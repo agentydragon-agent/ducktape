@@ -47,21 +47,21 @@ User password: `kubectl get secret agentydragon-user-password -n flux-system -o 
 
 ## Storage
 
-| Provisioner          | Location | Default | Notes                                   |
-| -------------------- | -------- | ------- | --------------------------------------- |
-| `proxmox-csi-retain` | Proxmox  | Yes     | Storage-heavy: Harbor, Gitea, Loki, Nix |
-| `hcloud-volumes`     | Hetzner  | No      | Always-on critical-path services        |
-| `local-path`         | Any node | No      | Simple: Vault Raft, Headscale           |
+| Provisioner          | Location | Default | Notes                                         |
+| -------------------- | -------- | ------- | --------------------------------------------- |
+| `proxmox-csi-retain` | Proxmox  | Yes     | Storage-heavy: Harbor, Gitea, Loki, Nix       |
+| `hcloud-volumes`     | Hetzner  | No      | Always-on critical-path: Authentik PostgreSQL |
+| `local-path`         | Any node | No      | Simple: Vault Raft, Headscale                 |
 
 Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) — needs VLAN access to API.
 
 ## Failure Modes
 
-| Scenario        | Cluster    | Ingress | Notes                                 |
-| --------------- | ---------- | ------- | ------------------------------------- |
-| Single VPS down | 2/3 quorum | Works   | DNS failover to other VPS             |
-| Both VPS down   | 1/3 only   | Down    | Home pods continue but cluster frozen |
-| Home down       | 2/3 quorum | Works   | Proxmox storage workloads unavailable |
+| Scenario        | Cluster    | Ingress | Authentik | Notes                                       |
+| --------------- | ---------- | ------- | --------- | ------------------------------------------- |
+| Single VPS down | 2/3 quorum | Works   | Works     | 1 server+worker replica on surviving VPS    |
+| Both VPS down   | 1/3 only   | Down    | Down      | Home pods continue but cluster frozen       |
+| Home down       | 2/3 quorum | Works   | Works     | All Authentik components on VPS, unaffected |
 
 ## Repository Structure
 

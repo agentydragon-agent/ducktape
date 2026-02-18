@@ -58,10 +58,22 @@ spec:
 
       # Secrets now loaded per-component via server.envFrom and worker.envFrom
 
-    # Server deployment
+    # Server deployment — 2 replicas spread across VPS nodes
     server:
       name: server
-      replicas: 1
+      replicas: 2
+
+      nodeSelector:
+        topology.kubernetes.io/region: hetzner
+
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: server
+                  app.kubernetes.io/instance: authentik
+              topologyKey: kubernetes.io/hostname
 
       # Allow 20 min for DB migrations on first boot (default 10 min).
       # If the startup probe kills the pod mid-migration, the PostgreSQL
@@ -69,6 +81,13 @@ spec:
       startupProbe:
         failureThreshold: 120
         periodSeconds: 10
+
+      # Default 3s timeout is too tight — outpost API calls regularly take
+      # 1s+ even with VPS-local PostgreSQL. Give enough headroom.
+      livenessProbe:
+        timeoutSeconds: 10
+      readinessProbe:
+        timeoutSeconds: 10
 
       # Load ESO-generated secret key via envFrom (plus all global secrets)
       envFrom:
@@ -92,31 +111,32 @@ spec:
       # Ingress disabled — traffic routed via Gateway API HTTPRoute
       ingress:
         enabled: false
-        ingressClassName: nginx
-        annotations:
-          cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
-          nginx.ingress.kubernetes.io/ssl-redirect: "true"
-        hosts:
-          - auth.allegedly.works
-        tls:
-          - secretName: authentik-tls
-            hosts:
-              - auth.allegedly.works
 
       # Resources
       resources:
-        server:
-          requests:
-            cpu: 100m
-            memory: 512Mi
-          limits:
-            cpu: 500m
-            memory: 1Gi
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          cpu: 500m
+          memory: 1Gi
 
-    # Worker deployment
+    # Worker deployment — 2 replicas spread across VPS nodes
     worker:
       name: worker
-      replicas: 1
+      replicas: 2
+
+      nodeSelector:
+        topology.kubernetes.io/region: hetzner
+
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: worker
+                  app.kubernetes.io/instance: authentik
+              topologyKey: kubernetes.io/hostname
 
       # Load ESO-generated secret key via envFrom (plus all global secrets)
       envFrom:
@@ -139,7 +159,9 @@ spec:
           cpu: 500m
           memory: 1Gi
 
-    # PostgreSQL with password injected via environment variable
+    # PostgreSQL — pinned to VPS with Hetzner volume for low-latency
+    # access from server/worker pods (previously on Proxmox, causing 1-1.6s
+    # API response times due to cross-site VXLAN+KubeSpan round-trips).
     postgresql:
       enabled: true
       auth:
@@ -148,15 +170,21 @@ spec:
           adminPasswordKey: "AUTHENTIK_POSTGRESQL__PASSWORD"
           userPasswordKey: "AUTHENTIK_POSTGRESQL__PASSWORD"
       primary:
-        # Kill connections idle in a transaction for >60s. Prevents stale
-        # locks from a killed authentik pod blocking the next pod's migrations.
+        nodeSelector:
+          topology.kubernetes.io/region: hetzner
+        persistence:
+          storageClass: hcloud-volumes
+          size: 8Gi
         extendedConfiguration: |
           max_connections = 500
           idle_in_transaction_session_timeout = '60s'
 
-    # Redis (required for worker message queue)
+    # Redis (required for worker message queue) — pinned to VPS
     redis:
       enabled: true
+      master:
+        nodeSelector:
+          topology.kubernetes.io/region: hetzner
 
     # Service account
     serviceAccount:

@@ -80,5 +80,15 @@ resource "authentik_outpost" "loki" {
   config = jsonencode({
     authentik_host         = var.authentik_url
     authentik_host_browser = "https://auth.allegedly.works"
+    # Pin outpost pods to VPS nodes (co-locate with Authentik server)
+    kubernetes_json_patches = {
+      deployment = [
+        {
+          op    = "add"
+          path  = "/spec/template/spec/nodeSelector"
+          value = { "topology.kubernetes.io/region" = "hetzner" }
+        }
+      ]
+    }
   })
 }

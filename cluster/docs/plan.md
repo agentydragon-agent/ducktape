@@ -9,6 +9,17 @@
 Cilium Gateway API serving HTTPS traffic. DNS automation fully working.
 Authentik auth verified.
 
+### Recent Fixes (2026-02-18)
+
+1. **Authentik moved to VPS nodes** — All Authentik components (server, worker, PostgreSQL,
+   Redis, outposts) pinned to Hetzner VPS nodes. PostgreSQL switched from `proxmox-csi-retain`
+   to `hcloud-volumes`. Server and worker scaled to 2 replicas with pod anti-affinity across
+   VPS nodes. Fixes: cross-site latency causing 1-1.6s outpost API calls (Django ORM
+   round-trips over VXLAN+KubeSpan), liveness probe kills (33 restarts/26h from 3s timeout
+   with only 2 gunicorn workers), and single-node-failure vulnerability. Liveness/readiness
+   probe timeout increased from 3s to 10s. Outpost deployments pinned via
+   `kubernetes_json_patches` in Terraform config.
+
 ### Recent Fixes (2026-02-16)
 
 1. **Cilium Gateway API migration complete** — Replaced ingress-nginx with Cilium
@@ -55,33 +66,10 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`, `authentik-blueprint-kagent`
 
-### Next Actions (Harbor CI + Flux Webhook, 2026-02-18)
+### Completed: Harbor CI + Flux Webhook (2026-02-18)
 
-The Harbor-as-registry + webhook receiver change is deployed to `devel` but requires
-two manual steps before CI pushes will reach the cluster:
-
-1. **Add GitHub secrets** `HARBOR_ROBOT_USERNAME` and `HARBOR_ROBOT_TOKEN` to the
-   `agentydragon/ducktape` repository. Retrieve values after the `harbor-ci` Terraform
-   applies (watch `kubectl get terraform harbor-ci -n flux-system`):
-
-   ```bash
-   vault kv get -field=username kv/harbor/ci-robot   # → HARBOR_ROBOT_USERNAME
-   vault kv get -field=password kv/harbor/ci-robot   # → HARBOR_ROBOT_TOKEN
-   ```
-
-   Then set them in GitHub: Settings → Secrets → Actions.
-
-2. **Register GitHub webhook** for instant GitRepository reconciliation (eliminates
-   the 1-minute Flux poll). Run once after `harbor-ci` Terraform applies:
-   ```bash
-   TOKEN=$(kubectl get secret github-webhook-token -n flux-system -o jsonpath='{.data.token}' | base64 -d)
-   HASH=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
-   gh api repos/agentydragon/ducktape/hooks --method POST \
-     -f "config[url]=https://flux-webhook.allegedly.works/hook/$HASH" \
-     -f "config[secret]=$TOKEN" \
-     -f "config[content_type]=json" \
-     -f "events[]=push"
-   ```
+- [x] **GitHub secrets** `HARBOR_ROBOT_USERNAME` and `HARBOR_ROBOT_TOKEN` added to `agentydragon/ducktape`
+- [x] **GitHub webhook** registered for instant Flux GitRepository reconciliation
 
 ### Next Actions
 
@@ -274,6 +262,13 @@ Low priority. Weave GitOps or Capacitor for visualizing kustomization DAG.
 `persistent-auth/terraform.tfstate` is local-only SSOT for sealed-secrets keypair, CSI
 tokens, Nix signing key. Minimum: rclone to encrypted cloud storage. Better: S3 backend
 with OpenTofu native state encryption + versioning.
+
+### TODO: Authentik HA PostgreSQL
+
+Single PostgreSQL instance on one VPS node. Losing that VPS requires Hetzner volume
+reattach (fast but manual). Consider CloudNativePG with streaming replication across
+both VPS nodes for zero-downtime failover. Stretch goal: replicate to Proxmox so
+Authentik can survive total Hetzner loss (fall back to home-only operation).
 
 ### TODO: Deploy etcd Backup
 
