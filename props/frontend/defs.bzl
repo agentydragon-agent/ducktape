@@ -29,11 +29,14 @@ def visual_test(name, srcs, deps = [], baseline = None, size = "small"):
         baseline: Baseline PNG path (e.g., "baselines/Foo-chromium-linux.png").
         size: Bazel test size (default "small").
     """
+    env = dict(_VISUAL_ENV)
+    env["BASELINE_WORKSPACE_PATH"] = native.package_name() + "/baselines"
+
     js_test(
         name = name,
         size = size,
         entry_point = srcs[0],
         data = _VISUAL_BASE_DATA + deps + ([baseline] if baseline else []),
-        env = _VISUAL_ENV,
+        env = env,
         no_copy_to_bin = _VISUAL_BASE_DATA,
     )

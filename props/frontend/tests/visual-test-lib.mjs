@@ -8,7 +8,7 @@
  * Uses file:// URLs to load the harness HTML directly — no HTTP server needed.
  * The harness bundle is IIFE format so it works without module CORS restrictions.
  *
- * To regenerate a baseline: set UPDATE_BASELINES=1 in the test env.
+ * To update a baseline: bazel run //path/to:visual_TestName -- --update
  * To inspect failures: check TEST_UNDECLARED_OUTPUTS_DIR for *-actual.png + *-diff.png.
  */
 
@@ -29,16 +29,43 @@ const DEFAULT_BASELINE_DIR = join(__dirname, "visual-regression.spec.ts-snapshot
 // Pixel diff tolerance (percentage of total pixels). See visual-regression.spec.js for rationale.
 const PIXEL_DIFF_PERCENT = 2;
 
-function compareBaseline(name, screenshot, outputDir, baselineDir) {
-  const UPDATE_BASELINES = process.env.UPDATE_BASELINES === "1";
+/**
+ * Determine whether update mode is active and where to write baselines.
+ *
+ * Returns { updateMode, writeDir } where writeDir is the source-tree path
+ * when updating, or null for comparison mode.
+ */
+function resolveUpdateMode() {
+  const updateRequested = process.argv.slice(2).includes("--update") || process.env.UPDATE_BASELINES === "1";
+  if (!updateRequested) return { updateMode: false, writeDir: null };
 
+  const workspaceDir = process.env.BUILD_WORKSPACE_DIRECTORY;
+  if (!workspaceDir) {
+    console.error(
+      "ERROR: --update requires BUILD_WORKSPACE_DIRECTORY (use 'bazel run', not 'bazel test').\n" +
+        "Usage: bazel run //path/to:visual_TestName -- --update"
+    );
+    process.exit(1);
+  }
+
+  const baselineRelPath = process.env.BASELINE_WORKSPACE_PATH;
+  if (!baselineRelPath) {
+    console.error("ERROR: BASELINE_WORKSPACE_PATH not set. Is the visual_test() macro up to date?");
+    process.exit(1);
+  }
+
+  return { updateMode: true, writeDir: join(workspaceDir, baselineRelPath) };
+}
+
+function compareBaseline(name, screenshot, outputDir, baselineDir, updateWriteDir) {
   if (!existsSync(outputDir)) mkdirSync(outputDir, { recursive: true });
   writeFileSync(join(outputDir, `${name}-actual.png`), screenshot);
 
-  if (UPDATE_BASELINES) {
-    if (!existsSync(baselineDir)) mkdirSync(baselineDir, { recursive: true });
-    writeFileSync(join(baselineDir, `${name}-chromium-linux.png`), screenshot);
-    console.log(`  Updating baseline: ${name}`);
+  if (updateWriteDir) {
+    if (!existsSync(updateWriteDir)) mkdirSync(updateWriteDir, { recursive: true });
+    const dest = join(updateWriteDir, `${name}-chromium-linux.png`);
+    writeFileSync(dest, screenshot);
+    console.log(`  Updated baseline: ${dest}`);
     return { passed: true, updated: true };
   }
 
@@ -93,6 +120,8 @@ export async function main(scenarioName, callerUrl = null) {
   const harnessDir = distDir.endsWith("/dist") ? dirname(distDir) : distDir;
   const outputDir = process.env.TEST_UNDECLARED_OUTPUTS_DIR || join(__dirname, "diffs");
 
+  const { updateMode, writeDir } = resolveUpdateMode();
+
   const indexPath = resolve(join(harnessDir, "index.html"));
   if (!existsSync(indexPath)) {
     console.error(`Harness index.html not found in: ${harnessDir}`);
@@ -146,6 +175,10 @@ export async function main(scenarioName, callerUrl = null) {
     launchOptions.executablePath = execPath;
   }
 
+  if (updateMode) {
+    console.log(`Updating baseline for: ${scenarioName}`);
+  }
+
   const browser = await puppeteer.launch(launchOptions);
   let passed = false;
 
@@ -176,7 +209,7 @@ export async function main(scenarioName, callerUrl = null) {
     const screenshotData = await element.screenshot();
     const screenshot = Buffer.isBuffer(screenshotData) ? screenshotData : Buffer.from(screenshotData);
 
-    const result = compareBaseline(scenarioName, screenshot, outputDir, baselineDir);
+    const result = compareBaseline(scenarioName, screenshot, outputDir, baselineDir, writeDir);
     if (result.updated) {
       console.log("  ✓ Baseline updated");
     } else if (result.created) {
