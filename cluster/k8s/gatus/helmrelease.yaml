@@ -88,7 +88,7 @@ spec:
           group: sso
           url: https://registry.allegedly.works/c/oidc/login
           client:
-            max-redirects: 0
+            ignore-redirect: true
           interval: 120s
           conditions:
             - "[STATUS] == 302"
