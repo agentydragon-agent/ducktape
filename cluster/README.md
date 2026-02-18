@@ -43,8 +43,11 @@ See <docs/bootstrap.md> for full setup.
 | Nix Cache      | <https://cache.allegedly.works>     | Binary cache       |
 | Headscale      | <https://headscale.allegedly.works> | Tailscale control  |
 | Gatus          | <https://status.allegedly.works>    | Health monitoring  |
+| OpenClaw       | <https://openclaw.allegedly.works>  | AI coding agent    |
 
-Authentik SSO passwords: `get-passwords` (requires direnv in cluster directory)
+Credentials: `get-passwords` (requires direnv in cluster directory).
+OpenClaw requires a one-time gateway token entry in the UI — the token is included in
+`get-passwords` output.
 
 ## Storage
 

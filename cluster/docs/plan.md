@@ -98,6 +98,11 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       remove the direct HTTPRoute from `k8s/gatus/` (proxy route in `authentik-proxy-routes/`
       takes over)
 - [ ] **Deploy headscale**, test with a device
+- [ ] **OpenClaw: eliminate one-time token entry** — currently the user must retrieve
+      the auto-generated gateway token (`kubectl get secret openclaw-gateway-token ...`)
+      and enter it once in the UI settings. Investigate options: operator exposing token
+      in bootstrap config, gateway-side token injection into served HTML, or upstream
+      PR to accept `"trusted-proxy"` in `sharedAuthOk` (message-handler.ts:385-387).
 - [ ] **Ollama: per-user auth** — investigate Authentik user tokens (app passwords →
       `client_credentials` JWTs). Currently uses shared API key from Vault.
 - [ ] **Harbor terraform: switch to robot accounts** — Currently uses admin database
@@ -172,6 +177,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Headscale      | Tailscale control  | -   |
 | Ollama         | LLM inference      | -   |
 | Website        | Static placeholder | -   |
+| OpenClaw       | AI coding agent    | ✅  |
 | Gatus          | Health monitoring  | ✅  |
 
 ## Applications (disabled - need flux-kustomization.yaml)
