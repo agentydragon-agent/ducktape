@@ -15,6 +15,7 @@ spec:
     - name: props-namespace
     - name: props-secrets
     - name: gateway
+    - name: harbor # Props image hosted on registry.allegedly.works
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
