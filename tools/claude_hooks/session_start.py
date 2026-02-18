@@ -459,25 +459,25 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
             await mount_tmpfs_at(bazel_cache_dir)
             return tmpfs_setup.setup_bazel_cache(bazel_cache_dir)
 
+    @tracer.start_as_current_span("install_bazelisk", context=root_ctx)
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
         """Install bazelisk and wrapper as separate tasks.
 
         Always installs the wrapper. Optionally downloads bazelisk unless
         DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK is False.
         """
-        with tracer.start_as_current_span("install_bazelisk", context=root_ctx):
-            wrapper_path = bazelisk_setup.install_wrapper(settings)
-            skipped = not settings.install_bazelisk
-            if not skipped:
-                bazelisk_setup.install_bazelisk(settings)
-            else:
-                logger.info("Skipping bazelisk download (install_bazelisk=False)")
-            return bazelisk_setup.BazeliskSetup(
-                bazelisk_path=settings.get_bazelisk_path(),
-                wrapper_path=wrapper_path,
-                settings=settings,
-                bazelisk_skipped=skipped,
-            )
+        wrapper_path = bazelisk_setup.install_wrapper(settings)
+        skipped = not settings.install_bazelisk
+        if not skipped:
+            bazelisk_setup.install_bazelisk(settings)
+        else:
+            logger.info("Skipping bazelisk download (install_bazelisk=False)")
+        return bazelisk_setup.BazeliskSetup(
+            bazelisk_path=settings.get_bazelisk_path(),
+            wrapper_path=wrapper_path,
+            settings=settings,
+            bazelisk_skipped=skipped,
+        )
 
     # Decrypt age-encrypted secrets from .claude_hooks/secrets/ in the repo checkout.
     with tracer.start_as_current_span("setup_secrets", context=root_ctx):
@@ -506,14 +506,26 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
     # Create proxy task with BuildBuddy configuration state
     proxy_task = asyncio.create_task(setup_proxy_with_supervisor(buildbuddy_configured=buildbuddy_configured))
 
-    async def setup_mkcert_with_proxy() -> mkcert_setup.MkcertSetup:
-        """Set up mkcert (depends on proxy for the combined CA bundle)."""
+    async def mkcert_generate_certs() -> mkcert_setup.MkcertSetup:
+        """Generate mkcert certs (no proxy dependency — runs immediately in parallel)."""
         with tracer.start_as_current_span("setup_mkcert", context=root_ctx):
             if not settings.install_mkcert:
                 raise SkipError("mkcert disabled (install_mkcert=False)")
+            # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
+            return await mkcert_setup.setup_mkcert(settings, combined_ca=None)
+
+    # Start cert generation immediately, without waiting for the proxy.
+    mkcert_task = asyncio.create_task(mkcert_generate_certs())
+
+    async def mkcert_append_bundle() -> mkcert_setup.MkcertSetup:
+        """Append mkcert CA to the combined CA bundle (depends on proxy + cert gen)."""
+        with tracer.start_as_current_span("mkcert_append_bundle", context=root_ctx):
+            mkcert_result = await mkcert_task
             await proxy_task
             combined_ca = settings.get_auth_proxy_combined_ca()
-            return mkcert_setup.setup_mkcert(settings, combined_ca if combined_ca.exists() else None)
+            if combined_ca.exists():
+                mkcert_setup.append_mkcert_ca_to_bundle(mkcert_result.ca_root, combined_ca)
+            return mkcert_result
 
     async def traced_precommit():
         with tracer.start_as_current_span("install_precommit", context=root_ctx):
@@ -534,7 +546,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
         traced_nix(),
         run_in_thread(install_bazelisk_wrapper),
         setup_bazel_on_tmpfs(),
-        setup_mkcert_with_proxy(),
+        mkcert_append_bundle(),
         traced_cli_tools(),
         return_exceptions=True,
     )

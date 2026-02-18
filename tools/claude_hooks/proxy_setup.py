@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cryptography import x509
+from opentelemetry import trace
 
 from bazel_util.subprocess import python_env
 from net_util.net import async_wait_for_port, is_port_in_use
@@ -27,6 +28,7 @@ from tools.claude_hooks.settings import HookSettings
 from tools.claude_hooks.supervisor.client import SupervisorClient
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 # Env vars set by Bazel BUILD targets (rlocation keys for hermetic JDK files)
 _KEYTOOL_RLOCATION_ENV = "KEYTOOL_RLOCATION"
@@ -147,6 +149,7 @@ def _is_anthropic_tls_inspection_ca(cert: x509.Certificate) -> bool:
     return org == ANTHROPIC_CA_ORG and ANTHROPIC_CA_CN_SUBSTRING in cn
 
 
+@tracer.start_as_current_span("proxy_extract_ca")
 def _extract_proxy_ca(settings: HookSettings) -> None:
     """Load the TLS inspection CA certificate from the filesystem.
 
@@ -325,10 +328,12 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
             name=AUTH_PROXY_SERVICE, command=command, directory=proxy_dir, environment=python_env(inherit=False)
         )
 
-    await _wait_for_proxy_running(settings, supervisor)
+    with tracer.start_as_current_span("proxy_wait_socket"):
+        await _wait_for_proxy_running(settings, supervisor)
     logger.info("Auth proxy running successfully")
 
 
+@tracer.start_as_current_span("proxy_create_bundle")
 def _create_combined_ca_bundle(settings: HookSettings) -> None:
     """Create a combined CA bundle with system CAs plus the proxy CA.
 
@@ -396,13 +401,15 @@ async def setup_auth_proxy(
     settings.get_auth_proxy_dir().mkdir(parents=True, exist_ok=True)
 
     # Step 1: Start auth proxy first (needed for CA extraction)
-    await ensure_proxy_running(settings, supervisor)
+    with tracer.start_as_current_span("proxy_start_service"):
+        await ensure_proxy_running(settings, supervisor)
 
     # Step 2: Load the TLS inspection CA from filesystem
     _extract_proxy_ca(settings)
 
     # Step 3: Create Java truststore with the CA
-    await _create_java_truststore(settings)
+    with tracer.start_as_current_span("proxy_create_truststore"):
+        await _create_java_truststore(settings)
 
     # Step 4: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
     _create_combined_ca_bundle(settings)
