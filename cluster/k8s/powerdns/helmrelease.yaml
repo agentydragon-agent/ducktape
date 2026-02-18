@@ -15,8 +15,8 @@ spec:
       chart: ./cluster/charts/powerdns
       sourceRef:
         kind: GitRepository
-        name: powerdns-chart
-        namespace: dns-system
+        name: flux-system
+        namespace: flux-system
       reconcileStrategy: Revision
       interval: 15m
   values:
