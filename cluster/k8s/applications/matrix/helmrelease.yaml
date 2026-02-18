@@ -27,16 +27,16 @@ spec:
         name: ananace-charts
         namespace: matrix
   valuesFrom:
-    # OIDC provider configuration from Vault
+    # OIDC provider configuration from ESO-templated Vault secret
     - kind: Secret
       name: matrix-oidc-config
       valuesKey: values.yaml
-    # Macaroon secret key from Vault (injected into config.macaroonSecretKey)
+    # Macaroon secret key from Vault
     - kind: Secret
       name: synapse-macaroon-secret
       valuesKey: macaroon_secret_key
       targetPath: config.macaroonSecretKey
-    # Registration shared secret from Vault (injected into config.registrationSharedSecret)
+    # Registration shared secret from Vault
     - kind: Secret
       name: synapse-registration-secret
       valuesKey: registration_shared_secret
@@ -79,11 +79,14 @@ spec:
       annotations:
         reloader.stakater.com/auto: "true"
 
-    # Synapse configuration via extraConfig
+    # Synapse configuration
     config:
       enableRegistration: false
       reportStats: false
       # macaroonSecretKey and registrationSharedSecret injected via valuesFrom
+
+    # extraConfig with oidc_providers is injected via valuesFrom from
+    # matrix-oidc-config secret (ESO-templated with Vault credentials)
 
     # Signing key from Vault (disable chart auto-generation)
     signingkey:
