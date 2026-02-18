@@ -11,11 +11,6 @@ spec:
     name: flux-system
     namespace: flux-system
 
-  # Wait for Vault OIDC client secret to be synced from Vault via ESO
-  dependsOn:
-    - name: authentik-blueprint-vault-secret
-      namespace: flux-system
-
   # Use in-cluster service account
   serviceAccountName: tf-runner
   approvePlan: "auto"
@@ -35,7 +30,7 @@ spec:
     - name: kubernetes_api_url
       value: "https://kubernetes.default.svc.cluster.local"
     - name: authentik_oidc_discovery_url
-      value: "http://authentik-server.authentik/application/o/vault/"
+      value: "https://auth.allegedly.works/application/o/vault/"
     - name: vault_external_url
       value: "https://vault.allegedly.works"
 
