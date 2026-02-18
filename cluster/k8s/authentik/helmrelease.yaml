@@ -69,6 +69,13 @@ spec:
       name: server
       replicas: 2
 
+      # With 2 replicas + required anti-affinity on 2 nodes, the default
+      # strategy (maxUnavailable=0) deadlocks: can't surge because anti-affinity
+      # blocks a third pod. Allow 1 unavailable so rollouts proceed.
+      strategy:
+        rollingUpdate:
+          maxUnavailable: 1
+
       nodeSelector:
         topology.kubernetes.io/region: hetzner
 
@@ -133,6 +140,10 @@ spec:
     worker:
       name: worker
       replicas: 2
+
+      strategy:
+        rollingUpdate:
+          maxUnavailable: 1
 
       nodeSelector:
         topology.kubernetes.io/region: hetzner
