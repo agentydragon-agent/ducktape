@@ -31,6 +31,14 @@ spec:
           - "10.244.0.0/16"
         auth:
           mode: "trusted-proxy"
+          # WORKAROUND: Dummy token prevents the operator's
+          # enrichConfigWithGatewayAuth() from overwriting mode to "token".
+          # The operator skips enrichment when auth.token is already set.
+          # In trusted-proxy mode the gateway never checks the token.
+          # TODO: File issue on openclaw-rocks/k8s-operator — operator should
+          # respect user-configured auth.mode and skip token injection when
+          # mode is not "token".
+          token: "unused-trusted-proxy-mode"
           trustedProxy:
             userHeader: "X-Authentik-Username"
 
@@ -53,7 +61,3 @@ spec:
   availability:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
-
-  # gateway.existingSecret omitted — operator auto-generates gateway token secret.
-  # Authentik trusted-proxy handles user auth; the token is for the Control UI
-  # WebSocket connection.
