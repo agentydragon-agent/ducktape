@@ -54,6 +54,6 @@ spec:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
 
-  gateway: {}
-  # Operator auto-generates gateway token secret. Authentik trusted-proxy
-  # handles user auth; the token is for the Control UI WebSocket connection.
+  # gateway.existingSecret omitted — operator auto-generates gateway token secret.
+  # Authentik trusted-proxy handles user auth; the token is for the Control UI
+  # WebSocket connection.
