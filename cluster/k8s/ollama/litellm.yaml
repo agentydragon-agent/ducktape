@@ -5,7 +5,7 @@ metadata:
   namespace: ollama
 spec:
   type: oci
-  url: oci://ghcr.io/berriai/litellm-helm
+  url: oci://ghcr.io/berriai
   interval: 24h
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
