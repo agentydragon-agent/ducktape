@@ -92,4 +92,6 @@ resources:
   - authentik-blueprint/vault-secret/flux-kustomization.yaml
   - authentik-proxy-routes/flux-kustomization.yaml
   - harbor-oidc-config/flux-kustomization.yaml
+  - user-agentydragon-namespace/flux-kustomization.yaml
+  - user-agentydragon/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml

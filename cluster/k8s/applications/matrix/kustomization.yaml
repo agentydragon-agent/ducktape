@@ -5,4 +5,4 @@ resources:
   - element-web.yaml
   - element-httproute.yaml
   - synapse-httproute.yaml
-# Matrix OIDC/SSO configuration is handled by k8s/authentik-blueprint/matrix-provider/ (Terraform) and k8s/authentik-blueprint/matrix-secret/ (ExternalSecret)
+# Matrix OIDC/SSO: native Authentik blueprint (k8s/authentik/sso-blueprints.yaml) + ESO (k8s/authentik-blueprint/matrix-secret/)
