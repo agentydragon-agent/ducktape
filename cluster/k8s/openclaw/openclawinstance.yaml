@@ -30,6 +30,8 @@ spec:
         trustedProxies:
           - "10.244.0.0/16"
         controlUi:
+          # Safe here: Authentik outpost authenticates all requests upstream,
+          # and NetworkPolicy restricts gateway ingress to authentik namespace.
           dangerouslyDisableDeviceAuth: true
         auth:
           mode: "trusted-proxy"
