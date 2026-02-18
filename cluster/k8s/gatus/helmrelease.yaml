@@ -87,11 +87,10 @@ spec:
         - name: Harbor OIDC redirect
           group: sso
           url: https://registry.allegedly.works/c/oidc/login
-          client:
-            ignore-redirect: true
           interval: 120s
           conditions:
-            - "[STATUS] == 302"
+            - "[STATUS] == 200"
+            - "[BODY] == pat(*authentik*)"
 
         - name: Vault
           group: core
