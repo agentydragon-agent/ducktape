@@ -184,9 +184,10 @@ async def commit(
             user_context=message,
             previous_message=prev_msg,
         )
-        ai_msg = await run_editor(repo, content)
-        if ai_msg is None:
+        edited = await run_editor(repo, content)
+        if edited is None:
             raise SystemExit(1)
+        ai_msg = edited
 
     cmd = ["git", "commit", "-m", ai_msg, "--no-verify"]
     if amend:
