@@ -40,6 +40,9 @@ if _RUNFILES_OPT is None:
     raise RuntimeError("Could not create runfiles")
 _RUNFILES: runfiles.Runfiles = _RUNFILES_OPT
 
+# Attributes that mark a file as ignored — matches rules_lint behavior and tools/format/formatter.py.
+_LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
+
 
 def resolve_bin(rlocation: str) -> str:
     """Resolve a runfiles path to an absolute path."""
@@ -49,15 +52,33 @@ def resolve_bin(rlocation: str) -> str:
     return path
 
 
+def _is_lint_ignored(repo: pygit2.Repository, path: Path) -> bool:
+    return any(repo.get_attr(str(path), attr) in (True, "true") for attr in _LINT_IGNORED_ATTRS)
+
+
+@dataclass
+class Skipped:
+    pass
+
+
+@dataclass
+class Failed:
+    elapsed: float
+    output: str
+
+
+@dataclass
+class Passed:
+    elapsed: float
+
+
+ValidationOutcome = Skipped | Failed | Passed
+
+
 @dataclass
 class ValidationResult:
-    """Result of a validation check."""
-
     name: str
-    elapsed: float
-    success: bool
-    output: str = ""
-    skipped: bool = False
+    outcome: ValidationOutcome
 
 
 def is_test_file(p: Path) -> bool:
@@ -80,20 +101,21 @@ def is_terraform_module(p: Path) -> bool:
     return p.suffix == ".tf" and p.is_relative_to("cluster/terraform/modules")
 
 
-async def run_pytest_main_check(files: list[Path], repo_root: Path) -> ValidationResult:
+async def run_pytest_main_check(files: list[Path], repo_root: Path, repo: pygit2.Repository) -> ValidationResult:
     """Check that test files have pytest_bazel.main() calls."""
     name = "pytest-main-check"
-    test_files = [f for f in files if is_test_file(f)]
+    test_files = [f for f in files if is_test_file(f) and not _is_lint_ignored(repo, f)]
     if not test_files:
-        return ValidationResult(name, 0.0, True, skipped=True)
+        return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
     results = await check_files_async(test_files, repo_root)
     elapsed = time.perf_counter() - start
 
     failed = [r for r in results if not r.passed]
-    output = "\n".join(f"{r.file_path}: {r.reason}" for r in failed) if failed else ""
-    return ValidationResult(name, elapsed, not failed, output)
+    if failed:
+        return ValidationResult(name, Failed(elapsed, "\n".join(f"{r.file_path}: {r.reason}" for r in failed)))
+    return ValidationResult(name, Passed(elapsed))
 
 
 async def run_subprocess_validation(
@@ -101,39 +123,41 @@ async def run_subprocess_validation(
     bin_rlocation: str,
     files: list[Path],
     file_filter: Callable[[Path], bool],
+    repo_root: Path,
     extra_args: list[str] | None = None,
 ) -> ValidationResult:
     """Run a subprocess validation if any files match the filter."""
     if not any(file_filter(f) for f in files):
-        return ValidationResult(name, 0.0, True, skipped=True)
+        return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
     validate_bin = resolve_bin(bin_rlocation)
     cmd = [validate_bin] + (extra_args or [])
-    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=repo_root
+    )
     stdout, stderr = await proc.communicate()
     elapsed = time.perf_counter() - start
 
     output = (stdout + stderr).decode()
-    return ValidationResult(name, elapsed, proc.returncode == 0, output)
+    if proc.returncode == 0:
+        return ValidationResult(name, Passed(elapsed))
+    return ValidationResult(name, Failed(elapsed, output))
 
 
-async def run_terraform_centralization_check(files: list[Path]) -> ValidationResult:
+async def run_terraform_centralization_check(files: list[Path], repo_root: Path) -> ValidationResult:
     """Check terraform modules don't define provider versions."""
     name = "tf-centralization"
     if not any(is_terraform_module(f) for f in files):
-        return ValidationResult(name, 0.0, True, skipped=True)
+        return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
-    violations = find_violations()
+    violations = find_violations(repo_root)
     elapsed = time.perf_counter() - start
 
-    output = "\n".join(str(v) for v in violations) if violations else ""
-    return ValidationResult(name, elapsed, not violations, output)
-
-
-# NOTE: checkov and tofu validate were moved to standalone pre-commit hooks
-# (bridgecrewio/checkov, antonbabenko/pre-commit-terraform terraform_validate)
+    if violations:
+        return ValidationResult(name, Failed(elapsed, "\n".join(str(v) for v in violations)))
+    return ValidationResult(name, Passed(elapsed))
 
 
 async def run_filename_convention_check(repo: pygit2.Repository) -> ValidationResult:
@@ -142,24 +166,27 @@ async def run_filename_convention_check(repo: pygit2.Repository) -> ValidationRe
     start = time.perf_counter()
     violations = check_filename_conventions(repo)
     elapsed = time.perf_counter() - start
-    output = "\n".join(violations) if violations else ""
-    return ValidationResult(name, elapsed, not violations, output)
+    if violations:
+        return ValidationResult(name, Failed(elapsed, "\n".join(violations)))
+    return ValidationResult(name, Passed(elapsed))
 
 
 async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Repository) -> list[ValidationResult]:
     """Run all validations on files."""
     return list(
         await asyncio.gather(
-            run_pytest_main_check(files, repo_root),
-            run_terraform_centralization_check(files),
+            run_pytest_main_check(files, repo_root, repo),
+            run_terraform_centralization_check(files, repo_root),
             run_filename_convention_check(repo),
             # Unified cluster validation: kustomize + helm + CRD layering + deps
-            # Skip flux build in pre-commit (flaky when run in parallel) - CI runs it in isolation
+            # TODO: validate_cluster is now a runfiles binary — check whether --skip-flux-build
+            # is still needed or if flux build is now stable enough to run in pre-commit.
             run_subprocess_validation(
                 "cluster-validate",
                 "_main/cluster/scripts/validate_cluster/validate_cluster",
                 files,
                 is_cluster_validated,
+                repo_root,
                 extra_args=["--skip-flux-build"],
             ),
             run_subprocess_validation(
@@ -167,15 +194,20 @@ async def run_validate(files: list[Path], repo_root: Path, repo: pygit2.Reposito
                 "_main/cluster/scripts/validate_cluster/validate_sealed_secrets",
                 files,
                 is_sealed_secret,
+                repo_root,
             ),
         )
     )
 
 
 def get_all_files(repo: pygit2.Repository) -> list[Path]:
-    """Get all tracked files from git index, excluding deleted files."""
-    deleted = {path for path, flags in repo.status().items() if flags & pygit2.GIT_STATUS_WT_DELETED}
-    return [Path(entry.path) for entry in repo.index if entry.path not in deleted]
+    """Get all tracked files from git index, excluding deleted files.
+
+    Uses per-entry exists() instead of repo.status() — the latter triggers
+    ~160k syscalls (stat/readlink/access per file) and takes ~88s on 9p filesystems.
+    """
+    repo_root = Path(repo.workdir)
+    return [Path(entry.path) for entry in repo.index if (repo_root / entry.path).exists()]
 
 
 async def main_async() -> int:
@@ -183,10 +215,8 @@ async def main_async() -> int:
 
     t0 = time.perf_counter()
 
-    # Workspace dir needed for: pygit2.Repository("."), relative file paths, cluster script execution
-    os.chdir(get_build_workspace_directory())
-    repo_root = Path.cwd()
-    repo = pygit2.Repository(".")
+    repo_root = get_build_workspace_directory()
+    repo = pygit2.Repository(str(repo_root))
     t1 = time.perf_counter()
 
     # Get files to process
@@ -204,14 +234,16 @@ async def main_async() -> int:
 
     validate_failed = []
     for vresult in validate_results:
-        if vresult.skipped:
-            continue
-        status = "✓" if vresult.success else "✗"
-        print(f"{status} {vresult.name}: {vresult.elapsed:.1f}s")
-        if not vresult.success:
-            validate_failed.append(vresult)
-            if vresult.output:
-                print(vresult.output, file=sys.stderr)
+        match vresult.outcome:
+            case Skipped():
+                pass
+            case Passed(elapsed=elapsed):
+                print(f"✓ {vresult.name}: {elapsed:.1f}s")
+            case Failed(elapsed=elapsed, output=output):
+                print(f"✗ {vresult.name}: {elapsed:.1f}s")
+                validate_failed.append(vresult)
+                if output:
+                    print(output, file=sys.stderr)
 
     elapsed_total = time.perf_counter() - start_total
     print(f"\nTotal: {elapsed_total:.1f}s")
