@@ -18,6 +18,8 @@ occurrences:
     note: "Multiple tests use 'or' in assertions to accept different valid outputs"
     critic_scopes_expected_to_recall:
       - [tests/claude_linter_v2/test_integration.py]
+    match_file_restriction:
+      - tests/claude_linter_v2/test_integration.py
   - occurrence_id: occ-1
     files:
       tests/claude_linter_v2/test_stop_hook_quality_gate.py:
@@ -25,6 +27,8 @@ occurrences:
     note: "Accepts either 'Line 10:' or 'Line 20:' in reason"
     critic_scopes_expected_to_recall:
       - [tests/claude_linter_v2/test_stop_hook_quality_gate.py]
+    match_file_restriction:
+      - tests/claude_linter_v2/test_stop_hook_quality_gate.py
   - occurrence_id: occ-2
     files:
       tests/claude_linter/test_claude_linter.py:
@@ -32,3 +36,5 @@ occurrences:
     note: "Accepts either 'Usage:' or 'Missing command' in output"
     critic_scopes_expected_to_recall:
       - [tests/claude_linter/test_claude_linter.py]
+    match_file_restriction:
+      - tests/claude_linter/test_claude_linter.py

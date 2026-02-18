@@ -466,7 +466,7 @@ def main() -> None:
 
     markdown = generate_markdown(result, specimens_root)
 
-    output_path = specimens_root / "pending-graders-match-labels.md"
+    output_path = specimens_root / "pending-match-file-restriction.md"
     output_path.write_text(markdown)
     print(f"Wrote {len(result.pending)} occurrences to {output_path}")
 

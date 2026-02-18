@@ -1,3035 +1,9 @@
 # Issues Missing `match_file_restriction`
 
-Total: 376 single-file TP occurrences without `match_file_restriction`.
+Total: 359 single-file TP occurrences without `match_file_restriction`.
 
 For detailed per-occurrence analysis with validation proofs, use:
 `/narrow_matchability <snapshot_slug>`
-
-## ducktape_llm_common/2026-01-03-00 (57)
-
-### `dict-instead-of-pydantic-model.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/dict-instead-of-pydantic-model.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_diff_intelligence.py#L49)
-
-File: `tests/claude_linter_v2/test_diff_intelligence.py` (L49)
-
-> Tests construct `edits` as a list of raw dicts `[{"old_string": ..., "new_string": ...}]`
-> when the typed `EditOperation` Pydantic model exists (claude_linter/models.py:45-58).
->
-> Per STYLE.md: "Instantiate Pydantic models with explicit keyword arguments rather than
-> passing raw dicts." While Pydantic coerces dicts, explicit construction provides type
-> safety and makes the expected type clear at the call site.
->
-> Use `[EditOperation(old_string="foo", new_string="bar")]` instead.
->
-> **Note:** edits=[{...}] should use EditOperation models
-
-```
-      46:             tool_name="MultiEdit",
-      47:             tool_input={
-      48:                 "file_path": "/test.py",
->>>   49:                 "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "baz", "new_string": "qux"}],
-      50:             },
-      51:             tool_response={
-      52:                 "structuredPatch": [
-```
-
-### `disjunctive-test-assertions.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/disjunctive-test-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L104-L269)
-
-File: `tests/claude_linter_v2/test_integration.py` (L104, L187, L237, L255, L269)
-
-> Test assertions use disjunctions (OR conditions) to accept multiple different
-> outputs as passing. This is a code smell - tests should have a single clear
-> expected outcome. Disjunctive assertions indicate either:
->
-> 1. The test doesn't know what behavior to expect (unclear requirements)
-> 2. The test is covering multiple scenarios that should be separate tests
-> 3. The production code has inconsistent output that should be normalized
->
-> **Note:** Multiple tests use 'or' in assertions to accept different valid outputs
-
-```
-     101:         response = json.loads(result.stdout)
-     102:         assert response["continue"] is True
-     103:         # Clean code just returns {"continue": true}
->>>  104:         assert "decision" not in response or response.get("decision") != "block"
-     105:
-     106:     @pytest.mark.skipif(
-     107:         subprocess.run(["ruff", "--version"], capture_output=True, check=False).returncode != 0,
-   ...
-     184:         # Invalid JSON should crash the CLI
-     185:         assert result.returncode != 0
-     186:         # When CLI crashes, there's no JSON output
->>>  187:         assert "JSON parse error" in result.stderr or "Invalid JSON" in result.stderr
-     188:
-     189:     def test_pre_hook_non_python_file(self):
-     190:         """Test that pre-hook passes non-Python files."""
-   ...
-     234:         assert response["continue"] is True
-     235:         # Post-hook may apply autofix and notify Claude
-     236:         if response.get("decision") == "block":
->>>  237:             assert "Autofix:" in response["reason"] or "Violations:" in response["reason"]
-     238:
-     239:
-     240: class TestSessionCommands:
-   ...
-     252:
-     253:         assert result.returncode == 0
-     254:         # Output should be valid (might be empty if no sessions)
->>>  255:         assert "Sessions in" in result.stdout or "No sessions found" in result.stdout
-     256:
-     257:     def test_session_allow(self):
-     258:         """Test adding an allow rule."""
-   ...
-     266:
-     267:         assert result.returncode == 0
-     268:         # Check for the actual output format
->>>  269:         assert "Permission granted" in result.stdout or "Added allow rule" in result.stdout
-```
-
-### `disjunctive-test-assertions.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/disjunctive-test-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_quality_gate.py#L68)
-
-File: `tests/claude_linter_v2/test_stop_hook_quality_gate.py` (L68)
-
-> Test assertions use disjunctions (OR conditions) to accept multiple different
-> outputs as passing. This is a code smell - tests should have a single clear
-> expected outcome. Disjunctive assertions indicate either:
->
-> 1. The test doesn't know what behavior to expect (unclear requirements)
-> 2. The test is covering multiple scenarios that should be separate tests
-> 3. The production code has inconsistent output that should be normalized
->
-> **Note:** Accepts either 'Line 10:' or 'Line 20:' in reason
-
-```
-      65:     assert "2 errors that must be fixed" in reason
-      66:     assert "/test/file.py" in reason
-      67:     assert "/test/other.py" in reason
->>>   68:     assert "Line 10:" in reason or "Line 20:" in reason  # Should show line numbers
-      69:     assert "cl2 check" in reason  # Should include check command
-      70:
-      71:
-```
-
-### `disjunctive-test-assertions.yaml` / `occ-2`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/disjunctive-test-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter/test_claude_linter.py#L41)
-
-File: `tests/claude_linter/test_claude_linter.py` (L41)
-
-> Test assertions use disjunctions (OR conditions) to accept multiple different
-> outputs as passing. This is a code smell - tests should have a single clear
-> expected outcome. Disjunctive assertions indicate either:
->
-> 1. The test doesn't know what behavior to expect (unclear requirements)
-> 2. The test is covering multiple scenarios that should be separate tests
-> 3. The production code has inconsistent output that should be normalized
->
-> **Note:** Accepts either 'Usage:' or 'Missing command' in output
-
-```
-      38:
-      39:         # No command -> error (CLI requires a subcommand)
-      40:         assert result.exit_code == 2
->>>   41:         assert "Usage:" in result.output or "Missing command" in result.output
-      42:
-      43:     def test_help(self):
-      44:         """Test that help text shows available commands."""
-```
-
-### `docstrings-as-field-descriptions.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/docstrings-as-field-descriptions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L27-L38)
-
-File: `ducktape_llm_common/claude_linter/models.py` (L27-28, L30-32, L34-35, L37-38)
-
-> Field docstrings like `"""Human-readable explanation..."""` after Field declarations
-> are not semantically attached to those fields. Use Field(description="...") instead -
-> it's more semantic, discoverable, and appears in JSON schema.
->
-> **Note:** HookResponse fields have trailing docstrings instead of Field descriptions
-
-```
-      24:     - block: Prevent operation (pre) or signal changes were made (post)
-      25:     """
-      26:
->>>   27:     reason: str | None = None
->>>   28:     """Human-readable explanation shown to user and/or used to re-prompt model."""
-      29:
->>>   30:     continue_: bool = Field(True, alias="continue")
->>>   31:     """Whether model should continue after processing hook response.
->>>   32:     Usually True unless you want to stop the session."""
-      33:
->>>   34:     stop_reason: str | None = Field(None, alias="stopReason")
->>>   35:     """If provided with continue=False, stops the session with this message."""
-      36:
->>>   37:     suppress_output: bool = Field(False, alias="suppressOutput")
->>>   38:     """If True, suppresses the hook's own output (stdout/stderr) from being shown."""
-      39:
-      40:     model_config = ConfigDict(
-      41:         populate_by_name=True, alias_generator=None, use_enum_values=True, arbitrary_types_allowed=True
-```
-
-### `empty-default-instead-of-classvar.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/empty-default-instead-of-classvar.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L61-L65)
-
-File: `ducktape_llm_common/claude_hook.py` (L61, L64-65)
-
-> `hook_name: str = ""` with a runtime check (lines 64-65) is a weak enforcement pattern.
-> Use `hook_name: ClassVar[str]` without a default - Python raises AttributeError at
-> access time if subclass doesn't define it, no explicit check needed.
-
-```
-      58:             MyClaudeHook.entrypoint()
-      59:     """
-      60:
->>>   61:     hook_name: str = ""  # Must be defined by subclass
-      62:
-      63:     def __init__(self):
->>>   64:         if not self.hook_name:
->>>   65:             raise ValueError("ClaudeCodeHookBase requires non-empty 'hook_name'")
-      66:
-      67:         self.logger: logging.Logger | None = None
-      68:
-```
-
-### `endswith-instead-of-path-suffix.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/endswith-instead-of-path-suffix.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/checker.py#L50-L73)
-
-File: `ducktape_llm_common/claude_linter_v2/checker.py` (L50, L73)
-
-> Using `.endswith(".py")` on paths instead of Path's `.suffix == ".py"` method.
-> Using `.endswith("__init__.py")` instead of `.name == "__init__.py"`.
->
-> Path methods are clearer, more idiomatic, and don't require str() conversion.
-> Replace string operations with Path methods.
->
-> **Note:** .endswith() on str(file_path) instead of Path.suffix/.name
-
-```
-      47:         violations: list[Violation] = []
-      48:
-      49:         # Only check Python files for now
->>>   50:         if not str(file_path).endswith(".py"):
-      51:             return violations
-      52:
-      53:         try:
-   ...
-      70:                 or (getattr_config.enabled if getattr_config else False)
-      71:                 or (setattr_config.enabled if setattr_config else False)
-      72:             ),
->>>   73:             barrel_init=str(file_path).endswith("__init__.py")
-      74:             and (barrel_init_config.enabled if barrel_init_config else False),
-      75:         )
-      76:         ast_violations = analyzer.analyze_code(content, str(file_path))
-```
-
-### `endswith-instead-of-path-suffix.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/endswith-instead-of-path-suffix.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/check_python.py#L55)
-
-File: `ducktape_llm_common/claude_linter_v2/check_python.py` (L55)
-
-> Using `.endswith(".py")` on paths instead of Path's `.suffix == ".py"` method.
-> Using `.endswith("__init__.py")` instead of `.name == "__init__.py"`.
->
-> Path methods are clearer, more idiomatic, and don't require str() conversion.
-> Replace string operations with Path methods.
->
-> **Note:** file_path.endswith('**init**.py') instead of Path(file_path).name
-
-```
-      52:     analyzer = PythonASTAnalyzer(
-      53:         bare_except=bare_except_enabled,
-      54:         getattr_setattr=getattr_setattr_enabled,
->>>   55:         barrel_init=file_path.endswith("__init__.py") and barrel_init_enabled,
-      56:     )
-      57:     ast_violations = analyzer.analyze_code(content, file_path)
-      58:
-```
-
-### `hook-response-boilerplate.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L122-L174)
-
-File: `ducktape_llm_common/claude_hook.py` (L122-125, L166-167, L171-174)
-
-> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
-> implementations. Extract to a shared runner function or base class method.
->
-> **Note:** ClaudeCodeHookBase.run() has 3 instances of print(response.model_dump_json(...)); sys.exit(0)
-
-```
-     119:                 request = HookRequest.model_validate(input_data)
-     120:             except Exception as e:
-     121:                 # Invalid request format
->>>  122:                 outcome = HookError(f"Invalid request format: {e!s}")
->>>  123:                 response = outcome.to_claude_response()
->>>  124:                 print(response.model_dump_json(by_alias=True))
->>>  125:                 sys.exit(0)
-     126:
-     127:             # Generate invocation ID and set up logging
-     128:             invocation_id = InvocationID(uuid.uuid4())
-   ...
-     163:                 raise
-     164:
-     165:             # Output JSON response
->>>  166:             print(response.model_dump_json(by_alias=True))
->>>  167:             sys.exit(0)
-     168:
-     169:         except Exception as e:
-     170:             # On any error, return error outcome
->>>  171:             error_outcome = HookError(f"Hook execution failed: {e!s}")
->>>  172:             response = error_outcome.to_claude_response()
->>>  173:             print(response.model_dump_json(by_alias=True))
->>>  174:             sys.exit(0)
-```
-
-### `hook-response-boilerplate.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/cli.py#L226-L235)
-
-File: `ducktape_llm_common/claude_linter/cli.py` (L226-235)
-
-> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
-> implementations. Extract to a shared runner function or base class method.
->
-> **Note:** main() serializes and exits
-
-```
-     223:         decision = HookResponse()
-     224:
-     225:     # Handle output
->>>  226:     output_json = decision.model_dump_json(by_alias=True, exclude_none=True)
->>>  227:     print(output_json, file=sys.stdout)
->>>  228:     log_data["output"] = json.loads(output_json)
->>>  229:
->>>  230:     # Log exit code
->>>  231:     log_data["exit_code"] = 0
->>>  232:     with Path(log_file).open("w") as f:
->>>  233:         json.dump(log_data, f, indent=2)
->>>  234:
->>>  235:     sys.exit(0)
-```
-
-### `hook-response-boilerplate.yaml` / `occ-2`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/cli.py#L180-L202)
-
-File: `ducktape_llm_common/claude_linter_v2/cli.py` (L180, L202)
-
-> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
-> implementations. Extract to a shared runner function or base class method.
->
-> **Note:** run_hook() serializes and exits separately
-
-```
-     177:     try:
-     178:         response = handle(hook_type, request)
-     179:         # Output response
->>>  180:         click.echo(response.model_dump_json(by_alias=True, exclude_none=True))
-     181:     except HookBugError as e:
-     182:         # Hook bug - this is OUR fault
-     183:         logger.error(f"FATAL: Hook bug: {e}", exc_info=True)
-   ...
-     199:         raise
-     200:
-     201:     # Always exit 0 - Claude Code uses JSON response, not exit codes
->>>  202:     sys.exit(0)
-     203:
-     204:
-     205: @cli.group()
-```
-
-### `integration-tests-not-isolated.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/integration-tests-not-isolated.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L27)
-
-File: `tests/claude_linter_v2/test_integration.py` (L27)
-
-> Integration tests use hardcoded session IDs and write to the real user data
-> directory (~/.local/share/claude-linter-v2/sessions/). This causes:
->
-> 1. Tests to interfere with each other across runs
-> 2. Tests to pick up stale state from previous runs
-> 3. Potential interference with real user session data
-> 4. Non-deterministic test failures when stale data has incompatible format
->
-> **Note:** Uses fixed session_id '12345678-1234-5678-1234-567812345678' that persists to real ~/.local/share path
-
-```
-      24:     pass
-      25: """,
-      26:             },
->>>   27:             "session_id": "12345678-1234-5678-1234-567812345678",
-      28:         }
-      29:
-      30:         result = subprocess.run(
-```
-
-### `manual-camelcase-aliases.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/manual-camelcase-aliases.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_code_api.py#L153-L167)
-
-File: `ducktape_llm_common/claude_code_api.py` (L153-167)
-
-> Response models use manual `alias="camelCase"` on each field instead of
-> `alias_generator=to_camel` in model_config. This creates boilerplate and
-> risks inconsistency. Use a CamelCaseModel base class with alias_generator.
->
-> Note: Request models must stay snake_case (Claude Code sends snake_case for requests).
-> Only response/outbound models can use to_camel.
->
-> **Note:** BaseResponse has manual aliases: stop_reason='stopReason', suppress_output='suppressOutput'
-
-```
-     150:
-     151:
-     152: # Base response types for Claude Code hook responses
->>>  153: class BaseResponse(BaseModel):
->>>  154:     """
->>>  155:     Base response for all hooks.
->>>  156:
->>>  157:     Per Anthropic docs section "Common JSON Fields":
->>>  158:     - continue: Whether Claude should continue (default: true)
->>>  159:     - stopReason: Message shown when continue is false (shown to user, NOT Claude)
->>>  160:     - suppressOutput: Hide stdout from transcript mode
->>>  161:     """
->>>  162:
->>>  163:     continue_: bool = Field(True, alias="continue")
->>>  164:     stop_reason: str | None = Field(
->>>  165:         None, alias="stopReason", description="Message shown to USER when continue is false"
->>>  166:     )
->>>  167:     suppress_output: bool | None = Field(None, alias="suppressOutput")
-     168:
-     169:     model_config = {"populate_by_name": True}
-     170:
-```
-
-### `manual-camelcase-aliases.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/manual-camelcase-aliases.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L24-L64)
-
-File: `ducktape_llm_common/claude_linter/models.py` (L24-31, L44-48, L58-64)
-
-> Response models use manual `alias="camelCase"` on each field instead of
-> `alias_generator=to_camel` in model_config. This creates boilerplate and
-> risks inconsistency. Use a CamelCaseModel base class with alias_generator.
->
-> Note: Request models must stay snake_case (Claude Code sends snake_case for requests).
-> Only response/outbound models can use to_camel.
->
-> **Note:** HookResponse, PatchLine, ToolResponse all have manual camelCase aliases
-
-```
-      21:     decision: Literal["approve", "block"] | None = None
-      22:     """Controls tool execution (PreToolUse) or provides feedback (PostToolUse).
-      23:     - approve: Allow operation to proceed
->>>   24:     - block: Prevent operation (pre) or signal changes were made (post)
->>>   25:     """
->>>   26:
->>>   27:     reason: str | None = None
->>>   28:     """Human-readable explanation shown to user and/or used to re-prompt model."""
->>>   29:
->>>   30:     continue_: bool = Field(True, alias="continue")
->>>   31:     """Whether model should continue after processing hook response.
-      32:     Usually True unless you want to stop the session."""
-      33:
-      34:     stop_reason: str | None = Field(None, alias="stopReason")
-   ...
-      41:         populate_by_name=True, alias_generator=None, use_enum_values=True, arbitrary_types_allowed=True
-      42:     )
-      43:
->>>   44:
->>>   45: class EditOperation(BaseModel):
->>>   46:     """Individual edit operation for MultiEdit tool.
->>>   47:
->>>   48:     Represents a single find-and-replace operation within a MultiEdit sequence.
-      49:     """
-      50:
-      51:     old_string: str
-   ...
-      55:     """Text to replace the old_string with."""
-      56:
-      57:     replace_all: bool = False
->>>   58:     """If True, replace all occurrences; if False, only replace first occurrence."""
->>>   59:
->>>   60:
->>>   61: class ToolInput(BaseModel):
->>>   62:     """Input parameters for Claude Code file manipulation tools.
->>>   63:
->>>   64:     Different tools use different subsets of these fields:
-      65:     - Write: file_path, content
-      66:     - Edit: file_path, old_string, new_string, replace_all
-      67:     - MultiEdit: file_path, edits
-```
-
-### `nullable-file-path-for-convenience.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/nullable-file-path-for-convenience.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/linters/python_formatter.py#L38-L145)
-
-File: `ducktape_llm_common/claude_linter_v2/linters/python_formatter.py` (L38-40, L86, L102, L126, L145)
-
-> `file_path: str | None` parameters in python_formatter.py are only nullable for
-> test convenience. Production callers (checker.py:87, handler.py:671) always pass
-> a file_path. The None case triggers fallback to "temp.py" for ruff's --stdin-filename.
->
-> The signature should be `file_path: Path` with no default, and tests should pass
-> explicit test paths instead of relying on None defaults. This eliminates unnecessary
-> nullability guards and makes the production contract explicit.
-
-```
-      35:
-      36:         return available
-      37:
->>>   38:     def format_code(
->>>   39:         self, code: str, file_path: str | None = None, categories: list[AutofixCategory] | None = None
->>>   40:     ) -> tuple[str, list[str]]:
-      41:         """
-      42:         Format Python code with specified autofix categories.
-      43:
-   ...
-      83:
-      84:         return formatted_code, changes
-      85:
->>>   86:     def _apply_formatting(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
-      87:         """Apply code formatting."""
-      88:         changes = []
-      89:         formatted = code
-   ...
-      99:
-     100:         return formatted, changes
-     101:
->>>  102:     def _format_with_ruff(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
-     103:         """Format code with ruff."""
-     104:         try:
-     105:             # Use stdin/stdout to avoid file operations
-   ...
-     123:             logger.error(f"Ruff error: {e}")
-     124:             return code, []
-     125:
->>>  126:     def _format_with_black(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
-     127:         """Format code with black."""
-     128:         try:
-     129:             # Use stdin/stdout to avoid file operations
-   ...
-     142:             logger.error(f"Black error: {e}")
-     143:             return code, []
-     144:
->>>  145:     def _fix_imports(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
-     146:         """Fix import ordering and remove unused imports."""
-     147:         changes = []
-     148:         formatted = code
-```
-
-### `path-prefix-match.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/path-prefix-match.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L129-L150)
-
-File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L129, L148-150)
-
-> `add_rule` uses `str.startswith()` (line 149) to test whether a session's
-> directory is under the target directory. String prefix matching is not
-> equivalent to path containment: a target of `/home/user/proj` incorrectly
-> matches `/home/user/project-old` because the string starts with the same
-> prefix. The rule is then applied to sessions belonging to unrelated
-> directories. Should use `Path.is_relative_to()` or compare with a trailing
-> separator.
-
-```
-     126:     ) -> int:
-     127:         """Add a permission rule to session(s)."""
-     128:         directory = directory or Path.cwd()
->>>  129:         directory_str = str(directory.resolve())
-     130:
-     131:         rule = Rule(predicate=predicate, action=action, created=datetime.now(), expires=expires)
-     132:
-   ...
-     145:                 session_data = self._load_session(sid)
-     146:
-     147:                 # Skip if session is in different directory
->>>  148:                 session_dir = str(session_data.directory) if session_data.directory else ""
->>>  149:                 if not session_dir.startswith(directory_str):
->>>  150:                     continue
-     151:
-     152:                 # Add rule to this session
-     153:                 session_data.rules.append(rule.model_copy())
-```
-
-### `redundant-inner-error-handling.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-inner-error-handling.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L125-L128)
-
-File: `ducktape_llm_common/claude_hook.py` (L125-128)
-
-> Inner try/except for request parsing is redundant when an outer error boundary
-> already catches all exceptions. The pattern duplicates error handling and
-> clutters the code. Let the outer boundary handle it.
->
-> **Note:** Inner try/except duplicates outer boundary at line 170
-
-```
-     122:                 outcome = HookError(f"Invalid request format: {e!s}")
-     123:                 response = outcome.to_claude_response()
-     124:                 print(response.model_dump_json(by_alias=True))
->>>  125:                 sys.exit(0)
->>>  126:
->>>  127:             # Generate invocation ID and set up logging
->>>  128:             invocation_id = InvocationID(uuid.uuid4())
-     129:
-     130:             # Set up logger for this session/invocation
-     131:             logger = get_session_logger(hook_instance.hook_name, request.session_id, invocation_id)
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L52-L63)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L52-63)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_mcp_puppeteer_tool - just verifies PostToolSuccess
-
-```
-      49:         outcome = handler._handle_pre_hook(request, session_id)
-      50:         assert isinstance(outcome, PreToolApprove)
-      51:
->>>   52:     def test_mcp_puppeteer_tool(self, handler, session_id):
->>>   53:         """Test MCP puppeteer tool with its specific parameters."""
->>>   54:         request = PostToolUseRequest(
->>>   55:             session_id=str(session_id),
->>>   56:             hook_event_name="PostToolUse",
->>>   57:             tool_name="mcp_puppeteer_navigate",
->>>   58:             tool_input=ToolInput(url="https://example.com", allowDangerous=True, wait_for="networkidle2"),
->>>   59:             tool_result={"success": True, "screenshot": "base64_data_here"},
->>>   60:         )
->>>   61:
->>>   62:         outcome = handler._handle_post_hook(request, session_id)
->>>   63:         assert isinstance(outcome, PostToolSuccess)
-      64:
-      65:     def test_mcp_filesystem_tool_with_path(self, handler, session_id):
-      66:         """Test MCP filesystem tool that should trigger path checks."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L92-L109)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L92-109)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_unknown_mcp_tool_fields - just verifies PreToolApprove
-
-```
-      89:         outcome = handler._handle_pre_hook(request, session_id)
-      90:         assert isinstance(outcome, PreToolApprove)
-      91:
->>>   92:     def test_unknown_mcp_tool_fields(self, handler, session_id):
->>>   93:         """Test that unknown MCP tool fields don't cause errors."""
->>>   94:         request = PreToolUseRequest(
->>>   95:             session_id=str(session_id),
->>>   96:             hook_event_name="PreToolUse",
->>>   97:             tool_name="mcp_custom_tool",
->>>   98:             tool_input=ToolInput(
->>>   99:                 # Completely custom fields
->>>  100:                 custom_field_1="value1",
->>>  101:                 nested_config={"key": "value"},
->>>  102:                 array_param=[1, 2, 3],
->>>  103:                 boolean_flag=True,
->>>  104:             ),
->>>  105:         )
->>>  106:
->>>  107:         # Should not raise any validation errors
->>>  108:         outcome = handler._handle_pre_hook(request, session_id)
->>>  109:         assert isinstance(outcome, PreToolApprove)
-     110:
-     111:     def test_mcp_tool_with_python_file(self, handler, session_id):
-     112:         """Test MCP tool operating on Python files."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-10`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L411-L429)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L411-429)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_calendar_tool_with_datetime - just verifies PreToolApprove
-
-```
-     408:         outcome = handler._handle_pre_hook(request, session_id)
-     409:         assert isinstance(outcome, PreToolApprove)
-     410:
->>>  411:     def test_calendar_tool_with_datetime(self, handler, session_id):
->>>  412:         """Test calendar tool with various datetime formats."""
->>>  413:         request = PreToolUseRequest(
->>>  414:             session_id=str(session_id),
->>>  415:             hook_event_name="PreToolUse",
->>>  416:             tool_name="mcp_calendar_create_event",
->>>  417:             tool_input=ToolInput(
->>>  418:                 title="Team Meeting",
->>>  419:                 start="2024-01-20T14:00:00Z",
->>>  420:                 end="2024-01-20T15:30:00Z",
->>>  421:                 timezone="America/New_York",
->>>  422:                 attendees=["alice@example.com", "bob@example.com"],
->>>  423:                 recurrence={"freq": "WEEKLY", "count": 10, "byday": ["MO", "WE", "FR"]},
->>>  424:                 reminder_minutes=[15, 60],
->>>  425:             ),
->>>  426:         )
->>>  427:
->>>  428:         outcome = handler._handle_pre_hook(request, session_id)
->>>  429:         assert isinstance(outcome, PreToolApprove)
-     430:
-     431:     def test_image_processing_tool(self, handler, session_id):
-     432:         """Test image processing tool with base64 data."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-11`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L431-L453)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L431-453)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_image_processing_tool - just verifies PostToolSuccess
-
-```
-     428:         outcome = handler._handle_pre_hook(request, session_id)
-     429:         assert isinstance(outcome, PreToolApprove)
-     430:
->>>  431:     def test_image_processing_tool(self, handler, session_id):
->>>  432:         """Test image processing tool with base64 data."""
->>>  433:         request = PostToolUseRequest(
->>>  434:             session_id=str(session_id),
->>>  435:             hook_event_name="PostToolUse",
->>>  436:             tool_name="mcp_image_resize",
->>>  437:             tool_input=ToolInput(
->>>  438:                 image_data="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
->>>  439:                 width=100,
->>>  440:                 height=100,
->>>  441:                 maintain_aspect_ratio=True,
->>>  442:                 format="webp",
->>>  443:                 quality=85,
->>>  444:             ),
->>>  445:             tool_result={
->>>  446:                 "success": True,
->>>  447:                 "output_size_bytes": 2048,
->>>  448:                 "output_dimensions": {"width": 100, "height": 100},
->>>  449:             },
->>>  450:         )
->>>  451:
->>>  452:         outcome = handler._handle_post_hook(request, session_id)
->>>  453:         assert isinstance(outcome, PostToolSuccess)
-     454:
-     455:     def test_scientific_computation_tool(self, handler, session_id):
-     456:         """Test scientific computation tool with complex numeric data."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-12`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L455-L474)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L455-474)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_scientific_computation_tool - just verifies PreToolApprove
-
-```
-     452:         outcome = handler._handle_post_hook(request, session_id)
-     453:         assert isinstance(outcome, PostToolSuccess)
-     454:
->>>  455:     def test_scientific_computation_tool(self, handler, session_id):
->>>  456:         """Test scientific computation tool with complex numeric data."""
->>>  457:         request = PreToolUseRequest(
->>>  458:             session_id=str(session_id),
->>>  459:             hook_event_name="PreToolUse",
->>>  460:             tool_name="mcp_scipy_optimize",
->>>  461:             tool_input=ToolInput(
->>>  462:                 function="minimize",
->>>  463:                 objective="x**2 + y**2",
->>>  464:                 variables=["x", "y"],
->>>  465:                 initial_guess=[1.0, 1.0],
->>>  466:                 method="BFGS",
->>>  467:                 constraints=[{"type": "ineq", "fun": "x + y - 1"}, {"type": "eq", "fun": "x - 2*y"}],
->>>  468:                 bounds=[(-10, 10), (-10, 10)],
->>>  469:                 options={"maxiter": 1000, "ftol": 1e-9},
->>>  470:             ),
->>>  471:         )
->>>  472:
->>>  473:         outcome = handler._handle_pre_hook(request, session_id)
->>>  474:         assert isinstance(outcome, PreToolApprove)
-     475:
-     476:     def test_completely_unknown_format(self, handler, session_id):
-     477:         """Test with completely made-up tool and format."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-13`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L476-L496)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L476-496)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_completely_unknown_format - just verifies PreToolApprove
-
-```
-     473:         outcome = handler._handle_pre_hook(request, session_id)
-     474:         assert isinstance(outcome, PreToolApprove)
-     475:
->>>  476:     def test_completely_unknown_format(self, handler, session_id):
->>>  477:         """Test with completely made-up tool and format."""
->>>  478:         request = PreToolUseRequest(
->>>  479:             session_id=str(session_id),
->>>  480:             hook_event_name="PreToolUse",
->>>  481:             tool_name="mcp_quantum_entangle_qubits",
->>>  482:             tool_input=ToolInput(
->>>  483:                 qubit_ids=["q0", "q1", "q2"],
->>>  484:                 entanglement_type="GHZ",
->>>  485:                 measurement_basis="computational",
->>>  486:                 shots=1024,
->>>  487:                 backend="simulator",
->>>  488:                 noise_model={"depolarizing": 0.01, "readout_error": [[0.97, 0.03], [0.02, 0.98]]},
->>>  489:                 optimization_level=3,
->>>  490:                 seed=42,
->>>  491:             ),
->>>  492:         )
->>>  493:
->>>  494:         # Should handle gracefully without crashing
->>>  495:         outcome = handler._handle_pre_hook(request, session_id)
->>>  496:         assert isinstance(outcome, PreToolApprove)
-     497:
-     498:     def test_empty_tool_input(self, handler, session_id):
-     499:         """Test MCP tool with no input parameters."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-2`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L177-L198)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L177-198)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_mcp_tool_with_complex_result - just verifies PostToolSuccess
-
-```
-     174:             outcome = handler._handle_pre_hook(request, session_id)
-     175:             assert isinstance(outcome, PreToolApprove)
-     176:
->>>  177:     def test_mcp_tool_with_complex_result(self, handler, session_id):
->>>  178:         """Test MCP tool with complex nested result structure."""
->>>  179:         request = PostToolUseRequest(
->>>  180:             session_id=str(session_id),
->>>  181:             hook_event_name="PostToolUse",
->>>  182:             tool_name="mcp_knowledge_graph_query",
->>>  183:             tool_input=ToolInput(query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"),
->>>  184:             tool_result={
->>>  185:                 "nodes": [
->>>  186:                     {
->>>  187:                         "id": 1,
->>>  188:                         "labels": ["Person", "Developer"],
->>>  189:                         "properties": {"name": "Alice", "skills": ["Python", "JavaScript"]},
->>>  190:                     }
->>>  191:                 ],
->>>  192:                 "relationships": [],
->>>  193:                 "metadata": {"query_time_ms": 42, "node_count": 1},
->>>  194:             },
->>>  195:         )
->>>  196:
->>>  197:         outcome = handler._handle_post_hook(request, session_id)
->>>  198:         assert isinstance(outcome, PostToolSuccess)
-     199:
-     200:     def test_mcp_tool_error_result(self, handler, session_id):
-     201:         """Test MCP tool that returned an error."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-3`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L200-L212)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L200-212)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_mcp_tool_error_result - just verifies PostToolSuccess
-
-```
-     197:         outcome = handler._handle_post_hook(request, session_id)
-     198:         assert isinstance(outcome, PostToolSuccess)
-     199:
->>>  200:     def test_mcp_tool_error_result(self, handler, session_id):
->>>  201:         """Test MCP tool that returned an error."""
->>>  202:         request = PostToolUseRequest(
->>>  203:             session_id=str(session_id),
->>>  204:             hook_event_name="PostToolUse",
->>>  205:             tool_name="mcp_api_call",
->>>  206:             tool_input=ToolInput(endpoint="/api/users", method="GET"),
->>>  207:             tool_result={"error": "Connection timeout", "status_code": None, "success": False},
->>>  208:         )
->>>  209:
->>>  210:         # Should still process normally - hooks don't care about tool success
->>>  211:         outcome = handler._handle_post_hook(request, session_id)
->>>  212:         assert isinstance(outcome, PostToolSuccess)
-     213:
-     214:     @pytest.mark.parametrize(
-     215:         ("tool_name", "input_fields", "should_check_python"),
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-4`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L298-L311)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L298-311)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_stock_price_tool - just verifies PreToolApprove
-
-```
-     295:         """Valid session ID."""
-     296:         return SessionID("770e8400-e29b-41d4-a716-446655440002")
-     297:
->>>  298:     def test_stock_price_tool(self, handler, session_id):
->>>  299:         """Test a financial MCP tool with custom format."""
->>>  300:         request = PreToolUseRequest(
->>>  301:             session_id=str(session_id),
->>>  302:             hook_event_name="PreToolUse",
->>>  303:             tool_name="mcp_finance_get_stock_price",
->>>  304:             tool_input=ToolInput(
->>>  305:                 symbol="AAPL", date="2024-01-15", exchange="NASDAQ", include_extended_hours=True, currency="USD"
->>>  306:             ),
->>>  307:         )
->>>  308:
->>>  309:         # Should not crash
->>>  310:         outcome = handler._handle_pre_hook(request, session_id)
->>>  311:         assert isinstance(outcome, PreToolApprove)
-     312:
-     313:     def test_weather_tool_nested_structure(self, handler, session_id):
-     314:         """Test weather tool with deeply nested structure."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-5`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L313-L335)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L313-335)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_weather_tool_nested_structure - just verifies PostToolSuccess
-
-```
-     310:         outcome = handler._handle_pre_hook(request, session_id)
-     311:         assert isinstance(outcome, PreToolApprove)
-     312:
->>>  313:     def test_weather_tool_nested_structure(self, handler, session_id):
->>>  314:         """Test weather tool with deeply nested structure."""
->>>  315:         request = PostToolUseRequest(
->>>  316:             session_id=str(session_id),
->>>  317:             hook_event_name="PostToolUse",
->>>  318:             tool_name="mcp_weather_forecast",
->>>  319:             tool_input=ToolInput(
->>>  320:                 location={"type": "coordinates", "lat": 37.7749, "lon": -122.4194, "name": "San Francisco"},
->>>  321:                 forecast_days=7,
->>>  322:                 units="metric",
->>>  323:                 include_alerts=True,
->>>  324:             ),
->>>  325:             tool_result={
->>>  326:                 "current": {"temp": 18.5, "feels_like": 17.2, "conditions": "Partly cloudy"},
->>>  327:                 "forecast": [
->>>  328:                     {"date": "2024-01-16", "high": 20, "low": 12},
->>>  329:                     {"date": "2024-01-17", "high": 19, "low": 11},
->>>  330:                 ],
->>>  331:             },
->>>  332:         )
->>>  333:
->>>  334:         outcome = handler._handle_post_hook(request, session_id)
->>>  335:         assert isinstance(outcome, PostToolSuccess)
-     336:
-     337:     def test_ai_model_tool_with_arrays(self, handler, session_id):
-     338:         """Test AI/ML tool with array parameters."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-6`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L337-L352)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L337-352)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_ai_model_tool_with_arrays - just verifies PreToolApprove
-
-```
-     334:         outcome = handler._handle_post_hook(request, session_id)
-     335:         assert isinstance(outcome, PostToolSuccess)
-     336:
->>>  337:     def test_ai_model_tool_with_arrays(self, handler, session_id):
->>>  338:         """Test AI/ML tool with array parameters."""
->>>  339:         request = PreToolUseRequest(
->>>  340:             session_id=str(session_id),
->>>  341:             hook_event_name="PreToolUse",
->>>  342:             tool_name="mcp_ml_predict",
->>>  343:             tool_input=ToolInput(
->>>  344:                 model_id="sentiment-v2",
->>>  345:                 inputs=["I love this!", "This is terrible", "Not sure about this"],
->>>  346:                 parameters={"temperature": 0.7, "max_tokens": 100, "top_p": 0.9},
->>>  347:                 return_probabilities=True,
->>>  348:             ),
->>>  349:         )
->>>  350:
->>>  351:         outcome = handler._handle_pre_hook(request, session_id)
->>>  352:         assert isinstance(outcome, PreToolApprove)
-     353:
-     354:     def test_database_tool_with_sql(self, handler, session_id):
-     355:         """Test database tool with SQL that might trigger security checks."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-7`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L354-L370)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L354-370)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_database_tool_with_sql - just verifies PreToolApprove
-
-```
-     351:         outcome = handler._handle_pre_hook(request, session_id)
-     352:         assert isinstance(outcome, PreToolApprove)
-     353:
->>>  354:     def test_database_tool_with_sql(self, handler, session_id):
->>>  355:         """Test database tool with SQL that might trigger security checks."""
->>>  356:         request = PreToolUseRequest(
->>>  357:             session_id=str(session_id),
->>>  358:             hook_event_name="PreToolUse",
->>>  359:             tool_name="mcp_postgres_query",
->>>  360:             tool_input=ToolInput(
->>>  361:                 connection_string="postgresql://user:pass@localhost/db",
->>>  362:                 query="SELECT * FROM users WHERE id = $1",
->>>  363:                 params=[123],
->>>  364:                 timeout_ms=5000,
->>>  365:                 return_format="json",
->>>  366:             ),
->>>  367:         )
->>>  368:
->>>  369:         outcome = handler._handle_pre_hook(request, session_id)
->>>  370:         assert isinstance(outcome, PreToolApprove)
-     371:
-     372:     def test_iot_device_control(self, handler, session_id):
-     373:         """Test IoT device control with mixed types."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-8`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L372-L388)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L372-388)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_iot_device_control - just verifies PostToolSuccess
-
-```
-     369:         outcome = handler._handle_pre_hook(request, session_id)
-     370:         assert isinstance(outcome, PreToolApprove)
-     371:
->>>  372:     def test_iot_device_control(self, handler, session_id):
->>>  373:         """Test IoT device control with mixed types."""
->>>  374:         request = PostToolUseRequest(
->>>  375:             session_id=str(session_id),
->>>  376:             hook_event_name="PostToolUse",
->>>  377:             tool_name="mcp_smart_home_control",
->>>  378:             tool_input=ToolInput(
->>>  379:                 device_id="light.living_room",
->>>  380:                 action="set_state",
->>>  381:                 payload={"on": True, "brightness": 75, "color": {"r": 255, "g": 200, "b": 100}, "transition_time": 2.5},
->>>  382:                 confirm=True,
->>>  383:             ),
->>>  384:             tool_result={"success": True, "device_state": {"on": True, "brightness": 75}},
->>>  385:         )
->>>  386:
->>>  387:         outcome = handler._handle_post_hook(request, session_id)
->>>  388:         assert isinstance(outcome, PostToolSuccess)
-     389:
-     390:     def test_blockchain_tool_with_hex_data(self, handler, session_id):
-     391:         """Test blockchain tool with hex strings and addresses."""
-```
-
-### `redundant-mcp-tool-tests.yaml` / `occ-9`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L390-L409)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L390-409)
-
-> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
-> They create different MCP tool payloads with various field types (stock prices,
-> weather data, blockchain addresses, calendar events, etc.) but all just verify
-> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
-> code paths - they're "the same thing painted orange".
->
-> The meaningful tests are the ones that exercise distinct handler behavior:
->
-> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
-> - test_mcp_filesystem_tool_with_path: tests path-based access control
-> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
-> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
-> - test_mcp_tool_name_variations: tests different naming conventions
-> - test_mcp_tool_python_detection: parametrized test for Python detection logic
-> - test_mcp_tool_session_tracking: verifies session file creation
-> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
-> - test_empty_tool_input: edge case of no parameters
-> - test_tool_with_none_values: edge case of null handling
-> - test_tool_with_special_characters: edge case of unusual field names
-> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
->
-> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
-> into a single parametrized test that verifies "arbitrary fields don't crash".
->
-> **Note:** test_blockchain_tool_with_hex_data - just verifies PreToolApprove
-
-```
-     387:         outcome = handler._handle_post_hook(request, session_id)
-     388:         assert isinstance(outcome, PostToolSuccess)
-     389:
->>>  390:     def test_blockchain_tool_with_hex_data(self, handler, session_id):
->>>  391:         """Test blockchain tool with hex strings and addresses."""
->>>  392:         request = PreToolUseRequest(
->>>  393:             session_id=str(session_id),
->>>  394:             hook_event_name="PreToolUse",
->>>  395:             tool_name="mcp_ethereum_send_transaction",
->>>  396:             tool_input=ToolInput(
->>>  397:                 from_address="0x742d35Cc6634C0532925a3b844Bc9e7595f4a7e4",
->>>  398:                 to_address="0x5aAeb6053f3E94C9b9A09f33669435E7Ef1BeAed",
->>>  399:                 value_wei="1000000000000000000",  # 1 ETH
->>>  400:                 gas_limit=21000,
->>>  401:                 gas_price_gwei="30",
->>>  402:                 nonce=42,
->>>  403:                 data="0x",
->>>  404:                 chain_id=1,
->>>  405:             ),
->>>  406:         )
->>>  407:
->>>  408:         outcome = handler._handle_pre_hook(request, session_id)
->>>  409:         assert isinstance(outcome, PreToolApprove)
-     410:
-     411:     def test_calendar_tool_with_datetime(self, handler, session_id):
-     412:         """Test calendar tool with various datetime formats."""
-```
-
-### `request-session-id-typed-as-str.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L34-L269)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L34, L55, L82, L95, L114, L143, L167, L180, L203, L235, L248, L269)
-
-> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
-> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
->
-> The models should accept SessionID directly. Pydantic handles UUID serialization
-> natively - no custom serializer needed. This eliminates repetitive str() conversions
-> and provides type safety at the API boundary.
->
-> **Note:** session_id=str(session_id) should be session_id=session_id
-
-```
-      31:         """Test that MCP tools with custom fields are handled correctly."""
-      32:         # Create a request with MCP-specific fields
-      33:         request = PreToolUseRequest(
->>>   34:             session_id=str(session_id),
-      35:             hook_event_name="PreToolUse",
-      36:             tool_name="mcp_memory_search_nodes",
-      37:             tool_input=ToolInput(
-   ...
-      52:     def test_mcp_puppeteer_tool(self, handler, session_id):
-      53:         """Test MCP puppeteer tool with its specific parameters."""
-      54:         request = PostToolUseRequest(
->>>   55:             session_id=str(session_id),
-      56:             hook_event_name="PostToolUse",
-      57:             tool_name="mcp_puppeteer_navigate",
-      58:             tool_input=ToolInput(url="https://example.com", allowDangerous=True, wait_for="networkidle2"),
-   ...
-      79:         type(handler.config_loader).config = mock_config
-      80:
-      81:         request = PreToolUseRequest(
->>>   82:             session_id=str(session_id),
-      83:             hook_event_name="PreToolUse",
-      84:             tool_name="mcp_filesystem_write_file",
-      85:             tool_input=ToolInput(path="/tmp/test.txt", content="Hello, world!"),
-   ...
-      92:     def test_unknown_mcp_tool_fields(self, handler, session_id):
-      93:         """Test that unknown MCP tool fields don't cause errors."""
-      94:         request = PreToolUseRequest(
->>>   95:             session_id=str(session_id),
-      96:             hook_event_name="PreToolUse",
-      97:             tool_name="mcp_custom_tool",
-      98:             tool_input=ToolInput(
-   ...
-     111:     def test_mcp_tool_with_python_file(self, handler, session_id):
-     112:         """Test MCP tool operating on Python files."""
-     113:         request = PreToolUseRequest(
->>>  114:             session_id=str(session_id),
-     115:             hook_event_name="PreToolUse",
-     116:             tool_name="mcp_editor_open",
-     117:             tool_input=ToolInput(
-   ...
-     140:         test_file.write_text("import os\nimport sys\n\n\ndef test():\n    pass")
-     141:
-     142:         request = PostToolUseRequest(
->>>  143:             session_id=str(session_id),
-     144:             hook_event_name="PostToolUse",
-     145:             tool_name="mcp_editor_save",
-     146:             tool_input=ToolInput(file_path=str(test_file), content="import os\nimport sys\n\n\ndef test():\n    pass"),
-   ...
-     164:
-     165:         for tool_name in tool_names:
-     166:             request = PreToolUseRequest(
->>>  167:                 session_id=str(session_id),
-     168:                 hook_event_name="PreToolUse",
-     169:                 tool_name=tool_name,
-     170:                 tool_input=ToolInput(query="test"),
-   ...
-     177:     def test_mcp_tool_with_complex_result(self, handler, session_id):
-     178:         """Test MCP tool with complex nested result structure."""
-     179:         request = PostToolUseRequest(
->>>  180:             session_id=str(session_id),
-     181:             hook_event_name="PostToolUse",
-     182:             tool_name="mcp_knowledge_graph_query",
-     183:             tool_input=ToolInput(query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"),
-   ...
-     200:     def test_mcp_tool_error_result(self, handler, session_id):
-     201:         """Test MCP tool that returned an error."""
-     202:         request = PostToolUseRequest(
->>>  203:             session_id=str(session_id),
-     204:             hook_event_name="PostToolUse",
-     205:             tool_name="mcp_api_call",
-     206:             tool_input=ToolInput(endpoint="/api/users", method="GET"),
-   ...
-     232:         tool_input_dict = {"file_path": None, "content": None, **input_fields}
-     233:
-     234:         request = PreToolUseRequest(
->>>  235:             session_id=str(session_id),
-     236:             hook_event_name="PreToolUse",
-     237:             tool_name=tool_name,
-     238:             tool_input=ToolInput(**tool_input_dict),
-   ...
-     245:     def test_mcp_tool_session_tracking(self, handler, session_id):
-     246:         """Test that MCP tools properly track sessions."""
-     247:         request = PreToolUseRequest(
->>>  248:             session_id=str(session_id),
-     249:             hook_event_name="PreToolUse",
-     250:             tool_name="mcp_workspace_list",
-     251:             tool_input=ToolInput(directory="/home/user/project"),
-   ...
-     266:     def test_mcp_tool_with_file_path_updates_working_dir(self, handler, session_id):
-     267:         """Test that MCP tools with file paths update the working directory."""
-     268:         request = PreToolUseRequest(
->>>  269:             session_id=str(session_id),
-     270:             hook_event_name="PreToolUse",
-     271:             tool_name="mcp_file_manager_open",
-     272:             tool_input=ToolInput(file_path="/home/user/projects/myapp/src/main.py", content="# Main file"),
-```
-
-### `request-session-id-typed-as-str.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_quality_gate.py#L54-L166)
-
-File: `tests/claude_linter_v2/test_stop_hook_quality_gate.py` (L54, L93, L107, L133, L166)
-
-> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
-> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
->
-> The models should accept SessionID directly. Pydantic handles UUID serialization
-> natively - no custom serializer needed. This eliminates repetitive str() conversions
-> and provides type safety at the API boundary.
->
-> **Note:** StopRequest session_id should accept SessionID directly
-
-```
-      51:     )
-      52:
-      53:     # Create stop hook request
->>>   54:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-      55:
-      56:     # Handle the hook
-      57:     result = handler.handle("Stop", request)
-   ...
-      90:     )
-      91:
-      92:     # Create stop hook request
->>>   93:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-      94:
-      95:     # Handle the hook
-      96:     result = handler.handle("Stop", request)
-   ...
-     104: def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
-     105:     """Test that stop hook passes when there are no violations."""
-     106:     # Create stop hook request
->>>  107:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-     108:
-     109:     # Handle the hook
-     110:     result = handler.handle("Stop", request)
-   ...
-     130:     )
-     131:
-     132:     # Create stop hook request
->>>  133:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-     134:
-     135:     # Handle the hook
-     136:     result = handler.handle("Stop", request)
-   ...
-     163:     assert unfixed[0].file_path == "/test/other.py"
-     164:
-     165:     # Stop hook should only report the unfixed violation
->>>  166:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-     167:
-     168:     result = handler.handle("Stop", request)
-     169:     # Since only warnings remain, should allow stop
-```
-
-### `request-session-id-typed-as-str.yaml` / `occ-2`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_fresh_scan.py#L45-L140)
-
-File: `tests/claude_linter_v2/test_stop_hook_fresh_scan.py` (L45, L84, L111, L140)
-
-> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
-> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
->
-> The models should accept SessionID directly. Pydantic handles UUID serialization
-> natively - no custom serializer needed. This eliminates repetitive str() conversions
-> and provides type safety at the API boundary.
->
-> **Note:** StopRequest session_id should accept SessionID directly
-
-```
-      42: """)
-      43:
-      44:     # Create stop hook request
->>>   45:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-      46:
-      47:     # Handle the hook
-      48:     result = handler.handle("Stop", request)
-   ...
-      81: """)
-      82:
-      83:     # Create stop hook request
->>>   84:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-      85:
-      86:     # Handle the hook
-      87:     result = handler.handle("Stop", request)
-   ...
-     108:     (tmp_path / "README.md").write_text("# except hasattr")
-     109:
-     110:     # Create stop hook request
->>>  111:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-     112:
-     113:     # Handle the hook
-     114:     result = handler.handle("Stop", request)
-   ...
-     137:     bad_file.write_text("except: pass")  # Invalid syntax but we don't care
-     138:
-     139:     # Create stop hook request
->>>  140:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-     141:
-     142:     # Handle the hook
-     143:     result = handler.handle("Stop", request)
-```
-
-### `request-session-id-typed-as-str.yaml` / `occ-3`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_gitignore.py#L90-L143)
-
-File: `tests/claude_linter_v2/test_stop_hook_gitignore.py` (L90, L143)
-
-> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
-> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
->
-> The models should accept SessionID directly. Pydantic handles UUID serialization
-> natively - no custom serializer needed. This eliminates repetitive str() conversions
-> and provides type safety at the API boundary.
->
-> **Note:** StopRequest session_id should accept SessionID directly
-
-```
-      87:     subprocess.run(["git", "commit", "-m", "Initial commit"], check=True)
-      88:
-      89:     # Create stop hook request
->>>   90:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-      91:
-      92:     # Handle the hook
-      93:     result = handler.handle("Stop", request)
-   ...
-     140:     )
-     141:
-     142:     # Create stop hook request
->>>  143:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
-     144:
-     145:     # Handle the hook
-     146:     result = handler.handle("Stop", request)
-```
-
-### `request-session-id-typed-as-str.yaml` / `occ-4`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/cli.py#L216-L248)
-
-File: `ducktape_llm_common/claude_linter_v2/cli.py` (L216, L248)
-
-> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
-> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
->
-> The models should accept SessionID directly. Pydantic handles UUID serialization
-> natively - no custom serializer needed. This eliminates repetitive str() conversions
-> and provides type safety at the API boundary.
->
-> **Note:** session_allow and session_deny take session: str | None instead of SessionID | None
-
-```
-     213: @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
-     214: @click.option("--dir", type=Path, help="Directory to affect (default: current)")
-     215: def session_allow(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
->>>  216:     """Grant temporary permissions using Python predicates."""
-     217:
-     218:     manager = SessionManager()
-     219:
-   ...
-     245: @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
-     246: @click.option("--dir", type=Path, help="Directory to affect (default: current)")
-     247: def session_deny(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
->>>  248:     """Deny permissions using Python predicates.
-     249:
-     250:     Examples:
-     251:         cl2 session deny 'Write("/etc/*")'
-```
-
-### `session-id-parsing-duplication.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/session-id-parsing-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L144-L166)
-
-File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L144, L166)
-
-> SessionManager has two occurrences of `SessionID(session_file.stem)` that directly
-> construct a SessionID from a string without validation. The `parse_session_id()`
-> function exists to validate UUID format before constructing SessionID.
->
-> Pattern should be `parse_session_id(session_file.stem)` to ensure the stem is a
-> valid UUID before wrapping it in SessionID.
->
-> **Note:** Use parse_session_id() instead of direct SessionID() construction
-
-```
-     141:         else:
-     142:             # Add to all sessions in the directory
-     143:             for session_file in self.sessions_dir.glob("*.json"):
->>>  144:                 sid = SessionID(session_file.stem)
-     145:                 session_data = self._load_session(sid)
-     146:
-     147:                 # Skip if session is in different directory
-   ...
-     163:
-     164:         # Scan all session files
-     165:         for session_file in self.sessions_dir.glob("*.json"):
->>>  166:             session_id = SessionID(session_file.stem)
-     167:             session_data = self._load_session(session_id)
-     168:
-     169:             # Skip sessions in other directories unless requested
-```
-
-### `session-id-typed-as-string.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/session-id-typed-as-string.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L33-L43)
-
-File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L33-43)
-
-> SessionData.id field is typed as str but should be typed as SessionID (UUID).
-> Pydantic 2 supports UUID serialization/deserialization natively, so there's
-> no need to store it as a string. Using the correct type provides type safety
-> and avoids unnecessary str() conversions in tests and application code.
->
-> **Note:** SessionData model has id field typed as str instead of SessionID (UUID)
-
-```
-      30:     expires: datetime | None = None
-      31:
-      32:
->>>   33: class SessionData(BaseModel):
->>>   34:     """Session data structure."""
->>>   35:
->>>   36:     model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
->>>   37:
->>>   38:     id: str
->>>   39:     created: datetime
->>>   40:     last_seen: datetime | None = None
->>>   41:     directory: Path | None = None
->>>   42:     rules: list[Rule] = Field(default_factory=list)
->>>   43:     notification_id: int | None = None
-      44:
-      45:
-      46: # Type alias for backwards compatibility
-```
-
-### `str-file-path-in-violations.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-in-violations.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/violations.py#L34-L73)
-
-File: `ducktape_llm_common/claude_linter_v2/session/violations.py` (L34, L60, L73)
-
-> ViolationTracker methods take `file_path: str` instead of `file_path: Path`.
-> Even though the paths are stored as strings in dicts, callers already have Path
-> objects and must convert to str. The interface should accept Path and convert
-> internally if needed for storage.
->
-> Change signatures to `file_path: Path` and convert to str only at storage point.
->
-> **Note:** add_violation, add_violations, mark_file_fixed all take file_path: str
-
-```
-      31:     def add_violation(
-      32:         self,
-      33:         session_id: SessionID,
->>>   34:         file_path: str,
-      35:         line: int,
-      36:         message: str,
-      37:         severity: str = "error",
-   ...
-      57:         self._violations[session_id][key] = violation_dict
-      58:
-      59:     def add_violations(
->>>   60:         self, session_id: SessionID, violations: list[Violation], file_path: str, severity: str = "error"
-      61:     ) -> None:
-      62:         """Add multiple violations from a linter."""
-      63:         for v in violations:
-   ...
-      70:                 rule=v.rule,
-      71:             )
-      72:
->>>   73:     def mark_file_fixed(self, session_id: SessionID, file_path: str) -> None:
-      74:         """Mark all violations in a file as fixed."""
-      75:         if session_id not in self._violations:
-      76:             return
-```
-
-### `str-file-path-type.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/linters/python_ruff.py#L57)
-
-File: `ducktape_llm_common/claude_linter_v2/linters/python_ruff.py` (L57)
-
-> Several functions take `file_path: str` or `paths: list[str]` when they should
-> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
-> os.PathLike directly. Using str forces callers to convert and loses Path methods.
->
-> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
->
-> **Note:** check_code takes file_path: str | None instead of Path
-
-```
-      54:             logger.warning("ruff not available")
-      55:         return False
-      56:
->>>   57:     def check_code(self, code: str, file_path: str | None = None, critical_only: bool = True) -> list[Violation]:
-      58:         """
-      59:         Check Python code with ruff.
-      60:
-```
-
-### `str-file-path-type.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/check_python.py#L10-L12)
-
-File: `ducktape_llm_common/claude_linter_v2/check_python.py` (L10-12)
-
-> Several functions take `file_path: str` or `paths: list[str]` when they should
-> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
-> os.PathLike directly. Using str forces callers to convert and loses Path methods.
->
-> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
->
-> **Note:** check_python_file takes file_path: str instead of Path
-
-```
-       7: from .pattern_matcher import PatternMatcher
-       8:
-       9:
->>>   10: def check_python_file(
->>>   11:     file_path: str, content: str, config: ModularConfig, critical_only: bool = False
->>>   12: ) -> list[Violation]:
-      13:     """Check a Python file for violations.
-      14:
-      15:     Args:
-```
-
-### `str-file-path-type.yaml` / `occ-2`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/precommit_runner.py#L21)
-
-File: `ducktape_llm_common/claude_linter/precommit_runner.py` (L21)
-
-> Several functions take `file_path: str` or `paths: list[str]` when they should
-> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
-> os.PathLike directly. Using str forces callers to convert and loses Path methods.
->
-> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
->
-> **Note:** run() takes paths: list[str] instead of list[Path]
-
-```
-      18:         self.config = config
-      19:
-      20:     def run(self, paths, cwd=None):
->>>   21:         """Run pre-commit hooks on specified paths.
-      22:
-      23:         Args:
-      24:             paths: List of file paths to check
-```
-
-### `str-file-path-type.yaml` / `occ-3`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/config.py#L58)
-
-File: `ducktape_llm_common/claude_linter/config.py` (L58)
-
-> Several functions take `file_path: str` or `paths: list[str]` when they should
-> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
-> os.PathLike directly. Using str forces callers to convert and loses Path methods.
->
-> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
->
-> **Note:** get_merged_config takes paths: list[str] instead of list[Path]
-
-```
-      55:
-      56: def get_merged_config(paths, fix=False):
-      57:     user_config = load_user_config()
->>>   58:     # Get the pre-commit section, which contains repos array
-      59:     user_pre_commit = user_config.get("pre-commit", {})
-      60:
-      61:     local_cfg = {}
-```
-
-### `test-file-path-fixture-missing.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_ast.py#L18-L221)
-
-File: `tests/claude_linter_v2/test_python_ast.py` (L18, L36, L49, L65, L79, L92, L109, L127, L202, L221)
-
-> Test files call analyze_code(), format_code(), and check_code() without a consistent
-> file_path parameter. Multiple occurrences use:
->
-> - No file_path at all
-> - Inline strings like "/tmp/test.py"
-> - Ad-hoc tmp_path constructions
->
-> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
-> to use consistently across all tests. This provides:
->
-> - Consistent behavior for path-dependent logic
-> - Clear indication that tests are using synthetic paths
-> - Single place to update if path handling changes
->
-> **Note:** analyze_code(code) should use analyze_code(code, TEST_FILE)
-
-```
-      15:     pass
-      16: """
-      17:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=False, barrel_init=False)
->>>   18:         violations = analyzer.analyze_code(code)
-      19:
-      20:         assert len(violations) == 1
-      21:         assert violations[0].line == 4
-   ...
-      33:     pass
-      34: """
-      35:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=False, barrel_init=False)
->>>   36:         violations = analyzer.analyze_code(code)
-      37:
-      38:         assert len(violations) == 0
-      39:
-   ...
-      46:     pass
-      47: """
-      48:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=False)
->>>   49:         violations = analyzer.analyze_code(code)
-      50:
-      51:         assert len(violations) == 0
-      52:
-   ...
-      62:     print("has foo")
-      63: """
-      64:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
->>>   65:         violations = analyzer.analyze_code(code)
-      66:
-      67:         assert len(violations) == 1
-      68:         assert violations[0].line == 3
-   ...
-      76: value = getattr(obj, 'foo', 'default')
-      77: """
-      78:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
->>>   79:         violations = analyzer.analyze_code(code)
-      80:
-      81:         assert len(violations) == 1
-      82:         assert violations[0].line == 3
-   ...
-      89: setattr(obj, 'foo', 'bar')
-      90: """
-      91:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
->>>   92:         violations = analyzer.analyze_code(code)
-      93:
-      94:         assert len(violations) == 1
-      95:         assert violations[0].line == 3
-   ...
-     106:     pass
-     107: """
-     108:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
->>>  109:         violations = analyzer.analyze_code(code)
-     110:
-     111:         assert len(violations) == 1  # Should still catch hasattr
-     112:         assert violations[0].line == 6
-   ...
-     124: del obj.bar
-     125: """
-     126:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
->>>  127:         violations = analyzer.analyze_code(code)
-     128:
-     129:         assert len(violations) == 0
-     130:
-   ...
-     199:     pass
-     200: """
-     201:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=True, barrel_init=False)
->>>  202:         violations = analyzer.analyze_code(code)
-     203:
-     204:         assert len(violations) == 3
-     205:         # Should find: bare except, hasattr, getattr
-   ...
-     218:     # Missing closing paren
-     219: """
-     220:         analyzer = PythonASTAnalyzer()
->>>  221:         violations = analyzer.analyze_code(code)
-     222:
-     223:         assert len(violations) == 1
-     224:         assert violations[0].rule == "syntax"
-```
-
-### `test-file-path-fixture-missing.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_formatter.py#L38-L194)
-
-File: `tests/claude_linter_v2/test_python_formatter.py` (L38, L64, L88, L103, L136, L147, L166, L185, L194)
-
-> Test files call analyze_code(), format_code(), and check_code() without a consistent
-> file_path parameter. Multiple occurrences use:
->
-> - No file_path at all
-> - Inline strings like "/tmp/test.py"
-> - Ad-hoc tmp_path constructions
->
-> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
-> to use consistently across all tests. This provides:
->
-> - Consistent behavior for path-dependent logic
-> - Clear indication that tests are using synthetic paths
-> - Single place to update if path handling changes
->
-> **Note:** format_code() should pass file_path=TEST_FILE
-
-```
-      35:         formatter = PythonFormatter(["ruff"])
-      36:         formatter._available_tools = ["ruff"]
-      37:
->>>   38:         result, changes = formatter.format_code(input_code)
-      39:
-      40:         assert result == formatted_code
-      41:         assert changes == ["Applied ruff formatting"]
-   ...
-      61:         formatter = PythonFormatter(["black"])
-      62:         formatter._available_tools = ["black"]
-      63:
->>>   64:         result, changes = formatter.format_code(input_code)
-      65:
-      66:         assert result == formatted_code
-      67:         assert changes == ["Applied black formatting"]
-   ...
-      85:         formatter = PythonFormatter(["ruff"])
-      86:         formatter._available_tools = ["ruff"]
-      87:
->>>   88:         result, changes = formatter.format_code(code)
-      89:
-      90:         assert result == code
-      91:         assert changes == []
-   ...
-     100:         formatter = PythonFormatter(["ruff"])
-     101:         formatter._available_tools = ["ruff"]
-     102:
->>>  103:         result, changes = formatter.format_code(code)
-     104:
-     105:         # Should return original code on error
-     106:         assert result == code
-   ...
-     133:         formatter = PythonFormatter(["ruff"])
-     134:         formatter._available_tools = ["ruff"]
-     135:
->>>  136:         result, changes = formatter.format_code(input_code, categories=[AutofixCategory.IMPORTS])
-     137:
-     138:         assert result == fixed_code
-     139:         assert "Fixed import ordering and removed unused imports" in changes
-   ...
-     144:         formatter._available_tools = []
-     145:
-     146:         code = "x=1+2"
->>>  147:         result, changes = formatter.format_code(code)
-     148:
-     149:         assert result == code
-     150:         assert changes == []
-   ...
-     163:         formatter._apply_formatting = MagicMock(return_value=(code, []))
-     164:         formatter._fix_imports = MagicMock(return_value=(code, []))
-     165:
->>>  166:         formatter.format_code(code, categories=[AutofixCategory.ALL])
-     167:
-     168:         # Both methods should be called
-     169:         formatter._apply_formatting.assert_called_once()
-   ...
-     182:         formatter._fix_imports = MagicMock(return_value=(code, []))
-     183:
-     184:         # Only formatting
->>>  185:         formatter.format_code(code, categories=[AutofixCategory.FORMATTING])
-     186:         formatter._apply_formatting.assert_called_once()
-     187:         formatter._fix_imports.assert_not_called()
-     188:
-   ...
-     191:         formatter._fix_imports.reset_mock()
-     192:
-     193:         # Only imports
->>>  194:         formatter.format_code(code, categories=[AutofixCategory.IMPORTS])
-     195:         formatter._apply_formatting.assert_not_called()
-     196:         formatter._fix_imports.assert_called_once()
-     197:
-```
-
-### `test-file-path-fixture-missing.yaml` / `occ-2`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_ruff.py#L49-L198)
-
-File: `tests/claude_linter_v2/test_python_ruff.py` (L49, L71, L101, L118, L145, L162, L175, L198)
-
-> Test files call analyze_code(), format_code(), and check_code() without a consistent
-> file_path parameter. Multiple occurrences use:
->
-> - No file_path at all
-> - Inline strings like "/tmp/test.py"
-> - Ad-hoc tmp_path constructions
->
-> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
-> to use consistently across all tests. This provides:
->
-> - Consistent behavior for path-dependent logic
-> - Clear indication that tests are using synthetic paths
-> - Single place to update if path handling changes
->
-> **Note:** check_code() should pass file_path=TEST_FILE
-
-```
-      46:         linter = PythonRuffLinter()
-      47:         linter._ruff_available = True
-      48:
->>>   49:         violations = linter.check_code(code)
-      50:
-      51:         assert len(violations) == 1
-      52:         assert violations[0].rule == "ruff:E722"
-   ...
-      68:         linter = PythonRuffLinter()
-      69:         linter._ruff_available = True
-      70:
->>>   71:         violations = linter.check_code(code)
-      72:
-      73:         assert len(violations) == 0
-      74:
-   ...
-      98:         linter = PythonRuffLinter()
-      99:         linter._ruff_available = True
-     100:
->>>  101:         violations = linter.check_code("code", critical_only=True)
-     102:
-     103:         # Should only return the critical violation
-     104:         assert len(violations) == 1
-   ...
-     115:         linter = PythonRuffLinter(force_select=force_rules)
-     116:         linter._ruff_available = True
-     117:
->>>  118:         linter.check_code(code, critical_only=False)
-     119:
-     120:         # Verify the command included force-select rules
-     121:         call_args = mock_run.call_args[0][0]
-   ...
-     142:         linter = PythonRuffLinter()
-     143:         linter._ruff_available = True
-     144:
->>>  145:         violations = linter.check_code("import unused", critical_only=False)
-     146:
-     147:         assert len(violations) == 1
-     148:         assert violations[0].fixable is True
-   ...
-     159:         linter = PythonRuffLinter()
-     160:         linter._ruff_available = True
-     161:
->>>  162:         violations = linter.check_code("code")
-     163:
-     164:         # Should return empty list on error
-     165:         assert violations == []
-   ...
-     172:         linter = PythonRuffLinter()
-     173:         linter._ruff_available = True
-     174:
->>>  175:         violations = linter.check_code("code")
-     176:
-     177:         # Should return empty list on parse error
-     178:         assert violations == []
-   ...
-     195:         linter = PythonRuffLinter()
-     196:         linter._ruff_available = False
-     197:
->>>  198:         violations = linter.check_code("code")
-     199:
-     200:         assert violations == []
-     201:
-```
-
-### `test-request-raw-dict-construction.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-request-raw-dict-construction.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L15-L219)
-
-File: `tests/claude_linter_v2/test_integration.py` (L15-28, L46-58, L76-89, L112-125, L146-159, L191-204, L216-219)
-
-> Tests construct PreToolUseRequest/PostToolUseRequest payloads as raw dicts:
-> request_data = {"hook_event_name": "PreToolUse", "tool_name": "Write", "tool_input": {...}}
->
-> Instead, use Pydantic models directly:
-> request = PreToolUseRequest(
-> session_id=session_id,
-> hook_event_name="PreToolUse",
-> tool_name="Write",
-> tool_input={"file_path": ..., "content": ...},
-> )
->
-> Using typed models provides compile-time checking and makes test intent clearer.
->
-> **Note:** request_data dict should be PreToolUseRequest model
-
-```
-      12:
-      13:     def test_pre_hook_bare_except(self):
-      14:         """Test that pre-hook blocks bare except."""
->>>   15:         request_data = {
->>>   16:             "hook_event_name": "PreToolUse",
->>>   17:             "tool_name": "Write",
->>>   18:             "tool_input": {
->>>   19:                 "file_path": "/tmp/test_bare_except.py",
->>>   20:                 "content": """
->>>   21: try:
->>>   22:     x = 1/0
->>>   23: except:
->>>   24:     pass
->>>   25: """,
->>>   26:             },
->>>   27:             "session_id": "12345678-1234-5678-1234-567812345678",
->>>   28:         }
-      29:
-      30:         result = subprocess.run(
-      31:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
-   ...
-      43:
-      44:     def test_pre_hook_hasattr(self):
-      45:         """Test that pre-hook blocks hasattr usage."""
->>>   46:         request_data = {
->>>   47:             "hook_event_name": "PreToolUse",
->>>   48:             "tool_name": "Write",
->>>   49:             "tool_input": {
->>>   50:                 "file_path": "/tmp/test_hasattr.py",
->>>   51:                 "content": """
->>>   52: obj = object()
->>>   53: if hasattr(obj, 'foo'):
->>>   54:     print("has foo")
->>>   55: """,
->>>   56:             },
->>>   57:             "session_id": "12345678-1234-5678-1234-567812345679",
->>>   58:         }
-      59:
-      60:         result = subprocess.run(
-      61:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
-   ...
-      73:
-      74:     def test_pre_hook_clean_code(self):
-      75:         """Test that pre-hook passes clean code."""
->>>   76:         request_data = {
->>>   77:             "hook_event_name": "PreToolUse",
->>>   78:             "tool_name": "Write",
->>>   79:             "tool_input": {
->>>   80:                 "file_path": "/tmp/test_clean.py",
->>>   81:                 "content": """
->>>   82: def hello():
->>>   83:     try:
->>>   84:         print("Hello, world!")
->>>   85:     except ValueError as e:
->>>   86:         print(f"Error: {e}")
->>>   87: """,
->>>   88:             },
->>>   89:             "session_id": "12345678-1234-5678-1234-567812345680",
-      90:         }
-      91:
-      92:         result = subprocess.run(
-   ...
-     109:     )
-     110:     def test_pre_hook_ruff_violation(self):
-     111:         """Test that pre-hook blocks ruff violations."""
->>>  112:         request_data = {
->>>  113:             "hook_event_name": "PreToolUse",
->>>  114:             "tool_name": "Write",
->>>  115:             "tool_input": {
->>>  116:                 "file_path": "/tmp/test_mutable_default.py",
->>>  117:                 "content": """
->>>  118: import os
->>>  119:
->>>  120: def get_data():
->>>  121:     # Mutable default argument
->>>  122:     def process(items=[]):
->>>  123:         items.append(1)
->>>  124:         return items
->>>  125: """,
-     126:             },
-     127:             "session_id": "12345678-1234-5678-1234-567812345681",
-     128:         }
-   ...
-     143:
-     144:     def test_pre_hook_barrel_init(self):
-     145:         """Test that pre-hook blocks barrel __init__.py."""
->>>  146:         request_data = {
->>>  147:             "hook_event_name": "PreToolUse",
->>>  148:             "tool_name": "Write",
->>>  149:             "tool_input": {
->>>  150:                 "file_path": "/tmp/__init__.py",
->>>  151:                 "content": """
->>>  152: from .module1 import *
->>>  153: from .module2 import Class1, Class2
->>>  154:
->>>  155: __all__ = ['Class1', 'Class2']
->>>  156: """,
->>>  157:             },
->>>  158:             "session_id": "12345678-1234-5678-1234-567812345682",
->>>  159:         }
-     160:
-     161:         result = subprocess.run(
-     162:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
-   ...
-     188:
-     189:     def test_pre_hook_non_python_file(self):
-     190:         """Test that pre-hook passes non-Python files."""
->>>  191:         request_data = {
->>>  192:             "hook_event_name": "PreToolUse",
->>>  193:             "tool_name": "Write",
->>>  194:             "tool_input": {
->>>  195:                 "file_path": "/tmp/test.txt",
->>>  196:                 "content": "This is just a text file with except: and hasattr",
->>>  197:             },
->>>  198:             "session_id": "12345678-1234-5678-1234-567812345683",
->>>  199:         }
->>>  200:
->>>  201:         result = subprocess.run(
->>>  202:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
->>>  203:             input=json.dumps(request_data),
->>>  204:             capture_output=True,
-     205:             text=True,
-     206:             check=False,
-     207:         )
-   ...
-     213:
-     214:     def test_post_hook_basic(self):
-     215:         """Test that post-hook runs without errors."""
->>>  216:         request_data = {
->>>  217:             "hook_event_name": "PostToolUse",
->>>  218:             "tool_name": "Write",
->>>  219:             "tool_input": {"file_path": "/tmp/test_post.py", "content": "x=1+2  # poorly formatted"},
-     220:             "session_id": "12345678-1234-5678-1234-567812345684",
-     221:         }
-     222:
-```
-
-### `test-session-id-fixture-duplication.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-session-id-fixture-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L26-L570)
-
-File: `tests/claude_linter_v2/test_mcp_tools.py` (L26-29, L294-297, L567-570)
-
-> Multiple test classes define their own session_id fixture with different UUIDs:
->
-> - TestMCPTools: "550e8400-e29b-41d4-a716-446655440000"
-> - TestMCPToolsUnexpectedFormats: "770e8400-e29b-41d4-a716-446655440002"
-> - TestMCPToolLogging: "660e8400-e29b-41d4-a716-446655440001"
->
-> These should be consolidated into a shared conftest.py fixture with a
-> "nothing-up-my-sleeve" UUID (e.g., all zeros: 00000000-0000-0000-0000-000000000000).
->
-> **Note:** session_id fixtures should be shared in conftest.py
-
-```
-      23:         return HookHandler()
-      24:
-      25:     @pytest.fixture
->>>   26:     def session_id(self) -> SessionID:
->>>   27:         """Valid session ID."""
->>>   28:         return SessionID("550e8400-e29b-41d4-a716-446655440000")
->>>   29:
-      30:     def test_mcp_tool_with_extra_fields(self, handler, session_id):
-      31:         """Test that MCP tools with custom fields are handled correctly."""
-      32:         # Create a request with MCP-specific fields
-   ...
-     291:         return HookHandler()
-     292:
-     293:     @pytest.fixture
->>>  294:     def session_id(self) -> SessionID:
->>>  295:         """Valid session ID."""
->>>  296:         return SessionID("770e8400-e29b-41d4-a716-446655440002")
->>>  297:
-     298:     def test_stock_price_tool(self, handler, session_id):
-     299:         """Test a financial MCP tool with custom format."""
-     300:         request = PreToolUseRequest(
-   ...
-     564:         return handler
-     565:
-     566:     @pytest.fixture
->>>  567:     def session_id(self) -> SessionID:
->>>  568:         """Valid session ID."""
->>>  569:         return SessionID("660e8400-e29b-41d4-a716-446655440001")
->>>  570:
-     571:     def test_mcp_tool_logging(self, handler, session_id, tmp_path):
-     572:         """Test that MCP tool calls are properly logged."""
-     573:         # Override log directory
-```
-
-### `tests-use-real-paths.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tests-use-real-paths.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L19-L218)
-
-File: `tests/claude_linter_v2/test_integration.py` (L19, L50, L86, L122, L165, L201, L218)
-
-> Tests use hardcoded /tmp/ paths instead of pytest's tmp_path fixture, and scan
-> the actual working directory instead of a predictable test directory. This causes:
->
-> 1. Tests to operate on real filesystem locations that may have stale state
-> 2. Stop hook tests to find violations in the actual codebase, not test fixtures
-> 3. Non-deterministic test behavior depending on cwd and /tmp/ contents
-> 4. Potential interference between parallel test runs
->
-> **Note:** Multiple tests use hardcoded /tmp/ paths like '/tmp/test_bare_except.py' instead of tmp_path fixture
-
-```
-      16:             "hook_event_name": "PreToolUse",
-      17:             "tool_name": "Write",
-      18:             "tool_input": {
->>>   19:                 "file_path": "/tmp/test_bare_except.py",
-      20:                 "content": """
-      21: try:
-      22:     x = 1/0
-   ...
-      47:             "hook_event_name": "PreToolUse",
-      48:             "tool_name": "Write",
-      49:             "tool_input": {
->>>   50:                 "file_path": "/tmp/test_hasattr.py",
-      51:                 "content": """
-      52: obj = object()
-      53: if hasattr(obj, 'foo'):
-   ...
-      83:     try:
-      84:         print("Hello, world!")
-      85:     except ValueError as e:
->>>   86:         print(f"Error: {e}")
-      87: """,
-      88:             },
-      89:             "session_id": "12345678-1234-5678-1234-567812345680",
-   ...
-     119:
-     120: def get_data():
-     121:     # Mutable default argument
->>>  122:     def process(items=[]):
-     123:         items.append(1)
-     124:         return items
-     125: """,
-   ...
-     162:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
-     163:             input=json.dumps(request_data),
-     164:             capture_output=True,
->>>  165:             text=True,
-     166:             check=False,
-     167:         )
-     168:
-   ...
-     198:             "session_id": "12345678-1234-5678-1234-567812345683",
-     199:         }
-     200:
->>>  201:         result = subprocess.run(
-     202:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
-     203:             input=json.dumps(request_data),
-     204:             capture_output=True,
-   ...
-     215:         """Test that post-hook runs without errors."""
-     216:         request_data = {
-     217:             "hook_event_name": "PostToolUse",
->>>  218:             "tool_name": "Write",
-     219:             "tool_input": {"file_path": "/tmp/test_post.py", "content": "x=1+2  # poorly formatted"},
-     220:             "session_id": "12345678-1234-5678-1234-567812345684",
-     221:         }
-```
-
-### `tests-use-real-paths.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tests-use-real-paths.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_quality_gate.py#L1-L190)
-
-File: `tests/claude_linter_v2/test_stop_hook_quality_gate.py` (L1-190)
-
-> Tests use hardcoded /tmp/ paths instead of pytest's tmp_path fixture, and scan
-> the actual working directory instead of a predictable test directory. This causes:
->
-> 1. Tests to operate on real filesystem locations that may have stale state
-> 2. Stop hook tests to find violations in the actual codebase, not test fixtures
-> 3. Non-deterministic test behavior depending on cwd and /tmp/ contents
-> 4. Potential interference between parallel test runs
->
-> **Note:** Stop hook tests scan actual cwd for violations instead of using isolated test directories with known content
-
-```
->>>    1: """Test the stop hook quality gate functionality."""
->>>    2:
->>>    3: import pytest
->>>    4:
->>>    5: from ducktape_llm_common.claude_code_api import StopRequest
->>>    6: from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
->>>    7: from ducktape_llm_common.claude_linter_v2.types import parse_session_id
->>>    8:
->>>    9:
->>>   10: @pytest.fixture
->>>   11: def handler():
->>>   12:     """Create a hook handler instance."""
->>>   13:     handler = HookHandler()
->>>   14:     # Ensure quality gate is enabled for testing
->>>   15:     handler.config_loader.config.hooks["stop"].quality_gate = True
->>>   16:     return handler
->>>   17:
->>>   18:
->>>   19: @pytest.fixture
->>>   20: def session_id():
->>>   21:     """Create a test session ID."""
->>>   22:     return parse_session_id("12345678-1234-5678-1234-567812345678")
->>>   23:
->>>   24:
->>>   25: def test_stop_hook_blocks_with_unfixed_errors(handler, session_id, tmp_path):
->>>   26:     """Test that stop hook blocks when there are unfixed errors."""
->>>   27:     # Add some violations to the tracker
->>>   28:     handler.violation_tracker.add_violation(
->>>   29:         session_id=session_id,
->>>   30:         file_path="/test/file.py",
->>>   31:         line=10,
->>>   32:         message="Bare except clause not allowed",
->>>   33:         severity="error",
->>>   34:         rule="bare-except",
->>>   35:     )
->>>   36:     handler.violation_tracker.add_violation(
->>>   37:         session_id=session_id,
->>>   38:         file_path="/test/file.py",
->>>   39:         line=20,
->>>   40:         message="Using hasattr() is not allowed",
->>>   41:         severity="error",
->>>   42:         rule="no-hasattr",
->>>   43:     )
->>>   44:     handler.violation_tracker.add_violation(
->>>   45:         session_id=session_id,
->>>   46:         file_path="/test/other.py",
->>>   47:         line=5,
->>>   48:         message="Line too long",
->>>   49:         severity="warning",
->>>   50:         rule="E501",
->>>   51:     )
->>>   52:
->>>   53:     # Create stop hook request
->>>   54:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
->>>   55:
->>>   56:     # Handle the hook
->>>   57:     result = handler.handle("Stop", request)
->>>   58:
->>>   59:     # Should block due to errors
->>>   60:     response_dict = result.model_dump()
->>>   61:     assert response_dict.get("continue_") is True  # Always True for hook responses
->>>   62:     assert response_dict.get("decision") == "block"  # StopPrevent sets decision=block
->>>   63:     assert response_dict.get("reason") is not None
->>>   64:     reason = response_dict["reason"]
->>>   65:     assert "2 errors that must be fixed" in reason
->>>   66:     assert "/test/file.py" in reason
->>>   67:     assert "/test/other.py" in reason
->>>   68:     assert "Line 10:" in reason or "Line 20:" in reason  # Should show line numbers
->>>   69:     assert "cl2 check" in reason  # Should include check command
->>>   70:
->>>   71:
->>>   72: def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
->>>   73:     """Test that stop hook allows proceeding with only warnings."""
->>>   74:     # Add only warnings
->>>   75:     handler.violation_tracker.add_violation(
->>>   76:         session_id=session_id,
->>>   77:         file_path="/test/file.py",
->>>   78:         line=10,
->>>   79:         message="Line too long",
->>>   80:         severity="warning",
->>>   81:         rule="E501",
->>>   82:     )
->>>   83:     handler.violation_tracker.add_violation(
->>>   84:         session_id=session_id,
->>>   85:         file_path="/test/file.py",
->>>   86:         line=20,
->>>   87:         message="Missing docstring",
->>>   88:         severity="warning",
->>>   89:         rule="D100",
->>>   90:     )
->>>   91:
->>>   92:     # Create stop hook request
->>>   93:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
->>>   94:
->>>   95:     # Handle the hook
->>>   96:     result = handler.handle("Stop", request)
->>>   97:
->>>   98:     # Should allow stop (only warnings)
->>>   99:     response_dict = result.model_dump()
->>>  100:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
->>>  101:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
->>>  102:
->>>  103:
->>>  104: def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
->>>  105:     """Test that stop hook passes when there are no violations."""
->>>  106:     # Create stop hook request
->>>  107:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
->>>  108:
->>>  109:     # Handle the hook
->>>  110:     result = handler.handle("Stop", request)
->>>  111:
->>>  112:     # Should pass
->>>  113:     response_dict = result.model_dump()
->>>  114:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
->>>  115:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
->>>  116:
->>>  117:
->>>  118: def test_stop_hook_passes_when_quality_gate_disabled(handler, session_id, tmp_path):
->>>  119:     """Test that stop hook passes when quality gate is disabled."""
->>>  120:     # Disable quality gate
->>>  121:     handler.config_loader.config.hooks["stop"].quality_gate = False
->>>  122:
->>>  123:     # Add violations
->>>  124:     handler.violation_tracker.add_violation(
->>>  125:         session_id=session_id,
->>>  126:         file_path="/test/file.py",
->>>  127:         line=10,
->>>  128:         message="Bare except clause not allowed",
->>>  129:         severity="error",
->>>  130:     )
->>>  131:
->>>  132:     # Create stop hook request
->>>  133:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
->>>  134:
->>>  135:     # Handle the hook
->>>  136:     result = handler.handle("Stop", request)
->>>  137:
->>>  138:     # Should pass despite errors
->>>  139:     response_dict = result.model_dump()
->>>  140:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
->>>  141:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
->>>  142:
->>>  143:
->>>  144: def test_violations_marked_as_fixed(handler, session_id, tmp_path):
->>>  145:     """Test that violations can be marked as fixed."""
->>>  146:     # Add violations
->>>  147:     handler.violation_tracker.add_violation(
->>>  148:         session_id=session_id, file_path="/test/file.py", line=10, message="Bare except clause", severity="error"
->>>  149:     )
->>>  150:     handler.violation_tracker.add_violation(
->>>  151:         session_id=session_id, file_path="/test/file.py", line=20, message="Line too long", severity="warning"
->>>  152:     )
->>>  153:     handler.violation_tracker.add_violation(
->>>  154:         session_id=session_id, file_path="/test/other.py", line=5, message="Missing docstring", severity="warning"
->>>  155:     )
->>>  156:
->>>  157:     # Mark one file as fixed
->>>  158:     handler.violation_tracker.mark_file_fixed(session_id, "/test/file.py")
->>>  159:
->>>  160:     # Check unfixed violations
->>>  161:     unfixed = handler.violation_tracker.get_unfixed_violations(session_id)
->>>  162:     assert len(unfixed) == 1
->>>  163:     assert unfixed[0].file_path == "/test/other.py"
->>>  164:
->>>  165:     # Stop hook should only report the unfixed violation
->>>  166:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
->>>  167:
->>>  168:     result = handler.handle("Stop", request)
->>>  169:     # Since only warnings remain, should allow stop
->>>  170:     response_dict = result.model_dump()
->>>  171:     assert response_dict.get("continue_") is True  # Only warnings - allows stop
->>>  172:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
->>>  173:
->>>  174:
->>>  175: def test_violation_deduplication(handler, session_id):
->>>  176:     """Test that duplicate violations are deduplicated."""
->>>  177:     # Add same violation multiple times
->>>  178:     for _ in range(3):
->>>  179:         handler.violation_tracker.add_violation(
->>>  180:             session_id=session_id,
->>>  181:             file_path="/test/file.py",
->>>  182:             line=10,
->>>  183:             message="Bare except clause not allowed",
->>>  184:             severity="error",
->>>  185:             rule="bare-except",
->>>  186:         )
->>>  187:
->>>  188:     # Should only have one violation
->>>  189:     unfixed = handler.violation_tracker.get_unfixed_violations(session_id)
->>>  190:     assert len(unfixed) == 1
-```
-
-### `tool-input-god-class.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tool-input-god-class.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_code_api.py#L22-L58)
-
-File: `ducktape_llm_common/claude_code_api.py` (L22-58)
-
-> ToolInput is a god class with all optional fields representing multiple distinct tool
-> types. This loses type safety - you can construct an "Edit" with no old_string/new_string,
-> or a "Bash" with file_path. Should be a discriminated union of per-tool input types.
->
-> One possible approach: define EditToolInput, BashToolInput, MCPToolInput (with extra="allow"
-> for arbitrary MCP tools), then use a discriminated union based on tool_name. Since tool_name
-> and tool_input are sibling fields in the wire format, a model_validator(mode="before") can
-> restructure them into a nested ToolCall object for Pydantic to discriminate.
->
-> **Note:** Main ToolInput with MCP fields and extra='allow'
-
-```
-      19:     replace_all: bool = False
-      20:
-      21:
->>>   22: class ToolInput(BaseModel):
->>>   23:     """Input parameters for Claude Code tools.
->>>   24:
->>>   25:     Different tools use different subsets of these fields.
->>>   26:     Extra fields are allowed for MCP and other tools.
->>>   27:     """
->>>   28:
->>>   29:     model_config = ConfigDict(extra="allow")
->>>   30:
->>>   31:     # Common fields
->>>   32:     file_path: str | None = None
->>>   33:     content: str | None = None
->>>   34:
->>>   35:     # Edit tool fields
->>>   36:     old_string: str | None = None
->>>   37:     new_string: str | None = None
->>>   38:     replace_all: bool = False
->>>   39:     old_content: str | None = None
->>>   40:
->>>   41:     # MultiEdit tool fields
->>>   42:     edits: list[EditOperation] | None = None
->>>   43:
->>>   44:     # Bash tool fields
->>>   45:     command: str | None = None
->>>   46:
->>>   47:     # MCP tool fields (common ones)
->>>   48:     url: str | None = None
->>>   49:     query: str | None = None
->>>   50:     path: str | None = None
->>>   51:     directory: str | None = None
->>>   52:
->>>   53:     # Allow any additional fields for extensibility
->>>   54:     allowDangerous: bool | None = None  # noqa: N815
->>>   55:     wait_for: str | None = None
->>>   56:     database: str | None = None
->>>   57:     endpoint: str | None = None
->>>   58:     method: str | None = None
-      59:
-      60:
-      61: class HookEventName(StrEnum):
-```
-
-### `tool-input-god-class.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tool-input-god-class.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L61-L91)
-
-File: `ducktape_llm_common/claude_linter/models.py` (L61-91)
-
-> ToolInput is a god class with all optional fields representing multiple distinct tool
-> types. This loses type safety - you can construct an "Edit" with no old_string/new_string,
-> or a "Bash" with file_path. Should be a discriminated union of per-tool input types.
->
-> One possible approach: define EditToolInput, BashToolInput, MCPToolInput (with extra="allow"
-> for arbitrary MCP tools), then use a discriminated union based on tool_name. Since tool_name
-> and tool_input are sibling fields in the wire format, a model_validator(mode="before") can
-> restructure them into a nested ToolCall object for Pydantic to discriminate.
->
-> **Note:** Duplicate ToolInput for file manipulation tools
-
-```
-      58:     """If True, replace all occurrences; if False, only replace first occurrence."""
-      59:
-      60:
->>>   61: class ToolInput(BaseModel):
->>>   62:     """Input parameters for Claude Code file manipulation tools.
->>>   63:
->>>   64:     Different tools use different subsets of these fields:
->>>   65:     - Write: file_path, content
->>>   66:     - Edit: file_path, old_string, new_string, replace_all
->>>   67:     - MultiEdit: file_path, edits
->>>   68:     """
->>>   69:
->>>   70:     # Common fields
->>>   71:     file_path: str | None = None
->>>   72:     """Path to the file being operated on. May be None for non-file tools."""
->>>   73:
->>>   74:     # Write tool fields
->>>   75:     content: str | None = None
->>>   76:     """Full content to write to the file (Write tool only)."""
->>>   77:
->>>   78:     # Edit tool fields
->>>   79:     old_string: str | None = None
->>>   80:     """Text to find and replace (Edit tool only)."""
->>>   81:
->>>   82:     new_string: str | None = None
->>>   83:     """Replacement text (Edit tool only)."""
->>>   84:
->>>   85:     replace_all: bool = False
->>>   86:     """Replace all occurrences if True, first occurrence if False (Edit tool)."""
->>>   87:
->>>   88:     # MultiEdit tool fields
->>>   89:     edits: list[EditOperation] | None = None
->>>   90:     """List of edit operations to apply in sequence (MultiEdit tool only)."""
->>>   91:
-      92:
-      93: class PatchLine(BaseModel):
-      94:     """Represents a hunk in a structured patch (unified diff format).
-```
-
-### `unnecessary-str-cast.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unnecessary-str-cast.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/checker.py#L50-L87)
-
-File: `ducktape_llm_common/claude_linter_v2/checker.py` (L50, L73, L76, L81, L87)
-
-> Redundant `str(file_path)` conversions when file_path is already Path and the
-> receiving function/method accepts os.PathLike or when Path methods should be used
-> directly. Python 3.13+ subprocess and ast.parse accept Path objects natively.
->
-> Remove the str() casts and use Path methods (.suffix, .name) instead of string
-> operations (.endswith).
->
-> **Note:** Multiple str(file_path) casts in check_file method
-
-```
-      47:         violations: list[Violation] = []
-      48:
-      49:         # Only check Python files for now
->>>   50:         if not str(file_path).endswith(".py"):
-      51:             return violations
-      52:
-      53:         try:
-   ...
-      70:                 or (getattr_config.enabled if getattr_config else False)
-      71:                 or (setattr_config.enabled if setattr_config else False)
-      72:             ),
->>>   73:             barrel_init=str(file_path).endswith("__init__.py")
-      74:             and (barrel_init_config.enabled if barrel_init_config else False),
-      75:         )
->>>   76:         ast_violations = analyzer.analyze_code(content, str(file_path))
-      77:         violations.extend(ast_violations)
-      78:
-      79:         # Run ruff checks
-      80:         ruff_linter = PythonRuffLinter(force_select=self.config.get_ruff_codes_to_select())
->>>   81:         ruff_violations = ruff_linter.check_code(content, str(file_path), critical_only=False)
-      82:         violations.extend(ruff_violations)
-      83:
-      84:         # Apply fixes if requested
-      85:         if self.fix and self.categories:
-      86:             formatter = PythonFormatter(self.config.python_tools)
->>>   87:             formatted_content, changes = formatter.format_code(content, str(file_path), self.categories)
-      88:
-      89:             if changes and formatted_content != content:
-      90:                 try:
-```
-
-### `unused-function-parameter.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unused-function-parameter.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/llm_analyzer.py#L62-L135)
-
-File: `ducktape_llm_common/claude_linter_v2/llm_analyzer.py` (L135, L62)
-
-> `_parse_llm_result(file_path: str)` accepts a `file_path` parameter that is never
-> used in the function body. The parameter is passed at the call site (line 62) but
-> the function doesn't reference it. Dead parameters add noise and mislead readers
-> about what the function actually needs.
->
-> Remove the unused parameter from both signature and call site.
->
-> **Note:** file_path param in signature (135) and call site (62) - param unused in body
-
-```
-      59:             result = self._call_llm(prompt)
-      60:
-      61:             # Parse result
->>>   62:             is_ok, message, violations = self._parse_llm_result(result, file_path)
-      63:
-      64:             return is_ok, message, violations
-      65:
-   ...
-     132:         # Mock response - always return OK for now
-     133:         return {"ok": True, "violations": []}
-     134:
->>>  135:     def _parse_llm_result(self, result: dict[str, Any], file_path: str) -> tuple[bool, str | None, list[Violation]]:
-     136:         """Parse LLM result into our format."""
-     137:         try:
-     138:             is_ok = result.get("ok", True)
-```
-
-### `unused-mixin.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unused-mixin.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/hook_session_state.py#L36-L104)
-
-File: `ducktape_llm_common/hook_session_state.py` (L36-104)
-
-> StatefulHookMixin (lines 36-104) is defined but never used anywhere in the codebase.
-> Delete it or implement something that uses it.
-
-```
-      33:
-      34:
-      35: class StatefulHookMixin:
->>>   36:     """
->>>   37:     Mixin for hooks that need Pydantic-based session state.
->>>   38:
->>>   39:     Automatically loads state before hook dispatch and saves on destruction.
->>>   40:     Hook can access state via self.state.
->>>   41:
->>>   42:     Example:
->>>   43:         class MyHookState(BaseModel):
->>>   44:             tool_calls: int = 0
->>>   45:             blocked_files: list[str] = []
->>>   46:
->>>   47:         class MyHook(ClaudeCodeHookBase, StatefulHookMixin):
->>>   48:             hook_name = "my-security-hook"
->>>   49:             StateModel = MyHookState
->>>   50:
->>>   51:             def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
->>>   52:                 self.state.tool_calls += 1
->>>   53:                 return PreToolApprove()
->>>   54:     """
->>>   55:
->>>   56:     hook_name: str
->>>   57:     StateModel: type[StateModel]
->>>   58:
->>>   59:     def __init__(self, *args, **kwargs):
->>>   60:         super().__init__(*args, **kwargs)
->>>   61:         if not hasattr(self, "hook_name"):
->>>   62:             raise ValueError("StatefulHookMixin requires 'hook_name' class attribute")
->>>   63:         if not hasattr(self, "StateModel"):
->>>   64:             raise ValueError("StatefulHookMixin requires 'StateModel' class attribute")
->>>   65:
->>>   66:         self.state: StateModel = None
->>>   67:         self._current_session: SessionID = None
->>>   68:
->>>   69:     def _get_state_file(self, session_id: SessionID) -> Path:
->>>   70:         """Get the state file path for a session."""
->>>   71:         session_dir = get_session_dir(self.hook_name, session_id)
->>>   72:         return session_dir / "state.json"
->>>   73:
->>>   74:     def _load_state(self, session_id: SessionID) -> None:
->>>   75:         """Load state from file or create new instance."""
->>>   76:         state_file = self._get_state_file(session_id)
->>>   77:
->>>   78:         if state_file.exists():
->>>   79:             try:
->>>   80:                 self.state = self.StateModel.model_validate_json(state_file.read_text())
->>>   81:                 self._current_session = session_id
->>>   82:                 return
->>>   83:             except Exception:
->>>   84:                 # If corrupted, start fresh
->>>   85:                 pass
->>>   86:
->>>   87:         self.state = self.StateModel()
->>>   88:         self._current_session = session_id
->>>   89:
->>>   90:     def _save_state(self) -> None:
->>>   91:         """Save current state to file."""
->>>   92:         if self.state is not None and self._current_session is not None:
->>>   93:             state_file = self._get_state_file(self._current_session)
->>>   94:             state_file.write_text(self.state.model_dump_json(indent=2))
->>>   95:
->>>   96:     def dispatch_hook(self, request) -> any:
->>>   97:         """Override dispatch to load state before hook execution."""
->>>   98:         self._load_state(request.session_id)
->>>   99:         return super().dispatch_hook(request)
->>>  100:
->>>  101:     def __del__(self):
->>>  102:         """Auto-save state on destruction."""
->>>  103:         with contextlib.suppress(Exception):
->>>  104:             self._save_state()
-```
-
-### `verbose-example-messages.yaml` / `occ-0`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/verbose-example-messages.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_outcomes.py#L48-L55)
-
-File: `ducktape_llm_common/claude_outcomes.py` (L48-55)
-
-> Example llm_message strings in HookOutcome docstrings are unnecessarily verbose
-> and multi-line. A one-liner like "Permission denied, can't edit production files"
-> suffices to demonstrate usage.
->
-> **Note:** PreToolDeny example has multi-line message with override instructions
-
-```
-      45:
-      46: @dataclass
-      47: class PreToolNoOpinion(HookOutcome):
->>>   48:     """No opinion - let existing permission flow decide."""
->>>   49:
->>>   50:     def to_claude_response(self) -> PreToolResponse:
->>>   51:         return PreToolResponse()  # undefined decision = existing permission flow
->>>   52:
->>>   53:
->>>   54: PreToolOutcome = PreToolApprove | PreToolDeny | PreToolNoOpinion
->>>   55:
-      56:
-      57: # PostToolUse Outcomes
-      58: @dataclass
-```
-
-### `verbose-example-messages.yaml` / `occ-1`
-
-Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/verbose-example-messages.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_outcomes.py#L127-L135)
-
-File: `ducktape_llm_common/claude_outcomes.py` (L127-135)
-
-> Example llm_message strings in HookOutcome docstrings are unnecessarily verbose
-> and multi-line. A one-liner like "Permission denied, can't edit production files"
-> suffices to demonstrate usage.
->
-> **Note:** StopPrevent example has multi-line error list
-
-```
-     124:     llm_message: str
-     125:
-     126:     def to_claude_response(self) -> StopResponse:
->>>  127:         return StopResponse(decision="block", reason=self.llm_message)
->>>  128:
->>>  129:
->>>  130: @dataclass
->>>  131: class StopAllowWithInfo(HookOutcome):
->>>  132:     """Allow Claude to end its turn, with an info message (non-blocking)."""
->>>  133:
->>>  134:     llm_message: str
->>>  135:
-     136:     def to_claude_response(self) -> StopResponse:
-     137:         return StopResponse()
-     138:
-```
 
 ## ducktape/2026-01-17-00 (51)
 
@@ -8155,6 +5129,2096 @@ File: `internal/tui/components/chat/editor/editor.go` (L144-149, L240, L333, L64
 >
 > **Note:** editor reaches through to m.app.CoderAgent.IsSessionBusy/IsBusy and m.app.Permissions — consider routing via
 > App façade methods or inject services explicitly.
+
+## ducktape_llm_common/2026-01-03-00 (40)
+
+### `dict-instead-of-pydantic-model.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/dict-instead-of-pydantic-model.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_diff_intelligence.py#L49)
+
+File: `tests/claude_linter_v2/test_diff_intelligence.py` (L49)
+
+> Tests construct `edits` as a list of raw dicts `[{"old_string": ..., "new_string": ...}]`
+> when the typed `EditOperation` Pydantic model exists (claude_linter/models.py:45-58).
+>
+> Per STYLE.md: "Instantiate Pydantic models with explicit keyword arguments rather than
+> passing raw dicts." While Pydantic coerces dicts, explicit construction provides type
+> safety and makes the expected type clear at the call site.
+>
+> Use `[EditOperation(old_string="foo", new_string="bar")]` instead.
+>
+> **Note:** edits=[{...}] should use EditOperation models
+
+```
+      46:             tool_name="MultiEdit",
+      47:             tool_input={
+      48:                 "file_path": "/test.py",
+>>>   49:                 "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "baz", "new_string": "qux"}],
+      50:             },
+      51:             tool_response={
+      52:                 "structuredPatch": [
+```
+
+### `docstrings-as-field-descriptions.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/docstrings-as-field-descriptions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L27-L38)
+
+File: `ducktape_llm_common/claude_linter/models.py` (L27-28, L30-32, L34-35, L37-38)
+
+> Field docstrings like `"""Human-readable explanation..."""` after Field declarations
+> are not semantically attached to those fields. Use Field(description="...") instead -
+> it's more semantic, discoverable, and appears in JSON schema.
+>
+> **Note:** HookResponse fields have trailing docstrings instead of Field descriptions
+
+```
+      24:     - block: Prevent operation (pre) or signal changes were made (post)
+      25:     """
+      26:
+>>>   27:     reason: str | None = None
+>>>   28:     """Human-readable explanation shown to user and/or used to re-prompt model."""
+      29:
+>>>   30:     continue_: bool = Field(True, alias="continue")
+>>>   31:     """Whether model should continue after processing hook response.
+>>>   32:     Usually True unless you want to stop the session."""
+      33:
+>>>   34:     stop_reason: str | None = Field(None, alias="stopReason")
+>>>   35:     """If provided with continue=False, stops the session with this message."""
+      36:
+>>>   37:     suppress_output: bool = Field(False, alias="suppressOutput")
+>>>   38:     """If True, suppresses the hook's own output (stdout/stderr) from being shown."""
+      39:
+      40:     model_config = ConfigDict(
+      41:         populate_by_name=True, alias_generator=None, use_enum_values=True, arbitrary_types_allowed=True
+```
+
+### `empty-default-instead-of-classvar.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/empty-default-instead-of-classvar.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L61-L65)
+
+File: `ducktape_llm_common/claude_hook.py` (L61, L64-65)
+
+> `hook_name: str = ""` with a runtime check (lines 64-65) is a weak enforcement pattern.
+> Use `hook_name: ClassVar[str]` without a default - Python raises AttributeError at
+> access time if subclass doesn't define it, no explicit check needed.
+
+```
+      58:             MyClaudeHook.entrypoint()
+      59:     """
+      60:
+>>>   61:     hook_name: str = ""  # Must be defined by subclass
+      62:
+      63:     def __init__(self):
+>>>   64:         if not self.hook_name:
+>>>   65:             raise ValueError("ClaudeCodeHookBase requires non-empty 'hook_name'")
+      66:
+      67:         self.logger: logging.Logger | None = None
+      68:
+```
+
+### `endswith-instead-of-path-suffix.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/endswith-instead-of-path-suffix.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/checker.py#L50-L73)
+
+File: `ducktape_llm_common/claude_linter_v2/checker.py` (L50, L73)
+
+> Using `.endswith(".py")` on paths instead of Path's `.suffix == ".py"` method.
+> Using `.endswith("__init__.py")` instead of `.name == "__init__.py"`.
+>
+> Path methods are clearer, more idiomatic, and don't require str() conversion.
+> Replace string operations with Path methods.
+>
+> **Note:** .endswith() on str(file_path) instead of Path.suffix/.name
+
+```
+      47:         violations: list[Violation] = []
+      48:
+      49:         # Only check Python files for now
+>>>   50:         if not str(file_path).endswith(".py"):
+      51:             return violations
+      52:
+      53:         try:
+   ...
+      70:                 or (getattr_config.enabled if getattr_config else False)
+      71:                 or (setattr_config.enabled if setattr_config else False)
+      72:             ),
+>>>   73:             barrel_init=str(file_path).endswith("__init__.py")
+      74:             and (barrel_init_config.enabled if barrel_init_config else False),
+      75:         )
+      76:         ast_violations = analyzer.analyze_code(content, str(file_path))
+```
+
+### `endswith-instead-of-path-suffix.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/endswith-instead-of-path-suffix.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/check_python.py#L55)
+
+File: `ducktape_llm_common/claude_linter_v2/check_python.py` (L55)
+
+> Using `.endswith(".py")` on paths instead of Path's `.suffix == ".py"` method.
+> Using `.endswith("__init__.py")` instead of `.name == "__init__.py"`.
+>
+> Path methods are clearer, more idiomatic, and don't require str() conversion.
+> Replace string operations with Path methods.
+>
+> **Note:** file_path.endswith('**init**.py') instead of Path(file_path).name
+
+```
+      52:     analyzer = PythonASTAnalyzer(
+      53:         bare_except=bare_except_enabled,
+      54:         getattr_setattr=getattr_setattr_enabled,
+>>>   55:         barrel_init=file_path.endswith("__init__.py") and barrel_init_enabled,
+      56:     )
+      57:     ast_violations = analyzer.analyze_code(content, file_path)
+      58:
+```
+
+### `hook-response-boilerplate.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L122-L174)
+
+File: `ducktape_llm_common/claude_hook.py` (L122-125, L166-167, L171-174)
+
+> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
+> implementations. Extract to a shared runner function or base class method.
+>
+> **Note:** ClaudeCodeHookBase.run() has 3 instances of print(response.model_dump_json(...)); sys.exit(0)
+
+```
+     119:                 request = HookRequest.model_validate(input_data)
+     120:             except Exception as e:
+     121:                 # Invalid request format
+>>>  122:                 outcome = HookError(f"Invalid request format: {e!s}")
+>>>  123:                 response = outcome.to_claude_response()
+>>>  124:                 print(response.model_dump_json(by_alias=True))
+>>>  125:                 sys.exit(0)
+     126:
+     127:             # Generate invocation ID and set up logging
+     128:             invocation_id = InvocationID(uuid.uuid4())
+   ...
+     163:                 raise
+     164:
+     165:             # Output JSON response
+>>>  166:             print(response.model_dump_json(by_alias=True))
+>>>  167:             sys.exit(0)
+     168:
+     169:         except Exception as e:
+     170:             # On any error, return error outcome
+>>>  171:             error_outcome = HookError(f"Hook execution failed: {e!s}")
+>>>  172:             response = error_outcome.to_claude_response()
+>>>  173:             print(response.model_dump_json(by_alias=True))
+>>>  174:             sys.exit(0)
+```
+
+### `hook-response-boilerplate.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/cli.py#L226-L235)
+
+File: `ducktape_llm_common/claude_linter/cli.py` (L226-235)
+
+> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
+> implementations. Extract to a shared runner function or base class method.
+>
+> **Note:** main() serializes and exits
+
+```
+     223:         decision = HookResponse()
+     224:
+     225:     # Handle output
+>>>  226:     output_json = decision.model_dump_json(by_alias=True, exclude_none=True)
+>>>  227:     print(output_json, file=sys.stdout)
+>>>  228:     log_data["output"] = json.loads(output_json)
+>>>  229:
+>>>  230:     # Log exit code
+>>>  231:     log_data["exit_code"] = 0
+>>>  232:     with Path(log_file).open("w") as f:
+>>>  233:         json.dump(log_data, f, indent=2)
+>>>  234:
+>>>  235:     sys.exit(0)
+```
+
+### `hook-response-boilerplate.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/cli.py#L180-L202)
+
+File: `ducktape_llm_common/claude_linter_v2/cli.py` (L180, L202)
+
+> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
+> implementations. Extract to a shared runner function or base class method.
+>
+> **Note:** run_hook() serializes and exits separately
+
+```
+     177:     try:
+     178:         response = handle(hook_type, request)
+     179:         # Output response
+>>>  180:         click.echo(response.model_dump_json(by_alias=True, exclude_none=True))
+     181:     except HookBugError as e:
+     182:         # Hook bug - this is OUR fault
+     183:         logger.error(f"FATAL: Hook bug: {e}", exc_info=True)
+   ...
+     199:         raise
+     200:
+     201:     # Always exit 0 - Claude Code uses JSON response, not exit codes
+>>>  202:     sys.exit(0)
+     203:
+     204:
+     205: @cli.group()
+```
+
+### `integration-tests-not-isolated.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/integration-tests-not-isolated.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L27)
+
+File: `tests/claude_linter_v2/test_integration.py` (L27)
+
+> Integration tests use hardcoded session IDs and write to the real user data
+> directory (~/.local/share/claude-linter-v2/sessions/). This causes:
+>
+> 1. Tests to interfere with each other across runs
+> 2. Tests to pick up stale state from previous runs
+> 3. Potential interference with real user session data
+> 4. Non-deterministic test failures when stale data has incompatible format
+>
+> **Note:** Uses fixed session_id '12345678-1234-5678-1234-567812345678' that persists to real ~/.local/share path
+
+```
+      24:     pass
+      25: """,
+      26:             },
+>>>   27:             "session_id": "12345678-1234-5678-1234-567812345678",
+      28:         }
+      29:
+      30:         result = subprocess.run(
+```
+
+### `manual-camelcase-aliases.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/manual-camelcase-aliases.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_code_api.py#L153-L167)
+
+File: `ducktape_llm_common/claude_code_api.py` (L153-167)
+
+> Response models use manual `alias="camelCase"` on each field instead of
+> `alias_generator=to_camel` in model_config. This creates boilerplate and
+> risks inconsistency. Use a CamelCaseModel base class with alias_generator.
+>
+> Note: Request models must stay snake_case (Claude Code sends snake_case for requests).
+> Only response/outbound models can use to_camel.
+>
+> **Note:** BaseResponse has manual aliases: stop_reason='stopReason', suppress_output='suppressOutput'
+
+```
+     150:
+     151:
+     152: # Base response types for Claude Code hook responses
+>>>  153: class BaseResponse(BaseModel):
+>>>  154:     """
+>>>  155:     Base response for all hooks.
+>>>  156:
+>>>  157:     Per Anthropic docs section "Common JSON Fields":
+>>>  158:     - continue: Whether Claude should continue (default: true)
+>>>  159:     - stopReason: Message shown when continue is false (shown to user, NOT Claude)
+>>>  160:     - suppressOutput: Hide stdout from transcript mode
+>>>  161:     """
+>>>  162:
+>>>  163:     continue_: bool = Field(True, alias="continue")
+>>>  164:     stop_reason: str | None = Field(
+>>>  165:         None, alias="stopReason", description="Message shown to USER when continue is false"
+>>>  166:     )
+>>>  167:     suppress_output: bool | None = Field(None, alias="suppressOutput")
+     168:
+     169:     model_config = {"populate_by_name": True}
+     170:
+```
+
+### `manual-camelcase-aliases.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/manual-camelcase-aliases.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L24-L64)
+
+File: `ducktape_llm_common/claude_linter/models.py` (L24-31, L44-48, L58-64)
+
+> Response models use manual `alias="camelCase"` on each field instead of
+> `alias_generator=to_camel` in model_config. This creates boilerplate and
+> risks inconsistency. Use a CamelCaseModel base class with alias_generator.
+>
+> Note: Request models must stay snake_case (Claude Code sends snake_case for requests).
+> Only response/outbound models can use to_camel.
+>
+> **Note:** HookResponse, PatchLine, ToolResponse all have manual camelCase aliases
+
+```
+      21:     decision: Literal["approve", "block"] | None = None
+      22:     """Controls tool execution (PreToolUse) or provides feedback (PostToolUse).
+      23:     - approve: Allow operation to proceed
+>>>   24:     - block: Prevent operation (pre) or signal changes were made (post)
+>>>   25:     """
+>>>   26:
+>>>   27:     reason: str | None = None
+>>>   28:     """Human-readable explanation shown to user and/or used to re-prompt model."""
+>>>   29:
+>>>   30:     continue_: bool = Field(True, alias="continue")
+>>>   31:     """Whether model should continue after processing hook response.
+      32:     Usually True unless you want to stop the session."""
+      33:
+      34:     stop_reason: str | None = Field(None, alias="stopReason")
+   ...
+      41:         populate_by_name=True, alias_generator=None, use_enum_values=True, arbitrary_types_allowed=True
+      42:     )
+      43:
+>>>   44:
+>>>   45: class EditOperation(BaseModel):
+>>>   46:     """Individual edit operation for MultiEdit tool.
+>>>   47:
+>>>   48:     Represents a single find-and-replace operation within a MultiEdit sequence.
+      49:     """
+      50:
+      51:     old_string: str
+   ...
+      55:     """Text to replace the old_string with."""
+      56:
+      57:     replace_all: bool = False
+>>>   58:     """If True, replace all occurrences; if False, only replace first occurrence."""
+>>>   59:
+>>>   60:
+>>>   61: class ToolInput(BaseModel):
+>>>   62:     """Input parameters for Claude Code file manipulation tools.
+>>>   63:
+>>>   64:     Different tools use different subsets of these fields:
+      65:     - Write: file_path, content
+      66:     - Edit: file_path, old_string, new_string, replace_all
+      67:     - MultiEdit: file_path, edits
+```
+
+### `nullable-file-path-for-convenience.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/nullable-file-path-for-convenience.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/linters/python_formatter.py#L38-L145)
+
+File: `ducktape_llm_common/claude_linter_v2/linters/python_formatter.py` (L38-40, L86, L102, L126, L145)
+
+> `file_path: str | None` parameters in python_formatter.py are only nullable for
+> test convenience. Production callers (checker.py:87, handler.py:671) always pass
+> a file_path. The None case triggers fallback to "temp.py" for ruff's --stdin-filename.
+>
+> The signature should be `file_path: Path` with no default, and tests should pass
+> explicit test paths instead of relying on None defaults. This eliminates unnecessary
+> nullability guards and makes the production contract explicit.
+
+```
+      35:
+      36:         return available
+      37:
+>>>   38:     def format_code(
+>>>   39:         self, code: str, file_path: str | None = None, categories: list[AutofixCategory] | None = None
+>>>   40:     ) -> tuple[str, list[str]]:
+      41:         """
+      42:         Format Python code with specified autofix categories.
+      43:
+   ...
+      83:
+      84:         return formatted_code, changes
+      85:
+>>>   86:     def _apply_formatting(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+      87:         """Apply code formatting."""
+      88:         changes = []
+      89:         formatted = code
+   ...
+      99:
+     100:         return formatted, changes
+     101:
+>>>  102:     def _format_with_ruff(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+     103:         """Format code with ruff."""
+     104:         try:
+     105:             # Use stdin/stdout to avoid file operations
+   ...
+     123:             logger.error(f"Ruff error: {e}")
+     124:             return code, []
+     125:
+>>>  126:     def _format_with_black(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+     127:         """Format code with black."""
+     128:         try:
+     129:             # Use stdin/stdout to avoid file operations
+   ...
+     142:             logger.error(f"Black error: {e}")
+     143:             return code, []
+     144:
+>>>  145:     def _fix_imports(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+     146:         """Fix import ordering and remove unused imports."""
+     147:         changes = []
+     148:         formatted = code
+```
+
+### `path-prefix-match.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/path-prefix-match.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L129-L150)
+
+File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L129, L148-150)
+
+> `add_rule` uses `str.startswith()` (line 149) to test whether a session's
+> directory is under the target directory. String prefix matching is not
+> equivalent to path containment: a target of `/home/user/proj` incorrectly
+> matches `/home/user/project-old` because the string starts with the same
+> prefix. The rule is then applied to sessions belonging to unrelated
+> directories. Should use `Path.is_relative_to()` or compare with a trailing
+> separator.
+
+```
+     126:     ) -> int:
+     127:         """Add a permission rule to session(s)."""
+     128:         directory = directory or Path.cwd()
+>>>  129:         directory_str = str(directory.resolve())
+     130:
+     131:         rule = Rule(predicate=predicate, action=action, created=datetime.now(), expires=expires)
+     132:
+   ...
+     145:                 session_data = self._load_session(sid)
+     146:
+     147:                 # Skip if session is in different directory
+>>>  148:                 session_dir = str(session_data.directory) if session_data.directory else ""
+>>>  149:                 if not session_dir.startswith(directory_str):
+>>>  150:                     continue
+     151:
+     152:                 # Add rule to this session
+     153:                 session_data.rules.append(rule.model_copy())
+```
+
+### `redundant-inner-error-handling.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-inner-error-handling.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L125-L128)
+
+File: `ducktape_llm_common/claude_hook.py` (L125-128)
+
+> Inner try/except for request parsing is redundant when an outer error boundary
+> already catches all exceptions. The pattern duplicates error handling and
+> clutters the code. Let the outer boundary handle it.
+>
+> **Note:** Inner try/except duplicates outer boundary at line 170
+
+```
+     122:                 outcome = HookError(f"Invalid request format: {e!s}")
+     123:                 response = outcome.to_claude_response()
+     124:                 print(response.model_dump_json(by_alias=True))
+>>>  125:                 sys.exit(0)
+>>>  126:
+>>>  127:             # Generate invocation ID and set up logging
+>>>  128:             invocation_id = InvocationID(uuid.uuid4())
+     129:
+     130:             # Set up logger for this session/invocation
+     131:             logger = get_session_logger(hook_instance.hook_name, request.session_id, invocation_id)
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L34-L269)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L34, L55, L82, L95, L114, L143, L167, L180, L203, L235, L248, L269)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** session_id=str(session_id) should be session_id=session_id
+
+```
+      31:         """Test that MCP tools with custom fields are handled correctly."""
+      32:         # Create a request with MCP-specific fields
+      33:         request = PreToolUseRequest(
+>>>   34:             session_id=str(session_id),
+      35:             hook_event_name="PreToolUse",
+      36:             tool_name="mcp_memory_search_nodes",
+      37:             tool_input=ToolInput(
+   ...
+      52:     def test_mcp_puppeteer_tool(self, handler, session_id):
+      53:         """Test MCP puppeteer tool with its specific parameters."""
+      54:         request = PostToolUseRequest(
+>>>   55:             session_id=str(session_id),
+      56:             hook_event_name="PostToolUse",
+      57:             tool_name="mcp_puppeteer_navigate",
+      58:             tool_input=ToolInput(url="https://example.com", allowDangerous=True, wait_for="networkidle2"),
+   ...
+      79:         type(handler.config_loader).config = mock_config
+      80:
+      81:         request = PreToolUseRequest(
+>>>   82:             session_id=str(session_id),
+      83:             hook_event_name="PreToolUse",
+      84:             tool_name="mcp_filesystem_write_file",
+      85:             tool_input=ToolInput(path="/tmp/test.txt", content="Hello, world!"),
+   ...
+      92:     def test_unknown_mcp_tool_fields(self, handler, session_id):
+      93:         """Test that unknown MCP tool fields don't cause errors."""
+      94:         request = PreToolUseRequest(
+>>>   95:             session_id=str(session_id),
+      96:             hook_event_name="PreToolUse",
+      97:             tool_name="mcp_custom_tool",
+      98:             tool_input=ToolInput(
+   ...
+     111:     def test_mcp_tool_with_python_file(self, handler, session_id):
+     112:         """Test MCP tool operating on Python files."""
+     113:         request = PreToolUseRequest(
+>>>  114:             session_id=str(session_id),
+     115:             hook_event_name="PreToolUse",
+     116:             tool_name="mcp_editor_open",
+     117:             tool_input=ToolInput(
+   ...
+     140:         test_file.write_text("import os\nimport sys\n\n\ndef test():\n    pass")
+     141:
+     142:         request = PostToolUseRequest(
+>>>  143:             session_id=str(session_id),
+     144:             hook_event_name="PostToolUse",
+     145:             tool_name="mcp_editor_save",
+     146:             tool_input=ToolInput(file_path=str(test_file), content="import os\nimport sys\n\n\ndef test():\n    pass"),
+   ...
+     164:
+     165:         for tool_name in tool_names:
+     166:             request = PreToolUseRequest(
+>>>  167:                 session_id=str(session_id),
+     168:                 hook_event_name="PreToolUse",
+     169:                 tool_name=tool_name,
+     170:                 tool_input=ToolInput(query="test"),
+   ...
+     177:     def test_mcp_tool_with_complex_result(self, handler, session_id):
+     178:         """Test MCP tool with complex nested result structure."""
+     179:         request = PostToolUseRequest(
+>>>  180:             session_id=str(session_id),
+     181:             hook_event_name="PostToolUse",
+     182:             tool_name="mcp_knowledge_graph_query",
+     183:             tool_input=ToolInput(query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"),
+   ...
+     200:     def test_mcp_tool_error_result(self, handler, session_id):
+     201:         """Test MCP tool that returned an error."""
+     202:         request = PostToolUseRequest(
+>>>  203:             session_id=str(session_id),
+     204:             hook_event_name="PostToolUse",
+     205:             tool_name="mcp_api_call",
+     206:             tool_input=ToolInput(endpoint="/api/users", method="GET"),
+   ...
+     232:         tool_input_dict = {"file_path": None, "content": None, **input_fields}
+     233:
+     234:         request = PreToolUseRequest(
+>>>  235:             session_id=str(session_id),
+     236:             hook_event_name="PreToolUse",
+     237:             tool_name=tool_name,
+     238:             tool_input=ToolInput(**tool_input_dict),
+   ...
+     245:     def test_mcp_tool_session_tracking(self, handler, session_id):
+     246:         """Test that MCP tools properly track sessions."""
+     247:         request = PreToolUseRequest(
+>>>  248:             session_id=str(session_id),
+     249:             hook_event_name="PreToolUse",
+     250:             tool_name="mcp_workspace_list",
+     251:             tool_input=ToolInput(directory="/home/user/project"),
+   ...
+     266:     def test_mcp_tool_with_file_path_updates_working_dir(self, handler, session_id):
+     267:         """Test that MCP tools with file paths update the working directory."""
+     268:         request = PreToolUseRequest(
+>>>  269:             session_id=str(session_id),
+     270:             hook_event_name="PreToolUse",
+     271:             tool_name="mcp_file_manager_open",
+     272:             tool_input=ToolInput(file_path="/home/user/projects/myapp/src/main.py", content="# Main file"),
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_quality_gate.py#L54-L166)
+
+File: `tests/claude_linter_v2/test_stop_hook_quality_gate.py` (L54, L93, L107, L133, L166)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** StopRequest session_id should accept SessionID directly
+
+```
+      51:     )
+      52:
+      53:     # Create stop hook request
+>>>   54:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      55:
+      56:     # Handle the hook
+      57:     result = handler.handle("Stop", request)
+   ...
+      90:     )
+      91:
+      92:     # Create stop hook request
+>>>   93:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      94:
+      95:     # Handle the hook
+      96:     result = handler.handle("Stop", request)
+   ...
+     104: def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
+     105:     """Test that stop hook passes when there are no violations."""
+     106:     # Create stop hook request
+>>>  107:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     108:
+     109:     # Handle the hook
+     110:     result = handler.handle("Stop", request)
+   ...
+     130:     )
+     131:
+     132:     # Create stop hook request
+>>>  133:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     134:
+     135:     # Handle the hook
+     136:     result = handler.handle("Stop", request)
+   ...
+     163:     assert unfixed[0].file_path == "/test/other.py"
+     164:
+     165:     # Stop hook should only report the unfixed violation
+>>>  166:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     167:
+     168:     result = handler.handle("Stop", request)
+     169:     # Since only warnings remain, should allow stop
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_fresh_scan.py#L45-L140)
+
+File: `tests/claude_linter_v2/test_stop_hook_fresh_scan.py` (L45, L84, L111, L140)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** StopRequest session_id should accept SessionID directly
+
+```
+      42: """)
+      43:
+      44:     # Create stop hook request
+>>>   45:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      46:
+      47:     # Handle the hook
+      48:     result = handler.handle("Stop", request)
+   ...
+      81: """)
+      82:
+      83:     # Create stop hook request
+>>>   84:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      85:
+      86:     # Handle the hook
+      87:     result = handler.handle("Stop", request)
+   ...
+     108:     (tmp_path / "README.md").write_text("# except hasattr")
+     109:
+     110:     # Create stop hook request
+>>>  111:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     112:
+     113:     # Handle the hook
+     114:     result = handler.handle("Stop", request)
+   ...
+     137:     bad_file.write_text("except: pass")  # Invalid syntax but we don't care
+     138:
+     139:     # Create stop hook request
+>>>  140:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     141:
+     142:     # Handle the hook
+     143:     result = handler.handle("Stop", request)
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_gitignore.py#L90-L143)
+
+File: `tests/claude_linter_v2/test_stop_hook_gitignore.py` (L90, L143)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** StopRequest session_id should accept SessionID directly
+
+```
+      87:     subprocess.run(["git", "commit", "-m", "Initial commit"], check=True)
+      88:
+      89:     # Create stop hook request
+>>>   90:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      91:
+      92:     # Handle the hook
+      93:     result = handler.handle("Stop", request)
+   ...
+     140:     )
+     141:
+     142:     # Create stop hook request
+>>>  143:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     144:
+     145:     # Handle the hook
+     146:     result = handler.handle("Stop", request)
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/cli.py#L216-L248)
+
+File: `ducktape_llm_common/claude_linter_v2/cli.py` (L216, L248)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** session_allow and session_deny take session: str | None instead of SessionID | None
+
+```
+     213: @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
+     214: @click.option("--dir", type=Path, help="Directory to affect (default: current)")
+     215: def session_allow(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
+>>>  216:     """Grant temporary permissions using Python predicates."""
+     217:
+     218:     manager = SessionManager()
+     219:
+   ...
+     245: @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
+     246: @click.option("--dir", type=Path, help="Directory to affect (default: current)")
+     247: def session_deny(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
+>>>  248:     """Deny permissions using Python predicates.
+     249:
+     250:     Examples:
+     251:         cl2 session deny 'Write("/etc/*")'
+```
+
+### `session-id-parsing-duplication.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/session-id-parsing-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L144-L166)
+
+File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L144, L166)
+
+> SessionManager has two occurrences of `SessionID(session_file.stem)` that directly
+> construct a SessionID from a string without validation. The `parse_session_id()`
+> function exists to validate UUID format before constructing SessionID.
+>
+> Pattern should be `parse_session_id(session_file.stem)` to ensure the stem is a
+> valid UUID before wrapping it in SessionID.
+>
+> **Note:** Use parse_session_id() instead of direct SessionID() construction
+
+```
+     141:         else:
+     142:             # Add to all sessions in the directory
+     143:             for session_file in self.sessions_dir.glob("*.json"):
+>>>  144:                 sid = SessionID(session_file.stem)
+     145:                 session_data = self._load_session(sid)
+     146:
+     147:                 # Skip if session is in different directory
+   ...
+     163:
+     164:         # Scan all session files
+     165:         for session_file in self.sessions_dir.glob("*.json"):
+>>>  166:             session_id = SessionID(session_file.stem)
+     167:             session_data = self._load_session(session_id)
+     168:
+     169:             # Skip sessions in other directories unless requested
+```
+
+### `session-id-typed-as-string.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/session-id-typed-as-string.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L33-L43)
+
+File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L33-43)
+
+> SessionData.id field is typed as str but should be typed as SessionID (UUID).
+> Pydantic 2 supports UUID serialization/deserialization natively, so there's
+> no need to store it as a string. Using the correct type provides type safety
+> and avoids unnecessary str() conversions in tests and application code.
+>
+> **Note:** SessionData model has id field typed as str instead of SessionID (UUID)
+
+```
+      30:     expires: datetime | None = None
+      31:
+      32:
+>>>   33: class SessionData(BaseModel):
+>>>   34:     """Session data structure."""
+>>>   35:
+>>>   36:     model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
+>>>   37:
+>>>   38:     id: str
+>>>   39:     created: datetime
+>>>   40:     last_seen: datetime | None = None
+>>>   41:     directory: Path | None = None
+>>>   42:     rules: list[Rule] = Field(default_factory=list)
+>>>   43:     notification_id: int | None = None
+      44:
+      45:
+      46: # Type alias for backwards compatibility
+```
+
+### `str-file-path-in-violations.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-in-violations.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/violations.py#L34-L73)
+
+File: `ducktape_llm_common/claude_linter_v2/session/violations.py` (L34, L60, L73)
+
+> ViolationTracker methods take `file_path: str` instead of `file_path: Path`.
+> Even though the paths are stored as strings in dicts, callers already have Path
+> objects and must convert to str. The interface should accept Path and convert
+> internally if needed for storage.
+>
+> Change signatures to `file_path: Path` and convert to str only at storage point.
+>
+> **Note:** add_violation, add_violations, mark_file_fixed all take file_path: str
+
+```
+      31:     def add_violation(
+      32:         self,
+      33:         session_id: SessionID,
+>>>   34:         file_path: str,
+      35:         line: int,
+      36:         message: str,
+      37:         severity: str = "error",
+   ...
+      57:         self._violations[session_id][key] = violation_dict
+      58:
+      59:     def add_violations(
+>>>   60:         self, session_id: SessionID, violations: list[Violation], file_path: str, severity: str = "error"
+      61:     ) -> None:
+      62:         """Add multiple violations from a linter."""
+      63:         for v in violations:
+   ...
+      70:                 rule=v.rule,
+      71:             )
+      72:
+>>>   73:     def mark_file_fixed(self, session_id: SessionID, file_path: str) -> None:
+      74:         """Mark all violations in a file as fixed."""
+      75:         if session_id not in self._violations:
+      76:             return
+```
+
+### `str-file-path-type.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/linters/python_ruff.py#L57)
+
+File: `ducktape_llm_common/claude_linter_v2/linters/python_ruff.py` (L57)
+
+> Several functions take `file_path: str` or `paths: list[str]` when they should
+> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+> os.PathLike directly. Using str forces callers to convert and loses Path methods.
+>
+> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+>
+> **Note:** check_code takes file_path: str | None instead of Path
+
+```
+      54:             logger.warning("ruff not available")
+      55:         return False
+      56:
+>>>   57:     def check_code(self, code: str, file_path: str | None = None, critical_only: bool = True) -> list[Violation]:
+      58:         """
+      59:         Check Python code with ruff.
+      60:
+```
+
+### `str-file-path-type.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/check_python.py#L10-L12)
+
+File: `ducktape_llm_common/claude_linter_v2/check_python.py` (L10-12)
+
+> Several functions take `file_path: str` or `paths: list[str]` when they should
+> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+> os.PathLike directly. Using str forces callers to convert and loses Path methods.
+>
+> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+>
+> **Note:** check_python_file takes file_path: str instead of Path
+
+```
+       7: from .pattern_matcher import PatternMatcher
+       8:
+       9:
+>>>   10: def check_python_file(
+>>>   11:     file_path: str, content: str, config: ModularConfig, critical_only: bool = False
+>>>   12: ) -> list[Violation]:
+      13:     """Check a Python file for violations.
+      14:
+      15:     Args:
+```
+
+### `str-file-path-type.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/precommit_runner.py#L21)
+
+File: `ducktape_llm_common/claude_linter/precommit_runner.py` (L21)
+
+> Several functions take `file_path: str` or `paths: list[str]` when they should
+> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+> os.PathLike directly. Using str forces callers to convert and loses Path methods.
+>
+> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+>
+> **Note:** run() takes paths: list[str] instead of list[Path]
+
+```
+      18:         self.config = config
+      19:
+      20:     def run(self, paths, cwd=None):
+>>>   21:         """Run pre-commit hooks on specified paths.
+      22:
+      23:         Args:
+      24:             paths: List of file paths to check
+```
+
+### `str-file-path-type.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/config.py#L58)
+
+File: `ducktape_llm_common/claude_linter/config.py` (L58)
+
+> Several functions take `file_path: str` or `paths: list[str]` when they should
+> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+> os.PathLike directly. Using str forces callers to convert and loses Path methods.
+>
+> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+>
+> **Note:** get_merged_config takes paths: list[str] instead of list[Path]
+
+```
+      55:
+      56: def get_merged_config(paths, fix=False):
+      57:     user_config = load_user_config()
+>>>   58:     # Get the pre-commit section, which contains repos array
+      59:     user_pre_commit = user_config.get("pre-commit", {})
+      60:
+      61:     local_cfg = {}
+```
+
+### `test-file-path-fixture-missing.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_ast.py#L18-L221)
+
+File: `tests/claude_linter_v2/test_python_ast.py` (L18, L36, L49, L65, L79, L92, L109, L127, L202, L221)
+
+> Test files call analyze_code(), format_code(), and check_code() without a consistent
+> file_path parameter. Multiple occurrences use:
+>
+> - No file_path at all
+> - Inline strings like "/tmp/test.py"
+> - Ad-hoc tmp_path constructions
+>
+> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
+> to use consistently across all tests. This provides:
+>
+> - Consistent behavior for path-dependent logic
+> - Clear indication that tests are using synthetic paths
+> - Single place to update if path handling changes
+>
+> **Note:** analyze_code(code) should use analyze_code(code, TEST_FILE)
+
+```
+      15:     pass
+      16: """
+      17:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=False, barrel_init=False)
+>>>   18:         violations = analyzer.analyze_code(code)
+      19:
+      20:         assert len(violations) == 1
+      21:         assert violations[0].line == 4
+   ...
+      33:     pass
+      34: """
+      35:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=False, barrel_init=False)
+>>>   36:         violations = analyzer.analyze_code(code)
+      37:
+      38:         assert len(violations) == 0
+      39:
+   ...
+      46:     pass
+      47: """
+      48:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=False)
+>>>   49:         violations = analyzer.analyze_code(code)
+      50:
+      51:         assert len(violations) == 0
+      52:
+   ...
+      62:     print("has foo")
+      63: """
+      64:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>   65:         violations = analyzer.analyze_code(code)
+      66:
+      67:         assert len(violations) == 1
+      68:         assert violations[0].line == 3
+   ...
+      76: value = getattr(obj, 'foo', 'default')
+      77: """
+      78:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>   79:         violations = analyzer.analyze_code(code)
+      80:
+      81:         assert len(violations) == 1
+      82:         assert violations[0].line == 3
+   ...
+      89: setattr(obj, 'foo', 'bar')
+      90: """
+      91:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>   92:         violations = analyzer.analyze_code(code)
+      93:
+      94:         assert len(violations) == 1
+      95:         assert violations[0].line == 3
+   ...
+     106:     pass
+     107: """
+     108:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>  109:         violations = analyzer.analyze_code(code)
+     110:
+     111:         assert len(violations) == 1  # Should still catch hasattr
+     112:         assert violations[0].line == 6
+   ...
+     124: del obj.bar
+     125: """
+     126:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>  127:         violations = analyzer.analyze_code(code)
+     128:
+     129:         assert len(violations) == 0
+     130:
+   ...
+     199:     pass
+     200: """
+     201:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=True, barrel_init=False)
+>>>  202:         violations = analyzer.analyze_code(code)
+     203:
+     204:         assert len(violations) == 3
+     205:         # Should find: bare except, hasattr, getattr
+   ...
+     218:     # Missing closing paren
+     219: """
+     220:         analyzer = PythonASTAnalyzer()
+>>>  221:         violations = analyzer.analyze_code(code)
+     222:
+     223:         assert len(violations) == 1
+     224:         assert violations[0].rule == "syntax"
+```
+
+### `test-file-path-fixture-missing.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_formatter.py#L38-L194)
+
+File: `tests/claude_linter_v2/test_python_formatter.py` (L38, L64, L88, L103, L136, L147, L166, L185, L194)
+
+> Test files call analyze_code(), format_code(), and check_code() without a consistent
+> file_path parameter. Multiple occurrences use:
+>
+> - No file_path at all
+> - Inline strings like "/tmp/test.py"
+> - Ad-hoc tmp_path constructions
+>
+> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
+> to use consistently across all tests. This provides:
+>
+> - Consistent behavior for path-dependent logic
+> - Clear indication that tests are using synthetic paths
+> - Single place to update if path handling changes
+>
+> **Note:** format_code() should pass file_path=TEST_FILE
+
+```
+      35:         formatter = PythonFormatter(["ruff"])
+      36:         formatter._available_tools = ["ruff"]
+      37:
+>>>   38:         result, changes = formatter.format_code(input_code)
+      39:
+      40:         assert result == formatted_code
+      41:         assert changes == ["Applied ruff formatting"]
+   ...
+      61:         formatter = PythonFormatter(["black"])
+      62:         formatter._available_tools = ["black"]
+      63:
+>>>   64:         result, changes = formatter.format_code(input_code)
+      65:
+      66:         assert result == formatted_code
+      67:         assert changes == ["Applied black formatting"]
+   ...
+      85:         formatter = PythonFormatter(["ruff"])
+      86:         formatter._available_tools = ["ruff"]
+      87:
+>>>   88:         result, changes = formatter.format_code(code)
+      89:
+      90:         assert result == code
+      91:         assert changes == []
+   ...
+     100:         formatter = PythonFormatter(["ruff"])
+     101:         formatter._available_tools = ["ruff"]
+     102:
+>>>  103:         result, changes = formatter.format_code(code)
+     104:
+     105:         # Should return original code on error
+     106:         assert result == code
+   ...
+     133:         formatter = PythonFormatter(["ruff"])
+     134:         formatter._available_tools = ["ruff"]
+     135:
+>>>  136:         result, changes = formatter.format_code(input_code, categories=[AutofixCategory.IMPORTS])
+     137:
+     138:         assert result == fixed_code
+     139:         assert "Fixed import ordering and removed unused imports" in changes
+   ...
+     144:         formatter._available_tools = []
+     145:
+     146:         code = "x=1+2"
+>>>  147:         result, changes = formatter.format_code(code)
+     148:
+     149:         assert result == code
+     150:         assert changes == []
+   ...
+     163:         formatter._apply_formatting = MagicMock(return_value=(code, []))
+     164:         formatter._fix_imports = MagicMock(return_value=(code, []))
+     165:
+>>>  166:         formatter.format_code(code, categories=[AutofixCategory.ALL])
+     167:
+     168:         # Both methods should be called
+     169:         formatter._apply_formatting.assert_called_once()
+   ...
+     182:         formatter._fix_imports = MagicMock(return_value=(code, []))
+     183:
+     184:         # Only formatting
+>>>  185:         formatter.format_code(code, categories=[AutofixCategory.FORMATTING])
+     186:         formatter._apply_formatting.assert_called_once()
+     187:         formatter._fix_imports.assert_not_called()
+     188:
+   ...
+     191:         formatter._fix_imports.reset_mock()
+     192:
+     193:         # Only imports
+>>>  194:         formatter.format_code(code, categories=[AutofixCategory.IMPORTS])
+     195:         formatter._apply_formatting.assert_not_called()
+     196:         formatter._fix_imports.assert_called_once()
+     197:
+```
+
+### `test-file-path-fixture-missing.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_ruff.py#L49-L198)
+
+File: `tests/claude_linter_v2/test_python_ruff.py` (L49, L71, L101, L118, L145, L162, L175, L198)
+
+> Test files call analyze_code(), format_code(), and check_code() without a consistent
+> file_path parameter. Multiple occurrences use:
+>
+> - No file_path at all
+> - Inline strings like "/tmp/test.py"
+> - Ad-hoc tmp_path constructions
+>
+> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
+> to use consistently across all tests. This provides:
+>
+> - Consistent behavior for path-dependent logic
+> - Clear indication that tests are using synthetic paths
+> - Single place to update if path handling changes
+>
+> **Note:** check_code() should pass file_path=TEST_FILE
+
+```
+      46:         linter = PythonRuffLinter()
+      47:         linter._ruff_available = True
+      48:
+>>>   49:         violations = linter.check_code(code)
+      50:
+      51:         assert len(violations) == 1
+      52:         assert violations[0].rule == "ruff:E722"
+   ...
+      68:         linter = PythonRuffLinter()
+      69:         linter._ruff_available = True
+      70:
+>>>   71:         violations = linter.check_code(code)
+      72:
+      73:         assert len(violations) == 0
+      74:
+   ...
+      98:         linter = PythonRuffLinter()
+      99:         linter._ruff_available = True
+     100:
+>>>  101:         violations = linter.check_code("code", critical_only=True)
+     102:
+     103:         # Should only return the critical violation
+     104:         assert len(violations) == 1
+   ...
+     115:         linter = PythonRuffLinter(force_select=force_rules)
+     116:         linter._ruff_available = True
+     117:
+>>>  118:         linter.check_code(code, critical_only=False)
+     119:
+     120:         # Verify the command included force-select rules
+     121:         call_args = mock_run.call_args[0][0]
+   ...
+     142:         linter = PythonRuffLinter()
+     143:         linter._ruff_available = True
+     144:
+>>>  145:         violations = linter.check_code("import unused", critical_only=False)
+     146:
+     147:         assert len(violations) == 1
+     148:         assert violations[0].fixable is True
+   ...
+     159:         linter = PythonRuffLinter()
+     160:         linter._ruff_available = True
+     161:
+>>>  162:         violations = linter.check_code("code")
+     163:
+     164:         # Should return empty list on error
+     165:         assert violations == []
+   ...
+     172:         linter = PythonRuffLinter()
+     173:         linter._ruff_available = True
+     174:
+>>>  175:         violations = linter.check_code("code")
+     176:
+     177:         # Should return empty list on parse error
+     178:         assert violations == []
+   ...
+     195:         linter = PythonRuffLinter()
+     196:         linter._ruff_available = False
+     197:
+>>>  198:         violations = linter.check_code("code")
+     199:
+     200:         assert violations == []
+     201:
+```
+
+### `test-request-raw-dict-construction.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-request-raw-dict-construction.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L15-L219)
+
+File: `tests/claude_linter_v2/test_integration.py` (L15-28, L46-58, L76-89, L112-125, L146-159, L191-204, L216-219)
+
+> Tests construct PreToolUseRequest/PostToolUseRequest payloads as raw dicts:
+> request_data = {"hook_event_name": "PreToolUse", "tool_name": "Write", "tool_input": {...}}
+>
+> Instead, use Pydantic models directly:
+> request = PreToolUseRequest(
+> session_id=session_id,
+> hook_event_name="PreToolUse",
+> tool_name="Write",
+> tool_input={"file_path": ..., "content": ...},
+> )
+>
+> Using typed models provides compile-time checking and makes test intent clearer.
+>
+> **Note:** request_data dict should be PreToolUseRequest model
+
+```
+      12:
+      13:     def test_pre_hook_bare_except(self):
+      14:         """Test that pre-hook blocks bare except."""
+>>>   15:         request_data = {
+>>>   16:             "hook_event_name": "PreToolUse",
+>>>   17:             "tool_name": "Write",
+>>>   18:             "tool_input": {
+>>>   19:                 "file_path": "/tmp/test_bare_except.py",
+>>>   20:                 "content": """
+>>>   21: try:
+>>>   22:     x = 1/0
+>>>   23: except:
+>>>   24:     pass
+>>>   25: """,
+>>>   26:             },
+>>>   27:             "session_id": "12345678-1234-5678-1234-567812345678",
+>>>   28:         }
+      29:
+      30:         result = subprocess.run(
+      31:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+   ...
+      43:
+      44:     def test_pre_hook_hasattr(self):
+      45:         """Test that pre-hook blocks hasattr usage."""
+>>>   46:         request_data = {
+>>>   47:             "hook_event_name": "PreToolUse",
+>>>   48:             "tool_name": "Write",
+>>>   49:             "tool_input": {
+>>>   50:                 "file_path": "/tmp/test_hasattr.py",
+>>>   51:                 "content": """
+>>>   52: obj = object()
+>>>   53: if hasattr(obj, 'foo'):
+>>>   54:     print("has foo")
+>>>   55: """,
+>>>   56:             },
+>>>   57:             "session_id": "12345678-1234-5678-1234-567812345679",
+>>>   58:         }
+      59:
+      60:         result = subprocess.run(
+      61:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+   ...
+      73:
+      74:     def test_pre_hook_clean_code(self):
+      75:         """Test that pre-hook passes clean code."""
+>>>   76:         request_data = {
+>>>   77:             "hook_event_name": "PreToolUse",
+>>>   78:             "tool_name": "Write",
+>>>   79:             "tool_input": {
+>>>   80:                 "file_path": "/tmp/test_clean.py",
+>>>   81:                 "content": """
+>>>   82: def hello():
+>>>   83:     try:
+>>>   84:         print("Hello, world!")
+>>>   85:     except ValueError as e:
+>>>   86:         print(f"Error: {e}")
+>>>   87: """,
+>>>   88:             },
+>>>   89:             "session_id": "12345678-1234-5678-1234-567812345680",
+      90:         }
+      91:
+      92:         result = subprocess.run(
+   ...
+     109:     )
+     110:     def test_pre_hook_ruff_violation(self):
+     111:         """Test that pre-hook blocks ruff violations."""
+>>>  112:         request_data = {
+>>>  113:             "hook_event_name": "PreToolUse",
+>>>  114:             "tool_name": "Write",
+>>>  115:             "tool_input": {
+>>>  116:                 "file_path": "/tmp/test_mutable_default.py",
+>>>  117:                 "content": """
+>>>  118: import os
+>>>  119:
+>>>  120: def get_data():
+>>>  121:     # Mutable default argument
+>>>  122:     def process(items=[]):
+>>>  123:         items.append(1)
+>>>  124:         return items
+>>>  125: """,
+     126:             },
+     127:             "session_id": "12345678-1234-5678-1234-567812345681",
+     128:         }
+   ...
+     143:
+     144:     def test_pre_hook_barrel_init(self):
+     145:         """Test that pre-hook blocks barrel __init__.py."""
+>>>  146:         request_data = {
+>>>  147:             "hook_event_name": "PreToolUse",
+>>>  148:             "tool_name": "Write",
+>>>  149:             "tool_input": {
+>>>  150:                 "file_path": "/tmp/__init__.py",
+>>>  151:                 "content": """
+>>>  152: from .module1 import *
+>>>  153: from .module2 import Class1, Class2
+>>>  154:
+>>>  155: __all__ = ['Class1', 'Class2']
+>>>  156: """,
+>>>  157:             },
+>>>  158:             "session_id": "12345678-1234-5678-1234-567812345682",
+>>>  159:         }
+     160:
+     161:         result = subprocess.run(
+     162:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+   ...
+     188:
+     189:     def test_pre_hook_non_python_file(self):
+     190:         """Test that pre-hook passes non-Python files."""
+>>>  191:         request_data = {
+>>>  192:             "hook_event_name": "PreToolUse",
+>>>  193:             "tool_name": "Write",
+>>>  194:             "tool_input": {
+>>>  195:                 "file_path": "/tmp/test.txt",
+>>>  196:                 "content": "This is just a text file with except: and hasattr",
+>>>  197:             },
+>>>  198:             "session_id": "12345678-1234-5678-1234-567812345683",
+>>>  199:         }
+>>>  200:
+>>>  201:         result = subprocess.run(
+>>>  202:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+>>>  203:             input=json.dumps(request_data),
+>>>  204:             capture_output=True,
+     205:             text=True,
+     206:             check=False,
+     207:         )
+   ...
+     213:
+     214:     def test_post_hook_basic(self):
+     215:         """Test that post-hook runs without errors."""
+>>>  216:         request_data = {
+>>>  217:             "hook_event_name": "PostToolUse",
+>>>  218:             "tool_name": "Write",
+>>>  219:             "tool_input": {"file_path": "/tmp/test_post.py", "content": "x=1+2  # poorly formatted"},
+     220:             "session_id": "12345678-1234-5678-1234-567812345684",
+     221:         }
+     222:
+```
+
+### `test-session-id-fixture-duplication.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-session-id-fixture-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L26-L570)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L26-29, L294-297, L567-570)
+
+> Multiple test classes define their own session_id fixture with different UUIDs:
+>
+> - TestMCPTools: "550e8400-e29b-41d4-a716-446655440000"
+> - TestMCPToolsUnexpectedFormats: "770e8400-e29b-41d4-a716-446655440002"
+> - TestMCPToolLogging: "660e8400-e29b-41d4-a716-446655440001"
+>
+> These should be consolidated into a shared conftest.py fixture with a
+> "nothing-up-my-sleeve" UUID (e.g., all zeros: 00000000-0000-0000-0000-000000000000).
+>
+> **Note:** session_id fixtures should be shared in conftest.py
+
+```
+      23:         return HookHandler()
+      24:
+      25:     @pytest.fixture
+>>>   26:     def session_id(self) -> SessionID:
+>>>   27:         """Valid session ID."""
+>>>   28:         return SessionID("550e8400-e29b-41d4-a716-446655440000")
+>>>   29:
+      30:     def test_mcp_tool_with_extra_fields(self, handler, session_id):
+      31:         """Test that MCP tools with custom fields are handled correctly."""
+      32:         # Create a request with MCP-specific fields
+   ...
+     291:         return HookHandler()
+     292:
+     293:     @pytest.fixture
+>>>  294:     def session_id(self) -> SessionID:
+>>>  295:         """Valid session ID."""
+>>>  296:         return SessionID("770e8400-e29b-41d4-a716-446655440002")
+>>>  297:
+     298:     def test_stock_price_tool(self, handler, session_id):
+     299:         """Test a financial MCP tool with custom format."""
+     300:         request = PreToolUseRequest(
+   ...
+     564:         return handler
+     565:
+     566:     @pytest.fixture
+>>>  567:     def session_id(self) -> SessionID:
+>>>  568:         """Valid session ID."""
+>>>  569:         return SessionID("660e8400-e29b-41d4-a716-446655440001")
+>>>  570:
+     571:     def test_mcp_tool_logging(self, handler, session_id, tmp_path):
+     572:         """Test that MCP tool calls are properly logged."""
+     573:         # Override log directory
+```
+
+### `tests-use-real-paths.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tests-use-real-paths.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L19-L218)
+
+File: `tests/claude_linter_v2/test_integration.py` (L19, L50, L86, L122, L165, L201, L218)
+
+> Tests use hardcoded /tmp/ paths instead of pytest's tmp_path fixture, and scan
+> the actual working directory instead of a predictable test directory. This causes:
+>
+> 1. Tests to operate on real filesystem locations that may have stale state
+> 2. Stop hook tests to find violations in the actual codebase, not test fixtures
+> 3. Non-deterministic test behavior depending on cwd and /tmp/ contents
+> 4. Potential interference between parallel test runs
+>
+> **Note:** Multiple tests use hardcoded /tmp/ paths like '/tmp/test_bare_except.py' instead of tmp_path fixture
+
+```
+      16:             "hook_event_name": "PreToolUse",
+      17:             "tool_name": "Write",
+      18:             "tool_input": {
+>>>   19:                 "file_path": "/tmp/test_bare_except.py",
+      20:                 "content": """
+      21: try:
+      22:     x = 1/0
+   ...
+      47:             "hook_event_name": "PreToolUse",
+      48:             "tool_name": "Write",
+      49:             "tool_input": {
+>>>   50:                 "file_path": "/tmp/test_hasattr.py",
+      51:                 "content": """
+      52: obj = object()
+      53: if hasattr(obj, 'foo'):
+   ...
+      83:     try:
+      84:         print("Hello, world!")
+      85:     except ValueError as e:
+>>>   86:         print(f"Error: {e}")
+      87: """,
+      88:             },
+      89:             "session_id": "12345678-1234-5678-1234-567812345680",
+   ...
+     119:
+     120: def get_data():
+     121:     # Mutable default argument
+>>>  122:     def process(items=[]):
+     123:         items.append(1)
+     124:         return items
+     125: """,
+   ...
+     162:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+     163:             input=json.dumps(request_data),
+     164:             capture_output=True,
+>>>  165:             text=True,
+     166:             check=False,
+     167:         )
+     168:
+   ...
+     198:             "session_id": "12345678-1234-5678-1234-567812345683",
+     199:         }
+     200:
+>>>  201:         result = subprocess.run(
+     202:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+     203:             input=json.dumps(request_data),
+     204:             capture_output=True,
+   ...
+     215:         """Test that post-hook runs without errors."""
+     216:         request_data = {
+     217:             "hook_event_name": "PostToolUse",
+>>>  218:             "tool_name": "Write",
+     219:             "tool_input": {"file_path": "/tmp/test_post.py", "content": "x=1+2  # poorly formatted"},
+     220:             "session_id": "12345678-1234-5678-1234-567812345684",
+     221:         }
+```
+
+### `tests-use-real-paths.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tests-use-real-paths.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_quality_gate.py#L1-L190)
+
+File: `tests/claude_linter_v2/test_stop_hook_quality_gate.py` (L1-190)
+
+> Tests use hardcoded /tmp/ paths instead of pytest's tmp_path fixture, and scan
+> the actual working directory instead of a predictable test directory. This causes:
+>
+> 1. Tests to operate on real filesystem locations that may have stale state
+> 2. Stop hook tests to find violations in the actual codebase, not test fixtures
+> 3. Non-deterministic test behavior depending on cwd and /tmp/ contents
+> 4. Potential interference between parallel test runs
+>
+> **Note:** Stop hook tests scan actual cwd for violations instead of using isolated test directories with known content
+
+```
+>>>    1: """Test the stop hook quality gate functionality."""
+>>>    2:
+>>>    3: import pytest
+>>>    4:
+>>>    5: from ducktape_llm_common.claude_code_api import StopRequest
+>>>    6: from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
+>>>    7: from ducktape_llm_common.claude_linter_v2.types import parse_session_id
+>>>    8:
+>>>    9:
+>>>   10: @pytest.fixture
+>>>   11: def handler():
+>>>   12:     """Create a hook handler instance."""
+>>>   13:     handler = HookHandler()
+>>>   14:     # Ensure quality gate is enabled for testing
+>>>   15:     handler.config_loader.config.hooks["stop"].quality_gate = True
+>>>   16:     return handler
+>>>   17:
+>>>   18:
+>>>   19: @pytest.fixture
+>>>   20: def session_id():
+>>>   21:     """Create a test session ID."""
+>>>   22:     return parse_session_id("12345678-1234-5678-1234-567812345678")
+>>>   23:
+>>>   24:
+>>>   25: def test_stop_hook_blocks_with_unfixed_errors(handler, session_id, tmp_path):
+>>>   26:     """Test that stop hook blocks when there are unfixed errors."""
+>>>   27:     # Add some violations to the tracker
+>>>   28:     handler.violation_tracker.add_violation(
+>>>   29:         session_id=session_id,
+>>>   30:         file_path="/test/file.py",
+>>>   31:         line=10,
+>>>   32:         message="Bare except clause not allowed",
+>>>   33:         severity="error",
+>>>   34:         rule="bare-except",
+>>>   35:     )
+>>>   36:     handler.violation_tracker.add_violation(
+>>>   37:         session_id=session_id,
+>>>   38:         file_path="/test/file.py",
+>>>   39:         line=20,
+>>>   40:         message="Using hasattr() is not allowed",
+>>>   41:         severity="error",
+>>>   42:         rule="no-hasattr",
+>>>   43:     )
+>>>   44:     handler.violation_tracker.add_violation(
+>>>   45:         session_id=session_id,
+>>>   46:         file_path="/test/other.py",
+>>>   47:         line=5,
+>>>   48:         message="Line too long",
+>>>   49:         severity="warning",
+>>>   50:         rule="E501",
+>>>   51:     )
+>>>   52:
+>>>   53:     # Create stop hook request
+>>>   54:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>   55:
+>>>   56:     # Handle the hook
+>>>   57:     result = handler.handle("Stop", request)
+>>>   58:
+>>>   59:     # Should block due to errors
+>>>   60:     response_dict = result.model_dump()
+>>>   61:     assert response_dict.get("continue_") is True  # Always True for hook responses
+>>>   62:     assert response_dict.get("decision") == "block"  # StopPrevent sets decision=block
+>>>   63:     assert response_dict.get("reason") is not None
+>>>   64:     reason = response_dict["reason"]
+>>>   65:     assert "2 errors that must be fixed" in reason
+>>>   66:     assert "/test/file.py" in reason
+>>>   67:     assert "/test/other.py" in reason
+>>>   68:     assert "Line 10:" in reason or "Line 20:" in reason  # Should show line numbers
+>>>   69:     assert "cl2 check" in reason  # Should include check command
+>>>   70:
+>>>   71:
+>>>   72: def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
+>>>   73:     """Test that stop hook allows proceeding with only warnings."""
+>>>   74:     # Add only warnings
+>>>   75:     handler.violation_tracker.add_violation(
+>>>   76:         session_id=session_id,
+>>>   77:         file_path="/test/file.py",
+>>>   78:         line=10,
+>>>   79:         message="Line too long",
+>>>   80:         severity="warning",
+>>>   81:         rule="E501",
+>>>   82:     )
+>>>   83:     handler.violation_tracker.add_violation(
+>>>   84:         session_id=session_id,
+>>>   85:         file_path="/test/file.py",
+>>>   86:         line=20,
+>>>   87:         message="Missing docstring",
+>>>   88:         severity="warning",
+>>>   89:         rule="D100",
+>>>   90:     )
+>>>   91:
+>>>   92:     # Create stop hook request
+>>>   93:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>   94:
+>>>   95:     # Handle the hook
+>>>   96:     result = handler.handle("Stop", request)
+>>>   97:
+>>>   98:     # Should allow stop (only warnings)
+>>>   99:     response_dict = result.model_dump()
+>>>  100:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+>>>  101:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
+>>>  102:
+>>>  103:
+>>>  104: def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
+>>>  105:     """Test that stop hook passes when there are no violations."""
+>>>  106:     # Create stop hook request
+>>>  107:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>  108:
+>>>  109:     # Handle the hook
+>>>  110:     result = handler.handle("Stop", request)
+>>>  111:
+>>>  112:     # Should pass
+>>>  113:     response_dict = result.model_dump()
+>>>  114:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+>>>  115:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
+>>>  116:
+>>>  117:
+>>>  118: def test_stop_hook_passes_when_quality_gate_disabled(handler, session_id, tmp_path):
+>>>  119:     """Test that stop hook passes when quality gate is disabled."""
+>>>  120:     # Disable quality gate
+>>>  121:     handler.config_loader.config.hooks["stop"].quality_gate = False
+>>>  122:
+>>>  123:     # Add violations
+>>>  124:     handler.violation_tracker.add_violation(
+>>>  125:         session_id=session_id,
+>>>  126:         file_path="/test/file.py",
+>>>  127:         line=10,
+>>>  128:         message="Bare except clause not allowed",
+>>>  129:         severity="error",
+>>>  130:     )
+>>>  131:
+>>>  132:     # Create stop hook request
+>>>  133:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>  134:
+>>>  135:     # Handle the hook
+>>>  136:     result = handler.handle("Stop", request)
+>>>  137:
+>>>  138:     # Should pass despite errors
+>>>  139:     response_dict = result.model_dump()
+>>>  140:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+>>>  141:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
+>>>  142:
+>>>  143:
+>>>  144: def test_violations_marked_as_fixed(handler, session_id, tmp_path):
+>>>  145:     """Test that violations can be marked as fixed."""
+>>>  146:     # Add violations
+>>>  147:     handler.violation_tracker.add_violation(
+>>>  148:         session_id=session_id, file_path="/test/file.py", line=10, message="Bare except clause", severity="error"
+>>>  149:     )
+>>>  150:     handler.violation_tracker.add_violation(
+>>>  151:         session_id=session_id, file_path="/test/file.py", line=20, message="Line too long", severity="warning"
+>>>  152:     )
+>>>  153:     handler.violation_tracker.add_violation(
+>>>  154:         session_id=session_id, file_path="/test/other.py", line=5, message="Missing docstring", severity="warning"
+>>>  155:     )
+>>>  156:
+>>>  157:     # Mark one file as fixed
+>>>  158:     handler.violation_tracker.mark_file_fixed(session_id, "/test/file.py")
+>>>  159:
+>>>  160:     # Check unfixed violations
+>>>  161:     unfixed = handler.violation_tracker.get_unfixed_violations(session_id)
+>>>  162:     assert len(unfixed) == 1
+>>>  163:     assert unfixed[0].file_path == "/test/other.py"
+>>>  164:
+>>>  165:     # Stop hook should only report the unfixed violation
+>>>  166:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>  167:
+>>>  168:     result = handler.handle("Stop", request)
+>>>  169:     # Since only warnings remain, should allow stop
+>>>  170:     response_dict = result.model_dump()
+>>>  171:     assert response_dict.get("continue_") is True  # Only warnings - allows stop
+>>>  172:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
+>>>  173:
+>>>  174:
+>>>  175: def test_violation_deduplication(handler, session_id):
+>>>  176:     """Test that duplicate violations are deduplicated."""
+>>>  177:     # Add same violation multiple times
+>>>  178:     for _ in range(3):
+>>>  179:         handler.violation_tracker.add_violation(
+>>>  180:             session_id=session_id,
+>>>  181:             file_path="/test/file.py",
+>>>  182:             line=10,
+>>>  183:             message="Bare except clause not allowed",
+>>>  184:             severity="error",
+>>>  185:             rule="bare-except",
+>>>  186:         )
+>>>  187:
+>>>  188:     # Should only have one violation
+>>>  189:     unfixed = handler.violation_tracker.get_unfixed_violations(session_id)
+>>>  190:     assert len(unfixed) == 1
+```
+
+### `tool-input-god-class.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tool-input-god-class.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_code_api.py#L22-L58)
+
+File: `ducktape_llm_common/claude_code_api.py` (L22-58)
+
+> ToolInput is a god class with all optional fields representing multiple distinct tool
+> types. This loses type safety - you can construct an "Edit" with no old_string/new_string,
+> or a "Bash" with file_path. Should be a discriminated union of per-tool input types.
+>
+> One possible approach: define EditToolInput, BashToolInput, MCPToolInput (with extra="allow"
+> for arbitrary MCP tools), then use a discriminated union based on tool_name. Since tool_name
+> and tool_input are sibling fields in the wire format, a model_validator(mode="before") can
+> restructure them into a nested ToolCall object for Pydantic to discriminate.
+>
+> **Note:** Main ToolInput with MCP fields and extra='allow'
+
+```
+      19:     replace_all: bool = False
+      20:
+      21:
+>>>   22: class ToolInput(BaseModel):
+>>>   23:     """Input parameters for Claude Code tools.
+>>>   24:
+>>>   25:     Different tools use different subsets of these fields.
+>>>   26:     Extra fields are allowed for MCP and other tools.
+>>>   27:     """
+>>>   28:
+>>>   29:     model_config = ConfigDict(extra="allow")
+>>>   30:
+>>>   31:     # Common fields
+>>>   32:     file_path: str | None = None
+>>>   33:     content: str | None = None
+>>>   34:
+>>>   35:     # Edit tool fields
+>>>   36:     old_string: str | None = None
+>>>   37:     new_string: str | None = None
+>>>   38:     replace_all: bool = False
+>>>   39:     old_content: str | None = None
+>>>   40:
+>>>   41:     # MultiEdit tool fields
+>>>   42:     edits: list[EditOperation] | None = None
+>>>   43:
+>>>   44:     # Bash tool fields
+>>>   45:     command: str | None = None
+>>>   46:
+>>>   47:     # MCP tool fields (common ones)
+>>>   48:     url: str | None = None
+>>>   49:     query: str | None = None
+>>>   50:     path: str | None = None
+>>>   51:     directory: str | None = None
+>>>   52:
+>>>   53:     # Allow any additional fields for extensibility
+>>>   54:     allowDangerous: bool | None = None  # noqa: N815
+>>>   55:     wait_for: str | None = None
+>>>   56:     database: str | None = None
+>>>   57:     endpoint: str | None = None
+>>>   58:     method: str | None = None
+      59:
+      60:
+      61: class HookEventName(StrEnum):
+```
+
+### `tool-input-god-class.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tool-input-god-class.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L61-L91)
+
+File: `ducktape_llm_common/claude_linter/models.py` (L61-91)
+
+> ToolInput is a god class with all optional fields representing multiple distinct tool
+> types. This loses type safety - you can construct an "Edit" with no old_string/new_string,
+> or a "Bash" with file_path. Should be a discriminated union of per-tool input types.
+>
+> One possible approach: define EditToolInput, BashToolInput, MCPToolInput (with extra="allow"
+> for arbitrary MCP tools), then use a discriminated union based on tool_name. Since tool_name
+> and tool_input are sibling fields in the wire format, a model_validator(mode="before") can
+> restructure them into a nested ToolCall object for Pydantic to discriminate.
+>
+> **Note:** Duplicate ToolInput for file manipulation tools
+
+```
+      58:     """If True, replace all occurrences; if False, only replace first occurrence."""
+      59:
+      60:
+>>>   61: class ToolInput(BaseModel):
+>>>   62:     """Input parameters for Claude Code file manipulation tools.
+>>>   63:
+>>>   64:     Different tools use different subsets of these fields:
+>>>   65:     - Write: file_path, content
+>>>   66:     - Edit: file_path, old_string, new_string, replace_all
+>>>   67:     - MultiEdit: file_path, edits
+>>>   68:     """
+>>>   69:
+>>>   70:     # Common fields
+>>>   71:     file_path: str | None = None
+>>>   72:     """Path to the file being operated on. May be None for non-file tools."""
+>>>   73:
+>>>   74:     # Write tool fields
+>>>   75:     content: str | None = None
+>>>   76:     """Full content to write to the file (Write tool only)."""
+>>>   77:
+>>>   78:     # Edit tool fields
+>>>   79:     old_string: str | None = None
+>>>   80:     """Text to find and replace (Edit tool only)."""
+>>>   81:
+>>>   82:     new_string: str | None = None
+>>>   83:     """Replacement text (Edit tool only)."""
+>>>   84:
+>>>   85:     replace_all: bool = False
+>>>   86:     """Replace all occurrences if True, first occurrence if False (Edit tool)."""
+>>>   87:
+>>>   88:     # MultiEdit tool fields
+>>>   89:     edits: list[EditOperation] | None = None
+>>>   90:     """List of edit operations to apply in sequence (MultiEdit tool only)."""
+>>>   91:
+      92:
+      93: class PatchLine(BaseModel):
+      94:     """Represents a hunk in a structured patch (unified diff format).
+```
+
+### `unnecessary-str-cast.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unnecessary-str-cast.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/checker.py#L50-L87)
+
+File: `ducktape_llm_common/claude_linter_v2/checker.py` (L50, L73, L76, L81, L87)
+
+> Redundant `str(file_path)` conversions when file_path is already Path and the
+> receiving function/method accepts os.PathLike or when Path methods should be used
+> directly. Python 3.13+ subprocess and ast.parse accept Path objects natively.
+>
+> Remove the str() casts and use Path methods (.suffix, .name) instead of string
+> operations (.endswith).
+>
+> **Note:** Multiple str(file_path) casts in check_file method
+
+```
+      47:         violations: list[Violation] = []
+      48:
+      49:         # Only check Python files for now
+>>>   50:         if not str(file_path).endswith(".py"):
+      51:             return violations
+      52:
+      53:         try:
+   ...
+      70:                 or (getattr_config.enabled if getattr_config else False)
+      71:                 or (setattr_config.enabled if setattr_config else False)
+      72:             ),
+>>>   73:             barrel_init=str(file_path).endswith("__init__.py")
+      74:             and (barrel_init_config.enabled if barrel_init_config else False),
+      75:         )
+>>>   76:         ast_violations = analyzer.analyze_code(content, str(file_path))
+      77:         violations.extend(ast_violations)
+      78:
+      79:         # Run ruff checks
+      80:         ruff_linter = PythonRuffLinter(force_select=self.config.get_ruff_codes_to_select())
+>>>   81:         ruff_violations = ruff_linter.check_code(content, str(file_path), critical_only=False)
+      82:         violations.extend(ruff_violations)
+      83:
+      84:         # Apply fixes if requested
+      85:         if self.fix and self.categories:
+      86:             formatter = PythonFormatter(self.config.python_tools)
+>>>   87:             formatted_content, changes = formatter.format_code(content, str(file_path), self.categories)
+      88:
+      89:             if changes and formatted_content != content:
+      90:                 try:
+```
+
+### `unused-function-parameter.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unused-function-parameter.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/llm_analyzer.py#L62-L135)
+
+File: `ducktape_llm_common/claude_linter_v2/llm_analyzer.py` (L135, L62)
+
+> `_parse_llm_result(file_path: str)` accepts a `file_path` parameter that is never
+> used in the function body. The parameter is passed at the call site (line 62) but
+> the function doesn't reference it. Dead parameters add noise and mislead readers
+> about what the function actually needs.
+>
+> Remove the unused parameter from both signature and call site.
+>
+> **Note:** file_path param in signature (135) and call site (62) - param unused in body
+
+```
+      59:             result = self._call_llm(prompt)
+      60:
+      61:             # Parse result
+>>>   62:             is_ok, message, violations = self._parse_llm_result(result, file_path)
+      63:
+      64:             return is_ok, message, violations
+      65:
+   ...
+     132:         # Mock response - always return OK for now
+     133:         return {"ok": True, "violations": []}
+     134:
+>>>  135:     def _parse_llm_result(self, result: dict[str, Any], file_path: str) -> tuple[bool, str | None, list[Violation]]:
+     136:         """Parse LLM result into our format."""
+     137:         try:
+     138:             is_ok = result.get("ok", True)
+```
+
+### `unused-mixin.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unused-mixin.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/hook_session_state.py#L36-L104)
+
+File: `ducktape_llm_common/hook_session_state.py` (L36-104)
+
+> StatefulHookMixin (lines 36-104) is defined but never used anywhere in the codebase.
+> Delete it or implement something that uses it.
+
+```
+      33:
+      34:
+      35: class StatefulHookMixin:
+>>>   36:     """
+>>>   37:     Mixin for hooks that need Pydantic-based session state.
+>>>   38:
+>>>   39:     Automatically loads state before hook dispatch and saves on destruction.
+>>>   40:     Hook can access state via self.state.
+>>>   41:
+>>>   42:     Example:
+>>>   43:         class MyHookState(BaseModel):
+>>>   44:             tool_calls: int = 0
+>>>   45:             blocked_files: list[str] = []
+>>>   46:
+>>>   47:         class MyHook(ClaudeCodeHookBase, StatefulHookMixin):
+>>>   48:             hook_name = "my-security-hook"
+>>>   49:             StateModel = MyHookState
+>>>   50:
+>>>   51:             def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
+>>>   52:                 self.state.tool_calls += 1
+>>>   53:                 return PreToolApprove()
+>>>   54:     """
+>>>   55:
+>>>   56:     hook_name: str
+>>>   57:     StateModel: type[StateModel]
+>>>   58:
+>>>   59:     def __init__(self, *args, **kwargs):
+>>>   60:         super().__init__(*args, **kwargs)
+>>>   61:         if not hasattr(self, "hook_name"):
+>>>   62:             raise ValueError("StatefulHookMixin requires 'hook_name' class attribute")
+>>>   63:         if not hasattr(self, "StateModel"):
+>>>   64:             raise ValueError("StatefulHookMixin requires 'StateModel' class attribute")
+>>>   65:
+>>>   66:         self.state: StateModel = None
+>>>   67:         self._current_session: SessionID = None
+>>>   68:
+>>>   69:     def _get_state_file(self, session_id: SessionID) -> Path:
+>>>   70:         """Get the state file path for a session."""
+>>>   71:         session_dir = get_session_dir(self.hook_name, session_id)
+>>>   72:         return session_dir / "state.json"
+>>>   73:
+>>>   74:     def _load_state(self, session_id: SessionID) -> None:
+>>>   75:         """Load state from file or create new instance."""
+>>>   76:         state_file = self._get_state_file(session_id)
+>>>   77:
+>>>   78:         if state_file.exists():
+>>>   79:             try:
+>>>   80:                 self.state = self.StateModel.model_validate_json(state_file.read_text())
+>>>   81:                 self._current_session = session_id
+>>>   82:                 return
+>>>   83:             except Exception:
+>>>   84:                 # If corrupted, start fresh
+>>>   85:                 pass
+>>>   86:
+>>>   87:         self.state = self.StateModel()
+>>>   88:         self._current_session = session_id
+>>>   89:
+>>>   90:     def _save_state(self) -> None:
+>>>   91:         """Save current state to file."""
+>>>   92:         if self.state is not None and self._current_session is not None:
+>>>   93:             state_file = self._get_state_file(self._current_session)
+>>>   94:             state_file.write_text(self.state.model_dump_json(indent=2))
+>>>   95:
+>>>   96:     def dispatch_hook(self, request) -> any:
+>>>   97:         """Override dispatch to load state before hook execution."""
+>>>   98:         self._load_state(request.session_id)
+>>>   99:         return super().dispatch_hook(request)
+>>>  100:
+>>>  101:     def __del__(self):
+>>>  102:         """Auto-save state on destruction."""
+>>>  103:         with contextlib.suppress(Exception):
+>>>  104:             self._save_state()
+```
+
+### `verbose-example-messages.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/verbose-example-messages.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_outcomes.py#L48-L55)
+
+File: `ducktape_llm_common/claude_outcomes.py` (L48-55)
+
+> Example llm_message strings in HookOutcome docstrings are unnecessarily verbose
+> and multi-line. A one-liner like "Permission denied, can't edit production files"
+> suffices to demonstrate usage.
+>
+> **Note:** PreToolDeny example has multi-line message with override instructions
+
+```
+      45:
+      46: @dataclass
+      47: class PreToolNoOpinion(HookOutcome):
+>>>   48:     """No opinion - let existing permission flow decide."""
+>>>   49:
+>>>   50:     def to_claude_response(self) -> PreToolResponse:
+>>>   51:         return PreToolResponse()  # undefined decision = existing permission flow
+>>>   52:
+>>>   53:
+>>>   54: PreToolOutcome = PreToolApprove | PreToolDeny | PreToolNoOpinion
+>>>   55:
+      56:
+      57: # PostToolUse Outcomes
+      58: @dataclass
+```
+
+### `verbose-example-messages.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/verbose-example-messages.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_outcomes.py#L127-L135)
+
+File: `ducktape_llm_common/claude_outcomes.py` (L127-135)
+
+> Example llm_message strings in HookOutcome docstrings are unnecessarily verbose
+> and multi-line. A one-liner like "Permission denied, can't edit production files"
+> suffices to demonstrate usage.
+>
+> **Note:** StopPrevent example has multi-line error list
+
+```
+     124:     llm_message: str
+     125:
+     126:     def to_claude_response(self) -> StopResponse:
+>>>  127:         return StopResponse(decision="block", reason=self.llm_message)
+>>>  128:
+>>>  129:
+>>>  130: @dataclass
+>>>  131: class StopAllowWithInfo(HookOutcome):
+>>>  132:     """Allow Claude to end its turn, with an info message (non-blocking)."""
+>>>  133:
+>>>  134:     llm_message: str
+>>>  135:
+     136:     def to_claude_response(self) -> StopResponse:
+     137:         return StopResponse()
+     138:
+```
 
 ## ducktape/2025-12-04-00 (30)
 

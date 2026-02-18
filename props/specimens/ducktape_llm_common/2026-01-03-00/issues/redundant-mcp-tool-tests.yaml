@@ -30,81 +30,109 @@ occurrences:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [52, 63]
     note: "test_mcp_puppeteer_tool - just verifies PostToolSuccess"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-1
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [92, 109]
     note: "test_unknown_mcp_tool_fields - just verifies PreToolApprove"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-2
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [177, 198]
     note: "test_mcp_tool_with_complex_result - just verifies PostToolSuccess"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-3
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [200, 212]
     note: "test_mcp_tool_error_result - just verifies PostToolSuccess"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-4
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [298, 311]
     note: "test_stock_price_tool - just verifies PreToolApprove"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-5
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [313, 335]
     note: "test_weather_tool_nested_structure - just verifies PostToolSuccess"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-6
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [337, 352]
     note: "test_ai_model_tool_with_arrays - just verifies PreToolApprove"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-7
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [354, 370]
     note: "test_database_tool_with_sql - just verifies PreToolApprove"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-8
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [372, 388]
     note: "test_iot_device_control - just verifies PostToolSuccess"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-9
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [390, 409]
     note: "test_blockchain_tool_with_hex_data - just verifies PreToolApprove"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-10
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [411, 429]
     note: "test_calendar_tool_with_datetime - just verifies PreToolApprove"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-11
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [431, 453]
     note: "test_image_processing_tool - just verifies PostToolSuccess"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-12
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [455, 474]
     note: "test_scientific_computation_tool - just verifies PreToolApprove"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
 
   - occurrence_id: occ-13
     files:
       tests/claude_linter_v2/test_mcp_tools.py:
         - [476, 496]
     note: "test_completely_unknown_format - just verifies PreToolApprove"
+    match_file_restriction:
+      - tests/claude_linter_v2/test_mcp_tools.py
