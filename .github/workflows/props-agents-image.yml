@@ -89,7 +89,7 @@ jobs:
           push() {
             local local_tag="$1" remote_repo="$2" remote_tag="$3"
             docker tag "$local_tag" "$REGISTRY/$remote_repo:$remote_tag"
-            docker push "$REGISTRY/$remote_repo:$remote_tag"
+            docker push --quiet "$REGISTRY/$remote_repo:$remote_tag"
           }
 
           push critic:latest critic latest
