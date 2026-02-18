@@ -94,6 +94,9 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       via Terraform with minimal read scope, store token in Vault, configure Gatus to use
       it for authenticated `/v2/` checks (proves full auth chain, not just 401 response)
 - [ ] **Gatus: expand monitors** — Add probes for Vault, Gitea, Grafana, Matrix, etc.
+- [ ] **Gatus: LiteLLM inference health probe** — Add a Gatus endpoint that sends a
+      lightweight chat completion request to `ollama.allegedly.works` and verifies a
+      valid response. Proves the full LiteLLM→Ollama inference pipeline is working.
 - [ ] **Gatus: remove direct HTTPRoute** — Once Authentik proxy outpost is confirmed working,
       remove the direct HTTPRoute from `k8s/gatus/` (proxy route in `authentik-proxy-routes/`
       takes over)
