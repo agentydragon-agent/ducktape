@@ -353,6 +353,18 @@ circuit breakers), consider a full service mesh. Options:
 
 Not needed while Cilium mutual auth + Gateway API cover the use cases.
 
+### TODO: Evaluate `schichtel/powerdns` Community Chart
+
+`schichtel/powerdns` v0.9.1 (<https://schich.tel/helm-charts>, last updated 2026-01-31) is the
+best available external PowerDNS chart: actively maintained, supports `gmysql`/MariaDB backend,
+references external secrets for API key.
+
+Blocker: uses `Deployment` workload type, no `hostNetwork` support. Our setup requires DaemonSet
+
+- `hostNetwork: true` to bind port 53 on VPS node public IPs (Cilium BPF intercepts `0.0.0.0:53`
+  with `hostPort`, breaking containerd DNS to `127.0.0.53:53`). Revisit if upstream gains
+  `hostNetwork` + DaemonSet support, or if the DNS binding strategy changes.
+
 ### Shared PostgreSQL / MariaDB Galera
 
 Replace single-instance MariaDB (PowerDNS) with 3-node Galera cluster (VPS-0, VPS-1, Proxmox)

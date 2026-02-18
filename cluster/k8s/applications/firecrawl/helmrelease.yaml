@@ -17,11 +17,11 @@ spec:
       retries: 3
   chart:
     spec:
-      chart: ./cluster/charts/firecrawl
+      chart: ./examples/kubernetes/firecrawl-helm
       sourceRef:
         kind: GitRepository
-        name: flux-system
-        namespace: flux-system
+        name: firecrawl-upstream
+        namespace: firecrawl
       reconcileStrategy: Revision
   values:
     # Replicas
@@ -120,20 +120,3 @@ spec:
       STRIPE_PRICE_ID_SCALE: ""
       FIRE_ENGINE_BETA_URL: ""
       REDIS_PASSWORD: ""
-
-    # Ingress configuration
-    ingress:
-      enabled: true
-      className: "nginx"
-      annotations:
-        nginx.ingress.kubernetes.io/ssl-redirect: "true"
-        nginx.ingress.kubernetes.io/proxy-body-size: "100m" # Allow large file uploads for scraping
-      hosts:
-        - host: firecrawl.allegedly.works
-          paths:
-            - path: /
-              pathType: Prefix
-      tls:
-        - secretName: firecrawl-tls
-          hosts:
-            - firecrawl.allegedly.works
