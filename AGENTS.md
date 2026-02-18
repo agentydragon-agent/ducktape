@@ -28,6 +28,12 @@ For Rust code, lint is also included by default; `--config=rust-check` still wor
 
 If you touched `ansible/`, also follow the checklist in `ansible/AGENTS.md`.
 
+## Git
+
+**NEVER amend a commit that has already been pushed.** Once a commit exists on the remote,
+create a new commit instead. Amending a pushed commit rewrites history and requires a force
+push, which is disruptive and can lose work.
+
 ## Development Practices
 
 ### Testing
