@@ -54,10 +54,6 @@ spec:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
 
-  security:
-    rbac:
-      automountServiceAccountToken: true
-
   gateway:
     # No token secret needed — auth handled by Authentik trusted-proxy mode
     existingSecret: ""
