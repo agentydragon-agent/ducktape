@@ -239,10 +239,10 @@ data:
         identifiers:
           slug: matrix
         attrs:
-          name: Matrix
+          name: Element
           protocol_provider: !KeyOf matrix-provider
-          meta_description: "Matrix Synapse Homeserver"
-          meta_publisher: "Matrix.org"
+          meta_description: "Matrix Chat (Element Web)"
+          meta_launch_url: "https://chat.allegedly.works"
           open_in_new_tab: true
 
   # --- Vault OAuth2/OIDC SSO ---

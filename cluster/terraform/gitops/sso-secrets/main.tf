@@ -160,7 +160,7 @@ resource "vault_kv_secret_v2" "matrix_oidc_config" {
         idp_id        = "authentik"
         idp_name      = "Authentik SSO"
         discover      = true
-        issuer        = "http://authentik-server.authentik/application/o/matrix/"
+        issuer        = "https://auth.allegedly.works/application/o/matrix/"
         client_id     = "matrix"
         client_secret = random_password.matrix_client_secret.result
         scopes = [
