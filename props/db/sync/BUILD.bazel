@@ -10,7 +10,10 @@ py_library(
     name = "yaml_loader",
     srcs = ["yaml_loader.py"],
     imports = ["../../.."],
-    visibility = ["//props/db:__subpackages__"],
+    visibility = [
+        "//props/db:__subpackages__",
+        "//props/specimens/scripts:__pkg__",
+    ],
     deps = [
         "//props/core:ids",
         "//props/core/models:true_positive",

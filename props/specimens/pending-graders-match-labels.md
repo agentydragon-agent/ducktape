@@ -1,15 +1,7497 @@
-# Issues Missing graders_match_only_if_reported_on
+# Issues Missing `match_file_restriction`
 
-Total: 298 single-file occurrences
+Total: 376 single-file TP occurrences without `match_file_restriction`.
+
+For detailed per-occurrence analysis with validation proofs, use:
+`/narrow_matchability <snapshot_slug>`
+
+## ducktape_llm_common/2026-01-03-00 (57)
+
+### `dict-instead-of-pydantic-model.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/dict-instead-of-pydantic-model.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_diff_intelligence.py#L49)
+
+File: `tests/claude_linter_v2/test_diff_intelligence.py` (L49)
+
+> Tests construct `edits` as a list of raw dicts `[{"old_string": ..., "new_string": ...}]`
+> when the typed `EditOperation` Pydantic model exists (claude_linter/models.py:45-58).
+>
+> Per STYLE.md: "Instantiate Pydantic models with explicit keyword arguments rather than
+> passing raw dicts." While Pydantic coerces dicts, explicit construction provides type
+> safety and makes the expected type clear at the call site.
+>
+> Use `[EditOperation(old_string="foo", new_string="bar")]` instead.
+>
+> **Note:** edits=[{...}] should use EditOperation models
+
+```
+      46:             tool_name="MultiEdit",
+      47:             tool_input={
+      48:                 "file_path": "/test.py",
+>>>   49:                 "edits": [{"old_string": "foo", "new_string": "bar"}, {"old_string": "baz", "new_string": "qux"}],
+      50:             },
+      51:             tool_response={
+      52:                 "structuredPatch": [
+```
+
+### `disjunctive-test-assertions.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/disjunctive-test-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L104-L269)
+
+File: `tests/claude_linter_v2/test_integration.py` (L104, L187, L237, L255, L269)
+
+> Test assertions use disjunctions (OR conditions) to accept multiple different
+> outputs as passing. This is a code smell - tests should have a single clear
+> expected outcome. Disjunctive assertions indicate either:
+>
+> 1. The test doesn't know what behavior to expect (unclear requirements)
+> 2. The test is covering multiple scenarios that should be separate tests
+> 3. The production code has inconsistent output that should be normalized
+>
+> **Note:** Multiple tests use 'or' in assertions to accept different valid outputs
+
+```
+     101:         response = json.loads(result.stdout)
+     102:         assert response["continue"] is True
+     103:         # Clean code just returns {"continue": true}
+>>>  104:         assert "decision" not in response or response.get("decision") != "block"
+     105:
+     106:     @pytest.mark.skipif(
+     107:         subprocess.run(["ruff", "--version"], capture_output=True, check=False).returncode != 0,
+   ...
+     184:         # Invalid JSON should crash the CLI
+     185:         assert result.returncode != 0
+     186:         # When CLI crashes, there's no JSON output
+>>>  187:         assert "JSON parse error" in result.stderr or "Invalid JSON" in result.stderr
+     188:
+     189:     def test_pre_hook_non_python_file(self):
+     190:         """Test that pre-hook passes non-Python files."""
+   ...
+     234:         assert response["continue"] is True
+     235:         # Post-hook may apply autofix and notify Claude
+     236:         if response.get("decision") == "block":
+>>>  237:             assert "Autofix:" in response["reason"] or "Violations:" in response["reason"]
+     238:
+     239:
+     240: class TestSessionCommands:
+   ...
+     252:
+     253:         assert result.returncode == 0
+     254:         # Output should be valid (might be empty if no sessions)
+>>>  255:         assert "Sessions in" in result.stdout or "No sessions found" in result.stdout
+     256:
+     257:     def test_session_allow(self):
+     258:         """Test adding an allow rule."""
+   ...
+     266:
+     267:         assert result.returncode == 0
+     268:         # Check for the actual output format
+>>>  269:         assert "Permission granted" in result.stdout or "Added allow rule" in result.stdout
+```
+
+### `disjunctive-test-assertions.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/disjunctive-test-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_quality_gate.py#L68)
+
+File: `tests/claude_linter_v2/test_stop_hook_quality_gate.py` (L68)
+
+> Test assertions use disjunctions (OR conditions) to accept multiple different
+> outputs as passing. This is a code smell - tests should have a single clear
+> expected outcome. Disjunctive assertions indicate either:
+>
+> 1. The test doesn't know what behavior to expect (unclear requirements)
+> 2. The test is covering multiple scenarios that should be separate tests
+> 3. The production code has inconsistent output that should be normalized
+>
+> **Note:** Accepts either 'Line 10:' or 'Line 20:' in reason
+
+```
+      65:     assert "2 errors that must be fixed" in reason
+      66:     assert "/test/file.py" in reason
+      67:     assert "/test/other.py" in reason
+>>>   68:     assert "Line 10:" in reason or "Line 20:" in reason  # Should show line numbers
+      69:     assert "cl2 check" in reason  # Should include check command
+      70:
+      71:
+```
+
+### `disjunctive-test-assertions.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/disjunctive-test-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter/test_claude_linter.py#L41)
+
+File: `tests/claude_linter/test_claude_linter.py` (L41)
+
+> Test assertions use disjunctions (OR conditions) to accept multiple different
+> outputs as passing. This is a code smell - tests should have a single clear
+> expected outcome. Disjunctive assertions indicate either:
+>
+> 1. The test doesn't know what behavior to expect (unclear requirements)
+> 2. The test is covering multiple scenarios that should be separate tests
+> 3. The production code has inconsistent output that should be normalized
+>
+> **Note:** Accepts either 'Usage:' or 'Missing command' in output
+
+```
+      38:
+      39:         # No command -> error (CLI requires a subcommand)
+      40:         assert result.exit_code == 2
+>>>   41:         assert "Usage:" in result.output or "Missing command" in result.output
+      42:
+      43:     def test_help(self):
+      44:         """Test that help text shows available commands."""
+```
+
+### `docstrings-as-field-descriptions.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/docstrings-as-field-descriptions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L27-L38)
+
+File: `ducktape_llm_common/claude_linter/models.py` (L27-28, L30-32, L34-35, L37-38)
+
+> Field docstrings like `"""Human-readable explanation..."""` after Field declarations
+> are not semantically attached to those fields. Use Field(description="...") instead -
+> it's more semantic, discoverable, and appears in JSON schema.
+>
+> **Note:** HookResponse fields have trailing docstrings instead of Field descriptions
+
+```
+      24:     - block: Prevent operation (pre) or signal changes were made (post)
+      25:     """
+      26:
+>>>   27:     reason: str | None = None
+>>>   28:     """Human-readable explanation shown to user and/or used to re-prompt model."""
+      29:
+>>>   30:     continue_: bool = Field(True, alias="continue")
+>>>   31:     """Whether model should continue after processing hook response.
+>>>   32:     Usually True unless you want to stop the session."""
+      33:
+>>>   34:     stop_reason: str | None = Field(None, alias="stopReason")
+>>>   35:     """If provided with continue=False, stops the session with this message."""
+      36:
+>>>   37:     suppress_output: bool = Field(False, alias="suppressOutput")
+>>>   38:     """If True, suppresses the hook's own output (stdout/stderr) from being shown."""
+      39:
+      40:     model_config = ConfigDict(
+      41:         populate_by_name=True, alias_generator=None, use_enum_values=True, arbitrary_types_allowed=True
+```
+
+### `empty-default-instead-of-classvar.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/empty-default-instead-of-classvar.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L61-L65)
+
+File: `ducktape_llm_common/claude_hook.py` (L61, L64-65)
+
+> `hook_name: str = ""` with a runtime check (lines 64-65) is a weak enforcement pattern.
+> Use `hook_name: ClassVar[str]` without a default - Python raises AttributeError at
+> access time if subclass doesn't define it, no explicit check needed.
+
+```
+      58:             MyClaudeHook.entrypoint()
+      59:     """
+      60:
+>>>   61:     hook_name: str = ""  # Must be defined by subclass
+      62:
+      63:     def __init__(self):
+>>>   64:         if not self.hook_name:
+>>>   65:             raise ValueError("ClaudeCodeHookBase requires non-empty 'hook_name'")
+      66:
+      67:         self.logger: logging.Logger | None = None
+      68:
+```
+
+### `endswith-instead-of-path-suffix.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/endswith-instead-of-path-suffix.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/checker.py#L50-L73)
+
+File: `ducktape_llm_common/claude_linter_v2/checker.py` (L50, L73)
+
+> Using `.endswith(".py")` on paths instead of Path's `.suffix == ".py"` method.
+> Using `.endswith("__init__.py")` instead of `.name == "__init__.py"`.
+>
+> Path methods are clearer, more idiomatic, and don't require str() conversion.
+> Replace string operations with Path methods.
+>
+> **Note:** .endswith() on str(file_path) instead of Path.suffix/.name
+
+```
+      47:         violations: list[Violation] = []
+      48:
+      49:         # Only check Python files for now
+>>>   50:         if not str(file_path).endswith(".py"):
+      51:             return violations
+      52:
+      53:         try:
+   ...
+      70:                 or (getattr_config.enabled if getattr_config else False)
+      71:                 or (setattr_config.enabled if setattr_config else False)
+      72:             ),
+>>>   73:             barrel_init=str(file_path).endswith("__init__.py")
+      74:             and (barrel_init_config.enabled if barrel_init_config else False),
+      75:         )
+      76:         ast_violations = analyzer.analyze_code(content, str(file_path))
+```
+
+### `endswith-instead-of-path-suffix.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/endswith-instead-of-path-suffix.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/check_python.py#L55)
+
+File: `ducktape_llm_common/claude_linter_v2/check_python.py` (L55)
+
+> Using `.endswith(".py")` on paths instead of Path's `.suffix == ".py"` method.
+> Using `.endswith("__init__.py")` instead of `.name == "__init__.py"`.
+>
+> Path methods are clearer, more idiomatic, and don't require str() conversion.
+> Replace string operations with Path methods.
+>
+> **Note:** file_path.endswith('**init**.py') instead of Path(file_path).name
+
+```
+      52:     analyzer = PythonASTAnalyzer(
+      53:         bare_except=bare_except_enabled,
+      54:         getattr_setattr=getattr_setattr_enabled,
+>>>   55:         barrel_init=file_path.endswith("__init__.py") and barrel_init_enabled,
+      56:     )
+      57:     ast_violations = analyzer.analyze_code(content, file_path)
+      58:
+```
+
+### `hook-response-boilerplate.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L122-L174)
+
+File: `ducktape_llm_common/claude_hook.py` (L122-125, L166-167, L171-174)
+
+> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
+> implementations. Extract to a shared runner function or base class method.
+>
+> **Note:** ClaudeCodeHookBase.run() has 3 instances of print(response.model_dump_json(...)); sys.exit(0)
+
+```
+     119:                 request = HookRequest.model_validate(input_data)
+     120:             except Exception as e:
+     121:                 # Invalid request format
+>>>  122:                 outcome = HookError(f"Invalid request format: {e!s}")
+>>>  123:                 response = outcome.to_claude_response()
+>>>  124:                 print(response.model_dump_json(by_alias=True))
+>>>  125:                 sys.exit(0)
+     126:
+     127:             # Generate invocation ID and set up logging
+     128:             invocation_id = InvocationID(uuid.uuid4())
+   ...
+     163:                 raise
+     164:
+     165:             # Output JSON response
+>>>  166:             print(response.model_dump_json(by_alias=True))
+>>>  167:             sys.exit(0)
+     168:
+     169:         except Exception as e:
+     170:             # On any error, return error outcome
+>>>  171:             error_outcome = HookError(f"Hook execution failed: {e!s}")
+>>>  172:             response = error_outcome.to_claude_response()
+>>>  173:             print(response.model_dump_json(by_alias=True))
+>>>  174:             sys.exit(0)
+```
+
+### `hook-response-boilerplate.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/cli.py#L226-L235)
+
+File: `ducktape_llm_common/claude_linter/cli.py` (L226-235)
+
+> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
+> implementations. Extract to a shared runner function or base class method.
+>
+> **Note:** main() serializes and exits
+
+```
+     223:         decision = HookResponse()
+     224:
+     225:     # Handle output
+>>>  226:     output_json = decision.model_dump_json(by_alias=True, exclude_none=True)
+>>>  227:     print(output_json, file=sys.stdout)
+>>>  228:     log_data["output"] = json.loads(output_json)
+>>>  229:
+>>>  230:     # Log exit code
+>>>  231:     log_data["exit_code"] = 0
+>>>  232:     with Path(log_file).open("w") as f:
+>>>  233:         json.dump(log_data, f, indent=2)
+>>>  234:
+>>>  235:     sys.exit(0)
+```
+
+### `hook-response-boilerplate.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/hook-response-boilerplate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/cli.py#L180-L202)
+
+File: `ducktape_llm_common/claude_linter_v2/cli.py` (L180, L202)
+
+> The "serialize response to JSON, print, exit 0" pattern is duplicated across hook
+> implementations. Extract to a shared runner function or base class method.
+>
+> **Note:** run_hook() serializes and exits separately
+
+```
+     177:     try:
+     178:         response = handle(hook_type, request)
+     179:         # Output response
+>>>  180:         click.echo(response.model_dump_json(by_alias=True, exclude_none=True))
+     181:     except HookBugError as e:
+     182:         # Hook bug - this is OUR fault
+     183:         logger.error(f"FATAL: Hook bug: {e}", exc_info=True)
+   ...
+     199:         raise
+     200:
+     201:     # Always exit 0 - Claude Code uses JSON response, not exit codes
+>>>  202:     sys.exit(0)
+     203:
+     204:
+     205: @cli.group()
+```
+
+### `integration-tests-not-isolated.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/integration-tests-not-isolated.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L27)
+
+File: `tests/claude_linter_v2/test_integration.py` (L27)
+
+> Integration tests use hardcoded session IDs and write to the real user data
+> directory (~/.local/share/claude-linter-v2/sessions/). This causes:
+>
+> 1. Tests to interfere with each other across runs
+> 2. Tests to pick up stale state from previous runs
+> 3. Potential interference with real user session data
+> 4. Non-deterministic test failures when stale data has incompatible format
+>
+> **Note:** Uses fixed session_id '12345678-1234-5678-1234-567812345678' that persists to real ~/.local/share path
+
+```
+      24:     pass
+      25: """,
+      26:             },
+>>>   27:             "session_id": "12345678-1234-5678-1234-567812345678",
+      28:         }
+      29:
+      30:         result = subprocess.run(
+```
+
+### `manual-camelcase-aliases.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/manual-camelcase-aliases.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_code_api.py#L153-L167)
+
+File: `ducktape_llm_common/claude_code_api.py` (L153-167)
+
+> Response models use manual `alias="camelCase"` on each field instead of
+> `alias_generator=to_camel` in model_config. This creates boilerplate and
+> risks inconsistency. Use a CamelCaseModel base class with alias_generator.
+>
+> Note: Request models must stay snake_case (Claude Code sends snake_case for requests).
+> Only response/outbound models can use to_camel.
+>
+> **Note:** BaseResponse has manual aliases: stop_reason='stopReason', suppress_output='suppressOutput'
+
+```
+     150:
+     151:
+     152: # Base response types for Claude Code hook responses
+>>>  153: class BaseResponse(BaseModel):
+>>>  154:     """
+>>>  155:     Base response for all hooks.
+>>>  156:
+>>>  157:     Per Anthropic docs section "Common JSON Fields":
+>>>  158:     - continue: Whether Claude should continue (default: true)
+>>>  159:     - stopReason: Message shown when continue is false (shown to user, NOT Claude)
+>>>  160:     - suppressOutput: Hide stdout from transcript mode
+>>>  161:     """
+>>>  162:
+>>>  163:     continue_: bool = Field(True, alias="continue")
+>>>  164:     stop_reason: str | None = Field(
+>>>  165:         None, alias="stopReason", description="Message shown to USER when continue is false"
+>>>  166:     )
+>>>  167:     suppress_output: bool | None = Field(None, alias="suppressOutput")
+     168:
+     169:     model_config = {"populate_by_name": True}
+     170:
+```
+
+### `manual-camelcase-aliases.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/manual-camelcase-aliases.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L24-L64)
+
+File: `ducktape_llm_common/claude_linter/models.py` (L24-31, L44-48, L58-64)
+
+> Response models use manual `alias="camelCase"` on each field instead of
+> `alias_generator=to_camel` in model_config. This creates boilerplate and
+> risks inconsistency. Use a CamelCaseModel base class with alias_generator.
+>
+> Note: Request models must stay snake_case (Claude Code sends snake_case for requests).
+> Only response/outbound models can use to_camel.
+>
+> **Note:** HookResponse, PatchLine, ToolResponse all have manual camelCase aliases
+
+```
+      21:     decision: Literal["approve", "block"] | None = None
+      22:     """Controls tool execution (PreToolUse) or provides feedback (PostToolUse).
+      23:     - approve: Allow operation to proceed
+>>>   24:     - block: Prevent operation (pre) or signal changes were made (post)
+>>>   25:     """
+>>>   26:
+>>>   27:     reason: str | None = None
+>>>   28:     """Human-readable explanation shown to user and/or used to re-prompt model."""
+>>>   29:
+>>>   30:     continue_: bool = Field(True, alias="continue")
+>>>   31:     """Whether model should continue after processing hook response.
+      32:     Usually True unless you want to stop the session."""
+      33:
+      34:     stop_reason: str | None = Field(None, alias="stopReason")
+   ...
+      41:         populate_by_name=True, alias_generator=None, use_enum_values=True, arbitrary_types_allowed=True
+      42:     )
+      43:
+>>>   44:
+>>>   45: class EditOperation(BaseModel):
+>>>   46:     """Individual edit operation for MultiEdit tool.
+>>>   47:
+>>>   48:     Represents a single find-and-replace operation within a MultiEdit sequence.
+      49:     """
+      50:
+      51:     old_string: str
+   ...
+      55:     """Text to replace the old_string with."""
+      56:
+      57:     replace_all: bool = False
+>>>   58:     """If True, replace all occurrences; if False, only replace first occurrence."""
+>>>   59:
+>>>   60:
+>>>   61: class ToolInput(BaseModel):
+>>>   62:     """Input parameters for Claude Code file manipulation tools.
+>>>   63:
+>>>   64:     Different tools use different subsets of these fields:
+      65:     - Write: file_path, content
+      66:     - Edit: file_path, old_string, new_string, replace_all
+      67:     - MultiEdit: file_path, edits
+```
+
+### `nullable-file-path-for-convenience.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/nullable-file-path-for-convenience.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/linters/python_formatter.py#L38-L145)
+
+File: `ducktape_llm_common/claude_linter_v2/linters/python_formatter.py` (L38-40, L86, L102, L126, L145)
+
+> `file_path: str | None` parameters in python_formatter.py are only nullable for
+> test convenience. Production callers (checker.py:87, handler.py:671) always pass
+> a file_path. The None case triggers fallback to "temp.py" for ruff's --stdin-filename.
+>
+> The signature should be `file_path: Path` with no default, and tests should pass
+> explicit test paths instead of relying on None defaults. This eliminates unnecessary
+> nullability guards and makes the production contract explicit.
+
+```
+      35:
+      36:         return available
+      37:
+>>>   38:     def format_code(
+>>>   39:         self, code: str, file_path: str | None = None, categories: list[AutofixCategory] | None = None
+>>>   40:     ) -> tuple[str, list[str]]:
+      41:         """
+      42:         Format Python code with specified autofix categories.
+      43:
+   ...
+      83:
+      84:         return formatted_code, changes
+      85:
+>>>   86:     def _apply_formatting(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+      87:         """Apply code formatting."""
+      88:         changes = []
+      89:         formatted = code
+   ...
+      99:
+     100:         return formatted, changes
+     101:
+>>>  102:     def _format_with_ruff(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+     103:         """Format code with ruff."""
+     104:         try:
+     105:             # Use stdin/stdout to avoid file operations
+   ...
+     123:             logger.error(f"Ruff error: {e}")
+     124:             return code, []
+     125:
+>>>  126:     def _format_with_black(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+     127:         """Format code with black."""
+     128:         try:
+     129:             # Use stdin/stdout to avoid file operations
+   ...
+     142:             logger.error(f"Black error: {e}")
+     143:             return code, []
+     144:
+>>>  145:     def _fix_imports(self, code: str, file_path: str | None) -> tuple[str, list[str]]:
+     146:         """Fix import ordering and remove unused imports."""
+     147:         changes = []
+     148:         formatted = code
+```
+
+### `path-prefix-match.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/path-prefix-match.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L129-L150)
+
+File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L129, L148-150)
+
+> `add_rule` uses `str.startswith()` (line 149) to test whether a session's
+> directory is under the target directory. String prefix matching is not
+> equivalent to path containment: a target of `/home/user/proj` incorrectly
+> matches `/home/user/project-old` because the string starts with the same
+> prefix. The rule is then applied to sessions belonging to unrelated
+> directories. Should use `Path.is_relative_to()` or compare with a trailing
+> separator.
+
+```
+     126:     ) -> int:
+     127:         """Add a permission rule to session(s)."""
+     128:         directory = directory or Path.cwd()
+>>>  129:         directory_str = str(directory.resolve())
+     130:
+     131:         rule = Rule(predicate=predicate, action=action, created=datetime.now(), expires=expires)
+     132:
+   ...
+     145:                 session_data = self._load_session(sid)
+     146:
+     147:                 # Skip if session is in different directory
+>>>  148:                 session_dir = str(session_data.directory) if session_data.directory else ""
+>>>  149:                 if not session_dir.startswith(directory_str):
+>>>  150:                     continue
+     151:
+     152:                 # Add rule to this session
+     153:                 session_data.rules.append(rule.model_copy())
+```
+
+### `redundant-inner-error-handling.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-inner-error-handling.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_hook.py#L125-L128)
+
+File: `ducktape_llm_common/claude_hook.py` (L125-128)
+
+> Inner try/except for request parsing is redundant when an outer error boundary
+> already catches all exceptions. The pattern duplicates error handling and
+> clutters the code. Let the outer boundary handle it.
+>
+> **Note:** Inner try/except duplicates outer boundary at line 170
+
+```
+     122:                 outcome = HookError(f"Invalid request format: {e!s}")
+     123:                 response = outcome.to_claude_response()
+     124:                 print(response.model_dump_json(by_alias=True))
+>>>  125:                 sys.exit(0)
+>>>  126:
+>>>  127:             # Generate invocation ID and set up logging
+>>>  128:             invocation_id = InvocationID(uuid.uuid4())
+     129:
+     130:             # Set up logger for this session/invocation
+     131:             logger = get_session_logger(hook_instance.hook_name, request.session_id, invocation_id)
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L52-L63)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L52-63)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_mcp_puppeteer_tool - just verifies PostToolSuccess
+
+```
+      49:         outcome = handler._handle_pre_hook(request, session_id)
+      50:         assert isinstance(outcome, PreToolApprove)
+      51:
+>>>   52:     def test_mcp_puppeteer_tool(self, handler, session_id):
+>>>   53:         """Test MCP puppeteer tool with its specific parameters."""
+>>>   54:         request = PostToolUseRequest(
+>>>   55:             session_id=str(session_id),
+>>>   56:             hook_event_name="PostToolUse",
+>>>   57:             tool_name="mcp_puppeteer_navigate",
+>>>   58:             tool_input=ToolInput(url="https://example.com", allowDangerous=True, wait_for="networkidle2"),
+>>>   59:             tool_result={"success": True, "screenshot": "base64_data_here"},
+>>>   60:         )
+>>>   61:
+>>>   62:         outcome = handler._handle_post_hook(request, session_id)
+>>>   63:         assert isinstance(outcome, PostToolSuccess)
+      64:
+      65:     def test_mcp_filesystem_tool_with_path(self, handler, session_id):
+      66:         """Test MCP filesystem tool that should trigger path checks."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L92-L109)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L92-109)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_unknown_mcp_tool_fields - just verifies PreToolApprove
+
+```
+      89:         outcome = handler._handle_pre_hook(request, session_id)
+      90:         assert isinstance(outcome, PreToolApprove)
+      91:
+>>>   92:     def test_unknown_mcp_tool_fields(self, handler, session_id):
+>>>   93:         """Test that unknown MCP tool fields don't cause errors."""
+>>>   94:         request = PreToolUseRequest(
+>>>   95:             session_id=str(session_id),
+>>>   96:             hook_event_name="PreToolUse",
+>>>   97:             tool_name="mcp_custom_tool",
+>>>   98:             tool_input=ToolInput(
+>>>   99:                 # Completely custom fields
+>>>  100:                 custom_field_1="value1",
+>>>  101:                 nested_config={"key": "value"},
+>>>  102:                 array_param=[1, 2, 3],
+>>>  103:                 boolean_flag=True,
+>>>  104:             ),
+>>>  105:         )
+>>>  106:
+>>>  107:         # Should not raise any validation errors
+>>>  108:         outcome = handler._handle_pre_hook(request, session_id)
+>>>  109:         assert isinstance(outcome, PreToolApprove)
+     110:
+     111:     def test_mcp_tool_with_python_file(self, handler, session_id):
+     112:         """Test MCP tool operating on Python files."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-10`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L411-L429)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L411-429)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_calendar_tool_with_datetime - just verifies PreToolApprove
+
+```
+     408:         outcome = handler._handle_pre_hook(request, session_id)
+     409:         assert isinstance(outcome, PreToolApprove)
+     410:
+>>>  411:     def test_calendar_tool_with_datetime(self, handler, session_id):
+>>>  412:         """Test calendar tool with various datetime formats."""
+>>>  413:         request = PreToolUseRequest(
+>>>  414:             session_id=str(session_id),
+>>>  415:             hook_event_name="PreToolUse",
+>>>  416:             tool_name="mcp_calendar_create_event",
+>>>  417:             tool_input=ToolInput(
+>>>  418:                 title="Team Meeting",
+>>>  419:                 start="2024-01-20T14:00:00Z",
+>>>  420:                 end="2024-01-20T15:30:00Z",
+>>>  421:                 timezone="America/New_York",
+>>>  422:                 attendees=["alice@example.com", "bob@example.com"],
+>>>  423:                 recurrence={"freq": "WEEKLY", "count": 10, "byday": ["MO", "WE", "FR"]},
+>>>  424:                 reminder_minutes=[15, 60],
+>>>  425:             ),
+>>>  426:         )
+>>>  427:
+>>>  428:         outcome = handler._handle_pre_hook(request, session_id)
+>>>  429:         assert isinstance(outcome, PreToolApprove)
+     430:
+     431:     def test_image_processing_tool(self, handler, session_id):
+     432:         """Test image processing tool with base64 data."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-11`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L431-L453)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L431-453)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_image_processing_tool - just verifies PostToolSuccess
+
+```
+     428:         outcome = handler._handle_pre_hook(request, session_id)
+     429:         assert isinstance(outcome, PreToolApprove)
+     430:
+>>>  431:     def test_image_processing_tool(self, handler, session_id):
+>>>  432:         """Test image processing tool with base64 data."""
+>>>  433:         request = PostToolUseRequest(
+>>>  434:             session_id=str(session_id),
+>>>  435:             hook_event_name="PostToolUse",
+>>>  436:             tool_name="mcp_image_resize",
+>>>  437:             tool_input=ToolInput(
+>>>  438:                 image_data="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+>>>  439:                 width=100,
+>>>  440:                 height=100,
+>>>  441:                 maintain_aspect_ratio=True,
+>>>  442:                 format="webp",
+>>>  443:                 quality=85,
+>>>  444:             ),
+>>>  445:             tool_result={
+>>>  446:                 "success": True,
+>>>  447:                 "output_size_bytes": 2048,
+>>>  448:                 "output_dimensions": {"width": 100, "height": 100},
+>>>  449:             },
+>>>  450:         )
+>>>  451:
+>>>  452:         outcome = handler._handle_post_hook(request, session_id)
+>>>  453:         assert isinstance(outcome, PostToolSuccess)
+     454:
+     455:     def test_scientific_computation_tool(self, handler, session_id):
+     456:         """Test scientific computation tool with complex numeric data."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-12`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L455-L474)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L455-474)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_scientific_computation_tool - just verifies PreToolApprove
+
+```
+     452:         outcome = handler._handle_post_hook(request, session_id)
+     453:         assert isinstance(outcome, PostToolSuccess)
+     454:
+>>>  455:     def test_scientific_computation_tool(self, handler, session_id):
+>>>  456:         """Test scientific computation tool with complex numeric data."""
+>>>  457:         request = PreToolUseRequest(
+>>>  458:             session_id=str(session_id),
+>>>  459:             hook_event_name="PreToolUse",
+>>>  460:             tool_name="mcp_scipy_optimize",
+>>>  461:             tool_input=ToolInput(
+>>>  462:                 function="minimize",
+>>>  463:                 objective="x**2 + y**2",
+>>>  464:                 variables=["x", "y"],
+>>>  465:                 initial_guess=[1.0, 1.0],
+>>>  466:                 method="BFGS",
+>>>  467:                 constraints=[{"type": "ineq", "fun": "x + y - 1"}, {"type": "eq", "fun": "x - 2*y"}],
+>>>  468:                 bounds=[(-10, 10), (-10, 10)],
+>>>  469:                 options={"maxiter": 1000, "ftol": 1e-9},
+>>>  470:             ),
+>>>  471:         )
+>>>  472:
+>>>  473:         outcome = handler._handle_pre_hook(request, session_id)
+>>>  474:         assert isinstance(outcome, PreToolApprove)
+     475:
+     476:     def test_completely_unknown_format(self, handler, session_id):
+     477:         """Test with completely made-up tool and format."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-13`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L476-L496)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L476-496)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_completely_unknown_format - just verifies PreToolApprove
+
+```
+     473:         outcome = handler._handle_pre_hook(request, session_id)
+     474:         assert isinstance(outcome, PreToolApprove)
+     475:
+>>>  476:     def test_completely_unknown_format(self, handler, session_id):
+>>>  477:         """Test with completely made-up tool and format."""
+>>>  478:         request = PreToolUseRequest(
+>>>  479:             session_id=str(session_id),
+>>>  480:             hook_event_name="PreToolUse",
+>>>  481:             tool_name="mcp_quantum_entangle_qubits",
+>>>  482:             tool_input=ToolInput(
+>>>  483:                 qubit_ids=["q0", "q1", "q2"],
+>>>  484:                 entanglement_type="GHZ",
+>>>  485:                 measurement_basis="computational",
+>>>  486:                 shots=1024,
+>>>  487:                 backend="simulator",
+>>>  488:                 noise_model={"depolarizing": 0.01, "readout_error": [[0.97, 0.03], [0.02, 0.98]]},
+>>>  489:                 optimization_level=3,
+>>>  490:                 seed=42,
+>>>  491:             ),
+>>>  492:         )
+>>>  493:
+>>>  494:         # Should handle gracefully without crashing
+>>>  495:         outcome = handler._handle_pre_hook(request, session_id)
+>>>  496:         assert isinstance(outcome, PreToolApprove)
+     497:
+     498:     def test_empty_tool_input(self, handler, session_id):
+     499:         """Test MCP tool with no input parameters."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L177-L198)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L177-198)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_mcp_tool_with_complex_result - just verifies PostToolSuccess
+
+```
+     174:             outcome = handler._handle_pre_hook(request, session_id)
+     175:             assert isinstance(outcome, PreToolApprove)
+     176:
+>>>  177:     def test_mcp_tool_with_complex_result(self, handler, session_id):
+>>>  178:         """Test MCP tool with complex nested result structure."""
+>>>  179:         request = PostToolUseRequest(
+>>>  180:             session_id=str(session_id),
+>>>  181:             hook_event_name="PostToolUse",
+>>>  182:             tool_name="mcp_knowledge_graph_query",
+>>>  183:             tool_input=ToolInput(query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"),
+>>>  184:             tool_result={
+>>>  185:                 "nodes": [
+>>>  186:                     {
+>>>  187:                         "id": 1,
+>>>  188:                         "labels": ["Person", "Developer"],
+>>>  189:                         "properties": {"name": "Alice", "skills": ["Python", "JavaScript"]},
+>>>  190:                     }
+>>>  191:                 ],
+>>>  192:                 "relationships": [],
+>>>  193:                 "metadata": {"query_time_ms": 42, "node_count": 1},
+>>>  194:             },
+>>>  195:         )
+>>>  196:
+>>>  197:         outcome = handler._handle_post_hook(request, session_id)
+>>>  198:         assert isinstance(outcome, PostToolSuccess)
+     199:
+     200:     def test_mcp_tool_error_result(self, handler, session_id):
+     201:         """Test MCP tool that returned an error."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L200-L212)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L200-212)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_mcp_tool_error_result - just verifies PostToolSuccess
+
+```
+     197:         outcome = handler._handle_post_hook(request, session_id)
+     198:         assert isinstance(outcome, PostToolSuccess)
+     199:
+>>>  200:     def test_mcp_tool_error_result(self, handler, session_id):
+>>>  201:         """Test MCP tool that returned an error."""
+>>>  202:         request = PostToolUseRequest(
+>>>  203:             session_id=str(session_id),
+>>>  204:             hook_event_name="PostToolUse",
+>>>  205:             tool_name="mcp_api_call",
+>>>  206:             tool_input=ToolInput(endpoint="/api/users", method="GET"),
+>>>  207:             tool_result={"error": "Connection timeout", "status_code": None, "success": False},
+>>>  208:         )
+>>>  209:
+>>>  210:         # Should still process normally - hooks don't care about tool success
+>>>  211:         outcome = handler._handle_post_hook(request, session_id)
+>>>  212:         assert isinstance(outcome, PostToolSuccess)
+     213:
+     214:     @pytest.mark.parametrize(
+     215:         ("tool_name", "input_fields", "should_check_python"),
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L298-L311)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L298-311)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_stock_price_tool - just verifies PreToolApprove
+
+```
+     295:         """Valid session ID."""
+     296:         return SessionID("770e8400-e29b-41d4-a716-446655440002")
+     297:
+>>>  298:     def test_stock_price_tool(self, handler, session_id):
+>>>  299:         """Test a financial MCP tool with custom format."""
+>>>  300:         request = PreToolUseRequest(
+>>>  301:             session_id=str(session_id),
+>>>  302:             hook_event_name="PreToolUse",
+>>>  303:             tool_name="mcp_finance_get_stock_price",
+>>>  304:             tool_input=ToolInput(
+>>>  305:                 symbol="AAPL", date="2024-01-15", exchange="NASDAQ", include_extended_hours=True, currency="USD"
+>>>  306:             ),
+>>>  307:         )
+>>>  308:
+>>>  309:         # Should not crash
+>>>  310:         outcome = handler._handle_pre_hook(request, session_id)
+>>>  311:         assert isinstance(outcome, PreToolApprove)
+     312:
+     313:     def test_weather_tool_nested_structure(self, handler, session_id):
+     314:         """Test weather tool with deeply nested structure."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-5`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L313-L335)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L313-335)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_weather_tool_nested_structure - just verifies PostToolSuccess
+
+```
+     310:         outcome = handler._handle_pre_hook(request, session_id)
+     311:         assert isinstance(outcome, PreToolApprove)
+     312:
+>>>  313:     def test_weather_tool_nested_structure(self, handler, session_id):
+>>>  314:         """Test weather tool with deeply nested structure."""
+>>>  315:         request = PostToolUseRequest(
+>>>  316:             session_id=str(session_id),
+>>>  317:             hook_event_name="PostToolUse",
+>>>  318:             tool_name="mcp_weather_forecast",
+>>>  319:             tool_input=ToolInput(
+>>>  320:                 location={"type": "coordinates", "lat": 37.7749, "lon": -122.4194, "name": "San Francisco"},
+>>>  321:                 forecast_days=7,
+>>>  322:                 units="metric",
+>>>  323:                 include_alerts=True,
+>>>  324:             ),
+>>>  325:             tool_result={
+>>>  326:                 "current": {"temp": 18.5, "feels_like": 17.2, "conditions": "Partly cloudy"},
+>>>  327:                 "forecast": [
+>>>  328:                     {"date": "2024-01-16", "high": 20, "low": 12},
+>>>  329:                     {"date": "2024-01-17", "high": 19, "low": 11},
+>>>  330:                 ],
+>>>  331:             },
+>>>  332:         )
+>>>  333:
+>>>  334:         outcome = handler._handle_post_hook(request, session_id)
+>>>  335:         assert isinstance(outcome, PostToolSuccess)
+     336:
+     337:     def test_ai_model_tool_with_arrays(self, handler, session_id):
+     338:         """Test AI/ML tool with array parameters."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-6`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L337-L352)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L337-352)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_ai_model_tool_with_arrays - just verifies PreToolApprove
+
+```
+     334:         outcome = handler._handle_post_hook(request, session_id)
+     335:         assert isinstance(outcome, PostToolSuccess)
+     336:
+>>>  337:     def test_ai_model_tool_with_arrays(self, handler, session_id):
+>>>  338:         """Test AI/ML tool with array parameters."""
+>>>  339:         request = PreToolUseRequest(
+>>>  340:             session_id=str(session_id),
+>>>  341:             hook_event_name="PreToolUse",
+>>>  342:             tool_name="mcp_ml_predict",
+>>>  343:             tool_input=ToolInput(
+>>>  344:                 model_id="sentiment-v2",
+>>>  345:                 inputs=["I love this!", "This is terrible", "Not sure about this"],
+>>>  346:                 parameters={"temperature": 0.7, "max_tokens": 100, "top_p": 0.9},
+>>>  347:                 return_probabilities=True,
+>>>  348:             ),
+>>>  349:         )
+>>>  350:
+>>>  351:         outcome = handler._handle_pre_hook(request, session_id)
+>>>  352:         assert isinstance(outcome, PreToolApprove)
+     353:
+     354:     def test_database_tool_with_sql(self, handler, session_id):
+     355:         """Test database tool with SQL that might trigger security checks."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-7`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L354-L370)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L354-370)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_database_tool_with_sql - just verifies PreToolApprove
+
+```
+     351:         outcome = handler._handle_pre_hook(request, session_id)
+     352:         assert isinstance(outcome, PreToolApprove)
+     353:
+>>>  354:     def test_database_tool_with_sql(self, handler, session_id):
+>>>  355:         """Test database tool with SQL that might trigger security checks."""
+>>>  356:         request = PreToolUseRequest(
+>>>  357:             session_id=str(session_id),
+>>>  358:             hook_event_name="PreToolUse",
+>>>  359:             tool_name="mcp_postgres_query",
+>>>  360:             tool_input=ToolInput(
+>>>  361:                 connection_string="postgresql://user:pass@localhost/db",
+>>>  362:                 query="SELECT * FROM users WHERE id = $1",
+>>>  363:                 params=[123],
+>>>  364:                 timeout_ms=5000,
+>>>  365:                 return_format="json",
+>>>  366:             ),
+>>>  367:         )
+>>>  368:
+>>>  369:         outcome = handler._handle_pre_hook(request, session_id)
+>>>  370:         assert isinstance(outcome, PreToolApprove)
+     371:
+     372:     def test_iot_device_control(self, handler, session_id):
+     373:         """Test IoT device control with mixed types."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-8`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L372-L388)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L372-388)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_iot_device_control - just verifies PostToolSuccess
+
+```
+     369:         outcome = handler._handle_pre_hook(request, session_id)
+     370:         assert isinstance(outcome, PreToolApprove)
+     371:
+>>>  372:     def test_iot_device_control(self, handler, session_id):
+>>>  373:         """Test IoT device control with mixed types."""
+>>>  374:         request = PostToolUseRequest(
+>>>  375:             session_id=str(session_id),
+>>>  376:             hook_event_name="PostToolUse",
+>>>  377:             tool_name="mcp_smart_home_control",
+>>>  378:             tool_input=ToolInput(
+>>>  379:                 device_id="light.living_room",
+>>>  380:                 action="set_state",
+>>>  381:                 payload={"on": True, "brightness": 75, "color": {"r": 255, "g": 200, "b": 100}, "transition_time": 2.5},
+>>>  382:                 confirm=True,
+>>>  383:             ),
+>>>  384:             tool_result={"success": True, "device_state": {"on": True, "brightness": 75}},
+>>>  385:         )
+>>>  386:
+>>>  387:         outcome = handler._handle_post_hook(request, session_id)
+>>>  388:         assert isinstance(outcome, PostToolSuccess)
+     389:
+     390:     def test_blockchain_tool_with_hex_data(self, handler, session_id):
+     391:         """Test blockchain tool with hex strings and addresses."""
+```
+
+### `redundant-mcp-tool-tests.yaml` / `occ-9`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/redundant-mcp-tool-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L390-L409)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L390-409)
+
+> Most tests in TestMCPToolsUnexpectedFormats (lines 285-553) are redundant.
+> They create different MCP tool payloads with various field types (stock prices,
+> weather data, blockchain addresses, calendar events, etc.) but all just verify
+> that PreToolApprove or PostToolSuccess is returned. They don't exercise unique
+> code paths - they're "the same thing painted orange".
+>
+> The meaningful tests are the ones that exercise distinct handler behavior:
+>
+> - test_mcp_tool_with_extra_fields: verifies extra="allow" on ToolInput
+> - test_mcp_filesystem_tool_with_path: tests path-based access control
+> - test_mcp_tool_with_python_file: tests Python violation detection in MCP tools
+> - test_mcp_tool_post_hook_with_autofix: tests autofix in post-hook
+> - test_mcp_tool_name_variations: tests different naming conventions
+> - test_mcp_tool_python_detection: parametrized test for Python detection logic
+> - test_mcp_tool_session_tracking: verifies session file creation
+> - test_mcp_tool_with_file_path_updates_working_dir: tests working dir tracking
+> - test_empty_tool_input: edge case of no parameters
+> - test_tool_with_none_values: edge case of null handling
+> - test_tool_with_special_characters: edge case of unusual field names
+> - test_mcp_tool_logging/test_mcp_tool_decision_logging: verify logging behavior
+>
+> The entire TestMCPToolsUnexpectedFormats class should be deleted or collapsed
+> into a single parametrized test that verifies "arbitrary fields don't crash".
+>
+> **Note:** test_blockchain_tool_with_hex_data - just verifies PreToolApprove
+
+```
+     387:         outcome = handler._handle_post_hook(request, session_id)
+     388:         assert isinstance(outcome, PostToolSuccess)
+     389:
+>>>  390:     def test_blockchain_tool_with_hex_data(self, handler, session_id):
+>>>  391:         """Test blockchain tool with hex strings and addresses."""
+>>>  392:         request = PreToolUseRequest(
+>>>  393:             session_id=str(session_id),
+>>>  394:             hook_event_name="PreToolUse",
+>>>  395:             tool_name="mcp_ethereum_send_transaction",
+>>>  396:             tool_input=ToolInput(
+>>>  397:                 from_address="0x742d35Cc6634C0532925a3b844Bc9e7595f4a7e4",
+>>>  398:                 to_address="0x5aAeb6053f3E94C9b9A09f33669435E7Ef1BeAed",
+>>>  399:                 value_wei="1000000000000000000",  # 1 ETH
+>>>  400:                 gas_limit=21000,
+>>>  401:                 gas_price_gwei="30",
+>>>  402:                 nonce=42,
+>>>  403:                 data="0x",
+>>>  404:                 chain_id=1,
+>>>  405:             ),
+>>>  406:         )
+>>>  407:
+>>>  408:         outcome = handler._handle_pre_hook(request, session_id)
+>>>  409:         assert isinstance(outcome, PreToolApprove)
+     410:
+     411:     def test_calendar_tool_with_datetime(self, handler, session_id):
+     412:         """Test calendar tool with various datetime formats."""
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L34-L269)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L34, L55, L82, L95, L114, L143, L167, L180, L203, L235, L248, L269)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** session_id=str(session_id) should be session_id=session_id
+
+```
+      31:         """Test that MCP tools with custom fields are handled correctly."""
+      32:         # Create a request with MCP-specific fields
+      33:         request = PreToolUseRequest(
+>>>   34:             session_id=str(session_id),
+      35:             hook_event_name="PreToolUse",
+      36:             tool_name="mcp_memory_search_nodes",
+      37:             tool_input=ToolInput(
+   ...
+      52:     def test_mcp_puppeteer_tool(self, handler, session_id):
+      53:         """Test MCP puppeteer tool with its specific parameters."""
+      54:         request = PostToolUseRequest(
+>>>   55:             session_id=str(session_id),
+      56:             hook_event_name="PostToolUse",
+      57:             tool_name="mcp_puppeteer_navigate",
+      58:             tool_input=ToolInput(url="https://example.com", allowDangerous=True, wait_for="networkidle2"),
+   ...
+      79:         type(handler.config_loader).config = mock_config
+      80:
+      81:         request = PreToolUseRequest(
+>>>   82:             session_id=str(session_id),
+      83:             hook_event_name="PreToolUse",
+      84:             tool_name="mcp_filesystem_write_file",
+      85:             tool_input=ToolInput(path="/tmp/test.txt", content="Hello, world!"),
+   ...
+      92:     def test_unknown_mcp_tool_fields(self, handler, session_id):
+      93:         """Test that unknown MCP tool fields don't cause errors."""
+      94:         request = PreToolUseRequest(
+>>>   95:             session_id=str(session_id),
+      96:             hook_event_name="PreToolUse",
+      97:             tool_name="mcp_custom_tool",
+      98:             tool_input=ToolInput(
+   ...
+     111:     def test_mcp_tool_with_python_file(self, handler, session_id):
+     112:         """Test MCP tool operating on Python files."""
+     113:         request = PreToolUseRequest(
+>>>  114:             session_id=str(session_id),
+     115:             hook_event_name="PreToolUse",
+     116:             tool_name="mcp_editor_open",
+     117:             tool_input=ToolInput(
+   ...
+     140:         test_file.write_text("import os\nimport sys\n\n\ndef test():\n    pass")
+     141:
+     142:         request = PostToolUseRequest(
+>>>  143:             session_id=str(session_id),
+     144:             hook_event_name="PostToolUse",
+     145:             tool_name="mcp_editor_save",
+     146:             tool_input=ToolInput(file_path=str(test_file), content="import os\nimport sys\n\n\ndef test():\n    pass"),
+   ...
+     164:
+     165:         for tool_name in tool_names:
+     166:             request = PreToolUseRequest(
+>>>  167:                 session_id=str(session_id),
+     168:                 hook_event_name="PreToolUse",
+     169:                 tool_name=tool_name,
+     170:                 tool_input=ToolInput(query="test"),
+   ...
+     177:     def test_mcp_tool_with_complex_result(self, handler, session_id):
+     178:         """Test MCP tool with complex nested result structure."""
+     179:         request = PostToolUseRequest(
+>>>  180:             session_id=str(session_id),
+     181:             hook_event_name="PostToolUse",
+     182:             tool_name="mcp_knowledge_graph_query",
+     183:             tool_input=ToolInput(query="MATCH (n:Node) RETURN n LIMIT 10", database="neo4j"),
+   ...
+     200:     def test_mcp_tool_error_result(self, handler, session_id):
+     201:         """Test MCP tool that returned an error."""
+     202:         request = PostToolUseRequest(
+>>>  203:             session_id=str(session_id),
+     204:             hook_event_name="PostToolUse",
+     205:             tool_name="mcp_api_call",
+     206:             tool_input=ToolInput(endpoint="/api/users", method="GET"),
+   ...
+     232:         tool_input_dict = {"file_path": None, "content": None, **input_fields}
+     233:
+     234:         request = PreToolUseRequest(
+>>>  235:             session_id=str(session_id),
+     236:             hook_event_name="PreToolUse",
+     237:             tool_name=tool_name,
+     238:             tool_input=ToolInput(**tool_input_dict),
+   ...
+     245:     def test_mcp_tool_session_tracking(self, handler, session_id):
+     246:         """Test that MCP tools properly track sessions."""
+     247:         request = PreToolUseRequest(
+>>>  248:             session_id=str(session_id),
+     249:             hook_event_name="PreToolUse",
+     250:             tool_name="mcp_workspace_list",
+     251:             tool_input=ToolInput(directory="/home/user/project"),
+   ...
+     266:     def test_mcp_tool_with_file_path_updates_working_dir(self, handler, session_id):
+     267:         """Test that MCP tools with file paths update the working directory."""
+     268:         request = PreToolUseRequest(
+>>>  269:             session_id=str(session_id),
+     270:             hook_event_name="PreToolUse",
+     271:             tool_name="mcp_file_manager_open",
+     272:             tool_input=ToolInput(file_path="/home/user/projects/myapp/src/main.py", content="# Main file"),
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_quality_gate.py#L54-L166)
+
+File: `tests/claude_linter_v2/test_stop_hook_quality_gate.py` (L54, L93, L107, L133, L166)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** StopRequest session_id should accept SessionID directly
+
+```
+      51:     )
+      52:
+      53:     # Create stop hook request
+>>>   54:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      55:
+      56:     # Handle the hook
+      57:     result = handler.handle("Stop", request)
+   ...
+      90:     )
+      91:
+      92:     # Create stop hook request
+>>>   93:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      94:
+      95:     # Handle the hook
+      96:     result = handler.handle("Stop", request)
+   ...
+     104: def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
+     105:     """Test that stop hook passes when there are no violations."""
+     106:     # Create stop hook request
+>>>  107:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     108:
+     109:     # Handle the hook
+     110:     result = handler.handle("Stop", request)
+   ...
+     130:     )
+     131:
+     132:     # Create stop hook request
+>>>  133:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     134:
+     135:     # Handle the hook
+     136:     result = handler.handle("Stop", request)
+   ...
+     163:     assert unfixed[0].file_path == "/test/other.py"
+     164:
+     165:     # Stop hook should only report the unfixed violation
+>>>  166:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     167:
+     168:     result = handler.handle("Stop", request)
+     169:     # Since only warnings remain, should allow stop
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_fresh_scan.py#L45-L140)
+
+File: `tests/claude_linter_v2/test_stop_hook_fresh_scan.py` (L45, L84, L111, L140)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** StopRequest session_id should accept SessionID directly
+
+```
+      42: """)
+      43:
+      44:     # Create stop hook request
+>>>   45:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      46:
+      47:     # Handle the hook
+      48:     result = handler.handle("Stop", request)
+   ...
+      81: """)
+      82:
+      83:     # Create stop hook request
+>>>   84:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      85:
+      86:     # Handle the hook
+      87:     result = handler.handle("Stop", request)
+   ...
+     108:     (tmp_path / "README.md").write_text("# except hasattr")
+     109:
+     110:     # Create stop hook request
+>>>  111:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     112:
+     113:     # Handle the hook
+     114:     result = handler.handle("Stop", request)
+   ...
+     137:     bad_file.write_text("except: pass")  # Invalid syntax but we don't care
+     138:
+     139:     # Create stop hook request
+>>>  140:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     141:
+     142:     # Handle the hook
+     143:     result = handler.handle("Stop", request)
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_gitignore.py#L90-L143)
+
+File: `tests/claude_linter_v2/test_stop_hook_gitignore.py` (L90, L143)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** StopRequest session_id should accept SessionID directly
+
+```
+      87:     subprocess.run(["git", "commit", "-m", "Initial commit"], check=True)
+      88:
+      89:     # Create stop hook request
+>>>   90:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+      91:
+      92:     # Handle the hook
+      93:     result = handler.handle("Stop", request)
+   ...
+     140:     )
+     141:
+     142:     # Create stop hook request
+>>>  143:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+     144:
+     145:     # Handle the hook
+     146:     result = handler.handle("Stop", request)
+```
+
+### `request-session-id-typed-as-str.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/request-session-id-typed-as-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/cli.py#L216-L248)
+
+File: `ducktape_llm_common/claude_linter_v2/cli.py` (L216, L248)
+
+> Hook request models (PreToolUseRequest, PostToolUseRequest, StopRequest, etc.)
+> have session_id typed as str, forcing callers to write `session_id=str(session_id)`.
+>
+> The models should accept SessionID directly. Pydantic handles UUID serialization
+> natively - no custom serializer needed. This eliminates repetitive str() conversions
+> and provides type safety at the API boundary.
+>
+> **Note:** session_allow and session_deny take session: str | None instead of SessionID | None
+
+```
+     213: @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
+     214: @click.option("--dir", type=Path, help="Directory to affect (default: current)")
+     215: def session_allow(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
+>>>  216:     """Grant temporary permissions using Python predicates."""
+     217:
+     218:     manager = SessionManager()
+     219:
+   ...
+     245: @click.option("--session", type=str, help="Specific session ID (default: all in current dir)")
+     246: @click.option("--dir", type=Path, help="Directory to affect (default: current)")
+     247: def session_deny(predicate: str, expires: str | None, session: str | None, dir: Path | None) -> None:
+>>>  248:     """Deny permissions using Python predicates.
+     249:
+     250:     Examples:
+     251:         cl2 session deny 'Write("/etc/*")'
+```
+
+### `session-id-parsing-duplication.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/session-id-parsing-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L144-L166)
+
+File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L144, L166)
+
+> SessionManager has two occurrences of `SessionID(session_file.stem)` that directly
+> construct a SessionID from a string without validation. The `parse_session_id()`
+> function exists to validate UUID format before constructing SessionID.
+>
+> Pattern should be `parse_session_id(session_file.stem)` to ensure the stem is a
+> valid UUID before wrapping it in SessionID.
+>
+> **Note:** Use parse_session_id() instead of direct SessionID() construction
+
+```
+     141:         else:
+     142:             # Add to all sessions in the directory
+     143:             for session_file in self.sessions_dir.glob("*.json"):
+>>>  144:                 sid = SessionID(session_file.stem)
+     145:                 session_data = self._load_session(sid)
+     146:
+     147:                 # Skip if session is in different directory
+   ...
+     163:
+     164:         # Scan all session files
+     165:         for session_file in self.sessions_dir.glob("*.json"):
+>>>  166:             session_id = SessionID(session_file.stem)
+     167:             session_data = self._load_session(session_id)
+     168:
+     169:             # Skip sessions in other directories unless requested
+```
+
+### `session-id-typed-as-string.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/session-id-typed-as-string.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/manager.py#L33-L43)
+
+File: `ducktape_llm_common/claude_linter_v2/session/manager.py` (L33-43)
+
+> SessionData.id field is typed as str but should be typed as SessionID (UUID).
+> Pydantic 2 supports UUID serialization/deserialization natively, so there's
+> no need to store it as a string. Using the correct type provides type safety
+> and avoids unnecessary str() conversions in tests and application code.
+>
+> **Note:** SessionData model has id field typed as str instead of SessionID (UUID)
+
+```
+      30:     expires: datetime | None = None
+      31:
+      32:
+>>>   33: class SessionData(BaseModel):
+>>>   34:     """Session data structure."""
+>>>   35:
+>>>   36:     model_config = ConfigDict(frozen=False, arbitrary_types_allowed=True)
+>>>   37:
+>>>   38:     id: str
+>>>   39:     created: datetime
+>>>   40:     last_seen: datetime | None = None
+>>>   41:     directory: Path | None = None
+>>>   42:     rules: list[Rule] = Field(default_factory=list)
+>>>   43:     notification_id: int | None = None
+      44:
+      45:
+      46: # Type alias for backwards compatibility
+```
+
+### `str-file-path-in-violations.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-in-violations.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/session/violations.py#L34-L73)
+
+File: `ducktape_llm_common/claude_linter_v2/session/violations.py` (L34, L60, L73)
+
+> ViolationTracker methods take `file_path: str` instead of `file_path: Path`.
+> Even though the paths are stored as strings in dicts, callers already have Path
+> objects and must convert to str. The interface should accept Path and convert
+> internally if needed for storage.
+>
+> Change signatures to `file_path: Path` and convert to str only at storage point.
+>
+> **Note:** add_violation, add_violations, mark_file_fixed all take file_path: str
+
+```
+      31:     def add_violation(
+      32:         self,
+      33:         session_id: SessionID,
+>>>   34:         file_path: str,
+      35:         line: int,
+      36:         message: str,
+      37:         severity: str = "error",
+   ...
+      57:         self._violations[session_id][key] = violation_dict
+      58:
+      59:     def add_violations(
+>>>   60:         self, session_id: SessionID, violations: list[Violation], file_path: str, severity: str = "error"
+      61:     ) -> None:
+      62:         """Add multiple violations from a linter."""
+      63:         for v in violations:
+   ...
+      70:                 rule=v.rule,
+      71:             )
+      72:
+>>>   73:     def mark_file_fixed(self, session_id: SessionID, file_path: str) -> None:
+      74:         """Mark all violations in a file as fixed."""
+      75:         if session_id not in self._violations:
+      76:             return
+```
+
+### `str-file-path-type.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/linters/python_ruff.py#L57)
+
+File: `ducktape_llm_common/claude_linter_v2/linters/python_ruff.py` (L57)
+
+> Several functions take `file_path: str` or `paths: list[str]` when they should
+> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+> os.PathLike directly. Using str forces callers to convert and loses Path methods.
+>
+> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+>
+> **Note:** check_code takes file_path: str | None instead of Path
+
+```
+      54:             logger.warning("ruff not available")
+      55:         return False
+      56:
+>>>   57:     def check_code(self, code: str, file_path: str | None = None, critical_only: bool = True) -> list[Violation]:
+      58:         """
+      59:         Check Python code with ruff.
+      60:
+```
+
+### `str-file-path-type.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/check_python.py#L10-L12)
+
+File: `ducktape_llm_common/claude_linter_v2/check_python.py` (L10-12)
+
+> Several functions take `file_path: str` or `paths: list[str]` when they should
+> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+> os.PathLike directly. Using str forces callers to convert and loses Path methods.
+>
+> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+>
+> **Note:** check_python_file takes file_path: str instead of Path
+
+```
+       7: from .pattern_matcher import PatternMatcher
+       8:
+       9:
+>>>   10: def check_python_file(
+>>>   11:     file_path: str, content: str, config: ModularConfig, critical_only: bool = False
+>>>   12: ) -> list[Violation]:
+      13:     """Check a Python file for violations.
+      14:
+      15:     Args:
+```
+
+### `str-file-path-type.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/precommit_runner.py#L21)
+
+File: `ducktape_llm_common/claude_linter/precommit_runner.py` (L21)
+
+> Several functions take `file_path: str` or `paths: list[str]` when they should
+> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+> os.PathLike directly. Using str forces callers to convert and loses Path methods.
+>
+> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+>
+> **Note:** run() takes paths: list[str] instead of list[Path]
+
+```
+      18:         self.config = config
+      19:
+      20:     def run(self, paths, cwd=None):
+>>>   21:         """Run pre-commit hooks on specified paths.
+      22:
+      23:         Args:
+      24:             paths: List of file paths to check
+```
+
+### `str-file-path-type.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/str-file-path-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/config.py#L58)
+
+File: `ducktape_llm_common/claude_linter/config.py` (L58)
+
+> Several functions take `file_path: str` or `paths: list[str]` when they should
+> take `Path` or `list[Path]`. Python 3.13+ stdlib (subprocess, ast.parse) accepts
+> os.PathLike directly. Using str forces callers to convert and loses Path methods.
+>
+> Change to `Path` and remove any unnecessary `str()` conversions at call sites.
+>
+> **Note:** get_merged_config takes paths: list[str] instead of list[Path]
+
+```
+      55:
+      56: def get_merged_config(paths, fix=False):
+      57:     user_config = load_user_config()
+>>>   58:     # Get the pre-commit section, which contains repos array
+      59:     user_pre_commit = user_config.get("pre-commit", {})
+      60:
+      61:     local_cfg = {}
+```
+
+### `test-file-path-fixture-missing.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_ast.py#L18-L221)
+
+File: `tests/claude_linter_v2/test_python_ast.py` (L18, L36, L49, L65, L79, L92, L109, L127, L202, L221)
+
+> Test files call analyze_code(), format_code(), and check_code() without a consistent
+> file_path parameter. Multiple occurrences use:
+>
+> - No file_path at all
+> - Inline strings like "/tmp/test.py"
+> - Ad-hoc tmp_path constructions
+>
+> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
+> to use consistently across all tests. This provides:
+>
+> - Consistent behavior for path-dependent logic
+> - Clear indication that tests are using synthetic paths
+> - Single place to update if path handling changes
+>
+> **Note:** analyze_code(code) should use analyze_code(code, TEST_FILE)
+
+```
+      15:     pass
+      16: """
+      17:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=False, barrel_init=False)
+>>>   18:         violations = analyzer.analyze_code(code)
+      19:
+      20:         assert len(violations) == 1
+      21:         assert violations[0].line == 4
+   ...
+      33:     pass
+      34: """
+      35:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=False, barrel_init=False)
+>>>   36:         violations = analyzer.analyze_code(code)
+      37:
+      38:         assert len(violations) == 0
+      39:
+   ...
+      46:     pass
+      47: """
+      48:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=False, barrel_init=False)
+>>>   49:         violations = analyzer.analyze_code(code)
+      50:
+      51:         assert len(violations) == 0
+      52:
+   ...
+      62:     print("has foo")
+      63: """
+      64:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>   65:         violations = analyzer.analyze_code(code)
+      66:
+      67:         assert len(violations) == 1
+      68:         assert violations[0].line == 3
+   ...
+      76: value = getattr(obj, 'foo', 'default')
+      77: """
+      78:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>   79:         violations = analyzer.analyze_code(code)
+      80:
+      81:         assert len(violations) == 1
+      82:         assert violations[0].line == 3
+   ...
+      89: setattr(obj, 'foo', 'bar')
+      90: """
+      91:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>   92:         violations = analyzer.analyze_code(code)
+      93:
+      94:         assert len(violations) == 1
+      95:         assert violations[0].line == 3
+   ...
+     106:     pass
+     107: """
+     108:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>  109:         violations = analyzer.analyze_code(code)
+     110:
+     111:         assert len(violations) == 1  # Should still catch hasattr
+     112:         assert violations[0].line == 6
+   ...
+     124: del obj.bar
+     125: """
+     126:         analyzer = PythonASTAnalyzer(bare_except=False, getattr_setattr=True, barrel_init=False)
+>>>  127:         violations = analyzer.analyze_code(code)
+     128:
+     129:         assert len(violations) == 0
+     130:
+   ...
+     199:     pass
+     200: """
+     201:         analyzer = PythonASTAnalyzer(bare_except=True, getattr_setattr=True, barrel_init=False)
+>>>  202:         violations = analyzer.analyze_code(code)
+     203:
+     204:         assert len(violations) == 3
+     205:         # Should find: bare except, hasattr, getattr
+   ...
+     218:     # Missing closing paren
+     219: """
+     220:         analyzer = PythonASTAnalyzer()
+>>>  221:         violations = analyzer.analyze_code(code)
+     222:
+     223:         assert len(violations) == 1
+     224:         assert violations[0].rule == "syntax"
+```
+
+### `test-file-path-fixture-missing.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_formatter.py#L38-L194)
+
+File: `tests/claude_linter_v2/test_python_formatter.py` (L38, L64, L88, L103, L136, L147, L166, L185, L194)
+
+> Test files call analyze_code(), format_code(), and check_code() without a consistent
+> file_path parameter. Multiple occurrences use:
+>
+> - No file_path at all
+> - Inline strings like "/tmp/test.py"
+> - Ad-hoc tmp_path constructions
+>
+> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
+> to use consistently across all tests. This provides:
+>
+> - Consistent behavior for path-dependent logic
+> - Clear indication that tests are using synthetic paths
+> - Single place to update if path handling changes
+>
+> **Note:** format_code() should pass file_path=TEST_FILE
+
+```
+      35:         formatter = PythonFormatter(["ruff"])
+      36:         formatter._available_tools = ["ruff"]
+      37:
+>>>   38:         result, changes = formatter.format_code(input_code)
+      39:
+      40:         assert result == formatted_code
+      41:         assert changes == ["Applied ruff formatting"]
+   ...
+      61:         formatter = PythonFormatter(["black"])
+      62:         formatter._available_tools = ["black"]
+      63:
+>>>   64:         result, changes = formatter.format_code(input_code)
+      65:
+      66:         assert result == formatted_code
+      67:         assert changes == ["Applied black formatting"]
+   ...
+      85:         formatter = PythonFormatter(["ruff"])
+      86:         formatter._available_tools = ["ruff"]
+      87:
+>>>   88:         result, changes = formatter.format_code(code)
+      89:
+      90:         assert result == code
+      91:         assert changes == []
+   ...
+     100:         formatter = PythonFormatter(["ruff"])
+     101:         formatter._available_tools = ["ruff"]
+     102:
+>>>  103:         result, changes = formatter.format_code(code)
+     104:
+     105:         # Should return original code on error
+     106:         assert result == code
+   ...
+     133:         formatter = PythonFormatter(["ruff"])
+     134:         formatter._available_tools = ["ruff"]
+     135:
+>>>  136:         result, changes = formatter.format_code(input_code, categories=[AutofixCategory.IMPORTS])
+     137:
+     138:         assert result == fixed_code
+     139:         assert "Fixed import ordering and removed unused imports" in changes
+   ...
+     144:         formatter._available_tools = []
+     145:
+     146:         code = "x=1+2"
+>>>  147:         result, changes = formatter.format_code(code)
+     148:
+     149:         assert result == code
+     150:         assert changes == []
+   ...
+     163:         formatter._apply_formatting = MagicMock(return_value=(code, []))
+     164:         formatter._fix_imports = MagicMock(return_value=(code, []))
+     165:
+>>>  166:         formatter.format_code(code, categories=[AutofixCategory.ALL])
+     167:
+     168:         # Both methods should be called
+     169:         formatter._apply_formatting.assert_called_once()
+   ...
+     182:         formatter._fix_imports = MagicMock(return_value=(code, []))
+     183:
+     184:         # Only formatting
+>>>  185:         formatter.format_code(code, categories=[AutofixCategory.FORMATTING])
+     186:         formatter._apply_formatting.assert_called_once()
+     187:         formatter._fix_imports.assert_not_called()
+     188:
+   ...
+     191:         formatter._fix_imports.reset_mock()
+     192:
+     193:         # Only imports
+>>>  194:         formatter.format_code(code, categories=[AutofixCategory.IMPORTS])
+     195:         formatter._apply_formatting.assert_not_called()
+     196:         formatter._fix_imports.assert_called_once()
+     197:
+```
+
+### `test-file-path-fixture-missing.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-file-path-fixture-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_python_ruff.py#L49-L198)
+
+File: `tests/claude_linter_v2/test_python_ruff.py` (L49, L71, L101, L118, L145, L162, L175, L198)
+
+> Test files call analyze_code(), format_code(), and check_code() without a consistent
+> file_path parameter. Multiple occurrences use:
+>
+> - No file_path at all
+> - Inline strings like "/tmp/test.py"
+> - Ad-hoc tmp_path constructions
+>
+> Should extract a shared TEST_FILE constant or fixture (e.g., Path("/test/file.py"))
+> to use consistently across all tests. This provides:
+>
+> - Consistent behavior for path-dependent logic
+> - Clear indication that tests are using synthetic paths
+> - Single place to update if path handling changes
+>
+> **Note:** check_code() should pass file_path=TEST_FILE
+
+```
+      46:         linter = PythonRuffLinter()
+      47:         linter._ruff_available = True
+      48:
+>>>   49:         violations = linter.check_code(code)
+      50:
+      51:         assert len(violations) == 1
+      52:         assert violations[0].rule == "ruff:E722"
+   ...
+      68:         linter = PythonRuffLinter()
+      69:         linter._ruff_available = True
+      70:
+>>>   71:         violations = linter.check_code(code)
+      72:
+      73:         assert len(violations) == 0
+      74:
+   ...
+      98:         linter = PythonRuffLinter()
+      99:         linter._ruff_available = True
+     100:
+>>>  101:         violations = linter.check_code("code", critical_only=True)
+     102:
+     103:         # Should only return the critical violation
+     104:         assert len(violations) == 1
+   ...
+     115:         linter = PythonRuffLinter(force_select=force_rules)
+     116:         linter._ruff_available = True
+     117:
+>>>  118:         linter.check_code(code, critical_only=False)
+     119:
+     120:         # Verify the command included force-select rules
+     121:         call_args = mock_run.call_args[0][0]
+   ...
+     142:         linter = PythonRuffLinter()
+     143:         linter._ruff_available = True
+     144:
+>>>  145:         violations = linter.check_code("import unused", critical_only=False)
+     146:
+     147:         assert len(violations) == 1
+     148:         assert violations[0].fixable is True
+   ...
+     159:         linter = PythonRuffLinter()
+     160:         linter._ruff_available = True
+     161:
+>>>  162:         violations = linter.check_code("code")
+     163:
+     164:         # Should return empty list on error
+     165:         assert violations == []
+   ...
+     172:         linter = PythonRuffLinter()
+     173:         linter._ruff_available = True
+     174:
+>>>  175:         violations = linter.check_code("code")
+     176:
+     177:         # Should return empty list on parse error
+     178:         assert violations == []
+   ...
+     195:         linter = PythonRuffLinter()
+     196:         linter._ruff_available = False
+     197:
+>>>  198:         violations = linter.check_code("code")
+     199:
+     200:         assert violations == []
+     201:
+```
+
+### `test-request-raw-dict-construction.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-request-raw-dict-construction.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L15-L219)
+
+File: `tests/claude_linter_v2/test_integration.py` (L15-28, L46-58, L76-89, L112-125, L146-159, L191-204, L216-219)
+
+> Tests construct PreToolUseRequest/PostToolUseRequest payloads as raw dicts:
+> request_data = {"hook_event_name": "PreToolUse", "tool_name": "Write", "tool_input": {...}}
+>
+> Instead, use Pydantic models directly:
+> request = PreToolUseRequest(
+> session_id=session_id,
+> hook_event_name="PreToolUse",
+> tool_name="Write",
+> tool_input={"file_path": ..., "content": ...},
+> )
+>
+> Using typed models provides compile-time checking and makes test intent clearer.
+>
+> **Note:** request_data dict should be PreToolUseRequest model
+
+```
+      12:
+      13:     def test_pre_hook_bare_except(self):
+      14:         """Test that pre-hook blocks bare except."""
+>>>   15:         request_data = {
+>>>   16:             "hook_event_name": "PreToolUse",
+>>>   17:             "tool_name": "Write",
+>>>   18:             "tool_input": {
+>>>   19:                 "file_path": "/tmp/test_bare_except.py",
+>>>   20:                 "content": """
+>>>   21: try:
+>>>   22:     x = 1/0
+>>>   23: except:
+>>>   24:     pass
+>>>   25: """,
+>>>   26:             },
+>>>   27:             "session_id": "12345678-1234-5678-1234-567812345678",
+>>>   28:         }
+      29:
+      30:         result = subprocess.run(
+      31:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+   ...
+      43:
+      44:     def test_pre_hook_hasattr(self):
+      45:         """Test that pre-hook blocks hasattr usage."""
+>>>   46:         request_data = {
+>>>   47:             "hook_event_name": "PreToolUse",
+>>>   48:             "tool_name": "Write",
+>>>   49:             "tool_input": {
+>>>   50:                 "file_path": "/tmp/test_hasattr.py",
+>>>   51:                 "content": """
+>>>   52: obj = object()
+>>>   53: if hasattr(obj, 'foo'):
+>>>   54:     print("has foo")
+>>>   55: """,
+>>>   56:             },
+>>>   57:             "session_id": "12345678-1234-5678-1234-567812345679",
+>>>   58:         }
+      59:
+      60:         result = subprocess.run(
+      61:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+   ...
+      73:
+      74:     def test_pre_hook_clean_code(self):
+      75:         """Test that pre-hook passes clean code."""
+>>>   76:         request_data = {
+>>>   77:             "hook_event_name": "PreToolUse",
+>>>   78:             "tool_name": "Write",
+>>>   79:             "tool_input": {
+>>>   80:                 "file_path": "/tmp/test_clean.py",
+>>>   81:                 "content": """
+>>>   82: def hello():
+>>>   83:     try:
+>>>   84:         print("Hello, world!")
+>>>   85:     except ValueError as e:
+>>>   86:         print(f"Error: {e}")
+>>>   87: """,
+>>>   88:             },
+>>>   89:             "session_id": "12345678-1234-5678-1234-567812345680",
+      90:         }
+      91:
+      92:         result = subprocess.run(
+   ...
+     109:     )
+     110:     def test_pre_hook_ruff_violation(self):
+     111:         """Test that pre-hook blocks ruff violations."""
+>>>  112:         request_data = {
+>>>  113:             "hook_event_name": "PreToolUse",
+>>>  114:             "tool_name": "Write",
+>>>  115:             "tool_input": {
+>>>  116:                 "file_path": "/tmp/test_mutable_default.py",
+>>>  117:                 "content": """
+>>>  118: import os
+>>>  119:
+>>>  120: def get_data():
+>>>  121:     # Mutable default argument
+>>>  122:     def process(items=[]):
+>>>  123:         items.append(1)
+>>>  124:         return items
+>>>  125: """,
+     126:             },
+     127:             "session_id": "12345678-1234-5678-1234-567812345681",
+     128:         }
+   ...
+     143:
+     144:     def test_pre_hook_barrel_init(self):
+     145:         """Test that pre-hook blocks barrel __init__.py."""
+>>>  146:         request_data = {
+>>>  147:             "hook_event_name": "PreToolUse",
+>>>  148:             "tool_name": "Write",
+>>>  149:             "tool_input": {
+>>>  150:                 "file_path": "/tmp/__init__.py",
+>>>  151:                 "content": """
+>>>  152: from .module1 import *
+>>>  153: from .module2 import Class1, Class2
+>>>  154:
+>>>  155: __all__ = ['Class1', 'Class2']
+>>>  156: """,
+>>>  157:             },
+>>>  158:             "session_id": "12345678-1234-5678-1234-567812345682",
+>>>  159:         }
+     160:
+     161:         result = subprocess.run(
+     162:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+   ...
+     188:
+     189:     def test_pre_hook_non_python_file(self):
+     190:         """Test that pre-hook passes non-Python files."""
+>>>  191:         request_data = {
+>>>  192:             "hook_event_name": "PreToolUse",
+>>>  193:             "tool_name": "Write",
+>>>  194:             "tool_input": {
+>>>  195:                 "file_path": "/tmp/test.txt",
+>>>  196:                 "content": "This is just a text file with except: and hasattr",
+>>>  197:             },
+>>>  198:             "session_id": "12345678-1234-5678-1234-567812345683",
+>>>  199:         }
+>>>  200:
+>>>  201:         result = subprocess.run(
+>>>  202:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+>>>  203:             input=json.dumps(request_data),
+>>>  204:             capture_output=True,
+     205:             text=True,
+     206:             check=False,
+     207:         )
+   ...
+     213:
+     214:     def test_post_hook_basic(self):
+     215:         """Test that post-hook runs without errors."""
+>>>  216:         request_data = {
+>>>  217:             "hook_event_name": "PostToolUse",
+>>>  218:             "tool_name": "Write",
+>>>  219:             "tool_input": {"file_path": "/tmp/test_post.py", "content": "x=1+2  # poorly formatted"},
+     220:             "session_id": "12345678-1234-5678-1234-567812345684",
+     221:         }
+     222:
+```
+
+### `test-session-id-fixture-duplication.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/test-session-id-fixture-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_mcp_tools.py#L26-L570)
+
+File: `tests/claude_linter_v2/test_mcp_tools.py` (L26-29, L294-297, L567-570)
+
+> Multiple test classes define their own session_id fixture with different UUIDs:
+>
+> - TestMCPTools: "550e8400-e29b-41d4-a716-446655440000"
+> - TestMCPToolsUnexpectedFormats: "770e8400-e29b-41d4-a716-446655440002"
+> - TestMCPToolLogging: "660e8400-e29b-41d4-a716-446655440001"
+>
+> These should be consolidated into a shared conftest.py fixture with a
+> "nothing-up-my-sleeve" UUID (e.g., all zeros: 00000000-0000-0000-0000-000000000000).
+>
+> **Note:** session_id fixtures should be shared in conftest.py
+
+```
+      23:         return HookHandler()
+      24:
+      25:     @pytest.fixture
+>>>   26:     def session_id(self) -> SessionID:
+>>>   27:         """Valid session ID."""
+>>>   28:         return SessionID("550e8400-e29b-41d4-a716-446655440000")
+>>>   29:
+      30:     def test_mcp_tool_with_extra_fields(self, handler, session_id):
+      31:         """Test that MCP tools with custom fields are handled correctly."""
+      32:         # Create a request with MCP-specific fields
+   ...
+     291:         return HookHandler()
+     292:
+     293:     @pytest.fixture
+>>>  294:     def session_id(self) -> SessionID:
+>>>  295:         """Valid session ID."""
+>>>  296:         return SessionID("770e8400-e29b-41d4-a716-446655440002")
+>>>  297:
+     298:     def test_stock_price_tool(self, handler, session_id):
+     299:         """Test a financial MCP tool with custom format."""
+     300:         request = PreToolUseRequest(
+   ...
+     564:         return handler
+     565:
+     566:     @pytest.fixture
+>>>  567:     def session_id(self) -> SessionID:
+>>>  568:         """Valid session ID."""
+>>>  569:         return SessionID("660e8400-e29b-41d4-a716-446655440001")
+>>>  570:
+     571:     def test_mcp_tool_logging(self, handler, session_id, tmp_path):
+     572:         """Test that MCP tool calls are properly logged."""
+     573:         # Override log directory
+```
+
+### `tests-use-real-paths.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tests-use-real-paths.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_integration.py#L19-L218)
+
+File: `tests/claude_linter_v2/test_integration.py` (L19, L50, L86, L122, L165, L201, L218)
+
+> Tests use hardcoded /tmp/ paths instead of pytest's tmp_path fixture, and scan
+> the actual working directory instead of a predictable test directory. This causes:
+>
+> 1. Tests to operate on real filesystem locations that may have stale state
+> 2. Stop hook tests to find violations in the actual codebase, not test fixtures
+> 3. Non-deterministic test behavior depending on cwd and /tmp/ contents
+> 4. Potential interference between parallel test runs
+>
+> **Note:** Multiple tests use hardcoded /tmp/ paths like '/tmp/test_bare_except.py' instead of tmp_path fixture
+
+```
+      16:             "hook_event_name": "PreToolUse",
+      17:             "tool_name": "Write",
+      18:             "tool_input": {
+>>>   19:                 "file_path": "/tmp/test_bare_except.py",
+      20:                 "content": """
+      21: try:
+      22:     x = 1/0
+   ...
+      47:             "hook_event_name": "PreToolUse",
+      48:             "tool_name": "Write",
+      49:             "tool_input": {
+>>>   50:                 "file_path": "/tmp/test_hasattr.py",
+      51:                 "content": """
+      52: obj = object()
+      53: if hasattr(obj, 'foo'):
+   ...
+      83:     try:
+      84:         print("Hello, world!")
+      85:     except ValueError as e:
+>>>   86:         print(f"Error: {e}")
+      87: """,
+      88:             },
+      89:             "session_id": "12345678-1234-5678-1234-567812345680",
+   ...
+     119:
+     120: def get_data():
+     121:     # Mutable default argument
+>>>  122:     def process(items=[]):
+     123:         items.append(1)
+     124:         return items
+     125: """,
+   ...
+     162:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+     163:             input=json.dumps(request_data),
+     164:             capture_output=True,
+>>>  165:             text=True,
+     166:             check=False,
+     167:         )
+     168:
+   ...
+     198:             "session_id": "12345678-1234-5678-1234-567812345683",
+     199:         }
+     200:
+>>>  201:         result = subprocess.run(
+     202:             [sys.executable, "-m", "ducktape_llm_common.claude_linter_v2.cli", "hook"],
+     203:             input=json.dumps(request_data),
+     204:             capture_output=True,
+   ...
+     215:         """Test that post-hook runs without errors."""
+     216:         request_data = {
+     217:             "hook_event_name": "PostToolUse",
+>>>  218:             "tool_name": "Write",
+     219:             "tool_input": {"file_path": "/tmp/test_post.py", "content": "x=1+2  # poorly formatted"},
+     220:             "session_id": "12345678-1234-5678-1234-567812345684",
+     221:         }
+```
+
+### `tests-use-real-paths.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tests-use-real-paths.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/tests/claude_linter_v2/test_stop_hook_quality_gate.py#L1-L190)
+
+File: `tests/claude_linter_v2/test_stop_hook_quality_gate.py` (L1-190)
+
+> Tests use hardcoded /tmp/ paths instead of pytest's tmp_path fixture, and scan
+> the actual working directory instead of a predictable test directory. This causes:
+>
+> 1. Tests to operate on real filesystem locations that may have stale state
+> 2. Stop hook tests to find violations in the actual codebase, not test fixtures
+> 3. Non-deterministic test behavior depending on cwd and /tmp/ contents
+> 4. Potential interference between parallel test runs
+>
+> **Note:** Stop hook tests scan actual cwd for violations instead of using isolated test directories with known content
+
+```
+>>>    1: """Test the stop hook quality gate functionality."""
+>>>    2:
+>>>    3: import pytest
+>>>    4:
+>>>    5: from ducktape_llm_common.claude_code_api import StopRequest
+>>>    6: from ducktape_llm_common.claude_linter_v2.hooks.handler import HookHandler
+>>>    7: from ducktape_llm_common.claude_linter_v2.types import parse_session_id
+>>>    8:
+>>>    9:
+>>>   10: @pytest.fixture
+>>>   11: def handler():
+>>>   12:     """Create a hook handler instance."""
+>>>   13:     handler = HookHandler()
+>>>   14:     # Ensure quality gate is enabled for testing
+>>>   15:     handler.config_loader.config.hooks["stop"].quality_gate = True
+>>>   16:     return handler
+>>>   17:
+>>>   18:
+>>>   19: @pytest.fixture
+>>>   20: def session_id():
+>>>   21:     """Create a test session ID."""
+>>>   22:     return parse_session_id("12345678-1234-5678-1234-567812345678")
+>>>   23:
+>>>   24:
+>>>   25: def test_stop_hook_blocks_with_unfixed_errors(handler, session_id, tmp_path):
+>>>   26:     """Test that stop hook blocks when there are unfixed errors."""
+>>>   27:     # Add some violations to the tracker
+>>>   28:     handler.violation_tracker.add_violation(
+>>>   29:         session_id=session_id,
+>>>   30:         file_path="/test/file.py",
+>>>   31:         line=10,
+>>>   32:         message="Bare except clause not allowed",
+>>>   33:         severity="error",
+>>>   34:         rule="bare-except",
+>>>   35:     )
+>>>   36:     handler.violation_tracker.add_violation(
+>>>   37:         session_id=session_id,
+>>>   38:         file_path="/test/file.py",
+>>>   39:         line=20,
+>>>   40:         message="Using hasattr() is not allowed",
+>>>   41:         severity="error",
+>>>   42:         rule="no-hasattr",
+>>>   43:     )
+>>>   44:     handler.violation_tracker.add_violation(
+>>>   45:         session_id=session_id,
+>>>   46:         file_path="/test/other.py",
+>>>   47:         line=5,
+>>>   48:         message="Line too long",
+>>>   49:         severity="warning",
+>>>   50:         rule="E501",
+>>>   51:     )
+>>>   52:
+>>>   53:     # Create stop hook request
+>>>   54:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>   55:
+>>>   56:     # Handle the hook
+>>>   57:     result = handler.handle("Stop", request)
+>>>   58:
+>>>   59:     # Should block due to errors
+>>>   60:     response_dict = result.model_dump()
+>>>   61:     assert response_dict.get("continue_") is True  # Always True for hook responses
+>>>   62:     assert response_dict.get("decision") == "block"  # StopPrevent sets decision=block
+>>>   63:     assert response_dict.get("reason") is not None
+>>>   64:     reason = response_dict["reason"]
+>>>   65:     assert "2 errors that must be fixed" in reason
+>>>   66:     assert "/test/file.py" in reason
+>>>   67:     assert "/test/other.py" in reason
+>>>   68:     assert "Line 10:" in reason or "Line 20:" in reason  # Should show line numbers
+>>>   69:     assert "cl2 check" in reason  # Should include check command
+>>>   70:
+>>>   71:
+>>>   72: def test_stop_hook_allows_with_only_warnings(handler, session_id, tmp_path):
+>>>   73:     """Test that stop hook allows proceeding with only warnings."""
+>>>   74:     # Add only warnings
+>>>   75:     handler.violation_tracker.add_violation(
+>>>   76:         session_id=session_id,
+>>>   77:         file_path="/test/file.py",
+>>>   78:         line=10,
+>>>   79:         message="Line too long",
+>>>   80:         severity="warning",
+>>>   81:         rule="E501",
+>>>   82:     )
+>>>   83:     handler.violation_tracker.add_violation(
+>>>   84:         session_id=session_id,
+>>>   85:         file_path="/test/file.py",
+>>>   86:         line=20,
+>>>   87:         message="Missing docstring",
+>>>   88:         severity="warning",
+>>>   89:         rule="D100",
+>>>   90:     )
+>>>   91:
+>>>   92:     # Create stop hook request
+>>>   93:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>   94:
+>>>   95:     # Handle the hook
+>>>   96:     result = handler.handle("Stop", request)
+>>>   97:
+>>>   98:     # Should allow stop (only warnings)
+>>>   99:     response_dict = result.model_dump()
+>>>  100:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+>>>  101:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
+>>>  102:
+>>>  103:
+>>>  104: def test_stop_hook_passes_with_no_violations(handler, session_id, tmp_path):
+>>>  105:     """Test that stop hook passes when there are no violations."""
+>>>  106:     # Create stop hook request
+>>>  107:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>  108:
+>>>  109:     # Handle the hook
+>>>  110:     result = handler.handle("Stop", request)
+>>>  111:
+>>>  112:     # Should pass
+>>>  113:     response_dict = result.model_dump()
+>>>  114:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+>>>  115:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
+>>>  116:
+>>>  117:
+>>>  118: def test_stop_hook_passes_when_quality_gate_disabled(handler, session_id, tmp_path):
+>>>  119:     """Test that stop hook passes when quality gate is disabled."""
+>>>  120:     # Disable quality gate
+>>>  121:     handler.config_loader.config.hooks["stop"].quality_gate = False
+>>>  122:
+>>>  123:     # Add violations
+>>>  124:     handler.violation_tracker.add_violation(
+>>>  125:         session_id=session_id,
+>>>  126:         file_path="/test/file.py",
+>>>  127:         line=10,
+>>>  128:         message="Bare except clause not allowed",
+>>>  129:         severity="error",
+>>>  130:     )
+>>>  131:
+>>>  132:     # Create stop hook request
+>>>  133:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>  134:
+>>>  135:     # Handle the hook
+>>>  136:     result = handler.handle("Stop", request)
+>>>  137:
+>>>  138:     # Should pass despite errors
+>>>  139:     response_dict = result.model_dump()
+>>>  140:     assert response_dict.get("continue_") is True  # StopAllow has continue_=True
+>>>  141:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
+>>>  142:
+>>>  143:
+>>>  144: def test_violations_marked_as_fixed(handler, session_id, tmp_path):
+>>>  145:     """Test that violations can be marked as fixed."""
+>>>  146:     # Add violations
+>>>  147:     handler.violation_tracker.add_violation(
+>>>  148:         session_id=session_id, file_path="/test/file.py", line=10, message="Bare except clause", severity="error"
+>>>  149:     )
+>>>  150:     handler.violation_tracker.add_violation(
+>>>  151:         session_id=session_id, file_path="/test/file.py", line=20, message="Line too long", severity="warning"
+>>>  152:     )
+>>>  153:     handler.violation_tracker.add_violation(
+>>>  154:         session_id=session_id, file_path="/test/other.py", line=5, message="Missing docstring", severity="warning"
+>>>  155:     )
+>>>  156:
+>>>  157:     # Mark one file as fixed
+>>>  158:     handler.violation_tracker.mark_file_fixed(session_id, "/test/file.py")
+>>>  159:
+>>>  160:     # Check unfixed violations
+>>>  161:     unfixed = handler.violation_tracker.get_unfixed_violations(session_id)
+>>>  162:     assert len(unfixed) == 1
+>>>  163:     assert unfixed[0].file_path == "/test/other.py"
+>>>  164:
+>>>  165:     # Stop hook should only report the unfixed violation
+>>>  166:     request = StopRequest(hook_event_name="Stop", session_id=str(session_id))
+>>>  167:
+>>>  168:     result = handler.handle("Stop", request)
+>>>  169:     # Since only warnings remain, should allow stop
+>>>  170:     response_dict = result.model_dump()
+>>>  171:     assert response_dict.get("continue_") is True  # Only warnings - allows stop
+>>>  172:     assert response_dict.get("decision") is None  # StopAllow doesn't set decision
+>>>  173:
+>>>  174:
+>>>  175: def test_violation_deduplication(handler, session_id):
+>>>  176:     """Test that duplicate violations are deduplicated."""
+>>>  177:     # Add same violation multiple times
+>>>  178:     for _ in range(3):
+>>>  179:         handler.violation_tracker.add_violation(
+>>>  180:             session_id=session_id,
+>>>  181:             file_path="/test/file.py",
+>>>  182:             line=10,
+>>>  183:             message="Bare except clause not allowed",
+>>>  184:             severity="error",
+>>>  185:             rule="bare-except",
+>>>  186:         )
+>>>  187:
+>>>  188:     # Should only have one violation
+>>>  189:     unfixed = handler.violation_tracker.get_unfixed_violations(session_id)
+>>>  190:     assert len(unfixed) == 1
+```
+
+### `tool-input-god-class.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tool-input-god-class.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_code_api.py#L22-L58)
+
+File: `ducktape_llm_common/claude_code_api.py` (L22-58)
+
+> ToolInput is a god class with all optional fields representing multiple distinct tool
+> types. This loses type safety - you can construct an "Edit" with no old_string/new_string,
+> or a "Bash" with file_path. Should be a discriminated union of per-tool input types.
+>
+> One possible approach: define EditToolInput, BashToolInput, MCPToolInput (with extra="allow"
+> for arbitrary MCP tools), then use a discriminated union based on tool_name. Since tool_name
+> and tool_input are sibling fields in the wire format, a model_validator(mode="before") can
+> restructure them into a nested ToolCall object for Pydantic to discriminate.
+>
+> **Note:** Main ToolInput with MCP fields and extra='allow'
+
+```
+      19:     replace_all: bool = False
+      20:
+      21:
+>>>   22: class ToolInput(BaseModel):
+>>>   23:     """Input parameters for Claude Code tools.
+>>>   24:
+>>>   25:     Different tools use different subsets of these fields.
+>>>   26:     Extra fields are allowed for MCP and other tools.
+>>>   27:     """
+>>>   28:
+>>>   29:     model_config = ConfigDict(extra="allow")
+>>>   30:
+>>>   31:     # Common fields
+>>>   32:     file_path: str | None = None
+>>>   33:     content: str | None = None
+>>>   34:
+>>>   35:     # Edit tool fields
+>>>   36:     old_string: str | None = None
+>>>   37:     new_string: str | None = None
+>>>   38:     replace_all: bool = False
+>>>   39:     old_content: str | None = None
+>>>   40:
+>>>   41:     # MultiEdit tool fields
+>>>   42:     edits: list[EditOperation] | None = None
+>>>   43:
+>>>   44:     # Bash tool fields
+>>>   45:     command: str | None = None
+>>>   46:
+>>>   47:     # MCP tool fields (common ones)
+>>>   48:     url: str | None = None
+>>>   49:     query: str | None = None
+>>>   50:     path: str | None = None
+>>>   51:     directory: str | None = None
+>>>   52:
+>>>   53:     # Allow any additional fields for extensibility
+>>>   54:     allowDangerous: bool | None = None  # noqa: N815
+>>>   55:     wait_for: str | None = None
+>>>   56:     database: str | None = None
+>>>   57:     endpoint: str | None = None
+>>>   58:     method: str | None = None
+      59:
+      60:
+      61: class HookEventName(StrEnum):
+```
+
+### `tool-input-god-class.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/tool-input-god-class.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter/models.py#L61-L91)
+
+File: `ducktape_llm_common/claude_linter/models.py` (L61-91)
+
+> ToolInput is a god class with all optional fields representing multiple distinct tool
+> types. This loses type safety - you can construct an "Edit" with no old_string/new_string,
+> or a "Bash" with file_path. Should be a discriminated union of per-tool input types.
+>
+> One possible approach: define EditToolInput, BashToolInput, MCPToolInput (with extra="allow"
+> for arbitrary MCP tools), then use a discriminated union based on tool_name. Since tool_name
+> and tool_input are sibling fields in the wire format, a model_validator(mode="before") can
+> restructure them into a nested ToolCall object for Pydantic to discriminate.
+>
+> **Note:** Duplicate ToolInput for file manipulation tools
+
+```
+      58:     """If True, replace all occurrences; if False, only replace first occurrence."""
+      59:
+      60:
+>>>   61: class ToolInput(BaseModel):
+>>>   62:     """Input parameters for Claude Code file manipulation tools.
+>>>   63:
+>>>   64:     Different tools use different subsets of these fields:
+>>>   65:     - Write: file_path, content
+>>>   66:     - Edit: file_path, old_string, new_string, replace_all
+>>>   67:     - MultiEdit: file_path, edits
+>>>   68:     """
+>>>   69:
+>>>   70:     # Common fields
+>>>   71:     file_path: str | None = None
+>>>   72:     """Path to the file being operated on. May be None for non-file tools."""
+>>>   73:
+>>>   74:     # Write tool fields
+>>>   75:     content: str | None = None
+>>>   76:     """Full content to write to the file (Write tool only)."""
+>>>   77:
+>>>   78:     # Edit tool fields
+>>>   79:     old_string: str | None = None
+>>>   80:     """Text to find and replace (Edit tool only)."""
+>>>   81:
+>>>   82:     new_string: str | None = None
+>>>   83:     """Replacement text (Edit tool only)."""
+>>>   84:
+>>>   85:     replace_all: bool = False
+>>>   86:     """Replace all occurrences if True, first occurrence if False (Edit tool)."""
+>>>   87:
+>>>   88:     # MultiEdit tool fields
+>>>   89:     edits: list[EditOperation] | None = None
+>>>   90:     """List of edit operations to apply in sequence (MultiEdit tool only)."""
+>>>   91:
+      92:
+      93: class PatchLine(BaseModel):
+      94:     """Represents a hunk in a structured patch (unified diff format).
+```
+
+### `unnecessary-str-cast.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unnecessary-str-cast.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/checker.py#L50-L87)
+
+File: `ducktape_llm_common/claude_linter_v2/checker.py` (L50, L73, L76, L81, L87)
+
+> Redundant `str(file_path)` conversions when file_path is already Path and the
+> receiving function/method accepts os.PathLike or when Path methods should be used
+> directly. Python 3.13+ subprocess and ast.parse accept Path objects natively.
+>
+> Remove the str() casts and use Path methods (.suffix, .name) instead of string
+> operations (.endswith).
+>
+> **Note:** Multiple str(file_path) casts in check_file method
+
+```
+      47:         violations: list[Violation] = []
+      48:
+      49:         # Only check Python files for now
+>>>   50:         if not str(file_path).endswith(".py"):
+      51:             return violations
+      52:
+      53:         try:
+   ...
+      70:                 or (getattr_config.enabled if getattr_config else False)
+      71:                 or (setattr_config.enabled if setattr_config else False)
+      72:             ),
+>>>   73:             barrel_init=str(file_path).endswith("__init__.py")
+      74:             and (barrel_init_config.enabled if barrel_init_config else False),
+      75:         )
+>>>   76:         ast_violations = analyzer.analyze_code(content, str(file_path))
+      77:         violations.extend(ast_violations)
+      78:
+      79:         # Run ruff checks
+      80:         ruff_linter = PythonRuffLinter(force_select=self.config.get_ruff_codes_to_select())
+>>>   81:         ruff_violations = ruff_linter.check_code(content, str(file_path), critical_only=False)
+      82:         violations.extend(ruff_violations)
+      83:
+      84:         # Apply fixes if requested
+      85:         if self.fix and self.categories:
+      86:             formatter = PythonFormatter(self.config.python_tools)
+>>>   87:             formatted_content, changes = formatter.format_code(content, str(file_path), self.categories)
+      88:
+      89:             if changes and formatted_content != content:
+      90:                 try:
+```
+
+### `unused-function-parameter.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unused-function-parameter.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_linter_v2/llm_analyzer.py#L62-L135)
+
+File: `ducktape_llm_common/claude_linter_v2/llm_analyzer.py` (L135, L62)
+
+> `_parse_llm_result(file_path: str)` accepts a `file_path` parameter that is never
+> used in the function body. The parameter is passed at the call site (line 62) but
+> the function doesn't reference it. Dead parameters add noise and mislead readers
+> about what the function actually needs.
+>
+> Remove the unused parameter from both signature and call site.
+>
+> **Note:** file_path param in signature (135) and call site (62) - param unused in body
+
+```
+      59:             result = self._call_llm(prompt)
+      60:
+      61:             # Parse result
+>>>   62:             is_ok, message, violations = self._parse_llm_result(result, file_path)
+      63:
+      64:             return is_ok, message, violations
+      65:
+   ...
+     132:         # Mock response - always return OK for now
+     133:         return {"ok": True, "violations": []}
+     134:
+>>>  135:     def _parse_llm_result(self, result: dict[str, Any], file_path: str) -> tuple[bool, str | None, list[Violation]]:
+     136:         """Parse LLM result into our format."""
+     137:         try:
+     138:             is_ok = result.get("ok", True)
+```
+
+### `unused-mixin.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/unused-mixin.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/hook_session_state.py#L36-L104)
+
+File: `ducktape_llm_common/hook_session_state.py` (L36-104)
+
+> StatefulHookMixin (lines 36-104) is defined but never used anywhere in the codebase.
+> Delete it or implement something that uses it.
+
+```
+      33:
+      34:
+      35: class StatefulHookMixin:
+>>>   36:     """
+>>>   37:     Mixin for hooks that need Pydantic-based session state.
+>>>   38:
+>>>   39:     Automatically loads state before hook dispatch and saves on destruction.
+>>>   40:     Hook can access state via self.state.
+>>>   41:
+>>>   42:     Example:
+>>>   43:         class MyHookState(BaseModel):
+>>>   44:             tool_calls: int = 0
+>>>   45:             blocked_files: list[str] = []
+>>>   46:
+>>>   47:         class MyHook(ClaudeCodeHookBase, StatefulHookMixin):
+>>>   48:             hook_name = "my-security-hook"
+>>>   49:             StateModel = MyHookState
+>>>   50:
+>>>   51:             def pre_tool_use(self, request: PreToolUseRequest) -> PreToolOutcome:
+>>>   52:                 self.state.tool_calls += 1
+>>>   53:                 return PreToolApprove()
+>>>   54:     """
+>>>   55:
+>>>   56:     hook_name: str
+>>>   57:     StateModel: type[StateModel]
+>>>   58:
+>>>   59:     def __init__(self, *args, **kwargs):
+>>>   60:         super().__init__(*args, **kwargs)
+>>>   61:         if not hasattr(self, "hook_name"):
+>>>   62:             raise ValueError("StatefulHookMixin requires 'hook_name' class attribute")
+>>>   63:         if not hasattr(self, "StateModel"):
+>>>   64:             raise ValueError("StatefulHookMixin requires 'StateModel' class attribute")
+>>>   65:
+>>>   66:         self.state: StateModel = None
+>>>   67:         self._current_session: SessionID = None
+>>>   68:
+>>>   69:     def _get_state_file(self, session_id: SessionID) -> Path:
+>>>   70:         """Get the state file path for a session."""
+>>>   71:         session_dir = get_session_dir(self.hook_name, session_id)
+>>>   72:         return session_dir / "state.json"
+>>>   73:
+>>>   74:     def _load_state(self, session_id: SessionID) -> None:
+>>>   75:         """Load state from file or create new instance."""
+>>>   76:         state_file = self._get_state_file(session_id)
+>>>   77:
+>>>   78:         if state_file.exists():
+>>>   79:             try:
+>>>   80:                 self.state = self.StateModel.model_validate_json(state_file.read_text())
+>>>   81:                 self._current_session = session_id
+>>>   82:                 return
+>>>   83:             except Exception:
+>>>   84:                 # If corrupted, start fresh
+>>>   85:                 pass
+>>>   86:
+>>>   87:         self.state = self.StateModel()
+>>>   88:         self._current_session = session_id
+>>>   89:
+>>>   90:     def _save_state(self) -> None:
+>>>   91:         """Save current state to file."""
+>>>   92:         if self.state is not None and self._current_session is not None:
+>>>   93:             state_file = self._get_state_file(self._current_session)
+>>>   94:             state_file.write_text(self.state.model_dump_json(indent=2))
+>>>   95:
+>>>   96:     def dispatch_hook(self, request) -> any:
+>>>   97:         """Override dispatch to load state before hook execution."""
+>>>   98:         self._load_state(request.session_id)
+>>>   99:         return super().dispatch_hook(request)
+>>>  100:
+>>>  101:     def __del__(self):
+>>>  102:         """Auto-save state on destruction."""
+>>>  103:         with contextlib.suppress(Exception):
+>>>  104:             self._save_state()
+```
+
+### `verbose-example-messages.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/verbose-example-messages.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_outcomes.py#L48-L55)
+
+File: `ducktape_llm_common/claude_outcomes.py` (L48-55)
+
+> Example llm_message strings in HookOutcome docstrings are unnecessarily verbose
+> and multi-line. A one-liner like "Permission denied, can't edit production files"
+> suffices to demonstrate usage.
+>
+> **Note:** PreToolDeny example has multi-line message with override instructions
+
+```
+      45:
+      46: @dataclass
+      47: class PreToolNoOpinion(HookOutcome):
+>>>   48:     """No opinion - let existing permission flow decide."""
+>>>   49:
+>>>   50:     def to_claude_response(self) -> PreToolResponse:
+>>>   51:         return PreToolResponse()  # undefined decision = existing permission flow
+>>>   52:
+>>>   53:
+>>>   54: PreToolOutcome = PreToolApprove | PreToolDeny | PreToolNoOpinion
+>>>   55:
+      56:
+      57: # PostToolUse Outcomes
+      58: @dataclass
+```
+
+### `verbose-example-messages.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/issues/verbose-example-messages.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape_llm_common/2026-01-03-00/code/ducktape_llm_common/claude_outcomes.py#L127-L135)
+
+File: `ducktape_llm_common/claude_outcomes.py` (L127-135)
+
+> Example llm_message strings in HookOutcome docstrings are unnecessarily verbose
+> and multi-line. A one-liner like "Permission denied, can't edit production files"
+> suffices to demonstrate usage.
+>
+> **Note:** StopPrevent example has multi-line error list
+
+```
+     124:     llm_message: str
+     125:
+     126:     def to_claude_response(self) -> StopResponse:
+>>>  127:         return StopResponse(decision="block", reason=self.llm_message)
+>>>  128:
+>>>  129:
+>>>  130: @dataclass
+>>>  131: class StopAllowWithInfo(HookOutcome):
+>>>  132:     """Allow Claude to end its turn, with an info message (non-blocking)."""
+>>>  133:
+>>>  134:     llm_message: str
+>>>  135:
+     136:     def to_claude_response(self) -> StopResponse:
+     137:         return StopResponse()
+     138:
+```
+
+## ducktape/2026-01-17-00 (51)
+
+### `confusing-pr-state-status.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/confusing-pr-state-status.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/shared/github_models.py#L15-L52)
+
+File: `wt/shared/github_models.py` (L15-46, L49-52)
+
+> `PRState` (github_models.py:49-52) and `PRStatus` (github_models.py:15-46)
+> are near-synonym names for distinct concepts: `PRState` is the raw GitHub
+> API state (open/closed/merged), while `PRStatus` is a derived rich status
+> combining state + mergeability (open_mergeable, open_conflicting, etc.).
+> Both are StrEnums defined adjacently. The naming makes it easy to confuse
+> them — "state" and "status" are synonyms in everyday use.
+>
+> Rename one to clarify the distinction, e.g. `PRStatus` →
+> `PRDetailedStatus` or `PRMergeStatus`, or `PRState` → `PRGitHubState` /
+> `PRRawState`.
+
+```
+      12:     pass
+      13:
+      14:
+>>>   15: class PRStatus(StrEnum):
+>>>   16:     MERGED = "MERGED"
+>>>   17:     CLOSED = "CLOSED"
+>>>   18:     OPEN_MERGEABLE = "OPEN_MERGEABLE"
+>>>   19:     OPEN_CONFLICTING = "OPEN_CONFLICTING"
+>>>   20:     OPEN_UNKNOWN = "OPEN_UNKNOWN"
+>>>   21:
+>>>   22:     @property
+>>>   23:     def is_merged(self) -> bool:
+>>>   24:         return self == PRStatus.MERGED
+>>>   25:
+>>>   26:     @property
+>>>   27:     def is_open(self) -> bool:
+>>>   28:         return self.name.startswith("OPEN_")
+>>>   29:
+>>>   30:     @property
+>>>   31:     def is_closed(self) -> bool:
+>>>   32:         return self == PRStatus.CLOSED
+>>>   33:
+>>>   34:     @property
+>>>   35:     def display_text(self) -> str:
+>>>   36:         if self == PRStatus.MERGED:
+>>>   37:             return "merged"
+>>>   38:         if self == PRStatus.CLOSED:
+>>>   39:             return "closed"
+>>>   40:         if self == PRStatus.OPEN_MERGEABLE:
+>>>   41:             return "can merge"
+>>>   42:         if self == PRStatus.OPEN_CONFLICTING:
+>>>   43:             return "conflict"
+>>>   44:         if self == PRStatus.OPEN_UNKNOWN:
+>>>   45:             return "open"
+>>>   46:         return self.value.lower()
+      47:
+      48:
+>>>   49: class PRState(StrEnum):
+>>>   50:     OPEN = "open"
+>>>   51:     CLOSED = "closed"
+>>>   52:     MERGED = "merged"
+      53:
+      54:     @property
+      55:     def is_merged(self) -> bool:
+```
+
+### `dead-code.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/steps.py#L83-L89)
+
+File: `agent_core_testing/steps.py` (L83-89)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** `AssistantMessage` step class — never imported or used outside steps.py
+
+```
+      80:
+      81:
+      82: @dataclass
+>>>   83: class AssistantMessage:
+>>>   84:     """Return assistant message without checking previous tool."""
+>>>   85:
+>>>   86:     message: str
+>>>   87:
+>>>   88:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>   89:         return factory.make_assistant_message(self.message)
+      90:
+      91:
+      92: @dataclass
+```
+
+### `dead-code.yaml` / `occ-10`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/policies/presets.py#L1-L12)
+
+File: `agent_server/policies/presets.py` (L1-12)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — re-exports `decide` from `approve_all` but nothing imports from it.
+
+```
+>>>    1: """Example policy program preset (approve-all)."""
+>>>    2:
+>>>    3: from __future__ import annotations
+>>>    4:
+>>>    5: from agent_server.policies.approve_all import decide
+>>>    6: from agent_server.policies.scaffold import run
+>>>    7:
+>>>    8: __all__ = ["decide"]
+>>>    9:
+>>>   10:
+>>>   11: if __name__ == "__main__":
+>>>   12:     raise SystemExit(run(decide))
+```
+
+### `dead-code.yaml` / `occ-11`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/claude/claude_optimizer/requirement_templates.py#L1-L121)
+
+File: `claude/claude_optimizer/requirement_templates.py` (L1-121)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — `RequirementSpec` and `create_behavioral_requirement` never imported.
+
+````
+>>>    1: #!/usr/bin/env python3
+>>>    2: """
+>>>    3: Template system for generating behavioral requirements with minimal duplication.
+>>>    4:
+>>>    5: Eliminates ~90% of boilerplate by using standardized templates while allowing
+>>>    6: each requirement to specify only its unique characteristics.
+>>>    7: """
+>>>    8:
+>>>    9: from dataclasses import dataclass
+>>>   10: from typing import Any
+>>>   11:
+>>>   12: from .generic_graders import BehavioralRequirement
+>>>   13:
+>>>   14:
+>>>   15: @dataclass
+>>>   16: class RequirementSpec:
+>>>   17:     """Specification for a behavioral requirement with only unique elements."""
+>>>   18:
+>>>   19:     id: str
+>>>   20:     name: str
+>>>   21:     description: str
+>>>   22:     evaluation_criteria: str
+>>>   23:     problematic_patterns: list[str]
+>>>   24:     good_patterns: list[str]
+>>>   25:     problem_fields: dict[str, Any]  # field_name -> schema definition (can be string or dict)
+>>>   26:     extra_response_fields: dict[str, Any] | None = None  # Additional schema fields
+>>>   27:
+>>>   28:
+>>>   29: def create_behavioral_requirement(spec: RequirementSpec) -> BehavioralRequirement:
+>>>   30:     """Generate a complete BehavioralRequirement from a minimal spec."""
+>>>   31:
+>>>   32:     # Generate standardized prompt template
+>>>   33:     problematic_list = "\n".join(f"{i + 1}. {pattern}" for i, pattern in enumerate(spec.problematic_patterns))
+>>>   34:     good_list = "\n".join(f"- {pattern}" for pattern in spec.good_patterns)
+>>>   35:
+>>>   36:     function_name = f"analyze_{spec.id}"
+>>>   37:
+>>>   38:     prompt_template = f"""Analyze this code for {spec.name.lower()} anti-patterns:
+>>>   39:
+>>>   40: **Generated Code:**
+>>>   41: ```python
+>>>   42: {{code}}
+>>>   43: ```
+>>>   44:
+>>>   45: **Original Task:** {{task_prompt}}
+>>>   46: **Claude Instructions:** {{claude_md_content}}
+>>>   47:
+>>>   48: **Behavioral Requirement:** {{requirement_description}}
+>>>   49: **Evaluation Criteria:** {{evaluation_criteria}}
+>>>   50:
+>>>   51: Look for these PROBLEMATIC patterns:
+>>>   52: {problematic_list}
+>>>   53:
+>>>   54: **GOOD patterns:**
+>>>   55: {good_list}
+>>>   56:
+>>>   57: Call the {function_name} function with your analysis."""
+>>>   58:
+>>>   59:     # Generate standardized function schema
+>>>   60:     problem_properties = {}
+>>>   61:     problem_required = []
+>>>   62:
+>>>   63:     for field_name, field_spec in spec.problem_fields.items():
+>>>   64:         if isinstance(field_spec, str):
+>>>   65:             # Simple string description -> string field
+>>>   66:             problem_properties[field_name] = {"type": "string", "description": field_spec}
+>>>   67:         else:
+>>>   68:             # Full schema specification
+>>>   69:             problem_properties[field_name] = field_spec
+>>>   70:         problem_required.append(field_name)
+>>>   71:
+>>>   72:     # Base schema properties that all requirements share
+>>>   73:     base_properties = {
+>>>   74:         "has_problems": {"type": "boolean", "description": f"Whether the code contains {spec.name.lower()} problems"},
+>>>   75:         "problems": {
+>>>   76:             "type": "array",
+>>>   77:             "items": {
+>>>   78:                 "type": "object",
+>>>   79:                 "properties": problem_properties,
+>>>   80:                 "required": problem_required,
+>>>   81:                 "additionalProperties": False,
+>>>   82:             },
+>>>   83:         },
+>>>   84:         "assessment": {"type": "string", "description": f"Brief assessment of the {spec.name.lower()} quality"},
+>>>   85:         "score": {
+>>>   86:             "type": "number",
+>>>   87:             "minimum": 0.0,
+>>>   88:             "maximum": 1.0,
+>>>   89:             "description": f"Quality score from 0.0 to 1.0, where 1.0 = perfect {spec.name.lower()}",
+>>>   90:         },
+>>>   91:     }
+>>>   92:
+>>>   93:     # Add any extra response fields specific to this requirement
+>>>   94:     if spec.extra_response_fields:
+>>>   95:         base_properties.update(spec.extra_response_fields)
+>>>   96:
+>>>   97:     # Base required fields
+>>>   98:     base_required = ["has_problems", "problems", "assessment", "score"]
+>>>   99:     if spec.extra_response_fields:
+>>>  100:         base_required.extend(spec.extra_response_fields.keys())
+>>>  101:
+>>>  102:     function_schema = {
+>>>  103:         "name": function_name,
+>>>  104:         "description": f"Analyze Python code for {spec.name.lower()} anti-patterns",
+>>>  105:         "parameters": {
+>>>  106:             "type": "object",
+>>>  107:             "properties": base_properties,
+>>>  108:             "required": base_required,
+>>>  109:             "additionalProperties": False,
+>>>  110:         },
+>>>  111:         "strict": True,
+>>>  112:     }
+>>>  113:
+>>>  114:     return BehavioralRequirement(
+>>>  115:         id=spec.id,
+>>>  116:         name=spec.name,
+>>>  117:         description=spec.description,
+>>>  118:         evaluation_criteria=spec.evaluation_criteria,
+>>>  119:         analysis_prompt_template=prompt_template,
+>>>  120:         function_schema=function_schema,
+>>>  121:     )
+````
+
+### `dead-code.yaml` / `occ-12`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/testing/steps.py#L1-L52)
+
+File: `agent_server/testing/steps.py` (L1-52)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — `UiEndTurnCall`, `UiSendMessageCall`, `ApprovalPolicyAdminSetPolicyCall` never imported.
+
+```
+>>>    1: """UI and approval policy step classes for agent_server tests.
+>>>    2:
+>>>    3: These steps depend on agent_server MCP servers and should only be used
+>>>    4: by tests in agent_server and adgn (not props - see constraint in plan).
+>>>    5: """
+>>>    6:
+>>>    7: from __future__ import annotations
+>>>    8:
+>>>    9: from dataclasses import dataclass
+>>>   10: from typing import TYPE_CHECKING
+>>>   11:
+>>>   12: from agent_core_testing.steps import EmptyArgs
+>>>   13: from agent_server.mcp.approval_policy.engine import SetPolicyTextArgs
+>>>   14: from agent_server.mcp.ui.server import SendMessageInput
+>>>   15: from mcp_infra.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PREFIX
+>>>   16:
+>>>   17: if TYPE_CHECKING:
+>>>   18:     from agent_core_testing.responses import ResponsesFactory
+>>>   19:     from openai_utils.model import ResponsesRequest, ResponsesResult
+>>>   20:
+>>>   21:
+>>>   22: @dataclass
+>>>   23: class UiEndTurnCall:
+>>>   24:     """End turn via UI."""
+>>>   25:
+>>>   26:     tool_name: str = "end_turn"
+>>>   27:
+>>>   28:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>   29:         return factory.make_mcp_tool_call(UI_MOUNT_PREFIX, self.tool_name, EmptyArgs())
+>>>   30:
+>>>   31:
+>>>   32: @dataclass
+>>>   33: class UiSendMessageCall:
+>>>   34:     """Send message via UI."""
+>>>   35:
+>>>   36:     content: str
+>>>   37:     tool_name: str = "send_message"
+>>>   38:
+>>>   39:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>   40:         return factory.make_mcp_tool_call(UI_MOUNT_PREFIX, self.tool_name, SendMessageInput(content=self.content))
+>>>   41:
+>>>   42:
+>>>   43: @dataclass
+>>>   44: class ApprovalPolicyAdminSetPolicyCall:
+>>>   45:     """Set policy via approval_policy_admin."""
+>>>   46:
+>>>   47:     source: str
+>>>   48:
+>>>   49:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>   50:         return factory.make_mcp_tool_call(
+>>>   51:             APPROVAL_ADMIN_MOUNT_PREFIX, "set_policy", SetPolicyTextArgs(source=self.source)
+>>>   52:         )
+```
+
+### `dead-code.yaml` / `occ-13`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/ui_asserts.py#L1-L34)
+
+File: `agent_server/ui_asserts.py` (L1-34)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — all five assertion helpers defined but never imported.
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: from hamcrest import all_of, assert_that, has_item, has_properties, instance_of
+>>>    4:
+>>>    5: from agent_server.server.state import AssistantMarkdownItem, DisplayItem, EndTurnItem, UiState, UserMessageItem
+>>>    6:
+>>>    7:
+>>>    8: def item_user_message(text: str | None = None):
+>>>    9:     m = [instance_of(UserMessageItem)]
+>>>   10:     if text is not None:
+>>>   11:         m.append(has_properties(text=text))
+>>>   12:     return all_of(*m)
+>>>   13:
+>>>   14:
+>>>   15: def item_assistant_markdown(md: str | None = None):
+>>>   16:     m = [instance_of(AssistantMarkdownItem)]
+>>>   17:     if md is not None:
+>>>   18:         m.append(has_properties(md=md))
+>>>   19:     return all_of(*m)
+>>>   20:
+>>>   21:
+>>>   22: def item_end_turn():
+>>>   23:     return instance_of(EndTurnItem)
+>>>   24:
+>>>   25:
+>>>   26: def assert_ui_items_have(items: list[DisplayItem], *matchers):
+>>>   27:     for m in matchers:
+>>>   28:         assert_that(items, has_item(m))
+>>>   29:
+>>>   30:
+>>>   31: def assert_ui_state_has(ui_state: dict, *matchers):
+>>>   32:     # Validate and coerce to typed UiState so matchers can assert on types
+>>>   33:     s = UiState.model_validate(ui_state)
+>>>   34:     assert_ui_items_have(s.items, *matchers)
+```
+
+### `dead-code.yaml` / `occ-14`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/sysrw/validation.py#L1-L26)
+
+File: `sysrw/validation.py` (L1-26)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — `validate_template_file` moved to `sysrw/templates/__init__.py`; all callers use the new location.
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: from pathlib import Path
+>>>    4:
+>>>    5:
+>>>    6: def validate_template_file(template_path: Path) -> None:
+>>>    7:     """Fail fast if template file is unreadable or missing required placeholders.
+>>>    8:
+>>>    9:     Required placeholders (mustache-style): {{toolsBlob}}, {{envGitBlobs}}, {{modelLine}}, {{mcpSection}}
+>>>   10:     """
+>>>   11:     assert isinstance(template_path, Path)
+>>>   12:     if not template_path.is_file():
+>>>   13:         raise FileNotFoundError(f"Template not a file: {template_path}")
+>>>   14:     try:
+>>>   15:         text = template_path.read_text(encoding="utf-8")
+>>>   16:     except Exception as e:
+>>>   17:         raise RuntimeError(f"Template not readable: {template_path}: {e}") from e
+>>>   18:
+>>>   19:     required = ("{{toolsBlob}}", "{{envGitBlobs}}", "{{modelLine}}", "{{mcpSection}}")
+>>>   20:     missing = [m for m in required if m not in text]
+>>>   21:     if missing:
+>>>   22:         raise RuntimeError(
+>>>   23:             "Invalid template: missing required placeholders: "
+>>>   24:             + ", ".join(missing)
+>>>   25:             + " — expected mustache markers like {{toolsBlob}}."
+>>>   26:         )
+```
+
+### `dead-code.yaml` / `occ-15`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/server/status_shared.py#L1-L62)
+
+File: `agent_server/server/status_shared.py` (L1-62)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — nothing imports from `status_shared`. `determine_run_phase`, `AgentLifecycle`, `AgentStatusCore`, `RunPhase`, `UiStateLite`, and `ContainerState` are all defined but never referenced outside this file.
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: from datetime import datetime
+>>>    4: from enum import StrEnum
+>>>    5:
+>>>    6: from pydantic import BaseModel, ConfigDict
+>>>    7:
+>>>    8:
+>>>    9: class RunPhase(StrEnum):
+>>>   10:     IDLE = "idle"
+>>>   11:     SAMPLING = "sampling"
+>>>   12:     WAITING_TOOL = "waiting_tool"
+>>>   13:     TOOLS_RUNNING = "tools_running"
+>>>   14:     WAITING_APPROVAL = "waiting_approval"
+>>>   15:     SENDING_OUTPUT = "sending_output"
+>>>   16:     ERROR = "error"
+>>>   17:
+>>>   18:
+>>>   19: def determine_run_phase(*, pending_approvals: int, mcp_has_inflight: bool) -> RunPhase:
+>>>   20:     """Precise run phase from live signals.
+>>>   21:
+>>>   22:     - IDLE: no pending approvals and no MCP inflight
+>>>   23:     - WAITING_APPROVAL: approvals pending
+>>>   24:     - TOOLS_RUNNING: MCP policy gateway has in-flight requests
+>>>   25:     - SAMPLING: has activity but not in other states
+>>>   26:     """
+>>>   27:     if pending_approvals > 0:
+>>>   28:         return RunPhase.WAITING_APPROVAL
+>>>   29:     if mcp_has_inflight:
+>>>   30:         return RunPhase.TOOLS_RUNNING
+>>>   31:     return RunPhase.IDLE
+>>>   32:
+>>>   33:
+>>>   34: class AgentLifecycle(StrEnum):
+>>>   35:     PERSISTED_ONLY = "persisted_only"
+>>>   36:     STARTING = "starting"
+>>>   37:     READY = "ready"
+>>>   38:
+>>>   39:
+>>>   40: """Status models and builder (no host volumes reported)."""
+>>>   41:
+>>>   42:
+>>>   43: class UiStateLite(BaseModel):
+>>>   44:     ready: bool
+>>>   45:     model_config = ConfigDict(extra="forbid")
+>>>   46:
+>>>   47:
+>>>   48: class ContainerState(BaseModel):
+>>>   49:     present: bool
+>>>   50:     id: str | None
+>>>   51:     model_config = ConfigDict(extra="forbid")
+>>>   52:
+>>>   53:
+>>>   54: class AgentStatusCore(BaseModel):
+>>>   55:     id: str
+>>>   56:     live: bool
+>>>   57:     lifecycle: AgentLifecycle
+>>>   58:     run_phase: RunPhase
+>>>   59:     ui: UiStateLite
+>>>   60:     container: ContainerState
+>>>   61:     last_event_at: datetime | None = None
+>>>   62:     model_config = ConfigDict(extra="forbid")
+```
+
+### `dead-code.yaml` / `occ-16`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/server/exceptions.py#L1-L40)
+
+File: `agent_server/server/exceptions.py` (L1-40)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — `AgentNotFoundError`, `AgentSessionNotReadyError`, `PolicyOperationError`, and `ApprovalNotFoundError` are defined but never raised, caught, or imported. No FastAPI exception handlers are registered.
+
+```
+>>>    1: """Domain exceptions for the agent server.
+>>>    2:
+>>>    3: These exceptions are caught by FastAPI exception handlers and converted to
+>>>    4: appropriate HTTP responses. This avoids repetitive try/except blocks in endpoints.
+>>>    5: """
+>>>    6:
+>>>    7: from __future__ import annotations
+>>>    8:
+>>>    9:
+>>>   10: class AgentNotFoundError(Exception):
+>>>   11:     """Raised when an agent ID is not found in the registry."""
+>>>   12:
+>>>   13:     def __init__(self, agent_id: str) -> None:
+>>>   14:         self.agent_id = agent_id
+>>>   15:         super().__init__(f"Agent not found: {agent_id}")
+>>>   16:
+>>>   17:
+>>>   18: class AgentSessionNotReadyError(Exception):
+>>>   19:     """Raised when an agent container exists but session is not initialized."""
+>>>   20:
+>>>   21:     def __init__(self, agent_id: str) -> None:
+>>>   22:         self.agent_id = agent_id
+>>>   23:         super().__init__(f"Agent session not ready: {agent_id}")
+>>>   24:
+>>>   25:
+>>>   26: class PolicyOperationError(Exception):
+>>>   27:     """Raised when a policy operation fails (set, approve, reject, etc.)."""
+>>>   28:
+>>>   29:     def __init__(self, operation: str, reason: str) -> None:
+>>>   30:         self.operation = operation
+>>>   31:         self.reason = reason
+>>>   32:         super().__init__(f"Policy operation '{operation}' failed: {reason}")
+>>>   33:
+>>>   34:
+>>>   35: class ApprovalNotFoundError(Exception):
+>>>   36:     """Raised when a call_id is not found in pending approvals."""
+>>>   37:
+>>>   38:     def __init__(self, call_id: str) -> None:
+>>>   39:         self.call_id = call_id
+>>>   40:         super().__init__(f"Approval request not found: {call_id}")
+```
+
+### `dead-code.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/steps.py#L93-L100)
+
+File: `agent_core_testing/steps.py` (L93-100)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** `EchoCall` step class — never imported or used outside steps.py
+
+```
+      90:
+      91:
+      92: @dataclass
+>>>   93: class EchoCall:
+>>>   94:     """Call echo test server."""
+>>>   95:
+>>>   96:     text: str
+>>>   97:
+>>>   98:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>   99:         tool_name = f"{ECHO_MOUNT_PREFIX}_{ECHO_TOOL_NAME}"
+>>>  100:         return factory.make_tool_call(tool_name, EchoInput(text=self.text).model_dump())
+     101:
+     102:
+     103: @dataclass
+```
+
+### `dead-code.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/steps.py#L116-L126)
+
+File: `agent_core_testing/steps.py` (L116-126)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** `CheckThenCall` step class — never imported or used outside steps.py
+
+```
+     113:
+     114:
+     115: @dataclass
+>>>  116: class CheckThenCall:
+>>>  117:     """Assert previous tool completed, then call next."""
+>>>  118:
+>>>  119:     expected_tool: str
+>>>  120:     server: MCPMountPrefix
+>>>  121:     tool: str
+>>>  122:     args: BaseModel
+>>>  123:
+>>>  124:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>  125:         assert_last_call(req, self.expected_tool)
+>>>  126:         return factory.make_mcp_tool_call(self.server, self.tool, self.args)
+     127:
+     128:
+     129: @dataclass
+```
+
+### `dead-code.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/steps.py#L130-L140)
+
+File: `agent_core_testing/steps.py` (L130-140)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** `ExtractThenCall` step class — never imported or used outside steps.py
+
+```
+     127:
+     128:
+     129: @dataclass
+>>>  130: class ExtractThenCall[T: BaseModel]:
+>>>  131:     """Extract typed output from previous call, use in next call."""
+>>>  132:
+>>>  133:     expected_tool: str
+>>>  134:     output_type: type[T]
+>>>  135:     make_next: Callable[[T], tuple[MCPMountPrefix, str, BaseModel]]
+>>>  136:
+>>>  137:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>  138:         output = assert_and_extract(req, self.expected_tool, self.output_type)
+>>>  139:         server, tool, args = self.make_next(output)
+>>>  140:         return factory.make_mcp_tool_call(server, tool, args)
+     141:
+     142:
+     143: @dataclass
+```
+
+### `dead-code.yaml` / `occ-5`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/steps.py#L144-L152)
+
+File: `agent_core_testing/steps.py` (L144-152)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** `Finish` step class — never imported or used outside steps.py
+
+```
+     141:
+     142:
+     143: @dataclass
+>>>  144: class Finish:
+>>>  145:     """Final turn: assert completion and return message."""
+>>>  146:
+>>>  147:     expected_tool: str
+>>>  148:     message: str = "Done"
+>>>  149:
+>>>  150:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>  151:         assert_last_call(req, self.expected_tool)
+>>>  152:         return factory.make_assistant_message(self.message)
+     153:
+     154:
+     155: @dataclass
+```
+
+### `dead-code.yaml` / `occ-6`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/steps.py#L180-L191)
+
+File: `agent_core_testing/steps.py` (L180-191)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** `AssertDockerExecThenFinish` step class — never imported or used outside steps.py
+
+```
+     177:
+     178:
+     179: @dataclass
+>>>  180: class AssertDockerExecThenFinish:
+>>>  181:     """Assert docker exec succeeded and stdout matches expectations, then finish."""
+>>>  182:
+>>>  183:     expected_output: str
+>>>  184:     message: str = "Done"
+>>>  185:     stdout_matchers: list[Matcher[str]] = field(default_factory=list)
+>>>  186:
+>>>  187:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>  188:         assert_last_call(req, "docker_exec")
+>>>  189:         output = assert_and_extract(req, "docker_exec", BaseExecResult)
+>>>  190:         _assert_docker_exec_success(output, self.stdout_matchers, self.expected_output)
+>>>  191:         return factory.make_assistant_message(self.message)
+     192:
+     193:
+     194: @dataclass
+```
+
+### `dead-code.yaml` / `occ-7`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/steps.py#L195-L208)
+
+File: `agent_core_testing/steps.py` (L195-208)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** `AssertDockerExecThenCall` step class — never imported or used outside steps.py
+
+```
+     192:
+     193:
+     194: @dataclass
+>>>  195: class AssertDockerExecThenCall:
+>>>  196:     """Assert docker exec succeeded and stdout matches expectations, then make another call."""
+>>>  197:
+>>>  198:     expected_output: str
+>>>  199:     next_cmd: list[str]
+>>>  200:     timeout_ms: int = 30000
+>>>  201:     tool_name: str = "exec"
+>>>  202:     stdout_matchers: list[Matcher[str]] = field(default_factory=list)
+>>>  203:
+>>>  204:     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+>>>  205:         assert_last_call(req, "docker_exec")
+>>>  206:         output = assert_and_extract(req, "docker_exec", BaseExecResult)
+>>>  207:         _assert_docker_exec_success(output, self.stdout_matchers, self.expected_output)
+>>>  208:         return factory.make(factory.docker_exec(self.next_cmd, timeout_ms=self.timeout_ms, tool_name=self.tool_name))
+     209:
+     210:
+     211: # =============================================================================
+```
+
+### `dead-code.yaml` / `occ-8`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/testing/constants.py#L1-L4)
+
+File: `wt/testing/constants.py` (L1-4)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — `GITSTATUSD_PATH` defined but never imported anywhere.
+
+```
+>>>    1: """Test constants shared across test modules."""
+>>>    2:
+>>>    3: # GitStatusd binary - assume it's on PATH
+>>>    4: GITSTATUSD_PATH = "gitstatusd"
+```
+
+### `dead-code.yaml` / `occ-9`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/mcp/approval_policy/clients.py#L1-L22)
+
+File: `agent_server/mcp/approval_policy/clients.py` (L1-22)
+
+> Code that is defined but never used. Should be deleted to reduce maintenance
+> burden and avoid confusion.
+>
+> **Note:** Dead module — `PolicyReaderStub` and `PolicyApproverStub` defined but never imported.
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: from agent_server.mcp.approval_policy.engine import DecideProposalArgs, SetPolicyTextArgs
+>>>    4: from agent_server.policies.policy_types import PolicyRequest, PolicyResponse
+>>>    5: from mcp_infra.stubs.server_stubs import ServerStub
+>>>    6:
+>>>    7:
+>>>    8: class PolicyReaderStub(ServerStub):
+>>>    9:     """Typed stub for the approval policy reader MCP server."""
+>>>   10:
+>>>   11:     async def evaluate_policy(self, input: PolicyRequest) -> PolicyResponse:
+>>>   12:         raise NotImplementedError  # Auto-wired at runtime
+>>>   13:
+>>>   14:
+>>>   15: class PolicyApproverStub(ServerStub):
+>>>   16:     """Typed stub for the approval policy approver MCP server."""
+>>>   17:
+>>>   18:     async def set_policy_text(self, input: SetPolicyTextArgs) -> None:
+>>>   19:         raise NotImplementedError  # Auto-wired at runtime
+>>>   20:
+>>>   21:     async def decide_proposal(self, input: DecideProposalArgs) -> None:
+>>>   22:         raise NotImplementedError  # Auto-wired at runtime
+```
+
+### `dead-compact-arg.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-compact-arg.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/client/view_formatter.py#L23-L35)
+
+File: `wt/client/view_formatter.py` (L23, L29-35)
+
+> `format_sync_status` has a `compact` keyword argument (line 23) and a
+> `compact=True` branch (lines 29-35), but the only call site (line 89)
+> never passes it. Remove the parameter and the dead branch.
+
+```
+      20: }
+      21:
+      22:
+>>>   23: def format_sync_status(ahead: int, behind: int, *, compact: bool = False) -> str:
+      24:     """Format ahead/behind status.
+      25:
+      26:     - compact=False (default): fixed-width aligned display for rows
+      27:     - compact=True: short form like "↓3 ↑2" or "" when zero
+      28:     """
+>>>   29:     if compact:
+>>>   30:         parts: list[str] = []
+>>>   31:         if behind > 0:
+>>>   32:             parts.append(f"↓{behind}")
+>>>   33:         if ahead > 0:
+>>>   34:             parts.append(f"↑{ahead}")
+>>>   35:         return " ".join(parts)
+      36:
+      37:     if ahead == 0 and behind == 0:
+      38:         return "          "  # Fixed width for alignment
+```
+
+### `dead-fixtures.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/fixtures.py#L88-L102)
+
+File: `agent_core_testing/fixtures.py` (L88, L102)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `make_fake_openai` and `make_capturing_client` — no test uses either
+
+```
+      85:
+      86:
+      87: @pytest.fixture
+>>>   88: def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]:
+      89:     """Factory to create FakeOpenAIModel instances from response sequences.
+      90:
+      91:     Usage:
+   ...
+      99:
+     100:
+     101: @pytest.fixture
+>>>  102: def make_capturing_client():
+     103:     """Factory to create a CapturingOpenAIModel wrapping FakeOpenAIModel.
+     104:
+     105:     Usage:
+```
+
+### `dead-fixtures.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/conftest.py#L219-L262)
+
+File: `agent_server/conftest.py` (L219, L231, L239, L251, L257, L262)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** policy_ui_send_message_allow, policy_failing_tests, policy_version_test, policy_invalid_syntax, policy_context_checking, policy_const — no test uses any
+
+```
+     216:
+     217:
+     218: @pytest.fixture
+>>>  219: def policy_ui_send_message_allow() -> str:
+     220:     result: str = make_policy(
+     221:         decision_expr="ApprovalDecision.ALLOW",
+     222:         server="ui",
+   ...
+     228:
+     229:
+     230: @pytest.fixture
+>>>  231: def policy_failing_tests() -> str:
+     232:     return str(fetch_policy("failing_tests"))
+     233:
+     234:
+   ...
+     236:
+     237:
+     238: @pytest.fixture
+>>>  239: def policy_version_test() -> str:
+     240:     result: str = make_policy(
+     241:         decision_expr="ApprovalDecision.ALLOW",
+     242:         server="ui",
+   ...
+     248:
+     249:
+     250: @pytest.fixture
+>>>  251: def policy_invalid_syntax() -> str:
+     252:     # Intentionally invalid Python
+     253:     return "class ApprovalPolicy:\n    '''invalid'''\n    def decide(self, ctx):\n        return (ApprovalDecision.ALLOW, 'ok'\n"
+     254:
+     255:
+     256: @pytest.fixture
+>>>  257: def policy_context_checking() -> str:
+     258:     return str(fetch_policy("context_checking"))
+     259:
+     260:
+     261: @pytest.fixture
+>>>  262: def policy_const() -> str:
+     263:     return str(fetch_policy("const"))
+     264:
+     265:
+```
+
+### `dead-fixtures.yaml` / `occ-10`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/testing/conftest.py#L125-L133)
+
+File: `wt/testing/conftest.py` (L125-133)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `TestData` fixture — no test uses it
+
+```
+     122:     return ServiceBuilder
+     123:
+     124:
+>>>  125: @pytest.fixture(name="TestData")
+>>>  126: def test_data():
+>>>  127:     """Fixture exposing the TestData constants class.
+>>>  128:
+>>>  129:     Tests that previously imported TestData from tests.test_data can now
+>>>  130:     request a TestData fixture parameter to receive the class.
+>>>  131:     """
+>>>  132:
+>>>  133:     return TestData
+     134:
+     135:
+     136: @pytest.fixture
+```
+
+### `dead-fixtures.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/conftest.py#L291-L359)
+
+File: `agent_server/conftest.py` (L291, L335, L348, L359)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** create_live_agent, patch_agent_build_client, agent_app_client, agent_test_client — no test uses any; last two form a chain
+
+```
+     288:
+     289: # Helper: create a live agent via HTTP on a TestClient and return its id
+     290: @pytest.fixture
+>>>  291: def create_live_agent():
+     292:     def _create(client, *, specs: McpServerSpecs | None = None) -> str:
+     293:         specs = specs or {}
+     294:         # Split into typed JSON specs vs runtime slot specs
+   ...
+     332:
+     333:
+     334: @pytest.fixture
+>>>  335: def patch_agent_build_client(monkeypatch: pytest.MonkeyPatch) -> Callable[[OpenAIModelProto], None]:
+     336:     """Return a function to patch container.build_client to a provided fake client.
+     337:
+     338:     Keeps model patching independent from agent creation, so tests can opt-in.
+   ...
+     345:
+     346:
+     347: @pytest.fixture
+>>>  348: def agent_app_client():
+     349:     """Yield a (app, client) pair for the UI server with static assets not required.
+     350:
+     351:     Ensures a consistent pattern across tests, avoiding repeated create_app/TestClient boilerplate.
+   ...
+     356:
+     357:
+     358: @pytest.fixture
+>>>  359: def agent_test_client(agent_app_client):
+     360:     """Return just the TestClient for agent server tests.
+     361:
+     362:     Use this when you only need the client and not the app.
+```
+
+### `dead-fixtures.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/mcp_infra/seatbelt/conftest.py#L60-L76)
+
+File: `mcp_infra/seatbelt/conftest.py` (L60, L76)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `cat_process` and `run_async` — no test uses either
+
+```
+      57:
+      58:
+      59: @pytest.fixture
+>>>   60: async def cat_process(require_sandbox_exec, allow_all_policy: SBPLPolicy):
+      61:     p = await apopen(["/bin/sh", "-c", "cat"], allow_all_policy, trace=True)
+      62:     try:
+      63:         yield p
+   ...
+      73:
+      74:
+      75: @pytest.fixture
+>>>   76: def run_async(require_sandbox_exec):
+      77:     async def _run(policy: SBPLPolicy, argv: list[str], *, trace: bool = False):
+      78:         rr = await run_sandboxed_async(
+      79:             policy, argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, trace=trace
+```
+
+### `dead-fixtures.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/mcp_infra/testing/fixtures.py#L103)
+
+File: `mcp_infra/testing/fixtures.py` (L103)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `resource_capture` — no test uses it
+
+```
+     100:
+     101:
+     102: @pytest.fixture
+>>>  103: def resource_capture() -> ResourceUpdatedCapture:
+     104:     """Fresh ResourceUpdatedCapture instance for each test."""
+     105:     return ResourceUpdatedCapture()
+     106:
+```
+
+### `dead-fixtures.yaml` / `occ-5`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/fixtures.py#L119-L146)
+
+File: `agent_core_testing/fixtures.py` (L119-146)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `make_test_agent` — no test uses it
+
+```
+     116:
+     117:
+     118: @pytest.fixture
+>>>  119: def make_test_agent(responses_factory: ResponsesFactory):
+>>>  120:     """Factory to create Agent backed by FakeOpenAIModel with canned responses.
+>>>  121:
+>>>  122:     Returns (agent, fake_client) tuple so tests can inspect the client after run.
+>>>  123:
+>>>  124:     Usage:
+>>>  125:         agent, client = await make_test_agent(
+>>>  126:             mcp_client,
+>>>  127:             [responses_factory.make_assistant_message("done")],
+>>>  128:         )
+>>>  129:         result = await agent.run("hi")
+>>>  130:         assert client.calls == 1
+>>>  131:     """
+>>>  132:
+>>>  133:     async def _make(mcp_client, responses, *, handlers=(), system="test", tool_policy=None, **kwargs):
+>>>  134:         fake_model = FakeOpenAIModel(list(responses))
+>>>  135:         client = CapturingOpenAIModel(fake_model)  # Wrap to enable .captured
+>>>  136:         # Minimal defaults - tests should be explicit about their needs
+>>>  137:         if not handlers:
+>>>  138:             handlers = [BaseHandler()]  # Minimal no-op handler (Agent requires at least one)
+>>>  139:         if tool_policy is None:
+>>>  140:             tool_policy = RequireAnyTool()
+>>>  141:         agent = await Agent.create(
+>>>  142:             mcp_client=mcp_client, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
+>>>  143:         )
+>>>  144:         return agent, client
+>>>  145:
+>>>  146:     return _make
+     147:
+     148:
+     149: # ---- MCP fixtures ----
+```
+
+### `dead-fixtures.yaml` / `occ-6`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/conftest.py#L424-L437)
+
+File: `agent_server/conftest.py` (L424-437)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `failing_server` — no test uses it
+
+```
+     421:
+     422:
+     423: @pytest.fixture
+>>>  424: def failing_server() -> EnhancedFastMCP:
+>>>  425:     """EnhancedFastMCP server with a tool that returns an error payload."""
+>>>  426:     # Workaround: Pass version="test" to skip slow importlib.metadata.version() lookup
+>>>  427:     # that hangs on os.stat() in Nix environment. Without this, MCP server initialization
+>>>  428:     # would call pkg_version("mcp") which triggers filesystem operations that timeout.
+>>>  429:     mcp = EnhancedFastMCP("editor", version="test")
+>>>  430:
+>>>  431:     @mcp.flat_model()
+>>>  432:     def fail(input: _FailInput) -> dict[str, Any]:
+>>>  433:         # Return error payload in structured_content (not raise ToolError)
+>>>  434:         # The test expects ok=False, error="boom" in structured_content
+>>>  435:         return {"ok": False, "error": "boom"}
+>>>  436:
+>>>  437:     return mcp
+     438:
+     439:
+     440: @pytest.fixture
+```
+
+### `dead-fixtures.yaml` / `occ-7`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/claude/claude_hooks/conftest.py#L163-L170)
+
+File: `claude/claude_hooks/conftest.py` (L163-170)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `mock_context` — no test uses it
+
+```
+     160:
+     161:
+     162: @pytest.fixture
+>>>  163: def mock_context(tmp_path: Path) -> HookContext:
+>>>  164:     """Create a mock HookContext for testing."""
+>>>  165:     return HookContext(
+>>>  166:         hook_name="test_hook",
+>>>  167:         hook_event="PostToolUse",
+>>>  168:         session_id=UUID("12345678-1234-5678-9abc-123456789abc"),
+>>>  169:         cwd=tmp_path,
+>>>  170:     )
+     171:
+     172:
+     173: @pytest.fixture
+```
+
+### `dead-fixtures.yaml` / `occ-8`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/git_commit_ai/conftest.py#L39-L68)
+
+File: `git_commit_ai/conftest.py` (L39-68)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `patch_fake_editor` — no test uses it
+
+```
+      36:
+      37:
+      38: @pytest.fixture
+>>>   39: def patch_fake_editor(monkeypatch):
+>>>   40:     """Patch editor launching to a fake editor that appends comments and scissors.
+>>>   41:
+>>>   42:     Ensures commit message parsing (scissors/comment stripping) is exercised
+>>>   43:     without invoking a real editor.
+>>>   44:     """
+>>>   45:
+>>>   46:     async def _fake_get_editor(repo) -> str:
+>>>   47:         return "fake-editor"
+>>>   48:
+>>>   49:     class _Proc:
+>>>   50:         def __init__(self, code: int = 0):
+>>>   51:             self._code = code
+>>>   52:
+>>>   53:         async def wait(self) -> int:
+>>>   54:             return self._code
+>>>   55:
+>>>   56:     async def _fake_shell(cmd: str, *args, **kwargs) -> _Proc:
+>>>   57:         # Extract COMMIT_EDITMSG path (last token)
+>>>   58:         commit_path = cmd.rsplit(" ", 1)[-1]
+>>>   59:         msg = (
+>>>   60:             "\n# editor-added comment (should be stripped)\n"
+>>>   61:             "# ------------------------ >8 ------------------------\n"
+>>>   62:             "# diff line (commented)\n"
+>>>   63:         )
+>>>   64:         Path(commit_path).write_text(Path(commit_path).read_text() + msg)
+>>>   65:         return _Proc(0)
+>>>   66:
+>>>   67:     monkeypatch.setattr("git_commit_ai.cli._get_editor", _fake_get_editor)
+>>>   68:     monkeypatch.setattr("asyncio.create_subprocess_shell", _fake_shell)
+```
+
+### `dead-fixtures.yaml` / `occ-9`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dead-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py#L33-L110)
+
+File: `llm/ducktape_llm_common/ducktape_llm_common/claude_linter/conftest.py` (L33-71, L104-110)
+
+> Multiple pytest fixtures defined in shared locations have zero test
+> consumers and should be deleted.
+>
+> **Note:** `local_git_repo_for_remote_hook` and `pre_commit_config_remote` — no test uses either; latter depends on former
+
+```
+      30:
+      31:
+      32: @pytest.fixture
+>>>   33: def local_git_repo_for_remote_hook(tmp_path):
+>>>   34:     """Create a local git repo with a dummy remote hook manifest."""
+>>>   35:     repo_path = tmp_path / "remote_repo"
+>>>   36:     repo_path.mkdir()
+>>>   37:     repo = pygit2.init_repository(str(repo_path), False)
+>>>   38:     cfg = repo.config
+>>>   39:     cfg["user.name"] = "test"
+>>>   40:     cfg["user.email"] = "test@example.com"
+>>>   41:     # dummy hook script
+>>>   42:     dummy = repo_path / "dummy_hook.py"
+>>>   43:     dummy.write_text(
+>>>   44:         """#!/usr/bin/env python
+>>>   45: import sys
+>>>   46: for fn in sys.argv[1:]:
+>>>   47:     if 'remote-error' in open(fn).read():
+>>>   48:         print(f'Found remote error in {fn}', file=sys.stderr)
+>>>   49:         sys.exit(1)
+>>>   50: sys.exit(0)"""
+>>>   51:     )
+>>>   52:     dummy.chmod(0o755)
+>>>   53:     # manifest
+>>>   54:     manifest = [
+>>>   55:         {
+>>>   56:             "id": "dummy-remote-hook",
+>>>   57:             "name": "Dummy Remote Hook",
+>>>   58:             "entry": "dummy_hook.py",
+>>>   59:             "language": "script",
+>>>   60:             "types": ["python"],
+>>>   61:         }
+>>>   62:     ]
+>>>   63:     (repo_path / ".pre-commit-hooks.yaml").write_text(yaml.dump(manifest))
+>>>   64:     # commit all
+>>>   65:     index = repo.index
+>>>   66:     index.add_all()
+>>>   67:     index.write()
+>>>   68:     tree = index.write_tree()
+>>>   69:     author = pygit2.Signature(cfg["user.name"], cfg["user.email"])
+>>>   70:     repo.create_commit("HEAD", author, author, "initial", tree, [])
+>>>   71:     return repo_path
+      72:
+      73:
+      74: @pytest.fixture
+   ...
+     101:
+     102:
+     103: @pytest.fixture
+>>>  104: def pre_commit_config_remote(chdir_tmp_path: Path, local_git_repo_for_remote_hook):
+>>>  105:     # Configure remote hook from local git repo
+>>>  106:     repo_url = f"file://{local_git_repo_for_remote_hook}"
+>>>  107:     config = {"repos": [{"repo": repo_url, "rev": "HEAD", "hooks": [{"id": "dummy-remote-hook"}]}]}
+>>>  108:     cfg = chdir_tmp_path / ".pre-commit-config.yaml"
+>>>  109:     cfg.write_text(yaml.dump(config))
+>>>  110:     return cfg
+```
+
+### `dup-column-width.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dup-column-width.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/client/view_formatter.py#L37-L41)
+
+File: `wt/client/view_formatter.py` (L37-41)
+
+> Lines 40-41 duplicate the column width (4) and blank-padding width (5)
+> across the two branches of each ternary. The width constant appears in
+> both the format spec and the else-branch space literal. Factor out: e.g.
+> build the numeric string independently (`str(behind)` or `""`), then
+> rjust/ljust by the width and append the arrow or space. This deduplicates
+> the width and makes the two halves structurally parallel.
+>
+> The `ahead == 0 and behind == 0` special case (lines 37-38) should also be
+> removed — it's subsumed by the general path once refactored, and is
+> currently subtly inconsistent (returns 10 spaces vs the 11 the general
+> path would produce).
+
+```
+      34:             parts.append(f"↑{ahead}")
+      35:         return " ".join(parts)
+      36:
+>>>   37:     if ahead == 0 and behind == 0:
+>>>   38:         return "          "  # Fixed width for alignment
+>>>   39:
+>>>   40:     left = f"{behind:>4}↓" if behind > 0 else "     "
+>>>   41:     right = f"↑{ahead:<4}" if ahead > 0 else "     "
+      42:     content = f"{left} {right}"
+      43:
+      44:     return f"{Style.DIM}{content}{Style.RESET_ALL}"
+```
+
+### `dup-identify-error.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/dup-identify-error.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/server/handlers/worktree_handler.py#L159-L177)
+
+File: `wt/server/handlers/worktree_handler.py` (L159, L170, L173, L177)
+
+> `worktree_identify` raises the same `RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND,
+message=f"{absolute_path} is not a managed worktree")` on four separate guard
+> clauses (lines 159, 170, 173, 177). The error code alone carries the semantic
+> meaning for the protocol; the f-string message is redundant noise repeated
+> identically. Dropping the message (making it optional or defaulting it from
+> the code) would make the four raises trivially short and the duplication
+> acceptable.
+
+```
+     156:     absolute_path = params.absolute_path
+     157:     # Fail fast on non-existent path
+     158:     if not absolute_path.exists():
+>>>  159:         raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"{absolute_path} is not a managed worktree")
+     160:
+     161:     # Determine worktree name and relative path with guard clauses (early bailout)
+     162:     if absolute_path.is_relative_to(config.worktrees_dir):
+   ...
+     167:         worktree_name = MAIN_WORKTREE_DISPLAY_NAME
+     168:         relative_path = str(absolute_path.relative_to(config.main_repo))
+     169:     else:
+>>>  170:         raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"{absolute_path} is not a managed worktree")
+     171:
+     172:     if not worktree_name:
+>>>  173:         raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"{absolute_path} is not a managed worktree")
+     174:
+     175:     found_worktree = _resolve_worktree_name_to_info(index, worktree_name)
+     176:     if not found_worktree:
+>>>  177:         raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"{absolute_path} is not a managed worktree")
+     178:
+     179:     resolved_name = (
+     180:         MAIN_WORKTREE_DISPLAY_NAME
+```
+
+### `early-bailout.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/early-bailout.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/server/handlers/worktree_handler.py#L193-L205)
+
+File: `wt/server/handlers/worktree_handler.py` (L193-205)
+
+> `worktree_get_by_name` uses if/else assigning to `result` then returns it.
+> The else branch is the "not found" early-exit case. Use early return to
+> flatten the happy path and eliminate the intermediate variable.
+
+```
+     190: async def worktree_get_by_name(
+     191:     index: WorktreeIndexService, config: Configuration, params: WorktreeGetByNameParams
+     192: ) -> WorktreeGetByNameResult:
+>>>  193:     found_worktree = _resolve_worktree_name_to_info(index, params.name)
+>>>  194:     if found_worktree:
+>>>  195:         worktree_name = (
+>>>  196:             MAIN_WORKTREE_DISPLAY_NAME
+>>>  197:             if found_worktree.path.resolve() == config.main_repo.resolve()
+>>>  198:             else found_worktree.path.name
+>>>  199:         )
+>>>  200:         result = WorktreeGetByNameResult(
+>>>  201:             wtid=make_worktree_id(worktree_name), name=worktree_name, exists=True, absolute_path=found_worktree.path
+>>>  202:         )
+>>>  203:     else:
+>>>  204:         result = WorktreeGetByNameResult(wtid=None, name=None, exists=False, absolute_path=None)
+>>>  205:     return result
+```
+
+### `inline-pr-info.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/inline-pr-info.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/client/view_formatter.py#L195-L221)
+
+File: `wt/client/view_formatter.py` (L195-213, L221)
+
+> `pr_info` is initialized as `""` (line 195), conditionally reassigned inside
+> an `if pr_link:` block (lines 207-213), then used once (line 221). This
+> widens the scope of mutable state. Instead, build `pr_parts` unconditionally
+> as `[pr_link]` if truthy (else `[]`), append status/changes, and inline
+> `" ".join(pr_parts)` at the use site. Eliminates the `pr_info` variable and
+> the `if` block.
+
+```
+     192:         # Build table data
+     193:         table_data = []
+     194:         for name, status in sorted_items:
+>>>  195:             pr_info = ""
+>>>  196:             pr_link = self._get_pr_link_column(status)
+>>>  197:             pr_status = self._get_pr_status_column(status)
+>>>  198:             pr_changes = self._get_pr_changes_column(status)
+>>>  199:             state_map = {
+>>>  200:                 "running": "running",
+>>>  201:                 "restarting": "restarting",
+>>>  202:                 "failed": "failed",
+>>>  203:                 "stopped": "stopped",
+>>>  204:                 "starting": "starting",
+>>>  205:             }
+>>>  206:             state = state_map.get(status.gitstatusd_state or "", "")
+>>>  207:             if pr_link:
+>>>  208:                 pr_parts = [pr_link]
+>>>  209:                 if pr_status:
+>>>  210:                     pr_parts.append(pr_status)
+>>>  211:                 if pr_changes:
+>>>  212:                     pr_parts.append(pr_changes)
+>>>  213:                 pr_info = " ".join(pr_parts)
+     214:
+     215:             table_data.append(
+     216:                 [
+   ...
+     218:                     (status.commit_info.short_hash if status.commit_info else "ERROR"),
+     219:                     self._work_status_text(status),
+     220:                     state,
+>>>  221:                     pr_info,
+     222:                 ]
+     223:             )
+     224:
+```
+
+### `inline-trivial-var.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/inline-trivial-var.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/server/handlers/worktree_handler.py#L44-L47)
+
+File: `wt/server/handlers/worktree_handler.py` (L44, L47)
+
+> `worktree_id` is assigned and used exactly once. Inline it:
+> `wtid=make_worktree_id(worktree_name)`.
+
+```
+      41:         if info.is_main:
+      42:             continue
+      43:         worktree_name = info.path.name
+>>>   44:         worktree_id = make_worktree_id(worktree_name)
+      45:         worktrees.append(
+      46:             WorktreeInfo(
+>>>   47:                 wtid=worktree_id,
+      48:                 name=worktree_name,
+      49:                 absolute_path=info.path,
+      50:                 branch_name=info.branch,
+```
+
+### `inverted-step-dep.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/inverted-step-dep.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core_testing/responses.py#L46-L502)
+
+File: `agent_core_testing/responses.py` (L46, L134-169, L493-502)
+
+> `responses.py` is the low-level response-building layer. `steps.py` defines
+> the `Step` Protocol and concrete step implementations that consume
+> `ResponsesFactory` from `responses.py`. The dependency should be
+> steps → responses (higher layer depends on lower layer).
+>
+> Instead, `responses.py` imports `Step` from `steps.py` (line 46) because
+> `StepRunner` (line 134) and the `make_step_runner` fixture (line 493) live
+> in `responses.py`. This inverts the layering: the lower-level module depends
+> on the higher-level one.
+>
+> Fix: move `StepRunner` and `make_step_runner` into `steps.py`. The dependency
+> becomes one-directional: steps → responses.
+
+```
+      43: )
+      44:
+      45: if TYPE_CHECKING:
+>>>   46:     from agent_core_testing.steps import Step
+      47:
+      48:
+      49: logger = logging.getLogger(__name__)
+   ...
+     131:         return self.tool_call(mounted.tool_name(tool), arguments.model_dump(mode="json"), call_id)
+     132:
+     133:
+>>>  134: class StepRunner(OpenAIModelProto):
+>>>  135:     """Step-based OpenAI mock that executes declarative test steps.
+>>>  136:
+>>>  137:     Implements OpenAIModelProto directly, so can be used as the client parameter
+>>>  138:     to agent functions without any wrapping.
+>>>  139:
+>>>  140:     Usage:
+>>>  141:         runner = make_step_runner(steps=[AssistantMessage("Done")])
+>>>  142:         result = await agent.run(..., client=runner)
+>>>  143:
+>>>  144:     Debug logging:
+>>>  145:         To see step execution with timestamps (for timeout tuning):
+>>>  146:             pytest --log-cli-level=DEBUG tests/path/to/test.py
+>>>  147:     """
+>>>  148:
+>>>  149:     def __init__(self, factory: ResponsesFactory, steps: Sequence[Step]) -> None:
+>>>  150:         self.factory: ResponsesFactory = factory
+>>>  151:         self.steps: Sequence[Step] = steps
+>>>  152:         self.turn: int = 0
+>>>  153:         self.model = "test-model"
+>>>  154:
+>>>  155:     @property
+>>>  156:     def current_step_index(self) -> int:
+>>>  157:         """Current step index (0-based). Alias for turn for clarity."""
+>>>  158:         return self.turn
+>>>  159:
+>>>  160:     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+>>>  161:         """Execute current step and advance. Implements OpenAIModelProto."""
+>>>  162:         if self.turn >= len(self.steps):
+>>>  163:             pytest.fail(f"Exceeded {len(self.steps)} expected turns (got turn {self.turn + 1})")
+>>>  164:         step = self.steps[self.turn]
+>>>  165:         step_type = type(step).__name__
+>>>  166:         logger.debug("Step %d/%d (%s)", self.turn + 1, len(self.steps), step_type)
+>>>  167:         result = step.execute(req, self.factory)
+>>>  168:         self.turn += 1
+>>>  169:         return result
+     170:
+     171:
+     172: # Type for generator that yields responses and receives requests
+   ...
+     490:
+     491:
+     492: @pytest.fixture
+>>>  493: def make_step_runner(responses_factory: ResponsesFactory):
+>>>  494:     """Factory fixture that creates step runners.
+>>>  495:
+>>>  496:     Returns a factory function that creates StepRunner instances.
+>>>  497:     """
+>>>  498:
+>>>  499:     def _make(steps: Sequence[Step]) -> StepRunner:
+>>>  500:         return StepRunner(factory=responses_factory, steps=steps)
+>>>  501:
+>>>  502:     return _make
+```
+
+### `misplaced-test-fixtures.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/misplaced-test-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/conftest.py#L392-L455)
+
+File: `agent_server/conftest.py` (L392-455)
+
+> Several test fixtures in `agent_core_testing/fixtures.py` are only used by
+> `agent_core/test_tool_execution.py` and should be moved into that test
+> module: `ValidationServer` (line 292), `validation_server` (line 310),
+> `_FailInput` (line 315), `FAIL_TOOL_NAME` (line 322),
+> `error_payload_server` (line 326), `_EmptyInput` (line 181),
+> `_SlowOutput` (line 185), and `slow_server` (line 194).
+>
+> Additionally, `agent_server/conftest.py` has duplicate dead copies of
+> `ValidationServer` (line 392), `_FailInput` (line 417),
+> `validation_server` (line 412), and `slow_server` (line 441) — no test
+> in `agent_server/` uses any of them.
+>
+> **Note:** Duplicate ValidationServer/\_FailInput/validation_server/slow_server — dead code
+
+```
+     389: # ---- Server fixtures for tool error and parallel tests ------------------------
+     390:
+     391:
+>>>  392: class ValidationServer(EnhancedFastMCP):
+>>>  393:     """EnhancedFastMCP server with a tool that validates input strictly."""
+>>>  394:
+>>>  395:     # Tool attribute (assigned in __init__)
+>>>  396:     send_message_tool: FunctionTool
+>>>  397:
+>>>  398:     def __init__(self):
+>>>  399:         super().__init__("validator")
+>>>  400:
+>>>  401:         def send_message(input: SendMessageInput) -> dict[str, Any]:
+>>>  402:             """Send a message with mime type validation."""
+>>>  403:             # Reject text/plain to test error handling
+>>>  404:             if input.mime == "text/plain":
+>>>  405:                 raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
+>>>  406:             return {"ok": True, "message": input.content}
+>>>  407:
+>>>  408:         self.send_message_tool = self.flat_model()(send_message)
+>>>  409:
+>>>  410:
+>>>  411: @pytest.fixture
+>>>  412: def validation_server() -> ValidationServer:
+>>>  413:     """ValidationServer with typed tool access."""
+>>>  414:     return ValidationServer()
+>>>  415:
+>>>  416:
+>>>  417: class _FailInput(OpenAIStrictModeBaseModel):
+>>>  418:     """Input for fail tool (test fixture)."""
+>>>  419:
+>>>  420:     x: int
+>>>  421:
+>>>  422:
+>>>  423: @pytest.fixture
+>>>  424: def failing_server() -> EnhancedFastMCP:
+>>>  425:     """EnhancedFastMCP server with a tool that returns an error payload."""
+>>>  426:     # Workaround: Pass version="test" to skip slow importlib.metadata.version() lookup
+>>>  427:     # that hangs on os.stat() in Nix environment. Without this, MCP server initialization
+>>>  428:     # would call pkg_version("mcp") which triggers filesystem operations that timeout.
+>>>  429:     mcp = EnhancedFastMCP("editor", version="test")
+>>>  430:
+>>>  431:     @mcp.flat_model()
+>>>  432:     def fail(input: _FailInput) -> dict[str, Any]:
+>>>  433:         # Return error payload in structured_content (not raise ToolError)
+>>>  434:         # The test expects ok=False, error="boom" in structured_content
+>>>  435:         return {"ok": False, "error": "boom"}
+>>>  436:
+>>>  437:     return mcp
+>>>  438:
+>>>  439:
+>>>  440: @pytest.fixture
+>>>  441: def slow_server() -> FastMCP:
+>>>  442:     """FastMCP server with two slow async tools for parallel call testing."""
+>>>  443:     mcp = FastMCP("dummy")
+>>>  444:
+>>>  445:     @mcp.tool()
+>>>  446:     async def slow() -> dict[str, Any]:
+>>>  447:         await asyncio.sleep(0.30)
+>>>  448:         return {"ok": True, "tool": "slow", "args": {}}
+>>>  449:
+>>>  450:     @mcp.tool()
+>>>  451:     async def slow2() -> dict[str, Any]:
+>>>  452:         await asyncio.sleep(0.30)
+>>>  453:         return {"ok": True, "tool": "slow2", "args": {}}
+>>>  454:
+>>>  455:     return mcp
+     456:
+     457:
+     458: # ---- UI reducer/history test fixtures ----------------------------------------
+```
+
+### `missing-lifespan-in-tests.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/missing-lifespan-in-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/gatelet/server/conftest.py#L147-L159)
+
+File: `gatelet/server/conftest.py` (L147-159)
+
+> The test client fixture bypasses FastAPI's lifespan context, manually initializing
+> CSRF config and templates instead of triggering proper startup. This causes routes
+> registered in lifespan (like `/k/{key}/`, `/s/{session}/`) to not exist during tests,
+> resulting in spurious 404 errors.
+>
+> Use `asgi-lifespan.LifespanManager` to properly trigger app startup/shutdown:
+>
+> ```python
+> from asgi_lifespan import LifespanManager
+> async with LifespanManager(app) as manager:
+>     async with AsyncClient(transport=ASGITransport(app=manager.app), ...) as client:
+>         yield client
+> ```
+
+```
+     144:     def override_settings() -> Settings:
+     145:         return test_settings
+     146:
+>>>  147:     # Initialize CSRF protection for tests (normally done in lifespan)
+>>>  148:     _init_csrf_config(test_settings.security.csrf_secret)
+>>>  149:
+>>>  150:     # Initialize templates (normally done in lifespan)
+>>>  151:     app.state.templates = Jinja2Templates(directory=BASE_DIR / "templates")
+>>>  152:     app.state.templates.env.globals.update({"max": max, "min": min})
+>>>  153:
+>>>  154:     app.dependency_overrides[get_db_session] = override_db
+>>>  155:     app.dependency_overrides[get_settings] = override_settings
+>>>  156:     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as client:
+>>>  157:         yield client
+>>>  158:     app.dependency_overrides.pop(get_db_session, None)
+>>>  159:     app.dependency_overrides.pop(get_settings, None)
+     160:
+     161:
+     162: @pytest_asyncio.fixture
+```
+
+### `mixed-api-domain-types.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/mixed-api-domain-types.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/shared/github_models.py#L1-L189)
+
+File: `wt/shared/github_models.py` (L1-189)
+
+> `github_models.py` mixes GitHub API boundary types with internal domain
+> types in one flat module. API types that directly mirror GitHub response
+> shapes (`PRState`, `PullRequestSearch`, `PullRequestList`,
+> `GitHubPRResponse`, `HasBasicPR`, `GitHubError`) live alongside internal
+> domain types (`PRStatus`, `PRData`, `PRInfo`, `PRInfoRepr`,
+> `PRMergeability`, `coerce_prdata`). The API types use `Field(alias=...)`
+> and match GitHub field names; the domain types use different field names
+> (e.g. `pr_number` vs `number`) and add derived concepts.
+>
+> Separate the GitHub API shapes into their own module (e.g.
+> `github_api_types.py`) so the boundary is explicit and domain types can
+> evolve independently.
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: from dataclasses import dataclass
+>>>    4: from datetime import datetime
+>>>    5: from enum import StrEnum
+>>>    6: from typing import Any, Protocol, runtime_checkable
+>>>    7:
+>>>    8: from pydantic import BaseModel, Field
+>>>    9:
+>>>   10:
+>>>   11: class GitHubError(Exception):
+>>>   12:     pass
+>>>   13:
+>>>   14:
+>>>   15: class PRStatus(StrEnum):
+>>>   16:     MERGED = "MERGED"
+>>>   17:     CLOSED = "CLOSED"
+>>>   18:     OPEN_MERGEABLE = "OPEN_MERGEABLE"
+>>>   19:     OPEN_CONFLICTING = "OPEN_CONFLICTING"
+>>>   20:     OPEN_UNKNOWN = "OPEN_UNKNOWN"
+>>>   21:
+>>>   22:     @property
+>>>   23:     def is_merged(self) -> bool:
+>>>   24:         return self == PRStatus.MERGED
+>>>   25:
+>>>   26:     @property
+>>>   27:     def is_open(self) -> bool:
+>>>   28:         return self.name.startswith("OPEN_")
+>>>   29:
+>>>   30:     @property
+>>>   31:     def is_closed(self) -> bool:
+>>>   32:         return self == PRStatus.CLOSED
+>>>   33:
+>>>   34:     @property
+>>>   35:     def display_text(self) -> str:
+>>>   36:         if self == PRStatus.MERGED:
+>>>   37:             return "merged"
+>>>   38:         if self == PRStatus.CLOSED:
+>>>   39:             return "closed"
+>>>   40:         if self == PRStatus.OPEN_MERGEABLE:
+>>>   41:             return "can merge"
+>>>   42:         if self == PRStatus.OPEN_CONFLICTING:
+>>>   43:             return "conflict"
+>>>   44:         if self == PRStatus.OPEN_UNKNOWN:
+>>>   45:             return "open"
+>>>   46:         return self.value.lower()
+>>>   47:
+>>>   48:
+>>>   49: class PRState(StrEnum):
+>>>   50:     OPEN = "open"
+>>>   51:     CLOSED = "closed"
+>>>   52:     MERGED = "merged"
+>>>   53:
+>>>   54:     @property
+>>>   55:     def is_merged(self) -> bool:
+>>>   56:         return self == PRState.MERGED
+>>>   57:
+>>>   58:
+>>>   59: class PRMergeability(StrEnum):
+>>>   60:     CONFLICTING = "CONFLICTING"
+>>>   61:     UNKNOWN = "UNKNOWN"
+>>>   62:
+>>>   63:
+>>>   64: class PullRequestSearch(BaseModel):
+>>>   65:     number: int
+>>>   66:     title: str
+>>>   67:     state: PRState
+>>>   68:     url: str
+>>>   69:
+>>>   70:
+>>>   71: class PullRequestList(BaseModel):
+>>>   72:     number: int
+>>>   73:     head_ref_name: str = Field(alias="headRefName")
+>>>   74:     state: PRState
+>>>   75:     title: str
+>>>   76:     merged_at: str | None = Field(None, alias="mergedAt")
+>>>   77:
+>>>   78:
+>>>   79: class PRData(BaseModel):
+>>>   80:     pr_number: int
+>>>   81:     pr_state: PRState
+>>>   82:     draft: bool = False
+>>>   83:     mergeable: bool | None = None
+>>>   84:     merged_at: str | None = None
+>>>   85:     additions: int | None = None
+>>>   86:     deletions: int | None = None
+>>>   87:
+>>>   88:
+>>>   89: class GitHubPRResponse(BaseModel):
+>>>   90:     """Raw GitHub PR API response data"""
+>>>   91:
+>>>   92:     number: int
+>>>   93:     state: PRState
+>>>   94:     title: str
+>>>   95:     draft: bool = False
+>>>   96:     mergeable: bool | None = None
+>>>   97:     merged_at: str | None = None
+>>>   98:     additions: int | None = None
+>>>   99:     deletions: int | None = None
+>>>  100:
+>>>  101:     @classmethod
+>>>  102:     def from_github_pr(cls, pr) -> GitHubPRResponse:
+>>>  103:         """Create from PyGithub PR object"""
+>>>  104:         return cls(
+>>>  105:             number=pr.number,
+>>>  106:             state=pr.state,
+>>>  107:             title=pr.title,
+>>>  108:             draft=pr.draft,
+>>>  109:             mergeable=pr.mergeable,
+>>>  110:             merged_at=pr.merged_at.isoformat() if pr.merged_at else None,
+>>>  111:             additions=pr.additions,
+>>>  112:             deletions=pr.deletions,
+>>>  113:         )
+>>>  114:
+>>>  115:
+>>>  116: class PRInfoRepr(BaseModel):
+>>>  117:     branch: str
+>>>  118:     pr_data: PRData | None = None
+>>>  119:     gh_error: str | None = None
+>>>  120:
+>>>  121:
+>>>  122: def coerce_prdata(src: Any) -> PRData:
+>>>  123:     if isinstance(src, PRData):
+>>>  124:         return src
+>>>  125:     if isinstance(src, GitHubPRResponse):
+>>>  126:         return PRData(
+>>>  127:             pr_number=src.number,
+>>>  128:             pr_state=PRState(src.state),
+>>>  129:             draft=src.draft,
+>>>  130:             mergeable=src.mergeable,
+>>>  131:             merged_at=src.merged_at,
+>>>  132:             additions=src.additions,
+>>>  133:             deletions=src.deletions,
+>>>  134:         )
+>>>  135:     if isinstance(src, dict):
+>>>  136:         num = src["pr_number"] if "pr_number" in src else src["number"]
+>>>  137:         st = src.get("pr_state")
+>>>  138:         raw_state = st if st is not None else src.get("state")
+>>>  139:         if raw_state is None:
+>>>  140:             raise KeyError("state")
+>>>  141:         state = raw_state if isinstance(raw_state, PRState) else PRState(str(raw_state))
+>>>  142:         return PRData(
+>>>  143:             pr_number=int(num),
+>>>  144:             pr_state=state,
+>>>  145:             draft=bool(src.get("draft", False)),
+>>>  146:             mergeable=src.get("mergeable"),
+>>>  147:             merged_at=src.get("merged_at"),
+>>>  148:             additions=src.get("additions"),
+>>>  149:             deletions=src.get("deletions"),
+>>>  150:         )
+>>>  151:     raise TypeError("Unsupported PR data type")
+>>>  152:
+>>>  153:
+>>>  154: @runtime_checkable
+>>>  155: class HasBasicPR(Protocol):  # minimal protocol for PyGithub-like PR (read-only properties OK)
+>>>  156:     @property
+>>>  157:     def number(self) -> int: ...
+>>>  158:
+>>>  159:     @property
+>>>  160:     def state(self) -> str: ...
+>>>  161:
+>>>  162:     @property
+>>>  163:     def title(self) -> str: ...
+>>>  164:
+>>>  165:     @property
+>>>  166:     def draft(self) -> bool: ...
+>>>  167:
+>>>  168:     @property
+>>>  169:     def mergeable(self) -> bool | None: ...
+>>>  170:
+>>>  171:     @property
+>>>  172:     def merged_at(self) -> datetime | None: ...
+>>>  173:
+>>>  174:     @property
+>>>  175:     def additions(self) -> int | None: ...
+>>>  176:
+>>>  177:     @property
+>>>  178:     def deletions(self) -> int | None: ...
+>>>  179:
+>>>  180:
+>>>  181: @dataclass
+>>>  182: class PRInfo:
+>>>  183:     branch: str
+>>>  184:     pr_data: PRData | None = None
+>>>  185:     github_pr: HasBasicPR | None = None  # runtime object, not serialized
+>>>  186:     gh_error: str | None = None
+>>>  187:
+>>>  188:     def to_repr(self) -> PRInfoRepr:
+>>>  189:         return PRInfoRepr(branch=self.branch, pr_data=self.pr_data, gh_error=self.gh_error)
+```
+
+### `narrow-fixtures.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/narrow-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core/conftest.py#L25)
+
+File: `agent_core/conftest.py` (L25)
+
+> Several pytest fixtures are defined in shared conftest/fixture files but
+> have only one consumer. Move them closer to their single user.
+>
+> **Note:** `text_content` — only used by `test_tool_execution.py`
+
+```
+      22:
+      23:
+      24: @pytest.fixture
+>>>   25: def text_content():
+      26:     """Helper to create MCP TextContent blocks."""
+      27:     return lambda text: mcp_types.TextContent(type="text", text=text)
+      28:
+```
+
+### `narrow-fixtures.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/narrow-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core/conftest.py#L31)
+
+File: `agent_core/conftest.py` (L31)
+
+> Several pytest fixtures are defined in shared conftest/fixture files but
+> have only one consumer. Move them closer to their single user.
+>
+> **Note:** `noop_agent` — only used by `test_message_processing.py`
+
+```
+      28:
+      29:
+      30: @pytest.fixture
+>>>   31: async def noop_agent(compositor_client, recording_handler):
+      32:     """Agent with NoopOpenAIClient for testing message processing without sampling."""
+      33:     return await Agent.create(
+      34:         mcp_client=compositor_client,
+```
+
+### `narrow-fixtures.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/narrow-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/conftest.py#L462)
+
+File: `agent_server/conftest.py` (L462)
+
+> Several pytest fixtures are defined in shared conftest/fixture files but
+> have only one consumer. Move them closer to their single user.
+>
+> **Note:** `fresh_ui_state` — only used by `test_reducer.py`
+
+```
+     459:
+     460:
+     461: @pytest.fixture
+>>>  462: def fresh_ui_state():
+     463:     """Fresh UI state for reducer tests."""
+     464:     return new_state()
+     465:
+```
+
+### `narrow-fixtures.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/narrow-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/conftest.py#L530-L583)
+
+File: `agent_server/conftest.py` (L530-583)
+
+> Several pytest fixtures are defined in shared conftest/fixture files but
+> have only one consumer. Move them closer to their single user.
+>
+> **Note:** `event_ts`, `make_event_record`, `make_user_text_event`, `make_tool_call_event`, `make_function_output_event` — entire chain only used by `test_history_fold_typed.py`
+
+```
+     527:
+     528:
+     529: @pytest.fixture
+>>>  530: def event_ts() -> datetime:
+>>>  531:     """Shared timestamp for EventRecord tests."""
+>>>  532:     return datetime.now(UTC)
+>>>  533:
+>>>  534:
+>>>  535: @pytest.fixture
+>>>  536: def make_event_record(event_ts: datetime) -> Callable[[EventType, int | None], EventRecord]:
+>>>  537:     """Wrap any EventType in an EventRecord with auto-sequencing."""
+>>>  538:     seq_counter = {"count": 0}
+>>>  539:
+>>>  540:     def _wrap(payload: EventType, seq: int | None = None) -> EventRecord:
+>>>  541:         if seq is None:
+>>>  542:             seq_counter["count"] += 1
+>>>  543:             seq = seq_counter["count"]
+>>>  544:         return EventRecord(seq=seq, ts=event_ts, payload=payload)
+>>>  545:
+>>>  546:     return _wrap
+>>>  547:
+>>>  548:
+>>>  549: @pytest.fixture
+>>>  550: def make_user_text_event(
+>>>  551:     make_event_record: Callable[[EventType, int | None], EventRecord],
+>>>  552: ) -> Callable[[int, str], EventRecord]:
+>>>  553:     """Factory for UserText EventRecord."""
+>>>  554:
+>>>  555:     def _make(seq: int, text: str) -> EventRecord:
+>>>  556:         return make_event_record(UserText(text=text), seq)
+>>>  557:
+>>>  558:     return _make
+>>>  559:
+>>>  560:
+>>>  561: @pytest.fixture
+>>>  562: def make_tool_call_event(
+>>>  563:     make_event_record: Callable[[EventType, int | None], EventRecord], make_tool_call: Callable[..., ToolCall]
+>>>  564: ) -> Callable[..., EventRecord]:
+>>>  565:     """Factory for ToolCall EventRecord."""
+>>>  566:
+>>>  567:     def _make(seq: int, server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> EventRecord:
+>>>  568:         return make_event_record(make_tool_call(server, tool, args=args), seq)
+>>>  569:
+>>>  570:     return _make
+>>>  571:
+>>>  572:
+>>>  573: @pytest.fixture
+>>>  574: def make_function_output_event(
+>>>  575:     make_event_record: Callable[[EventType, int | None], EventRecord],
+>>>  576:     make_tool_call_output: Callable[[str, dict[str, Any] | None, bool], ToolCallOutput],
+>>>  577: ) -> Callable[[int, str, dict[str, Any] | None], EventRecord]:
+>>>  578:     """Factory for ToolCallOutput EventRecord."""
+>>>  579:
+>>>  580:     def _make(seq: int, call_id: str, structured_content: dict[str, Any] | None = None) -> EventRecord:
+>>>  581:         return make_event_record(make_tool_call_output(call_id, structured_content, False), seq)
+>>>  582:
+>>>  583:     return _make
+     584:
+     585:
+     586: # --- Policy gateway fixtures (for MCP middleware tests) ---
+```
+
+### `narrow-fixtures.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/narrow-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_server/conftest.py#L102)
+
+File: `agent_server/conftest.py` (L102)
+
+> Several pytest fixtures are defined in shared conftest/fixture files but
+> have only one consumer. Move them closer to their single user.
+>
+> **Note:** `mcp_client_box` — only used by `test_exec_roundtrip.py`
+
+```
+      99:
+     100:
+     101: @pytest.fixture
+>>>  102: async def mcp_client_box(docker_exec_server_py312slim, compositor, compositor_client):
+     103:     """MCP client with box Docker exec server (no policy gateway)."""
+     104:     await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server_py312slim)
+     105:     return compositor_client
+```
+
+### `narrow-fixtures.yaml` / `occ-5`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/narrow-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/mcp_infra/compositor/conftest.py#L22-L36)
+
+File: `mcp_infra/compositor/conftest.py` (L22, L36)
+
+> Several pytest fixtures are defined in shared conftest/fixture files but
+> have only one consumer. Move them closer to their single user.
+>
+> **Note:** `mounted_compositor_admin` + `compositor_admin_tool` — chain only used by `test_admin_client.py`
+
+```
+      19:
+      20:
+      21: @pytest.fixture
+>>>   22: async def mounted_compositor_admin(compositor) -> Mounted[CompositorAdminServer]:
+      23:     """Mounted CompositorAdminServer for testing.
+      24:
+      25:     Mounts the admin server with prefix 'test_compositor_admin' to avoid
+   ...
+      33:
+      34:
+      35: @pytest.fixture
+>>>   36: def compositor_admin_tool(
+      37:     compositor_client: Client, mounted_compositor_admin: Mounted[CompositorAdminServer]
+      38: ) -> Callable[[str, BaseModel], Awaitable]:
+      39:     """Helper to call tools on the mounted compositor admin server."""
+```
+
+### `narrow-fixtures.yaml` / `occ-6`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/narrow-fixtures.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/mcp_infra/conftest.py#L46)
+
+File: `mcp_infra/conftest.py` (L46)
+
+> Several pytest fixtures are defined in shared conftest/fixture files but
+> have only one consumer. Move them closer to their single user.
+>
+> **Note:** `typed_docker_client` — only used by `exec/test_docker.py`
+
+```
+      43:
+      44:
+      45: @pytest.fixture
+>>>   46: async def typed_docker_client(make_typed_mcp, docker_exec_server_py312slim):
+      47:     """Typed MCP client for docker exec server with python:3.12-slim.
+      48:
+      49:     Yields (TypedClient, session) tuple for direct use in tests.
+```
+
+### `redundant-structured-content-test.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/redundant-structured-content-test.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core/test_tool_execution.py#L95-L120)
+
+File: `agent_core/test_tool_execution.py` (L95-120)
+
+> `test_app_level_error_payload_surfaced_in_structured_content` (line 95)
+> tests that a successful MCP result with `{"ok": False, "error": "boom"}`
+> in structuredContent passes through to the agent. MCP does not distinguish
+> this from any other successful structured content — the `{"ok": False}`
+> convention is meaningless at the MCP layer. This is already covered by
+> `test_mcp_integration.py` which asserts structured content passthrough
+> (line 37: `has_entries(echo="hello")`, line 56: direct equality check).
+> Delete the redundant test and its `error_payload_server` fixture.
+
+```
+      92:     x: int
+      93:
+      94:
+>>>   95: async def test_app_level_error_payload_surfaced_in_structured_content(
+>>>   96:     compositor, compositor_client, error_payload_server, recording_handler
+>>>   97: ) -> None:
+>>>   98:     """Test that application-level error payloads are surfaced in structuredContent.
+>>>   99:
+>>>  100:     Note: This tests the {"ok": False, "error": "..."} pattern in structuredContent,
+>>>  101:     NOT the MCP-level isError flag. For MCP-level error testing, see test_tool_error_continues_turn.
+>>>  102:     """
+>>>  103:     mounted = await compositor.mount_inproc(MCPMountPrefix("editor"), error_payload_server)
+>>>  104:
+>>>  105:     @DecoratorMock.mock()
+>>>  106:     def mock(m: DecoratorMock):
+>>>  107:         yield
+>>>  108:         yield m.tool_call(build_mcp_function(mounted.prefix, FAIL_TOOL_NAME), FailInput(x=1))
+>>>  109:         yield m.assistant_text("done")
+>>>  110:
+>>>  111:     agent = await Agent.create(
+>>>  112:         mcp_client=compositor_client,
+>>>  113:         client=mock,
+>>>  114:         handlers=[FinishOnTextMessageHandler(), recording_handler],
+>>>  115:         tool_policy=AllowAnyToolOrTextMessage(),
+>>>  116:     )
+>>>  117:     agent.process_message(UserMessage.text("fail"))
+>>>  118:     await agent.run()
+>>>  119:
+>>>  120:     assert_function_call_output_structured(recording_handler.records, has_entries(ok=False, error="boom"))
+     121:
+     122:
+     123: # --- Parallel tool call tests ---
+```
+
+### `str-keyed-state-map.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/str-keyed-state-map.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/client/view_formatter.py#L199-L206)
+
+File: `wt/client/view_formatter.py` (L199-206)
+
+> `state_map` (view_formatter.py:199-205) is keyed by string literals
+> (`"running"`, `"failed"`, etc.) when `gitstatusd_state` is a
+> `GitstatusdState` StrEnum. The lookup coerces via `or ""` to avoid None.
+> Key by `GitstatusdState` enum values instead.
+>
+> Additionally, the map is a trivial identity mapping — every key maps to
+> itself. The entire map and lookup can be replaced with
+> `status.gitstatusd_state or ""` (or `.value` if an explicit str is needed).
+
+```
+     196:             pr_link = self._get_pr_link_column(status)
+     197:             pr_status = self._get_pr_status_column(status)
+     198:             pr_changes = self._get_pr_changes_column(status)
+>>>  199:             state_map = {
+>>>  200:                 "running": "running",
+>>>  201:                 "restarting": "restarting",
+>>>  202:                 "failed": "failed",
+>>>  203:                 "stopped": "stopped",
+>>>  204:                 "starting": "starting",
+>>>  205:             }
+>>>  206:             state = state_map.get(status.gitstatusd_state or "", "")
+     207:             if pr_link:
+     208:                 pr_parts = [pr_link]
+     209:                 if pr_status:
+```
+
+### `str-keyed-status-map.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/str-keyed-status-map.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/client/view_formatter.py#L14-L291)
+
+File: `wt/client/view_formatter.py` (L14-20, L61-80, L286-291)
+
+> `PR_STATUS_DISPLAY_MAP` (view_formatter.py:14-20) is keyed by
+> `PRStatus.*.display_text` strings rather than `PRStatus` enum values.
+> `get_pr_status_text` (lines 61-80) manually resolves `PRState` + mergeability
+>
+> - merged_at into a display string, duplicating the `PRState → PRStatus`
+>   resolution that should produce a `PRStatus` enum value. The lookup site
+>   (line 287) then compares this string output against display-text keys.
+>
+> The entire chain is string-based when it should be enum-based:
+> `get_pr_status_text` should return `PRStatus` (not `str`), the map should
+> be keyed by `PRStatus`, and display formatting should happen at the end.
+> As-is, any change to `display_text` silently breaks the map lookup.
+
+```
+      11: from ..shared.protocol import PRInfo, PRInfoError, PRInfoOk, StatusResult
+      12:
+      13: # PR status display mapping centralized via PRStatus.display_text
+>>>   14: PR_STATUS_DISPLAY_MAP = {
+>>>   15:     PRStatus.MERGED.display_text: ("✅", "already merged"),
+>>>   16:     PRStatus.CLOSED.display_text: ("❌", "closed"),
+>>>   17:     PRStatus.OPEN_MERGEABLE.display_text: ("🟢", "can merge"),
+>>>   18:     PRStatus.OPEN_CONFLICTING.display_text: ("🔴", "has conflict"),
+>>>   19:     PRStatus.OPEN_UNKNOWN.display_text: ("🟡", "open"),
+>>>   20: }
+      21:
+      22:
+      23: def format_sync_status(ahead: int, behind: int, *, compact: bool = False) -> str:
+   ...
+      58:             return "unknown"
+      59:         return "mergeable" if mergeable else "conflicting"
+      60:
+>>>   61:     def get_pr_status_text(
+>>>   62:         self,
+>>>   63:         pr_state: PRState,
+>>>   64:         mergeability: Literal["mergeable", "conflicting", "unknown"],
+>>>   65:         is_draft: bool = False,
+>>>   66:         merged_at: str | None = None,
+>>>   67:     ) -> str:
+>>>   68:         # Show draft status first if it's a draft
+>>>   69:         if is_draft:
+>>>   70:             return "draft"
+>>>   71:
+>>>   72:         # Distinguish between merged and closed based on merged_at
+>>>   73:         if pr_state == PRState.CLOSED:
+>>>   74:             return "merged" if merged_at else "closed"
+>>>   75:         if pr_state == PRState.OPEN:
+>>>   76:             if mergeability == "unknown":
+>>>   77:                 return PRStatus.OPEN_UNKNOWN.display_text
+>>>   78:             if mergeability == "mergeable":
+>>>   79:                 return PRStatus.OPEN_MERGEABLE.display_text
+>>>   80:             return PRStatus.OPEN_CONFLICTING.display_text
+      81:         return str(pr_state.value).lower()
+      82:
+      83:     def format_status_row(self, name: str, status: StatusResult, pr_info: PRInfo | None, name_width: int = 22) -> str:
+   ...
+     283:             )
+     284:
+     285:             # Format detailed PR status
+>>>  286:             status_text = self.get_pr_status_text(pr_state, self._mergeability_label(d.mergeable), d.draft, d.merged_at)
+>>>  287:             if status_text in PR_STATUS_DISPLAY_MAP:
+>>>  288:                 icon, message = PR_STATUS_DISPLAY_MAP[status_text]
+>>>  289:                 click.echo(f"{icon} Status: This PR {message}")
+>>>  290:             else:
+>>>  291:                 click.echo(f"Status: {status_text}")
+     292:
+     293:     def render_worktree_removal_confirmation(self, name: str, worktree_path: Path) -> None:
+     294:         click.echo(f"⚠️  About to permanently remove worktree '{name}' at {worktree_path}")
+```
+
+### `trivial-wrapper.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/trivial-wrapper.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/agent_core/conftest.py#L24-L27)
+
+File: `agent_core/conftest.py` (L24-27)
+
+> `text_content` fixture (conftest.py:25) returns a lambda that calls
+> `mcp_types.TextContent(type="text", text=text)`. This is a trivial wrapper
+> — callers should construct `TextContent` directly.
+
+```
+      21: ]
+      22:
+      23:
+>>>   24: @pytest.fixture
+>>>   25: def text_content():
+>>>   26:     """Helper to create MCP TextContent blocks."""
+>>>   27:     return lambda text: mcp_types.TextContent(type="text", text=text)
+      28:
+      29:
+      30: @pytest.fixture
+```
+
+### `walrus.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/walrus.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/server/handlers/status_handler.py#L54-L56)
+
+File: `wt/server/handlers/status_handler.py` (L54-56)
+
+> Assign-then-check patterns that should use walrus operator (:=).
+>
+> **Note:** `cached = ahead_behind_data.get(branch)` then `if cached:`
+
+```
+      51: ) -> tuple[int | None, int | None]:
+      52:     if not branch:
+      53:         return (None, None)
+>>>   54:     cached = ahead_behind_data.get(branch)
+>>>   55:     if cached:
+>>>   56:         return (cached.ahead, cached.behind)
+      57:     return (None, None)
+      58:
+      59:
+```
+
+### `walrus.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/issues/walrus.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-17-00/code/wt/client/view_formatter.py#L197-L212)
+
+File: `wt/client/view_formatter.py` (L197-198, L209-212)
+
+> Assign-then-check patterns that should use walrus operator (:=).
+>
+> **Note:** `pr_status` and `pr_changes` assigned then checked with `if`
+
+```
+     194:         for name, status in sorted_items:
+     195:             pr_info = ""
+     196:             pr_link = self._get_pr_link_column(status)
+>>>  197:             pr_status = self._get_pr_status_column(status)
+>>>  198:             pr_changes = self._get_pr_changes_column(status)
+     199:             state_map = {
+     200:                 "running": "running",
+     201:                 "restarting": "restarting",
+   ...
+     206:             state = state_map.get(status.gitstatusd_state or "", "")
+     207:             if pr_link:
+     208:                 pr_parts = [pr_link]
+>>>  209:                 if pr_status:
+>>>  210:                     pr_parts.append(pr_status)
+>>>  211:                 if pr_changes:
+>>>  212:                     pr_parts.append(pr_changes)
+     213:                 pr_info = " ".join(pr_parts)
+     214:
+     215:             table_data.append(
+```
+
+## ducktape/2026-01-29-00 (51)
+
+### `auth-url-duplication.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/auth-url-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/cli.py#L52-L146)
+
+File: `agent_server/cli.py` (L52-64, L136-146)
+
+> The `dev()` command duplicates the auth URL construction logic from `_print_auth_url()`:
+> it re-reads `TokensConfig.from_yaml_file()`, re-extracts the first user token, and
+> re-builds the authenticated URL with `urlencode`/`urlunparse`. Extract a helper that
+> returns the auth URL string (or None), then both `_print_auth_url` and the
+> `open_browser` block can call it.
+>
+> **Note:** Lines 138-142 duplicate the token-lookup and URL-building logic from \_print_auth_url (lines 54-59)
+
+```
+      49:     return cfg
+      50:
+      51:
+>>>   52: def _print_auth_url(host: str, port: int) -> None:
+>>>   53:     """Print the authenticated URL for accessing the UI."""
+>>>   54:     config = TokensConfig.from_yaml_file()
+>>>   55:     if user_tokens := config.user_tokens():
+>>>   56:         # Use first user token
+>>>   57:         token = next(iter(user_tokens.keys()))
+>>>   58:         query = urlencode({"token": token})
+>>>   59:         url = urlunparse(("http", f"{host}:{port}", "", "", query, ""))
+>>>   60:         print(f"\nAuthenticated URL: {url}")
+>>>   61:     else:
+>>>   62:         print("\nNo user tokens found. Create ~/.config/adgn/tokens.yaml with:")
+>>>   63:         print("  users:")
+>>>   64:         print('    admin: "your-hex-token"')
+      65:
+      66:
+      67: @app.command("serve")
+   ...
+     133:         backend_url = urlunparse(("http", f"{host}:{backend_port}", "", "", "", ""))
+     134:         typer.echo(f"Backend (MCP): {backend_url}")
+     135:         _print_auth_url(host, frontend_dev_port)
+>>>  136:         if open_browser:
+>>>  137:             # Try to open authenticated URL if token available
+>>>  138:             config = TokensConfig.from_yaml_file()
+>>>  139:             if user_tokens := config.user_tokens():
+>>>  140:                 token = next(iter(user_tokens.keys()))
+>>>  141:                 query = urlencode({"token": token})
+>>>  142:                 auth_url = urlunparse(("http", f"{host}:{frontend_dev_port}", "", "", query, ""))
+>>>  143:             else:
+>>>  144:                 auth_url = url
+>>>  145:             with contextlib.suppress(Exception):
+>>>  146:                 subprocess.Popen(["open", auth_url])
+     147:
+     148:         # Build FastAPI app; agent lifecycle is handled by the runtime container (registry)
+     149:         app_fastapi = create_app()
+```
+
+### `code-in-prose.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/code-in-prose.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/sandboxed_jupyter/docs/TODO-SANDBOX.md#L33-L47)
+
+File: `sandboxed_jupyter/docs/TODO-SANDBOX.md` (L33-47)
+
+> Code tokens (variable names, CLI flags, config keys, env vars, file paths, glob patterns)
+> written as plain markdown text instead of inline code or fenced code blocks. This causes
+> formatters like prettier to mangle special characters (e.g., `*` → `\*`), loses syntax
+> highlighting, and makes content non-copypasteable. Structured data like YAML schemas and
+> directory trees rendered as markdown nested lists are particularly bad — they don't render
+> as code, won't syntax-highlight, and can't be copy-pasted.
+>
+> **Note:** YAML policy schema rendered as markdown nested list instead of fenced yaml code block
+
+```
+      30:
+      31: Policy YAML (explicit-only, platform-selective)
+      32:
+>>>   33: - env:
+>>>   34:   - set: { JUPYTER_* dirs, HOME, PYTHONPYCACHEPREFIX, MPLCONFIGDIR, PATH prepend for control venv }
+>>>   35:   - passthrough: [OPENAI_API_KEY, HTTP_PROXY, HTTPS_PROXY, ...]
+>>>   36: - fs:
+>>>   37:   - allow_write_all: bool
+>>>   38:   - allow_read_all: bool
+>>>   39:   - read_paths: [abs paths]
+>>>   40:   - write_paths: [abs paths]
+>>>   41: - net:
+>>>   42:   - mode: none | loopback | all | allowlist | proxy
+>>>   43:   - allow_domains: [api.openai.com, ...] (for allowlist/proxy modes)
+>>>   44:   - proxy: { listen: 127.0.0.1:0, upstream: null | host:port }
+>>>   45: - platform:
+>>>   46:   - seatbelt: { trace: bool, extra_allow: { mach-lookup: [..], system-socket: bool, dev: { allow_tty_writes: bool }, file_read_extra: [subpaths] } }
+>>>   47:   - bwrap: { ro_bind: [...], rw_bind: [...], tmpfs: [...], unshare: { net: bool, pid: bool, ipc: bool }, devices: [null, urandom, random] }
+      48:
+      49: Notes
+      50:
+```
+
+### `code-in-prose.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/code-in-prose.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/sandboxed_jupyter/docs/TODO-SANDBOX.md#L57-L67)
+
+File: `sandboxed_jupyter/docs/TODO-SANDBOX.md` (L57-67)
+
+> Code tokens (variable names, CLI flags, config keys, env vars, file paths, glob patterns)
+> written as plain markdown text instead of inline code or fenced code blocks. This causes
+> formatters like prettier to mangle special characters (e.g., `*` → `\*`), loses syntax
+> highlighting, and makes content non-copypasteable. Structured data like YAML schemas and
+> directory trees rendered as markdown nested lists are particularly bad — they don't render
+> as code, won't syntax-highlight, and can't be copy-pasted.
+>
+> **Note:** Directory tree rendered as markdown nested list instead of fenced code block
+
+```
+      54:
+      55: Directory layout (example control bundle)
+      56:
+>>>   57: - control/
+>>>   58:   - bin/ (control venv: jupyter, jupyter-mcp-server, sandboxer)
+>>>   59:   - jupyter/config/jupyter_server_config.py
+>>>   60:   - kernels/
+>>>   61:     - python3-low/kernel.json  # argv: sandboxer --policy policies/low/policy.yaml -- <kernel-python> -m ipykernel_launcher -f {connection_file}
+>>>   62:     - python3-high/kernel.json
+>>>   63:   - policies/
+>>>   64:     - low/policy.yaml
+>>>   65:     - high/policy.yaml
+>>>   66:   - mcp/
+>>>   67:     - jupyter_mcp_launcher.yaml (optional convenience)
+      68:
+      69: ---
+      70:
+```
+
+### `code-in-prose.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/code-in-prose.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/sandboxed_jupyter/docs/TODO-SANDBOX.md#L8-L81)
+
+File: `sandboxed_jupyter/docs/TODO-SANDBOX.md` (L8, L34-35, L51, L61, L75-81)
+
+> Code tokens (variable names, CLI flags, config keys, env vars, file paths, glob patterns)
+> written as plain markdown text instead of inline code or fenced code blocks. This causes
+> formatters like prettier to mangle special characters (e.g., `*` → `\*`), loses syntax
+> highlighting, and makes content non-copypasteable. Structured data like YAML schemas and
+> directory trees rendered as markdown nested lists are particularly bad — they don't render
+> as code, won't syntax-highlight, and can't be copy-pasted.
+>
+> **Note:** Code tokens as plain text throughout (file-read*, JUPYTER\_*, env vars, config keys)
+
+```
+       5: - Network egress options:
+       6:   - Add a mode to allow only loopback + a local HTTP proxy, and restrict that proxy to a curated allowlist (e.g., openai.com) while denying general HTTP
+       7: - Filesystem surface:
+>>>    8:   - Reduce file-read* to the minimum required (system libs, site-packages) and keep WORKSPACE read/write; make /tmp writes optional
+       9: - Policy capabilities:
+      10:   - Support specifying policy sections/capabilities on argv (seatbelt substitutions), to toggle features without changing code
+      11: - Environment hygiene:
+   ...
+      31: Policy YAML (explicit-only, platform-selective)
+      32:
+      33: - env:
+>>>   34:   - set: { JUPYTER_* dirs, HOME, PYTHONPYCACHEPREFIX, MPLCONFIGDIR, PATH prepend for control venv }
+>>>   35:   - passthrough: [OPENAI_API_KEY, HTTP_PROXY, HTTPS_PROXY, ...]
+      36: - fs:
+      37:   - allow_write_all: bool
+      38:   - allow_read_all: bool
+   ...
+      48:
+      49: Notes
+      50:
+>>>   51: - On Linux, bwrap ro_bind/rw_bind will be derived largely from generic fs.read_paths/write_paths; platform.bwrap allows extra mounts/tuning as needed.
+      52: - Docker: orthogonal; configs differ enough that unifying with sandboxer isn’t worth it. Leave as a separate composer flow (TODO).
+      53: - Future: a "sandboxer MCP" that accepts "execute <foo> under sandbox <bar>" with internal policies (e.g., only allow <baz> if net=none and specific read-only areas), with agent request → user approve/deny flow. Leave as TODO.
+      54:
+   ...
+      58:   - bin/ (control venv: jupyter, jupyter-mcp-server, sandboxer)
+      59:   - jupyter/config/jupyter_server_config.py
+      60:   - kernels/
+>>>   61:     - python3-low/kernel.json  # argv: sandboxer --policy policies/low/policy.yaml -- <kernel-python> -m ipykernel_launcher -f {connection_file}
+      62:     - python3-high/kernel.json
+      63:   - policies/
+      64:     - low/policy.yaml
+   ...
+      72:
+      73: Phase 2 — functionality hardening
+      74:
+>>>   75: - [ ] Add sandboxer proxy-managed allowlist mode (net: proxy)
+>>>   76:   - [ ] Spawn local HTTP proxy on 127.0.0.1:0; set `HTTP(S)_PROXY` inside sandbox; filter by `allow_domains`
+>>>   77:   - [ ] Teardown proxy cleanly on exit
+>>>   78: - [ ] Add Linux bwrap backend
+>>>   79:   - [ ] Map fs.read_paths → ro binds; fs.write_paths → rw binds; tmpfs per policy
+>>>   80:   - [ ] Implement net: none via unshare; loopback-only TBD; proxy mode supported via same proxy flow
+>>>   81: - [ ] Tighten macOS base allowances (mach-lookup/system-socket/dev/tty) guided by traces
+      82: - [ ] Fonts/plotting support: add curated read paths for macOS fonts and fontconfig caches if needed
+      83:
+      84: Phase 3 — integration and migration
+```
+
+### `code-in-prose.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/code-in-prose.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/sandboxed_jupyter/docs/TODO.md#L5-L22)
+
+File: `sandboxed_jupyter/docs/TODO.md` (L5-6, L10, L22)
+
+> Code tokens (variable names, CLI flags, config keys, env vars, file paths, glob patterns)
+> written as plain markdown text instead of inline code or fenced code blocks. This causes
+> formatters like prettier to mangle special characters (e.g., `*` → `\*`), loses syntax
+> highlighting, and makes content non-copypasteable. Structured data like YAML schemas and
+> directory trees rendered as markdown nested lists are particularly bad — they don't render
+> as code, won't syntax-highlight, and can't be copy-pasted.
+>
+> **Note:** Code tokens as plain text (file-read\*, mach-lookup/system-socket, /tmp, mcpServers)
+
+```
+       2:
+       3: - Policy tightening (when ready):
+       4:   - Restrict network-outbound to loopback or specific ports (Jupyter server)
+>>>    5:   - Make reads explicit-only (done: removed global file-read*) and tighten test fixtures to allow_read_all: false with minimal read_paths
+>>>    6:   - Reduce remaining allowances (mach-lookup/system-socket) if not required by kernel
+       7:   - Remove `/dev/tty` write if not needed
+       8: - WORKSPACE and RUN_ROOT semantics:
+       9:   - WORKSPACE: repo/workspace root passed via `--workspace`. Kernel may read/write anywhere under this path
+>>>   10:   - RUN_ROOT: ephemeral per-run directory under /tmp (runtime logs, notebook scratch, kernelspec, jupyter runtime)
+      11: - Desired final mode:
+      12:   - Wrapper runs with `--workspace <repo root>` so kernel has R/W under repo; no write outside WORKSPACE, RUN_ROOT, tmp
+      13:
+   ...
+      19:
+      20: - `wt` allocates a `JP_PORT` and per-worktree `JUPYTER_*` dirs under `.wt/state/jupyter/`
+      21: - Starts `sandbox-jupyter --workspace <root> --mode seatbelt --jupyter-port $PORT` with inherited env
+>>>   22: - Exposes an mcpServers block or a small shim to register with clients
+      23: - Lifecycle: `wt up` / `wt down` manage the server
+      24:
+      25: Not implemented yet. Keep wrapper minimal for now.
+```
+
+### `dead-bootstrap-stub.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-bootstrap-stub.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/adgn/testing/bootstrap.py#L1)
+
+File: `adgn/testing/bootstrap.py` (L1)
+
+> `adgn/testing/bootstrap.py` was gutted to a single comment
+> ("This module has been cleaned up - all code was dead"). The file,
+> its BUILD target, and the empty `adgn/testing/` package should be
+> deleted entirely rather than leaving a placeholder comment.
+
+```
+>>>    1: # This module has been cleaned up - all code was dead (no external imports).
+```
+
+### `dead-code.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/mcp_infra/calltool.py#L7-L19)
+
+File: `mcp_infra/calltool.py` (L7-19)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `extract_structured_content` never imported or called
+
+```
+       4: from pydantic import TypeAdapter
+       5:
+       6:
+>>>    7: def extract_structured_content[T](result: mcp_types.CallToolResult, output_type: type[T]) -> T:
+>>>    8:     """Extract and validate structured content from a tool result.
+>>>    9:
+>>>   10:     Raises ValueError if result is an error or lacks structured content.
+>>>   11:     """
+>>>   12:     if result.isError:
+>>>   13:         raise ValueError(f"Cannot extract from error result: {result}")
+>>>   14:
+>>>   15:     sc = result.structuredContent
+>>>   16:     if sc is None:
+>>>   17:         raise ValueError(f"CallToolResult missing structured content: {result}")
+>>>   18:
+>>>   19:     return TypeAdapter(output_type).validate_python(sc)
+```
+
+### `dead-code.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/mcp/matrix/control.py#L19-L30)
+
+File: `agent_server/mcp/matrix/control.py` (L19-30)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `make_matrix_control_server` never imported — matrix_bot.py inlines identical logic
+
+```
+      16: from mcp_infra.enhanced.server import EnhancedFastMCP
+      17:
+      18:
+>>>   19: def make_matrix_control_server(bus: ServerBus) -> EnhancedFastMCP:
+>>>   20:     mcp = EnhancedFastMCP(
+>>>   21:         "Matrix Control Server", instructions=("Matrix control: yield-only control to signal end of turn.")
+>>>   22:     )
+>>>   23:
+>>>   24:     @mcp.flat_model()
+>>>   25:     def do_yield() -> UiEndTurn:
+>>>   26:         """End the current turn. The runner will wake you on new DMs."""
+>>>   27:         bus.push_end_turn()
+>>>   28:         return UiEndTurn()
+>>>   29:
+>>>   30:     return mcp
+```
+
+### `dead-code.yaml` / `occ-10`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/cli/cmd_stats.py#L63-L64)
+
+File: `props/cli/cmd_stats.py` (L63-64)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `fmt_hash` never called
+
+```
+      60:
+      61: def fmt_hash(hash_value: str | None) -> str:
+      62:     return short_sha(hash_value) if hash_value else "—"
+>>>   63:
+>>>   64:
+      65: # Common dimension columns (used by prompt and example stats)
+      66: _DIMENSION_COLUMNS: list[ColumnDef[Any, Any]] = [
+      67:     ColumnDef("Split", lambda r: r.split, width=6),
+```
+
+### `dead-code.yaml` / `occ-11`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/cli/cmd_stats.py#L274-L279)
+
+File: `props/cli/cmd_stats.py` (L274-279)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `PromptStats` dataclass never instantiated
+
+```
+     271:         return 100.0 * zeros / len(self.recalls)
+     272:
+     273:
+>>>  274: @dataclass
+>>>  275: class PromptStats:
+>>>  276:     prompt_sha256: str
+>>>  277:     created_at: datetime
+>>>  278:     splits: dict[Split, SplitStats]
+>>>  279:     valid_best_count: int = 0  # Number of valid samples where this prompt is best (or tied)
+     280:
+     281:
+     282: def _display_split_analysis(
+```
+
+### `dead-code.yaml` / `occ-12`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/cli/__main__.py#L125-L133)
+
+File: `props/cli/__main__.py` (L125-133)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `MetricsRow` dataclass never instantiated
+
+```
+     122:         typer.echo(agent_run.type_config.model_dump_json(indent=2))
+     123:
+     124:
+>>>  125: @dataclass
+>>>  126: class MetricsRow:
+>>>  127:     iteration: int
+>>>  128:     mean_recall: float
+>>>  129:     tp: int
+>>>  130:     fp: int
+>>>  131:     fn: int
+>>>  132:     unknown: int
+>>>  133:     dir: str
+     134:
+     135:
+     136: def read_embedded_paths(paths: list[Path]) -> str:
+```
+
+### `dead-code.yaml` / `occ-13`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/cli/__main__.py#L136-L145)
+
+File: `props/cli/__main__.py` (L136-145)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `read_embedded_paths` never called
+
+```
+     133:     dir: str
+     134:
+     135:
+>>>  136: def read_embedded_paths(paths: list[Path]) -> str:
+>>>  137:     files_to_embed: list[Path] = []
+>>>  138:     for q in paths:
+>>>  139:         p = Path(q)
+>>>  140:         if p.is_file():
+>>>  141:             files_to_embed.append(p)
+>>>  142:     return "\n\n".join(
+>>>  143:         "\n".join([f'<file path=":/{p}">', p.read_text(encoding="utf-8"), "</file>"])
+>>>  144:         for p in sorted(files_to_embed, key=str)
+>>>  145:     )
+     146:
+     147:
+     148: @app.command("prompt-optimize")
+```
+
+### `dead-code.yaml` / `occ-14`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/core/models/types.py#L41-L56)
+
+File: `props/core/models/types.py` (L41-56)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `classify_path` never called
+
+```
+      38:     OTHER = "other"
+      39:
+      40:
+>>>   41: def classify_path(p: Path) -> FileType:
+>>>   42:     """Classify a path's file type.
+>>>   43:
+>>>   44:     Must check in this order:
+>>>   45:     1. is_symlink() - symlinks report True for is_file()/is_dir()
+>>>   46:     2. is_dir()
+>>>   47:     3. is_file()
+>>>   48:     4. else OTHER
+>>>   49:     """
+>>>   50:     if p.is_symlink():
+>>>   51:         return FileType.SYMLINK
+>>>   52:     if p.is_dir():
+>>>   53:         return FileType.DIRECTORY
+>>>   54:     if p.is_file():
+>>>   55:         return FileType.REGULAR
+>>>   56:     return FileType.OTHER
+      57:
+      58:
+      59: def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo) -> Path:
+```
+
+### `dead-code.yaml` / `occ-15`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/core/models/true_positive.py#L211-L222)
+
+File: `props/core/models/true_positive.py` (L211-222)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `IssueCore` never used in Python code
+
+```
+     208: # BaseIssueID imported from ids module (validates no colons)
+     209:
+     210:
+>>>  211: class IssueCore(BaseModel):
+>>>  212:     """True positive metadata without occurrences.
+>>>  213:
+>>>  214:     Minimal header describing a logical problem.
+>>>  215:     When sending or storing per-location data separately, pair an IssueCore with
+>>>  216:     one or more Occurrence objects rather than repeating metadata.
+>>>  217:     """
+>>>  218:
+>>>  219:     id: BaseIssueID
+>>>  220:     rationale: Rationale
+>>>  221:
+>>>  222:     model_config = ConfigDict(extra="forbid")
+```
+
+### `dead-code.yaml` / `occ-16`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/core/models/true_positive.py#L192-L204)
+
+File: `props/core/models/true_positive.py` (L192-204)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `SnapshotIssuesLoadError` never raised or caught
+
+```
+     189:     model_config = ConfigDict(extra="forbid")
+     190:
+     191:
+>>>  192: class SnapshotIssuesLoadError(Exception):
+>>>  193:     """Raised when per-issue Jsonnet evaluation/validation yields any errors in strict mode.
+>>>  194:
+>>>  195:     Carries a list of human-readable error lines. __str__ joins them with newlines
+>>>  196:     so pytest and CLIs surface a readable summary.
+>>>  197:     """
+>>>  198:
+>>>  199:     def __init__(self, errors: list[str]):
+>>>  200:         self.errors = errors
+>>>  201:         super().__init__(str(self))
+>>>  202:
+>>>  203:     def __str__(self) -> str:  # pragma: no cover - exercised via message rendering
+>>>  204:         return "Snapshot issue loading errors:\n" + "\n".join(self.errors)
+     205:
+     206:
+     207: # Strongly-typed identifiers with validation
+```
+
+### `dead-code.yaml` / `occ-17`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/db/sync/sync.py#L723-L732)
+
+File: `props/db/sync/sync.py` (L723-732)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `sync_model_metadata` wrapper never called — `sync_model_metadata_with_session` used directly
+
+```
+     720:         return f"{self.total} models (+{self.added}, ~{self.updated}, -{self.deleted})"
+     721:
+     722:
+>>>  723: def sync_model_metadata() -> ModelMetadataSyncStats:
+>>>  724:     """Sync model_metadata table from MODEL_METADATA source.
+>>>  725:
+>>>  726:     Opens its own session internally (legacy interface for backward compatibility).
+>>>  727:
+>>>  728:     Returns:
+>>>  729:         Statistics about what changed
+>>>  730:     """
+>>>  731:     with get_session() as session:
+>>>  732:         return sync_model_metadata_with_session(session)
+     733:
+     734:
+     735: def sync_model_metadata_with_session(session: Session) -> ModelMetadataSyncStats:
+```
+
+### `dead-code.yaml` / `occ-18`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/db/session.py#L143-L145)
+
+File: `props/db/session.py` (L143-145)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `is_db_initialized` never called
+
+```
+     140:             _engine = None
+     141:
+     142:
+>>>  143: def is_db_initialized() -> bool:
+>>>  144:     """Check if database connection is already established."""
+>>>  145:     return _engine is not None
+     146:
+     147:
+     148: def init_db(config: DatabaseConfig | None = None) -> None:
+```
+
+### `dead-code.yaml` / `occ-19`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/db/session.py#L173-L185)
+
+File: `props/db/session.py` (L173-185)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `check_connection` never called
+
+```
+     170:     _get_engine(config)
+     171:
+     172:
+>>>  173: def check_connection(timeout_secs: int = 2) -> None:
+>>>  174:     """Validate database connection (fail fast if DB not reachable).
+>>>  175:
+>>>  176:     Args:
+>>>  177:         timeout_secs: Connection timeout in seconds (default: 2)
+>>>  178:
+>>>  179:     Raises:
+>>>  180:         RuntimeError: If database not initialized (call init_db() first)
+>>>  181:         sqlalchemy.exc.OperationalError: If cannot connect to database within timeout
+>>>  182:     """
+>>>  183:     if _engine is None:
+>>>  184:         raise RuntimeError("Database not initialized. Call init_db() first.")
+>>>  185:     _check_connection_internal(timeout_secs)
+     186:
+     187:
+     188: def recreate_database() -> None:
+```
+
+### `dead-code.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/core/ids.py#L88-L111)
+
+File: `props/core/ids.py` (L88-111)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `get_snapshot_manifest_path` defined but never imported or called
+
+```
+      85:     return parts[0], parts[1]
+      86:
+      87:
+>>>   88: def get_snapshot_manifest_path(base_path: Path, slug: SnapshotSlug) -> Path:
+>>>   89:     """Get synthetic reference path for resolving relative paths within a snapshot.
+>>>   90:
+>>>   91:     Returns a synthetic path (doesn't actually exist on disk) used as a reference
+>>>   92:     point for resolving relative paths like LocalSource.root. The parent of this
+>>>   93:     path is the snapshot directory.
+>>>   94:
+>>>   95:     Args:
+>>>   96:         base_path: Specimens base directory
+>>>   97:         slug: Snapshot slug like "ducktape/2025-11-26-00"
+>>>   98:
+>>>   99:     Returns:
+>>>  100:         Synthetic path {snapshot_dir}/_snapshot (parent is snapshot directory)
+>>>  101:
+>>>  102:     Example:
+>>>  103:         >>> base = Path("/path/to/specimens")
+>>>  104:         >>> path = get_snapshot_manifest_path(base, SnapshotSlug("ducktape/2025-11-26-00"))
+>>>  105:         >>> path
+>>>  106:         PosixPath('/path/to/specimens/ducktape/2025-11-26-00/_snapshot')
+>>>  107:         >>> path.parent  # This is the snapshot directory
+>>>  108:         PosixPath('/path/to/specimens/ducktape/2025-11-26-00')
+>>>  109:     """
+>>>  110:     repo, version = split_snapshot_slug(slug)
+>>>  111:     return (base_path / repo / version / "_snapshot").resolve()
+```
+
+### `dead-code.yaml` / `occ-5`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/grader/daemon.py#L1-L136)
+
+File: `props/grader/daemon.py` (L1-136)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `GraderDaemonScaffold` — entire module never imported
+
+```
+>>>    1: """Grader daemon scaffold for persistent snapshot grading.
+>>>    2:
+>>>    3: The daemon is a k8s controller-style reconciliation loop:
+>>>    4: - Goal: make grading_pending empty for its snapshot
+>>>    5: - When drift exists → grade; when empty → sleep until woken by pg_notify
+>>>    6: - Context exhaustion → restart with fresh agent, query remaining drift
+>>>    7: """
+>>>    8:
+>>>    9: from __future__ import annotations
+>>>   10:
+>>>   11: import asyncio
+>>>   12: import logging
+>>>   13: from typing import Any
+>>>   14:
+>>>   15: import asyncpg
+>>>   16: from asyncpg.pool import PoolConnectionProxy
+>>>   17:
+>>>   18: from props.core.ids import SnapshotSlug
+>>>   19: from props.db.config import DatabaseConfig
+>>>   20: from props.grader.drift_handler import GraderDriftHandler, check_grading_pending
+>>>   21: from props.grader.notifications import GRADING_PENDING_CHANNEL, GradingPendingNotification
+>>>   22:
+>>>   23: logger = logging.getLogger(__name__)
+>>>   24:
+>>>   25:
+>>>   26: class GraderDaemonScaffold:
+>>>   27:     """Scaffold that manages the grader daemon lifecycle.
+>>>   28:
+>>>   29:     Responsibilities:
+>>>   30:     - Background pg_listen task for notifications
+>>>   31:     - Wake/sleep coordination via asyncio.Event
+>>>   32:     - Agent run loop with restart on context exhaustion
+>>>   33:     - Notification queue management
+>>>   34:     """
+>>>   35:
+>>>   36:     def __init__(self, snapshot_slug: SnapshotSlug, db_config: DatabaseConfig):
+>>>   37:         self._snapshot_slug = snapshot_slug
+>>>   38:         self._db_config = db_config
+>>>   39:         self._notification_queue: list[GradingPendingNotification] = []
+>>>   40:         self._wake_event = asyncio.Event()
+>>>   41:         self._listener_task: asyncio.Task | None = None
+>>>   42:         self._listener_conn: asyncpg.Connection | None = None
+>>>   43:         self._shutdown = False
+>>>   44:
+>>>   45:     @property
+>>>   46:     def snapshot_slug(self) -> SnapshotSlug:
+>>>   47:         return self._snapshot_slug
+>>>   48:
+>>>   49:     @property
+>>>   50:     def notification_queue(self) -> list[GradingPendingNotification]:
+>>>   51:         """Shared queue for handler to drain."""
+>>>   52:         return self._notification_queue
+>>>   53:
+>>>   54:     @property
+>>>   55:     def wake_event(self) -> asyncio.Event:
+>>>   56:         """Event set when notifications arrive."""
+>>>   57:         return self._wake_event
+>>>   58:
+>>>   59:     def create_drift_handler(self) -> GraderDriftHandler:
+>>>   60:         """Create drift handler with shared queue and event."""
+>>>   61:         return GraderDriftHandler(
+>>>   62:             snapshot_slug=self._snapshot_slug, notification_queue=self._notification_queue, wake_event=self._wake_event
+>>>   63:         )
+>>>   64:
+>>>   65:     def _notification_callback(
+>>>   66:         self, connection: asyncpg.Connection[Any] | PoolConnectionProxy[Any], pid: int, channel: str, payload: object
+>>>   67:     ) -> None:
+>>>   68:         """Handle incoming pg_notify notifications."""
+>>>   69:         if not isinstance(payload, str):
+>>>   70:             raise TypeError(f"Expected string payload, got {type(payload)}")
+>>>   71:
+>>>   72:         notification = GradingPendingNotification.model_validate_json(payload)
+>>>   73:
+>>>   74:         if notification.snapshot_slug != self._snapshot_slug:
+>>>   75:             return  # Not for us
+>>>   76:
+>>>   77:         logger.debug(f"Notification for {self._snapshot_slug}: {notification.operation} {notification.item.table}")
+>>>   78:         self._notification_queue.append(notification)
+>>>   79:         self._wake_event.set()
+>>>   80:
+>>>   81:     async def _start_listener(self) -> None:
+>>>   82:         """Start background pg_listen task."""
+>>>   83:         self._listener_conn = await asyncpg.connect(self._db_config.admin.url())
+>>>   84:         await self._listener_conn.add_listener(GRADING_PENDING_CHANNEL, self._notification_callback)
+>>>   85:         logger.info(f"Listening on channel '{GRADING_PENDING_CHANNEL}' for {self._snapshot_slug}")
+>>>   86:
+>>>   87:     async def _stop_listener(self) -> None:
+>>>   88:         """Stop background listener."""
+>>>   89:         if self._listener_conn:
+>>>   90:             try:
+>>>   91:                 await self._listener_conn.remove_listener(GRADING_PENDING_CHANNEL, self._notification_callback)
+>>>   92:                 await self._listener_conn.close()
+>>>   93:             except Exception as e:
+>>>   94:                 logger.warning(f"Error closing listener connection: {e}")
+>>>   95:             self._listener_conn = None
+>>>   96:
+>>>   97:     async def wait_for_drift_or_notification(self) -> list[GradingPendingNotification]:
+>>>   98:         """Wait until there's drift or a notification arrives.
+>>>   99:
+>>>  100:         Returns accumulated notifications (may be empty if drift detected on check).
+>>>  101:         """
+>>>  102:         # First check if there's already drift
+>>>  103:         if check_grading_pending(self._snapshot_slug):
+>>>  104:             # There's work to do, don't wait
+>>>  105:             notifs = list(self._notification_queue)
+>>>  106:             self._notification_queue.clear()
+>>>  107:             return notifs
+>>>  108:
+>>>  109:         # No drift, wait for notification
+>>>  110:         logger.info(f"No drift for {self._snapshot_slug}, waiting for notification...")
+>>>  111:         self._wake_event.clear()
+>>>  112:         await self._wake_event.wait()
+>>>  113:
+>>>  114:         # Drain queue
+>>>  115:         notifs = list(self._notification_queue)
+>>>  116:         self._notification_queue.clear()
+>>>  117:         return notifs
+>>>  118:
+>>>  119:     async def __aenter__(self) -> GraderDaemonScaffold:
+>>>  120:         """Start listener on context entry."""
+>>>  121:         await self._start_listener()
+>>>  122:         return self
+>>>  123:
+>>>  124:     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+>>>  125:         """Stop listener on context exit."""
+>>>  126:         self._shutdown = True
+>>>  127:         await self._stop_listener()
+>>>  128:
+>>>  129:     def shutdown(self) -> None:
+>>>  130:         """Signal shutdown (can be called from another task)."""
+>>>  131:         self._shutdown = True
+>>>  132:         self._wake_event.set()  # Wake up if sleeping
+>>>  133:
+>>>  134:     @property
+>>>  135:     def is_shutdown(self) -> bool:
+>>>  136:         return self._shutdown
+```
+
+### `dead-code.yaml` / `occ-6`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/core/docker_env.py#L34-L156)
+
+File: `props/core/docker_env.py` (L34-140, L143-156)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `PropertiesDockerCompositor` and `build_critic_binds` — never instantiated or called
+
+```
+      31: PROPS_NETWORK_NAME = "props-agents"
+      32:
+      33:
+>>>   34: class PropertiesDockerCompositor(Compositor):
+>>>   35:     """Base compositor for properties tasks - handles Docker runtime mounting.
+>>>   36:
+>>>   37:     This intermediate class sits between Compositor and task-specific compositors (Critic, Grader, Lint).
+>>>   38:     It centralizes Docker container setup and mounting logic that all properties tasks share.
+>>>   39:
+>>>   40:     Hierarchy:
+>>>   41:         Compositor (base) → mounts resources, compositor_meta
+>>>   42:         PropertiesDockerCompositor (this class) → mounts runtime (Docker exec server)
+>>>   43:         Task compositors (Critic/Grader/Lint) → mount task-specific servers
+>>>   44:
+>>>   45:     Snapshots are NOT pre-mounted. Agents fetch and extract their own snapshots at init time
+>>>   46:     via fetch_snapshot() from props.core.agent_helpers. This eliminates external dependencies at runtime.
+>>>   47:
+>>>   48:     Attributes:
+>>>   49:         runtime: Mounted Docker exec server (populated in __aenter__)
+>>>   50:     """
+>>>   51:
+>>>   52:     runtime: Mounted[ContainerExecServer]
+>>>   53:
+>>>   54:     def __init__(
+>>>   55:         self,
+>>>   56:         workspace_root: Path,
+>>>   57:         docker_client: aiodocker.Docker,
+>>>   58:         *,
+>>>   59:         image_id: str,
+>>>   60:         db_conn: DbConnectionConfig | None = None,
+>>>   61:         extra_binds: Sequence[BindMount] = (),
+>>>   62:         workspace_mode: str = "ro",
+>>>   63:         network_mode: str = "none",
+>>>   64:         extra_env: dict[str, str] | None = None,
+>>>   65:         labels: dict[str, str] | None = None,
+>>>   66:         auto_remove: bool = False,
+>>>   67:         container_name: str | None = None,
+>>>   68:     ):
+>>>   69:         super().__init__()
+>>>   70:         self._workspace_root = workspace_root
+>>>   71:         self._docker_client = docker_client
+>>>   72:         self._image_id = image_id
+>>>   73:         self._db_conn = db_conn
+>>>   74:         self._extra_binds = extra_binds
+>>>   75:         self._workspace_mode = workspace_mode
+>>>   76:         self._network_mode = network_mode
+>>>   77:         self._extra_env = extra_env
+>>>   78:         self._labels = labels or {"adgn.project": "props", "adgn.role": "properties-runtime"}
+>>>   79:         self._container_name = container_name
+>>>   80:         self._auto_remove = auto_remove
+>>>   81:
+>>>   82:     async def __aenter__(self):
+>>>   83:         """Start compositor and mount Docker runtime server."""
+>>>   84:         await super().__aenter__()  # Mounts resources, compositor_meta
+>>>   85:
+>>>   86:         # Mount Docker runtime (shared by all properties compositors)
+>>>   87:         docker_server = self._create_docker_server(self._image_id)
+>>>   88:         self.runtime = await self.mount_inproc(DOCKER_MOUNT_PREFIX, docker_server, pinned=True)
+>>>   89:
+>>>   90:         return self
+>>>   91:
+>>>   92:     def _create_docker_server(self, image_id: str) -> ContainerExecServer:
+>>>   93:         # Build Docker volume binds
+>>>   94:         binds: list[BindMount] = [
+>>>   95:             BindMount(host_path=self._workspace_root.resolve(), container_path=WORKING_DIR, mode=self._workspace_mode)
+>>>   96:         ]
+>>>   97:         if self._extra_binds:
+>>>   98:             binds.extend(self._extra_binds)
+>>>   99:
+>>>  100:         # Build container environment variables
+>>>  101:         env = {
+>>>  102:             "XDG_CACHE_HOME": "/tmp",
+>>>  103:             "RUFF_CACHE_DIR": "/tmp/.ruff_cache",
+>>>  104:             "MYPY_CACHE_DIR": "/tmp/.mypy_cache",
+>>>  105:             "TMPDIR": "/tmp",
+>>>  106:             "TMP": "/tmp",
+>>>  107:             "TEMP": "/tmp",
+>>>  108:             "PYTHONPYCACHEPREFIX": "/tmp/__pycache__",
+>>>  109:         }
+>>>  110:         if self._db_conn:
+>>>  111:             env.update(self._db_conn.to_env_dict())
+>>>  112:             logger.info(
+>>>  113:                 f"Set database env vars: PGHOST={self._db_conn.host}, "
+>>>  114:                 f"PGPORT={self._db_conn.port}, PGDATABASE={self._db_conn.database}, PGUSER={self._db_conn.user}"
+>>>  115:             )
+>>>  116:         else:
+>>>  117:             logger.info("No db_conn provided - container will not have database access")
+>>>  118:         if self._extra_env:
+>>>  119:             env.update(self._extra_env)
+>>>  120:             logger.info(f"Injecting extra environment variables: {list(self._extra_env.keys())}")
+>>>  121:
+>>>  122:         # TODO: if we ever need fully stateless containers (new container per call),
+>>>  123:         # add an explicit strategy switch instead of reintroducing a boolean.
+>>>  124:         return ContainerExecServer(
+>>>  125:             self._docker_client,
+>>>  126:             ContainerOptions(
+>>>  127:                 image=image_id,
+>>>  128:                 working_dir=WORKING_DIR,
+>>>  129:                 binds=binds,
+>>>  130:                 environment=env,
+>>>  131:                 network_mode=self._network_mode,
+>>>  132:                 labels=self._labels,
+>>>  133:                 name=self._container_name,
+>>>  134:                 auto_remove=self._auto_remove,
+>>>  135:             ),
+>>>  136:         )
+>>>  137:
+>>>  138:     @property
+>>>  139:     def container_working_dir(self) -> Path:
+>>>  140:         return WORKING_DIR
+     141:
+     142:
+>>>  143: def build_critic_binds(
+>>>  144:     workspace_root: Path, *, workspace_mode: str = "ro", extra_binds: dict[str, dict[str, str]] | None = None
+>>>  145: ) -> dict[str, dict[str, str]]:
+>>>  146:     """Build standard bind mounts map for properties critic containers.
+>>>  147:
+>>>  148:     - Mounts workspace_root at /workspace with the provided workspace_mode ("ro" or "rw")
+>>>  149:     - Allows extra bind mounts to be merged in
+>>>  150:     """
+>>>  151:     binds: dict[str, dict[str, str]] = {
+>>>  152:         str(workspace_root.resolve()): {"bind": str(WORKING_DIR), "mode": str(workspace_mode)}
+>>>  153:     }
+>>>  154:     if extra_binds:
+>>>  155:         binds.update(extra_binds)
+>>>  156:     return binds
+```
+
+### `dead-code.yaml` / `occ-7`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/core/runs_context.py#L17-L112)
+
+File: `props/core/runs_context.py` (L17-19, L73-112)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `pkg_dir` and `RunsContext` — never imported or instantiated
+
+```
+      14: logger = logging.getLogger(__name__)
+      15:
+      16:
+>>>   17: def pkg_dir() -> Path:
+>>>   18:     """Root directory of this package resources."""
+>>>   19:     return Path(__file__).parent
+      20:
+      21:
+      22: def specimens_definitions_root() -> Path:
+   ...
+      70:     return dt.strftime("%Y%m%d_%H%M%S")
+      71:
+      72:
+>>>   73: class RunsContext:
+>>>   74:     """Context object for runs directory path derivation.
+>>>   75:
+>>>   76:     Injected at CLI/entry point level. All path construction goes through this object.
+>>>   77:     No code should independently compute runs paths or use hardcoded path tokens.
+>>>   78:     """
+>>>   79:
+>>>   80:     def __init__(self, base_dir: Path):
+>>>   81:         """Initialize runs context.
+>>>   82:
+>>>   83:         Args:
+>>>   84:             base_dir: Base runs directory (e.g., pkg_dir() / "runs")
+>>>   85:         """
+>>>   86:         self.base_dir = base_dir
+>>>   87:
+>>>   88:     @classmethod
+>>>   89:     def from_pkg_dir(cls) -> RunsContext:
+>>>   90:         """Create RunsContext from package directory (default location).
+>>>   91:
+>>>   92:         Returns:
+>>>   93:             RunsContext for pkg_dir() / "runs"
+>>>   94:         """
+>>>   95:         return cls(pkg_dir() / "runs")
+>>>   96:
+>>>   97:     def issue_eval_dir(self, identifier: str, timestamp: str | None = None) -> Path:
+>>>   98:         """Get output directory for issue evaluation runs (lint_issue harness).
+>>>   99:
+>>>  100:         Args:
+>>>  101:             identifier: Identifier for the eval (e.g., snapshot_issue_id or "all")
+>>>  102:             timestamp: Optional timestamp string (defaults to creating new one)
+>>>  103:
+>>>  104:         Returns:
+>>>  105:             Path to eval output directory (created if it doesn't exist)
+>>>  106:             Structure: runs/evals/{identifier}_{timestamp}/
+>>>  107:         """
+>>>  108:         if timestamp is None:
+>>>  109:             timestamp = format_timestamp_session()
+>>>  110:         path = self.base_dir / "evals" / f"{identifier}_{timestamp}"
+>>>  111:         path.mkdir(parents=True, exist_ok=True)
+>>>  112:         return path
+```
+
+### `dead-code.yaml` / `occ-8`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/cli/shared.py#L17-L26)
+
+File: `props/cli/shared.py` (L17-26)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `save_prompt_to_tmp` never called
+
+```
+      14: from props.core.runs_context import format_timestamp_session
+      15:
+      16:
+>>>   17: def save_prompt_to_tmp(stem: str, text: str) -> Path:
+>>>   18:     """Save prompt text to temp dir and print summary. Prints approximate token count."""
+>>>   19:     tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+>>>   20:     tmpdir.mkdir(parents=True, exist_ok=True)
+>>>   21:     ts = format_timestamp_session()
+>>>   22:     outfile = tmpdir / f"{stem}_{ts}.md"
+>>>   23:     outfile.write_text(text, encoding="utf-8")
+>>>   24:     tokens = len(tiktoken.get_encoding("cl100k_base").encode(text))
+>>>   25:     print(f"Saved prompt: {outfile} (approx tokens: {tokens})")
+>>>   26:     return outfile
+      27:
+      28:
+      29: def make_example_from_files(
+```
+
+### `dead-code.yaml` / `occ-9`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/critic_dev/optimize/budget_handler.py#L1-L118)
+
+File: `props/critic_dev/optimize/budget_handler.py` (L1-118)
+
+> Unused code that is never reached. Remove it.
+>
+> **Note:** `BudgetState` and `BudgetEnforcementHandler` — entire module never imported
+
+```
+>>>    1: """Budget enforcement handler for prompt optimization runs.
+>>>    2:
+>>>    3: Monitors cumulative costs across critic/grader runs and enforces budget limits by:
+>>>    4: 1. Checking if budget is exhausted after each tool result
+>>>    5: 2. When budget reached: inject final system message and switch to text-only mode
+>>>    6: 3. Agent produces summary report (detected via on_assistant_text_event)
+>>>    7: 4. Abort on next sample
+>>>    8: """
+>>>    9:
+>>>   10: from __future__ import annotations
+>>>   11:
+>>>   12: import logging
+>>>   13: from enum import StrEnum
+>>>   14: from typing import TYPE_CHECKING
+>>>   15: from uuid import UUID
+>>>   16:
+>>>   17: from sqlalchemy.orm import Session
+>>>   18:
+>>>   19: from agent_core.events import AssistantText
+>>>   20: from agent_core.handler import BaseHandler
+>>>   21: from agent_core.loop_control import Abort, ForbidAllTools, InjectItems, LoopDecision, NoAction
+>>>   22: from openai_utils.model import UserMessage
+>>>   23: from props.db import query_builders as qb
+>>>   24: from props.db.session import get_session
+>>>   25:
+>>>   26: if TYPE_CHECKING:
+>>>   27:     from agent_core.agent import Agent
+>>>   28:
+>>>   29: logger = logging.getLogger(__name__)
+>>>   30:
+>>>   31:
+>>>   32: class BudgetState(StrEnum):
+>>>   33:     """Budget enforcement state machine states."""
+>>>   34:
+>>>   35:     MONITORING = "monitoring"
+>>>   36:     SUMMARY_REQUESTED = "summary_requested"
+>>>   37:     SUMMARY_PRODUCED = "summary_produced"
+>>>   38:
+>>>   39:
+>>>   40: class BudgetEnforcementHandler(BaseHandler):
+>>>   41:     """Enforce budget limits for prompt optimization runs.
+>>>   42:
+>>>   43:     Tracks cumulative costs across all critic/grader runs linked to a PO run ID.
+>>>   44:     When budget is reached:
+>>>   45:     1. Inject system message requesting final summary report
+>>>   46:     2. Switch agent to text-only mode (ForbidAllTools)
+>>>   47:     3. Allow agent one final turn to produce report
+>>>   48:     4. Abort on next sample attempt
+>>>   49:
+>>>   50:     State machine:
+>>>   51:     - MONITORING: normal operation, checking budget before each sample
+>>>   52:     - SUMMARY_REQUESTED: budget exceeded, injected summary request, waiting for final text response
+>>>   53:     - SUMMARY_PRODUCED: got final response, ready to abort
+>>>   54:     """
+>>>   55:
+>>>   56:     def __init__(
+>>>   57:         self,
+>>>   58:         *,
+>>>   59:         optimizer_run_id: UUID,
+>>>   60:         budget_limit: float,  # USD
+>>>   61:         agent: Agent,
+>>>   62:     ) -> None:
+>>>   63:         self._optimizer_run_id = optimizer_run_id
+>>>   64:         self._budget_limit = budget_limit
+>>>   65:         self._agent = agent
+>>>   66:         self._state = BudgetState.MONITORING
+>>>   67:
+>>>   68:     def _query_total_cost(self, session: Session) -> float:
+>>>   69:         result = session.execute(qb.po_run_costs(self._optimizer_run_id)).fetchall()
+>>>   70:         return sum((row.cost_usd for row in result if row.cost_usd is not None), start=0.0)
+>>>   71:
+>>>   72:     def on_assistant_text_event(self, evt: AssistantText) -> None:
+>>>   73:         if self._state == BudgetState.SUMMARY_REQUESTED:
+>>>   74:             self._state = BudgetState.SUMMARY_PRODUCED
+>>>   75:             logger.info(f"PO run {self._optimizer_run_id}: Summary report produced, will abort on next sample")
+>>>   76:
+>>>   77:     def on_before_sample(self) -> LoopDecision:
+>>>   78:         """Enforce budget limits before each sampling step.
+>>>   79:
+>>>   80:         State transitions:
+>>>   81:         1. SUMMARY_PRODUCED → Abort
+>>>   82:         2. MONITORING with budget exceeded → inject summary request, transition to SUMMARY_REQUESTED
+>>>   83:         3. SUMMARY_REQUESTED → NoAction (waiting for response)
+>>>   84:         4. MONITORING with budget OK → NoAction
+>>>   85:         """
+>>>   86:         if self._state == BudgetState.SUMMARY_PRODUCED:
+>>>   87:             logger.info(f"PO run {self._optimizer_run_id}: Aborting after summary")
+>>>   88:             return Abort()
+>>>   89:
+>>>   90:         if self._state == BudgetState.MONITORING:
+>>>   91:             with get_session() as session:
+>>>   92:                 cumulative_cost = self._query_total_cost(session)
+>>>   93:
+>>>   94:             if cumulative_cost >= self._budget_limit:
+>>>   95:                 logger.info(
+>>>   96:                     f"PO run {self._optimizer_run_id}: Budget exhausted (${cumulative_cost:.4f} >= ${self._budget_limit:.2f})"
+>>>   97:                 )
+>>>   98:                 self._state = BudgetState.SUMMARY_REQUESTED
+>>>   99:                 self._agent._tool_policy = ForbidAllTools()
+>>>  100:                 logger.info(f"PO run {self._optimizer_run_id}: Switched to text-only mode (ForbidAllTools)")
+>>>  101:
+>>>  102:                 summary_request = UserMessage.text(
+>>>  103:                     f"""\
+>>>  104: Your budget of ${self._budget_limit:.2f} has been exceeded.
+>>>  105: Tool calls are now disabled. Produce a final summary report with:
+>>>  106:
+>>>  107: 1. **Best prompt found**: prompt SHA256 and key insights
+>>>  108: 2. **Performance summary**: best recall achieved on valid split
+>>>  109: 3. **Key learnings**: what worked, what didn't, patterns discovered
+>>>  110: 4. **Recommendations**: next steps for further optimization
+>>>  111:
+>>>  112: Make this your final response - the session will end after this message.
+>>>  113: """
+>>>  114:                 )
+>>>  115:
+>>>  116:                 return InjectItems(items=[summary_request])
+>>>  117:
+>>>  118:         return NoAction()
+```
+
+### `dead-grader-persistence.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-grader-persistence.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/grader/persistence.py#L1-L67)
+
+File: `props/grader/persistence.py` (L1-67)
+
+> `props/grader/persistence.py` defines `orm_tp_to_db`, `orm_fp_to_db`, and
+> `_convert_orm_ranges_to_db_files`. None are imported or called anywhere in
+> the codebase. Remove the file and its BUILD target.
+
+```
+>>>    1: """Conversion functions from ORM models to database persistence models.
+>>>    2:
+>>>    3: This module converts ORM models (db.models.TruePositive, FalsePositive) to
+>>>    4: JSON-serializable persistence models (db.snapshots.DBTruePositiveIssue, DBKnownFalsePositive).
+>>>    5: """
+>>>    6:
+>>>    7: from __future__ import annotations
+>>>    8:
+>>>    9: from collections import defaultdict
+>>>   10:
+>>>   11: from props.db.models import FalsePositive, OccurrenceRangeORM, TruePositive
+>>>   12: from props.db.snapshots import (
+>>>   13:     DBFalsePositiveOccurrence,
+>>>   14:     DBKnownFalsePositive,
+>>>   15:     DBLineRange,
+>>>   16:     DBTruePositiveIssue,
+>>>   17:     DBTruePositiveOccurrence,
+>>>   18: )
+>>>   19:
+>>>   20:
+>>>   21: def _convert_orm_ranges_to_db_files(ranges: list[OccurrenceRangeORM]) -> dict[str, list[DBLineRange]]:
+>>>   22:     """Convert ORM ranges to DB persistence model files dict.
+>>>   23:
+>>>   24:     Groups ranges by file path (as strings) and converts to DBLineRange objects.
+>>>   25:     """
+>>>   26:     by_file: dict[str, list[DBLineRange]] = defaultdict(list)
+>>>   27:     for range_orm in ranges:
+>>>   28:         by_file[str(range_orm.file_path)].append(
+>>>   29:             DBLineRange(start_line=range_orm.start_line, end_line=range_orm.end_line, note=range_orm.note)
+>>>   30:         )
+>>>   31:     return dict(by_file) if by_file else {}
+>>>   32:
+>>>   33:
+>>>   34: def orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
+>>>   35:     """Convert ORM TruePositive to DB persistence model."""
+>>>   36:     return DBTruePositiveIssue(
+>>>   37:         id=orm_tp.tp_id,
+>>>   38:         rationale=orm_tp.rationale,
+>>>   39:         occurrences=[
+>>>   40:             DBTruePositiveOccurrence(
+>>>   41:                 occurrence_id=occ.occurrence_id,
+>>>   42:                 files=_convert_orm_ranges_to_db_files(occ.ranges),
+>>>   43:                 note=occ.note,
+>>>   44:                 critic_scopes_expected_to_recall=[
+>>>   45:                     [str(p) for p in trigger_set] for trigger_set in occ.critic_scopes_expected_to_recall_set
+>>>   46:                 ],
+>>>   47:             )
+>>>   48:             for occ in orm_tp.occurrences
+>>>   49:         ],
+>>>   50:     )
+>>>   51:
+>>>   52:
+>>>   53: def orm_fp_to_db(orm_fp: FalsePositive) -> DBKnownFalsePositive:
+>>>   54:     """Convert ORM FalsePositive to DB persistence model."""
+>>>   55:     return DBKnownFalsePositive(
+>>>   56:         id=orm_fp.fp_id,
+>>>   57:         rationale=orm_fp.rationale,
+>>>   58:         occurrences=[
+>>>   59:             DBFalsePositiveOccurrence(
+>>>   60:                 occurrence_id=occ.occurrence_id,
+>>>   61:                 files=_convert_orm_ranges_to_db_files(occ.ranges),
+>>>   62:                 note=occ.note,
+>>>   63:                 relevant_files=[str(rf.file_path) for rf in occ.relevant_file_orms],
+>>>   64:             )
+>>>   65:             for occ in orm_fp.occurrences
+>>>   66:         ],
+>>>   67:     )
+```
+
+### `dead-pytest-runner.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-pytest-runner.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gatelet/server/pytest_runner.py#L1-L16)
+
+File: `gatelet/server/pytest_runner.py` (L1-16)
+
+> `gatelet/server/pytest_runner.py` is a pytest runner shim that sets
+> `GATELET_CONFIG` before delegating to `pytest_bazel.main()`. No BUILD
+> target or test references it. Remove the file and its BUILD target.
+
+```
+>>>    1: """Pytest runner for gatelet tests.
+>>>    2:
+>>>    3: Sets GATELET_CONFIG environment variable before any imports,
+>>>    4: then delegates to pytest_bazel.main() for Bazel integration.
+>>>    5: """
+>>>    6:
+>>>    7: import os
+>>>    8:
+>>>    9: # Set config path BEFORE any gatelet imports
+>>>   10: # (prevents import-time config reads from failing)
+>>>   11: os.environ.setdefault("GATELET_CONFIG", "gatelet/gatelet.toml")
+>>>   12:
+>>>   13: import pytest_bazel
+>>>   14:
+>>>   15: if __name__ == "__main__":
+>>>   16:     pytest_bazel.main()
+```
+
+### `dead-reexport-shim.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dead-reexport-shim.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/critic_dev/improve/improve_agent.py#L1-L17)
+
+File: `props/critic_dev/improve/improve_agent.py` (L1-17)
+
+> `props/critic_dev/improve/improve_agent.py` is a backwards-compatible
+> re-export shim. The canonical types (`ImprovementOutcome`,
+> `ImprovementResult`, `OutcomeExhausted`, `OutcomeUnexpectedTermination`)
+> live in `props/orchestration/agent_registry.py`. No code imports from
+> this shim. Remove it and its BUILD target.
+
+```
+>>>    1: """Improvement agent - re-exports from canonical locations.
+>>>    2:
+>>>    3: The run_improvement_agent orchestration and result types have moved to AgentRegistry.
+>>>    4: This module provides backwards-compatible re-exports.
+>>>    5: """
+>>>    6:
+>>>    7: from __future__ import annotations
+>>>    8:
+>>>    9: # Re-export result types from agent_registry (canonical location)
+>>>   10: from props.orchestration.agent_registry import (
+>>>   11:     ImprovementOutcome,
+>>>   12:     ImprovementResult,
+>>>   13:     OutcomeExhausted,
+>>>   14:     OutcomeUnexpectedTermination,
+>>>   15: )
+>>>   16:
+>>>   17: __all__ = ["ImprovementOutcome", "ImprovementResult", "OutcomeExhausted", "OutcomeUnexpectedTermination"]
+```
+
+### `deny-continue-executes.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/deny-continue-executes.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/mcp/approval_policy/engine.py#L345-L532)
+
+File: `agent_server/mcp/approval_policy/engine.py` (L525-532, L345-348, L358-365)
+
+> `decide_call` resolves DENY_CONTINUE with `ContinueDecision()` (line 532),
+> identical to APPROVE (line 526). The gateway's `on_call_tool` treats
+> `ContinueDecision` as permission to execute: it calls `call_next(context)`
+> (line 362), which runs the tool. So a human operator who denies a tool call
+> with "deny but continue the turn" sees the tool execute anyway. The comment
+> on lines 530-531 ("Continue without executing - resolve with continue
+> decision / The call is skipped but turn continues") is actively misleading
+> — it describes the intended behavior, not what the code does. The gateway's
+> own policy-evaluation path handles DENY_CONTINUE correctly by raising
+> `_policy_denied_error` (lines 345-348), but the admin decision path does
+> not — the hub's binary type system (`ContinueDecision |
+AbortTurnDecision`) cannot represent "skip execution, continue turn."
+
+```
+     342:                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
+     343:             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, rationale)
+     344:
+>>>  345:         if decision is ApprovalDecision.DENY_CONTINUE:
+>>>  346:             if self._record is not None:
+>>>  347:                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_CONTINUE)
+>>>  348:             raise _policy_denied_error(ApprovalDecision.DENY_CONTINUE, name, rationale)
+     349:
+     350:         # ASK: block until resolved via hub
+     351:         call_id = "pg:" + uuid.uuid4().hex
+   ...
+     355:         )
+     356:         decision_obj = await self._hub.await_decision(call_id, req)
+     357:
+>>>  358:         if isinstance(decision_obj, ContinueDecision):
+>>>  359:             if self._record is not None:
+>>>  360:                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
+>>>  361:             try:
+>>>  362:                 return await call_next(context)
+>>>  363:             except McpError as e:
+>>>  364:                 _raise_if_reserved_code(e, name)
+>>>  365:                 raise
+     366:         if isinstance(decision_obj, AbortTurnDecision):
+     367:             if self._record is not None:
+     368:                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
+   ...
+     522:             call_id = input.call_id
+     523:             decision = input.decision
+     524:
+>>>  525:             if decision == CallDecision.APPROVE:
+>>>  526:                 engine._hub.resolve(call_id, ContinueDecision())
+>>>  527:             elif decision == CallDecision.DENY_ABORT:
+>>>  528:                 engine._hub.resolve(call_id, AbortTurnDecision(reason="user_denied"))
+>>>  529:             elif decision == CallDecision.DENY_CONTINUE:
+>>>  530:                 # Continue without executing - resolve with continue decision
+>>>  531:                 # The call is skipped but turn continues
+>>>  532:                 engine._hub.resolve(call_id, ContinueDecision())
+     533:             return SimpleOk()
+     534:
+     535:         async def decide_proposal(input: DecideProposalArgs) -> SimpleOk:
+```
+
+### `dup-import.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/dup-import.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gmail_archiver/gmail_client.py#L17-L18)
+
+File: `gmail_archiver/gmail_client.py` (L17-18)
+
+> `gmail_client.py` imports `format_truncation_suffix` twice from different
+> module paths (line 17 from `fmt_util`, line 18 from `fmt_util.fmt_util`).
+> The second import shadows the first. If the two module paths ever diverge
+> (e.g., the package `__init__` re-export is removed), the shadowed import
+> silently changes behavior. One of the two imports should be removed.
+
+```
+      14: from googleapiclient.discovery import build
+      15: from googleapiclient.errors import HttpError
+      16:
+>>>   17: from fmt_util import format_truncation_suffix
+>>>   18: from fmt_util.fmt_util import format_truncation_suffix
+      19: from gmail_archiver.gmail_api_models import (
+      20:     CreateFilterRequest,
+      21:     GmailFilter,
+```
+
+### `field-docstring.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/field-docstring.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/mcp_infra/flat_tool.py#L35-L42)
+
+File: `mcp_infra/flat_tool.py` (L35-42)
+
+> FlatTool fields use Python docstrings (lines 37, 39, 42) instead of
+> Pydantic Field(description=...). Pydantic does not include bare docstrings
+> in the JSON schema — use Field(description="...") so the metadata is
+> machine-readable.
+
+```
+      32:     Use isinstance(tool, FlatTool) to check for flat tools and access input_model directly.
+      33:     """
+      34:
+>>>   35:     fn: Callable[..., Any]
+>>>   36:     """The original function that takes a Pydantic model (or nothing for no-arg tools)."""
+>>>   37:
+>>>   38:     input_model: type[InputModelT]
+>>>   39:     """The Pydantic model for tool input parameters."""
+>>>   40:
+>>>   41:     context_kwarg: str | None = None
+>>>   42:     """Name of the context parameter, if the function accepts one."""
+      43:
+      44:     async def run(self, arguments: dict[str, Any]) -> ToolResult:
+      45:         """Run the tool by parsing arguments into input_model and calling fn."""
+```
+
+### `manual-batching.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gmail_archiver/gmail_client.py#L171-L172)
+
+File: `gmail_archiver/gmail_client.py` (L171-172)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** get_messages_metadata_batch
+
+```
+     168:
+     169:             return callback
+     170:
+>>>  171:         for i in range(0, len(message_ids), batch_size):
+>>>  172:             batch = message_ids[i : i + batch_size]
+     173:             batch_results: list[GmailMessageWithHeaders] = []
+     174:             batch_errors: list[tuple[str, str]] = []
+     175:
+```
+
+### `manual-batching.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gmail_archiver/gmail_client.py#L213-L214)
+
+File: `gmail_archiver/gmail_client.py` (L213-214)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** get_messages_minimal_batch
+
+```
+     210:
+     211:             return callback
+     212:
+>>>  213:         for i in range(0, len(message_ids), batch_size):
+>>>  214:             batch = message_ids[i : i + batch_size]
+     215:             batch_results: list[GmailMessageMinimal] = []
+     216:             batch_errors: list[tuple[str, str]] = []
+     217:
+```
+
+### `manual-batching.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gmail_archiver/gmail_client.py#L271-L272)
+
+File: `gmail_archiver/gmail_client.py` (L271-272)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** get_messages_raw_batch
+
+```
+     268:             return callback
+     269:
+     270:         # Process in batches (API allows 100, but 50 recommended to avoid rate limits)
+>>>  271:         for i in range(0, len(message_ids), batch_size):
+>>>  272:             batch = message_ids[i : i + batch_size]
+     273:
+     274:             # Retry logic for the entire batch if rate limited
+     275:             max_retries = 10
+```
+
+### `manual-batching.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gmail_archiver/gmail_client.py#L409-L410)
+
+File: `gmail_archiver/gmail_client.py` (L409-410)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** get_messages_batch
+
+```
+     406:
+     407:         # Process in batches
+     408:         all_errors = []
+>>>  409:         for i in range(0, len(message_ids), batch_size):
+>>>  410:             batch = message_ids[i : i + batch_size]
+     411:             batch_emails: list[Email] = []
+     412:             batch_errors: list[tuple[str, str]] = []
+     413:
+```
+
+### `manual-batching.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gmail_archiver/gmail_client.py#L461-L462)
+
+File: `gmail_archiver/gmail_client.py` (L461-462)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** add_labels_batch
+
+```
+     458:         failed = []
+     459:
+     460:         # Process in batches
+>>>  461:         for i in range(0, len(message_ids), batch_size):
+>>>  462:             batch = message_ids[i : i + batch_size]
+     463:
+     464:             try:
+     465:                 body = {"ids": batch, "addLabelIds": [label_id]}
+```
+
+### `manual-batching.yaml` / `occ-5`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gmail_archiver/__main__.py#L266-L267)
+
+File: `gmail_archiver/__main__.py` (L266-267)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** download batch loop
+
+```
+     263:     ) as progress:
+     264:         task = progress.add_task("Downloading emails...", total=len(to_download))
+     265:
+>>>  266:         for i in range(0, len(to_download), batch_size):
+>>>  267:             batch_ids = to_download[i : i + batch_size]
+     268:
+     269:             raw_messages, errors = client.get_messages_raw_batch(batch_ids, batch_size=batch_size, retry_failures=True)
+     270:
+```
+
+### `manual-batching.yaml` / `occ-6`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/core/noop_classifier/classifier.py#L206)
+
+File: `props/core/noop_classifier/classifier.py` (L206)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** pattern classification batching
+
+```
+     203:         Combined classifications from all workers
+     204:     """
+     205:     # Create batches
+>>>  206:     batches = [patterns[i : i + batch_size] for i in range(0, len(patterns), batch_size)]
+     207:
+     208:     # Create shared queues
+     209:     batch_queue: asyncio.Queue[list[str]] = asyncio.Queue()
+```
+
+### `manual-batching.yaml` / `occ-7`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/llm/html/llm_html/token_scheme.py#L80)
+
+File: `llm/html/llm_html/token_scheme.py` (L80)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** hex suffix chunking into pairs
+
+```
+      77:
+      78:         assert self._DOC_LEN + self._PUB_LEN + self._AUTH_LEN == N_TAGS * TAG_LEN
+      79:
+>>>   80:         return prefix, [suffix[i : i + 2] for i in range(0, len(suffix), 2)]
+      81:
+      82:     def _public_auth(self, date: str) -> str:
+      83:         size = _digest_size(self._PUB_LEN)
+```
+
+### `manual-batching.yaml` / `occ-8`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/mcp_starter/adgn_mcp_starter/server.py#L42)
+
+File: `mcp_starter/adgn_mcp_starter/server.py` (L42)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** text chunking
+
+```
+      39:             ContentChunk(
+      40:                 chunk_id=i // chunk_size, content=text[i : i + chunk_size], is_final=(i + chunk_size >= len(text))
+      41:             )
+>>>   42:             for i in range(0, len(text), chunk_size)
+      43:         ]
+      44:
+      45:     @mcp.tool
+```
+
+### `manual-batching.yaml` / `occ-9`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/manual-batching.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/experimental/webhook_inbox/webhook_inbox.py#L165)
+
+File: `experimental/webhook_inbox/webhook_inbox.py` (L165)
+
+> Manual range-based chunking loops (`for i in range(0, len(x), n): batch = x[i:i+n]`)
+> should use `itertools.batched` (stdlib since Python 3.12, and this repo targets 3.13+).
+>
+> **Note:** ciphertext string chunking into fixed-width lines
+
+```
+     162:         # 2. break into ≤50-char chunks and tag each line “# line i/N” for
+     163:         #    readability when embedded into documentation.
+     164:         width = 60
+>>>  165:         chunks = [ciphertext[i : i + width] for i in range(0, len(ciphertext), width)]
+     166:         total = len(chunks)
+     167:         body = "\n".join(f"  {chunk!r}  # line {i + 1}/{total}" for i, chunk in enumerate(chunks))
+     168:
+```
+
+### `metadata-cache-drop.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/metadata-cache-drop.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/gmail_archiver/inbox.py#L77-L97)
+
+File: `gmail_archiver/inbox.py` (L77, L94-97)
+
+> `GmailInbox.fetch_messages_metadata` silently drops messages that are in
+> `_full_cache` but not `_metadata_cache`. Line 77 skips re-fetching IDs
+> already in `_full_cache` (correct, since full data is a superset of
+> metadata). But lines 94-97 then fail to include those IDs in the result:
+> the `elif mid in self._full_cache` branch executes `pass` instead of
+> appending to `result`. Any message previously fetched via `fetch_messages`
+> (which populates `_full_cache`) will be silently omitted from subsequent
+> `fetch_messages_metadata` calls.
+
+```
+      74:             return []
+      75:
+      76:         # Check both caches - if in full cache, we can derive metadata
+>>>   77:         uncached_ids = [mid for mid in message_ids if mid not in self._metadata_cache and mid not in self._full_cache]
+      78:
+      79:         if self.show_progress and uncached_ids:
+      80:             self.console.print(
+   ...
+      91:         for mid in message_ids:
+      92:             if mid in self._metadata_cache:
+      93:                 result.append(self._metadata_cache[mid])
+>>>   94:             elif mid in self._full_cache:
+>>>   95:                 # Derive metadata from full email - create GmailMessageWithHeaders-like object
+>>>   96:                 # For now, just skip - the planner should have it from metadata cache
+>>>   97:                 pass
+      98:         return result
+      99:
+     100:     def get_message(self, message_id: str) -> Email | GmailMessageWithHeaders:
+```
+
+### `misplaced-tests.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/misplaced-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/test_exec_roundtrip.py#L1-L83)
+
+File: `agent_server/test_exec_roundtrip.py` (L1-83)
+
+> These test files live in agent_server/ but exclusively test code in mcp_infra/
+> (exec servers, compositor rendering, resources server). Tests for package X
+> should not live in package Y just because Y depends on X. They belong under
+> mcp_infra/ alongside the code they exercise.
+>
+> **Note:** Tests mcp_infra/exec/docker.py ContainerExecServer
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: import os
+>>>    4:
+>>>    5: import pytest
+>>>    6: import pytest_bazel
+>>>    7:
+>>>    8: from agent_core.agent import Agent, AgentResult
+>>>    9: from agent_core.handler import BaseHandler
+>>>   10: from agent_core.loop_control import RequireAnyTool
+>>>   11: from agent_core.mcp_provider import MCPToolProvider
+>>>   12: from mcp_infra.exec.docker.server import ContainerExecServer
+>>>   13: from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
+>>>   14: from mcp_infra.naming import build_mcp_function
+>>>   15: from mcp_infra.prefix import MCPMountPrefix
+>>>   16: from mcp_infra.stubs.typed_stubs import ToolStub
+>>>   17: from mcp_infra.testing.fixtures import make_container_opts
+>>>   18: from openai_utils.client_factory import build_client
+>>>   19: from openai_utils.model import SystemMessage, UserMessage
+>>>   20:
+>>>   21: # Use /bin/echo -n for portability and to avoid trailing newline
+>>>   22: ECHO_CMD = ["/bin/echo", "-n", "hello"]
+>>>   23:
+>>>   24: SERVER_NAME = MCPMountPrefix("box")
+>>>   25:
+>>>   26:
+>>>   27: @pytest.fixture
+>>>   28: async def docker_exec_server_py312slim(async_docker_client, python_slim_image):
+>>>   29:     """Canonical Docker exec server using python-slim image."""
+>>>   30:     opts = make_container_opts(python_slim_image)
+>>>   31:     return ContainerExecServer(async_docker_client, opts)
+>>>   32:
+>>>   33:
+>>>   34: @pytest.fixture
+>>>   35: async def mcp_client_box(docker_exec_server_py312slim, compositor, compositor_client):
+>>>   36:     """MCP client with box Docker exec server (no policy gateway)."""
+>>>   37:     await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server_py312slim)
+>>>   38:     return compositor_client
+>>>   39:
+>>>   40:
+>>>   41: async def _assert_exec_echo(sess) -> None:
+>>>   42:     # Call via compositor using namespaced tool key
+>>>   43:     stub = ToolStub(sess, build_mcp_function(SERVER_NAME, "exec"), BaseExecResult)
+>>>   44:     res = await stub(make_exec_input(ECHO_CMD))
+>>>   45:     assert isinstance(res.exit, Exited)
+>>>   46:     assert res.exit.exit_code == 0
+>>>   47:     assert (res.stdout or "") == "hello"
+>>>   48:     assert (res.stderr or "") == ""
+>>>   49:
+>>>   50:
+>>>   51: @pytest.mark.requires_docker
+>>>   52: async def test_exec_roundtrip_echo(mcp_client_box) -> None:
+>>>   53:     """Spin up real Docker container and roundtrip an echo via exec without policy gateway."""
+>>>   54:     await _assert_exec_echo(mcp_client_box)
+>>>   55:
+>>>   56:
+>>>   57: @pytest.mark.live_openai_api
+>>>   58: async def test_live_llm_exec_echo(mcp_client_box) -> None:
+>>>   59:     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
+>>>   60:     model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
+>>>   61:     client = build_client(model_name)
+>>>   62:     agent = await Agent.create(
+>>>   63:         tool_provider=MCPToolProvider(mcp_client_box),
+>>>   64:         client=client,
+>>>   65:         handlers=[BaseHandler()],
+>>>   66:         tool_policy=RequireAnyTool(),
+>>>   67:     )
+>>>   68:     agent.process_message(
+>>>   69:         SystemMessage.text(
+>>>   70:             "You are testing an MCP exec tool.\n"
+>>>   71:             "Call the tool "
+>>>   72:             f"{build_mcp_function(SERVER_NAME, 'exec')} "
+>>>   73:             f"with cmd={ECHO_CMD!r} and return exactly the stdout."
+>>>   74:         )
+>>>   75:     )
+>>>   76:     agent.process_message(UserMessage.text("Run the command now and output exactly the stdout value."))
+>>>   77:     res: AgentResult = await agent.run()
+>>>   78:     text = (res.text or "").strip()
+>>>   79:     assert text == "hello"
+>>>   80:
+>>>   81:
+>>>   82: if __name__ == "__main__":
+>>>   83:     pytest_bazel.main()
+```
+
+### `misplaced-tests.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/misplaced-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/test_mcp_integration.py#L1-L55)
+
+File: `agent_server/test_mcp_integration.py` (L1-55)
+
+> These test files live in agent_server/ but exclusively test code in mcp_infra/
+> (exec servers, compositor rendering, resources server). Tests for package X
+> should not live in package Y just because Y depends on X. They belong under
+> mcp_infra/ alongside the code they exercise.
+>
+> **Note:** Tests mcp_infra/exec/{direct,docker,subprocess}.py
+
+```
+>>>    1: import pytest
+>>>    2: import pytest_bazel
+>>>    3: from fastmcp.client import Client
+>>>    4:
+>>>    5: from mcp_infra.exec.direct import DirectExecServer
+>>>    6: from mcp_infra.exec.docker.server import ContainerExecServer
+>>>    7: from mcp_infra.exec.models import BaseExecResult, Exited
+>>>    8: from mcp_infra.exec.subprocess import DirectExecArgs
+>>>    9: from mcp_infra.naming import build_mcp_function
+>>>   10: from mcp_infra.prefix import MCPMountPrefix
+>>>   11: from mcp_infra.stubs.typed_stubs import ToolStub
+>>>   12: from mcp_infra.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
+>>>   13:
+>>>   14:
+>>>   15: async def test_stdio_server_list_tools(compositor, compositor_client, stdio_echo_spec) -> None:
+>>>   16:     """Smoke test: mount stdio server and list tools."""
+>>>   17:     await compositor.mount_server(ECHO_MOUNT_PREFIX, stdio_echo_spec)
+>>>   18:     tools = await compositor_client.list_tools()
+>>>   19:     tool_names = {t.name for t in tools}
+>>>   20:     # Echo server exposes exactly one tool
+>>>   21:     expected = build_mcp_function(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME)
+>>>   22:     assert expected in tool_names
+>>>   23:
+>>>   24:
+>>>   25: async def test_direct_inprocess_server(compositor, compositor_client) -> None:
+>>>   26:     """Direct (unsandboxed) in-process FastMCP exec tool mounted in a Compositor."""
+>>>   27:
+>>>   28:     srv = DirectExecServer()
+>>>   29:     await compositor.mount_inproc(MCPMountPrefix("local"), srv)
+>>>   30:
+>>>   31:     tools = await compositor_client.list_tools()
+>>>   32:     # Tools are composed under the compositor with namespaced tool names
+>>>   33:     tool_name = build_mcp_function(MCPMountPrefix("local"), "exec")
+>>>   34:     assert any(t.name == tool_name for t in tools)
+>>>   35:     # Sanity-call exec via the namespaced tool using the typed helper
+>>>   36:     exec_stub = ToolStub(compositor_client, tool_name, BaseExecResult)
+>>>   37:     result = await exec_stub(DirectExecArgs(cmd=["/bin/echo", "hello"], max_bytes=100_000, timeout_ms=5000))
+>>>   38:     # Compare whole exit object
+>>>   39:     assert result.exit == Exited(exit_code=0)
+>>>   40:
+>>>   41:
+>>>   42: @pytest.mark.requires_docker
+>>>   43: async def test_inproc_container_exec_exposes_container_info_resource(
+>>>   44:     docker_exec_server_py312slim: ContainerExecServer,
+>>>   45: ) -> None:
+>>>   46:     """in-proc container exec exposes a container.info resource."""
+>>>   47:
+>>>   48:     # Call the server directly to read the resource; no manager needed here
+>>>   49:     async with Client(docker_exec_server_py312slim) as sess:
+>>>   50:         res = await sess.read_resource_mcp(docker_exec_server_py312slim.container_info_resource.uri)
+>>>   51:         assert res.contents, "container.info returned no contents"
+>>>   52:
+>>>   53:
+>>>   54: if __name__ == "__main__":
+>>>   55:     pytest_bazel.main()
+```
+
+### `misplaced-tests.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/misplaced-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/test_mcp_resources_flow.py#L1-L62)
+
+File: `agent_server/test_mcp_resources_flow.py` (L1-62)
+
+> These test files live in agent_server/ but exclusively test code in mcp_infra/
+> (exec servers, compositor rendering, resources server). Tests for package X
+> should not live in package Y just because Y depends on X. They belong under
+> mcp_infra/ alongside the code they exercise.
+>
+> **Note:** Tests mcp_infra/compositor/resources_server.py
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: import pytest
+>>>    4: import pytest_bazel
+>>>    5: from hamcrest import assert_that, has_item, instance_of
+>>>    6:
+>>>    7: from agent_core.agent import Agent
+>>>    8: from agent_core.events import ToolCall, ToolCallOutput
+>>>    9: from agent_core.handler import FinishOnTextMessageHandler
+>>>   10: from agent_core.loop_control import RequireAnyTool
+>>>   11: from agent_core.mcp_provider import MCPToolProvider
+>>>   12: from agent_core_testing.responses import DecoratorMock
+>>>   13: from mcp_infra.compositor.resources_server import ResourcesReadArgs
+>>>   14: from mcp_infra.display.event_renderer import DisplayEventsHandler
+>>>   15: from mcp_infra.prefix import MCPMountPrefix
+>>>   16: from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
+>>>   17:
+>>>   18:
+>>>   19: @pytest.mark.requires_docker
+>>>   20: async def test_model_reads_container_info_with_stubbed_openai(
+>>>   21:     reasoning_model, docker_exec_server_py312slim, compositor, compositor_client, recording_handler
+>>>   22: ) -> None:
+>>>   23:     """Test model reading container info resources without policy gateway."""
+>>>   24:     # Mount runtime server and capture Mounted object
+>>>   25:     mounted_runtime = await compositor.mount_inproc(MCPMountPrefix("runtime"), docker_exec_server_py312slim)
+>>>   26:
+>>>   27:     # Get container info URI from server instance (convert to string)
+>>>   28:     container_info_uri = str(docker_exec_server_py312slim.container_info_resource.uri)
+>>>   29:
+>>>   30:     @DecoratorMock.mock()
+>>>   31:     def mock(m: DecoratorMock):
+>>>   32:         # First turn: receive request, return tool call
+>>>   33:         _ = yield
+>>>   34:         tool_call = m.mcp_tool_call(
+>>>   35:             MCPMountPrefix("resources"),
+>>>   36:             "read",
+>>>   37:             ResourcesReadArgs(server=mounted_runtime.prefix, uri=container_info_uri, start_offset=0, max_bytes=1024),
+>>>   38:         )
+>>>   39:         # Second turn: receive request with tool output, return final text
+>>>   40:         req = yield tool_call
+>>>   41:         # Verify stateless replay: second call must include function_call and function_call_output
+>>>   42:         assert isinstance(req.input, list)
+>>>   43:         assert_that(req.input, has_item(instance_of(FunctionCallItem)))
+>>>   44:         assert_that(req.input, has_item(instance_of(FunctionCallOutputItem)))
+>>>   45:         yield m.assistant_text("ok")
+>>>   46:
+>>>   47:     agent = await Agent.create(
+>>>   48:         tool_provider=MCPToolProvider(compositor_client),
+>>>   49:         client=mock,
+>>>   50:         handlers=[FinishOnTextMessageHandler(), DisplayEventsHandler(), recording_handler],
+>>>   51:         tool_policy=RequireAnyTool(),
+>>>   52:     )
+>>>   53:     agent.process_message(UserMessage.text("read container info"))
+>>>   54:
+>>>   55:     await agent.run()
+>>>   56:     types = [e.type for e in recording_handler.records if isinstance(e, ToolCall | ToolCallOutput)]
+>>>   57:     assert "tool_call" in types
+>>>   58:     assert "function_call_output" in types
+>>>   59:
+>>>   60:
+>>>   61: if __name__ == "__main__":
+>>>   62:     pytest_bazel.main()
+```
+
+### `misplaced-tests.yaml` / `occ-3`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/misplaced-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/test_rendering_instructions.py#L1-L41)
+
+File: `agent_server/test_rendering_instructions.py` (L1-41)
+
+> These test files live in agent_server/ but exclusively test code in mcp_infra/
+> (exec servers, compositor rendering, resources server). Tests for package X
+> should not live in package Y just because Y depends on X. They belong under
+> mcp_infra/ alongside the code they exercise.
+>
+> **Note:** Tests mcp_infra/compositor/rendering.py
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: from importlib import resources
+>>>    4:
+>>>    5: import pytest_bazel
+>>>    6: from mcp import types
+>>>    7:
+>>>    8: from mcp_infra.compositor.rendering import render_compositor_instructions
+>>>    9: from mcp_infra.prefix import MCPMountPrefix
+>>>   10: from mcp_infra.snapshots import RunningServerEntry
+>>>   11:
+>>>   12:
+>>>   13: def test_template_packaged() -> None:
+>>>   14:     # Ensure the template is available via importlib.resources
+>>>   15:     pkg = "mcp_infra.compositor.templates"
+>>>   16:     text = resources.files(pkg).joinpath("compositor_instructions.md.j2").read_text("utf-8")
+>>>   17:     assert "Instructions" in text
+>>>   18:
+>>>   19:
+>>>   20: def test_render_empty_states_returns_empty() -> None:
+>>>   21:     out = render_compositor_instructions({})
+>>>   22:     assert out == ""
+>>>   23:
+>>>   24:
+>>>   25: def test_render_single_running_with_instructions() -> None:
+>>>   26:     init = types.InitializeResult(
+>>>   27:         protocolVersion="1.0",
+>>>   28:         capabilities=types.ServerCapabilities(),
+>>>   29:         serverInfo=types.Implementation(name="docker_exec", version="0.0.0"),
+>>>   30:         instructions="Hello world",
+>>>   31:     )
+>>>   32:     state = RunningServerEntry(initialize=init, tools=[])
+>>>   33:     out = render_compositor_instructions({MCPMountPrefix("docker_exec"): state})
+>>>   34:     assert "The following MCP servers" in out
+>>>   35:     assert "# docker_exec" in out
+>>>   36:     assert "## Instructions" in out
+>>>   37:     assert "Hello world" in out
+>>>   38:
+>>>   39:
+>>>   40: if __name__ == "__main__":
+>>>   41:     pytest_bazel.main()
+```
+
+### `misplaced-tests.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/misplaced-tests.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/test_runtime_timeout.py#L1-L50)
+
+File: `agent_server/test_runtime_timeout.py` (L1-50)
+
+> These test files live in agent_server/ but exclusively test code in mcp_infra/
+> (exec servers, compositor rendering, resources server). Tests for package X
+> should not live in package Y just because Y depends on X. They belong under
+> mcp_infra/ alongside the code they exercise.
+>
+> **Note:** Tests mcp_infra/exec/docker.py timeout handling
+
+```
+>>>    1: from __future__ import annotations
+>>>    2:
+>>>    3: import pytest
+>>>    4: import pytest_bazel
+>>>    5:
+>>>    6: from mcp_infra.exec.docker.server import ContainerExecServer
+>>>    7: from mcp_infra.exec.models import BaseExecResult, Exited, TimedOut, make_exec_input
+>>>    8: from mcp_infra.naming import build_mcp_function
+>>>    9: from mcp_infra.prefix import MCPMountPrefix
+>>>   10: from mcp_infra.stubs.typed_stubs import ToolStub
+>>>   11: from mcp_infra.testing.fixtures import make_container_opts
+>>>   12:
+>>>   13:
+>>>   14: def _runtime_spec_persession(docker_client, image: str = "python:3.12-slim"):
+>>>   15:     return ContainerExecServer(
+>>>   16:         docker_client,
+>>>   17:         make_container_opts(image),  # per-session container
+>>>   18:     )
+>>>   19:
+>>>   20:
+>>>   21: @pytest.mark.requires_docker
+>>>   22: async def test_runtime_per_session_timeout_then_next_call_ok(
+>>>   23:     compositor, compositor_client, async_docker_client
+>>>   24: ) -> None:
+>>>   25:     """Test runtime timeout and recovery without policy gateway."""
+>>>   26:     # Mount runtime server and capture Mounted object
+>>>   27:     mounted_runtime = await compositor.mount_inproc(
+>>>   28:         MCPMountPrefix("runtime"), _runtime_spec_persession(async_docker_client)
+>>>   29:     )
+>>>   30:
+>>>   31:     # Cause a host-side timeout: sleep longer than timeout_ms
+>>>   32:     # Namespaced exec via Compositor
+>>>   33:     stub = ToolStub(
+>>>   34:         compositor_client,
+>>>   35:         build_mcp_function(mounted_runtime.prefix, mounted_runtime.server.exec_tool.name),
+>>>   36:         BaseExecResult,
+>>>   37:     )
+>>>   38:
+>>>   39:     res_timeout = await stub(make_exec_input(["sh", "-lc", "sleep 3"], timeout_ms=500))
+>>>   40:     assert isinstance(res_timeout.exit, TimedOut)
+>>>   41:
+>>>   42:     # Next call should work; container should have been restarted
+>>>   43:     res_ok = await stub(make_exec_input(["/bin/echo", "-n", "ok"], timeout_ms=5000))
+>>>   44:     assert isinstance(res_ok.exit, Exited)
+>>>   45:     assert res_ok.exit.exit_code == 0
+>>>   46:     assert (res_ok.stdout or "") == "ok"
+>>>   47:
+>>>   48:
+>>>   49: if __name__ == "__main__":
+>>>   50:     pytest_bazel.main()
+```
+
+### `ready-event-never-set.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/ready-event-never-set.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/agent_server/runtime/container.py#L233-L501)
+
+File: `agent_server/runtime/container.py` (L233, L501)
+
+> `AgentContainer._ready` is an `asyncio.Event` (line 233) awaited in
+> `start()` (line 501) after `_post_msg(_StartMsg(...))` completes.
+> `_ready.set()` is never called anywhere in the codebase. Every call to
+> `start()` — and therefore `build_container()` — deadlocks on
+> `self._ready.wait()`.
+
+```
+     230:         default_factory=asyncio.Queue, init=False
+     231:     )
+     232:     _actor_task: asyncio.Task | None = field(default=None, init=False)
+>>>  233:     _ready: asyncio.Event = field(default_factory=asyncio.Event, init=False)
+     234:     _closed: asyncio.Event = field(default_factory=asyncio.Event, init=False)
+     235:     _stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False)
+     236:     # Internal helpers/state
+   ...
+     498:     async def start(self, *, mcp_config: MCPConfig) -> None:
+     499:         self._ensure_actor()
+     500:         await self._post_msg(_StartMsg(mcp_config=mcp_config))
+>>>  501:         await self._ready.wait()
+     502:
+     503:     async def close(self) -> CloseResult:
+     504:         if self._actor_task is None:
+```
+
+### `trivial-forwarder.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/trivial-forwarder.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/props/cli/resources.py#L27-L34)
+
+File: `props/cli/resources.py` (L27-34)
+
+> `props.cli.resources.get_database_config` is a trivial forwarder that just
+> calls `props.db.config.get_database_config`. The wrapper adds no caching,
+> transformation, or typer-di–specific behavior — `Depends()` works identically
+> with the original function. Callers should import from `props.db.config`
+> directly and the module can be deleted.
+>
+> **Note:** Forwarder definition — body is just `return _get_database_config()`
+
+```
+      24: from props.db.config import DatabaseConfig, get_database_config as _get_database_config
+      25:
+      26:
+>>>   27: def get_database_config() -> DatabaseConfig:
+>>>   28:     """Get database configuration from environment variables.
+>>>   29:
+>>>   30:     Reads PostgreSQL connection parameters from environment (set by devenv or passed to containers).
+>>>   31:
+>>>   32:     typer-di calls this function only once per CLI invocation.
+>>>   33:     """
+>>>   34:     return _get_database_config()
+      35:
+      36:
+      37: # NOTE: No get_docker_client() dependency function.
+```
+
+### `unguarded-singleton.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/unguarded-singleton.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/wt/client/wt_client.py#L321)
+
+File: `wt/client/wt_client.py` (L321)
+
+> Several call sites use `next(iter(collection))` to extract a value from a collection
+> that is semantically expected to contain exactly one item. This silently discards any
+> extra items instead of raising on unexpected cardinality. Use `more_itertools.one()` to
+> enforce the single-item invariant (raises ValueError if zero or multiple items).
+> The repo has a custom `unwrap_singleton` in `inventree_utils/beautifier/iter_util.py`
+> that could be promoted to a repo-level helper as an alternative.
+>
+> **Note:** Requests status for a single worktree ID; response dict should have exactly one entry
+
+```
+     318:             return set(), set()
+     319:
+     320:         # Extract the single result
+>>>  321:         item = next(iter(status_response.items.values()))
+     322:         if isinstance(item.result, StatusResultError):
+     323:             raise RpcError(ErrorCodes.INTERNAL_ERROR, item.result.error)
+     324:
+```
+
+### `unguarded-singleton.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/unguarded-singleton.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/wt/client/handlers.py#L104)
+
+File: `wt/client/handlers.py` (L104)
+
+> Several call sites use `next(iter(collection))` to extract a value from a collection
+> that is semantically expected to contain exactly one item. This silently discards any
+> extra items instead of raising on unexpected cardinality. Use `more_itertools.one()` to
+> enforce the single-item invariant (raises ValueError if zero or multiple items).
+> The repo has a custom `unwrap_singleton` in `inventree_utils/beautifier/iter_util.py`
+> that could be promoted to a repo-level helper as an alternative.
+>
+> **Note:** Same pattern: requests status for a single worktree ID via get_status([info.wtid])
+
+```
+     101:     if not resp.items:
+     102:         click.echo(f"❌ No status available for '{worktree_name}'")
+     103:         return
+>>>  104:     item = next(iter(resp.items.values()))
+     105:     status = item.status
+     106:     formatter.render_worktree_status_single(status.name, status, status.pr_info)
+     107:
+```
+
+### `unguarded-singleton.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/issues/unguarded-singleton.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2026-01-29-00/code/wt/server/handlers/test_status_handler.py#L58-L76)
+
+File: `wt/server/handlers/test_status_handler.py` (L58, L76)
+
+> Several call sites use `next(iter(collection))` to extract a value from a collection
+> that is semantically expected to contain exactly one item. This silently discards any
+> extra items instead of raising on unexpected cardinality. Use `more_itertools.one()` to
+> enforce the single-item invariant (raises ValueError if zero or multiple items).
+> The repo has a custom `unwrap_singleton` in `inventree_utils/beautifier/iter_util.py`
+> that could be promoted to a repo-level helper as an alternative.
+>
+> **Note:** Test code: both tests assert len==1 then next(iter(...)); one() replaces both lines
+
+```
+      55:     response = await get_status(status_deps, StatusParams())
+      56:
+      57:     assert len(response.items) == 1
+>>>   58:     item = next(iter(response.items.values()))
+      59:
+      60:     assert isinstance(item.result, StatusResultError)
+      61:     assert "repository not found" in item.result.error
+   ...
+      73:     response = await get_status(status_deps, StatusParams())
+      74:
+      75:     assert len(response.items) == 1
+>>>   76:     item = next(iter(response.items.values()))
+      77:
+      78:     assert isinstance(item.result, StatusResultOk)
+      79:     assert item.result.status.branch_name == "feature-branch"
+```
 
 ## crush/2025-08-30-internal_db (46)
 
 ### `lsp-stdin-race.yaml` / `occ-0` [P10]
 
-File: `internal/lsp/transport.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/lsp-stdin-race.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/lsp/transport.go#L15-L267)
+
+File: `internal/lsp/transport.go` (L15-38, L145-148, L215-218, L260-267)
 
 > LSP client performs unsynchronized concurrent writes to the server's stdin, risking interleaved headers/bodies
-> and JSON‑RPC/LSP stream corruption.
+> and
+> JSON‑RPC/LSP stream corruption.
 >
 > Evidence
 >
@@ -31,7 +7513,8 @@ File: `internal/lsp/transport.go`
 >   so the bug can be latent under light load. However, server‑initiated requests and concurrent notifications
 >   still
 >   overlap with client calls, and the code provides no serialization. Treat this as bad practice to be fixed
->   regardless of current incidence.
+>   regardless
+>   of current incidence.
 >
 > Acceptance criteria
 >
@@ -41,40 +7524,54 @@ File: `internal/lsp/transport.go`
 
 ### `sentinel-flag-pattern.yaml` / `occ-0` [P10]
 
-File: `internal/shell/shell.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/sentinel-flag-pattern.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/shell/shell.go#L183-L201)
+
+File: `internal/shell/shell.go` (L183-201)
 
 > ArgumentsBlocker in internal/shell/shell.go uses a sentinel flag inside an inner loop to decide post-loop
 > behavior. Prefer a labeled continue to skip to the next outer iteration and keep the happy-path less indented.
 
 ### `renderer-guard-clauses.yaml` / `occ-0` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L290-L297)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L290-297)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
 > then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...);
-> err != nil
+> err !=
+> nil
 > { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash
-> renderer already uses the guard-clause style.
+> renderer
+> already
+> uses the guard-clause style.
 >
 > **Note:** editRenderer.Render: use guard clause for json unmarshal of params, proceed on happy path.
 
 ### `renderer-guard-clauses.yaml` / `occ-1` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L335-L344)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L335-344)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
 > then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...);
-> err != nil
+> err !=
+> nil
 > { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash
-> renderer already uses the guard-clause style.
+> renderer
+> already
+> uses the guard-clause style.
 >
 > **Note:** multiEditRenderer.Render: use guard clause for params unmarshal.
 
 ### `renderer-guard-clauses.yaml` / `occ-2` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L384-L390)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L384-390)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
@@ -90,20 +7587,27 @@ File: `internal/tui/components/chat/messages/renderer.go`
 
 ### `renderer-guard-clauses.yaml` / `occ-3` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L410-L416)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L410-416)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
 > then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...);
-> err != nil
+> err !=
+> nil
 > { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash
-> renderer already uses the guard-clause style.
+> renderer
+> already
+> uses the guard-clause style.
 >
 > **Note:** fetchRenderer.Render: use early bailout on unmarshal error then happy-path.
 
 ### `renderer-guard-clauses.yaml` / `occ-4` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L457-L463)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L457-463)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
@@ -119,20 +7623,27 @@ File: `internal/tui/components/chat/messages/renderer.go`
 
 ### `renderer-guard-clauses.yaml` / `occ-5` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L483-L488)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L483-488)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
 > then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...);
-> err != nil
+> err !=
+> nil
 > { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash
-> renderer already uses the guard-clause style.
+> renderer
+> already
+> uses the guard-clause style.
 >
 > **Note:** globRenderer.Render: use guard-clause pattern.
 
 ### `renderer-guard-clauses.yaml` / `occ-6` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L508-L515)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L508-515)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
@@ -148,12 +7659,15 @@ File: `internal/tui/components/chat/messages/renderer.go`
 
 ### `renderer-guard-clauses.yaml` / `occ-7` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L535-L543)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L535-543)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
 > then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...);
-> err != nil
+> err !=
+> nil
 > { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash
 > renderer
 > already
@@ -163,20 +7677,27 @@ File: `internal/tui/components/chat/messages/renderer.go`
 
 ### `renderer-guard-clauses.yaml` / `occ-8` [P15]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/renderer-guard-clauses.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L563-L569)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L563-569)
 
 > Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ...
 }` and
 > then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...);
-> err != nil
+> err !=
+> nil
 > { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash
-> renderer already uses the guard-clause style.
+> renderer
+> already
+> uses the guard-clause style.
 >
 > **Note:** sourcegraphRenderer.Render: prefer guard-clause for params/metadata parsing.
 
 ### `config-nil-chains.yaml` / `occ-0` [P20]
 
-File: `internal/diff/external.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/config-nil-chains.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/diff/external.go#L41-L93)
+
+File: `internal/diff/external.go` (L41-43, L92-93)
 
 > Call-sites frequently chain nil checks (cfg != nil && cfg.Options != nil && cfg.Options.X != nil ...) which is
 > noisy and error-prone. Centralize nil-safe accessors on Config (nil-receiver-safe methods) or pass
@@ -187,7 +7708,9 @@ File: `internal/diff/external.go`
 
 ### `config-nil-chains.yaml` / `occ-1` [P20]
 
-File: `internal/lsp/watcher/watcher.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/config-nil-chains.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/lsp/watcher/watcher.go#L320-L356)
+
+File: `internal/lsp/watcher/watcher.go` (L320-356)
 
 > Call-sites frequently chain nil checks (cfg != nil && cfg.Options != nil && cfg.Options.X != nil ...) which is
 > noisy and error-prone. Centralize nil-safe accessors on Config (nil-receiver-safe methods) or pass
@@ -198,7 +7721,9 @@ File: `internal/lsp/watcher/watcher.go`
 
 ### `config-nil-chains.yaml` / `occ-2` [P20]
 
-File: `internal/llm/tools/tools.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/config-nil-chains.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/tools/tools.go#L1-L30)
+
+File: `internal/llm/tools/tools.go` (L1-30)
 
 > Call-sites frequently chain nil checks (cfg != nil && cfg.Options != nil && cfg.Options.X != nil ...) which is
 > noisy and error-prone. Centralize nil-safe accessors on Config (nil-receiver-safe methods) or pass
@@ -209,7 +7734,9 @@ File: `internal/llm/tools/tools.go`
 
 ### `control-flow-complexity.yaml` / `occ-0` [P20]
 
-File: `internal/tui/components/chat/chat.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/control-flow-complexity.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/chat.go#L508-L841)
+
+File: `internal/tui/components/chat/chat.go` (L508-516, L837-841)
 
 > Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial
 > nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see
@@ -220,7 +7747,9 @@ File: `internal/tui/components/chat/chat.go`
 
 ### `control-flow-complexity.yaml` / `occ-1` [P20]
 
-File: `internal/message/content.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/control-flow-complexity.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/message/content.go#L211-L300)
+
+File: `internal/message/content.go` (L211-300)
 
 > Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial
 > nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see
@@ -231,7 +7760,9 @@ File: `internal/message/content.go`
 
 ### `control-flow-complexity.yaml` / `occ-2` [P20]
 
-File: `internal/app/app.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/control-flow-complexity.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/app/app.go#L310-L319)
+
+File: `internal/app/app.go` (L310-319)
 
 > Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial
 > nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see
@@ -242,7 +7773,9 @@ File: `internal/app/app.go`
 
 ### `control-flow-complexity.yaml` / `occ-3` [P20]
 
-File: `internal/lsp/client.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/control-flow-complexity.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/lsp/client.go#L340-L356)
+
+File: `internal/lsp/client.go` (L340-356)
 
 > Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial
 > nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see
@@ -252,7 +7785,9 @@ File: `internal/lsp/client.go`
 
 ### `control-flow-complexity.yaml` / `occ-4` [P20]
 
-File: `e2e/scenario.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/control-flow-complexity.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/e2e/scenario.go#L196-L201)
+
+File: `e2e/scenario.go` (L196-201)
 
 > Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial
 > nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see
@@ -263,7 +7798,9 @@ File: `e2e/scenario.go`
 
 ### `control-flow-complexity.yaml` / `occ-5` [P20]
 
-File: `internal/pubsub/broker.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/control-flow-complexity.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/pubsub/broker.go#L180-L184)
+
+File: `internal/pubsub/broker.go` (L180-184)
 
 > Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial
 > nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see
@@ -273,7 +7810,9 @@ File: `internal/pubsub/broker.go`
 
 ### `control-flow-complexity.yaml` / `occ-6` [P20]
 
-File: `internal/history/file.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/control-flow-complexity.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/history/file.go#L77-L115)
+
+File: `internal/history/file.go` (L77-115)
 
 > Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial
 > nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see
@@ -284,7 +7823,9 @@ File: `internal/history/file.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-0` [P20]
 
-File: `internal/lsp/client.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/lsp/client.go#L241-L526)
+
+File: `internal/lsp/client.go` (L241-246, L312-318, L316-319, L522-526)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -298,7 +7839,9 @@ File: `internal/lsp/client.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-1` [P20]
 
-File: `internal/diff/external.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/diff/external.go#L54-L63)
+
+File: `internal/diff/external.go` (L54-63)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -311,7 +7854,9 @@ File: `internal/diff/external.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-2` [P20]
 
-File: `internal/lsp/diagnostics_wait.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/lsp/diagnostics_wait.go#L24-L42)
+
+File: `internal/lsp/diagnostics_wait.go` (L24-42)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -324,7 +7869,9 @@ File: `internal/lsp/diagnostics_wait.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-3` [P20]
 
-File: `internal/app/lsp.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/app/lsp.go#L40-L122)
+
+File: `internal/app/lsp.go` (L40-46, L118-122)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -337,7 +7884,9 @@ File: `internal/app/lsp.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-4` [P20]
 
-File: `internal/app/app.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/app/app.go#L76-L312)
+
+File: `internal/app/app.go` (L76-81, L304-310, L306-312)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -350,7 +7899,9 @@ File: `internal/app/app.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-5` [P20]
 
-File: `internal/lsp/watcher/watcher.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/lsp/watcher/watcher.go#L64-L92)
+
+File: `internal/lsp/watcher/watcher.go` (L64-72, L74-80, L86-92)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -363,7 +7914,9 @@ File: `internal/lsp/watcher/watcher.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-6` [P20]
 
-File: `internal/llm/agent/sequence_transformer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/agent/sequence_transformer.go#L1-L199)
+
+File: `internal/llm/agent/sequence_transformer.go` (L1-199)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -376,7 +7929,9 @@ File: `internal/llm/agent/sequence_transformer.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-7` [P20]
 
-File: `internal/llm/agent/agent.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/agent/agent.go#L1-L240)
+
+File: `internal/llm/agent/agent.go` (L1-240)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -388,7 +7943,9 @@ File: `internal/llm/agent/agent.go`
 
 ### `hardcoded-timeouts.yaml` / `occ-8` [P20]
 
-File: `internal/llm/tools/sourcegraph.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/hardcoded-timeouts.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/tools/sourcegraph.go#L1-L240)
+
+File: `internal/llm/tools/sourcegraph.go` (L1-240)
 
 > Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner,
 > app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or
@@ -400,7 +7957,9 @@ File: `internal/llm/tools/sourcegraph.go`
 
 ### `path-schema-docs-mismatch.yaml` / `occ-0` [P20]
 
-File: `internal/llm/tools/ls.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/path-schema-docs-mismatch.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/tools/ls.go#L109-L123)
+
+File: `internal/llm/tools/ls.go` (L109, L119-123)
 
 > Path schema/docs are inconsistent with runtime behavior in internal/llm/tools; the spec (schema/docs) and
 > implementation
@@ -412,7 +7971,9 @@ File: `internal/llm/tools/ls.go`
 
 ### `path-schema-docs-mismatch.yaml` / `occ-1` [P20]
 
-File: `internal/llm/tools/edit.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/path-schema-docs-mismatch.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/tools/edit.go#L48-L157)
+
+File: `internal/llm/tools/edit.go` (L48-104, L155-157)
 
 > Path schema/docs are inconsistent with runtime behavior in internal/llm/tools; the spec (schema/docs) and
 > implementation
@@ -423,7 +7984,9 @@ File: `internal/llm/tools/edit.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-0` [P20]
 
-File: `internal/llm/tools/download.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/tools/download.go#L17-L166)
+
+File: `internal/llm/tools/download.go` (L17-27, L155-166)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -433,7 +7996,9 @@ File: `internal/llm/tools/download.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-1` [P20]
 
-File: `internal/llm/tools/fetch.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/tools/fetch.go#L1-L124)
+
+File: `internal/llm/tools/fetch.go` (L1-6, L60-68, L120-124)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -443,7 +8008,9 @@ File: `internal/llm/tools/fetch.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-10` [P20]
 
-File: `internal/transform/transform.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/transform/transform.go#L34-L38)
+
+File: `internal/transform/transform.go` (L34-38)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -453,7 +8020,9 @@ File: `internal/transform/transform.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-2` [P20]
 
-File: `internal/llm/tools/tools.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/llm/tools/tools.go#L1-L10)
+
+File: `internal/llm/tools/tools.go` (L1-10)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -463,7 +8032,9 @@ File: `internal/llm/tools/tools.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-3` [P20]
 
-File: `internal/message/content.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/message/content.go#L41-L378)
+
+File: `internal/message/content.go` (L41-62, L338-378)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -473,7 +8044,9 @@ File: `internal/message/content.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-4` [P20]
 
-File: `internal/message/message.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/message/message.go#L120-L236)
+
+File: `internal/message/message.go` (L120-136, L228-236)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -483,7 +8056,9 @@ File: `internal/message/message.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-5` [P20]
 
-File: `internal/history/file.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/history/file.go#L1-L20)
+
+File: `internal/history/file.go` (L1-20)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -493,7 +8068,9 @@ File: `internal/history/file.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-6` [P20]
 
-File: `internal/tui/components/chat/chat.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/chat.go#L500-L520)
+
+File: `internal/tui/components/chat/chat.go` (L500-520)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -503,7 +8080,9 @@ File: `internal/tui/components/chat/chat.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-7` [P20]
 
-File: `internal/tui/components/chat/messages/renderer.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/messages/renderer.go#L420-L436)
+
+File: `internal/tui/components/chat/messages/renderer.go` (L420-436)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -513,7 +8092,9 @@ File: `internal/tui/components/chat/messages/renderer.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-8` [P20]
 
-File: `internal/pubsub/broker.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/pubsub/broker.go#L50-L172)
+
+File: `internal/pubsub/broker.go` (L50-58, L160-172)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -523,7 +8104,9 @@ File: `internal/pubsub/broker.go`
 
 ### `timestamp-type-inconsistency.yaml` / `occ-9` [P20]
 
-File: `internal/session/session.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/timestamp-type-inconsistency.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/session/session.go#L21-L146)
+
+File: `internal/session/session.go` (L21-23, L140-146)
 
 > Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int,
 > suffix
@@ -533,7 +8116,9 @@ File: `internal/session/session.go`
 
 ### `facade-law-of-demeter.yaml` / `occ-0` [SKIP - cross-file]
 
-File: `internal/tui/page/chat/chat.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/facade-law-of-demeter.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/page/chat/chat.go#L320-L820)
+
+File: `internal/tui/page/chat/chat.go` (L320, L335-336, L344, L352-355, L376, L679, L699, L820)
 
 > App currently serves as both composition root and partial façade. TUI code reaches through app to call inner
 > services (CoderAgent, Sessions, Permissions) directly, producing duplicated guards and unclear ownership. Pick
@@ -545,7 +8130,9 @@ File: `internal/tui/page/chat/chat.go`
 
 ### `facade-law-of-demeter.yaml` / `occ-1` [SKIP - cross-file]
 
-File: `internal/tui/tui.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/facade-law-of-demeter.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/tui.go#L178-L436)
+
+File: `internal/tui/tui.go` (L178, L192, L253, L417, L436)
 
 > App currently serves as both composition root and partial façade. TUI code reaches through app to call inner
 > services (CoderAgent, Sessions, Permissions) directly, producing duplicated guards and unclear ownership. Pick
@@ -557,7 +8144,9 @@ File: `internal/tui/tui.go`
 
 ### `facade-law-of-demeter.yaml` / `occ-2` [SKIP - cross-file]
 
-File: `internal/tui/components/chat/editor/editor.go`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/crush/2025-08-30-internal_db/issues/facade-law-of-demeter.yaml) · [code](https://github.com/agentydragon/crush/blob/a2a1ffa00943aa373f688ac05b667083ac3230b1/internal/tui/components/chat/editor/editor.go#L144-L647)
+
+File: `internal/tui/components/chat/editor/editor.go` (L144-149, L240, L333, L647)
 
 > App currently serves as both composition root and partial façade. TUI code reaches through app to call inner
 > services (CoderAgent, Sessions, Permissions) directly, producing duplicated guards and unclear ownership. Pick
@@ -567,1441 +8156,19 @@ File: `internal/tui/components/chat/editor/editor.go`
 > **Note:** editor reaches through to m.app.CoderAgent.IsSessionBusy/IsBusy and m.app.Permissions — consider routing via
 > App façade methods or inject services explicitly.
 
-## ducktape/2025-11-26-00 (34)
-
-### `ask-approved-inflight.yaml` / `occ-0` [P20]
-
-File: `adgn/src/adgn/mcp/policy_gateway/middleware.py`
-
-> When user approves an ASK-case tool call (ContinueDecision at lines 252-258), middleware executes it but does
-> NOT track
-> it in `self._inflight`, making it invisible to `has_inflight_calls()` and `inflight_count()`.
->
-> The ALLOW case (lines 167-225) correctly tracks in \_inflight during execution with try/finally cleanup.
->
-> Problems: (1) `has_inflight_calls()` returns False even when ASK-approved call is executing, (2)
-> `inflight_count()`
-> doesn't count ASK-approved calls, (3) can't distinguish "waiting for approval" vs "approved and executing",
-> (4)
-> inconsistent tracking between ALLOW and ASK paths.
->
-> Match the ALLOW pattern: add call to \_inflight before execution, clean up in finally block. Both paths should
-> track
-> consistently regardless of whether policy allowed or user approved.
-
-```
-     247:         if self._notify is not None:
-     248:             await self._notify(call_id, tool_key, req.tool_call.args_json)
-     249:
-     250:         decision_obj = await wait_coro
-     251:
->>>  252:         if isinstance(decision_obj, ContinueDecision):
->>>  253:             if self._record is not None:
->>>  254:                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
->>>  255:             try:
->>>  256:                 return await call_next(context)
->>>  257:             except McpError as e:
->>>  258:                 _raise_if_reserved_code(e, name)
-     259:                 raise
-     260:         if isinstance(decision_obj, AbortTurnDecision):
-     261:             if self._record is not None:
-     262:                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
-     263:             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, decision_obj.reason)
-   ...
-     162:         if decision is ApprovalDecision.ALLOW:
-     163:             if self._record is not None:
-     164:                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_ALLOW)
-     165:
-     166:             # Track in-flight tool call
->>>  167:             call_id = uuid.uuid4().hex
->>>  168:             self._inflight[call_id] = tool_key
->>>  169:             try:
->>>  170:                 call_result = await call_next(context)
->>>  171:                 # If downstream returned an error ToolResult instead of raising,
->>>  172:                 # remap reserved policy codes/messages here using typed parsing when available.
->>>  173:                 if bool(getattr(call_result, "is_error", False)):
->>>  174:                     # Parse error details - ErrorData guarantees code: int per MCP/JSON-RPC spec
->>>  175:                     err = getattr(call_result, "error", None)
->>>  176:                     if err is None:
->>>  177:                         return call_result
->>>  178:
->>>  179:                     # Try parsing as ErrorData (validates code is int, message is str)
->>>  180:                     try:
->>>  181:                         ed = mtypes.ErrorData.model_validate(err)
->>>  182:                     except Exception:
->>>  183:                         # Non-conforming error format - pass through
->>>  184:                         return call_result
->>>  185:
->>>  186:                     # Check if error uses reserved policy codes/messages
->>>  187:                     stamped_downstream = isinstance(ed.data, dict) and ed.data.get(POLICY_GATEWAY_STAMP_KEY) is True
->>>  188:                     if (
->>>  189:                         stamped_downstream
->>>  190:                         or ed.code
->>>  191:                         in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
->>>  192:                         or ed.message
->>>  193:                         in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)
->>>  194:                     ):
->>>  195:                         raise McpError(
->>>  196:                             ErrorData(
->>>  197:                                 code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
->>>  198:                                 message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
->>>  199:                                 data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": ed.code},
->>>  200:                             )
->>>  201:                         )
->>>  202:                 return call_result
->>>  203:             except McpError as e:
->>>  204:                 _raise_if_reserved_code(e, name)
->>>  205:                 raise
->>>  206:             except Exception as e:
->>>  207:                 # Some servers may translate backend McpError into a ToolError before it reaches us.
->>>  208:                 # As a last resort, remap by inspecting the exception text.
->>>  209:                 s = str(e)
->>>  210:                 if (
->>>  211:                     (POLICY_DENIED_ABORT_MSG in s)
->>>  212:                     or (POLICY_DENIED_CONTINUE_MSG in s)
->>>  213:                     or (POLICY_EVALUATOR_ERROR_MSG in s)
->>>  214:                 ):
->>>  215:                     raise McpError(
->>>  216:                         ErrorData(
->>>  217:                             code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
->>>  218:                             message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
->>>  219:                             data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
->>>  220:                         )
->>>  221:                     )
->>>  222:                 raise
->>>  223:             finally:
->>>  224:                 # Remove from in-flight tracking when call completes (success or error)
->>>  225:                 self._inflight.pop(call_id, None)
-     226:
-     227:         if decision is ApprovalDecision.DENY_ABORT:
-     228:             if self._record is not None:
-     229:                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_DENY_ABORT)
-     230:             raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, rationale)
-```
-
-### `mutable-batch-accumulation.yaml` / `occ-0`
-
-File: `adgn/src/adgn/mcp/notifications/buffer.py`
-
-> The class uses sets (`_updates`, `_list_changed`) during accumulation, then converts
-> to frozen structures in NotificationsBatch. This is clunky.
->
-> **Current pattern:**
->
-> ```python
-> # Accumulation storage (mutable sets)
-> self._updates: dict[str, set[str]] = {}
-> self._list_changed: set[str] = set()
->
-> # On add:
-> self._updates[server_name].add(uri)
-> self._list_changed.add(server_name)
->
-> # On poll/peek:
-> resources = self._build_resources()  # Converts sets to frozen structures
-> return NotificationsBatch(resources=resources)
-> ```
->
-> **Problem:** Clunky conversion between mutable sets and immutable structures.
->
-> **Better approach:**
-> Replace `dict[str, set[str]]` and `set[str]` with a single mutable `NotificationsBatch`
-> instance (`self._batch`). On add operations, mutate `_batch` directly. On poll, return
-> `self._batch.model_copy()` and reset `_batch = NotificationsBatch()`. On peek, return
-> `self._batch.model_copy()`. This eliminates the conversion logic between sets and frozen
-> structures.
->
-> **Benefits:**
->
-> 1. Simpler - one data structure instead of two representations
-> 2. No conversion logic needed
-> 3. More elegant and DRY
-> 4. Clearer what's being accumulated
-
-```
-      35:     - Groups updates by server with deduplicated URIs using frozenset.
-      36:     - Server names are derived via Compositor mount prefixes when possible; otherwise set to 'unknown'.
-      37:     - Hooks can be registered to react to updates (e.g., push UI snapshots).
-      38:     """
-      39:
->>>   40:     def __init__(self, *, client: Client | None = None, compositor: Compositor) -> None:
->>>   41:         self._client = client
-      42:         self._compositor = compositor
-      43:         # Per-server updates (mutable sets during accumulation, converted to frozenset on poll/peek)
-      44:         self._updates: dict[str, set[str]] = {}
-      45:         self._list_changed: set[str] = set()
-      46:         self._hooks: list[Callable[[], Awaitable[None]]] = []
-```
-
-### `poll-use-peek.yaml` / `occ-0`
-
-File: `adgn/src/adgn/mcp/notifications/buffer.py`
-
-> Lines 62-72 define `poll()` and `peek()` which both call `_build_resources()` and
-> create `NotificationsBatch` objects independently. This duplicates the batch creation
-> logic.
->
-> **The issue:** Both methods build resources and construct batch objects separately,
-> obscuring that `poll()` is conceptually `peek()` plus clear operations.
->
-> **Fix:** Make `poll()` call `peek()`, then clear buffers. This DRYs batch creation
-> into one place and makes the relationship explicit: poll = peek + clear.
->
-> If `_build_resources()` becomes single-use after this change, inline it into `peek()`.
-
-```
-      57:         self._hooks.append(hook)
-      58:
-      59:     def clear_hooks(self) -> None:
-      60:         self._hooks.clear()
-      61:
->>>   62:     def poll(self) -> NotificationsBatch:
->>>   63:         """Poll and clear buffered notifications, returning grouped batch."""
->>>   64:         resources = self._build_resources()
->>>   65:         self._updates.clear()
->>>   66:         self._list_changed.clear()
->>>   67:         return NotificationsBatch(resources=resources)
->>>   68:
->>>   69:     def peek(self) -> NotificationsBatch:
->>>   70:         """Peek at buffered notifications without clearing them."""
->>>   71:         resources = self._build_resources()
->>>   72:         return NotificationsBatch(resources=resources)
-      73:
-      74:     def _build_resources(self) -> dict[str, ResourcesServerNotice]:
-      75:         """Build the grouped resources structure from current buffer state."""
-      76:         resources: dict[str, ResourcesServerNotice] = {}
-      77:         # Add servers with updated resources
-```
-
-### `proposal-status-enum-drift.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/server/app.py`
-
-> Line 293 converts `rec.status` to `ProposalStatus` enum, suggesting the persistence
-> layer and application layer use different types for the same concept.
->
-> **The issue:** `PolicyProposal.status` (persist/**init**.py) is typed as `str`, not
-> `ProposalStatus`. Line 293 must convert at the application boundary. This creates drift
-> risk: invalid status strings in the database won't be caught by the type system, and
-> runtime errors occur if the database contains unexpected values.
->
-> **Fix:** Change `PolicyProposal.status` from `str` to `ProposalStatus` enum. Pydantic
-> validates on construction. No conversion needed at line 293 - persistence layer enforces
-> the enum, application layer receives typed values.
->
-> Benefits: single source of truth, type safety throughout stack, no runtime conversion
-> errors.
-
-```
-     288:     @app.get("/api/agents/{agent_id}/proposals", response_model=ProposalsList)
-     289:     async def api_list_proposals(agent_id: AgentID) -> ProposalsList:
-     290:         rows = await app.state.persistence.list_policy_proposals(agent_id)
-     291:         items = [
-     292:             ProposalRow(
->>>  293:                 id=rec.id, status=ProposalStatus(rec.status), created_at=rec.created_at, decided_at=rec.decided_at
-     294:             )
-     295:             for rec in rows
-     296:         ]
-     297:         return ProposalsList(proposals=items)
-     298:
-```
-
-### `remove-boolean-param-amend.yaml` / `occ-0`
-
-File: `adgn/src/adgn/git_commit_ai/cli.py`
-
-> Lines 539-547 define `_get_previous_message_if_amend()` which takes `is_amend: bool` and returns None if
-> False.
-> Function
-> wraps an if-statement (antipattern).
->
-> Remove boolean parameter. Rename to `_get_previous_commit_message()` with non-nullable `str` return type. Move
-> condition
-> to call site (line 731): `previous_message = _get_previous_commit_message(repo) if is_amend else None`. Or
-> inline
-> entirely since it's called only once.
-
-```
-     534:         # Stage tracked changes (approximate 'git add -u')
-     535:         repo.index.add_all()
-     536:         repo.index.write()
-     537:
-     538:
->>>  539: def _get_previous_message_if_amend(repo: pygit2.Repository, is_amend: bool) -> str | None:
->>>  540:     if not is_amend:
->>>  541:         return None
->>>  542:     try:
->>>  543:         commit = repo.head.peel(pygit2.Commit)
->>>  544:         return (commit.message or "").strip()
->>>  545:     except (KeyError, pygit2.GitError) as e:
->>>  546:         print(f"Error: Cannot amend - failed to retrieve previous commit message: {e}", file=sys.stderr)
->>>  547:         raise ExitWithCode(1)
-     548:
-     549:
-     550: # ---------- commit/editor helpers ------------------------------------
-     551:
-     552:
-   ...
-     726:
-     727:     # Stage if requested (-a/--all)
-     728:     _stage_all_if_requested(repo, include_all)
-     729:
-     730:     # Get previous commit message if amending
->>>  731:     previous_message = _get_previous_message_if_amend(repo, is_amend)
-     732:
-     733:     if not (diff := get_commit_diff(repo, include_all, previous_message)).strip():
-     734:         # Check if there's truly nothing to commit
-     735:         status = _format_status_porcelain(repo)
-     736:         if not status:
-```
-
-### `resources-take-client.yaml` / `occ-0`
-
-File: `adgn/src/adgn/mcp/resources/server.py`
-
-> Lines 238-241 create `Client(compositor)` internally, but resources server should receive Client as parameter
-> instead
-> of
-> Compositor.
->
-> Violates "take what you need" principle (Dependency Injection): (1) server receives Compositor but only uses
-> it to
-> create Client, (2) creates client internally instead of receiving it, (3) harder to test (can't inject
-> mock/test
-> client).
->
-> Change signature to `make_resources_server(name: str, client: Client)` and use client directly. Caller creates
-> Client
-> and passes it. Delete useless comments about "bypassing policy gateway" (lines 238-240); parameter docstring
-> should
-> explain this instead. Benefits: takes what it needs, easier to test, clearer dependencies, follows standard
-> DI.
-
-```
-     233:     """
-     234:     mcp = NotifyingFastMCP(
-     235:         name, instructions=("Resources aggregator for listing/reading resources across mounted servers.")
-     236:     )
-     237:
->>>  238:     # Direct client to compositor (bypasses policy gateway to prevent double enforcement)
->>>  239:     # This client is created without middleware since tools calling this server already
->>>  240:     # went through the policy gateway
->>>  241:     compositor_client = Client(compositor)
-     242:
-     243:     # ---- Subscriptions index (single resource) -----------------------------
-     244:     # Internal store for subscriptions made via this server's subscribe tool.
-     245:     # No principals for now; keys are (server, uri).
-     246:     subs_lock = asyncio.Lock()
-```
-
-## ducktape/2025-11-20-00 (33)
-
-### `collection-params-empty-tuple.yaml` / `occ-2` [P20]
-
-File: `adgn/src/adgn/agent/persist/sqlite.py`
-
-> Functions accept collection parameters as Optional, defaulting to None, then
-> check for None and convert to empty collection. Should use empty collection
-> as default instead.
->
-> Benefits:
->
-> - Simpler type: no Optional/union with None
-> - No None checks or reassignments needed
-> - Empty tuple is immutable and safe as default
-> - Clearer intent: "no items" vs "missing value"
-> - Empty collections are falsy if bool check needed
->
-> This is a standard Python idiom for collection parameters.
->
-> **Note:** attach/detach default to None, then reassigned with `attach or {}` and `detach if detach is not None else []`
-
-```
-      94:                 update(Agent).where(Agent.id == agent_id).values(mcp_config=spec_json)
-      95:             )
-      96:             await session.commit()
-      97:
-      98:     async def patch_agent_specs(
->>>   99:         self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
-     100:     ) -> MCPConfig:
-     101:         attach = attach or {}
-     102:         detach = detach if detach is not None else []
-     103:         async with self._session() as session:
-     104:             result = await session.execute(select(Agent).where(Agent.id == agent_id))
-   ...
-      96:             await session.commit()
-      97:
-      98:     async def patch_agent_specs(
-      99:         self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
-     100:     ) -> MCPConfig:
->>>  101:         attach = attach or {}
->>>  102:         detach = detach if detach is not None else []
-     103:         async with self._session() as session:
-     104:             result = await session.execute(select(Agent).where(Agent.id == agent_id))
-     105:             agent = result.scalar_one_or_none()
-     106:             if not agent:
-     107:                 raise KeyError(f"agent not found: {agent_id}")
-```
-
-### `collection-params-empty-tuple.yaml` / `occ-3` [P20]
-
-File: `adgn/src/adgn/agent/persist/__init__.py`
-
-> Functions accept collection parameters as Optional, defaulting to None, then
-> check for None and convert to empty collection. Should use empty collection
-> as default instead.
->
-> Benefits:
->
-> - Simpler type: no Optional/union with None
-> - No None checks or reassignments needed
-> - Empty tuple is immutable and safe as default
-> - Clearer intent: "no items" vs "missing value"
-> - Empty collections are falsy if bool check needed
->
-> This is a standard Python idiom for collection parameters.
->
-> **Note:** Protocol signature uses Optional instead of default empty collection
-
-```
-     136:
-     137:     # Agents API ---------------------------------------------------------------
-     138:     async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> AgentID: ...
-     139:     async def update_agent_specs(self, agent_id: AgentID, *, mcp_config: MCPConfig) -> None: ...
-     140:     async def patch_agent_specs(
->>>  141:         self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
-     142:     ) -> MCPConfig: ...
-     143:     async def list_agents(self) -> list[AgentRow]: ...
-     144:     async def get_agent(self, agent_id: AgentID) -> AgentRow | None: ...
-     145:     async def list_agents_last_activity(self) -> dict[AgentID, datetime | None]: ...
-     146:     async def delete_agent(self, agent_id: AgentID) -> None: ...
-```
-
-### `approvals-pending-wrong-attributes.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
-
-> approvals_pending_global builds URIs and JSON by accessing approval.call_id, approval.tool,
-> and approval.args, but PendingApproval only exposes tool_call (a ToolCall object) and timestamp.
-> The code raises AttributeError on every invocation because these attributes don't exist at the
-> PendingApproval level - they need to be accessed via approval.tool_call.call_id,
-> approval.tool_call.name, and approval.tool_call.args_json respectively.
-
-```
-     395:         "resource://approvals/pending",
-     396:         name="approvals.pending.global",
-     397:         mime_type="application/json",
-     398:         description="Global mailbox: all pending approvals across all agents (returns multiple content blocks)",
-     399:     )
->>>  400:     async def approvals_pending_global():
->>>  401:         """Each approval is a separate MCP TextResourceContents block.
->>>  402:
->>>  403:         Crashes if any agent fails (no exception swallowing).
->>>  404:         """
->>>  405:         content_blocks: list[mcp_types.TextResourceContents] = []
->>>  406:
->>>  407:         for agent_id in registry.known_agents():
->>>  408:             infra = await registry.get_infrastructure(agent_id)
->>>  409:             pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
->>>  410:
->>>  411:             for approval in pending_approvals:
->>>  412:                 approval_uri = f"resource://agents/{agent_id}/approvals/{approval.call_id}"
->>>  413:                 approval_data = {
->>>  414:                     "agent_id": agent_id,
->>>  415:                     "call_id": approval.call_id,
->>>  416:                     "tool": approval.tool,
->>>  417:                     "args": approval.args,
->>>  418:                     "timestamp": approval.timestamp.isoformat(),
->>>  419:                 }
->>>  420:                 block = mcp_types.TextResourceContents(
->>>  421:                     uri=approval_uri, mimeType="application/json", text=json.dumps(approval_data)
->>>  422:                 )
-     423:                 content_blocks.append(block)
-     424:
-     425:         return mcp_types.ReadResourceResult(contents=content_blocks)
-     426:
-     427:     @server.resource(
-```
-
-### `parse-response-should-not-exist.yaml` / `occ-0`
-
-File: `adgn/src/adgn/llm/sysrw/openai_typing.py`
-
-> parse_response_messages accepts Any and converts to list[ResponseOutputMessage].
-> This function exists because callers hold untyped data and need runtime validation.
->
-> Problem: This defers type safety to runtime. Callers should receive properly
-> typed data from API responses directly.
->
-> Should instead:
->
-> 1. Type API response parsing at source (where data enters system)
-> 2. Callers work with list[ResponseOutputMessage] | None from the start
-> 3. No runtime validation needed in application layer
->
-> The function is a symptom of inadequate typing at API boundary.
->
-> If using OpenAI SDK or similar, the response should already be typed.
-> If parsing raw JSON, parse to typed Response object immediately, not dict[str, Any].
->
-> Benefits of proper typing at source:
->
-> - Type errors caught at compile time, not runtime
-> - No defensive validation in application code
-> - Clearer data flow: typed from API → typed throughout
-> - No Any spreading through codebase
->
-> Same principle applies to parse_chat_messages.
->
-> **Note:** parse_response_messages function
-
-```
-     106:
-     107:
-     108: # Removed parse_tool_call and extract_*_tool_call_info - no longer needed since we work with typed objects directly
-     109:
-     110:
->>>  111: def parse_response_messages(messages: Any) -> list[ResponseOutputMessage] | None:
->>>  112:     """Parse messages into validated ResponseOutputMessage objects.
->>>  113:
->>>  114:     Args:
->>>  115:         messages: Unvalidated external payload (typically from OpenAI API response).
->>>  116:                   Structured validation happens via TypeAdapter within function.
->>>  117:
->>>  118:     Returns:
->>>  119:         Validated list of ResponseOutputMessage objects, or None if messages is falsy.
->>>  120:     """
->>>  121:     if not messages:
->>>  122:         return None
->>>  123:     return TypeAdapter(list[ResponseOutputMessage]).validate_python(messages)
-     124:
-     125:
-     126: def dump_response_messages(messages: list[ResponseOutputMessage]) -> list[dict[str, Any]]:
-     127:     """Convert validated ResponseOutputMessage objects back to dict form."""
-     128:     return [msg.model_dump(by_alias=True) for msg in messages]
-```
-
-### `parse-response-should-not-exist.yaml` / `occ-1`
-
-File: `adgn/src/adgn/llm/sysrw/openai_typing.py`
-
-> parse_response_messages accepts Any and converts to list[ResponseOutputMessage].
-> This function exists because callers hold untyped data and need runtime validation.
->
-> Problem: This defers type safety to runtime. Callers should receive properly
-> typed data from API responses directly.
->
-> Should instead:
->
-> 1. Type API response parsing at source (where data enters system)
-> 2. Callers work with list[ResponseOutputMessage] | None from the start
-> 3. No runtime validation needed in application layer
->
-> The function is a symptom of inadequate typing at API boundary.
->
-> If using OpenAI SDK or similar, the response should already be typed.
-> If parsing raw JSON, parse to typed Response object immediately, not dict[str, Any].
->
-> Benefits of proper typing at source:
->
-> - Type errors caught at compile time, not runtime
-> - No defensive validation in application code
-> - Clearer data flow: typed from API → typed throughout
-> - No Any spreading through codebase
->
-> Same principle applies to parse_chat_messages.
->
-> **Note:** parse_chat_messages function
-
-```
-     131: def dump_chat_messages(messages: list[ChatCompletionMessageParam]) -> list[dict[str, Any]]:
-     132:     """Convert ChatCompletionMessageParam objects to dict form."""
-     133:     return [TypeAdapter(dict[str, Any]).validate_python(msg) for msg in messages]
-     134:
-     135:
->>>  136: def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | None:
->>>  137:     """Parse messages into validated ChatCompletionMessageParam objects.
->>>  138:
->>>  139:     Args:
->>>  140:         messages: Unvalidated external payload (typically from stored state or API).
->>>  141:                   Structured validation happens via TypeAdapter within function.
->>>  142:
->>>  143:     Returns:
->>>  144:         Validated list of ChatCompletionMessageParam objects, or None if messages is falsy.
->>>  145:     """
->>>  146:     if not messages:
->>>  147:         return None
->>>  148:     return TypeAdapter(list[ChatCompletionMessageParam]).validate_python(messages)
-     149:
-     150:
-     151: # Remove this function - parse the data into the right type first instead of handling unions
-     152:
-     153:
-```
-
-### `policy-table-status-enum-inconsistency.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/persist/sqlite.py`
-
-> The Policy table's status column is written with values from two different enums inconsistently:
-> approve_policy_proposal (lines 303-308) writes PolicyStatus.ACTIVE and PolicyStatus.SUPERSEDED,
-> while reject_policy_proposal (line 321) writes ProposalStatus.REJECTED. This means the same
-> database column holds a mix of enum values from different types, making queries fragile and
-> prone to type errors when instantiating Pydantic models (e.g., PolicyProposal expects
-> ProposalStatus but may receive PolicyStatus values). These should be merged into a single enum
-> representing all policy states (active, superseded, pending, approved, rejected) for a unified
-> policy table that tracks both proposals and active policies. Additionally, the enum could be
-> linked to the ORM using SQLAlchemy's Enum type (which creates a SQL-level CHECK constraint or
-> native enum type) to prevent storing invalid status values and catch misuse at the API boundary.
-
-```
-     298:             # Mark existing ACTIVE policies as SUPERSEDED
-     299:             await session.execute(
-     300:                 update(Policy)
-     301:                 .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE.value)
-     302:                 .values(status=PolicyStatus.SUPERSEDED.value)
->>>  303:             )
->>>  304:
->>>  305:             # Mark proposal as ACTIVE
->>>  306:             policy.status = PolicyStatus.ACTIVE.value
->>>  307:             policy.decided_at = _now()
->>>  308:             await session.commit()
-     309:             return policy.id
-     310:
-     311:     async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
-     312:         async with self._session() as session:
-     313:             try:
-   ...
-     316:                 return
-     317:
-     318:             await session.execute(
-     319:                 update(Policy)
-     320:                 .where(Policy.id == policy_id, Policy.agent_id == agent_id)
->>>  321:                 .values(status=ProposalStatus.REJECTED, decided_at=_now())
-     322:             )
-     323:             await session.commit()
-     324:
-     325:     # Runs --------------------------------------------------------------------
-     326:     async def start_run(
-```
-
-### `preset-modified-at-datetime.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/presets.py`
-
-> AgentPreset.modified_at uses str for timestamp instead of datetime type. Timestamps
-> should use datetime, not strings, for type safety, operations (comparison, arithmetic),
-> and automatic ISO-8601 serialization. Pydantic handles datetime serialization to JSON
-> automatically. Only use str when interfacing with systems requiring precise control
-> over format.
-
-```
-      25:     system: str | None = Field(None, description="System message for the agent")
-      26:     specs: dict[str, JsonValue] = Field(default_factory=dict, description="Agent specifications (arbitrary JSON)")
-      27:     approval_policy: str | None = Field(None, description="Approval policy Python source code")
-      28:     # Source metadata (filled by loader; used by UI)
-      29:     file_path: str | None = Field(None, description="Source file path for this preset")
->>>   30:     modified_at: str | None = Field(None, description="Last modification time (ISO-8601 string)")
-      31:
-      32:
-      33: def _load_yaml(path: Path) -> dict[str, JsonValue]:
-      34:     with path.open("r", encoding="utf-8") as f:
-      35:         data = yaml.safe_load(f) or {}
-```
-
-### `pydantic-read-path.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/persist/sqlite.py`
-
-> Building intermediate dict before constructing Pydantic model at read boundary.
->
-> Code creates row_dict from SQLAlchemy result (lines 445-454), then passes to
-> parse_event. This intermediate dict step is unnecessary and loses type safety.
->
-> Should construct EventRecord directly with keyword arguments for immediate field
-> validation and type checking.
->
-> Anti-pattern: dict as intermediate representation when going from DB row to
-> typed model. Correct approach: pass SQLAlchemy row fields directly to Pydantic
-> constructor using keyword arguments.
->
-> Benefits:
->
-> - Type safety: catch field mismatches at type-check time
-> - No intermediate dict allocation
-> - Immediate validation on construction
-> - Clearer data flow
-
-```
-     440:         async with self._session() as session:
-     441:             result = await session.execute(
-     442:                 select(Event).where(Event.run_id == str(run_id)).order_by(Event.seq.asc())
-     443:             )
-     444:             events = result.scalars().all()
->>>  445:             for event in events:
->>>  446:                 row_dict = {
->>>  447:                     "seq": event.seq,
->>>  448:                     "ts": event.event_at,  # Map event_at back to ts for compatibility
->>>  449:                     "type": event.type,
->>>  450:                     "payload": event.payload,
->>>  451:                     "call_id": event.call_id,
->>>  452:                     "tool_key": event.tool_key,
->>>  453:                 }
->>>  454:                 out.append(parse_event(row_dict))
-     455:         return out
-     456:
-     457:     # Tool Calls (new ToolCallRecord persistence) --------------------------------
-     458:     async def save_tool_call(self, record: ToolCallRecord) -> None:
-     459:         """Save or update a tool call record."""
-```
-
-### `pydantic-write-path.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/persist/handler.py`
-
-> Pre-serialization of Pydantic models before passing to persistence layer.
->
-> Calls model_dump() at caller site (lines 102-103, 110, 145-146) before passing
-> to persistence methods. This violates separation of concerns - caller shouldn't
-> know about persistence format.
->
-> Anti-pattern: Serialization at caller site instead of callee. Correct approach:
-> append_event should accept typed EventRecord payload, ResponsePayload should
-> accept Response model, and serialization should happen inside persistence layer.
->
-> Benefits:
->
-> - Type safety preserved across call boundary
-> - Single serialization point (DRY)
-> - Clearer responsibility boundaries
-> - Caller doesn't need to know persistence format
-> - Easier to change serialization strategy later
-
-```
-      97:         # Reset sequence if run changed (auto-bind path)
-      98:         if self._last_run_id != rid:
-      99:             self._last_run_id = rid
-     100:             self._seq = 0
-     101:         self._seq += 1
->>>  102:         # Convert TypedPayload to dict for persistence
->>>  103:         payload_dict = payload.model_dump(mode="json", exclude_none=True)
-     104:         self._spawn(
-     105:             self._persistence.append_event(
-     106:                 run_id=rid,
-     107:                 seq=self._seq,
-     108:                 ts=self._now(),
-   ...
-     105:             self._persistence.append_event(
-     106:                 run_id=rid,
-     107:                 seq=self._seq,
-     108:                 ts=self._now(),
-     109:                 type=type,
->>>  110:                 payload=payload_dict,
-     111:                 call_id=call_id,
-     112:                 tool_key=tool_key,
-     113:             )
-     114:         )
-     115:
-   ...
-     140:     def on_reasoning(self, item: ReasoningItem) -> None:
-     141:         self._record_event(type=EventType.REASONING, payload=ReasoningPayload(text=item.text))
-     142:
-     143:     def on_response(self, evt: Response) -> None:
-     144:         # Convert Response to ResponsePayload; for now pass full dumped content
->>>  145:         content_dict = evt.model_dump(mode="json", exclude_none=True)
->>>  146:         self._record_event(type=EventType.RESPONSE, payload=ResponsePayload(content=content_dict))
-```
-
-### `registry-get-missing.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/server/status_shared.py`
-
-> InfrastructureRegistry.get() method is called but does not exist in the class definition.
->
-> The calls should likely use get_running_infrastructure() instead,
-> based on the usage pattern where the result is checked for None.
->
-> **Note:** Called in build_agent_status_core: c = registry.get(agent_id)
-
-```
-     109:     container id (for non-ephemeral runtime), pending approvals, and run phase.
-     110:     """
-     111:     registry = app.state.registry
-     112:     persistence = app.state.persistence
-     113:
->>>  114:     c = registry.get(agent_id)
-     115:     present = c is not None
-     116:
-     117:     # UI + approvals + active run
-     118:     ui_ready = bool(c and c._ui_manager is not None)
-     119:     pending = 0
-```
-
-### `registry-get-missing.yaml` / `occ-1`
-
-File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
-
-> InfrastructureRegistry.get() method is called but does not exist in the class definition.
->
-> The calls should likely use get_running_infrastructure() instead,
-> based on the usage pattern where the result is checked for None.
->
-> **Note:** Called in agent_ui_state_resource: runtime = registry.get(agent_id)
-
-```
-     511:         mime_type="application/json",
-     512:         description="UI state (optional, only if UI server attached)",
-     513:     )
-     514:     async def agent_ui_state_resource(agent_id: AgentID) -> str:
-     515:         """UI state (optional, only if UI server attached)."""
->>>  516:         runtime = registry.get(agent_id)
-     517:         if not runtime or not runtime.runtime.session:
-     518:             raise ValueError(f"Agent {agent_id} has no session")
-     519:
-     520:         ui_state = runtime.runtime.session.ui_state
-     521:
-```
-
-### `return-result-not-reconstruct.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/runtime/registry.py`
-
-> AgentContainer.close() deconstructs CloseResult to rebuild identical dict
-> (registry.py:43-44):
->
-> result = await self.running.close() # Returns CloseResult
-> return {"drained": result.drained, "error": result.error}
->
-> CloseResult is a dataclass with drained and error fields (running.py:28-31).
-> The code extracts these fields to create a dict with the same structure.
->
-> Should return the result directly:
-> return await self.running.close()
->
-> Or inline the call:
-> await self.runtime.close()
-> return await self.running.close()
->
-> Benefits:
->
-> - No useless reconstruction
-> - Preserves type information (CloseResult vs untyped dict)
-> - Clearer intent: propagate result from running.close()
-> - Less code
->
-> Investigation shows return value unused at call site (registry.py:105),
-> so dict reconstruction serves no purpose. If serialization needed, use
-> dataclasses.asdict() or Pydantic.
-
-```
-      38:     _ui_bus: ServerBus | None = None
-      39:
-      40:     async def close(self):
-      41:         """Lifecycle management - close all components together."""
-      42:         await self.runtime.close()
->>>   43:         result = await self.running.close()
->>>   44:         return {"drained": result.drained, "error": result.error}
-      45:
-      46:
-      47: @dataclass
-      48: class AgentRegistry:
-      49:     """Registry for managing agent runtimes.
-```
-
-### `send-json-duplicate-logic.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/server/runtime.py`
-
-> send_json and \_send_direct_all have identical logic except for how they send
-> (runtime.py:119-128, 187-196).
->
-> send_json uses q.put_nowait():
-> for \_ws, q, \_task in list(self.\_clients.values()):
-> q.put_nowait(dumped)
->
-> \_send_direct_all uses ws.send_json():
-> for ws, \_q, \_task in list(self.\_clients.values()):
-> await ws.send_json(dumped)
->
-> Both:
->
-> 1. Create identical Envelope with same fields
-> 2. Call model_dump(mode="json")
-> 3. Iterate over self.\_clients.values()
-> 4. Send to each client
->
-> Only difference: synchronous put_nowait vs async send_json.
->
-> Should extract common logic:
-> def \_create_envelope(self, payload: ServerMessage) -> dict:
-> return Envelope(
-> session_id=self.\_session_id,
-> event_id=self.\_next_event_id(),
-> event_at=datetime.now(UTC),
-> payload=payload,
-> ).model_dump(mode="json")
->
-> async def send_json(self, payload: ServerMessage) -> None:
-> dumped = self.\_create_envelope(payload)
-> for \_ws, q, \_task in list(self.\_clients.values()):
-> q.put_nowait(dumped)
->
-> async def \_send_direct_all(self, payload: ServerMessage) -> None:
-> dumped = self.\_create_envelope(payload)
-> for ws, \_q, \_task in list(self.\_clients.values()):
-> await ws.send_json(dumped)
->
-> Or unify completely if possible.
->
-> Benefits:
->
-> - DRY: envelope creation in one place
-> - Easier to maintain: change once, affects both
-> - Clear separation: envelope creation vs distribution
-
-```
-     114:
-     115:     def _next_event_id(self) -> int:
-     116:         self._event_id += 1
-     117:         return self._event_id
-     118:
->>>  119:     async def send_json(self, payload: ServerMessage) -> None:
->>>  120:         envelope = Envelope(
->>>  121:             session_id=self._session_id,
->>>  122:             event_id=self._next_event_id(),
->>>  123:             event_at=datetime.now(UTC),
->>>  124:             payload=payload,
->>>  125:         )
->>>  126:         dumped = envelope.model_dump(mode="json")
->>>  127:         for _ws, q, _task in list(self._clients.values()):
->>>  128:             q.put_nowait(dumped)
-     129:
-     130:     async def _send_and_reduce(self, payload: ServerMessage) -> None:
-     131:         await self.send_payload(payload)
-     132:         assert self._session is not None
-     133:         await self._session._apply_ui_event(payload)
-   ...
-     182:         self._spawn(self._send_and_reduce(ut))
-     183:         # Notify MCP bridge of session state change
-     184:         if self._session_state_notifier is not None:
-     185:             self._session_state_notifier()
-     186:
->>>  187:     async def _send_direct_all(self, payload: ServerMessage) -> None:
->>>  188:         envelope = Envelope(
->>>  189:             session_id=self._session_id,
->>>  190:             event_id=self._next_event_id(),
->>>  191:             event_at=datetime.now(UTC),
->>>  192:             payload=payload,
->>>  193:         )
->>>  194:         dumped = envelope.model_dump(mode="json")
->>>  195:         for ws, _q, _task in list(self._clients.values()):
->>>  196:             await ws.send_json(dumped)
-     197:
-     198:     def on_assistant_text_event(self, evt: AssistantText) -> None:
-     199:         raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
-     200:
-     201:     def on_tool_call_event(self, evt: ToolCall) -> None:
-```
-
-### `snapshot-misses-active-run-at-start.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/server/runtime.py`
-
-> AgentSession.\_run_impl builds and sends a snapshot before setting self.active_run. Line 399
-> calls `await self._manager.send_payload(await self.build_snapshot())` but self.active_run isn't
-> assigned until line 400-402. Since build_snapshot only includes run metadata when
-> self.active_run is non-None, the startup snapshot always contains active_run_id=None, empty
-> pending_approvals, and no SnapshotDetails. UI clients reading the snapshot resource never learn
-> that a run started until the next snapshot emission (typically at run completion). The
-> active_run assignment should be moved before the build_snapshot call so the snapshot accurately
-> reflects that a run is active.
-
-```
-     394:             await self._manager.broadcast_status(True, run_id)
-     395:             # Also push a fresh Snapshot so UIs that rely on snapshot-only
-     396:             # state (not incremental run_status) update immediately.
-     397:             # This helps early UI elements like the Abort button appear
-     398:             # deterministically even if they don't consume run_status events.
->>>  399:             await self._manager.send_payload(await self.build_snapshot())
->>>  400:             self.active_run = RunState(
->>>  401:                 run_id=run_id, status=UiRunStatus.RUNNING, started_at=started, pending_approvals=[], last_event_id=None
->>>  402:             )
-     403:             self._run_counter += 1
-     404:             # Notify MCP bridge of session state change (run started)
-     405:             if self._manager._session_state_notifier is not None:
-     406:                 self._manager._session_state_notifier()
-     407:             finish_status = PersistenceRunStatus.FINISHED
-```
-
-### `str-fallback-on-structured.yaml` / `occ-0`
-
-File: `adgn/src/adgn/llm/sysrw/openai_typing.py`
-
-> chat_param_message_content_as_text (lines 75-105) claims to "extract text content", but when
-> content is not a plain string (e.g., multi-part ChatCompletion\*MessageParam with structured
-> content like [{'type': 'text', 'text': 'hi'}]), it falls back to str(content) (lines 85, 92,
-> 99, 104), returning the Python repr of the structure instead of the actual text. This is
-> misleading and makes it easy to abuse the API - callers receive strings like "[{'type':
->
-> > 'text', 'text': 'hi'}]" and may not realize they're getting repr output rather than extracted
-> > text. The function should be designed to make abuse hard: it should expect text-only content
-> > and either raise an exception or return None (with a return type like str | None) when called
-> > on non-text content, forcing callers to handle structured content explicitly. The name and
-> > docstring should also clarify that this is only for text-only messages.
-
-```
-      80:         case MessageRole.ASSISTANT:
-      81:             # ChatCompletionAssistantMessageParam - content is optional
-      82:             content = message.get("content")
-      83:             if isinstance(content, str):
-      84:                 return content
->>>   85:             return str(content) if content else ""
-      86:         case MessageRole.USER:
-      87:             # ChatCompletionUserMessageParam - content is required
-      88:             content = message["content"]
-      89:             if isinstance(content, str):
-      90:                 return content
-   ...
-      87:             # ChatCompletionUserMessageParam - content is required
-      88:             content = message["content"]
-      89:             if isinstance(content, str):
-      90:                 return content
-      91:             return str(content)
->>>   92:         case MessageRole.SYSTEM:
-      93:             # ChatCompletionSystemMessageParam - content is required
-      94:             content = message["content"]
-      95:             if isinstance(content, str):
-      96:                 return content
-      97:             return str(content)
-   ...
-      94:             content = message["content"]
-      95:             if isinstance(content, str):
-      96:                 return content
-      97:             return str(content)
-      98:         case MessageRole.TOOL | MessageRole.FUNCTION | MessageRole.DEVELOPER:
->>>   99:             # Other message types - handle gracefully
-     100:             content = message.get("content")
-     101:             if isinstance(content, str):
-     102:                 return content
-     103:             return str(content) if content else ""
-     104:         case _:
-   ...
-      99:             # Other message types - handle gracefully
-     100:             content = message.get("content")
-     101:             if isinstance(content, str):
-     102:                 return content
-     103:             return str(content) if content else ""
->>>  104:         case _:
-     105:             raise ValueError(f"Unhandled MessageRole: {role}")
-     106:
-     107:
-     108: # Removed parse_tool_call and extract_*_tool_call_info - no longer needed since we work with typed objects directly
-     109:
-```
-
-### `stub-convenience-stack-method.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/runtime/infrastructure.py`
-
-> Creating typed server stubs requires verbose boilerplate (infrastructure.py:180-186):
->
-> reader_client = Client(reader_server)
-> await stack.enter_async_context(reader_client)
-> policy_reader = PolicyReaderStub(TypedClient(reader_client))
->
-> approver_client = Client(approver_server)
-> await stack.enter_async_context(approver_client)
-> policy_approver = PolicyApproverStub(TypedClient(approver_client))
->
-> This 3-line pattern repeats for every stub. Should provide convenience method:
->
-> policy_reader = await PolicyReaderStub.for_server(stack, reader_server)
-> policy_approver = await PolicyApproverStub.for_server(stack, approver_server)
->
-> Or even simpler with context manager protocol on stub class.
->
-> The for_server method would encapsulate:
->
-> 1. Create Client from server
-> 2. Enter into async context stack
-> 3. Wrap in TypedClient
-> 4. Return stub instance
->
-> Benefits:
->
-> - DRY: pattern in one place
-> - Less error-prone: can't forget context manager entry
-> - Clearer intent: "create stub from server"
-> - Reduces line count 3:1
->
-> This suggests base class method or helper function in server stub framework.
->
-> **Note:** PolicyReaderStub creation boilerplate
-
-```
-     175:         )
-     176:         await compositor.mount_inproc(APPROVAL_POLICY_SERVER_NAME_PROPOSER, proposer_server)
-     177:
-     178:         approver_server = ApprovalPolicyAdminServer(engine=approval_engine, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
-     179:
->>>  180:         reader_client = Client(reader_server)
->>>  181:         await stack.enter_async_context(reader_client)
->>>  182:         policy_reader = PolicyReaderStub(TypedClient(reader_client))
-     183:
-     184:         approver_client = Client(approver_server)
-     185:         await stack.enter_async_context(approver_client)
-     186:         policy_approver = PolicyApproverStub(TypedClient(approver_client))
-     187:
-```
-
-### `stub-convenience-stack-method.yaml` / `occ-1`
-
-File: `adgn/src/adgn/agent/runtime/infrastructure.py`
-
-> Creating typed server stubs requires verbose boilerplate (infrastructure.py:180-186):
->
-> reader_client = Client(reader_server)
-> await stack.enter_async_context(reader_client)
-> policy_reader = PolicyReaderStub(TypedClient(reader_client))
->
-> approver_client = Client(approver_server)
-> await stack.enter_async_context(approver_client)
-> policy_approver = PolicyApproverStub(TypedClient(approver_client))
->
-> This 3-line pattern repeats for every stub. Should provide convenience method:
->
-> policy_reader = await PolicyReaderStub.for_server(stack, reader_server)
-> policy_approver = await PolicyApproverStub.for_server(stack, approver_server)
->
-> Or even simpler with context manager protocol on stub class.
->
-> The for_server method would encapsulate:
->
-> 1. Create Client from server
-> 2. Enter into async context stack
-> 3. Wrap in TypedClient
-> 4. Return stub instance
->
-> Benefits:
->
-> - DRY: pattern in one place
-> - Less error-prone: can't forget context manager entry
-> - Clearer intent: "create stub from server"
-> - Reduces line count 3:1
->
-> This suggests base class method or helper function in server stub framework.
->
-> **Note:** PolicyApproverStub creation boilerplate
-
-```
-     179:
-     180:         reader_client = Client(reader_server)
-     181:         await stack.enter_async_context(reader_client)
-     182:         policy_reader = PolicyReaderStub(TypedClient(reader_client))
-     183:
->>>  184:         approver_client = Client(approver_server)
->>>  185:         await stack.enter_async_context(approver_client)
->>>  186:         policy_approver = PolicyApproverStub(TypedClient(approver_client))
-     187:
-     188:         return (policy_reader, policy_approver)
-     189:
-     190:     async def _install_policy_gateway(
-     191:         self, compositor: Compositor, approval_hub: ApprovalHub, policy_reader: PolicyReaderStub
-```
-
-### `token-role-invalid-state.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/server/mcp_routing.py`
-
-> TokenRole + agent_id (mcp_routing.py:76-97) accepts role and agent_id
-> separately, allowing invalid state (AGENT role without agent_id). Should
-> use discriminated union (HumanTokenInfo | AgentTokenInfo) to make invalid
-> state unrepresentable.
->
-> Current code has runtime check `if not agent_id` at line 86 to handle
-> the invalid state that the type system allows.
->
-> Using discriminated union provides:
->
-> - Type safety: invalid states unrepresentable
-> - No runtime validation needed
-> - Clear type contracts in signatures
-
-```
-      71:                 auth_value = value.decode("utf-8")
-      72:                 if auth_value.startswith("Bearer "):
-      73:                     return auth_value[7:]  # Strip "Bearer " prefix
-      74:         return None
-      75:
->>>   76:     async def _get_backend_app(self, role: TokenRole, agent_id: str | None) -> ASGIApp:
->>>   77:         """Get or create backend ASGI app for the given role/agent_id."""
->>>   78:         if role == TokenRole.HUMAN:
->>>   79:             backend_key = "human"
->>>   80:             if backend_key not in self._backend_apps:
->>>   81:                 # Use the agents management server's HTTP app
->>>   82:                 self._backend_apps[backend_key] = self.agents_server.http_app()  # type: ignore[assignment]
->>>   83:             return self._backend_apps[backend_key]
->>>   84:
->>>   85:         if role == TokenRole.AGENT:
->>>   86:             if not agent_id:
->>>   87:                 raise ValueError("Agent role requires agent_id")
->>>   88:
->>>   89:             backend_key = f"agent:{agent_id}"
->>>   90:             if backend_key not in self._backend_apps:
->>>   91:                 # Get the agent's compositor HTTP app
->>>   92:                 container = await self.registry.ensure_live(AgentID(agent_id), with_ui=False)
->>>   93:                 compositor_app = container.running.compositor.http_app()
->>>   94:                 self._backend_apps[backend_key] = compositor_app  # type: ignore[assignment]
->>>   95:             return self._backend_apps[backend_key]
->>>   96:
->>>   97:         raise ValueError(f"Unknown role: {role}")
-      98:
-      99:     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-     100:         """Route request to appropriate backend based on token."""
-     101:         # Extract Bearer token
-     102:         token = self._extract_bearer_token(request.scope["headers"])
-   ...
-      81:                 # Use the agents management server's HTTP app
-      82:                 self._backend_apps[backend_key] = self.agents_server.http_app()  # type: ignore[assignment]
-      83:             return self._backend_apps[backend_key]
-      84:
-      85:         if role == TokenRole.AGENT:
->>>   86:             if not agent_id:
-      87:                 raise ValueError("Agent role requires agent_id")
-      88:
-      89:             backend_key = f"agent:{agent_id}"
-      90:             if backend_key not in self._backend_apps:
-      91:                 # Get the agent's compositor HTTP app
-```
-
-### `token-table-pydantic-model.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/server/mcp_routing.py`
-
-> TOKEN_TABLE uses nested untyped dicts (mcp_routing.py:37-40):
->
-> TOKEN_TABLE: dict[str, dict[str, str]] = {
-> "human-token-123": {"role": "human"},
-> "agent-token-abc": {"role": "agent", "agent_id": "agent-1"},
-> }
->
-> Problems:
->
-> - No type safety: can't validate field presence
-> - No autocomplete for fields (role, agent_id)
-> - Field names are magic strings
-> - Can't distinguish required vs optional fields
-> - Code accesses with dict["role"], dict.get("agent_id")
->
-> Should define Pydantic model:
-> class TokenInfo(BaseModel):
-> role: TokenRole # Already a StrEnum
-> agent_id: AgentID | None = None
->
-> TOKEN_TABLE: dict[str, TokenInfo] = {
-> "human-token-123": TokenInfo(role=TokenRole.HUMAN),
-> "agent-token-abc": TokenInfo(role=TokenRole.AGENT, agent_id="agent-1"),
-> }
->
-> Benefits:
->
-> - Type safety: token_info.role, token_info.agent_id
-> - Validation: can't create invalid TokenInfo
-> - Clear schema: required role, optional agent_id
-> - IDE support: autocomplete and type checking
->
-> Code already uses TokenRole enum, should extend to full typed model.
-
-```
-      32:     AGENT = "agent"  # Routes to agent's compositor
-      33:
-      34:
-      35: # Token table: token -> {role: str, agent_id?: str}
-      36: # In production, this would be a database lookup or external service
->>>   37: TOKEN_TABLE: dict[str, dict[str, str]] = {
->>>   38:     "human-token-123": {"role": "human"},
->>>   39:     "agent-token-abc": {"role": "agent", "agent_id": "agent-1"},
->>>   40: }
-      41:
-      42:
-      43: class MCPRoutingMiddleware(BaseHTTPMiddleware):
-      44:     """Routes MCP connections based on Bearer token to appropriate backend server.
-      45:
-   ...
-     110:             logger.warning(f"Invalid token: {token[:10]}...")
-     111:             return Response(content="Invalid token", status_code=401)
-     112:
-     113:         # Determine role and routing
-     114:         try:
->>>  115:             role = TokenRole(token_info["role"])
-     116:             agent_id = token_info.get("agent_id")
-     117:
-     118:             logger.info(f"Routing MCP request: role={role}, agent_id={agent_id}")
-     119:
-     120:             # Get backend app
-   ...
-     111:             return Response(content="Invalid token", status_code=401)
-     112:
-     113:         # Determine role and routing
-     114:         try:
-     115:             role = TokenRole(token_info["role"])
->>>  116:             agent_id = token_info.get("agent_id")
-     117:
-     118:             logger.info(f"Routing MCP request: role={role}, agent_id={agent_id}")
-     119:
-     120:             # Get backend app
-     121:             backend_app = await self._get_backend_app(role, agent_id)
-```
-
-### `unnecessary-wrapper-functions.yaml` / `occ-0`
-
-File: `adgn/src/adgn/llm/sysrw/openai_typing.py`
-
-> Trivial wrapper functions that add no abstraction value. Only create wrapper
-> functions when they add real abstraction (combine multiple operations),
-> provide domain-specific naming clarity, or encapsulate complex logic.
->
-> **Note:** dump_response_messages/dump_chat_messages/parse_tool_params are one-line wrappers around Pydantic methods
-
-```
-     121:     if not messages:
-     122:         return None
-     123:     return TypeAdapter(list[ResponseOutputMessage]).validate_python(messages)
-     124:
-     125:
->>>  126: def dump_response_messages(messages: list[ResponseOutputMessage]) -> list[dict[str, Any]]:
->>>  127:     """Convert validated ResponseOutputMessage objects back to dict form."""
->>>  128:     return [msg.model_dump(by_alias=True) for msg in messages]
-     129:
-     130:
-     131: def dump_chat_messages(messages: list[ChatCompletionMessageParam]) -> list[dict[str, Any]]:
-     132:     """Convert ChatCompletionMessageParam objects to dict form."""
-     133:     return [TypeAdapter(dict[str, Any]).validate_python(msg) for msg in messages]
-   ...
-     126: def dump_response_messages(messages: list[ResponseOutputMessage]) -> list[dict[str, Any]]:
-     127:     """Convert validated ResponseOutputMessage objects back to dict form."""
-     128:     return [msg.model_dump(by_alias=True) for msg in messages]
-     129:
-     130:
->>>  131: def dump_chat_messages(messages: list[ChatCompletionMessageParam]) -> list[dict[str, Any]]:
->>>  132:     """Convert ChatCompletionMessageParam objects to dict form."""
->>>  133:     return [TypeAdapter(dict[str, Any]).validate_python(msg) for msg in messages]
-     134:
-     135:
-     136: def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | None:
-     137:     """Parse messages into validated ChatCompletionMessageParam objects.
-     138:
-   ...
-     154: def parse_response(response: dict[str, Any]) -> Response:
-     155:     """Parse response data into validated Response object."""
-     156:     return TypeAdapter(Response).validate_python(response)
-     157:
-     158:
->>>  159: def parse_tool_params(params: dict[str, Any]) -> dict[str, Any]:
->>>  160:     """Parse and validate tool parameters.
->>>  161:
->>>  162:     Args:
->>>  163:         params: Tool parameters as dict. If you have a JSON string,
->>>  164:                 deserialize it first: parse_tool_params(json.loads(json_str))
->>>  165:
->>>  166:     Returns:
->>>  167:         Validated parameter dict.
->>>  168:     """
->>>  169:     return TypeAdapter(dict[str, Any]).validate_python(params)
-     170:
-     171:
-     172: def parse_tools_list(tools: Any) -> list[dict[str, Any]]:
-     173:     """Parse a list of tools into validated dicts.
-     174:
-```
-
-### `unnecessary-wrapper-functions.yaml` / `occ-1`
-
-File: `adgn/src/adgn/agent/agent.py`
-
-> Trivial wrapper functions that add no abstraction value. Only create wrapper
-> functions when they add real abstraction (combine multiple operations),
-> provide domain-specific naming clarity, or encapsulate complex logic.
->
-> **Note:** \_normalize_call_arguments accepts dict[str, Any] | str | None but dict case never occurs; defensive check for
-> impossible case
-
-```
-     144:
-     145: def _abort_result(reason: str | None = None) -> CallToolResult:
-     146:     return _make_error_result(reason or DEFAULT_ABORT_ERROR)
-     147:
-     148:
->>>  149: def _normalize_call_arguments(arguments: dict[str, Any] | str | None) -> str | None:
->>>  150:     """Normalize function call arguments to JSON string.
->>>  151:
->>>  152:     Args:
->>>  153:         arguments: Structured data (dict), pre-serialized JSON string, or None.
->>>  154:
->>>  155:     Returns:
->>>  156:         JSON string representation or None if arguments is None.
->>>  157:     """
->>>  158:     if arguments is None or isinstance(arguments, str):
->>>  159:         return arguments
->>>  160:     return json.dumps(arguments)
-     161:
-     162:
-     163: def _call_tool_result_from_json(output: str) -> CallToolResult:
-     164:     """Parse CallToolResult from JSON using Pydantic for validation.
-     165:
-   ...
-     264:             raise
-     265:
-     266:     async def _handle_pending_tool_calls(self) -> None:
-     267:         function_calls: list[FunctionCallItem] = list(self.pending_function_calls)
-     268:         calls: list[tuple[FunctionCallItem, str | None]] = [
->>>  269:             (function_call, _normalize_call_arguments(function_call.arguments)) for function_call in function_calls
-     270:         ]
-     271:
-     272:         local_result_map: dict[str, CallToolResult] = {
-     273:             evt.call_id: evt.result for evt in self._transcript if isinstance(evt, ToolCallOutput)
-     274:         }
-```
-
-### `yaml-loader-falsy-coercion.yaml` / `occ-0`
-
-File: `adgn/src/adgn/agent/presets.py`
-
-> \_load_yaml coerces any falsy YAML payload to {} before the type check (line 35:
-> `data = yaml.safe_load(f) or {}`). This means non-mapping presets like [], 0, false, or None
-> are silently treated as empty mappings, bypassing the isinstance(data, dict) check on line 36
-> that should raise "preset must be a mapping". The `or {}` should be removed - let yaml.safe_load
-> return whatever it returns, and let the isinstance check fail naturally for non-dict values.
-> This hides malformed presets and causes downstream validation errors instead of clear early
-> failures.
-
-```
-      30:     modified_at: str | None = Field(None, description="Last modification time (ISO-8601 string)")
-      31:
-      32:
-      33: def _load_yaml(path: Path) -> dict[str, JsonValue]:
-      34:     with path.open("r", encoding="utf-8") as f:
->>>   35:         data = yaml.safe_load(f) or {}
-      36:     if not isinstance(data, dict):
-      37:         raise ValueError(f"preset must be a mapping: {path}")
-      38:     return cast(dict[str, JsonValue], data)
-      39:
-      40:
-```
-
 ## ducktape/2025-12-04-00 (30)
 
 ### `cast-may-be-unnecessary.yaml` / `occ-0`
 
-File: `adgn/src/adgn/props/grader/models.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/cast-may-be-unnecessary.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/props/grader/models.py#L307)
+
+File: `adgn/src/adgn/props/grader/models.py` (L307)
 
 > Line 307 uses cast(GradeValidationContext, ctx) after already checking isinstance.
 > After the isinstance check on line 305, mypy should already know the type.
 > The cast may be unnecessary redundancy.
 
 ```
-     302:             return None
-     303:         ctx = info.context.get("grade_validation_context")
      304:         if ctx is None or not isinstance(ctx, GradeValidationContext):
      305:             return None
      306:         return cast(GradeValidationContext, ctx)
@@ -2009,13 +8176,13 @@ File: `adgn/src/adgn/props/grader/models.py`
      308:     @property
      309:     def _mentioned_tp_ids(self) -> set[InputIssueID]:
      310:         """Input IDs mentioned in canonical TP coverage."""
-     311:         return set().union(*(cov.covered_by.keys() for cov in self.canonical_tp_coverage.values()))
-     312:
 ```
 
 ### `dead-code.yaml` / `occ-7`
 
-File: `adgn/src/adgn/openai_utils/model.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/openai_utils/model.py#L348-L357)
+
+File: `adgn/src/adgn/openai_utils/model.py` (L348-357)
 
 > Dead code that should be removed. These are definitions with zero call sites,
 > commented-out code, or infrastructure left over from migrations.
@@ -2023,8 +8190,6 @@ File: `adgn/src/adgn/openai_utils/model.py`
 > **Note:** Dead `responses` property providing unused .responses.create() interface
 
 ```
-     343:
-     344: @dataclass
      345: class OpenAIModel:
      346:     client: AsyncOpenAI
      347:
@@ -2041,13 +8206,13 @@ File: `adgn/src/adgn/openai_utils/model.py`
      358:
      359:     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
      360:         """Create a Responses completion (non-streaming) and convert to our types."""
-     361:         if not isinstance(req, ResponsesRequest):
-     362:             raise TypeError("responses_create expects a ResponsesRequest instance")
 ```
 
 ### `dead-code.yaml` / `occ-8`
 
-File: `adgn/src/adgn/openai_utils/model.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/dead-code.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/openai_utils/model.py#L218-L230)
+
+File: `adgn/src/adgn/openai_utils/model.py` (L218-230)
 
 > Dead code that should be removed. These are definitions with zero call sites,
 > commented-out code, or infrastructure left over from migrations.
@@ -2055,8 +8220,6 @@ File: `adgn/src/adgn/openai_utils/model.py`
 > **Note:** Dead \_coerce_text validator in AssistantMessageOut - coercion logic never triggered
 
 ```
-     213:
-     214:     kind: Literal["assistant_message"] = "assistant_message"
      215:     parts: list[OutputText]
      216:     model_config = ConfigDict(extra="allow")
      217:
@@ -2076,13 +8239,13 @@ File: `adgn/src/adgn/openai_utils/model.py`
      231:
      232:     @property
      233:     def text(self) -> str:
-     234:         return "\n".join(part.text for part in self.parts if part.text)
-     235:
 ```
 
 ### `dead-constants-runs-context.yaml` / `occ-0`
 
-File: `adgn/src/adgn/props/runs_context.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/dead-constants-runs-context.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/props/runs_context.py#L15-L19)
+
+File: `adgn/src/adgn/props/runs_context.py` (L15-19)
 
 > Lines 15-19 define five constants (RUN_TYPE_CRITIC, RUN_TYPE_GRADER, INPUT_JSON, OUTPUT_JSON, EVENTS_JSONL)
 > that are
@@ -2102,8 +8265,6 @@ File: `adgn/src/adgn/props/runs_context.py`
 >   module's purpose is being violated by not using these centralized constants.
 
 ```
-      10: from pathlib import Path
-      11:
       12: from adgn.props.prop_utils import pkg_dir
       13:
       14: # Path token constants - single source of truth
@@ -2115,13 +8276,13 @@ File: `adgn/src/adgn/props/runs_context.py`
       20:
       21:
       22: def format_timestamp_session(dt: datetime | None = None) -> str:
-      23:     """Standard timestamp format for session/output directories: YYYYMMDD_HHMMSS.
-      24:
 ```
 
 ### `duplicate-exit-code-constants.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/_shared/constants.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/duplicate-exit-code-constants.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/mcp/_shared/constants.py#L18-L27)
+
+File: `adgn/src/adgn/mcp/_shared/constants.py` (L18-27)
 
 > Exit code constants (SIGNAL_EXIT_OFFSET, signal_exit_code(), EXIT_CODE_SIGTERM,
 > EXIT_CODE_SIGKILL) are duplicated in both \_shared/constants.py and exec/models.py
@@ -2137,8 +8298,6 @@ File: `adgn/src/adgn/mcp/_shared/constants.py`
 > **Note:** First definition in shared constants
 
 ```
-      13:
-      14: # Canonical server/tool names for the agent runtime Docker MCP server
       15: RUNTIME_SERVER_NAME: Final[str] = "runtime"
       16: RUNTIME_EXEC_TOOL_NAME: Final[str] = "exec"
       17: RUNTIME_CONTAINER_INFO_URI: Final[str] = "resource://container.info"
@@ -2155,13 +8314,13 @@ File: `adgn/src/adgn/mcp/_shared/constants.py`
       28:
       29: # Common server names
       30: CRITIC_SUBMIT_SERVER_NAME: Final[str] = "critic_submit"
-      31: MATRIX_CONTROL_SERVER_NAME: Final[str] = "matrix_control"
-      32: UI_SERVER_NAME: Final[str] = "ui"
 ```
 
 ### `duplicate-exit-code-constants.yaml` / `occ-1`
 
-File: `adgn/src/adgn/mcp/exec/models.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/duplicate-exit-code-constants.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/mcp/exec/models.py#L14-L56)
+
+File: `adgn/src/adgn/mcp/exec/models.py` (L14-19, L55-56)
 
 > Exit code constants (SIGNAL_EXIT_OFFSET, signal_exit_code(), EXIT_CODE_SIGTERM,
 > EXIT_CODE_SIGKILL) are duplicated in both \_shared/constants.py and exec/models.py
@@ -2177,8 +8336,6 @@ File: `adgn/src/adgn/mcp/exec/models.py`
 > **Note:** Duplicate definition in exec/models
 
 ```
-       9: import time
-      10: from typing import Annotated, Final, Literal
       11:
       12: from pydantic import BaseModel, ConfigDict, Field
       13:
@@ -2191,11 +8348,7 @@ File: `adgn/src/adgn/mcp/exec/models.py`
       20:
       21:
       22: def perf_timer() -> float:
-      23:     """Get current performance counter time."""
-      24:     return time.perf_counter()
    ...
-      50:         return round((loop.time() - start_time) * 1000)
-      51:
       52:     yield get_duration_ms
       53:
       54:
@@ -2204,13 +8357,13 @@ File: `adgn/src/adgn/mcp/exec/models.py`
       57:
       58: # Cap for stdout/stderr/stdin bytes in exec-like servers
       59: MAX_BYTES_CAP = 100_000
-      60:
-      61: # Cap for execution timeout across exec-like servers (milliseconds)
 ```
 
 ### `manual-snapshot-yaml-update.yaml` / `occ-0`
 
-File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/manual-snapshot-yaml-update.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/props/cli_app/cmd_build_bundle.py#L335-L363)
+
+File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py` (L335-363)
 
 > The `cmd_build_bundle` function (lines 335-363) uses pygit2 to create filtered
 > commits and tags for snapshot bundles, but doesn't return the mapping of tag names
@@ -2226,8 +8379,6 @@ File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
 > snapshots.yaml updates.
 
 ```
-     330:         if not p.exists() or not p.is_dir():
-     331:             raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
      332:         return p
      333:
      334:
@@ -2264,7 +8415,9 @@ File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
 
 ### `missing-docker-cpu-limit.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/_shared/container_session.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/missing-docker-cpu-limit.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/mcp/_shared/container_session.py#L52-L129)
+
+File: `adgn/src/adgn/mcp/_shared/container_session.py` (L99-129, L52-61)
 
 > Docker containers created by ContainerOptions and \_build_host_config() do not
 > specify CPU limits. While the containers are otherwise well-isolated, it would be
@@ -2285,8 +8438,23 @@ File: `adgn/src/adgn/mcp/_shared/container_session.py`
 > host_config["NanoCpus"] = opts.nano_cpus or (2 \* 1_000_000_000) # 2 CPUs default
 
 ```
-      94:
-      95: def _session_state_from_ctx(ctx: Any) -> ContainerSessionState:
+      49:     return shlex.join(list(cmd))
+      50:
+      51:
+>>>   52: @dataclass
+>>>   53: class ContainerOptions:
+>>>   54:     image: str
+>>>   55:     working_dir: Path = WORKING_DIR
+>>>   56:     volumes: dict[str, dict[str, str]] | list[str] | None = None
+>>>   57:     network_mode: str = "none"
+>>>   58:     environment: dict[str, str] | None = None
+>>>   59:     labels: dict[str, str] | None = None
+>>>   60:     describe: bool = True
+>>>   61:     ephemeral: bool = False
+      62:
+      63:     def to_container_config(
+      64:         self,
+   ...
       96:     return cast(ContainerSessionState, ctx.request_context.lifespan_context)
       97:
       98:
@@ -2324,34 +8492,13 @@ File: `adgn/src/adgn/mcp/_shared/container_session.py`
      130:
      131:
      132: async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) -> dict[str, Any]:
-     133:     container_config = opts.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=True)
-     134:
-   ...
-      47:
-      48: def _shell_join(cmd: Iterable[str]) -> str:
-      49:     return shlex.join(list(cmd))
-      50:
-      51:
->>>   52: @dataclass
->>>   53: class ContainerOptions:
->>>   54:     image: str
->>>   55:     working_dir: Path = WORKING_DIR
->>>   56:     volumes: dict[str, dict[str, str]] | list[str] | None = None
->>>   57:     network_mode: str = "none"
->>>   58:     environment: dict[str, str] | None = None
->>>   59:     labels: dict[str, str] | None = None
->>>   60:     describe: bool = True
->>>   61:     ephemeral: bool = False
-      62:
-      63:     def to_container_config(
-      64:         self,
-      65:         *,
-      66:         cmd: list[str],
 ```
 
 ### `missing-docker-memory-limit.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/_shared/container_session.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/missing-docker-memory-limit.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/mcp/_shared/container_session.py#L52-L129)
+
+File: `adgn/src/adgn/mcp/_shared/container_session.py` (L99-129, L52-61)
 
 > Docker containers created by ContainerOptions and \_build_host_config() do not
 > specify memory limits. While containers are isolated by network mode ("none") and
@@ -2371,8 +8518,23 @@ File: `adgn/src/adgn/mcp/_shared/container_session.py`
 > host_config["Memory"] = opts.mem_limit or (2 * 1024 \_ 1024 \* 1024) # 2GB default
 
 ```
-      94:
-      95: def _session_state_from_ctx(ctx: Any) -> ContainerSessionState:
+      49:     return shlex.join(list(cmd))
+      50:
+      51:
+>>>   52: @dataclass
+>>>   53: class ContainerOptions:
+>>>   54:     image: str
+>>>   55:     working_dir: Path = WORKING_DIR
+>>>   56:     volumes: dict[str, dict[str, str]] | list[str] | None = None
+>>>   57:     network_mode: str = "none"
+>>>   58:     environment: dict[str, str] | None = None
+>>>   59:     labels: dict[str, str] | None = None
+>>>   60:     describe: bool = True
+>>>   61:     ephemeral: bool = False
+      62:
+      63:     def to_container_config(
+      64:         self,
+   ...
       96:     return cast(ContainerSessionState, ctx.request_context.lifespan_context)
       97:
       98:
@@ -2410,34 +8572,13 @@ File: `adgn/src/adgn/mcp/_shared/container_session.py`
      130:
      131:
      132: async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) -> dict[str, Any]:
-     133:     container_config = opts.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=True)
-     134:
-   ...
-      47:
-      48: def _shell_join(cmd: Iterable[str]) -> str:
-      49:     return shlex.join(list(cmd))
-      50:
-      51:
->>>   52: @dataclass
->>>   53: class ContainerOptions:
->>>   54:     image: str
->>>   55:     working_dir: Path = WORKING_DIR
->>>   56:     volumes: dict[str, dict[str, str]] | list[str] | None = None
->>>   57:     network_mode: str = "none"
->>>   58:     environment: dict[str, str] | None = None
->>>   59:     labels: dict[str, str] | None = None
->>>   60:     describe: bool = True
->>>   61:     ephemeral: bool = False
-      62:
-      63:     def to_container_config(
-      64:         self,
-      65:         *,
-      66:         cmd: list[str],
 ```
 
 ### `mkdir-in-wrong-location.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/transcript_handler.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/mkdir-in-wrong-location.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/agent/transcript_handler.py#L36-L37)
+
+File: `adgn/src/adgn/agent/transcript_handler.py` (L36-37)
 
 > Lines 36-37 in transcript_handler.py create the parent directory in `__init__`, which performs I/O
 > during object construction. The comment on line 36 ("Create parent directory if needed") and the mkdir
@@ -2446,8 +8587,6 @@ File: `adgn/src/adgn/agent/transcript_handler.py`
 > be performed once before the first write operation.
 
 ```
-      31:       MiniCodex.create(..., handlers=[h, ...])
-      32:     """
       33:
       34:     def __init__(self, *, events_path: Path) -> None:
       35:         self._events_path = events_path
@@ -2456,13 +8595,13 @@ File: `adgn/src/adgn/agent/transcript_handler.py`
       38:         # Fail fast if a transcript already exists at destination
       39:         if self._events_path.exists():
       40:             raise FileExistsError(f"Transcript already exists: {self._events_path}")
-      41:
-      42:     # ---- Event helpers ----
 ```
 
 ### `nullable-with-defaults.yaml` / `occ-0`
 
-File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/nullable-with-defaults.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/props/cli_app/cmd_build_bundle.py#L18-L44)
+
+File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py` (L18-44)
 
 > The apply_gitignore_patterns function accepts include and exclude as list[str] | None,
 > then checks "if include:" and "if exclude:" at lines 37-42. These parameters should
@@ -2470,8 +8609,6 @@ File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
 > need for None checks. This makes the contract clearer and reduces defensive code.
 
 ```
-      13: import yaml
-      14:
       15: from adgn.props.models.snapshot import GitSource, SnapshotDoc
       16:
       17:
@@ -2505,13 +8642,13 @@ File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
       45:
       46:
       47: def get_tree_files(repo: pygit2.Repository, tree: pygit2.Tree, prefix: str = "") -> dict[str, tuple[pygit2.Oid, int]]:
-      48:     """Get all files in a tree recursively as path -> (oid, filemode) mappings."""
-      49:     files: dict[str, tuple[pygit2.Oid, int]] = {}
 ```
 
 ### `openai-utils-bypass-reasoning-params.yaml` / `occ-0`
 
-File: `adgn/src/adgn/openai_utils/model.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/openai-utils-bypass-reasoning-params.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/openai_utils/model.py#L178-L391)
+
+File: `adgn/src/adgn/openai_utils/model.py` (L390-391, L178)
 
 > Lines 390-391 in `BoundOpenAIModel.responses_create()` manually construct the reasoning dict:
 >
@@ -2539,8 +8676,14 @@ File: `adgn/src/adgn/openai_utils/model.py`
 > Manual dict manipulation after `to_kwargs()` bypasses the type system and creates maintenance burden.
 
 ```
-     385:
-     386:     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+     175:     parallel_tool_calls: bool | None = None
+     176:     stream: bool = False
+     177:     store: bool | None = None
+>>>  178:     reasoning: ReasoningParams | None = None
+     179:     max_output_tokens: int | None = None
+     180:
+     181:     # Allow unknown fields for forward-compat (timeouts, metadata, etc.)
+   ...
      387:         kwargs = req.to_kwargs()
      388:         # Enforce bound-model contract: always use the instance's model
      389:         kwargs["model"] = self.model
@@ -2549,50 +8692,19 @@ File: `adgn/src/adgn/openai_utils/model.py`
      392:         sdk_resp: Response = await self.client.responses.create(**kwargs)
      393:         return ResponsesResult.from_sdk(sdk_resp)
      394:
-     395:
-     396: # ---------------------------------------------
-   ...
-     173:     tools: list[FunctionToolParam] | None = None
-     174:     tool_choice: ToolChoice | None = None
-     175:     parallel_tool_calls: bool | None = None
-     176:     stream: bool = False
-     177:     store: bool | None = None
->>>  178:     reasoning: ReasoningParams | None = None
-     179:     max_output_tokens: int | None = None
-     180:
-     181:     # Allow unknown fields for forward-compat (timeouts, metadata, etc.)
-     182:     model_config = ConfigDict(extra="allow")
-     183:
 ```
 
 ### `openai-utils-redundant-singledispatch.yaml` / `occ-0`
 
-File: `adgn/src/adgn/openai_utils/model.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/openai-utils-redundant-singledispatch.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/openai_utils/model.py#L261-L273)
+
+File: `adgn/src/adgn/openai_utils/model.py` (L261-273)
 
 > Lines 261-273 contain three redundant `@singledispatch` registered functions that are identical - they all
-> just return
-> `item` unchanged with the same comment "No conversion needed, X is already an InputItem".
+> just return `item` unchanged with the same comment "No conversion needed, X is already an InputItem".
 >
-> Current pattern (duplicated 3 times):
->
-> ```python
-> @response_out_item_to_input.register
-> def _(item: ReasoningItem) -> InputItem:
->     return item  # No conversion needed, ReasoningItem is already an InputItem
->
-> @response_out_item_to_input.register
-> def _(item: FunctionCallItem) -> InputItem:
->     return item  # No conversion needed, FunctionCallItem is already an InputItem
->
-> @response_out_item_to_input.register
-> def _(item: FunctionCallOutputItem) -> InputItem:
->     return item  # No conversion needed, FunctionCallOutputItem is already an InputItem
-> ```
->
-> While `@singledispatch.register` doesn't support Union types like `item: (ReasoningItem | FunctionCallItem |
-...)`,
-> you
-> CAN register the same function for multiple types to avoid duplication:
+> While `@singledispatch.register` doesn't support Union types, you CAN register the same function for
+> multiple types to avoid duplication:
 >
 > ```python
 > def _identity(item: InputItem) -> InputItem:
@@ -2603,19 +8715,9 @@ File: `adgn/src/adgn/openai_utils/model.py`
 > response_out_item_to_input.register(FunctionCallOutputItem)(_identity)
 > ```
 >
-> Or in a loop:
->
-> ```python
-> _identity_types = [ReasoningItem, FunctionCallItem, FunctionCallOutputItem]
-> for typ in _identity_types:
->     response_out_item_to_input.register(typ)(lambda item: item)
-> ```
->
 > This eliminates the redundant function definitions while maintaining the same dispatch behavior.
 
 ```
-     256: @singledispatch
-     257: def response_out_item_to_input(item: BaseModel) -> InputItem:
      258:     raise TypeError(f"Unsupported response item type: {type(item)!r}")
      259:
      260:
@@ -2635,13 +8737,13 @@ File: `adgn/src/adgn/openai_utils/model.py`
      274:
      275:
      276: @response_out_item_to_input.register
-     277: def _(item: AssistantMessageOut) -> InputItem:
-     278:     return item.to_input_item()
 ```
 
 ### `openai-utils-silent-error-skip.yaml` / `occ-0`
 
-File: `adgn/src/adgn/openai_utils/model.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/openai-utils-silent-error-skip.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/openai_utils/model.py#L281-L332)
+
+File: `adgn/src/adgn/openai_utils/model.py` (L281, L292-293, L330-332)
 
 > The `_message_output_to_assistant` function (lines 281-294) returns `AssistantMessageOut | None`, and when it
 > returns
@@ -2664,8 +8766,6 @@ File: `adgn/src/adgn/openai_utils/model.py`
 > Errors must cause breakage/raise, not be silently skipped.
 
 ```
-     276: @response_out_item_to_input.register
-     277: def _(item: AssistantMessageOut) -> InputItem:
      278:     return item.to_input_item()
      279:
      280:
@@ -2673,11 +8773,7 @@ File: `adgn/src/adgn/openai_utils/model.py`
      282:     parts: list[OutputText] = []
      283:     for content_item in message.content:
      284:         if isinstance(content_item, ResponseOutputText):
-     285:             part = OutputText(
-     286:                 text=content_item.text,
    ...
-     287:                 annotations=[annotation.model_dump(exclude_none=True) for annotation in content_item.annotations]
-     288:                 if content_item.annotations
      289:                 else None,
      290:             )
      291:             parts.append(part)
@@ -2686,11 +8782,7 @@ File: `adgn/src/adgn/openai_utils/model.py`
      294:     return AssistantMessageOut(parts=parts)
      295:
      296:
-     297: # Removed legacy aliases; use AssistantMessageOut and OutputText explicitly
-     298:
    ...
-     325:                         id=item.id,
-     326:                         status=item.status,
      327:                     )
      328:                 )
      329:             elif isinstance(item, ResponseOutputMessage):
@@ -2700,13 +8792,13 @@ File: `adgn/src/adgn/openai_utils/model.py`
      333:             else:
      334:                 raise NotImplementedError(f"Unsupported output item type: {type(item)}")
      335:         usage = ResponseUsage.from_sdk(sdk_resp.usage) if sdk_resp.usage else None
-     336:         return cls(id=sdk_resp.id, usage=usage, output=out_items)
-     337:
 ```
 
 ### `redundant-checks.yaml` / `occ-0`
 
-File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/redundant-checks.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/props/cli_app/cmd_build_bundle.py#L224-L235)
+
+File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py` (L224-235)
 
 > Redundant checks and guards that serve no purpose and can be removed. These include checking the same
 > condition twice,
@@ -2715,8 +8807,6 @@ File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
 > **Note:** Checks for bundle metadata twice - first at line 226 with dict.get(), then at line 233 with validated model
 
 ```
-     219:
-     220:     with snapshots_yaml.open() as f:
      221:         snapshots_data = yaml.safe_load(f) or {}
      222:
      223:     results = []
@@ -2735,13 +8825,13 @@ File: `adgn/src/adgn/props/cli_app/cmd_build_bundle.py`
      236:     return results
      237:
      238:
-     239: def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_bundle: Path) -> None:
-     240:     """Internal bundle building implementation.
 ```
 
 ### `redundant-checks.yaml` / `occ-2`
 
-File: `adgn/src/adgn/agent/agent.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/redundant-checks.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/agent/agent.py#L87)
+
+File: `adgn/src/adgn/agent/agent.py` (L87)
 
 > Redundant checks and guards that serve no purpose and can be removed. These include checking the same
 > condition twice,
@@ -2750,8 +8840,6 @@ File: `adgn/src/adgn/agent/agent.py`
 > **Note:** Redundant isinstance check: "if not isinstance(call_id, str) or not call_id" - second condition is sufficient
 
 ```
-      82:     was_aborted: bool = False
-      83:
       84:
       85: def _require_call_id(function_call: FunctionCallItem) -> str:
       86:     call_id = function_call.call_id
@@ -2759,13 +8847,13 @@ File: `adgn/src/adgn/agent/agent.py`
       88:         raise RuntimeError("FunctionCallItem missing call_id")
       89:     return call_id
       90:
-      91:
-      92: def _dump_call_tool_result(res: mcp_types.CallToolResult) -> str:
 ```
 
 ### `redundant-compositor-names.yaml` / `occ-0`
 
-File: `adgn/tests/conftest.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/redundant-compositor-names.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/tests/conftest.py#L81-L473)
+
+File: `adgn/tests/conftest.py` (L81, L355, L379, L411, L473)
 
 > Multiple places instantiate `Compositor` with explicit name arguments (e.g., `Compositor("test")`,
 > `Compositor("comp")`), but these names serve no functional purpose in most cases.
@@ -2797,8 +8885,6 @@ File: `adgn/tests/conftest.py`
 > **Note:** Test fixtures using arbitrary "comp" name - name never referenced
 
 ```
-      76:     # Ensure runtime/policy evaluation containers use a single image tag.
-      77:     os.environ.setdefault("ADGN_RUNTIME_IMAGE", DEFAULT_RUNTIME_IMAGE)
       78:
       79:
       80: def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -2806,11 +8892,7 @@ File: `adgn/tests/conftest.py`
       82:         if item.get_closest_marker("requires_sandbox_exec") is not None:
       83:             item.add_marker(pytest.mark.macos)
       84:
-      85:
-      86: def pytest_runtest_setup(item: pytest.Item) -> None:
    ...
-     350:
-     351:
      352: @pytest.fixture
      353: async def pg_compositor_echo(echo_spec, make_pg_compositor):
      354:     """Async fixture with echo server and policy gateway.
@@ -2818,11 +8900,7 @@ File: `adgn/tests/conftest.py`
      356:     Yields (client, compositor, policy_engine).
      357:     """
      358:     async with make_pg_compositor(echo_spec) as result:
-     359:         yield result
-     360:
    ...
-     374:     """Async helper to open a Compositor + Client with NotificationsBuffer.
-     375:
      376:     Yields (client, compositor, buffer) so tests can read buffered notifications
      377:     or pass buffer.poll into handlers.
      378:     """
@@ -2830,11 +8908,7 @@ File: `adgn/tests/conftest.py`
      380:     @asynccontextmanager
      381:     async def _open(servers: McpServerSpecs):
      382:         comp = Compositor("comp")
-     383:         await _mount_servers(comp, servers)
-     384:         buf = NotificationsBuffer(compositor=comp)
    ...
-     406: @pytest.fixture
-     407: def live_openai(request):
      408:     """Provide a live AsyncOpenAI client for tests marked with `live_llm`.
      409:
      410:     - For non-`live_llm` tests that include this fixture in the signature but
@@ -2842,11 +8916,7 @@ File: `adgn/tests/conftest.py`
      412:       return a lightweight no-op placeholder to avoid network work and keep
      413:       those tests running.
      414:     - For `live_llm` tests, require OPENAI_API_KEY and construct AsyncOpenAI;
-     415:       skip if the key is not available.
-     416:     """
    ...
-     468:     """
-     469:
      470:     def _make(decision: ApprovalDecision) -> PolicyEngine:
      471:         policy_source = make_policy_source(decision)
      472:         return make_approval_policy_server(policy_source)
@@ -2854,21 +8924,19 @@ File: `adgn/tests/conftest.py`
      474:     return _make
      475:
      476:
-     477: @pytest.fixture
-     478: async def approval_policy_reader_allow_all(sqlite_persistence, docker_client) -> FastMCP:
 ```
 
 ### `redundant-path-construction.yaml` / `occ-0`
 
-File: `adgn/src/adgn/inop/engine/models.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/redundant-path-construction.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/inop/engine/models.py#L380)
+
+File: `adgn/src/adgn/inop/engine/models.py` (L380)
 
 > Line 380 converts self.workspace_path (str) to Path, but this field should already be typed as Path at the
 > class
 > definition level. The conversion is redundant if the model properly validates the field type on construction.
 
 ```
-     375:
-     376:         Returns:
      377:             Dictionary mapping relative file paths to contents
      378:         """
      379:         files: dict[str, str] = {}
@@ -2876,13 +8944,13 @@ File: `adgn/src/adgn/inop/engine/models.py`
      381:
      382:         if not directory_path.exists():
      383:             return files
-     384:
-     385:         for root, _, filenames in os.walk(self.workspace_path):
 ```
 
 ### `redundant-pydantic-type-param.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/agent.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/redundant-pydantic-type-param.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/agent/agent.py#L133)
+
+File: `adgn/src/adgn/agent/agent.py` (L133)
 
 > Line 133 in agent.py explicitly sets `type="text"` when constructing a TextContent object:
 > `mcp_types.TextContent(type="text", text=message)`. This parameter is redundant if "text" is the
@@ -2890,8 +8958,6 @@ File: `adgn/src/adgn/agent/agent.py`
 > unless it's required by the Pydantic model definition (i.e., has no default).
 
 ```
-     128:             raise NotImplementedError(f"Unsupported CallToolResult content type: {type(block).__name__}")
-     129:     return None
      130:
      131:
      132: def _make_error_result(message: str) -> mcp_types.CallToolResult:
@@ -2899,13 +8965,13 @@ File: `adgn/src/adgn/agent/agent.py`
      134:
      135:
      136: DEFAULT_ABORT_ERROR = "tool execution aborted"
-     137:
-     138:
 ```
 
 ### `redundant-snapshot-hydration.yaml` / `occ-0`
 
-File: `adgn/src/adgn/props/gepa/gepa_adapter.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/redundant-snapshot-hydration.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/props/gepa/gepa_adapter.py#L195-L334)
+
+File: `adgn/src/adgn/props/gepa/gepa_adapter.py` (L308-334, L195, L256)
 
 > GEPA optimization repeatedly hydrates the same snapshots, causing ~200 redundant tar extractions and file
 > discoveries
@@ -2962,8 +9028,22 @@ File: `adgn/src/adgn/props/gepa/gepa_adapter.py`
 > This would reduce ~200 hydrations to ~10, saving 3-6 minutes per optimization run.
 
 ```
-     303: # =============================================================================
-     304: # Dataset Loading
+     192:         slug = specimen_input.slug
+     193:
+     194:         # Run critic
+>>>  195:         async with self.registry.load_and_hydrate(slug) as hydrated:
+     196:             critic_input = CriticInput(snapshot_slug=slug, files=ALL_FILES_WITH_ISSUES, prompt_sha256=prompt_sha256)
+     197:
+     198:             critic_output, critic_run_id, critique_id = await run_critic(
+   ...
+     253:         prompt_sha256 = hash_and_upsert_prompt(system_prompt)
+     254:
+     255:         # Run all specimens in parallel
+>>>  256:         tasks = [self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces) for specimen_input in batch]
+     257:         results = await asyncio.gather(*tasks)
+     258:
+     259:         return list(results)
+   ...
      305: # =============================================================================
      306:
      307:
@@ -2997,37 +9077,13 @@ File: `adgn/src/adgn/props/gepa/gepa_adapter.py`
      335:
      336:
      337: def load_training_examples(specimens_dir: Path | None = None) -> tuple[list[TrainingExample], list[TrainingExample]]:
-     338:     """Load train and validation TrainingExamples from filesystem.
-     339:
-   ...
-     190:     ) -> EvaluationResult:
-     191:         """Evaluate a single specimen (for parallel execution)."""
-     192:         slug = specimen_input.slug
-     193:
-     194:         # Run critic
->>>  195:         async with self.registry.load_and_hydrate(slug) as hydrated:
-     196:             critic_input = CriticInput(snapshot_slug=slug, files=ALL_FILES_WITH_ISSUES, prompt_sha256=prompt_sha256)
-     197:
-     198:             critic_output, critic_run_id, critique_id = await run_critic(
-     199:                 input_data=critic_input,
-     200:                 client=self.client,
-   ...
-     251:         """Async implementation of evaluate - runs specimens in parallel."""
-     252:         system_prompt = candidate["system_prompt"]
-     253:         prompt_sha256 = hash_and_upsert_prompt(system_prompt)
-     254:
-     255:         # Run all specimens in parallel
->>>  256:         tasks = [self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces) for specimen_input in batch]
-     257:         results = await asyncio.gather(*tasks)
-     258:
-     259:         return list(results)
-     260:
-     261:     def make_reflective_dataset(
 ```
 
 ### `resources-list-missing-inproc-servers.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/resources/server.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/resources-list-missing-inproc-servers.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/mcp/resources/server.py#L348-L349)
+
+File: `adgn/src/adgn/mcp/resources/server.py` (L348-349)
 
 > The resources server's `list_resources_tool` function (lines 343-368) only inspects servers mounted from
 > specs,
@@ -3070,18 +9126,9 @@ File: `adgn/src/adgn/mcp/resources/server.py`
 > This ensures resources from ALL mounted servers (both spec-based and inproc) are included in the list results,
 > maintaining consistency with how tools are already multiplexed.
 >
-> **Impact:**
->
-> - Agents currently cannot discover resources from inproc servers like compositor_meta (which exposes server
->   state,
->   mount info, etc.)
-> - The resources.subscriptions index resource (line 287) is itself hosted by the resources server,
->   so it likely doesn't appear in its own list results
-> - Any other inproc servers mounted dynamically are invisible to agents
+> **Impact:** Agents cannot discover resources from inproc servers like compositor_meta or resources server itself.
 
 ```
-     343:     async def list_resources_tool(input: ResourcesListArgs) -> ResourcesListResult:
-     344:         """List resources via aggregator; derive origin using FastMCP prefix logic."""
      345:         # Call compositor's internal _list_resources_mcp directly to avoid client dependency
      346:         # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
      347:         mcp_list = await compositor._list_resources_mcp()
@@ -3090,13 +9137,13 @@ File: `adgn/src/adgn/mcp/resources/server.py`
      350:         out: list[ResourceEntry] = []
      351:         for r in mcp_list:
      352:             uri_str = str(r.uri)
-     353:             try:
-     354:                 origin = derive_origin_server(uri_str, mount_names, compositor.resource_prefix_format)
 ```
 
 ### `session-passing.yaml` / `occ-0`
 
-File: `adgn/src/adgn/props/cli_app/cmd_db.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/session-passing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/props/cli_app/cmd_db.py#L47-L63)
+
+File: `adgn/src/adgn/props/cli_app/cmd_db.py` (L47-63)
 
 > Inconsistent session management: sync_detector_prompts() and sync_model_metadata()
 > don't take a session parameter, while sync_snapshots_to_db() and sync_issues_to_db() do.
@@ -3108,8 +9155,6 @@ File: `adgn/src/adgn/props/cli_app/cmd_db.py`
 > construction with all four calls inside the session context.
 
 ```
-      42:         DetectorPromptSyncResult(filename=filename, prompt_sha256=load_and_upsert_detector_prompt(filename))
-      43:         for filename in discover_detector_prompts()
       44:     ]
       45:
       46:
@@ -3133,13 +9178,13 @@ File: `adgn/src/adgn/props/cli_app/cmd_db.py`
       64:
       65:
       66: def recreate_database_schema() -> tuple[SyncStats, SyncStats]:
-      67:     """Recreate database from scratch (destructive).
-      68:
 ```
 
 ### `string-replace-db-url.yaml` / `occ-0`
 
-File: `adgn/src/adgn/props/prompt_optimizer.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/string-replace-db-url.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/props/prompt_optimizer.py#L370-L379)
+
+File: `adgn/src/adgn/props/prompt_optimizer.py` (L370-379)
 
 > Lines 370-379 read the database URL from environment variable PROPS_AGENT_DB_URL, then use string replacement
 > `agent_db_url.replace("localhost:5433", "props-postgres:5432")` to transform the host-side URL into a
@@ -3148,8 +9193,6 @@ File: `adgn/src/adgn/props/prompt_optimizer.py`
 > specific URL format and hardcodes both the source and target host/port values.
 
 ```
-     365:
-     366:         # Ground truth issues (TPs/FPs) are now accessed via database
      367:         # No longer mount libsonnet definitions from filesystem
      368:
      369:         # Get agent_user database URL from environment
@@ -3166,13 +9209,13 @@ File: `adgn/src/adgn/props/prompt_optimizer.py`
      380:             logger.info(f"Transformed agent_db_url for container: {agent_db_url}")
      381:
      382:         # Create Docker wiring (no /repo mount - would leak test specimen definitions!)
-     383:         # workspace_root will be mounted as /workspace (rw mode for agent to write prompts)
-     384:         wiring = properties_docker_spec(
 ```
 
 ### `subscribe-tools-wrong-input-type.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/resources/server.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/subscribe-tools-wrong-input-type.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/mcp/resources/server.py#L51-L413)
+
+File: `adgn/src/adgn/mcp/resources/server.py` (L386, L413, L51-52)
 
 > Lines 386 and 413 define subscribe/unsubscribe tools that use ResourcesReadArgs as their input type. However,
 > ResourcesReadArgs includes windowing parameters (start_offset and max_bytes on lines 51-52) that are only
@@ -3187,32 +9230,6 @@ File: `adgn/src/adgn/mcp/resources/server.py`
 > making the tool interface clearer and avoiding unnecessary parameters.
 
 ```
-     381:         # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
-     382:         contents = await compositor.read_resource_contents(uri_value)
-     383:         return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
-     384:
-     385:     @mcp.flat_model()
->>>  386:     async def subscribe(input: ResourcesReadArgs) -> SimpleOk:
-     387:         """Subscribe to updates for a resource."""
-     388:         await _ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
-     389:         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
-     390:         uri_value = ANY_URL.validate_python(prefixed)
-     391:         # Attempt subscribe; reflect success/error in index and re-raise on error.
-   ...
-     408:                 rec.last_error = None
-     409:             await _broadcast_subs_updated()
-     410:             return SimpleOk(ok=True)
-     411:
-     412:     @mcp.flat_model()
->>>  413:     async def unsubscribe(input: ResourcesReadArgs) -> SimpleOk:
-     414:         """Unsubscribe from updates for a resource."""
-     415:         await _ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
-     416:         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
-     417:         uri_value = ANY_URL.validate_python(prefixed)
-     418:         rec_key = (input.server, input.uri)
-   ...
-      46:
-      47:
       48: class ResourcesReadArgs(BaseModel):
       49:     server: str = Field(description="Origin MCP server name that owns the resource")
       50:     uri: str = Field(description="Resource URI as reported by the origin server's list")
@@ -3221,13 +9238,29 @@ File: `adgn/src/adgn/mcp/resources/server.py`
       53:     model_config = ConfigDict(extra="forbid")
       54:
       55:
-      56: # No compositor meta resources here; see adgn.mcp.compositor_meta.server
-      57:
+   ...
+     383:         return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
+     384:
+     385:     @mcp.flat_model()
+>>>  386:     async def subscribe(input: ResourcesReadArgs) -> SimpleOk:
+     387:         """Subscribe to updates for a resource."""
+     388:         await _ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
+     389:         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
+   ...
+     410:             return SimpleOk(ok=True)
+     411:
+     412:     @mcp.flat_model()
+>>>  413:     async def unsubscribe(input: ResourcesReadArgs) -> SimpleOk:
+     414:         """Unsubscribe from updates for a resource."""
+     415:         await _ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
+     416:         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
 ```
 
 ### `unnecessary-tuple-unpacking.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/approval_policy/engine.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/unnecessary-tuple-unpacking.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/mcp/approval_policy/engine.py#L566-L568)
+
+File: `adgn/src/adgn/mcp/approval_policy/engine.py` (L566-568)
 
 > The active_policy() resource handler unnecessarily calls get_policy() which
 > returns a tuple (source, version), then unpacks and discards the version:
@@ -3252,8 +9285,6 @@ File: `adgn/src/adgn/mcp/approval_policy/engine.py`
 > a different context (agent layer calling into MCP layer).
 
 ```
-     561:         @self.reader.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
-     562:         async def proposal_item(id: str) -> str:
      563:             if (got := await self.persistence.get_policy_proposal(self.agent_id, id)) is None:
      564:                 raise KeyError(id)
      565:             return got.content
@@ -3263,13 +9294,55 @@ File: `adgn/src/adgn/mcp/approval_policy/engine.py`
      569:             """List all pending tool call approval requests."""
      570:             items = [
      571:                 PendingCallItem(
-     572:                     call_id=call_id, tool_key=req.tool_key, args_json=req.tool_call.args_json if req.tool_call else None
-     573:                 )
+```
+
+### `unstaged-includes-staged.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/unstaged-includes-staged.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/git_commit_ai/editor_template.py#L46-L56)
+
+File: `adgn/src/adgn/git_commit_ai/editor_template.py` (L46-56)
+
+> Line 46 calls `_format_name_status(repo, include_all=True)` for unstaged files.
+> With `include_all=True`, `_diff()` uses `cached=False` which computes HEAD→worktree,
+> including both staged and unstaged changes. Should use index→worktree diff
+> (e.g., `repo.diff()` with no args) to show only unstaged changes.
+>
+> This is a design/logic error around `_diff()` and the `include_all` parameter.
+> The abstraction is confused: by the time diffs are computed, staging has already
+> happened (either explicitly via `git add` or via `-a` flag which calls
+> `repo.index.add_all()` at cli.py:711-713). The boolean conflates two distinct
+> diff types that should be explicit:
+>
+> - Staged: HEAD → index (what will be committed)
+> - Unstaged: index → worktree (modified but not staged)
+>
+> Fix: delete `_diff()` entirely and inline the two correct pygit2 calls.
+
+```
+      43:             template_text += f"#\t{status_text.ljust(12)} {filename}\n"
+      44:
+      45:     # Add unstaged changes if any
+>>>   46:     unstaged = (_format_name_status(repo, include_all=True) or "").splitlines()
+>>>   47:     if unstaged:
+>>>   48:         template_text += """#
+>>>   49: # Changes not staged for commit:
+>>>   50: #   (use "git add <file>..." to update what will be committed
+>>>   51: #   (use "git restore <file>..." to discard changes in working directory
+>>>   52: """
+>>>   53:         for line in unstaged:
+>>>   54:             status, filename = line.split("\t", 1)
+>>>   55:             status_text = status_letter_text(status[0])
+>>>   56:             template_text += f"#\t{status_text.ljust(12)} {filename}\n"
+      57:
+      58:     # Add untracked files if any
+      59:     untracked = [line[3:] for line in status_output.splitlines() if line.startswith("?? ")]
 ```
 
 ### `unused-seeded-prompts.yaml` / `occ-0`
 
-File: `adgn/tests/props/conftest.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/unused-seeded-prompts.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/tests/props/conftest.py#L255-L260)
+
+File: `adgn/tests/props/conftest.py` (L255-260)
 
 > The test_db fixture seeds four Prompt records that are never used by any test.
 > Lines 257-260 create prompts with sha256 values "test123", "unknown", "test", and
@@ -3279,8 +9352,6 @@ File: `adgn/tests/props/conftest.py`
 > its own entries. These seeded prompts should be deleted.
 
 ```
-     250:
-     251:     # Initialize schema in the new database
      252:     init_db(test_config.admin_url)
      253:     recreate_database()
      254:
@@ -3293,13 +9364,13 @@ File: `adgn/tests/props/conftest.py`
      261:
      262:     yield  # Test runs here
      263:
-     264:     # Cleanup: drop the test database
-     265:     with postgres_engine.connect() as conn:
 ```
 
 ### `useless-empty-check.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/compositor/server.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/useless-empty-check.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/mcp/compositor/server.py#L311-L312)
+
+File: `adgn/src/adgn/mcp/compositor/server.py` (L311-312)
 
 > Lines 311-312 silently succeed when given an empty server name: "if name in ('',): return". This is wrong
 > because if
@@ -3316,8 +9387,6 @@ File: `adgn/src/adgn/mcp/compositor/server.py`
 > silently returning. Silent success on invalid input masks bugs and makes debugging harder.
 
 ```
-     306:         if pinned:
-     307:             self._pinned_servers.add(name)
      308:         await self._notify_mount_listeners(name, MountEvent.MOUNTED)
      309:
      310:     async def unmount_server(self, name: str) -> None:
@@ -3326,13 +9395,13 @@ File: `adgn/src/adgn/mcp/compositor/server.py`
      313:         # Prevent unmount of pinned servers
      314:         if name in self._pinned_servers:
      315:             raise RuntimeError(f"server '{name}' is pinned and cannot be unmounted")
-     316:         async with self._lock:
-     317:             mount = self._mounts.pop(name, None)
 ```
 
 ### `useless-fast-path-check.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/agent.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/useless-fast-path-check.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/src/adgn/agent/agent.py#L620-L621)
+
+File: `adgn/src/adgn/agent/agent.py` (L620-621)
 
 > Lines 620-621 in agent.py contain a useless fast-path return that checks if there are pending
 > function calls before iterating and emitting results. This check doesn't provide any performance
@@ -3340,8 +9409,6 @@ File: `adgn/src/adgn/agent/agent.py`
 > The early return adds unnecessary code without improving performance or clarity.
 
 ```
-     615:         self._transcript.append(event)
-     616:         self._controller.on_tool_result(event)
      617:
      618:     # Exposed for abort flows: synthesize aborted outputs for all pending calls
      619:     def abort_pending_tool_calls(self) -> None:
@@ -3350,13 +9417,13 @@ File: `adgn/src/adgn/agent/agent.py`
      622:         for fc in list(self.pending_function_calls):
      623:             self._emit_tool_result(fc, _abort_result())
      624:         self.pending_function_calls.clear()
-     625:
-     626:     @property
 ```
 
 ### `uuid-test-db-name.yaml` / `occ-0`
 
-File: `adgn/tests/props/conftest.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/issues/uuid-test-db-name.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-12-04-00/code/adgn/tests/props/conftest.py#L232-L233)
+
+File: `adgn/tests/props/conftest.py` (L232-233)
 
 > Line 232 uses uuid4() for test database names. The issue suggests using actual test IDs if available
 > from pytest (e.g., request.node.nodeid) and applying a whitelist-based sanitizer (keep
@@ -3365,8 +9432,6 @@ File: `adgn/tests/props/conftest.py`
 > more reasonable like 128 characters if PostgreSQL allows it.
 
 ```
-     227:
-     228:     Creates a unique database per test, initializes schema, and drops it after.
      229:     Safe for parallel pytest-xdist execution - each test gets its own database.
      230:     """
      231:     # Generate unique database name for this test
@@ -3375,491 +9440,15 @@ File: `adgn/tests/props/conftest.py`
      234:
      235:     # Get base config and parse admin URL
      236:     base_config = get_test_config()
-     237:     # Parse admin URL to get connection params (connect to postgres db to create new db)
-     238:     parsed = urlparse(base_config.admin_url)
 ```
-
-## ducktape/2025-09-03-00 (30)
-
-### `argparse-type-path.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py`
-
-> Argparse can directly parse filesystem arguments into pathlib.Path objects by using `type=Path` on
-> add_argument.
-> Prefer declaring `ap.add_argument('--foo', type=Path, ...)` so callers receive a Path immediately and avoid
-> scattershot
-> `Path(args.foo)` conversions later.
->
-> Why this matters:
->
-> - Tightens contracts: handlers downstream get the correct type without ad-hoc wrapping.
-> - Reduces one-off conversions and improves readability.
-> - Avoids small bugs where a string path is treated differently than a Path (e.g.,
->   path / os.PathLike handling).
-
-### `call-tool-shell-abstraction-confusion.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py`
-
-> McpManager.call_tool() (lines 266-284) treats all MCP tools as if they were shell commands,
-> manufacturing {"exit", "stdout", "stderr"} for everything. For local handlers that return
-> dicts, it wraps them as {"exit": 0, "json": <result>} (line 281-282). This is confused
-> about the abstraction: MCP tools are general-purpose operations that return CallToolResult
-> (from mcp package), not necessarily shell command results. CallToolResult has proper fields
-> (isError, content, structuredContent, meta) for representing tool execution results.
->
-> The method should use CallToolResult throughout instead of manufacturing exit codes for
-> non-command tools. This confusion causes issues like double-wrapping where LocalExecServer's
-> {"exit": 1, "stderr": "error"} gets wrapped as {"exit": 0, "json": {"exit": 1, ...}},
-> hiding failures from the agent.
-
-### `cap-append-defaults.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> Calls like `_cap_append(parts, chunk, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated…]")` repeat the same
-> constants at each site. Prefer giving `_cap_append` sensible defaults (or deriving the note from the cap)
-> so callers only pass the varying pieces. This reduces duplication and drift risk across call sites.
-
-### `collect-tools-openai-dict-duplication.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py`
-
-> \_collect_tools_live has duplicated logic for building openai_tools dict entries.
-> The stdio branch (lines 121-128) and local branch (lines 133-140) create identical
-> dict structures with "type", "name", "description", "parameters" keys. Should extract
-> a helper function that takes (server, tool_name, description, params_schema) and
-> returns the tool dict, then call it from both branches. This would eliminate 8 lines
-> of duplication and make the tool dict structure easier to maintain.
-
-### `derive-model-str.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> `AppConfig.resolve` constructs `model_str` and also stores `provider` and `model_name` split from it, but
-> later code reads the composite `model_str` only for logging/printing. Since `model_str` is trivially derivable
-> as `f"{provider}:{model_name}"`, avoid storing this redundant field and derive it where needed.
->
-> This reduces duplicated state and keeps the config focused on primary fields.
-
-### `diagnostics-broad-catch.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py`
-
-> During diagnostics the code catches broad Exception, prints a diagnostic message, and continues. In a
-> diagnostics path
-> this masks failures that were supposed to surface useful debug information — the wrapper should fail fast or
-> at least
-> propagate the error after logging full context.
->
-> Diagnostics code should make problems visible and actionable. Silently continuing after printing a short
-> message
-> prevents test harnesses and callers from noticing failures and makes root-cause debugging much harder.
->
-> Prefer: log full traceback and re-raise (or exit non-zero) so CI/tests detect the issue. Only suppress known,
-> explicitly
-> documented non-fatal exceptions.
-
-### `docker-exec-mcp-typed-inputs.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py`
-
-> Docker Exec MCP tool inputs should be declared as strongly-typed (Pydantic) parameters on the FastMCP
-> tool function, so validation is handled by the framework and schemas are auto-exported to MCP clients.
->
-> Current pattern (manual dict/field extraction in call_tool) leads to ad-hoc checks and coercions.
->
-> FastMCP-idiomatic pattern (two options):
->
-> - Single Pydantic payload model:
->   @app.tool()
->   async def docker_exec(payload: ExecInputs) -> ExecResultPayload: ...
->   where ExecInputs is a Pydantic BaseModel with strict field types.
-> - Separate strongly-typed parameters:
->   @app.tool()
->   async def docker_exec(cmd: list[str], timeout_secs: float | None = None, ...) -> ExecResultPayload: ...
->
-> Required input typing (minimum):
->
-> - cmd: list[str] (non-empty)
-> - cwd: str | None
-> - env: dict[str, str] | None (values must be strings; reject non-strings)
-> - user: str | None
-> - tty: bool (no truthy-string coercion)
-> - shell: bool (no truthy-string coercion)
-> - timeout_secs: float | None (>= 0; no string coercion)
->
-> Benefits:
->
-> - Validation moves to FastMCP/Pydantic; no manual coercion.
-> - JSON Schema for the tool is generated directly from the Pydantic model and visible to MCP clients.
-> - Clear, self-documenting contracts; fewer runtime surprises.
->
-> Acceptance criteria:
->
-> - Define a Pydantic BaseModel ExecInputs with the fields above (strict types; min_items=1 for cmd).
-> - Change the FastMCP registration to use a typed tool signature (either payload model or per-arg types).
-> - Remove manual extraction/coercion in call_tool; rely on Pydantic validation (any invalid inputs must raise).
-> - Keep existing shell/timeout composition logic, but operate only on already-validated,
->   correctly-typed values.
-
-### `docker-exec-unbounded-output.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py`
-
-> Docker Exec MCP returns unbounded stdout/stderr data, which is hazardous for MCP/LLM agents and
-> can also lead to process memory growth.
->
-> Primary impact (MCP/LLM):
->
-> - Tool responses are fed back into an LLM context. Returning megabytes of text will quickly
->   blow the caller’s context/window, causing truncation, failures, or severe quality drops.
->   MCP tools must bound returned payload size.
->
-> Secondary impact (server memory):
->
-> - The server accumulates stdout/stderr into bytearrays with no cap. Very chatty commands can
->   cause high memory usage or OOM over time.
->
-> Observed (specimen paths):
->
-> - llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py collects into bytearrays without limits
->   and returns the full decoded strings in the tool payload.
->
-> Acceptance criteria (bounded capture in MCP response):
->
-> - Enforce an upper bound (bytes or characters) for stdout/stderr included in the tool return
->   (e.g., first N bytes, with a clear truncation note and total sizes).
-> - Keep full data optional (e.g., tee to a temp file/log and return a path/reference), but the
->   MCP tool’s returned text must be bounded deterministically.
-> - Document the cap and truncation behavior in the tool description so callers can plan.
->
-> Optional (server memory hygiene):
->
-> - Apply the same bound in the in-process accumulation path, or stream/tee to a file to avoid
->   unbounded memory growth while still allowing capped returns.
-
-### `docker-mutable-singletons.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py`
-
-> Module-level `_DOCKER_CLIENT` and `_CONTAINER_REF` introduce mutable global state that couples requests
-> through hidden, process-wide singletons. This makes behavior order-dependent, complicates testing,
-> and risks leaking configuration across calls.
->
-> Prefer explicit dependency injection: pass a Docker client via parameters or a factory, or manage per-request
-> context that resolves the container ref at call time. Keep state local to the request boundary.
-
-### `editor-shell-injection.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> In llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py the editor is invoked via:
-> `asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")`.
->
-> This concatenates the filename into the shell command string. That is not Git-compatible and
-> breaks with spaces/quotes in either the editor value or the path; it also changes parsing semantics.
->
-> Correct Git-compatible invocation keeps shell semantics but appends the filename as a separate
-> argument through the shell wrapper (like Git's run-command):
->
-> /bin/sh -c '<editor> "$@"' <editor> <realpath-to-COMMIT_EDITMSG>
->
-> # On Git for Windows, use `sh -c` rather than `/bin/sh -c`.
->
-> Acceptance criteria:
->
-> - Replace the f-string shell command with the shell-wrapper form above (or an equivalent that
->   passes the path as a separate arg rather than interpolating it into the command string).
-> - Resolve the editor via `git var GIT_EDITOR` (respects precedence and ":" no-op).
-> - Keep shell usage for full Git compatibility; do not flag shell usage itself.
-> - (Optional) Validate COMMIT_EDITMSG path (e.g., symlink/permissions) before launch.
-
-### `enforce-single-total-cap.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> Current caps are applied per git output block (status / name-status / log / diff), so the assembled
-> prompt can reach many× the nominal cap. Prefer a single accumulator-based total cap enforced over the
-> fully assembled prompt, or track remaining bytes across calls to `_cap_append` to share the budget.
->
-> This yields predictable size, avoids double work, and makes tradeoffs explicit between sections.
-
-### `exceptions-for-control-flow.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> Do not use try/except to detect normal, non-error conditions. Reserve exceptions for unexpected situations.
-> The current "first commit" detection relies on catching a diff failure, which can also swallow unrelated
-> errors.
-> Prefer a positive repository capability/condition check with early bailout. Example pattern:
->
-> - If we're in the 90% normal case (without executing a failing operation), run the normal path.
-> - Else, handle the 10% case explicitly.
->   As a reviewer, seeing try/except signals "what's on fire" (unexpected), not a routine precondition check.
->
-> **Note:** try/except used to detect first commit instead of positive check
-
-### `gitpython-over-shell.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> `_get_editor` shells out via `asyncio.create_subprocess_exec("git", "var", "GIT_EDITOR", ...)` to
-> obtain the editor. Prefer using the repo API directly (e.g., `repo.git.var("GIT_EDITOR")`) or a
-> config reader fallback (`repo.config_reader().get_value("core", "editor", default)`). This reduces
-> subprocess boilerplate and simplifies control flow.
-
-### `legacy-policyconfig-shim.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py`
-
-> The wrapper contains a legacy PolicyConfig shim that exists only for import compatibility with older tests.
-> Keeping dead shims because "tests still reference it" is not a sufficient reason to retain the code: tests
-> should be
-> updated to the canonical model or provided a test-only shim.
->
-> Why this is bad:
->
-> - It preserves dead/unused code paths that increase maintenance burden and cognitive load.
-> - New readers assume the shim is live behavior and may write code to support it, increasing cruft.
-> - Tests depending on obsolete shims should be migrated or wrapped in explicit test fixtures rather than
->   perpetuating
->   legacy surface area.
-
-### `literal-to-strenum.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/agent.py`
-
-> For small, closed sets of string-valued discriminants (e.g. the tool policy values "auto", "required",
-> "none"), prefer
-> a
-> StrEnum rather than ad-hoc Literal annotations.
->
-> A StrEnum centralizes the allowed values as runtime objects, improves discoverability and IDE support, makes
-> parsing
-> and
-> validation simpler (ToolPolicy(value) will raise on unknown values), and reduces accidental typos in call
-> sites.
-
-### `liveserver-close-leak.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py`
-
-> \_LiveServer.close() awaits session.**aexit**() and only afterwards closes the stdio
-> transport context manager. If the session close raises, the stdio cleanup never runs,
-> leaking subprocess pipes and file descriptors.
-
-### `max-prompt-cap-name.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> The constant name `MAX_PROMPT_CONTEXT_BYTES` uses two near-synonyms in this code path ("prompt" and
-> "context").
-> Either pick one term and scope it correctly, or enforce a true global prompt cap:
->
-> Options:
->
-> - Rename to reflect true scope (per-block cap): e.g.,
->   `MAX_PROMPT_GIT_OUTPUT_BYTES` (applies to each appended block)
-> - Or adopt a global `MAX_PROMPT_BYTES` and enforce an overall cap,
->   leaving block-level caps as internal helpers
->
-> This reduces ambiguity, communicates scope precisely, and prevents misinterpretation.
-
-### `mcp-config-load-swallow.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/cli.py`
-
-> The code currently conditionally reads an MCP config only if the file exists. That’s fine. The problem is the
-> broad
-> except that silently ignores _errors parsing or using the file_. If the .mcp.json exists but is malformed or
-> otherwise
-> unusable, the program must crash loudly so operator/CI notices and fixes the problem; do NOT silently ignore a
-> present-but-broken config file.
->
-> Swallowing initialization-time parsing/shape errors leads to silently degraded runtime behavior and
-> hard-to-diagnose
-> failures later. If the file exists, treat errors parsing/using it as fatal.
-
-### `redundant-parallel-names.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> The editor flow uses redundant parallel variable names (`final_text` and `content_before`) that mirror each
-> other
-> without adding clarity. Keep a single source variable to reduce cognitive load and avoid confusion about which
-> represents the canonical value.
-
-### `remove-openai-key-plumb.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/agent.py`
-
-> The OpenAI SDK already reads `OPENAI_API_KEY` and base URL env vars; hand-rolling a client factory that
-> fetches
-> env vars duplicates configuration paths and adds code surface without value.
->
-> Prefer:
->
-> - Call `openai.OpenAI()` directly and let the SDK read environment variables; or
-> - Inject a client (DI) from the caller/tests to keep construction policy out of core logic.
->
-> This reduces duplication and makes tests simpler (just pass a client/fake).
-
-### `responses-turn-duplicate.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/cli.py`
-
-> `responses_turn` and `responses_followup_with_tool_outputs` in the CLI duplicate ~20 lines of logic:
-> assembling instructions (with optional MCP block), listing tools, building the payload, and
-> calling Responses. This copy/paste raises drift risk and splits responsibility between CLI and agent.
->
-> Preferred design:
->
-> - Keep agent.py as the single owner of the agent loop and Responses flow (instructions assembly,
->   tools listing, payload construction, result parsing).
-> - Make cli.py a thin wrapper that delegates to the agent (or a single helper) rather than repeating logic.
->
-> Concretely: extract a shared helper (or call through to agent) used by both paths, removing the duplicate
-> try/except + instruction assembly + tools list + responses.create blocks.
-
-### `runner-branch-duplication.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> ParallelTaskRunner.create_and_run duplicates runner construction and update loop across branches; only output
-> streaming
-> differs.
-> Prefer a single shared trunk: compute precommit_task (real or noop) and master_fd, construct the runner once,
-> start
-> the
-> update loop once, and stream output only if master_fd is not None. This keeps the main path flat (early
-> bailout for
-> no-precommit).
-
-### `scoped-try-except-swallow.yaml` / `occ-4`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py`
-
-> Scoped try/except blocks swallow errors instead of failing loudly.
-> Where there is no specific recovery/handling need, do not catch at all — let exceptions bubble normally.
-> Where there is a specific reason to handle, catch only the narrow exception and do not swallow silently (log
-> and/or
-> re-raise as appropriate).
->
-> **Note:** mkdir failure silently falls back to cwd, hiding operational problems
-
-### `timeout-ms-propagation.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py`
-
-> exec_handler converts timeout_ms to seconds early with int(timeout_ms / 1000), truncating
-> sub-second precision (1500ms becomes 1s, 500ms becomes 0→1s). Timeout should be propagated
-> as milliseconds (int) throughout the call chain and only divided by 1000.0 at the final
-> subprocess.communicate() call. This requires changing: exec_handler to pass timeout_ms
-> directly, \_run_in_sandbox(timeout_s: int) → \_run_in_sandbox(timeout_ms: int),
-> \_run_proc(timeout_s: int) → \_run_proc(timeout_ms: int), and \_run_proc to convert at
-> communicate: p.communicate(timeout=timeout_ms / 1000.0). Python >=3.11 is required
-> and subprocess.communicate() has supported float timeout since Python 3.3.
-
-### `timeout-noop-branch.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py`
-
-> The timeout branch is a literal no-op:
->
-> if timed_out: # We cannot reliably kill the exec unless wrapper handled it; return best-effort
-> pass
->
-> Timeout handling in this module:
->
-> - With USE_CONTAINER_TIMEOUT_WRAPPER=1, commands are wrapped in `timeout -s TERM <secs>` inside the container
->   (see
->   lines 27–31), so the process is actually signaled on expiry.
-> - Without the wrapper, we stop reading and return ExecResult with `timed_out=True`,
->   but the container process may keep running. Tests only assert `timed_out`; they do not verify termination.
->
-> This is a footgun: timeouts can exceed and leave processes running. At the very least, document this behavior
-> prominently and surface explicit return markers (e.g., `timeout_enforced=false` or `kill_attempted=false`) so
-> callers
-> can react.
->
-> Preferred fix: require an always-correct timeout path. If a timeout is requested and the wrapper is
-> unavailable, fail
-> fast (refuse to run) instead of best-effort; or ensure the implementation enforces termination reliably.
-> Delete the
-> empty branch.
-
-### `timeout-units-ambiguous.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py`
-
-> Constants representing timeouts should carry units in their type or name. `_DEFAULT_TIMEOUT: float | None =
-None` is
-> ambiguous about units.
->
-> Prefer one of two patterns:
->
-> - Use a timedelta, e.g. `DEFAULT_TIMEOUT = timedelta(seconds=30)`, and name it DEFAULT_TIMEOUT.
-> - If storing a numeric value, include the unit in the name and type,
->   e.g. `DEFAULT_TIMEOUT_S: int | None = None`.
->
-> Benefits: reduces confusion about whether a timeout is seconds, milliseconds, or fractional seconds; makes
-> call sites
-> clearer and avoids silent misconfigurations.
-
-### `trivial-wrapper-main.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/cli.py`
-
-> The CLI `main()` in `mcp/sandboxed_jupyter_mcp/cli.py` merely delegates to `wrapper.main()` without adding any
-> value
-> (no
-> argument transformation, validation, or help text).
-> One-line passthrough wrappers like this add indirection and lines of code for no benefit. Prefer calling the
-> implementation directly from entry points or consolidating the tiny delegating main into the wrapper to reduce
-> churn
-> and
-> improve readability.
-
-### `truncation-msg-hardcoded.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> The truncation note is hardcoded as "[Context truncated to 100 KiB]" in multiple places, while the cap
-> is driven by MAX_PROMPT_CONTEXT_BYTES. This duplicates the limit in string form and risks drift.
->
-> Prefer a single source of truth: derive the human text from the cap (e.g., f"[Context truncated to
->
-> > {MAX_PROMPT_CONTEXT_BYTES // 1024} KiB]")
-> > or use a generic stable marker like "[Context truncated]". Keep the message in one place and reuse it.
-
-### `tty-guard-early-bailout.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> The TTY guard should use an early bailout to avoid unnecessary nesting.
-> Instead of nesting the main logic under `if sys.stdout.isatty(): ...`, invert the condition and return/skip
-> when not a
-> TTY, then run the terminal sizing at the base level.
-
-### `unused-prev-msg-default.yaml` / `occ-0`
-
-File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py`
-
-> The parameter is declared with a default that callers never use:
->
-> previous_message: str | None = None
->
-> Unused defaults add unnecessary degrees of freedom and complicate API contracts.
-> Prefer tightening the signature: drop the default (require an explicit value from callers)
-> or make the parameter mandatory only where needed via a higher-level object.
 
 ## ducktape/2025-11-22-00 (29)
 
 ### `byte-length-for-token-budget.yaml` / `occ-0`
 
-File: `adgn/src/adgn/git_commit_ai/core.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/byte-length-for-token-budget.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/git_commit_ai/core.py#L8-L165)
+
+File: `adgn/src/adgn/git_commit_ai/core.py` (L8, L14-15, L18-29, L146, L151, L155, L160, L163-165)
 
 > The code uses byte length (`_len_bytes()`) to cap context passed to LLMs,
 > but LLM token budgets are better approximated by character count, not bytes.
@@ -3885,20 +9474,10 @@ File: `adgn/src/adgn/git_commit_ai/core.py`
 > (~25k tokens at ~4 chars/token). Truncate via string slicing, which always
 > produces valid strings.
 >
-> **Benefits:**
->
-> 1. Better approximation: Chars correlate with tokens better than bytes
-> 2. Clearer intent: "100k chars" is more meaningful than "100 KiB"
-> 3. Simpler code: No encoding/decoding, just string slicing
-> 4. No mid-character breaks: String slicing always produces valid strings
-> 5. Portable: Byte lengths vary by encoding; char counts don't
->
 > **Note:** For precise token counting, use a tokenizer (e.g., `tiktoken`). For
 > rough caps, character count is a better heuristic than byte length.
 
 ```
-       3: import re
-       4:
        5: import pygit2
        6:
        7: # Shared constants used by backends and CLI
@@ -3908,23 +9487,8 @@ File: `adgn/src/adgn/git_commit_ai/core.py`
       11: DIFF_SNIPPET_CHARS = 5000
       12:
       13:
-   ...
-       9: PAST_COMMITS_MAX_CHARS = 6000
-      10: RECENT_COMMITS_FOR_CONTEXT = 30
-      11: DIFF_SNIPPET_CHARS = 5000
-      12:
-      13:
 >>>   14: def _len_bytes(s: str) -> int:
 >>>   15:     return len(s.encode("utf-8"))
-      16:
-      17:
-      18: def _cap_append(parts: list[str], chunk: str, cap_bytes: int, truncation_note: str) -> bool:
-      19:     """Append chunk to parts unless this would exceed cap; returns True if truncated."""
-      20:     current_bytes = _len_bytes("".join(parts))
-   ...
-      13:
-      14: def _len_bytes(s: str) -> int:
-      15:     return len(s.encode("utf-8"))
       16:
       17:
 >>>   18: def _cap_append(parts: list[str], chunk: str, cap_bytes: int, truncation_note: str) -> bool:
@@ -3942,11 +9506,7 @@ File: `adgn/src/adgn/git_commit_ai/core.py`
       30:
       31:
       32: def _diff(repo: pygit2.Repository, include_all: bool) -> pygit2.Diff:
-      33:     return repo.diff(repo.head.target, None, cached=not include_all)
-      34:
    ...
-     141: def _build_ai_context(repo: pygit2.Repository, include_all: bool) -> str:
-     142:     parts: list[str] = []
      143:
      144:     parts.append("$ git status --porcelain\n")
      145:     status_out = _format_status_porcelain(repo) + "\n"
@@ -3955,22 +9515,7 @@ File: `adgn/src/adgn/git_commit_ai/core.py`
      148:     ns_header = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
      149:     parts.append(f"$ {ns_header}\n")
      150:     ns_out = _format_name_status(repo, include_all) + "\n"
-     151:     _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-   ...
-     146:     _cap_append(parts, status_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-     147:
-     148:     ns_header = "git diff HEAD --name-status" if include_all else "git diff --cached --name-status"
-     149:     parts.append(f"$ {ns_header}\n")
-     150:     ns_out = _format_name_status(repo, include_all) + "\n"
 >>>  151:     _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-     152:
-     153:     parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %B\n")
-     154:     log_out = "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n"
-     155:     _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-     156:
-   ...
-     150:     ns_out = _format_name_status(repo, include_all) + "\n"
-     151:     _cap_append(parts, ns_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
      152:
      153:     parts.append(f"$ git log --no-color -n {RECENT_COMMITS_FOR_CONTEXT} --stat --pretty=format:%h %B\n")
      154:     log_out = "\n".join(_log_subjects(repo, RECENT_COMMITS_FOR_CONTEXT)) + "\n"
@@ -3979,23 +9524,7 @@ File: `adgn/src/adgn/git_commit_ai/core.py`
      157:     diff_header = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
      158:     parts.append(f"$ {diff_header}\n")
      159:     diff_out = _format_unified_diff(repo, include_all) + "\n"
-     160:     _cap_append(parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-   ...
-     155:     _cap_append(parts, log_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-     156:
-     157:     diff_header = "git diff HEAD --unified=0" if include_all else "git diff --cached --unified=0"
-     158:     parts.append(f"$ {diff_header}\n")
-     159:     diff_out = _format_unified_diff(repo, include_all) + "\n"
 >>>  160:     _cap_append(parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
-     161:
-     162:     out = "".join(parts)
-     163:     if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
-     164:         out = out.encode("utf-8")[:MAX_PROMPT_CONTEXT_BYTES].decode("utf-8", errors="ignore")
-     165:         out += "\n[Context truncated to 100 KiB]\n"
-   ...
-     158:     parts.append(f"$ {diff_header}\n")
-     159:     diff_out = _format_unified_diff(repo, include_all) + "\n"
-     160:     _cap_append(parts, diff_out, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated to 100 KiB]")
      161:
      162:     out = "".join(parts)
 >>>  163:     if _len_bytes(out) > MAX_PROMPT_CONTEXT_BYTES:
@@ -4004,13 +9533,13 @@ File: `adgn/src/adgn/git_commit_ai/core.py`
      166:     return out
      167:
      168:
-     169: def diffstat(repo: pygit2.Repository, passthru: list[str]) -> str:
-     170:     include_all = include_all_from_passthru(passthru)
 ```
 
 ### `deprecated-datetime-utcnow.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/transcript_handler.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/deprecated-datetime-utcnow.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/transcript_handler.py#L45-L52)
+
+File: `adgn/src/adgn/agent/transcript_handler.py` (L45, L52)
 
 > Lines 45 and 52 use `datetime.utcnow().isoformat() + "Z"` for timestamp generation.
 >
@@ -4025,8 +9554,6 @@ File: `adgn/src/adgn/agent/transcript_handler.py`
 > and prevents accidentally forgetting the timezone suffix or using the wrong timezone.
 
 ```
-      40:         # Fail fast if a transcript already exists at destination
-      41:         if self._events_path.exists():
       42:             raise FileExistsError(f"Transcript already exists: {self._events_path}")
       43:         # Write a small metadata file once
       44:         (self._root / "metadata.json").write_text(
@@ -4036,23 +9563,18 @@ File: `adgn/src/adgn/agent/transcript_handler.py`
       48:     # ---- Event helpers ----
       49:     def _write_event(self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem) -> None:
       50:         rec = to_jsonl_record(evt)
-   ...
-      47:
-      48:     # ---- Event helpers ----
-      49:     def _write_event(self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem) -> None:
-      50:         rec = to_jsonl_record(evt)
       51:         # Timestamped envelope (events.jsonl)
 >>>   52:         out = {"ts": datetime.utcnow().isoformat() + "Z", **rec}
       53:         with self._events_path.open("a", encoding="utf-8") as f:
       54:             f.write(json.dumps(out, ensure_ascii=False) + "\n")
       55:         # Compact transcript (transcript.jsonl)
-      56:         with self._transcript_path.open("a", encoding="utf-8") as g:
-      57:             g.write(json.dumps(rec, ensure_ascii=False) + "\n")
 ```
 
 ### `duplicate-style-definitions.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/duplicate-style-definitions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte#L347)
+
+File: `adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte` (L347)
 
 > AgentsSidebar.svelte line 347 contains a useless historical comment: "Backdrop
 > styling moved to ModalBackdrop component". This documents a past refactoring
@@ -4067,8 +9589,6 @@ File: `adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte`
 > workarounds, or non-obvious behavior, not document past refactorings.
 
 ```
-     342:   /* Keep the resize handle within the sidebar to avoid overlaying the chat area */
-     343:   .left-resize { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; background: transparent; border: none; padding: 0; }
      344:   .row { display: flex; gap: 0.5rem; align-items: center; }
      345:   .preset { flex: 1; min-width: 0; }
      346:   /* Modal styles */
@@ -4076,25 +9596,17 @@ File: `adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte`
      348:   .modal { background: var(--surface); color: var(--text); min-width: 320px; max-width: 90vw; border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
      349:   .modal header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-weight: 600; }
      350:   .modal .body { padding: 0.75rem; display: grid; grid-template-columns: 1fr; gap: 0.5rem; }
-     351:   .modal .row { display: flex; gap: 0.5rem; align-items: center; }
-     352:   .modal footer { display: flex; justify-content: flex-end; gap: 0.5rem; padding: 0.5rem 0.75rem; border-top: 1px solid var(--border); }
 ```
 
 ### `duplicate-transcript-files.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/transcript_handler.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/duplicate-transcript-files.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/transcript_handler.py#L38-L57)
+
+File: `adgn/src/adgn/agent/transcript_handler.py` (L38-39, L41-42, L53-57)
 
 > `TranscriptHandler` writes the same events to two nearly-identical files: `events.jsonl`
 > (with timestamps) and `transcript.jsonl` (without timestamps). Lines 38-39 define both
 > paths, lines 53-57 write to both files on every event.
->
-> **Problems:**
->
-> 1. Redundant storage: same data written twice, only difference is timestamp wrapper
-> 2. Confusing naming: two files with similar names containing nearly identical content
-> 3. Performance overhead: double I/O operations for every event
-> 4. Storage waste: doubles disk usage for large transcripts
-> 5. Unclear purpose: which file should tools read?
 >
 > **Fix:** Choose one format. Keep the timestamped format (`events.jsonl`) as primary since
 > it preserves temporal information (timestamps are useful for debugging, analysis, replay;
@@ -4104,34 +9616,18 @@ File: `adgn/src/adgn/agent/transcript_handler.py`
 > truth, half the I/O, no redundant data, easier maintenance.
 
 ```
-      33:     """
-      34:
       35:     def __init__(self, *, dest_dir: Path) -> None:
       36:         self._root = dest_dir
       37:         self._root.mkdir(parents=True, exist_ok=True)
 >>>   38:         self._events_path = self._root / "events.jsonl"
 >>>   39:         self._transcript_path = self._root / "transcript.jsonl"
       40:         # Fail fast if a transcript already exists at destination
-      41:         if self._events_path.exists():
-      42:             raise FileExistsError(f"Transcript already exists: {self._events_path}")
-      43:         # Write a small metadata file once
-      44:         (self._root / "metadata.json").write_text(
-   ...
-      36:         self._root = dest_dir
-      37:         self._root.mkdir(parents=True, exist_ok=True)
-      38:         self._events_path = self._root / "events.jsonl"
-      39:         self._transcript_path = self._root / "transcript.jsonl"
-      40:         # Fail fast if a transcript already exists at destination
 >>>   41:         if self._events_path.exists():
 >>>   42:             raise FileExistsError(f"Transcript already exists: {self._events_path}")
       43:         # Write a small metadata file once
       44:         (self._root / "metadata.json").write_text(
       45:             json.dumps({"started": datetime.utcnow().isoformat() + "Z"}, indent=2), encoding="utf-8"
-      46:         )
-      47:
    ...
-      48:     # ---- Event helpers ----
-      49:     def _write_event(self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem) -> None:
       50:         rec = to_jsonl_record(evt)
       51:         # Timestamped envelope (events.jsonl)
       52:         out = {"ts": datetime.utcnow().isoformat() + "Z", **rec}
@@ -4143,13 +9639,13 @@ File: `adgn/src/adgn/agent/transcript_handler.py`
       58:
       59:     # ---- BaseHandler hooks (typed) ----
       60:     def on_user_text_event(self, evt: UserText) -> None:
-      61:         self._write_event(evt)
-      62:
 ```
 
 ### `duplicated-agent-info.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/server.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/duplicated-agent-info.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/mcp_bridge/server.py#L187-L302)
+
+File: `adgn/src/adgn/agent/mcp_bridge/server.py` (L252-279, L285-302, L187-198)
 
 > The code has two problems in server.py:
 >
@@ -4172,22 +9668,27 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
 > Let callers use `_get_agent_or_raise()` directly and access fields themselves
 > (`agent.running`, `agent.mode`, `agent.local_runtime`). Or if public access is needed,
 > rename `_get_agent_or_raise` to `get_agent` and let callers access fields directly.
->
-> **Benefits:**
->
-> 1. Less code duplication (single agent info construction)
-> 2. Easier maintenance (one place for changes)
-> 3. Simpler API (fewer methods, clearer responsibilities)
-> 4. More direct (no unnecessary jumps between wrapper methods)
-> 5. Better testability (can test helper independently)
->
-> **Why thin wrappers are harmful:**
-> They add noise without meaningful abstraction, increase maintenance burden, and make it harder
-> to see what's actually being accessed.
 
 ```
-     247:         else:
-     248:             return RunPhase.SAMPLING, pending_approvals
+     184:             raise KeyError(f"Agent {agent_id} not yet initialized")
+     185:         return agent
+     186:
+>>>  187:     async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
+>>>  188:         """Get infrastructure. Raises KeyError if not found."""
+>>>  189:         return self._get_agent_or_raise(agent_id).running
+>>>  190:
+>>>  191:     def get_agent_mode(self, agent_id: AgentID) -> AgentMode:
+>>>  192:         """Get agent mode. Raises KeyError if not found."""
+>>>  193:         return self._get_agent_or_raise(agent_id).mode
+>>>  194:
+>>>  195:     def get_local_runtime(self, agent_id: AgentID) -> LocalAgentRuntime | None:
+>>>  196:         """Get local runtime or None if bridge agent. Raises KeyError if not found."""
+>>>  197:         return self._get_agent_or_raise(agent_id).local_runtime
+>>>  198:
+     199:     def register_local_agent(
+     200:         self,
+     201:         agent_id: AgentID,
+   ...
      249:
      250:     def _register_resources(self) -> None:
      251:         @self.resource("resource://agents/list", name="agents_list", mime_type="application/json")
@@ -4224,12 +9725,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
      282:             return AgentsListResponse(agents=agents)
      283:
      284:         @self.resource("resource://agents/{agent_id}/info", name="agent_info", mime_type="application/json")
-   ...
-     280:                 )
-     281:
-     282:             return AgentsListResponse(agents=agents)
-     283:
-     284:         @self.resource("resource://agents/{agent_id}/info", name="agent_info", mime_type="application/json")
 >>>  285:         async def get_agent_info(agent_id: AgentID) -> AgentInfo:
 >>>  286:             """Get detailed information about a specific agent."""
 >>>  287:             agent = self._get_agent_or_raise(agent_id)
@@ -4251,36 +9746,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
      303:                 capabilities=AgentCapabilities(chat=is_local, agent_loop=is_local),
      304:             )
      305:
-     306:     def _register_tools(self) -> None:
-     307:         @self.tool()
-   ...
-     182:             raise KeyError(f"Agent {agent_id} not found in registry")
-     183:         if (agent := self._agents[agent_id].agent) is None:
-     184:             raise KeyError(f"Agent {agent_id} not yet initialized")
-     185:         return agent
-     186:
->>>  187:     async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
->>>  188:         """Get infrastructure. Raises KeyError if not found."""
->>>  189:         return self._get_agent_or_raise(agent_id).running
->>>  190:
->>>  191:     def get_agent_mode(self, agent_id: AgentID) -> AgentMode:
->>>  192:         """Get agent mode. Raises KeyError if not found."""
->>>  193:         return self._get_agent_or_raise(agent_id).mode
->>>  194:
->>>  195:     def get_local_runtime(self, agent_id: AgentID) -> LocalAgentRuntime | None:
->>>  196:         """Get local runtime or None if bridge agent. Raises KeyError if not found."""
->>>  197:         return self._get_agent_or_raise(agent_id).local_runtime
->>>  198:
-     199:     def register_local_agent(
-     200:         self,
-     201:         agent_id: AgentID,
-     202:         running: RunningInfrastructure,
-     203:         compositor_app: FastAPI,
 ```
 
 ### `duplicated-notification-data.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/notifications/types.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/duplicated-notification-data.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/notifications/types.py#L14-L49)
+
+File: `adgn/src/adgn/agent/notifications/types.py` (L14-30, L33-49)
 
 > notifications/types.py duplicates data in two ways: (1) NotificationsBatch
 > (lines 14-30) stores both parsed fields (resources_updated, resource_list_changed)
@@ -4302,8 +9774,6 @@ File: `adgn/src/adgn/agent/notifications/types.py`
 > Principle: Store data in ONE efficient representation, derive views on-demand.
 
 ```
-       9:
-      10:     server: str = Field(description="Origin MCP server name (derived)")
       11:     uri: str = Field(description="Resource URI string for the update")
       12:
       13:
@@ -4324,15 +9794,6 @@ File: `adgn/src/adgn/agent/notifications/types.py`
 >>>   28:     raw: list[mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification] = Field(
 >>>   29:         default_factory=list, description="Full MCP resources notifications captured for display/debugging"
 >>>   30:     )
-      31:
-      32:
-      33: class ResourcesServerNotice(BaseModel):
-      34:     """Per-server resources notice.
-      35:
-   ...
-      28:     raw: list[mcp_types.ResourceUpdatedNotification | mcp_types.ResourceListChangedNotification] = Field(
-      29:         default_factory=list, description="Full MCP resources notifications captured for display/debugging"
-      30:     )
       31:
       32:
 >>>   33: class ResourcesServerNotice(BaseModel):
@@ -4356,7 +9817,9 @@ File: `adgn/src/adgn/agent/notifications/types.py`
 
 ### `duplicated-xdg-paths.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/cli.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/duplicated-xdg-paths.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/mcp_bridge/cli.py#L36)
+
+File: `adgn/src/adgn/agent/mcp_bridge/cli.py` (L36)
 
 > The code constructs XDG user data directory paths (using `user_data_dir("adgn", ...)`)
 > in multiple places instead of defining these paths once in a central location.
@@ -4364,31 +9827,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/cli.py`
 > **Current implementation:** Each module independently calls `user_data_dir("adgn", "agentydragon")`
 > and constructs paths like `DEFAULT_DB_PATH = Path(...) / "mcp-bridge.db"` (mcp_bridge/cli.py, line 36).
 >
-> **Problems:**
->
-> 1. Duplication: Same platformdirs call in multiple files
-> 2. Inconsistency risk: Easy to use different app name/author
-> 3. Hard to change: Must update multiple files
-> 4. No discoverability: Can't easily find all data paths
-> 5. Testing difficulty: Can't easily override base directory
->
 > **The correct approach:**
 > Create a central paths module (e.g., `adgn/paths.py`) that defines XDG directories once
 > (USER_DATA_DIR, USER_CACHE_DIR, USER_CONFIG_DIR) and specific application paths
 > (MCP_BRIDGE_DB, RESPONSES_CACHE_DB, AUTH_TOKENS_FILE, etc.). Import these constants
 > throughout the codebase.
->
-> **Benefits:**
->
-> 1. Single source of truth for all paths
-> 2. Guaranteed consistency in app name/author
-> 3. Easy to add environment variable overrides once
-> 4. Testable: can patch the paths module
-> 5. Follows XDG Base Directory Specification correctly across platforms
 
 ```
-      31: from adgn.agent.persist.sqlite import SQLitePersistence
-      32:
       33: logger = logging.getLogger(__name__)
       34:
       35: # Default database path in XDG user data directory
@@ -4396,13 +9841,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/cli.py`
       37:
       38:
       39: @click.group()
-      40: def cli():
-      41:     """HTTP MCP Bridge - expose policy-gated infrastructure to external agents."""
 ```
 
 ### `explicit-constructions-ui.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/explicit-constructions-ui.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte#L29-L121)
+
+File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte` (L29-36, L115-121)
 
 > Lines 29-36 define `parseArgs()` using manual `JSON.parse()` that returns `{}` on error (silent
 > failure). Lines 115-121 manually parse approval blocks with `JSON.parse()`, destructuring
@@ -4420,8 +9865,6 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
 > detailed error messages, and single source of truth (Backend Pydantic → Frontend Zod).
 
 ```
-      24:   let expandedApprovals = new Set<string>()
-      25:
       26:   /**
       27:    * Parse tool call args_json to object
       28:    */
@@ -4436,11 +9879,7 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
       37:
       38:   // Group approvals by agent_id for display
       39:   $: groupedApprovals = approvals.reduce((acc, approval) => {
-      40:     const agentId = approval.agent_id
-      41:     if (!acc[agentId]) {
    ...
-     110:     if (!mcpClient) return
-     111:
      112:     try {
      113:       // Read the global approvals resource
      114:       const contents = await readResource(mcpClient, MCPUris.approvalsPendingUri)
@@ -4454,13 +9893,13 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
      122:         if ('text' in block && block.mimeType === 'application/json') {
      123:           try {
      124:             const data = JSON.parse(block.text)
-     125:             parsedApprovals.push({
-     126:               agent_id: data.agent_id,
 ```
 
 ### `json-output-constraint.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/policy_eval/runner.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/json-output-constraint.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/policy_eval/runner.py#L80)
+
+File: `adgn/src/adgn/agent/policy_eval/runner.py` (L80)
 
 > Line 80 uses `.strip().splitlines()[-1]` to extract the last line, which unnecessarily constrains the policy
 > output to
@@ -4501,8 +9940,6 @@ File: `adgn/src/adgn/agent/policy_eval/runner.py`
 > ```
 
 ```
-      75:             raise RuntimeError(f"policy eval failed (exit={status}): {text.strip()}")
-      76:         try:
       77:             data = json.loads(text.strip().splitlines()[-1]) if text.strip() else {}
       78:         except Exception as e:
       79:             raise RuntimeError(f"invalid JSON from policy eval: {e}; output={text!r}") from e
@@ -4510,13 +9947,13 @@ File: `adgn/src/adgn/agent/policy_eval/runner.py`
       81:     finally:
       82:         try:
       83:             container.remove(force=True)
-      84:         except (docker.errors.APIError, docker.errors.NotFound) as e:
-      85:             logger.warning("policy eval container cleanup failed", exc_info=e)
 ```
 
 ### `manual-dict-parsing.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/persist/events.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/manual-dict-parsing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/persist/events.py#L47-L100)
+
+File: `adgn/src/adgn/agent/persist/events.py` (L47-50, L67-100)
 
 > The `parse_event()` function manually parses event dictionaries using if-elif
 > chains that inspect the `type` field and construct the appropriate payload class.
@@ -4532,12 +9969,8 @@ File: `adgn/src/adgn/agent/persist/events.py`
 > **Problems:**
 >
 > 1. **Reimplements Pydantic**: Manual if-elif dispatching duplicates what Pydantic does
-> 2. **Error-prone**: Easy to forget cases or mismatch type strings
-> 3. **Verbose**: 30 lines of manual parsing vs 3 lines with discriminated unions
-> 4. **No validation**: Manual `str()` casts and `.get()` don't validate structure
-> 5. **Inconsistent**: Some fields use TypeAdapter, others use manual dict access
-> 6. **Misleading type hint**: `Field(discriminator=None)` suggests discriminated union but doesn't use it
-> 7. **Maintenance burden**: Adding a new event type requires updating if-elif chain
+> 2. **No validation**: Manual `str()` casts and `.get()` don't validate structure
+> 3. **Misleading type hint**: `Field(discriminator=None)` suggests discriminated union but doesn't use it
 >
 > **The correct approach:**
 >
@@ -4545,20 +9978,8 @@ File: `adgn/src/adgn/agent/persist/events.py`
 > payload class, set `Field(discriminator="type")` on the union, and use
 > `model_validate()`. This reduces the 30+ line manual parser to a 3-line
 > function that injects the type field into the payload dict before validation.
->
-> **Benefits:**
->
-> 1. **Automatic dispatch**: Pydantic handles type-based routing
-> 2. **Full validation**: All fields validated according to payload schema
-> 3. **Type safety**: Type checkers understand the discriminated union
-> 4. **Concise**: 3 lines instead of 30+ lines of if-elif
-> 5. **Better errors**: ValidationError shows exactly what's wrong
-> 6. **Easy to extend**: Add new event type = add new payload class to union
-> 7. **Declarative**: Schema describes what's valid, not how to parse
 
 ```
-      42:     content: Response | None = None
-      43:
       44:
       45: TypedPayload = Annotated[
       46:     UserTextPayload
@@ -4569,11 +9990,7 @@ File: `adgn/src/adgn/agent/persist/events.py`
       51:     | ResponsePayload,
       52:     Field(discriminator=None),
       53: ]
-      54:
-      55:
    ...
-      62:     tool_key: str | None = None
-      63:
       64:     model_config = ConfigDict(extra="forbid")
       65:
       66:
@@ -4614,12 +10031,13 @@ File: `adgn/src/adgn/agent/persist/events.py`
      101:
      102:
      103: def parse_events(items: list[dict[str, Any]]) -> list[EventRecord]:
-     104:     return [parse_event(d) for d in items]
 ```
 
 ### `manual-indentation-loop.yaml` / `occ-0`
 
-File: `adgn/src/adgn/git_commit_ai/cli.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/manual-indentation-loop.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/git_commit_ai/cli.py#L573-L574)
+
+File: `adgn/src/adgn/git_commit_ai/cli.py` (L573-574)
 
 > Manual loop to indent lines instead of using `textwrap.indent()` from standard library.
 >
@@ -4630,29 +10048,13 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
 >     final_text += f"# {line}\n"
 > ```
 >
-> **Problems:**
->
-> - Reimplements standard library functionality
-> - More verbose than stdlib solution
-> - Harder to test independently
-> - Potential edge cases not handled (empty lines, trailing newlines)
->
 > **Correct approach:**
 >
 > ```python
 > final_text += textwrap.indent(previous_message, "# ", lambda line: True)
 > ```
->
-> **Benefits:**
->
-> - Uses standard, tested library function
-> - More concise (1 line vs 2 lines)
-> - Clearer intent (obviously indenting text)
-> - Handles edge cases correctly
 
 ```
-     568:     repo: pygit2.Repository, msg: str, previous_message: str | None, stats_comment: str, passthru: list[str]
-     569: ) -> int:
      570:     final_text = msg
      571:     if previous_message:
      572:         final_text += "\n\n# Previous commit message (being amended):\n"
@@ -4661,13 +10063,13 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
      575:     final_text += stats_comment + build_commit_template(repo, passthru)
      576:
      577:     commit_msg_path = Path(repo.path) / "COMMIT_EDITMSG"
-     578:     commit_msg_path.write_text(final_text)
-     579:
 ```
 
 ### `manual-init-not-dataclass.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/policy_eval/container.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/manual-init-not-dataclass.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/policy_eval/container.py#L17-L46)
+
+File: `adgn/src/adgn/agent/policy_eval/container.py` (L17-46)
 
 > Class (container.py:17-46) uses manual `__init__` for simple field
 > initialization. The constructor does assignment-only initialization
@@ -4679,8 +10081,6 @@ File: `adgn/src/adgn/agent/policy_eval/container.py`
 > classes. Use `__post_init__` if complex initialization needed.
 
 ```
-      12: from adgn.agent.types import AgentID
-      13:
       14: logger = logging.getLogger(__name__)
       15:
       16:
@@ -4717,13 +10117,13 @@ File: `adgn/src/adgn/agent/policy_eval/container.py`
       47:         payload = {"name": policy_input.name, "arguments": policy_input.arguments}
       48:         policy_src, _ver = self._engine.get_policy()
       49:         return run_policy_source(
-      50:             docker_client=self._docker,
-      51:             source=policy_src,
 ```
 
 ### `manual-isinstance-validation.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/auth.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/manual-isinstance-validation.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/mcp_bridge/auth.py#L60-L69)
+
+File: `adgn/src/adgn/agent/mcp_bridge/auth.py` (L60-69)
 
 > The `reload()` method manually validates that the loaded JSON is a dict with string
 > keys and values using `isinstance()` checks, but this can be done automatically and
@@ -4732,29 +10132,11 @@ File: `adgn/src/adgn/agent/mcp_bridge/auth.py`
 > **Current implementation:** Manual validation loop checking isinstance on each token/agent_id
 > pair, raising generic ValueError on mismatch (auth.py, lines 60-69).
 >
-> **Problems:**
->
-> 1. Verbose hand-written isinstance checks
-> 2. Easy to miss edge cases (None, numbers)
-> 3. Poor error messages (generic ValueError without location)
-> 4. Not composable or reusable
-> 5. Incomplete validation of nested structure
->
 > **The correct approach:**
 > Use Pydantic's `TypeAdapter(dict[str, AgentID])` to validate and parse in one step.
 > Can call `validate_python(data)` after `json.loads()` or `validate_json(text)` directly.
->
-> **Benefits:**
->
-> 1. Automatic validation with better error messages showing exact path
-> 2. Type-safe: TypeAdapter knows the shape is `dict[str, AgentID]`
-> 3. Concise: 1 line instead of 10 lines of manual validation
-> 4. Robust: handles edge cases correctly
-> 5. Composable: can reuse the adapter elsewhere
 
 ```
-      55:         """Reload mapping from file."""
-      56:         if not self.path.exists():
       57:             raise FileNotFoundError(f"Token mapping file not found: {self.path}")
       58:
       59:         data = json.loads(self.path.read_text())
@@ -4771,24 +10153,16 @@ File: `adgn/src/adgn/agent/mcp_bridge/auth.py`
       70:         self._mapping = mapping
       71:         logger.info(f"Loaded {len(self._mapping)} token mappings from {self.path}")
       72:
-      73:     def get_agent_id(self, token: str) -> AgentID | None:
-      74:         """Get agent_id for a token, or None if not found."""
 ```
 
 ### `manual-json-parsing.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/policy_eval/runner.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/manual-json-parsing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/policy_eval/runner.py#L76-L83)
+
+File: `adgn/src/adgn/agent/policy_eval/runner.py` (L76-83)
 
 > Line 80 does `json.loads(...)` to parse JSON, then passes the dict to `PolicyResponse.model_validate(data)`.
-> Pydantic
-> provides `model_validate_json()` which does both steps in one call and is more efficient.
->
-> **Benefits of model_validate_json():**
->
-> - Pydantic's JSON parser is faster (uses Rust)
-> - Works directly on bytes (no decode needed for success case)
-> - One-step parsing and validation
-> - Better error messages from Pydantic
+> Pydantic provides `model_validate_json()` which does both steps in one call and is more efficient.
 >
 > **Correct approach:**
 >
@@ -4807,8 +10181,6 @@ File: `adgn/src/adgn/agent/policy_eval/runner.py`
 > ```
 
 ```
-      71:         status = int(res.get("StatusCode", 1)) if isinstance(res, dict) else 1
-      72:         logs = container.logs(stdout=True, stderr=True) or b""
       73:         text = logs.decode("utf-8", errors="replace")
       74:         if status != 0:
       75:             raise RuntimeError(f"policy eval failed (exit={status}): {text.strip()}")
@@ -4826,7 +10198,9 @@ File: `adgn/src/adgn/agent/policy_eval/runner.py`
 
 ### `mixed-exit-code-conventions.yaml` / `occ-0`
 
-File: `adgn/src/adgn/git_commit_ai/cli.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/mixed-exit-code-conventions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/git_commit_ai/cli.py#L551-L732)
+
+File: `adgn/src/adgn/git_commit_ai/cli.py` (L551-556, L558-564, L567-609, L728-732)
 
 > Functions inconsistently mix two conventions for signaling exit codes: some declare
 > `-> int` return types but actually raise `ExitWithCode` exceptions on error paths.
@@ -4841,8 +10215,6 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
 >
 > 1. Type lies: functions promise `-> int` but raise exceptions, violating contracts
 > 2. Unreachable code: code after exception-raising calls never executes
-> 3. Easy to forget: callers must remember BOTH to check returns AND catch exceptions
-> 4. No guidance: new code has no clear pattern to follow
 >
 > **Fix:** Pick ONE convention consistently. Option A (always raise exceptions, change
 > signatures to `-> None`): impossible to forget, clear failure paths, consistent with
@@ -4850,8 +10222,6 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
 > Mixing both violates type contracts and creates ad-hoc error handling.
 
 ```
-     546:         f"\n# ai-draft{'(cached)' if cached else ''}: prompt: {len(diff)} chars, "
-     547:         f"response: {len(msg)} chars, elapsed: {elapsed_s:.2f}s\n"
      548:     )
      549:
      550:
@@ -4862,16 +10232,6 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
 >>>  555:         self.code = code
 >>>  556:
      557:
-     558: async def _commit_immediately(msg: str, passthru: list[str]) -> int:
-     559:     if not msg.strip():
-     560:         print("Aborting commit due to empty AI commit message.", file=sys.stderr)
-     561:         raise ExitWithCode(1)
-   ...
-     553:     def __init__(self, code: int):
-     554:         super().__init__(str(code))
-     555:         self.code = code
-     556:
-     557:
 >>>  558: async def _commit_immediately(msg: str, passthru: list[str]) -> int:
 >>>  559:     if not msg.strip():
 >>>  560:         print("Aborting commit due to empty AI commit message.", file=sys.stderr)
@@ -4879,15 +10239,6 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
 >>>  562:     commit_passthru = filter_commit_passthru(passthru)
 >>>  563:     commit_proc = await asyncio.create_subprocess_exec("git", "commit", "-m", msg, "--no-verify", *commit_passthru)
 >>>  564:     return await commit_proc.wait()
-     565:
-     566:
-     567: async def _run_editor_flow(
-     568:     repo: pygit2.Repository, msg: str, previous_message: str | None, stats_comment: str, passthru: list[str]
-     569: ) -> int:
-   ...
-     562:     commit_passthru = filter_commit_passthru(passthru)
-     563:     commit_proc = await asyncio.create_subprocess_exec("git", "commit", "-m", msg, "--no-verify", *commit_passthru)
-     564:     return await commit_proc.wait()
      565:
      566:
 >>>  567: async def _run_editor_flow(
@@ -4936,11 +10287,7 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
      610:
      611:     commit_passthru = filter_commit_passthru(passthru)
      612:     commit_proc = await asyncio.create_subprocess_exec(
-     613:         "git", "commit", "-F", commit_msg_path, "--cleanup=strip", "--no-verify", *commit_passthru
-     614:     )
    ...
-     723:
-     724:         elapsed_s = time.monotonic() - start_monotonic_s
      725:         stats_comment = _make_stats_comment(cached, diff, msg, elapsed_s)
      726:
      727:         if args.accept_ai:
@@ -4952,13 +10299,13 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
      733:     except ExitWithCode as e:
      734:         sys.exit(e.code)
      735:
-     736:
-     737: def main():
 ```
 
 ### `raw-sql-instead-of-orm.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/persist/sqlite.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/raw-sql-instead-of-orm.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/persist/sqlite.py#L145-L165)
+
+File: `adgn/src/adgn/agent/persist/sqlite.py` (L145-165)
 
 > Query (sqlite.py:145-165) uses raw SQL with `text()` instead of SQLAlchemy
 > ORM constructs. The function executes a SELECT with GROUP BY and COALESCE
@@ -4973,8 +10320,6 @@ File: `adgn/src/adgn/agent/persist/sqlite.py`
 > better errors, IDE navigation.
 
 ```
-     140:                 created_at=agent.created_at,
-     141:                 mcp_config=MCPConfig.model_validate(agent.mcp_config) if agent.mcp_config else MCPConfig(),
      142:                 preset=agent.preset,
      143:             )
      144:
@@ -5002,13 +10347,13 @@ File: `adgn/src/adgn/agent/persist/sqlite.py`
      166:
      167:     async def delete_agent(self, agent_id: AgentID) -> None:
      168:         """Delete an agent and all associated records (cascaded by ORM)."""
-     169:         async with self._session() as session:
-     170:             await session.execute(delete(Agent).where(Agent.id == agent_id))
 ```
 
 ### `redundant-exit-handler.yaml` / `occ-0`
 
-File: `adgn/src/adgn/git_commit_ai/cli.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/redundant-exit-handler.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/git_commit_ai/cli.py#L660-L734)
+
+File: `adgn/src/adgn/git_commit_ai/cli.py` (L660, L733-734)
 
 > cli.py async_main() (lines 659-734) has a try-except handler that catches
 > ExitWithCode exceptions only to immediately call sys.exit() with the same code.
@@ -5027,8 +10372,6 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
 > own exit exceptions.
 
 ```
-     655:     result_stdout = stdout.decode() if stdout else ""
-     656:     return result_stdout.strip() if proc.returncode == 0 else os.environ.get("EDITOR", "vi")
      657:
      658:
      659: async def async_main(argv: list[str] | None = None):
@@ -5036,11 +10379,7 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
      661:         start_monotonic_s = time.monotonic()
      662:         gitdir = pygit2.discover_repository(str(Path.cwd()))
      663:         if not gitdir:
-     664:             print("fatal: not a git repository (or any of the parent directories)", file=sys.stderr)
-     665:             raise ExitWithCode(128)
    ...
-     728:             code = await _commit_immediately(msg, passthru)
-     729:             sys.exit(code)
      730:
      731:         code = await _run_editor_flow(repo, msg, previous_message, stats_comment, passthru)
      732:         sys.exit(code)
@@ -5049,13 +10388,13 @@ File: `adgn/src/adgn/git_commit_ai/cli.py`
      735:
      736:
      737: def main():
-     738:     asyncio.run(async_main())
-     739:
 ```
 
 ### `redundant-policy-error-enum.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/models/policy_error.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/redundant-policy-error-enum.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/models/policy_error.py#L9-L22)
+
+File: `adgn/src/adgn/agent/models/policy_error.py` (L9-11, L14-17, L21-22)
 
 > Lines 9-11 define `PolicyErrorCode` enum with `READ_ERROR` and `PARSE_ERROR` values. Lines 14-17
 > define `PolicyErrorStage` enum with `READ`, `PARSE`, and `TESTS` values. Lines 21-22 in `PolicyError`
@@ -5071,23 +10410,12 @@ File: `adgn/src/adgn/agent/models/policy_error.py`
 > duplication, easier maintenance, no mismatch risk, complete coverage.
 
 ```
-       4: from typing import Literal
-       5:
        6: from pydantic import BaseModel, ConfigDict, Field
        7:
        8:
 >>>    9: class PolicyErrorCode(StrEnum):
 >>>   10:     READ_ERROR = "read_error"
 >>>   11:     PARSE_ERROR = "parse_error"
-      12:
-      13:
-      14: class PolicyErrorStage(StrEnum):
-      15:     READ = "read"
-      16:     PARSE = "parse"
-   ...
-       9: class PolicyErrorCode(StrEnum):
-      10:     READ_ERROR = "read_error"
-      11:     PARSE_ERROR = "parse_error"
       12:
       13:
 >>>   14: class PolicyErrorStage(StrEnum):
@@ -5097,26 +10425,18 @@ File: `adgn/src/adgn/agent/models/policy_error.py`
       18:
       19:
       20: class PolicyError(BaseModel):
-      21:     stage: PolicyErrorStage = Field(description="Processing stage where error occurred")
-      22:     code: PolicyErrorCode = Field(description="Error code (read_error, parse_error)")
-   ...
-      16:     PARSE = "parse"
-      17:     TESTS = "tests"
-      18:
-      19:
-      20: class PolicyError(BaseModel):
 >>>   21:     stage: PolicyErrorStage = Field(description="Processing stage where error occurred")
 >>>   22:     code: PolicyErrorCode = Field(description="Error code (read_error, parse_error)")
       23:     index: int | None = Field(None, description="Character/token index where error occurred")
       24:     length: int | None = Field(None, description="Length of error span in characters/tokens")
       25:     message: str | None = Field(None, description="Human-readable error message")
-      26:
-      27:     model_config = ConfigDict(extra="forbid")
 ```
 
 ### `redundant-runtime-type-check.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/policy_eval/container.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/redundant-runtime-type-check.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/policy_eval/container.py#L34-L35)
+
+File: `adgn/src/adgn/agent/policy_eval/container.py` (L34-35)
 
 > Redundant runtime type check for parameter when type system already guarantees non-None.
 >
@@ -5145,17 +10465,8 @@ File: `adgn/src/adgn/agent/policy_eval/container.py`
 > ```
 >
 > This centralizes validation at the type level, not at every usage site.
->
-> **Benefits:**
->
-> - Less code
-> - Type system is the source of truth
-> - No redundant checks at call sites
-> - Validation happens once (at type construction)
 
 ```
-      29:         agent_id: AgentID,
-      30:         docker_client: DockerClient,
       31:         engine: ApprovalPolicyEngine,
       32:         image: str | None = None,
       33:         timeout_secs: float | None = None,
@@ -5164,13 +10475,13 @@ File: `adgn/src/adgn/agent/policy_eval/container.py`
       36:             raise ValueError("ContainerPolicyEvaluator requires agent_id")
       37:         self.agent_id = agent_id
       38:         self.image: str = image or resolve_runtime_image()
-      39:         self.timeout_secs = (
-      40:             timeout_secs if timeout_secs is not None else float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5"))
 ```
 
 ### `runtime-lifecycle-confusion.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/runtime/local_runtime.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/runtime-lifecycle-confusion.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/runtime/local_runtime.py#L81-L165)
+
+File: `adgn/src/adgn/agent/runtime/local_runtime.py` (L81-82, L85-88, L90-153, L155-158, L160-165)
 
 > `LocalAgentRuntime` has lifecycle issues: missing type annotations
 > (ui_bus, connection_manager at 81-82), "may be initialized" antipattern
@@ -5191,8 +10502,6 @@ File: `adgn/src/adgn/agent/runtime/local_runtime.py`
 > cleanup.
 
 ```
-      76:     ):
-      77:         self.running = running
       78:         self.model = model
       79:         self._client_factory = client_factory
       80:         self._system_override = system_override
@@ -5200,29 +10509,10 @@ File: `adgn/src/adgn/agent/runtime/local_runtime.py`
 >>>   82:         self._reasoning_summary = reasoning_summary
       83:         self._parallel_tool_calls = parallel_tool_calls
       84:         self._extra_handlers = list(extra_handlers)
-      85:         self._ui_bus = ui_bus
-      86:         self._connection_manager = connection_manager
-      87:
-   ...
-      80:         self._system_override = system_override
-      81:         self._reasoning_effort = reasoning_effort
-      82:         self._reasoning_summary = reasoning_summary
-      83:         self._parallel_tool_calls = parallel_tool_calls
-      84:         self._extra_handlers = list(extra_handlers)
 >>>   85:         self._ui_bus = ui_bus
 >>>   86:         self._connection_manager = connection_manager
 >>>   87:
 >>>   88:         # Initialized by start()
-      89:         self.session: AgentSession | None = None
-      90:         self.agent: MiniCodex | None = None
-      91:
-      92:     async def start(self) -> None:
-      93:         # Create session with UI components if provided
-   ...
-      85:         self._ui_bus = ui_bus
-      86:         self._connection_manager = connection_manager
-      87:
-      88:         # Initialized by start()
       89:         self.session: AgentSession | None = None
 >>>   90:         self.agent: MiniCodex | None = None
 >>>   91:
@@ -5289,30 +10579,10 @@ File: `adgn/src/adgn/agent/runtime/local_runtime.py`
 >>>  152:         self.session = sess
 >>>  153:         self.agent = agent
      154:
-     155:     async def run(self, user_text: str) -> AgentResult:
-     156:         """Raises RuntimeError if agent not started."""
-     157:         if self.agent is None:
-     158:             raise RuntimeError("agent not started - call start() first")
-   ...
-     150:
-     151:         # Store references
-     152:         self.session = sess
-     153:         self.agent = agent
-     154:
 >>>  155:     async def run(self, user_text: str) -> AgentResult:
 >>>  156:         """Raises RuntimeError if agent not started."""
 >>>  157:         if self.agent is None:
 >>>  158:             raise RuntimeError("agent not started - call start() first")
-     159:
-     160:         return await self.agent.run(user_text)
-     161:
-     162:     async def close(self) -> None:
-     163:         """Does NOT close the underlying RunningInfrastructure.
-   ...
-     155:     async def run(self, user_text: str) -> AgentResult:
-     156:         """Raises RuntimeError if agent not started."""
-     157:         if self.agent is None:
-     158:             raise RuntimeError("agent not started - call start() first")
      159:
 >>>  160:         return await self.agent.run(user_text)
 >>>  161:
@@ -5326,7 +10596,9 @@ File: `adgn/src/adgn/agent/runtime/local_runtime.py`
 
 ### `silent-future-done-check.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/silent-future-done-check.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/approvals.py#L185-L203)
+
+File: `adgn/src/adgn/agent/approvals.py` (L185-189, L199-203)
 
 > approve() and reject() tools in ApprovalHub check if a future is already done,
 > but silently ignore this case instead of raising an error.
@@ -5361,8 +10633,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > - Forces callers to handle the race condition properly
 
 ```
-     180:
-     181:             Returns:
      182:                 Dictionary confirming the approval
      183:             """
      184:             # Inline resolve logic
@@ -5374,11 +10644,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      190:
      191:         @self.tool()
      192:         async def reject(call_id: str, reasoning: str | None = None) -> dict:
-     193:             """Reject a pending tool call.
-     194:
    ...
-     194:
-     195:             Returns:
      196:                 Dictionary confirming the rejection
      197:             """
      198:             # Inline resolve logic
@@ -5390,13 +10656,13 @@ File: `adgn/src/adgn/agent/approvals.py`
      204:
      205:     async def notify_approvals_changed(self) -> None:
      206:         """Notify that approvals have changed."""
-     207:         await self.broadcast_resource_updated("resource://approvals")
-     208:
 ```
 
 ### `state-redundant-compositor.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/server/status_shared.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/state-redundant-compositor.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/server/status_shared.py#L66-L91)
+
+File: `adgn/src/adgn/agent/server/status_shared.py` (L66-68, L76-78, L91)
 
 > status_shared.py AgentStatusCore duplicates data available via the 2-layer
 > compositor. Three fields (mcp: McpState lines 76-78, policy: PolicyState lines
@@ -5422,8 +10688,6 @@ File: `adgn/src/adgn/agent/server/status_shared.py`
 > standard MCP protocol to avoid sync issues.
 
 ```
-      61:     STARTING = "starting"
-      62:     READY = "ready"
       63:
       64:
       65: """Status models and builder (no host volumes reported)."""
@@ -5433,11 +10697,7 @@ File: `adgn/src/adgn/agent/server/status_shared.py`
       69:     id: int | None = None
       70:     model_config = ConfigDict(extra="forbid")
       71:
-      72:
-      73: class UiStateLite(BaseModel):
    ...
-      71:
-      72:
       73: class UiStateLite(BaseModel):
       74:     ready: bool
       75:     model_config = ConfigDict(extra="forbid")
@@ -5447,11 +10707,7 @@ File: `adgn/src/adgn/agent/server/status_shared.py`
       79:     entries: dict[str, ServerEntry]
       80:     model_config = ConfigDict(extra="forbid")
       81:
-      82:
-      83: class ContainerState(BaseModel):
    ...
-      86:     ephemeral: bool
-      87:     model_config = ConfigDict(extra="forbid")
       88:
       89:
       90: class AgentStatusCore(BaseModel):
@@ -5459,13 +10715,13 @@ File: `adgn/src/adgn/agent/server/status_shared.py`
       92:     live: bool
       93:     active_run_id: UUID | None
       94:     lifecycle: AgentLifecycle
-      95:     run_phase: RunPhase
-      96:     policy: PolicyState
 ```
 
 ### `ui-factories-helpers-missing.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/ui-factories-helpers-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte#L69-L180)
+
+File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte` (L69-71, L78, L107, L115-121, L138-142, L175-180)
 
 > GlobalApprovalsList.svelte contains explicit tool/resource constructions at 6 locations instead
 > of using factories/helpers with defaults: MCP client creation (line 69: createMCPClient with
@@ -5485,8 +10741,6 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
 > (mock helpers not raw calls), type safety, less duplication.
 
 ```
-      64:         throw new Error('No authentication token available')
-      65:       }
       66:
       67:       // Connect to MCP server (requires backend to expose MCP endpoint)
       68:       // In a full implementation, this would connect to something like:
@@ -5498,21 +10752,12 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
       74:       })
       75:
       76:       // Subscribe to resource updates for live refresh
-   ...
-      73:         token
-      74:       })
-      75:
-      76:       // Subscribe to resource updates for live refresh
       77:       // NOTE: Subscription support would need to be added to the backend
 >>>   78:       try {
       79:         await subscribeToResource(mcpClient, MCPUris.approvalsPendingUri)
       80:       } catch (e) {
       81:         console.warn('Subscription not supported, will use polling:', e)
-      82:       }
-      83:
    ...
-     102:
-     103:   /**
      104:    * Fetch all pending approvals from the global mailbox
      105:    *
      106:    * The resource://approvals/pending resource returns multiple TextResourceContents blocks,
@@ -5520,11 +10765,7 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
      108:    */
      109:   async function fetchApprovals() {
      110:     if (!mcpClient) return
-     111:
-     112:     try {
    ...
-     110:     if (!mcpClient) return
-     111:
      112:     try {
      113:       // Read the global approvals resource
      114:       const contents = await readResource(mcpClient, MCPUris.approvalsPendingUri)
@@ -5538,11 +10779,7 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
      122:         if ('text' in block && block.mimeType === 'application/json') {
      123:           try {
      124:             const data = JSON.parse(block.text)
-     125:             parsedApprovals.push({
-     126:               agent_id: data.agent_id,
    ...
-     133:         }
-     134:       }
      135:
      136:       approvals = parsedApprovals
      137:       error = null
@@ -5554,11 +10791,7 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
      143:   }
      144:
      145:   /**
-     146:    * Approve a tool call via MCP tool
-     147:    */
    ...
-     170:   /**
-     171:    * Show rejection dialog
      172:    */
      173:   function showRejectDialogFor(agentId: string, callId: string) {
      174:     rejectAgentId = agentId
@@ -5571,13 +10804,13 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
      181:    * Reject a tool call via MCP tool with reason
      182:    */
      183:   async function handleReject() {
-     184:     if (!mcpClient || !rejectReason.trim()) return
-     185:
 ```
 
 ### `unimplemented-websocket.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/unimplemented-websocket.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte#L85)
+
+File: `adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte` (L85)
 
 > Four Svelte components create independent MCP client connections: AgentsSidebar (line 85), ChatPane
 > (lines 87-91 and 124-128 - TWO separate clients in same component), MessageComposer (lines 16-20),
@@ -5600,8 +10833,6 @@ File: `adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte`
 > **Note:** Creates MCP client to list agents; should use shared client from store/context
 
 ```
-      80:       const config: MCPClientConfig = {
-      81:         name: 'agents-sidebar',
       82:         url: `${window.location.protocol}//${window.location.host}/mcp`,
       83:         token,
       84:       }
@@ -5609,13 +10840,13 @@ File: `adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte`
       86:
       87:       // Set up notification handler for resource updates
       88:       mcpClient.setNotificationHandler(
-      89:         ResourceUpdatedNotificationSchema,
-      90:         async (notification) => {
 ```
 
 ### `unimplemented-websocket.yaml` / `occ-1`
 
-File: `adgn/src/adgn/agent/web/src/components/ChatPane.svelte`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/unimplemented-websocket.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/web/src/components/ChatPane.svelte#L87-L128)
+
+File: `adgn/src/adgn/agent/web/src/components/ChatPane.svelte` (L87-91, L124-128)
 
 > Four Svelte components create independent MCP client connections: AgentsSidebar (line 85), ChatPane
 > (lines 87-91 and 124-128 - TWO separate clients in same component), MessageComposer (lines 16-20),
@@ -5639,8 +10870,6 @@ File: `adgn/src/adgn/agent/web/src/components/ChatPane.svelte`
 > chat-pane-abort-client (line 124-128) for aborting. Worst offender - not even reusing its own client
 
 ```
-      82:         console.warn('No auth token available for MCP client')
-      83:         agentMode = null
       84:         return
       85:       }
       86:
@@ -5652,11 +10881,7 @@ File: `adgn/src/adgn/agent/web/src/components/ChatPane.svelte`
       92:
       93:       const contents = await readResource(client, MCPUris.agentsListUri)
       94:
-      95:       // Parse the resource contents
-      96:       if (Array.isArray(contents) && contents.length > 0) {
    ...
-     119:       if (!token) {
-     120:         abortErrorMessage = 'Authentication required'
      121:         return
      122:       }
      123:
@@ -5668,13 +10893,13 @@ File: `adgn/src/adgn/agent/web/src/components/ChatPane.svelte`
      129:
      130:       await callTool(client, 'abort_agent', { agent_id: id })
      131:     } catch (error) {
-     132:       if (error instanceof MCPClientError) {
-     133:         abortErrorMessage = `Abort failed: ${error.message}`
 ```
 
 ### `unimplemented-websocket.yaml` / `occ-2`
 
-File: `adgn/src/adgn/agent/web/src/components/MessageComposer.svelte`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/unimplemented-websocket.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/web/src/components/MessageComposer.svelte#L16-L20)
+
+File: `adgn/src/adgn/agent/web/src/components/MessageComposer.svelte` (L16-20)
 
 > Four Svelte components create independent MCP client connections: AgentsSidebar (line 85), ChatPane
 > (lines 87-91 and 124-128 - TWO separate clients in same component), MessageComposer (lines 16-20),
@@ -5697,8 +10922,6 @@ File: `adgn/src/adgn/agent/web/src/components/MessageComposer.svelte`
 > **Note:** Creates new MCP client per message send operation; should use shared client
 
 ```
-      11:   let message = ''
-      12:   let sending = false
       13:   let error: string | null = null
       14:
       15:   // Send message to agent via MCP prompt tool
@@ -5710,13 +10933,13 @@ File: `adgn/src/adgn/agent/web/src/components/MessageComposer.svelte`
       21:
       22:     try {
       23:       const token = getOrExtractToken()
-      24:       if (!token) {
-      25:         throw new Error('Authentication required')
 ```
 
 ### `unimplemented-websocket.yaml` / `occ-3`
 
-File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/unimplemented-websocket.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte#L69-L71)
+
+File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte` (L69-71)
 
 > Four Svelte components create independent MCP client connections: AgentsSidebar (line 85), ChatPane
 > (lines 87-91 and 124-128 - TWO separate clients in same component), MessageComposer (lines 16-20),
@@ -5740,8 +10963,6 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
 > User suggests: delete component or expose agent-global resource through compositor
 
 ```
-      64:         throw new Error('No authentication token available')
-      65:       }
       66:
       67:       // Connect to MCP server (requires backend to expose MCP endpoint)
       68:       // In a full implementation, this would connect to something like:
@@ -5751,13 +10972,13 @@ File: `adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte`
       72:         url: `${window.location.origin}/api/mcp`,
       73:         token
       74:       })
-      75:
-      76:       // Subscribe to resource updates for live refresh
 ```
 
 ### `unmounted-resource-uris.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/resources.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/unmounted-resource-uris.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/mcp_bridge/resources.py#L16-L67)
+
+File: `adgn/src/adgn/agent/mcp_bridge/resources.py` (L16-67)
 
 > The `resources.py` module defines ten parameterized resource URI helper functions
 > (agent_state, agent_snapshot, agent_mcp_state, agent_approvals_pending, agent_approvals_history,
@@ -5778,17 +10999,8 @@ File: `adgn/src/adgn/agent/mcp_bridge/resources.py`
 > Either implement the missing resources or delete the unused helpers. Recommended: delete helpers
 > for unmounted resources, keeping only what's actually implemented. Search for usages first; if used
 > only in tests expecting future work, move to test fixtures.
->
-> **Benefits of cleanup:**
->
-> 1. No dead code, clear API surface
-> 2. Less confusion for new developers
-> 3. Honest documentation reflecting actual capabilities
-> 4. Smaller maintenance burden
 
 ```
-      11:
-      12: ACTIVE_POLICY = "resource://approval-policy/policy.py"
       13: """Resource URI for active approval policy."""
       14:
       15:
@@ -5850,7 +11062,9 @@ File: `adgn/src/adgn/agent/mcp_bridge/resources.py`
 
 ### `unnecessary-noop-overrides.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/reducer.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/issues/unnecessary-noop-overrides.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-00/code/adgn/src/adgn/agent/reducer.py#L244-L265)
+
+File: `adgn/src/adgn/agent/reducer.py` (L244-265)
 
 > Lines 244-265 in reducer.py define `NotificationsHandler(BaseHandler)` that overrides 7 event
 > methods (`on_response`, `on_error`, `on_user_text`, `on_assistant_text`, `on_tool_call`,
@@ -5867,8 +11081,6 @@ File: `adgn/src/adgn/agent/reducer.py`
 > self-documenting (missing overrides signal "uses base behavior").
 
 ```
-     239:
-     240:         if msg is None:
      241:             logger.debug("NotificationsHandler: no updates")
      242:             return NoLoopDecision()
      243:
@@ -5897,1020 +11109,1504 @@ File: `adgn/src/adgn/agent/reducer.py`
      266:     # Agent-level before-tool gating removed; Policy Gateway middleware enforces approvals/denials
      267:
      268:     def on_tool_result(self, evt: ToolCallOutput) -> None:
-     269:         return None
-     270:
 ```
 
-## gmail-archiver/2025-12-17-00 (28)
+## ducktape/2025-09-03-00 (26)
 
-### `ad-hoc-action-signature-tuple.yaml` / `occ-0`
+### `argparse-type-path.yaml` / `occ-0`
 
-File: `gmail_archiver/cli/filters.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/argparse-type-path.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py#L460-L508)
 
-> The code constructs an ad-hoc tuple-of-tuples to represent an action's label changes
-> for grouping purposes:
+File: `llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py` (L460-466, L476-485, L508)
+
+> Argparse can directly parse filesystem arguments into pathlib.Path objects by using `type=Path` on
+> add_argument.
+> Prefer declaring `ap.add_argument('--foo', type=Path, ...)` so callers receive a Path immediately and avoid
+> scattershot
+> `Path(args.foo)` conversions later.
 >
->     sig = (tuple(sorted(pa.action.labels_to_add)), tuple(sorted(pa.action.labels_to_remove)))
+> Why this matters:
+>
+> - Tightens contracts: handlers downstream get the correct type without ad-hoc wrapping.
+> - Reduces one-off conversions and improves readability.
+> - Avoids small bugs where a string path is treated differently than a Path (e.g.,
+>   path / os.PathLike handling).
+
+### `call-tool-shell-abstraction-confusion.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/call-tool-shell-abstraction-confusion.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py#L266-L284)
+
+File: `llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py` (L266-284)
+
+> McpManager.call_tool() (lines 266-284) treats all MCP tools as if they were shell commands,
+> manufacturing {"exit", "stdout", "stderr"} for everything. For local handlers that return
+> dicts, it wraps them as {"exit": 0, "json": <result>} (line 281-282). This is confused
+> about the abstraction: MCP tools are general-purpose operations that return CallToolResult
+> (from mcp package), not necessarily shell command results. CallToolResult has proper fields
+> (isError, content, structuredContent, meta) for representing tool execution results.
+>
+> The method should use CallToolResult throughout instead of manufacturing exit codes for
+> non-command tools. This confusion causes issues like double-wrapping where LocalExecServer's
+> {"exit": 1, "stderr": "error"} gets wrapped as {"exit": 0, "json": {"exit": 1, ...}},
+> hiding failures from the agent.
+
+### `cap-append-defaults.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/cap-append-defaults.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L133-L195)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L133-137, L154-156, L174-176, L194-195)
+
+> Calls like `_cap_append(parts, chunk, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated…]")` repeat the same
+> constants at each site. Prefer giving `_cap_append` sensible defaults (or deriving the note from the cap)
+> so callers only pass the varying pieces. This reduces duplication and drift risk across call sites.
+
+### `collect-tools-openai-dict-duplication.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/collect-tools-openai-dict-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py#L121-L140)
+
+File: `llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py` (L121-128, L133-140)
+
+> \_collect_tools_live has duplicated logic for building openai_tools dict entries.
+> The stdio branch (lines 121-128) and local branch (lines 133-140) create identical
+> dict structures with "type", "name", "description", "parameters" keys. Should extract
+> a helper function that takes (server, tool_name, description, params_schema) and
+> returns the tool dict, then call it from both branches. This would eliminate 8 lines
+> of duplication and make the tool dict structure easier to maintain.
+
+### `derive-model-str.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/derive-model-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L74-L95)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L74-95)
+
+> `AppConfig.resolve` constructs `model_str` and also stores `provider` and `model_name` split from it, but
+> later code reads the composite `model_str` only for logging/printing. Since `model_str` is trivially derivable
+> as `f"{provider}:{model_name}"`, avoid storing this redundant field and derive it where needed.
+>
+> This reduces duplicated state and keeps the config focused on primary fields.
+
+### `diagnostics-broad-catch.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/diagnostics-broad-catch.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py#L343)
+
+File: `llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py` (L343)
+
+> During diagnostics the code catches broad Exception, prints a diagnostic message, and continues. In a
+> diagnostics path
+> this masks failures that were supposed to surface useful debug information — the wrapper should fail fast or
+> at least
+> propagate the error after logging full context.
+>
+> Diagnostics code should make problems visible and actionable. Silently continuing after printing a short
+> message
+> prevents test harnesses and callers from noticing failures and makes root-cause debugging much harder.
+>
+> Prefer: log full traceback and re-raise (or exit non-zero) so CI/tests detect the issue. Only suppress known,
+> explicitly
+> documented non-fatal exceptions.
+
+### `docker-exec-mcp-typed-inputs.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/docker-exec-mcp-typed-inputs.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py#L88-L250)
+
+File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py` (L200-250, L88-112)
+
+> Docker Exec MCP tool inputs should be declared as strongly-typed (Pydantic) parameters on the FastMCP
+> tool function, so validation is handled by the framework and schemas are auto-exported to MCP clients.
+>
+> Current pattern (manual dict/field extraction in call_tool) leads to ad-hoc checks and coercions.
+>
+> FastMCP-idiomatic pattern (two options):
+>
+> - Single Pydantic payload model:
+>   @app.tool()
+>   async def docker_exec(payload: ExecInputs) -> ExecResultPayload: ...
+>   where ExecInputs is a Pydantic BaseModel with strict field types.
+> - Separate strongly-typed parameters:
+>   @app.tool()
+>   async def docker_exec(cmd: list[str], timeout_secs: float | None = None, ...) -> ExecResultPayload: ...
+>
+> Required input typing (minimum):
+>
+> - cmd: list[str] (non-empty)
+> - cwd: str | None
+> - env: dict[str, str] | None (values must be strings; reject non-strings)
+> - user: str | None
+> - tty: bool (no truthy-string coercion)
+> - shell: bool (no truthy-string coercion)
+> - timeout_secs: float | None (>= 0; no string coercion)
+>
+> Benefits:
+>
+> - Validation moves to FastMCP/Pydantic; no manual coercion.
+> - JSON Schema for the tool is generated directly from the Pydantic model and visible to MCP clients.
+> - Clear, self-documenting contracts; fewer runtime surprises.
+>
+> Acceptance criteria:
+>
+> - Define a Pydantic BaseModel ExecInputs with the fields above (strict types; min_items=1 for cmd).
+> - Change the FastMCP registration to use a typed tool signature (either payload model or per-arg types).
+> - Remove manual extraction/coercion in call_tool; rely on Pydantic validation (any invalid inputs must raise).
+> - Keep existing shell/timeout composition logic, but operate only on already-validated,
+>   correctly-typed values.
+
+### `docker-exec-unbounded-output.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/docker-exec-unbounded-output.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py#L146-L250)
+
+File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py` (L146-200, L241-250)
+
+> Docker Exec MCP returns unbounded stdout/stderr data, which is hazardous for MCP/LLM agents and
+> can also lead to process memory growth.
+>
+> Primary impact (MCP/LLM):
+>
+> - Tool responses are fed back into an LLM context. Returning megabytes of text will quickly
+>   blow the caller’s context/window, causing truncation, failures, or severe quality drops.
+>   MCP tools must bound returned payload size.
+>
+> Secondary impact (server memory):
+>
+> - The server accumulates stdout/stderr into bytearrays with no cap. Very chatty commands can
+>   cause high memory usage or OOM over time.
+>
+> Observed (specimen paths):
+>
+> - llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py collects into bytearrays without limits
+>   and returns the full decoded strings in the tool payload.
+>
+> Acceptance criteria (bounded capture in MCP response):
+>
+> - Enforce an upper bound (bytes or characters) for stdout/stderr included in the tool return
+>   (e.g., first N bytes, with a clear truncation note and total sizes).
+> - Keep full data optional (e.g., tee to a temp file/log and return a path/reference), but the
+>   MCP tool’s returned text must be bounded deterministically.
+> - Document the cap and truncation behavior in the tool description so callers can plan.
+>
+> Optional (server memory hygiene):
+>
+> - Apply the same bound in the in-process accumulation path, or stream/tee to a file to avoid
+>   unbounded memory growth while still allowing capped returns.
+
+### `docker-mutable-singletons.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/docker-mutable-singletons.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py#L53-L71)
+
+File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py` (L53-58, L60-71)
+
+> Module-level `_DOCKER_CLIENT` and `_CONTAINER_REF` introduce mutable global state that couples requests
+> through hidden, process-wide singletons. This makes behavior order-dependent, complicates testing,
+> and risks leaking configuration across calls.
+>
+> Prefer explicit dependency injection: pass a Docker client via parameters or a factory, or manage per-request
+> context that resolves the container ref at call time. Keep state local to the request boundary.
+
+### `enforce-single-total-cap.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/enforce-single-total-cap.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L133-L205)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L133-137, L154-156, L174-176, L194-195, L201-205)
+
+> Current caps are applied per git output block (status / name-status / log / diff), so the assembled
+> prompt can reach many× the nominal cap. Prefer a single accumulator-based total cap enforced over the
+> fully assembled prompt, or track remaining bytes across calls to `_cap_append` to share the budget.
+>
+> This yields predictable size, avoids double work, and makes tradeoffs explicit between sections.
+
+### `exceptions-for-control-flow.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/exceptions-for-control-flow.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L304)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L304)
+
+> Do not use try/except to detect normal, non-error conditions. Reserve exceptions for unexpected situations.
+> The current "first commit" detection relies on catching a diff failure, which can also swallow unrelated
+> errors.
+> Prefer a positive repository capability/condition check with early bailout. Example pattern:
+>
+> - If we're in the 90% normal case (without executing a failing operation), run the normal path.
+> - Else, handle the 10% case explicitly.
+>   As a reviewer, seeing try/except signals "what's on fire" (unexpected), not a routine precondition check.
+>
+> **Note:** try/except used to detect first commit instead of positive check
+
+### `gitpython-over-shell.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/gitpython-over-shell.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L731-L739)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L731-739)
+
+> `_get_editor` shells out via `asyncio.create_subprocess_exec("git", "var", "GIT_EDITOR", ...)` to
+> obtain the editor. Prefer using the repo API directly (e.g., `repo.git.var("GIT_EDITOR")`) or a
+> config reader fallback (`repo.config_reader().get_value("core", "editor", default)`). This reduces
+> subprocess boilerplate and simplifies control flow.
+
+### `legacy-policyconfig-shim.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/legacy-policyconfig-shim.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py#L23-L27)
+
+File: `llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py` (L23-27)
+
+> The wrapper contains a legacy PolicyConfig shim that exists only for import compatibility with older tests.
+> Keeping dead shims because "tests still reference it" is not a sufficient reason to retain the code: tests
+> should be
+> updated to the canonical model or provided a test-only shim.
+>
+> Why this is bad:
+>
+> - It preserves dead/unused code paths that increase maintenance burden and cognitive load.
+> - New readers assume the shim is live behavior and may write code to support it, increasing cruft.
+> - Tests depending on obsolete shims should be migrated or wrapped in explicit test fixtures rather than
+>   perpetuating
+>   legacy surface area.
+
+### `max-prompt-cap-name.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/max-prompt-cap-name.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L60-L205)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L60, L135-137, L155-156, L175-176, L194-195, L201-205)
+
+> The constant name `MAX_PROMPT_CONTEXT_BYTES` uses two near-synonyms in this code path ("prompt" and
+> "context").
+> Either pick one term and scope it correctly, or enforce a true global prompt cap:
+>
+> Options:
+>
+> - Rename to reflect true scope (per-block cap): e.g.,
+>   `MAX_PROMPT_GIT_OUTPUT_BYTES` (applies to each appended block)
+> - Or adopt a global `MAX_PROMPT_BYTES` and enforce an overall cap,
+>   leaving block-level caps as internal helpers
+>
+> This reduces ambiguity, communicates scope precisely, and prevents misinterpretation.
+
+### `redundant-parallel-names.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/redundant-parallel-names.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L906-L922)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L906-922)
+
+> The editor flow uses redundant parallel variable names (`final_text` and `content_before`) that mirror each
+> other
+> without adding clarity. Keep a single source variable to reduce cognitive load and avoid confusion about which
+> represents the canonical value.
+
+### `remove-openai-key-plumb.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/remove-openai-key-plumb.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mini_codex/agent.py#L45-L111)
+
+File: `llm/adgn_llm/src/adgn_llm/mini_codex/agent.py` (L45-55, L100-111)
+
+> The OpenAI SDK already reads `OPENAI_API_KEY` and base URL env vars; hand-rolling a client factory that
+> fetches
+> env vars duplicates configuration paths and adds code surface without value.
+>
+> Prefer:
+>
+> - Call `openai.OpenAI()` directly and let the SDK read environment variables; or
+> - Inject a client (DI) from the caller/tests to keep construction policy out of core logic.
+>
+> This reduces duplication and makes tests simpler (just pass a client/fake).
+
+### `responses-turn-duplicate.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/responses-turn-duplicate.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mini_codex/cli.py#L188-L306)
+
+File: `llm/adgn_llm/src/adgn_llm/mini_codex/cli.py` (L188-218, L276-306)
+
+> `responses_turn` and `responses_followup_with_tool_outputs` in the CLI duplicate ~20 lines of logic:
+> assembling instructions (with optional MCP block), listing tools, building the payload, and
+> calling Responses. This copy/paste raises drift risk and splits responsibility between CLI and agent.
+>
+> Preferred design:
+>
+> - Keep agent.py as the single owner of the agent loop and Responses flow (instructions assembly,
+>   tools listing, payload construction, result parsing).
+> - Make cli.py a thin wrapper that delegates to the agent (or a single helper) rather than repeating logic.
+>
+> Concretely: extract a shared helper (or call through to agent) used by both paths, removing the duplicate
+> try/except + instruction assembly + tools list + responses.create blocks.
+
+### `runner-branch-duplication.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/runner-branch-duplication.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L590-L621)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L590-621)
+
+> ParallelTaskRunner.create_and_run duplicates runner construction and update loop across branches; only output
+> streaming
+> differs.
+> Prefer a single shared trunk: compute precommit_task (real or noop) and master_fd, construct the runner once,
+> start
+> the
+> update loop once, and stream output only if master_fd is not None. This keeps the main path flat (early
+> bailout for
+> no-precommit).
+
+### `scoped-try-except-swallow.yaml` / `occ-4`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/scoped-try-except-swallow.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py#L55-L59)
+
+File: `llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py` (L55-59)
+
+> Scoped try/except blocks swallow errors instead of failing loudly.
+> Where there is no specific recovery/handling need, do not catch at all — let exceptions bubble normally.
+> Where there is a specific reason to handle, catch only the narrow exception and do not swallow silently (log
+> and/or
+> re-raise as appropriate).
+>
+> **Note:** mkdir failure silently falls back to cwd, hiding operational problems
+
+### `timeout-ms-propagation.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/timeout-ms-propagation.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py#L28-L127)
+
+File: `llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py` (L28-43, L50-90, L110-127)
+
+> exec_handler converts timeout_ms to seconds early with int(timeout_ms / 1000), truncating
+> sub-second precision (1500ms becomes 1s, 500ms becomes 0→1s). Timeout should be propagated
+> as milliseconds (int) throughout the call chain and only divided by 1000.0 at the final
+> subprocess.communicate() call. This requires changing: exec_handler to pass timeout_ms
+> directly, \_run_in_sandbox(timeout_s: int) → \_run_in_sandbox(timeout_ms: int),
+> \_run_proc(timeout_s: int) → \_run_proc(timeout_ms: int), and \_run_proc to convert at
+> communicate: p.communicate(timeout=timeout_ms / 1000.0). Python >=3.11 is required
+> and subprocess.communicate() has supported float timeout since Python 3.3.
+
+### `timeout-noop-branch.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/timeout-noop-branch.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py#L181-L183)
+
+File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py` (L181-183)
+
+> The timeout branch is a literal no-op:
+>
+> if timed_out: # We cannot reliably kill the exec unless wrapper handled it; return best-effort
+> pass
+>
+> Timeout handling in this module:
+>
+> - With USE_CONTAINER_TIMEOUT_WRAPPER=1, commands are wrapped in `timeout -s TERM <secs>` inside the container
+>   (see
+>   lines 27–31), so the process is actually signaled on expiry.
+> - Without the wrapper, we stop reading and return ExecResult with `timed_out=True`,
+>   but the container process may keep running. Tests only assert `timed_out`; they do not verify termination.
+>
+> This is a footgun: timeouts can exceed and leave processes running. At the very least, document this behavior
+> prominently and surface explicit return markers (e.g., `timeout_enforced=false` or `kill_attempted=false`) so
+> callers
+> can react.
+>
+> Preferred fix: require an always-correct timeout path. If a timeout is requested and the wrapper is
+> unavailable, fail
+> fast (refuse to run) instead of best-effort; or ensure the implementation enforces termination reliably.
+> Delete the
+> empty branch.
+
+### `timeout-units-ambiguous.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/timeout-units-ambiguous.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py#L55)
+
+File: `llm/adgn_llm/src/adgn_llm/mcp/docker_exec/server.py` (L55)
+
+> Constants representing timeouts should carry units in their type or name. `_DEFAULT_TIMEOUT: float | None =
+None` is
+> ambiguous about units.
+>
+> Prefer one of two patterns:
+>
+> - Use a timedelta, e.g. `DEFAULT_TIMEOUT = timedelta(seconds=30)`, and name it DEFAULT_TIMEOUT.
+> - If storing a numeric value, include the unit in the name and type,
+>   e.g. `DEFAULT_TIMEOUT_S: int | None = None`.
+>
+> Benefits: reduces confusion about whether a timeout is seconds, milliseconds, or fractional seconds; makes
+> call sites
+> clearer and avoids silent misconfigurations.
+
+### `trivial-wrapper-main.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/trivial-wrapper-main.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/cli.py#L6-L7)
+
+File: `llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/cli.py` (L6-7)
+
+> The CLI `main()` in `mcp/sandboxed_jupyter_mcp/cli.py` merely delegates to `wrapper.main()` without adding any
+> value
+> (no
+> argument transformation, validation, or help text).
+> One-line passthrough wrappers like this add indirection and lines of code for no benefit. Prefer calling the
+> implementation directly from entry points or consolidating the tiny delegating main into the wrapper to reduce
+> churn
+> and
+> improve readability.
+
+### `truncation-msg-hardcoded.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/truncation-msg-hardcoded.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L135-L205)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L135-136, L154-156, L174-176, L193-195, L201-205)
+
+> The truncation note is hardcoded as "[Context truncated to 100 KiB]" in multiple places, while the cap
+> is driven by MAX_PROMPT_CONTEXT_BYTES. This duplicates the limit in string form and risks drift.
+>
+> Prefer a single source of truth: derive the human text from the cap (e.g., f"[Context truncated to
+>
+> > {MAX_PROMPT_CONTEXT_BYTES // 1024} KiB]")
+> > or use a generic stable marker like "[Context truncated]". Keep the message in one place and reuse it.
+
+### `tty-guard-early-bailout.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/tty-guard-early-bailout.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L715-L721)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L715-721)
+
+> The TTY guard should use an early bailout to avoid unnecessary nesting.
+> Instead of nesting the main logic under `if sys.stdout.isatty(): ...`, invert the condition and return/skip
+> when not a
+> TTY, then run the terminal sizing at the base level.
+
+### `unused-prev-msg-default.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-09-03-00/issues/unused-prev-msg-default.yaml) · [code](https://github.com/agentydragon/ducktape/blob/4ad33013af27e159863bed92ffcfdb55b388e46c/llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py#L280-L281)
+
+File: `llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py` (L280-281)
+
+> The parameter is declared with a default that callers never use:
+>
+> previous_message: str | None = None
+>
+> Unused defaults add unnecessary degrees of freedom and complicate API contracts.
+> Prefer tightening the signature: drop the default (require an explicit value from callers)
+> or make the parameter mandatory only where needed via a higher-level object.
+
+## ducktape/2025-11-20-00 (25)
+
+### `collection-params-empty-tuple.yaml` / `occ-2` [P20]
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/collection-params-empty-tuple.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/persist/sqlite.py#L99-L102)
+
+File: `adgn/src/adgn/agent/persist/sqlite.py` (L99, L101-102)
+
+> Functions accept collection parameters as Optional, defaulting to None, then
+> check for None and convert to empty collection. Should use empty collection
+> as default instead.
+>
+> Benefits:
+>
+> - Simpler type: no Optional/union with None
+> - No None checks or reassignments needed
+> - Empty tuple is immutable and safe as default
+> - Clearer intent: "no items" vs "missing value"
+> - Empty collections are falsy if bool check needed
+>
+> This is a standard Python idiom for collection parameters.
+>
+> **Note:** attach/detach default to None, then reassigned with `attach or {}` and `detach if detach is not None else []`
+
+```
+      96:             await session.commit()
+      97:
+      98:     async def patch_agent_specs(
+>>>   99:         self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
+     100:     ) -> MCPConfig:
+>>>  101:         attach = attach or {}
+>>>  102:         detach = detach if detach is not None else []
+     103:         async with self._session() as session:
+     104:             result = await session.execute(select(Agent).where(Agent.id == agent_id))
+     105:             agent = result.scalar_one_or_none()
+```
+
+### `collection-params-empty-tuple.yaml` / `occ-3` [P20]
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/collection-params-empty-tuple.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/persist/__init__.py#L141)
+
+File: `adgn/src/adgn/agent/persist/__init__.py` (L141)
+
+> Functions accept collection parameters as Optional, defaulting to None, then
+> check for None and convert to empty collection. Should use empty collection
+> as default instead.
+>
+> Benefits:
+>
+> - Simpler type: no Optional/union with None
+> - No None checks or reassignments needed
+> - Empty tuple is immutable and safe as default
+> - Clearer intent: "no items" vs "missing value"
+> - Empty collections are falsy if bool check needed
+>
+> This is a standard Python idiom for collection parameters.
+>
+> **Note:** Protocol signature uses Optional instead of default empty collection
+
+```
+     138:     async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> AgentID: ...
+     139:     async def update_agent_specs(self, agent_id: AgentID, *, mcp_config: MCPConfig) -> None: ...
+     140:     async def patch_agent_specs(
+>>>  141:         self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
+     142:     ) -> MCPConfig: ...
+     143:     async def list_agents(self) -> list[AgentRow]: ...
+     144:     async def get_agent(self, agent_id: AgentID) -> AgentRow | None: ...
+```
+
+### `approvals-pending-wrong-attributes.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/approvals-pending-wrong-attributes.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/mcp_bridge/servers/agents.py#L400-L422)
+
+File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py` (L400-422)
+
+> approvals_pending_global builds URIs and JSON by accessing approval.call_id, approval.tool,
+> and approval.args, but PendingApproval only exposes tool_call (a ToolCall object) and timestamp.
+> The code raises AttributeError on every invocation because these attributes don't exist at the
+> PendingApproval level - they need to be accessed via approval.tool_call.call_id,
+> approval.tool_call.name, and approval.tool_call.args_json respectively.
+
+```
+     397:         mime_type="application/json",
+     398:         description="Global mailbox: all pending approvals across all agents (returns multiple content blocks)",
+     399:     )
+>>>  400:     async def approvals_pending_global():
+>>>  401:         """Each approval is a separate MCP TextResourceContents block.
+>>>  402:
+>>>  403:         Crashes if any agent fails (no exception swallowing).
+>>>  404:         """
+>>>  405:         content_blocks: list[mcp_types.TextResourceContents] = []
+>>>  406:
+>>>  407:         for agent_id in registry.known_agents():
+>>>  408:             infra = await registry.get_infrastructure(agent_id)
+>>>  409:             pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
+>>>  410:
+>>>  411:             for approval in pending_approvals:
+>>>  412:                 approval_uri = f"resource://agents/{agent_id}/approvals/{approval.call_id}"
+>>>  413:                 approval_data = {
+>>>  414:                     "agent_id": agent_id,
+>>>  415:                     "call_id": approval.call_id,
+>>>  416:                     "tool": approval.tool,
+>>>  417:                     "args": approval.args,
+>>>  418:                     "timestamp": approval.timestamp.isoformat(),
+>>>  419:                 }
+>>>  420:                 block = mcp_types.TextResourceContents(
+>>>  421:                     uri=approval_uri, mimeType="application/json", text=json.dumps(approval_data)
+>>>  422:                 )
+     423:                 content_blocks.append(block)
+     424:
+     425:         return mcp_types.ReadResourceResult(contents=content_blocks)
+```
+
+### `char-len-vs-byte-len.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/char-len-vs-byte-len.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/agent.py#L97-L177)
+
+File: `adgn/src/adgn/agent/agent.py` (L97, L101, L177)
+
+> `_dump_call_tool_result` (line 101) checks `len(result) > MAX_TOOL_RESULT_BYTES`
+> where `result` is a Python `str` and `MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024`
+> (line 177). `len(str)` returns character count, not byte count. Because
+> `json.dumps(..., ensure_ascii=False)` (line 97) preserves multi-byte characters,
+> a string with non-ASCII content (e.g., CJK text, emoji) can have significantly
+> more UTF-8 bytes than characters, bypassing the guard. The error message
+> (line 103) also reports `len(result)` as MB, further misrepresenting the size.
+
+```
+      94:     Dumps a compact JSON with native snake_case keys to avoid lossy remapping.
+      95:     """
+      96:
+>>>   97:     result = json.dumps(serialize_tool_result_compact(res), ensure_ascii=False)
+      98:
+      99:     # Safety check: OpenAI has a 10MB limit for input strings
+     100:     # Fail fast if tool output is too large to prevent API errors
+>>>  101:     if len(result) > MAX_TOOL_RESULT_BYTES:
+     102:         error_msg = (
+     103:             f"Tool output too large: {len(result) / (1024 * 1024):.1f}MB "
+     104:             f"exceeds max {MAX_TOOL_RESULT_BYTES / (1024 * 1024):.0f}MB. "
+   ...
+     174: SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
+     175:
+     176: # Size limits (bytes)
+>>>  177: MAX_TOOL_RESULT_BYTES = 10 * 1024 * 1024  # 10 MiB
+     178:
+     179:
+     180: def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
+```
+
+### `parse-response-should-not-exist.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/parse-response-should-not-exist.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/llm/sysrw/openai_typing.py#L111-L123)
+
+File: `adgn/src/adgn/llm/sysrw/openai_typing.py` (L111-123)
+
+> `parse_response_messages` and `parse_chat_messages` accept `Any` and validate via
+> TypeAdapter at runtime. Callers pass untyped dicts — e.g., `translation.py:149` builds
+> dicts via `.model_dump()` then immediately re-validates them, and `run_eval.py` has
+> multiple functions typed `(inp: Any)` that just forward to `parse_response_messages`.
+>
+> The data should be typed at source: callers should build/hold `list[ResponseOutputMessage]`
+> directly instead of round-tripping through dicts. This eliminates the need for runtime
+> validation functions and stops `Any` from spreading through the codebase.
+>
+> **Note:** parse_response_messages function
+
+```
+     108: # Removed parse_tool_call and extract_*_tool_call_info - no longer needed since we work with typed objects directly
+     109:
+     110:
+>>>  111: def parse_response_messages(messages: Any) -> list[ResponseOutputMessage] | None:
+>>>  112:     """Parse messages into validated ResponseOutputMessage objects.
+>>>  113:
+>>>  114:     Args:
+>>>  115:         messages: Unvalidated external payload (typically from OpenAI API response).
+>>>  116:                   Structured validation happens via TypeAdapter within function.
+>>>  117:
+>>>  118:     Returns:
+>>>  119:         Validated list of ResponseOutputMessage objects, or None if messages is falsy.
+>>>  120:     """
+>>>  121:     if not messages:
+>>>  122:         return None
+>>>  123:     return TypeAdapter(list[ResponseOutputMessage]).validate_python(messages)
+     124:
+     125:
+     126: def dump_response_messages(messages: list[ResponseOutputMessage]) -> list[dict[str, Any]]:
+```
+
+### `parse-response-should-not-exist.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/parse-response-should-not-exist.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/llm/sysrw/openai_typing.py#L136-L148)
+
+File: `adgn/src/adgn/llm/sysrw/openai_typing.py` (L136-148)
+
+> `parse_response_messages` and `parse_chat_messages` accept `Any` and validate via
+> TypeAdapter at runtime. Callers pass untyped dicts — e.g., `translation.py:149` builds
+> dicts via `.model_dump()` then immediately re-validates them, and `run_eval.py` has
+> multiple functions typed `(inp: Any)` that just forward to `parse_response_messages`.
+>
+> The data should be typed at source: callers should build/hold `list[ResponseOutputMessage]`
+> directly instead of round-tripping through dicts. This eliminates the need for runtime
+> validation functions and stops `Any` from spreading through the codebase.
+>
+> **Note:** parse_chat_messages function
+
+```
+     133:     return [TypeAdapter(dict[str, Any]).validate_python(msg) for msg in messages]
+     134:
+     135:
+>>>  136: def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | None:
+>>>  137:     """Parse messages into validated ChatCompletionMessageParam objects.
+>>>  138:
+>>>  139:     Args:
+>>>  140:         messages: Unvalidated external payload (typically from stored state or API).
+>>>  141:                   Structured validation happens via TypeAdapter within function.
+>>>  142:
+>>>  143:     Returns:
+>>>  144:         Validated list of ChatCompletionMessageParam objects, or None if messages is falsy.
+>>>  145:     """
+>>>  146:     if not messages:
+>>>  147:         return None
+>>>  148:     return TypeAdapter(list[ChatCompletionMessageParam]).validate_python(messages)
+     149:
+     150:
+     151: # Remove this function - parse the data into the right type first instead of handling unions
+```
+
+### `policy-table-status-enum-inconsistency.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/policy-table-status-enum-inconsistency.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/persist/sqlite.py#L303-L321)
+
+File: `adgn/src/adgn/agent/persist/sqlite.py` (L303-308, L321)
+
+> The Policy table's status column is written with values from two different enums inconsistently:
+> approve_policy_proposal (lines 303-308) writes PolicyStatus.ACTIVE and PolicyStatus.SUPERSEDED,
+> while reject_policy_proposal (line 321) writes ProposalStatus.REJECTED. This means the same
+> database column holds a mix of enum values from different types, making queries fragile and
+> prone to type errors when instantiating Pydantic models (e.g., PolicyProposal expects
+> ProposalStatus but may receive PolicyStatus values). These should be merged into a single enum
+> representing all policy states (active, superseded, pending, approved, rejected) for a unified
+> policy table that tracks both proposals and active policies. Additionally, the enum could be
+> linked to the ORM using SQLAlchemy's Enum type (which creates a SQL-level CHECK constraint or
+> native enum type) to prevent storing invalid status values and catch misuse at the API boundary.
+
+```
+     300:                 update(Policy)
+     301:                 .where(Policy.agent_id == agent_id, Policy.status == PolicyStatus.ACTIVE.value)
+     302:                 .values(status=PolicyStatus.SUPERSEDED.value)
+>>>  303:             )
+>>>  304:
+>>>  305:             # Mark proposal as ACTIVE
+>>>  306:             policy.status = PolicyStatus.ACTIVE.value
+>>>  307:             policy.decided_at = _now()
+>>>  308:             await session.commit()
+     309:             return policy.id
+     310:
+     311:     async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None:
+   ...
+     318:             await session.execute(
+     319:                 update(Policy)
+     320:                 .where(Policy.id == policy_id, Policy.agent_id == agent_id)
+>>>  321:                 .values(status=ProposalStatus.REJECTED, decided_at=_now())
+     322:             )
+     323:             await session.commit()
+     324:
+```
+
+### `preset-modified-at-datetime.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/preset-modified-at-datetime.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/presets.py#L30)
+
+File: `adgn/src/adgn/agent/presets.py` (L30)
+
+> AgentPreset.modified_at uses str for timestamp instead of datetime type. Timestamps
+> should use datetime, not strings, for type safety, operations (comparison, arithmetic),
+> and automatic ISO-8601 serialization. Pydantic handles datetime serialization to JSON
+> automatically. Only use str when interfacing with systems requiring precise control
+> over format.
+
+```
+      27:     approval_policy: str | None = Field(None, description="Approval policy Python source code")
+      28:     # Source metadata (filled by loader; used by UI)
+      29:     file_path: str | None = Field(None, description="Source file path for this preset")
+>>>   30:     modified_at: str | None = Field(None, description="Last modification time (ISO-8601 string)")
+      31:
+      32:
+      33: def _load_yaml(path: Path) -> dict[str, JsonValue]:
+```
+
+### `pydantic-read-path.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/pydantic-read-path.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/persist/sqlite.py#L445-L454)
+
+File: `adgn/src/adgn/agent/persist/sqlite.py` (L445-454)
+
+> Building intermediate dict before constructing Pydantic model at read boundary.
+>
+> Code creates row_dict from SQLAlchemy result (lines 445-454), then passes to
+> parse_event. This intermediate dict step is unnecessary and loses type safety.
+>
+> Should construct EventRecord directly with keyword arguments for immediate field
+> validation and type checking.
+>
+> Anti-pattern: dict as intermediate representation when going from DB row to
+> typed model. Correct approach: pass SQLAlchemy row fields directly to Pydantic
+> constructor using keyword arguments.
+>
+> Benefits:
+>
+> - Type safety: catch field mismatches at type-check time
+> - No intermediate dict allocation
+> - Immediate validation on construction
+> - Clearer data flow
+
+```
+     442:                 select(Event).where(Event.run_id == str(run_id)).order_by(Event.seq.asc())
+     443:             )
+     444:             events = result.scalars().all()
+>>>  445:             for event in events:
+>>>  446:                 row_dict = {
+>>>  447:                     "seq": event.seq,
+>>>  448:                     "ts": event.event_at,  # Map event_at back to ts for compatibility
+>>>  449:                     "type": event.type,
+>>>  450:                     "payload": event.payload,
+>>>  451:                     "call_id": event.call_id,
+>>>  452:                     "tool_key": event.tool_key,
+>>>  453:                 }
+>>>  454:                 out.append(parse_event(row_dict))
+     455:         return out
+     456:
+     457:     # Tool Calls (new ToolCallRecord persistence) --------------------------------
+```
+
+### `pydantic-write-path.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/pydantic-write-path.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/persist/handler.py#L102-L146)
+
+File: `adgn/src/adgn/agent/persist/handler.py` (L102-103, L110, L145-146)
+
+> Pre-serialization of Pydantic models before passing to persistence layer.
+>
+> Calls model_dump() at caller site (lines 102-103, 110, 145-146) before passing
+> to persistence methods. This violates separation of concerns - caller shouldn't
+> know about persistence format.
+>
+> Anti-pattern: Serialization at caller site instead of callee. Correct approach:
+> append_event should accept typed EventRecord payload, ResponsePayload should
+> accept Response model, and serialization should happen inside persistence layer.
+>
+> Benefits:
+>
+> - Type safety preserved across call boundary
+> - Single serialization point (DRY)
+> - Clearer responsibility boundaries
+> - Caller doesn't need to know persistence format
+> - Easier to change serialization strategy later
+
+```
+      99:             self._last_run_id = rid
+     100:             self._seq = 0
+     101:         self._seq += 1
+>>>  102:         # Convert TypedPayload to dict for persistence
+>>>  103:         payload_dict = payload.model_dump(mode="json", exclude_none=True)
+     104:         self._spawn(
+     105:             self._persistence.append_event(
+     106:                 run_id=rid,
+     107:                 seq=self._seq,
+     108:                 ts=self._now(),
+     109:                 type=type,
+>>>  110:                 payload=payload_dict,
+     111:                 call_id=call_id,
+     112:                 tool_key=tool_key,
+     113:             )
+   ...
+     142:
+     143:     def on_response(self, evt: Response) -> None:
+     144:         # Convert Response to ResponsePayload; for now pass full dumped content
+>>>  145:         content_dict = evt.model_dump(mode="json", exclude_none=True)
+>>>  146:         self._record_event(type=EventType.RESPONSE, payload=ResponsePayload(content=content_dict))
+```
+
+### `registry-get-missing.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/registry-get-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/server/status_shared.py#L114)
+
+File: `adgn/src/adgn/agent/server/status_shared.py` (L114)
+
+> InfrastructureRegistry.get() method is called but does not exist in the class definition.
+>
+> The calls should likely use get_running_infrastructure() instead,
+> based on the usage pattern where the result is checked for None.
+>
+> **Note:** Called in build_agent_status_core: c = registry.get(agent_id)
+
+```
+     111:     registry = app.state.registry
+     112:     persistence = app.state.persistence
+     113:
+>>>  114:     c = registry.get(agent_id)
+     115:     present = c is not None
+     116:
+     117:     # UI + approvals + active run
+```
+
+### `registry-get-missing.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/registry-get-missing.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/mcp_bridge/servers/agents.py#L516)
+
+File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py` (L516)
+
+> InfrastructureRegistry.get() method is called but does not exist in the class definition.
+>
+> The calls should likely use get_running_infrastructure() instead,
+> based on the usage pattern where the result is checked for None.
+>
+> **Note:** Called in agent_ui_state_resource: runtime = registry.get(agent_id)
+
+```
+     513:     )
+     514:     async def agent_ui_state_resource(agent_id: AgentID) -> str:
+     515:         """UI state (optional, only if UI server attached)."""
+>>>  516:         runtime = registry.get(agent_id)
+     517:         if not runtime or not runtime.runtime.session:
+     518:             raise ValueError(f"Agent {agent_id} has no session")
+     519:
+```
+
+### `return-result-not-reconstruct.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/return-result-not-reconstruct.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/runtime/registry.py#L43-L44)
+
+File: `adgn/src/adgn/agent/runtime/registry.py` (L43-44)
+
+> AgentContainer.close() deconstructs CloseResult to rebuild identical dict
+> (registry.py:43-44):
+>
+> result = await self.running.close() # Returns CloseResult
+> return {"drained": result.drained, "error": result.error}
+>
+> CloseResult is a dataclass with drained and error fields (running.py:28-31).
+> The code extracts these fields to create a dict with the same structure.
+>
+> Should return the result directly:
+> return await self.running.close()
+>
+> Or inline the call:
+> await self.runtime.close()
+> return await self.running.close()
+>
+> Benefits:
+>
+> - No useless reconstruction
+> - Preserves type information (CloseResult vs untyped dict)
+> - Clearer intent: propagate result from running.close()
+> - Less code
+>
+> Investigation shows return value unused at call site (registry.py:105),
+> so dict reconstruction serves no purpose. If serialization needed, use
+> dataclasses.asdict() or Pydantic.
+
+```
+      40:     async def close(self):
+      41:         """Lifecycle management - close all components together."""
+      42:         await self.runtime.close()
+>>>   43:         result = await self.running.close()
+>>>   44:         return {"drained": result.drained, "error": result.error}
+      45:
+      46:
+      47: @dataclass
+```
+
+### `send-json-duplicate-logic.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/send-json-duplicate-logic.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/server/runtime.py#L119-L196)
+
+File: `adgn/src/adgn/agent/server/runtime.py` (L119-128, L187-196)
+
+> send_json and \_send_direct_all have identical logic except for how they send
+> (runtime.py:119-128, 187-196).
+>
+> send_json uses q.put_nowait():
+> for \_ws, q, \_task in list(self.\_clients.values()):
+> q.put_nowait(dumped)
+>
+> \_send_direct_all uses ws.send_json():
+> for ws, \_q, \_task in list(self.\_clients.values()):
+> await ws.send_json(dumped)
+>
+> Both:
+>
+> 1. Create identical Envelope with same fields
+> 2. Call model_dump(mode="json")
+> 3. Iterate over self.\_clients.values()
+> 4. Send to each client
+>
+> Only difference: synchronous put_nowait vs async send_json.
+>
+> Should extract common logic:
+> def \_create_envelope(self, payload: ServerMessage) -> dict:
+> return Envelope(
+> session_id=self.\_session_id,
+> event_id=self.\_next_event_id(),
+> event_at=datetime.now(UTC),
+> payload=payload,
+> ).model_dump(mode="json")
+>
+> async def send_json(self, payload: ServerMessage) -> None:
+> dumped = self.\_create_envelope(payload)
+> for \_ws, q, \_task in list(self.\_clients.values()):
+> q.put_nowait(dumped)
+>
+> async def \_send_direct_all(self, payload: ServerMessage) -> None:
+> dumped = self.\_create_envelope(payload)
+> for ws, \_q, \_task in list(self.\_clients.values()):
+> await ws.send_json(dumped)
+>
+> Or unify completely if possible.
+>
+> Benefits:
+>
+> - DRY: envelope creation in one place
+> - Easier to maintain: change once, affects both
+> - Clear separation: envelope creation vs distribution
+
+```
+     116:         self._event_id += 1
+     117:         return self._event_id
+     118:
+>>>  119:     async def send_json(self, payload: ServerMessage) -> None:
+>>>  120:         envelope = Envelope(
+>>>  121:             session_id=self._session_id,
+>>>  122:             event_id=self._next_event_id(),
+>>>  123:             event_at=datetime.now(UTC),
+>>>  124:             payload=payload,
+>>>  125:         )
+>>>  126:         dumped = envelope.model_dump(mode="json")
+>>>  127:         for _ws, q, _task in list(self._clients.values()):
+>>>  128:             q.put_nowait(dumped)
+     129:
+     130:     async def _send_and_reduce(self, payload: ServerMessage) -> None:
+     131:         await self.send_payload(payload)
+   ...
+     184:         if self._session_state_notifier is not None:
+     185:             self._session_state_notifier()
+     186:
+>>>  187:     async def _send_direct_all(self, payload: ServerMessage) -> None:
+>>>  188:         envelope = Envelope(
+>>>  189:             session_id=self._session_id,
+>>>  190:             event_id=self._next_event_id(),
+>>>  191:             event_at=datetime.now(UTC),
+>>>  192:             payload=payload,
+>>>  193:         )
+>>>  194:         dumped = envelope.model_dump(mode="json")
+>>>  195:         for ws, _q, _task in list(self._clients.values()):
+>>>  196:             await ws.send_json(dumped)
+     197:
+     198:     def on_assistant_text_event(self, evt: AssistantText) -> None:
+     199:         raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
+```
+
+### `snapshot-misses-active-run-at-start.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/snapshot-misses-active-run-at-start.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/server/runtime.py#L399-L402)
+
+File: `adgn/src/adgn/agent/server/runtime.py` (L399-402)
+
+> AgentSession.\_run_impl builds and sends a snapshot before setting self.active_run. Line 399
+> calls `await self._manager.send_payload(await self.build_snapshot())` but self.active_run isn't
+> assigned until line 400-402. Since build_snapshot only includes run metadata when
+> self.active_run is non-None, the startup snapshot always contains active_run_id=None, empty
+> pending_approvals, and no SnapshotDetails. UI clients reading the snapshot resource never learn
+> that a run started until the next snapshot emission (typically at run completion). The
+> active_run assignment should be moved before the build_snapshot call so the snapshot accurately
+> reflects that a run is active.
+
+```
+     396:             # state (not incremental run_status) update immediately.
+     397:             # This helps early UI elements like the Abort button appear
+     398:             # deterministically even if they don't consume run_status events.
+>>>  399:             await self._manager.send_payload(await self.build_snapshot())
+>>>  400:             self.active_run = RunState(
+>>>  401:                 run_id=run_id, status=UiRunStatus.RUNNING, started_at=started, pending_approvals=[], last_event_id=None
+>>>  402:             )
+     403:             self._run_counter += 1
+     404:             # Notify MCP bridge of session state change (run started)
+     405:             if self._manager._session_state_notifier is not None:
+```
+
+### `str-fallback-on-structured.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/str-fallback-on-structured.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/llm/sysrw/openai_typing.py#L85-L104)
+
+File: `adgn/src/adgn/llm/sysrw/openai_typing.py` (L85, L92, L99, L104)
+
+> chat_param_message_content_as_text (lines 75-105) claims to "extract text content", but when
+> content is not a plain string (e.g., multi-part ChatCompletion\*MessageParam with structured
+> content like [{'type': 'text', 'text': 'hi'}]), it falls back to str(content) (lines 85, 92,
+> 99, 104), returning the Python repr of the structure instead of the actual text. This is
+> misleading and makes it easy to abuse the API - callers receive strings like "[{'type':
+>
+> > 'text', 'text': 'hi'}]" and may not realize they're getting repr output rather than extracted
+> > text. The function should be designed to make abuse hard: it should expect text-only content
+> > and either raise an exception or return None (with a return type like str | None) when called
+> > on non-text content, forcing callers to handle structured content explicitly. The name and
+> > docstring should also clarify that this is only for text-only messages.
+
+```
+      82:             content = message.get("content")
+      83:             if isinstance(content, str):
+      84:                 return content
+>>>   85:             return str(content) if content else ""
+      86:         case MessageRole.USER:
+      87:             # ChatCompletionUserMessageParam - content is required
+      88:             content = message["content"]
+      89:             if isinstance(content, str):
+      90:                 return content
+      91:             return str(content)
+>>>   92:         case MessageRole.SYSTEM:
+      93:             # ChatCompletionSystemMessageParam - content is required
+      94:             content = message["content"]
+      95:             if isinstance(content, str):
+      96:                 return content
+      97:             return str(content)
+      98:         case MessageRole.TOOL | MessageRole.FUNCTION | MessageRole.DEVELOPER:
+>>>   99:             # Other message types - handle gracefully
+     100:             content = message.get("content")
+     101:             if isinstance(content, str):
+     102:                 return content
+     103:             return str(content) if content else ""
+>>>  104:         case _:
+     105:             raise ValueError(f"Unhandled MessageRole: {role}")
+     106:
+     107:
+```
+
+### `stub-convenience-stack-method.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/stub-convenience-stack-method.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/runtime/infrastructure.py#L180-L182)
+
+File: `adgn/src/adgn/agent/runtime/infrastructure.py` (L180-182)
+
+> Creating typed server stubs requires verbose boilerplate (infrastructure.py:180-186):
+>
+> reader_client = Client(reader_server)
+> await stack.enter_async_context(reader_client)
+> policy_reader = PolicyReaderStub(TypedClient(reader_client))
+>
+> approver_client = Client(approver_server)
+> await stack.enter_async_context(approver_client)
+> policy_approver = PolicyApproverStub(TypedClient(approver_client))
+>
+> This 3-line pattern repeats for every stub. Should provide convenience method:
+>
+> policy_reader = await PolicyReaderStub.for_server(stack, reader_server)
+> policy_approver = await PolicyApproverStub.for_server(stack, approver_server)
+>
+> Or even simpler with context manager protocol on stub class.
+>
+> The for_server method would encapsulate:
+>
+> 1. Create Client from server
+> 2. Enter into async context stack
+> 3. Wrap in TypedClient
+> 4. Return stub instance
+>
+> Benefits:
+>
+> - DRY: pattern in one place
+> - Less error-prone: can't forget context manager entry
+> - Clearer intent: "create stub from server"
+> - Reduces line count 3:1
+>
+> This suggests base class method or helper function in server stub framework.
+>
+> **Note:** PolicyReaderStub creation boilerplate
+
+```
+     177:
+     178:         approver_server = ApprovalPolicyAdminServer(engine=approval_engine, name=APPROVAL_POLICY_SERVER_NAME_APPROVER)
+     179:
+>>>  180:         reader_client = Client(reader_server)
+>>>  181:         await stack.enter_async_context(reader_client)
+>>>  182:         policy_reader = PolicyReaderStub(TypedClient(reader_client))
+     183:
+     184:         approver_client = Client(approver_server)
+     185:         await stack.enter_async_context(approver_client)
+```
+
+### `stub-convenience-stack-method.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/stub-convenience-stack-method.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/runtime/infrastructure.py#L184-L186)
+
+File: `adgn/src/adgn/agent/runtime/infrastructure.py` (L184-186)
+
+> Creating typed server stubs requires verbose boilerplate (infrastructure.py:180-186):
+>
+> reader_client = Client(reader_server)
+> await stack.enter_async_context(reader_client)
+> policy_reader = PolicyReaderStub(TypedClient(reader_client))
+>
+> approver_client = Client(approver_server)
+> await stack.enter_async_context(approver_client)
+> policy_approver = PolicyApproverStub(TypedClient(approver_client))
+>
+> This 3-line pattern repeats for every stub. Should provide convenience method:
+>
+> policy_reader = await PolicyReaderStub.for_server(stack, reader_server)
+> policy_approver = await PolicyApproverStub.for_server(stack, approver_server)
+>
+> Or even simpler with context manager protocol on stub class.
+>
+> The for_server method would encapsulate:
+>
+> 1. Create Client from server
+> 2. Enter into async context stack
+> 3. Wrap in TypedClient
+> 4. Return stub instance
+>
+> Benefits:
+>
+> - DRY: pattern in one place
+> - Less error-prone: can't forget context manager entry
+> - Clearer intent: "create stub from server"
+> - Reduces line count 3:1
+>
+> This suggests base class method or helper function in server stub framework.
+>
+> **Note:** PolicyApproverStub creation boilerplate
+
+```
+     181:         await stack.enter_async_context(reader_client)
+     182:         policy_reader = PolicyReaderStub(TypedClient(reader_client))
+     183:
+>>>  184:         approver_client = Client(approver_server)
+>>>  185:         await stack.enter_async_context(approver_client)
+>>>  186:         policy_approver = PolicyApproverStub(TypedClient(approver_client))
+     187:
+     188:         return (policy_reader, policy_approver)
+     189:
+```
+
+### `token-role-invalid-state.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/token-role-invalid-state.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/server/mcp_routing.py#L76-L97)
+
+File: `adgn/src/adgn/agent/server/mcp_routing.py` (L76-97, L86)
+
+> TokenRole + agent_id (mcp_routing.py:76-97) accepts role and agent_id
+> separately, allowing invalid state (AGENT role without agent_id). Should
+> use discriminated union (HumanTokenInfo | AgentTokenInfo) to make invalid
+> state unrepresentable.
+>
+> Current code has runtime check `if not agent_id` at line 86 to handle
+> the invalid state that the type system allows.
+>
+> Using discriminated union provides:
+>
+> - Type safety: invalid states unrepresentable
+> - No runtime validation needed
+> - Clear type contracts in signatures
+
+```
+      73:                     return auth_value[7:]  # Strip "Bearer " prefix
+      74:         return None
+      75:
+>>>   76:     async def _get_backend_app(self, role: TokenRole, agent_id: str | None) -> ASGIApp:
+>>>   77:         """Get or create backend ASGI app for the given role/agent_id."""
+>>>   78:         if role == TokenRole.HUMAN:
+>>>   79:             backend_key = "human"
+>>>   80:             if backend_key not in self._backend_apps:
+>>>   81:                 # Use the agents management server's HTTP app
+>>>   82:                 self._backend_apps[backend_key] = self.agents_server.http_app()  # type: ignore[assignment]
+>>>   83:             return self._backend_apps[backend_key]
+>>>   84:
+>>>   85:         if role == TokenRole.AGENT:
+>>>   86:             if not agent_id:
+>>>   87:                 raise ValueError("Agent role requires agent_id")
+>>>   88:
+>>>   89:             backend_key = f"agent:{agent_id}"
+>>>   90:             if backend_key not in self._backend_apps:
+>>>   91:                 # Get the agent's compositor HTTP app
+>>>   92:                 container = await self.registry.ensure_live(AgentID(agent_id), with_ui=False)
+>>>   93:                 compositor_app = container.running.compositor.http_app()
+>>>   94:                 self._backend_apps[backend_key] = compositor_app  # type: ignore[assignment]
+>>>   95:             return self._backend_apps[backend_key]
+>>>   96:
+>>>   97:         raise ValueError(f"Unknown role: {role}")
+      98:
+      99:     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+     100:         """Route request to appropriate backend based on token."""
+```
+
+### `token-table-pydantic-model.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/token-table-pydantic-model.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/server/mcp_routing.py#L37-L116)
+
+File: `adgn/src/adgn/agent/server/mcp_routing.py` (L37-40, L115, L116)
+
+> TOKEN_TABLE uses nested untyped dicts (mcp_routing.py:37-40):
+>
+> TOKEN_TABLE: dict[str, dict[str, str]] = {
+> "human-token-123": {"role": "human"},
+> "agent-token-abc": {"role": "agent", "agent_id": "agent-1"},
+> }
 >
 > Problems:
 >
-> - Uses tuples instead of frozensets (order shouldn't matter for set comparison)
-> - Ad-hoc structure with gnarly type annotation
-> - Duplicates knowledge of what makes an action "the same" for batching
+> - No type safety: can't validate field presence
+> - No autocomplete for fields (role, agent_id)
+> - Field names are magic strings
+> - Can't distinguish required vs optional fields
+> - Code accesses with dict["role"], dict.get("agent_id")
 >
-> Fix: Create a frozen ActionSignature dataclass with frozenset fields in core.py:
+> Should define Pydantic model:
+> class TokenInfo(BaseModel):
+> role: TokenRole # Already a StrEnum
+> agent_id: AgentID | None = None
 >
->     @dataclass(frozen=True)
->     class ActionSignature:
->         labels_to_add: frozenset[str]
->         labels_to_remove: frozenset[str]
+> TOKEN_TABLE: dict[str, TokenInfo] = {
+> "human-token-123": TokenInfo(role=TokenRole.HUMAN),
+> "agent-token-abc": TokenInfo(role=TokenRole.AGENT, agent_id="agent-1"),
+> }
 >
-> Add Action.signature property that returns ActionSignature | None (None when no-op).
-> Then grouping becomes: by_signature[pa.action.signature].append(message_id)
+> Benefits:
+>
+> - Type safety: token_info.role, token_info.agent_id
+> - Validation: can't create invalid TokenInfo
+> - Clear schema: required role, optional agent_id
+> - IDE support: autocomplete and type checking
+>
+> Code already uses TokenRole enum, should extend to full typed model.
 
 ```
-     365:     display_plan(plan, dry_run=dry_run is True)
-     366:
-     367:     # Execute using batch operations grouped by label change signature
-     368:     def do_apply():
-     369:         # Group messages by their label change signature for efficient batching
->>>  370:         by_signature: dict[tuple[tuple[str, ...], tuple[str, ...]], list[str]] = {}
->>>  371:         for message_id, pa in plan.actions.items():
->>>  372:             if pa.action.labels_to_add or pa.action.labels_to_remove:
->>>  373:                 sig = (tuple(sorted(pa.action.labels_to_add)), tuple(sorted(pa.action.labels_to_remove)))
->>>  374:                 if sig not in by_signature:
->>>  375:                     by_signature[sig] = []
->>>  376:                 by_signature[sig].append(message_id)
-     377:
-     378:         total_processed = 0
-     379:         for (add_labels, remove_labels), msg_ids in by_signature.items():
-     380:             # Use batchModify for efficiency
-     381:             batch_size = 1000
-```
-
-### `duplicate-criteria-query-conversion.yaml` / `occ-0`
-
-File: `gmail_archiver/filter_planner.py`
-
-> The pattern of building "from:/to:/subject:" strings is duplicated across models:
->
-> - criteria_to_gmail_query(FilterCriteria)
-> - rule_to_gmail_query(FilterRule)
-> - GmailFilterPlanner.**init** (from FilterCriteria)
-> - format_filter_for_display(NormalizedFilter)
->
-> NormalizedFilter has same criteria fields as FilterCriteria. Fix: add to_criteria()
-> methods or use a Protocol, then single criteria_to_gmail_query() everywhere.
->
-> **Note:** criteria_to_gmail_query(FilterCriteria)
-
-```
-       4: from gmail_archiver.gmail_api_models import FilterCriteria, GmailFilter
-       5: from gmail_archiver.gmail_yaml_filters_models import FilterRule
-       6: from gmail_archiver.inbox import GmailInbox
-       7:
-       8:
->>>    9: def criteria_to_gmail_query(criteria: FilterCriteria) -> str:
->>>   10:     """Convert FilterCriteria to Gmail search query string."""
->>>   11:     parts = []
->>>   12:     if criteria.from_:
->>>   13:         parts.append(f"from:({criteria.from_})")
->>>   14:     if criteria.to:
->>>   15:         parts.append(f"to:({criteria.to})")
->>>   16:     if criteria.subject:
->>>   17:         parts.append(f"subject:({criteria.subject})")
->>>   18:     if criteria.query:
->>>   19:         parts.append(criteria.query)
->>>   20:     if criteria.negated_query:
->>>   21:         parts.append(f"-({criteria.negated_query})")
->>>   22:     return " ".join(parts)
-      23:
-      24:
-      25: def rule_to_gmail_query(rule: FilterRule) -> str:
-      26:     """Convert FilterRule to Gmail search query string."""
-      27:     parts = []
-```
-
-### `duplicate-criteria-query-conversion.yaml` / `occ-1`
-
-File: `gmail_archiver/filter_planner.py`
-
-> The pattern of building "from:/to:/subject:" strings is duplicated across models:
->
-> - criteria_to_gmail_query(FilterCriteria)
-> - rule_to_gmail_query(FilterRule)
-> - GmailFilterPlanner.**init** (from FilterCriteria)
-> - format_filter_for_display(NormalizedFilter)
->
-> NormalizedFilter has same criteria fields as FilterCriteria. Fix: add to_criteria()
-> methods or use a Protocol, then single criteria_to_gmail_query() everywhere.
->
-> **Note:** rule_to_gmail_query(FilterRule)
-
-```
-      20:     if criteria.negated_query:
-      21:         parts.append(f"-({criteria.negated_query})")
-      22:     return " ".join(parts)
-      23:
-      24:
->>>   25: def rule_to_gmail_query(rule: FilterRule) -> str:
->>>   26:     """Convert FilterRule to Gmail search query string."""
->>>   27:     parts = []
->>>   28:
->>>   29:     if isinstance(rule.from_, str):
->>>   30:         parts.append(f"from:({rule.from_})")
->>>   31:     if isinstance(rule.to, str):
->>>   32:         parts.append(f"to:({rule.to})")
->>>   33:     if isinstance(rule.subject, str):
->>>   34:         parts.append(f"subject:({rule.subject})")
->>>   35:     if isinstance(rule.has, str):
->>>   36:         parts.append(rule.has)
->>>   37:     elif isinstance(rule.has, list):
->>>   38:         parts.extend(rule.has)
->>>   39:     if isinstance(rule.does_not_have, str):
->>>   40:         parts.append(f"-({rule.does_not_have})")
->>>   41:     elif isinstance(rule.does_not_have, list):
->>>   42:         for term in rule.does_not_have:
->>>   43:             parts.append(f"-({term})")
->>>   44:
->>>   45:     # Additional search operators
->>>   46:     if isinstance(rule.bcc, str):
->>>   47:         parts.append(f"bcc:({rule.bcc})")
->>>   48:     if isinstance(rule.cc, str):
->>>   49:         parts.append(f"cc:({rule.cc})")
->>>   50:     if isinstance(rule.list, str):
->>>   51:         parts.append(f"list:({rule.list})")
->>>   52:     if isinstance(rule.filename, str):
->>>   53:         parts.append(f"filename:({rule.filename})")
->>>   54:     if rule.larger:
->>>   55:         parts.append(f"larger:{rule.larger}")
->>>   56:     if rule.smaller:
->>>   57:         parts.append(f"smaller:{rule.smaller}")
->>>   58:
->>>   59:     return " ".join(parts)
-      60:
-      61:
-      62: class SingleFilterPlanner:
-      63:     """Planner that applies a single filter rule to matching emails."""
-      64:
-```
-
-### `duplicate-criteria-query-conversion.yaml` / `occ-2`
-
-File: `gmail_archiver/filter_planner.py`
-
-> The pattern of building "from:/to:/subject:" strings is duplicated across models:
->
-> - criteria_to_gmail_query(FilterCriteria)
-> - rule_to_gmail_query(FilterRule)
-> - GmailFilterPlanner.**init** (from FilterCriteria)
-> - format_filter_for_display(NormalizedFilter)
->
-> NormalizedFilter has same criteria fields as FilterCriteria. Fix: add to_criteria()
-> methods or use a Protocol, then single criteria_to_gmail_query() everywhere.
->
-> **Note:** GmailFilterPlanner.**init** name building from FilterCriteria
-
-```
-     151:         self.labels_by_id = labels_by_id
-     152:         self.additional_query = additional_query
-     153:
-     154:         # Build display name from filter criteria
-     155:         criteria = gmail_filter.criteria
->>>  156:         name_parts = []
->>>  157:         if criteria.from_:
->>>  158:             name_parts.append(f"from:{criteria.from_}")
->>>  159:         if criteria.subject:
->>>  160:             name_parts.append(f"subject:{criteria.subject}")
->>>  161:         if criteria.query:
->>>  162:             name_parts.append(criteria.query)
->>>  163:         suffix = " ".join(name_parts)[:50] if name_parts else "(unnamed)"
-     164:         self.name = f"Filter: {suffix}"
-     165:
-     166:     def plan(self, inbox: GmailInbox) -> Plan:
-     167:         plan = Plan(planner=self)
-     168:
-```
-
-### `duplicate-criteria-query-conversion.yaml` / `occ-3`
-
-File: `gmail_archiver/filter_sync.py`
-
-> The pattern of building "from:/to:/subject:" strings is duplicated across models:
->
-> - criteria_to_gmail_query(FilterCriteria)
-> - rule_to_gmail_query(FilterRule)
-> - GmailFilterPlanner.**init** (from FilterCriteria)
-> - format_filter_for_display(NormalizedFilter)
->
-> NormalizedFilter has same criteria fields as FilterCriteria. Fix: add to_criteria()
-> methods or use a Protocol, then single criteria_to_gmail_query() everywhere.
->
-> **Note:** format_filter_for_display() from NormalizedFilter
-
-```
-     210:             self.by_name[name] = label_id
-     211:             self.by_id[label_id] = name
-     212:         return self.by_name[name]
-     213:
-     214:
->>>  215: def format_filter_for_display(f: NormalizedFilter) -> str:
->>>  216:     """Format a filter for human-readable display."""
->>>  217:     parts = []
->>>  218:
->>>  219:     # Criteria
->>>  220:     if f.from_:
->>>  221:         parts.append(f"from:{f.from_}")
->>>  222:     if f.to:
->>>  223:         parts.append(f"to:{f.to}")
->>>  224:     if f.subject:
->>>  225:         parts.append(f"subject:{f.subject}")
->>>  226:     if f.query:
->>>  227:         parts.append(f"has:{f.query}")
->>>  228:     if f.negated_query:
->>>  229:         parts.append(f"-({f.negated_query})")
->>>  230:
->>>  231:     criteria_str = " ".join(parts) if parts else "(no criteria)"
-     232:
-     233:     # Actions
-     234:     actions = []
-     235:     if f.add_labels:
-     236:         for label in sorted(f.add_labels):
-```
-
-### `duplicated-pagination-logic.yaml` / `occ-0`
-
-File: `gmail_archiver/__main__.py`
-
-> download_matching() in **main**.py manually implements paginated Gmail query
-> (lines 155-174) instead of using the existing GmailClient.list_messages_by_query()
-> which already handles pagination.
->
-> **Note:** manual pagination loop duplicates GmailClient.list_messages_by_query()
-
-```
-     150:     client = get_gmail_client(token_file)
-     151:
-     152:     # Search for matching emails
-     153:     console.print("Searching Gmail...")
-     154:
->>>  155:     # Build search with pagination
->>>  156:     all_message_ids = []
->>>  157:     page_token = None
->>>  158:
->>>  159:     while True:
->>>  160:         search_params = {"userId": "me", "q": query, "maxResults": 500}
->>>  161:         if page_token:
->>>  162:             search_params["pageToken"] = page_token
->>>  163:
->>>  164:         results = client.service.users().messages().list(**search_params).execute()
->>>  165:         messages = results.get("messages", [])
->>>  166:         all_message_ids.extend([msg["id"] for msg in messages])
->>>  167:
->>>  168:         if max_results and len(all_message_ids) >= max_results:
->>>  169:             all_message_ids = all_message_ids[:max_results]
->>>  170:             break
->>>  171:
->>>  172:         page_token = results.get("nextPageToken")
->>>  173:         if not page_token:
->>>  174:             break
-     175:
-     176:     if not all_message_ids:
-     177:         console.print("[yellow]No matching emails found.[/yellow]")
-     178:         return
-     179:
-```
-
-### `ignored-label-removals.yaml` / `occ-0`
-
-File: `gmail_archiver/__main__.py`
-
-> execute_action only handles INBOX removal, silently ignoring all other labels_to_remove:
->
->     if label == "INBOX":
->         client.remove_from_inbox(message_id)
->     # TODO: Handle other label removals
->
-> If an action specifies removing UNREAD, STARRED, or any other label, it's silently
-> dropped. This is a bug - the TODO acknowledges it but the fix is trivial:
-> call client.remove_label(message_id, label) for non-INBOX labels.
-
-```
-     109:         if action.labels_to_add:
-     110:             for label in action.labels_to_add:
-     111:                 client.add_label(message_id, label)
-     112:         if action.labels_to_remove:
-     113:             for label in action.labels_to_remove:
->>>  114:                 if label == "INBOX":
->>>  115:                     client.remove_from_inbox(message_id)
->>>  116:                 # TODO: Handle other label removals
+      34:
+      35: # Token table: token -> {role: str, agent_id?: str}
+      36: # In production, this would be a database lookup or external service
+>>>   37: TOKEN_TABLE: dict[str, dict[str, str]] = {
+>>>   38:     "human-token-123": {"role": "human"},
+>>>   39:     "agent-token-abc": {"role": "agent", "agent_id": "agent-1"},
+>>>   40: }
+      41:
+      42:
+      43: class MCPRoutingMiddleware(BaseHTTPMiddleware):
+   ...
+     112:
+     113:         # Determine role and routing
+     114:         try:
+>>>  115:             role = TokenRole(token_info["role"])
+>>>  116:             agent_id = token_info.get("agent_id")
      117:
-     118:     combined.execute(dry_run=dry_run, execute_fn=execute_action)
+     118:             logger.info(f"Routing MCP request: role={role}, agent_id={agent_id}")
      119:
-     120:     # Show summary
-     121:     console.print(f"\n{summarize_plan(combined)}")
 ```
 
-### `inconsistent-frozenset-building.yaml` / `occ-0`
+### `truncation-byte-calc.yaml` / `occ-0`
 
-File: `gmail_archiver/filter_sync.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/truncation-byte-calc.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/event_renderer.py#L128-L132)
 
-> Building a set incrementally with .add() then converting to frozenset is
-> inconsistent when other code paths already produce frozensets directly.
-> normalize_yaml_rule builds add_labels and remove_labels as mutable sets then
-> returns them as frozensets. Using set comprehensions or frozenset() directly
-> would be more idiomatic.
+File: `adgn/src/adgn/agent/event_renderer.py` (L128-132)
+
+> `_truncate_text` (line 132) reports truncated bytes as
+> `len(s.encode('utf-8')) - len(raw)`. At this point `s` was just decoded from
+> `raw` (line 131), so re-encoding it produces nearly the same byte count —
+> the difference is at most a few bytes from `errors="replace"` substituting
+> broken trailing bytes with U+FFFD. The message always says something like
+> "truncated (+0 bytes)" or "+3 bytes" instead of the actual amount removed.
+> The original byte length should be captured before truncation.
+
+```
+     125:     # Utility methods --------------------------------------------------------
+     126:
+     127:     def _truncate_text(self, s: str) -> str:
+>>>  128:         raw = s.encode("utf-8", errors="replace")
+>>>  129:         if len(raw) > self._max_bytes:
+>>>  130:             raw = raw[: self._max_bytes]
+>>>  131:             s = raw.decode("utf-8", errors="replace")
+>>>  132:             s += f"\n… truncated (+{len(s.encode('utf-8')) - len(raw)} bytes)"
+     133:         lines = s.splitlines()
+     134:         if len(lines) > self._max_lines:
+     135:             kept = lines[: self._max_lines]
+```
+
+### `unnecessary-wrapper-functions.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/unnecessary-wrapper-functions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/llm/sysrw/openai_typing.py#L126-L169)
+
+File: `adgn/src/adgn/llm/sysrw/openai_typing.py` (L126-128, L131-133, L159-169)
+
+> Trivial wrapper functions that add no abstraction value. Only create wrapper
+> functions when they add real abstraction (combine multiple operations),
+> provide domain-specific naming clarity, or encapsulate complex logic.
 >
-> **Note:** add_labels and remove_labels built as set() then converted - could use frozenset comprehension
+> **Note:** dump_response_messages/dump_chat_messages/parse_tool_params are one-line wrappers around Pydantic methods
 
 ```
-      71:
-      72:
-      73: def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
-      74:     """Convert FilterRule from YAML to normalized form."""
-      75:     # Build add_labels set
->>>   76:     add_labels: set[str] = set()
->>>   77:     if rule.label:
->>>   78:         add_labels.add(rule.label)
->>>   79:     if rule.important or rule.mark_as_important:
->>>   80:         add_labels.add("IMPORTANT")
->>>   81:     if rule.star:
->>>   82:         add_labels.add("STARRED")
->>>   83:     if rule.trash or rule.delete:
->>>   84:         add_labels.add("TRASH")
->>>   85:
->>>   86:     # Build remove_labels set
->>>   87:     remove_labels: set[str] = set()
-      88:     if rule.archive:
-      89:         remove_labels.add("INBOX")
-      90:     if rule.read or rule.mark_as_read:
-      91:         remove_labels.add("UNREAD")
-      92:     if rule.not_important or rule.never_mark_as_important:
-```
-
-### `inline-link-parsing.yaml` / `occ-0`
-
-File: `gmail_archiver/__main__.py`
-
-> Gmail link parsing logic (lines 330-344) is inline in download_email command.
-> Should be extracted as a separate function for reusability and testability.
->
-> **Note:** link parsing in download_email() - extract to parse_gmail_link() or similar
-
-```
-     325:         gmail-archiver download-email 19b1c55967d81057
-     326:         gmail-archiver download-email FMfcgzQcqtXwNDFwNDZXFhFgVnXRzQjw
-     327:         gmail-archiver download-email https://mail.google.com/mail/u/0/#inbox/FMfcgzQcqtXwNDFwNDZXFhFgVnXRzQjw
-     328:         gmail-archiver download-email 19b1c55967d81057 -o my_email.eml
-     329:     """
->>>  330:     # Extract ID from link if needed
->>>  331:     extracted_id = id_or_link
->>>  332:     if id_or_link.startswith("http"):
->>>  333:         # Extract ID from Gmail link
->>>  334:         # Match hex IDs: /inbox/19b1c55967d81057
->>>  335:         match = re.search(r"/#[^/]+/([a-f0-9]{16})", id_or_link)
->>>  336:         if not match:
->>>  337:             print_error(f"Could not extract message ID from link: {id_or_link}")
->>>  338:             console.print(
->>>  339:                 "\nNote: Gmail web URLs use encoded IDs that don't work with the Gmail API. "
->>>  340:                 "To download an email, find its message ID by searching Gmail with the download-matching command."
->>>  341:             )
->>>  342:             raise typer.Exit(code=1)
->>>  343:         extracted_id = match.group(1)
->>>  344:         console.print(f"Extracted message ID: {extracted_id}")
-     345:
-     346:     # Connect to Gmail
-     347:     client = get_gmail_client(token_file)
-     348:
-     349:     # Try fetching as message ID first (most common case)
-```
-
-### `iterate-values-not-items.yaml` / `occ-0`
-
-File: `gmail_archiver/planners/aliexpress.py`
-
-> Iterating with .items() when key is unused. Should use .values() instead
-> when only the values are needed.
->
-> **Note:** for \_order_id, order_emails in by_order.items() - should use .values()
-
-```
-     184:         if unparseable:
-     185:             plan.add_message(f"Skipping {len(unparseable)} emails with unrecognized status:")
-     186:             for msg, _error in unparseable:
-     187:                 plan.add_message(f"  - {msg.subject[:60]}...")
-     188:
->>>  189:         for _order_id, order_emails in by_order.items():
-     190:             # Sort by date, newest first
-     191:             sorted_emails = sorted(order_emails, key=lambda m: m.internal_date, reverse=True)
-     192:             latest = sorted_emails[0]
-     193:             latest_parsed = parsed_cache[latest.id]
-     194:
-```
-
-### `manual-batch-slicing.yaml` / `occ-0`
-
-File: `gmail_archiver/cli/filters.py`
-
-> Manual batch slicing pattern:
->
->     for i in range(0, len(msg_ids), batch_size):
->         batch = msg_ids[i : i + batch_size]
->
-> Python 3.12+ has itertools.batched() which handles this cleanly:
->
->     for batch in itertools.batched(msg_ids, batch_size):
-
-```
-     377:
-     378:         total_processed = 0
-     379:         for (add_labels, remove_labels), msg_ids in by_signature.items():
-     380:             # Use batchModify for efficiency
-     381:             batch_size = 1000
->>>  382:             for i in range(0, len(msg_ids), batch_size):
->>>  383:                 batch = msg_ids[i : i + batch_size]
-     384:                 body: dict = {"ids": batch}
-     385:                 if add_labels:
-     386:                     body["addLabelIds"] = list(add_labels)
-     387:                 if remove_labels:
-     388:                     body["removeLabelIds"] = list(remove_labels)
-```
-
-### `manual-credentials-construction.yaml` / `occ-0`
-
-File: `gmail_archiver/gmail_client.py`
-
-> GmailClient constructor manually parses JSON and constructs Credentials field by field.
-> Google's API provides Credentials.from_authorized_user_file() which handles this
-> automatically, reducing boilerplate and risk of missing fields.
-
-```
-      94:         self.token_file = token_file
-      95:         self.service = self._build_service()
-      96:         self._label_cache: dict[str, str] | None = None  # name -> id
-      97:
-      98:     def _build_service(self):
->>>   99:         token_data = json.loads(self.token_file.read_text())
->>>  100:
->>>  101:         creds = Credentials(
->>>  102:             token=token_data["token"],
->>>  103:             refresh_token=token_data.get("refresh_token"),
->>>  104:             token_uri=token_data["token_uri"],
->>>  105:             client_id=token_data["client_id"],
->>>  106:             client_secret=token_data["client_secret"],
-     107:             scopes=token_data.get("scopes", []),
-     108:         )
-     109:
-     110:         return build("gmail", "v1", credentials=creds)
-     111:
-```
-
-### `manual-path-existence-check.yaml` / `occ-0`
-
-File: `gmail_archiver/__main__.py`
-
-> Manual file existence check when typer provides `exists=True` parameter for
-> path arguments. Should use `typer.Argument(exists=True)` instead of manual
-> check with print_error + typer.Exit.
->
-> **Note:** eml_file argument in classify_event() - should use exists=True in typer.Argument
-
-```
-     397:     console.print(f"  Date: {parsed.get('Date', '')}")
-     398:
-     399:
-     400: @app.command()
-     401: def classify_event(
->>>  402:     eml_file: Annotated[Path, typer.Argument(help="Path to .eml file to classify")],
-     403:     no_cache: Annotated[bool, typer.Option("--no-cache", help="Skip cache and re-classify")] = False,
-     404: ):
-     405:     """Recognize email template and extract structured data using OpenAI.
-     406:
-     407:     This command is for debugging the template extractor. It reads an .eml file,
-   ...
-     409:     (if any) the email matches and extracts structured data accordingly.
-     410:
-     411:     Example:
-     412:         gmail-archiver classify-event inbox/19b18706c1c9ae8f.eml
-     413:     """
->>>  414:     if not eml_file.exists():
->>>  415:         print_error(f"File not found: {eml_file}")
->>>  416:         raise typer.Exit(code=1)
-     417:
-     418:     # Parse .eml file
-     419:     console.print(f"Reading {eml_file}...")
-     420:     with eml_file.open("rb") as f:
-     421:         msg = BytesParser(policy=default).parse(f)
-```
-
-### `module-level-extractor-singleton.yaml` / `occ-0`
-
-File: `gmail_archiver/planners/dbsa.py`
-
-> Module-level singleton creates hidden global state:
->
->     _extractor = EmailTemplateExtractor()
->
-> This instantiates an OpenAI client and cache at import time. Problems:
->
-> - Hidden dependency (not visible in function/class signatures)
-> - Hard to test (can't inject mock extractor)
-> - Imports have side effects (client creation, env var access)
-> - Can't configure differently per use case
->
-> Fix: Use dependency injection - pass EmailTemplateExtractor into
-> DbsaEventPlanner.**init**() and store as instance attribute. The caller
-> (autoclean_inbox) creates one extractor and passes it to planners that need it.
-
-```
-      15: class DBSASFEvent(BaseModel):
-      16:     event_datetime: datetime | None = None
-      17:     confidence: float = 0.0
-      18:
-      19:
->>>   20: _extractor = EmailTemplateExtractor()
-      21:
-      22:
-      23: def parse_dbsa_sf(email: GmailMessage) -> DBSASFEvent:
-      24:     """Extract DBSA SF event date using OpenAI (with caching)."""
-      25:
-```
-
-### `plan-merge-bypasses-init.yaml` / `occ-0`
-
-File: `gmail_archiver/core.py`
-
-> Plan.merge() uses **new** to bypass **init** and manually initializes fields:
->
->     merged = Plan.__new__(Plan)
->     merged.planner = None
->     merged.actions = {}
->     merged.messages_by_id = {}
->     merged.messages = []
->
-> This is fragile - if **init** ever adds setup logic, logging, validation, or new
-> fields, this code will silently produce broken Plan instances. The hack exists
-> because Plan.**init** requires a planner, but merged plans have no single owner.
->
-> Better alternatives:
->
-> - Make planner optional in **init**: def **init**(self, planner: Planner | None = None)
-> - Use a @classmethod factory: Plan.create_merged(plans)
-> - Use a dataclass with default_factory for fields
-
-```
-     115:         """Merge multiple plans into one. Raises ValueError on conflicts."""
-     116:         if not plans:
-     117:             raise ValueError("Cannot merge empty list of plans")
-     118:
-     119:         # Create merged plan (no specific planner owner)
->>>  120:         merged = Plan.__new__(Plan)
->>>  121:         merged.planner = None
->>>  122:         merged.actions = {}
->>>  123:         merged.messages_by_id = {}
->>>  124:         merged.messages = []
+     123:     return TypeAdapter(list[ResponseOutputMessage]).validate_python(messages)
+     124:
      125:
-     126:         for plan in plans:
-     127:             # Check for collisions before merging
-     128:             for message_id, planned_action in plan.actions.items():
-     129:                 if message_id in merged.actions:
-```
-
-### `silent-exception-swallowing.yaml` / `occ-0`
-
-File: `gmail_archiver/event_classifier.py`
-
-> ExtractionCache.get() catches all exceptions and silently returns None (line 78-79).
-> This swallows errors like JSON decode failures or schema mismatches without any logging.
-> Should either not catch, or at minimum log the error before returning None.
->
-> **Note:** bare except returning None in cache get
-
-```
-      73:         cache_path = self._get_cache_path(message_id)
-      74:         if cache_path.exists():
-      75:             try:
-      76:                 data = json.loads(cache_path.read_text())
-      77:                 return EmailTemplateExtraction(**data)
->>>   78:             except Exception:
->>>   79:                 return None
-      80:         return None
-      81:
-      82:     def set(self, message_id: str, extraction: EmailTemplateExtraction):
-      83:         cache_path = self._get_cache_path(message_id)
-      84:         cache_path.write_text(extraction.model_dump_json(indent=2))
-```
-
-### `sync-planner-wrapping-async.yaml` / `occ-0`
-
-File: `gmail_archiver/planners/dbsa.py`
-
-> DbsaEventPlanner.plan() is sync but calls async code via asyncio.run() per email:
->
->     def parse_dbsa_sf(email: GmailMessage) -> DBSASFEvent:
->         async def extract_async():
->             return await _extractor.extract(...)
->         extraction = asyncio.run(extract_async())
->
-> This creates a new event loop per email, preventing concurrent API calls.
-> The extractor already supports batching via extract_batch() with asyncio.gather().
->
-> The fix is to make the planner async end-to-end:
->
-> - Make Planner.plan() an async method
-> - Make DbsaEventPlanner.plan() async and use extract_batch() or gather
-> - Thread async through the caller (autoclean_inbox)
->
-> This allows concurrent OpenAI calls instead of sequential with event loop overhead.
-
-```
-      21:
-      22:
-      23: def parse_dbsa_sf(email: GmailMessage) -> DBSASFEvent:
-      24:     """Extract DBSA SF event date using OpenAI (with caching)."""
-      25:
->>>   26:     async def extract_async():
->>>   27:         return await _extractor.extract(
->>>   28:             message_id=email.id, subject=email.subject, body=email.body, received_date=email.date, use_cache=True
->>>   29:         )
->>>   30:
->>>   31:     # Run async extraction in sync context
->>>   32:     extraction = asyncio.run(extract_async())
-      33:
-      34:     # Extract event datetime if this is a DBSA SF reminder
-      35:     if extraction.data.template == "dbsa_sf_group_reminder" and extraction.data.event_datetime:
-      36:         try:
-      37:             event_dt = datetime.fromisoformat(extraction.data.event_datetime)
-```
-
-### `unbatched-incomplete-labels.yaml` / `occ-0`
-
-File: `gmail_archiver/__main__.py`
-
-> execute_action() in **main**.py has two issues:
->
-> 1. Not batched - makes individual API calls per message instead of using Gmail
->    batch API for efficiency
-> 2. Incomplete - only handles INBOX removal specially, silently ignores other
->    label removals (has TODO comment on line 116)
->
-> **Note:** execute_action() - unbatched individual calls, ignores non-INBOX label removals
-
-```
-     103:
-     104:     # Display unified table
-     105:     display_plan(combined, dry_run=dry_run, group_by_category=True)
-     106:
-     107:     # Execute all Gmail API operations
->>>  108:     def execute_action(message_id: str, action: Action):
->>>  109:         if action.labels_to_add:
->>>  110:             for label in action.labels_to_add:
->>>  111:                 client.add_label(message_id, label)
->>>  112:         if action.labels_to_remove:
->>>  113:             for label in action.labels_to_remove:
->>>  114:                 if label == "INBOX":
->>>  115:                     client.remove_from_inbox(message_id)
->>>  116:                 # TODO: Handle other label removals
->>>  117:
->>>  118:     combined.execute(dry_run=dry_run, execute_fn=execute_action)
-     119:
-     120:     # Show summary
-     121:     console.print(f"\n{summarize_plan(combined)}")
-     122:
-     123:
-```
-
-### `unfaithful-gmail-message.yaml` / `occ-0`
-
-File: `gmail_archiver/models.py`
-
-> GmailMessage extracts and stores only `body: str` from the raw email, discarding the
-> original MIME data. This is premature data reduction - it loses information (HTML body,
-> attachments, headers) and prevents fixing parsing bugs or adding new derived fields
-> without re-fetching from the API. The model should preserve the raw email bytes and
-> derive text content on demand.
->
-> **Note:** GmailMessage.body is single str field, loses MIME structure
-
-```
-      20:     sender: str = Field(alias="from")
-      21:     recipient: str | None = Field(default=None, alias="to")
-      22:     subject: str
-      23:     date: str
-      24:     internal_date: int  # milliseconds since epoch
->>>   25:     body: str
-      26:     snippet: str | None = None
-      27:     label_ids: list[str] = Field(default_factory=list)
-      28:
-      29:
-      30: class GmailLabel(BaseModel):
-```
-
-### `unfaithful-gmail-message.yaml` / `occ-1`
-
-File: `gmail_archiver/gmail_client.py`
-
-> GmailMessage extracts and stores only `body: str` from the raw email, discarding the
-> original MIME data. This is premature data reduction - it loses information (HTML body,
-> attachments, headers) and prevents fixing parsing bugs or adding new derived fields
-> without re-fetching from the API. The model should preserve the raw email bytes and
-> derive text content on demand.
->
-> **Note:** get_messages_batch() plaintext extraction (no HTML fallback)
-
-```
-     445:                     # Parse the message
-     446:                     raw_email = base64.urlsafe_b64decode(response["raw"]).decode("utf-8")
-     447:                     parsed = email.message_from_string(raw_email)
-     448:
-     449:                     # Extract plain text body
->>>  450:                     body = ""
->>>  451:                     if parsed.is_multipart():
->>>  452:                         for part in parsed.walk():
->>>  453:                             if part.get_content_type() == "text/plain":
->>>  454:                                 payload = part.get_payload(decode=True)
->>>  455:                                 if payload:
->>>  456:                                     body = payload.decode("utf-8", errors="ignore")
->>>  457:                                     break
->>>  458:                     else:
->>>  459:                         payload = parsed.get_payload(decode=True)
->>>  460:                         if payload:
->>>  461:                             body = payload.decode("utf-8", errors="ignore")
-     462:
-     463:                     msg = GmailMessage(
-     464:                         id=response["id"],
-     465:                         thread_id=response.get("threadId"),
-     466:                         sender=parsed.get("From", ""),
-```
-
-### `unfaithful-gmail-message.yaml` / `occ-2`
-
-File: `gmail_archiver/gmail_client.py`
-
-> GmailMessage extracts and stores only `body: str` from the raw email, discarding the
-> original MIME data. This is premature data reduction - it loses information (HTML body,
-> attachments, headers) and prevents fixing parsing bugs or adding new derived fields
-> without re-fetching from the API. The model should preserve the raw email bytes and
-> derive text content on demand.
->
-> **Note:** get_message() plaintext extraction (no HTML fallback)
-
-```
-     512:         # Decode raw email using email.parser for proper header decoding
-     513:         raw_bytes = base64.urlsafe_b64decode(msg["raw"])
-     514:         parsed = BytesParser(policy=email_default_policy).parsebytes(raw_bytes)
-     515:
-     516:         # Extract plain text body
->>>  517:         body = ""
->>>  518:         if parsed.is_multipart():
->>>  519:             for part in parsed.walk():
->>>  520:                 if part.get_content_type() == "text/plain":
->>>  521:                     body = part.get_content()
->>>  522:                     break
->>>  523:         else:
->>>  524:             body = parsed.get_content() if parsed.get_content_type() == "text/plain" else ""
-     525:
-     526:         return GmailMessage(
-     527:             id=msg["id"],
-     528:             thread_id=msg.get("threadId"),
-     529:             sender=str(parsed.get("From", "")),
-```
-
-### `unnecessary-attributeerror-suppression.yaml` / `occ-0`
-
-File: `gmail_archiver/planners/square.py`
-
-> The contextlib.suppress includes AttributeError but this exception cannot occur:
->
-> - email.date is a str field (not optional), so no AttributeError from accessing it
-> - datetime.strptime() raises ValueError on parse failure, not AttributeError
-> - datetime.replace() is always available on datetime objects
->
-> Even if AttributeError could somehow occur, suppressing it would mask a real bug
-> (e.g., typo in attribute name, wrong object type). Suppressing AttributeError is
-> almost never correct - it hides programming errors rather than handling expected
-> failure modes.
->
-> **Note:** contextlib.suppress(ValueError, AttributeError) for date parsing
-
-```
-      35:
-      36:
-      37: def parse_square(email: GmailMessage) -> SquareReceipt:
-      38:     # Parse email date
-      39:     email_dt = None
->>>   40:     with contextlib.suppress(ValueError, AttributeError):
-      41:         email_dt = datetime.strptime(email.date, "%a, %d %b %Y %H:%M:%S %z")
-      42:         email_dt = email_dt.replace(tzinfo=None)
-      43:
-      44:     # Extract text from HTML body
-      45:     soup = BeautifulSoup(email.body, "html.parser")
-```
-
-### `unnecessary-attributeerror-suppression.yaml` / `occ-1`
-
-File: `gmail_archiver/planners/anthem_eob.py`
-
-> The contextlib.suppress includes AttributeError but this exception cannot occur:
->
-> - email.date is a str field (not optional), so no AttributeError from accessing it
-> - datetime.strptime() raises ValueError on parse failure, not AttributeError
-> - datetime.replace() is always available on datetime objects
->
-> Even if AttributeError could somehow occur, suppressing it would mask a real bug
-> (e.g., typo in attribute name, wrong object type). Suppressing AttributeError is
-> almost never correct - it hides programming errors rather than handling expected
-> failure modes.
->
-> **Note:** except (ValueError, AttributeError) for date parsing
-
-```
-      20:     """Extract received date from email for 180-day dispute window calculation."""
-      21:     try:
-      22:         received_dt = datetime.strptime(email.date, "%a, %d %b %Y %H:%M:%S %z")
-      23:         received_dt = received_dt.replace(tzinfo=None)
-      24:         return AnthemEOB(received_date=received_dt)
->>>   25:     except (ValueError, AttributeError):
->>>   26:         return AnthemEOB(received_date=None)
-      27:
-      28:
-      29: class AnthemEobPlanner:
-      30:     """Archives Anthem EOBs older than 180 days."""
-      31:
-```
-
-### `unnecessary-exception-handling.yaml` / `occ-0`
-
-File: `gmail_archiver/__main__.py`
-
-> Try/except around Plan.merge() is unnecessary defensive coding. If merge
-> fails with ValueError (plan collision), that's a bug in planners that should
-> crash loudly, not be silently caught and return early.
->
-> **Note:** try/except ValueError around Plan.merge() - should just call unguarded
-
-```
-      88:         except Exception as e:
-      89:             console.print(f"[bold red]Error in {planner.name}:[/bold red] {e}")
-      90:             continue
-      91:
-      92:     # Merge all plans
->>>   93:     try:
->>>   94:         combined = Plan.merge(plans)
->>>   95:     except ValueError as e:
->>>   96:         console.print(f"[bold red]Error merging plans:[/bold red] {e}")
->>>   97:         return
-      98:
-      99:     # Display category messages
-     100:     for msg in combined.messages:
-     101:         console.print(msg)
-     102:     console.print()
-```
-
-### `unnecessary-list-conversion.yaml` / `occ-0`
-
-File: `gmail_archiver/cli/filters.py`
-
-> Calling list() on a set when passing to an API that accepts any iterable is
-> unnecessary. The Gmail batchModify API accepts any iterable for label IDs,
-> so the conversion adds noise without benefit.
->
-> **Note:** list(add_labels) and list(remove_labels) - Gmail API accepts iterables
-
-```
-     381:             batch_size = 1000
-     382:             for i in range(0, len(msg_ids), batch_size):
-     383:                 batch = msg_ids[i : i + batch_size]
-     384:                 body: dict = {"ids": batch}
-     385:                 if add_labels:
->>>  386:                     body["addLabelIds"] = list(add_labels)
->>>  387:                 if remove_labels:
->>>  388:                     body["removeLabelIds"] = list(remove_labels)
-     389:
-     390:                 client.service.users().messages().batchModify(userId="me", body=body).execute()
-     391:                 total_processed += len(batch)
-     392:
-     393:         console.print(f"[green]✓[/green] Applied filter to {total_processed} email(s)")
-```
-
-### `unnecessary-regex-for-substring.yaml` / `occ-0`
-
-File: `gmail_archiver/planners/aliexpress.py`
-
-> STATUS_PATTERNS uses compiled regex for simple substring checks. All patterns
-> are plain strings with no regex metacharacters - just "delivered", "out for
-> delivery", etc. with IGNORECASE. Should use simple str.lower() + "in" check
-> instead of regex.
->
-> **Note:** STATUS_PATTERNS - regex overkill for case-insensitive substring checks
-
-```
-      57:         return ""
-      58:
-      59:
-      60: # Regex patterns for subject parsing
-      61: ORDER_ID_PATTERN = re.compile(r"Order (\d+):")
->>>   62: STATUS_PATTERNS = [
->>>   63:     (re.compile(r"delivered", re.IGNORECASE), AliExpressStatus.DELIVERED),
->>>   64:     (re.compile(r"out for delivery", re.IGNORECASE), AliExpressStatus.OUT_FOR_DELIVERY),
->>>   65:     (re.compile(r"at delivery center", re.IGNORECASE), AliExpressStatus.AT_DELIVERY_CENTER),
->>>   66:     (re.compile(r"in your country", re.IGNORECASE), AliExpressStatus.IN_COUNTRY),
->>>   67:     (re.compile(r"cleared customs", re.IGNORECASE), AliExpressStatus.CLEARED_CUSTOMS),
->>>   68:     (re.compile(r"package in transit", re.IGNORECASE), AliExpressStatus.IN_TRANSIT),
->>>   69:     (re.compile(r"order shipped", re.IGNORECASE), AliExpressStatus.SHIPPED),
->>>   70:     (re.compile(r"ready to ship", re.IGNORECASE), AliExpressStatus.READY_TO_SHIP),
->>>   71:     (re.compile(r"order confirmed", re.IGNORECASE), AliExpressStatus.CONFIRMED),
->>>   72:     (re.compile(r"delivery update", re.IGNORECASE), AliExpressStatus.DELIVERY_UPDATE),
->>>   73:     (re.compile(r"awaiting confirmation", re.IGNORECASE), AliExpressStatus.AWAITING_CONFIRMATION),
->>>   74:     (re.compile(r"how did it go", re.IGNORECASE), AliExpressStatus.FEEDBACK_REQUEST),
->>>   75:     (re.compile(r"is closed", re.IGNORECASE), AliExpressStatus.CLOSED),
->>>   76:     (re.compile(r"delayed delivery coupon", re.IGNORECASE), AliExpressStatus.DELAYED_COUPON),
->>>   77: ]
-      78:
-      79:
-      80: class AliExpressParseError(Exception):
-      81:     """Raised when an AliExpress email cannot be parsed."""
-      82:
-```
-
-### `untyped-email-tuple.yaml` / `occ-0`
-
-File: `gmail_archiver/event_classifier.py`
-
-> extract_batch() takes emails as list[tuple[str, str, str, str]] - a raw tuple
-> with no indication of what each element means (message_id, subject, body,
-> received_date). Should use one of the existing Pydantic Gmail models like
-> GmailMessage, or a subset model if full GmailMessage is too heavy.
->
-> **Note:** emails parameter in extract_batch() - tuple of (message_id, subject, body, received_date)
-
-```
-     166:         self.cache.set(message_id, classification)
-     167:
-     168:         return classification
-     169:
-     170:     async def extract_batch(
->>>  171:         self, emails: list[tuple[str, str, str, str]], use_cache: bool = True, max_concurrent: int = 10
-     172:     ) -> list[tuple[str, EmailTemplateExtraction]]:
-     173:         semaphore = asyncio.Semaphore(max_concurrent)
-     174:
-     175:         async def extract_with_limit(email_data):
-     176:             message_id, subject, body, received_date = email_data
-```
-
-### `unused-tuple-element.yaml` / `occ-0`
-
-File: `gmail_archiver/planners/aliexpress.py`
-
-> Tuple element is stored but never used. unparseable is typed as
-> list[tuple[GmailMessage, str]] and stores the error string, but when
-> iterated it's ignored with \_error. Should just be list[GmailMessage].
->
-> **Note:** unparseable stores error string that is never used
-
-```
-     166:             return plan
-     167:
-     168:         # Group by order ID
-     169:         by_order: dict[str | None, list[GmailMessage]] = defaultdict(list)
-     170:         parsed_cache: dict[str, AliExpressEmail] = {}
->>>  171:         unparseable: list[tuple[GmailMessage, str]] = []
-     172:
-     173:         for msg in messages:
-     174:             try:
-     175:                 parsed = parse_aliexpress_subject(msg.subject)
-     176:                 parsed_cache[msg.id] = parsed
+>>>  126: def dump_response_messages(messages: list[ResponseOutputMessage]) -> list[dict[str, Any]]:
+>>>  127:     """Convert validated ResponseOutputMessage objects back to dict form."""
+>>>  128:     return [msg.model_dump(by_alias=True) for msg in messages]
+     129:
+     130:
+>>>  131: def dump_chat_messages(messages: list[ChatCompletionMessageParam]) -> list[dict[str, Any]]:
+>>>  132:     """Convert ChatCompletionMessageParam objects to dict form."""
+>>>  133:     return [TypeAdapter(dict[str, Any]).validate_python(msg) for msg in messages]
+     134:
+     135:
+     136: def parse_chat_messages(messages: Any) -> list[ChatCompletionMessageParam] | None:
    ...
-     174:             try:
-     175:                 parsed = parse_aliexpress_subject(msg.subject)
-     176:                 parsed_cache[msg.id] = parsed
-     177:                 by_order[parsed.order_id].append(msg)
-     178:             except AliExpressParseError as e:
->>>  179:                 unparseable.append((msg, str(e)))
-     180:
-     181:         now = datetime.now(UTC)
-     182:
-     183:         # Report unparseable emails but don't take action
-     184:         if unparseable:
-   ...
-     181:         now = datetime.now(UTC)
-     182:
-     183:         # Report unparseable emails but don't take action
-     184:         if unparseable:
-     185:             plan.add_message(f"Skipping {len(unparseable)} emails with unrecognized status:")
->>>  186:             for msg, _error in unparseable:
-     187:                 plan.add_message(f"  - {msg.subject[:60]}...")
-     188:
-     189:         for _order_id, order_emails in by_order.items():
-     190:             # Sort by date, newest first
-     191:             sorted_emails = sorted(order_emails, key=lambda m: m.internal_date, reverse=True)
+     156:     return TypeAdapter(Response).validate_python(response)
+     157:
+     158:
+>>>  159: def parse_tool_params(params: dict[str, Any]) -> dict[str, Any]:
+>>>  160:     """Parse and validate tool parameters.
+>>>  161:
+>>>  162:     Args:
+>>>  163:         params: Tool parameters as dict. If you have a JSON string,
+>>>  164:                 deserialize it first: parse_tool_params(json.loads(json_str))
+>>>  165:
+>>>  166:     Returns:
+>>>  167:         Validated parameter dict.
+>>>  168:     """
+>>>  169:     return TypeAdapter(dict[str, Any]).validate_python(params)
+     170:
+     171:
+     172: def parse_tools_list(tools: Any) -> list[dict[str, Any]]:
 ```
 
-## ducktape/2025-11-22-02 (24)
+### `unnecessary-wrapper-functions.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/unnecessary-wrapper-functions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/agent.py#L149-L269)
+
+File: `adgn/src/adgn/agent/agent.py` (L149-160, L269)
+
+> Trivial wrapper functions that add no abstraction value. Only create wrapper
+> functions when they add real abstraction (combine multiple operations),
+> provide domain-specific naming clarity, or encapsulate complex logic.
+>
+> **Note:** \_normalize_call_arguments accepts dict[str, Any] | str | None but dict case never occurs; defensive check for
+> impossible case
+
+```
+     146:     return _make_error_result(reason or DEFAULT_ABORT_ERROR)
+     147:
+     148:
+>>>  149: def _normalize_call_arguments(arguments: dict[str, Any] | str | None) -> str | None:
+>>>  150:     """Normalize function call arguments to JSON string.
+>>>  151:
+>>>  152:     Args:
+>>>  153:         arguments: Structured data (dict), pre-serialized JSON string, or None.
+>>>  154:
+>>>  155:     Returns:
+>>>  156:         JSON string representation or None if arguments is None.
+>>>  157:     """
+>>>  158:     if arguments is None or isinstance(arguments, str):
+>>>  159:         return arguments
+>>>  160:     return json.dumps(arguments)
+     161:
+     162:
+     163: def _call_tool_result_from_json(output: str) -> CallToolResult:
+   ...
+     266:     async def _handle_pending_tool_calls(self) -> None:
+     267:         function_calls: list[FunctionCallItem] = list(self.pending_function_calls)
+     268:         calls: list[tuple[FunctionCallItem, str | None]] = [
+>>>  269:             (function_call, _normalize_call_arguments(function_call.arguments)) for function_call in function_calls
+     270:         ]
+     271:
+     272:         local_result_map: dict[str, CallToolResult] = {
+```
+
+### `wrong-ephemeral-flag.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/wrong-ephemeral-flag.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/runtime/container.py#L622-L629)
+
+File: `adgn/src/adgn/agent/runtime/container.py` (L622, L628-629)
+
+> Line 622 creates the runtime container with `ephemeral=True`, but line 629
+> stores `self.runtime_ephemeral = False`. The comment on 628 says "Persist
+> runtime ephemerality for status reporting (explicit)" — the value contradicts
+> both the comment's intent and the actual container configuration. Status
+> reports will incorrectly show the runtime as non-ephemeral.
+
+```
+     619:
+     620:             # Runtime exec server (no host mounts)
+     621:             runtime_image = resolve_runtime_image()
+>>>  622:             opts = ContainerOptions(image=runtime_image, volumes=None, ephemeral=True)
+     623:             runtime_server = make_runtime_server(opts)
+     624:             # Ensure tool is exposed under expected name
+     625:             tools = await runtime_server._tool_manager.list_tools()
+     626:             assert RUNTIME_EXEC_TOOL_NAME in [t.name for t in tools]
+     627:             await self._compositor.mount_inproc(RUNTIME_SERVER_NAME, runtime_server)
+>>>  628:         # Persist runtime ephemerality for status reporting (explicit)
+>>>  629:         self.runtime_ephemeral = False
+     630:         # Notification hooks are managed by the compositor client notifications buffer
+     631:
+     632:     # Seatbelt is no longer intercepted/rewritten; respect provided specs.
+```
+
+### `yaml-loader-falsy-coercion.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/issues/yaml-loader-falsy-coercion.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-00/code/adgn/src/adgn/agent/presets.py#L35)
+
+File: `adgn/src/adgn/agent/presets.py` (L35)
+
+> \_load_yaml coerces any falsy YAML payload to {} before the type check (line 35:
+> `data = yaml.safe_load(f) or {}`). This means non-mapping presets like [], 0, false, or None
+> are silently treated as empty mappings, bypassing the isinstance(data, dict) check on line 36
+> that should raise "preset must be a mapping". The `or {}` should be removed - let yaml.safe_load
+> return whatever it returns, and let the isinstance check fail naturally for non-dict values.
+> This hides malformed presets and causes downstream validation errors instead of clear early
+> failures.
+
+```
+      32:
+      33: def _load_yaml(path: Path) -> dict[str, JsonValue]:
+      34:     with path.open("r", encoding="utf-8") as f:
+>>>   35:         data = yaml.safe_load(f) or {}
+      36:     if not isinstance(data, dict):
+      37:         raise ValueError(f"preset must be a mapping: {path}")
+      38:     return cast(dict[str, JsonValue], data)
+```
+
+## ducktape/2025-11-22-02 (23)
 
 ### `ambiguous-timestamp-field.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/ambiguous-timestamp-field.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/approvals.py#L79-L189)
+
+File: `adgn/src/adgn/agent/approvals.py` (L79-85, L167, L189)
 
 > The ApprovalItem model has a `timestamp` field whose meaning is ambiguous:
 >
@@ -6955,8 +12651,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > pending and decided states.
 
 ```
-      74:     REJECTED = "rejected"
-      75:     DENIED = "denied"
       76:     ABORTED = "aborted"
       77:
       78:
@@ -6970,11 +12664,7 @@ File: `adgn/src/adgn/agent/approvals.py`
       86:
       87:
       88: class ApprovalsResponse(BaseModel):
-      89:     """Response containing all approvals for an agent (pending + decided history)."""
-      90:     agent_id: AgentID
    ...
-     162:                 ApprovalItem(
-     163:                     call_id=call_id,
      164:                     tool_call=tool_call,
      165:                     status=ApprovalStatus.PENDING,
      166:                     reason=None,
@@ -6982,11 +12672,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      168:                 )
      169:                 for call_id, tool_call in pending_map.items()
      170:             ]
-     171:
-     172:             # Build decided approvals from persistence
    ...
-     184:                 ApprovalItem(
-     185:                     call_id=record.tool_call.id,
      186:                     tool_call=record.tool_call,
      187:                     status=map_outcome_to_status(record.decision.outcome),
      188:                     reason=record.decision.reason,
@@ -6994,13 +12680,13 @@ File: `adgn/src/adgn/agent/approvals.py`
      190:                 )
      191:                 for record in records
      192:                 if record.decision is not None
-     193:             ]
-     194:
 ```
 
 ### `docker-check-at-call-sites.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/docker-check-at-call-sites.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/approvals.py#L344-L361)
+
+File: `adgn/src/adgn/agent/approvals.py` (L344-345, L360-361)
 
 > The pattern `if self.docker_client is not None: self.self_check(...)` appears
 > twice (lines 344-345, 360-361). This conditional is repeated at every call site.
@@ -7025,8 +12711,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > - Cleaner API: callers don't need to know about Docker availability
 
 ```
-     339:
-     340:         Validates the proposal content if docker_client is available,
      341:         persists it, and notifies about the change.
      342:         """
      343:         # Self-check proposal program if docker is available
@@ -7035,11 +12719,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      346:         # Create proposal and get actual database-assigned ID
      347:         new_id = await self.persistence.create_policy_proposal(self.agent_id, proposal_id=0, content=content)
      348:         await self.notify_proposal_change(new_id)
-     349:         return new_id
-     350:
    ...
-     355:         marks it approved in persistence, and notifies about the change.
-     356:         """
      357:         if (got := await self.persistence.get_policy_proposal(self.agent_id, proposal_id)) is None:
      358:             raise KeyError(str(proposal_id))
      359:         # Self-check the proposal program before activation
@@ -7048,13 +12728,13 @@ File: `adgn/src/adgn/agent/approvals.py`
      362:         # Activate policy (notifies via engine's set_policy)
      363:         await self.set_policy(got.content)
      364:         await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
-     365:         await self.notify_proposal_change(proposal_id)
-     366:
 ```
 
 ### `duplicate-bearer-extraction.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/auth.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/duplicate-bearer-extraction.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/mcp_bridge/auth.py#L75-L161)
+
+File: `adgn/src/adgn/agent/mcp_bridge/auth.py` (L75-91, L144-161)
 
 > Both TokenAuthMiddleware and UITokenAuthMiddleware duplicate the same
 > Bearer token extraction logic:
@@ -7096,8 +12776,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/auth.py`
 > two use cases.
 
 ```
-      70:     def __init__(self, app, token_mapping: TokenMapping):
-      71:         super().__init__(app)
       72:         self.token_mapping = token_mapping
       73:
       74:     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
@@ -7121,11 +12799,7 @@ File: `adgn/src/adgn/agent/mcp_bridge/auth.py`
       92:
       93:         if (agent_id := self.token_mapping.get_agent_id(token)) is None:
       94:             raise HTTPException(
-      95:                 status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token", headers={"WWW-Authenticate": "Bearer"}
-      96:             )
    ...
-     139:             await self.app(scope, receive, send)
-     140:             return
      141:
      142:         # Parse headers
      143:         headers = dict(scope.get("headers", []))
@@ -7150,13 +12824,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/auth.py`
      162:
      163:         # Send error or continue
      164:         if error_response:
-     165:             await send({
-     166:                 "type": "http.response.start",
 ```
 
 ### `duplicated-agent-lookup.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/server.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/duplicated-agent-lookup.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/mcp_bridge/server.py#L158-L237)
+
+File: `adgn/src/adgn/agent/mcp_bridge/server.py` (L158-165, L168-177, L224-237)
 
 > Methods `get_agent_mode` (lines 168-177), `get_infrastructure` (lines 158-165), and
 > `remove_agent` (lines 224-237) duplicate the same "get agent or raise KeyError" logic.
@@ -7174,8 +12848,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
 > maintain. Could even inline some one-liners if called in few places.
 
 ```
-     153:             return (running, compositor_app)
-     154:
      155:     async def get_compositor_app(self, agent_id: AgentID) -> FastAPI:
      156:         """Get compositor app for an agent_id."""
      157:         _, app = await self.get_or_create_infrastructure(agent_id)
@@ -7187,15 +12859,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
 >>>  163:         return entry.agent.running if entry and entry.agent else None
 >>>  164:
 >>>  165:     def known_agents(self) -> list[AgentID]:
-     166:         return list(self._agents.keys())
-     167:
-     168:     async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
-     169:         """Raises KeyError if agent not in registry or not yet initialized."""
-     170:         if agent_id not in self._agents:
-   ...
-     163:         return entry.agent.running if entry and entry.agent else None
-     164:
-     165:     def known_agents(self) -> list[AgentID]:
      166:         return list(self._agents.keys())
      167:
 >>>  168:     async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
@@ -7211,11 +12874,7 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
      178:         """Raises KeyError if agent not in registry or not yet initialized."""
      179:         if agent_id not in self._agents:
      180:             raise KeyError(f"Agent {agent_id} not found in registry")
-     181:         agent = self._agents[agent_id].agent
-     182:         if agent is None:
    ...
-     219:         if agent_id not in self._agents:
-     220:             raise KeyError(f"Agent {agent_id} not found in registry")
      221:         running, _ = await self.get_or_create_infrastructure(agent_id)
      222:         return running
      223:
@@ -7236,13 +12895,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
      238:         await self.notify_agents_list_changed()
      239:
      240:     def _register_resources(self) -> None:
-     241:         @self.resource("resource://agents/list", name="agents_list", mime_type="application/json")
-     242:         async def list_agents() -> AgentsListResponse:
 ```
 
 ### `duplicated-get-proposal-check.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/duplicated-get-proposal-check.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/approvals.py#L357-L401)
+
+File: `adgn/src/adgn/agent/approvals.py` (L357-358, L399-401)
 
 > The "get proposal or raise KeyError if None" pattern appears twice:
 >
@@ -7276,8 +12935,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > This simplifies call sites to: got = await persistence.get_policy_proposal_or_raise(...)
 
 ```
-     352:         """Approve a pending policy proposal by ID and activate it.
-     353:
      354:         Retrieves the proposal, validates it, activates it as the current policy,
      355:         marks it approved in persistence, and notifies about the change.
      356:         """
@@ -7286,11 +12943,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      359:         # Self-check the proposal program before activation
      360:         if self.docker_client is not None:
      361:             self.self_check(got.content)
-     362:         # Activate policy (notifies via engine's set_policy)
-     363:         await self.set_policy(got.content)
    ...
-     394:             )
-     395:
      396:         @self.resource("resource://proposals/{id}", name="proposal_detail", mime_type="application/json")
      397:         async def proposal_detail(id: str) -> ProposalDetail:
      398:             """Get full proposal details including content and metadata."""
@@ -7300,13 +12953,13 @@ File: `adgn/src/adgn/agent/approvals.py`
      402:
      403:             return ProposalDetail(
      404:                 id=got.id,
-     405:                 status=ProposalStatus(got.status),
-     406:                 created_at=got.created_at,
 ```
 
 ### `duplicated-run-phase-logic.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/server.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/duplicated-run-phase-logic.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/mcp_bridge/server.py#L255-L304)
+
+File: `adgn/src/adgn/agent/mcp_bridge/server.py` (L255-267, L296-304)
 
 > Run phase determination logic is duplicated across `list_agents()` resource
 > (lines 255-267) and `get_agent_info()` resource (lines 296-304).
@@ -7334,8 +12987,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
 > Then call it: `run_phase, pending_approvals = self._determine_run_phase(infra)`
 
 ```
-     250:
-     251:                 # Get infrastructure if available
      252:                 infra = self.get_running_infrastructure(agent_id)
      253:                 live = infra is not None
      254:
@@ -7355,11 +13006,7 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
      268:
      269:                 # Determine capabilities
      270:                 is_local = mode == AgentMode.LOCAL
-     271:
-     272:                 agents.append(
    ...
-     291:                 raise KeyError(f"Agent {agent_id} not found")
-     292:
      293:             infra = self.get_running_infrastructure(agent_id)
      294:             live = infra is not None
      295:
@@ -7375,13 +13022,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
      305:
      306:             is_local = mode == AgentMode.LOCAL
      307:
-     308:             return AgentInfo(
-     309:                 id=agent_id,
 ```
 
 ### `keyerror-iteration-mismatch.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/server.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/keyerror-iteration-mismatch.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/mcp_bridge/server.py#L245-L249)
+
+File: `adgn/src/adgn/agent/mcp_bridge/server.py` (L245-249)
 
 > Iteration catches KeyError when agent isn't initialized (lines 245-249):
 >
@@ -7412,8 +13059,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
 > Or explicitly decide whether to include uninitialized agents with different status.
 
 ```
-     240:     def _register_resources(self) -> None:
-     241:         @self.resource("resource://agents/list", name="agents_list", mime_type="application/json")
      242:         async def list_agents() -> AgentsListResponse:
      243:             """List all agents with detailed status."""
      244:             agents = []
@@ -7425,13 +13070,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/server.py`
      250:
      251:                 # Get infrastructure if available
      252:                 infra = self.get_running_infrastructure(agent_id)
-     253:                 live = infra is not None
-     254:
 ```
 
 ### `methods-only-called-by-mcp.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/methods-only-called-by-mcp.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/approvals.py#L142-L370)
+
+File: `adgn/src/adgn/agent/approvals.py` (L142-148, L316-322, L337-349, L351-366, L367-370)
 
 > Several methods in ApprovalHub and ApprovalPolicyEngine are called ONLY by their
 > corresponding MCP tools/resources, and nowhere else in production code:
@@ -7475,8 +13120,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > should NOT be inlined - they're called externally by production code.
 
 ```
-     137:                 fut = pending.future
-     138:         if self._has_mcp:
      139:             await self.notify_approvals_changed()
      140:         return await fut
      141:
@@ -7490,11 +13133,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      149:
      150:     @property
      151:     def pending(self) -> dict[str, ToolCall]:
-     152:         """Public view of pending approval tool calls (immutable contract by convention)."""
-     153:         return {call_id: p.tool_call for call_id, p in self._pending.items()}
    ...
-     311:         self._register_tools()
-     312:
      313:     def get_policy(self) -> tuple[str, int]:
      314:         return self._policy_source, self._policy_id
      315:
@@ -7508,11 +13147,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      323:
      324:     # Internal load used on startup to hydrate content/id from persistence
      325:     def load_policy(self, source: str, *, policy_id: int) -> None:
-     326:         # Hydrate from persistence without executing the code
-     327:         self._policy_source = source
    ...
-     332:             docker_client=self.docker_client,
-     333:             source=source,
      334:             input_payload={"name": build_mcp_function(UI_SERVER_NAME, "send_message"), "arguments": {}},
      335:         )
      336:
@@ -7530,16 +13165,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 >>>  348:         await self.notify_proposal_change(new_id)
 >>>  349:         return new_id
      350:
-     351:     async def approve_proposal(self, proposal_id: int) -> None:
-     352:         """Approve a pending policy proposal by ID and activate it.
-     353:
-     354:         Retrieves the proposal, validates it, activates it as the current policy,
-   ...
-     346:         # Create proposal and get actual database-assigned ID
-     347:         new_id = await self.persistence.create_policy_proposal(self.agent_id, proposal_id=0, content=content)
-     348:         await self.notify_proposal_change(new_id)
-     349:         return new_id
-     350:
 >>>  351:     async def approve_proposal(self, proposal_id: int) -> None:
 >>>  352:         """Approve a pending policy proposal by ID and activate it.
 >>>  353:
@@ -7556,17 +13181,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 >>>  364:         await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
 >>>  365:         await self.notify_proposal_change(proposal_id)
 >>>  366:
-     367:     async def reject_proposal(self, proposal_id: int) -> None:
-     368:         """Reject a pending policy proposal by ID."""
-     369:         await self.persistence.reject_policy_proposal(self.agent_id, proposal_id)
-     370:         await self.notify_proposal_change(proposal_id)
-     371:
-   ...
-     362:         # Activate policy (notifies via engine's set_policy)
-     363:         await self.set_policy(got.content)
-     364:         await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
-     365:         await self.notify_proposal_change(proposal_id)
-     366:
 >>>  367:     async def reject_proposal(self, proposal_id: int) -> None:
 >>>  368:         """Reject a pending policy proposal by ID."""
 >>>  369:         await self.persistence.reject_policy_proposal(self.agent_id, proposal_id)
@@ -7574,13 +13188,13 @@ File: `adgn/src/adgn/agent/approvals.py`
      371:
      372:     def _register_resources(self) -> None:
      373:         @self.resource("resource://policy.py", name="policy.py", mime_type="text/x-python")
-     374:         def active_policy() -> str:
-     375:             """Get the active approval policy source code."""
 ```
 
 ### `missing-call-id-silent-fail.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/missing-call-id-silent-fail.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/approvals.py#L131-L148)
+
+File: `adgn/src/adgn/agent/approvals.py` (L142-148, L131-137)
 
 > Both `resolve()` and `await_decision()` silently handle missing call_ids instead of failing fast.
 >
@@ -7600,26 +13214,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > actually changes.
 
 ```
-     137:                 fut = pending.future
-     138:         if self._has_mcp:
-     139:             await self.notify_approvals_changed()
-     140:         return await fut
-     141:
->>>  142:     def resolve(self, call_id: str, decision: ContinueDecision | DenyContinueDecision | AbortTurnDecision) -> None:
->>>  143:         pending = self._pending.pop(call_id, None)
->>>  144:         if pending is not None and not pending.future.done():
->>>  145:             pending.future.set_result(decision)
->>>  146:         # Schedule notification asynchronously if MCP is enabled
->>>  147:         if self._has_mcp:
->>>  148:             asyncio.create_task(self.notify_approvals_changed())
-     149:
-     150:     @property
-     151:     def pending(self) -> dict[str, ToolCall]:
-     152:         """Public view of pending approval tool calls (immutable contract by convention)."""
-     153:         return {call_id: p.tool_call for call_id, p in self._pending.items()}
-   ...
-     126:             self._register_tools()
-     127:
      128:     async def await_decision(
      129:         self, call_id: str, tool_call: ToolCall
      130:     ) -> ContinueDecision | DenyContinueDecision | AbortTurnDecision:
@@ -7634,12 +13228,23 @@ File: `adgn/src/adgn/agent/approvals.py`
      139:             await self.notify_approvals_changed()
      140:         return await fut
      141:
-     142:     def resolve(self, call_id: str, decision: ContinueDecision | DenyContinueDecision | AbortTurnDecision) -> None:
+>>>  142:     def resolve(self, call_id: str, decision: ContinueDecision | DenyContinueDecision | AbortTurnDecision) -> None:
+>>>  143:         pending = self._pending.pop(call_id, None)
+>>>  144:         if pending is not None and not pending.future.done():
+>>>  145:             pending.future.set_result(decision)
+>>>  146:         # Schedule notification asynchronously if MCP is enabled
+>>>  147:         if self._has_mcp:
+>>>  148:             asyncio.create_task(self.notify_approvals_changed())
+     149:
+     150:     @property
+     151:     def pending(self) -> dict[str, ToolCall]:
 ```
 
 ### `redundant-function-call-param.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/agent.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/redundant-function-call-param.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/agent.py#L305)
+
+File: `adgn/src/adgn/agent/agent.py` (L305)
 
 > The invoker callback is called with both a FunctionCall object and its arguments as separate parameters:
 >
@@ -7676,8 +13281,6 @@ File: `adgn/src/adgn/agent/agent.py`
 > site.
 
 ```
-     300:             cancelled_exc = anyio.get_cancelled_exc_class()
-     301:
      302:             async def runner(fc: FunctionCallItem) -> None:
      303:                 nonlocal abort_triggered
      304:                 try:
@@ -7685,13 +13288,13 @@ File: `adgn/src/adgn/agent/agent.py`
      306:                 except cancelled_exc:
      307:                     return
      308:                 cid = _require_call_id(fc)
-     309:                 results[cid] = outcome
-     310:                 if isinstance(outcome, ToolCallAborted):
 ```
 
 ### `redundant-mode-field-derived.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/server.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/redundant-mode-field-derived.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/mcp_bridge/server.py#L40)
+
+File: `adgn/src/adgn/agent/mcp_bridge/server.py` (L40)
 
 > Line 40 defines `RunningAgent` dataclass with both `mode: AgentMode` and
 > `local_runtime: LocalAgentRuntime | None` fields. The mode is completely determined by
@@ -7707,8 +13310,6 @@ else AgentMode.BRIDGE`. Update construction sites to omit the mode parameter. Be
 > single source of truth, cannot desync, less data to maintain, clear semantic relationship.
 
 ```
-      35:
-      36:
       37: @dataclass
       38: class RunningAgent:
       39:     """All infrastructure for a running agent (single point of optionality)."""
@@ -7716,13 +13317,13 @@ else AgentMode.BRIDGE`. Update construction sites to omit the mode parameter. Be
       41:     running: RunningInfrastructure
       42:     compositor_app: FastAPI
       43:     mode: AgentMode
-      44:     local_runtime: LocalAgentRuntime | None  # None for bridge agents
-      45:
 ```
 
 ### `redundant-status-conversion.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/redundant-status-conversion.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/approvals.py#L388-L405)
+
+File: `adgn/src/adgn/agent/approvals.py` (L388, L405)
 
 > Both resource handlers convert p.status and got.status to ProposalStatus:
 >
@@ -7753,8 +13354,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > without runtime conversion.
 
 ```
-     383:             return ProposalsList(
-     384:                 agent_id=self.agent_id,
      385:                 proposals=[
      386:                     ProposalDescriptor(
      387:                         id=p.id,
@@ -7762,11 +13361,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      389:                         created_at=p.created_at,
      390:                         decided_at=p.decided_at,
      391:                     )
-     392:                     for p in proposals
-     393:                 ]
    ...
-     400:             if got is None:
-     401:                 raise KeyError(f"Proposal {id} not found")
      402:
      403:             return ProposalDetail(
      404:                 id=got.id,
@@ -7774,13 +13369,13 @@ File: `adgn/src/adgn/agent/approvals.py`
      406:                 created_at=got.created_at,
      407:                 decided_at=got.decided_at,
      408:                 content=got.content,
-     409:             )
-     410:
 ```
 
 ### `redundant-total-tokens-field.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/handler.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/redundant-total-tokens-field.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/handler.py#L29)
+
+File: `adgn/src/adgn/agent/handler.py` (L29)
 
 > The TokenUsage model has a total_tokens field that is a trivial sum of two other fields:
 >
@@ -7817,8 +13412,6 @@ File: `adgn/src/adgn/agent/handler.py`
 > - Backward compatible if needed
 
 ```
-      24:     model: str = Field(description="Model name used for the request")
-      25:     input_tokens: int | None = Field(None, description="Number of input tokens consumed")
       26:     input_tokens_details: InputTokensDetails | None = Field(None, description="Breakdown of input token usage")
       27:     output_tokens: int | None = Field(None, description="Number of output tokens generated")
       28:     output_tokens_details: OutputTokensDetails | None = Field(None, description="Breakdown of output token usage")
@@ -7826,13 +13419,13 @@ File: `adgn/src/adgn/agent/handler.py`
       30:
       31:
       32: # ---- Typed events (no shared runtime base required) ----
-      33: class UserText(BaseModel):
-      34:     text: str
 ```
 
 ### `split-with-ui-conditional.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/runtime/builder.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/split-with-ui-conditional.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/runtime/builder.py#L70-L86)
+
+File: `adgn/src/adgn/agent/runtime/builder.py` (L70-72, L84-86)
 
 > Lines 70-72 and 84-86 split with_ui conditional logic unnecessarily. First
 > block creates ui_bus and connection_manager, then builder.start() executes,
@@ -7849,8 +13442,6 @@ File: `adgn/src/adgn/agent/runtime/builder.py`
 > block. Eliminates split conditional.
 
 ```
-      65:     await runtime.close()
-      66:     await running.close()
       67:     """
       68:     ui_bus: ServerBus | None = None
       69:     connection_manager: ConnectionManager | None = None
@@ -7860,11 +13451,7 @@ File: `adgn/src/adgn/agent/runtime/builder.py`
       73:
       74:     builder = MCPInfrastructure(
       75:         agent_id=agent_id,
-      76:         persistence=persistence,
-      77:         docker_client=docker_client,
    ...
-      79:         connection_manager=connection_manager,
-      80:     )
       81:
       82:     running = await builder.start(mcp_config)
       83:
@@ -7874,13 +13461,13 @@ File: `adgn/src/adgn/agent/runtime/builder.py`
       87:     await running.attach_sidecar(ChatSidecar())
       88:     await running.attach_sidecar(LoopControlSidecar())
       89:
-      90:     runtime = LocalAgentRuntime(
-      91:         running=running,
 ```
 
 ### `swallow-initialization-error.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/compositor_factory.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/swallow-initialization-error.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/mcp_bridge/compositor_factory.py#L93-L95)
+
+File: `adgn/src/adgn/agent/mcp_bridge/compositor_factory.py` (L93-95)
 
 > Lines 93-95 catch exceptions when mounting agent compositors and continue
 > silently with logged error. This is dangerous initialization behavior.
@@ -7904,8 +13491,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/compositor_factory.py`
 > health checks, error APIs, recovery logic, and documentation.
 
 ```
-      88:     for agent_id in registry.known_agents():
-      89:         try:
       90:             agent_comp = await create_agent_compositor(agent_id, registry)
       91:             await global_comp.mount_inproc(f"agent{agent_id}", agent_comp)
       92:             logger.info(f"Mounted agent compositor for agent {agent_id}")
@@ -7915,13 +13500,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/compositor_factory.py`
       96:
       97:     # Standard infrastructure (resources aggregator, compositor metadata, admin)
       98:     if gateway_client is not None:
-      99:         await mount_standard_inproc_servers(global_comp, gateway_client)
-     100:         logger.info("Mounted standard infrastructure servers")
 ```
 
 ### `ternary-oneliner-needed.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/cli.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/ternary-oneliner-needed.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/mcp_bridge/cli.py#L88-L90)
+
+File: `adgn/src/adgn/agent/mcp_bridge/cli.py` (L88-90)
 
 > The policy_source initialization uses two lines when it could be a single ternary expression:
 >
@@ -7947,8 +13532,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/cli.py`
 > - Variable is const-assigned (not mutated)
 
 ```
-      83:     if mcp_config:
-      84:         config = MCPConfig.model_validate_json(mcp_config.read_text())
       85:     else:
       86:         config = MCPConfig(mcpServers={})
       87:
@@ -7958,24 +13541,17 @@ File: `adgn/src/adgn/agent/mcp_bridge/cli.py`
       91:
       92:     asyncio.run(
       93:         _run_server(
-      94:             agent_id=agent_id,
-      95:             auth_tokens_path=auth_tokens,
 ```
 
 ### `test-dup-responses-create.yaml` / `occ-0`
 
-File: `adgn/tests/agent/e2e/test_mcp_concurrent.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/test-dup-responses-create.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/tests/agent/e2e/test_mcp_concurrent.py#L100-L283)
+
+File: `adgn/tests/agent/e2e/test_mcp_concurrent.py` (L100-110, L159-169, L269-283)
 
 > The pattern of creating stateful mock response handlers (a dict with `{"i": 0}` and an
 > `async def responses_create(_req)` function that increments the counter and returns
 > tool calls from a sequence) is duplicated 16+ times across the test suite.
->
-> **Why this is problematic:**
->
-> - 40+ lines of duplicated code across test suite
-> - Each occurrence is essentially identical with minor variations
-> - Changes to the pattern must be replicated everywhere
-> - Increases maintenance burden and risk of inconsistency
 >
 > **Fix:** Extract into a shared `make_stateful_responses(responses_factory, response_sequence)`
 > helper in conftest.py or tests/agent/helpers.py that takes a list of (function_name,
@@ -7985,8 +13561,6 @@ File: `adgn/tests/agent/e2e/test_mcp_concurrent.py`
 > **Note:** Three instances in test_mcp_concurrent.py
 
 ```
-      95:     - Subscribe to resource
-      96:     - Unsubscribe
       97:     - Resubscribe
       98:     - State consistency maintained
       99:     """
@@ -8004,11 +13578,7 @@ File: `adgn/tests/agent/e2e/test_mcp_concurrent.py`
      111:     s = run_server(lambda model: make_mock(responses_create))
      112:     base = s["base_url"]
      113:
-     114:     # Create agent
-     115:     agent_id = api_create_agent(base)
    ...
-     154:     - Subscribe to agent resource
-     155:     - Delete agent via API
      156:     - No errors occur
      157:     - Graceful cleanup
      158:     """
@@ -8026,11 +13596,7 @@ File: `adgn/tests/agent/e2e/test_mcp_concurrent.py`
      170:     s = run_server(lambda model: make_mock(responses_create))
      171:     base = s["base_url"]
      172:
-     173:     # Create agent
-     174:     agent_id = api_create_agent(base)
    ...
-     264:     Verifies:
-     265:     - Subscribe to resource
      266:     - Simulate network hiccup (pause/resume via offline mode)
      267:     - Subscription recovers correctly
      268:     """
@@ -8052,24 +13618,17 @@ File: `adgn/tests/agent/e2e/test_mcp_concurrent.py`
      284:     s = run_server(lambda model: make_mock(responses_create))
      285:     base = s["base_url"]
      286:
-     287:     # Create agent
-     288:     agent_id = api_create_agent(base)
 ```
 
 ### `test-dup-responses-create.yaml` / `occ-1`
 
-File: `adgn/tests/agent/e2e/test_mcp_errors.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/test-dup-responses-create.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/tests/agent/e2e/test_mcp_errors.py#L73-L256)
+
+File: `adgn/tests/agent/e2e/test_mcp_errors.py` (L73-82, L127-135, L184-193, L249-256)
 
 > The pattern of creating stateful mock response handlers (a dict with `{"i": 0}` and an
 > `async def responses_create(_req)` function that increments the counter and returns
 > tool calls from a sequence) is duplicated 16+ times across the test suite.
->
-> **Why this is problematic:**
->
-> - 40+ lines of duplicated code across test suite
-> - Each occurrence is essentially identical with minor variations
-> - Changes to the pattern must be replicated everywhere
-> - Increases maintenance burden and risk of inconsistency
 >
 > **Fix:** Extract into a shared `make_stateful_responses(responses_factory, response_sequence)`
 > helper in conftest.py or tests/agent/helpers.py that takes a list of (function_name,
@@ -8079,8 +13638,6 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
 > **Note:** Four instances in test_mcp_errors.py
 
 ```
-      68:     - Error message is shown to user
-      69:     - Agent continues to function after error
       70:     """
       71:     state = {"i": 0}
       72:
@@ -8097,11 +13654,7 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
       83:
       84:     s = run_server(lambda model: make_mock(responses_create))
       85:     base = s["base_url"]
-      86:
-      87:     # Create agent
    ...
-     122:     - Timeout message is shown to user
-     123:     - System remains responsive after timeout
      124:     """
      125:     state = {"i": 0}
      126:
@@ -8117,11 +13670,7 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
      136:
      137:     s = run_server(lambda model: make_mock(responses_create))
      138:     base = s["base_url"]
-     139:
-     140:     # Create agent
    ...
-     179:     - System can recover or fail gracefully
-     180:     """
      181:     # Use a simple echo server that we can "kill" by having it fail
      182:     state = {"i": 0, "should_fail": False}
      183:
@@ -8138,11 +13687,7 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
      194:
      195:     s = run_server(lambda model: make_mock(responses_create))
      196:     base = s["base_url"]
-     197:
-     198:     # Create agent
    ...
-     244:     - No lingering references or memory leaks
-     245:     - UI handles agent deletion appropriately
      246:     """
      247:     state = {"i": 0}
      248:
@@ -8157,24 +13702,17 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
      257:
      258:     s = run_server(lambda model: make_mock(responses_create))
      259:     base = s["base_url"]
-     260:
-     261:     # Create agent
 ```
 
 ### `test-dup-responses-create.yaml` / `occ-2`
 
-File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/test-dup-responses-create.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/tests/agent/e2e/test_mcp_edge_cases.py#L38-L283)
+
+File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py` (L38-51, L100-101, L139-152, L207-220, L275-283)
 
 > The pattern of creating stateful mock response handlers (a dict with `{"i": 0}` and an
 > `async def responses_create(_req)` function that increments the counter and returns
 > tool calls from a sequence) is duplicated 16+ times across the test suite.
->
-> **Why this is problematic:**
->
-> - 40+ lines of duplicated code across test suite
-> - Each occurrence is essentially identical with minor variations
-> - Changes to the pattern must be replicated everywhere
-> - Increases maintenance burden and risk of inconsistency
 >
 > **Fix:** Extract into a shared `make_stateful_responses(responses_factory, response_sequence)`
 > helper in conftest.py or tests/agent/helpers.py that takes a list of (function_name,
@@ -8184,8 +13722,6 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
 > **Note:** Five instances in test_mcp_edge_cases.py
 
 ```
-      33:     - Agent can subscribe to a non-existent resource URI
-      34:     - System returns appropriate error via notifications
       35:     - UI displays error state without crashing
       36:     - Agent continues to function after the error
       37:     """
@@ -8206,11 +13742,7 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
       52:
       53:     s = run_server(lambda model: make_mock(responses_create))
       54:     base = s["base_url"]
-      55:
-      56:     # Create agent
    ...
-      95:     - Immediately deleting the agent succeeds
-      96:     - No resource leaks or dangling references
       97:     - System handles rapid lifecycle transitions gracefully
       98:     """
       99:
@@ -8219,11 +13751,7 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
      102:
      103:     s = run_server(lambda model: make_mock(responses_create))
      104:     base = s["base_url"]
-     105:
-     106:     # Rapidly create and delete multiple agents
    ...
-     134:     - Simulate server disconnect
-     135:     - Reconnect server
      136:     - Verify subscription state is handled gracefully
      137:     - UI reflects current server state
      138:     """
@@ -8244,11 +13772,7 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
      153:
      154:     s = run_server(lambda model: make_mock(responses_create))
      155:     base = s["base_url"]
-     156:
-     157:     # Create agent
    ...
-     202:     - UI shows appropriate error state
-     203:     - System remains stable
      204:
      205:     Note: This test simulates the condition by using a slow/hanging resource.
      206:     """
@@ -8269,11 +13793,7 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
      221:
      222:     s = run_server(lambda model: make_mock(responses_create))
      223:     base = s["base_url"]
-     224:
-     225:     # Create agent
    ...
-     270:     Verifies:
-     271:     - Agent creation succeeds
      272:     - Attempting to subscribe before MCP servers are attached is handled gracefully
      273:     - System queues or rejects the request appropriately
      274:     - No crashes or undefined behavior
@@ -8289,13 +13809,13 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
      284:
      285:     s = run_server(lambda model: make_mock(responses_create))
      286:     base = s["base_url"]
-     287:
-     288:     # Create agent (no MCP servers attached yet)
 ```
 
 ### `test-error-swallow.yaml` / `occ-0`
 
-File: `adgn/tests/agent/e2e/test_mcp_concurrent.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/test-error-swallow.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/tests/agent/e2e/test_mcp_concurrent.py#L75-L82)
+
+File: `adgn/tests/agent/e2e/test_mcp_concurrent.py` (L75-82)
 
 > Tests use bare `except Exception:` blocks that swallow all errors, hiding real failures.
 >
@@ -8314,8 +13834,6 @@ File: `adgn/tests/agent/e2e/test_mcp_concurrent.py`
 > **Note:** Error-swallowing in approval loop with `except Exception: break`
 
 ```
-      70:
-      71:     # Wait for approvals to appear (we should see multiple pending)
       72:     wait_for_pending_approvals(page)
       73:
       74:     # Auto-approve all pending approvals by clicking approve repeatedly
@@ -8330,13 +13848,13 @@ File: `adgn/tests/agent/e2e/test_mcp_concurrent.py`
       83:
       84:     # Verify all agents finished (check for finished status)
       85:     # The UI should show updates for all agents without missing any
-      86:     page.wait_for_timeout(2000)  # Wait for all updates to propagate
-      87:
 ```
 
 ### `test-error-swallow.yaml` / `occ-1`
 
-File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/test-error-swallow.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/tests/agent/e2e/test_mcp_edge_cases.py#L171-L255)
+
+File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py` (L171-175, L251-255)
 
 > Tests use bare `except Exception:` blocks that swallow all errors, hiding real failures.
 >
@@ -8355,8 +13873,6 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
 > **Note:** Error-swallowing in optional approval checks with `except Exception: pass`
 
 ```
-     166:
-     167:     # Send prompt that triggers subscription
      168:     send_prompt(page, "subscribe to resource")
      169:
      170:     # Wait for approval (if needed) and approve
@@ -8368,11 +13884,7 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
      176:
      177:     # Wait for run to finish
      178:     page.get_by_text("Status: finished").wait_for(timeout=10000)
-     179:
-     180:     # Detach server (simulate disconnect)
    ...
-     246:
-     247:     # Send prompt that triggers slow resource read
      248:     send_prompt(page, "read slow resource")
      249:
      250:     # Wait for approval if needed and approve
@@ -8384,13 +13896,13 @@ File: `adgn/tests/agent/e2e/test_mcp_edge_cases.py`
      256:
      257:     # Wait for run to complete (with extended timeout due to slow resource)
      258:     page.get_by_text("Status: finished").wait_for(timeout=15000)
-     259:
-     260:     # Verify the timeline is still accessible
 ```
 
 ### `test-overuse-suppress-exception.yaml` / `occ-0`
 
-File: `adgn/tests/agent/e2e/test_mcp_errors.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/test-overuse-suppress-exception.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/tests/agent/e2e/test_mcp_errors.py#L94-L232)
+
+File: `adgn/tests/agent/e2e/test_mcp_errors.py` (L94-96, L102-103, L147-148, L153-155, L230-232)
 
 > Multiple uses of `with suppress(Exception):` to hide errors in tests that are meant
 > to verify error handling behavior.
@@ -8403,12 +13915,7 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
 >     requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
 > ```
 >
-> **Why this is problematic:**
-> If the test is meant to verify error handling, it should explicitly check for expected
-> errors, not suppress all exceptions. Tests that suppress exceptions provide no signal
-> when they fail - they just silently skip over problems.
->
-> When an operation is expected to fail in a test:
+> **When an operation is expected to fail in a test:**
 >
 > - Use `pytest.raises(SpecificException)` to verify the specific error occurs
 > - Assert on the error message or error state
@@ -8424,8 +13931,6 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
 > Suppressing all exceptions makes the test unable to detect when something goes wrong.
 
 ```
-      89:
-      90:     # Attach broken MCP server
       91:     spec = {"broken": {"transport": "inproc", "factory": "tests.agent.e2e.test_mcp_errors:_make_broken_server"}}
       92:     # Note: We use a factory string that will attempt to create a server with malformed responses
       93:     # This tests the error path when server produces invalid data
@@ -8437,34 +13942,17 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
       99:     page.goto(base + f"/?agent_id={agent_id}")
      100:
      101:     # Wait for WS connection (may succeed even if MCP attachment failed)
-   ...
-      97:
-      98:     # Open UI
-      99:     page.goto(base + f"/?agent_id={agent_id}")
-     100:
-     101:     # Wait for WS connection (may succeed even if MCP attachment failed)
 >>>  102:     with suppress(Exception):
 >>>  103:         page.locator(".ws .dot.on").wait_for(timeout=5000)
      104:
      105:     # Try to interact and verify UI shows error gracefully
      106:     send_prompt(page, "test broken resource")
-     107:
-     108:     # Give it a moment to process
    ...
-     142:
-     143:     # Attach slow MCP server (as in-proc)
      144:     # Note: For this test to work properly, we'd need the server to be properly instantiated
      145:     # For now, we test the UI's resilience to slow operations
      146:     spec = {"slow": {"transport": "inproc", "factory": "tests.agent.e2e.test_mcp_errors:_make_slow_server"}}
 >>>  147:     with suppress(Exception):
 >>>  148:         requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
-     149:
-     150:     # Open UI
-     151:     page.goto(base + f"/?agent_id={agent_id}")
-     152:
-     153:     with suppress(Exception):
-   ...
-     148:         requests.patch(base + f"/api/agents/{agent_id}/mcp", json={"attach": spec})
      149:
      150:     # Open UI
      151:     page.goto(base + f"/?agent_id={agent_id}")
@@ -8475,11 +13963,7 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
      156:
      157:     # Verify UI is still responsive
      158:     assert page.title() is not None
-     159:
-     160:     # Try to interact
    ...
-     225:
-     226:     # Verify UI is still responsive and shows appropriate state
      227:     assert page.title() is not None
      228:
      229:     # Check if WS connection is still active (should be, agent still exists)
@@ -8489,13 +13973,13 @@ File: `adgn/tests/agent/e2e/test_mcp_errors.py`
      233:
      234:     s["stop"]()
      235:
-     236:
-     237: def test_subscription_to_deleted_agent(page: Page, run_server, responses_factory):
 ```
 
 ### `untyped-tuple-returns.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/persist/__init__.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/issues/untyped-tuple-returns.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-02/code/adgn/src/adgn/agent/persist/__init__.py#L188-L189)
+
+File: `adgn/src/adgn/agent/persist/__init__.py` (L188, L189)
 
 > Lines 188-189 define policy persistence methods with unclear return types:
 > `get_latest_policy` returns `tuple[str, int] | None` where tuple unpacking
@@ -8512,36 +13996,23 @@ File: `adgn/src/adgn/agent/persist/__init__.py`
 > add docstring documenting what the int represents.
 
 ```
-     183:     async def list_runs(self, *, agent_id: AgentID | None = None, limit: int = 50) -> list[RunRow]: ...
-     184:     async def get_run(self, run_id: UUID) -> RunRow | None: ...
      185:     async def load_events(self, run_id: UUID) -> list[EventRecord]: ...
      186:
      187:     # Approval policy (per-agent) --------------------------------------------
 >>>  188:     async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None: ...
-     189:     async def set_policy(self, agent_id: AgentID, *, content: str) -> int: ...
-     190:
-     191:     # Approval policy proposals (single store impl: SQLite)
-     192:     async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> int: ...
-     193:     async def list_policy_proposals(self, agent_id: AgentID) -> list[PolicyProposal]: ...
-   ...
-     184:     async def get_run(self, run_id: UUID) -> RunRow | None: ...
-     185:     async def load_events(self, run_id: UUID) -> list[EventRecord]: ...
-     186:
-     187:     # Approval policy (per-agent) --------------------------------------------
-     188:     async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None: ...
 >>>  189:     async def set_policy(self, agent_id: AgentID, *, content: str) -> int: ...
      190:
      191:     # Approval policy proposals (single store impl: SQLite)
      192:     async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: int, content: str) -> int: ...
-     193:     async def list_policy_proposals(self, agent_id: AgentID) -> list[PolicyProposal]: ...
-     194:     async def get_policy_proposal(self, agent_id: AgentID, proposal_id: int) -> PolicyProposal | None: ...
 ```
 
-## ducktape/2025-11-20-01 (23)
+## ducktape/2025-11-20-01 (12)
 
 ### `admin-server-fixture-needed.yaml` / `occ-0`
 
-File: `adgn/tests/agent/test_policy_validation_reload.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/admin-server-fixture-needed.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/tests/agent/test_policy_validation_reload.py#L43-L146)
+
+File: `adgn/tests/agent/test_policy_validation_reload.py` (L43, L56, L70, L90, L107, L122, L133, L146)
 
 > Repeated admin_server creation should be a shared fixture.
 >
@@ -8558,8 +14029,6 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
 > - Easy to modify server configuration
 
 ```
-      38:
-      39: async def test_validate_policy_valid(engine_and_persistence, docker_client: DockerClient):
       40:     """Test validating a valid policy."""
       41:     engine, _ = engine_and_persistence
       42:
@@ -8567,11 +14036,7 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
       44:
       45:     # Valid Python code
       46:     result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello')"))
-      47:
-      48:     assert result.valid is True
    ...
-      51:
-      52: async def test_validate_policy_syntax_error(engine_and_persistence):
       53:     """Test validating a policy with syntax errors."""
       54:     engine, _ = engine_and_persistence
       55:
@@ -8579,11 +14044,7 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
       57:
       58:     # Invalid syntax
       59:     result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello'"))
-      60:
-      61:     assert result.valid is False
    ...
-      65:
-      66: async def test_validate_policy_runtime_error(engine_and_persistence, docker_client: DockerClient):
       67:     """Test validating a policy that fails at runtime."""
       68:     engine, _ = engine_and_persistence
       69:
@@ -8591,11 +14052,7 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
       71:
       72:     # Syntactically valid but fails self-check (wrong structure)
       73:     result = await admin_server._mcp_server._tools["validate_policy"].fn(
-      74:         ValidatePolicyArgs(source="import sys; sys.exit(1)")
-      75:     )
    ...
-      85:
-      86:     # Save a policy to persistence
       87:     new_policy = "print('from persistence')"
       88:     await persistence.set_policy(engine.agent_id, content=new_policy)
       89:
@@ -8603,11 +14060,7 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
       91:
       92:     # Change engine's in-memory policy
       93:     engine.set_policy("print('different')")
-      94:
-      95:     # Reload from persistence
    ...
-     102:
-     103: async def test_reload_policy_from_source(engine_and_persistence, docker_client: DockerClient):
      104:     """Test reloading policy from provided source."""
      105:     engine, _ = engine_and_persistence
      106:
@@ -8615,11 +14068,7 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
      108:
      109:     # Reload with provided source
      110:     new_source = load_default_policy_source()
-     111:     await admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source=new_source))
-     112:
    ...
-     117:
-     118: async def test_reload_policy_validates_source(engine_and_persistence, docker_client: DockerClient):
      119:     """Test that reload validates the source before setting."""
      120:     engine, _ = engine_and_persistence
      121:
@@ -8627,11 +14076,7 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
      123:
      124:     # Try to reload with invalid source
      125:     with pytest.raises(Exception):  # Should fail validation
-     126:         await admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source="import sys; sys.exit(1)"))
-     127:
    ...
-     128:
-     129: async def test_reload_policy_no_persistence_raises(engine_and_persistence):
      130:     """Test that reloading from empty persistence raises error."""
      131:     engine, persistence = engine_and_persistence
      132:
@@ -8639,11 +14084,7 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
      134:
      135:     # Create a new agent with no policy in persistence
      136:     new_agent_id = await persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
-     137:
-     138:     # Create new engine with no persisted policy
    ...
-     141:         agent_id=new_agent_id,
-     142:         persistence=persistence,
      143:         policy_source=load_default_policy_source(),
      144:     )
      145:
@@ -8651,31 +14092,13 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
      147:
      148:     # Try to reload (should fail - no policy in persistence)
      149:     with pytest.raises(ValueError, match="No policy found in persistence"):
-     150:         await new_admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source=None))
-     151:
-```
-
-### `attach-container-exec-inline.yaml` / `occ-0`
-
-File: `adgn/src/adgn/mcp/runtime/server.py`
-
-> `attach_container_exec` has only one call site (runtime/server.py line 22) and is a
-> trivial wrapper that just forwards parameters. This function should be inlined directly
-> into its only caller to reduce indirection and simplify the code. The function body is
-> a single await statement with parameter forwarding - no logic to justify the abstraction.
-
-```
-      17:
-      18:
-      19: async def attach_runtime(comp: Compositor, opts: ContainerOptions) -> None:
-      20:     """Attach the runtime server (enforced adgn mount) in-proc with bearer auth."""
-      21:     # Reuse docker_exec attach with Compositor
->>>   22:     await attach_container_exec(comp, opts, server_name=RUNTIME_SERVER_NAME, tool_exec_name=RUNTIME_EXEC_TOOL_NAME)
 ```
 
 ### `complex-nested-loop-assertion.yaml` / `occ-0`
 
-File: `adgn/tests/agent/test_mcp_notifications_flow.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/complex-nested-loop-assertion.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/tests/agent/test_mcp_notifications_flow.py#L136-L147)
+
+File: `adgn/tests/agent/test_mcp_notifications_flow.py` (L136-147)
 
 > Lines 136-147: Complex 12-line assertion with nested loops, boolean flag,
 > and break statements should be replaced with declarative hamcrest matcher.
@@ -8689,14 +14112,8 @@ File: `adgn/tests/agent/test_mcp_notifications_flow.py`
 >
 > **Should use:** Hamcrest matchers like has_properties, instance_of, and
 > contains_string to express the same check declaratively.
->
-> **Benefits:** Declarative vs imperative, no manual loops/flags/breaks, better
-> error messages (hamcrest shows diffs), more readable, consistent with other
-> tests, eliminates mutable state.
 
 ```
-     131:             system="n/a",
-     132:         )
      133:         await agent.run("go")
      134:
      135:         # The second create call (post-tool) should include the injected system notification
@@ -8715,13 +14132,13 @@ File: `adgn/tests/agent/test_mcp_notifications_flow.py`
      148:
      149:
      150: async def test_notifications_broadcast_outside_tool(responses_factory: ResponsesFactory, make_buffered_client):
-     151:     # Server that can broadcast notifications outside a tool
-     152:     server = NotifyingFastMCP(name="notifier", instructions="Notifier test")
 ```
 
 ### `delete-coerce-error-data.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/policy_gateway/signals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/delete-coerce-error-data.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/src/adgn/mcp/policy_gateway/signals.py#L56-L122)
+
+File: `adgn/src/adgn/mcp/policy_gateway/signals.py` (L56-60, L62-93, L116, L119, L122)
 
 > Lines 62-93 define \_coerce_error_data that tries to coerce various error representations
 > to mtypes.ErrorData with extensive defensive fallbacks. Lines 56-60 define a Protocol
@@ -8737,8 +14154,6 @@ File: `adgn/src/adgn/mcp/policy_gateway/signals.py`
 > minimal ErrorData or returning None.
 
 ```
-      51:
-      52: _CODE_TO_KIND: dict[int, PolicyGatewayErrorKind] = {code: kind for code, _msg, kind in _KINDS}
       53: _MSG_TO_KIND: dict[str, PolicyGatewayErrorKind] = {msg: kind for _code, msg, kind in _KINDS}
       54:
       55:
@@ -8747,16 +14162,6 @@ File: `adgn/src/adgn/mcp/policy_gateway/signals.py`
 >>>   58:     code: Any
 >>>   59:     message: Any
 >>>   60:
-      61:
-      62: def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
-      63:     """Attempt to coerce various error representations to mcp.types.ErrorData.
-      64:
-      65:     - Accepts dicts, already-typed ErrorData, or objects with .code/.message attributes.
-   ...
-      57: class _ErrorFields(Protocol):
-      58:     code: Any
-      59:     message: Any
-      60:
       61:
 >>>   62: def _coerce_error_data(obj: Any) -> mtypes.ErrorData | None:
 >>>   63:     """Attempt to coerce various error representations to mcp.types.ErrorData.
@@ -8793,49 +14198,27 @@ File: `adgn/src/adgn/mcp/policy_gateway/signals.py`
       94:
       95:
       96: def detect_policy_gateway_error(
-      97:     err: FastMcpCallToolResult | mtypes.CallToolResult | McpError | dict[str, Any] | mtypes.ErrorData | BaseException,
-      98: ) -> PolicyGatewayError | None:
    ...
-     111:     """
-     112:     # Prefer structured error data when present (CallToolResult or exception with .error)
      113:     error_data: mtypes.ErrorData | None = None
      114:     # Check for CallToolResult with is_error=True
      115:     if (isinstance(err, FastMcpCallToolResult | mtypes.CallToolResult) and err.is_error) or isinstance(err, McpError):
 >>>  116:         error_data = _coerce_error_data(err.error)
      117:     # Check for direct error data
      118:     elif isinstance(err, dict | mtypes.ErrorData):
-     119:         error_data = _coerce_error_data(err)
-     120:     # Fallback: other exceptions with .error attribute
-     121:     elif hasattr(err, "error"):
-   ...
-     114:     # Check for CallToolResult with is_error=True
-     115:     if (isinstance(err, FastMcpCallToolResult | mtypes.CallToolResult) and err.is_error) or isinstance(err, McpError):
-     116:         error_data = _coerce_error_data(err.error)
-     117:     # Check for direct error data
-     118:     elif isinstance(err, dict | mtypes.ErrorData):
 >>>  119:         error_data = _coerce_error_data(err)
-     120:     # Fallback: other exceptions with .error attribute
-     121:     elif hasattr(err, "error"):
-     122:         error_data = _coerce_error_data(err.error)
-     123:
-     124:     # Map structured error first
-   ...
-     117:     # Check for direct error data
-     118:     elif isinstance(err, dict | mtypes.ErrorData):
-     119:         error_data = _coerce_error_data(err)
      120:     # Fallback: other exceptions with .error attribute
      121:     elif hasattr(err, "error"):
 >>>  122:         error_data = _coerce_error_data(err.error)
      123:
      124:     # Map structured error first
      125:     if error_data is not None:
-     126:         # Extract minimally-typed fields
-     127:         code: int | None
 ```
 
 ### `fragmented-assertions.yaml` / `occ-0`
 
-File: `adgn/tests/agent/test_runtime_timeout.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/fragmented-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/tests/agent/test_runtime_timeout.py#L38-L40)
+
+File: `adgn/tests/agent/test_runtime_timeout.py` (L38-40)
 
 > Tests use multiple separate assertions instead of structured matchers (hamcrest or Pydantic model equality).
 >
@@ -8850,8 +14233,6 @@ File: `adgn/tests/agent/test_runtime_timeout.py`
 > has_properties
 
 ```
-      33:         res_timeout = await stub(ExecInput(cmd=["sh", "-lc", "sleep 3"], timeout_ms=500, shell=True))
-      34:         assert_that(res_timeout.exit, instance_of(TimedOut))
       35:
       36:         # Next call should work; container should have been restarted
       37:         res_ok = await stub(ExecInput(cmd=["/bin/echo", "-n", "ok"], timeout_ms=5000, shell=False))
@@ -8862,7 +14243,9 @@ File: `adgn/tests/agent/test_runtime_timeout.py`
 
 ### `fragmented-assertions.yaml` / `occ-1`
 
-File: `adgn/tests/agent/test_policy_validation_reload.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/fragmented-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/tests/agent/test_policy_validation_reload.py#L62-L79)
+
+File: `adgn/tests/agent/test_policy_validation_reload.py` (L62-63, L77-79)
 
 > Tests use multiple separate assertions instead of structured matchers (hamcrest or Pydantic model equality).
 >
@@ -8877,8 +14260,6 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
 > has_item(contains_string(...))
 
 ```
-      57:
-      58:     # Invalid syntax
       59:     result = await admin_server._mcp_server._tools["validate_policy"].fn(ValidatePolicyArgs(source="print('hello'"))
       60:
       61:     assert result.valid is False
@@ -8887,11 +14268,7 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
       64:
       65:
       66: async def test_validate_policy_runtime_error(engine_and_persistence, docker_client: DockerClient):
-      67:     """Test validating a policy that fails at runtime."""
-      68:     engine, _ = engine_and_persistence
    ...
-      72:     # Syntactically valid but fails self-check (wrong structure)
-      73:     result = await admin_server._mcp_server._tools["validate_policy"].fn(
       74:         ValidatePolicyArgs(source="import sys; sys.exit(1)")
       75:     )
       76:
@@ -8901,13 +14278,13 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
       80:
       81:
       82: async def test_reload_policy_from_persistence(engine_and_persistence, docker_client: DockerClient):
-      83:     """Test reloading policy from persistence."""
-      84:     engine, persistence = engine_and_persistence
 ```
 
 ### `fragmented-assertions.yaml` / `occ-2`
 
-File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/fragmented-assertions.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/tests/mcp/approval_policy/test_policy_resources.py#L171-L321)
+
+File: `adgn/tests/mcp/approval_policy/test_policy_resources.py` (L171-176, L213-218, L249-252, L289-290, L308-309, L320-321)
 
 > Tests use multiple separate assertions instead of structured matchers (hamcrest or Pydantic model equality).
 >
@@ -8922,8 +14299,6 @@ File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
 > has_properties
 
 ```
-     166:         )
-     167:
      168:         assert result.isError is False
      169:
      170:         # Verify it was created in persistence
@@ -8936,11 +14311,7 @@ File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
      177:
      178:     async def test_create_duplicate(self, admin_server, persistence):
      179:         """Test creating a policy with duplicate ID fails."""
-     180:         # Create first policy
-     181:         await admin_server._mcp_server.call_tool(
    ...
-     208:             ).model_dump(),
-     209:         )
      210:
      211:         assert result.isError is False
      212:
@@ -8953,11 +14324,7 @@ File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
      219:
      220:
      221: class TestUpdatePolicyTool:
-     222:     """Test the update_policy admin tool."""
-     223:
    ...
-     244:         )
-     245:
      246:         assert result.isError is False
      247:
      248:         # Verify the update
@@ -8968,11 +14335,7 @@ File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
      253:
      254:     async def test_update_nonexistent(self, admin_server):
      255:         """Test updating a nonexistent policy fails."""
-     256:         result = await admin_server._mcp_server.call_tool(
-     257:             "update_policy",
    ...
-     284:             ).model_dump(),
-     285:         )
      286:
      287:         # Check that history was created (requires accessing policy_history table)
      288:         # For now, just verify the update worked
@@ -8981,11 +14344,7 @@ File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
      291:
      292:
      293: class TestDeletePolicyTool:
-     294:     """Test the delete_policy admin tool."""
-     295:
    ...
-     303:                 text="print('bye')",
-     304:             ).model_dump(),
      305:         )
      306:
      307:         # Verify it exists
@@ -8994,11 +14353,7 @@ File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
      310:
      311:         # Delete it
      312:         result = await admin_server._mcp_server.call_tool(
-     313:             "delete_policy",
-     314:             arguments=DeletePolicyArgs(id="delete-me").model_dump(),
    ...
-     315:         )
-     316:
      317:         assert result.isError is False
      318:
      319:         # Verify it's gone
@@ -9007,13 +14362,13 @@ File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
      322:
      323:     async def test_delete_nonexistent(self, admin_server):
      324:         """Test deleting a nonexistent policy succeeds (idempotent)."""
-     325:         result = await admin_server._mcp_server.call_tool(
-     326:             "delete_policy",
 ```
 
 ### `from-server-too-long.yaml` / `occ-0`
 
-File: `adgn/src/adgn/mcp/stubs/typed_stubs.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/from-server-too-long.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/src/adgn/mcp/stubs/typed_stubs.py#L109-L178)
+
+File: `adgn/src/adgn/mcp/stubs/typed_stubs.py` (L109-178, L128-177)
 
 > The from_server classmethod spans 69 lines (109-178), with a single for-loop body
 > consuming 49 lines (128-177). This makes the method difficult to understand and maintain.
@@ -9029,8 +14384,6 @@ File: `adgn/src/adgn/mcp/stubs/typed_stubs.py`
 > testable independently, reduced cognitive load.
 
 ```
-     104:     @property
-     105:     def models(self) -> dict[str, ToolModels]:
      106:         return self._models
      107:
      108:     @classmethod
@@ -9107,74 +14460,13 @@ File: `adgn/src/adgn/mcp/stubs/typed_stubs.py`
      179:
      180:     def error(self, name: str) -> Callable[[BaseModel], Awaitable[str]]:
      181:         models = self._models.get(name)
-     182:         if not models:
-     183:             raise AttributeError(name)
-   ...
-     123:         except AttributeError as exc:
-     124:             raise RuntimeError("Server tool manager does not expose _tools") from exc
-     125:         tools = list(tools_by_name.values())
-     126:
-     127:         client = cls(session, exclude_none=exclude_none)
->>>  128:         for t in tools:
->>>  129:             try:
->>>  130:                 fm = t.fn_metadata  # type: ignore[attr-defined]
->>>  131:             except AttributeError:
->>>  132:                 fm = None
->>>  133:             try:
->>>  134:                 fn = t.fn  # type: ignore[attr-defined]
->>>  135:             except AttributeError:
->>>  136:                 fn = None
->>>  137:             hinted_input = None
->>>  138:             hinted_output = None
->>>  139:             if fn is not None:
->>>  140:                 try:
->>>  141:                     hinted_input = fn._mcp_flat_input_model  # type: ignore[attr-defined]
->>>  142:                 except AttributeError:
->>>  143:                     hinted_input = None
->>>  144:                 try:
->>>  145:                     hinted_output = fn._mcp_flat_output_model  # type: ignore[attr-defined]
->>>  146:                 except AttributeError:
->>>  147:                     hinted_output = None
->>>  148:             if fm is None:
->>>  149:                 # Fall back to flat-model hints only
->>>  150:                 arg_model = hinted_input
->>>  151:                 out_model = hinted_output
->>>  152:                 if not (isinstance(arg_model, type) and issubclass(arg_model, BaseModel)):
->>>  153:                     continue
->>>  154:             else:
->>>  155:                 arg_model = fm.arg_model  # type: ignore[attr-defined]
->>>  156:                 out_model = fm.output_model  # type: ignore[attr-defined]
->>>  157:                 if out_model is None or arg_model is None:
->>>  158:                     continue
->>>  159:
->>>  160:             if isinstance(hinted_input, type) and issubclass(hinted_input, BaseModel):
->>>  161:                 input_type: type[BaseModel] | None = hinted_input
->>>  162:             elif isinstance(arg_model, type) and issubclass(arg_model, BaseModel):
->>>  163:                 input_type = arg_model
->>>  164:             else:
->>>  165:                 input_type = None
->>>  166:
->>>  167:             try:
->>>  168:                 tool_key = t.key  # type: ignore[attr-defined]
->>>  169:             except AttributeError:
->>>  170:                 try:
->>>  171:                     tool_key = t.name  # type: ignore[attr-defined]
->>>  172:                 except AttributeError:
->>>  173:                     tool_key = None
->>>  174:             if not isinstance(tool_key, str) or not tool_key:
->>>  175:                 continue
->>>  176:             output_type = _resolve_output_type(hinted_output, out_model)
->>>  177:             client._models[tool_key] = ToolModels(Input=input_type, Output=output_type, _arg_model=arg_model)
-     178:         return client
-     179:
-     180:     def error(self, name: str) -> Callable[[BaseModel], Awaitable[str]]:
-     181:         models = self._models.get(name)
-     182:         if not models:
 ```
 
 ### `message-wrapper-discriminator.yaml` / `occ-0`
 
-File: `adgn/src/adgn/openai_utils/model.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/message-wrapper-discriminator.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/src/adgn/openai_utils/model.py#L26-L182)
+
+File: `adgn/src/adgn/openai_utils/model.py` (L26-33, L36-43, L46-53, L93, L172-182)
 
 > model.py input message types (AssistantMessage, UserMessage, SystemMessage lines
 > 26-53) embed the discriminator field (role) directly in the message class,
@@ -9195,8 +14487,6 @@ File: `adgn/src/adgn/openai_utils/model.py`
 > format.
 
 ```
-      21:     type: Literal["input_text"] = "input_text"
-      22:     text: str
       23:     model_config = ConfigDict(extra="allow")
       24:
       25:
@@ -9210,15 +14500,6 @@ File: `adgn/src/adgn/openai_utils/model.py`
 >>>   33:         return cls(content=[InputTextPart(text=text)])
       34:
       35:
-      36: class UserMessage(BaseModel):
-      37:     role: Literal["user"] = "user"
-      38:     content: list[InputTextPart]
-   ...
-      31:     @classmethod
-      32:     def text(cls, text: str) -> Self:
-      33:         return cls(content=[InputTextPart(text=text)])
-      34:
-      35:
 >>>   36: class UserMessage(BaseModel):
 >>>   37:     role: Literal["user"] = "user"
 >>>   38:     content: list[InputTextPart]
@@ -9227,15 +14508,6 @@ File: `adgn/src/adgn/openai_utils/model.py`
 >>>   41:     @classmethod
 >>>   42:     def text(cls, text: str) -> Self:
 >>>   43:         return cls(content=[InputTextPart(text=text)])
-      44:
-      45:
-      46: class SystemMessage(BaseModel):
-      47:     role: Literal["system"] = "system"
-      48:     content: list[InputTextPart]
-   ...
-      41:     @classmethod
-      42:     def text(cls, text: str) -> Self:
-      43:         return cls(content=[InputTextPart(text=text)])
       44:
       45:
 >>>   46: class SystemMessage(BaseModel):
@@ -9249,11 +14521,7 @@ File: `adgn/src/adgn/openai_utils/model.py`
       54:
       55:
       56: class ReasoningSummaryItem(BaseModel):
-      57:     """Summary item within a reasoning block."""
-      58:
    ...
-      88:     call_id: str
-      89:     output: str | None = Field(default=None, description="Tool output as string (JSON if structured)")
       90:     model_config = ConfigDict(extra="allow")
       91:
       92:
@@ -9261,11 +14529,7 @@ File: `adgn/src/adgn/openai_utils/model.py`
       94:
       95:
       96: class ToolChoiceFunction(BaseModel):
-      97:     type: Literal["function"] = "function"
-      98:     name: str
    ...
-     167:     text: str
-     168:     annotations: list[dict[str, Any]] | None = None
      169:     model_config = ConfigDict(extra="allow")
      170:
      171:
@@ -9283,13 +14547,13 @@ File: `adgn/src/adgn/openai_utils/model.py`
      183:
      184:     @model_validator(mode="before")
      185:     @classmethod
-     186:     def _coerce_text(cls, data: str | dict[str, Any]) -> dict[str, Any]:
-     187:         """Coerce various input forms to the standard parts-based format.
 ```
 
 ### `proposal-id-int-not-str.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/proposal-id-int-not-str.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/src/adgn/agent/approvals.py#L211-L258)
+
+File: `adgn/src/adgn/agent/approvals.py` (L211-220, L217, L236, L253, L258)
 
 > Lines 211-220 define notify_proposal_change with str signature, but all three callers
 > (lines 236, 253, 258) have int proposal_id and must explicitly convert with str().
@@ -9307,8 +14571,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > Related to issue 022 about using wrong ID in create_proposal.
 
 ```
-     206:     def notify_proposals_changed(self) -> None:
-     207:         cb = self._notify
      208:         if cb:
      209:             cb(APPROVAL_POLICY_PROPOSALS_INDEX_URI)
      210:
@@ -9325,23 +14587,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      221:
      222:     async def create_proposal(self, content: str) -> int:
      223:         """Create a new policy proposal and return its ID.
-     224:
-     225:         Validates the proposal content if docker_client is available,
    ...
-     212:         """Notify about a specific proposal change and the proposals index.
-     213:
-     214:         Convenience method that combines notifying about a specific proposal item
-     215:         and the proposals index list change.
-     216:         """
->>>  217:         self.notify_resource(f"{APPROVAL_POLICY_PROPOSALS_INDEX_URI}/{proposal_id}")
-     218:         self.notify_proposals_changed()
-     219:         # Also notify agent-specific policy state resource since proposals changed
-     220:         self.notify_resource(AGENTS_POLICY_STATE_URI_FMT.format(agent_id=self.agent_id))
-     221:
-     222:     async def create_proposal(self, content: str) -> int:
-   ...
-     231:         # Generate new proposal ID (will be auto-generated by DB, use placeholder)
-     232:         new_id = 0  # Placeholder, actual ID assigned by database
      233:         await self.persistence.create_policy_proposal(self.agent_id, proposal_id=new_id, content=content)
      234:         # Note: We don't have the actual ID here, but persistence will handle it
      235:         # For now, notify with string version for compatibility
@@ -9349,11 +14595,7 @@ File: `adgn/src/adgn/agent/approvals.py`
      237:         return new_id
      238:
      239:     async def approve_proposal(self, proposal_id: int) -> None:
-     240:         """Approve a pending policy proposal by ID and activate it.
-     241:
    ...
-     248:         if self.docker_client is not None:
-     249:             self.self_check(got.content)
      250:         # Activate policy (notifies via engine's set_policy)
      251:         self.set_policy(got.content)
      252:         await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
@@ -9362,24 +14604,17 @@ File: `adgn/src/adgn/agent/approvals.py`
      255:     async def reject_proposal(self, proposal_id: int) -> None:
      256:         """Reject a pending policy proposal by ID."""
      257:         await self.persistence.reject_policy_proposal(self.agent_id, proposal_id)
-     258:         self.notify_proposal_change(str(proposal_id))
-   ...
-     253:         self.notify_proposal_change(str(proposal_id))
-     254:
-     255:     async def reject_proposal(self, proposal_id: int) -> None:
-     256:         """Reject a pending policy proposal by ID."""
-     257:         await self.persistence.reject_policy_proposal(self.agent_id, proposal_id)
 >>>  258:         self.notify_proposal_change(str(proposal_id))
      259:
      260:
      261: def make_policy_engine(
-     262:     *,
-     263:     agent_id: AgentID,
 ```
 
 ### `proposal-notifies-wrong-id.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/approvals.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/proposal-notifies-wrong-id.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/src/adgn/agent/approvals.py#L232-L237)
+
+File: `adgn/src/adgn/agent/approvals.py` (L232-237, L234-235)
 
 > Lines 232-237 define create_proposal that sets new_id = 0 as placeholder, calls
 > persistence with that placeholder, and notifies with str(new_id) still as "0".
@@ -9396,8 +14631,6 @@ File: `adgn/src/adgn/agent/approvals.py`
 > Related to issue 023 about proposal_id type inconsistency.
 
 ```
-     227:         """
-     228:         # Self-check proposal program if docker is available
      229:         if self.docker_client is not None:
      230:             self.self_check(content)
      231:         # Generate new proposal ID (will be auto-generated by DB, use placeholder)
@@ -9410,26 +14643,13 @@ File: `adgn/src/adgn/agent/approvals.py`
      238:
      239:     async def approve_proposal(self, proposal_id: int) -> None:
      240:         """Approve a pending policy proposal by ID and activate it.
-     241:
-     242:         Retrieves the proposal, validates it, activates it as the current policy,
-   ...
-     229:         if self.docker_client is not None:
-     230:             self.self_check(content)
-     231:         # Generate new proposal ID (will be auto-generated by DB, use placeholder)
-     232:         new_id = 0  # Placeholder, actual ID assigned by database
-     233:         await self.persistence.create_policy_proposal(self.agent_id, proposal_id=new_id, content=content)
->>>  234:         # Note: We don't have the actual ID here, but persistence will handle it
->>>  235:         # For now, notify with string version for compatibility
-     236:         self.notify_proposal_change(str(new_id))
-     237:         return new_id
-     238:
-     239:     async def approve_proposal(self, proposal_id: int) -> None:
-     240:         """Approve a pending policy proposal by ID and activate it.
 ```
 
 ### `test-main-block.yaml` / `occ-0`
 
-File: `adgn/tests/agent/test_policy_validation_reload.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/test-main-block.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/tests/agent/test_policy_validation_reload.py#L153-L154)
+
+File: `adgn/tests/agent/test_policy_validation_reload.py` (L153-154)
 
 > Test file has unnecessary `__main__` block.
 >
@@ -9443,8 +14663,6 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
 > Pytest tests shouldn't have `__main__` blocks. Run with `pytest` command instead. This is an outdated pattern.
 
 ```
-     148:     # Try to reload (should fail - no policy in persistence)
-     149:     with pytest.raises(ValueError, match="No policy found in persistence"):
      150:         await new_admin_server._mcp_server._tools["reload_policy"].fn(ReloadPolicyArgs(source=None))
      151:
      152:
@@ -9454,7 +14672,9 @@ File: `adgn/tests/agent/test_policy_validation_reload.py`
 
 ### `tests-nonexistent-api.yaml` / `occ-0`
 
-File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/issues/tests-nonexistent-api.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-20-01/code/adgn/tests/mcp/approval_policy/test_policy_resources.py#L1-L384)
+
+File: `adgn/tests/mcp/approval_policy/test_policy_resources.py` (L1-384)
 
 > The test file `adgn/tests/mcp/approval_policy/test_policy_resources.py` tests a policy
 > CRUD API that was never implemented in the production code.
@@ -9883,11 +15103,600 @@ File: `adgn/tests/mcp/approval_policy/test_policy_resources.py`
 >>>  384:             )
 ```
 
-## ducktape/2025-11-21-00 (13)
+## ducktape/2025-11-26-00 (7)
+
+### `ask-approved-inflight.yaml` / `occ-0` [P20]
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/issues/ask-approved-inflight.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/code/adgn/src/adgn/mcp/policy_gateway/middleware.py#L167-L258)
+
+File: `adgn/src/adgn/mcp/policy_gateway/middleware.py` (L252-258, L167-225)
+
+> When user approves an ASK-case tool call (ContinueDecision at lines 252-258), middleware executes it but does
+> NOT
+> track
+> it in `self._inflight`, making it invisible to `has_inflight_calls()` and `inflight_count()`.
+>
+> The ALLOW case (lines 167-225) correctly tracks in \_inflight during execution with try/finally cleanup.
+>
+> Problems: (1) `has_inflight_calls()` returns False even when ASK-approved call is executing, (2)
+> `inflight_count()`
+> doesn't count ASK-approved calls, (3) can't distinguish "waiting for approval" vs "approved and executing",
+> (4)
+> inconsistent tracking between ALLOW and ASK paths.
+>
+> Match the ALLOW pattern: add call to \_inflight before execution, clean up in finally block. Both paths should
+> track
+> consistently regardless of whether policy allowed or user approved.
+
+```
+     164:                 await self._record("pg:" + uuid.uuid4().hex, tool_key, ApprovalOutcome.POLICY_ALLOW)
+     165:
+     166:             # Track in-flight tool call
+>>>  167:             call_id = uuid.uuid4().hex
+>>>  168:             self._inflight[call_id] = tool_key
+>>>  169:             try:
+>>>  170:                 call_result = await call_next(context)
+>>>  171:                 # If downstream returned an error ToolResult instead of raising,
+>>>  172:                 # remap reserved policy codes/messages here using typed parsing when available.
+>>>  173:                 if bool(getattr(call_result, "is_error", False)):
+>>>  174:                     # Parse error details - ErrorData guarantees code: int per MCP/JSON-RPC spec
+>>>  175:                     err = getattr(call_result, "error", None)
+>>>  176:                     if err is None:
+>>>  177:                         return call_result
+>>>  178:
+>>>  179:                     # Try parsing as ErrorData (validates code is int, message is str)
+>>>  180:                     try:
+>>>  181:                         ed = mtypes.ErrorData.model_validate(err)
+>>>  182:                     except Exception:
+>>>  183:                         # Non-conforming error format - pass through
+>>>  184:                         return call_result
+>>>  185:
+>>>  186:                     # Check if error uses reserved policy codes/messages
+>>>  187:                     stamped_downstream = isinstance(ed.data, dict) and ed.data.get(POLICY_GATEWAY_STAMP_KEY) is True
+>>>  188:                     if (
+>>>  189:                         stamped_downstream
+>>>  190:                         or ed.code
+>>>  191:                         in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
+>>>  192:                         or ed.message
+>>>  193:                         in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)
+>>>  194:                     ):
+>>>  195:                         raise McpError(
+>>>  196:                             ErrorData(
+>>>  197:                                 code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
+>>>  198:                                 message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
+>>>  199:                                 data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": ed.code},
+>>>  200:                             )
+>>>  201:                         )
+>>>  202:                 return call_result
+>>>  203:             except McpError as e:
+>>>  204:                 _raise_if_reserved_code(e, name)
+>>>  205:                 raise
+>>>  206:             except Exception as e:
+>>>  207:                 # Some servers may translate backend McpError into a ToolError before it reaches us.
+>>>  208:                 # As a last resort, remap by inspecting the exception text.
+>>>  209:                 s = str(e)
+>>>  210:                 if (
+>>>  211:                     (POLICY_DENIED_ABORT_MSG in s)
+>>>  212:                     or (POLICY_DENIED_CONTINUE_MSG in s)
+>>>  213:                     or (POLICY_EVALUATOR_ERROR_MSG in s)
+>>>  214:                 ):
+>>>  215:                     raise McpError(
+>>>  216:                         ErrorData(
+>>>  217:                             code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
+>>>  218:                             message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
+>>>  219:                             data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
+>>>  220:                         )
+>>>  221:                     )
+>>>  222:                 raise
+>>>  223:             finally:
+>>>  224:                 # Remove from in-flight tracking when call completes (success or error)
+>>>  225:                 self._inflight.pop(call_id, None)
+     226:
+     227:         if decision is ApprovalDecision.DENY_ABORT:
+     228:             if self._record is not None:
+   ...
+     249:
+     250:         decision_obj = await wait_coro
+     251:
+>>>  252:         if isinstance(decision_obj, ContinueDecision):
+>>>  253:             if self._record is not None:
+>>>  254:                 await self._record(call_id, tool_key, ApprovalOutcome.POLICY_ALLOW)
+>>>  255:             try:
+>>>  256:                 return await call_next(context)
+>>>  257:             except McpError as e:
+>>>  258:                 _raise_if_reserved_code(e, name)
+     259:                 raise
+     260:         if isinstance(decision_obj, AbortTurnDecision):
+     261:             if self._record is not None:
+```
+
+### `mutable-batch-accumulation.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/issues/mutable-batch-accumulation.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/code/adgn/src/adgn/mcp/notifications/buffer.py#L40-L41)
+
+File: `adgn/src/adgn/mcp/notifications/buffer.py` (L40-41)
+
+> The class uses sets (`_updates`, `_list_changed`) during accumulation, then converts
+> to frozen structures in NotificationsBatch. This is clunky.
+>
+> **Current pattern:**
+>
+> ```python
+> # Accumulation storage (mutable sets)
+> self._updates: dict[str, set[str]] = {}
+> self._list_changed: set[str] = set()
+>
+> # On add:
+> self._updates[server_name].add(uri)
+> self._list_changed.add(server_name)
+>
+> # On poll/peek:
+> resources = self._build_resources()  # Converts sets to frozen structures
+> return NotificationsBatch(resources=resources)
+> ```
+>
+> **Better approach:**
+> Replace `dict[str, set[str]]` and `set[str]` with a single mutable `NotificationsBatch`
+> instance (`self._batch`). On add operations, mutate `_batch` directly. On poll, return
+> `self._batch.model_copy()` and reset `_batch = NotificationsBatch()`. On peek, return
+> `self._batch.model_copy()`. This eliminates the conversion logic between sets and frozen
+> structures.
+
+```
+      37:     - Hooks can be registered to react to updates (e.g., push UI snapshots).
+      38:     """
+      39:
+>>>   40:     def __init__(self, *, client: Client | None = None, compositor: Compositor) -> None:
+>>>   41:         self._client = client
+      42:         self._compositor = compositor
+      43:         # Per-server updates (mutable sets during accumulation, converted to frozenset on poll/peek)
+      44:         self._updates: dict[str, set[str]] = {}
+```
+
+### `poll-use-peek.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/issues/poll-use-peek.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/code/adgn/src/adgn/mcp/notifications/buffer.py#L62-L72)
+
+File: `adgn/src/adgn/mcp/notifications/buffer.py` (L62-72)
+
+> Lines 62-72 define `poll()` and `peek()` which both call `_build_resources()` and
+> create `NotificationsBatch` objects independently. This duplicates the batch creation
+> logic.
+>
+> **The issue:** Both methods build resources and construct batch objects separately,
+> obscuring that `poll()` is conceptually `peek()` plus clear operations.
+>
+> **Fix:** Make `poll()` call `peek()`, then clear buffers. This DRYs batch creation
+> into one place and makes the relationship explicit: poll = peek + clear.
+>
+> If `_build_resources()` becomes single-use after this change, inline it into `peek()`.
+
+```
+      59:     def clear_hooks(self) -> None:
+      60:         self._hooks.clear()
+      61:
+>>>   62:     def poll(self) -> NotificationsBatch:
+>>>   63:         """Poll and clear buffered notifications, returning grouped batch."""
+>>>   64:         resources = self._build_resources()
+>>>   65:         self._updates.clear()
+>>>   66:         self._list_changed.clear()
+>>>   67:         return NotificationsBatch(resources=resources)
+>>>   68:
+>>>   69:     def peek(self) -> NotificationsBatch:
+>>>   70:         """Peek at buffered notifications without clearing them."""
+>>>   71:         resources = self._build_resources()
+>>>   72:         return NotificationsBatch(resources=resources)
+      73:
+      74:     def _build_resources(self) -> dict[str, ResourcesServerNotice]:
+      75:         """Build the grouped resources structure from current buffer state."""
+```
+
+### `proposal-status-enum-drift.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/issues/proposal-status-enum-drift.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/code/adgn/src/adgn/agent/server/app.py#L293)
+
+File: `adgn/src/adgn/agent/server/app.py` (L293)
+
+> Line 293 converts `rec.status` to `ProposalStatus` enum, suggesting the persistence
+> layer and application layer use different types for the same concept.
+>
+> **The issue:** `PolicyProposal.status` (persist/**init**.py) is typed as `str`, not
+> `ProposalStatus`. Line 293 must convert at the application boundary. This creates drift
+> risk: invalid status strings in the database won't be caught by the type system, and
+> runtime errors occur if the database contains unexpected values.
+>
+> **Fix:** Change `PolicyProposal.status` from `str` to `ProposalStatus` enum. Pydantic
+> validates on construction. No conversion needed at line 293 - persistence layer enforces
+> the enum, application layer receives typed values.
+>
+> Benefits: single source of truth, type safety throughout stack, no runtime conversion
+> errors.
+
+```
+     290:         rows = await app.state.persistence.list_policy_proposals(agent_id)
+     291:         items = [
+     292:             ProposalRow(
+>>>  293:                 id=rec.id, status=ProposalStatus(rec.status), created_at=rec.created_at, decided_at=rec.decided_at
+     294:             )
+     295:             for rec in rows
+     296:         ]
+```
+
+### `remove-boolean-param-amend.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/issues/remove-boolean-param-amend.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/code/adgn/src/adgn/git_commit_ai/cli.py#L539-L731)
+
+File: `adgn/src/adgn/git_commit_ai/cli.py` (L539-547, L731)
+
+> Lines 539-547 define `_get_previous_message_if_amend()` which takes `is_amend: bool` and returns None if
+> False.
+> Function
+> wraps an if-statement (antipattern).
+>
+> Remove boolean parameter. Rename to `_get_previous_commit_message()` with non-nullable `str` return type. Move
+> condition
+> to call site (line 731): `previous_message = _get_previous_commit_message(repo) if is_amend else None`. Or
+> inline
+> entirely since it's called only once.
+
+```
+     536:         repo.index.write()
+     537:
+     538:
+>>>  539: def _get_previous_message_if_amend(repo: pygit2.Repository, is_amend: bool) -> str | None:
+>>>  540:     if not is_amend:
+>>>  541:         return None
+>>>  542:     try:
+>>>  543:         commit = repo.head.peel(pygit2.Commit)
+>>>  544:         return (commit.message or "").strip()
+>>>  545:     except (KeyError, pygit2.GitError) as e:
+>>>  546:         print(f"Error: Cannot amend - failed to retrieve previous commit message: {e}", file=sys.stderr)
+>>>  547:         raise ExitWithCode(1)
+     548:
+     549:
+     550: # ---------- commit/editor helpers ------------------------------------
+   ...
+     728:     _stage_all_if_requested(repo, include_all)
+     729:
+     730:     # Get previous commit message if amending
+>>>  731:     previous_message = _get_previous_message_if_amend(repo, is_amend)
+     732:
+     733:     if not (diff := get_commit_diff(repo, include_all, previous_message)).strip():
+     734:         # Check if there's truly nothing to commit
+```
+
+### `resources-take-client.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/issues/resources-take-client.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/code/adgn/src/adgn/mcp/resources/server.py#L238-L241)
+
+File: `adgn/src/adgn/mcp/resources/server.py` (L238-241)
+
+> Lines 238-241 create `Client(compositor)` internally, but resources server should receive Client as parameter
+> instead
+> of
+> Compositor.
+>
+> Violates "take what you need" principle (Dependency Injection): (1) server receives Compositor but only uses
+> it to
+> create Client, (2) creates client internally instead of receiving it, (3) harder to test (can't inject
+> mock/test
+> client).
+>
+> Change signature to `make_resources_server(name: str, client: Client)` and use client directly. Caller creates
+> Client
+> and passes it. Delete useless comments about "bypassing policy gateway" (lines 238-240); parameter docstring
+> should
+> explain this instead. Benefits: takes what it needs, easier to test, clearer dependencies, follows standard
+> DI.
+
+```
+     235:         name, instructions=("Resources aggregator for listing/reading resources across mounted servers.")
+     236:     )
+     237:
+>>>  238:     # Direct client to compositor (bypasses policy gateway to prevent double enforcement)
+>>>  239:     # This client is created without middleware since tools calling this server already
+>>>  240:     # went through the policy gateway
+>>>  241:     compositor_client = Client(compositor)
+     242:
+     243:     # ---- Subscriptions index (single resource) -----------------------------
+     244:     # Internal store for subscriptions made via this server's subscribe tool.
+```
+
+### `truncation-noop.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/issues/truncation-noop.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-26-00/code/adgn/src/adgn/inop/prompting/truncation_utils.py#L36-L181)
+
+File: `adgn/src/adgn/inop/prompting/truncation_utils.py` (L36-40, L162-181)
+
+> `truncate_file_by_bytes` (line 162) calls
+> `self._truncated_content(content, len(content))` at line 178.
+> `_truncated_content` (line 36) returns `content` unchanged when
+> `len(content) <= max_chars`. Since `max_chars` equals `len(content)`, the
+> condition is always true — the call is equivalent to an identity function
+> and the truncation suffix is never appended.
+
+```
+      33:             return text
+      34:         return text[: max_length - len(suffix)] + suffix
+      35:
+>>>   36:     def _truncated_content(self, content: str, max_chars: int) -> str:
+>>>   37:         """Helper to create truncated content with standard message."""
+>>>   38:         if len(content) <= max_chars:
+>>>   39:             return content
+>>>   40:         return content[:max_chars] + f"\n... [TRUNCATED: {len(content)} chars total, showing first {max_chars}]"
+      41:
+      42:     def _skipped_content(self, content: str, threshold: int) -> str:
+      43:         """Helper to create skipped content message."""
+   ...
+     159:         assert final <= max_tokens, f"File truncation failed: {final} tokens > {max_tokens} limit"
+     160:         return result
+     161:
+>>>  162:     def truncate_file_by_bytes(self, file_path: Path, max_bytes: int) -> str:
+>>>  163:         """Read and truncate a single file by byte size.
+>>>  164:
+>>>  165:         Args:
+>>>  166:             file_path: Path to the file
+>>>  167:             max_bytes: Maximum bytes to read
+>>>  168:
+>>>  169:         Returns:
+>>>  170:             File content, possibly truncated
+>>>  171:         """
+>>>  172:         try:
+>>>  173:             file_size = file_path.stat().st_size
+>>>  174:
+>>>  175:             if file_size > max_bytes:
+>>>  176:                 with file_path.open("r", encoding="utf-8") as f:
+>>>  177:                     content = f.read(max_bytes)
+>>>  178:                 return self._truncated_content(content, len(content))  # Will show the truncation message
+>>>  179:             return file_path.read_text()
+>>>  180:         except UnicodeDecodeError:
+>>>  181:             return "<<not a plaintext file>>"
+```
+
+## gmail-archiver/2025-12-17-00 (6)
+
+### `lossy-timezone-handling.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/issues/lossy-timezone-handling.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/code/gmail_archiver/planners/anthem_eob.py#L22-L53)
+
+File: `gmail_archiver/planners/anthem_eob.py` (L22-23, L51-53)
+
+> Multiple planners parse timezone-aware dates with `strptime(..., "%z")`,
+> then immediately strip the timezone with `.replace(tzinfo=None)`, then later
+> re-assign UTC with `.replace(tzinfo=UTC)`. This silently reinterprets the
+> original local time as UTC. For example, an email sent at 17:31:44-0800
+> becomes 17:31:44+0000 (8 hours off). While the error is immaterial for the
+> current day-scale thresholds, the pattern is semantically wrong. The root
+> cause is that `GmailMessage.date` is `str` (models.py line 23), forcing
+> every planner to independently parse the Date header — and each does it
+> with its own format string and its own incorrect timezone handling. The
+> model already has `internal_date: int` (epoch millis from the Gmail API),
+> which is a proper timestamp. Either `date` should be parsed to `datetime`
+> once at construction time (in `gmail_client.py` where the GmailMessage is
+> built), or planners should use `internal_date` for age comparisons and
+> avoid parsing the header at all.
+>
+> **Note:** parse_anthem_eob + AnthemEobPlanner.plan
+
+```
+      19: def parse_anthem_eob(email: GmailMessage) -> AnthemEOB:
+      20:     """Extract received date from email for 180-day dispute window calculation."""
+      21:     try:
+>>>   22:         received_dt = datetime.strptime(email.date, "%a, %d %b %Y %H:%M:%S %z")
+>>>   23:         received_dt = received_dt.replace(tzinfo=None)
+      24:         return AnthemEOB(received_date=received_dt)
+      25:     except (ValueError, AttributeError):
+      26:         return AnthemEOB(received_date=None)
+   ...
+      48:                 continue
+      49:
+      50:             # Make date timezone-aware for comparison
+>>>   51:             received_date = parsed.received_date
+>>>   52:             if received_date.tzinfo is None:
+>>>   53:                 received_date = received_date.replace(tzinfo=UTC)
+      54:
+      55:             if received_date >= cutoff_date:
+      56:                 plan.add_action(
+```
+
+### `lossy-timezone-handling.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/issues/lossy-timezone-handling.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/code/gmail_archiver/planners/anthem_reimbursement.py#L29-L103)
+
+File: `gmail_archiver/planners/anthem_reimbursement.py` (L29-30, L101-103)
+
+> Multiple planners parse timezone-aware dates with `strptime(..., "%z")`,
+> then immediately strip the timezone with `.replace(tzinfo=None)`, then later
+> re-assign UTC with `.replace(tzinfo=UTC)`. This silently reinterprets the
+> original local time as UTC. For example, an email sent at 17:31:44-0800
+> becomes 17:31:44+0000 (8 hours off). While the error is immaterial for the
+> current day-scale thresholds, the pattern is semantically wrong. The root
+> cause is that `GmailMessage.date` is `str` (models.py line 23), forcing
+> every planner to independently parse the Date header — and each does it
+> with its own format string and its own incorrect timezone handling. The
+> model already has `internal_date: int` (epoch millis from the Gmail API),
+> which is a proper timestamp. Either `date` should be parsed to `datetime`
+> once at construction time (in `gmail_client.py` where the GmailMessage is
+> built), or planners should use `internal_date` for age comparisons and
+> avoid parsing the header at all.
+>
+> **Note:** parse_anthem_reimbursement + AnthemReimbursementPlanner.plan
+
+```
+      26: def parse_anthem_reimbursement(email: GmailMessage) -> AnthemReimbursement:
+      27:     # Parse email date
+      28:     try:
+>>>   29:         email_dt = datetime.strptime(email.date, "%a, %d %b %Y %H:%M:%S %z")
+>>>   30:         email_dt = email_dt.replace(tzinfo=None)
+      31:     except (ValueError, AttributeError):
+      32:         email_dt = None
+      33:
+   ...
+      98:                 continue
+      99:
+     100:             # Make date timezone-aware for comparison
+>>>  101:             email_date = parsed.email_date
+>>>  102:             if email_date.tzinfo is None:
+>>>  103:                 email_date = email_date.replace(tzinfo=UTC)
+     104:
+     105:             if email_date >= cutoff_date:
+     106:                 plan.add_action(
+```
+
+### `lossy-timezone-handling.yaml` / `occ-2`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/issues/lossy-timezone-handling.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/code/gmail_archiver/planners/square.py#L41-L42)
+
+File: `gmail_archiver/planners/square.py` (L41-42)
+
+> Multiple planners parse timezone-aware dates with `strptime(..., "%z")`,
+> then immediately strip the timezone with `.replace(tzinfo=None)`, then later
+> re-assign UTC with `.replace(tzinfo=UTC)`. This silently reinterprets the
+> original local time as UTC. For example, an email sent at 17:31:44-0800
+> becomes 17:31:44+0000 (8 hours off). While the error is immaterial for the
+> current day-scale thresholds, the pattern is semantically wrong. The root
+> cause is that `GmailMessage.date` is `str` (models.py line 23), forcing
+> every planner to independently parse the Date header — and each does it
+> with its own format string and its own incorrect timezone handling. The
+> model already has `internal_date: int` (epoch millis from the Gmail API),
+> which is a proper timestamp. Either `date` should be parsed to `datetime`
+> once at construction time (in `gmail_client.py` where the GmailMessage is
+> built), or planners should use `internal_date` for age comparisons and
+> avoid parsing the header at all.
+>
+> **Note:** parse_square email_date handling
+
+```
+      38:     # Parse email date
+      39:     email_dt = None
+      40:     with contextlib.suppress(ValueError, AttributeError):
+>>>   41:         email_dt = datetime.strptime(email.date, "%a, %d %b %Y %H:%M:%S %z")
+>>>   42:         email_dt = email_dt.replace(tzinfo=None)
+      43:
+      44:     # Extract text from HTML body
+      45:     soup = BeautifulSoup(email.body, "html.parser")
+```
+
+### `naive-aware-comparison.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/issues/naive-aware-comparison.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/code/gmail_archiver/planners/aliexpress.py#L112-L199)
+
+File: `gmail_archiver/planners/aliexpress.py` (L112, L131, L181, L199)
+
+> `compute_deadline()` returns naive datetimes from both code paths:
+> `extract_delivered_date` returns `datetime(year, month, day)` (line 112,
+> no tzinfo), and the fallback explicitly strips timezone with
+> `.replace(tzinfo=None)` (line 131). But `AliExpressPlanner.plan()` creates
+> `now = datetime.now(UTC)` (line 181, timezone-aware) and then compares
+> `full_parsed.confirmation_deadline < now` (line 199). Comparing a naive
+> datetime against an aware datetime raises `TypeError: can't compare
+offset-naive and offset-aware datetimes`. Fix by making
+> `compute_deadline()` return aware datetimes. The delivered date is a bare
+> calendar date ("Delivered DD/MM/YYYY") with no intrinsic timezone — what
+> zone to assign is somewhat ambiguous (user-local would be most precise
+> for "has this day passed," but UTC is fine given the 15-day window).
+
+```
+     109:     if match := DELIVERED_DATE_PATTERN.search(body):
+     110:         day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+     111:         try:
+>>>  112:             return datetime(year, month, day)
+     113:         except ValueError:
+     114:             return None
+     115:     return None
+   ...
+     128:     # Fallback: email received date + 30 days
+     129:     try:
+     130:         received = parsedate_to_datetime(message.date)
+>>>  131:         received = received.replace(tzinfo=None)
+     132:         return received + timedelta(days=30)
+     133:     except (ValueError, TypeError):
+     134:         return None
+   ...
+     178:             except AliExpressParseError as e:
+     179:                 unparseable.append((msg, str(e)))
+     180:
+>>>  181:         now = datetime.now(UTC)
+     182:
+     183:         # Report unparseable emails but don't take action
+     184:         if unparseable:
+   ...
+     196:             if latest_parsed.status in STATES_WITH_DEADLINE:
+     197:                 full_parsed = parse_aliexpress(latest, should_compute_deadline=True)
+     198:
+>>>  199:                 if full_parsed.confirmation_deadline and full_parsed.confirmation_deadline < now:
+     200:                     # Deadline passed - archive all emails for this order
+     201:                     for msg in sorted_emails:
+     202:                         plan.add_action(
+```
+
+### `weakly-typed-timestamps.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/issues/weakly-typed-timestamps.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/code/gmail_archiver/models.py#L23)
+
+File: `gmail_archiver/models.py` (L23)
+
+> GmailMessage has two timestamp fields stored as primitives instead of
+> `datetime`: `date: str` (line 23) is the RFC 2822 Date header, parsed
+> independently by 5 consumers using 3 different approaches (`strptime`
+> with `%z` in anthem_eob/anthem_reimbursement/square, `parsedate_to_datetime`
+> in aliexpress, raw string passthrough in dbsa). `internal_date: int`
+> (line 24) is epoch milliseconds from the Gmail API, used for sorting in
+> one_medical and aliexpress but left as a raw int. Both should be `datetime`
+> — parsed once at construction time in the `gmail_client.py` callback that
+> builds GmailMessage instances (lines 463-474, 248-256, 529-537). This
+> eliminates the duplicated parsing, the divergent format strings, and the
+> lossy timezone handling that each planner re-invents.
+>
+> **Note:** date field is raw RFC 2822 string, parsed 5 different ways downstream
+
+```
+      20:     sender: str = Field(alias="from")
+      21:     recipient: str | None = Field(default=None, alias="to")
+      22:     subject: str
+>>>   23:     date: str
+      24:     internal_date: int  # milliseconds since epoch
+      25:     body: str
+      26:     snippet: str | None = None
+```
+
+### `weakly-typed-timestamps.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/issues/weakly-typed-timestamps.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/gmail-archiver/2025-12-17-00/code/gmail_archiver/models.py#L24)
+
+File: `gmail_archiver/models.py` (L24)
+
+> GmailMessage has two timestamp fields stored as primitives instead of
+> `datetime`: `date: str` (line 23) is the RFC 2822 Date header, parsed
+> independently by 5 consumers using 3 different approaches (`strptime`
+> with `%z` in anthem_eob/anthem_reimbursement/square, `parsedate_to_datetime`
+> in aliexpress, raw string passthrough in dbsa). `internal_date: int`
+> (line 24) is epoch milliseconds from the Gmail API, used for sorting in
+> one_medical and aliexpress but left as a raw int. Both should be `datetime`
+> — parsed once at construction time in the `gmail_client.py` callback that
+> builds GmailMessage instances (lines 463-474, 248-256, 529-537). This
+> eliminates the duplicated parsing, the divergent format strings, and the
+> lossy timezone handling that each planner re-invents.
+>
+> **Note:** internal_date is raw epoch milliseconds, should be datetime
+
+```
+      21:     recipient: str | None = Field(default=None, alias="to")
+      22:     subject: str
+      23:     date: str
+>>>   24:     internal_date: int  # milliseconds since epoch
+      25:     body: str
+      26:     snippet: str | None = None
+      27:     label_ids: list[str] = Field(default_factory=list)
+```
+
+## ducktape/2025-11-21-00 (3)
 
 ### `agent-info-computable-uris.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-21-00/issues/agent-info-computable-uris.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-21-00/code/adgn/src/adgn/agent/mcp_bridge/servers/agents.py#L144-L146)
+
+File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py` (L144-146)
 
 > The `state_uri`, `approvals_uri`, and `policy_proposals_uri` fields in `AgentInfo` (lines 144-146)
 > can always be computed from `agent_id`. They should not be in the Pydantic model as they add no
@@ -9911,8 +15720,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
 > less code to maintain, clearer URIs are derived not stored.
 
 ```
-     139: # Resource response models
-     140: class AgentInfo(BaseModel):
      141:     """Information about a single agent."""
      142:
      143:     agent_id: AgentID
@@ -9922,13 +15729,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
      147:     approvals_uri: str | None = None
      148:     policy_proposals_uri: str | None = None
      149:
-     150:
-     151: class AgentList(BaseModel):
 ```
 
 ### `approvals-pending-manual-json.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-21-00/issues/approvals-pending-manual-json.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-21-00/code/adgn/src/adgn/agent/mcp_bridge/servers/agents.py#L395-L424)
+
+File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py` (L395-424, L411-419, L421-424)
 
 > Lines 395-424 define `approvals_pending_global` that manually constructs JSON dicts with
 > string keys and `json.dumps()` instead of using Pydantic models.
@@ -9947,8 +15754,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
 > IDE support, reuses existing ToolCall model, framework handles serialization.
 
 ```
-     390:
-     391:     @server.resource(
      392:         "resource://approvals/pending",
      393:         name="approvals.pending.global",
      394:         mime_type="application/json",
@@ -9985,48 +15790,13 @@ File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
      425:         "resource://agents/{agent_id}/approvals/history",
      426:         name="agent.approvals.history",
      427:         mime_type="application/json",
-     428:         description="Historical approval timeline for an agent (activity log)",
-     429:     )
-   ...
-     406:             pending_approvals = _convert_pending_approvals(infra.approval_hub.pending)
-     407:
-     408:             for approval in pending_approvals:
-     409:                 approval_uri = f"resource://agents/{agent_id}/approvals/{approval.call_id}"
-     410:                 approval_data = {
->>>  411:                     "agent_id": agent_id,
->>>  412:                     "call_id": approval.call_id,
->>>  413:                     "tool": approval.tool,
->>>  414:                     "args": approval.args,
->>>  415:                     "timestamp": approval.timestamp.isoformat(),
->>>  416:                 }
->>>  417:                 block = mcp_types.TextResourceContents(
->>>  418:                     uri=approval_uri, mimeType="application/json", text=json.dumps(approval_data)
->>>  419:                 )
-     420:                 content_blocks.append(block)
-     421:
-     422:         return mcp_types.ReadResourceResult(contents=content_blocks)
-     423:
-     424:     @server.resource(
-   ...
-     416:                 }
-     417:                 block = mcp_types.TextResourceContents(
-     418:                     uri=approval_uri, mimeType="application/json", text=json.dumps(approval_data)
-     419:                 )
-     420:                 content_blocks.append(block)
->>>  421:
->>>  422:         return mcp_types.ReadResourceResult(contents=content_blocks)
->>>  423:
->>>  424:     @server.resource(
-     425:         "resource://agents/{agent_id}/approvals/history",
-     426:         name="agent.approvals.history",
-     427:         mime_type="application/json",
-     428:         description="Historical approval timeline for an agent (activity log)",
-     429:     )
 ```
 
 ### `proposal-uri-computable.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-21-00/issues/proposal-uri-computable.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-21-00/code/adgn/src/adgn/agent/mcp_bridge/servers/agents.py#L178)
+
+File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py` (L178)
 
 > Line 178 defines `PolicyProposalInfo` with a `proposal_uri` field that is trivially computable
 > from the `id` field via `f"{APPROVAL_POLICY_PROPOSALS_INDEX_URI}/{id}"`.
@@ -10044,8 +15814,6 @@ File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
 > patterns.
 
 ```
-     173: class PolicyProposalInfo(BaseModel):
-     174:     """Policy proposal metadata with URI to full content."""
      175:
      176:     id: str
      177:     status: ProposalStatus
@@ -10053,15 +15821,15 @@ File: `adgn/src/adgn/agent/mcp_bridge/servers/agents.py`
      179:     decided_at: datetime | None = None
      180:     proposal_uri: str  # URI to access full proposal content in policy server
      181:
-     182:
-     183: class AgentPolicyProposals(BaseModel):
 ```
 
-## ducktape/2025-11-22-01 (8)
+## ducktape/2025-11-22-01 (2)
 
 ### `duplicate-ts-types.yaml` / `occ-0`
 
-File: `adgn/src/adgn/agent/web/src/features/chat/channels.ts`
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-01/issues/duplicate-ts-types.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-01/code/adgn/src/adgn/agent/web/src/features/chat/channels.ts#L138-L174)
+
+File: `adgn/src/adgn/agent/web/src/features/chat/channels.ts` (L138-174)
 
 > The `channels.ts` file (lines 138-174) manually defines TypeScript types for
 > WebSocket messages (SessionMessage, McpMessage, ApprovalsMessage, etc.).
@@ -10082,8 +15850,6 @@ File: `adgn/src/adgn/agent/web/src/features/chat/channels.ts`
 > manually defined (infrastructure, not data model).
 
 ```
-     133:
-     134: /**
      135:  * Channel message type guards
      136:  */
      137:
@@ -10127,5 +15893,245 @@ File: `adgn/src/adgn/agent/web/src/features/chat/channels.ts`
      175:
      176: export type AcceptedMessage = {
      177:   type: 'accepted'
-     178: }
+```
+
+### `redundant-args-json-param.yaml` / `occ-0`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-01/issues/redundant-args-json-param.yaml) · [code](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/ducktape/2025-11-22-01/code/adgn/src/adgn/agent/agent.py#L261-L334)
+
+File: `adgn/src/adgn/agent/agent.py` (L261-265, L276-280, L305, L334)
+
+> Lines 261-265 define `_invoke()` with parameters `function_call: FunctionCallItem` and
+> `args_json: str | None`. Call sites (lines 305, 334) always pass `args_json` as
+> `function_call.arguments`, making it redundant. Lines 276-280 parse `args_json` but could
+> use `function_call.arguments` directly.
+>
+> This creates data duplication (same data passed twice), cognitive load (reader must verify
+> args_json matches function_call.arguments), and potential inconsistency (nothing enforces
+> equality). Arguments already accessible via function_call object.
+>
+> Remove `args_json` parameter from `_invoke()` signature (lines 261-265). Replace `if args_json:`
+> check (line 277) with `if function_call.arguments:`. Update call sites (lines 305, 334) to pass
+> only `function_call`. Establishes single source of truth, simpler signature, and type safety.
+
+```
+     258:             evt.call_id: evt.result for evt in self._transcript if isinstance(evt, ToolCallOutput)
+     259:         }
+     260:
+>>>  261:         async def _invoke(
+>>>  262:             function_call: FunctionCallItem,
+>>>  263:             args_json: str | None,
+>>>  264:             local_map: dict[str, CallToolResult] = local_result_map,
+>>>  265:         ) -> ToolCallOutcome:
+     266:             cid = _require_call_id(function_call)
+     267:             # No agent-level before-tool gating; Policy Gateway middleware enforces approvals/denials
+     268:             if cid in local_map:
+   ...
+     273:             # Invoke via Policy Gateway client; do not swallow exceptions.
+     274:             # Parse arguments strictly; invalid JSON/object shape is a hard error.
+     275:             args: dict[str, Any] = {}
+>>>  276:             if args_json:
+>>>  277:                 val = json.loads(args_json)
+>>>  278:                 if not isinstance(val, dict):
+>>>  279:                     raise ValueError("tool arguments must be a JSON object")
+>>>  280:                 args = val
+     281:             raw = await self._mcp_client.call_tool(function_call.name, args, raise_on_error=False)
+     282:             res = copy.deepcopy(raw)
+     283:             if res.is_error:
+   ...
+     302:             async def runner(fc: FunctionCallItem) -> None:
+     303:                 nonlocal abort_triggered
+     304:                 try:
+>>>  305:                     outcome = await invoker(fc, fc.arguments)
+     306:                 except cancelled_exc:
+     307:                     return
+     308:                 cid = _require_call_id(fc)
+   ...
+     331:         self, function_calls: list[FunctionCallItem], invoker
+     332:     ) -> None:
+     333:         for i, function_call in enumerate(function_calls):
+>>>  334:             outcome = await invoker(function_call, function_call.arguments)
+     335:             self._emit_tool_result(function_call, outcome.result)
+     336:             if isinstance(outcome, ToolCallAborted):
+     337:                 for remaining in function_calls[i + 1 :]:
+```
+
+## test-fixtures/test1 (2)
+
+### `tp-001.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/test-fixtures/test1/issues/tp-001.yaml)
+
+File: `example_module.py` (L4-6)
+
+> Test issue for TEST split verification.
+> This is a minimal issue to satisfy specimen validation.
+
+```
+       1: """Test module for TEST split RLS verification."""
+       2:
+       3:
+>>>    4: def test_function(value: str) -> str:
+>>>    5:     """Simple test function for split filtering."""
+>>>    6:     return f"Test: {value}"
+```
+
+### `tp-001.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/test-fixtures/test1/issues/tp-001.yaml)
+
+File: `example_module.py` (L4-6)
+
+> Test issue for TEST split verification.
+> This is a minimal issue to satisfy specimen validation.
+
+```
+       1: """Test module for TEST split RLS verification."""
+       2:
+       3:
+>>>    4: def test_function(value: str) -> str:
+>>>    5:     """Simple test function for split filtering."""
+>>>    6:     return f"Test: {value}"
+```
+
+## test-fixtures/train1 (2)
+
+### `tp-003.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/test-fixtures/train1/issues/tp-003.yaml)
+
+File: `multiply.py` (L4-6)
+
+> Missing type annotation on return value.
+> The multiply function should have explicit return type annotation for clarity.
+
+```
+       1: """Multiplication function for test fixture."""
+       2:
+       3:
+>>>    4: def multiply(x: int, y: int) -> int:
+>>>    5:     """Multiply two numbers."""
+>>>    6:     return x * y
+```
+
+### `tp-003.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/test-fixtures/train1/issues/tp-003.yaml)
+
+File: `multiply.py` (L4-6)
+
+> Missing type annotation on return value.
+> The multiply function should have explicit return type annotation for clarity.
+
+```
+       1: """Multiplication function for test fixture."""
+       2:
+       3:
+>>>    4: def multiply(x: int, y: int) -> int:
+>>>    5:     """Multiply two numbers."""
+>>>    6:     return x * y
+```
+
+## test-fixtures/valid1 (2)
+
+### `tp-001.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/test-fixtures/valid1/issues/tp-001.yaml)
+
+File: `sample_subtract.py` (L10-15)
+
+> Test issue for integration testing.
+> This is a minimal issue to satisfy specimen validation.
+
+```
+       7:     return a - b
+       8:
+       9:
+>>>   10: def main() -> None:
+>>>   11:     """Main entry point."""
+>>>   12:     print("Enter two numbers to subtract:")
+>>>   13:     try:
+>>>   14:         num1 = float(input("First number: "))
+>>>   15:         num2 = float(input("Second number: "))
+      16:         result = subtract(num1, num2)
+      17:         print(f"{num1} - {num2} = {result}")
+      18:     except ValueError:
+```
+
+### `tp-001.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/test-fixtures/valid1/issues/tp-001.yaml)
+
+File: `sample_subtract.py` (L10-15)
+
+> Test issue for integration testing.
+> This is a minimal issue to satisfy specimen validation.
+
+```
+       7:     return a - b
+       8:
+       9:
+>>>   10: def main() -> None:
+>>>   11:     """Main entry point."""
+>>>   12:     print("Enter two numbers to subtract:")
+>>>   13:     try:
+>>>   14:         num1 = float(input("First number: "))
+>>>   15:         num2 = float(input("Second number: "))
+      16:         result = subtract(num1, num2)
+      17:         print(f"{num1} - {num2} = {result}")
+      18:     except ValueError:
+```
+
+## test-fixtures/valid2 (2)
+
+### `tp-001.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/test-fixtures/valid2/issues/tp-001.yaml)
+
+File: `calculator.py` (L6-17)
+
+> Test issue for validation testing.
+> This is a minimal issue to satisfy specimen validation.
+
+```
+       3:
+       4: def calculate(operation: str, a: float, b: float) -> float:
+       5:     """Perform calculation based on operation string."""
+>>>    6:     if operation == "add":
+>>>    7:         return a + b
+>>>    8:     if operation == "subtract":
+>>>    9:         return a - b
+>>>   10:     if operation == "multiply":
+>>>   11:         return a * b
+>>>   12:     if operation == "divide":
+>>>   13:         if b == 0:
+>>>   14:             raise ValueError("Cannot divide by zero")
+>>>   15:         return a / b
+>>>   16:     raise ValueError(f"Unknown operation: {operation}")
+```
+
+### `tp-001.yaml` / `occ-1`
+
+Links: [YAML](https://github.com/agentydragon/ducktape/blob/devel/props/specimens/test-fixtures/valid2/issues/tp-001.yaml)
+
+File: `calculator.py` (L6-16)
+
+> Test issue for validation testing.
+> This is a minimal issue to satisfy specimen validation.
+
+```
+       3:
+       4: def calculate(operation: str, a: float, b: float) -> float:
+       5:     """Perform calculation based on operation string."""
+>>>    6:     if operation == "add":
+>>>    7:         return a + b
+>>>    8:     if operation == "subtract":
+>>>    9:         return a - b
+>>>   10:     if operation == "multiply":
+>>>   11:         return a * b
+>>>   12:     if operation == "divide":
+>>>   13:         if b == 0:
+>>>   14:             raise ValueError("Cannot divide by zero")
+>>>   15:         return a / b
+>>>   16:     raise ValueError(f"Unknown operation: {operation}")
 ```

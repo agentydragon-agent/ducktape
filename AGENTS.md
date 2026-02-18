@@ -108,6 +108,23 @@ live_openai_py_test(
 
 **Gating:** `.live` targets get `OPENAI_API_KEY` via `env_inherit` and the `live_openai_api` tag. CI excludes them with `--test_tag_filters=-live_openai_api`. The root `conftest.py` also skips live-marked tests at runtime when the key is absent.
 
+### Shared Utility Libraries
+
+**`bazel_util`** (`//bazel_util`): Bazel runtime utilities.
+
+- `bazel_util.workspace.get_build_workspace_directory()` — repo root (`BUILD_WORKSPACE_DIRECTORY` under `bazel run`, cwd otherwise). Use this in `py_binary` targets that need to find source files on the real filesystem.
+- `bazel_util.workspace.get_build_working_directory()` — cwd where `bazel run` was invoked.
+- `bazel_util.runfiles` — runfiles resolution utilities.
+- `bazel_util.subprocess` — subprocess execution helpers.
+
+**`env_utils`** (`//env_utils`): Environment variable access with validation.
+
+- `env_utils.env_utils.get_required_env(name)` — get env var or raise `KeyError`.
+- `env_utils.env_utils.get_required_env_path(name)` — get env var as `Path`.
+- `env_utils.env_utils.get_required_existing_path(name)` — get env var as `Path`, verify it exists.
+- `env_utils.env_utils.get_optional_env(name, default=None)` — get optional env var.
+- `env_utils.env_utils.get_optional_env_path(name)` — get optional env var as `Path`.
+
 ### Deployment
 
 ```bash
