@@ -27,7 +27,7 @@ spec:
     - name: matrix-namespace
     - name: gateway
     - name: cert-manager
-    - name: authentik-blueprint-matrix-provider # Wait for Authentik OIDC application to be created
+    - name: authentik # Wait for Authentik worker to apply SSO blueprints
     - name: matrix-secrets
 # Note: Matrix Synapse needs OIDC discovery endpoint at startup (from provider),
 # but oauth-client-secret (from matrix-secret) is only needed for OAuth login flows later

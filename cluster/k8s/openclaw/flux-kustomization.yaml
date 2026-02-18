@@ -15,4 +15,4 @@ spec:
     - name: openclaw-operator
     - name: openclaw-namespace
     - name: openclaw-secrets
-    - name: authentik-blueprint-openclaw
+    - name: authentik # Wait for Authentik worker to apply SSO blueprints

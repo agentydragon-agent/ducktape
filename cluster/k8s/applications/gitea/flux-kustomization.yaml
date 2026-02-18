@@ -29,7 +29,7 @@ spec:
     - name: cert-manager
     - name: vault
     - name: gitea-secrets
-    - name: authentik-blueprint-gitea-provider # Wait for OIDC app in Authentik
+    - name: authentik # Wait for Authentik worker to apply SSO blueprints
     - name: authentik-blueprint-gitea-secret # Wait for OAuth secret to be synced from Vault
     # Gitea validates OIDC at init time (configure-gitea init container fetches discovery URL).
     # Other SSO apps (Harbor, Matrix, Grafana) validate lazily at first login, so they don't need this.

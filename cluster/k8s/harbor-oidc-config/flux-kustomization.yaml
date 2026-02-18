@@ -20,5 +20,5 @@ spec:
   dependsOn:
     - name: tofu-controller
     - name: harbor # Harbor API must be running
-    - name: authentik-blueprint-harbor-provider # OIDC creds in Vault
+    - name: authentik-blueprint-sso-secrets # OIDC creds in Vault
     - name: vault-token

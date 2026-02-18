@@ -26,4 +26,4 @@ spec:
     - name: kagent-secrets
     - name: gateway
     - name: cert-manager-environment
-    - name: authentik-blueprint-kagent # SSO configuration and outpost
+    - name: authentik # Wait for Authentik worker to apply SSO blueprints
