@@ -69,11 +69,12 @@ spec:
       name: server
       replicas: 2
 
-      # With 2 replicas + required anti-affinity on 2 nodes, the default
-      # strategy (maxUnavailable=0) deadlocks: can't surge because anti-affinity
-      # blocks a third pod. Allow 1 unavailable so rollouts proceed.
-      strategy:
+      # With 2 replicas + required anti-affinity on 2 nodes, surge deadlocks
+      # (can't create 3rd pod). Kill one first, then replace.
+      deploymentStrategy:
+        type: RollingUpdate
         rollingUpdate:
+          maxSurge: 0
           maxUnavailable: 1
 
       nodeSelector:
@@ -141,8 +142,10 @@ spec:
       name: worker
       replicas: 2
 
-      strategy:
+      deploymentStrategy:
+        type: RollingUpdate
         rollingUpdate:
+          maxSurge: 0
           maxUnavailable: 1
 
       nodeSelector:
