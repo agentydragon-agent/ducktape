@@ -477,6 +477,126 @@ silent overwrites when TF state is lost.
 
 **Lessons Learned**: See <lessons_learned/2026-02-13-authentik-token-vault-overwrite.md>
 
+### Authentik Teardown: Terraform State Desync
+
+**Symptoms**:
+
+- Terraform resources stuck with `"already exists"` errors after Authentik DB wipe
+- Providers assigned to wrong applications (cross-contamination between SSO modules)
+- `authentik-blueprint-users` fails with `"slug already exists"` or `"username must be unique"`
+- Cascading failures: all `authentik-blueprint-*` kustomizations stuck False
+
+**Root Cause**:
+
+tofu-controller stores Terraform state in K8s secrets (`tfstate-default-*`). These secrets
+reference Authentik resource PKs/UUIDs. When Authentik's database is wiped (HelmRelease +
+PVC deleted), the PKs become invalid but the state secrets persist. Multiple modules
+applying simultaneously against the fresh DB causes partial applies (resources created but
+state not saved), leading to irrecoverable `"already exists"` errors.
+
+**This is an inherent limitation** — tofu-controller has no lifecycle coupling between
+state secrets and the managed backend. See
+<lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> for full analysis.
+
+**Diagnosis**:
+
+```bash
+# Check for stale TF state secrets
+kubectl get secrets -n flux-system | grep tfstate | grep authentik
+
+# Check for cross-assigned providers in Authentik
+TOKEN=$(kubectl get secret authentik-api-token -n flux-system \
+  -o jsonpath='{.data.authentik_token}' | base64 -d)
+kubectl exec -n authentik deployment/authentik-server -- \
+  curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:9000/api/v3/providers/all/' | \
+  python3 -c "import sys,json; [print(f'{p[\"name\"]:25s} -> {p[\"assigned_application_slug\"]}') for p in json.load(sys.stdin)['results']]"
+# If provider names don't match their assigned application slugs → cross-contamination
+```
+
+**Resolution**:
+
+```bash
+# 1. Suspend all Authentik-targeting Terraform resources
+for name in authentik-blueprint-users authentik-blueprint-gitea \
+  authentik-blueprint-harbor authentik-blueprint-hubble authentik-blueprint-loki \
+  authentik-blueprint-matrix authentik-blueprint-vault authentik-blueprint-openclaw \
+  grafana-sso vault-oidc-auth; do
+  kubectl patch terraform "$name" -n flux-system \
+    -p '{"spec":{"suspend":true}}' --type=merge 2>/dev/null
+done
+
+# 2. Kill runner pods and delete stale state
+kubectl delete pods -n flux-system -l app.kubernetes.io/name=tf-runner
+kubectl delete secret -n flux-system \
+  tfstate-default-authentik-blueprint-users \
+  tfstate-default-authentik-blueprint-gitea \
+  tfstate-default-authentik-blueprint-harbor \
+  tfstate-default-authentik-blueprint-hubble \
+  tfstate-default-authentik-blueprint-loki \
+  tfstate-default-authentik-blueprint-matrix \
+  tfstate-default-authentik-blueprint-vault \
+  tfstate-default-authentik-blueprint-openclaw \
+  tfstate-default-grafana-sso \
+  tfstate-default-vault-oidc-auth \
+  --ignore-not-found
+
+# 3. Clean up ALL applications, providers, outposts from Authentik API
+# (they were created by partial applies with wrong assignments)
+TOKEN=$(kubectl get secret authentik-api-token -n flux-system \
+  -o jsonpath='{.data.authentik_token}' | base64 -d)
+
+# Delete applications by slug
+for slug in gitea grafana harbor hubble loki matrix vault; do
+  kubectl exec -n authentik deployment/authentik-server -- \
+    curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
+    "http://localhost:9000/api/v3/core/applications/$slug/" 2>/dev/null
+done
+
+# Delete non-embedded outposts
+kubectl exec -n authentik deployment/authentik-server -- \
+  curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:9000/api/v3/outposts/instances/' | \
+  python3 -c "
+import sys, json, subprocess
+for o in json.load(sys.stdin)['results']:
+    if 'Embedded' not in o['name']:
+        print(f'Deleting outpost: {o[\"name\"]}')
+" 2>/dev/null
+
+# Delete user, flow, brand (from users blueprint partial apply)
+# Flow: DELETE by slug, not UUID
+kubectl exec -n authentik deployment/authentik-server -- \
+  curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:9000/api/v3/flows/instances/custom-authentication-flow/'
+# Brand: query then delete by brand_uuid
+# User: query then delete by pk
+
+# 4. If Vault was NOT wiped, also disable its stale OIDC auth backend
+ROOT_TOKEN=$(kubectl get secret -n vault instance-unseal-keys \
+  -o jsonpath='{.data.vault-root}' | base64 -d)
+kubectl exec -n vault instance-0 -c vault -- sh -c \
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$ROOT_TOKEN \
+   vault auth disable oidc/" 2>/dev/null || true
+
+# 5. Unsuspend Terraform resources
+for name in authentik-blueprint-users authentik-blueprint-gitea \
+  authentik-blueprint-harbor authentik-blueprint-hubble authentik-blueprint-loki \
+  authentik-blueprint-matrix authentik-blueprint-vault authentik-blueprint-openclaw \
+  grafana-sso vault-oidc-auth; do
+  kubectl patch terraform "$name" -n flux-system \
+    -p '{"spec":{"suspend":false}}' --type=merge 2>/dev/null
+done
+```
+
+**Prevention**:
+
+- **Always wipe TF state secrets when wiping Authentik DB** — run the suspend/delete/resume
+  procedure above BEFORE Flux re-reconciles
+- During full cluster rebuild (`tofu destroy` → bootstrap), all K8s secrets are destroyed
+  with the cluster — no manual cleanup needed
+- See <lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> for full details
+
 ## 🚨 Fast Path Health Checks
 
 ### KubeSpan (WireGuard Mesh) - VPS Hybrid Cluster

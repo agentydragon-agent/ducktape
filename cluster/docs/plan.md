@@ -253,6 +253,36 @@ Flux `Receiver` resources and HTTPRoute deployed at `flux-webhook.allegedly.work
 Harbor webhook auto-configured by `harbor-webhook` Terraform. GitHub webhook requires
 one manual `gh api` call — see "Next Actions (Harbor CI + Flux Webhook)" above.
 
+### TODO: Authentik Blueprint Migration (Reduce TF State Coupling)
+
+Consider migrating simple Authentik config (users, flows, brands) from Terraform to
+Authentik [native blueprints](https://docs.goauthentik.io/customize/blueprints/) (mounted
+as ConfigMaps via Flux). Blueprints use `state: present` — idempotent with no external
+state, eliminating the TF state lifecycle coupling that causes cascading failures on
+Authentik DB wipe. Keep Terraform for OIDC providers that need Vault secret integration.
+
+Trade-off: requires redesigning client secret flow. Blueprints can't generate
+`random_password` or write to Vault. Would need a separate Terraform module (or bootstrap
+step) to generate all OIDC client secrets in Vault, then Authentik blueprints read them
+from env vars populated by ExternalSecrets. Cross-service coordination becomes two-phase
+instead of atomic.
+
+See <lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> for the full
+analysis and community research on alternatives (Crossplane, Authentik operator, ArgoCD
+hooks).
+
+### TODO: Automate TF State Cleanup in Bootstrap
+
+Add a step to `bootstrap.py` (post-Flux, pre-Terraform-reconcile) that detects
+freshly-recreated HelmReleases and deletes corresponding `tfstate-default-*` secrets.
+Currently this is a manual procedure documented in `docs/troubleshooting.md`. Automation
+would prevent the cascading "already exists" errors that occur when Authentik DB is wiped
+without clearing TF state.
+
+Alternatively: add K8s OwnerReferences from TF state secrets to the Authentik HelmRelease
+(tofu-controller doesn't do this — upstream issue #937, open since 2024). This would make
+K8s GC delete state secrets when the HelmRelease is deleted.
+
 ### TODO: Flux Kustomization Dependency Graph UI
 
 Low priority. Weave GitOps or Capacitor for visualizing kustomization DAG.

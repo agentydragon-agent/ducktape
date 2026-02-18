@@ -20,6 +20,28 @@ Contains sealed secrets keypair and CSI tokens that survive VM teardown by desig
 **NEVER reconcile Flux resources until changes are committed AND pushed.** Flux reads from
 the git remote, not your local filesystem.
 
+## ⚠️ CRITICAL: AUTHENTIK TEARDOWN REQUIRES TF STATE WIPE
+
+When Authentik's database is wiped (HelmRelease delete, PVC delete, or any operation that
+recreates the PostgreSQL data), **ALL tofu-controller Terraform state secrets targeting
+Authentik become invalid**. You MUST delete them before Flux re-reconciles, or you'll get
+cascading "already exists" errors from partial applies with cross-contaminated provider
+assignments.
+
+Affected secrets (in `flux-system` namespace):
+
+- `tfstate-default-authentik-blueprint-{users,gitea,harbor,hubble,loki,matrix,vault,openclaw}`
+- `tfstate-default-grafana-sso`
+- `tfstate-default-vault-oidc-auth` (also requires `vault auth disable oidc/` in Vault)
+
+**Procedure**: Suspend TF resources → delete state secrets → delete Authentik HelmRelease +
+PVC → wait for recreation → unsuspend TF resources. Full steps in
+<docs/troubleshooting.md> under "Authentik Teardown: Terraform State Desync."
+
+**Root cause**: tofu-controller stores TF state in K8s secrets with no lifecycle coupling to
+the managed backend. See
+<docs/lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md>.
+
 ## PRIMARY DIRECTIVE: DECLARATIVE TURNKEY BOOTSTRAP
 
 **Goal**: Committed repo state where `bazel run //cluster:bootstrap` → everything works.
@@ -71,6 +93,10 @@ subagents via the Task tool. Spawn agents in parallel when possible.
 **Split Blueprint Pattern**: Provider blueprint (`terraform/gitops/sso/{app}/`) creates OIDC
 app in Authentik + stores credentials in Vault. Secret blueprint (`k8s/{app}/`) creates
 ExternalSecret pulling from Vault into the app namespace.
+
+**Implicit state dependency**: Each SSO blueprint's Terraform state (`tfstate-default-*` K8s
+secret) references Authentik resource PKs. If Authentik DB is wiped, these states become
+invalid. See the "AUTHENTIK TEARDOWN REQUIRES TF STATE WIPE" warning above.
 
 ## Operational Context
 
