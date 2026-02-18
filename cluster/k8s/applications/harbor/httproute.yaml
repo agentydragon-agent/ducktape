@@ -11,5 +11,5 @@ spec:
     - "registry.allegedly.works"
   rules:
     - backendRefs:
-        - name: harbor-nginx
+        - name: harbor
           port: 80
