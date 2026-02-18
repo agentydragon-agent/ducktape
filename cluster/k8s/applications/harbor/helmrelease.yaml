@@ -84,6 +84,8 @@ spec:
     # timeouts when core/nginx are on VPS but database/redis are on Proxmox.
     core:
       replicas: 1
+      podAnnotations:
+        reloader.stakater.com/auto: "true"
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       resources:

@@ -17,6 +17,8 @@ spec:
       labels:
         app: devbot
         component: desktop
+      annotations:
+        reloader.stakater.com/auto: "true"
     spec:
       containers:
         # Desktop container - Ubuntu + Xfce + VNC + X11
