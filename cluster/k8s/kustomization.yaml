@@ -83,19 +83,13 @@ resources:
   - openclaw-namespace/flux-kustomization.yaml
   - openclaw-secrets/flux-kustomization.yaml
   - openclaw/flux-kustomization.yaml
-  - authentik-blueprint/gitea-provider/flux-kustomization.yaml
+  - authentik-blueprint/sso-secrets/flux-kustomization.yaml
+  - authentik-sso-secrets/flux-kustomization.yaml
   - authentik-blueprint/gitea-secret/flux-kustomization.yaml
-  - authentik-blueprint/matrix-provider/flux-kustomization.yaml
-  - authentik-blueprint/matrix-secret/flux-kustomization.yaml
-  - authentik-blueprint/harbor-provider/flux-kustomization.yaml
-  - authentik-blueprint/harbor-secret/flux-kustomization.yaml
-  - harbor-oidc-config/flux-kustomization.yaml
-  - authentik-blueprint/vault/flux-kustomization.yaml
-  - authentik-blueprint/users/flux-kustomization.yaml
   - authentik-blueprint/grafana-secret/flux-kustomization.yaml
-  - authentik-blueprint/grafana-provider/flux-kustomization.yaml
-  - authentik-blueprint/kagent/flux-kustomization.yaml
-  - authentik-blueprint/hubble/flux-kustomization.yaml
-  - authentik-blueprint/loki/flux-kustomization.yaml
-  - authentik-blueprint/openclaw/flux-kustomization.yaml
+  - authentik-blueprint/harbor-secret/flux-kustomization.yaml
+  - authentik-blueprint/matrix-secret/flux-kustomization.yaml
+  - authentik-blueprint/vault-secret/flux-kustomization.yaml
+  - authentik-proxy-routes/flux-kustomization.yaml
+  - harbor-oidc-config/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml

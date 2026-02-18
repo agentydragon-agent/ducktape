@@ -34,6 +34,7 @@ spec:
     - name: cert-manager-issuer-config
     - name: authentik-namespace
     - name: authentik-secrets
+    - name: authentik-sso-secrets # SSO client secrets for blueprint !Env tags
     - name: authentik-token # Wait for API token generation in Vault
     - name: cert-manager # Wait for cert-manager for TLS certificates
     - name: gateway # Wait for Gateway API for external access

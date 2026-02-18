@@ -1,23 +1,24 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: authentik-blueprint-grafana-secret
+  name: authentik-blueprint-vault-secret
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./cluster/k8s/authentik-blueprint/grafana-secret
+  timeout: 5m
+  path: ./cluster/k8s/authentik-blueprint/vault-secret
   prune: true
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
   wait: true
-  # Health check ensures OIDC config is synced from Vault for Grafana SSO
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
-      name: grafana-oidc-config
-      namespace: monitoring
+      name: vault-oauth-client-secret
+      namespace: vault
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
   dependsOn:
-    - name: monitoring-namespace
+    - name: vault
     - name: external-secrets-config
+    - name: reflector
     - name: authentik-blueprint-sso-secrets # Vault data exists

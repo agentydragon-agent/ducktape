@@ -20,27 +20,18 @@ Contains sealed secrets keypair and CSI tokens that survive VM teardown by desig
 **NEVER reconcile Flux resources until changes are committed AND pushed.** Flux reads from
 the git remote, not your local filesystem.
 
-## ⚠️ CRITICAL: AUTHENTIK TEARDOWN REQUIRES TF STATE WIPE
+## ⚠️ CRITICAL: AUTHENTIK TEARDOWN — REMAINING TF STATE
 
-When Authentik's database is wiped (HelmRelease delete, PVC delete, or any operation that
-recreates the PostgreSQL data), **ALL tofu-controller Terraform state secrets targeting
-Authentik become invalid**. You MUST delete them before Flux re-reconciles, or you'll get
-cascading "already exists" errors from partial applies with cross-contaminated provider
-assignments.
+Most Authentik SSO config uses native blueprints (no TF state). Two Terraform modules
+still target Authentik-adjacent systems:
 
-Affected secrets (in `flux-system` namespace):
+- `tfstate-default-sso-secrets` — generates OAuth2 client secrets in Vault
+- `tfstate-default-vault-oidc-auth` — configures Vault OIDC auth backend
 
-- `tfstate-default-authentik-blueprint-{users,gitea,harbor,hubble,loki,matrix,vault,openclaw}`
-- `tfstate-default-grafana-sso`
-- `tfstate-default-vault-oidc-auth` (also requires `vault auth disable oidc/` in Vault)
+After an Authentik DB wipe, these may need state cleanup:
+`vault-oidc-auth` requires `vault auth disable oidc/` in Vault before re-apply.
 
-**Procedure**: Suspend TF resources → delete state secrets → delete Authentik HelmRelease +
-PVC → wait for recreation → unsuspend TF resources. Full steps in
-<docs/troubleshooting.md> under "Authentik Teardown: Terraform State Desync."
-
-**Root cause**: tofu-controller stores TF state in K8s secrets with no lifecycle coupling to
-the managed backend. See
-<docs/lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md>.
+See <docs/lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> for history.
 
 ## PRIMARY DIRECTIVE: DECLARATIVE TURNKEY BOOTSTRAP
 
@@ -90,13 +81,20 @@ subagents via the Task tool. Spawn agents in parallel when possible.
 
 ## SSO Integration
 
-**Split Blueprint Pattern**: Provider blueprint (`terraform/gitops/sso/{app}/`) creates OIDC
-app in Authentik + stores credentials in Vault. Secret blueprint (`k8s/{app}/`) creates
-ExternalSecret pulling from Vault into the app namespace.
+**Native Blueprint Pattern**: Authentik SSO providers, applications, outposts, and user config
+are defined as native Authentik blueprints in `k8s/authentik/sso-blueprints.yaml` (ConfigMap
+mounted into the worker). Blueprints re-apply every 60 min with `state: present` — idempotent,
+no external state.
 
-**Implicit state dependency**: Each SSO blueprint's Terraform state (`tfstate-default-*` K8s
-secret) references Authentik resource PKs. If Authentik DB is wiped, these states become
-invalid. See the "AUTHENTIK TEARDOWN REQUIRES TF STATE WIPE" warning above.
+**Secret flow**: `terraform/gitops/sso-secrets/` generates all OAuth2 client secrets →
+stores in Vault → ESO creates `authentik-sso-client-secrets` K8s Secret in authentik namespace
+→ worker reads via `envFrom` → blueprints reference via `!Env` tags.
+
+**App-side secrets**: Each app has an ESO in `k8s/authentik-blueprint/{app}-secret/` that
+reads from the same Vault path, providing credentials to the application.
+
+**Remaining Terraform**: `harbor-oidc-config/` (Harbor API), `vault-oidc-auth/` (Vault OIDC
+auth backend) — these configure non-Authentik systems and still use TF state.
 
 ## Operational Context
 

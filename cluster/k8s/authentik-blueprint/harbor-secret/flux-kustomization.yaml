@@ -20,6 +20,4 @@ spec:
       namespace: harbor
   dependsOn:
     - name: harbor # Wait for Harbor namespace and app
-      namespace: flux-system
-    - name: authentik-blueprint-harbor-provider # Wait for provider to be created
-      namespace: flux-system
+    - name: authentik-blueprint-sso-secrets # Vault data exists

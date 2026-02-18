@@ -477,9 +477,13 @@ silent overwrites when TF state is lost.
 
 **Lessons Learned**: See <lessons_learned/2026-02-13-authentik-token-vault-overwrite.md>
 
-### Authentik Teardown: Terraform State Desync
+### Authentik Teardown: Terraform State Desync (Mostly Historical)
 
-**Symptoms**:
+**Status**: Most SSO config migrated to native Authentik blueprints (no TF state). Only
+`sso-secrets` (Vault secret generation) and `vault-oidc-auth` (Vault OIDC backend) remain
+as Terraform. The cascading multi-module desync described below should no longer occur.
+
+**Symptoms** (historical, pre-blueprint migration):
 
 - Terraform resources stuck with `"already exists"` errors after Authentik DB wipe
 - Providers assigned to wrong applications (cross-contamination between SSO modules)

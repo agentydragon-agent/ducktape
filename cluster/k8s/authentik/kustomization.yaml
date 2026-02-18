@@ -5,3 +5,4 @@ resources:
   - authentik-host-configmap.yaml
   - token-secret.yaml
   - httproute.yaml
+  - sso-blueprints.yaml
