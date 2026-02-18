@@ -92,7 +92,7 @@ spec:
           interval: 120s
           conditions:
             - "[STATUS] == 302"
-            - "[HEADER].Location startsWith https://auth.allegedly.works/"
+            - "[HEADER].Location == pat(https://auth.allegedly.works/*)"
 
         - name: Vault
           group: core
