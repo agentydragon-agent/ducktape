@@ -70,6 +70,8 @@ resources:
   - node-feature-discovery/flux-kustomization.yaml
   - nvidia-device-plugin/flux-kustomization.yaml
   - hubble-ui/flux-kustomization.yaml
+  - gatus-namespace/flux-kustomization.yaml
+  - gatus/flux-kustomization.yaml
   - ollama-namespace/flux-kustomization.yaml
   - ollama-secrets/flux-kustomization.yaml
   - ollama/flux-kustomization.yaml

@@ -1,0 +1,77 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: twin
+  namespace: gatus
+spec:
+  interval: 24h
+  url: https://twin.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: gatus
+  namespace: gatus
+spec:
+  interval: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: gatus
+      version: "1.5.0"
+      sourceRef:
+        kind: HelmRepository
+        name: twin
+        namespace: gatus
+  values:
+    ingress:
+      enabled: false
+
+    persistence:
+      enabled: true
+      size: 200Mi
+      storageClassName: local-path
+
+    serviceMonitor:
+      enabled: true
+
+    nodeSelector:
+      topology.kubernetes.io/region: hetzner
+    tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+    config:
+      endpoints:
+        - name: Website
+          group: core
+          url: https://www.allegedly.works
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"
+
+        - name: Harbor Registry API
+          group: core
+          url: https://registry.allegedly.works/v2/
+          interval: 60s
+          conditions:
+            - "[STATUS] == 401"
+
+        - name: Authentik Login
+          group: core
+          url: https://auth.allegedly.works
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"

@@ -5,3 +5,4 @@ resources:
   - loki-httproute.yaml
   - hubble-httproute.yaml
   - openclaw-httproute.yaml
+  - gatus-httproute.yaml

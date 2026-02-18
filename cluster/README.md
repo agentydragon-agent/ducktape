@@ -42,6 +42,7 @@ See <docs/bootstrap.md> for full setup.
 | Grafana        | <https://grafana.allegedly.works>   | Monitoring         |
 | Nix Cache      | <https://cache.allegedly.works>     | Binary cache       |
 | Headscale      | <https://headscale.allegedly.works> | Tailscale control  |
+| Gatus          | <https://status.allegedly.works>    | Health monitoring  |
 
 Authentik SSO passwords: `get-passwords` (requires direnv in cluster directory)
 

@@ -90,6 +90,13 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       stage back when ready.
 - [ ] **Wire `scripts/check-authentik-login.py` into bootstrap/CI** — currently manual.
       Consider adding to `bootstrap.py` health checks or as a flux kustomization health check.
+- [ ] **Gatus: Harbor robot token for authenticated probe** — Create a Harbor robot account
+      via Terraform with minimal read scope, store token in Vault, configure Gatus to use
+      it for authenticated `/v2/` checks (proves full auth chain, not just 401 response)
+- [ ] **Gatus: expand monitors** — Add probes for Vault, Gitea, Grafana, Matrix, etc.
+- [ ] **Gatus: remove direct HTTPRoute** — Once Authentik proxy outpost is confirmed working,
+      remove the direct HTTPRoute from `k8s/gatus/` (proxy route in `authentik-proxy-routes/`
+      takes over)
 - [ ] **Deploy headscale**, test with a device
 - [ ] **Ollama: per-user auth** — investigate Authentik user tokens (app passwords →
       `client_credentials` JWTs). Currently uses shared API key from Vault.
@@ -165,6 +172,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Headscale      | Tailscale control  | -   |
 | Ollama         | LLM inference      | -   |
 | Website        | Static placeholder | -   |
+| Gatus          | Health monitoring  | ✅  |
 
 ## Applications (disabled - need flux-kustomization.yaml)
 
