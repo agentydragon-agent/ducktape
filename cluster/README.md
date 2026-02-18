@@ -43,7 +43,7 @@ See <docs/bootstrap.md> for full setup.
 | Nix Cache      | <https://cache.allegedly.works>     | Binary cache       |
 | Headscale      | <https://headscale.allegedly.works> | Tailscale control  |
 
-Authentik SSO password: `kubectl get secret agentydragon-user-password -n agentydragon -o jsonpath='{.data.user_password}' | base64 -d`
+Authentik SSO passwords: `get-passwords` (requires direnv in cluster directory)
 
 ## Storage
 
