@@ -61,6 +61,19 @@ spec:
         cpu: "1000m"
         memory: "2Gi"
 
+  security:
+    networkPolicy:
+      additionalEgress:
+        # Allow egress to LiteLLM proxy in ollama namespace (port 4000).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: ollama
+          ports:
+            - port: 4000
+              protocol: TCP
+        # TODO: Add egress rules for InvenTree and Grocy when deployed.
+
   availability:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
