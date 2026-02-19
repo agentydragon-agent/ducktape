@@ -110,8 +110,13 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       and enter it once in the UI settings. Investigate options: operator exposing token
       in bootstrap config, gateway-side token injection into served HTML, or upstream
       PR to accept `"trusted-proxy"` in `sharedAuthOk` (message-handler.ts:385-387).
-- [ ] **Ollama: per-user auth** — investigate Authentik user tokens (app passwords →
-      `client_credentials` JWTs). Currently uses shared API key from Vault.
+- [ ] **Ollama: per-user auth** — OpenClaw currently talks directly to Ollama (no auth,
+      dummy `OLLAMA_API_KEY` env var). Wire up proper auth: either re-introduce LiteLLM
+      proxy with API key (once OpenClaw's OpenAI streaming handler supports
+      `reasoning_content`), or deploy an auth-aware reverse proxy in front of Ollama.
+      The `openclaw-ollama-api-key` ESO and Vault secret (`kv/ollama/api-key`) already
+      exist but are not consumed. Investigate Authentik user tokens (app passwords →
+      `client_credentials` JWTs) for per-user access.
 - [ ] **Harbor terraform: switch to robot accounts** — Currently uses admin database
       auth (UserID 1 always works regardless of auth mode). Switch to Harbor robot
       accounts for least-privilege. Needs: create robot account with admin scope,
