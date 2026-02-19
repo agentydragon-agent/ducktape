@@ -18,7 +18,7 @@ spec:
       agents:
         defaults:
           model:
-            primary: "gpt-oss-20b-128k"
+            primary: "ollama/gpt-oss-20b-128k"
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
