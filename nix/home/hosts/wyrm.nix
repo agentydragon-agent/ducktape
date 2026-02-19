@@ -22,7 +22,10 @@ in
   # Wyrm-specific configuration (VM/desktop with full GUI)
   home.stateVersion = "24.05";
 
-  home.packages = [ tana ];
+  home.packages = [
+    tana
+    pkgs.gemini-cli
+  ];
   # TODO: Re-enable once k3s cluster is back up
   # services.google-drive.enable = true;
 
