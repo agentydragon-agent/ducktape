@@ -189,6 +189,14 @@ class HookSettings(BaseSettings):
         """
         return self.session_dir / "container-storage"
 
+    def get_sandbox_writable_dir(self) -> Path:
+        """Get a directory writable from within Claude Code's sandbox.
+
+        Claude Code's Bash tool sandbox makes ~/.claude/session-env/ read-only,
+        so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude/.
+        """
+        return Path("/tmp/claude") / self.session_dir.name
+
     def get_bazel_cache_dir(self) -> Path:
         """Get Bazel cache directory (tmpfs-backed, pointed to via startup --output_user_root in session bazelrc)."""
         return self.session_dir / "bazel-cache"

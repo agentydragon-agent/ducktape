@@ -79,7 +79,7 @@ def _setup_logging(settings: HookSettings) -> None:
     stderr_handler.setLevel(logging.WARNING)
 
     # File: verbose (DEBUG+) for post-mortem debugging
-    log_file = settings.get_supervisor_dir() / "bazel-wrapper.log"
+    log_file = settings.get_sandbox_writable_dir() / "bazel-wrapper.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)

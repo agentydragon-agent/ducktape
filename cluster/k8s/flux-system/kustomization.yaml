@@ -12,6 +12,7 @@ resources:
   - harbor-webhook-receiver.yaml
   - github-webhook-receiver.yaml
   - flux-webhook-httproute.yaml
+  - allow-gateway-webhook-ingress.yaml
 patches:
   - target:
       kind: GitRepository
