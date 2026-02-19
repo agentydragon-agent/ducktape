@@ -47,14 +47,12 @@ class NestedModel(BaseModel):
 
 
 class InputWithNestedRefAndDescription(BaseModel):
-    """Input model with $ref field that has description (not allowed).
+    """Input model with $ref field that has description.
 
-    When a field references another model, Pydantic generates a $ref.
-    Adding Field(description=...) adds keywords alongside $ref, which
-    OpenAI strict mode doesn't allow.
+    Pydantic generates $ref + description siblings, which OpenAICompatibleSchema
+    resolves by inlining the $ref.
     """
 
-    # This produces: {"$ref": "...", "description": "..."} which is invalid
     nested: NestedModel = Field(description="Nested model reference")
 
     model_config = ConfigDict(extra="forbid")
@@ -107,16 +105,13 @@ def test_strict_mode_rejects_set_field(mcp: EnhancedFastMCP):
             return str(input.ids)
 
 
-def test_strict_mode_rejects_ref_with_description(mcp: EnhancedFastMCP):
-    """OpenAI strict mode should reject $ref with additional keywords like description."""
-    # Field(description=...) on a model reference produces:
-    # {"$ref": "...", "description": "..."} which is invalid
-    with pytest.raises(ValueError, match=r"\$ref cannot have additional keywords"):
+def test_strict_mode_accepts_ref_with_description(mcp: EnhancedFastMCP):
+    """$ref with description is auto-inlined by OpenAICompatibleSchema, so registration succeeds."""
 
-        @mcp.flat_model()
-        def ref_desc_tool(input: InputWithNestedRefAndDescription) -> str:
-            """Tool with $ref + description."""
-            return input.nested.value
+    @mcp.flat_model()
+    def ref_desc_tool(input: InputWithNestedRefAndDescription) -> str:
+        """Tool with $ref + description."""
+        return input.nested.value
 
 
 def test_strict_mode_rejects_nested_set_in_defs(mcp: EnhancedFastMCP):

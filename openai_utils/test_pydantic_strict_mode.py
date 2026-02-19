@@ -143,16 +143,32 @@ def test_invalid_uniqueitems():
             tags: set[str]
 
 
-def test_ref_with_description():
-    """$ref with additional keywords should be rejected - automatic validation."""
+def test_ref_with_description_accepted_via_inlining():
+    """$ref with description is auto-inlined by OpenAICompatibleSchema, so subclass creation succeeds."""
     type MyUnion = list[str] | Literal["all"]
 
-    # Validation happens during class definition via __init_subclass__
-    with pytest.raises(OpenAIStrictModeValidationError, match=r"\$ref cannot have additional keywords"):
+    # Should NOT raise — OpenAICompatibleSchema inlines the $ref, preserving the description
+    class ValidModel(OpenAIStrictModeBaseModel):
+        files: MyUnion = Field(description="Files to process")
 
-        class InvalidModel(OpenAIStrictModeBaseModel):
-            # This generates $ref with description keyword
-            files: MyUnion = Field(description="Files to process")
+    # Verify the description survived in the generated schema
+    schema = ValidModel.model_json_schema(schema_generator=OpenAICompatibleSchema)
+    assert schema["properties"]["files"]["description"] == "Files to process"
+    assert "$ref" not in schema["properties"]["files"]
+
+
+def test_ref_with_description_rejected_without_inlining():
+    """Raw validator still rejects $ref with sibling keywords (catches schemas not using our generator)."""
+    type MyUnion = list[str] | Literal["all"]
+
+    class RawModel(BaseModel):
+        files: MyUnion = Field(description="Files to process")
+        model_config = ConfigDict(extra="forbid")
+
+    # Default generator produces $ref with description sibling
+    schema = RawModel.model_json_schema()
+    with pytest.raises(OpenAIStrictModeValidationError, match=r"\$ref cannot have additional keywords"):
+        validate_openai_strict_mode_schema(schema, "RawModel")
 
 
 # Parameterized test cases: (model_class, should_pass, error_pattern)

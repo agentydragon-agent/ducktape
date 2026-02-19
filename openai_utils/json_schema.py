@@ -14,8 +14,63 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic.json_schema import GenerateJsonSchema, JsonSchemaValue
+from pydantic.json_schema import GenerateJsonSchema, JsonSchemaMode, JsonSchemaValue
 from pydantic_core import core_schema
+
+# Keys that are expected to be added as siblings to $ref by Pydantic
+# (e.g., Field(description=...) adds "description" alongside $ref).
+# These are safe to merge: the sibling value takes precedence.
+_ALLOWED_REF_SIBLING_KEYS = frozenset({"description", "title", "default", "examples"})
+
+_DEFS_REF_PREFIX = "#/$defs/"
+
+
+def _inline_refs_with_siblings(schema: dict[str, Any]) -> None:
+    """Inline $ref nodes that have sibling keywords.
+
+    OpenAI strict mode forbids additional keywords alongside $ref
+    (e.g., {"$ref": "#/$defs/Foo", "description": "..."}). This resolves
+    such references by replacing the node with the inlined definition
+    merged with the sibling keywords.
+
+    Raises if a sibling key would silently overwrite a different value
+    from the definition (except for known-safe keys like description/title).
+    """
+    defs = schema.get("$defs", {})
+
+    def resolve(obj: Any, path: str = "") -> Any:
+        if isinstance(obj, list):
+            return [resolve(item, f"{path}[{i}]") for i, item in enumerate(obj)]
+        if not isinstance(obj, dict):
+            return obj
+
+        # No $ref or no siblings — just recurse into values
+        if "$ref" not in obj or len(obj) <= 1:
+            return {k: resolve(v, f"{path}.{k}") for k, v in obj.items()}
+
+        # $ref with siblings — try to inline
+        ref_path = obj["$ref"]
+        def_name = ref_path.removeprefix(_DEFS_REF_PREFIX)
+        if def_name == ref_path or def_name not in defs:
+            # Non-local or unknown ref — leave as-is
+            return {k: resolve(v, f"{path}.{k}") for k, v in obj.items()}
+
+        resolved = dict(defs[def_name])
+        for key, value in obj.items():
+            if key == "$ref":
+                continue
+            if key in resolved and resolved[key] != value and key not in _ALLOWED_REF_SIBLING_KEYS:
+                raise ValueError(
+                    f"$ref inlining conflict at {path}: "
+                    f"sibling key {key!r} has value {value!r} but "
+                    f"$defs/{def_name} already has {resolved[key]!r}"
+                )
+            resolved[key] = value
+        return resolve(resolved, path)
+
+    resolved = resolve(schema)
+    schema.clear()
+    schema.update(resolved)
 
 
 class OpenAICompatibleSchema(GenerateJsonSchema):
@@ -27,6 +82,7 @@ class OpenAICompatibleSchema(GenerateJsonSchema):
     - Converts oneOf to anyOf for discriminated unions (oneOf not supported)
     - Preserves discriminator metadata for proper validation
     - Marks Literal fields with const values as required (even with defaults)
+    - Inlines $ref nodes that have sibling keywords (e.g., description alongside $ref)
 
     The last point is important for discriminated unions: fields like
     `type: Literal["http"] = "http"` are semantically required (must have
@@ -50,6 +106,11 @@ class OpenAICompatibleSchema(GenerateJsonSchema):
     Note: This only affects the JSON schema representation. Pydantic validation
     behavior is unchanged - discriminated union validation still works perfectly.
     """
+
+    def generate(self, schema: core_schema.CoreSchema, mode: JsonSchemaMode = "validation") -> JsonSchemaValue:
+        json_schema = super().generate(schema, mode)
+        _inline_refs_with_siblings(json_schema)
+        return json_schema
 
     def field_is_required(
         self, field: core_schema.ModelField | core_schema.DataclassField | core_schema.TypedDictField, total: bool
