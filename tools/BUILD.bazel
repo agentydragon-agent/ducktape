@@ -21,6 +21,7 @@ py_library(
     srcs = ["build_info.py"],
     data = [":build_info_gen"],
     visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_library(

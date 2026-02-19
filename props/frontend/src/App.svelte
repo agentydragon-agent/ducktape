@@ -5,6 +5,8 @@
   import { pathname, resolve, goto, parseParams } from "$lib/router";
   import { connected, startFeed } from "$lib/stores/runsFeed";
   import { captureTokenFromUrl, getToken, setToken, needsToken } from "$lib/stores/token";
+  import { api } from "$lib/api/client";
+  import type { components } from "$lib/api/schema";
   import RunTriggerModal from "$components/RunTriggerModal.svelte";
   import type { Split, ExampleKind } from "$lib/types";
 
@@ -17,6 +19,8 @@
   import SnapshotsPage from "./pages/SnapshotsPage.svelte";
   import SnapshotDetailPage from "./pages/SnapshotDetailPage.svelte";
 
+  type BuildInfo = components["schemas"]["BuildInfo"];
+
   interface ModalPrefill {
     definitionId?: string;
     split?: Split;
@@ -28,6 +32,7 @@
   let tokenInput = $state("");
   let usernameInput = $state("");
   let passwordInput = $state("");
+  let buildInfo: BuildInfo | null = $state(null);
 
   // Disable the other mode when one has input
   let tokenHasInput = $derived(tokenInput.trim().length > 0);
@@ -71,6 +76,9 @@
     } else {
       needsToken.set(true);
     }
+    api.GET("/api/build-info").then(({ data }) => {
+      if (data) buildInfo = data;
+    });
   });
 
   // Navigation items
@@ -227,6 +235,12 @@
         </div>
       {/if}
     </main>
+
+    {#if buildInfo}
+      <footer class="px-6 py-2 text-xs text-gray-400 text-right">
+        {buildInfo.commit} &middot; {buildInfo.commit_time}
+      </footer>
+    {/if}
   </div>
 
   <RunTriggerModal open={showRunModal} onClose={handleCloseRunModal} prefill={modalPrefill} />

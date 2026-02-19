@@ -37,6 +37,7 @@ from props.db.sync.sync import SpecimenBundle, sync_specimen
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.executor_factory import create_executor
 from props.orchestration.grader_supervisor import GraderSupervisor
+from tools.build_info import BuildInfo, get_build_info
 
 # Configure logging on module import
 configure_logging(
@@ -174,6 +175,10 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/build-info")
+    def build_info() -> BuildInfo:
+        return get_build_info()
 
     @app.exception_handler(Exception)
     async def debug_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:

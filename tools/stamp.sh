@@ -17,5 +17,13 @@ else
   COMMIT="unknown"
 fi
 
+# Get commit timestamp (ISO 8601, deterministic per commit)
+if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null; then
+  COMMIT_TIME=$(git log -1 --format=%cI HEAD 2>/dev/null || echo "unknown")
+else
+  COMMIT_TIME="unknown"
+fi
+
 # Stable status - only changes when commit changes
 echo "STABLE_BUILD_COMMIT ${COMMIT}"
+echo "STABLE_BUILD_TIMESTAMP ${COMMIT_TIME}"

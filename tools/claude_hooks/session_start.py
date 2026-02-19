@@ -26,7 +26,7 @@ from opentelemetry import trace
 from pydantic import BaseModel
 
 from env_utils import env_utils
-from tools.build_info import BUILD_COMMIT
+from tools.build_info import get_build_info
 from tools.claude_hooks import (
     bazelisk_setup,
     buildbuddy_setup,
@@ -298,7 +298,7 @@ def emit_session_context(
     template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
     result: str = template.render(
         WARNING=logging.WARNING,
-        build_commit=BUILD_COMMIT,
+        build_commit=get_build_info().commit,
         status=status,
         proxy=auth_proxy,
         container=container,

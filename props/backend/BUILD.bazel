@@ -64,6 +64,7 @@ py_library(
         "//props/orchestration:agent_registry",
         "//props/orchestration:executor_factory",
         "//props/orchestration:grader_supervisor",
+        "//tools:build_info",
         "@pypi//asyncpg",
         "@pypi//fastapi",
     ],
