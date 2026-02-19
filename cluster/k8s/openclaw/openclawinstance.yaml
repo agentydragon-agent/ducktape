@@ -5,13 +5,8 @@ metadata:
   namespace: openclaw
 spec:
   env:
-    - name: OLLAMA_API_KEY
-      valueFrom:
-        secretKeyRef:
-          name: openclaw-ollama-api-key
-          key: api-key
     - name: OLLAMA_BASE_URL
-      value: "http://litellm.ollama.svc.cluster.local:4000"
+      value: "http://ollama.ollama.svc.cluster.local:11434"
 
   config:
     raw:
@@ -22,9 +17,7 @@ spec:
       models:
         providers:
           ollama:
-            # LiteLLM proxies Ollama via OpenAI-compatible API (not native /api/chat).
-            baseUrl: "http://litellm.ollama.svc.cluster.local:4000"
-            api: openai-completions
+            baseUrl: "http://ollama.ollama.svc.cluster.local:11434"
             models:
               - id: "gpt-oss-20b-128k"
                 name: "GPT-OSS 20B 128K"
@@ -64,13 +57,13 @@ spec:
   security:
     networkPolicy:
       additionalEgress:
-        # Allow egress to LiteLLM proxy in ollama namespace (port 4000).
+        # Allow egress to Ollama in ollama namespace (port 11434).
         - to:
             - namespaceSelector:
                 matchLabels:
                   kubernetes.io/metadata.name: ollama
           ports:
-            - port: 4000
+            - port: 11434
               protocol: TCP
         # TODO: Add egress rules for InvenTree and Grocy when deployed.
 
