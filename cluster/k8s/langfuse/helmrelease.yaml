@@ -100,6 +100,12 @@ spec:
       auth:
         existingSecret: langfuse-secrets
         existingSecretKey: clickhouse-password
+      replicaCount: 1
+      resourcesPreset: medium
+      clusterEnabled: false
+      zookeeper:
+        replicaCount: 1
+        resourcesPreset: small
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       persistence:

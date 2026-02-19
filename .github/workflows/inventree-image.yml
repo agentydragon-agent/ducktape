@@ -37,10 +37,10 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build rai_plugin wheel
-        run: bazel build //inventree_utils/rai_plugin:rai_plugin_wheel
+        run: bazel build --remote_download_all //inventree_utils/rai_plugin:rai_plugin_wheel
 
       - name: Copy wheel to Docker build context
-        run: cp bazel-bin/inventree_utils/rai_plugin/inventree_rai_plugin-1.0.0-py3-none-any.whl inventree_utils/rai_plugin/
+        run: cp "$(bazel info bazel-bin)/inventree_utils/rai_plugin/inventree_rai_plugin-1.0.0-py3-none-any.whl" inventree_utils/rai_plugin/
 
       - name: Compute image tags
         id: meta
