@@ -47,14 +47,9 @@ def parse_tool_name(name: str) -> tuple[MCPMountPrefix, str]:
     def _err(detail: str) -> str:
         return f"Invalid tool name format: {name!r}. {detail}"
 
-    parts = name.split("_", 1)
-    if len(parts) != 2:
+    prefix_str, _, tool = name.partition("_")
+    if not prefix_str or not tool:
         raise ValueError(_err("Expected 'prefix_tool'."))
-    prefix_str, tool = parts[0], parts[1]
-    if not prefix_str:
-        raise ValueError(_err("Prefix portion is empty."))
-    if not tool:
-        raise ValueError(_err("Tool portion is empty."))
 
     # Validate and construct MCPMountPrefix
     try:
@@ -63,45 +58,6 @@ def parse_tool_name(name: str) -> tuple[MCPMountPrefix, str]:
         raise ValueError(_err(f"Invalid prefix: {e}")) from e
 
     return (prefix, tool)
-
-
-def tool_prefix(server: MCPMountPrefix) -> str:
-    """Return the namespaced prefix for all tools exposed by mount prefix.
-
-    Args:
-        server: Mount prefix (already validated via MCPMountPrefix type)
-
-    Returns:
-        Namespaced prefix with trailing underscore (e.g., "runtime_")
-    """
-    return f"{server}_"
-
-
-def tool_matches(name: str, *, server: MCPMountPrefix, tool: str) -> bool:
-    """Return True when ``name`` refers to the specified server/tool.
-
-    Args:
-        name: Tool name to check
-        server: Mount prefix (already validated)
-        tool: Tool name to match
-
-    Returns:
-        True if name matches the server/tool combination
-    """
-    return name == build_mcp_function(server, tool)
-
-
-def server_matches(name: str, *, server: MCPMountPrefix) -> bool:
-    """Return True when ``name`` belongs to the specified server.
-
-    Args:
-        name: Tool name to check
-        server: Mount prefix (already validated)
-
-    Returns:
-        True if name starts with the server's tool prefix
-    """
-    return name.startswith(tool_prefix(server))
 
 
 # Internal helpers; avoid barrels

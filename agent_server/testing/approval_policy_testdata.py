@@ -45,7 +45,7 @@ def make_policy(
         "from agent_server.approvals import WellKnownTools\n"
         "from agent_server.policies.scaffold import run_with_tests\n"
         "from mcp_infra.constants import UI_MOUNT_PREFIX\n"
-        "from mcp_infra.naming import build_mcp_function, tool_matches\n\n"
+        "from mcp_infra.naming import build_mcp_function, parse_tool_name\n\n"
     )
     body = f"""
 # {doc}
@@ -55,9 +55,9 @@ TEST_CASES = [
 
 def decide(req: PolicyRequest) -> PolicyResponse:
     # Always allow UI send_message to satisfy baseline TEST_CASES
-    if tool_matches(req.name, server=UI_MOUNT_PREFIX, tool=WellKnownTools.SEND_MESSAGE):
+    if parse_tool_name(req.name) == (UI_MOUNT_PREFIX, WellKnownTools.SEND_MESSAGE):
         return PolicyResponse(decision=ApprovalDecision.ALLOW, rationale='ui allow')
-    if tool_matches(req.name, server='{server}', tool='{tool}'):
+    if parse_tool_name(req.name) == ('{server}', '{tool}'):
         return PolicyResponse(decision={decision_expr}, rationale='explicit')
     return PolicyResponse(decision={default_expr}, rationale='default')
 
