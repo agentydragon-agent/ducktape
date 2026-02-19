@@ -115,8 +115,10 @@ spec:
     redis:
       deploy: true
       auth:
-        existingSecret: langfuse-redis
-        existingSecretPasswordKey: valkey-password
+        # Reference the langfuse-secrets K8s secret (managed by ESO from Vault)
+        # for both the Bitnami sub-chart and Langfuse app connection string.
+        existingSecret: langfuse-secrets
+        existingSecretPasswordKey: redis-password
       # TODO(reliability): Move Redis to VPS or add Sentinel/cluster mode.
       nodeSelector:
         topology.kubernetes.io/region: proxmox
