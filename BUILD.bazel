@@ -74,22 +74,6 @@ js_library(
     ],
 )
 
-# Prettier configuration as js_library
-# This makes the config and prettier-plugin-svelte available in runfiles.
-# Without this, prettier finds config in source tree but can't resolve plugins
-# because node_modules doesn't exist in CI. See aspect-build/rules_lint#176.
-# no-lint: This is a config file, not a target to lint (avoids aspect self-application)
-js_library(
-    name = "prettierrc",
-    srcs = [".prettierrc.cjs"],
-    tags = ["no-lint"],
-    visibility = ["//tools:__subpackages__"],
-    deps = [
-        ":node_modules/prettier-plugin-svelte",
-        ":node_modules/svelte",
-    ],
-)
-
 # Generate requirements_bazel.txt from pyproject.toml
 # Run: bazel run //:requirements.update
 #

@@ -57,7 +57,6 @@ bazel build //...                       # Build + lint (runs by default)
 bazel run //:requirements.update        # Update Python requirements lock
 bazel run //tools/orphans:find_orphans  # Find un-Bazelized files
 bazel run //tools:gazelle               # Update BUILD files
-bazel run //tools/format                # Format code
 bazel run //tools/lint:buildifier       # Format BUILD files
 ```
 

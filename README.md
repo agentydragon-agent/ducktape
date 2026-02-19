@@ -224,10 +224,10 @@ Files excluded from linting and formatting are controlled in two places:
 
 | File                | Purpose                            | Read by                  |
 | ------------------- | ---------------------------------- | ------------------------ |
-| `.gitattributes`    | Source of truth for all exclusions | `tools/format/format.py` |
+| `.gitattributes`    | Source of truth for all exclusions | pre-commit hooks         |
 | `ruff.toml exclude` | Must mirror Python patterns        | ruff check (lint aspect) |
 
-**Why two files?** Our `format.py` reads `.gitattributes` (via `git check-attr`), but ruff's linter only reads `ruff.toml`. For Python files, patterns must exist in both.
+**Why two files?** Pre-commit hooks check `.gitattributes` for exclusions, but ruff's linter only reads `ruff.toml`. For Python files, patterns must exist in both.
 
 To exclude a file/directory:
 
