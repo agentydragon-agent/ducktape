@@ -81,9 +81,17 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
 
-    # Ingress disabled — traffic routed via Gateway API HTTPRoute
+    # Ingress entry populates nginx server_name and INVENTREE_TRUSTED_ORIGINS
+    # in the chart templates. The Ingress resource itself is unused (no
+    # IngressClass controller) — traffic is routed via Gateway API HTTPRoute.
     ingress:
-      enabled: false
+      main:
+        enabled: true
+        hosts:
+          - host: inventree.allegedly.works
+            paths:
+              - path: /
+                pathType: Prefix
 
     service:
       type: ClusterIP

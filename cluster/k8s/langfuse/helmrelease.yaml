@@ -114,6 +114,9 @@ spec:
 
     redis:
       deploy: true
+      auth:
+        existingSecret: langfuse-redis
+        existingSecretPasswordKey: valkey-password
       # TODO(reliability): Move Redis to VPS or add Sentinel/cluster mode.
       nodeSelector:
         topology.kubernetes.io/region: proxmox
