@@ -40,6 +40,7 @@ spec:
       general_settings:
         master_key: os.environ/LITELLM_MASTER_KEY
       litellm_settings:
+        drop_params: true
         success_callback: ["langfuse"]
       environment_variables:
         LANGFUSE_HOST: "http://langfuse-web.langfuse.svc.cluster.local:3000"
