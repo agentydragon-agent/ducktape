@@ -10,3 +10,6 @@ subjects:
   - kind: ServiceAccount
     name: claude-code-web
     namespace: default
+  - kind: ServiceAccount
+    name: openclaw
+    namespace: openclaw
