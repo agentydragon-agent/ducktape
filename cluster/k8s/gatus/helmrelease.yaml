@@ -114,10 +114,8 @@ spec:
           url: http://litellm.ollama.svc.cluster.local:4000/v1/chat/completions
           method: POST
           headers:
-            - key: Content-Type
-              value: application/json
-            - key: Authorization
-              value: "Bearer ${LITELLM_API_KEY}"
+            Content-Type: application/json
+            Authorization: "Bearer ${LITELLM_API_KEY}"
           body: |
             {
               "model": "gpt-oss-20b-128k",
