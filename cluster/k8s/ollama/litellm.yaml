@@ -27,6 +27,10 @@ spec:
         name: litellm
         namespace: ollama
   values:
+    # Chart 1.81.13 defaults to image tag main-v1.81.13 which doesn't exist
+    # on ghcr.io (upstream issue BerriAI/litellm#15288). Pin to main-stable.
+    image:
+      tag: "main-stable"
     proxy_config:
       model_list:
         - model_name: gpt-oss-20b-128k
