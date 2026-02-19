@@ -11,7 +11,7 @@ spec:
           name: openclaw-ollama-api-key
           key: api-key
     - name: OLLAMA_BASE_URL
-      value: "https://ollama.allegedly.works/v1"
+      value: "http://litellm.ollama.svc.cluster.local:4000"
 
   config:
     raw:
@@ -19,6 +19,19 @@ spec:
         defaults:
           model:
             primary: "ollama/gpt-oss-20b-128k"
+      models:
+        providers:
+          ollama:
+            # LiteLLM proxies Ollama via OpenAI-compatible API (not native /api/chat).
+            baseUrl: "http://litellm.ollama.svc.cluster.local:4000"
+            api: openai-completions
+            models:
+              - id: "gpt-oss-20b-128k"
+                name: "GPT-OSS 20B 128K"
+                reasoning: true
+                input: ["text"]
+                contextWindow: 131072
+                maxTokens: 8192
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
