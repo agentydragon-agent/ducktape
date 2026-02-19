@@ -97,6 +97,9 @@ spec:
     # durability. Currently single-node on Proxmox.
     clickhouse:
       deploy: true
+      auth:
+        existingSecret: langfuse-secrets
+        existingSecretKey: clickhouse-password
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       persistence:

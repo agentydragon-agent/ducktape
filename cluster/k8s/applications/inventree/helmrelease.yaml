@@ -6,7 +6,7 @@ metadata:
   namespace: inventree
 spec:
   interval: 24h
-  url: https://inventree.github.io/inventree-helm-chart
+  url: https://inventree.github.io/helm-charts
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease

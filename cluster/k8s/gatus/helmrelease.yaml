@@ -109,6 +109,83 @@ spec:
           conditions:
             - "[STATUS] == any(200, 429)"
 
+        - name: Gitea
+          group: core
+          url: https://git.allegedly.works/api/v1/version
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"
+
+        - name: Grafana
+          group: core
+          url: https://grafana.allegedly.works/api/health
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"
+
+        - name: Element (Matrix Chat)
+          group: services
+          url: https://chat.allegedly.works
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"
+
+        - name: Nix Cache
+          group: services
+          url: https://cache.allegedly.works/nix-cache-info
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"
+
+        - name: Headscale
+          group: services
+          url: https://headscale.allegedly.works/health
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"
+
+        - name: Ollama
+          group: services
+          url: http://ollama.ollama.svc.cluster.local:11434/api/tags
+          interval: 60s
+          conditions:
+            - "[STATUS] == 200"
+
+        - name: Langfuse
+          group: services
+          url: https://langfuse.allegedly.works
+          interval: 120s
+          conditions:
+            - "[STATUS] == any(200, 302)"
+
+        - name: InventTree
+          group: services
+          url: https://inventree.allegedly.works
+          interval: 120s
+          conditions:
+            - "[STATUS] == any(200, 302)"
+
+        - name: OpenClaw
+          group: services
+          url: https://openclaw.allegedly.works
+          interval: 120s
+          conditions:
+            - "[STATUS] == any(200, 302)"
+
+        - name: Hubble
+          group: services
+          url: https://hubble.allegedly.works
+          interval: 120s
+          conditions:
+            - "[STATUS] == any(200, 302)"
+
+        - name: Atuin
+          group: services
+          url: https://atuin.allegedly.works
+          interval: 120s
+          conditions:
+            - "[STATUS] == any(200, 302)"
+
         - name: LiteLLM Inference
           group: services
           url: http://litellm.ollama.svc.cluster.local:4000/v1/chat/completions

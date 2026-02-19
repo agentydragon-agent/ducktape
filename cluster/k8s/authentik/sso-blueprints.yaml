@@ -388,7 +388,7 @@ data:
           name: loki-outpost
         attrs:
           type: proxy
-          protocol_providers:
+          providers:
             - !KeyOf loki-provider
           service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
           config:
@@ -450,7 +450,7 @@ data:
           name: hubble-outpost
         attrs:
           type: proxy
-          protocol_providers:
+          providers:
             - !KeyOf hubble-provider
           service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
           config:
@@ -511,7 +511,7 @@ data:
           name: openclaw-outpost
         attrs:
           type: proxy
-          protocol_providers:
+          providers:
             - !KeyOf openclaw-provider
           service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
           config:
@@ -572,7 +572,7 @@ data:
           name: gatus-outpost
         attrs:
           type: proxy
-          protocol_providers:
+          providers:
             - !KeyOf gatus-provider
           service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
           config:
@@ -632,7 +632,7 @@ data:
           name: kagent-outpost
         attrs:
           type: proxy
-          protocol_providers:
+          providers:
             - !KeyOf kagent-provider
           service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
           config:
@@ -688,7 +688,7 @@ data:
           name: headlamp-outpost
         attrs:
           type: proxy
-          protocol_providers:
+          providers:
             - !KeyOf headlamp-provider
           service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
           config:
@@ -746,7 +746,7 @@ data:
           name: grocy-outpost
         attrs:
           type: proxy
-          protocol_providers:
+          providers:
             - !KeyOf grocy-provider
           service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
           config:

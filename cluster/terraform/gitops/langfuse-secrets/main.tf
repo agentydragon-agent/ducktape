@@ -93,6 +93,15 @@ resource "random_password" "admin_password" {
   }
 }
 
+resource "random_password" "clickhouse_password" {
+  length  = 32
+  special = false
+
+  lifecycle {
+    ignore_changes = [length, special]
+  }
+}
+
 locals {
   project_public_key = "pk-lf-${random_password.project_public_key_raw.result}"
   project_secret_key = "sk-lf-${random_password.project_secret_key_raw.result}"
@@ -104,13 +113,14 @@ resource "vault_kv_secret_v2" "langfuse_secrets" {
   cas   = 0
 
   data_json = jsonencode({
-    nextauth_secret    = random_password.nextauth_secret.result
-    salt               = random_password.salt.result
-    encryption_key     = random_password.encryption_key.result
-    postgres_password  = random_password.postgres_password.result
-    project_public_key = local.project_public_key
-    project_secret_key = local.project_secret_key
-    admin_password     = random_password.admin_password.result
+    nextauth_secret     = random_password.nextauth_secret.result
+    salt                = random_password.salt.result
+    encryption_key      = random_password.encryption_key.result
+    postgres_password   = random_password.postgres_password.result
+    project_public_key  = local.project_public_key
+    project_secret_key  = local.project_secret_key
+    admin_password      = random_password.admin_password.result
+    clickhouse_password = random_password.clickhouse_password.result
   })
 
   lifecycle {
