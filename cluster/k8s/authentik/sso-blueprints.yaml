@@ -118,7 +118,7 @@ data:
           slug: gitea
         attrs:
           name: Gitea
-          protocol_provider: !KeyOf gitea-provider
+          provider: !KeyOf gitea-provider
           meta_description: "Gitea Git Repository Management"
           meta_publisher: "Gitea"
           meta_icon: "https://cdn.simpleicons.org/gitea"
@@ -161,7 +161,7 @@ data:
           slug: grafana
         attrs:
           name: Grafana
-          protocol_provider: !KeyOf grafana-provider
+          provider: !KeyOf grafana-provider
           meta_description: "Grafana Monitoring and Observability"
           meta_publisher: "Grafana Labs"
           meta_icon: "https://cdn.simpleicons.org/grafana"
@@ -204,7 +204,7 @@ data:
           slug: harbor
         attrs:
           name: Harbor
-          protocol_provider: !KeyOf harbor-provider
+          provider: !KeyOf harbor-provider
           meta_description: "Harbor Container Registry"
           meta_publisher: "Harbor"
           meta_icon: "https://cdn.simpleicons.org/harbor"
@@ -247,7 +247,7 @@ data:
           slug: matrix
         attrs:
           name: Element
-          protocol_provider: !KeyOf matrix-provider
+          provider: !KeyOf matrix-provider
           meta_description: "Matrix Chat (Element Web)"
           meta_launch_url: "https://chat.allegedly.works"
           meta_icon: "https://cdn.simpleicons.org/element"
@@ -292,7 +292,7 @@ data:
           slug: vault
         attrs:
           name: Vault
-          protocol_provider: !KeyOf vault-provider
+          provider: !KeyOf vault-provider
           meta_description: "HashiCorp Vault Secrets Management"
           meta_publisher: "HashiCorp"
           meta_icon: "https://cdn.simpleicons.org/vault"
@@ -335,7 +335,7 @@ data:
           slug: inventree
         attrs:
           name: InvenTree
-          protocol_provider: !KeyOf inventree-provider
+          provider: !KeyOf inventree-provider
           meta_description: "InvenTree Inventory Management"
           meta_icon: "https://cdn.simpleicons.org/inventree"
           open_in_new_tab: true
@@ -370,7 +370,7 @@ data:
           slug: loki
         attrs:
           name: Loki
-          protocol_provider: !KeyOf loki-provider
+          provider: !KeyOf loki-provider
           meta_description: "Grafana Loki Log Aggregation"
           meta_launch_url: "https://loki.allegedly.works"
           open_in_new_tab: true
@@ -431,7 +431,7 @@ data:
           slug: hubble
         attrs:
           name: Hubble UI
-          protocol_provider: !KeyOf hubble-provider
+          provider: !KeyOf hubble-provider
           meta_description: "Cilium Hubble Network Observability"
           meta_launch_url: "https://hubble.allegedly.works"
           meta_icon: "https://cdn.simpleicons.org/cilium"
@@ -493,7 +493,7 @@ data:
           slug: openclaw
         attrs:
           name: OpenClaw
-          protocol_provider: !KeyOf openclaw-provider
+          provider: !KeyOf openclaw-provider
           meta_description: "OpenClaw AI Agent"
           meta_launch_url: "https://openclaw.allegedly.works"
           open_in_new_tab: true
@@ -554,7 +554,7 @@ data:
           slug: gatus
         attrs:
           name: Gatus
-          protocol_provider: !KeyOf gatus-provider
+          provider: !KeyOf gatus-provider
           meta_description: "Gatus Health Monitoring"
           meta_launch_url: "https://status.allegedly.works"
           open_in_new_tab: true
@@ -614,7 +614,7 @@ data:
           slug: kagent
         attrs:
           name: Kagent
-          protocol_provider: !KeyOf kagent-provider
+          provider: !KeyOf kagent-provider
           meta_description: "Kubernetes Agent Platform - AI agents with K8s integration"
           meta_launch_url: "https://kagent.allegedly.works"
           open_in_new_tab: true
@@ -669,7 +669,7 @@ data:
           slug: headlamp
         attrs:
           name: Headlamp
-          protocol_provider: !KeyOf headlamp-provider
+          provider: !KeyOf headlamp-provider
           meta_description: "Kubernetes cluster UI"
           meta_launch_url: "https://headlamp.allegedly.works"
           meta_icon: "https://headlamp.dev/img/headlamp_logo.svg"
@@ -728,7 +728,7 @@ data:
           slug: grocy
         attrs:
           name: Grocy
-          protocol_provider: !KeyOf grocy-provider
+          provider: !KeyOf grocy-provider
           meta_description: "Groceries & household management"
           meta_launch_url: "https://grocy.allegedly.works"
           open_in_new_tab: true
