@@ -7,3 +7,4 @@ resources:
   - openclaw-httproute.yaml
   - gatus-httproute.yaml
   - grocy-httproute.yaml
+  - headlamp-httproute.yaml
