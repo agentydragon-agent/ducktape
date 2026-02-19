@@ -17,15 +17,15 @@ spec:
       agents:
         defaults:
           model:
-            primary: "ollama/gpt-oss-20b-128k"
+            primary: "ollama/gpt-oss:20b"
       models:
         providers:
           ollama:
             baseUrl: "http://ollama.ollama.svc.cluster.local:11434"
             api: ollama
             models:
-              - id: "gpt-oss-20b-128k"
-                name: "GPT-OSS 20B 128K"
+              - id: "gpt-oss:20b"
+                name: "GPT-OSS 20B"
                 reasoning: true
                 input: ["text"]
                 contextWindow: 131072
