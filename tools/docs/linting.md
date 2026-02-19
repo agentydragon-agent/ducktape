@@ -30,7 +30,7 @@ This document describes the linting and formatting setup across pre-commit, Baze
 | mypy       | `/mypy.ini`                     | Bazel aspects                  |
 | eslint     | `/eslint.config.js`             | Bazel aspects                  |
 | buildifier | `@buildifier_prebuilt` defaults | Pre-commit, Bazel              |
-| prettier   | `/.prettierrc.cjs`              | `//tools/format`               |
+| prettier   | `/.prettierrc.cjs`              | Pre-commit `prettier` hook     |
 
 **Do not add `[tool.ruff]` or `[tool.mypy]` to package-level `pyproject.toml` files.**
 
@@ -83,25 +83,14 @@ Aspect definitions in `tools/lint/linters.bzl`:
 
 ## Formatting
 
-Formatting is unified through `//tools/format`:
+Formatting is handled by pre-commit hooks (run automatically on `git commit`):
 
-```bash
-# Format all tracked files
-bazel run //tools/format
+- **prettier** - JS/TS, CSS, HTML, Markdown, YAML, JSON (local node hook)
+- **ruff format** - Python (`astral-sh/ruff-pre-commit`)
+- **shfmt** - Shell scripts (`scop/pre-commit-shfmt`)
+- **buildifier** - Starlark (`keith/pre-commit-buildifier`)
 
-# Format specific files
-bazel run //tools/format -- file1.py file2.js
-```
-
-Formatters included:
-
-- **prettier** - JS/TS, CSS, HTML, Markdown, YAML, JSON
-- **ruff format** - Python
-- **shfmt** - Shell scripts
-
-The formatter respects `.gitattributes` exclusions (`rules-lint-ignored=true`).
-
-Note: **buildifier** is managed separately via `keith/pre-commit-buildifier` hooks.
+All hooks respect `.gitattributes` and `.pre-commit-config.yaml` exclusions.
 
 ## Pre-commit Hooks
 
@@ -134,9 +123,7 @@ Pre-commit uses external tool versions for some hooks:
 
 Bazel uses managed versions:
 
-- ruff: `@multitool//tools/ruff` (used by `//tools/format`)
-- buildifier: `@buildifier_prebuilt//buildifier` (used by `//tools/format`, `//tools/lint`)
-- shfmt: `@aspect_rules_lint//format:shfmt` (used by `//tools/precommit`, `//tools/format`)
+- buildifier: `@buildifier_prebuilt//buildifier` (used by `//tools/lint`)
 
 The `bazel-precommit` hook uses Bazel-managed shfmt version for shell formatting.
 

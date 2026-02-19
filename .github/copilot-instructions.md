@@ -21,7 +21,6 @@ For detailed repository guidance, see: [AGENTS.md](../AGENTS.md) and [STYLE.md](
 ```bash
 bazel build //...                    # Build all (lint runs by default)
 bazel test //...                     # Run all tests
-bazel run //tools/format             # Format code
 bazel run //tools:gazelle            # Update BUILD files
 ```
 
