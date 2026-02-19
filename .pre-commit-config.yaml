@@ -153,6 +153,14 @@ repos:
         files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
         exclude: "\\.pnpm/"
 
+      # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml
+      - id: no-subdir-pyproject-toml
+        name: No sub-directory pyproject.toml files
+        entry: bash -c 'echo "Non-root pyproject.toml files are forbidden (use root pyproject.toml):" >&2; printf "  %s\n" "$@" >&2; exit 1' --
+        language: system
+        files: "pyproject\\.toml$"
+        exclude: "^pyproject\\.toml$"
+
       # Unified pre-commit: custom validations only (formatting handled by dedicated hooks)
       # Uses --script_path runner to avoid Bazel lock (allows parallel batch execution)
       # Runners stored in .git/precommit-runners/, one per pre-commit invocation
