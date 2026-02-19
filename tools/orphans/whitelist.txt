@@ -4,7 +4,6 @@
 # Build system files
 BUILD.bazel
 MODULE.bazel
-WORKSPACE.bazel
 *.bzl
 .bazelignore
 .bazelrc
@@ -12,16 +11,11 @@ WORKSPACE.bazel
 
 # Config files
 *.toml
-*.yaml
-*.yml
-*.json
 *.lock
 *.ini
-*.cfg
 .editorconfig
 .gitattributes
 .gitignore
-.pre-commit-config.yaml
 .envrc
 .dockerignore
 .npmrc
@@ -29,8 +23,14 @@ WORKSPACE.bazel
 .markdownlint*
 .puppeteerrc*
 
-# Git placeholder files
-.gitkeep
+# Root-level CI and tool config files (yaml — not blanket *.yaml)
+.pre-commit-config.yaml
+.gitlab-ci.yml
+buildbuddy.yaml
+.ansible-lint.yaml
+.yamllint.yaml
+pnpm-workspace.yaml
+pnpm-lock.yaml
 
 # Documentation
 *.md
@@ -46,19 +46,11 @@ Dockerfile
 # Python version files
 .python-version
 
-# Terraform lock files (generated, not in BUILD srcs)
-*.lock.hcl
-
 # Shell scripts (many are standalone utilities)
 *.sh
 
-# Certificates, keys, and encrypted secrets
-*.pem
-*.crt
-*.key
-*.age
-*.pub
-*.asc
+# Age-encrypted secrets (only in .claude_hooks/secrets/)
+.claude_hooks/secrets/*.age
 
 # Nginx configs
 *.conf
@@ -70,22 +62,26 @@ nix/**
 dotfiles/**
 k8s_old/**
 
+# k8s cluster manifests (declarative YAML, never Bazelized; scripts/charts/terraform are Bazelized)
+cluster/k8s/**
+cluster/terraform.tf
+cluster/scripts/get-passwords
+cluster/docs/iam-policy-route53.json
+
 # investigations/ - ad-hoc analysis, not buildable
 investigations/**
 
 # Website (Hakyll, not Bazelized)
 website/**
 
+# Home automation YAML configs (Python source is Bazelized; BUILD/gitignore/sh/md covered by type patterns)
+homeassistant/**/*.yaml
+
+# Claude workspace metadata
+.claude/**
+
 # Static assets
 *.png
-*.jpg
-*.gif
-*.mp4
-*.pdf
-*.dot
-
-# Haskell
-*.hs
 
 # GitHub workflows
 .github/**
@@ -93,15 +89,16 @@ website/**
 # Markdown posts
 *.markdown
 
-# JavaScript (various places)
-*.js
-*.ts
-*.tsx
+# JavaScript / TypeScript
+eslint.config.js
+finance/worthy/worthy/graph.js
+sysrw/js/system_rewrite_apply.js
+
+# rspcache admin UI (Vite/React frontend, not Bazelized)
+experimental/rspcache/admin_ui/**
 
 # Template files
-*.tpl
-*.j2
-*.j2.md
+sysrw/templates/report.html.j2
 
 # Text files (notes, todos, etc.)
 *.txt
@@ -114,47 +111,49 @@ website/**
 
 # Nix files
 *.nix
-flake.lock
 
 # Helm charts (files auto-discovered by helm_chart rule, but .helmignore
 # is not part of the chart content — whitelist it)
 *.helmignore
 
-# Props specimens (committed code snapshots, not buildable)
-props/specimens/**
+# npm manifests (never Bazel targets)
+**/package.json
 
-# claude_web_env (rootfs overlay and tools, not Bazelized)
-claude_web_env/**
+# JSON config/example files
+agent_cli/example.mcp.json
+claude_web_env/diff-report.json
+mcp_starter/example_config.json
+tools/multitool/lockfile.json
+
+# Props docker compose (infra config, not Bazelized)
+props/compose.yaml
+
+# claude_web_env: re/ is mostly Bazelized reverse-engineered source; one orphaned Go file
+# and go module files are orphaned (BUILD.bazel/md/toml covered by type patterns)
+claude_web_env/docs/**
+claude_web_env/re/environment_manager/6b49f1ca/src/internal/tunnel/factory.go
+claude_web_env/re/**/go.mod
+claude_web_env/re/**/go.sum
+claude_web_env/reference/**
+claude_web_env/rootfs/**
+claude_web_env/exclusions.yaml
 
 # Compressed data files
-*.gz
 *.zst
-
-# APT repository config files
-*.sources
-*.list
 
 # === Legacy/Archived Directories ===
 nonrcm_dotfiles/**
-terraform/**
 trilium/**
 
 # Local registry patches
 tools/local_registry/**
 
 # Data/archive files
-*.cereal
 *.edn
-*.info
-*.gcode
-*.example
-*.mako
-*.ambr
-*.tanapaste
+# Tana paste export reference files
+tana/export/references/**
 
 # Git hooks and server-side hooks
-hooks/pre-commit
-*/hooks/pre-commit
 **/hooks/pre-receive*
 **/hooks/pre-commit
 
@@ -167,8 +166,6 @@ ember/scripts/ember-deploy
 # TODO/notes files
 *-TODO
 **/TODO
-TODO
-**/todo-*
 **/pytest-todo
 
 # gatelet Makefile (not Python, but tracked here)
@@ -178,8 +175,6 @@ experimental/gatelet/Makefile
 *.service
 *.hcl
 **/README
-cluster/k8s/agents/devbot/docker/desktop/xstartup
-cluster/scripts/get-passwords
 experimental/make-grid-pdf
 experimental/prompt
 experimental/webcam-record
