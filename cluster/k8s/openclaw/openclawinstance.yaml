@@ -59,7 +59,38 @@ spec:
         cpu: "1000m"
         memory: "2Gi"
 
+  extraVolumes:
+    - name: kube-api-token
+      projected:
+        sources:
+          - serviceAccountToken:
+              path: token
+              expirationSeconds: 2592000 # 30 days
+          - configMap:
+              name: kube-root-ca.crt
+              items:
+                - key: ca.crt
+                  path: ca.crt
+          - downwardAPI:
+              items:
+                - path: namespace
+                  fieldRef:
+                    fieldPath: metadata.namespace
+
+  extraVolumeMounts:
+    - name: kube-api-token
+      mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+
   security:
+    rbac:
+      additionalRules:
+        - apiGroups: ["", "apps", "batch"]
+          resources: ["*"]
+          verbs: ["*"]
+        - apiGroups: ["networking.k8s.io"]
+          resources: ["*"]
+          verbs: ["*"]
     networkPolicy:
       additionalEgress:
         # Allow egress to Ollama in ollama namespace (port 11434).
