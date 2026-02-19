@@ -338,6 +338,14 @@ in
       ast-grep
       awscli2
       bazelisk
+      # bazelisk is the real binary; this wrapper makes it available as "bazel" too.
+      # IMPORTANT: This must be a real binary, not a shell alias. Shell aliases only
+      # work in interactive shells — they are invisible to subprocesses
+      # (e.g., subprocess.run(["bazel", ...]) in Python, Makefiles, pre-commit hooks).
+      # The Claude Code session hook installs a bazel wrapper shim that delegates to
+      # the real "bazel" binary on PATH; if only an alias exists, the shim cannot find
+      # it and fails with FileNotFoundError.
+      (pkgs.writeShellScriptBin "bazel" ''exec ${pkgs.bazelisk}/bin/bazelisk "$@"'')
       gnuplot
       jq
       mc
@@ -649,7 +657,6 @@ in
     ".." = "cd ..";
     suspend = "systemctl suspend";
     npm = "pnpm";
-    bazel = "bazelisk"; # Use bazelisk to auto-download correct Bazel version per .bazelversion
     npx = "echo '❌ No you idiot, use pnpm dlx' && false";
     gmrc = "glab mr create --fill --remove-source-branch --yes";
     gs = "git status --short --branch --show-stash";
