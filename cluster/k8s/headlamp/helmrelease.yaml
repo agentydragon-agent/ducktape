@@ -1,0 +1,66 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  interval: 24h
+  url: https://headlamp-k8s.github.io/headlamp/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: headlamp
+  namespace: headlamp
+spec:
+  interval: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: headlamp
+      version: "0.26.0"
+      sourceRef:
+        kind: HelmRepository
+        name: headlamp
+        namespace: headlamp
+  values:
+    replicaCount: 1
+
+    ingress:
+      enabled: false
+
+    nodeSelector:
+      topology.kubernetes.io/region: hetzner
+    tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+    # Flux plugin installed via initContainer.
+    # The initContainer copies plugin files to a shared emptyDir mounted at pluginsDir.
+    initContainers:
+      - name: headlamp-plugin-flux
+        image: ghcr.io/headlamp-k8s/headlamp-plugin-flux:latest
+        command: ["/bin/sh", "-c", "cp -r /plugins/. /headlamp/plugins/"]
+        volumeMounts:
+          - name: headlamp-plugins
+            mountPath: /headlamp/plugins
+
+    volumes:
+      - name: headlamp-plugins
+        emptyDir: {}
+
+    volumeMounts:
+      - name: headlamp-plugins
+        mountPath: /headlamp/plugins

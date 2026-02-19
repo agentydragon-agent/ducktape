@@ -75,6 +75,8 @@ resources:
   - gatus-namespace/flux-kustomization.yaml
   - gatus-secrets/flux-kustomization.yaml
   - gatus/flux-kustomization.yaml
+  - headlamp-namespace/flux-kustomization.yaml
+  - headlamp/flux-kustomization.yaml
   - ollama-namespace/flux-kustomization.yaml
   - ollama-secrets/flux-kustomization.yaml
   - ollama/flux-kustomization.yaml
