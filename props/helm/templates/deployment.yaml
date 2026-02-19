@@ -20,6 +20,10 @@ spec:
         {{- include "props.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: backend
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: props-backend
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
