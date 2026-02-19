@@ -312,6 +312,16 @@ Authentik can survive total Hetzner loss (fall back to home-only operation).
 Deploy [talos-backup](https://github.com/siderolabs/talos-backup) CronJob with age
 encryption to S3. Covers cluster state loss if 2/3 control-plane nodes fail simultaneously.
 
+### TODO: Provision InvenTree API Tokens
+
+After InvenTree is deployed and operational, provision API tokens for service integrations:
+
+- **openclaw**: Token for the openclaw operator to query/update inventory
+- **claude**: Token for Claude Code sessions to interact with InvenTree API
+
+Steps: Log in as admin → User Management → API Tokens → Create token per service account.
+Store tokens in Vault at `kv/inventree/api-tokens/{service}`.
+
 ### TODO: Deploy Velero for PVC Backup
 
 Scheduled backups of PVCs (Harbor, Gitea, Loki, Postgres). Critical application data
