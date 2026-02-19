@@ -27,6 +27,10 @@ spec:
         name: twin
         namespace: gatus
   values:
+    envFrom:
+      - secretRef:
+          name: gatus-ollama-api-key
+
     ingress:
       enabled: false
 
@@ -104,3 +108,23 @@ spec:
           interval: 60s
           conditions:
             - "[STATUS] == any(200, 429)"
+
+        - name: LiteLLM Inference
+          group: services
+          url: http://litellm.ollama.svc.cluster.local:4000/v1/chat/completions
+          method: POST
+          headers:
+            - key: Content-Type
+              value: application/json
+            - key: Authorization
+              value: "Bearer ${LITELLM_API_KEY}"
+          body: |
+            {
+              "model": "gpt-oss-20b-128k",
+              "messages": [{"role": "user", "content": "Respond with exactly the number that equals 5 times 7"}],
+              "max_tokens": 1000
+            }
+          interval: 30m
+          conditions:
+            - "[STATUS] == 200"
+            - "[BODY].choices[0].message.content == pat(*35*)"
