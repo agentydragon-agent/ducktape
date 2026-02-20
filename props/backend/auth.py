@@ -206,24 +206,30 @@ def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
         return None
 
 
-def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity:
-    """FastAPI dependency that parses Authorization header, validates credentials, and returns request identity.
+def get_credentials(request: Request) -> tuple[str, str] | None:
+    """FastAPI dependency that extracts and parses Authorization header.
+
+    Returns (username, password) tuple or None if missing/invalid.
+    Delegates to parse_credentials() and is cached per-request by FastAPI.
+    """
+    authorization = request.headers.get("authorization")
+    return parse_credentials(authorization)
+
+
+def get_request_identity(
+    request: Request, admin_db: AdminDb, credentials: Annotated[tuple[str, str] | None, Depends(get_credentials)]
+) -> RequestIdentity:
+    """FastAPI dependency that validates credentials and returns request identity.
 
     Raises HTTPException 401 for malformed or invalid credentials.
     Returns AnonymousIdentity for unauthenticated requests (downstream ACL decides access).
     For agents, looks up agent_type from database.
     FastAPI caches the result per-request.
     """
-    authorization = request.headers.get("authorization")
-
-    if not authorization:
+    if not credentials:
         return AnonymousIdentity()
 
-    parsed = parse_credentials(authorization)
-    if not parsed:
-        raise HTTPException(status_code=401, detail="Invalid authorization format")
-
-    username, password = parsed
+    username, password = credentials
     result = validate_postgres_credentials(username, password, admin_db.config)
     if not result.is_valid:
         logger.warning(f"Invalid postgres credentials for user: {username}")
@@ -282,7 +288,9 @@ def require_evaluator_or_admin_access(auth: Auth) -> RequestIdentity:
 # =============================================================================
 
 
-def get_agent_db(request: Request, admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
+def get_agent_db(
+    admin_db: AdminDb, auth: Auth, credentials: Annotated[tuple[str, str] | None, Depends(get_credentials)]
+) -> Iterator[Database]:
     """Get Database using agent credentials for RLS enforcement.
 
     For agent callers: Creates per-request Database with agent's Postgres
@@ -299,17 +307,12 @@ def get_agent_db(request: Request, admin_db: AdminDb, auth: Auth) -> Iterator[Da
         yield admin_db
         return
 
-    # Agent caller: extract credentials from request to create per-request database
+    # Agent caller: create per-request database with agent credentials
     assert isinstance(auth, AgentIdentity)
-    authorization = request.headers.get("authorization")
-    if not authorization:
+    if not credentials:
         raise HTTPException(status_code=500, detail="Agent auth missing credentials")
 
-    parsed = parse_credentials(authorization)
-    if not parsed:
-        raise HTTPException(status_code=500, detail="Agent auth missing credentials")
-
-    username, password = parsed
+    username, password = credentials
     agent_config = admin_db.config.with_user(username, password)
     agent_db = Database.per_request(agent_config)
     try:

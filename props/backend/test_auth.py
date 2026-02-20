@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import contextlib
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -19,11 +18,9 @@ from props.db.database import Database
 def test_get_agent_db_admin_returns_admin_db(exhaust_generator):
     """Admin users get the shared admin database connection."""
     admin_db = MagicMock(spec=Database)
-    request = MagicMock()
-    request.headers.get.return_value = None
     auth = AdminIdentity()
 
-    gen = get_agent_db(request=request, admin_db=admin_db, auth=auth)
+    gen = get_agent_db(admin_db=admin_db, auth=auth, credentials=None)
     db = exhaust_generator(gen)
     assert db is admin_db
 
@@ -31,10 +28,9 @@ def test_get_agent_db_admin_returns_admin_db(exhaust_generator):
 def test_get_agent_db_anonymous_raises_401():
     """Anonymous (unauthenticated) callers get 401."""
     admin_db = MagicMock(spec=Database)
-    request = MagicMock()
     auth = AnonymousIdentity()
 
-    gen = get_agent_db(request=request, admin_db=admin_db, auth=auth)
+    gen = get_agent_db(admin_db=admin_db, auth=auth, credentials=None)
     with pytest.raises(HTTPException) as exc_info:
         next(gen)
     assert exc_info.value.status_code == 401
@@ -49,14 +45,11 @@ def test_get_agent_db_agent_calls_per_request():
 
     username = f"agent_{run_id}"
     password = "agent_pass"
-    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
-    request = MagicMock()
-    request.headers.get.return_value = f"Bearer {credentials}"
     auth = AgentIdentity(agent_type="critic", agent_run_id=run_id)
 
     mock_agent_db = MagicMock(spec=Database)
     with patch.object(Database, "per_request", return_value=mock_agent_db) as mock_pr:
-        gen = get_agent_db(request=request, admin_db=admin_db, auth=auth)
+        gen = get_agent_db(admin_db=admin_db, auth=auth, credentials=(username, password))
         db = next(gen)
 
         # Verify per_request was called with agent credentials
@@ -85,14 +78,11 @@ def test_get_agent_db_agent_disposes_on_cleanup():
 
     username = f"agent_{run_id}"
     password = "agent_pass"
-    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
-    request = MagicMock()
-    request.headers.get.return_value = f"Bearer {credentials}"
     auth = AgentIdentity(agent_type="critic", agent_run_id=run_id)
 
     mock_agent_db = MagicMock(spec=Database)
     with patch.object(Database, "per_request", return_value=mock_agent_db):
-        gen = get_agent_db(request=request, admin_db=admin_db, auth=auth)
+        gen = get_agent_db(admin_db=admin_db, auth=auth, credentials=(username, password))
         next(gen)  # Get the yielded db
 
         mock_agent_db.dispose.assert_not_called()
