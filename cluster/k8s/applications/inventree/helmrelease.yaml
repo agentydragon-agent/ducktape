@@ -74,6 +74,9 @@ spec:
       INVENTREE_GLOBAL_SETTINGS: '{"LOGIN_ENABLE_SSO": true, "LOGIN_ENABLE_SSO_REG": true}'
       # Trust X-Forwarded-Proto from Gateway (TLS terminates at Envoy)
       INVENTREE_USE_X_FORWARDED_PROTO: "true"
+      # Console email backend — no SMTP server needed. Unblocks SSO user
+      # registration which requires is_email_configured()==True.
+      INVENTREE_EMAIL_BACKEND: "django.core.mail.backends.console.EmailBackend"
 
     # Pin server to Proxmox nodes (PVE)
     nodeSelector:
