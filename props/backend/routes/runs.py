@@ -21,14 +21,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 
 from props.backend.auth import (
+    AdminIdentity,
     AgentDb,
     AgentIdentity,
     RequestIdentity,
-    parse_credentials,
+    get_request_identity,
     require_admin_access,
     require_critic_run_access,
     require_evaluator_or_admin_access,
-    validate_postgres_credentials,
 )
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import get_snapshot_or_404
@@ -985,27 +985,17 @@ def _get_active_jobs() -> list[JobInfo]:
 
 
 @router.websocket("/feed")
-async def runs_feed(websocket: WebSocket) -> None:
+async def runs_feed(websocket: WebSocket, auth: Annotated[RequestIdentity, Depends(get_request_identity)]) -> None:
     """WebSocket endpoint for live runs/jobs feed.
 
     Sends initial state then streams updates when runs or jobs change.
-    Requires admin token as ?token= query parameter.
+    Requires admin credentials via Authorization header.
     """
     db: Database = websocket.app.state.admin_db
 
-    # Validate token from query parameter
-    token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=4001, reason="Missing token")
-        return
-    parsed = parse_credentials(f"Bearer {token}")
-    if not parsed:
-        await websocket.close(code=4001, reason="Invalid token")
-        return
-    username, password = parsed
-    result = validate_postgres_credentials(username, password, db.config)
-    if not result.is_valid:
-        await websocket.close(code=4001, reason="Invalid credentials")
+    # Validate admin access
+    if not isinstance(auth, AdminIdentity):
+        await websocket.close(code=4003, reason="Admin access required")
         return
 
     await websocket.accept()
