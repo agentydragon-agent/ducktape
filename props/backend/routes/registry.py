@@ -27,7 +27,6 @@ from props.backend.auth import (
     Auth,
     RequestIdentity,
     can_run_agent_type,
-    get_request_identity,
 )
 from props.backend.deps import AdminDb
 from props.core.oci_utils import is_digest
@@ -176,14 +175,13 @@ def _deny(identity: RequestIdentity, action: str) -> HTTPException:
 @router.put("/v2/{repo}/manifests/{ref}", include_in_schema=False)
 async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb, auth: Auth) -> Response:
     """Push a manifest — records agent definition on success."""
-    identity = get_request_identity(auth, admin_db)
-    if not can_run_agent_type(identity, ACL_CAN_PUSH_REGISTRY):
-        raise _deny(identity, "push to registry")
+    if not can_run_agent_type(auth, ACL_CAN_PUSH_REGISTRY):
+        raise _deny(auth, "push to registry")
 
-    if not is_digest(ref) and not can_run_agent_type(identity, ACL_CAN_PUSH_TAGS):
-        raise _deny(identity, "push by tag")
+    if not is_digest(ref) and not can_run_agent_type(auth, ACL_CAN_PUSH_TAGS):
+        raise _deny(auth, "push by tag")
 
-    agent_run_id = identity.agent_run_id if isinstance(identity, AgentIdentity) else None
+    agent_run_id = auth.agent_run_id if isinstance(auth, AgentIdentity) else None
 
     body = await request.body()
     response = await _proxy_to_upstream(request)
@@ -208,12 +206,11 @@ async def put_manifest(request: Request, repo: str, ref: str, admin_db: AdminDb,
 
 
 @router.api_route("/v2/{path:path}", methods=["GET", "HEAD", "POST", "PATCH", "PUT"], include_in_schema=False)
-async def registry_proxy(request: Request, path: str, auth: Auth, admin_db: AdminDb) -> Response:
+async def registry_proxy(request: Request, path: str, auth: Auth) -> Response:
     """Proxy OCI registry requests with method-based ACL (read for GET/HEAD, write for mutations)."""
-    identity = get_request_identity(auth, admin_db)
     if request.method in ("GET", "HEAD"):
-        if not can_run_agent_type(identity, ACL_CAN_READ_REGISTRY):
-            raise _deny(identity, "read from registry")
-    elif not can_run_agent_type(identity, ACL_CAN_PUSH_REGISTRY):
-        raise _deny(identity, "push to registry")
+        if not can_run_agent_type(auth, ACL_CAN_READ_REGISTRY):
+            raise _deny(auth, "read from registry")
+    elif not can_run_agent_type(auth, ACL_CAN_PUSH_REGISTRY):
+        raise _deny(auth, "push to registry")
     return await _proxy_to_upstream(request)

@@ -200,48 +200,18 @@ def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
         return None
 
 
-@dataclass
-class AuthContext:
-    """Authentication context resolved per-request by the get_auth_context dependency."""
-
-    is_authenticated: bool = False
-    is_admin: bool = False
-    is_evaluator: bool = False
-    username: str | None = None
-    password: str | None = None
-    agent_run_id: UUID | None = None
-
-    @classmethod
-    def anonymous(cls) -> AuthContext:
-        return cls(is_authenticated=False)
-
-    @classmethod
-    def admin(cls, username: str, password: str) -> AuthContext:
-        return cls(is_authenticated=True, is_admin=True, username=username, password=password)
-
-    @classmethod
-    def agent(cls, username: str, password: str, agent_run_id: UUID) -> AuthContext:
-        return cls(
-            is_authenticated=True, is_admin=False, username=username, password=password, agent_run_id=agent_run_id
-        )
-
-    @classmethod
-    def evaluator(cls, username: str, password: str) -> AuthContext:
-        return cls(is_authenticated=True, is_admin=False, is_evaluator=True, username=username, password=password)
-
-
-def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
-    """FastAPI dependency that parses Authorization header and validates credentials.
+def get_request_identity(request: Request, admin_db: AdminDb) -> RequestIdentity:
+    """FastAPI dependency that parses Authorization header, validates credentials, and returns request identity.
 
     Raises HTTPException 401 for malformed or invalid credentials.
-    Returns anonymous for unauthenticated requests (downstream ACL decides access).
-    FastAPI caches the result per-request, so downstream dependencies that
-    also Depends(get_auth_context) reuse the same AuthContext.
+    Returns AnonymousIdentity for unauthenticated requests (downstream ACL decides access).
+    For agents, looks up agent_type from database.
+    FastAPI caches the result per-request.
     """
     authorization = request.headers.get("authorization")
 
     if not authorization:
-        return AuthContext.anonymous()
+        return AnonymousIdentity()
 
     parsed = parse_credentials(authorization)
     if not parsed:
@@ -252,38 +222,24 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
     if not result.is_valid:
         logger.warning(f"Invalid postgres credentials for user: {username}")
         raise HTTPException(status_code=401, detail=result.error or "Invalid credentials")
-    if result.access_level == AccessLevel.AGENT:
-        assert result.agent_run_id is not None
-        return AuthContext.agent(username, password, result.agent_run_id)
-    if result.access_level == AccessLevel.EVALUATOR:
-        return AuthContext.evaluator(username, password)
-    return AuthContext.admin(username, password)
 
-
-# Type alias for auth context dependency (use in FastAPI route signatures)
-Auth = Annotated[AuthContext, Depends(get_auth_context)]
-
-
-def get_request_identity(auth: AuthContext, db: Database) -> RequestIdentity:
-    """Determine request identity from auth context. Does DB lookup for agent users."""
-    if not auth.is_authenticated:
-        return AnonymousIdentity()
-
-    if auth.is_admin:
+    if result.access_level == AccessLevel.ADMIN:
         return AdminIdentity()
 
-    if auth.is_evaluator:
+    if result.access_level == AccessLevel.EVALUATOR:
         return EvaluatorIdentity()
 
-    # For agents, look up run in database to determine type
-    if auth.agent_run_id is None:
-        raise HTTPException(status_code=500, detail="Agent auth missing run ID")
-    with db.session() as session:
-        agent_run = session.get(AgentRun, auth.agent_run_id)
+    # For agents: look up agent_type from database
+    assert result.agent_run_id is not None
+    with admin_db.session() as session:
+        agent_run = session.get(AgentRun, result.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
+        return AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=result.agent_run_id)
 
-        return AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=auth.agent_run_id)
+
+# Type alias for request identity dependency (use in FastAPI route signatures)
+Auth = Annotated[RequestIdentity, Depends(get_request_identity)]
 
 
 # =============================================================================
@@ -291,31 +247,28 @@ def get_request_identity(auth: AuthContext, db: Database) -> RequestIdentity:
 # =============================================================================
 
 
-def require_critic_run_access(auth: Auth, admin_db: AdminDb) -> RequestIdentity:
+def require_critic_run_access(auth: Auth) -> RequestIdentity:
     """FastAPI dependency requiring critic run access. Raises HTTPException 403 if not allowed."""
-    identity = get_request_identity(auth, admin_db)
-    if not can_run_agent_type(identity, ACL_CAN_RUN_CRITICS):
-        raise HTTPException(status_code=403, detail=f"{identity} not allowed to run critics")
-    return identity
+    if not can_run_agent_type(auth, ACL_CAN_RUN_CRITICS):
+        raise HTTPException(status_code=403, detail=f"{auth} not allowed to run critics")
+    return auth
 
 
-def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
+def require_admin_access(auth: Auth) -> None:
     """FastAPI dependency requiring admin access. Raises HTTPException 403 if not admin."""
-    identity, _ = get_request_identity(auth, admin_db)
-    if not isinstance(identity, AdminIdentity):
+    if not isinstance(auth, AdminIdentity):
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
-def require_evaluator_or_admin_access(auth: Auth, admin_db: AdminDb) -> RequestIdentity:
+def require_evaluator_or_admin_access(auth: Auth) -> RequestIdentity:
     """FastAPI dependency requiring evaluator or admin access.
 
     Allows both admin and evaluator identities to run validation/optimization/improvement runs.
     Raises HTTPException 403 if neither.
     """
-    identity = get_request_identity(auth, admin_db)
-    if not isinstance(identity, (AdminIdentity, EvaluatorIdentity)):
+    if not isinstance(auth, (AdminIdentity, EvaluatorIdentity)):
         raise HTTPException(status_code=403, detail="Evaluator or admin access required")
-    return identity
+    return auth
 
 
 # =============================================================================
@@ -323,7 +276,7 @@ def require_evaluator_or_admin_access(auth: Auth, admin_db: AdminDb) -> RequestI
 # =============================================================================
 
 
-def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
+def get_agent_db(request: Request, admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
     """Get Database using agent credentials for RLS enforcement.
 
     For agent callers: Creates per-request Database with agent's Postgres
@@ -333,17 +286,25 @@ def get_agent_db(admin_db: AdminDb, auth: Auth) -> Iterator[Database]:
 
     Yields the Database and disposes per-request agent connections on cleanup.
     """
-    if not auth.is_authenticated:
+    if isinstance(auth, AnonymousIdentity):
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    if auth.is_admin:
+    if isinstance(auth, AdminIdentity):
         yield admin_db
         return
 
-    if not auth.username or not auth.password:
+    # Agent caller: extract credentials from request to create per-request database
+    assert isinstance(auth, AgentIdentity)
+    authorization = request.headers.get("authorization")
+    if not authorization:
         raise HTTPException(status_code=500, detail="Agent auth missing credentials")
 
-    agent_config = admin_db.config.with_user(auth.username, auth.password)
+    parsed = parse_credentials(authorization)
+    if not parsed:
+        raise HTTPException(status_code=500, detail="Agent auth missing credentials")
+
+    username, password = parsed
+    agent_config = admin_db.config.with_user(username, password)
     agent_db = Database.per_request(agent_config)
     try:
         yield agent_db
