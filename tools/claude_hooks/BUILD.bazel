@@ -251,6 +251,13 @@ py_library(
 )
 
 py_library(
+    name = "pre_tool_use_lib",
+    srcs = ["pre_tool_use.py"],
+    imports = ["../.."],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "session_start_lib",
     srcs = ["session_start.py"],
     data = ["templates/session_context.mako"],
@@ -283,6 +290,14 @@ py_library(
 )
 
 # === Binaries ===
+
+py_binary(
+    name = "pre_tool_use",
+    imports = ["../.."],
+    main_module = "tools.claude_hooks.pre_tool_use",
+    visibility = ["//visibility:public"],
+    deps = [":pre_tool_use_lib"],
+)
 
 py_binary(
     name = "bazel_wrapper",
@@ -328,6 +343,7 @@ py_package(
         ":mkcert_setup",
         ":nix_setup",
         ":platform_utils",
+        ":pre_tool_use_lib",
         ":precommit_setup",
         ":proxy_credentials",
         ":proxy_setup",
@@ -350,9 +366,10 @@ py_package(
 py_wheel(
     name = "wheel",
     distribution = "claude_hooks",
-    # Only claude-session-start is a console script. Other commands are invoked via
-    # sys.executable -m (bazel wrapper, auth proxy) to ensure correct Python environment.
-    entry_points = {"console_scripts": ["claude-session-start = tools.claude_hooks.session_start:main"]},
+    entry_points = {"console_scripts": [
+        "claude-pre-tool-use = tools.claude_hooks.pre_tool_use:main",
+        "claude-session-start = tools.claude_hooks.session_start:main",
+    ]},
     python_requires = ">=3.13",
     requires = [
         "cryptography",
@@ -381,6 +398,18 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pytest"],
+)
+
+py_test(
+    name = "test_pre_tool_use",
+    srcs = ["test_pre_tool_use.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":pre_tool_use_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
