@@ -43,7 +43,7 @@ def upgrade() -> None:
         "false_positives",
         "false_positive_occurrences",
         "occurrence_ranges",
-        "false_positive_relevant_files",
+        "fp_occurrence_relevant_files",
         "snapshot_files",
     ]
 
