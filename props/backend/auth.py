@@ -30,7 +30,6 @@ import psycopg
 from fastapi import Depends, HTTPException, Request
 
 from props.backend.deps import AdminDb
-from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.models import AgentRun, AgentType
 
@@ -148,37 +147,6 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
         return None
 
 
-def validate_postgres_credentials(
-    username: str, password: str, db_config: DatabaseConfig
-) -> CredentialValidationResult:
-    """Validate credentials by attempting Postgres connection."""
-    # First, try to extract agent run ID from username pattern
-    agent_run_id = extract_agent_run_id_from_username(username)
-    is_evaluator = username == "evaluator"
-
-    # Validate credentials against Postgres
-    try:
-        with psycopg.connect(
-            host=db_config.host,
-            port=db_config.port,
-            dbname=db_config.database,
-            user=username,
-            password=password,
-            connect_timeout=5,
-        ):
-            pass  # Connection succeeded
-    except psycopg.OperationalError as e:
-        logger.warning(f"Postgres auth failed for user {username}: {e}")
-        return CredentialValidationResult.invalid("Invalid credentials")
-
-    # Credentials valid - determine access level
-    if agent_run_id is not None:
-        return CredentialValidationResult.agent(agent_run_id)
-    if is_evaluator:
-        return CredentialValidationResult.evaluator()
-    return CredentialValidationResult.admin()
-
-
 def parse_credentials(authorization: str | None) -> tuple[str, str] | None:
     """Parse Bearer or Basic token containing base64-encoded username:password.
 
@@ -230,24 +198,38 @@ def get_request_identity(
         return AnonymousIdentity()
 
     username, password = credentials
-    result = validate_postgres_credentials(username, password, admin_db.config)
-    if not result.is_valid:
-        logger.warning(f"Invalid postgres credentials for user: {username}")
-        raise HTTPException(status_code=401, detail=result.error or "Invalid credentials")
 
-    if result.access_level == AccessLevel.ADMIN:
-        return AdminIdentity()
+    # Extract agent run ID from username pattern and check if evaluator
+    agent_run_id = extract_agent_run_id_from_username(username)
+    is_evaluator = username == "evaluator"
 
-    if result.access_level == AccessLevel.EVALUATOR:
+    # Validate credentials against Postgres
+    try:
+        with psycopg.connect(
+            host=admin_db.config.host,
+            port=admin_db.config.port,
+            dbname=admin_db.config.database,
+            user=username,
+            password=password,
+            connect_timeout=5,
+        ):
+            pass  # Connection succeeded
+    except psycopg.OperationalError as e:
+        logger.warning(f"Postgres auth failed for user {username}: {e}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Credentials valid - determine access level
+    if agent_run_id is not None:
+        with admin_db.session() as session:
+            agent_run = session.get(AgentRun, agent_run_id)
+            if agent_run is None:
+                raise HTTPException(status_code=401, detail="Invalid agent token")
+            return AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=agent_run_id)
+
+    if is_evaluator:
         return EvaluatorIdentity()
 
-    # For agents: look up agent_type from database
-    assert result.agent_run_id is not None
-    with admin_db.session() as session:
-        agent_run = session.get(AgentRun, result.agent_run_id)
-        if agent_run is None:
-            raise HTTPException(status_code=401, detail="Invalid agent token")
-        return AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=result.agent_run_id)
+    return AdminIdentity()
 
 
 # Type alias for request identity dependency (use in FastAPI route signatures)
