@@ -31,7 +31,7 @@
 #
 # Tools where Nix takes precedence (moved to cli_nix_migrated in Ansible):
 #   - neovim (Nix: unstable version)
-#   - Node.js (Nix: nodejs_22)
+#   - Node.js (Nix: nodejs_24)
 #   - Rust (Nix: rustc/cargo packages)
 # Note for NixOS systems with enableHeavyPackages:
 # Heavy packages (gimp, krita, freecad, inkscape, etc.) should be installed
@@ -92,6 +92,7 @@ let
 in
 {
   imports = [
+
     # TODO: Re-enable google-drive-service once the git repo is accessible
     # Disabled during 25.11 migration due to 504 error from https://git.k3s.agentydragon.com/agentydragon/google-drive
     # ./packages/google-drive-service.nix
@@ -910,7 +911,7 @@ in
   };
 
   # Prompt configurations (switchable via USE_OHMYPOSH env var)
-  # TODO: oh-my-posh being tested, not working currently
+  # TODO: oh-my-posh is configured, but not enabled by default (requires USE_OHMYPOSH env var).
   xdg.configFile."oh-my-posh/config.json".source = ./ohmyposh.json;
   home.file.".p10k.zsh".source = ./p10k.zsh;
 

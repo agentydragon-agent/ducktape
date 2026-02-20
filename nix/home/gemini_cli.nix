@@ -42,6 +42,12 @@ in
     };
 
     settings = {
+      security = {
+        auth = {
+          selectedType = "oauth-personal";
+        };
+      };
+
       # Personal settings overrides
       general = {
         preferredEditor = "nvim";
