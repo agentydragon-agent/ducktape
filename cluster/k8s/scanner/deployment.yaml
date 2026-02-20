@@ -21,13 +21,15 @@ spec:
     spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
+      securityContext:
+        fsGroup: 1000
       initContainers:
         - name: init-dirs
           image: busybox:1.37
           command:
             - sh
             - -c
-            - mkdir -p /data/scans /data/.filebrowser
+            - mkdir -p /data/scans /data/.filebrowser && chown -R 1000:1000 /data/scans /data/.filebrowser
           volumeMounts:
             - name: data
               mountPath: /data
