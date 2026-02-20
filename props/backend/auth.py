@@ -76,18 +76,24 @@ RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity | EvaluatorI
 
 def can_run_agent_type(identity: RequestIdentity, allowed_types: set[AgentType]) -> bool:
     """Check if identity's agent type is in the allowed set. Admin always allowed."""
-    if isinstance(identity, AdminIdentity):
-        return True
-    return isinstance(identity, AgentIdentity) and identity.agent_type in allowed_types
+    match identity:
+        case AdminIdentity():
+            return True
+        case AgentIdentity(agent_type=agent_type):
+            return agent_type in allowed_types
+        case _:
+            return False
 
 
 def can_access_level(identity: RequestIdentity, allowed_levels: set[AccessLevel]) -> bool:
     """Check if identity has one of the allowed access levels."""
-    if isinstance(identity, AdminIdentity):
-        return AccessLevel.ADMIN in allowed_levels
-    if isinstance(identity, EvaluatorIdentity):
-        return AccessLevel.EVALUATOR in allowed_levels
-    return False
+    match identity:
+        case AdminIdentity():
+            return AccessLevel.ADMIN in allowed_levels
+        case EvaluatorIdentity():
+            return AccessLevel.EVALUATOR in allowed_levels
+        case _:
+            return False
 
 
 # ACL permission sets — agent types that can perform each operation (admin always allowed)
