@@ -108,7 +108,7 @@ data:
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
-          allowed_redirect_uris:
+          redirect_uris:
             - url: "https://git.allegedly.works/user/oauth2/authentik/callback"
               matching_mode: strict
 
@@ -151,7 +151,7 @@ data:
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
-          allowed_redirect_uris:
+          redirect_uris:
             - url: "https://grafana.allegedly.works/login/generic_oauth"
               matching_mode: strict
 
@@ -194,7 +194,7 @@ data:
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
-          allowed_redirect_uris:
+          redirect_uris:
             - url: "https://registry.allegedly.works/c/oidc/callback"
               matching_mode: strict
 
@@ -237,7 +237,7 @@ data:
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
-          allowed_redirect_uris:
+          redirect_uris:
             - url: "https://matrix.allegedly.works/_synapse/client/oidc/callback"
               matching_mode: strict
 
@@ -280,7 +280,7 @@ data:
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
-          allowed_redirect_uris:
+          redirect_uris:
             - url: "https://vault.allegedly.works/ui/vault/auth/oidc/oidc/callback"
               matching_mode: strict
             - url: "https://vault.allegedly.works/oidc/callback"
@@ -325,7 +325,7 @@ data:
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
             - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
-          allowed_redirect_uris:
+          redirect_uris:
             - url: "https://inventree.allegedly.works/accounts/authentik/login/callback/"
               matching_mode: strict
 
@@ -337,6 +337,7 @@ data:
           name: InvenTree
           provider: !KeyOf inventree-provider
           meta_description: "InvenTree Inventory Management"
+          meta_publisher: "InvenTree"
           meta_icon: "https://cdn.simpleicons.org/inventree"
           open_in_new_tab: true
 
