@@ -142,18 +142,13 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
         return None
 
 
-def is_evaluator_role(username: str) -> bool:
-    """Check if username is the evaluator role."""
-    return username == "evaluator"
-
-
 def validate_postgres_credentials(
     username: str, password: str, db_config: DatabaseConfig
 ) -> CredentialValidationResult:
     """Validate credentials by attempting Postgres connection."""
     # First, try to extract agent run ID from username pattern
     agent_run_id = extract_agent_run_id_from_username(username)
-    is_evaluator = is_evaluator_role(username)
+    is_evaluator = username == "evaluator"
 
     # Validate credentials against Postgres
     try:
