@@ -68,9 +68,24 @@ spec:
           ports:
             - containerPort: 8080
               name: http
-          args:
-            - --config
-            - /etc/filebrowser/.filebrowser.json
+          command:
+            - sh
+            - -c
+            - |
+              filebrowser config init -d /data/.filebrowser/filebrowser.db 2>/dev/null || true
+              filebrowser users update 1 --username "$FB_USERNAME" --password "$FB_PASSWORD" -d /data/.filebrowser/filebrowser.db 2>/dev/null || true
+              exec filebrowser --config /etc/filebrowser/.filebrowser.json
+          env:
+            - name: FB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: samba-credentials
+                  key: username
+            - name: FB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: samba-credentials
+                  key: password
           volumeMounts:
             - name: data
               mountPath: /data
