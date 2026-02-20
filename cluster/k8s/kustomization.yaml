@@ -67,6 +67,8 @@ resources:
   - applications/atuin/flux-kustomization.yaml
   - grocy-namespace/flux-kustomization.yaml
   - applications/grocy/flux-kustomization.yaml
+  - scanner-namespace/flux-kustomization.yaml
+  - scanner/flux-kustomization.yaml
   - applications/website/flux-kustomization.yaml
   - applications/buildbuddy-executor/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
