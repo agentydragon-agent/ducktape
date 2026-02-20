@@ -25,6 +25,7 @@ entries:
       name: Grocy
       provider: !KeyOf grocy-provider
       meta_description: "Groceries & household management"
+      meta_icon: "https://cdn.simpleicons.org/grocy"
       meta_launch_url: "https://grocy.allegedly.works"
       open_in_new_tab: true
 

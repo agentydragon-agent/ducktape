@@ -29,7 +29,7 @@ entries:
       provider: !KeyOf headlamp-provider
       meta_description: "Kubernetes cluster UI"
       meta_launch_url: "https://headlamp.allegedly.works"
-      meta_icon: "https://headlamp.dev/img/headlamp_logo.svg"
+      meta_icon: "https://headlamp.dev/img/logo.svg"
       open_in_new_tab: true
 
   - model: authentik_policies.policybinding

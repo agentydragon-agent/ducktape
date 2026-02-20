@@ -27,6 +27,7 @@ entries:
       name: Kagent
       provider: !KeyOf kagent-provider
       meta_description: "Kubernetes Agent Platform - AI agents with K8s integration"
+      meta_icon: "https://cdn.simpleicons.org/kubernetes"
       meta_launch_url: "https://kagent.allegedly.works"
       open_in_new_tab: true
 

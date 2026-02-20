@@ -28,6 +28,7 @@ entries:
       name: Gatus
       provider: !KeyOf gatus-provider
       meta_description: "Gatus Health Monitoring"
+      meta_icon: "https://cdn.simpleicons.org/statuspage"
       meta_launch_url: "https://status.allegedly.works"
       open_in_new_tab: true
 

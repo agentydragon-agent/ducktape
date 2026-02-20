@@ -28,6 +28,7 @@ entries:
       name: Loki
       provider: !KeyOf loki-provider
       meta_description: "Grafana Loki Log Aggregation"
+      meta_icon: "https://cdn.simpleicons.org/grafana"
       meta_launch_url: "https://loki.allegedly.works"
       open_in_new_tab: true
 
