@@ -171,7 +171,12 @@ repos:
         language: system
         pass_filenames: true
         # Triggers on: test files (pytest-main), cluster files (validations), terraform (centralization)
-        files: "\\.(py|tf)$|^cluster/"
+        files: |
+          (?x)^(
+            .*\\.(py|tf)$|
+            cluster/
+          )$
+        exclude: cluster/k8s/authentik/blueprints/.*
 
       # Specimens: block changes to committed snapshot code/ directories
       - id: block-specimen-code-changes
@@ -209,7 +214,12 @@ repos:
           -ignore-missing-schemas
           -skip CustomResourceDefinition,Kustomization
         files: ^cluster/k8s/.*\.(yaml|yml)$
-        exclude: ^cluster/k8s/flux-system/gotk-components\.yaml$
+        exclude: |
+          (?x)^(
+            cluster/k8s/flux-system/gotk-components\.yaml|
+            # Authentik blueprints are not K8s manifests, skip validation
+            cluster/k8s/authentik/blueprints/.*
+          )$
         types: [yaml]
 
   # ============================================================================
