@@ -73,6 +73,8 @@ spec:
       # SSO settings (env vars override DB, read-only in UI)
       INVENTREE_LOGIN_ENABLE_SSO: "true"
       INVENTREE_LOGIN_ENABLE_SSO_REG: "true"
+      # Trust X-Forwarded-Proto from Gateway (TLS terminates at Envoy)
+      INVENTREE_USE_X_FORWARDED_PROTO: "true"
 
     # Pin server to Proxmox nodes (PVE)
     nodeSelector:
