@@ -5,6 +5,6 @@ metadata:
   namespace: grocy
 data:
   # Trust X-authentik-username header from Authentik outpost proxy.
-  # PHP-FPM converts the header to HTTP_X_AUTHENTIK_USERNAME.
+  # Grocy reads this via PSR-7 getHeader(), which uses the raw HTTP header name.
   AUTH_CLASS.txt: "Grocy\\Middleware\\ReverseProxyAuthMiddleware"
-  REVERSE_PROXY_AUTH_HEADER.txt: "HTTP_X_AUTHENTIK_USERNAME"
+  REVERSE_PROXY_AUTH_HEADER.txt: "X-authentik-username"
