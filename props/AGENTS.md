@@ -6,7 +6,7 @@
 
 - **Backend API:** @backend/AGENTS.md
 - **Frontend:** @frontend/AGENTS.md
-- **Tests:** @core/testing/AGENTS.md
+- **Tests:** @testing/AGENTS.md
 
 ## Agent-Facing Documentation
 
