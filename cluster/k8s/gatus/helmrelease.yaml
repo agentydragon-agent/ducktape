@@ -160,10 +160,11 @@ spec:
 
         - name: InventTree
           group: services
-          url: https://inventree.allegedly.works
-          interval: 120s
+          url: https://inventree.allegedly.works/api/
+          interval: 60s
           conditions:
-            - "[STATUS] == any(200, 302)"
+            - "[STATUS] == 200"
+            - "[BODY].server == InvenTree"
 
         - name: OpenClaw
           group: services
