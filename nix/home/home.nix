@@ -101,6 +101,8 @@ in
     ./scripts
     ./terminals
     ./claude_code
+    ./programs/gemini-cli.nix # Our local module with policies support
+    ./gemini_cli.nix # Configuration using the local module
     ./modules/gnome-workspace-shortcuts.nix
     ./modules/flameshot-screenshots.nix
     ./modules/datetime-format.nix

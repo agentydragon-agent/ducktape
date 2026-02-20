@@ -9,44 +9,62 @@
   ...
 }:
 let
-  inspectionCommands = import ../../lib/inspection-commands.nix;
+  inspection = import ../../lib/inspection-commands.nix { inherit lib; };
 
   # NixOS requires fully-qualified paths in sudoers
   # System packages are symlinked to /run/current-system/sw/bin/
   bin = "/run/current-system/sw/bin";
 
-  # Convert command list to sudo rules
-  # For commands where any arguments are safe
-  anyArgsRules = map (cmd: {
-    command = "${bin}/${cmd}";
-    options = [ "NOPASSWD" ];
-  }) inspectionCommands.sudoAnyArgsCommands;
+  # Transform command entry → sudoers rule
+  # Input: { type = "prefix"|"exact"; cmd; args?; } OR plain string
+  # Output: { command = "/full/path/to/cmd args"; options = ["NOPASSWD"]; }
+  toSudoRule =
+    entry:
+    let
+      # Handle both structured format and plain strings (for logViewingCommands)
+      cmdStr =
+        if builtins.isString entry then
+          entry # Plain string: use as-is
+        else if entry ? args then
+          "${entry.cmd} ${entry.args}" # Structured with args
+        else
+          entry.cmd; # Structured without args
 
-  # For exact subcommands: flatten { cmd, args = [list] } into individual rules
-  # Includes logViewingCommands (same structure, separate in SSOT because Claude Code omits them)
-  # Empty string arg ("") means command with no arguments
-  exactRules = lib.flatten (
-    map (
-      entry:
-      map (arg: {
-        command = "${bin}/${entry.cmd}${if arg == "" then " \"\"" else " ${arg}"}";
-        options = [ "NOPASSWD" ];
-      }) entry.args
-    ) (inspectionCommands.sudoExactSubcommands ++ inspectionCommands.logViewingCommands)
-  );
+      # Extract base command for path resolution
+      baseCmd = lib.head (lib.splitString " " cmdStr);
+      fullCmd = "${bin}/${baseCmd}";
 
-  # For wildcard subcommands: flatten { cmd, prefixes = [list] } into rules with wildcard
-  wildcardRules = lib.flatten (
-    map (
-      entry:
-      map (prefix: {
-        command = "${bin}/${entry.cmd} ${prefix} *";
-        options = [ "NOPASSWD" ];
-      }) entry.prefixes
-    ) inspectionCommands.sudoWildcardSubcommands
-  );
+      # Get args if any (everything after first space)
+      argsList = lib.tail (lib.splitString " " cmdStr);
+      args = lib.concatStringsSep " " argsList;
 
-  allRules = anyArgsRules ++ exactRules ++ wildcardRules;
+      # Determine match type
+      isPrefix =
+        if builtins.isString entry then
+          false # Plain strings are exact match (logViewingCommands)
+        else
+          entry.type == "prefix";
+
+      # Build sudoers rule command string
+      cmdRule =
+        if isPrefix then
+          # Prefix match: allow trailing arguments
+          if args != "" then "${fullCmd} ${args} *" else "${fullCmd} *"
+        # exact
+        else
+        # Exact match: no trailing arguments
+        if args != "" then
+          "${fullCmd} ${args}"
+        else
+          "${fullCmd} \"\"";
+    in
+    {
+      command = cmdRule;
+      options = [ "NOPASSWD" ];
+    };
+
+  # Generate all sudo rules from normalized format
+  allRules = map toSudoRule inspection.exports.sudoDetailed;
 in
 {
   options.ducktape.systemInspectionSudo = {
