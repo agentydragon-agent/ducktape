@@ -18,7 +18,10 @@ from props.testing.fixtures.runs import ensure_fake_agent_definitions
 
 
 async def make_agent_credentials(db: Database, type_config: BaseModel, image_digest: str) -> AgentCredentials:
-    """Create an AgentRun record and Postgres role, returning credentials."""
+    """Create an AgentRun record and Postgres role, returning credentials.
+
+    Caller can extract agent_type from type_config directly (type_config.agent_type).
+    """
     run_id = uuid4()
     with db.session() as session:
         ensure_fake_agent_definitions(session)
