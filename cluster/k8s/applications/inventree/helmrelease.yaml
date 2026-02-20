@@ -84,9 +84,10 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
 
-    # Ingress entry populates nginx server_name and INVENTREE_TRUSTED_ORIGINS
-    # in the chart templates. The Ingress resource itself is unused (no
-    # IngressClass controller) — traffic is routed via Gateway API HTTPRoute.
+    # Ingress entry populates INVENTREE_TRUSTED_ORIGINS in chart templates.
+    # The Ingress resource itself is unused (no IngressClass controller) —
+    # traffic is routed via Gateway API HTTPRoute directly to gunicorn.
+    # The tls field makes the chart generate https:// in TRUSTED_ORIGINS.
     ingress:
       main:
         enabled: true
@@ -95,6 +96,9 @@ spec:
             paths:
               - path: /
                 pathType: Prefix
+        tls:
+          - hosts:
+              - inventree.allegedly.works
 
     service:
       type: ClusterIP
