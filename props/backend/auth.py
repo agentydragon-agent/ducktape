@@ -264,16 +264,16 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
 Auth = Annotated[AuthContext, Depends(get_auth_context)]
 
 
-def get_request_identity(auth: AuthContext, db: Database) -> tuple[RequestIdentity, UUID | None]:
+def get_request_identity(auth: AuthContext, db: Database) -> RequestIdentity:
     """Determine request identity from auth context. Does DB lookup for agent users."""
     if not auth.is_authenticated:
-        return AnonymousIdentity(), None
+        return AnonymousIdentity()
 
     if auth.is_admin:
-        return AdminIdentity(), None
+        return AdminIdentity()
 
     if auth.is_evaluator:
-        return EvaluatorIdentity(), None
+        return EvaluatorIdentity()
 
     # For agents, look up run in database to determine type
     if auth.agent_run_id is None:
@@ -283,10 +283,7 @@ def get_request_identity(auth: AuthContext, db: Database) -> tuple[RequestIdenti
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Invalid agent token")
 
-        return (
-            AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=auth.agent_run_id),
-            auth.agent_run_id,
-        )
+        return AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=auth.agent_run_id)
 
 
 # =============================================================================
@@ -294,12 +291,12 @@ def get_request_identity(auth: AuthContext, db: Database) -> tuple[RequestIdenti
 # =============================================================================
 
 
-def require_critic_run_access(auth: Auth, admin_db: AdminDb) -> tuple[RequestIdentity, UUID | None]:
+def require_critic_run_access(auth: Auth, admin_db: AdminDb) -> RequestIdentity:
     """FastAPI dependency requiring critic run access. Raises HTTPException 403 if not allowed."""
-    identity, agent_run_id = get_request_identity(auth, admin_db)
+    identity = get_request_identity(auth, admin_db)
     if not can_run_agent_type(identity, ACL_CAN_RUN_CRITICS):
         raise HTTPException(status_code=403, detail=f"{identity} not allowed to run critics")
-    return identity, agent_run_id
+    return identity
 
 
 def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
@@ -309,16 +306,16 @@ def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
-def require_evaluator_or_admin_access(auth: Auth, admin_db: AdminDb) -> tuple[RequestIdentity, UUID | None]:
+def require_evaluator_or_admin_access(auth: Auth, admin_db: AdminDb) -> RequestIdentity:
     """FastAPI dependency requiring evaluator or admin access.
 
     Allows both admin and evaluator identities to run validation/optimization/improvement runs.
     Raises HTTPException 403 if neither.
     """
-    identity, agent_run_id = get_request_identity(auth, admin_db)
+    identity = get_request_identity(auth, admin_db)
     if not isinstance(identity, (AdminIdentity, EvaluatorIdentity)):
         raise HTTPException(status_code=403, detail="Evaluator or admin access required")
-    return identity, agent_run_id
+    return identity
 
 
 # =============================================================================
