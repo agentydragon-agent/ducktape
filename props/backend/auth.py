@@ -199,10 +199,6 @@ def get_request_identity(
 
     username, password = credentials
 
-    # Extract agent run ID from username pattern and check if evaluator
-    agent_run_id = extract_agent_run_id_from_username(username)
-    is_evaluator = username == "evaluator"
-
     # Validate credentials against Postgres
     try:
         with psycopg.connect(
@@ -219,15 +215,16 @@ def get_request_identity(
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Credentials valid - determine access level
+    if username == "evaluator":
+        return EvaluatorIdentity()
+
+    agent_run_id = extract_agent_run_id_from_username(username)
     if agent_run_id is not None:
         with admin_db.session() as session:
             agent_run = session.get(AgentRun, agent_run_id)
             if agent_run is None:
                 raise HTTPException(status_code=401, detail="Invalid agent token")
             return AgentIdentity(agent_type=agent_run.type_config.agent_type, agent_run_id=agent_run_id)
-
-    if is_evaluator:
-        return EvaluatorIdentity()
 
     return AdminIdentity()
 
