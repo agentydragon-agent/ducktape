@@ -26,6 +26,7 @@ from props.backend.auth import (
     parse_credentials,
     require_admin_access,
     require_critic_run_access,
+    require_evaluator_or_admin_access,
     validate_postgres_credentials,
 )
 from props.backend.deps import AdminDb
@@ -425,7 +426,7 @@ def list_runs(
         )
 
 
-@router.post("/validation", dependencies=[Depends(require_admin_access)])
+@router.post("/validation", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_validation_runs(
     request: Request, body: ValidationRunRequest, admin_db: AdminDb
 ) -> ValidationRunResponse:
@@ -555,7 +556,7 @@ class OptimizeRunResponse(BaseModel):
     agent_run_id: UUID
 
 
-@router.post("/optimize", dependencies=[Depends(require_admin_access)])
+@router.post("/optimize", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> OptimizeRunResponse:
     """Launch a critic developer optimize agent."""
     registry = get_registry(request)
@@ -591,7 +592,7 @@ class ImproveRunResponse(BaseModel):
     n_examples_selected: int
 
 
-@router.post("/improve", dependencies=[Depends(require_admin_access)])
+@router.post("/improve", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_db: AdminDb) -> ImproveRunResponse:
     """Launch a critic developer improve agent.
 

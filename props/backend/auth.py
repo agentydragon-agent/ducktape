@@ -42,6 +42,7 @@ class AccessLevel(StrEnum):
 
     ADMIN = "admin"  # Full access (postgres user)
     AGENT = "agent"  # Agent access (agent_{uuid} pattern)
+    EVALUATOR = "evaluator"  # Evaluator access (evaluator role)
 
 
 # --- Request identity: discriminated union ---
@@ -65,7 +66,12 @@ class AgentIdentity:
     agent_run_id: UUID
 
 
-RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity
+@dataclass(frozen=True)
+class EvaluatorIdentity:
+    """Evaluator with read and run permissions."""
+
+
+RequestIdentity = AnonymousIdentity | AdminIdentity | AgentIdentity | EvaluatorIdentity
 
 
 def can_run_agent_type(identity: RequestIdentity, allowed_types: set[AgentType]) -> bool:
@@ -75,12 +81,24 @@ def can_run_agent_type(identity: RequestIdentity, allowed_types: set[AgentType])
     return isinstance(identity, AgentIdentity) and identity.agent_type in allowed_types
 
 
+def can_access_level(identity: RequestIdentity, allowed_levels: set[AccessLevel]) -> bool:
+    """Check if identity has one of the allowed access levels."""
+    if isinstance(identity, AdminIdentity):
+        return AccessLevel.ADMIN in allowed_levels
+    if isinstance(identity, EvaluatorIdentity):
+        return AccessLevel.EVALUATOR in allowed_levels
+    return False
+
+
 # ACL permission sets — agent types that can perform each operation (admin always allowed)
 _CRITIC_DEV_TYPES = {AgentType.CRITIC_DEV_OPTIMIZE, AgentType.CRITIC_DEV_IMPROVE}
 ACL_CAN_READ_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
 ACL_CAN_PUSH_REGISTRY: set[AgentType] = _CRITIC_DEV_TYPES
 ACL_CAN_PUSH_TAGS: set[AgentType] = set()  # Admin only
 ACL_CAN_RUN_CRITICS: set[AgentType] = _CRITIC_DEV_TYPES
+
+# Caller types allowed to perform each operation (evaluated with has_access_caller)
+ACL_CAN_RUN_VALIDATION_AGENTS: set[AccessLevel] = {AccessLevel.ADMIN, AccessLevel.EVALUATOR}
 
 
 @dataclass(frozen=True)
@@ -102,6 +120,10 @@ class CredentialValidationResult:
     def agent(cls, agent_run_id: UUID) -> CredentialValidationResult:
         return cls(is_valid=True, access_level=AccessLevel.AGENT, agent_run_id=agent_run_id)
 
+    @classmethod
+    def evaluator(cls) -> CredentialValidationResult:
+        return cls(is_valid=True, access_level=AccessLevel.EVALUATOR)
+
 
 def extract_agent_run_id_from_username(username: str) -> UUID | None:
     """Extract agent_run_id from username if it matches agent_{uuid} pattern.
@@ -120,12 +142,18 @@ def extract_agent_run_id_from_username(username: str) -> UUID | None:
         return None
 
 
+def is_evaluator_role(username: str) -> bool:
+    """Check if username is the evaluator role."""
+    return username == "evaluator"
+
+
 def validate_postgres_credentials(
     username: str, password: str, db_config: DatabaseConfig
 ) -> CredentialValidationResult:
     """Validate credentials by attempting Postgres connection."""
     # First, try to extract agent run ID from username pattern
     agent_run_id = extract_agent_run_id_from_username(username)
+    is_evaluator = is_evaluator_role(username)
 
     # Validate credentials against Postgres
     try:
@@ -145,6 +173,8 @@ def validate_postgres_credentials(
     # Credentials valid - determine access level
     if agent_run_id is not None:
         return CredentialValidationResult.agent(agent_run_id)
+    if is_evaluator:
+        return CredentialValidationResult.evaluator()
     return CredentialValidationResult.admin()
 
 
@@ -181,6 +211,7 @@ class AuthContext:
 
     is_authenticated: bool = False
     is_admin: bool = False
+    is_evaluator: bool = False
     username: str | None = None
     password: str | None = None
     agent_run_id: UUID | None = None
@@ -198,6 +229,10 @@ class AuthContext:
         return cls(
             is_authenticated=True, is_admin=False, username=username, password=password, agent_run_id=agent_run_id
         )
+
+    @classmethod
+    def evaluator(cls, username: str, password: str) -> AuthContext:
+        return cls(is_authenticated=True, is_admin=False, is_evaluator=True, username=username, password=password)
 
 
 def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
@@ -225,6 +260,8 @@ def get_auth_context(request: Request, admin_db: AdminDb) -> AuthContext:
     if result.access_level == AccessLevel.AGENT:
         assert result.agent_run_id is not None
         return AuthContext.agent(username, password, result.agent_run_id)
+    if result.access_level == AccessLevel.EVALUATOR:
+        return AuthContext.evaluator(username, password)
     return AuthContext.admin(username, password)
 
 
@@ -239,6 +276,9 @@ def get_request_identity(auth: AuthContext, db: Database) -> tuple[RequestIdenti
 
     if auth.is_admin:
         return AdminIdentity(), None
+
+    if auth.is_evaluator:
+        return EvaluatorIdentity(), None
 
     # For agents, look up run in database to determine type
     if auth.agent_run_id is None:
@@ -272,6 +312,18 @@ def require_admin_access(auth: Auth, admin_db: AdminDb) -> None:
     identity, _ = get_request_identity(auth, admin_db)
     if not isinstance(identity, AdminIdentity):
         raise HTTPException(status_code=403, detail="Admin access required")
+
+
+def require_evaluator_or_admin_access(auth: Auth, admin_db: AdminDb) -> tuple[RequestIdentity, UUID | None]:
+    """FastAPI dependency requiring evaluator or admin access.
+
+    Allows both admin and evaluator identities to run validation/optimization/improvement runs.
+    Raises HTTPException 403 if neither.
+    """
+    identity, agent_run_id = get_request_identity(auth, admin_db)
+    if not isinstance(identity, (AdminIdentity, EvaluatorIdentity)):
+        raise HTTPException(status_code=403, detail="Evaluator or admin access required")
+    return identity, agent_run_id
 
 
 # =============================================================================
