@@ -156,7 +156,7 @@ The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <tools/rb
 
 ### What Nix Manages
 
-- **Shell configs**: `programs.bash`, `programs.zsh`, `programs.atuin`, `programs.direnv`, `programs.zoxide`, `programs.eza`
+- **Shell configs**: `programs.{bash, zsh, atuin, direnv, zoxide, eza}`
 - **Shell init scripts**: `nix/home/shell/` (bash-init.sh, zsh-init.zsh, common-init.sh)
 - **Aliases**: `home.shellAliases`
 - **Environment variables**: `home.sessionVariables`
