@@ -12,7 +12,7 @@ entries:
       name: headlamp
     attrs:
       external_host: "https://headlamp.allegedly.works"
-      internal_host: "http://headlamp.headlamp.svc.cluster.local:4466"
+      internal_host: "http://headlamp.headlamp.svc.cluster.local:80"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
