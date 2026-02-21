@@ -14,11 +14,11 @@ This document describes the linting and formatting setup across pre-commit, Baze
 | **Starlark (buildifier)**        | `buildifier-lint` hook | -            | Pre-commit          |
 | **Starlark (buildifier format)** | `buildifier` hook      | N/A          | Pre-commit          |
 | **Rust (clippy)**                | -                      | default      | bazel-check         |
-| **Rust (rustfmt)**               | `rustfmt` hook         | default      | Both                |
-| **Shell (shfmt)**                | `bazel-precommit` hook | N/A          | Pre-commit          |
+| **Rust (rustfmt)**               | `fmt` hook             | default      | Both                |
+| **Shell (shfmt)**                | `shfmt` hook           | N/A          | Pre-commit          |
 | **Nix (nixfmt)**                 | `nixfmt` hook          | N/A          | Pre-commit          |
 | **Ansible**                      | syntax-check (fast)    | -            | ansible-lint (full) |
-| **Terraform**                    | fmt/validate/tflint    | -            | Pre-commit          |
+| **Terraform (tflint/validate)**  | `checkov_diff`/`tflint`| Bazel tests  | Both                |
 
 ## Configuration Files
 
@@ -102,7 +102,7 @@ Key hooks in `.pre-commit-config.yaml`:
 | `ruff-format`       | astral-sh/ruff-pre-commit    | Python formatting              |
 | `buildifier`        | keith/pre-commit-buildifier  | Starlark formatting            |
 | `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting               |
-| `bazel-precommit`   | local (Bazel)                | Shell formatting + validations |
+| `bazel-precommit`   | local (Bazel)                | Validations only               |
 | `prettier`          | local (node)                 | JS/TS/MD/YAML formatting       |
 | `fmt`               | doublify/pre-commit-rust     | Rust formatting                |
 | `nixfmt`            | local (static binary)        | Nix formatting                 |
@@ -111,8 +111,10 @@ Key hooks in `.pre-commit-config.yaml`:
 Cluster-specific hooks run only on `cluster/` files:
 
 - `kubeconform` - K8s manifest validation
-- `terraform_fmt`, `terraform_validate`, `terraform_tflint`
-- `checkov` - Terraform security analysis
+- `checkov_diff` - Terraform security analysis
+- `tflint` - Terraform linting
+
+Terraform validation and linting are also covered by Bazel `tf_module` test targets (`rules_tf`).
 
 ## Version Management
 
@@ -124,8 +126,6 @@ Pre-commit uses external tool versions for some hooks:
 Bazel uses managed versions:
 
 - buildifier: `@buildifier_prebuilt//buildifier` (used by `//tools/lint`)
-
-The `bazel-precommit` hook uses Bazel-managed shfmt version for shell formatting.
 
 ### Known Gaps
 
