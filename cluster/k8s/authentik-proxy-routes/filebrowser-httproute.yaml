@@ -13,7 +13,7 @@ spec:
     - name: cluster-gateway
       namespace: gateway-system
   hostnames:
-    - "files.allegedly.works"
+    - "scanbox.allegedly.works"
   rules:
     - backendRefs:
         - name: ak-outpost-scanner-filebrowser-outpost

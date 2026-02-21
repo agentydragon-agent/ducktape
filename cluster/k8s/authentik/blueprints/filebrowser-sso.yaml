@@ -11,7 +11,7 @@ entries:
     identifiers:
       name: scanner-filebrowser
     attrs:
-      external_host: "https://files.allegedly.works"
+      external_host: "https://scanbox.allegedly.works"
       internal_host: "http://scanner-filebrowser.scanner.svc.cluster.local:8080"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
@@ -29,7 +29,7 @@ entries:
       provider: !KeyOf scanner-filebrowser-provider
       meta_description: "Scanner File Browser"
       meta_icon: "https://cdn.simpleicons.org/files"
-      meta_launch_url: "https://files.allegedly.works"
+      meta_launch_url: "https://scanbox.allegedly.works"
       open_in_new_tab: true
 
   - model: authentik_policies.policybinding
