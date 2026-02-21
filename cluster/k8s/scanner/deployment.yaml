@@ -33,6 +33,17 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+        - name: configure-noauth
+          image: filebrowser/filebrowser:latest
+          command:
+            - filebrowser
+            - config
+            - set
+            - --auth.method=noauth
+            - --database=/data/.filebrowser/filebrowser.db
+          volumeMounts:
+            - name: data
+              mountPath: /data
       containers:
         - name: samba
           image: ghcr.io/servercontainers/samba:latest
