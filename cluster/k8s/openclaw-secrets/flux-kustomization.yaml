@@ -14,3 +14,4 @@ spec:
   dependsOn:
     - name: openclaw-namespace
     - name: external-secrets-config
+    - name: reflector

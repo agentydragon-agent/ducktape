@@ -1,0 +1,16 @@
+# Allow egress to Google Gemini API (generativelanguage.googleapis.com).
+# Additive with the operator's default-deny NetworkPolicy.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-gemini-egress
+  namespace: openclaw
+spec:
+  endpointSelector: {}
+  egress:
+    - toFQDNs:
+        - matchName: generativelanguage.googleapis.com
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

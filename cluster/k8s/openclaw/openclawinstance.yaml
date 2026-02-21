@@ -11,6 +11,11 @@ spec:
       value: "unused-ollama-has-no-auth"
     - name: OLLAMA_BASE_URL
       value: "http://ollama.ollama.svc.cluster.local:11434"
+    - name: GEMINI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-gemini-api-key
+          key: api-key
 
   config:
     raw:
@@ -30,6 +35,15 @@ spec:
                 input: ["text"]
                 contextWindow: 131072
                 maxTokens: 8192
+          google:
+            api: google
+            models:
+              - id: "gemini-3-pro-preview"
+                name: "Gemini 3 Pro"
+                reasoning: true
+                input: ["text"]
+                contextWindow: 1048576
+                maxTokens: 65536
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
