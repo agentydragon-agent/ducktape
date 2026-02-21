@@ -36,7 +36,8 @@ spec:
                 contextWindow: 131072
                 maxTokens: 8192
           google:
-            api: google
+            baseUrl: "https://generativelanguage.googleapis.com/v1beta"
+            api: google-generative-ai
             models:
               - id: "gemini-3-pro-preview"
                 name: "Gemini 3 Pro"
