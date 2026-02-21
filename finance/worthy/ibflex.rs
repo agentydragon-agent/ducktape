@@ -17,14 +17,32 @@ pub enum Status {
     Fail,
 }
 
+mod status_deserializer {
+    use super::Status;
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Status, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "Success" => Ok(Status::Success),
+            "Fail" => Ok(Status::Fail),
+            _ => Err(serde::de::Error::custom(format!("unknown status: {}", s))),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub struct FlexStatementResponse {
     // TODO: https://serde.rs/custom-date-format.html
     // 16 February, 2021 04:50 PM EST
     #[serde(rename = "Status")]
+    #[serde(with = "status_deserializer")]
     pub status: Status,
-    #[serde(rename = "timestamp")]
+    #[serde(rename = "@timestamp")]
     pub timestamp: String,
 
     // if status == Success:
@@ -83,31 +101,37 @@ pub enum Side {
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct OpenPosition {
-    #[serde(rename = "accountId")]
+    #[serde(rename = "@accountId")]
     pub account_id: String,
-    #[serde(rename = "acctAlias")]
+    #[serde(rename = "@acctAlias")]
     pub acct_alias: String,
-    #[serde(rename = "currency")]
+    #[serde(rename = "@currency")]
     pub currency: String,
-    #[serde(rename = "assetCategory")]
+    #[serde(rename = "@assetCategory")]
     pub asset_category: AssetCategory, /*STK*/
-    pub symbol: String,      /* TSLA*/
+    #[serde(rename = "@symbol")]
+    pub symbol: String, /* TSLA*/
+    #[serde(rename = "@description")]
     pub description: String, /* TSLA*/
+    #[serde(rename = "@multiplier")]
     pub multiplier: Decimal, /* 1*/
-    #[serde(rename = "fxRateToBase")]
+    #[serde(rename = "@fxRateToBase")]
     pub fx_rate_to_base: Decimal,
     //Conid             string `xml:"conid,attr"`
     //SecurityID        string `xml:"securityID,attr"`
     //SecurityIDType    string `xml:"securityIDType,attr"`
+    #[serde(rename = "@isin")]
     pub isin: String,
     //Cusip             string `xml:"cusip,attr"`
-    #[serde(rename = "markPrice")]
+    #[serde(rename = "@markPrice")]
     pub mark_price: Decimal,
     //ListingExchange   string `xml:"listingExchange,attr"`
+    #[serde(rename = "@position")]
     pub position: Decimal,
+    #[serde(rename = "@side")]
     pub side: Side,
     //ReportDate        string `xml:"reportDate,attr"`
-    #[serde(rename = "levelOfDetail")]
+    #[serde(rename = "@levelOfDetail")]
     pub level_of_detail: LevelOfDetail,
     //PositionValue     string `xml:"positionValue,attr"`
     //OpenPrice         string `xml:"openPrice,attr"`
@@ -115,9 +139,11 @@ pub struct OpenPosition {
     //CostBasisPrice    string `xml:"costBasisPrice,attr"`
     //CostBasisMoney    string `xml:"costBasisMoney,attr"`
     //FifoPnlUnrealized string `xml:"fifoPnlUnrealized,attr"`
+    #[serde(rename = "@issuer")]
     pub issuer: String,
+    #[serde(rename = "@expiry")]
     pub expiry: String,
-    #[serde(rename = "putCall")]
+    #[serde(rename = "@putCall")]
     pub put_call: String,
 }
 
@@ -137,20 +163,21 @@ pub enum LevelOfDetail {
 pub struct FlexStatement {
     #[serde(rename = "OpenPositions")]
     pub open_positions: OpenPositions,
-    #[serde(rename = "accountId")]
+    #[serde(rename = "@accountId")]
     pub account_id: String,
-    #[serde(rename = "fromDate")]
+    #[serde(rename = "@fromDate")]
     pub from_date: String,
-    #[serde(rename = "toDate")]
+    #[serde(rename = "@toDate")]
     pub to_date: String,
-    #[serde(rename = "period")]
+    #[serde(rename = "@period")]
     pub period: Period,
-    #[serde(rename = "whenGenerated")]
+    #[serde(rename = "@whenGenerated")]
     pub when_generated: String,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct FlexStatements {
+    #[serde(rename = "@count")]
     pub count: i32,
     #[serde(rename = "FlexStatement")]
     pub flex_statements: Vec<FlexStatement>,
@@ -158,6 +185,7 @@ pub struct FlexStatements {
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub enum Period {
+    #[serde(rename = "LastBusinessDay")]
     LastBusinessDay,
 }
 
@@ -168,7 +196,7 @@ pub struct FlexQueryResponseXml {
     pub error_code: Option<i32>,
     pub error_message: Option<String>,
 
-    #[serde(rename = "type")]
+    #[serde(rename = "@type")]
     // present on success
     pub response_type: Option<String>,
     pub flex_statements: Option<FlexStatements>,

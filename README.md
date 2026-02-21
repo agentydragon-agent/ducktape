@@ -65,7 +65,7 @@ This repository uses **Bazel** as the unified build system for all Python packag
 - `requirements_bazel.txt` - Single source of truth for Python dependencies
 - All Python packages have `BUILD.bazel` files defining targets
 - Linting via Bazel aspects (runs by default; use `--config=nolint` to skip)
-- Python 3.12+ is the target runtime version
+- Python 3.13+ is the target runtime version
 
 **Adding dependencies:**
 

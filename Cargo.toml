@@ -7,64 +7,47 @@ authors = ["Rai <agentydragon@gmail.com>"]
 edition = "2024"
 
 [dependencies]
-log = "*"
-env_logger = "*"
-rust_decimal = "*"
-tokio = { version = "*", features = ["macros", "rt-multi-thread", "net", "process", "signal", "time", "fs", "sync", "io-util", "io-std"], default-features=false}
-serde_path_to_error = "*"
+log = "^0.4.29"
+env_logger = "^0.11.8"
+rust_decimal = "^1.40.0"
+tokio = { version = "^1.49.0", features = ["macros", "rt-multi-thread", "net", "process", "signal", "time", "fs", "sync", "io-util", "io-std"], default-features=false}
 # native-tls makes trouble
-reqwest = {version="*", features=["json", "rustls-tls"], default-features=false} #, features=["json"]} # , "serde_json", "tokio-rustls"]}
-serde = {version="*", features=["derive"]}
-url = {version="*", features=["serde"]}
-
-serde_json = "*"
-toml = "*"
-
+reqwest = {version="^0.12.28", features=["json", "rustls-tls"], default-features=false}
+serde = {version="^1.0.228", features=["derive"]}
+url = {version="^2.5.8", features=["serde"]}
+serde_json = "^1.0.149"
 # worthy
-chrono = {features=["serde"], version="*"}
-petgraph = "*"
-chrono-tz = {features=["serde"], version="*"}
+chrono = {features=["serde"], version="^0.4.43"}
+chrono-tz = "^0.10.4"
+serde-xml-rs = "^0.8.2"
+petgraph = "^0.8.3"
 #tokio = { version = "*", features = ["full", "time"] }
-warp = "*"
-futures = "*"
-rand = "*"
-base64 = "*"
-openssl = "*"
-jwt = {version="*", features=["openssl"]}
-rusty-money = "0.4"
-serde_yaml = "*"
-structopt = "*"
-xdg = "*"
-alphavantage = "*"
-shellexpand = "*"
-# coinbase-rs removed - legacy API deprecated, needs rewrite for CDP API
-# coinbase-rs = {git="https://github.com/agentydragon/coinbase-rs", rev="..."}
-bigdecimal = { version = "0.4", features = ["serde"] }
-currency_layer = "0.2.0"
-serde-xml-rs = "0.6"
-async-trait = "*"
-rust_decimal_macros = "*"
-regex = "*"
-term-table = "*"
-uuid = { version="*", features=["v4"] }
-glob = "*"
-csv = "*"
-oauth2 = "*"
-biscuit = "*"
-# ftx removed - FTX exchange collapsed in 2022
-# ftx = "*"
-scraper = "*"
-
+warp = "^0.4.2"
+futures = "^0.3.31"
+rusty-money = "^0.4.2"
+serde_yaml = "^0.9.34"
+structopt = "^0.3.26"
+xdg = "^3.0.0"
+alphavantage = "^0.7.1"
+shellexpand = "^3.1.1"
+currency_layer = "^0.2.0"
+async-trait = "^0.1.89"
+rust_decimal_macros = "^1.40.0"
+term-table = "^1.4.0"
+uuid = { version="^1.19.0", features=["v4"] }
+glob = "^0.3.3"
+csv = "^1.4.0"
+scraper = "^0.25.0"
 # process_api RE dependencies
-tokio-tungstenite = "*"
-hyper = { version = "*", features = ["http1", "server"] }
-hyper-util = { version = "*", features = ["tokio"] }
-http = "*"
-http-body-util = "*"
-clap = { version = "*", features = ["derive", "env"] }
-nix = { version = "*", features = ["signal", "process", "fs"] }
-bytes = "*"
-parking_lot = "*"
+tokio-tungstenite = "^0.28.0"
+hyper = { version = "^1.8.1", features = ["http1", "server"] }
+hyper-util = { version = "^0.1.19", features = ["tokio"] }
+http = "^1.4.0"
+http-body-util = "^0.1.3"
+clap = { version = "^4.5.58", features = ["derive", "env"] }
+nix = { version = "^0.31.1", features = ["signal", "process", "fs"] }
+bytes = "^1.11.0"
+parking_lot = "^0.12.5"
 
 [[bin]]
 name = "ducktape_fake"
