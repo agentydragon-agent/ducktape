@@ -1,4 +1,9 @@
-"""Find git-tracked files that are not inputs to any Bazel target.
+"""Find orphaned files and py_library targets.
+
+Detects two kinds of orphans:
+1. Git-tracked files not in any Bazel target's srcs/data.
+2. py_library targets not transitively depended on by any entry point
+   (py_binary, py_test, oci_image, etc.).
 
 Also reports whitelist entries that are no longer needed (dead patterns),
 and for each pattern shows how many matching files are covered by Bazel.
@@ -12,11 +17,12 @@ import argparse
 import dataclasses
 import sys
 from pathlib import Path
+from textwrap import dedent
 
 import pathspec
 import pygit2
 
-from bazel_util.query import run_query
+from bazel_util.query import BazelLabel, run_query
 from bazel_util.workspace import get_build_workspace_directory
 
 
@@ -27,6 +33,29 @@ class PatternStats:
     pattern: str
     bazel_covered: int  # git files also in Bazel matched by this pattern
     orphaned: int  # git orphans (not in Bazel) matched by this pattern
+
+
+_ENTRY_POINT_KINDS = [
+    "aspect_py_binary",
+    "go_binary",
+    "js_binary",
+    "native_test",
+    "oci_image",
+    "py_binary",
+    "py_test",
+    "py_wheel",
+    "rust_binary",
+]
+
+
+def query_orphan_py_libraries(repo_root: Path, *, keep_going: bool = False) -> set[BazelLabel]:
+    """Find py_library targets not transitively depended on by any entry point."""
+    kinds = "|".join(_ENTRY_POINT_KINDS)
+    expr = dedent(f"""\
+        let entry_points = kind("{kinds}", //...)
+        in kind("py_library", //...) except deps($entry_points)
+    """)
+    return set(run_query(expr, cwd=repo_root, keep_going=keep_going))
 
 
 def query_bazel_files(repo_root: Path) -> set[Path]:
@@ -106,12 +135,16 @@ def main() -> int:
     parser.add_argument(
         "--check", action="store_true", help="Exit with code 1 if any orphans or dead whitelist entries exist"
     )
+    parser.add_argument(
+        "--keep-going", action="store_true", help="Continue past Bazel query errors (e.g. broken external deps)"
+    )
     args = parser.parse_args()
 
     repo_root = get_build_workspace_directory()
     whitelist_path = args.whitelist or repo_root / "tools/orphans/whitelist.txt"
 
     orphans, stats = run_report(repo_root, whitelist_path)
+    orphan_libs = query_orphan_py_libraries(repo_root, keep_going=args.keep_going)
 
     for orphan in orphans:
         print(orphan)
@@ -132,12 +165,19 @@ def main() -> int:
             total = s.bazel_covered + s.orphaned
             print(f"  {s.pattern}: {s.bazel_covered}/{total} in Bazel, {s.orphaned} orphaned")
 
-    if args.check and (orphans or unused):
+    if orphan_libs:
+        print(f"\nOrphaned py_library targets ({len(orphan_libs)}):")
+        for lib in sorted(orphan_libs, key=str):
+            print(f"  {lib}")
+
+    if args.check and (orphans or unused or orphan_libs):
         counts = []
         if orphans:
             counts.append(f"{len(orphans)} orphaned file(s)")
         if unused:
             counts.append(f"{len(unused)} dead whitelist entry/entries")
+        if orphan_libs:
+            counts.append(f"{len(orphan_libs)} orphaned py_library target(s)")
         print(f"\n{' and '.join(counts)} found", file=sys.stderr)
         return 1
 

@@ -118,7 +118,9 @@ class BazelLabel:
         return self.package
 
 
-def run_query(expr: str, *, cwd: Path | None = None, persist_dir: Path | None = None) -> list[BazelLabel]:
+def run_query(
+    expr: str, *, cwd: Path | None = None, persist_dir: Path | None = None, keep_going: bool = False
+) -> list[BazelLabel]:
     """Run a ``bazel query`` and return the parsed labels.
 
     ``--output=label`` ensures every output line is a parseable label.
@@ -132,26 +134,28 @@ def run_query(expr: str, *, cwd: Path | None = None, persist_dir: Path | None = 
         persist_dir: When set, save ``query``, ``stdout``, ``stderr`` and
                      ``exit_code`` files there for CI artifact capture.
                      The directory must already exist; no subdir is created.
+        keep_going:  Pass ``--keep_going`` and accept exit code 3 (partial
+                     results due to errors in transitive closure).
 
-    Raises :class:`subprocess.CalledProcessError` if the query exits non-zero,
-    with ``.stderr`` containing the captured error text.
+    Raises :class:`subprocess.CalledProcessError` if the query exits non-zero
+    (or non-3 when *keep_going*), with ``.stderr`` containing the captured
+    error text.
     """
+    cmd = ["bazel", "query", "--output=label"]
+    if keep_going:
+        cmd.append("--keep_going")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery") as query_file:
         query_file.write(expr)
         query_file.flush()
         if persist_dir is not None:
             (persist_dir / "query").write_text(expr)
-        result = subprocess.run(
-            ["bazel", "query", "--output=label", f"--query_file={query_file.name}"],
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            check=False,
-        )
+        cmd.append(f"--query_file={query_file.name}")
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, check=False)
     if persist_dir is not None:
         (persist_dir / "stdout").write_text(result.stdout)
         (persist_dir / "stderr").write_text(result.stderr)
         (persist_dir / "exit_code").write_text(str(result.returncode))
-    if result.returncode != 0:
+    ok_codes = {0, 3} if keep_going else {0}
+    if result.returncode not in ok_codes:
         raise subprocess.CalledProcessError(result.returncode, "bazel", result.stdout, result.stderr)
     return [BazelLabel.parse(line) for line in result.stdout.splitlines() if line]

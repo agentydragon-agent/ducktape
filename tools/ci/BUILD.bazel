@@ -111,6 +111,20 @@ py_library(
 # === Binaries ===
 
 py_binary(
+    name = "check_release_bin",
+    imports = ["../.."],
+    main_module = "tools.ci.check_release",
+    deps = [":check_release"],
+)
+
+py_binary(
+    name = "ci_decide_bin",
+    imports = ["../.."],
+    main_module = "tools.ci.ci_decide",
+    deps = [":ci_decide"],
+)
+
+py_binary(
     name = "generate_ci_bin",
     imports = ["../.."],
     main_module = "tools.ci.generate_ci",
