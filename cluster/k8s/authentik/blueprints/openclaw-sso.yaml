@@ -28,7 +28,7 @@ entries:
       name: OpenClaw
       provider: !KeyOf openclaw-provider
       meta_description: "OpenClaw AI Agent"
-      meta_icon: "https://cdn.simpleicons.org/anthropic"
+      meta_icon: "https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/pixel-lobster.svg"
       meta_launch_url: "https://openclaw.allegedly.works"
       open_in_new_tab: true
 

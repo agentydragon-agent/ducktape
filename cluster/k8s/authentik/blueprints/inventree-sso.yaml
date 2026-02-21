@@ -36,5 +36,5 @@ entries:
       provider: !KeyOf inventree-provider
       meta_description: "InvenTree Inventory Management"
       meta_publisher: "InvenTree"
-      meta_icon: "https://cdn.simpleicons.org/inventree"
+      meta_icon: "https://raw.githubusercontent.com/inventree/InvenTree/master/assets/images/logo/inventree.svg"
       open_in_new_tab: true
