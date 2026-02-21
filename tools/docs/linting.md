@@ -104,7 +104,7 @@ Key hooks in `.pre-commit-config.yaml`:
 | `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting               |
 | `bazel-precommit`   | local (Bazel)                | Shell formatting + validations |
 | `prettier`          | local (node)                 | JS/TS/MD/YAML formatting       |
-| `rustfmt`           | local (system)               | Rust formatting                |
+| `fmt`               | doublify/pre-commit-rust     | Rust formatting                |
 | `nixfmt`            | local (static binary)        | Nix formatting                 |
 | `markdownlint-cli2` | DavidAnson/markdownlint-cli2 | Markdown linting               |
 

@@ -93,7 +93,7 @@ repos:
         files: ^(cluster|website)/.*\.md$
 
   # NOTE: ESLint and svelte-check are handled by Bazel:
-  # - ESLint: bazel build --config=lint //...
+  # - ESLint: bazel build //... (lint aspects run by default)
   # - svelte-check: bazel test //props/frontend:svelte_check_test
   #                 bazel test //agent_server/src/agent_server/web:svelte_check_test
 
@@ -113,13 +113,10 @@ repos:
       - id: shfmt
 
   # rustfmt - Rust code formatting
-  - repo: local
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
     hooks:
-      - id: rustfmt
-        name: rustfmt
-        entry: rustfmt
-        language: system
-        files: "\\.rs$"
+      - id: fmt
 
   # ============================================================================
   # LOCAL HOOKS
