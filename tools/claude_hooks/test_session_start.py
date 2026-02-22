@@ -33,6 +33,7 @@ from tools.claude_hooks.session_start import HookInput, HookSource
 from tools.claude_hooks.testing import shell_helpers
 from tools.claude_hooks.testing.fixtures import MockEgressProxyFixture, collect_supervisor_logs
 from tools.claude_hooks.testing.mock_egress_proxy import MockEgressProxy
+from tools.claude_hooks.tmpfs_setup import unmount_tmpfs_under
 
 # Register fixtures from module (pytest-native, no direct name import needed)
 pytest_plugins = ["tools.claude_hooks.testing.fixtures"]
@@ -299,9 +300,11 @@ async def run_session_start_hook(
 
 @pytest.fixture(autouse=True)
 def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
-    """Cleanup supervisor after each test."""
+    """Cleanup supervisor and tmpfs mounts after each test."""
     yield
-    _cleanup_supervisor(isolated_dirs.env_file.parent)
+    session_dir = isolated_dirs.env_file.parent
+    unmount_tmpfs_under(session_dir)
+    _cleanup_supervisor(session_dir)
 
 
 class TestFullSessionStartHook:

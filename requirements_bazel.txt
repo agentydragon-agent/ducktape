@@ -1599,7 +1599,9 @@ google-auth-oauthlib==1.2.4 \
 googleapis-common-protos==1.72.0 \
     --hash=sha256:4299c5a82d5ae1a9702ada957347726b167f9f8d1fc352477702a1e851ff4038 \
     --hash=sha256:e55a601c1b32b52d7a3e65f43563e2aa61bcd737998ee672ac9b951cd49319f5
-    # via google-api-core
+    # via
+    #   google-api-core
+    #   opentelemetry-exporter-otlp-proto-http
 greenlet==3.3.1 \
     --hash=sha256:02925a0bfffc41e542c70aa14c7eda3593e4d7e274bfcccca1827e6c0875902e \
     --hash=sha256:04bee4775f40ecefcdaa9d115ab44736cd4b9c5fba733575bfe9379419582e13 \
@@ -3074,11 +3076,20 @@ opentelemetry-api==1.39.1 \
     --hash=sha256:fbde8c80e1b937a2c61f20347e91c0c18a1940cecf012d62e65a7caf08967c9c
     # via
     #   ducktape (pyproject.toml)
+    #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-exporter-prometheus
     #   opentelemetry-instrumentation
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   pydocket
+opentelemetry-exporter-otlp-proto-common==1.39.1 \
+    --hash=sha256:08f8a5862d64cc3435105686d0216c1365dc5701f86844a8cd56597d0c764fde \
+    --hash=sha256:763370d4737a59741c89a67b50f9e39271639ee4afc999dadfe768541c027464
+    # via opentelemetry-exporter-otlp-proto-http
+opentelemetry-exporter-otlp-proto-http==1.39.1 \
+    --hash=sha256:31bdab9745c709ce90a49a0624c2bd445d31a28ba34275951a6a362d16a0b9cb \
+    --hash=sha256:d9f5207183dd752a412c4cd564ca8875ececba13be6e9c6c370ffb752fd59985
+    # via ducktape (pyproject.toml)
 opentelemetry-exporter-prometheus==0.60b1 \
     --hash=sha256:49f59178de4f4590e3cef0b8b95cf6e071aae70e1f060566df5546fad773b8fd \
     --hash=sha256:a4011b46906323f71724649d301b4dc188aaa068852e814f4df38cc76eac616b
@@ -3087,11 +3098,18 @@ opentelemetry-instrumentation==0.60b1 \
     --hash=sha256:04480db952b48fb1ed0073f822f0ee26012b7be7c3eac1a3793122737c78632d \
     --hash=sha256:57ddc7974c6eb35865af0426d1a17132b88b2ed8586897fee187fd5b8944bd6a
     # via pydocket
+opentelemetry-proto==1.39.1 \
+    --hash=sha256:22cdc78efd3b3765d09e68bfbd010d4fc254c9818afd0b6b423387d9dee46007 \
+    --hash=sha256:6c8e05144fc0d3ed4d22c2289c6b126e03bcd0e6a7da0f16cedd2e1c2772e2c8
+    # via
+    #   opentelemetry-exporter-otlp-proto-common
+    #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-sdk==1.39.1 \
     --hash=sha256:4d5482c478513ecb0a5d938dcc61394e647066e0cc2676bee9f3af3f3f45f01c \
     --hash=sha256:cf4d4563caf7bff906c9f7967e2be22d0d6b349b908be0d90fb21c8e9c995cc6
     # via
     #   ducktape (pyproject.toml)
+    #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-exporter-prometheus
 opentelemetry-semantic-conventions==0.60b1 \
     --hash=sha256:87c228b5a0669b748c76d76df6c364c369c28f1c465e50f661e39737e84bc953 \
@@ -3625,6 +3643,7 @@ protobuf==6.33.4 \
     # via
     #   google-api-core
     #   googleapis-common-protos
+    #   opentelemetry-proto
     #   proto-plus
 psutil==7.2.1 \
     --hash=sha256:05cc68dbb8c174828624062e73078e7e35406f4ca2d0866c272c2410d8ef06d1 \
@@ -4860,6 +4879,7 @@ requests==2.32.5 \
     #   jupyter-nbmodel-client
     #   jupyter-server-client
     #   kubernetes
+    #   opentelemetry-exporter-otlp-proto-http
     #   policy-sentry
     #   pygithub
     #   pytest-base-url
@@ -5786,6 +5806,7 @@ typing-extensions==4.15.0 \
     #   mypy
     #   openai
     #   opentelemetry-api
+    #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   pint
