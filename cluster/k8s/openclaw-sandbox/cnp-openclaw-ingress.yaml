@@ -1,0 +1,19 @@
+# Allow the OpenClaw gateway (in openclaw namespace) to reach the DinD node-runner
+# Docker API on port 2375. All other ingress to node-runner pods is denied by default.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-openclaw-to-node-runner
+  namespace: openclaw-sandbox
+spec:
+  endpointSelector:
+    matchLabels:
+      app: node-runner
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openclaw
+      toPorts:
+        - ports:
+            - port: "2375"
+              protocol: TCP

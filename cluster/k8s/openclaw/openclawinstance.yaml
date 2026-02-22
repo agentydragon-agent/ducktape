@@ -16,6 +16,11 @@ spec:
         secretKeyRef:
           name: openclaw-gemini-api-key
           key: api-key
+    # Route Docker CLI commands to the DinD node-runner in openclaw-sandbox.
+    # The node-runner exposes the Docker API over plain TCP (TLS disabled; traffic
+    # is cluster-internal and Cilium CNP restricts callers to this namespace).
+    - name: DOCKER_HOST
+      value: "tcp://node-runner.openclaw-sandbox.svc.cluster.local:2375"
 
   config:
     raw:
@@ -23,7 +28,39 @@ spec:
         defaults:
           model:
             primary: "ollama/gpt-oss:20b"
+            fallbacks:
+              - "google/gemini-2.5-flash"
+              - "google/gemini-3-pro-preview"
+          sandbox:
+            # Run all agent sessions inside the DinD node-runner in openclaw-sandbox.
+            # Docker commands go to DOCKER_HOST (node-runner.openclaw-sandbox.svc.cluster.local:2375).
+            mode: "all"
+            scope: "agent"
+            workspaceAccess: "rw"
+            docker:
+              image: "ubuntu:24.04"
+              readOnlyRoot: false
+              capDrop: ["ALL"]
+              network: "none"
+          # Explicit catalog → becomes the model allowlist shown in the UI.
+          models:
+            "ollama/gpt-oss:20b":
+              alias: "GPT-OSS 20B (Local)"
+            "google/gemini-2.5-pro":
+              alias: "Gemini 2.5 Pro"
+            "google/gemini-2.5-flash":
+              alias: "Gemini 2.5 Flash"
+            "google/gemini-2.5-flash-lite":
+              alias: "Gemini 2.5 Flash Lite"
+            "google/gemini-3-flash-preview":
+              alias: "Gemini 3 Flash"
+            "google/gemini-3-pro-preview":
+              alias: "Gemini 3 Pro"
+            "google/gemini-3.1-pro-preview":
+              alias: "Gemini 3.1 Pro"
       models:
+        # Merge with built-in pi-ai catalog to preserve other built-in providers.
+        mode: "merge"
         providers:
           ollama:
             baseUrl: "http://ollama.ollama.svc.cluster.local:11434"
@@ -39,12 +76,61 @@ spec:
             baseUrl: "https://generativelanguage.googleapis.com/v1beta"
             api: google-generative-ai
             models:
+              - id: "gemini-2.5-pro"
+                name: "Gemini 2.5 Pro"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
+              - id: "gemini-2.5-flash"
+                name: "Gemini 2.5 Flash"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
+              - id: "gemini-2.5-flash-lite"
+                name: "Gemini 2.5 Flash Lite"
+                reasoning: false
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 32768
+              - id: "gemini-3-flash-preview"
+                name: "Gemini 3 Flash"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
               - id: "gemini-3-pro-preview"
                 name: "Gemini 3 Pro"
                 reasoning: true
-                input: ["text"]
+                input: ["text", "image"]
                 contextWindow: 1048576
                 maxTokens: 65536
+              - id: "gemini-3.1-pro-preview"
+                name: "Gemini 3.1 Pro"
+                reasoning: true
+                input: ["text", "image"]
+                contextWindow: 1048576
+                maxTokens: 65536
+      plugins:
+        allow:
+          - "diagnostics-otel"
+        entries:
+          diagnostics-otel:
+            enabled: true
+      diagnostics:
+        enabled: true
+        otel:
+          enabled: true
+          # Grafana Alloy OTLP/HTTP receiver (see cluster/k8s/alloy/).
+          endpoint: "http://alloy.monitoring.svc.cluster.local:4318"
+          protocol: "http/protobuf"
+          serviceName: "openclaw-gateway"
+          traces: true
+          metrics: true
+          logs: true
+          sampleRate: 0.2
+          flushIntervalMs: 60000
       gateway:
         trustedProxies:
           - "10.244.0.0/16"
@@ -107,6 +193,22 @@ spec:
                   kubernetes.io/metadata.name: ollama
           ports:
             - port: 11434
+              protocol: TCP
+        # Allow egress to Grafana Alloy OTLP/HTTP in monitoring namespace (port 4318).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: monitoring
+          ports:
+            - port: 4318
+              protocol: TCP
+        # Allow egress to the DinD node-runner in openclaw-sandbox (Docker API, port 2375).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: openclaw-sandbox
+          ports:
+            - port: 2375
               protocol: TCP
         # TODO: Add egress rules for InvenTree and Grocy when deployed.
 
