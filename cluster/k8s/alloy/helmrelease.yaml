@@ -1,0 +1,47 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: alloy
+  namespace: monitoring
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: alloy
+      version: "1.x"
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+        namespace: flux-system
+      interval: 12h
+  values:
+    alloy:
+      configMap:
+        # Config lives in config.alloy; generated into alloy-config ConfigMap by kustomization.yaml.
+        name: alloy-config
+        key: config.alloy
+        create: false
+
+    # Expose OTLP HTTP port so OpenClaw can reach it.
+    service:
+      extraPorts:
+        - name: otlp-http
+          port: 4318
+          targetPort: 4318
+          protocol: TCP
+
+    controller:
+      type: deployment
+      replicas: 1
+      extraContainerPorts:
+        - name: otlp-http
+          containerPort: 4318
+          protocol: TCP
+
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi

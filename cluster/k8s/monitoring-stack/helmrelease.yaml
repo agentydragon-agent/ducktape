@@ -134,7 +134,7 @@ spec:
         - grafana-clock-panel
 
       # Datasources - use default Prometheus datasource from chart
-      # Add Loki datasource for log aggregation
+      # Add Loki datasource for log aggregation, Tempo for tracing
       additionalDataSources:
         - name: Loki
           type: loki
@@ -142,6 +142,21 @@ spec:
           url: http://loki-stack.loki.svc.cluster.local:3100
           jsonData:
             maxLines: 1000
+          isDefault: false
+          editable: true
+        - name: Tempo
+          type: tempo
+          access: proxy
+          url: http://tempo.monitoring.svc.cluster.local:3100
+          jsonData:
+            httpMethod: GET
+            # Link traces to Loki logs by trace/span ID.
+            tracesToLogsV2:
+              datasourceUid: loki
+              spanStartTimeShift: "-1h"
+              spanEndTimeShift: "1h"
+              filterByTraceID: true
+              filterBySpanID: false
           isDefault: false
           editable: true
 
@@ -181,6 +196,9 @@ spec:
         enabled: false # Can enable later with authentication
 
       prometheusSpec:
+        # Accept OTLP metric pushes from Grafana Alloy (see cluster/k8s/alloy/).
+        enableRemoteWriteReceiver: true
+
         # Retention settings
         retention: 7d
         retentionSize: "15GB"
