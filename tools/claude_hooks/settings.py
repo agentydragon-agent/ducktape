@@ -87,6 +87,12 @@ class HookSettings(BaseSettings):
     # Secrets
     secrets_age_key: str | None = Field(default=None, description="Age private key for decrypting secrets")
 
+    # OpenTelemetry
+    otel_endpoint: str | None = Field(
+        default=None, description="Full OTLP/HTTP traces endpoint URL (e.g. https://host/v1/traces)"
+    )
+    otel_auth_token: str | None = Field(default=None, description="Bearer token for the OTLP endpoint")
+
     # Test configuration
     use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
 

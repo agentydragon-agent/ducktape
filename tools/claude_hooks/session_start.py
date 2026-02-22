@@ -36,6 +36,7 @@ from tools.claude_hooks import (
     kubeconfig_setup,
     mkcert_setup,
     nix_setup,
+    otel,
     precommit_setup,
     proxy_setup,
     secrets_setup,
@@ -730,6 +731,7 @@ async def async_main() -> None:
 
     env_file_path = env_utils.get_required_env_path("CLAUDE_ENV_FILE")
     settings = HookSettings(session_dir=env_file_path.parent)
+    otel.init(settings)
 
     if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
         await run_web_mode(hook_input, settings, env_file_path)

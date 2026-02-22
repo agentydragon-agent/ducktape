@@ -71,6 +71,19 @@ py_library(
 )
 
 py_library(
+    name = "otel",
+    srcs = ["otel.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_exporter_otlp_proto_http",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
     name = "proxy_credentials",
     srcs = ["proxy_credentials.py"],
     imports = ["../.."],
@@ -273,6 +286,7 @@ py_library(
         ":kubeconfig_setup",
         ":mkcert_setup",
         ":nix_setup",
+        ":otel",
         ":precommit_setup",
         ":proxy_credentials",
         ":proxy_setup",
