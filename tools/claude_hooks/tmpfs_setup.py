@@ -1,13 +1,8 @@
-"""Set up tmpfs-backed directories for better performance.
+"""Mount tmpfs volumes for fast I/O inside gVisor sessions.
 
-gVisor's 9p root filesystem is slow.  This module mounts dedicated tmpfs
-volumes for components that need fast I/O (Bazel cache, Docker storage,
-Podman overlay).  Each component gets its own tmpfs mount under the session
-directory.
-
-We do NOT use /dev/shm because gVisor mounts it ``noexec``, which prevents
-Bazel's embedded JDK and external toolchain binaries from executing.  Instead
-we ``mount -t tmpfs`` our own volumes (inherit no ``noexec`` restriction).
+gVisor's 9p root filesystem is slow, so each component that needs fast I/O
+(Bazel cache, Docker/Podman storage) gets its own tmpfs mount.  We avoid
+`/dev/shm` because gVisor mounts it `noexec`, which breaks Bazel's JDK.
 """
 
 from __future__ import annotations
