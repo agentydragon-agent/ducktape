@@ -17,6 +17,8 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+import psutil
+
 logger = logging.getLogger(__name__)
 
 TMPFS_SIZE = "300G"
@@ -32,12 +34,7 @@ class TmpfsSetup:
 def is_tmpfs_mounted(path: Path) -> bool:
     """Return True if ``path`` is a tmpfs mount point."""
     path_str = str(path)
-    with Path("/proc/mounts").open() as f:
-        for line in f:
-            parts = line.split()
-            if len(parts) >= 3 and parts[1] == path_str and parts[2] == "tmpfs":
-                return True
-    return False
+    return any(p.mountpoint == path_str and p.fstype == "tmpfs" for p in psutil.disk_partitions(all=True))
 
 
 def ensure_tmpfs_mounted(path: Path) -> None:
@@ -64,12 +61,11 @@ def unmount_tmpfs_under(root: Path) -> None:
     Bazel server daemon) still holds the directory open.
     """
     root_str = str(root)
-    with Path("/proc/mounts").open() as f:
-        mounted = [
-            line.split()[1]
-            for line in f
-            if len(line.split()) >= 3 and line.split()[1].startswith(root_str) and line.split()[2] == "tmpfs"
-        ]
+    mounted = [
+        p.mountpoint
+        for p in psutil.disk_partitions(all=True)
+        if p.mountpoint.startswith(root_str) and p.fstype == "tmpfs"
+    ]
     for mount_point in mounted:
         result = subprocess.run(["umount", "-l", mount_point], check=False, capture_output=True)
         if result.returncode == 0:

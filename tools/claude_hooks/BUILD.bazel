@@ -183,6 +183,7 @@ py_library(
     srcs = ["tmpfs_setup.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
+    deps = ["@pypi//psutil"],
 )
 
 py_library(
@@ -392,6 +393,7 @@ py_wheel(
         "opentelemetry-api",
         "opentelemetry-sdk",
         "platformdirs",
+        "psutil",
         "pydantic",
         "pydantic-settings",
         "pyjwt",
