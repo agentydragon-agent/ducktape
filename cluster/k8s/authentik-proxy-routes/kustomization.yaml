@@ -8,5 +8,4 @@ resources:
   - alloy-otlp-httproute.yaml
   - gatus-httproute.yaml
   - grocy-httproute.yaml
-  - headlamp-httproute.yaml
   - filebrowser-httproute.yaml

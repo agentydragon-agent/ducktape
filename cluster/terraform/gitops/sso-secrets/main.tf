@@ -97,6 +97,16 @@ resource "random_password" "headscale_client_secret" {
   }
 }
 
+resource "random_password" "headlamp_client_secret" {
+  length  = 32
+  special = false
+  keepers = { rotation_version = var.rotation_version }
+
+  lifecycle {
+    ignore_changes = [length, special]
+  }
+}
+
 # --- Vault Storage: Basic Credentials ---
 
 resource "vault_kv_secret_v2" "gitea_oidc" {
@@ -166,6 +176,16 @@ resource "vault_kv_secret_v2" "headscale_oidc" {
   data_json = jsonencode({
     client_id     = "headscale"
     client_secret = random_password.headscale_client_secret.result
+  })
+}
+
+resource "vault_kv_secret_v2" "headlamp_oidc" {
+  mount = "kv"
+  name  = "sso/headlamp"
+
+  data_json = jsonencode({
+    client_id     = "headlamp"
+    client_secret = random_password.headlamp_client_secret.result
   })
 }
 

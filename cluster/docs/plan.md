@@ -116,12 +116,13 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       and enter it once in the UI settings. Investigate options: operator exposing token
       in bootstrap config, gateway-side token injection into served HTML, or upstream
       PR to accept `"trusted-proxy"` in `sharedAuthOk` (message-handler.ts:385-387).
-- [ ] **Headlamp: per-user OIDC auth** — Currently uses a shared `cluster-admin` ServiceAccount
-      (`inCluster: true`). Switch to OIDC so Kubernetes API calls are made under the
-      authenticated user's identity with per-user RBAC: 1. Configure k3s `--oidc-issuer-url` (Authentik OIDC endpoint) and `--oidc-client-id` 2. Update Headlamp HelmRelease to use OIDC flow (pointing at Authentik) 3. Create `ClusterRoleBinding`s mapping Authentik groups → Kubernetes roles
-      (e.g. `authentik Admins` → `cluster-admin`)
-      Benefit: audit logs show real usernames; compromised Authentik session can't
-      exceed RBAC permissions; no single shared all-powerful SA token.
+- [x] **Headlamp: native OIDC auth** — Switched from Authentik proxy outpost to
+      Headlamp's built-in OIDC. Users authenticate via Authentik; K8s API calls still
+      use shared `cluster-admin` ServiceAccount (`inCluster: true`).
+- [ ] **Headlamp: per-user K8s RBAC** — Currently all authenticated users share
+      `cluster-admin` via the ServiceAccount. For per-user RBAC: configure Talos API
+      server `--oidc-issuer-url` to trust Authentik, create `ClusterRoleBinding`s
+      mapping Authentik groups to K8s roles (e.g. `authentik Admins` → `cluster-admin`).
 - [ ] **Ollama: per-user auth** — OpenClaw currently talks directly to Ollama (no auth,
       dummy `OLLAMA_API_KEY` env var). Wire up proper auth: either re-introduce LiteLLM
       proxy with API key (once OpenClaw's OpenAI streaming handler supports
