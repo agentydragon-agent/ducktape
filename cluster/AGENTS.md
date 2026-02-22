@@ -33,6 +33,14 @@ After an Authentik DB wipe, these may need state cleanup:
 
 See <docs/lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> for history.
 
+## ⚠️ CRITICAL: VPS-ONLY RESILIENCE
+
+**DNS and website MUST work/recover with VPS only (without Proxmox).** These services must
+NOT depend on `proxmox-csi-retain` storage or Proxmox-pinned nodes. When adding or modifying
+critical-path services (DNS, ingress, website, SSO), verify they use `hcloud-volumes` or
+`local-path` storage and can schedule on VPS nodes. See <docs/plan.md> "VPS-Only Resilience
+Invariants" for the full list and compliance tracking.
+
 ## PRIMARY DIRECTIVE: DECLARATIVE TURNKEY BOOTSTRAP
 
 **Goal**: Committed repo state where `bazel run //cluster:bootstrap` → everything works.

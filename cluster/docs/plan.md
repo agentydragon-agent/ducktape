@@ -83,6 +83,12 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 - [x] **Fix `dns-records` terraform** — Added `allow_overwrite` for glue records,
       `import` block for domain registration, `lifecycle { ignore_changes }` for
       non-nameserver attributes. IAM policy minimized to 4 actions. Applied successfully.
+- [ ] **PowerDNS MariaDB: migrate to `hcloud-volumes`** — MariaDB currently uses
+      `proxmox-csi-retain`, making DNS dependent on Proxmox. Change `storageClass` in
+      `k8s/powerdns/helmrelease.yaml` from `proxmox-csi-retain` to `hcloud-volumes`.
+      Requires PVC migration (backup MariaDB data, delete old PVC, let new PVC provision
+      on Hetzner, restore data) or a fresh bootstrap cycle. Also add `nodeSelector` or
+      affinity to pin MariaDB to VPS nodes. Violates VPS-only resilience invariant.
 - [ ] **Grocy: provision API token for agent access** — after first login, create an API key
       in the Grocy UI (user menu → Manage API keys), store it at `kv/grocy/api-key` in Vault,
       then wire via ExternalSecret into OpenClaw (`GROCY_API_KEY`) and/or expose for Claude.
@@ -240,6 +246,45 @@ to the VPS IP. Managed in `ansible/atlas.yaml` (atlas-specific, not in the role)
 **When VPS changes**: Must re-run ansible on all tailscale clients to update the IP.
 Eventually `agentydragon.com` will have multiple IPs (cluster VPS nodes) — the hosts
 entry will need to list all of them or use a single stable entry point.
+
+---
+
+## 🛡️ VPS-Only Resilience Invariants
+
+**Rule**: The following services MUST work/recover with VPS nodes only (Proxmox completely
+down). They must NOT depend on `proxmox-csi-retain` storage or Proxmox-pinned workloads.
+
+| Service   | Requirement                      | Status | Storage              | Notes                                           |
+| --------- | -------------------------------- | ------ | -------------------- | ----------------------------------------------- |
+| DNS       | Must resolve `*.allegedly.works` | ❌     | `proxmox-csi-retain` | **ACTION**: migrate MariaDB to `hcloud-volumes` |
+| Website   | Must serve `allegedly.works`     | ✅     | None (stateless)     | No Proxmox dependencies                         |
+| Ingress   | Must terminate HTTPS on VPS      | ✅     | None (hostNetwork)   | Cilium Gateway on VPS nodes                     |
+| Authentik | Must authenticate users          | ✅     | `hcloud-volumes`     | All components pinned to VPS                    |
+| Vault     | Must serve secrets               | ✅     | `local-path`         | Raft storage, schedulable on VPS                |
+
+### Compliance Checklist
+
+When adding or modifying critical-path services, verify:
+
+1. **No `proxmox-csi-retain`** PVCs in the service's dependency chain
+2. **No `topology.kubernetes.io/region: proxmox`** nodeSelector/affinity
+3. Service can schedule on VPS nodes (no Proxmox-only resource requirements like GPU)
+4. All upstream dependencies (databases, secret stores) also pass checks 1-3
+
+### Proxmox-Dependent Services (Acceptable)
+
+These services tolerate Proxmox downtime by design:
+
+| Service    | Storage              | Impact when Proxmox down           |
+| ---------- | -------------------- | ---------------------------------- |
+| Harbor     | `proxmox-csi-retain` | Container registry unavailable     |
+| Gitea      | `proxmox-csi-retain` | Git hosting unavailable            |
+| Loki       | `proxmox-csi-retain` | Log ingestion stops, no log search |
+| Nix cache  | `proxmox-csi-retain` | Binary cache unavailable           |
+| Grafana    | `proxmox-csi-retain` | Dashboards unavailable             |
+| BuildBuddy | Proxmox nodes        | Remote execution unavailable       |
+| Ollama     | GPU worker           | LLM inference unavailable          |
+| InvenTree  | `proxmox-csi-retain` | Inventory unavailable              |
 
 ---
 
@@ -408,7 +453,8 @@ Not needed while Cilium mutual auth + Gateway API cover the use cases.
 
 Replace single-instance MariaDB (PowerDNS) with 3-node Galera cluster (VPS-0, VPS-1, Proxmox)
 on `local-path` storage. 2/3 quorum survives single node failure. Could also serve as shared
-PostgreSQL for multiple services.
+PostgreSQL for multiple services. Note: even without Galera, the immediate fix is migrating
+MariaDB from `proxmox-csi-retain` to `hcloud-volumes` (VPS-only resilience invariant).
 
 ## 📋 Future Services (Lower Priority)
 
@@ -495,7 +541,8 @@ for network stack diagrams and diagnostic checklist.
 ### DNS Architecture
 
 PowerDNS runs in-cluster on VPS nodes with `hostNetwork: true` (no AXFR, single source of
-truth). Future: MariaDB Galera (3-node) for DB redundancy. ExternalDNS + powerdns-operator
+truth). MariaDB backend must use `hcloud-volumes` storage (VPS-only resilience invariant).
+Future: MariaDB Galera (3-node) for DB redundancy. ExternalDNS + powerdns-operator
 for declarative zone/record management.
 
 ### Storage Strategy: Consolidated VPS, Liberal Home
@@ -514,10 +561,10 @@ for declarative zone/record management.
 - Media services (Jellyfin, \*arr stack)
 - Nix cache (100GB+)
 
-| Location | Services                                       | Rationale                            |
-| -------- | ---------------------------------------------- | ------------------------------------ |
-| VPS      | Vault, Authentik, Gateway, DNS, cert-manager   | Always-on, critical path             |
-| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, can tolerate downtime |
+| Location | Services                                             | Rationale                            |
+| -------- | ---------------------------------------------------- | ------------------------------------ |
+| VPS      | Vault, Authentik, Gateway, DNS (+ MariaDB), cert-mgr | Always-on, critical path (invariant) |
+| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache       | Storage-heavy, can tolerate downtime |
 
 #### Shared PostgreSQL Option
 

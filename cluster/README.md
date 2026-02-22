@@ -51,21 +51,33 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 
 ## Storage
 
-| Provisioner          | Location | Default | Notes                                         |
-| -------------------- | -------- | ------- | --------------------------------------------- |
-| `proxmox-csi-retain` | Proxmox  | Yes     | Storage-heavy: Harbor, Gitea, Loki, Nix       |
-| `hcloud-volumes`     | Hetzner  | No      | Always-on critical-path: Authentik PostgreSQL |
-| `local-path`         | Any node | No      | Simple: Vault Raft, Headscale                 |
+| Provisioner          | Location | Default | Notes                                          |
+| -------------------- | -------- | ------- | ---------------------------------------------- |
+| `proxmox-csi-retain` | Proxmox  | Yes     | Storage-heavy: Harbor, Gitea, Loki, Nix        |
+| `hcloud-volumes`     | Hetzner  | No      | Critical-path: Authentik PG (PowerDNS pending) |
+| `local-path`         | Any node | No      | Simple: Vault Raft, Headscale                  |
 
 Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) — needs VLAN access to API.
 
 ## Failure Modes
 
-| Scenario        | Cluster    | Ingress | Authentik | Notes                                       |
-| --------------- | ---------- | ------- | --------- | ------------------------------------------- |
-| Single VPS down | 2/3 quorum | Works   | Works     | 1 server+worker replica on surviving VPS    |
-| Both VPS down   | 1/3 only   | Down    | Down      | Home pods continue but cluster frozen       |
-| Home down       | 2/3 quorum | Works   | Works     | All Authentik components on VPS, unaffected |
+| Scenario        | Cluster    | Ingress | DNS      | Authentik | Notes                                            |
+| --------------- | ---------- | ------- | -------- | --------- | ------------------------------------------------ |
+| Single VPS down | 2/3 quorum | Works   | Works    | Works     | 1 server+worker replica on surviving VPS         |
+| Both VPS down   | 1/3 only   | Down    | Down     | Down      | Home pods continue but cluster frozen            |
+| Home down       | 2/3 quorum | Works   | **Down** | Works     | DNS breaks: MariaDB PVC on Proxmox (fix pending) |
+
+### VPS-Only Resilience Invariants
+
+The following services **MUST** work/recover with VPS only (without Proxmox):
+
+- **DNS** (PowerDNS) — all external name resolution depends on this
+- **Website** (`allegedly.works`) — public-facing
+
+These services must not depend on `proxmox-csi-retain` storage or Proxmox-pinned nodes.
+**Current violation**: PowerDNS MariaDB uses `proxmox-csi-retain` — migration to
+`hcloud-volumes` pending. See <docs/plan.md> for the full invariant definition, compliance
+tracking, and fix plan.
 
 ## Repository Structure
 
