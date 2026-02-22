@@ -44,11 +44,11 @@ spec:
             - name: OLLAMA_FLASH_ATTENTION
               value: "1"
             - name: OLLAMA_NUM_CTX
-              value: "131072"
+              value: "1048576"
           resources:
             requests:
               nvidia.com/gpu: 2
-              memory: 16Gi
+              memory: 24Gi
               cpu: "2"
             limits:
               nvidia.com/gpu: 2

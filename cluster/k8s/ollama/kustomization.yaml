@@ -6,5 +6,18 @@ resources:
   - service.yaml
   - httproute.yaml
   - clusterrole-ollama-consumer.yaml
-  - job-pull-gpt-oss-20b-v1.yaml
+  - job-setup-gpt-oss-v1.yaml
   - litellm.yaml
+
+configMapGenerator:
+  - name: gpt-oss-modelfiles
+    options:
+      disableNameSuffixHash: true
+    files:
+      - Modelfile-256k
+      - Modelfile-512k
+  - name: gpt-oss-scripts
+    options:
+      disableNameSuffixHash: true
+    files:
+      - setup-gpt-oss-v1.sh
