@@ -475,6 +475,7 @@ py_test(
         ":proxy_vars",
         ":session_start",
         ":settings",
+        ":tmpfs_setup",
         "//bazel_util:runfiles",
         "//net_util:net",
         "//test_util:undeclared_outputs",

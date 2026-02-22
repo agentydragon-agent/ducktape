@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-import logging
 import os
 import re
 import shutil
@@ -34,8 +33,7 @@ from tools.claude_hooks.session_start import HookInput, HookSource
 from tools.claude_hooks.testing import shell_helpers
 from tools.claude_hooks.testing.fixtures import MockEgressProxyFixture, collect_supervisor_logs
 from tools.claude_hooks.testing.mock_egress_proxy import MockEgressProxy
-
-logger = logging.getLogger(__name__)
+from tools.claude_hooks.tmpfs_setup import unmount_tmpfs_under
 
 # Register fixtures from module (pytest-native, no direct name import needed)
 pytest_plugins = ["tools.claude_hooks.testing.fixtures"]
@@ -208,31 +206,6 @@ def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) 
     )
 
 
-def _unmount_session_tmpfs(session_dir: Path) -> None:
-    """Unmount any tmpfs mounts the hook created under session_dir.
-
-    In production the gVisor container is destroyed at session end, which
-    implicitly cleans up mounts. In tests we're on the host, so nested
-    tmpfs mounts (bazel-cache, container-storage) must be explicitly
-    unmounted — otherwise they block Bazel's sandbox directory cleanup.
-    """
-    session_str = str(session_dir)
-    with Path("/proc/mounts").open() as f:
-        mounted = [
-            line.split()[1]
-            for line in f
-            if len(line.split()) >= 3 and line.split()[1].startswith(session_str) and line.split()[2] == "tmpfs"
-        ]
-    for mount_point in mounted:
-        try:
-            # -l (lazy): detaches the mountpoint from the namespace immediately,
-            # even if the Bazel server daemon still has the directory open.
-            subprocess.run(["umount", "-l", mount_point], check=True, capture_output=True)
-            logger.debug("Unmounted tmpfs at %s", mount_point)
-        except subprocess.CalledProcessError as e:
-            logger.warning("Failed to unmount %s: %s", mount_point, e.stderr.decode())
-
-
 def _cleanup_supervisor(config_dir: Path) -> None:
     """Kill any lingering supervisor processes."""
     pidfile = config_dir / "supervisor" / "supervisord.pid"
@@ -330,7 +303,7 @@ def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
     """Cleanup supervisor and tmpfs mounts after each test."""
     yield
     session_dir = isolated_dirs.env_file.parent
-    _unmount_session_tmpfs(session_dir)
+    unmount_tmpfs_under(session_dir)
     _cleanup_supervisor(session_dir)
 
 

@@ -57,6 +57,27 @@ def ensure_tmpfs_mounted(path: Path) -> None:
     logger.info("Mounted tmpfs (%s) at %s", TMPFS_SIZE, path)
 
 
+def unmount_tmpfs_under(root: Path) -> None:
+    """Unmount all tmpfs mounts whose mountpoint is under root.
+
+    Uses lazy unmount (-l) so the detach succeeds even if a process (e.g. a
+    Bazel server daemon) still holds the directory open.
+    """
+    root_str = str(root)
+    with Path("/proc/mounts").open() as f:
+        mounted = [
+            line.split()[1]
+            for line in f
+            if len(line.split()) >= 3 and line.split()[1].startswith(root_str) and line.split()[2] == "tmpfs"
+        ]
+    for mount_point in mounted:
+        result = subprocess.run(["umount", "-l", mount_point], check=False, capture_output=True)
+        if result.returncode == 0:
+            logger.debug("Unmounted tmpfs at %s", mount_point)
+        else:
+            logger.warning("Failed to unmount %s: %s", mount_point, result.stderr.decode())
+
+
 def setup_bazel_cache(bazel_cache_dir: Path) -> TmpfsSetup:
     """Set up Bazel cache at the given directory (tmpfs should already be mounted).
 
