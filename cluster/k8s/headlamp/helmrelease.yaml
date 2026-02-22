@@ -29,6 +29,14 @@ spec:
   values:
     replicaCount: 1
 
+    # Use in-cluster ServiceAccount for Kubernetes API access.
+    # The chart creates a ClusterRoleBinding to cluster-admin by default,
+    # so no token needs to be pasted in the UI.
+    # TODO: Consider switching to OIDC auth so Kubernetes API calls are made
+    # under the authenticated user's identity (requires configuring k3s
+    # --oidc-issuer-url to trust Authentik and Headlamp to use OIDC flow).
+    inCluster: true
+
     ingress:
       enabled: false
 
