@@ -4,3 +4,11 @@ kind: Kustomization
 resources:
   - helmrelease.yaml
   # HTTPRoute is in authentik-proxy-routes/gatus-httproute.yaml (SSO-protected via Authentik outpost).
+
+configMapGenerator:
+  - name: gatus-config
+    namespace: gatus
+    files:
+      - config.yaml
+    options:
+      disableNameSuffixHash: true
