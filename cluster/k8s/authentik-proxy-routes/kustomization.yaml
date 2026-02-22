@@ -5,6 +5,7 @@ resources:
   - loki-httproute.yaml
   - hubble-httproute.yaml
   - openclaw-httproute.yaml
+  - alloy-otlp-httproute.yaml
   - gatus-httproute.yaml
   - grocy-httproute.yaml
   - headlamp-httproute.yaml
