@@ -31,6 +31,8 @@ resources:
   - gateway-namespace/flux-kustomization.yaml
   - gateway/flux-kustomization.yaml
   - dns-system-namespace/flux-kustomization.yaml
+  - cnpg/flux-kustomization.yaml
+  - powerdns-db/flux-kustomization.yaml
   - powerdns/flux-kustomization.yaml
   - powerdns-secrets/flux-kustomization.yaml
   - powerdns-operator/flux-kustomization.yaml
