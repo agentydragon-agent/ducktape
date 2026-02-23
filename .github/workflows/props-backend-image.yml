@@ -63,7 +63,7 @@ jobs:
           SHA="${{ github.sha }}"
           # Timestamp prefix makes tags sortable for Flux ImagePolicy (alphabetical order)
           TS="$(date -u +%Y%m%d%H%M%S)"
-          SEMVER_TAG="${TS}-${SHA:0:7}"
+          SEMVER_TAG="devel-${TS}-${SHA:0:7}"
           TAGS="${{ env.IMAGE }}:$SHA,${{ env.IMAGE }}:$SEMVER_TAG"
           if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
             TAGS="$TAGS,${{ env.IMAGE }}:latest"
