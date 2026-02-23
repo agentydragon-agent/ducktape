@@ -1,8 +1,8 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: powerdns-db
-  namespace: dns-system
+  name: headscale-db
+  namespace: headscale
 spec:
   instances: 2
 
@@ -22,10 +22,6 @@ spec:
 
   bootstrap:
     initdb:
-      database: pdns
-      owner: pdns
-      # CNPG auto-generates credentials and stores them in secret powerdns-db-pdns
-      postInitApplicationSQLRefs:
-        configMapRefs:
-          - name: powerdns-schema
-            key: schema.pgsql.sql
+      database: headscale
+      owner: headscale
+      # CNPG auto-generates credentials and stores them in secret headscale-db-headscale

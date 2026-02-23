@@ -1,8 +1,8 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: powerdns-db
-  namespace: dns-system
+  name: authentik-db
+  namespace: authentik
 spec:
   instances: 2
 
@@ -18,14 +18,10 @@ spec:
 
   storage:
     storageClass: local-path
-    size: 1Gi
+    size: 8Gi
 
   bootstrap:
     initdb:
-      database: pdns
-      owner: pdns
-      # CNPG auto-generates credentials and stores them in secret powerdns-db-pdns
-      postInitApplicationSQLRefs:
-        configMapRefs:
-          - name: powerdns-schema
-            key: schema.pgsql.sql
+      database: authentik
+      owner: authentik
+      # CNPG auto-generates credentials and stores them in secret authentik-db-authentik
