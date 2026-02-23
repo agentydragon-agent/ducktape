@@ -3,7 +3,6 @@
   import { onMount, setContext } from "svelte";
   import { Toaster } from "svelte-sonner";
   import { pathname, resolve, goto, parseParams } from "$lib/router";
-  import { connected, startFeed } from "$lib/stores/runsFeed";
   import { captureTokenFromUrl, getToken, setToken, needsToken } from "$lib/stores/token";
   import { api } from "$lib/api/client";
   import type { components } from "$lib/api/schema";
@@ -66,14 +65,11 @@
     } else {
       return;
     }
-    startFeed();
   }
 
   onMount(() => {
     captureTokenFromUrl();
-    if (getToken()) {
-      startFeed();
-    } else {
+    if (!getToken()) {
       needsToken.set(true);
     }
     api.GET("/api/build-info").then(({ data }) => {
@@ -189,16 +185,6 @@
           <h1 class="text-xl font-bold">
             <a href={resolve("/")} class="hover:text-blue-600">Props</a>
           </h1>
-          {#if $connected}
-            <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 rounded"
-              >live</span
-            >
-          {:else}
-            <span
-              class="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 rounded"
-              >reconnecting...</span
-            >
-          {/if}
         </div>
         <nav class="flex gap-1">
           {#each navItems as { path, label } (path)}

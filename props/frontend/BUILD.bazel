@@ -30,7 +30,6 @@ js_library(
     deps = [
         "//props/frontend/src/components:RunTriggerModal",
         "//props/frontend/src/lib:router",
-        "//props/frontend/src/lib:runsFeed",
         "//props/frontend/src/lib:token",
         "//props/frontend/src/lib:types",
         "//props/frontend/src/pages:DefinitionDetailPage",

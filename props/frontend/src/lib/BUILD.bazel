@@ -56,11 +56,6 @@ js_library(
     srcs = ["stores/token.ts"],
 )
 
-js_library(
-    name = "JobIdLink",
-    srcs = ["JobIdLink.svelte"],
-)
-
 # Utilities with deps
 
 js_library(
@@ -91,15 +86,6 @@ js_library(
     name = "status",
     srcs = ["status.ts"],
     deps = [":client"],
-)
-
-js_library(
-    name = "runsFeed",
-    srcs = ["stores/runsFeed.ts"],
-    deps = [
-        ":client",
-        ":token",
-    ],
 )
 
 # Link components

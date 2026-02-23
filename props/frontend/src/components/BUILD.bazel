@@ -56,27 +56,6 @@ js_library(
 )
 
 js_library(
-    name = "JobsList",
-    srcs = ["JobsList.svelte"],
-    deps = [
-        "//props/frontend/src/lib:DefinitionIdLink",
-        "//props/frontend/src/lib:JobIdLink",
-        "//props/frontend/src/lib:runsFeed",
-    ],
-)
-
-js_library(
-    name = "RunList",
-    srcs = ["RunList.svelte"],
-    deps = [
-        "//props/frontend/src/lib:DefinitionIdLink",
-        "//props/frontend/src/lib:RunIdLink",
-        "//props/frontend/src/lib:runsFeed",
-        "//props/frontend/src/lib:status",
-    ],
-)
-
-js_library(
     name = "IssueComment",
     srcs = ["IssueComment.svelte"],
     deps = [

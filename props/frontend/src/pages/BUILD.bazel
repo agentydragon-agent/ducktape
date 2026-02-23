@@ -57,8 +57,6 @@ js_library(
     name = "OverviewPage",
     srcs = ["OverviewPage.svelte"],
     deps = [
-        "//props/frontend/src/components:JobsList",
-        "//props/frontend/src/components:RunList",
         "//props/frontend/src/components:TabButton",
         "//props/frontend/src/components/stats:CoverageHeatmap",
         "//props/frontend/src/components/stats:DefinitionsTable",

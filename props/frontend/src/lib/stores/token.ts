@@ -1,6 +1,6 @@
 /**
  * Admin token management - capture from URL, store in localStorage,
- * provide to API client and WebSocket.
+ * provide to API client.
  */
 import { writable } from "svelte/store";
 

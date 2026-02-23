@@ -1,12 +1,10 @@
 <script lang="ts">
-  import { onMount, getContext } from "svelte";
+  import { onMount } from "svelte";
   import { goto } from "$lib/router";
   import type { RunModalPrefill } from "$lib/types";
   import { fetchOverview, type OverviewResponse } from "$lib/api/client";
   import DefinitionsTable from "$components/stats/DefinitionsTable.svelte";
   import SummaryCards from "$components/stats/SummaryCards.svelte";
-  import JobsList from "$components/JobsList.svelte";
-  import RunList from "$components/RunList.svelte";
   import DistributionChart from "$components/stats/DistributionChart.svelte";
   import CoverageHeatmap from "$components/stats/CoverageHeatmap.svelte";
   import { fetchDistributions, fetchCoverage } from "$lib/api/client";
@@ -19,10 +17,6 @@
   }
 
   let { initialData }: Props = $props();
-
-  const runModal = getContext<{
-    open: (_?: RunModalPrefill) => void;
-  }>("runModal");
 
   // svelte-ignore state_referenced_locally
   let overview: OverviewResponse | null = $state(initialData ?? null);
@@ -104,12 +98,6 @@
   </div>
 {:else if overview}
   <div>
-    <JobsList onNewRun={() => runModal?.open()} />
-
-    <div class="mb-4">
-      <RunList />
-    </div>
-
     <SummaryCards data={overview} />
     <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30">
       <DefinitionsTable
