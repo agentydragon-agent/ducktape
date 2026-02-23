@@ -21,6 +21,7 @@ in
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   home.packages = [
     pkgs.gnomeExtensions.appindicator
+    pkgs.lightburn
     tana
   ];
   dconf.settings."org/gnome/shell".enabled-extensions = [
