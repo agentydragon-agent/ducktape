@@ -401,6 +401,7 @@ py_wheel(
         "httpx",
         "mako",
         "opentelemetry-api",
+        "opentelemetry-exporter-otlp-proto-http",
         "opentelemetry-sdk",
         "platformdirs",
         "psutil",
