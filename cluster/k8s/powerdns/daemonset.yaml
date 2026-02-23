@@ -72,7 +72,7 @@ spec:
             - name: PDNS_gpgsql_password
               valueFrom:
                 secretKeyRef:
-                  name: powerdns-db-pdns
+                  name: powerdns-db-app
                   key: password
             - name: PDNS_gpgsql_dbname
               value: "pdns"
