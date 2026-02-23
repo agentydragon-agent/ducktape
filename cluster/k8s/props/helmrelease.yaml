@@ -66,6 +66,11 @@ spec:
       primary:
         nodeSelector:
           topology.kubernetes.io/region: proxmox
+        # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 100m
         persistence:
           enabled: true
           size: 10Gi

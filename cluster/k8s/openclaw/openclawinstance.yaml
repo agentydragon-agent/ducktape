@@ -64,12 +64,21 @@ spec:
       size: 20Gi
       storageClass: proxmox-csi-retain
 
+  # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "768Mi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+
   chromium:
     enabled: true
     resources:
       requests:
         cpu: "250m"
-        memory: "512Mi"
+        memory: "256Mi"
       limits:
         cpu: "1000m"
         memory: "2Gi"

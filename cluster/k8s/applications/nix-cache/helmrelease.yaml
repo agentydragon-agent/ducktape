@@ -102,10 +102,10 @@ spec:
       garbage-collection:
         interval: "12 hours"
 
-    # Resources
+    # Resources — right-sized from observed usage, see docs/operations/2026-02-22-memory-request-rightsizing.md
     resources:
       requests:
-        memory: 256Mi
+        memory: 32Mi
         cpu: 100m
       limits:
         memory: 1Gi

@@ -91,10 +91,11 @@ spec:
   serviceType: "NodePort"
 
   # Resource limits (correct Bank-Vaults schema)
+  # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
   resources:
     vault:
       requests:
-        memory: "256Mi"
+        memory: "128Mi"
         cpu: "250m"
       limits:
         memory: "512Mi"

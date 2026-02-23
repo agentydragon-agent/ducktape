@@ -82,6 +82,7 @@ spec:
     # Pin all components to Proxmox — PVCs use proxmox-csi-retain and
     # cross-site latency (VPS↔Proxmox via KubeSpan) causes liveness probe
     # timeouts when core/nginx are on VPS but database/redis are on Proxmox.
+    # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
     core:
       replicas: 1
       podAnnotations:
@@ -90,7 +91,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       resources:
         requests:
-          memory: 256Mi
+          memory: 128Mi
           cpu: 100m
         limits:
           memory: 512Mi
@@ -116,7 +117,7 @@ spec:
         password: "changeit"
         resources:
           requests:
-            memory: 256Mi
+            memory: 128Mi
             cpu: 100m
           limits:
             memory: 512Mi
@@ -129,7 +130,7 @@ spec:
           topology.kubernetes.io/region: proxmox
         resources:
           requests:
-            memory: 256Mi
+            memory: 64Mi
             cpu: 100m
           limits:
             memory: 512Mi
@@ -142,7 +143,7 @@ spec:
       resources:
         requests:
           cpu: 200m
-          memory: 512Mi
+          memory: 64Mi
         limits:
           cpu: 1000m
           memory: 1Gi
@@ -157,7 +158,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       resources:
         requests:
-          memory: 256Mi
+          memory: 64Mi
           cpu: 100m
         limits:
           memory: 512Mi
@@ -169,7 +170,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       resources:
         requests:
-          memory: 256Mi
+          memory: 32Mi
           cpu: 100m
         limits:
           memory: 512Mi

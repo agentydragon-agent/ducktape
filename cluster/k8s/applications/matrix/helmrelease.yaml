@@ -138,6 +138,11 @@ spec:
       global:
         storageClass: "proxmox-csi-retain"
       primary:
+        # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
+        resources:
+          requests:
+            memory: 128Mi
+            cpu: 100m
         persistence:
           enabled: true
           storageClass: "proxmox-csi-retain"
