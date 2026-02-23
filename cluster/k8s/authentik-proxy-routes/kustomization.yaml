@@ -9,3 +9,4 @@ resources:
   - gatus-httproute.yaml
   - grocy-httproute.yaml
   - filebrowser-httproute.yaml
+  - headlamp-httproute.yaml

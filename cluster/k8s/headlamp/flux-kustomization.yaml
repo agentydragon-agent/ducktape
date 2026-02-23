@@ -20,5 +20,3 @@ spec:
   dependsOn:
     - name: headlamp-namespace
     - name: gateway
-    - name: authentik
-    - name: authentik-blueprint-headlamp-secret
