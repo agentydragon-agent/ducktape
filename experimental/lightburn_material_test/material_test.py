@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, model_validator
 
 from experimental.lightburn_material_test.lbrn2_writer import (
     AnyShape,
+    CutMode,
     CutSetting,
     HAlign,
     LightBurnProject,
@@ -69,10 +70,23 @@ def fmt_val(v: float) -> str:
 # ── Pydantic config models ─────────────────────────────────────────────────────
 
 
-class CutParams(BaseModel):
-    """Full set of laser cut parameters for a single fixed layer.
+class AxisConfig(BaseModel):
+    """Configuration for one grid axis (X or Y)."""
 
-    Use `power` as shorthand to set both power_min and power_max simultaneously.
+    model_config = ConfigDict(extra="forbid")
+
+    param: CutParam
+    values: list[float]
+    label: str | None = None  # None = auto-generate from param name + unit; "" = no label
+    show_annotations: bool = True
+
+
+class CutConfig(BaseModel):
+    """Laser cut parameters held constant across the entire grid.
+
+    The x/y axis parameters override their respective entries here for each cell.
+
+    Use 'power' to set both min and max simultaneously.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -87,7 +101,7 @@ class CutParams(BaseModel):
     num_passes: int = 1
 
     @model_validator(mode="after")
-    def apply_power_shorthand(self) -> CutParams:
+    def apply_power_shorthand(self) -> CutConfig:
         if self.power is not None:
             self.power_min = self.power
             self.power_max = self.power
@@ -105,24 +119,6 @@ class CutParams(BaseModel):
             z_per_pass=self.z_per_pass,
             num_passes=self.num_passes,
         )
-
-
-class AxisConfig(BaseModel):
-    """Configuration for one grid axis (X or Y)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    param: CutParam
-    values: list[float]
-    label: str | None = None  # None = auto-generate from param name + unit; "" = no label
-    show_annotations: bool = True
-
-
-class CutConfig(CutParams):
-    """Laser cut parameters held constant across the entire grid.
-
-    The x/y axis parameters override their respective entries here for each cell.
-    """
 
 
 class GeometryConfig(BaseModel):
@@ -149,7 +145,17 @@ class BorderConfig(BaseModel):
 
     enabled: bool = False
     padding: float = 3.0  # mm outside the grid cells
-    cut: CutParams = CutParams(power_min=10.0, power_max=10.0, speed=200.0)
+    power: float = 10.0  # %
+    speed: float = 200.0  # mm/s
+
+
+class TextLayerConfig(BaseModel):
+    """Cut settings for the annotation text layer (layer 0)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    power: float = 15.0  # %
+    speed: float = 200.0  # mm/s
 
 
 class FontConfig(BaseModel):
@@ -183,8 +189,7 @@ class GridConfig(BaseModel):
     geometry: GeometryConfig = GeometryConfig()
     annotations: AnnotationConfig = AnnotationConfig()
     border: BorderConfig = BorderConfig()
-    # text_layer: cut settings for layer 0 (annotation text); x/y axis params do not apply here
-    text_layer: CutParams = CutParams(power_min=15.0, power_max=15.0, speed=200.0)
+    text_layer: TextLayerConfig = TextLayerConfig()
     font: FontConfig = FontConfig()
 
     @model_validator(mode="after")
@@ -309,7 +314,16 @@ def generate(config: GridConfig) -> LightBurnProject:
     shapes: list[AnyShape] = []
 
     # Layer 0: annotation text
-    cut_settings.append(config.text_layer.to_cut_setting(_TEXT_LAYER, "Text"))
+    cut_settings.append(
+        CutSetting(
+            index=_TEXT_LAYER,
+            name="Text",
+            mode=CutMode.CUT,
+            min_power=config.text_layer.power,
+            max_power=config.text_layer.power,
+            speed=config.text_layer.speed,
+        )
+    )
 
     # Layers 1..N*M: one per grid cell
     cell_cut_index: dict[tuple[int, int], int] = {}
@@ -326,7 +340,16 @@ def generate(config: GridConfig) -> LightBurnProject:
     # Optional border layer
     border_layer_index: int | None = None
     if config.border.enabled:
-        cut_settings.append(config.border.cut.to_cut_setting(next_index, "Border"))
+        cut_settings.append(
+            CutSetting(
+                index=next_index,
+                name="Border",
+                mode=CutMode.CUT,
+                min_power=config.border.power,
+                max_power=config.border.power,
+                speed=config.border.speed,
+            )
+        )
         border_layer_index = next_index
         next_index += 1
 
