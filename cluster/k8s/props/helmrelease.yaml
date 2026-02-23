@@ -22,7 +22,7 @@ spec:
       topology.kubernetes.io/region: proxmox
     image:
       repository: registry.allegedly.works/props/props-backend
-      tag: devel-20260223111058-7302f4d # {"$imagepolicy": "flux-system:props-backend:tag"}
+      tag: devel-20260223111325-a8d8082 # {"$imagepolicy": "flux-system:props-backend:tag"}
       pullPolicy: Always
     imagePullSecrets:
       - name: harbor-ci-robot
