@@ -410,14 +410,17 @@ Switch `require-gitops` ClusterPolicy from Audit to Enforce mode after validatio
 Prevent resource contention. Set default CPU/memory requests+limits via LimitRange.
 Set namespace-level quotas via ResourceQuota.
 
-### TODO: Vertical Pod Autoscaler (VPA)
+### Vertical Pod Autoscaler (VPA) — Deployed (Recommendation-Only)
 
-Deploy [Kubernetes VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler)
-in `Off` (recommendation-only) mode. VPA monitors actual resource usage and generates
-right-sized request/limit recommendations per pod. Replaces manual `kubectl top` analysis
-(see <operations/2026-02-22-memory-request-rightsizing.md>). Once validated, consider
-switching to `Auto` mode for automatic request adjustment (evicts and recreates pods
-with updated requests).
+VPA deployed in `Off` (recommendation-only) mode via Fairwinds Helm chart (`k8s/vpa/`).
+Monitors actual resource usage and generates right-sized request/limit recommendations.
+Replaces manual `kubectl top` analysis (see <operations/2026-02-22-memory-request-rightsizing.md>).
+
+### TODO: VPA Auto Mode
+
+Once VPA recommendations have been validated over a few weeks, consider enabling `Auto`
+mode (enable updater + admission controller). This automatically evicts pods and recreates
+them with right-sized requests. Start with non-critical workloads first.
 
 ### TODO: Alertmanager → ntfy Bridge
 

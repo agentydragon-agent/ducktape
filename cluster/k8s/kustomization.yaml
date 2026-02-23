@@ -15,6 +15,8 @@ resources:
   - hcloud-csi/flux-kustomization.yaml
   - local-path-provisioner/flux-kustomization.yaml
   - metrics-server/flux-kustomization.yaml
+  - vpa/flux-kustomization.yaml
+  - vpa-resources/flux-kustomization.yaml
   - monitoring-namespace/flux-kustomization.yaml
   - monitoring-stack/flux-kustomization.yaml
   - monitoring-stack-secrets/flux-kustomization.yaml

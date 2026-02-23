@@ -1,0 +1,226 @@
+# VPA resources for recommendation-only monitoring.
+# updateMode: "Off" means VPA only generates recommendations, never modifies pods.
+#
+# Right-sized services (see docs/operations/2026-02-22-memory-request-rightsizing.md)
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: vault
+  namespace: vault
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: instance
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: openclaw
+  namespace: openclaw
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: openclaw
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: attic
+  namespace: nix-cache
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: attic
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: harbor-core
+  namespace: harbor
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: harbor-core
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: harbor-database
+  namespace: harbor
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: harbor-database
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: harbor-redis
+  namespace: harbor
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: harbor-redis
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: harbor-trivy
+  namespace: harbor
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: harbor-trivy
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: harbor-jobservice
+  namespace: harbor
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: harbor-jobservice
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: harbor-portal
+  namespace: harbor
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: harbor-portal
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: matrix-synapse-postgresql
+  namespace: matrix
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: matrix-synapse-postgresql
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: props-postgresql
+  namespace: props
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: props-postgresql
+  updatePolicy:
+    updateMode: "Off"
+# Biggest consumers
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: langfuse-clickhouse
+  namespace: langfuse
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: langfuse-clickhouse-shard0
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kube-prometheus-stack-grafana
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: prometheus-kube-prometheus-stack-prometheus
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: authentik-server
+  namespace: authentik
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: authentik-server
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: authentik-worker
+  namespace: authentik
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: authentik-worker
+  updatePolicy:
+    updateMode: "Off"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: authentik-postgresql
+  namespace: authentik
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: authentik-postgresql
+  updatePolicy:
+    updateMode: "Off"
