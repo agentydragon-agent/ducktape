@@ -122,9 +122,14 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       and enter it once in the UI settings. Investigate options: operator exposing token
       in bootstrap config, gateway-side token injection into served HTML, or upstream
       PR to accept `"trusted-proxy"` in `sharedAuthOk` (message-handler.ts:385-387).
-- [x] **Headlamp: native OIDC auth** — Switched from Authentik proxy outpost to
-      Headlamp's built-in OIDC. Users authenticate via Authentik; K8s API calls still
-      use shared `cluster-admin` ServiceAccount (`inCluster: true`).
+- [ ] **Headlamp: fix auth** — Native OIDC reverted (Headlamp forwards OIDC tokens to
+      K8s API server, which doesn't trust Authentik → 401 on all API calls). Switched
+      to Authentik proxy outpost pattern (like gatus/grocy), but outpost is not yet
+      verified working. The proxy outpost handles authentication at the gateway; Headlamp
+      uses its ServiceAccount (`inCluster: true`) for K8s API calls. Verify end-to-end:
+      user hits `headlamp.allegedly.works` → Authentik login → proxy forwards to Headlamp
+      → Headlamp uses SA for API calls. If proxy outpost doesn't work for WebSocket-heavy
+      apps like Headlamp, may need to configure Talos API server `--oidc-issuer-url` instead.
 - [ ] **Headlamp: per-user K8s RBAC** — Currently all authenticated users share
       `cluster-admin` via the ServiceAccount. For per-user RBAC: configure Talos API
       server `--oidc-issuer-url` to trust Authentik, create `ClusterRoleBinding`s
@@ -211,7 +216,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | OpenClaw       | AI coding agent        | ✅  |
 | Gatus          | Health monitoring      | ✅  |
 | Grocy          | Household/grocery mgmt | ✅  |
-| Headlamp       | Kubernetes cluster UI  | ✅  |
+| Headlamp       | Kubernetes cluster UI  | ❌  |
 
 ## Applications (disabled - need flux-kustomization.yaml)
 
