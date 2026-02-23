@@ -9,5 +9,6 @@ spec:
     - port: 5000
       targetPort: 5000
   selector:
+    app.kubernetes.io/component: registry
+    app.kubernetes.io/instance: props
     app.kubernetes.io/name: props
-    component: registry

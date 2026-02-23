@@ -7,13 +7,15 @@ spec:
   replicas: 1
   selector:
     matchLabels:
+      app.kubernetes.io/component: registry
+      app.kubernetes.io/instance: props
       app.kubernetes.io/name: props
-      component: registry
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: registry
+        app.kubernetes.io/instance: props
         app.kubernetes.io/name: props
-        component: registry
     spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
