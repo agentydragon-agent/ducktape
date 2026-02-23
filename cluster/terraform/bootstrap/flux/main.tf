@@ -36,7 +36,8 @@ provider "flux" {
 # The patch adds sparseCheckout: ["cluster/"] to only fetch the cluster/ directory,
 # reducing the artifact size to ~200KB.
 resource "flux_bootstrap_git" "cluster" {
-  path = "cluster/k8s"
+  path             = "cluster/k8s"
+  components_extra = ["image-reflector-controller", "image-automation-controller"]
 
   kustomization_override = <<-EOT
     apiVersion: kustomize.config.k8s.io/v1beta1

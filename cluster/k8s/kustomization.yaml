@@ -92,6 +92,7 @@ resources:
   - langfuse-namespace/flux-kustomization.yaml
   - langfuse-secrets/flux-kustomization.yaml
   - langfuse/flux-kustomization.yaml
+  - flux-image-automation/flux-kustomization.yaml
   - props-namespace/flux-kustomization.yaml
   - props-secrets/flux-kustomization.yaml
   - props/flux-kustomization.yaml
