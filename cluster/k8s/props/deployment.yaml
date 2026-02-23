@@ -15,6 +15,7 @@ spec:
         app.kubernetes.io/name: props
         component: backend
     spec:
+      serviceAccountName: props-executor
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       imagePullSecrets:
