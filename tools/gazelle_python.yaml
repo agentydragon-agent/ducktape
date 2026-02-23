@@ -311,6 +311,8 @@ manifest:
     opentelemetry.baggage: opentelemetry_api
     opentelemetry.context: opentelemetry_api
     opentelemetry.environment_variables: opentelemetry_api
+    opentelemetry.exporter.otlp.proto.common: opentelemetry_exporter_otlp_proto_common
+    opentelemetry.exporter.otlp.proto.http: opentelemetry_exporter_otlp_proto_http
     opentelemetry.exporter.prometheus: opentelemetry_exporter_prometheus
     opentelemetry.instrumentation.auto_instrumentation: opentelemetry_instrumentation
     opentelemetry.instrumentation.bootstrap: opentelemetry_instrumentation
@@ -327,6 +329,7 @@ manifest:
     opentelemetry.propagate: opentelemetry_api
     opentelemetry.propagators.composite: opentelemetry_api
     opentelemetry.propagators.textmap: opentelemetry_api
+    opentelemetry.proto: opentelemetry_proto
     opentelemetry.sdk.environment_variables: opentelemetry_sdk
     opentelemetry.sdk.error_handler: opentelemetry_sdk
     opentelemetry.sdk.metrics: opentelemetry_sdk
@@ -462,7 +465,7 @@ manifest:
     supervisor: supervisor
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     termcolor: termcolor
     terminado: terminado
@@ -562,4 +565,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: da2cb3f2073d678556b9d78a2105decfd61f632168f15bbf7a1ddad7800141b8
+integrity: be17ecbaf721fc83c5164da75b93c2d04113abf7aa7c9485b29f7fc436d11d3a
