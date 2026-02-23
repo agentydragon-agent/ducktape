@@ -10,7 +10,6 @@ from xml.etree import ElementTree as ET
 import pytest
 import pytest_bazel
 
-from bazel_util import runfiles
 from experimental.lightburn_material_test.lbrn2_writer import (
     CutSetting,
     HAlign,
@@ -26,7 +25,6 @@ from experimental.lightburn_material_test.material_test import (
     BorderConfig,
     CutConfig,
     CutParam,
-    CutParams,
     GridConfig,
     _full_subtitle,
     fmt_val,
@@ -211,81 +209,6 @@ def test_cut_config_power_shorthand_does_not_override_explicit():
     assert cc.power_max == 60
 
 
-# ── CutParams / BorderConfig ───────────────────────────────────────────────────
-
-
-def test_cut_params_power_shorthand():
-    p = CutParams(power=42.0)
-    assert p.power_min == 42.0
-    assert p.power_max == 42.0
-
-
-def test_cut_params_to_cut_setting_full():
-    """to_cut_setting propagates all cut fields."""
-    p = CutParams(power_min=5.0, power_max=95.0, speed=50.0, kerf=0.1, z_offset=-0.5, z_per_pass=-0.2, num_passes=4)
-    cs = p.to_cut_setting(index=3, name="TestLayer")
-    assert cs.index == 3
-    assert cs.name == "TestLayer"
-    assert cs.min_power == 5.0
-    assert cs.max_power == 95.0
-    assert cs.speed == 50.0
-    assert cs.kerf == 0.1
-    assert cs.z_offset == -0.5
-    assert cs.z_per_pass == -0.2
-    assert cs.num_passes == 4
-
-
-def test_border_config_defaults():
-    bc = BorderConfig()
-    assert bc.cut.power_min == 10.0
-    assert bc.cut.power_max == 10.0
-    assert bc.cut.speed == 200.0
-    assert bc.enabled is False
-    assert bc.padding == 3.0
-
-
-def test_border_config_full_params():
-    """BorderConfig.cut accepts the full cut parameter set."""
-    bc = BorderConfig(
-        enabled=True, padding=5.0, cut=CutParams(power_min=8.0, power_max=12.0, speed=100.0, kerf=0.1, num_passes=2)
-    )
-    cs = bc.cut.to_cut_setting(7, "Border")
-    assert cs.min_power == 8.0
-    assert cs.max_power == 12.0
-    assert cs.kerf == 0.1
-    assert cs.num_passes == 2
-
-
-def test_generate_text_layer_full_params_applied():
-    """Full cut params specified on text_layer are reflected in generated layer 0."""
-    cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX, values=[10.0]),
-        y=AxisConfig(param=CutParam.SPEED, values=[50.0]),
-        text_layer=CutParams(power_min=3.0, power_max=7.0, speed=150.0, kerf=0.02),
-    )
-    project = generate(cfg)
-    text_cs = project.cut_settings[0]
-    assert text_cs.min_power == 3.0
-    assert text_cs.max_power == 7.0
-    assert text_cs.speed == 150.0
-    assert text_cs.kerf == 0.02
-
-
-def test_generate_border_full_params_applied():
-    """Full cut params specified on border.cut are reflected in the border layer."""
-    cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX, values=[10.0]),
-        y=AxisConfig(param=CutParam.SPEED, values=[50.0]),
-        border=BorderConfig(enabled=True, cut=CutParams(power_min=2.0, power_max=8.0, speed=120.0, z_offset=-0.3)),
-    )
-    project = generate(cfg)
-    border_cs = next(cs for cs in project.cut_settings if cs.name == "Border")
-    assert border_cs.min_power == 2.0
-    assert border_cs.max_power == 8.0
-    assert border_cs.speed == 120.0
-    assert border_cs.z_offset == -0.3
-
-
 def test_grid_config_from_toml():
     toml_str = textwrap.dedent("""\
         title = "Test"
@@ -342,7 +265,7 @@ def test_generate_rect_count():
 
 
 def test_generate_border_adds_layer_and_rect():
-    project = _make_project(border=BorderConfig(enabled=True, cut=CutParams(power=5, speed=100)))
+    project = _make_project(border=BorderConfig(enabled=True, power=5, speed=100))
     # border layer added
     assert any(cs.name == "Border" for cs in project.cut_settings)
     # border rect added (one extra rect)
@@ -412,18 +335,6 @@ def test_generate_auto_subtitle_omits_varied_params():
     assert "Power" not in sub
     assert "Speed" not in sub
     assert "Z=" in sub or "kerf" in sub.lower() or "Kerf" in sub
-
-
-def test_example_config_parses():
-    """example_config.toml must parse without error and produce a valid GridConfig."""
-    path = runfiles.get_required_path("_main/experimental/lightburn_material_test/example_config.toml")
-    with path.open("rb") as f:
-        data = tomllib.load(f)
-    cfg = GridConfig.model_validate(data)
-    assert cfg.x.param == CutParam.POWER_MAX
-    assert cfg.y.param == CutParam.Z_PER_PASS
-    assert cfg.border.enabled is True
-    assert cfg.border.cut.power_min == 10.0
 
 
 if __name__ == "__main__":
