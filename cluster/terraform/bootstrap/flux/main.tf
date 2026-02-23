@@ -33,8 +33,7 @@ provider "flux" {
 # 2. flux_bootstrap_git doesn't natively support sparseCheckout
 # 3. Without this, terraform generates gotk-sync.yaml without sparseCheckout
 #
-# The patch adds sparseCheckout: ["cluster/"] to only fetch the cluster/ directory,
-# reducing the artifact size to ~200KB.
+# The patch adds sparseCheckout: ["cluster/"] to only fetch the cluster/ directory.
 resource "flux_bootstrap_git" "cluster" {
   path             = "cluster/k8s"
   components_extra = ["image-reflector-controller", "image-automation-controller"]
@@ -54,7 +53,6 @@ resource "flux_bootstrap_git" "cluster" {
             path: /spec/sparseCheckout
             value:
               - cluster/
-              - props/helm/
   EOT
 }
 
