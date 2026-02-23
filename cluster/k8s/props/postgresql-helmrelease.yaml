@@ -17,6 +17,10 @@ spec:
     auth:
       database: eval_results
       username: postgres
+      existingSecret: props-postgresql
+      secretKeys:
+        adminPasswordKey: postgres-password
+        userPasswordKey: postgres-password
     primary:
       nodeSelector:
         topology.kubernetes.io/region: proxmox

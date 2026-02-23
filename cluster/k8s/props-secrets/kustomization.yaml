@@ -1,7 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  - props-secrets-tf.yaml
+  - db-password-externalsecret.yaml
+  - evaluator-credentials-externalsecret.yaml
   - openai-api-key-sealed.yaml
   - ollama-api-key-externalsecret.yaml
   - harbor-robot-secret.yaml
-  - evaluator-credentials-sealed.yaml
