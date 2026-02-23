@@ -43,6 +43,17 @@ spec:
         - name: powerdns
           image: powerdns/pdns-auth-49:latest
           imagePullPolicy: IfNotPresent
+          # The official pdns-auth-49 image does NOT support PDNS_* env vars
+          # (that's a community Docker image convention). Override the entrypoint
+          # to inject secrets and local-address into the config file at startup.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              cp /etc/powerdns-template/pdns.conf /etc/powerdns/pdns.conf
+              echo "gpgsql-password=${GPGSQL_PASSWORD}" >> /etc/powerdns/pdns.conf
+              echo "api-key=${API_KEY}" >> /etc/powerdns/pdns.conf
+              echo "local-address=${POD_IP}" >> /etc/powerdns/pdns.conf
+              exec pdns_server --config-dir=/etc/powerdns --guardian=no --daemon=no
           # Security context: must run as root for hostNetwork port 53 binding.
           # Verified via /proc/PID/status: containerd/runc does NOT populate the
           # effective capability set for non-root processes, even with
@@ -61,55 +72,16 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           env:
-            - name: PDNS_launch
-              value: gpgsql
-            - name: PDNS_gpgsql_host
-              value: "powerdns-db-rw.dns-system.svc"
-            - name: PDNS_gpgsql_port
-              value: "5432"
-            - name: PDNS_gpgsql_user
-              value: "pdns"
-            - name: PDNS_gpgsql_password
+            - name: GPGSQL_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: powerdns-db-app
                   key: password
-            - name: PDNS_gpgsql_dbname
-              value: "pdns"
-            - name: PDNS_api
-              value: "yes"
-            - name: PDNS_api_key
+            - name: API_KEY
               valueFrom:
                 secretKeyRef:
                   name: powerdns-api-key
                   key: powerdns_api_key
-            - name: PDNS_webserver
-              value: "yes"
-            - name: PDNS_webserver_address
-              value: "0.0.0.0"
-            - name: PDNS_webserver_port
-              value: "8081"
-            # Allow all IPs for health probes. Security model:
-            # - Webserver (8081) is ClusterIP only, not exposed externally
-            # - Zone operations require X-API-Key header (powerdns-api-key secret)
-            # - Without API key: only health (/) and metrics (/metrics) accessible
-            # - Kubelet probes come from node's INTERNAL-IP; VPS nodes have public IPs,
-            #   so RFC1918-only ACL breaks health checks on hybrid VPS+Proxmox cluster
-            - name: PDNS_webserver_allow_from
-              value: "0.0.0.0/0"
-            # Move control socket to writable /tmp directory
-            - name: PDNS_socket_dir
-              value: "/tmp"
-            # Disable setuid/setgid (already enforced by Kubernetes securityContext)
-            - name: PDNS_setuid
-              value: ""
-            - name: PDNS_setgid
-              value: ""
-            # Enable AXFR for VPS secondary zone
-            - name: PDNS_allow_axfr_ips
-              value: "10.0.0.0/8,100.64.0.3"
-            - name: PDNS_disable_axfr
-              value: "no"
             # Bind PowerDNS to the node's IP only (not 0.0.0.0) to avoid conflicting
             # with Talos dns-resolve-cache at 127.0.0.53:53.
             # With hostNetwork: true, status.podIP = node IP.
@@ -117,8 +89,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-            - name: PDNS_local_address
-              value: "$(POD_IP)"
           ports:
             - name: dns-tcp
               containerPort: 53
@@ -142,8 +112,11 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 5
           volumeMounts:
-            - name: config
-              mountPath: /etc/pdns
+            - name: config-template
+              mountPath: /etc/powerdns-template
+              readOnly: true
+            - name: config-runtime
+              mountPath: /etc/powerdns
           resources:
             limits:
               cpu: 500m
@@ -152,8 +125,10 @@ spec:
               cpu: 100m
               memory: 128Mi
       volumes:
-        # powerdns/pdns-auth-49 entrypoint writes config to /etc/pdns
-        - name: config
+        - name: config-template
+          configMap:
+            name: powerdns-config
+        - name: config-runtime
           emptyDir: {}
       nodeSelector:
         topology.kubernetes.io/region: hetzner

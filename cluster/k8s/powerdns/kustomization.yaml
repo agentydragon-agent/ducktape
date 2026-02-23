@@ -3,3 +3,9 @@ kind: Kustomization
 resources:
   - daemonset.yaml
   - service.yaml
+configMapGenerator:
+  - name: powerdns-config
+    files:
+      - pdns.conf
+generatorOptions:
+  disableNameSuffixHash: true
