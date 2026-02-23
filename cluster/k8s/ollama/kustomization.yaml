@@ -11,12 +11,6 @@ resources:
   - litellm.yaml
 
 configMapGenerator:
-  - name: gpt-oss-modelfiles
-    options:
-      disableNameSuffixHash: true
-    files:
-      - Modelfile-256k
-      - Modelfile-512k
   - name: gpt-oss-scripts
     options:
       disableNameSuffixHash: true

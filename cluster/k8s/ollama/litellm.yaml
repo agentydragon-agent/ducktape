@@ -44,16 +44,22 @@ spec:
             extra_body:
               options:
                 num_ctx: 1048576
-        # RoPE-scaled variants (Modelfile-based): proper position interpolation
-        # for context beyond the model's native 128k training window.
+        # Extended context variants: num_ctx override per request.
+        # YaRN scaling (baked into GGUF metadata) handles RoPE interpolation.
         - model_name: gpt-oss-20b-256k
           litellm_params:
-            model: ollama/gpt-oss-256k
+            model: ollama/gpt-oss:20b
             api_base: http://ollama.ollama.svc.cluster.local:11434
+            extra_body:
+              options:
+                num_ctx: 262144
         - model_name: gpt-oss-20b-512k
           litellm_params:
-            model: ollama/gpt-oss-512k
+            model: ollama/gpt-oss:20b
             api_base: http://ollama.ollama.svc.cluster.local:11434
+            extra_body:
+              options:
+                num_ctx: 524288
         - model_name: gpt-oss-120b-128k
           litellm_params:
             model: ollama/gpt-oss:120b
