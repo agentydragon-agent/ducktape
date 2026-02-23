@@ -96,3 +96,8 @@ CREATE TABLE tsigkeys (
 );
 
 CREATE UNIQUE INDEX namealgoindex ON tsigkeys(name, algorithm);
+
+-- CNPG runs postInitApplicationSQL as the postgres superuser, so tables
+-- are owned by postgres. Grant full access to the pdns application user.
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pdns;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pdns;
