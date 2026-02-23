@@ -177,12 +177,12 @@
   const hasCritiques = $derived(critiqueIssues.length > 0);
 </script>
 
-<div class="border rounded bg-white font-mono text-sm">
+<div class="border dark:border-gray-700 rounded bg-white dark:bg-gray-900 font-mono text-sm">
   <!-- Header -->
-  <div class="px-4 py-2 border-b bg-gray-50 flex items-center gap-2">
+  <div class="px-4 py-2 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex items-center gap-2">
     <span class="font-semibold">{file.path}</span>
-    <span class="text-gray-500 text-xs">({file.line_count} lines)</span>
-    <span class="text-gray-500 text-xs ml-auto">
+    <span class="text-gray-500 dark:text-gray-400 text-xs">({file.line_count} lines)</span>
+    <span class="text-gray-500 dark:text-gray-400 text-xs ml-auto">
       {#if hasCritiques}
         {critiqueCount} critique,
       {/if}
@@ -200,7 +200,13 @@
           {@const hasTP = lineIssues.some((i) => i.kind === "tp")}
           {@const hasFP = lineIssues.some((i) => i.kind === "fp")}
           {@const hasCritique = lineIssues.some((i) => i.kind === "critique")}
-          {@const bgClass = hasTP ? "bg-green-50" : hasFP ? "bg-red-50" : hasCritique ? "bg-blue-50" : ""}
+          {@const bgClass = hasTP
+            ? "bg-green-50 dark:bg-green-950"
+            : hasFP
+              ? "bg-red-50 dark:bg-red-950"
+              : hasCritique
+                ? "bg-blue-50 dark:bg-blue-950"
+                : ""}
           {@const borderClass = hasTP
             ? "border-l-4 border-green-500"
             : hasFP
@@ -209,19 +215,21 @@
                 ? "border-l-4 border-blue-500"
                 : ""}
 
-          <tr class="hover:bg-gray-100 {bgClass} {borderClass}">
+          <tr class="hover:bg-gray-100 dark:hover:bg-gray-800 {bgClass} {borderClass}">
             <!-- Line number (1-based display) -->
-            <td class="px-2 py-0.5 text-right text-gray-400 select-none w-12 border-r align-top">
+            <td
+              class="px-2 py-0.5 text-right text-gray-400 dark:text-gray-500 select-none w-12 border-r dark:border-gray-700 align-top"
+            >
               <div class="flex items-center justify-end gap-1">
                 {#if lineIssues.length > 0}
                   <div class="flex gap-0.5">
                     {#each lineIssues as issue (getIssueKey(issue))}
                       {#if issue.kind === "tp"}
-                        <CheckCircle size={12} class="text-green-600" />
+                        <CheckCircle size={12} class="text-green-600 dark:text-green-400" />
                       {:else if issue.kind === "fp"}
-                        <XCircle size={12} class="text-red-600" />
+                        <XCircle size={12} class="text-red-600 dark:text-red-400" />
                       {:else if issue.kind === "critique"}
-                        <MessageSquare size={12} class="text-blue-600" />
+                        <MessageSquare size={12} class="text-blue-600 dark:text-blue-400" />
                       {/if}
                     {/each}
                   </div>
@@ -276,7 +284,9 @@
           {#each locationNotes as { loc, issue }, i (`${getIssueKey(issue)}-${loc.start_line}-${i}`)}
             <tr>
               <td colspan="2" class="px-4 py-0.5">
-                <div class="text-xs italic text-gray-600 bg-gray-50 border-l-2 border-gray-300 px-2 py-1 rounded-r">
+                <div
+                  class="text-xs italic text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-l-2 border-gray-300 dark:border-gray-600 px-2 py-1 rounded-r"
+                >
                   {loc.note}
                 </div>
               </td>

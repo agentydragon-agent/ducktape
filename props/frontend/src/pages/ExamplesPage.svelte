@@ -44,10 +44,10 @@
 
 {#if loading}
   <div class="flex items-center justify-center py-12">
-    <div class="text-gray-500">Loading...</div>
+    <div class="text-gray-500 dark:text-gray-400">Loading...</div>
   </div>
 {:else if error}
-  <p class="text-gray-500">{error}</p>
+  <p class="text-gray-500 dark:text-gray-400">{error}</p>
 {:else if example}
   <ExampleDetail data={example} />
 {/if}

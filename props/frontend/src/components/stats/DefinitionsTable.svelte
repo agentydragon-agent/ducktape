@@ -80,17 +80,17 @@
   <table class="min-w-full text-sm">
     <thead>
       <!-- Level 1: Split (Valid / Train) -->
-      <tr class="border-b border-gray-200">
+      <tr class="border-b border-gray-200 dark:border-gray-700">
         <th
           rowspan="3"
-          class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 align-bottom"
+          class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 align-bottom"
           onclick={() => handleSort("image_digest")}
         >
           Definition{getSortIndicator("image_digest")}
         </th>
         <th
           rowspan="3"
-          class="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 align-bottom"
+          class="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 align-bottom"
           onclick={() => handleSort("created_at")}
         >
           Age{getSortIndicator("created_at")}
@@ -98,33 +98,35 @@
         {#each splits as split (split)}
           <th
             colspan={kinds.length * metricsPerKind}
-            class="px-3 py-1 text-center border-l border-gray-300 font-semibold capitalize"
+            class="px-3 py-1 text-center border-l border-gray-300 dark:border-gray-600 font-semibold capitalize"
           >
             {split}
           </th>
         {/each}
       </tr>
       <!-- Level 2: Kind with example counts -->
-      <tr class="border-b border-gray-200">
+      <tr class="border-b border-gray-200 dark:border-gray-700">
         {#each splits as split (split)}
           {#each kinds as kind (`${split}-${kind}`)}
             {@const colId = `${split}_${kind}_recall`}
             {@const count = getExampleCount(split, kind)}
             <th
               colspan={metricsPerKind}
-              class="px-2 py-1 text-center border-l border-gray-200 cursor-pointer hover:bg-gray-100"
+              class="px-2 py-1 text-center border-l border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
               onclick={() => handleSort(colId)}
             >
-              {kind} <span class="text-gray-400 font-normal">(n={count})</span>{getSortIndicator(colId)}
+              {kind} <span class="text-gray-400 dark:text-gray-500 font-normal">(n={count})</span>{getSortIndicator(
+                colId
+              )}
             </th>
           {/each}
         {/each}
       </tr>
       <!-- Level 3: Metrics -->
-      <tr class="border-b border-gray-300 text-xs text-gray-500">
+      <tr class="border-b border-gray-300 dark:border-gray-600 text-xs text-gray-500 dark:text-gray-400">
         {#each splits as _split (_split)}
           {#each kinds as _kind (`${_split}-${_kind}`)}
-            <th class="px-2 py-1 text-right border-l border-gray-200">Recall</th>
+            <th class="px-2 py-1 text-right border-l border-gray-200 dark:border-gray-700">Recall</th>
             <th class="px-2 py-1 text-right">Runs</th>
             <th class="px-2 py-1 text-right">Zero</th>
             <th class="px-2 py-1 text-right">Done</th>
@@ -135,11 +137,11 @@
     </thead>
     <tbody>
       {#each table.rows as def (def.image_digest)}
-        <tr class="border-b border-gray-100 hover:bg-gray-50">
+        <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
           <td class="px-3 py-2 font-mono text-xs">
             <DefinitionIdLink id={def.image_digest} />
           </td>
-          <td class="px-3 py-2 text-right text-gray-600">
+          <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
             {formatTableAge(def.created_at)}
           </td>
           {#each splits as split (split)}
@@ -149,11 +151,11 @@
               {@const cellClick = clickable
                 ? () => onCellClick({ definitionId: def.image_digest, split, kind })
                 : undefined}
-              {@const clickClass = clickable ? "cursor-pointer hover:bg-blue-100" : ""}
+              {@const clickClass = clickable ? "cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900" : ""}
               {@const clickTitle = clickable ? `View ${split} ${kind} runs` : undefined}
               {#if stats}
                 <td
-                  class="px-2 py-2 text-right border-l border-gray-100 {recallColorClass(
+                  class="px-2 py-2 text-right border-l border-gray-100 dark:border-gray-800 {recallColorClass(
                     stats.recall_stats?.mean
                   )} {clickClass}"
                   onclick={cellClick}
@@ -162,19 +164,21 @@
                   {stats.recall_stats ? formatStatsWithCI(stats.recall_stats) : "—"}
                 </td>
                 <td class="px-2 py-2 text-right">{stats.n_examples}</td>
-                <td class="px-2 py-2 text-right text-gray-400">{stats.zero_count}</td>
+                <td class="px-2 py-2 text-right text-gray-400 dark:text-gray-500">{stats.zero_count}</td>
                 <td class="px-2 py-2 text-right">{stats.status_counts.completed ?? 0}</td>
-                <td class="px-2 py-2 text-right text-gray-400">{stats.status_counts.timed_out ?? 0}</td>
+                <td class="px-2 py-2 text-right text-gray-400 dark:text-gray-500"
+                  >{stats.status_counts.timed_out ?? 0}</td
+                >
               {:else}
                 <td
-                  class="px-2 py-2 text-right border-l border-gray-100 text-gray-300 {clickClass}"
+                  class="px-2 py-2 text-right border-l border-gray-100 dark:border-gray-800 text-gray-300 dark:text-gray-600 {clickClass}"
                   onclick={cellClick}
                   title={clickTitle}>—</td
                 >
-                <td class="px-2 py-2 text-right text-gray-300">—</td>
-                <td class="px-2 py-2 text-right text-gray-300">—</td>
-                <td class="px-2 py-2 text-right text-gray-300">—</td>
-                <td class="px-2 py-2 text-right text-gray-300">—</td>
+                <td class="px-2 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
+                <td class="px-2 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
+                <td class="px-2 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
+                <td class="px-2 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
               {/if}
             {/each}
           {/each}

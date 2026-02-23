@@ -15,6 +15,10 @@
   const displayText = $derived(showFull ? slug : formatSnapshotSlug(slug));
 </script>
 
-<a href={resolve(`/snapshots/${slug}`)} class="text-blue-600 underline hover:text-blue-800" title={slug}>
+<a
+  href={resolve(`/snapshots/${slug}`)}
+  class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
+  title={slug}
+>
   {displayText}
 </a>

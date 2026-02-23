@@ -11,6 +11,10 @@
   let { id }: Props = $props();
 </script>
 
-<a href={resolve(`/runs/${id}`)} class="font-mono text-blue-600 underline hover:text-blue-800 truncate" title={id}>
+<a
+  href={resolve(`/runs/${id}`)}
+  class="font-mono text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300 truncate"
+  title={id}
+>
   {id}
 </a>

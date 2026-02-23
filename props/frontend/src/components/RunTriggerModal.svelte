@@ -187,7 +187,8 @@
     if (event.key === "Escape") onClose();
   }
 
-  const inputClass = "w-full border rounded px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
+  const inputClass =
+    "w-full border dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
 
   const tabs: { key: RunMode; label: string }[] = [
     { key: "validation", label: "Validation" },
@@ -198,7 +199,7 @@
 
 {#snippet modelSelect(id: string, label: string, value: string, onchange: (v: string) => void)}
   <div>
-    <label for={id} class="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+    <label for={id} class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
     <select
       {id}
       class={inputClass}
@@ -226,7 +227,7 @@
   >
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+      class="bg-white dark:bg-gray-800 rounded-lg shadow-xl dark:shadow-gray-950/50 p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
       role="document"
       onclick={(e) => e.stopPropagation()}
       onkeydown={() => {}}
@@ -236,7 +237,9 @@
       <!-- Shared: Budget & Timeout -->
       <div class="grid grid-cols-2 gap-3 mb-4">
         <div>
-          <label for="s-budget" class="block text-sm font-medium text-gray-700 mb-1">Budget ($)</label>
+          <label for="s-budget" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+            >Budget ($)</label
+          >
           <input
             id="s-budget"
             type="number"
@@ -248,7 +251,9 @@
           />
         </div>
         <div>
-          <label for="s-timeout" class="block text-sm font-medium text-gray-700 mb-1">Timeout (s)</label>
+          <label for="s-timeout" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+            >Timeout (s)</label
+          >
           <input
             id="s-timeout"
             type="number"
@@ -265,14 +270,14 @@
       {@render modelSelect("s-critic", "Critic Model", criticModel, (v) => (criticModel = v))}
 
       <!-- Mode tabs -->
-      <div class="flex border-b border-gray-200 mb-4 mt-4">
+      <div class="flex border-b border-gray-200 dark:border-gray-700 mb-4 mt-4">
         {#each tabs as tab (tab.key)}
           <button
             type="button"
             class="px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors
               {mode === tab.key
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}"
+              ? 'border-blue-600 dark:border-blue-400 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'}"
             onclick={() => {
               mode = tab.key;
               clearResult();
@@ -284,13 +289,15 @@
       </div>
 
       {#if loadingDefinitions && mode === "validation"}
-        <p class="text-gray-500">Loading definitions...</p>
+        <p class="text-gray-500 dark:text-gray-400">Loading definitions...</p>
       {:else}
         <div class="space-y-3">
           {#if mode === "validation"}
             <!-- Validation form -->
             <div>
-              <label for="m-def" class="block text-sm font-medium text-gray-700 mb-1">Critic Definition</label>
+              <label for="m-def" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >Critic Definition</label
+              >
               <select id="m-def" bind:value={selectedDefinition} class={inputClass} disabled={loading}>
                 {#each definitions as def (def.image_digest)}
                   <option value={def.image_digest}>{formatDigest(def.image_digest)}</option>
@@ -299,14 +306,18 @@
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label for="m-split" class="block text-sm font-medium text-gray-700 mb-1">Split</label>
+                <label for="m-split" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >Split</label
+                >
                 <select id="m-split" bind:value={selectedSplit} class={inputClass} disabled={loading}>
                   <option value="train">Train</option>
                   <option value="valid">Validation</option>
                 </select>
               </div>
               <div>
-                <label for="m-kind" class="block text-sm font-medium text-gray-700 mb-1">Example Kind</label>
+                <label for="m-kind" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >Example Kind</label
+                >
                 <select id="m-kind" bind:value={selectedKind} class={inputClass} disabled={loading}>
                   <option value="whole_snapshot">Whole Snapshot</option>
                   <option value="file_set">File Set</option>
@@ -314,7 +325,9 @@
               </div>
             </div>
             <div>
-              <label for="m-n" class="block text-sm font-medium text-gray-700 mb-1">Samples (1-50)</label>
+              <label for="m-n" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >Samples (1-50)</label
+              >
               <input
                 id="m-n"
                 type="number"
@@ -328,7 +341,9 @@
           {:else if mode === "optimize"}
             <!-- Optimize form -->
             <div>
-              <label for="o-metric" class="block text-sm font-medium text-gray-700 mb-1">Target Metric</label>
+              <label for="o-metric" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                >Target Metric</label
+              >
               <select id="o-metric" bind:value={optTargetMetric} class={inputClass} disabled={loading}>
                 <option value="whole-repo">Whole Repo (full-snapshot validation only)</option>
                 <option value="targeted">Targeted (includes per-file validation)</option>
@@ -337,7 +352,7 @@
             {@render modelSelect("o-optmodel", "Optimizer Model", optOptimizerModel, (v) => (optOptimizerModel = v))}
           {:else if mode === "improve"}
             <!-- Improve form -->
-            <p class="text-xs text-gray-500 mb-2">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-2">
               Auto-selects the best definition (by validation LCB) and top Pareto training examples.
             </p>
             {@render modelSelect(
@@ -347,7 +362,7 @@
               (v) => (impImprovementModel = v)
             )}
             <div>
-              <label for="i-n" class="block text-sm font-medium text-gray-700 mb-1">Examples</label>
+              <label for="i-n" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Examples</label>
               <input
                 id="i-n"
                 type="number"
@@ -363,7 +378,7 @@
 
         <!-- Result message -->
         {#if resultMessage}
-          <div class="mt-3 text-sm text-green-700 bg-green-50 p-2 rounded">
+          <div class="mt-3 text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950 p-2 rounded">
             {resultMessage}
             {#if resultRunId}
               — <a href={resolve(`/runs/${resultRunId}`)} class="underline font-medium" onclick={onClose}>view run</a>
@@ -377,7 +392,7 @@
             type="button"
             onclick={onClose}
             disabled={loading}
-            class="px-4 py-2 text-sm border border-gray-300 text-gray-700 bg-white rounded hover:bg-gray-50 disabled:opacity-50"
+            class="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
           >
             {resultMessage ? "Close" : "Cancel"}
           </button>
@@ -385,7 +400,7 @@
             type="button"
             onclick={handleTrigger}
             disabled={loading || (mode === "validation" && (!selectedDefinition || budgetUsd <= 0))}
-            class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            class="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
           >
             {loading ? "Launching..." : mode === "validation" ? "Run" : mode === "optimize" ? "Optimize" : "Improve"}
           </button>

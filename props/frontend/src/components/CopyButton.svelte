@@ -35,12 +35,12 @@
 <button
   onclick={copy}
   type="button"
-  class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+  class="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
   title={label}
 >
   {#if copied}
-    <Check size={14} class="text-green-600" />
-    <span class="text-green-600">Copied!</span>
+    <Check size={14} class="text-green-600 dark:text-green-400" />
+    <span class="text-green-600 dark:text-green-400">Copied!</span>
   {:else}
     <Copy size={14} />
     <span>{label}</span>

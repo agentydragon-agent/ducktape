@@ -132,8 +132,8 @@
 <Toaster richColors position="top-right" duration={8000} />
 
 {#if $needsToken}
-  <div class="min-h-screen bg-gray-50 flex items-center justify-center">
-    <div class="bg-white rounded-lg shadow-md p-8 max-w-md w-full">
+  <div class="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md dark:shadow-gray-950/50 p-8 max-w-md w-full">
       <h1 class="text-xl font-bold mb-2">Props</h1>
       <form
         onsubmit={(e: SubmitEvent) => {
@@ -149,7 +149,7 @@
             placeholder="Username"
             autocomplete="username"
             disabled={tokenHasInput}
-            class="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+            class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
           />
           <input
             type="password"
@@ -157,13 +157,13 @@
             placeholder="Password"
             autocomplete="current-password"
             disabled={tokenHasInput}
-            class="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+            class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
           />
         </div>
         <div class="flex items-center gap-2">
-          <div class="flex-1 border-t border-gray-200"></div>
-          <span class="text-xs text-gray-400">or token</span>
-          <div class="flex-1 border-t border-gray-200"></div>
+          <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
+          <span class="text-xs text-gray-400 dark:text-gray-500">or token</span>
+          <div class="flex-1 border-t border-gray-200 dark:border-gray-700"></div>
         </div>
         <div class="transition-opacity {credsHasInput ? 'opacity-40' : ''}">
           <input
@@ -171,7 +171,7 @@
             bind:value={tokenInput}
             placeholder="base64 token"
             disabled={credsHasInput}
-            class="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+            class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:cursor-not-allowed"
           />
         </div>
         <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700">
@@ -181,18 +181,23 @@
     </div>
   </div>
 {:else}
-  <div class="min-h-screen bg-gray-50">
+  <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
     <!-- Header -->
-    <header class="bg-white border-b border-gray-200 px-6 py-3">
+    <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-3">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-3">
           <h1 class="text-xl font-bold">
             <a href={resolve("/")} class="hover:text-blue-600">Props</a>
           </h1>
           {#if $connected}
-            <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">live</span>
+            <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300 rounded"
+              >live</span
+            >
           {:else}
-            <span class="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">reconnecting...</span>
+            <span
+              class="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300 rounded"
+              >reconnecting...</span
+            >
           {/if}
         </div>
         <nav class="flex gap-1">
@@ -201,8 +206,8 @@
               href={resolve(path)}
               class="px-3 py-1.5 rounded text-sm font-medium transition-colors
                 {isActive(path, $pathname)
-                ? 'bg-blue-100 text-blue-700'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}"
+                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100'}"
             >
               {label}
             </a>
@@ -229,15 +234,15 @@
         <SnapshotDetailPage slug={currentRoute.params.slug} />
       {:else}
         <div class="text-center py-12">
-          <h2 class="text-2xl font-bold text-gray-900">Page Not Found</h2>
-          <p class="mt-2 text-gray-600">The page you're looking for doesn't exist.</p>
-          <a href={resolve("/")} class="mt-4 inline-block text-blue-600 hover:underline">Go home</a>
+          <h2 class="text-2xl font-bold text-gray-900 dark:text-gray-100">Page Not Found</h2>
+          <p class="mt-2 text-gray-600 dark:text-gray-400">The page you're looking for doesn't exist.</p>
+          <a href={resolve("/")} class="mt-4 inline-block text-blue-600 dark:text-blue-400 hover:underline">Go home</a>
         </div>
       {/if}
     </main>
 
     {#if buildInfo}
-      <footer class="px-6 py-2 text-xs text-gray-400 text-right">
+      <footer class="px-6 py-2 text-xs text-gray-400 dark:text-gray-500 text-right">
         {buildInfo.commit} &middot; {buildInfo.commit_time}
       </footer>
     {/if}

@@ -11,6 +11,6 @@
   let { id }: Props = $props();
 </script>
 
-<span class="font-mono text-gray-500 truncate" title={id}>
+<span class="font-mono text-gray-500 dark:text-gray-400 truncate" title={id}>
   {id.slice(0, 8)}...
 </span>

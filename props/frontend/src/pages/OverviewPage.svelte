@@ -94,10 +94,12 @@
 
 {#if loading}
   <div class="flex items-center justify-center py-12">
-    <div class="text-gray-500">Loading...</div>
+    <div class="text-gray-500 dark:text-gray-400">Loading...</div>
   </div>
 {:else if error}
-  <div class="bg-red-50 border border-red-200 rounded p-4 text-red-700">
+  <div
+    class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded p-4 text-red-700 dark:text-red-300"
+  >
     {error}
   </div>
 {:else if overview}
@@ -109,7 +111,7 @@
     </div>
 
     <SummaryCards data={overview} />
-    <div class="bg-white rounded-lg shadow">
+    <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30">
       <DefinitionsTable
         definitions={overview.definitions}
         exampleCounts={overview.example_counts}
@@ -118,17 +120,17 @@
     </div>
 
     <!-- Analysis Section -->
-    <div class="mt-4 bg-white rounded-lg shadow p-4">
+    <div class="mt-4 bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30 p-4">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-lg font-semibold">Stats & Analysis</h3>
-        <div class="flex border rounded">
+        <div class="flex border rounded dark:border-gray-700">
           <TabButton active={analysisSplit === "valid"} onclick={() => (analysisSplit = "valid")}>Valid</TabButton>
           <TabButton active={analysisSplit === "train"} onclick={() => (analysisSplit = "train")}>Train</TabButton>
         </div>
       </div>
 
       {#if analysisLoading}
-        <div class="text-gray-500 text-center py-8">Loading analysis...</div>
+        <div class="text-gray-500 dark:text-gray-400 text-center py-8">Loading analysis...</div>
       {:else}
         {#if distributions}
           <div class="grid grid-cols-2 gap-4 mb-4">

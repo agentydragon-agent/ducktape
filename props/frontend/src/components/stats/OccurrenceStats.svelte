@@ -31,26 +31,26 @@
 </script>
 
 <!-- Standalone table view for all occurrences -->
-<div class="bg-white rounded-lg border">
-  <div class="px-4 py-3 border-b">
+<div class="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700">
+  <div class="px-4 py-3 border-b dark:border-gray-700">
     <h3 class="text-sm font-semibold">Occurrence Detection Statistics</h3>
-    <p class="text-xs text-gray-500 mt-1">
+    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
       Mean credit per occurrence across all critic runs. Low values indicate hard-to-find issues.
     </p>
   </div>
   {#if occurrences.length === 0}
-    <div class="p-4 text-sm text-gray-500">No occurrence statistics available</div>
+    <div class="p-4 text-sm text-gray-500 dark:text-gray-400">No occurrence statistics available</div>
   {:else}
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
         <thead>
-          <tr class="border-b bg-gray-50">
-            <th class="px-3 py-2 text-left font-medium text-gray-600">TP ID</th>
-            <th class="px-3 py-2 text-left font-medium text-gray-600">Occurrence</th>
-            <th class="px-3 py-2 text-right font-medium text-gray-600">Mean</th>
-            <th class="px-3 py-2 text-right font-medium text-gray-600">Min</th>
-            <th class="px-3 py-2 text-right font-medium text-gray-600">Max</th>
-            <th class="px-3 py-2 text-right font-medium text-gray-600">Runs</th>
+          <tr class="border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+            <th class="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-400">TP ID</th>
+            <th class="px-3 py-2 text-left font-medium text-gray-600 dark:text-gray-400">Occurrence</th>
+            <th class="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Mean</th>
+            <th class="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Min</th>
+            <th class="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Max</th>
+            <th class="px-3 py-2 text-right font-medium text-gray-600 dark:text-gray-400">Runs</th>
           </tr>
         </thead>
         <tbody>
@@ -58,7 +58,7 @@
             {@const mean = pctParts(occ.mean_credit)}
             {@const min = pctParts(occ.min_credit)}
             {@const max = pctParts(occ.max_credit)}
-            <tr class="border-b hover:bg-gray-50">
+            <tr class="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800">
               <td class="px-3 py-2 font-mono text-xs">{occ.tp_id}</td>
               <td class="px-3 py-2 font-mono text-xs">{occ.occurrence_id}</td>
               <td class="px-3 py-2 font-mono text-xs tabular-nums"
@@ -70,7 +70,7 @@
               <td class="px-3 py-2 font-mono text-xs tabular-nums"
                 ><span class="inline-block w-[3ch] text-right">{max.integer}</span>{max.fraction}</td
               >
-              <td class="px-3 py-2 text-right text-xs text-gray-600">{occ.n_runs}</td>
+              <td class="px-3 py-2 text-right text-xs text-gray-600 dark:text-gray-400">{occ.n_runs}</td>
             </tr>
           {/each}
         </tbody>

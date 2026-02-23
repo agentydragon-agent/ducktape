@@ -142,9 +142,9 @@
   });
 </script>
 
-<div class="bg-white rounded-lg border p-4">
+<div class="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700 p-4">
   <h3 class="text-sm font-semibold mb-2">Definition Coverage Heatmap</h3>
-  <div class="flex items-center gap-4 text-xs text-gray-500 mb-2">
+  <div class="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 mb-2">
     <span class="flex items-center gap-1">
       <span class="inline-block w-3 h-3 rounded" style="background: rgba(22, 163, 74, 0.8)"></span> Best
     </span>
@@ -157,7 +157,10 @@
   </div>
   <!-- Right side: definition labels -->
   <div class="flex gap-2">
-    <div class="flex flex-col justify-around text-xs text-gray-600 font-mono" style="min-width: 100px;">
+    <div
+      class="flex flex-col justify-around text-xs text-gray-600 dark:text-gray-400 font-mono"
+      style="min-width: 100px;"
+    >
       {#each definitions as def}
         <div class="flex items-center gap-1 truncate" title={def.image_digest}>
           {formatDigest(def.image_digest)} ({def.best_on_count})

@@ -142,14 +142,14 @@
   const pageEnd = $derived(Math.min(offset + limit, totalCount));
 </script>
 
-<div class="bg-white rounded-lg shadow p-4">
+<div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30 p-4">
   <div class="flex items-center gap-3 mb-3">
     <BackButton />
     <h2 class="text-lg font-semibold">
       {#if initialDefinitionId}
-        Runs for <span class="font-mono text-blue-600">{initialDefinitionId}</span>
-        {#if initialSplit}<span class="text-gray-500">/ {initialSplit}</span>{/if}
-        {#if initialKind}<span class="text-gray-500">/ {initialKind}</span>{/if}
+        Runs for <span class="font-mono text-blue-600 dark:text-blue-400">{initialDefinitionId}</span>
+        {#if initialSplit}<span class="text-gray-500 dark:text-gray-400">/ {initialSplit}</span>{/if}
+        {#if initialKind}<span class="text-gray-500 dark:text-gray-400">/ {initialKind}</span>{/if}
       {:else}
         All Runs
       {/if}
@@ -169,10 +169,10 @@
   <!-- Filters -->
   <div class="flex gap-4 mb-4">
     <div>
-      <label for="runs-status-filter" class="block text-xs text-gray-500 mb-1">Status</label>
+      <label for="runs-status-filter" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Status</label>
       <select
         id="runs-status-filter"
-        class="border rounded px-2 py-1 text-sm"
+        class="border rounded px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700"
         bind:value={statusFilter}
         onchange={handleFilterChange}
       >
@@ -183,10 +183,10 @@
       </select>
     </div>
     <div>
-      <label for="runs-agent-type-filter" class="block text-xs text-gray-500 mb-1">Agent Type</label>
+      <label for="runs-agent-type-filter" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Agent Type</label>
       <select
         id="runs-agent-type-filter"
-        class="border rounded px-2 py-1 text-sm"
+        class="border rounded px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700"
         bind:value={agentTypeFilter}
         onchange={handleFilterChange}
       >
@@ -197,62 +197,80 @@
       </select>
     </div>
     <div class="flex-1"></div>
-    <div class="self-end text-sm text-gray-600">
+    <div class="self-end text-sm text-gray-600 dark:text-gray-400">
       {pageStart}–{pageEnd} of {totalCount}
     </div>
   </div>
 
   {#if loading}
-    <p class="text-gray-500 text-sm">Loading...</p>
+    <p class="text-gray-500 dark:text-gray-400 text-sm">Loading...</p>
   {:else if runs.length === 0}
-    <p class="text-gray-500 text-sm">No runs found</p>
+    <p class="text-gray-500 dark:text-gray-400 text-sm">No runs found</p>
   {:else}
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm">
         <thead>
-          <tr class="border-b border-gray-300">
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("agent_run_id")}>
+          <tr class="border-b border-gray-300 dark:border-gray-600">
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("agent_run_id")}
+            >
               ID{getSortIndicator("agent_run_id")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("image_digest")}>
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("image_digest")}
+            >
               Definition{getSortIndicator("image_digest")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("split")}>
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("split")}
+            >
               Split{getSortIndicator("split")}
             </th>
             <th class="px-3 py-2 text-left"> Example </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("model")}>
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("model")}
+            >
               Model{getSortIndicator("model")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("status")}>
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("status")}
+            >
               Status{getSortIndicator("status")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => handleSort("created_at")}>
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("created_at")}
+            >
               Created{getSortIndicator("created_at")}
             </th>
           </tr>
         </thead>
         <tbody>
           {#each table.rows as run (run.agent_run_id)}
-            <tr class="border-b border-gray-100 hover:bg-gray-50">
+            <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
               <td class="px-3 py-2 text-xs">
                 <RunIdLink id={run.agent_run_id} />
               </td>
               <td class="px-3 py-2 text-xs">
                 <DefinitionIdLink id={run.image_digest} />
               </td>
-              <td class="px-3 py-2 text-xs text-gray-500">
+              <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                 {run.split ?? "—"}
               </td>
-              <td class="px-3 py-2 text-xs text-gray-500">
+              <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                 {#if run.type_config.agent_type === "critic"}
                   {@const config = run.type_config as CriticTypeConfig}
                   <ExampleLink example={config.example} />
                 {:else}
-                  <span class="text-gray-400">—</span>
+                  <span class="text-gray-400 dark:text-gray-500">—</span>
                 {/if}
               </td>
-              <td class="px-3 py-2 text-xs text-gray-500">
+              <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                 {run.model}
               </td>
               <td class="px-3 py-2">
@@ -260,7 +278,7 @@
                   {formatStatus(run.status)}
                 </span>
               </td>
-              <td class="px-3 py-2 text-gray-600 text-xs">
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-400 text-xs">
                 {formatAge(run.created_at)}
               </td>
             </tr>
@@ -273,7 +291,7 @@
     <div class="flex justify-between items-center mt-4">
       <button
         type="button"
-        class="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-3 py-1 text-sm border rounded dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={prevPage}
         disabled={offset === 0}
       >
@@ -281,7 +299,7 @@
       </button>
       <button
         type="button"
-        class="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-3 py-1 text-sm border rounded dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={nextPage}
         disabled={offset + limit >= totalCount}
       >

@@ -103,9 +103,9 @@
   });
 </script>
 
-<div class="bg-white rounded-lg border p-4">
+<div class="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700 p-4">
   {#if stats}
-    <div class="text-xs text-gray-500 mb-2">
+    <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">
       N={stats.n} · μ={valueFormat(stats.mean)} · median={valueFormat(stats.median)} · P10={valueFormat(stats.p10)} · P90={valueFormat(
         stats.p90
       )}

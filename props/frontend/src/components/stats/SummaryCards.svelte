@@ -48,42 +48,42 @@
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
   <!-- Definitions count -->
-  <div class="bg-white rounded-lg shadow p-4">
-    <h3 class="text-sm font-medium text-gray-500 mb-2">Definitions</h3>
+  <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30 p-4">
+    <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Definitions</h3>
     <div class="text-2xl font-bold">{data.definitions.length}</div>
-    <div class="text-xs text-gray-500 mt-1">Critic definitions</div>
+    <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Critic definitions</div>
   </div>
 
   <!-- Best definition -->
-  <div class="bg-white rounded-lg shadow p-4">
-    <h3 class="text-sm font-medium text-gray-500 mb-2">Best (Valid Whole)</h3>
+  <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30 p-4">
+    <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Best (Valid Whole)</h3>
     {#if bestDef}
-      <div class="text-2xl font-bold text-green-600">{formatStatsWithCI(bestDef.recall_stats)}</div>
+      <div class="text-2xl font-bold text-green-600 dark:text-green-400">{formatStatsWithCI(bestDef.recall_stats)}</div>
       <div class="text-xs mt-1">
         <DefinitionIdLink id={bestDef.def.image_digest} />
       </div>
     {:else}
-      <div class="text-2xl font-bold text-gray-400">-</div>
-      <div class="text-xs text-gray-500 mt-1">No valid runs yet</div>
+      <div class="text-2xl font-bold text-gray-400 dark:text-gray-500">-</div>
+      <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">No valid runs yet</div>
     {/if}
   </div>
 
   <!-- Run status breakdown -->
-  <div class="bg-white rounded-lg shadow p-4">
-    <h3 class="text-sm font-medium text-gray-500 mb-2">Runs ({totalRuns})</h3>
+  <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30 p-4">
+    <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Runs ({totalRuns})</h3>
     <div class="flex gap-2 text-xs">
       {#if statusCounts["exited"]}
-        <span class="text-green-600" title="Exited">
+        <span class="text-green-600 dark:text-green-400" title="Exited">
           ✓{statusCounts["exited"]}
         </span>
       {/if}
       {#if statusCounts["in_progress"]}
-        <span class="text-blue-600" title="In Progress">
+        <span class="text-blue-600 dark:text-blue-400" title="In Progress">
           ⟳{statusCounts["in_progress"]}
         </span>
       {/if}
       {#if statusCounts["timed_out"]}
-        <span class="text-yellow-600" title="Timed Out">
+        <span class="text-yellow-600 dark:text-yellow-400" title="Timed Out">
           T{statusCounts["timed_out"]}
         </span>
       {/if}

@@ -20,6 +20,13 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #e5e7eb;
+    background-color: #111827;
+  }
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -58,4 +65,19 @@ th {
 
 tr:hover {
   background: #f9f9f9;
+}
+
+@media (prefers-color-scheme: dark) {
+  th,
+  td {
+    border-bottom-color: #374151;
+  }
+
+  th {
+    background: #1f2937;
+  }
+
+  tr:hover {
+    background: #1f2937;
+  }
 }

@@ -196,16 +196,18 @@
 
 {#if loading}
   <div class="flex items-center justify-center py-12">
-    <div class="text-gray-500">Loading...</div>
+    <div class="text-gray-500 dark:text-gray-400">Loading...</div>
   </div>
 {:else if error}
-  <div class="bg-red-50 border border-red-200 rounded p-4 text-red-700">
+  <div
+    class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded p-4 text-red-700 dark:text-red-300"
+  >
     {error}
   </div>
 {:else if snapshot && tree}
-  <div class="bg-white rounded-lg shadow">
+  <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30">
     <!-- Header -->
-    <div class="px-4 py-3 border-b">
+    <div class="px-4 py-3 border-b dark:border-gray-700">
       <div class="flex justify-between items-center mb-2">
         <div class="flex items-center gap-3">
           <BackButton href="/snapshots" />
@@ -221,7 +223,7 @@
     </div>
 
     <!-- Tabs -->
-    <div class="border-b">
+    <div class="border-b dark:border-gray-700">
       <nav class="flex -mb-px">
         <TabButton active={activeTab === "files"} onclick={() => (activeTab = "files")}>Files</TabButton>
         <TabButton active={activeTab === "tps"} onclick={() => (activeTab = "tps")}>
@@ -250,7 +252,7 @@
           <!-- File Viewer -->
           <div class="overflow-y-auto max-h-[70vh]">
             {#if loadingFile}
-              <div class="flex items-center justify-center h-full text-gray-500">Loading...</div>
+              <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">Loading...</div>
             {:else if selectedFile}
               <div class="mb-3">
                 <Breadcrumb items={breadcrumbs} />
@@ -263,42 +265,46 @@
                 targetOccurrenceId={parsedSlug.occurrenceId}
               />
             {:else}
-              <div class="flex items-center justify-center h-full text-gray-500">Select a file to view</div>
+              <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                Select a file to view
+              </div>
             {/if}
           </div>
         </div>
       {:else if activeTab === "tps"}
         <div class="max-h-[70vh] overflow-y-auto">
           {#if snapshot.true_positives.length === 0}
-            <p class="text-gray-500">No true positives</p>
+            <p class="text-gray-500 dark:text-gray-400">No true positives</p>
           {:else}
             <div class="space-y-2">
               {#each snapshot.true_positives as tp (tp.tp_id)}
-                <div class="border rounded">
+                <div class="border dark:border-gray-700 rounded">
                   <button
-                    class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 text-left"
+                    class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-800 text-left"
                     onclick={() => expandedIssues.toggle(tp.tp_id)}
                   >
                     <div class="flex items-center gap-2">
-                      <span class="text-gray-400">{expandedIssues.isExpanded(tp.tp_id) ? "▼" : "▶"}</span>
+                      <span class="text-gray-400 dark:text-gray-500"
+                        >{expandedIssues.isExpanded(tp.tp_id) ? "▼" : "▶"}</span
+                      >
                       <span class="font-mono text-sm font-medium">{tp.tp_id}</span>
-                      <span class="text-xs text-gray-500">({tp.occurrences.length} occ)</span>
+                      <span class="text-xs text-gray-500 dark:text-gray-400">({tp.occurrences.length} occ)</span>
                     </div>
                   </button>
 
                   {#if expandedIssues.isExpanded(tp.tp_id)}
-                    <div class="px-3 pb-3 border-t bg-gray-50">
+                    <div class="px-3 pb-3 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
                       <div class="mt-2">
-                        <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Rationale</h4>
+                        <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Rationale</h4>
                         <p class="text-sm whitespace-pre-wrap">{tp.rationale}</p>
                       </div>
                       <div class="mt-3">
-                        <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Occurrences</h4>
+                        <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Occurrences</h4>
                         {#each tp.occurrences as occ (occ.occurrence_id)}
                           <div
                             id="{tp.tp_id}-{occ.occurrence_id}"
-                            class="bg-white border rounded p-2 mt-1 {parsedSlug.issueId === tp.tp_id &&
-                            parsedSlug.occurrenceId === occ.occurrence_id
+                            class="bg-white dark:bg-gray-900 border dark:border-gray-700 rounded p-2 mt-1 {parsedSlug.issueId ===
+                              tp.tp_id && parsedSlug.occurrenceId === occ.occurrence_id
                               ? 'ring-2 ring-blue-500'
                               : ''}"
                           >
@@ -325,16 +331,16 @@
                                 <div class="text-sm font-mono">
                                   {formatLocationAnchor(loc)}
                                   {#if loc.note}
-                                    <span class="italic text-gray-500 ml-1">({loc.note})</span>
+                                    <span class="italic text-gray-500 dark:text-gray-400 ml-1">({loc.note})</span>
                                   {/if}
                                 </div>
                               {/each}
                             </div>
                             {#if occ.note}
-                              <div class="mt-1 text-sm text-gray-600 italic">{occ.note}</div>
+                              <div class="mt-1 text-sm text-gray-600 dark:text-gray-400 italic">{occ.note}</div>
                             {/if}
                             {#if occ.critic_scopes_expected_to_recall && occ.critic_scopes_expected_to_recall.length > 0}
-                              <div class="mt-1 text-xs text-gray-500">
+                              <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                 Expected recall scopes: {occ.critic_scopes_expected_to_recall
                                   .map((f: string[]) => f.join(", "))
                                   .join(" | ")}
@@ -353,35 +359,37 @@
       {:else if activeTab === "fps"}
         <div class="max-h-[70vh] overflow-y-auto">
           {#if snapshot.false_positives.length === 0}
-            <p class="text-gray-500">No false positives</p>
+            <p class="text-gray-500 dark:text-gray-400">No false positives</p>
           {:else}
             <div class="space-y-2">
               {#each snapshot.false_positives as fp (fp.fp_id)}
-                <div class="border rounded">
+                <div class="border dark:border-gray-700 rounded">
                   <button
-                    class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 text-left"
+                    class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-800 text-left"
                     onclick={() => expandedIssues.toggle(fp.fp_id)}
                   >
                     <div class="flex items-center gap-2">
-                      <span class="text-gray-400">{expandedIssues.isExpanded(fp.fp_id) ? "▼" : "▶"}</span>
+                      <span class="text-gray-400 dark:text-gray-500"
+                        >{expandedIssues.isExpanded(fp.fp_id) ? "▼" : "▶"}</span
+                      >
                       <span class="font-mono text-sm font-medium">{fp.fp_id}</span>
-                      <span class="text-xs text-gray-500">({fp.occurrences.length} occ)</span>
+                      <span class="text-xs text-gray-500 dark:text-gray-400">({fp.occurrences.length} occ)</span>
                     </div>
                   </button>
 
                   {#if expandedIssues.isExpanded(fp.fp_id)}
-                    <div class="px-3 pb-3 border-t bg-gray-50">
+                    <div class="px-3 pb-3 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
                       <div class="mt-2">
-                        <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Rationale</h4>
+                        <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Rationale</h4>
                         <p class="text-sm whitespace-pre-wrap">{fp.rationale}</p>
                       </div>
                       <div class="mt-3">
-                        <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Occurrences</h4>
+                        <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Occurrences</h4>
                         {#each fp.occurrences as occ (occ.occurrence_id)}
                           <div
                             id="{fp.fp_id}-{occ.occurrence_id}"
-                            class="bg-white border rounded p-2 mt-1 {parsedSlug.issueId === fp.fp_id &&
-                            parsedSlug.occurrenceId === occ.occurrence_id
+                            class="bg-white dark:bg-gray-900 border dark:border-gray-700 rounded p-2 mt-1 {parsedSlug.issueId ===
+                              fp.fp_id && parsedSlug.occurrenceId === occ.occurrence_id
                               ? 'ring-2 ring-blue-500'
                               : ''}"
                           >
@@ -404,16 +412,16 @@
                                 <div class="text-sm font-mono">
                                   {formatLocationAnchor(loc)}
                                   {#if loc.note}
-                                    <span class="italic text-gray-500 ml-1">({loc.note})</span>
+                                    <span class="italic text-gray-500 dark:text-gray-400 ml-1">({loc.note})</span>
                                   {/if}
                                 </div>
                               {/each}
                             </div>
                             {#if occ.note}
-                              <div class="mt-1 text-sm text-gray-600 italic">{occ.note}</div>
+                              <div class="mt-1 text-sm text-gray-600 dark:text-gray-400 italic">{occ.note}</div>
                             {/if}
                             {#if occ.relevant_files && occ.relevant_files.length > 0}
-                              <div class="mt-1 text-xs text-gray-500">
+                              <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                 Relevant: {occ.relevant_files.join(", ")}
                               </div>
                             {/if}
@@ -430,49 +438,51 @@
       {:else if activeTab === "clusters"}
         <div class="max-h-[70vh] overflow-y-auto">
           {#if clusters.length === 0}
-            <p class="text-gray-500">No clusters</p>
+            <p class="text-gray-500 dark:text-gray-400">No clusters</p>
           {:else}
             <div class="space-y-2">
               {#each clusters as cluster (cluster.cluster_id)}
-                <div class="border rounded">
+                <div class="border dark:border-gray-700 rounded">
                   <button
-                    class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 text-left"
+                    class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-800 text-left"
                     onclick={() => expandedIssues.toggle(`cluster-${cluster.cluster_id}`)}
                   >
                     <div class="flex items-center gap-2">
-                      <span class="text-gray-400"
+                      <span class="text-gray-400 dark:text-gray-500"
                         >{expandedIssues.isExpanded(`cluster-${cluster.cluster_id}`) ? "▼" : "▶"}</span
                       >
                       <span class="font-mono text-sm font-medium">{cluster.cluster_id}</span>
-                      <span class="text-xs text-gray-500">({cluster.members.length} issues)</span>
+                      <span class="text-xs text-gray-500 dark:text-gray-400">({cluster.members.length} issues)</span>
                     </div>
                   </button>
 
                   {#if expandedIssues.isExpanded(`cluster-${cluster.cluster_id}`)}
-                    <div class="px-3 pb-3 border-t bg-gray-50">
+                    <div class="px-3 pb-3 border-t dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
                       <div class="mt-2">
-                        <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Description</h4>
+                        <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">Description</h4>
                         <p class="text-sm whitespace-pre-wrap">{cluster.rationale}</p>
                       </div>
                       <div class="mt-3">
-                        <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Member Issues</h4>
+                        <h4 class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                          Member Issues
+                        </h4>
                         {#each cluster.members as member (`${member.critique_run_id}-${member.critique_issue_id}`)}
-                          <div class="bg-white border rounded p-2 mt-1">
+                          <div class="bg-white dark:bg-gray-900 border dark:border-gray-700 rounded p-2 mt-1">
                             <div class="flex items-center gap-2 text-xs">
                               <a
                                 href={resolve(`/runs/${member.critique_run_id}`)}
-                                class="font-mono text-blue-600 hover:underline"
+                                class="font-mono text-blue-600 dark:text-blue-400 hover:underline"
                               >
                                 {member.critique_run_id.slice(0, 8)}
                               </a>
-                              <span class="text-gray-400">/</span>
+                              <span class="text-gray-400 dark:text-gray-500">/</span>
                               <span class="font-mono font-medium">{member.critique_issue_id}</span>
                             </div>
                             {#if member.issue_rationale}
-                              <div class="mt-1 text-sm text-gray-700">{member.issue_rationale}</div>
+                              <div class="mt-1 text-sm text-gray-700 dark:text-gray-300">{member.issue_rationale}</div>
                             {/if}
                             {#if member.rationale}
-                              <div class="mt-1 text-xs text-gray-500 italic">{member.rationale}</div>
+                              <div class="mt-1 text-xs text-gray-500 dark:text-gray-400 italic">{member.rationale}</div>
                             {/if}
                           </div>
                         {/each}
