@@ -9,5 +9,6 @@ spec:
     - port: 8000
       targetPort: 8000
   selector:
+    app.kubernetes.io/component: backend
     app.kubernetes.io/instance: props
     app.kubernetes.io/name: props

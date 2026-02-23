@@ -12,6 +12,7 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: backend
         app.kubernetes.io/instance: props
         app.kubernetes.io/name: props
     spec:
