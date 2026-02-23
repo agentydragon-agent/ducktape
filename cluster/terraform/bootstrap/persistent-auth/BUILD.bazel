@@ -11,6 +11,7 @@ tf_providers_versions(
     name = "providers",
     providers = {
         "external": "hashicorp/external:~>2.3.0",
+        "local": "hashicorp/local:~>2.5.0",
         "null": "hashicorp/null:~>3.2.0",
         "random": "hashicorp/random:~>3.7.0",
         "talos": "siderolabs/talos:~>0.9.0",
@@ -25,6 +26,7 @@ tf_module(
     name = "persistent-auth",
     providers = [
         "external",
+        "local",
         "null",
         "random",
         "talos",

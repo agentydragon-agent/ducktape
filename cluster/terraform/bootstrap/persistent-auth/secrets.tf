@@ -31,6 +31,13 @@ resource "tls_self_signed_cert" "sealed_secrets" {
   ]
 }
 
+# Public certificate committed to repo (safe — only enables encrypting, not decrypting).
+# seal-secret.sh reads this file instead of requiring terraform state access.
+resource "local_file" "sealed_secrets_cert" {
+  content  = tls_self_signed_cert.sealed_secrets.cert_pem
+  filename = "${path.module}/../../../k8s/sealed-secrets/sealed-secrets-cert.pem"
+}
+
 # ============================================
 # FLUX DEPLOY KEY
 # ED25519 key for GitHub repository access

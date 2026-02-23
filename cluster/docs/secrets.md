@@ -51,11 +51,17 @@
 
 ### Keypair Locations
 
-| Location                                                | Purpose                |
-| ------------------------------------------------------- | ---------------------- |
-| `terraform/bootstrap/persistent-auth/terraform.tfstate` | SSOT (gitignored)      |
-| `kube-system/sealed-secrets-key`                        | Deployed to cluster    |
-| Git SealedSecrets                                       | Encrypted with keypair |
+| Location                                                | Purpose                                    |
+| ------------------------------------------------------- | ------------------------------------------ |
+| `terraform/bootstrap/persistent-auth/terraform.tfstate` | SSOT (gitignored)                          |
+| `k8s/sealed-secrets/sealed-secrets-cert.pem`            | Public cert committed to repo (TF-managed) |
+| `kube-system/sealed-secrets-key`                        | Full keypair deployed to cluster           |
+| Git SealedSecrets                                       | Encrypted with public cert                 |
+
+The public certificate at `k8s/sealed-secrets/sealed-secrets-cert.pem` is managed by a
+`local_file` resource in `persistent-auth` terraform. It contains only the public half
+of the keypair (safe to commit — enables encrypting new SealedSecrets, not decrypting
+existing ones). `seal-secret.sh` reads this file directly.
 
 ## SealedSecrets in Repository
 
@@ -97,21 +103,27 @@ bazel run //cluster/scripts:validate_sealed_secrets
 ## Adding New SealedSecrets
 
 1. Create secret YAML with `kubectl create secret ... --dry-run=client -o yaml`
-2. Seal with tofu keypair using the helper script (reads cert directly from tofu state):
+2. Seal with the committed public cert via the helper script:
 
    ```bash
    kubectl create secret generic my-secret --from-literal=key=value \
      --dry-run=client -o yaml | ./scripts/seal-secret.sh /dev/stdin k8s/path/my-sealed.yaml
    ```
 
+   The script reads `k8s/sealed-secrets/sealed-secrets-cert.pem` (falls back to tofu state
+   if the file is missing).
+
 3. Add to appropriate kustomization.yaml
 4. Commit and push
 
 ## Keypair Verification
 
-Compare serial numbers (should match):
+Compare serial numbers (all three should match):
 
 ```bash
+# Committed cert:
+openssl x509 -noout -serial < k8s/sealed-secrets/sealed-secrets-cert.pem
+
 # OpenTofu state:
 cat terraform/bootstrap/persistent-auth/terraform.tfstate | \
   jq -r '.resources[] | select(.type == "tls_self_signed_cert") | .instances[0].attributes.cert_pem' | \
