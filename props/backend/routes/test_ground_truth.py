@@ -26,13 +26,28 @@ from props.testing.fixtures.runs import FAKE_CRITIC_DEV_OPTIMIZE_DIGEST
 pytestmark = [pytest.mark.integration]
 
 
-def make_gt_client(app_db: Database, caller_db: Database) -> TestClient:
-    """Build a TestClient for the ground truth router with a given caller DB."""
+def make_gt_client(caller_db: Database) -> TestClient:
+    """Build a TestClient for the ground truth router using caller_db for all queries."""
     app = FastAPI()
     app.include_router(ground_truth.router, prefix="/api/gt")
-    app.state.admin_db = app_db
     app.dependency_overrides[get_caller_db] = lambda: caller_db
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture
+async def critic_dev_optimize_gt_client(synced_db: Database):
+    creds = await make_agent_credentials(
+        synced_db,
+        CriticDevOptimizeTypeConfig(
+            target_metric=TargetMetric.TARGETED, optimizer_model="gpt-4o-mini", critic_model="gpt-4o-mini"
+        ),
+        FAKE_CRITIC_DEV_OPTIMIZE_DIGEST,
+    )
+    user_db = Database.per_request(synced_db.config.with_user(creds.username, creds.password))
+    try:
+        yield make_gt_client(user_db)
+    finally:
+        user_db.dispose()
 
 
 # --- Admin access ---
@@ -40,8 +55,7 @@ def make_gt_client(app_db: Database, caller_db: Database) -> TestClient:
 
 def test_admin_can_list_snapshots(synced_db: Database) -> None:
     """Admin (full access, bypasses RLS) sees all snapshots."""
-    client = make_gt_client(synced_db, synced_db)
-    resp = client.get("/api/gt/snapshots")
+    resp = make_gt_client(synced_db).get("/api/gt/snapshots")
     assert resp.status_code == 200
     slugs = {s["slug"] for s in resp.json()["snapshots"]}
     # synced_db has test-fixtures/train1 (train) and test-fixtures/valid1 (valid)
@@ -51,8 +65,7 @@ def test_admin_can_list_snapshots(synced_db: Database) -> None:
 
 def test_admin_can_get_snapshot_detail(synced_db: Database) -> None:
     """Admin can retrieve full TP/FP detail for any snapshot."""
-    client = make_gt_client(synced_db, synced_db)
-    resp = client.get("/api/gt/snapshots/test-fixtures/train1")
+    resp = make_gt_client(synced_db).get("/api/gt/snapshots/test-fixtures/train1")
     assert resp.status_code == 200
     body = resp.json()
     assert body["slug"] == "test-fixtures/train1"
@@ -64,33 +77,23 @@ def test_admin_can_get_snapshot_detail(synced_db: Database) -> None:
 # --- critic_dev_optimize agent: RLS-filtered access ---
 
 
-async def test_critic_dev_optimize_sees_all_snapshot_metadata(synced_db: Database) -> None:
+async def test_critic_dev_optimize_sees_all_snapshot_metadata(critic_dev_optimize_gt_client: TestClient) -> None:
     """critic_dev_optimize can list snapshots (all agents see snapshot metadata).
 
     The snapshots_agent_select RLS policy allows any active agent run to read
     snapshot metadata (slug, split). Sensitive data access is enforced per-table.
     """
-    creds = await make_agent_credentials(
-        synced_db,
-        CriticDevOptimizeTypeConfig(
-            target_metric=TargetMetric.TARGETED, optimizer_model="gpt-4o-mini", critic_model="gpt-4o-mini"
-        ),
-        FAKE_CRITIC_DEV_OPTIMIZE_DIGEST,
-    )
-    user_db = Database.per_request(synced_db.config.with_user(creds.username, creds.password))
-    try:
-        client = make_gt_client(synced_db, user_db)
-        resp = client.get("/api/gt/snapshots")
-        assert resp.status_code == 200
-        slugs = {s["slug"] for s in resp.json()["snapshots"]}
-        # All snapshot metadata is visible regardless of split
-        assert "test-fixtures/train1" in slugs
-        assert "test-fixtures/valid1" in slugs
-    finally:
-        user_db.dispose()
+    resp = critic_dev_optimize_gt_client.get("/api/gt/snapshots")
+    assert resp.status_code == 200
+    slugs = {s["slug"] for s in resp.json()["snapshots"]}
+    # All snapshot metadata is visible regardless of split
+    assert "test-fixtures/train1" in slugs
+    assert "test-fixtures/valid1" in slugs
 
 
-async def test_critic_dev_optimize_sees_train_tps_in_detail(synced_db: Database) -> None:
+async def test_critic_dev_optimize_sees_train_tps_in_detail(
+    synced_db: Database, critic_dev_optimize_gt_client: TestClient
+) -> None:
     """critic_dev_optimize sees TPs on train split snapshot.
 
     can_access_snapshot_ground_truth() permits critic_dev_optimize access
@@ -102,30 +105,20 @@ async def test_critic_dev_optimize_sees_train_tps_in_detail(synced_db: Database)
         }
     assert len(train_tp_ids) > 0, "train1 specimen must have TPs (check specimen sync)"
 
-    creds = await make_agent_credentials(
-        synced_db,
-        CriticDevOptimizeTypeConfig(
-            target_metric=TargetMetric.TARGETED, optimizer_model="gpt-4o-mini", critic_model="gpt-4o-mini"
-        ),
-        FAKE_CRITIC_DEV_OPTIMIZE_DIGEST,
-    )
-    user_db = Database.per_request(synced_db.config.with_user(creds.username, creds.password))
-    try:
-        client = make_gt_client(synced_db, user_db)
-        resp = client.get("/api/gt/snapshots/test-fixtures/train1")
-        assert resp.status_code == 200
-        body = resp.json()
-        returned_tp_ids = {tp["tp_id"] for tp in body["true_positives"]}
-        assert returned_tp_ids == train_tp_ids, dedent(f"""
-            critic_dev_optimize must see all TRAIN split TPs via RLS.
-            Expected: {train_tp_ids}
-            Got:      {returned_tp_ids}
-        """)
-    finally:
-        user_db.dispose()
+    resp = critic_dev_optimize_gt_client.get("/api/gt/snapshots/test-fixtures/train1")
+    assert resp.status_code == 200
+    body = resp.json()
+    returned_tp_ids = {tp["tp_id"] for tp in body["true_positives"]}
+    assert returned_tp_ids == train_tp_ids, dedent(f"""
+        critic_dev_optimize must see all TRAIN split TPs via RLS.
+        Expected: {train_tp_ids}
+        Got:      {returned_tp_ids}
+    """)
 
 
-async def test_critic_dev_optimize_cannot_see_valid_tps_in_detail(synced_db: Database) -> None:
+async def test_critic_dev_optimize_cannot_see_valid_tps_in_detail(
+    synced_db: Database, critic_dev_optimize_gt_client: TestClient
+) -> None:
     """critic_dev_optimize cannot see TPs on valid/test snapshots (RLS blocks).
 
     can_access_snapshot_ground_truth() returns false for non-train snapshots
@@ -135,26 +128,14 @@ async def test_critic_dev_optimize_cannot_see_valid_tps_in_detail(synced_db: Dat
         valid_tp_count = session.query(TruePositive).filter_by(snapshot_slug="test-fixtures/valid1").count()
     assert valid_tp_count > 0, "valid1 specimen must have TPs (check specimen sync)"
 
-    creds = await make_agent_credentials(
-        synced_db,
-        CriticDevOptimizeTypeConfig(
-            target_metric=TargetMetric.TARGETED, optimizer_model="gpt-4o-mini", critic_model="gpt-4o-mini"
-        ),
-        FAKE_CRITIC_DEV_OPTIMIZE_DIGEST,
-    )
-    user_db = Database.per_request(synced_db.config.with_user(creds.username, creds.password))
-    try:
-        client = make_gt_client(synced_db, user_db)
-        resp = client.get("/api/gt/snapshots/test-fixtures/valid1")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["true_positives"] == [], dedent("""
-            critic_dev_optimize must NOT see valid split TPs.
-            RLS policy can_access_snapshot_ground_truth() must block access
-            for non-train snapshots to prevent overfitting.
-        """)
-    finally:
-        user_db.dispose()
+    resp = critic_dev_optimize_gt_client.get("/api/gt/snapshots/test-fixtures/valid1")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["true_positives"] == [], dedent("""
+        critic_dev_optimize must NOT see valid split TPs.
+        RLS policy can_access_snapshot_ground_truth() must block access
+        for non-train snapshots to prevent overfitting.
+    """)
 
 
 if __name__ == "__main__":
