@@ -43,7 +43,7 @@ class RegistryProxyConfig:
     def proxy_url(self) -> str:
         return f"http://{self.host}:{self.port}"
 
-    def _pull_authority(self) -> str:
+    def pull_authority(self) -> str:
         """Host:port string for image references (what the container runtime pulls from)."""
         h = self.pull_host or self.host
         p = self.pull_port if self.pull_host else self.port
@@ -52,24 +52,9 @@ class RegistryProxyConfig:
         return f"{h}:{p}"
 
     def build_oci_reference(self, agent_type: AgentType, digest: str) -> str:
-        """Build full OCI reference (host:port/repository@digest)."""
+        """Build full OCI reference (authority/repository@digest)."""
         repository = str(agent_type)
-        return f"{self._pull_authority()}/{repository}@{digest}"
-
-    def normalize_image_ref(self, image_ref: str) -> str:
-        """Normalize image reference, adding registry if needed.
-
-        Examples:
-            "critic:latest" -> "localhost:8000/critic:latest"
-            "localhost:8000/critic:latest" -> "localhost:8000/critic:latest"
-            "sha256:abc..." -> "sha256:abc..." (digest refs unchanged)
-        """
-        if image_ref.startswith("sha256:"):
-            return image_ref
-        if "/" in image_ref and ":" in image_ref.split("/")[0]:
-            return image_ref
-        authority = self._pull_authority()
-        return f"{authority}/{image_ref}"
+        return f"{self.pull_authority()}/{repository}@{digest}"
 
 
 def get_registry_proxy_config() -> RegistryProxyConfig:

@@ -70,7 +70,7 @@ async def create_executor(
         core_v1 = CoreV1Api(api_client)
 
         if executor_config.image_pull_secret and registry_config:
-            pull_host = registry_config._pull_authority()
+            pull_host = registry_config.pull_authority()
             await _ensure_image_pull_secret(
                 core_v1,
                 namespace=executor_config.namespace,

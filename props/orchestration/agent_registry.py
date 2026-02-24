@@ -200,10 +200,13 @@ class AgentRegistry:
 
     # --- Image Resolution ---
 
-    async def _pull_image(self, image: str) -> str:
-        """Ensure image is available to the executor, returning a runtime-specific image ID."""
-        full_ref = self._registry_config.normalize_image_ref(image)
-        return await self._executor.ensure_image(full_ref)
+    async def _pull_image(self, oci_ref: str) -> str:
+        """Ensure image is available to the executor, returning a runtime-specific image ID.
+
+        oci_ref must be a fully-qualified OCI reference (authority/repository@digest),
+        as returned by build_oci_reference().
+        """
+        return await self._executor.ensure_image(oci_ref)
 
     async def _resolve_image_ref(self, agent_type: AgentType, ref: str) -> str:
         """Resolve image reference to digest via registry proxy.

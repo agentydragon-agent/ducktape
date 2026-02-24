@@ -79,6 +79,18 @@ py_test(
 )
 
 py_test(
+    name = "test_oci_utils",
+    srcs = ["test_oci_utils.py"],
+    imports = ["../.."],
+    deps = [
+        ":agent_types",
+        ":oci_utils",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_agent_types",
     srcs = ["test_agent_types.py"],
     imports = ["../.."],
