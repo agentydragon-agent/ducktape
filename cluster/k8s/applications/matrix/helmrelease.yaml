@@ -51,8 +51,9 @@ spec:
     # Server name - this is the domain used in Matrix user IDs (@user:allegedly.works)
     serverName: allegedly.works
 
-    # Public baseurl - this is the actual URL where Synapse is accessible
-    publicBaseurl: https://matrix.allegedly.works
+    # Public server name - the hostname where Synapse is publicly accessible.
+    # The chart derives public_baseurl as https://<publicServerName>.
+    publicServerName: matrix.allegedly.works
 
     # Resources
     resources:
