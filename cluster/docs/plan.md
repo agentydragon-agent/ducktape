@@ -40,6 +40,18 @@ Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
    `common_cluster_config`, and `common_machine_base` locals into `main.tf`. Hetzner and
    Proxmox node configs both reference these, eliminating duplication of kube-apiserver
    OIDC flags, cluster settings, and network/feature config.
+5. **Matrix OIDC fix** — Fixed `publicBaseurl` not being applied by the ananace chart.
+   The top-level `publicBaseurl` value was silently ignored; replaced with
+   `publicServerName: matrix.allegedly.works` which the chart uses to derive
+   `public_baseurl`. This fixed the OIDC redirect URI mismatch (`allegedly.works` vs
+   `matrix.allegedly.works`) that was blocking Authentik SSO login for Element.
+6. **Proxmox CSI SCSI slot exhaustion fix** — `talos-pve-cp-0` had 29/29 CSI data
+   volumes (CSI driver hardcodes `for lun = 1; lun < 30`), blocking harbor-database.
+   Deleted 3 orphaned Gitea Valkey PVCs (redis-cluster disabled but PVCs remained)
+   and detached their SCSI devices from Proxmox. Switched Harbor Redis and Langfuse
+   Zookeeper PVCs to `local-path` storageClass (cache/ephemeral data, acceptable to
+   lose on cluster rebuild). Harbor database rescheduled to gpu-worker-0 (automatic —
+   scheduler picked the node with free CSI slots).
 
 ### Recent Changes (2026-02-23)
 
@@ -145,8 +157,12 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       in the Grocy UI (user menu → Manage API keys), store it at `kv/grocy/api-key` in Vault,
       then wire via ExternalSecret into OpenClaw (`GROCY_API_KEY`) and/or expose for Claude.
       REST API base: `https://grocy.allegedly.works/api/`.
-- [ ] **Test all SSO flows** — Gitea verified working. Run `scripts/check-authentik-login.py`.
-      Remaining to test: Harbor, Grafana, Matrix, Vault OIDC login via browser.
+- [ ] **Test all SSO flows** — Gitea, Matrix, Grafana, and Vault verified working.
+      Run `scripts/check-authentik-login.py`. Remaining: Harbor SSO.
+- [ ] **Consider moving more PVCs from `proxmox-csi-retain` to `local-path`** — the
+      Proxmox CSI driver hardcodes a 29 data volume per node limit (`lun < 30`).
+      cp-0 currently has ~26/29 slots used. Candidates for `local-path` (ephemeral/
+      regenerable data, acceptable to lose on cluster rebuild): - `langfuse/valkey-data-langfuse-redis-primary-0` (8Gi) — cache - `langfuse/langfuse-s3` (8Gi) — MinIO object storage, regenerable - `monitoring/alertmanager-*` (5Gi) — alert silences - `monitoring/prometheus-*` (20Gi) — time-series metrics - `monitoring/storage-tempo-0` (10Gi) — traces - `monitoring/kube-prometheus-stack-grafana` (10Gi) — dashboards (should be in ConfigMaps) - `loki/storage-loki-stack-0` (20Gi) — logs - `harbor/harbor-jobservice` (1Gi) — job queue
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
       in `terraform/gitops/sso/users/main.tf` skips MFA. Add enrollment stage + MFA validation
       stage back when ready.

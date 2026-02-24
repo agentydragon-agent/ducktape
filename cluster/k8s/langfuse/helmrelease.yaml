@@ -106,6 +106,9 @@ spec:
       zookeeper:
         replicaCount: 1
         resourcesPreset: small
+        persistence:
+          storageClass: local-path
+          size: 8Gi
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       persistence:
@@ -119,9 +122,11 @@ spec:
         # for both the Bitnami sub-chart and Langfuse app connection string.
         existingSecret: langfuse-secrets
         existingSecretPasswordKey: redis-password
-      # TODO(reliability): Move Redis to VPS or add Sentinel/cluster mode.
       nodeSelector:
         topology.kubernetes.io/region: proxmox
+      master:
+        persistence:
+          storageClass: local-path
 
     # TODO(reliability): Replace bundled MinIO with multi-node MinIO or
     # external S3 (Cloudflare R2 / Hetzner Object Storage) for durability.

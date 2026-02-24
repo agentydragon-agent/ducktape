@@ -69,6 +69,7 @@ spec:
         database:
           size: 1Gi
         redis:
+          storageClass: local-path
           size: 1Gi
         trivy:
           size: 5Gi
