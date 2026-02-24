@@ -89,6 +89,9 @@ let
 
   # headscale-cleanup - Headscale node management tool
   headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix { };
+
+  # claude-hooks - Claude Code hooks and statusline
+  claude-hooks = pkgs.callPackage ./packages/claude-hooks.nix { };
 in
 {
   imports = [
@@ -405,6 +408,7 @@ in
       # Custom packages from ducktape repo
       ducktape # CLI tools: git-commit-ai, difftree
       headscale-cleanup # Headscale node management
+      claude-hooks # Claude Code hooks and statusline
     ]
     ++ lib.optionals enableKube [
       kubectl

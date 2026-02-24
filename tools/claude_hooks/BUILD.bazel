@@ -280,6 +280,12 @@ py_library(
 )
 
 py_library(
+    name = "statusline_lib",
+    srcs = ["statusline.py"],
+    imports = ["../.."],
+)
+
+py_library(
     name = "session_start_lib",
     srcs = ["session_start.py"],
     data = ["templates/session_context.mako"],
@@ -332,6 +338,14 @@ py_binary(
 )
 
 py_binary(
+    name = "statusline",
+    imports = ["../.."],
+    main_module = "tools.claude_hooks.statusline",
+    visibility = ["//visibility:public"],
+    deps = [":statusline_lib"],
+)
+
+py_binary(
     name = "session_start",
     data = [":bazel_wrapper"],
     imports = ["../.."],
@@ -374,6 +388,7 @@ py_package(
         ":secrets_setup",
         ":session_start_lib",
         ":settings",
+        ":statusline_lib",
         ":streaming",
         ":tmpfs_setup",
         ":tracing",
@@ -392,6 +407,7 @@ py_wheel(
     entry_points = {"console_scripts": [
         "claude-pre-tool-use = tools.claude_hooks.pre_tool_use:main",
         "claude-session-start = tools.claude_hooks.session_start:main",
+        "claude-statusline = tools.claude_hooks.statusline:main",
     ]},
     python_requires = ">=3.13",
     requires = [

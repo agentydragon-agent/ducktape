@@ -255,7 +255,7 @@ jobs:
           )" \
             dist/*.whl
 
-      - name: Bump settings.json to new release tag
+      - name: Bump Nix package to new release
         run: |
           set -x  # Print commands for debugging
           git config user.name "github-actions[bot]"
@@ -270,14 +270,21 @@ jobs:
             exit 1
           fi
 
-          TAG="claude-hooks-${{ env.SHORT_SHA }}"
-          sed -i "s|claude-hooks-[a-f0-9]\{8\}|${TAG}|g" .claude/settings.json
-          if git diff --quiet .claude/settings.json; then
+          # Bump Nix package (shortSha + SRI hash)
+          NIX_PKG="nix/home/packages/claude-hooks.nix"
+          WHEEL_FILE="dist/claude_hooks-0.1.0-py3-none-any.whl"
+          SHA256=$(sha256sum "$WHEEL_FILE" | cut -d' ' -f1)
+          SRI_HASH="sha256-$(echo -n "$SHA256" | xxd -r -p | base64 -w0)"
+          sed -i "s|shortSha = \".*\"|shortSha = \"${{ env.SHORT_SHA }}\"|" "$NIX_PKG"
+          sed -i "s|hash = \"sha256-.*\"|hash = \"${SRI_HASH}\"|" "$NIX_PKG"
+
+          if git diff --quiet "$NIX_PKG"; then
             echo "No change needed"
             exit 0
           fi
 
-          git add .claude/settings.json
+          TAG="claude-hooks-${{ env.SHORT_SHA }}"
+          git add "$NIX_PKG"
           git commit -m "chore: bump claude-hooks to ${TAG} [skip ci]"
 
           # Push with error diagnostics

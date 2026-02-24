@@ -343,7 +343,7 @@ in
       promptSuggestions = true;
       statusLine = {
         type = "command";
-        command = "/home/agentydragon/.claude/statusline.py";
+        command = "claude-statusline";
       };
 
       sandbox = {
@@ -382,13 +382,7 @@ in
   config.home.packages = [ gmail-mcp-server ];
 
   # Deploy skills to ~/.claude/skills/ from shared nix/home/skills/ directory
-  config.home.file = {
-    ".claude/statusline.py" = {
-      source = ./statusline.py;
-      executable = true;
-    };
-  }
-  // lib.mapAttrs' (
+  config.home.file = lib.mapAttrs' (
     skillName: skillType:
     lib.nameValuePair ".claude/skills/${skillName}" {
       source = skillsDir + "/${skillName}";
