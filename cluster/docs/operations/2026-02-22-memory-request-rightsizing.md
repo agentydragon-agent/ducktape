@@ -36,6 +36,20 @@ only matter at OOM-kill time).
 
 **Total reclaimed: ~2.7GB of request budget.**
 
+## Outpost Consolidation (2026-02-23)
+
+Consolidated 9 single-replica Authentik proxy outposts into 1 shared outpost with 2
+replicas. Outpost pods have no memory requests configured (Authentik default), so
+request budget is unchanged, but actual memory footprint decreased:
+
+| Before                                       | After                                                |
+| -------------------------------------------- | ---------------------------------------------------- |
+| 9 outpost pods (~10-18Mi each, ~112Mi total) | 2 shared outpost pods (~30Mi each est., ~60Mi total) |
+
+Net saving: ~50Mi actual memory and 7 fewer pods (reduced scheduling overhead, API server
+watch connections, and kubelet bookkeeping). Primary benefit is HA — rolling restarts keep
+at least 1 replica serving.
+
 ## Future Work
 
 Consider deploying [Kubernetes VPA](https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler)
