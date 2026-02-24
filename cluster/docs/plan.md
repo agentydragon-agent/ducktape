@@ -170,13 +170,10 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       configure Gitea OAuth via admin API, but SSO moved to the Authentik blueprint pattern.
       Nothing currently consumes the token secret. May still be useful for future Gitea API
       automation (repo/org management).
-- [ ] **Fix Harbor proxy cache: add `overridePath` to registry mirrors** — Proxy cache
-      is non-functional because containerd sends a double `/v2/` in the URL path (e.g.
-      `/v2/docker-hub-proxy/v2/library/busybox/...` instead of
-      `/v2/docker-hub-proxy/library/busybox/...`). Root cause: Talos `hosts.toml` lacks
-      `override_path = true`. Fix: add `overridePath = true` to each mirror entry in
-      `terraform/bootstrap/infrastructure/main.tf:64`. Requires cluster rebuild (machine
-      config change). See `docs/troubleshooting/harbor-proxy-cache-401.md`.
+- [x] **Fix Harbor proxy cache: add `overridePath` to registry mirrors** — Fixed.
+      `overridePath = true` added to all mirror entries in `main.tf` and confirmed deployed
+      to nodes. Anonymous token-based pulls through the proxy cache work correctly for
+      public images (all 5 proxy cache projects are `public = true`).
 - [ ] **Harbor proxy cache: add GHCR credentials for private repos** — GHCR proxy returns
       403 DENIED for private repos like `openclaw/openclaw`. Configure credentials on the
       `ghcr` registry endpoint in Harbor (via `harbor-proxy-cache` terraform module or
