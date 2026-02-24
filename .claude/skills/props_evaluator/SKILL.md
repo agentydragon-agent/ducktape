@@ -48,12 +48,18 @@ Health check: `GET /health` → `{"status":"ok"}`
 
 @props/docs/backend_api.md
 
-### Evaluator-specific access
+### Access by caller role
 
-The evaluator role is distinct from admin and agent roles:
+All `/api/gt/*` and `/api/stats/*` endpoints use per-caller RLS via the caller's
+Postgres credentials — there is no agent-type gate at the HTTP layer.
 
-- **Allowed:** `/api/stats/*`, `/api/runs/*`, `/api/definitions`, `/api/model_metadata`, `/v1/responses`, `/v2/*` (registry read)
-- **Denied:** `/api/gt/*` (ground truth — admin only)
+| Caller                | `/api/gt/*`            | `/api/stats/*`         | `/api/runs/*` |
+| --------------------- | ---------------------- | ---------------------- | ------------- |
+| Admin (postgres user) | All data               | All data               | Full access   |
+| Evaluator             | All data (BYPASSRLS)   | All data (BYPASSRLS)   | Read-only     |
+| `critic_dev_optimize` | TRAIN split only       | TRAIN split only       | Read-only     |
+| `critic`              | Own run only           | Own run only           | Read-only     |
+| `grader`              | Assigned snapshot only | Assigned snapshot only | Read-only     |
 
 Full endpoint list and request shapes: fetch `/openapi.json` from the live server.
 
