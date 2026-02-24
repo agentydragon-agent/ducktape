@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 from pydantic import BaseModel
-from sqlalchemy import select, tuple_
+from sqlalchemy import select, text, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -496,3 +496,14 @@ def sync_specimen(session: Session, bundle: SpecimenBundle) -> None:
     _sync_critic_scopes_for_specimen(session, slug, true_positives, false_positives)
 
     logger.info(f"Synced specimen from bundle: {slug}")
+
+
+def refresh_examples_matview(session: Session) -> None:
+    """Refresh the examples materialized view after specimen data changes.
+
+    Must be called after specimen data is committed (the refresh reads committed data).
+    Commits internally since REFRESH MATERIALIZED VIEW is a top-level DDL operation.
+    """
+    session.execute(text("REFRESH MATERIALIZED VIEW examples"))
+    session.commit()
+    logger.info("Refreshed examples materialized view")

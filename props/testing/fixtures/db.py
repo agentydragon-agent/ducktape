@@ -20,7 +20,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.model_metadata import sync_model_metadata_with_session
-from props.db.sync.sync import SpecimenBundle, sync_specimen
+from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
@@ -180,6 +180,7 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
             bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
             sync_specimen(session, bundle)
         session.commit()
+        refresh_examples_matview(session)
 
 
 @pytest.fixture(scope="session")

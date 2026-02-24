@@ -14,7 +14,7 @@ from rich.table import Table
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.model_metadata import sync_model_metadata_with_session
-from props.db.sync.sync import SpecimenBundle, sync_specimen
+from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
@@ -51,6 +51,7 @@ def cmd_sync_specimen(
     with db.session() as session:
         sync_specimen(session, bundle)
         session.commit()
+        refresh_examples_matview(session)
 
     console.print("[green]✓[/green] Sync completed successfully")
 

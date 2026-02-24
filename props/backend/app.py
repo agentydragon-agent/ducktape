@@ -33,7 +33,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_evaluator_role, upgrade_database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
-from props.db.sync.sync import SpecimenBundle, sync_specimen
+from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.executor_factory import create_executor
 from props.orchestration.grader_supervisor import GraderSupervisor
@@ -84,6 +84,10 @@ def _sync_all_specimens(db: Database) -> None:
         synced += 1
 
     logger.info(f"Synced {synced} specimens from {SPECIMENS_DIR}")
+
+    # Refresh the materialized view (reads committed specimen data)
+    with db.session() as session:
+        refresh_examples_matview(session)
 
 
 def _make_lifespan(deps: BackendDeps):
