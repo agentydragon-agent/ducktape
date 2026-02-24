@@ -5,3 +5,4 @@ resources:
   - gemini-api-key-sealed.yaml
   - openai-api-key-sealed.yaml
   - anthropic-api-key-sealed.yaml
+  - sandbox-sa-token-eso.yaml

@@ -13,5 +13,6 @@ spec:
   timeout: 5m
   dependsOn:
     - name: openclaw-namespace
+    - name: openclaw-sandbox
     - name: external-secrets-config
     - name: reflector

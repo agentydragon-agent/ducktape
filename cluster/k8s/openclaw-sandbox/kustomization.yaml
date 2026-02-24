@@ -7,7 +7,4 @@ resources:
   - role-sandbox.yaml
   - rolebinding-default-sa.yaml
   - rolebinding-openclaw-sa.yaml
-  - node-config.yaml
-  - node-pvc.yaml
-  - gateway-token-eso.yaml
-  - node-deployment.yaml
+  - sa-token-secret.yaml

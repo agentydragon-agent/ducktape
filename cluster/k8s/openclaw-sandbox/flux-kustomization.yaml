@@ -12,7 +12,4 @@ spec:
     name: flux-system
   timeout: 5m
   dependsOn:
-    - name: openclaw
     - name: openclaw-namespace
-    - name: external-secrets-operator
-    - name: external-secrets-config

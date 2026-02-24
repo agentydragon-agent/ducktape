@@ -234,6 +234,51 @@ spec:
         cpu: "1000m"
         memory: "2Gi"
 
+  sidecars:
+    - name: node-host
+      image: ghcr.io/openclaw/openclaw:latest
+      command: ["node", "openclaw.mjs", "node", "run"]
+      args: ["--host", "127.0.0.1", "--port", "18789"]
+      env:
+        - name: OPENCLAW_GATEWAY_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: openclaw-gateway-token
+              key: token
+        # Point kubectl at the sandbox SA token so agent commands target
+        # openclaw-sandbox with the sandbox RBAC permissions.
+        - name: KUBECONFIG
+          value: /dev/null
+        - name: KUBERNETES_SERVICE_HOST
+          value: kubernetes.default.svc
+        - name: KUBERNETES_SERVICE_PORT
+          value: "443"
+      volumeMounts:
+        - name: sandbox-sa-token
+          mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          readOnly: true
+        - name: node-data
+          mountPath: /home/node/.openclaw
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+
+  sidecarVolumes:
+    - name: sandbox-sa-token
+      secret:
+        secretName: sandbox-sa-token
+        items:
+          - key: token
+            path: token
+          - key: ca.crt
+            path: ca.crt
+    - name: node-data
+      emptyDir: {}
+
   extraVolumes:
     - name: kube-api-token
       projected:
