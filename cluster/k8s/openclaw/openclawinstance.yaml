@@ -95,36 +95,36 @@ spec:
               - id: "gemini-3.1-pro-preview"
                 name: "Gemini 3.1 Pro"
                 reasoning: true
-                input: ["text", "image", "audio", "video"]
+                input: ["text", "image"]
                 contextWindow: 1048576
                 maxTokens: 65536
               - id: "gemini-3-pro-preview"
                 name: "Gemini 3 Pro"
                 reasoning: true
-                input: ["text", "image", "audio", "video"]
+                input: ["text", "image"]
                 contextWindow: 1048576
                 maxTokens: 65536
               - id: "gemini-3-flash-preview"
                 name: "Gemini 3 Flash"
                 reasoning: true
-                input: ["text", "image", "audio", "video"]
+                input: ["text", "image"]
                 contextWindow: 1048576
                 maxTokens: 65536
               - id: "gemini-2.5-pro"
                 name: "Gemini 2.5 Pro"
                 reasoning: true
-                input: ["text", "image", "audio", "video"]
+                input: ["text", "image"]
                 contextWindow: 1048576
                 maxTokens: 65536
               - id: "gemini-2.5-flash"
                 name: "Gemini 2.5 Flash"
                 reasoning: true
-                input: ["text", "image", "audio", "video"]
+                input: ["text", "image"]
                 contextWindow: 1048576
                 maxTokens: 65536
           openai:
             baseUrl: "https://api.openai.com/v1"
-            api: openai
+            api: openai-completions
             models:
               - id: "gpt-5.2"
                 name: "GPT-5.2"
@@ -164,7 +164,7 @@ spec:
                 maxTokens: 128000
           anthropic:
             baseUrl: "https://api.anthropic.com/v1"
-            api: anthropic
+            api: anthropic-messages
             models:
               - id: "claude-opus-4-6"
                 name: "Claude Opus 4.6"
