@@ -1,0 +1,135 @@
+"""Shared utility libraries."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//tools/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "net",
+    srcs = ["net.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//tenacity"],
+)
+
+py_library(
+    name = "docker",
+    srcs = ["docker.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//aiodocker"],
+)
+
+py_library(
+    name = "workspace",
+    srcs = ["workspace.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "runfiles",
+    srcs = ["runfiles.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@rules_python//python/runfiles"],
+)
+
+py_library(
+    name = "bazel_subprocess",
+    srcs = ["bazel_subprocess.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "bazel_query",
+    srcs = ["bazel_query.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "decorators",
+    srcs = ["decorators.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "logging",
+    srcs = ["logging.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//structlog",
+        "@pypi//typer_slim",
+    ],
+)
+
+py_library(
+    name = "fmt",
+    srcs = ["fmt.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "oci",
+    testonly = True,
+    srcs = ["oci.py"],
+    data = ["@crane"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runfiles",
+        "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "undeclared_outputs",
+    testonly = True,
+    srcs = ["undeclared_outputs.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "playwright",
+    testonly = True,
+    srcs = ["playwright.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//playwright",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_bazel_subprocess",
+    srcs = ["test_bazel_subprocess.py"],
+    deps = [
+        ":bazel_subprocess",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bazel_query",
+    srcs = ["test_bazel_query.py"],
+    deps = [
+        ":bazel_query",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

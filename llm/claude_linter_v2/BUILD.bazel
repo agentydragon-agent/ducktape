@@ -171,7 +171,7 @@ py_test(
     deps = [
         ":cli",
         ":conftest",
-        "//bazel_util:subprocess",
+        "//util:bazel_subprocess",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",

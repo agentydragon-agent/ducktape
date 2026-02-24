@@ -1,4 +1,4 @@
-"""Tests for bazel_util.subprocess module."""
+"""Tests for util.bazel_subprocess module."""
 
 import os
 import sys
@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 import pytest_bazel
 
-from bazel_util.subprocess import (
+from util.bazel_subprocess import (
     exports_from_dict,
     generate_shell_wrapper,
     python_env,

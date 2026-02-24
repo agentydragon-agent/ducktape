@@ -1,4 +1,4 @@
-"""Tests for bazel_util.query."""
+"""Tests for util.bazel_query."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from bazel_util.query import BazelLabel, run_query
+from util.bazel_query import BazelLabel, run_query
 
 
 @pytest.mark.parametrize(
@@ -106,7 +106,7 @@ def test_run_query_parses_labels(tmp_path: Path) -> None:
     mock_result = MagicMock()
     mock_result.stdout = "//foo:bar.py\n@ext//pkg:target\n\n"
     mock_result.returncode = 0
-    with patch("bazel_util.query.subprocess.run", return_value=mock_result) as mock_run:
+    with patch("util.bazel_query.subprocess.run", return_value=mock_result) as mock_run:
         result = run_query("//...", cwd=tmp_path)
     (cmd,), kwargs = mock_run.call_args
     assert cmd[:3] == ["bazel", "query", "--output=label"]
@@ -126,7 +126,7 @@ def test_run_query_persist_dir(tmp_path: Path) -> None:
     mock_result.stdout = "//foo:bar\n"
     mock_result.stderr = ""
     mock_result.returncode = 0
-    with patch("bazel_util.query.subprocess.run", return_value=mock_result):
+    with patch("util.bazel_query.subprocess.run", return_value=mock_result):
         run_query("//...", persist_dir=persist_dir)
     assert (persist_dir / "query").read_text() == "//..."
     assert (persist_dir / "stdout").read_text() == "//foo:bar\n"
@@ -138,7 +138,7 @@ def test_run_query_raises_on_failure(tmp_path: Path) -> None:
     mock_result.stdout = ""
     mock_result.stderr = "error"
     mock_result.returncode = 1
-    with patch("bazel_util.query.subprocess.run", return_value=mock_result), pytest.raises(CalledProcessError):
+    with patch("util.bazel_query.subprocess.run", return_value=mock_result), pytest.raises(CalledProcessError):
         run_query("//...", cwd=tmp_path)
 
 

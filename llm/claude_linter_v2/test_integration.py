@@ -6,7 +6,7 @@ import subprocess
 import pytest
 import pytest_bazel
 
-from bazel_util.subprocess import run_python_module
+from util.bazel_subprocess import run_python_module
 
 
 def _has_ruff() -> bool:

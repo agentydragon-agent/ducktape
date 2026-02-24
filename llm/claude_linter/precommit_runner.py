@@ -9,7 +9,7 @@ from typing import Any
 import platformdirs
 import yaml
 
-from bazel_util.subprocess import run_python_module
+from util.bazel_subprocess import run_python_module
 
 
 class PreCommitRunner:

@@ -29,9 +29,9 @@ if str(_REPO_ROOT) not in sys.path:
 import pygit2  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
-from env_utils.env_utils import get_required_env  # noqa: E402
 from tools.ci.diff_utils import download_bazel_diff, get_changed_files, has_infra_changes, run_bazel_diff  # noqa: E402
 from tools.ci.github_actions import CIEnvironment  # noqa: E402
+from util.env import get_required_env  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

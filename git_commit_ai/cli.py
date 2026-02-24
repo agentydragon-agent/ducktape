@@ -23,11 +23,11 @@ from pathlib import Path
 import pygit2
 import typer
 
-from bazel_util.workspace import get_build_workspace_directory
-from cli_util.decorators import async_run
 from git_commit_ai.agent_backend import generate_commit_message_agent
 from git_commit_ai.config import load_settings
 from git_commit_ai.editor import render_editor_content, run_editor
+from util.decorators import async_run
+from util.workspace import get_build_workspace_directory
 
 app = typer.Typer(help="AI-powered git commit message generator")
 

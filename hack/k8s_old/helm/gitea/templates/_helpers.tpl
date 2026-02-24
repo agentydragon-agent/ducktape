@@ -25,4 +25,3 @@ Helper templates for the Ducktape Gitea stack chart.
 {{- define "gitea-stack.emberScriptConfigMapName" -}}
 {{- default "gitea-ember-bootstrap" .Values.emberBootstrap.scriptConfigMapName -}}
 {{- end -}}
-

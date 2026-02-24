@@ -9,13 +9,13 @@ from pathlib import Path
 import pygit2
 from platformdirs import user_state_dir
 
-from bazel_util.subprocess import run_python_module
 from claude_hooks.actions import PostToolAction, PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.base import PostToolUseHook
 from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput
 from claude_hooks.logging_context import get_current_invocation_id
 from claude_hooks.tool_models import EditInput, MultiEditInput, WriteInput
+from util.bazel_subprocess import run_python_module
 
 PRECOMMIT_CONFIG_FILE = ".pre-commit-config.yaml"
 

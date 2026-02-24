@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from bazel_util.query import run_query as _run_query
+from util.bazel_query import run_query as _run_query
 
 logger = logging.getLogger(__name__)
 
