@@ -18,7 +18,7 @@ spec:
       containers:
         - name: node
           image: ghcr.io/openclaw/openclaw:latest
-          command: ["openclaw", "node", "run"]
+          command: ["node", "openclaw.mjs", "node", "run"]
           args:
             - "--host"
             - "$(GATEWAY_HOST)"
@@ -35,6 +35,11 @@ spec:
                 configMapKeyRef:
                   name: openclaw-node-config
                   key: gateway-port
+            - name: OPENCLAW_GATEWAY_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openclaw-gateway-token
+                  key: token
           resources:
             requests:
               cpu: 100m
@@ -44,7 +49,7 @@ spec:
               memory: 512Mi
           volumeMounts:
             - name: node-data
-              mountPath: /root/.openclaw
+              mountPath: /home/node/.openclaw
       volumes:
         - name: node-data
           persistentVolumeClaim:

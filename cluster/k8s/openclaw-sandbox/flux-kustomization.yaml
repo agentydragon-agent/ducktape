@@ -14,3 +14,5 @@ spec:
   dependsOn:
     - name: openclaw
     - name: openclaw-namespace
+    - name: external-secrets-operator
+    - name: external-secrets-config
