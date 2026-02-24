@@ -69,24 +69,3 @@ entries:
       target: !KeyOf alloy-otlp-app
       user: !KeyOf alloy-otlp-sa
       order: 0
-
-  # Dedicated outpost so alloy-otlp auth is isolated from other proxy providers.
-  # Runs on Hetzner VPS nodes alongside Authentik server.
-  - model: authentik_outposts.outpost
-    state: present
-    identifiers:
-      name: alloy-otlp-outpost
-    attrs:
-      type: proxy
-      providers:
-        - !KeyOf alloy-otlp-provider
-      service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
-      config:
-        authentik_host: "http://authentik-server.authentik:80"
-        authentik_host_browser: "https://auth.allegedly.works"
-        kubernetes_json_patches:
-          deployment:
-            - op: add
-              path: /spec/template/spec/nodeSelector
-              value:
-                topology.kubernetes.io/region: hetzner

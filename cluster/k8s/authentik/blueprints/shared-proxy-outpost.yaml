@@ -1,0 +1,83 @@
+version: 1
+metadata:
+  name: SSO - Shared Proxy Outpost
+  labels:
+    blueprints.goauthentik.io/description: "Shared HA proxy outpost for all proxy-mode SSO providers"
+
+entries:
+  - model: authentik_outposts.outpost
+    state: present
+    identifiers:
+      name: shared-proxy-outpost
+    attrs:
+      type: proxy
+      providers:
+        - !Find [authentik_providers_proxy.proxyprovider, [name, gatus]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, grocy]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, headlamp]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, loki]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, openclaw]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, scanner-filebrowser]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
+      service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
+      config:
+        authentik_host: "http://authentik-server.authentik:80"
+        authentik_host_browser: "https://auth.allegedly.works"
+        kubernetes_replicas: 2
+        kubernetes_json_patches:
+          deployment:
+            - op: add
+              path: /spec/template/spec/nodeSelector
+              value:
+                topology.kubernetes.io/region: hetzner
+            - op: add
+              path: /spec/template/spec/affinity
+              value:
+                podAntiAffinity:
+                  preferredDuringSchedulingIgnoredDuringExecution:
+                    - weight: 100
+                      podAffinityTerm:
+                        labelSelector:
+                          matchExpressions:
+                            - key: app.kubernetes.io/managed-by
+                              operator: In
+                              values: ["goauthentik.io"]
+                            - key: app.kubernetes.io/name
+                              operator: In
+                              values: ["ak-outpost-shared-proxy-outpost"]
+                        topologyKey: kubernetes.io/hostname
+
+  # Clean up old per-service outposts (replaced by shared-proxy-outpost)
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: gatus-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: grocy-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: headlamp-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: hubble-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: loki-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: openclaw-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: scanner-filebrowser-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: alloy-otlp-outpost

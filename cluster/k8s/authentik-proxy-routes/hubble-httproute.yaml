@@ -1,7 +1,5 @@
-# HTTPRoute for Hubble UI via Authentik proxy outpost.
+# HTTPRoute for Hubble UI via shared Authentik proxy outpost.
 # Traffic flows: Gateway → outpost (auth) → hubble-ui backend.
-# The outpost service (ak-outpost-hubble-outpost) is auto-created by Authentik
-# when the blueprint deploys the outpost.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -16,5 +14,5 @@ spec:
     - "hubble.allegedly.works"
   rules:
     - backendRefs:
-        - name: ak-outpost-hubble-outpost
+        - name: ak-outpost-shared-proxy-outpost
           port: 9000

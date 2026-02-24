@@ -1,7 +1,5 @@
-# HTTPRoute for Headlamp via Authentik proxy outpost.
-# Traffic flows: Gateway -> outpost (auth) -> headlamp backend.
-# The outpost service (ak-outpost-headlamp-outpost) is auto-created by Authentik
-# when the blueprint deploys the outpost.
+# HTTPRoute for Headlamp via shared Authentik proxy outpost.
+# Traffic flows: Gateway → outpost (auth) → headlamp backend.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -16,5 +14,5 @@ spec:
     - "headlamp.allegedly.works"
   rules:
     - backendRefs:
-        - name: ak-outpost-headlamp-outpost
+        - name: ak-outpost-shared-proxy-outpost
           port: 9000

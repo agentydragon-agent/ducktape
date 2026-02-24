@@ -38,22 +38,3 @@ entries:
       target: !KeyOf openclaw-app
       group: !Find [authentik_core.group, [name, authentik Admins]]
       order: 0
-
-  - model: authentik_outposts.outpost
-    state: present
-    identifiers:
-      name: openclaw-outpost
-    attrs:
-      type: proxy
-      providers:
-        - !KeyOf openclaw-provider
-      service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
-      config:
-        authentik_host: "http://authentik-server.authentik:80"
-        authentik_host_browser: "https://auth.allegedly.works"
-        kubernetes_json_patches:
-          deployment:
-            - op: add
-              path: /spec/template/spec/nodeSelector
-              value:
-                topology.kubernetes.io/region: hetzner

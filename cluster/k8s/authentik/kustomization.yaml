@@ -27,4 +27,5 @@ configMapGenerator:
       - blueprints/grocy-sso.yaml
       - blueprints/filebrowser-sso.yaml
       - blueprints/headscale-sso.yaml
+      - blueprints/shared-proxy-outpost.yaml
     namespace: authentik

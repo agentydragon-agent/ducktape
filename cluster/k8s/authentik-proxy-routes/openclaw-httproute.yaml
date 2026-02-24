@@ -1,7 +1,5 @@
-# HTTPRoute for OpenClaw via Authentik proxy outpost.
+# HTTPRoute for OpenClaw via shared Authentik proxy outpost.
 # Traffic flows: Gateway → outpost (auth) → OpenClaw backend.
-# The outpost service (ak-outpost-openclaw-outpost) is auto-created by Authentik
-# when the blueprint deploys the outpost.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -16,7 +14,7 @@ spec:
     - "openclaw.allegedly.works"
   rules:
     - backendRefs:
-        - name: ak-outpost-openclaw-outpost
+        - name: ak-outpost-shared-proxy-outpost
           port: 9000
       timeouts:
         request: "600s"

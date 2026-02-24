@@ -1,7 +1,5 @@
-# HTTPRoute for Scanner File Browser via Authentik proxy outpost.
-# Traffic flows: Gateway -> outpost (auth) -> filebrowser backend.
-# The outpost service (ak-outpost-scanner-filebrowser-outpost) is auto-created by Authentik
-# when the blueprint deploys the outpost.
+# HTTPRoute for Scanner File Browser via shared Authentik proxy outpost.
+# Traffic flows: Gateway → outpost (auth) → filebrowser backend.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -16,5 +14,5 @@ spec:
     - "scanbox.allegedly.works"
   rules:
     - backendRefs:
-        - name: ak-outpost-scanner-filebrowser-outpost
+        - name: ak-outpost-shared-proxy-outpost
           port: 9000

@@ -1,7 +1,5 @@
-# HTTPRoute for Alloy OTLP via Authentik proxy outpost.
+# HTTPRoute for Alloy OTLP via shared Authentik proxy outpost.
 # Traffic flows: external client → Gateway → outpost (Bearer token auth) → Alloy :4318.
-# The outpost service (ak-outpost-alloy-otlp-outpost) is auto-created by Authentik
-# when the blueprint in cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml deploys.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -16,5 +14,5 @@ spec:
     - "alloy-otlp.allegedly.works"
   rules:
     - backendRefs:
-        - name: ak-outpost-alloy-otlp-outpost
+        - name: ak-outpost-shared-proxy-outpost
           port: 9000
