@@ -19,7 +19,11 @@ Methodology:
 
     output:  short seed prompt + max_tokens=128, stream=True.
              Rate = (tokens_generated - 1) / (last_chunk_ts - first_chunk_ts).
-             Measures decode (output token generation) speed.
+             Measures decode (output token generation) speed at minimal context.
+
+    decode:  filler prompt of ~N tokens + max_tokens=128, stream=True.
+             Same rate calculation as output, but after prefilling a large context.
+             Measures how decode speed degrades with KV cache size.
 
     input:   filler prompt of ~N tokens + max_tokens=1, non-streaming.
              Rate = prompt_tokens / wall_clock_time (includes network RTT).
@@ -247,6 +251,50 @@ def measure_input(client: openai.OpenAI, model: str, target_tokens: int, time_li
     return results
 
 
+def measure_decode_at_context(client: openai.OpenAI, model: str, target_tokens: int, time_limit: float) -> list[float]:
+    """Measure decode speed after prefilling a large context.
+
+    Sends a filler prompt of ~target_tokens followed by a question that elicits
+    a multi-token response. Measures output token rate from streaming chunks.
+    """
+    prompt = make_filler_prompt(target_tokens) + "\n\nNow write a short paragraph about the weather."
+    results: list[float] = []
+    deadline = time.monotonic() + time_limit
+    num_ctx = num_ctx_for(target_tokens)
+
+    while time.monotonic() < deadline and len(results) < MIN_SAMPLES:
+        first_ts: float | None = None
+        last_ts: float | None = None
+        token_count = 0
+
+        try:
+            stream = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=OUTPUT_MAX_TOKENS,
+                stream=True,
+                extra_body={"options": {"num_ctx": num_ctx}},
+            )
+            for chunk in stream:
+                if time.monotonic() > deadline:
+                    break
+                delta = chunk.choices[0].delta.content if chunk.choices else None
+                if delta:
+                    now = time.monotonic()
+                    if first_ts is None:
+                        first_ts = now
+                    last_ts = now
+                    token_count += 1
+        except openai.APIError as exc:
+            print(f" [error: {exc}]", flush=True)
+            break
+
+        if first_ts and last_ts and last_ts > first_ts and token_count > 1:
+            results.append((token_count - 1) / (last_ts - first_ts))
+
+    return results
+
+
 def run_niah(
     client: openai.OpenAI, model: str, context_size_tokens: int, max_samples: int, time_limit: float
 ) -> list[NiahSample]:
@@ -382,6 +430,12 @@ def benchmark_model(
             print(f"    (stopped \u2014 likely hit VRAM limit at {ctx:,} tokens)", flush=True)
             break
 
+        # Decode speed at this context size (KV cache filled, then generate).
+        print(f"  decode {ctx_label} (up to {time_limit:.0f}s)...", end=" ", flush=True)
+        dec = measure_decode_at_context(client, model, ctx, time_limit)
+        results[f"decode{ctx_label}"] = dec
+        print(_fmt(dec), flush=True)
+
         # NIAH recall (same num_ctx, no reallocation needed).
         if niah_samples > 0:
             print(f"  niah {ctx_label} (up to {niah_samples} samples, {time_limit:.0f}s)...", flush=True)
@@ -405,11 +459,12 @@ def print_summary(
 ) -> None:
     col = 28
 
-    # Build metric list: output, then interleaved (input, niah) per context size.
+    # Build metric list: output, then interleaved (input, decode, niah) per context size.
     metrics: list[str] = ["output"]
     for s in context_sizes:
         label = f"{s // 1000}k"
         metrics.append(f"input{label}")
+        metrics.append(f"decode{label}")
         metrics.append(f"niah{label}")
 
     print(f"\n{'=' * 70}")
@@ -440,9 +495,10 @@ def print_summary(
 
     print()
     print("Notes:")
-    print("  output = decode speed (output tokens/sec between first/last streaming chunk)")
-    print("  input  = prefill speed (input tokens/sec, prompt_tokens / wall_clock)")
-    print("  niah   = needle-in-haystack recall (found/total, evenly spaced depths)")
+    print("  output  = decode speed at minimal context (output tok/s, streaming)")
+    print("  input   = prefill speed (input tok/s, prompt_tokens / wall_clock)")
+    print("  decode  = decode speed after prefilling N tokens (output tok/s, streaming)")
+    print("  niah    = needle-in-haystack recall (found/total, evenly spaced depths)")
     print(f"  Each config ran for up to {TIME_LIMIT_S}s")
 
 
