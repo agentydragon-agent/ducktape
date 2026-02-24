@@ -4,6 +4,52 @@ Quick diagnostic commands for common cluster issues.
 
 ## Known Issues
 
+### Cilium Gateway Controller Dies After Talos Machine Config Apply
+
+**Symptoms**:
+
+- Newly created HTTPRoutes have empty `status` (no `Accepted`/`ResolvedRefs` conditions)
+- Existing routes continue serving traffic normally
+- New apps return `{"Message": "no app for hostname"}` or connection refused
+- Cilium operator logs show: `"failed to wait for secret caches to sync: timed out waiting for cache to be synced for Kind *v1.Gateway"`
+
+**Root Cause**:
+
+The Cilium operator's gateway controller is a one-shot job. If it fails to sync the `*v1.Gateway`
+cache during startup (e.g., kube-apiserver was restarting during `talos_machine_configuration_apply`),
+it dies permanently for that pod's lifetime. Existing Envoy routes continue serving from last known
+state, but new HTTPRoutes are never programmed.
+
+This happens when `tofu apply` changes kube-apiserver or kubelet config (causing a rolling Talos
+service restart), and the Cilium operator pod(s) happen to initialize during that window.
+
+**Fix**:
+
+```bash
+kubectl rollout restart deployment/cilium-operator -n kube-system
+kubectl rollout status deployment/cilium-operator -n kube-system --timeout=60s
+```
+
+**Prevention**: `bootstrap.py` now restarts the Cilium operator after `tofu apply` as part of
+`deploy_infrastructure()`. For manual `tofu apply` runs that touch Talos machine config, run the
+fix above.
+
+**Diagnosis**:
+
+```bash
+# Check for HTTPRoutes with empty status (unaccepted by gateway controller)
+kubectl get httproute -A -o json | python3 -c "
+import sys, json
+items = json.load(sys.stdin)['items']
+for r in items:
+    if not r.get('status', {}).get('parents'):
+        print(f'{r[\"metadata\"][\"namespace\"]}/{r[\"metadata\"][\"name\"]}: no status (gateway controller dead?)')
+"
+
+# Check operator logs for the failure
+kubectl logs -n kube-system -l name=cilium-operator --tail=50 | grep "gateway\|cache sync"
+```
+
 ### Cilium MTU Case Sensitivity (Cross-Node Packet Loss)
 
 **Symptoms**:
