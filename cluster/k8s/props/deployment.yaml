@@ -23,7 +23,7 @@ spec:
         - name: harbor-ci-robot
       containers:
         - name: props
-          image: registry.allegedly.works/props/props-backend:devel-20260224021356-9c4046e # {"$imagepolicy": "flux-system:props-backend"}
+          image: registry.allegedly.works/props/props-backend:devel-20260224022248-74dde61 # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
