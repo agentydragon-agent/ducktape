@@ -47,6 +47,18 @@ entries:
                               operator: In
                               values: ["ak-outpost-shared-proxy-outpost"]
                         topologyKey: kubernetes.io/hostname
+          # OAuth sessions are stored in /dev/shm (per-pod). Without session
+          # affinity, the callback request can land on a different pod than the
+          # one that started the OAuth flow, causing a 400 on the callback URL.
+          service:
+            - op: add
+              path: /spec/sessionAffinity
+              value: ClientIP
+            - op: add
+              path: /spec/sessionAffinityConfig
+              value:
+                clientIP:
+                  timeoutSeconds: 3600
 
   # Clean up old per-service outposts (replaced by shared-proxy-outpost)
   - model: authentik_outposts.outpost
