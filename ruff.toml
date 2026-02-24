@@ -22,6 +22,7 @@ exclude = [
     "sysrw/testdata",
     "tana/testdata",
     "props/specimens/*/*/code",
+    "hack/orcaslicer_config",
 ]
 
 [format]

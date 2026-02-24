@@ -6,7 +6,7 @@ finance/worthy/worthy/index_tail.html
 claude/claude_hooks/testdata/claude_tools/**/*.md
 
 # OrcaSlicer config - machine-generated, should not be formatted
-nonrcm_dotfiles/config/OrcaSlicer/**
+hack/orcaslicer_config/**
 
 # Jinja2 templates - prettier mangles block/variable tag formatting
 **/*.j2

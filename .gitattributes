@@ -43,6 +43,9 @@ props/specimens/** filename-conventions-ignored=true
 # Specimens committed snapshot code — frozen third-party code, not ours to lint
 props/specimens/*/*/code/** rules-lint-ignored=true
 
+# OrcaSlicer config - 3D printer slicer settings, not source code
+hack/orcaslicer_config/** rules-lint-ignored=true
+
 # Archived/legacy code
 k8s_old/** rules-lint-ignored=true
 # TODO: Delete legacy_* roles once all machines switch to Nix home-manager
