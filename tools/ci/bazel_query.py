@@ -62,15 +62,28 @@ def filter_for_ci(targets: list[str]) -> list[str]:
     - except attr(target_compatible_with, macos) — exclude platform-incompatible
     - except attr(tags, 'manual') — exclude targets needing special setup
       (e.g. system libraries). Release workflows build these explicitly.
+
+    Handles the ``["//..."]`` sentinel (all targets) by using ``//...`` as a
+    direct query expression, avoiding a huge ``set(...)`` enumeration.
     """
     if not targets:
         return targets
 
-    target_set = f"set({' '.join(targets)})"
-    query = (
-        f"let targets = {target_set} in "
-        f"kind('rule', $targets) "
-        f"except attr(target_compatible_with, '@platforms//os:macos', $targets) "
-        f"except attr(tags, 'manual', $targets)"
-    )
+    if targets == ["//..."]:
+        # Use //... directly — set(//...) works but the result would be a
+        # concrete list of thousands of labels, so handle it up front.
+        universe = "//..."
+        query = (
+            f"kind('rule', {universe}) "
+            f"except attr(target_compatible_with, '@platforms//os:macos', {universe}) "
+            f"except attr(tags, 'manual', {universe})"
+        )
+    else:
+        target_set = f"set({' '.join(targets)})"
+        query = (
+            f"let targets = {target_set} in "
+            f"kind('rule', $targets) "
+            f"except attr(target_compatible_with, '@platforms//os:macos', $targets) "
+            f"except attr(tags, 'manual', $targets)"
+        )
     return run_query(query)
