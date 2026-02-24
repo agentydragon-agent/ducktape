@@ -52,20 +52,26 @@ spec:
   # Idempotency: `plugins install` refuses to overwrite existing installs, so
   # we rm the target first (PVC persists across restarts).
   #
-  # Crypto workaround: @matrix-org/matrix-sdk-crypto-nodejs requires a native
-  # binary that fails to install in the container. Removing the package after
-  # install lets the extension load — create-client.ts catches the missing
-  # import and disables E2EE (we have encryption: false anyway).
+  # Crypto binary: openclaw runs `npm install --ignore-scripts`, so the
+  # @matrix-org/matrix-sdk-crypto-nodejs postinstall (which downloads the
+  # native .node binary from GitHub) never runs. We download it manually
+  # after install. Without it, the bot SDK's CryptoClient.js fails to load
+  # (top-level require), preventing the entire matrix plugin from loading.
   initContainers:
     - name: install-matrix-plugin
       image: ghcr.io/openclaw/openclaw:2026.2.23
       command: ["sh", "-c"]
       args:
         - |
-          rm -rf /home/node/.openclaw/extensions/matrix &&
-          node --max-old-space-size=1024 openclaw.mjs plugins install /app/extensions/matrix &&
-          rm -rf /home/node/.openclaw/extensions/matrix/node_modules/@matrix-org/matrix-sdk-crypto-nodejs &&
-          rm -rf /home/node/.openclaw/node_modules/@matrix-org/matrix-sdk-crypto-nodejs
+          set -e
+          rm -rf /home/node/.openclaw/extensions/matrix
+          node --max-old-space-size=1024 openclaw.mjs plugins install /app/extensions/matrix
+          CRYPTO_DIR=$(find /home/node/.openclaw -path '*/matrix-sdk-crypto-nodejs' -type d | head -1)
+          if [ -n "$CRYPTO_DIR" ]; then
+            echo "Downloading crypto native binary to $CRYPTO_DIR"
+            wget -q -O "$CRYPTO_DIR/matrix-sdk-crypto.linux-x64-gnu.node" \
+              "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v0.4.0/matrix-sdk-crypto.linux-x64-gnu.node"
+          fi
       resources:
         requests:
           memory: "512Mi"
@@ -259,6 +265,8 @@ spec:
           # allowing device auth bypass. Without this, OpenClaw's device
           # pairing requirement blocks all non-localhost connections.
           dangerouslyDisableDeviceAuth: true
+          allowedOrigins:
+            - "https://openclaw.allegedly.works"
         # Auth: operator auto-generates token via enrichConfigWithGatewayAuth()
         # and sets mode to "token". No explicit auth section needed.
       channels:

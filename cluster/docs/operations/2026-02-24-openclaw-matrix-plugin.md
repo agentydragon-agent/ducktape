@@ -92,13 +92,29 @@ The "failed to load" message during `plugins install` is a **non-fatal verificat
 main container runtime loading works. With `encryption: false` and the try/catch fallback,
 the bot should work without the crypto binary.
 
-**Fix**: Remove `@matrix-org/matrix-sdk-crypto-nodejs` from `node_modules` after
-`npm install`. Must remove from BOTH the extension-local path AND the hoisted
-path (`~/.openclaw/node_modules/@matrix-org/matrix-sdk-crypto-nodejs`) — npm
-hoists packages to the nearest parent `node_modules`. This lets the extension
-load — when `create-client.ts` tries
-`await import("@matrix-org/matrix-sdk-crypto-nodejs")`, the module isn't found,
-the catch block runs, and E2EE is disabled. The bot SDK works fine without it.
+**Root cause found**: OpenClaw's `install-package-dir.ts:48` runs
+`npm install --omit=dev --silent --ignore-scripts`. The `--ignore-scripts` flag
+prevents the `postinstall` script (`download-lib.js`) from running. This script
+downloads the pre-built `.node` binary from GitHub releases. Without it, the
+napi-rs loader in `index.js` can't find the platform binary.
+
+The bot SDK's `index.js` barrel-exports `CryptoClient.js` (line 25:
+`__exportStar(require("./e2ee/CryptoClient"), exports)`), which unconditionally
+requires `@matrix-org/matrix-sdk-crypto-nodejs` at the top level. So the ENTIRE
+bot SDK fails to load if the native binary is missing.
+
+**Fix**: After `plugins install`, manually download the native binary using wget:
+
+```bash
+wget -q -O "$CRYPTO_DIR/matrix-sdk-crypto.linux-x64-gnu.node" \
+  "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v0.4.0/matrix-sdk-crypto.linux-x64-gnu.node"
+```
+
+The binary URL pattern is:
+`https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v{version}/matrix-sdk-crypto.linux-x64-gnu.node`
+
+Note: `--ignore-scripts` is intentional for security (prevents arbitrary code
+execution during install). The manual download is the correct workaround.
 
 ### 6. Init Container Not Idempotent (FIXED, pending push)
 
