@@ -15,6 +15,8 @@ spec:
     spec:
       serviceAccountName: default
       automountServiceAccountToken: true
+      securityContext:
+        fsGroup: 1000
       containers:
         - name: node
           image: ghcr.io/openclaw/openclaw:latest
