@@ -50,7 +50,12 @@ spec:
   initContainers:
     - name: install-matrix-plugin
       image: ghcr.io/openclaw/openclaw:2026.2.23
-      command: ["node", "openclaw.mjs", "plugins", "install", "/app/extensions/matrix"]
+      command: ["node", "--max-old-space-size=1024", "openclaw.mjs", "plugins", "install", "/app/extensions/matrix"]
+      resources:
+        requests:
+          memory: "512Mi"
+        limits:
+          memory: "1536Mi"
       volumeMounts:
         - name: data
           mountPath: /home/openclaw/.openclaw
