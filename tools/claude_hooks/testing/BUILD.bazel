@@ -61,3 +61,24 @@ py_library(
         "@pypi//pytest",
     ],
 )
+
+py_library(
+    name = "session_start_helpers",
+    testonly = True,
+    srcs = ["session_start_helpers.py"],
+    imports = ["../../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
+    deps = [
+        ":mock_egress_proxy",
+        ":shell_helpers",
+        "//tools/claude_hooks:proxy_setup",
+        "//tools/claude_hooks:proxy_vars",
+        "//tools/claude_hooks:session_start_lib",
+        "//tools/claude_hooks:settings",
+        "//tools/claude_hooks:tmpfs_setup",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)

@@ -290,6 +290,7 @@ py_library(
     srcs = ["session_start.py"],
     data = ["templates/session_context.mako"],
     imports = ["../.."],
+    visibility = ["//tools/claude_hooks:__subpackages__"],
     deps = [
         ":bazelisk_setup",
         ":buildbuddy_setup",
@@ -467,6 +468,18 @@ py_test(
 )
 
 py_test(
+    name = "test_hook_input",
+    srcs = ["test_hook_input.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":session_start_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_session_start",
     size = "medium",
     srcs = ["test_session_start.py"],
@@ -491,7 +504,7 @@ py_test(
         "SSL_CERT_FILE",
     ],
     imports = ["../.."],
-    # local: podman needs user namespaces (newuidmap), blocked by linux-sandbox
+    # local: keytool (Adoptium JDK) needs libjli.so which isn't on the RBE worker image
     local = True,
     tags = [
         "e2e",
@@ -499,17 +512,53 @@ py_test(
     ],
     deps = [
         ":conftest",
-        ":proxy_setup",
-        ":proxy_vars",
-        ":session_start",
         ":settings",
-        ":tmpfs_setup",
         "//tools/claude_hooks/testing:fixtures",
-        "//tools/claude_hooks/testing:mock_egress_proxy",
+        "//tools/claude_hooks/testing:session_start_helpers",
         "//tools/claude_hooks/testing:shell_helpers",
-        "//util:net",
-        "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start_podman",
+    size = "medium",
+    srcs = ["test_session_start_podman.py"],
+    data = [
+        ":session_start",
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
+        "//tools/claude_hooks/auth_proxy:run",
+    ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    env_inherit = [
+        "CURL_CA_BUNDLE",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    ],
+    imports = ["../.."],
+    # local: podman needs mount/networking capabilities blocked by linux-sandbox and RBE
+    local = True,
+    tags = [
+        "e2e",
+        "external",
+        "manual",  # podman path not used in prod currently
+    ],
+    deps = [
+        ":conftest",
+        "//tools/claude_hooks/testing:fixtures",
+        "//tools/claude_hooks/testing:session_start_helpers",
+        "//tools/claude_hooks/testing:shell_helpers",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
