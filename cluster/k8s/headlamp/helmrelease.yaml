@@ -67,15 +67,6 @@ spec:
         cpu: 500m
         memory: 256Mi
 
-    # Prometheus plugin not on ArtifactHub — install via initContainer + shared volume.
-    initContainers:
-      - name: headlamp-plugin-prometheus
-        image: ghcr.io/headlamp-k8s/headlamp-plugin-prometheus:latest
-        command: ["/bin/sh", "-c", "cp -r /plugins/. /headlamp/plugins/"]
-        volumeMounts:
-          - name: plugins-dir
-            mountPath: /headlamp/plugins
-
     pluginsManager:
       enabled: true
       configContent: |
