@@ -5,14 +5,21 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  timeout: 5m
+  timeout: 10m
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: "./cluster/k8s/headscale-secrets"
   prune: true
   wait: true
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: headscale-keys
+      namespace: flux-system
   dependsOn:
     - name: external-secrets-operator # kubernetes-headscale-secret-store must exist
     - name: headscale-namespace
     - name: headscale-db # headscale-db-app secret must exist before ESO can sync
+    - name: tofu-controller
+    - name: vault-token

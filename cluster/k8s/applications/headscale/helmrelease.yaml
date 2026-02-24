@@ -19,6 +19,9 @@ spec:
   install:
     remediation:
       retries: 3
+  upgrade:
+    remediation:
+      retries: 3
   valuesFrom:
     # Injects headscale.config.oidc.client_secret from Vault (via ExternalSecret).
     # client_secret is kept out of ConfigMaps by merging it here at deploy time.
@@ -40,6 +43,9 @@ spec:
         namespace: headscale
   values:
     headscale:
+      keys:
+        create: false
+        existingSecret: headscale-keys
       certmanager:
         enabled: false # TLS terminated at Gateway
       config:
