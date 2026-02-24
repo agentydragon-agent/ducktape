@@ -28,6 +28,18 @@ Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
    `node-pvc.yaml`, `gateway-token-eso.yaml` from `openclaw-sandbox/`.
 2. **OpenClaw default model → Claude Opus 4.6** — Changed `agents.defaults.model.primary`
    from `ollama/gpt-oss:20b` to `anthropic/claude-opus-4-6`.
+3. **Headlamp: direct OIDC with per-user K8s RBAC** — Switched from proxy outpost +
+   shared ServiceAccount to direct OIDC login. kube-apiserver on all nodes now has
+   `--oidc-issuer-url`, `--oidc-client-id=headlamp`, `--oidc-username-claim=preferred_username`,
+   `--oidc-username-prefix=oidc:` (in Talos machine config `cluster.apiServer.extraArgs`).
+   Headlamp switched from `inCluster: true` to OIDC mode via `headlamp-oidc-secret` (ESO).
+   ClusterRoleBinding `oidc-agentydragon-admin` maps `oidc:agentydragon` → `cluster-admin`.
+   Authentik `oauth2provider` blueprint replaces `proxyprovider`; headlamp removed from
+   proxy outpost and `authentik-proxy-routes`. Direct HTTPRoute activated.
+4. **Talos machine config deduplication** — Extracted shared `api_server_config`,
+   `common_cluster_config`, and `common_machine_base` locals into `main.tf`. Hetzner and
+   Proxmox node configs both reference these, eliminating duplication of kube-apiserver
+   OIDC flags, cluster settings, and network/feature config.
 
 ### Recent Changes (2026-02-23)
 
@@ -129,9 +141,6 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 
 ### Next Actions
 
-- [ ] **Clean up orphaned MariaDB PVC** — `data-powerdns-mariadb-0` in `dns-system` is
-      no longer used (PowerDNS switched to CloudNativePG). Delete once confirmed:
-      `kubectl delete pvc data-powerdns-mariadb-0 -n dns-system`
 - [ ] **Grocy: provision API token for agent access** — after first login, create an API key
       in the Grocy UI (user menu → Manage API keys), store it at `kv/grocy/api-key` in Vault,
       then wire via ExternalSecret into OpenClaw (`GROCY_API_KEY`) and/or expose for Claude.
@@ -170,15 +179,6 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       to pod endpoints). Options to investigate: `CiliumEnvoyConfig` with cookie-based
       hash routing, Gateway API `BackendLBPolicy` (when Cilium adds support), or
       upstream Authentik re-adding shared session storage.
-- [ ] **Headlamp: verify proxy outpost auth** — Switched to Authentik proxy outpost
-      pattern (like gatus/grocy). Outpost pod is running but end-to-end flow is unverified.
-      Verify: user hits `headlamp.allegedly.works` → Authentik login → proxy forwards to
-      Headlamp → Headlamp uses SA for K8s API calls. If proxy outpost doesn't work for
-      WebSocket-heavy apps, may need to configure Talos API server `--oidc-issuer-url`.
-- [ ] **Headlamp: per-user K8s RBAC** — Currently all authenticated users share
-      `cluster-admin` via the ServiceAccount. For per-user RBAC: configure Talos API
-      server `--oidc-issuer-url` to trust Authentik, create `ClusterRoleBinding`s
-      mapping Authentik groups to K8s roles (e.g. `authentik Admins` → `cluster-admin`).
 - [ ] **Ollama: per-user auth** — OpenClaw currently talks directly to Ollama (no auth,
       dummy `OLLAMA_API_KEY` env var). Wire up proper auth: either re-introduce LiteLLM
       proxy with API key (once OpenClaw's OpenAI streaming handler supports
@@ -195,10 +195,6 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       configure Gitea OAuth via admin API, but SSO moved to the Authentik blueprint pattern.
       Nothing currently consumes the token secret. May still be useful for future Gitea API
       automation (repo/org management).
-- [x] **Fix Harbor proxy cache: add `overridePath` to registry mirrors** — Fixed.
-      `overridePath = true` added to all mirror entries in `main.tf` and confirmed deployed
-      to nodes. Anonymous token-based pulls through the proxy cache work correctly for
-      public images (all 5 proxy cache projects are `public = true`).
 - [ ] **Harbor proxy cache: add GHCR credentials for private repos** — GHCR proxy returns
       403 DENIED for private repos like `openclaw/openclaw`. Configure credentials on the
       `ghcr` registry endpoint in Harbor (via `harbor-proxy-cache` terraform module or
@@ -257,25 +253,25 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 
 ## Applications (already configured)
 
-| App            | Purpose                | SSO | Notes                                |
-| -------------- | ---------------------- | --- | ------------------------------------ |
-| Harbor         | Container registry     | ✅  |                                      |
-| Gitea          | Git hosting            | ✅  |                                      |
-| Matrix/Element | Chat                   | ✅  |                                      |
-| Nix cache      | Binary cache           | -   | Running, cache not initialized yet   |
-| BuildBuddy     | Remote build exec      | -   |                                      |
-| Headscale      | Tailscale control      | ✅  | Deployed, untested with real device  |
-| Ollama         | LLM inference          | -   | + LiteLLM proxy                      |
-| Website        | Static placeholder     | -   |                                      |
-| OpenClaw       | AI coding agent        | ✅  | Node-host sidecar, sandbox SA token  |
-| Gatus          | Health monitoring      | ✅  |                                      |
-| Grocy          | Household/grocery mgmt | ✅  |                                      |
-| Headlamp       | Kubernetes cluster UI  | ✅  | Proxy outpost; per-user RBAC pending |
-| InvenTree      | Inventory management   | -   |                                      |
-| Langfuse       | LLM observability      | -   |                                      |
-| Tempo          | Distributed tracing    | -   | Part of monitoring stack             |
-| Scanner        | Document scanning      | ✅  | Filebrowser frontend                 |
-| Atuin          | Shell history sync     | -   |                                      |
+| App            | Purpose                | SSO | Notes                                            |
+| -------------- | ---------------------- | --- | ------------------------------------------------ |
+| Harbor         | Container registry     | ✅  |                                                  |
+| Gitea          | Git hosting            | ✅  |                                                  |
+| Matrix/Element | Chat                   | ✅  |                                                  |
+| Nix cache      | Binary cache           | -   | Running, cache not initialized yet               |
+| BuildBuddy     | Remote build exec      | -   |                                                  |
+| Headscale      | Tailscale control      | ✅  | Deployed, untested with real device              |
+| Ollama         | LLM inference          | -   |                                                  |
+| Website        | Static placeholder     | -   |                                                  |
+| OpenClaw       | AI coding agent        | ✅  | Node-host sidecar, sandbox SA token              |
+| Gatus          | Health monitoring      | ✅  |                                                  |
+| Grocy          | Household/grocery mgmt | ✅  |                                                  |
+| Headlamp       | Kubernetes cluster UI  | ✅  | Direct OIDC; `oidc:agentydragon` → cluster-admin |
+| InvenTree      | Inventory management   | -   |                                                  |
+| Langfuse       | LLM observability      | -   |                                                  |
+| Tempo          | Distributed tracing    | -   | Part of monitoring stack                         |
+| Scanner        | Document scanning      | ✅  | Filebrowser frontend                             |
+| Atuin          | Shell history sync     | -   |                                                  |
 
 ## Applications (disabled - need flux-kustomization.yaml)
 
@@ -320,10 +316,10 @@ down). They must NOT depend on `proxmox-csi-retain` storage or Proxmox-pinned wo
 
 | Service   | Requirement                      | Status | Storage            | Notes                                             |
 | --------- | -------------------------------- | ------ | ------------------ | ------------------------------------------------- |
-| DNS       | Must resolve `*.allegedly.works` | ✅     | `hcloud-volumes`   | CNPG PostgreSQL cluster, 2 instances on VPS nodes |
+| DNS       | Must resolve `*.allegedly.works` | ✅     | `local-path`       | CNPG PostgreSQL cluster, 2 instances on VPS nodes |
 | Website   | Must serve `allegedly.works`     | ✅     | None (stateless)   | No Proxmox dependencies                           |
 | Ingress   | Must terminate HTTPS on VPS      | ✅     | None (hostNetwork) | Cilium Gateway on VPS nodes                       |
-| Authentik | Must authenticate users          | ✅     | `hcloud-volumes`   | All components pinned to VPS                      |
+| Authentik | Must authenticate users          | ✅     | `local-path`       | All components pinned to VPS                      |
 | Vault     | Must serve secrets               | ✅     | `local-path`       | Raft storage, schedulable on VPS                  |
 
 ### Compliance Checklist
@@ -503,9 +499,37 @@ Kyverno policy restricting container images to known registries: `ghcr.io`, `doc
 `talos-pve-gpu-worker-0`: 2x RTX 5090, 8 cores, 32GB fixed RAM, Ollama at `ollama.allegedly.works`.
 TODO: Revisit virtio-mem when Proxmox adds support (Bugzilla #2949).
 
-### BuildBuddy Remote Executor ✅
+### TODO: Dynamic Resource Allocation (DRA) for GPU
 
-3 replicas on Proxmox, connected to `remote.buildbuddy.io`.
+DRA is the successor to device plugins for exposing GPUs and other hardware to pods —
+more flexible, standardized allocation vs. the current NVIDIA device plugin approach.
+Requires enabling the `DynamicResourceAllocation` feature gate across kubelet, kube-apiserver,
+kube-controller-manager, and kube-scheduler (Talos machine config `extraArgs` on all nodes).
+Still beta; check NVIDIA's DRA driver guidance before enabling.
+
+See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/dynamic-resource-allocation>
+
+### TODO: KubeRay for distributed ML
+
+KubeRay operator deploys Ray clusters on K8s for distributed ML workloads on the GPU node.
+See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/kuberay>
+
+### TODO: Kueue for job quota management
+
+Kueue is a K8s-native quota and job queuing system — useful for managing GPU workload scheduling.
+See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/kueue>
+
+### TODO: Talos API access from Kubernetes
+
+`kubernetesTalosAPIAccess` feature lets pods call the Talos API directly, scoped by namespace
+and Talos role. Useful for granting agentydragon's tooling (e.g. in `user-agentydragon`
+namespace) read/admin access to node-level Talos operations without leaving the cluster.
+See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/talos-api-access-from-k8s>
+
+### BuildBuddy Remote Executor
+
+Deployed on Proxmox, currently scaled to 0 replicas. Re-enable by setting `replicaCount > 0`
+in the HelmRelease when remote execution is needed.
 
 ### Service Mesh (Future)
 
@@ -519,12 +543,11 @@ circuit breakers), consider a full service mesh. Options:
 
 Not needed while Cilium mutual auth + Gateway API cover the use cases.
 
-### Shared PostgreSQL / MariaDB Galera
+### TODO: Database HA (Galera / CNPG Multi-primary)
 
-Replace single-instance MariaDB (PowerDNS) with 3-node Galera cluster (VPS-0, VPS-1, Proxmox)
-on `local-path` storage. 2/3 quorum survives single node failure. Could also serve as shared
-PostgreSQL for multiple services. Note: even without Galera, the immediate fix is migrating
-MariaDB from `proxmox-csi-retain` to `hcloud-volumes` (VPS-only resilience invariant).
+Current CloudNativePG clusters are 2-instance primary+standby (not active-active).
+For stronger HA, consider: Galera for MariaDB workloads, or CNPG with regional standby
+clusters. Low priority — current setup survives single-node failure via automatic failover.
 
 ## 📋 Future Services (Lower Priority)
 
@@ -610,9 +633,9 @@ for network stack diagrams and diagnostic checklist.
 ### DNS Architecture
 
 PowerDNS runs in-cluster on VPS nodes with `hostNetwork: true` (no AXFR, single source of
-truth). MariaDB backend must use `hcloud-volumes` storage (VPS-only resilience invariant).
-Future: MariaDB Galera (3-node) for DB redundancy. ExternalDNS + powerdns-operator
-for declarative zone/record management.
+truth). Backend is a 2-instance CloudNativePG PostgreSQL cluster (`powerdns-db`) on
+`hcloud-volumes`, both instances on VPS nodes with `topologyKey: kubernetes.io/hostname`.
+ExternalDNS + powerdns-operator for declarative zone/record management.
 
 ### Storage Strategy: Consolidated VPS, Liberal Home
 
@@ -630,16 +653,16 @@ for declarative zone/record management.
 - Media services (Jellyfin, \*arr stack)
 - Nix cache (100GB+)
 
-| Location | Services                                             | Rationale                            |
-| -------- | ---------------------------------------------------- | ------------------------------------ |
-| VPS      | Vault, Authentik, Gateway, DNS (+ MariaDB), cert-mgr | Always-on, critical path (invariant) |
-| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache       | Storage-heavy, can tolerate downtime |
+| Location | Services                                                       | Rationale                            |
+| -------- | -------------------------------------------------------------- | ------------------------------------ |
+| VPS      | Vault, Authentik, Gateway, DNS, cert-mgr (all on `local-path`) | Always-on, critical path (invariant) |
+| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache                 | Storage-heavy, can tolerate downtime |
 
-#### Shared PostgreSQL Option
+#### Shared PostgreSQL — Done (CloudNativePG)
 
-- Single PostgreSQL pod on VPS with Hetzner volume
-- Multiple databases: `vault`, `authentik`, etc.
-- Secrets persist across cluster destroy/recreate
+Authentik, PowerDNS, and Headscale each have dedicated 2-instance CloudNativePG clusters
+on `local-path`, pinned to VPS nodes via `topology.kubernetes.io/region: hetzner`. Individual
+CNPG clusters preferred over a single shared PostgreSQL for fault isolation.
 
 ## 🔗 Related Documentation
 

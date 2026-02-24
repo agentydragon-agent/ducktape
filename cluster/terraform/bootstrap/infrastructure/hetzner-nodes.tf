@@ -126,26 +126,10 @@ data "talos_machine_configuration" "vps" {
 
   config_patches = [
     yamlencode({
-      machine = {
-        network = {
-          # KubeSpan config stays in machine.network (not deprecated in v1.12)
-          kubespan = {
-            enabled             = true
-            allowDownPeerBypass = true
-          }
-        }
+      machine = merge(local.common_machine_base, {
         nodeLabels = {
           "topology.kubernetes.io/region" = "hetzner"
           "topology.kubernetes.io/zone"   = var.hetzner_location
-        }
-        features = {
-          kubePrism = {
-            enabled = true
-            port    = 7445
-          }
-        }
-        registries = {
-          mirrors = local.registry_mirrors
         }
         kubelet = {
           # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
@@ -154,22 +138,8 @@ data "talos_machine_configuration" "vps" {
             allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
           }
         }
-      }
-      cluster = {
-        # Each VPS controlplane node consumes a whole VPS instance, so we need
-        # to allow scheduling workloads on them to utilize the VPS resources
-        allowSchedulingOnControlPlanes = true
-        apiServer = {
-          certSANs = ["api.${var.cluster_domain}"]
-        }
-        discovery = {
-          enabled = true
-        }
-        network = {
-          cni = { name = "none" }
-        }
-        proxy = { disabled = true }
-      }
+      })
+      cluster = local.common_cluster_config
     }),
     # Hostname: hcloud platform auto-detects from server name (hcloud_server.vps.name)
     # Do NOT add explicit HostnameConfig — conflicts with platform's auto hostname

@@ -29,13 +29,14 @@ spec:
   values:
     replicaCount: 1
 
-    # Use in-cluster ServiceAccount for Kubernetes API access.
-    # The chart creates a ClusterRoleBinding to cluster-admin by default.
-    # Authentication handled by Authentik proxy outpost at the gateway level.
-    # All K8s API calls use the shared cluster-admin SA.
-    # TODO: Per-user K8s RBAC requires configuring Talos API server
-    # --oidc-issuer-url to trust Authentik OIDC tokens.
-    inCluster: true
+    # OIDC mode: users authenticate via Authentik, their JWT is forwarded to the
+    # K8s API server which validates it using oidc-issuer-url (configured in Talos
+    # machine config). Each user gets their own K8s identity (oidc:<username>).
+    inCluster: false
+
+    envFrom:
+      - secretRef:
+          name: headlamp-oidc-secret
 
     ingress:
       enabled: false

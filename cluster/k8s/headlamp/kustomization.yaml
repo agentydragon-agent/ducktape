@@ -3,5 +3,5 @@ kind: Kustomization
 
 resources:
   - helmrelease.yaml
-  # HTTPRoute moved to authentik-proxy-routes/headlamp-httproute.yaml
-  # (traffic flows through Authentik proxy outpost for authentication)
+  - httproute.yaml
+  - clusterrolebinding.yaml

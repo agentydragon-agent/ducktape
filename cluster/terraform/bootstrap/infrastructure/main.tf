@@ -103,6 +103,47 @@ locals {
       overridePath = true
     }
   }
+
+  # Shared kube-apiserver config for all control plane nodes (VPS + Proxmox).
+  # Centralised here to avoid duplicating between hetzner-nodes.tf and proxmox-nodes.tf.
+  api_server_config = {
+    certSANs = ["api.${var.cluster_domain}"]
+    extraArgs = {
+      "oidc-issuer-url"      = "https://auth.${var.cluster_domain}/application/o/headlamp/"
+      "oidc-client-id"       = "headlamp"
+      "oidc-username-claim"  = "preferred_username"
+      "oidc-username-prefix" = "oidc:"
+    }
+  }
+
+  # Shared cluster config — identical on every node regardless of provider.
+  common_cluster_config = {
+    allowSchedulingOnControlPlanes = true
+    apiServer                      = local.api_server_config
+    discovery                      = { enabled = true }
+    network                        = { cni = { name = "none" } }
+    proxy                          = { disabled = true }
+  }
+
+  # Shared machine base — networking and feature flags common to all nodes.
+  # Does not include nodeLabels or kubelet (those differ per provider/node).
+  common_machine_base = {
+    network = {
+      kubespan = {
+        enabled             = true
+        allowDownPeerBypass = true
+      }
+    }
+    features = {
+      kubePrism = {
+        enabled = true
+        port    = 7445
+      }
+    }
+    registries = {
+      mirrors = local.registry_mirrors
+    }
+  }
 }
 
 # ============================================================================

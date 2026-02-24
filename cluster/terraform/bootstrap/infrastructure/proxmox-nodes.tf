@@ -297,30 +297,8 @@ resource "proxmox_virtual_environment_vm" "talos_gpu" {
 locals {
   # Base config patch shared by all Proxmox nodes
   proxmox_base_config_patch = {
-    machine = {
-      network = {
-        kubespan = {
-          enabled             = true
-          allowDownPeerBypass = true
-        }
-      }
-      features = {
-        kubePrism = {
-          enabled = true
-          port    = 7445
-        }
-      }
-      registries = {
-        mirrors = local.registry_mirrors
-      }
-    }
-    cluster = {
-      allowSchedulingOnControlPlanes = true
-      apiServer                      = { certSANs = ["api.${var.cluster_domain}"] }
-      discovery                      = { enabled = true }
-      network                        = { cni = { name = "none" } }
-      proxy                          = { disabled = true }
-    }
+    machine = local.common_machine_base
+    cluster = local.common_cluster_config
   }
 
   # Worker LinkConfig: disable DHCP on eth0
