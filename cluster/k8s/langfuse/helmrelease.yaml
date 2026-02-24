@@ -124,7 +124,7 @@ spec:
         existingSecretPasswordKey: redis-password
       nodeSelector:
         topology.kubernetes.io/region: proxmox
-      master:
+      primary:
         persistence:
           storageClass: local-path
 
