@@ -30,7 +30,7 @@ Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
    (`authentik-db`) on `hcloud-volumes`. Both CNPG pods run on Hetzner VPS nodes with
    `topologyKey: kubernetes.io/hostname` for real HA and zero-downtime failover. Removed
    the Vault-stored `postgres_password` and ESO ExternalSecret; CNPG auto-generates
-   credentials in secret `authentik-db-authentik`. Server and worker now load the password
+   credentials in secret `authentik-db-app`. Server and worker now load the password
    via `env.valueFrom.secretKeyRef` instead of `envFrom`. Existing data dropped (fresh
    cluster — acceptable per plan). Old bundled PVC pending deletion.
 4. **PowerDNS MariaDB → CloudNativePG PostgreSQL** — Migrated PowerDNS backend from
@@ -170,6 +170,18 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       configure Gitea OAuth via admin API, but SSO moved to the Authentik blueprint pattern.
       Nothing currently consumes the token secret. May still be useful for future Gitea API
       automation (repo/org management).
+- [ ] **Fix Harbor proxy cache: add `overridePath` to registry mirrors** — Proxy cache
+      is non-functional because containerd sends a double `/v2/` in the URL path (e.g.
+      `/v2/docker-hub-proxy/v2/library/busybox/...` instead of
+      `/v2/docker-hub-proxy/library/busybox/...`). Root cause: Talos `hosts.toml` lacks
+      `override_path = true`. Fix: add `overridePath = true` to each mirror entry in
+      `terraform/bootstrap/infrastructure/main.tf:64`. Requires cluster rebuild (machine
+      config change). See `docs/troubleshooting/harbor-proxy-cache-401.md`.
+- [ ] **Harbor proxy cache: add GHCR credentials for private repos** — GHCR proxy returns
+      403 DENIED for private repos like `openclaw/openclaw`. Configure credentials on the
+      `ghcr` registry endpoint in Harbor (via `harbor-proxy-cache` terraform module or
+      Harbor API). Create a GitHub PAT with `read:packages` scope, store in Vault, wire
+      via ESO to Harbor registry endpoint config.
 - [ ] **Verify ntfy.sh notifications** — confirm Flux reconciliation failure alerts
       actually arrive on phone via ntfy.sh push notifications.
 

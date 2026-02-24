@@ -24,7 +24,7 @@ spec:
     initdb:
       database: pdns
       owner: pdns
-      # CNPG auto-generates credentials and stores them in secret powerdns-db-pdns
+      # CNPG auto-generates credentials in secret powerdns-db-app
       postInitApplicationSQLRefs:
         configMapRefs:
           - name: powerdns-schema

@@ -15,4 +15,4 @@ spec:
   dependsOn:
     - name: external-secrets # kubernetes-headscale-secret-store must exist
     - name: headscale-namespace
-    - name: headscale-db # headscale-db-headscale secret must exist before ESO can sync
+    - name: headscale-db # headscale-db-app secret must exist before ESO can sync

@@ -97,6 +97,15 @@ resource "hcloud_server" "vps" {
     ipv4_enabled = true
     ipv6_enabled = true
   }
+
+  # Hetzner treats user_data as immutable — any change forces server replacement.
+  # Talos only reads user_data on first boot; ongoing config is managed via the
+  # Talos API (talos_machine_configuration_apply). Ignore user_data changes so
+  # that machine config updates (registry mirrors, labels, kubelet args, etc.)
+  # don't destroy and recreate VPS servers.
+  lifecycle {
+    ignore_changes = [user_data]
+  }
 }
 
 # ============================================================================

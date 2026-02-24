@@ -24,4 +24,4 @@ spec:
     initdb:
       database: authentik
       owner: authentik
-      # CNPG auto-generates credentials and stores them in secret authentik-db-authentik
+      # CNPG auto-generates credentials in secret authentik-db-app

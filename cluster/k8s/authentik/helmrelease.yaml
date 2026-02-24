@@ -31,7 +31,7 @@ spec:
     # Global configuration
     global:
       deploymentAnnotations:
-        secret.reloader.stakater.com/reload: "authentik-db-authentik,authentik-secrets,authentik-sso-client-secrets"
+        secret.reloader.stakater.com/reload: "authentik-db-app,authentik-secrets,authentik-sso-client-secrets"
         configmap.reloader.stakater.com/reload: "authentik-sso-blueprints"
 
     # Mount SSO blueprint ConfigMap into worker for native blueprint processing
@@ -124,7 +124,7 @@ spec:
         - name: AUTHENTIK_POSTGRESQL__PASSWORD
           valueFrom:
             secretKeyRef:
-              name: authentik-db-authentik
+              name: authentik-db-app
               key: password
 
       # Service configuration
@@ -186,7 +186,7 @@ spec:
         - name: AUTHENTIK_POSTGRESQL__PASSWORD
           valueFrom:
             secretKeyRef:
-              name: authentik-db-authentik
+              name: authentik-db-app
               key: password
 
       resources:

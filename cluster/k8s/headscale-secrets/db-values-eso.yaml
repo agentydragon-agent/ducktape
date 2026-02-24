@@ -1,4 +1,4 @@
-# Reads password from CNPG-generated secret (headscale-db-headscale) and generates
+# Reads password from CNPG-generated secret (headscale-db-app) and generates
 # a Helm values fragment injected into the HelmRelease via valuesFrom.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -31,5 +31,5 @@ spec:
   data:
     - secretKey: password
       remoteRef:
-        key: headscale-db-headscale
+        key: headscale-db-app
         property: password

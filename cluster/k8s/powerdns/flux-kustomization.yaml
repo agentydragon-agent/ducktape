@@ -16,7 +16,7 @@ spec:
     - name: dns-system-namespace
     - name: powerdns-secrets # Wait for API key generation
     - name: reflector # Wait for Reflector to handle secret copying
-    - name: powerdns-db # Wait for CNPG cluster ready and powerdns-db-pdns secret to exist
+    - name: powerdns-db # Wait for CNPG cluster ready and powerdns-db-app secret to exist
   healthChecks:
     - apiVersion: apps/v1
       kind: DaemonSet

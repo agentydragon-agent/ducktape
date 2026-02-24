@@ -24,4 +24,4 @@ spec:
     initdb:
       database: headscale
       owner: headscale
-      # CNPG auto-generates credentials and stores them in secret headscale-db-headscale
+      # CNPG auto-generates credentials in secret headscale-db-app

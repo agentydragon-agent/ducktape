@@ -61,36 +61,46 @@ locals {
   # Containerd registry mirrors — pull through Harbor proxy cache.
   # Harbor runs in-cluster, so mirrors are unavailable during early bootstrap.
   # Containerd falls back to upstream endpoints when mirror is unreachable.
+  #
+  # overridePath: Harbor proxy cache serves images at /v2/<project>/<repo>/...,
+  # so the endpoint path must replace containerd's default /v2/ prefix, not be
+  # prepended to it. Without overridePath, containerd requests
+  # /v2/<project>/v2/<repo>/... (double /v2/) which fails upstream.
   registry_mirrors = {
     "docker.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/docker-hub-proxy",
         "https://registry-1.docker.io",
       ]
+      overridePath = true
     }
     "ghcr.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/ghcr-proxy",
         "https://ghcr.io",
       ]
+      overridePath = true
     }
     "gcr.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/gcr-proxy",
         "https://gcr.io",
       ]
+      overridePath = true
     }
     "quay.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/quay-proxy",
         "https://quay.io",
       ]
+      overridePath = true
     }
     "registry.k8s.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/registry-k8s-io-proxy",
         "https://registry.k8s.io",
       ]
+      overridePath = true
     }
   }
 }
