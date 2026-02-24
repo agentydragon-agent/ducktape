@@ -29,13 +29,13 @@ spec:
   values:
     replicaCount: 1
 
-    # OIDC mode: users authenticate via Authentik, their JWT is forwarded to the
-    # K8s API server which validates it using oidc-issuer-url (configured in Talos
-    # machine config). Each user gets their own K8s identity (oidc:<username>).
-    inCluster: false
-
-    envFrom:
-      - secretRef:
+    config:
+      # OIDC mode: Headlamp redirects to Authentik, JWT forwarded to K8s API server
+      # which validates it via oidc-issuer-url (in Talos machine config).
+      # Each user gets their own K8s identity (oidc:<username>).
+      oidc:
+        externalSecret:
+          enabled: true
           name: headlamp-oidc-secret
 
     ingress:
