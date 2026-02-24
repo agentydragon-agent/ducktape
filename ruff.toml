@@ -163,10 +163,7 @@ split-on-trailing-comma = false
 # Test fixtures are intentionally bad code for detector testing
 "py_detectors/tests/fixtures/**" = ["ALL"]
 "prompts/scans/scan_*.py" = ["N802"]
-# Lazy import for orchestration-only dependency (not available in container)
-"props/core/db/sync/sync.py" = ["PLC0415"]
 # sys.path manipulation must happen before imports in uv run scripts and pytest
-"agent_server/tests/pytest_runner.py" = ["E402"]
 "tools/ci/check_release.py" = ["E402"]
 "tools/ci/ci_decide.py" = ["E402"]
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
