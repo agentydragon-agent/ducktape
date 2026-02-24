@@ -6,6 +6,13 @@ metadata:
 spec:
   instances: 2
 
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
   affinity:
     nodeSelector:
       topology.kubernetes.io/region: hetzner
