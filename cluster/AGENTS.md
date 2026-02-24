@@ -104,6 +104,22 @@ reads from the same Vault path, providing credentials to the application.
 **Remaining Terraform**: `harbor-oidc-config/` (Harbor API), `vault-oidc-auth/` (Vault OIDC
 auth backend) — these configure non-Authentik systems and still use TF state.
 
+## Loki (Log Aggregation)
+
+Loki collects logs from all pods via Promtail. Use it for postmortems when pod logs have
+been lost (completed/deleted Jobs, crashed pods, evicted pods).
+
+```bash
+# Query logs by namespace and container (URL-encode the LogQL query)
+START=$(date -d '1 hour ago' +%s)000000000
+END=$(date +%s)000000000
+kubectl exec -n loki loki-stack-0 -- wget -qO- \
+  "http://localhost:3100/loki/api/v1/query_range?query=%7Bnamespace%3D%22NAMESPACE%22%2Ccontainer%3D%22CONTAINER%22%7D&limit=50&direction=backward&start=$START&end=$END"
+```
+
+Loki runs as `loki-stack-0` StatefulSet in the `loki` namespace. Promtail DaemonSet ships
+logs from all nodes. Grafana has Loki as a datasource for interactive log exploration.
+
 ## Operational Context
 
 - **SSH**: `root@atlas` (Proxmox host, key auth)
