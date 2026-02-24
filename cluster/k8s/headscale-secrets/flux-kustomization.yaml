@@ -17,6 +17,10 @@ spec:
       kind: Terraform
       name: headscale-keys
       namespace: flux-system
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: headscale-keys
+      namespace: headscale
   dependsOn:
     - name: external-secrets-operator # kubernetes-headscale-secret-store must exist
     - name: headscale-namespace
