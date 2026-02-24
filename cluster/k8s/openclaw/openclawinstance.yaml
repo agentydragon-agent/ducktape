@@ -221,9 +221,6 @@ spec:
       channels:
         telegram:
           enabled: true
-          dm:
-            enabled: true
-            policy: open
         matrix:
           enabled: true
           homeserver: "https://chat.allegedly.works"
@@ -232,9 +229,6 @@ spec:
           deviceName: "OpenClaw Agent"
           encryption: false
           autoJoin: always
-          dm:
-            enabled: true
-            policy: open
 
   storage:
     persistence:

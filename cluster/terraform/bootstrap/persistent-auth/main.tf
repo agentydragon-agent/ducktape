@@ -81,7 +81,6 @@ locals {
         "VM.Config.Options",
         "VM.Console",
         "VM.Migrate",
-        "VM.Monitor",
         "VM.PowerMgmt",
       ])
       token = "terraform-token"

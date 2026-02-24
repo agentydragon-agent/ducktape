@@ -280,10 +280,9 @@ let
     name: type: lib.nameValuePair (lib.removeSuffix ".md" name) (commandsDir + "/${name}")
   ) (lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".md" name) commandFiles);
 
-  # Skills directory for Claude Code
-  # Skills are model-invoked capabilities that Claude automatically uses based on context
+  # Shared skills directory (nix/home/skills/) — used by both Claude Code and Gemini CLI
   # Each skill is a subdirectory containing SKILL.md and optional supporting files
-  skillsDir = ./skills;
+  skillsDir = ../skills;
 in
 {
   options.programs.claude-code.extraAllowedReadDirs = lib.mkOption {
@@ -382,8 +381,7 @@ in
   # Add gmail-mcp-server to PATH for auth setup command
   config.home.packages = [ gmail-mcp-server ];
 
-  # Deploy skills to ~/.claude/skills/
-  # Skills are stored in nix/home/claude_code/skills/ and symlinked for declarative management
+  # Deploy skills to ~/.claude/skills/ from shared nix/home/skills/ directory
   config.home.file = {
     ".claude/statusline.py" = {
       source = ./statusline.py;
