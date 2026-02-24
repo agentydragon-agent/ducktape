@@ -41,12 +41,13 @@ spec:
           name: openclaw-matrix-bot-password
           key: password
 
-  # Install the matrix channel plugin. The extension source is bundled in the
-  # image at /app/extensions/matrix/ but its npm deps are not. `plugins install`
-  # copies the extension to ~/.config/openclaw/extensions/matrix/ and runs
-  # npm install for its dependencies. Plugin discovery finds it via the "global"
-  # extensions path. Fixed in 2026.2.23 (upstream #24442: sanitize workspace:*
-  # devDeps before npm install).
+  # Install the matrix channel plugin. The image bundles extension source at
+  # /app/extensions/matrix/ but not its npm deps. `plugins install` copies to
+  # CONFIG_DIR/extensions/ and runs npm install. The container runs as user
+  # `node` (home /home/node/), so CONFIG_DIR resolves to /home/node/.openclaw/.
+  # The operator overrides HOME=/home/openclaw for the main container, so the
+  # same PVC appears at /home/openclaw/.openclaw/ there. Mount must match the
+  # init container's actual home. Fixed in 2026.2.23 (upstream #24442).
   initContainers:
     - name: install-matrix-plugin
       image: ghcr.io/openclaw/openclaw:2026.2.23
@@ -58,7 +59,7 @@ spec:
           memory: "1536Mi"
       volumeMounts:
         - name: data
-          mountPath: /home/openclaw/.openclaw
+          mountPath: /home/node/.openclaw
 
   config:
     raw:
