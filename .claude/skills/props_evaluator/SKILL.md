@@ -26,18 +26,6 @@ curl -s -H "Authorization: Bearer $EVALUATOR_CREDS" \
   https://props.allegedly.works/api/stats/overview
 ```
 
-Or as an `httpx` tuple:
-
-```python
-import subprocess, base64
-pw = subprocess.check_output([
-    "kubectl", "get", "secret", "props-evaluator-credentials",
-    "-n", "props", "-o", "jsonpath={.data.password}"
-]).decode()
-pw = base64.b64decode(pw).decode()
-auth = ("evaluator", pw)
-```
-
 ## Base URL
 
 `https://props.allegedly.works`
