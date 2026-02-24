@@ -3,3 +3,5 @@ kind: Kustomization
 resources:
   - externalsecret.yaml
   - gemini-api-key-sealed.yaml
+  - openai-api-key-sealed.yaml
+  - anthropic-api-key-sealed.yaml

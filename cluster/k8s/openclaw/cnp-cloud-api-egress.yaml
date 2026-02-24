@@ -1,15 +1,17 @@
-# Allow egress to Google Gemini API (generativelanguage.googleapis.com).
+# Allow egress to cloud LLM API providers.
 # Additive with the operator's default-deny NetworkPolicy.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: allow-gemini-egress
+  name: allow-cloud-api-egress
   namespace: openclaw
 spec:
   endpointSelector: {}
   egress:
     - toFQDNs:
         - matchName: generativelanguage.googleapis.com
+        - matchName: api.openai.com
+        - matchName: api.anthropic.com
       toPorts:
         - ports:
             - port: "443"

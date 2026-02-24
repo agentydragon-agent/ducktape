@@ -8,5 +8,5 @@ resources:
   - rolebinding-props-reader.yaml
   - networkpolicy-authentik.yaml
   - networkpolicy-node-ingress.yaml
-  - cnp-gemini-egress.yaml
+  - cnp-cloud-api-egress.yaml
   - rolebinding-gatus-reader.yaml
