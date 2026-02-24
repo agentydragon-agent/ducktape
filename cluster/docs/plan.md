@@ -1,6 +1,6 @@
 # Cluster Roadmap
 
-**Last Updated**: 2026-02-23
+**Last Updated**: 2026-02-24
 
 ## 🔥 Immediate Next Steps
 
@@ -10,6 +10,24 @@ DNS automation fully working. Authentik auth verified.
 PowerDNS, Authentik, and Headscale all migrated to CloudNativePG on `local-path`.
 VPS-only resilience invariant fully satisfied. Gatus monitoring comprehensive.
 Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
+
+### Recent Changes (2026-02-24)
+
+1. **OpenClaw node-host sidecar architecture** — Replaced standalone node-host Deployment
+   in `openclaw-sandbox` with a sidecar container in the `openclaw-0` StatefulSet pod.
+   The sidecar shares the pod network namespace, so it connects to the gateway via
+   `127.0.0.1:18789` — recognized as a local client and auto-approved for device pairing
+   (no manual token entry for node connections). Agent CLI commands execute inside the
+   sidecar via `child_process.spawn()`, scoped to `openclaw-sandbox` namespace by
+   mounting the sandbox service account token at
+   `/var/run/secrets/kubernetes.io/serviceaccount`. Cross-namespace secret flow:
+   `openclaw-sandbox/sandbox-sa-token` (long-lived SA token) → ClusterSecretStore
+   (`kubernetes-openclaw-sandbox-secret-store`) → ExternalSecret in `openclaw` namespace
+   → sidecar volume mount. Gateway token similarly copied via ClusterSecretStore from
+   `openclaw` namespace. Deleted standalone `node-deployment.yaml`, `node-config.yaml`,
+   `node-pvc.yaml`, `gateway-token-eso.yaml` from `openclaw-sandbox/`.
+2. **OpenClaw default model → Claude Opus 4.6** — Changed `agents.defaults.model.primary`
+   from `ollama/gpt-oss:20b` to `anthropic/claude-opus-4-6`.
 
 ### Recent Changes (2026-02-23)
 
@@ -249,7 +267,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Headscale      | Tailscale control      | ✅  | Deployed, untested with real device  |
 | Ollama         | LLM inference          | -   | + LiteLLM proxy                      |
 | Website        | Static placeholder     | -   |                                      |
-| OpenClaw       | AI coding agent        | ✅  |                                      |
+| OpenClaw       | AI coding agent        | ✅  | Node-host sidecar, sandbox SA token  |
 | Gatus          | Health monitoring      | ✅  |                                      |
 | Grocy          | Household/grocery mgmt | ✅  |                                      |
 | Headlamp       | Kubernetes cluster UI  | ✅  | Proxy outpost; per-user RBAC pending |

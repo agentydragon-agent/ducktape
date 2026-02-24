@@ -32,7 +32,7 @@ spec:
       agents:
         defaults:
           model:
-            primary: "ollama/gpt-oss:20b"
+            primary: "anthropic/claude-opus-4-6"
           models:
             ollama/gpt-oss:20b:
               alias: gpt-oss-20b
