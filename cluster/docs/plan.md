@@ -160,9 +160,15 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 - [ ] **Test all SSO flows** — Gitea, Matrix, Grafana, and Vault verified working.
       Run `scripts/check-authentik-login.py`. Remaining: Harbor SSO.
 - [ ] **Consider moving more PVCs from `proxmox-csi-retain` to `local-path`** — the
-      Proxmox CSI driver hardcodes a 29 data volume per node limit (`lun < 30`).
-      cp-0 currently has ~23/29 slots used. Candidates for `local-path` (ephemeral/
-      regenerable data, acceptable to lose on cluster rebuild): - `langfuse/langfuse-s3` (8Gi) — MinIO object storage, regenerable - `monitoring/alertmanager-*` (5Gi) — alert silences - `monitoring/prometheus-*` (20Gi) — time-series metrics - `monitoring/storage-tempo-0` (10Gi) — traces - `monitoring/kube-prometheus-stack-grafana` (10Gi) — dashboards (should be in ConfigMaps) - `loki/storage-loki-stack-0` (20Gi) — logs - `harbor/harbor-jobservice` (1Gi) — job queue
+      Proxmox CSI driver has a 29 data volume hard limit per node (`lun < 30`).
+      The scheduler default was 24 but is now raised to 29 via node label
+      `csi.proxmox.sinextra.dev/max-volume-attachments=29` (set in `proxmox-nodes.tf`).
+      Candidates for `local-path` if more headroom is needed (ephemeral/regenerable
+      data, acceptable to lose on cluster rebuild):
+      `langfuse/langfuse-s3` (8Gi), `monitoring/alertmanager-*` (5Gi),
+      `monitoring/prometheus-*` (20Gi), `monitoring/storage-tempo-0` (10Gi),
+      `monitoring/kube-prometheus-stack-grafana` (10Gi), `loki/storage-loki-stack-0` (20Gi),
+      `harbor/harbor-jobservice` (1Gi)
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
       in `terraform/gitops/sso/users/main.tf` skips MFA. Add enrollment stage + MFA validation
       stage back when ready.
@@ -262,8 +268,8 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | local-path-provisioner | ✅     | Storage for VPS nodes                        |
 | Stakater Reloader      | ✅     | Deployed, adopted (7/7 services)             |
 | DNS Automation         | ✅     | tofu-controller manages Route53 + PowerDNS   |
-| Node Feature Discovery | ✅     | Auto-detects GPU/hardware, provides labels   |
-| NVIDIA Device Plugin   | ✅     | GPU resource registration on GPU nodes       |
+| Node Feature Discovery | ✅     | Auto-detects GPU/hardware via PCI labels     |
+| NVIDIA Device Plugin   | ✅     | GPU resources, uses NFD `pci-10de.present`   |
 | CloudNativePG          | ✅     | CNPG operator for PostgreSQL clusters        |
 | Cilium Mutual Auth     | ⏸️     | SPIRE disabled (bootstrap timeout on Talos)  |
 

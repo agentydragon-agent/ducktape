@@ -309,6 +309,13 @@ locals {
     up         = true
   })
 
+  # Common node labels for all Proxmox nodes
+  proxmox_node_labels = {
+    "topology.kubernetes.io/region"                   = "proxmox"
+    "topology.kubernetes.io/zone"                     = "atlas"
+    "csi.proxmox.sinextra.dev/max-volume-attachments" = "29"
+  }
+
   # NVIDIA-specific config patches for GPU nodes
   nvidia_config_patches = [
     yamlencode({
@@ -357,10 +364,7 @@ data "talos_machine_configuration" "proxmox" {
   config_patches = concat(
     [yamlencode(merge(local.proxmox_base_config_patch, {
       machine = merge(local.proxmox_base_config_patch.machine, {
-        nodeLabels = {
-          "topology.kubernetes.io/region" = "proxmox"
-          "topology.kubernetes.io/zone"   = "atlas"
-        }
+        nodeLabels = local.proxmox_node_labels
         kubelet = {
           extraArgs = {
             provider-id            = "proxmox://cluster/${each.value.vm_id}"
@@ -388,11 +392,7 @@ data "talos_machine_configuration" "proxmox_gpu" {
   config_patches = concat(
     [yamlencode(merge(local.proxmox_base_config_patch, {
       machine = merge(local.proxmox_base_config_patch.machine, {
-        nodeLabels = {
-          "topology.kubernetes.io/region" = "proxmox"
-          "topology.kubernetes.io/zone"   = "atlas"
-          "nvidia.com/gpu"                = "true"
-        }
+        nodeLabels = local.proxmox_node_labels
         kubelet = {
           extraArgs = {
             provider-id            = "proxmox://cluster/${each.value.vm_id}"

@@ -31,3 +31,11 @@ spec:
       tolerations:
         - effect: NoSchedule
           operator: Exists
+      config:
+        sources:
+          pci:
+            deviceClassWhitelist:
+              - "02"
+              - "03"
+            deviceLabelFields:
+              - vendor

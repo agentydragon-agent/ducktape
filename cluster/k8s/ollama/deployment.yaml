@@ -20,7 +20,7 @@ spec:
         app: ollama
     spec:
       nodeSelector:
-        nvidia.com/gpu: "true"
+        feature.node.kubernetes.io/pci-10de.present: "true"
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists

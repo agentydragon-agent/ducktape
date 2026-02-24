@@ -26,21 +26,4 @@ spec:
         kind: HelmRepository
         name: nvidia
         namespace: nvidia-device-plugin
-  values:
-    # Override default affinity — chart expects NFD label pci-10de.present but
-    # NFD v0.17 sets pci-0300_10de.present (with PCI class prefix). Use the
-    # Talos machine config label instead (set in proxmox-nodes.tf).
-    affinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: nvidia.com/gpu
-                  operator: In
-                  values:
-                    - "true"
-    # Tolerate GPU node taints if any
-    tolerations:
-      - key: nvidia.com/gpu
-        operator: Exists
-        effect: NoSchedule
+  values: {}
