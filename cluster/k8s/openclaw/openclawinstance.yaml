@@ -6,11 +6,10 @@ metadata:
 spec:
   image:
     repository: registry.allegedly.works/openclaw/openclaw-matrix
-    tag: "2026.2.23" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
+    tag: "20260224214207-12ca686" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
     pullSecrets:
       - name: harbor-registry-credentials
-
   env:
     # OpenClaw requires an API key for every provider. Ollama has no auth,
     # but a dummy value satisfies the auth-profiles check.
@@ -43,7 +42,6 @@ spec:
         secretKeyRef:
           name: openclaw-matrix-bot-password
           key: password
-
   config:
     raw:
       agents:
@@ -230,8 +228,8 @@ spec:
           dangerouslyDisableDeviceAuth: true
           allowedOrigins:
             - "https://openclaw.allegedly.works"
-        # Auth: operator auto-generates token via enrichConfigWithGatewayAuth()
-        # and sets mode to "token". No explicit auth section needed.
+            # Auth: operator auto-generates token via enrichConfigWithGatewayAuth()
+            # and sets mode to "token". No explicit auth section needed.
       channels:
         telegram:
           enabled: true
@@ -259,13 +257,11 @@ spec:
           actions:
             reactions: true
             messages: true
-
   storage:
     persistence:
       enabled: true
       size: 20Gi
       storageClass: proxmox-csi-retain
-
   # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
   resources:
     requests:
@@ -274,7 +270,6 @@ spec:
     limits:
       cpu: "2"
       memory: "4Gi"
-
   chromium:
     enabled: true
     resources:
@@ -284,7 +279,6 @@ spec:
       limits:
         cpu: "1000m"
         memory: "2Gi"
-
   sidecars:
     - name: node-host
       image: ghcr.io/openclaw/openclaw:2026.2.23
@@ -296,11 +290,11 @@ spec:
             secretKeyRef:
               name: openclaw-gateway-token
               key: token
-        # Note: Commands execute directly inside this container via
-        # child_process.spawn() — no K8s API involved.
-        # The SA token below is ONLY for kubectl: it provides in-cluster
-        # auth scoped to openclaw-sandbox namespace (restricted RBAC).
-        # The namespace file in the mount defaults kubectl's namespace.
+              # Note: Commands execute directly inside this container via
+              # child_process.spawn() — no K8s API involved.
+              # The SA token below is ONLY for kubectl: it provides in-cluster
+              # auth scoped to openclaw-sandbox namespace (restricted RBAC).
+              # The namespace file in the mount defaults kubectl's namespace.
       volumeMounts:
         - name: sandbox-sa-token
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -314,7 +308,6 @@ spec:
         limits:
           cpu: 500m
           memory: 512Mi
-
   sidecarVolumes:
     - name: sandbox-sa-token
       secret:
@@ -328,7 +321,6 @@ spec:
             path: namespace
     - name: node-data
       emptyDir: {}
-
   extraVolumes:
     - name: kube-api-token
       projected:
@@ -346,12 +338,10 @@ spec:
                 - path: namespace
                   fieldRef:
                     fieldPath: metadata.namespace
-
   extraVolumeMounts:
     - name: kube-api-token
       mountPath: /var/run/secrets/kubernetes.io/serviceaccount
       readOnly: true
-
   security:
     networkPolicy:
       additionalEgress:
@@ -377,8 +367,7 @@ spec:
               protocol: TCP
             - port: 443
               protocol: TCP
-        # TODO: Add egress rules for InvenTree and Grocy when deployed.
-
+      # TODO: Add egress rules for InvenTree and Grocy when deployed.
   availability:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
