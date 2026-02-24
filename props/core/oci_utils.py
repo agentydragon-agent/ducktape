@@ -28,21 +28,33 @@ class RegistryProxyConfig:
     The registry proxy is part of the props backend - it proxies OCI API requests
     to an upstream registry and records agent_definitions on push.
 
-    host/port: How the Docker daemon (on the host) reaches the registry proxy.
-    proxy_url: HTTP URL for tag resolution (HEAD /v2/{repo}/manifests/{ref}).
+    host/port: How the backend reaches the registry proxy (HTTP tag resolution).
+    pull_host/pull_port: How the container runtime (kubelet/Docker) pulls images.
+      Defaults to host/port when not set. Needed in k8s where the backend resolves
+      the service name (e.g. "props") via cluster DNS, but the kubelet can't.
     """
 
     host: str
     port: int
+    pull_host: str | None = None
+    pull_port: int | None = None
 
     @property
     def proxy_url(self) -> str:
         return f"http://{self.host}:{self.port}"
 
+    def _pull_authority(self) -> str:
+        """Host:port string for image references (what the container runtime pulls from)."""
+        h = self.pull_host or self.host
+        p = self.pull_port if self.pull_host else self.port
+        if p is None or p in (443, 80):
+            return h
+        return f"{h}:{p}"
+
     def build_oci_reference(self, agent_type: AgentType, digest: str) -> str:
         """Build full OCI reference (host:port/repository@digest)."""
         repository = str(agent_type)
-        return f"{self.host}:{self.port}/{repository}@{digest}"
+        return f"{self._pull_authority()}/{repository}@{digest}"
 
     def normalize_image_ref(self, image_ref: str) -> str:
         """Normalize image reference, adding registry if needed.
@@ -56,18 +68,27 @@ class RegistryProxyConfig:
             return image_ref
         if "/" in image_ref and ":" in image_ref.split("/")[0]:
             return image_ref
-        return f"{self.host}:{self.port}/{image_ref}"
+        authority = self._pull_authority()
+        return f"{authority}/{image_ref}"
 
 
 def get_registry_proxy_config() -> RegistryProxyConfig:
     """Get registry configuration from environment variables.
 
     Environment variables:
-        PROPS_REGISTRY_HOST: Host for Docker daemon to reach registry proxy (default: 127.0.0.1)
-        PROPS_REGISTRY_PORT: Port for Docker daemon to reach registry proxy (default: 8000)
+        PROPS_REGISTRY_HOST: Host for backend to reach registry proxy (default: 127.0.0.1)
+        PROPS_REGISTRY_PORT: Port for backend to reach registry proxy (default: 8000)
+        PROPS_REGISTRY_PULL_HOST: Host for container runtime image pulls (default: PROPS_REGISTRY_HOST)
+        PROPS_REGISTRY_PULL_PORT: Port for container runtime image pulls (default: PROPS_REGISTRY_PORT)
     """
+    pull_host = os.environ.get("PROPS_REGISTRY_PULL_HOST") or None
+    pull_port_str = os.environ.get("PROPS_REGISTRY_PULL_PORT")
+    pull_port = int(pull_port_str) if pull_port_str else None
     return RegistryProxyConfig(
-        host=os.environ.get("PROPS_REGISTRY_HOST", "127.0.0.1"), port=int(os.environ.get("PROPS_REGISTRY_PORT", "8000"))
+        host=os.environ.get("PROPS_REGISTRY_HOST", "127.0.0.1"),
+        port=int(os.environ.get("PROPS_REGISTRY_PORT", "8000")),
+        pull_host=pull_host,
+        pull_port=pull_port,
     )
 
 

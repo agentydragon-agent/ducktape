@@ -87,6 +87,7 @@ py_library(
         ":executor",
         ":k8s_executor",
         "//props:config",
+        "//props/core:oci_utils",
         "//props/db:config",
         "@pypi//aiodocker",
         "@pypi//kubernetes_asyncio",

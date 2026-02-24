@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, getContext } from "svelte";
   import { goto } from "$lib/router";
   import type { RunModalPrefill } from "$lib/types";
   import { fetchOverview, type OverviewResponse } from "$lib/api/client";
@@ -11,6 +11,8 @@
   import type { DistributionsResponse, CoverageResponse } from "$lib/api/client";
   import TabButton from "$components/TabButton.svelte";
   import { toast } from "svelte-sonner";
+
+  const runModal = getContext<{ open: (_?: RunModalPrefill) => void }>("runModal");
 
   interface Props {
     initialData?: OverviewResponse;
@@ -99,6 +101,15 @@
 {:else if overview}
   <div>
     <SummaryCards data={overview} />
+    <div class="flex justify-end mb-3">
+      <button
+        type="button"
+        class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+        onclick={() => runModal?.open()}
+      >
+        + New Run
+      </button>
+    </div>
     <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30">
       <DefinitionsTable
         definitions={overview.definitions}

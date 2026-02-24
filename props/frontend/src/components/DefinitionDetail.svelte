@@ -1,11 +1,14 @@
 <script lang="ts">
+  import { getContext } from "svelte";
   import { type DefinitionDetailResponse } from "../lib/api/client";
   import { formatStatsWithCI, formatAge } from "../lib/formatters";
   import { recallColorClass } from "../lib/colors";
   import RunsBrowser from "./RunsBrowser.svelte";
   import BackButton from "./BackButton.svelte";
   import Breadcrumb from "./Breadcrumb.svelte";
-  import type { Split, ExampleKind } from "../lib/types";
+  import type { RunModalPrefill, Split, ExampleKind } from "../lib/types";
+
+  const runModal = getContext<{ open: (_?: RunModalPrefill) => void }>("runModal");
 
   interface Props {
     data: DefinitionDetailResponse;
@@ -31,6 +34,15 @@
     <div class="flex items-center gap-3 mb-3">
       <BackButton />
       <h2 class="text-lg font-semibold">Definition Detail</h2>
+      <div class="ml-auto">
+        <button
+          type="button"
+          class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+          onclick={() => runModal?.open({ definitionId: data.image_digest })}
+        >
+          + New Run
+        </button>
+      </div>
     </div>
     <Breadcrumb
       items={[{ label: "Home", href: "/" }, { label: "Definitions", href: "/" }, { label: data.image_digest }]}

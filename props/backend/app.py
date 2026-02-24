@@ -109,7 +109,7 @@ def _make_lifespan(deps: BackendDeps):
         if deps.config.auto_sync_specimens:
             _sync_all_specimens(db)
 
-        executor = await create_executor(deps.config.executor, db_config)
+        executor = await create_executor(deps.config.executor, db_config, deps.registry_proxy_config)
         logger.info("Using %s executor", deps.config.executor.type)
         app.state.registry = AgentRegistry(
             executor=executor,
