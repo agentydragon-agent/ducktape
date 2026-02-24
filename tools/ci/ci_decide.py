@@ -118,14 +118,17 @@ def _compute_affected_targets(
 ) -> tuple[list[str], bool]:
     """Compute affected Bazel targets and whether infrastructure changed.
 
-    Returns (targets, infra_changed). Short-circuits to ["//..."] when
-    infrastructure files changed, avoiding a bazel-diff run that would fail
-    if the parent commit's BUILD graph is incompatible with the current one.
+    Returns (targets, infra_changed). When infrastructure files changed,
+    skips bazel-diff (which would fail if the parent BUILD graph is
+    incompatible) and queries all CI-compatible targets directly.
+    All returned targets are filtered for CI (no macOS-only, no manual).
     """
     infra_changed = has_infra_changes(changed_files)
     if infra_changed:
         logger.info("Infrastructure change detected, building all targets")
-        return ["//..."], True
+        targets = filter_for_ci(["//..."])
+        logger.info("Filtered to %d CI-compatible targets", len(targets))
+        return targets, True
 
     jar_path = get_required_existing_path("BAZEL_DIFF_JAR")
     cache_dir = get_optional_env_path("BAZEL_DIFF_CACHE_DIR") or (env.workspace / ".bazel-diff-cache")
