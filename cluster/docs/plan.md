@@ -481,6 +481,14 @@ Apply `restricted` PSS labels to application namespaces. System namespaces (`kub
 
 Switch `require-gitops` ClusterPolicy from Audit to Enforce mode after validation.
 
+### TODO: Kyverno `require-gitops` Generic Operator Exclusion
+
+Current policy explicitly whitelists each operator SA (vault-operator, openclaw-operator,
+prometheus-operator, authentik, reloader). Consider replacing with a generic rule that
+skips validation for resources with `ownerReferences` (any controller-created child
+resource). This would eliminate per-operator maintenance. Requires verifying Kyverno
+`preconditions` support for checking `request.object.metadata.ownerReferences` length.
+
 ### TODO: ResourceQuota + LimitRange per Namespace
 
 Prevent resource contention. Set default CPU/memory requests+limits via LimitRange.
