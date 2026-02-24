@@ -242,6 +242,10 @@
             >
               Status{getSortIndicator("status")}
             </th>
+            <th class="px-3 py-2 text-right"> Issues </th>
+            <th class="px-3 py-2 text-right"> TPs </th>
+            <th class="px-3 py-2 text-right"> FPs </th>
+            <th class="px-3 py-2 text-right"> Credit </th>
             <th
               class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
               onclick={() => handleSort("created_at")}
@@ -277,6 +281,18 @@
                 <span class="px-2 py-0.5 rounded text-xs font-medium capitalize {getStatusColor(run.status)}">
                   {formatStatus(run.status)}
                 </span>
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.reported_issues_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.grading?.tp_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.grading?.fp_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.grading ? run.grading.total_credit.toFixed(2) : "—"}
               </td>
               <td class="px-3 py-2 text-gray-600 dark:text-gray-400 text-xs">
                 {formatAge(run.created_at)}

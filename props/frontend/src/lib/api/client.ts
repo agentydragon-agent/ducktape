@@ -62,6 +62,7 @@ export type JobInfo = components["schemas"]["JobInfo"];
 export type JobsResponse = components["schemas"]["JobsResponse"];
 export type AgentType = components["schemas"]["AgentType"];
 export type RunInfo = components["schemas"]["RunInfo"];
+export type RunGradingSummary = components["schemas"]["RunGradingSummary"];
 export type RunsListResponse = components["schemas"]["RunsListResponse"];
 export type CriticTypeConfig = components["schemas"]["CriticTypeConfig"];
 export type GraderTypeConfig = components["schemas"]["GraderTypeConfig"];

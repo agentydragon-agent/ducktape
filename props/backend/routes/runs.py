@@ -18,7 +18,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import case, func
 
 from props.backend.auth import (
     AgentRole,
@@ -46,6 +46,7 @@ from props.db.models import (
     LLMRequest,
     LLMRunCost,
     RecallByDefinitionSplitKind,
+    ReportedIssue,
     Snapshot,
 )
 from props.db.query_builders import query_recall_by_example
@@ -249,6 +250,14 @@ class AgentRunDetail(BaseModel):
     details: RunSpecifics
 
 
+class RunGradingSummary(BaseModel):
+    """Grading summary for a critic run (from its grader children)."""
+
+    tp_count: int = Field(description="Number of matched true positive edges (credit > 0)")
+    fp_count: int = Field(description="Number of matched false positive edges (credit > 0)")
+    total_credit: float = Field(description="Sum of credit across all grading edges")
+
+
 class RunInfo(BaseModel):
     """Run information for list view."""
 
@@ -260,6 +269,8 @@ class RunInfo(BaseModel):
     created_at: datetime
     updated_at: datetime
     split: Split | None = None
+    reported_issues_count: int | None = None
+    grading: RunGradingSummary | None = None
 
 
 class RunsListResponse(BaseModel):
@@ -413,12 +424,46 @@ def list_runs(
 
         total_count = query.count()
 
-        runs_with_split = (
-            query.add_columns(Snapshot.split).order_by(AgentRun.created_at.desc()).offset(offset).limit(limit).all()
+        # Subquery: count reported issues per critic run
+        issues_subq = (
+            session.query(ReportedIssue.agent_run_id, func.count().label("issues_count"))
+            .group_by(ReportedIssue.agent_run_id)
+            .subquery()
+        )
+
+        # Subquery: grading summary per critic run (aggregated from grading edges)
+        grading_subq = (
+            session.query(
+                GradingEdge.critique_run_id,
+                func.count(case((GradingEdge.tp_id.isnot(None) & (GradingEdge.credit > 0), 1))).label("tp_count"),
+                func.count(case((GradingEdge.fp_id.isnot(None) & (GradingEdge.credit > 0), 1))).label("fp_count"),
+                func.coalesce(func.sum(GradingEdge.credit), 0.0).label("total_credit"),
+            )
+            .group_by(GradingEdge.critique_run_id)
+            .subquery()
+        )
+
+        runs_with_extras = (
+            query.add_columns(
+                Snapshot.split,
+                issues_subq.c.issues_count,
+                grading_subq.c.tp_count,
+                grading_subq.c.fp_count,
+                grading_subq.c.total_credit,
+            )
+            .outerjoin(issues_subq, AgentRun.agent_run_id == issues_subq.c.agent_run_id)
+            .outerjoin(grading_subq, AgentRun.agent_run_id == grading_subq.c.critique_run_id)
+            .order_by(AgentRun.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
         )
 
         return RunsListResponse(
-            runs=[_build_run_info(r, split) for r, split in runs_with_split],
+            runs=[
+                _build_run_info(r, split, issues_count, tp_count, fp_count, total_credit)
+                for r, split, issues_count, tp_count, fp_count, total_credit in runs_with_extras
+            ],
             total_count=total_count,
             offset=offset,
             limit=limit,
@@ -921,8 +966,18 @@ def get_run_llm_requests(run_id: UUID, caller_db: CallerDb) -> LLMRequestsRespon
         return LLMRequestsResponse(requests=[LLMRequestInfo.model_validate(req) for req in requests])
 
 
-def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
+def _build_run_info(
+    run: AgentRun,
+    split: Split | None,
+    issues_count: int | None = None,
+    tp_count: int | None = None,
+    fp_count: int | None = None,
+    total_credit: float | None = None,
+) -> RunInfo:
     """Convert AgentRun ORM to RunInfo."""
+    grading = None
+    if tp_count is not None or fp_count is not None:
+        grading = RunGradingSummary(tp_count=tp_count or 0, fp_count=fp_count or 0, total_credit=total_credit or 0.0)
     return RunInfo(
         agent_run_id=run.agent_run_id,
         image_digest=run.image_digest,
@@ -932,6 +987,8 @@ def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
         created_at=run.created_at,
         updated_at=run.updated_at,
         split=split,
+        reported_issues_count=issues_count,
+        grading=grading,
     )
 
 
