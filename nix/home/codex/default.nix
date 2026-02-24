@@ -25,6 +25,12 @@ let
         # Returns reasoning_text in format Codex can't parse.
         wire_api = "chat";
       };
+      cluster = {
+        name = "Cluster (ollama.allegedly.works)";
+        base_url = "https://ollama.allegedly.works/v1";
+        env_key = "OLLAMA_API_KEY";
+        wire_api = "chat";
+      };
     };
 
     features = {
@@ -60,6 +66,26 @@ let
       gpt-oss-ollama = {
         model = "gpt-oss:20b";
         model_provider = "ollama";
+        features = {
+          web_search_request = false;
+        };
+      };
+      # GPT-OSS 20B via cluster LiteLLM (228 t/s decode, 100% GPU)
+      # Run: codex --config profile=gpt-oss-20b
+      gpt-oss-20b = {
+        model = "gpt-oss-20b-128k";
+        model_provider = "cluster";
+        model_reasoning_effort = "high";
+        features = {
+          web_search_request = false;
+        };
+      };
+      # GPT-OSS 120B via cluster LiteLLM (10 t/s decode, 91% GPU)
+      # Run: codex --config profile=gpt-oss-120b
+      gpt-oss-120b = {
+        model = "gpt-oss-120b-128k";
+        model_provider = "cluster";
+        model_reasoning_effort = "high";
         features = {
           web_search_request = false;
         };
