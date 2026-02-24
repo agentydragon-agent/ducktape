@@ -187,3 +187,10 @@ visual_test(
     baseline = "baselines/RunsBrowser-chromium-linux.png",
     deps = [":RunsBrowser"],
 )
+
+visual_test(
+    name = "visual_RunDetailCritic",
+    srcs = ["visual_test_RunDetailCritic.mjs"],
+    baseline = "baselines/RunDetailCritic-chromium-linux.png",
+    deps = [":RunDetail"],
+)

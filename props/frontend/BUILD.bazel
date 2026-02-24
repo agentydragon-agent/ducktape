@@ -251,6 +251,7 @@ test_suite(
         "//props/frontend/src/components:visual_FileViewerAnnotated",
         "//props/frontend/src/components:visual_FileViewerGroundTruth",
         "//props/frontend/src/components:visual_LLMRequests",
+        "//props/frontend/src/components:visual_RunDetailCritic",
         "//props/frontend/src/components:visual_RunsBrowser",
         "//props/frontend/src/components/stats:visual_CoverageHeatmap",
         "//props/frontend/src/components/stats:visual_DistributionChartRecall",

@@ -33,21 +33,27 @@
   // Props
   interface Props {
     runId: string;
+    initialRun?: AgentRunDetail;
+    initialSnapshotDetail?: SnapshotDetailResponse;
+    initialFileContents?: Map<string, FileContentResponse>;
+    initialLLMRequests?: LLMRequestInfo[];
   }
-  let { runId }: Props = $props();
+  let { runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests }: Props = $props();
 
   // State
-  let run: AgentRunDetail | null = $state(null);
-  let loading = $state(true);
+  let run: AgentRunDetail | null = $state(initialRun ?? null);
+  let loading = $state(!initialRun);
   let pollInterval: ReturnType<typeof setInterval> | null = null;
 
   // Critique viewer state
-  let snapshotDetail: SnapshotDetailResponse | null = $state(null);
-  let fileContents = $state(new SvelteMap<string, FileContentResponse>());
+  let snapshotDetail: SnapshotDetailResponse | null = $state(initialSnapshotDetail ?? null);
+  let fileContents = $state(
+    initialFileContents ? new SvelteMap(initialFileContents) : new SvelteMap<string, FileContentResponse>()
+  );
   let loadingSnapshot = $state(false);
 
   // LLM requests state
-  let llmRequests: LLMRequestInfo[] = $state([]);
+  let llmRequests: LLMRequestInfo[] = $state(initialLLMRequests ?? []);
   let loadingLLMRequests = $state(false);
 
   // Tab state for logs/LLM view
@@ -211,6 +217,9 @@
   let polling = false;
 
   onMount(() => {
+    // Skip fetching when initial data is provided (visual tests)
+    if (initialRun) return;
+
     loadData().then(() => {
       // Load LLM requests after run data is loaded (LLM tab is default)
       if (run) {
@@ -451,6 +460,7 @@
                 critiqueIssues={reportedIssues}
                 gradingEdges={edges}
                 snapshotSlug={getSnapshotSlug(run)}
+                defaultCollapsed={true}
               />
             {/each}
           </div>
