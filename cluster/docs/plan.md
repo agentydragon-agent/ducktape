@@ -161,8 +161,8 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       Run `scripts/check-authentik-login.py`. Remaining: Harbor SSO.
 - [ ] **Consider moving more PVCs from `proxmox-csi-retain` to `local-path`** — the
       Proxmox CSI driver hardcodes a 29 data volume per node limit (`lun < 30`).
-      cp-0 currently has ~26/29 slots used. Candidates for `local-path` (ephemeral/
-      regenerable data, acceptable to lose on cluster rebuild): - `langfuse/valkey-data-langfuse-redis-primary-0` (8Gi) — cache - `langfuse/langfuse-s3` (8Gi) — MinIO object storage, regenerable - `monitoring/alertmanager-*` (5Gi) — alert silences - `monitoring/prometheus-*` (20Gi) — time-series metrics - `monitoring/storage-tempo-0` (10Gi) — traces - `monitoring/kube-prometheus-stack-grafana` (10Gi) — dashboards (should be in ConfigMaps) - `loki/storage-loki-stack-0` (20Gi) — logs - `harbor/harbor-jobservice` (1Gi) — job queue
+      cp-0 currently has ~23/29 slots used. Candidates for `local-path` (ephemeral/
+      regenerable data, acceptable to lose on cluster rebuild): - `langfuse/langfuse-s3` (8Gi) — MinIO object storage, regenerable - `monitoring/alertmanager-*` (5Gi) — alert silences - `monitoring/prometheus-*` (20Gi) — time-series metrics - `monitoring/storage-tempo-0` (10Gi) — traces - `monitoring/kube-prometheus-stack-grafana` (10Gi) — dashboards (should be in ConfigMaps) - `loki/storage-loki-stack-0` (20Gi) — logs - `harbor/harbor-jobservice` (1Gi) — job queue
 - [ ] **Re-enable MFA** (TOTP/WebAuthn) once device enrollment is set up. Current custom flow
       in `terraform/gitops/sso/users/main.tf` skips MFA. Add enrollment stage + MFA validation
       stage back when ready.
