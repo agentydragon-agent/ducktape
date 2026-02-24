@@ -1,6 +1,7 @@
 """Ground truth API routes for viewing snapshots and issues.
 
-All endpoints require admin access (localhost admin or authenticated admin user).
+Access is controlled per caller via RLS: admin sees everything, evaluator bypasses
+RLS (SELECT-only), agent roles see only what their Postgres policies permit.
 """
 
 from __future__ import annotations
@@ -10,13 +11,12 @@ import tarfile
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from props.backend.auth import require_admin_access
-from props.backend.deps import AdminDb
+from props.backend.auth import CallerDb
 from props.core.ids import SnapshotSlug
 from props.core.splits import Split
 from props.db.models import (
@@ -34,7 +34,7 @@ from props.db.models import (
 )
 from props.db.snapshots import LocationAnchor
 
-router = APIRouter(dependencies=[Depends(require_admin_access)])
+router = APIRouter()
 
 
 # --- Response Models ---
@@ -134,9 +134,9 @@ def get_snapshot_or_404(session: Session, snapshot_slug: SnapshotSlug) -> Snapsh
 
 
 @router.get("/snapshots")
-def list_snapshots(admin_db: AdminDb) -> SnapshotsListResponse:
+def list_snapshots(caller_db: CallerDb) -> SnapshotsListResponse:
     """List all snapshots with issue counts."""
-    with admin_db.session() as session:
+    with caller_db.session() as session:
         # Get snapshots with TP/FP counts
         snapshots = session.query(Snapshot).order_by(Snapshot.created_at.desc()).all()
 
@@ -169,10 +169,10 @@ def list_snapshots(admin_db: AdminDb) -> SnapshotsListResponse:
 
 
 @router.get("/snapshots/{org}/{snapshot_date}")
-def get_snapshot_detail(org: str, snapshot_date: str, admin_db: AdminDb) -> SnapshotDetailResponse:
+def get_snapshot_detail(org: str, snapshot_date: str, caller_db: CallerDb) -> SnapshotDetailResponse:
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get detailed snapshot info with all TPs and FPs."""
-    with admin_db.session() as session:
+    with caller_db.session() as session:
         snapshot = get_snapshot_or_404(session, snapshot_slug)
 
         # Get TPs with eager loading
@@ -295,10 +295,10 @@ class FileTreeResponse(BaseModel):
 
 
 @router.get("/snapshots/{org}/{snapshot_date}/tree")
-def get_snapshot_tree(org: str, snapshot_date: str, admin_db: AdminDb) -> FileTreeResponse:
+def get_snapshot_tree(org: str, snapshot_date: str, caller_db: CallerDb) -> FileTreeResponse:
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get directory tree with issue occurrence counts."""
-    with admin_db.session() as session:
+    with caller_db.session() as session:
         get_snapshot_or_404(session, snapshot_slug)
 
         # Get all snapshot files
@@ -409,10 +409,10 @@ class FileContentResponse(BaseModel):
 
 
 @router.get("/snapshots/{org}/{snapshot_date}/files/{file_path:path}")
-def get_snapshot_file(org: str, snapshot_date: str, file_path: str, admin_db: AdminDb) -> FileContentResponse:
+def get_snapshot_file(org: str, snapshot_date: str, file_path: str, caller_db: CallerDb) -> FileContentResponse:
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get file content from snapshot tar archive."""
-    with admin_db.session() as session:
+    with caller_db.session() as session:
         snapshot = get_snapshot_or_404(session, snapshot_slug)
 
         if not snapshot.content:
@@ -471,10 +471,10 @@ class ClustersListResponse(BaseModel):
 
 
 @router.get("/snapshots/{org}/{snapshot_date}/clusters")
-def list_clusters(org: str, snapshot_date: str, admin_db: AdminDb) -> ClustersListResponse:
+def list_clusters(org: str, snapshot_date: str, caller_db: CallerDb) -> ClustersListResponse:
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """List all issue clusters for a snapshot with members."""
-    with admin_db.session() as session:
+    with caller_db.session() as session:
         get_snapshot_or_404(session, snapshot_slug)
 
         clusters = (

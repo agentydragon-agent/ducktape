@@ -22,10 +22,8 @@ py_library(
     visibility = ["//props/backend:__subpackages__"],
     deps = [
         "//props/backend:auth",
-        "//props/backend:deps",
         "//props/core:ids",
         "//props/core:splits",
-        "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
         "@pypi//fastapi",
@@ -174,6 +172,28 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//starlette",
         "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_ground_truth",
+    srcs = ["test_ground_truth.py"],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":ground_truth",
+        "//props:conftest",
+        "//props/backend:auth",
+        "//props/backend:conftest",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing/fixtures:credentials",
+        "//props/testing/fixtures:runs",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 
