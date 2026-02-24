@@ -37,8 +37,8 @@ pkgs.python3Packages.buildPythonApplication {
     pydantic
     pydantic-settings
     pyjwt
-    # pyrage not in nixpkgs — only needed by session_start (encrypted secrets),
-    # not by claude-statusline which is the primary reason for this package
+    # pyrage not in nixpkgs — lazily imported in secrets_setup.py,
+    # so CLI mode (statusline, session_start) works without it
     pygit2
     pyyaml
     supervisor

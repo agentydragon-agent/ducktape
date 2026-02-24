@@ -29,8 +29,6 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import pyrage
-
 from tools.claude_hooks.kubeconfig_setup import KubeconfigSecret
 
 logger = logging.getLogger(__name__)
@@ -68,6 +66,10 @@ def setup_secrets(age_key: str | None, secrets_dir: Path) -> SecretsSetup | None
     if not secrets_dir.is_dir():
         logger.info("Secrets directory %s does not exist, skipping", secrets_dir)
         return None
+
+    # Lazy import: pyrage is a Rust native extension not available in all environments
+    # (e.g., Nix-installed CLI where secrets decryption isn't needed).
+    import pyrage  # noqa: PLC0415
 
     identity = pyrage.x25519.Identity.from_str(age_key.strip())
 
