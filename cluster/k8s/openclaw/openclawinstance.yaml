@@ -221,6 +221,14 @@ spec:
       channels:
         telegram:
           enabled: true
+          dmPolicy: allowlist
+          allowFrom:
+            - 349002008
+          actions:
+            sendMessage: true
+            reactions: true
+            deleteMessage: true
+            sticker: true
         matrix:
           enabled: true
           homeserver: "http://matrix-synapse.matrix.svc.cluster.local:8008"
@@ -229,6 +237,14 @@ spec:
           deviceName: "OpenClaw Agent"
           encryption: false
           autoJoin: always
+          dm:
+            enabled: true
+            policy: allowlist
+            allowFrom:
+              - "@agentydragon:allegedly.works"
+          actions:
+            reactions: true
+            messages: true
 
   storage:
     persistence:
