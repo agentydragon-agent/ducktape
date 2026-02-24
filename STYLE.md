@@ -32,6 +32,7 @@ Style and convention rules for this repository. Package-specific elaborations be
 
 ## General
 
+- **No large code blobs embedded in YAML/JSON**: Do not inline Python scripts, shell scripts, or large configuration blocks as string values in Kubernetes manifests, Helm values, or other YAML/JSON files. Embedded code cannot be linted, formatted, or type-checked by standard tools (ruff, shellcheck, mypy). Instead, keep code in its native file format (`.py`, `.sh`) and mount it into containers via `configMapGenerator` (kustomize) or `ConfigMap` with file references. This applies to any embedded block longer than ~5 lines.
 - **Imports at module top**: Place all imports at the top of files. Only use in-function imports to break a proven circular dependency, and add a one-line comment at that import explaining the cycle it avoids.
 - **No suspicious nullability**: If a field is optional, it must be for a clear transitional reason or represent an intentional, valid state with defined behavior. Otherwise, model as non-nullable and remove guards.
 - **No dead code**: Remove unused code, unused imports, and historical comments that no longer reflect the behavior.

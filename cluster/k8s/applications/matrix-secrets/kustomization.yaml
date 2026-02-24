@@ -4,3 +4,8 @@ resources:
   - matrix-secrets-tf.yaml
   - secrets.yaml
   - openclaw-bot-registration-job.yaml
+configMapGenerator:
+  - name: openclaw-bot-registration-script
+    namespace: matrix
+    files:
+      - register_openclaw_bot.py
