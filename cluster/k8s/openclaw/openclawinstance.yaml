@@ -37,6 +37,9 @@ spec:
           name: openclaw-matrix-bot-password
           key: password
 
+  skills:
+    - "npm:@openclaw/matrix"
+
   config:
     raw:
       agents:
