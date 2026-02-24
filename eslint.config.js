@@ -189,12 +189,7 @@ export default [
 
   // RSPCache admin UI (React)
   {
-    files: ["experimental/rspcache/admin_ui/**/*.{ts,tsx}"],
-    ignores: [
-      "experimental/rspcache/admin_ui/node_modules/**",
-      "experimental/rspcache/admin_ui/dist/**",
-      "experimental/rspcache/admin_ui/src/generated/**", // Generated types
-    ],
+    files: ["hack/rspcache/admin_ui/**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
