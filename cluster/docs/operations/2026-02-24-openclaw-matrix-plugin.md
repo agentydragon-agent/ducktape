@@ -93,7 +93,10 @@ main container runtime loading works. With `encryption: false` and the try/catch
 the bot should work without the crypto binary.
 
 **Fix**: Remove `@matrix-org/matrix-sdk-crypto-nodejs` from `node_modules` after
-`npm install`. This lets the extension load — when `create-client.ts` tries
+`npm install`. Must remove from BOTH the extension-local path AND the hoisted
+path (`~/.openclaw/node_modules/@matrix-org/matrix-sdk-crypto-nodejs`) — npm
+hoists packages to the nearest parent `node_modules`. This lets the extension
+load — when `create-client.ts` tries
 `await import("@matrix-org/matrix-sdk-crypto-nodejs")`, the module isn't found,
 the catch block runs, and E2EE is disabled. The bot SDK works fine without it.
 

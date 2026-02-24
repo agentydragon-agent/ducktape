@@ -64,7 +64,8 @@ spec:
         - |
           rm -rf /home/node/.openclaw/extensions/matrix &&
           node --max-old-space-size=1024 openclaw.mjs plugins install /app/extensions/matrix &&
-          rm -rf /home/node/.openclaw/extensions/matrix/node_modules/@matrix-org/matrix-sdk-crypto-nodejs
+          rm -rf /home/node/.openclaw/extensions/matrix/node_modules/@matrix-org/matrix-sdk-crypto-nodejs &&
+          rm -rf /home/node/.openclaw/node_modules/@matrix-org/matrix-sdk-crypto-nodejs
       resources:
         requests:
           memory: "512Mi"
