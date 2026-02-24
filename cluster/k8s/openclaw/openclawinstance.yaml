@@ -26,6 +26,16 @@ spec:
         secretKeyRef:
           name: openclaw-anthropic-api-key
           key: api-key
+    - name: TELEGRAM_BOT_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-telegram-bot-token
+          key: token
+    - name: MATRIX_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-matrix-bot-password
+          key: password
 
   config:
     raw:
@@ -208,6 +218,23 @@ spec:
           dangerouslyDisableDeviceAuth: true
         # Auth: operator auto-generates token via enrichConfigWithGatewayAuth()
         # and sets mode to "token". No explicit auth section needed.
+      channels:
+        telegram:
+          enabled: true
+          dm:
+            enabled: true
+            policy: open
+        matrix:
+          enabled: true
+          homeserver: "https://chat.allegedly.works"
+          userId: "@openclaw:allegedly.works"
+          # Password injected via MATRIX_PASSWORD env var
+          deviceName: "OpenClaw Agent"
+          encryption: false
+          autoJoin: always
+          dm:
+            enabled: true
+            policy: open
 
   storage:
     persistence:
@@ -312,6 +339,18 @@ spec:
                   kubernetes.io/metadata.name: ollama
           ports:
             - port: 11434
+              protocol: TCP
+        # Allow egress to Matrix/Synapse in matrix namespace (port 8008).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: matrix
+          ports:
+            - port: 8008
+              protocol: TCP
+        # Allow egress to Telegram API (api.telegram.org, HTTPS).
+        - ports:
+            - port: 443
               protocol: TCP
         # TODO: Add egress rules for InvenTree and Grocy when deployed.
 

@@ -6,3 +6,5 @@ resources:
   - openai-api-key-sealed.yaml
   - anthropic-api-key-sealed.yaml
   - sandbox-sa-token-eso.yaml
+  - telegram-bot-token-sealed.yaml
+  - matrix-bot-password-eso.yaml

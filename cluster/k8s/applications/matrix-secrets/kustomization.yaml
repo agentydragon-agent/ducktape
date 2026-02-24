@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - matrix-secrets-tf.yaml
   - secrets.yaml
+  - openclaw-bot-registration-job.yaml

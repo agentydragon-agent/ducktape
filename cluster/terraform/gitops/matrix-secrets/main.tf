@@ -59,16 +59,26 @@ resource "random_password" "redis_password" {
   }
 }
 
+resource "random_password" "openclaw_bot_password" {
+  length  = 32
+  special = false
+
+  lifecycle {
+    ignore_changes = [length, special]
+  }
+}
+
 resource "vault_kv_secret_v2" "matrix_secrets" {
   mount = "kv"
   name  = "matrix/secrets"
   cas   = 0
 
   data_json = jsonencode({
-    signing_key         = random_password.signing_key.result
-    registration_secret = random_password.registration_secret.result
-    macaroon_secret     = random_password.macaroon_secret.result
-    redis_password      = random_password.redis_password.result
+    signing_key           = random_password.signing_key.result
+    registration_secret   = random_password.registration_secret.result
+    macaroon_secret       = random_password.macaroon_secret.result
+    redis_password        = random_password.redis_password.result
+    openclaw_bot_password = random_password.openclaw_bot_password.result
   })
 
   lifecycle {
