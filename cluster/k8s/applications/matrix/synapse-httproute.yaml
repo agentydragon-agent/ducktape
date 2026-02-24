@@ -42,10 +42,3 @@ spec:
       backendRefs:
         - name: matrix-synapse
           port: 8008
-    - matches:
-        - path:
-            type: PathPrefix
-            value: "/_synapse"
-      backendRefs:
-        - name: matrix-synapse
-          port: 8008
