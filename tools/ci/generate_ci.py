@@ -76,8 +76,8 @@ COMPUTE_TARGETS_JOB = Job(
             'echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV\n'
             'echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV\n'
             'echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV\n'
-            "# Full build on main/devel pushes; incremental on PRs and feature branches\n"
-            'if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master|devel)$ ]]; then\n'
+            "# Full build on main/master pushes; incremental everywhere else (PRs, devel, feature branches)\n"
+            'if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master)$ ]]; then\n'
             '  echo "CI_PUSH_STRATEGY=full" >> $GITHUB_ENV\n'
             "else\n"
             '  echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV\n'

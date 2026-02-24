@@ -57,8 +57,8 @@ jobs:
           echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
           echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV
           echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV
-          # Full build on main/devel pushes; incremental on PRs and feature branches
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master|devel)$ ]]; then
+          # Full build on main/master pushes; incremental everywhere else (PRs, devel, feature branches)
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master)$ ]]; then
             echo "CI_PUSH_STRATEGY=full" >> $GITHUB_ENV
           else
             echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV
