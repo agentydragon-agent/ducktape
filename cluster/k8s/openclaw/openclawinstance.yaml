@@ -173,7 +173,7 @@ spec:
                 contextWindow: 400000
                 maxTokens: 128000
           anthropic:
-            baseUrl: "https://api.anthropic.com/v1"
+            baseUrl: "https://api.anthropic.com"
             api: anthropic-messages
             models:
               - id: "claude-opus-4-6"
