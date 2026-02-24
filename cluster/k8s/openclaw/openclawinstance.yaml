@@ -296,9 +296,11 @@ spec:
             secretKeyRef:
               name: openclaw-gateway-token
               key: token
-        # kubectl uses in-cluster config: reads the sandbox SA token from
-        # /var/run/secrets/kubernetes.io/serviceaccount/ (mounted below).
-        # The namespace file in that mount defaults kubectl to openclaw-sandbox.
+        # Note: Commands execute directly inside this container via
+        # child_process.spawn() — no K8s API involved.
+        # The SA token below is ONLY for kubectl: it provides in-cluster
+        # auth scoped to openclaw-sandbox namespace (restricted RBAC).
+        # The namespace file in the mount defaults kubectl's namespace.
       volumeMounts:
         - name: sandbox-sa-token
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount

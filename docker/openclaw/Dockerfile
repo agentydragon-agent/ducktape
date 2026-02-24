@@ -1,19 +1,31 @@
 # Custom OpenClaw image with matrix channel plugin pre-installed.
 #
-# The upstream image bundles extension source at /app/extensions/matrix/ but not
-# its npm dependencies. `plugins install` copies to CONFIG_DIR/extensions/ and
-# runs npm install. We bake this into the image so no init container is needed.
+# The upstream image bundles extension source at /app/extensions/matrix/ but
+# without node_modules/. We install deps directly there so the bundled extension
+# loader (discovery position #4) finds them at runtime — no HOME path confusion,
+# no init container needed.
 #
-# The crypto native binary (matrix-sdk-crypto-nodejs) must be downloaded manually
-# because openclaw runs `npm install --ignore-scripts` (security hardening).
+# Unlike `plugins install` (which uses --ignore-scripts for security), we allow
+# postinstall scripts so the crypto native binary downloads automatically.
 FROM ghcr.io/openclaw/openclaw:2026.2.23
 
 USER root
-RUN node --max-old-space-size=1024 openclaw.mjs plugins install /app/extensions/matrix \
- && CRYPTO_DIR=$(find /home/node/.openclaw -path '*/matrix-sdk-crypto-nodejs' -type d | head -1) \
- && if [ -n "$CRYPTO_DIR" ]; then \
-      wget -q -O "$CRYPTO_DIR/matrix-sdk-crypto.linux-x64-gnu.node" \
-        "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v0.4.0/matrix-sdk-crypto.linux-x64-gnu.node"; \
-    fi \
- && chown -R node:node /home/node/.openclaw
+WORKDIR /app/extensions/matrix
+
+# 1. Strip workspace:* devDependencies (invalid outside the monorepo)
+# 2. Install production deps (postinstall scripts download crypto binary)
+# 3. Fix ownership for runtime (node user, uid 1000)
+RUN node -e " \
+  const fs = require('fs'); \
+  const p = JSON.parse(fs.readFileSync('package.json', 'utf8')); \
+  if (p.devDependencies) { \
+    for (const k of Object.keys(p.devDependencies)) { \
+      if (p.devDependencies[k].startsWith('workspace:')) delete p.devDependencies[k]; \
+    } \
+  } \
+  fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');" \
+ && npm install --omit=dev \
+ && chown -R node:node node_modules
+
+WORKDIR /app
 USER node

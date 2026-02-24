@@ -13,24 +13,29 @@ OpenClaw's exec tool has three execution hosts, controlled by `tools.exec.host`:
 | `gateway`           | The gateway process itself             | Not what we want        |
 | `node`              | A paired node-host companion process   | **This is what we use** |
 
-In our deployment, the **node-host sidecar** (lines 274-305 of
-`openclawinstance.yaml`) runs as a sidecar container in the same pod as the
-gateway. It connects to the gateway over `127.0.0.1:18789` and registers as a
-node with `system.run` capability. When the agent calls the exec tool, the
-gateway routes the command to this node-host, which spawns the process.
+In our deployment, the **node-host sidecar** (see `openclawinstance.yaml`
+`sidecars` section) runs as a sidecar container in the same pod as the gateway.
+It connects to the gateway over `127.0.0.1:18789` and registers as a node with
+`system.run` capability. When the agent calls the exec tool, the gateway routes
+the command to this node-host over WebSocket, and the **node-host spawns the
+process directly inside its own container** via Node.js `child_process.spawn()`.
+
+No Kubernetes API or service account token is involved in command execution
+itself — the sidecar is just a regular Linux process spawning child processes.
 
 ```text
-┌─────────────────────────────────────────────────┐
-│ OpenClaw Pod                                    │
-│                                                 │
-│  ┌──────────────┐    WebSocket     ┌──────────┐│
-│  │ Gateway      │◄───────────────►│ Node-Host ││
-│  │ :18789       │  (127.0.0.1)    │ sidecar   ││
-│  │              │                  │           ││
-│  │ tools.exec   │  routes exec    │ spawns    ││
-│  │ .host=node ──┼─────────────────►│ processes ││
-│  └──────────────┘                  └──────────┘│
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│ OpenClaw Pod                                             │
+│                                                          │
+│  ┌──────────────┐    WebSocket     ┌───────────────────┐│
+│  │ Gateway      │◄───────────────►│ Node-Host sidecar  ││
+│  │ :18789       │  (127.0.0.1)    │                    ││
+│  │              │                  │ child_process      ││
+│  │ tools.exec   │  routes exec    │ .spawn() ──► bash  ││
+│  │ .host=node ──┼────────────────►│           ──► git   ││
+│  └──────────────┘                  │           ──► kubectl│
+│                                    └───────────────────┘│
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## Current Configuration
@@ -51,8 +56,14 @@ sidecars:
             key: token
 ```
 
-The sidecar uses the sandbox service account token to scope `kubectl` commands
-to the `openclaw-sandbox` namespace with restricted RBAC permissions.
+### Sandbox Service Account Token (kubectl only)
+
+The sidecar mounts a service account token from `openclaw-sandbox` namespace at
+`/var/run/secrets/kubernetes.io/serviceaccount`. This token is **only relevant
+for `kubectl` commands** — it provides in-cluster auth that scopes kubectl to the
+`openclaw-sandbox` namespace with restricted RBAC permissions. The token plays no
+role in how commands are spawned or routed; it simply determines what kubectl can
+access when the agent happens to run `kubectl` inside the sidecar.
 
 ## Configuring `tools.exec`
 
@@ -64,9 +75,9 @@ config:
     tools:
       exec:
         host: node # Route to paired node (not sandbox/gateway)
-        node: "node-host" # Name/ID of the target node
-        security: allowlist # Or "full" for unrestricted
+        security: full # Unrestricted execution
         ask: off # Don't prompt for approval (headless)
+        # node: "node-host"  # Optional — auto-selects when only one node connected
 ```
 
 ### `tools.exec.*` Field Reference
@@ -74,7 +85,7 @@ config:
 | Field         | Type                           | Default                               | Description                                                    |
 | ------------- | ------------------------------ | ------------------------------------- | -------------------------------------------------------------- |
 | `host`        | `sandbox` / `gateway` / `node` | `sandbox`                             | Where commands execute                                         |
-| `node`        | string                         | —                                     | Target node ID or display name (required when `host=node`)     |
+| `node`        | string                         | —                                     | Target node ID or display name (auto-selects if only one node) |
 | `security`    | `deny` / `allowlist` / `full`  | `deny`                                | Command validation mode                                        |
 | `ask`         | `off` / `on-miss` / `always`   | `on-miss`                             | Approval prompt strategy                                       |
 | `askFallback` | `deny` / `allowlist` / `full`  | `deny`                                | Behavior when UI is unreachable                                |

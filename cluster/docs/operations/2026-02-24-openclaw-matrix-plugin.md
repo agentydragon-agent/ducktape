@@ -198,8 +198,11 @@ The init container approach was abandoned in favor of a custom Docker image that
 matrix plugin in at build time. This eliminates all the runtime issues (idempotency, volume
 paths, heap limits, crypto binary download).
 
-- **Dockerfile**: `docker/openclaw/Dockerfile` — derives from upstream, runs `plugins install`
-  and downloads native crypto binary during build
+- **Dockerfile**: `docker/openclaw/Dockerfile` — derives from upstream, installs npm deps
+  directly in `/app/extensions/matrix/` (bundled extension path). Runs `npm install` without
+  `--ignore-scripts` so the crypto native binary downloads automatically via postinstall.
+  Skips `plugins install` entirely to avoid HOME path issues (`USER root` → HOME=/root,
+  operator overrides HOME=/home/openclaw at runtime — neither matches /home/node).
 - **CI**: `.github/workflows/openclaw-image.yml` — builds and pushes to Harbor
 - **Registry**: `registry.allegedly.works/openclaw/openclaw-matrix`
 - **Auto-update**: Flux ImagePolicy + ImageUpdateAutomation updates tag in
