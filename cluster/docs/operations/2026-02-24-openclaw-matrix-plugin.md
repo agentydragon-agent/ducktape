@@ -92,12 +92,20 @@ The "failed to load" message during `plugins install` is a **non-fatal verificat
 main container runtime loading works. With `encryption: false` and the try/catch fallback,
 the bot should work without the crypto binary.
 
-**Status**: Waiting to verify after volume mount fix. If the main container still fails,
-options include:
+**Fix**: Remove `@matrix-org/matrix-sdk-crypto-nodejs` from `node_modules` after
+`npm install`. This lets the extension load — when `create-client.ts` tries
+`await import("@matrix-org/matrix-sdk-crypto-nodejs")`, the module isn't found,
+the catch block runs, and E2EE is disabled. The bot SDK works fine without it.
 
-- `npm install --no-optional` to skip the binary entirely
-- Check if `@vector-im/matrix-bot-sdk` imports crypto at the top level (would be fatal)
-- Pre-download the binary in a multi-stage build
+### 6. Init Container Not Idempotent (FIXED, pending push)
+
+**Symptom**: On pod restarts, the init container fails with `plugin already exists:
+/home/node/.openclaw/extensions/matrix (delete it first)`.
+
+**Root cause**: The PVC retains files from previous installs. `plugins install` refuses
+to overwrite existing installations.
+
+**Fix**: Added `rm -rf /home/node/.openclaw/extensions/matrix` before the install command.
 
 ### Dependency chain for the crypto issue
 
@@ -172,4 +180,5 @@ Not needed when `encryption: false`.
 | `a5b642924` | NetworkPolicy port fix + skills (skills was wrong, later replaced) |
 | `bc3b88a67` | Replace skills with initContainers + image pin to 2026.2.23        |
 | `5a99616f9` | Heap fix for init container (--max-old-space-size=1024)            |
-| (pending)   | Volume mount path fix + comment cleanup                            |
+| `f30d8b7b0` | Volume mount path fix (/home/node/.openclaw) + notes               |
+| (pending)   | Idempotency fix + crypto module workaround                         |

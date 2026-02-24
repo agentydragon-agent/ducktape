@@ -48,10 +48,23 @@ spec:
   # The operator overrides HOME=/home/openclaw for the main container, so the
   # same PVC appears at /home/openclaw/.openclaw/ there. Mount must match the
   # init container's actual home. Fixed in 2026.2.23 (upstream #24442).
+  #
+  # Idempotency: `plugins install` refuses to overwrite existing installs, so
+  # we rm the target first (PVC persists across restarts).
+  #
+  # Crypto workaround: @matrix-org/matrix-sdk-crypto-nodejs requires a native
+  # binary that fails to install in the container. Removing the package after
+  # install lets the extension load — create-client.ts catches the missing
+  # import and disables E2EE (we have encryption: false anyway).
   initContainers:
     - name: install-matrix-plugin
       image: ghcr.io/openclaw/openclaw:2026.2.23
-      command: ["node", "--max-old-space-size=1024", "openclaw.mjs", "plugins", "install", "/app/extensions/matrix"]
+      command: ["sh", "-c"]
+      args:
+        - |
+          rm -rf /home/node/.openclaw/extensions/matrix &&
+          node --max-old-space-size=1024 openclaw.mjs plugins install /app/extensions/matrix &&
+          rm -rf /home/node/.openclaw/extensions/matrix/node_modules/@matrix-org/matrix-sdk-crypto-nodejs
       resources:
         requests:
           memory: "512Mi"
