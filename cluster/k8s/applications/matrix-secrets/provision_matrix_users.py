@@ -1,9 +1,9 @@
 """Provision Matrix users on Synapse: admin + OpenClaw bot.
 
 Two-phase idempotent provisioning:
-  Phase 1: Register _provisioner as admin via shared-secret endpoint.
+  Phase 1: Register provisioner as admin via shared-secret endpoint.
            Skips if user already exists (M_USER_IN_USE).
-  Phase 2: Log in as _provisioner, then PUT the bot user via Synapse admin API.
+  Phase 2: Log in as provisioner, then PUT the bot user via Synapse admin API.
            Creates or updates (handles password drift).
 
 Requires: REGISTRATION_SECRET, ADMIN_PASSWORD, BOT_PASSWORD env vars.
@@ -16,7 +16,7 @@ import os
 import urllib.request
 
 SYNAPSE_URL = "http://matrix-synapse.matrix.svc.cluster.local:8008"
-ADMIN_USERNAME = "_provisioner"
+ADMIN_USERNAME = "provisioner"
 BOT_USERNAME = "openclaw"
 SERVER_NAME = "allegedly.works"
 
@@ -37,7 +37,7 @@ def _put_json(url: str, data: dict, headers: dict) -> dict:
 
 
 def register_admin(registration_secret: str, admin_password: str) -> None:
-    """Phase 1: Register _provisioner as admin via shared-secret."""
+    """Phase 1: Register provisioner as admin via shared-secret."""
     # Get nonce
     req = urllib.request.Request(f"{SYNAPSE_URL}/_synapse/admin/v1/register")
     resp = json.loads(urllib.request.urlopen(req).read())
@@ -63,7 +63,7 @@ def register_admin(registration_secret: str, admin_password: str) -> None:
 
 def upsert_bot(admin_password: str, bot_password: str) -> None:
     """Phase 2: Log in as admin, then create/update bot user via admin API."""
-    # Log in as _provisioner
+    # Log in as provisioner
     login_resp = _post_json(
         f"{SYNAPSE_URL}/_matrix/client/v3/login",
         {
