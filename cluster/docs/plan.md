@@ -145,6 +145,13 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
       and enter it once in the UI settings. Investigate options: operator exposing token
       in bootstrap config, gateway-side token injection into served HTML, or upstream
       PR to accept `"trusted-proxy"` in `sharedAuthOk` (message-handler.ts:385-387).
+- [ ] **Proxy outpost HA: shared session storage** — Currently limited to 1 replica
+      because OAuth sessions live in `/dev/shm` (per-pod). Authentik 2025.10 removed
+      Redis for outpost sessions ([#18130](https://github.com/goauthentik/authentik/issues/18130)).
+      Cilium Gateway Envoy ignores Service `sessionAffinity` (does its own round-robin
+      to pod endpoints). Options to investigate: `CiliumEnvoyConfig` with cookie-based
+      hash routing, Gateway API `BackendLBPolicy` (when Cilium adds support), or
+      upstream Authentik re-adding shared session storage.
 - [ ] **Headlamp: verify proxy outpost auth** — Switched to Authentik proxy outpost
       pattern (like gatus/grocy). Outpost pod is running but end-to-end flow is unverified.
       Verify: user hits `headlamp.allegedly.works` → Authentik login → proxy forwards to

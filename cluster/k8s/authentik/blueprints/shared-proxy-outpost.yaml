@@ -24,41 +24,19 @@ entries:
       config:
         authentik_host: "http://authentik-server.authentik:80"
         authentik_host_browser: "https://auth.allegedly.works"
-        kubernetes_replicas: 2
+        # Single replica: OAuth sessions live in /dev/shm (per-pod, no shared
+        # backend since Authentik 2025.10 removed Redis for outpost sessions).
+        # With multiple replicas, the callback lands on a different pod than
+        # the one that started the OAuth flow → 400. Service sessionAffinity
+        # doesn't help because Cilium Gateway Envoy does its own round-robin
+        # LB to pod endpoints, ignoring Service-level affinity settings.
+        kubernetes_replicas: 1
         kubernetes_json_patches:
           deployment:
             - op: add
               path: /spec/template/spec/nodeSelector
               value:
                 topology.kubernetes.io/region: hetzner
-            - op: add
-              path: /spec/template/spec/affinity
-              value:
-                podAntiAffinity:
-                  preferredDuringSchedulingIgnoredDuringExecution:
-                    - weight: 100
-                      podAffinityTerm:
-                        labelSelector:
-                          matchExpressions:
-                            - key: app.kubernetes.io/managed-by
-                              operator: In
-                              values: ["goauthentik.io"]
-                            - key: app.kubernetes.io/name
-                              operator: In
-                              values: ["ak-outpost-shared-proxy-outpost"]
-                        topologyKey: kubernetes.io/hostname
-          # OAuth sessions are stored in /dev/shm (per-pod). Without session
-          # affinity, the callback request can land on a different pod than the
-          # one that started the OAuth flow, causing a 400 on the callback URL.
-          service:
-            - op: add
-              path: /spec/sessionAffinity
-              value: ClientIP
-            - op: add
-              path: /spec/sessionAffinityConfig
-              value:
-                clientIP:
-                  timeoutSeconds: 3600
 
   # Clean up old per-service outposts (replaced by shared-proxy-outpost)
   - model: authentik_outposts.outpost
