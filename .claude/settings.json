@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool run --from 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-34c2f837/claude_hooks-0.1.0-py3-none-any.whl' claude-session-start"
+            "command": "uv tool run --from 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-8f52f25d/claude_hooks-0.1.0-py3-none-any.whl' claude-session-start"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool run --from 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-34c2f837/claude_hooks-0.1.0-py3-none-any.whl' claude-pre-tool-use"
+            "command": "uv tool run --from 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-8f52f25d/claude_hooks-0.1.0-py3-none-any.whl' claude-pre-tool-use"
           }
         ]
       }
