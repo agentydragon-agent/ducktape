@@ -51,6 +51,23 @@ MAX_EXEC_TIMEOUT_MS = 300_000
 TimeoutMs = Annotated[int, Field(gt=0, le=MAX_EXEC_TIMEOUT_MS)]
 
 
+class ExecArgsBase(BaseModel):
+    """Shared fields for all exec args models (direct, bwrap, seatbelt).
+
+    Subclasses add the command field (currently ``cmd`` or ``argv`` — TODO: unify naming).
+    """
+
+    max_bytes: int = Field(
+        ..., ge=0, le=100_000, description="Max bytes to capture from stdout and stderr. 0 means both will be empty."
+    )
+    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
+    cwd: str | None = None
+    timeout_ms: TimeoutMs
+    stdin_text: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class TruncatedStream(BaseModel):
     """Truncated stream output with metadata about the original size.
 

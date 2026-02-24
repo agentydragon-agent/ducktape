@@ -9,14 +9,14 @@ from pathlib import Path
 import anyio
 import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import (
     BaseExecResult,
+    ExecArgsBase,
     StreamReadResult,
-    TimeoutMs,
     async_timer,
     read_stream_limited_async,
     render_raw_to_result,
@@ -45,20 +45,14 @@ DEFAULT_ENV_WHITELIST: tuple[str, ...] = (
 )
 
 
-class SandboxExecArgs(BaseModel):
+class SandboxExecArgs(ExecArgsBase):
     # Stateless: require a full policy on every call
     policy: SBPLPolicy
+    # TODO: unify argv/cmd naming across exec args models
     argv: list[str] = Field(min_length=1)
-    max_bytes: int = Field(..., ge=0, le=100_000, description="Applies to stdin and captures")
-    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
-    cwd: str | None = None
     # Explicit env to set/override in the child (applied after policy.env passthrough base)
     env: dict[str, str] | None = None
-    timeout_ms: TimeoutMs
     trace: bool = False
-    stdin_text: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class SandboxExecResult(BaseExecResult):

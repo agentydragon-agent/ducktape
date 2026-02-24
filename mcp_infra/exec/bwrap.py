@@ -7,11 +7,11 @@ from shutil import which
 
 import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.models import BaseExecResult, ExecOutcome, TimeoutMs, render_outcome_to_result
+from mcp_infra.exec.models import BaseExecResult, ExecArgsBase, ExecOutcome, render_outcome_to_result
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
 from mcp_infra.exec.subprocess import run_proc
 
@@ -57,15 +57,8 @@ async def _run_in_bwrap(cmd: list[str], timeout_s: float, cwd: Path | None, stdi
     return await run_proc(argv, timeout_s=timeout_s, cwd=None, stdin=stdin_text)
 
 
-class BwrapExecArgs(BaseModel):
-    cmd: list[str]
-    max_bytes: int = Field(..., ge=0, le=100_000, description="Applies to stdin and captures")
-    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
-    cwd: str | None = None
-    timeout_ms: TimeoutMs
-    stdin_text: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
+class BwrapExecArgs(ExecArgsBase):
+    cmd: list[str] = Field(min_length=1)
 
 
 class BwrapExecServer(EnhancedFastMCP):

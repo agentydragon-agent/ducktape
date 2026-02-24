@@ -3,16 +3,16 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from mcp_infra.exec.models import (
     BaseExecResult,
+    ExecArgsBase,
     ExecOutcome,
     ExecOutput,
     Exited,
     Killed,
     TimedOut,
-    TimeoutMs,
     async_timer,
     render_outcome_to_result,
 )
@@ -69,17 +69,10 @@ async def run_proc(
 # =============================================================================
 
 
-class DirectExecArgs(BaseModel):
+class DirectExecArgs(ExecArgsBase):
     """Arguments for direct command execution."""
 
     cmd: list[str] = Field(min_length=1)
-    max_bytes: int = Field(..., ge=0, le=100_000, description="Applies to stdin and captures")
-    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
-    cwd: str | None = None
-    timeout_ms: TimeoutMs
-    stdin_text: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
 
 
 async def run_direct_exec(input: DirectExecArgs, *, default_cwd: Path | None = None) -> BaseExecResult:
