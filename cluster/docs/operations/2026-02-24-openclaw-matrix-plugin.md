@@ -1,7 +1,7 @@
 # OpenClaw Matrix Plugin Investigation
 
 **Date**: 2026-02-24
-**Status**: In progress
+**Status**: Resolved — custom image approach
 
 ## Problems Found and Fixed
 
@@ -192,6 +192,19 @@ Not needed when `encryption: false`.
 - **#16031**: "@vector-im/matrix-bot-sdk silently dropped on pnpm updates"
 - **#20548** (closed): "Bundled extensions fail with Cannot find module on npm/brew installs"
 
+## Final Solution: Custom Image
+
+The init container approach was abandoned in favor of a custom Docker image that bakes the
+matrix plugin in at build time. This eliminates all the runtime issues (idempotency, volume
+paths, heap limits, crypto binary download).
+
+- **Dockerfile**: `docker/openclaw/Dockerfile` — derives from upstream, runs `plugins install`
+  and downloads native crypto binary during build
+- **CI**: `.github/workflows/openclaw-image.yml` — builds and pushes to Harbor
+- **Registry**: `registry.allegedly.works/openclaw/openclaw-matrix`
+- **Auto-update**: Flux ImagePolicy + ImageUpdateAutomation updates tag in
+  `openclawinstance.yaml` when CI pushes a new image
+
 ## Commits
 
 | Commit      | Description                                                        |
@@ -200,4 +213,4 @@ Not needed when `encryption: false`.
 | `bc3b88a67` | Replace skills with initContainers + image pin to 2026.2.23        |
 | `5a99616f9` | Heap fix for init container (--max-old-space-size=1024)            |
 | `f30d8b7b0` | Volume mount path fix (/home/node/.openclaw) + notes               |
-| (pending)   | Idempotency fix + crypto module workaround                         |
+| (pending)   | Custom image approach: Dockerfile, CI, Flux image automation       |

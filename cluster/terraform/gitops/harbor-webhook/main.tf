@@ -32,6 +32,10 @@ data "harbor_project" "props" {
   name = "props"
 }
 
+data "harbor_project" "openclaw" {
+  name = "openclaw"
+}
+
 locals {
   token            = data.vault_kv_secret_v2.harbor_webhook_token.data["token"]
   flux_webhook_url = "${var.flux_webhook_base_url}/hook/${sha256(local.token)}"
@@ -41,6 +45,18 @@ resource "harbor_project_webhook" "flux_receiver" {
   name             = "flux-image-receiver"
   project_id       = data.harbor_project.props.id
   description      = "Notifies Flux webhook receiver on image push, triggering immediate ImageRepository rescan"
+  enabled          = true
+  notify_type      = "http"
+  address          = local.flux_webhook_url
+  auth_header      = local.token
+  skip_cert_verify = false
+  events_types     = ["PUSH_ARTIFACT"]
+}
+
+resource "harbor_project_webhook" "flux_receiver_openclaw" {
+  name             = "flux-image-receiver"
+  project_id       = data.harbor_project.openclaw.id
+  description      = "Notifies Flux webhook receiver on openclaw image push"
   enabled          = true
   notify_type      = "http"
   address          = local.flux_webhook_url

@@ -3,7 +3,8 @@
 # Creates:
 #   - props project (private, for hosting CI-pushed images)
 #   - inventree project (private, for hosting the custom InvenTree image)
-#   - ci robot account with push+pull on both projects
+#   - openclaw project (private, for hosting the custom OpenClaw+matrix image)
+#   - ci robot account with push+pull on all projects
 #   - webhook token for the Flux harbor Receiver
 #   - github webhook token for the Flux github Receiver
 #
@@ -40,6 +41,12 @@ resource "harbor_project" "inventree" {
   public = false
 }
 
+# Private project for the custom OpenClaw+matrix image
+resource "harbor_project" "openclaw" {
+  name   = "openclaw"
+  public = false
+}
+
 # Project-level robot account for CI push + cluster pull (both projects)
 resource "harbor_robot_account" "ci" {
   name        = "ci"
@@ -71,6 +78,28 @@ resource "harbor_robot_account" "ci" {
   permissions {
     kind      = "project"
     namespace = harbor_project.inventree.name
+
+    access {
+      action   = "push"
+      resource = "repository"
+    }
+    access {
+      action   = "pull"
+      resource = "repository"
+    }
+    access {
+      action   = "read"
+      resource = "artifact"
+    }
+    access {
+      action   = "create"
+      resource = "tag"
+    }
+  }
+
+  permissions {
+    kind      = "project"
+    namespace = harbor_project.openclaw.name
 
     access {
       action   = "push"

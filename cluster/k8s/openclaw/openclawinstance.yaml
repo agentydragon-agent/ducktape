@@ -5,8 +5,11 @@ metadata:
   namespace: openclaw
 spec:
   image:
-    tag: "2026.2.23"
+    repository: registry.allegedly.works/openclaw/openclaw-matrix
+    tag: "2026.2.23" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
+    pullSecrets:
+      - name: harbor-registry-credentials
 
   env:
     # OpenClaw requires an API key for every provider. Ollama has no auth,
@@ -40,46 +43,6 @@ spec:
         secretKeyRef:
           name: openclaw-matrix-bot-password
           key: password
-
-  # Install the matrix channel plugin. The image bundles extension source at
-  # /app/extensions/matrix/ but not its npm deps. `plugins install` copies to
-  # CONFIG_DIR/extensions/ and runs npm install. The container runs as user
-  # `node` (home /home/node/), so CONFIG_DIR resolves to /home/node/.openclaw/.
-  # The operator overrides HOME=/home/openclaw for the main container, so the
-  # same PVC appears at /home/openclaw/.openclaw/ there. Mount must match the
-  # init container's actual home. Fixed in 2026.2.23 (upstream #24442).
-  #
-  # Idempotency: `plugins install` refuses to overwrite existing installs, so
-  # we rm the target first (PVC persists across restarts).
-  #
-  # Crypto binary: openclaw runs `npm install --ignore-scripts`, so the
-  # @matrix-org/matrix-sdk-crypto-nodejs postinstall (which downloads the
-  # native .node binary from GitHub) never runs. We download it manually
-  # after install. Without it, the bot SDK's CryptoClient.js fails to load
-  # (top-level require), preventing the entire matrix plugin from loading.
-  initContainers:
-    - name: install-matrix-plugin
-      image: ghcr.io/openclaw/openclaw:2026.2.23
-      command: ["sh", "-c"]
-      args:
-        - |
-          set -e
-          rm -rf /home/node/.openclaw/extensions/matrix
-          node --max-old-space-size=1024 openclaw.mjs plugins install /app/extensions/matrix
-          CRYPTO_DIR=$(find /home/node/.openclaw -path '*/matrix-sdk-crypto-nodejs' -type d | head -1)
-          if [ -n "$CRYPTO_DIR" ]; then
-            echo "Downloading crypto native binary to $CRYPTO_DIR"
-            wget -q -O "$CRYPTO_DIR/matrix-sdk-crypto.linux-x64-gnu.node" \
-              "https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v0.4.0/matrix-sdk-crypto.linux-x64-gnu.node"
-          fi
-      resources:
-        requests:
-          memory: "512Mi"
-        limits:
-          memory: "1536Mi"
-      volumeMounts:
-        - name: data
-          mountPath: /home/node/.openclaw
 
   config:
     raw:
