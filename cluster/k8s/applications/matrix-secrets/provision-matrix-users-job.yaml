@@ -1,10 +1,10 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: openclaw-bot-registration
+  name: provision-matrix-users
   namespace: matrix
   annotations:
-    # Recreate job on each reconciliation to ensure idempotent registration
+    # Recreate job on each reconciliation to ensure idempotent provisioning
     kustomize.toolkit.fluxcd.io/force: enabled
 spec:
   backoffLimit: 5
@@ -13,15 +13,20 @@ spec:
     spec:
       restartPolicy: OnFailure
       containers:
-        - name: register
+        - name: provision
           image: python:3.13-alpine
-          command: ["python3", "/scripts/register_openclaw_bot.py"]
+          command: ["python3", "/scripts/provision_matrix_users.py"]
           env:
             - name: REGISTRATION_SECRET
               valueFrom:
                 secretKeyRef:
                   name: synapse-registration-secret
                   key: registration_shared_secret
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: synapse-admin-credentials
+                  key: password
             - name: BOT_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -34,4 +39,4 @@ spec:
       volumes:
         - name: script
           configMap:
-            name: openclaw-bot-registration-script
+            name: provision-matrix-users-script

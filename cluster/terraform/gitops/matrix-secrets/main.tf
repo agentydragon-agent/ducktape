@@ -68,6 +68,15 @@ resource "random_password" "openclaw_bot_password" {
   }
 }
 
+resource "random_password" "admin_password" {
+  length  = 32
+  special = false
+
+  lifecycle {
+    ignore_changes = [length, special]
+  }
+}
+
 resource "vault_kv_secret_v2" "matrix_secrets" {
   mount = "kv"
   name  = "matrix/secrets"
@@ -92,6 +101,20 @@ resource "vault_kv_secret_v2" "openclaw_bot" {
 
   data_json = jsonencode({
     password = random_password.openclaw_bot_password.result
+  })
+
+  lifecycle {
+    ignore_changes = [data_json]
+  }
+}
+
+resource "vault_kv_secret_v2" "admin" {
+  mount = "kv"
+  name  = "matrix/admin"
+  cas   = 0
+
+  data_json = jsonencode({
+    password = random_password.admin_password.result
   })
 
   lifecycle {

@@ -3,9 +3,9 @@ kind: Kustomization
 resources:
   - matrix-secrets-tf.yaml
   - secrets.yaml
-  - openclaw-bot-registration-job.yaml
+  - provision-matrix-users-job.yaml
 configMapGenerator:
-  - name: openclaw-bot-registration-script
+  - name: provision-matrix-users-script
     namespace: matrix
     files:
-      - register_openclaw_bot.py
+      - provision_matrix_users.py
