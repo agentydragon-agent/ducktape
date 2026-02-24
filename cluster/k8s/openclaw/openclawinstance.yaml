@@ -4,6 +4,10 @@ metadata:
   name: openclaw
   namespace: openclaw
 spec:
+  image:
+    tag: "2026.2.23"
+    pullPolicy: Always
+
   env:
     # OpenClaw requires an API key for every provider. Ollama has no auth,
     # but a dummy value satisfies the auth-profiles check.
@@ -37,8 +41,19 @@ spec:
           name: openclaw-matrix-bot-password
           key: password
 
-  skills:
-    - "npm:@openclaw/matrix"
+  # Install the matrix channel plugin. The extension source is bundled in the
+  # image at /app/extensions/matrix/ but its npm deps are not. `plugins install`
+  # copies the extension to ~/.config/openclaw/extensions/matrix/ and runs
+  # npm install for its dependencies. Plugin discovery finds it via the "global"
+  # extensions path. Fixed in 2026.2.23 (upstream #24442: sanitize workspace:*
+  # devDeps before npm install).
+  initContainers:
+    - name: install-matrix-plugin
+      image: ghcr.io/openclaw/openclaw:2026.2.23
+      command: ["node", "openclaw.mjs", "plugins", "install", "/app/extensions/matrix"]
+      volumeMounts:
+        - name: data
+          mountPath: /home/openclaw/.openclaw
 
   config:
     raw:
@@ -281,7 +296,7 @@ spec:
 
   sidecars:
     - name: node-host
-      image: ghcr.io/openclaw/openclaw:latest
+      image: ghcr.io/openclaw/openclaw:2026.2.23
       command: ["node", "openclaw.mjs", "node", "run"]
       args: ["--host", "127.0.0.1", "--port", "18789"]
       env:
