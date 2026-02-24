@@ -1,7 +1,7 @@
 """Benchmark Ollama models via the LiteLLM OpenAI-compatible proxy.
 
-Measures text generation (tg), prompt processing (pp), and needle-in-haystack
-recall (niah) at multiple context lengths. Each configuration runs for up to
+Measures output speed, input speed at multiple context lengths, and
+needle-in-haystack recall (niah). Each configuration runs for up to
 --time-limit seconds (default 60s) or --min-samples samples, whichever comes
 first.
 
@@ -15,22 +15,24 @@ Environment:
     OLLAMA_API_KEY  API key for ollama.allegedly.works (optional)
 
 Methodology:
-    prewarm: one throwaway request per model to load weights into GPU.
+    prewarm: one throwaway request per context size to allocate KV cache.
 
-    tg rate: short seed prompt + max_tokens=128, stream=True.
+    output:  short seed prompt + max_tokens=128, stream=True.
              Rate = (tokens_generated - 1) / (last_chunk_ts - first_chunk_ts).
+             Measures decode (output token generation) speed.
 
-    pp rate: filler prompt of ~N tokens + max_tokens=1, non-streaming.
+    input:   filler prompt of ~N tokens + max_tokens=1, non-streaming.
              Rate = prompt_tokens / wall_clock_time (includes network RTT).
+             Measures prefill (input token processing) speed.
 
     niah:    haystack (War and Peace) with an embedded 8-char hex needle at
-             a random depth, streamed response (reasoning model needs streaming
-             to capture thinking tokens). Scored by needle presence in full
-             stream. Multiple samples per context size with random depths,
-             run until time limit or --niah-samples collected.
+             evenly spaced depths (0.0 to 1.0), streamed response (reasoning
+             model needs streaming to capture thinking tokens). Scored by
+             needle presence in full stream. Samples run until time limit or
+             --niah-samples collected.
 
     num_ctx is passed per-request via extra_body so Ollama dynamically sizes
-    the KV cache. The run stops at the first pp failure (typically VRAM
+    the KV cache. The run stops at the first input failure (typically VRAM
     exhaustion).
 """
 
@@ -39,7 +41,6 @@ import contextlib
 import functools
 import json
 import os
-import random
 import secrets
 import statistics
 import time
@@ -61,10 +62,10 @@ NIAH_SAMPLES_DEFAULT = 8
 _FILLER_PHRASE = "The quick brown fox jumps over the lazy dog near the riverbank. "
 _CHARS_PER_TOKEN = 4.5
 
-PP_CONTEXT_SIZES = [1_000, 4_000, 16_000, 32_000, 64_000, 128_000, 256_000, 512_000, 1_000_000]
+CONTEXT_SIZES = [1_000, 4_000, 16_000, 32_000, 64_000, 128_000, 256_000, 512_000, 1_000_000]
 
-TG_MAX_TOKENS = 128
-TG_SEED_PROMPT = "Write a detailed essay about the history of computing:"
+OUTPUT_MAX_TOKENS = 128
+OUTPUT_SEED_PROMPT = "Write a detailed essay about the history of computing:"
 
 # War and Peace (Tolstoy) from Project Gutenberg — ~3.3 MB, covers all context sizes.
 _GUTENBERG_URL = "https://www.gutenberg.org/files/2600/2600-0.txt"
@@ -182,8 +183,8 @@ def unload_model(client: openai.OpenAI, model: str) -> None:
         )
 
 
-def run_tg(client: openai.OpenAI, model: str, time_limit: float) -> list[float]:
-    """Measure text generation throughput (tokens/sec between first and last chunk)."""
+def measure_output(client: openai.OpenAI, model: str, time_limit: float) -> list[float]:
+    """Measure output (decode) speed: tokens/sec between first and last streaming chunk."""
     results: list[float] = []
     deadline = time.monotonic() + time_limit
 
@@ -193,7 +194,10 @@ def run_tg(client: openai.OpenAI, model: str, time_limit: float) -> list[float]:
         token_count = 0
 
         stream = client.chat.completions.create(
-            model=model, messages=[{"role": "user", "content": TG_SEED_PROMPT}], max_tokens=TG_MAX_TOKENS, stream=True
+            model=model,
+            messages=[{"role": "user", "content": OUTPUT_SEED_PROMPT}],
+            max_tokens=OUTPUT_MAX_TOKENS,
+            stream=True,
         )
         for chunk in stream:
             if time.monotonic() > deadline:
@@ -212,8 +216,11 @@ def run_tg(client: openai.OpenAI, model: str, time_limit: float) -> list[float]:
     return results
 
 
-def run_pp(client: openai.OpenAI, model: str, target_tokens: int, time_limit: float) -> list[float]:
-    """Measure prompt processing throughput (prompt_tokens / wall_clock)."""
+def measure_input(client: openai.OpenAI, model: str, target_tokens: int, time_limit: float) -> list[float]:
+    """Measure input (prefill) speed: prompt_tokens / wall_clock.
+
+    Assumes KV cache is already allocated at the right num_ctx (call prewarm first).
+    """
     prompt = make_filler_prompt(target_tokens)
     results: list[float] = []
     deadline = time.monotonic() + time_limit
@@ -241,15 +248,16 @@ def run_pp(client: openai.OpenAI, model: str, target_tokens: int, time_limit: fl
 
 
 def run_niah(
-    client: openai.OpenAI, model: str, context_size_tokens: int, max_samples: int, time_limit: float, rng: random.Random
+    client: openai.OpenAI, model: str, context_size_tokens: int, max_samples: int, time_limit: float
 ) -> list[NiahSample]:
-    """Run NIAH samples at random depths until time_limit or max_samples reached."""
+    """Run NIAH samples at evenly spaced depths until time_limit or max_samples reached."""
     samples: list[NiahSample] = []
     num_ctx = num_ctx_for(context_size_tokens)
     deadline = time.monotonic() + time_limit
+    depths = [i / (max_samples - 1) for i in range(max_samples)] if max_samples > 1 else [0.5]
 
     while time.monotonic() < deadline and len(samples) < max_samples:
-        depth_frac = rng.random()
+        depth_frac = depths[len(samples)]
         needle_code = secrets.token_hex(4)
         prompt_text = _build_niah_prompt(context_size_tokens, needle_code, depth_frac)
 
@@ -333,13 +341,7 @@ def _fmt_niah(samples: list[NiahSample]) -> str:
 
 
 def benchmark_model(
-    client: openai.OpenAI,
-    model: str,
-    pp_sizes: list[int],
-    time_limit: float,
-    niah_samples: int,
-    rng: random.Random,
-    log_path: Path | None,
+    client: openai.OpenAI, model: str, context_sizes: list[int], time_limit: float, niah_samples: int, log_path: Path
 ) -> tuple[dict[str, list[float]], dict[int, list[NiahSample]]]:
     print(f"\n{'=' * 60}", flush=True)
     print(f"Model: {model}", flush=True)
@@ -352,41 +354,45 @@ def benchmark_model(
     results: dict[str, list[float]] = {}
     niah_results: dict[int, list[NiahSample]] = {}
 
-    # Prewarm: load model into GPU memory.
+    # Output speed (uses server default num_ctx).
     print("  prewarm (loading model)...", end=" ", flush=True)
-    warmup_s = prewarm(client, model, num_ctx_for(pp_sizes[0]))
+    warmup_s = prewarm(client, model, num_ctx_for(context_sizes[0]))
     print(f"{warmup_s:.1f}s", flush=True)
 
-    # Text generation throughput.
-    print(f"  tg{TG_MAX_TOKENS} (up to {time_limit:.0f}s)...", end=" ", flush=True)
-    tg = run_tg(client, model, time_limit)
-    results[f"tg{TG_MAX_TOKENS}"] = tg
-    print(_fmt(tg), flush=True)
+    print(f"  output (up to {time_limit:.0f}s)...", end=" ", flush=True)
+    output = measure_output(client, model, time_limit)
+    results["output"] = output
+    print(_fmt(output), flush=True)
 
-    for ctx in pp_sizes:
+    for ctx in context_sizes:
         ctx_label = f"{ctx // 1000}k"
+        num_ctx = num_ctx_for(ctx)
 
-        # Prompt processing throughput.
-        print(f"  pp{ctx_label} (up to {time_limit:.0f}s)...", end=" ", flush=True)
-        pp = run_pp(client, model, ctx, time_limit)
-        results[f"pp{ctx_label}"] = pp
-        print(_fmt(pp), flush=True)
-        if not pp:
+        # Prewarm: allocate KV cache at this num_ctx (pays reallocation cost once).
+        print(f"  prewarm {ctx_label} (num_ctx={num_ctx})...", end=" ", flush=True)
+        warmup_s = prewarm(client, model, num_ctx)
+        print(f"{warmup_s:.1f}s", flush=True)
+
+        # Input speed (KV cache already allocated).
+        print(f"  input {ctx_label} (up to {time_limit:.0f}s)...", end=" ", flush=True)
+        inp = measure_input(client, model, ctx, time_limit)
+        results[f"input{ctx_label}"] = inp
+        print(_fmt(inp), flush=True)
+        if not inp:
             print(f"    (stopped \u2014 likely hit VRAM limit at {ctx:,} tokens)", flush=True)
             break
 
-        # NIAH recall at this context size.
+        # NIAH recall (same num_ctx, no reallocation needed).
         if niah_samples > 0:
-            print(f"  niah{ctx_label} (up to {niah_samples} samples, {time_limit:.0f}s)...", flush=True)
-            niah = run_niah(client, model, ctx, niah_samples, time_limit, rng)
+            print(f"  niah {ctx_label} (up to {niah_samples} samples, {time_limit:.0f}s)...", flush=True)
+            niah = run_niah(client, model, ctx, niah_samples, time_limit)
             niah_results[ctx] = niah
             found = sum(s.found for s in niah)
             print(f"    recall: {found}/{len(niah)}", flush=True)
 
-            if log_path:
-                with log_path.open("a") as f:
-                    for sample in niah:
-                        f.write(json.dumps(asdict(sample)) + "\n")
+            with log_path.open("a") as f:
+                for sample in niah:
+                    f.write(json.dumps(asdict(sample)) + "\n")
 
     return results, niah_results
 
@@ -395,15 +401,15 @@ def print_summary(
     all_results: dict[str, dict[str, list[float]]],
     all_niah: dict[str, dict[int, list[NiahSample]]],
     models: list[str],
-    pp_sizes: list[int],
+    context_sizes: list[int],
 ) -> None:
     col = 28
 
-    # Build metric list: tg, then interleaved (pp, niah) per context size.
-    metrics: list[str] = [f"tg{TG_MAX_TOKENS}"]
-    for s in pp_sizes:
+    # Build metric list: output, then interleaved (input, niah) per context size.
+    metrics: list[str] = ["output"]
+    for s in context_sizes:
         label = f"{s // 1000}k"
-        metrics.append(f"pp{label}")
+        metrics.append(f"input{label}")
         metrics.append(f"niah{label}")
 
     print(f"\n{'=' * 70}")
@@ -434,54 +440,53 @@ def print_summary(
 
     print()
     print("Notes:")
-    print("  tg = text generation (tokens between first/last streaming chunk)")
-    print("  pp = prompt processing (prompt_tokens / wall_clock, includes RTT)")
-    print("  niah = needle-in-haystack recall (found/total, random depths)")
+    print("  output = decode speed (output tokens/sec between first/last streaming chunk)")
+    print("  input  = prefill speed (input tokens/sec, prompt_tokens / wall_clock)")
+    print("  niah   = needle-in-haystack recall (found/total, evenly spaced depths)")
     print(f"  Each config ran for up to {TIME_LIMIT_S}s")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Benchmark Ollama models via LiteLLM proxy")
     parser.add_argument("--models", nargs="+", default=DEFAULT_MODELS)
-    parser.add_argument("--pp-sizes", nargs="+", type=int, default=PP_CONTEXT_SIZES)
+    parser.add_argument("--context-sizes", nargs="+", type=int, default=CONTEXT_SIZES)
     parser.add_argument("--time-limit", type=float, default=TIME_LIMIT_S, help="Seconds per config")
     parser.add_argument(
         "--niah-samples", type=int, default=NIAH_SAMPLES_DEFAULT, help="NIAH samples per ctx (0=disable)"
     )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument("--log-dir", type=Path, default=None, help="Directory for NIAH JSONL logs")
+    parser.add_argument(
+        "--log-dir", type=Path, default=None, help="Directory for JSONL logs (default: next to this script)"
+    )
     parser.add_argument("--unload-between-models", action="store_true", help="Unload model from GPU between models")
     args = parser.parse_args()
 
-    rng = random.Random(args.seed)
     client = make_client()
 
     build_wd = get_build_working_directory()
-    log_dir: Path | None = None
     if args.log_dir:
         raw = args.log_dir
         log_dir = raw if raw.is_absolute() else build_wd / raw
-        log_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        log_dir = build_wd / "hack" / "benchmark_ollama"
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp_str = time.strftime("%Y%m%d_%H%M%S")
 
     print(f"Ollama benchmark \u2014 {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}")
     print(f"Endpoint:     {OLLAMA_BASE_URL}")
     print(f"Models:       {', '.join(args.models)}")
-    print(f"PP sizes:     {args.pp_sizes}")
+    print(f"Context sizes: {args.context_sizes}")
     print(f"NIAH samples: {args.niah_samples}")
-    print(f"Seed:         {args.seed}")
     print(f"Time limit:   {args.time_limit:.0f}s per config")
+    print(f"Log dir:      {log_dir}")
 
     all_results: dict[str, dict[str, list[float]]] = {}
     all_niah: dict[str, dict[int, list[NiahSample]]] = {}
 
     for i, model in enumerate(args.models):
-        log_path: Path | None = None
-        if log_dir:
-            log_path = log_dir / f"benchmark_{model.replace('/', '_')}_{timestamp_str}.jsonl"
+        log_path = log_dir / f"benchmark_{model.replace('/', '_')}_{timestamp_str}.jsonl"
 
-        results, niah = benchmark_model(client, model, args.pp_sizes, args.time_limit, args.niah_samples, rng, log_path)
+        results, niah = benchmark_model(client, model, args.context_sizes, args.time_limit, args.niah_samples, log_path)
         all_results[model] = results
         all_niah[model] = niah
 
@@ -490,7 +495,7 @@ def main() -> None:
             unload_model(client, model)
             print("done", flush=True)
 
-    print_summary(all_results, all_niah, args.models, args.pp_sizes)
+    print_summary(all_results, all_niah, args.models, args.context_sizes)
 
 
 if __name__ == "__main__":
