@@ -1,11 +1,15 @@
 # Build and push the ActivityWatch server (aw-server-rust) image to Harbor.
 #
 # Triggers:
+#   - push to devel changing docker/activitywatch/** (tags :latest too)
 #   - workflow_dispatch: manual trigger (tags :latest too)
 #   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
 name: ActivityWatch Image
 
 on:
+  push:
+    branches: [devel]
+    paths: ["docker/activitywatch/**"]
   workflow_dispatch:
   workflow_call:
 
