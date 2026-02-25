@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
@@ -31,6 +31,7 @@ from lightburn.lbrn2_writer import (
     VAlign,
     XForm,
 )
+from lightburn.ruida.rd_writer import RdJob, RdLayer, RdRect
 
 # ── Cut parameter enum ─────────────────────────────────────────────────────────
 
@@ -142,12 +143,20 @@ class GeometryConfig(BaseModel):
     subgrid_gap_mm: float = 20.0  # gap between sub-grids (3D/4D sweeps)
 
 
+class CellContent(StrEnum):
+    """What to show inside each grid cell."""
+
+    NOTHING = "nothing"  # no in-cell text
+    VALUES = "values"  # parameter values without units (e.g. "25")
+    VALUES_WITH_UNITS = "values_with_units"  # parameter values with units (e.g. "25%")
+
+
 class AnnotationConfig(BaseModel):
     """In-cell text annotations."""
 
     model_config = ConfigDict(extra="forbid")
 
-    show_cell_text: bool = False  # print param values inside each cell
+    cell_content: CellContent = CellContent.NOTHING
     cell_text_gap_mm: float = 0.3  # vertical gap between the two in-cell text lines
 
 
@@ -385,38 +394,80 @@ def _x_annot_height(config: GridConfig) -> float:
 
 
 @dataclass
-class _PendingCell:
-    """Cell awaiting global index assignment (for energy-based sort ordering)."""
+class _CellSpec:
+    """A cell's parameter values and grid position indices (no absolute position).
 
-    cx: float  # cell center x
-    cy: float  # cell center y
+    Used for energy-based sorting before assigning layer indices. Both
+    generate() (LightBurn) and generate_rd() (Ruida) compute absolute
+    positions from these grid indices using their own coordinate systems.
+    """
+
     x_val: float
     y_val: float
     outer_params: list[tuple[CutParam, float]]
+    outer_col: int  # index into config.cols.values (0 if no cols axis)
+    outer_row: int  # index into config.rows.values (0 if no rows axis)
+    inner_col: int  # index into config.x.values
+    inner_row: int  # index into config.y.values
 
 
-@dataclass
-class _SubGridResult:
-    shapes: list[AnyShape] = field(default_factory=list)
-    pending_cells: list[_PendingCell] = field(default_factory=list)
+def _sorted_cell_specs(config: GridConfig) -> list[_CellSpec]:
+    """Collect all cell parameter combinations and sort by ascending energy."""
+    n_outer_cols = len(config.cols.values) if config.cols is not None else 1
+    n_outer_rows = len(config.rows.values) if config.rows is not None else 1
+
+    specs: list[_CellSpec] = []
+    for or_i in range(n_outer_rows):
+        for oc_j in range(n_outer_cols):
+            outer_params: list[tuple[CutParam, float]] = []
+            if config.cols is not None:
+                outer_params.append((config.cols.param, config.cols.values[oc_j]))
+            if config.rows is not None:
+                outer_params.append((config.rows.param, config.rows.values[or_i]))
+
+            for row_i, y_val in enumerate(config.y.values):
+                for col_j, x_val in enumerate(config.x.values):
+                    specs.append(
+                        _CellSpec(
+                            x_val=x_val,
+                            y_val=y_val,
+                            outer_params=outer_params,
+                            outer_col=oc_j,
+                            outer_row=or_i,
+                            inner_col=col_j,
+                            inner_row=row_i,
+                        )
+                    )
+
+    specs.sort(key=lambda c: _cell_energy(config, c.outer_params, c.x_val, c.y_val))
+    return specs
 
 
-def _generate_subgrid(
+def _cell_cut_setting(config: GridConfig, spec: _CellSpec, index: int, name: str) -> CutSetting:
+    """Create a CutSetting for a grid cell, applying the cell's parameter values."""
+    cut = config.cut.to_cut_setting(index, name)
+    _apply_param(cut, config.x.param, spec.x_val)
+    _apply_param(cut, config.y.param, spec.y_val)
+    for param, value in spec.outer_params:
+        _apply_param(cut, param, value)
+    return cut
+
+
+def _generate_subgrid_annotations(
     config: GridConfig,
-    outer_params: list[tuple[CutParam, float]],
     cell_grid_left: float,
     cell_grid_top: float,
     *,
     emit_x_annotations: bool = True,
     emit_y_annotations: bool = True,
-) -> _SubGridResult:
-    """Generate a single 2D sub-grid with inner axis annotations.
+) -> list[AnyShape]:
+    """Generate text annotations for a single 2D sub-grid.
 
-    Places cells starting at (cell_grid_left, cell_grid_top), with inner Y-axis
-    annotations extending to the left and inner X-axis annotations below.
+    Places annotations around cells starting at (cell_grid_left, cell_grid_top)
+    in LightBurn's Y-up coordinate system.
 
-    Returns text annotation shapes and pending cells. CutSettings and RectShapes
-    for cells are created later in generate() after global energy-based sorting.
+    Cell rectangles are NOT created here — they are generated after global
+    energy-based sorting in generate().
     """
     n_cols = len(config.x.values)
     n_rows = len(config.y.values)
@@ -424,9 +475,8 @@ def _generate_subgrid(
     font = config.font
 
     shapes: list[AnyShape] = []
-    pending_cells: list[_PendingCell] = []
 
-    # Cell centre positions
+    # Cell centre positions (Y-up: top is larger Y)
     x_col = [cell_grid_left + config.geometry.cell_size_mm / 2.0 + j * stride for j in range(n_cols)]
     y_row = [cell_grid_top - config.geometry.cell_size_mm / 2.0 - i * stride for i in range(n_rows)]
 
@@ -435,15 +485,18 @@ def _generate_subgrid(
     cell_grid_x_centre = (cell_grid_left + cell_grid_right) / 2.0
     cell_grid_y_centre = (cell_grid_top + cell_grid_bottom) / 2.0
 
-    # Pending cells and in-cell text annotations
+    # In-cell text annotations
     for row_i, y_val in enumerate(config.y.values):
         for col_j, x_val in enumerate(config.x.values):
             cx = x_col[col_j]
             cy = y_row[row_i]
 
-            pending_cells.append(_PendingCell(cx=cx, cy=cy, x_val=x_val, y_val=y_val, outer_params=outer_params))
-
-            if config.annotations.show_cell_text:
+            if config.annotations.cell_content != CellContent.NOTHING:
+                _cell_fmt = (
+                    _fmt_val_with_unit
+                    if config.annotations.cell_content == CellContent.VALUES_WITH_UNITS
+                    else lambda _p, v: fmt_val(v)
+                )
                 half_gap = config.annotations.cell_text_gap_mm / 2.0
                 y_line1 = cy + half_gap + font.h_cell_mm / 2.0
                 y_line2 = cy - half_gap - font.h_cell_mm / 2.0
@@ -454,7 +507,7 @@ def _generate_subgrid(
 
                 shapes.append(
                     _make_text(
-                        _fmt_val_with_unit(config.x.param, x_val),
+                        _cell_fmt(config.x.param, x_val),
                         cx,
                         y_line1,
                         font.h_cell_mm,
@@ -465,7 +518,7 @@ def _generate_subgrid(
                 )
                 shapes.append(
                     _make_text(
-                        _fmt_val_with_unit(config.y.param, y_val),
+                        _cell_fmt(config.y.param, y_val),
                         cx,
                         y_line2,
                         font.h_cell_mm,
@@ -526,7 +579,7 @@ def _generate_subgrid(
                 )
             )
 
-    return _SubGridResult(shapes=shapes, pending_cells=pending_cells)
+    return shapes
 
 
 def generate(config: GridConfig) -> LightBurnProject:
@@ -655,8 +708,7 @@ def generate(config: GridConfig) -> LightBurnProject:
             shapes.append(_make_text(outer_cols_label, centre_x, y, font.h_label_mm, font.name, ah=HAlign.CENTER))
             y -= font.h_label_mm + _SPACING
 
-    # Generate sub-grids (text annotations only; cell rects created after sorting)
-    all_pending: list[_PendingCell] = []
+    # Generate sub-grid text annotations
     subgrid_cell_grid_tops: list[float] = []
 
     for or_i in range(n_outer_rows):
@@ -664,41 +716,33 @@ def generate(config: GridConfig) -> LightBurnProject:
         subgrid_cell_grid_tops.append(cell_grid_top_y)
 
         for oc_j in range(n_outer_cols):
-            outer_params: list[tuple[CutParam, float]] = []
-            if config.cols is not None:
-                outer_params.append((config.cols.param, config.cols.values[oc_j]))
-            if config.rows is not None:
-                outer_params.append((config.rows.param, config.rows.values[or_i]))
-
-            result = _generate_subgrid(
-                config=config,
-                outer_params=outer_params,
-                cell_grid_left=cell_grid_lefts[oc_j],
-                cell_grid_top=cell_grid_top_y,
-                emit_y_annotations=oc_j == 0,
-                emit_x_annotations=or_i == n_outer_rows - 1,
+            shapes.extend(
+                _generate_subgrid_annotations(
+                    config=config,
+                    cell_grid_left=cell_grid_lefts[oc_j],
+                    cell_grid_top=cell_grid_top_y,
+                    emit_y_annotations=oc_j == 0,
+                    emit_x_annotations=or_i == n_outer_rows - 1,
+                )
             )
-            shapes.extend(result.shapes)
-            all_pending.extend(result.pending_cells)
 
-    # Sort cells globally by ascending energy so the laser processes
-    # low-energy (safer) cells first, reducing fire risk.
-    all_pending.sort(key=lambda c: _cell_energy(config, c.outer_params, c.x_val, c.y_val))
-
+    # Create cell layers sorted by ascending energy.
+    # Cell positions use LightBurn's Y-up coordinate system.
+    sorted_cells = _sorted_cell_specs(config)
     next_layer_index = 1
-    for cell in all_pending:
-        cut = config.cut.to_cut_setting(next_layer_index, f"C{next_layer_index:02d}")
-        _apply_param(cut, config.x.param, cell.x_val)
-        _apply_param(cut, config.y.param, cell.y_val)
-        for param, value in cell.outer_params:
-            _apply_param(cut, param, value)
+    for spec in sorted_cells:
+        cut = _cell_cut_setting(config, spec, next_layer_index, f"C{next_layer_index:02d}")
         cut_settings.append(cut)
+
+        sg_top = subgrid_cell_grid_tops[spec.outer_row]
+        cx = cell_grid_lefts[spec.outer_col] + config.geometry.cell_size_mm / 2.0 + spec.inner_col * inner_stride
+        cy = sg_top - config.geometry.cell_size_mm / 2.0 - spec.inner_row * inner_stride
         shapes.append(
             RectShape(
                 cut_index=next_layer_index,
                 width=config.geometry.cell_size_mm,
                 height=config.geometry.cell_size_mm,
-                xform=XForm.translate(cell.cx, cell.cy),
+                xform=XForm.translate(cx, cy),
             )
         )
         next_layer_index += 1
@@ -777,6 +821,83 @@ def generate(config: GridConfig) -> LightBurnProject:
     return LightBurnProject(cut_settings=cut_settings, shapes=shapes, notes="  ".join(notes_parts))
 
 
+def generate_rd(config: GridConfig) -> RdJob:
+    """Build an RdJob from the grid configuration (no text labels, cells + border only).
+
+    Uses the same energy-based sort ordering as generate(). Coordinates are in
+    Ruida's Y-down system (Y increases downward, origin at top-left).
+    """
+    n_outer_cols = len(config.cols.values) if config.cols is not None else 1
+    n_outer_rows = len(config.rows.values) if config.rows is not None else 1
+    inner_stride = config.geometry.cell_size_mm + config.geometry.gap_mm
+    cell_grid_w = len(config.x.values) * inner_stride - config.geometry.gap_mm
+    cell_grid_h = len(config.y.values) * inner_stride - config.geometry.gap_mm
+    subgrid_gap = config.geometry.subgrid_gap_mm
+
+    # Sub-grid positions (Y-down: top-left origin)
+    cell_grid_lefts = [oc * (cell_grid_w + subgrid_gap) for oc in range(n_outer_cols)]
+    cell_grid_tops = [or_i * (cell_grid_h + subgrid_gap) for or_i in range(n_outer_rows)]
+
+    sorted_cells = _sorted_cell_specs(config)
+    layers: list[RdLayer] = []
+    rects: list[RdRect] = []
+
+    for i, spec in enumerate(sorted_cells):
+        cut = _cell_cut_setting(config, spec, i, "")
+        layers.append(
+            RdLayer(
+                index=i,
+                min_power_pct=cut.min_power,
+                max_power_pct=cut.max_power,
+                speed_mm_s=cut.speed,
+                num_passes=cut.num_passes,
+                z_offset_mm=cut.z_offset,
+                z_per_pass_mm=cut.z_per_pass,
+            )
+        )
+        # Cell position in Y-down coords
+        x = cell_grid_lefts[spec.outer_col] + spec.inner_col * inner_stride
+        y_rd = cell_grid_tops[spec.outer_row] + spec.inner_row * inner_stride
+        rects.append(
+            RdRect(
+                layer_index=i,
+                x_mm=x,
+                y_mm=y_rd,
+                width_mm=config.geometry.cell_size_mm,
+                height_mm=config.geometry.cell_size_mm,
+            )
+        )
+
+    # Optional border (last layer)
+    if config.border.enabled:
+        border_idx = len(layers)
+        all_x_min = min(r.x_mm for r in rects)
+        all_y_min = min(r.y_mm for r in rects)
+        all_x_max = max(r.x_mm + r.width_mm for r in rects)
+        all_y_max = max(r.y_mm + r.height_mm for r in rects)
+        p = config.border.padding_mm
+        layers.append(
+            RdLayer(
+                index=border_idx,
+                min_power_pct=config.border.power_pct,
+                max_power_pct=config.border.power_pct,
+                speed_mm_s=config.border.speed_mm_s,
+                num_passes=config.border.num_passes,
+            )
+        )
+        rects.append(
+            RdRect(
+                layer_index=border_idx,
+                x_mm=all_x_min - p,
+                y_mm=all_y_min - p,
+                width_mm=(all_x_max - all_x_min) + 2 * p,
+                height_mm=(all_y_max - all_y_min) + 2 * p,
+            )
+        )
+
+    return RdJob(layers=layers, rects=rects)
+
+
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
 
@@ -790,7 +911,14 @@ def main(argv: list[str] | None = None) -> None:
         "--output",
         default=None,
         metavar="FILE",
-        help="Output .lbrn2 file path (default: derived from config filename)",
+        help="Output file path (default: derived from config filename + format)",
+    )
+    p.add_argument(
+        "--format",
+        choices=["lbrn2", "rd"],
+        default="lbrn2",
+        dest="fmt",
+        help="Output format: lbrn2 (LightBurn XML, max 30 layers) or rd (Ruida binary, up to 128 layers)",
     )
     args = p.parse_args(argv)
 
@@ -801,12 +929,16 @@ def main(argv: list[str] | None = None) -> None:
 
     output_path = args.output
     if output_path is None:
-        output_path = str(Path(args.config).with_suffix(".lbrn2"))
+        output_path = str(Path(args.config).with_suffix(f".{args.fmt}"))
 
-    project = generate(config)
-
-    with Path(output_path).open("w", encoding="utf-8") as f:
-        f.write(project.to_xml_str())
+    if args.fmt == "rd":
+        rd_job = generate_rd(config)
+        with Path(output_path).open("wb") as fb:
+            fb.write(rd_job.to_bytes())
+    else:
+        project = generate(config)
+        with Path(output_path).open("w", encoding="utf-8") as f:
+            f.write(project.to_xml_str())
 
     inner_cells = len(config.x.values) * len(config.y.values)
     n_outer_cols = len(config.cols.values) if config.cols else 1

@@ -6,6 +6,7 @@ py_library(
     imports = ["../.."],
     deps = [
         "//lightburn:lbrn2_writer",
+        "//lightburn/ruida:rd_writer",
         "@pypi//pydantic",
     ],
 )

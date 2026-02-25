@@ -44,7 +44,7 @@ gap_mm = 8          # gap between adjacent cells
 
 # ── In-cell annotations ───────────────────────────────────────────────────────
 [annotations]
-show_cell_text = true      # print x and y parameter values inside each cell
+cell_content = "values_with_units"  # "nothing", "values", or "values_with_units"
 cell_text_gap_mm = 0.3     # vertical gap between the two in-cell text lines
 
 # ── Border ────────────────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ speed_mm_s = 200
 
 # ── Font and text sizes ───────────────────────────────────────────────────────
 [font]
-name = "Arial"
+name = "zzSTENCIL"
 h_title_mm = 10      # title text height
 h_subtitle_mm = 7
 h_label_mm = 6       # axis labels

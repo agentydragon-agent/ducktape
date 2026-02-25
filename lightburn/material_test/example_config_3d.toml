@@ -36,7 +36,7 @@ gap_mm = 6
 subgrid_gap_mm = 20
 
 [annotations]
-show_cell_text = false
+cell_content = "nothing"
 
 [border]
 enabled = true
@@ -49,7 +49,7 @@ power_pct = 15
 speed_mm_s = 200
 
 [font]
-name = "Arial"
+name = "zzSTENCIL"
 h_title_mm = 10
 h_subtitle_mm = 7
 h_label_mm = 6

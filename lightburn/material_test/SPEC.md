@@ -164,9 +164,11 @@ example.
 
 **`[annotations]`:**
 
-| Key              | Default | Description                           |
-| ---------------- | ------- | ------------------------------------- |
-| `show_cell_text` | `false` | Print X and Y values inside each cell |
+`cell_content` (default `"nothing"`): what to print inside each cell.
+
+- `"nothing"` — no in-cell text
+- `"values"` — parameter values without units (e.g. `25`, `12`)
+- `"values_with_units"` — parameter values with units (e.g. `25%`, `12 mm/s`)
 
 **`[border]`:**
 

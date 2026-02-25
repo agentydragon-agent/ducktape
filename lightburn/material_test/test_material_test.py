@@ -15,6 +15,7 @@ from lightburn.material_test.material_test import (
     AnnotationConfig,
     AxisConfig,
     BorderConfig,
+    CellContent,
     CutConfig,
     CutParam,
     GeometryConfig,
@@ -341,7 +342,7 @@ def test_generate_with_cell_text():
     cfg = GridConfig(
         x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
-        annotations=AnnotationConfig(show_cell_text=True),
+        annotations=AnnotationConfig(cell_content=CellContent.VALUES_WITH_UNITS),
     )
     project = generate(cfg)
     texts = [s for s in project.shapes if isinstance(s, TextShape)]
