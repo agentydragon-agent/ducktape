@@ -1,0 +1,51 @@
+title = "8.66mm ply cut"
+auto_subtitle = true
+
+[x]
+param = "power_pct"
+values = [25, 27, 29, 32]
+label = "Power [%]"
+
+[y]
+param = "speed_mm_s"
+values = [12, 14, 16, 18, 20]
+label = "Speed [mm/s]"
+
+[cols]
+param = "z_per_pass_mm"
+values = [-0.6, -0.7, -0.8]
+label = "\u0394Z/pass [mm]"
+
+[cut]
+power_pct = 25
+speed_mm_s = 12
+z_offset_mm = -0.1
+num_passes = 4
+
+[geometry]
+cell_size_mm = 15
+gap_mm = 5
+subgrid_gap_mm = 10
+
+[annotations]
+show_cell_text = false
+cell_text_gap_mm = 0.3
+
+[border]
+enabled = true
+padding_mm = 3
+power_pct = 32
+speed_mm_s = 11
+num_passes = 3
+
+[text_layer]
+power_pct = 15
+speed_mm_s = 200
+
+[font]
+name = "Arial"
+h_title_mm = 10
+h_subtitle_mm = 7
+h_label_mm = 6
+h_value_mm = 5
+h_cell_mm = 3.4

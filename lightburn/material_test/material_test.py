@@ -75,9 +75,7 @@ def _fmt_val_with_unit(param: CutParam, v: float) -> str:
     formatted = fmt_val(v)
     if not unit:
         return formatted
-    if unit == "%":
-        return f"{formatted}%"
-    return f"{formatted} {unit}"
+    return f"{formatted}{unit}"
 
 
 # ── Pydantic config models ─────────────────────────────────────────────────────
