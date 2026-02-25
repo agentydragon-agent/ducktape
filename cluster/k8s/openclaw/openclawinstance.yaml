@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     repository: registry.allegedly.works/openclaw/openclaw-matrix
-    tag: "20260224214207-12ca686" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
+    tag: "20260225132237-43be864" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
     pullSecrets:
       - name: harbor-registry-credentials
@@ -371,7 +371,7 @@ spec:
               protocol: TCP
             - port: 443
               protocol: TCP
-      # TODO: Add egress rules for InvenTree and Grocy when deployed.
+              # TODO: Add egress rules for InvenTree and Grocy when deployed.
   availability:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
