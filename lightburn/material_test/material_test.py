@@ -308,6 +308,24 @@ def _auto_label(param: CutParam) -> str:
     return f"{label} [{unit}]" if unit else label
 
 
+def _cell_energy(config: GridConfig, outer_params: list[tuple[CutParam, float]], x_val: float, y_val: float) -> float:
+    """Energy proxy for sort ordering: higher value = more fire risk.
+
+    Computes max_power * num_passes / speed from the effective parameter values.
+    """
+    power = config.cut.power_max_pct
+    speed = config.cut.speed_mm_s
+    passes = config.cut.num_passes
+    for param, val in [(config.x.param, x_val), (config.y.param, y_val), *outer_params]:
+        if param in (CutParam.POWER_PCT, CutParam.POWER_MAX_PCT):
+            power = val
+        elif param == CutParam.SPEED_MM_S:
+            speed = val
+        elif param == CutParam.NUM_PASSES:
+            passes = round(val)
+    return power * passes / speed
+
+
 # ── Layout constants ───────────────────────────────────────────────────────────
 
 _SPACING = 3.0  # mm between text elements
@@ -357,23 +375,32 @@ def _x_annot_height(config: GridConfig) -> float:
 
 
 @dataclass
+class _PendingCell:
+    """Cell awaiting global index assignment (for energy-based sort ordering)."""
+
+    cx: float  # cell center x
+    cy: float  # cell center y
+    x_val: float
+    y_val: float
+    outer_params: list[tuple[CutParam, float]]
+
+
+@dataclass
 class _SubGridResult:
     shapes: list[AnyShape] = field(default_factory=list)
-    cut_settings: list[CutSetting] = field(default_factory=list)
-    next_layer_index: int = 0
+    pending_cells: list[_PendingCell] = field(default_factory=list)
 
 
 def _generate_subgrid(
-    config: GridConfig,
-    outer_params: list[tuple[CutParam, float]],
-    next_layer_index: int,
-    cell_grid_left: float,
-    cell_grid_top: float,
+    config: GridConfig, outer_params: list[tuple[CutParam, float]], cell_grid_left: float, cell_grid_top: float
 ) -> _SubGridResult:
     """Generate a single 2D sub-grid with inner axis annotations.
 
     Places cells starting at (cell_grid_left, cell_grid_top), with inner Y-axis
     annotations extending to the left and inner X-axis annotations below.
+
+    Returns text annotation shapes and pending cells. CutSettings and RectShapes
+    for cells are created later in generate() after global energy-based sorting.
     """
     n_cols = len(config.x.values)
     n_rows = len(config.y.values)
@@ -381,7 +408,7 @@ def _generate_subgrid(
     font = config.font
 
     shapes: list[AnyShape] = []
-    cut_settings: list[CutSetting] = []
+    pending_cells: list[_PendingCell] = []
 
     # Cell centre positions
     x_col = [cell_grid_left + config.geometry.cell_size_mm / 2.0 + j * stride for j in range(n_cols)]
@@ -392,35 +419,13 @@ def _generate_subgrid(
     cell_grid_x_centre = (cell_grid_left + cell_grid_right) / 2.0
     cell_grid_y_centre = (cell_grid_top + cell_grid_bottom) / 2.0
 
-    # Cell cut settings
-    cell_cut_index: dict[tuple[int, int], int] = {}
-    idx = next_layer_index
+    # Pending cells and in-cell text annotations
     for row_i, y_val in enumerate(config.y.values):
         for col_j, x_val in enumerate(config.x.values):
-            cut = config.cut.to_cut_setting(idx, f"C{idx:02d}")
-            _apply_param(cut, config.x.param, x_val)
-            _apply_param(cut, config.y.param, y_val)
-            for param, value in outer_params:
-                _apply_param(cut, param, value)
-            cut_settings.append(cut)
-            cell_cut_index[(row_i, col_j)] = idx
-            idx += 1
-
-    # Cell rectangles and in-cell text
-    for row_i, y_val in enumerate(config.y.values):
-        for col_j, x_val in enumerate(config.x.values):
-            cut_idx = cell_cut_index[(row_i, col_j)]
             cx = x_col[col_j]
             cy = y_row[row_i]
 
-            shapes.append(
-                RectShape(
-                    cut_index=cut_idx,
-                    width=config.geometry.cell_size_mm,
-                    height=config.geometry.cell_size_mm,
-                    xform=XForm.translate(cx, cy),
-                )
-            )
+            pending_cells.append(_PendingCell(cx=cx, cy=cy, x_val=x_val, y_val=y_val, outer_params=outer_params))
 
             if config.annotations.show_cell_text:
                 half_gap = config.annotations.cell_text_gap_mm / 2.0
@@ -491,7 +496,7 @@ def _generate_subgrid(
                 )
             )
 
-    return _SubGridResult(shapes=shapes, cut_settings=cut_settings, next_layer_index=idx)
+    return _SubGridResult(shapes=shapes, pending_cells=pending_cells)
 
 
 def generate(config: GridConfig) -> LightBurnProject:
@@ -621,8 +626,8 @@ def generate(config: GridConfig) -> LightBurnProject:
             shapes.append(_make_text(outer_cols_label, centre_x, y, font.h_label_mm, font.name, ah=HAlign.CENTER))
             y -= font.h_label_mm + _SPACING
 
-    # Generate sub-grids
-    next_layer_index = 1
+    # Generate sub-grids (text annotations only; cell rects created after sorting)
+    all_pending: list[_PendingCell] = []
     subgrid_cell_grid_tops: list[float] = []
 
     for or_i in range(n_outer_rows):
@@ -639,13 +644,33 @@ def generate(config: GridConfig) -> LightBurnProject:
             result = _generate_subgrid(
                 config=config,
                 outer_params=outer_params,
-                next_layer_index=next_layer_index,
                 cell_grid_left=cell_grid_lefts[oc_j],
                 cell_grid_top=cell_grid_top_y,
             )
             shapes.extend(result.shapes)
-            cut_settings.extend(result.cut_settings)
-            next_layer_index = result.next_layer_index
+            all_pending.extend(result.pending_cells)
+
+    # Sort cells globally by ascending energy so the laser processes
+    # low-energy (safer) cells first, reducing fire risk.
+    all_pending.sort(key=lambda c: _cell_energy(config, c.outer_params, c.x_val, c.y_val))
+
+    next_layer_index = 1
+    for cell in all_pending:
+        cut = config.cut.to_cut_setting(next_layer_index, f"C{next_layer_index:02d}")
+        _apply_param(cut, config.x.param, cell.x_val)
+        _apply_param(cut, config.y.param, cell.y_val)
+        for param, value in cell.outer_params:
+            _apply_param(cut, param, value)
+        cut_settings.append(cut)
+        shapes.append(
+            RectShape(
+                cut_index=next_layer_index,
+                width=config.geometry.cell_size_mm,
+                height=config.geometry.cell_size_mm,
+                xform=XForm.translate(cell.cx, cell.cy),
+            )
+        )
+        next_layer_index += 1
 
     # Outer rows annotations (left side, rotated 90° CCW)
     if has_outer_rows and config.rows is not None and config.rows.show_annotations:

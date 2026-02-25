@@ -269,22 +269,65 @@ def test_generate_border_adds_layer_and_rect():
 
 
 def test_generate_cell_cut_settings_have_correct_params():
-    """Each cell layer should have x_param and y_param set correctly."""
+    """Each cell layer should have x_param and y_param set correctly.
+
+    Cells are sorted by ascending energy (max_power * num_passes / speed).
+    x=power_max_pct [10, 20], y=speed_mm_s [50, 100]:
+      (r0,c0) 10/50=0.2, (r0,c1) 20/50=0.4, (r1,c0) 10/100=0.1, (r1,c1) 20/100=0.2
+    Sorted: 0.1 → 0.2 → 0.2 → 0.4
+    """
     x_vals = [10.0, 20.0]
     y_vals = [50.0, 100.0]
     project = _make_project(x_values=x_vals, y_values=y_vals)
-    # Layer 0 is text; cell layers start at 1
     cell_layers = project.cut_settings[1:]  # skip text layer
     assert len(cell_layers) == 4
-    # Row 0, col 0: power=10, speed=50
+    # Lowest energy: power=10, speed=100 (energy=0.1)
     assert cell_layers[0].max_power == 10.0
-    assert cell_layers[0].speed == 50.0
-    # Row 0, col 1: power=20, speed=50
-    assert cell_layers[1].max_power == 20.0
+    assert cell_layers[0].speed == 100.0
+    # power=10, speed=50 (energy=0.2)
+    assert cell_layers[1].max_power == 10.0
     assert cell_layers[1].speed == 50.0
-    # Row 1, col 0: power=10, speed=100
-    assert cell_layers[2].max_power == 10.0
+    # power=20, speed=100 (energy=0.2)
+    assert cell_layers[2].max_power == 20.0
     assert cell_layers[2].speed == 100.0
+    # Highest energy: power=20, speed=50 (energy=0.4)
+    assert cell_layers[3].max_power == 20.0
+    assert cell_layers[3].speed == 50.0
+
+
+def test_cells_sorted_by_ascending_energy():
+    """Cell layers must be in ascending energy order (max_power * num_passes / speed)."""
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 50.0, 90.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[25.0, 100.0, 200.0]),
+    )
+    project = generate(cfg)
+    cell_layers = project.cut_settings[1:]  # skip text layer
+    energies = [cs.max_power * cs.num_passes / cs.speed for cs in cell_layers]
+    assert energies == sorted(energies)
+
+
+def test_cells_sorted_by_energy_across_subgrids():
+    """Energy sorting is global across sub-grids, not per-sub-grid."""
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 50.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[100.0]),
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 5]),
+    )
+    project = generate(cfg)
+    cell_layers = project.cut_settings[1:]
+    energies = [cs.max_power * cs.num_passes / cs.speed for cs in cell_layers]
+    assert energies == sorted(energies)
+    # Verify interleaving: 1-pass cells (energy 0.1, 0.5) should come before
+    # 5-pass 50% power (energy 2.5), not grouped by sub-grid.
+    assert cell_layers[0].num_passes == 1
+    assert cell_layers[0].max_power == 10.0
+    assert cell_layers[1].num_passes == 1
+    assert cell_layers[1].max_power == 50.0
+    assert cell_layers[2].num_passes == 5
+    assert cell_layers[2].max_power == 10.0
+    assert cell_layers[3].num_passes == 5
+    assert cell_layers[3].max_power == 50.0
 
 
 def test_generate_xml_round_trips():
@@ -456,7 +499,13 @@ def test_generate_3d_outer_params_applied():
 
 
 def test_generate_4d_outer_params_applied():
-    """Both cols and rows params should be applied."""
+    """Both cols and rows params should be applied.
+
+    Global energy sort: power=10, speed=50 for all cells, so energy depends
+    only on num_passes. passes=1 cells (energy=0.2) sort before passes=2
+    cells (energy=0.4). Within same energy, stable sort preserves iteration
+    order (row0 before row1).
+    """
     cfg = GridConfig(
         x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
@@ -465,14 +514,14 @@ def test_generate_4d_outer_params_applied():
     )
     project = generate(cfg)
     cell_layers = [cs for cs in project.cut_settings if cs.index > 0]
-    # 4 sub-grids x 1 cell each = 4 cells
-    # Order: (row0,col0), (row0,col1), (row1,col0), (row1,col1)
+    # 4 sub-grids x 1 cell each = 4 cells, sorted by energy globally
+    # passes=1 cells first (energy=0.2), then passes=2 (energy=0.4)
     assert cell_layers[0].num_passes == 1
     assert cell_layers[0].z_per_pass == -0.3
-    assert cell_layers[1].num_passes == 2
-    assert cell_layers[1].z_per_pass == -0.3
-    assert cell_layers[2].num_passes == 1
-    assert cell_layers[2].z_per_pass == -0.5
+    assert cell_layers[1].num_passes == 1
+    assert cell_layers[1].z_per_pass == -0.5
+    assert cell_layers[2].num_passes == 2
+    assert cell_layers[2].z_per_pass == -0.3
     assert cell_layers[3].num_passes == 2
     assert cell_layers[3].z_per_pass == -0.5
 
