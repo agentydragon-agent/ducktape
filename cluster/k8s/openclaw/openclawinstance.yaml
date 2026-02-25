@@ -295,6 +295,11 @@ spec:
         # to ask=on-miss / security=allowlist and blocks execution).
         - name: OPENCLAW_CONFIG_PATH
           value: /operator-config/openclaw.json
+        # Operator config references ${OPENCLAW_CHROMIUM_CDP} in browser
+        # profiles. The sidecar doesn't use chromium but config parsing
+        # fails without this env var.
+        - name: OPENCLAW_CHROMIUM_CDP
+          value: "http://127.0.0.1:9222"
       # Note: Commands execute directly inside this container via
       # child_process.spawn() — no K8s API involved.
       # The SA token below is ONLY for kubectl: it provides in-cluster
