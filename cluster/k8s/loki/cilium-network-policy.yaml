@@ -1,0 +1,72 @@
+# Restrict Loki ingress to legitimate sources only.
+#
+# Loki has auth_enabled: false — any pod that can reach port 3100 can read,
+# write, or delete all cluster logs. This policy whitelists the known consumers.
+#
+# Allowed ingress to Loki (port 3100):
+#   - Promtail (loki namespace, log shipping)
+#   - Grafana (monitoring namespace, log queries)
+#   - Alloy (monitoring namespace, OTel log forwarding)
+#   - Gatus (gatus namespace, health checks)
+#   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
+#
+# Promtail egress is unrestricted (DaemonSet needs k8s API for service discovery).
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: loki-ingress
+  namespace: loki
+spec:
+  endpointSelector:
+    matchLabels:
+      app: loki
+  ingress:
+    # Promtail → Loki (log push)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: promtail
+            k8s:io.kubernetes.pod.namespace: loki
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Grafana → Loki (log queries)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: grafana
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Alloy → Loki (OTel log forwarding)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: alloy
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Gatus → Loki (health checks)
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: gatus
+            k8s:io.kubernetes.pod.namespace: gatus
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
+
+    # Authentik proxy outpost → Loki (SSO-protected external access)
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "3100"
+              protocol: TCP
