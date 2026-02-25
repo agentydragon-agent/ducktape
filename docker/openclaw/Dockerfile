@@ -7,7 +7,7 @@
 #
 # Unlike `plugins install` (which uses --ignore-scripts for security), we allow
 # postinstall scripts so the crypto native binary downloads automatically.
-FROM ghcr.io/openclaw/openclaw:2026.2.23
+FROM ghcr.io/openclaw/openclaw:2026.2.24
 
 USER root
 WORKDIR /app/extensions/matrix
