@@ -46,6 +46,13 @@ See <changelog.md> for detailed change history.
 - [ ] **Harbor proxy cache: add GHCR credentials for private repos** — 403 on
       `openclaw/openclaw`. Needs GitHub PAT (`read:packages`) in Vault → ESO → Harbor.
 - [ ] **Verify ntfy.sh notifications** — confirm Flux failure alerts arrive on phone
+- [ ] **ActivityWatch: build and push initial image** — Run `activitywatch-image.yml`
+      workflow manually after Harbor CI creates the project. Verify pod starts.
+- [ ] **ActivityWatch: set up desktop client sync** — see "ActivityWatch Setup" below
+- [ ] **ActivityWatch: Headscale direct access** — once Headscale is tested with real
+      devices, switch from `kubectl port-forward` to direct mesh access
+- [ ] **ActivityWatch: Android sync** — not feasible with current upstream (`aw-android`
+      embeds its own server, no remote sync). Revisit when `aw-sync` ships for Android
 
 ---
 
@@ -97,16 +104,17 @@ When adding or modifying critical-path services, verify:
 
 These services tolerate Proxmox downtime by design:
 
-| Service    | Storage              | Impact when Proxmox down           |
-| ---------- | -------------------- | ---------------------------------- |
-| Harbor     | `proxmox-csi-retain` | Container registry unavailable     |
-| Gitea      | `proxmox-csi-retain` | Git hosting unavailable            |
-| Loki       | `proxmox-csi-retain` | Log ingestion stops, no log search |
-| Nix cache  | `proxmox-csi-retain` | Binary cache unavailable           |
-| Grafana    | `proxmox-csi-retain` | Dashboards unavailable             |
-| BuildBuddy | Proxmox nodes        | Remote execution unavailable       |
-| Ollama     | GPU worker           | LLM inference unavailable          |
-| InvenTree  | `proxmox-csi-retain` | Inventory unavailable              |
+| Service       | Storage              | Impact when Proxmox down           |
+| ------------- | -------------------- | ---------------------------------- |
+| Harbor        | `proxmox-csi-retain` | Container registry unavailable     |
+| Gitea         | `proxmox-csi-retain` | Git hosting unavailable            |
+| Loki          | `proxmox-csi-retain` | Log ingestion stops, no log search |
+| Nix cache     | `proxmox-csi-retain` | Binary cache unavailable           |
+| Grafana       | `proxmox-csi-retain` | Dashboards unavailable             |
+| BuildBuddy    | Proxmox nodes        | Remote execution unavailable       |
+| Ollama        | GPU worker           | LLM inference unavailable          |
+| InvenTree     | `proxmox-csi-retain` | Inventory unavailable              |
+| ActivityWatch | `proxmox-csi-retain` | Activity tracking unavailable      |
 
 ## Operational Hardening
 
@@ -281,6 +289,93 @@ Not needed while Cilium mutual auth + Gateway API cover the use cases.
 Current CloudNativePG clusters are 2-instance primary+standby (not active-active).
 For stronger HA, consider: Galera for MariaDB workloads, or CNPG with regional standby
 clusters. Low priority — current setup survives single-node failure via automatic failover.
+
+## ActivityWatch Setup
+
+Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
+Cluster-internal only (no public exposure). Access via `kubectl port-forward` or Headscale.
+
+### Architecture
+
+- **Server**: `aw-server-rust` in `activitywatch` namespace on Proxmox node
+- **Storage**: SQLite on `proxmox-csi-retain` (1Gi PVC)
+- **Image**: Custom build at `registry.allegedly.works/activitywatch/aw-server`
+  (`docker/activitywatch/Dockerfile`), CI at `.github/workflows/activitywatch-image.yml`
+- **Auth**: No built-in auth — transport-level auth via kubectl/Headscale
+- **Port**: 5600 (REST API + web UI)
+
+### Desktop Client Setup
+
+Watchers (`aw-watcher-window`, `aw-watcher-afk`) run locally and send heartbeats to the
+cluster server via `kubectl port-forward`.
+
+1. **Install ActivityWatch** on desktop (watchers + `aw-server-rust` for local fallback)
+
+2. **Set up persistent port-forward** (systemd user service):
+
+   ```ini
+   # ~/.config/systemd/user/aw-port-forward.service
+   [Unit]
+   Description=ActivityWatch kubectl port-forward
+   After=network-online.target
+
+   [Service]
+   ExecStart=/usr/bin/kubectl port-forward svc/activitywatch 5600:5600 -n activitywatch
+   Restart=always
+   RestartSec=5
+
+   [Install]
+   WantedBy=default.target
+   ```
+
+   ```bash
+   systemctl --user enable --now aw-port-forward
+   ```
+
+3. **Configure watchers** — no changes needed, default `aw-client.toml` uses
+   `hostname = "127.0.0.1"`, `port = "5600"` which hits the port-forward
+
+4. **Stop local aw-server** — watchers talk directly to the cluster server via the tunnel.
+   Keep local `aw-server` installed as fallback if the tunnel is down.
+
+5. **Verify**: Browse `http://localhost:5600` → ActivityWatch web UI with bucket data
+
+### Headscale Access (Future)
+
+Once Headscale is tested with real devices:
+
+1. Expose `activitywatch.activitywatch.svc` via Headscale subnet route
+2. Configure `aw-client.toml` on each machine:
+
+   ```toml
+   [server]
+   hostname = "<headscale-ip-of-service>"
+   port = "5600"
+   ```
+
+3. Server must bind to `0.0.0.0` (already configured) which disables the Host header
+   validation check in aw-server-rust
+
+### Android
+
+`aw-android` embeds its own `aw-server-rust` and cannot point at a remote server.
+No sync mechanism exists. Options when upstream support improves:
+
+- **`aw-sync`**: File-based sync via Syncthing — not yet supported on Android
+- **Custom exporter**: Termux script reading from `localhost:5600` on phone and POSTing
+  to the cluster server's REST API
+- **Accept the gap**: Desktop data (where most work happens) is centralized; phone data
+  stays local
+
+### Public Access (Future, Optional)
+
+If browser access from anywhere is needed, add Authentik proxy outpost following the
+Grocy pattern (no app changes required):
+
+1. Add proxy provider blueprint to `k8s/authentik/blueprints/`
+2. Add provider to shared proxy outpost
+3. Add HTTPRoute to `k8s/authentik-proxy-routes/`
+4. Watchers would still need `kubectl port-forward` or Headscale (no native auth support)
 
 ## 📋 Future Services (Lower Priority)
 

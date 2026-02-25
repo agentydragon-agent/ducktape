@@ -47,6 +47,12 @@ resource "harbor_project" "openclaw" {
   public = false
 }
 
+# Private project for the ActivityWatch server image
+resource "harbor_project" "activitywatch" {
+  name   = "activitywatch"
+  public = false
+}
+
 # Project-level robot account for CI push + cluster pull (both projects)
 resource "harbor_robot_account" "ci" {
   name        = "ci"
@@ -100,6 +106,28 @@ resource "harbor_robot_account" "ci" {
   permissions {
     kind      = "project"
     namespace = harbor_project.openclaw.name
+
+    access {
+      action   = "push"
+      resource = "repository"
+    }
+    access {
+      action   = "pull"
+      resource = "repository"
+    }
+    access {
+      action   = "read"
+      resource = "artifact"
+    }
+    access {
+      action   = "create"
+      resource = "tag"
+    }
+  }
+
+  permissions {
+    kind      = "project"
+    namespace = harbor_project.activitywatch.name
 
     access {
       action   = "push"

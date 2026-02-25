@@ -1,0 +1,41 @@
+# Default-deny with explicit allowlist for ActivityWatch.
+# Ingress: port 5600 from kube-apiserver only (kubectl port-forward traffic).
+# Egress: DNS only (no outbound connections needed — SQLite, no external APIs).
+#
+# kubectl port-forward is proxied through the kube-apiserver, so allowing
+# kube-apiserver ingress is sufficient. No other pods need to reach this service.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: activitywatch
+  namespace: activitywatch
+spec:
+  endpointSelector:
+    matchLabels:
+      app: activitywatch
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "5600"
+              protocol: TCP
+  egress:
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP

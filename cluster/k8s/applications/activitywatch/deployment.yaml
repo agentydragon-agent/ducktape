@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: activitywatch
+  namespace: activitywatch
+  labels:
+    app: activitywatch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: activitywatch
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: activitywatch
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: aw-server
+          image: registry.allegedly.works/activitywatch/aw-server:latest
+          ports:
+            - containerPort: 5600
+              name: http
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/0/info
+              port: 5600
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/0/info
+              port: 5600
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: activitywatch-data
