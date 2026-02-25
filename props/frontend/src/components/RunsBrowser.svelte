@@ -243,6 +243,11 @@
               Status{getSortIndicator("status")}
             </th>
             <th class="px-3 py-2 text-right"> Issues </th>
+            <th class="px-3 py-2 text-right"> LLM Reqs </th>
+            <th class="px-3 py-2 text-left"> Grading </th>
+            <th class="px-3 py-2 text-right" title="Present grading edges / Drift (pending) grading edges">
+              Present/Drift
+            </th>
             <th class="px-3 py-2 text-right"> TPs </th>
             <th class="px-3 py-2 text-right"> FPs </th>
             <th class="px-3 py-2 text-right"> Credit </th>
@@ -284,6 +289,33 @@
               </td>
               <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
                 {run.reported_issues_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.llm_requests_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs">
+                {#if run.grading}
+                  {@const fullyGraded = run.grading.drift_edges === 0}
+                  {@const partiallyGraded = run.grading.present_edges > 0}
+                  <span
+                    class="px-2 py-0.5 rounded text-xs font-medium {fullyGraded
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                      : partiallyGraded
+                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'}"
+                  >
+                    {fullyGraded ? "Graded" : partiallyGraded ? "Partial" : "None"}
+                  </span>
+                {:else}
+                  <span class="text-gray-400 dark:text-gray-500">—</span>
+                {/if}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {#if run.grading}
+                  <span>{run.grading.present_edges}</span><span class="text-gray-400 dark:text-gray-500"
+                    >/{run.grading.drift_edges}</span
+                  >
+                {:else}—{/if}
               </td>
               <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
                 {run.grading?.tp_count ?? "—"}
