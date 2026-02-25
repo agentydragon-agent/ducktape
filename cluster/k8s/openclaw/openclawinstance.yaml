@@ -281,7 +281,7 @@ spec:
         memory: "2Gi"
   sidecars:
     - name: node-host
-      image: ghcr.io/openclaw/openclaw:2026.2.23
+      image: ghcr.io/openclaw/openclaw:2026.2.24
       command: ["node", "openclaw.mjs", "node", "run"]
       args: ["--host", "127.0.0.1", "--port", "18789"]
       env:

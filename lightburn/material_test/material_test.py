@@ -69,6 +69,17 @@ def fmt_val(v: float) -> str:
     return f"{v:.4g}"
 
 
+def _fmt_val_with_unit(param: CutParam, v: float) -> str:
+    """Format a parameter value with its unit (e.g. '25%', '12 mm/s')."""
+    _, unit, _ = _PARAM[param]
+    formatted = fmt_val(v)
+    if not unit:
+        return formatted
+    if unit == "%":
+        return f"{formatted}%"
+    return f"{formatted} {unit}"
+
+
 # ── Pydantic config models ─────────────────────────────────────────────────────
 
 
@@ -151,6 +162,7 @@ class BorderConfig(BaseModel):
     padding_mm: float = 3.0  # outside the grid cells
     power_pct: float = 10.0
     speed_mm_s: float = 200.0
+    num_passes: int = 1
 
 
 class TextLayerConfig(BaseModel):
@@ -392,7 +404,13 @@ class _SubGridResult:
 
 
 def _generate_subgrid(
-    config: GridConfig, outer_params: list[tuple[CutParam, float]], cell_grid_left: float, cell_grid_top: float
+    config: GridConfig,
+    outer_params: list[tuple[CutParam, float]],
+    cell_grid_left: float,
+    cell_grid_top: float,
+    *,
+    emit_x_annotations: bool = True,
+    emit_y_annotations: bool = True,
 ) -> _SubGridResult:
     """Generate a single 2D sub-grid with inner axis annotations.
 
@@ -438,16 +456,30 @@ def _generate_subgrid(
 
                 shapes.append(
                     _make_text(
-                        fmt_val(x_val), cx, y_line1, font.h_cell_mm, font.name, ah=HAlign.CENTER, av=VAlign.BOTTOM
+                        _fmt_val_with_unit(config.x.param, x_val),
+                        cx,
+                        y_line1,
+                        font.h_cell_mm,
+                        font.name,
+                        ah=HAlign.CENTER,
+                        av=VAlign.BOTTOM,
                     )
                 )
                 shapes.append(
-                    _make_text(fmt_val(y_val), cx, y_line2, font.h_cell_mm, font.name, ah=HAlign.CENTER, av=VAlign.TOP)
+                    _make_text(
+                        _fmt_val_with_unit(config.y.param, y_val),
+                        cx,
+                        y_line2,
+                        font.h_cell_mm,
+                        font.name,
+                        ah=HAlign.CENTER,
+                        av=VAlign.TOP,
+                    )
                 )
 
     # Inner X-axis annotations (below grid)
     x_label = config.x.label if config.x.label is not None else _auto_label(config.x.param)
-    if config.x.show_annotations:
+    if config.x.show_annotations and emit_x_annotations:
         y_below = cell_grid_bottom - _SPACING
         for col_j, x_val in enumerate(config.x.values):
             shapes.append(
@@ -464,7 +496,7 @@ def _generate_subgrid(
 
     # Inner Y-axis annotations (left of grid, rotated 90° CCW)
     y_label = config.y.label if config.y.label is not None else _auto_label(config.y.param)
-    if config.y.show_annotations:
+    if config.y.show_annotations and emit_y_annotations:
         x_y_val_cx = cell_grid_left - _SPACING - config.font.h_value_mm / 2.0
         x_y_label_cx = cell_grid_left - _SPACING - config.font.h_value_mm - _SPACING - config.font.h_label_mm / 2.0
 
@@ -533,8 +565,6 @@ def generate(config: GridConfig) -> LightBurnProject:
     cell_grid_h = len(config.y.values) * inner_stride - config.geometry.gap_mm
     y_aw = _y_annot_width(config)
     x_ah = _x_annot_height(config)
-    subgrid_w = y_aw + cell_grid_w
-    subgrid_h = cell_grid_h + x_ah
     subgrid_gap = config.geometry.subgrid_gap_mm
 
     # ── Horizontal layout ─────────────────────────────────────────────────────
@@ -555,10 +585,10 @@ def generate(config: GridConfig) -> LightBurnProject:
             x_outer_rows_val_cx = x_cursor + font.h_value_mm / 2.0
             x_cursor += font.h_value_mm + _SPACING
 
-    # Sub-grid positions
-    subgrid_x_origins = [x_cursor + oc * (subgrid_w + subgrid_gap) for oc in range(n_outer_cols)]
-    cell_grid_lefts = [sx + y_aw for sx in subgrid_x_origins]
-    total_right = subgrid_x_origins[-1] + subgrid_w
+    # Sub-grid positions — Y annotations only on the first column, so y_aw
+    # space is reserved once (not per sub-grid).
+    cell_grid_lefts = [x_cursor + y_aw + oc * (cell_grid_w + subgrid_gap) for oc in range(n_outer_cols)]
+    total_right = cell_grid_lefts[-1] + cell_grid_w
 
     # Centre X for title/subtitle: centred on the cell grids across all sub-grids
     all_cell_left = cell_grid_lefts[0]
@@ -580,7 +610,8 @@ def generate(config: GridConfig) -> LightBurnProject:
             if outer_cols_label:
                 outer_cols_annot_h += font.h_label_mm + _SPACING
 
-    total_subgrids_h = n_outer_rows * subgrid_h + max(0, n_outer_rows - 1) * subgrid_gap
+    # X annotations only on the last row, so x_ah space is reserved once.
+    total_subgrids_h = n_outer_rows * cell_grid_h + max(0, n_outer_rows - 1) * subgrid_gap + x_ah
 
     v_total = 0.0
     if config.title:
@@ -631,7 +662,7 @@ def generate(config: GridConfig) -> LightBurnProject:
     subgrid_cell_grid_tops: list[float] = []
 
     for or_i in range(n_outer_rows):
-        cell_grid_top_y = y - or_i * (subgrid_h + subgrid_gap)
+        cell_grid_top_y = y - or_i * (cell_grid_h + subgrid_gap)
         subgrid_cell_grid_tops.append(cell_grid_top_y)
 
         for oc_j in range(n_outer_cols):
@@ -646,6 +677,8 @@ def generate(config: GridConfig) -> LightBurnProject:
                 outer_params=outer_params,
                 cell_grid_left=cell_grid_lefts[oc_j],
                 cell_grid_top=cell_grid_top_y,
+                emit_y_annotations=oc_j == 0,
+                emit_x_annotations=or_i == n_outer_rows - 1,
             )
             shapes.extend(result.shapes)
             all_pending.extend(result.pending_cells)
@@ -707,7 +740,7 @@ def generate(config: GridConfig) -> LightBurnProject:
             )
 
     # Content bottom
-    content_bottom = subgrid_cell_grid_tops[-1] - subgrid_h
+    content_bottom = subgrid_cell_grid_tops[-1] - cell_grid_h - x_ah
 
     # Optional border
     if config.border.enabled:
@@ -719,6 +752,7 @@ def generate(config: GridConfig) -> LightBurnProject:
                 min_power=config.border.power_pct,
                 max_power=config.border.power_pct,
                 speed=config.border.speed_mm_s,
+                num_passes=config.border.num_passes,
             )
         )
         p = config.border.padding_mm

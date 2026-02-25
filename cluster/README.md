@@ -29,6 +29,7 @@ See <docs/bootstrap.md> for full setup.
 - HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
 - KubeSpan: WireGuard mesh between VPS and Proxmox (UDP 51820)
 - Cilium MTU: `MTU: 1370` (uppercase key required — VXLAN 50 + WireGuard 80 = 130 overhead)
+- KubePrism: `localhost:7445` as cluster endpoint (no VIP possible across VPS+home; kubeconfig patched post-bootstrap to real VPS IP)
 
 ## Services
 
