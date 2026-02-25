@@ -284,7 +284,9 @@
               </td>
               <td class="px-3 py-2">
                 <span class="px-2 py-0.5 rounded text-xs font-medium capitalize {getStatusColor(run.status)}">
-                  {formatStatus(run.status)}
+                  {formatStatus(run.status)}{run.status === "exited" && run.container_exit_code != null
+                    ? ` (${run.container_exit_code})`
+                    : ""}
                 </span>
               </td>
               <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">

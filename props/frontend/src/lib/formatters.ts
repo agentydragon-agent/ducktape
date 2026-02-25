@@ -73,6 +73,11 @@ export function formatFilesHash(hash: string): string {
   return hash.slice(0, 8);
 }
 
+/** Format a UUID for display (first 8 chars). */
+export function formatUuid(uuid: string): string {
+  return uuid.slice(0, 8);
+}
+
 /** Format an OCI image digest for display (sha256:abcdef12... → sha256:abcdef12). */
 export function formatDigest(digest: string): string {
   const prefix = "sha256:";
