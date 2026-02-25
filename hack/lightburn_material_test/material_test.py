@@ -354,22 +354,18 @@ def generate(config: GridConfig) -> LightBurnProject:
         next_index += 1
 
     # ── Horizontal layout ─────────────────────────────────────────────────────
-    if config.x.show_annotations and config.y.show_annotations:
-        max_y_val_str = max((fmt_val(v) for v in config.y.values), key=len, default="0")
-        max_y_val_width = _estimate_text_width(max_y_val_str, font.h_value)
-        x_y_label_cx = _MARGIN_LEFT + font.h_label / 2.0
-        x_y_val_right = _MARGIN_LEFT + font.h_label + _SPACING + max_y_val_width
-        x_grid_left = x_y_val_right + _SPACING
-    elif config.y.show_annotations:
-        max_y_val_str = max((fmt_val(v) for v in config.y.values), key=len, default="0")
-        max_y_val_width = _estimate_text_width(max_y_val_str, font.h_value)
-        x_y_label_cx = _MARGIN_LEFT
-        x_y_val_right = _MARGIN_LEFT + max_y_val_width
-        x_grid_left = x_y_val_right + _SPACING
+    # Both Y-axis label and value annotations are rotated 90° CCW, so their
+    # horizontal footprint is their font height.
+    x = _MARGIN_LEFT
+    if config.y.show_annotations:
+        x_y_label_cx = x + font.h_label / 2.0
+        x += font.h_label + _SPACING
+        x_y_val_cx = x + font.h_value / 2.0
+        x += font.h_value + _SPACING
     else:
         x_y_label_cx = _MARGIN_LEFT
-        x_y_val_right = _MARGIN_LEFT
-        x_grid_left = _MARGIN_LEFT
+        x_y_val_cx = _MARGIN_LEFT
+    x_grid_left = x
 
     x_col = [x_grid_left + config.geometry.cell_size / 2.0 + col_j * stride for col_j in range(n_cols)]
     x_grid_right = x_grid_left + n_cols * stride - config.geometry.gap
@@ -392,31 +388,45 @@ def generate(config: GridConfig) -> LightBurnProject:
             TextShape(cut_index=_TEXT_LAYER, text=text, height=height, xform=xform, font=font.name, ah=ah, av=av)
         )
 
+    # Track overall content bounding box for the border.
+    # content_left is already known from x layout; content_right starts at grid right.
+    content_left = 0.0  # left edge with no margin (border padding adds its own)
+    content_right = x_grid_right
+    content_top = _MARGIN_TOP
+
     if config.title:
         add_text(config.title, x_grid_centre, y, font.h_title, ah=HAlign.CENTER)
+        title_half_w = _estimate_text_width(config.title, font.h_title) / 2.0
+        content_right = max(content_right, x_grid_centre + title_half_w)
         y += font.h_title + _SPACING
 
     subtitle_text = _full_subtitle(config)
     if subtitle_text:
         add_text(subtitle_text, x_grid_centre, y, font.h_subtitle, ah=HAlign.CENTER)
+        sub_half_w = _estimate_text_width(subtitle_text, font.h_subtitle) / 2.0
+        content_right = max(content_right, x_grid_centre + sub_half_w)
         y += font.h_subtitle + _SPACING
 
     x_label = config.x.label if config.x.label is not None else _auto_label(config.x.param)
     y_label = config.y.label if config.y.label is not None else _auto_label(config.y.param)
 
-    if config.x.show_annotations:
-        for col_j, x_val in enumerate(config.x.values):
-            add_text(fmt_val(x_val), x_col[col_j], y, font.h_value, ah=HAlign.CENTER, av=VAlign.TOP)
-        y += font.h_value + _SPACING
-
-        if x_label:
-            add_text(x_label, x_grid_centre, y, font.h_label, ah=HAlign.CENTER)
-            y += font.h_label + _SPACING
-
     y_grid_top = y
     y_row = [y_grid_top + config.geometry.cell_size / 2.0 + row_i * stride for row_i in range(n_rows)]
     y_grid_bottom = y_grid_top + n_rows * stride - config.geometry.gap
     y_grid_centre = (y_grid_top + y_grid_bottom) / 2.0
+
+    # X-axis annotations below the grid: tick values, then label
+    y_below = y_grid_bottom + _SPACING
+    if config.x.show_annotations:
+        for col_j, x_val in enumerate(config.x.values):
+            add_text(fmt_val(x_val), x_col[col_j], y_below, font.h_value, ah=HAlign.CENTER, av=VAlign.TOP)
+        y_below += font.h_value + _SPACING
+
+        if x_label:
+            add_text(x_label, x_grid_centre, y_below, font.h_label, ah=HAlign.CENTER)
+            y_below += font.h_label
+
+    content_bottom = y_below if config.x.show_annotations else y_grid_bottom
 
     # Y-axis label (rotated 90° CCW, reads bottom-to-top)
     if config.y.show_annotations and y_label:
@@ -424,10 +434,18 @@ def generate(config: GridConfig) -> LightBurnProject:
             y_label, x_y_label_cx, y_grid_centre, font.h_label, ah=HAlign.CENTER, av=VAlign.CENTER, rotate90ccw=True
         )
 
-    # Y-axis value annotations (right-aligned, centred vertically on each row)
+    # Y-axis value annotations (rotated 90° CCW like the axis label, centred on each row)
     if config.y.show_annotations:
         for row_i, y_val in enumerate(config.y.values):
-            add_text(fmt_val(y_val), x_y_val_right, y_row[row_i], font.h_value, ah=HAlign.RIGHT, av=VAlign.CENTER)
+            add_text(
+                fmt_val(y_val),
+                x_y_val_cx,
+                y_row[row_i],
+                font.h_value,
+                ah=HAlign.CENTER,
+                av=VAlign.CENTER,
+                rotate90ccw=True,
+            )
 
     # Grid cells
     for row_i, y_val in enumerate(config.y.values):
@@ -457,17 +475,19 @@ def generate(config: GridConfig) -> LightBurnProject:
                 add_text(fmt_val(x_val), cx, y_line1, font.h_cell, ah=HAlign.CENTER, av=VAlign.BOTTOM)
                 add_text(fmt_val(y_val), cx, y_line2, font.h_cell, ah=HAlign.CENTER, av=VAlign.TOP)
 
-    # Optional border
+    # Optional border — encompasses all content (title, labels, grid), not just cells
     if config.border.enabled and border_layer_index is not None:
         p = config.border.padding
-        border_w = (x_grid_right - x_grid_left) + 2.0 * p
-        border_h = (y_grid_bottom - y_grid_top) + 2.0 * p
+        border_w = (content_right - content_left) + 2.0 * p
+        border_h = (content_bottom - content_top) + 2.0 * p
+        border_cx = (content_left + content_right) / 2.0
+        border_cy = (content_top + content_bottom) / 2.0
         shapes.append(
             RectShape(
                 cut_index=border_layer_index,
                 width=border_w,
                 height=border_h,
-                xform=XForm.translate(x_grid_centre, y_grid_centre),
+                xform=XForm.translate(border_cx, border_cy),
             )
         )
 

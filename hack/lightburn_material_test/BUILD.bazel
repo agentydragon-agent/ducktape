@@ -23,6 +23,20 @@ py_binary(
     deps = [":material_test_lib"],
 )
 
+py_library(
+    name = "generate_test_docs_lib",
+    srcs = ["generate_test_docs.py"],
+    imports = ["../.."],
+    deps = [":lbrn2_writer"],
+)
+
+py_binary(
+    name = "generate_test_docs",
+    imports = ["../.."],
+    main_module = "hack.lightburn_material_test.generate_test_docs",
+    deps = [":generate_test_docs_lib"],
+)
+
 py_test(
     name = "test_material_test",
     srcs = ["test_material_test.py"],

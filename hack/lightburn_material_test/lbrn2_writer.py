@@ -309,11 +309,12 @@ class LightBurnProject:
     shapes: list[AnyShape] = field(default_factory=list)
     notes: str = ""
     material_height: float = 0.0
-    # MirrorX/MirrorY: machine-specific homing settings saved in the file.
-    # "True" for the common diode/galvo setup with home at upper-right.
-    # Does not affect file coordinate interpretation.
-    mirror_x: bool = True
-    mirror_y: bool = True
+    # MirrorX/MirrorY: machine-specific output mirroring.
+    # LightBurn applies these when exporting/rendering, flipping text anchor
+    # semantics (LEFT↔RIGHT) and reversing axis order. Default False so that
+    # layout coordinates match the rendered output directly.
+    mirror_x: bool = False
+    mirror_y: bool = False
 
     def to_element(self) -> ET.Element:
         """Build the complete <LightBurnProject> Element tree."""
