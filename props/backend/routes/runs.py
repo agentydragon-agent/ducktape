@@ -46,6 +46,7 @@ from props.db.models import (
     LLMRequest,
     LLMRunCost,
     RecallByDefinitionSplitKind,
+    RecallByRun,
     ReportedIssue,
     Snapshot,
 )
@@ -251,8 +252,14 @@ class AgentRunDetail(BaseModel):
 
 
 class RunGradingSummary(BaseModel):
-    """Grading summary for a critic run (from its grader children)."""
+    """Grading summary for a critic run.
 
+    Present for all critic runs that are in the recall_by_run view.
+    Non-null even when no grading edges exist yet (drift_edges > 0, present_edges == 0).
+    """
+
+    present_edges: int = Field(description="Total grading edges created so far")
+    drift_edges: int = Field(description="Pending grading edges not yet filled (from grading_pending)")
     tp_count: int = Field(description="Number of matched true positive edges (credit > 0)")
     fp_count: int = Field(description="Number of matched false positive edges (credit > 0)")
     total_credit: float = Field(description="Sum of credit across all grading edges")
@@ -271,6 +278,7 @@ class RunInfo(BaseModel):
     split: Split | None = None
     reported_issues_count: int | None = None
     grading: RunGradingSummary | None = None
+    llm_requests_count: int | None = None
 
 
 class RunsListResponse(BaseModel):
@@ -435,6 +443,7 @@ def list_runs(
         grading_subq = (
             session.query(
                 GradingEdge.critique_run_id,
+                func.count().label("total_edges"),
                 func.count(case((GradingEdge.tp_id.isnot(None) & (GradingEdge.credit > 0), 1))).label("tp_count"),
                 func.count(case((GradingEdge.fp_id.isnot(None) & (GradingEdge.credit > 0), 1))).label("fp_count"),
                 func.coalesce(func.sum(GradingEdge.credit), 0.0).label("total_credit"),
@@ -443,16 +452,28 @@ def list_runs(
             .subquery()
         )
 
+        # Subquery: count LLM requests per run
+        llm_requests_subq = (
+            session.query(LLMRequest.agent_run_id, func.count().label("llm_requests_count"))
+            .group_by(LLMRequest.agent_run_id)
+            .subquery()
+        )
+
         runs_with_extras = (
             query.add_columns(
                 Snapshot.split,
                 issues_subq.c.issues_count,
+                grading_subq.c.total_edges,
                 grading_subq.c.tp_count,
                 grading_subq.c.fp_count,
                 grading_subq.c.total_credit,
+                llm_requests_subq.c.llm_requests_count,
+                RecallByRun.missing_grading_edges,
             )
             .outerjoin(issues_subq, AgentRun.agent_run_id == issues_subq.c.agent_run_id)
             .outerjoin(grading_subq, AgentRun.agent_run_id == grading_subq.c.critique_run_id)
+            .outerjoin(llm_requests_subq, AgentRun.agent_run_id == llm_requests_subq.c.agent_run_id)
+            .outerjoin(RecallByRun, AgentRun.agent_run_id == RecallByRun.critic_run_id)
             .order_by(AgentRun.created_at.desc())
             .offset(offset)
             .limit(limit)
@@ -461,8 +482,18 @@ def list_runs(
 
         return RunsListResponse(
             runs=[
-                _build_run_info(r, split, issues_count, tp_count, fp_count, total_credit)
-                for r, split, issues_count, tp_count, fp_count, total_credit in runs_with_extras
+                _build_run_info(
+                    r,
+                    split,
+                    issues_count,
+                    total_edges,
+                    tp_count,
+                    fp_count,
+                    total_credit,
+                    llm_requests_count,
+                    missing_grading_edges,
+                )
+                for r, split, issues_count, total_edges, tp_count, fp_count, total_credit, llm_requests_count, missing_grading_edges in runs_with_extras
             ],
             total_count=total_count,
             offset=offset,
@@ -970,14 +1001,23 @@ def _build_run_info(
     run: AgentRun,
     split: Split | None,
     issues_count: int | None = None,
+    total_edges: int | None = None,
     tp_count: int | None = None,
     fp_count: int | None = None,
     total_credit: float | None = None,
+    llm_requests_count: int | None = None,
+    missing_grading_edges: int | None = None,
 ) -> RunInfo:
     """Convert AgentRun ORM to RunInfo."""
-    grading = None
-    if tp_count is not None or fp_count is not None:
-        grading = RunGradingSummary(tp_count=tp_count or 0, fp_count=fp_count or 0, total_credit=total_credit or 0.0)
+    grading: RunGradingSummary | None = None
+    if missing_grading_edges is not None:
+        grading = RunGradingSummary(
+            present_edges=total_edges or 0,
+            drift_edges=missing_grading_edges,
+            tp_count=tp_count or 0,
+            fp_count=fp_count or 0,
+            total_credit=total_credit or 0.0,
+        )
     return RunInfo(
         agent_run_id=run.agent_run_id,
         image_digest=run.image_digest,
@@ -989,6 +1029,7 @@ def _build_run_info(
         split=split,
         reported_issues_count=issues_count,
         grading=grading,
+        llm_requests_count=llm_requests_count,
     )
 
 
