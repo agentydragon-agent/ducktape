@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<LightBurnProject AppVersion="1.6.00" FormatVersion="1" MaterialHeight="0" MirrorX="True" MirrorY="True">
+<LightBurnProject AppVersion="1.6.00" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">
     <VariableText>
         <Start Value="0" />
         <End Value="999" />
@@ -137,31 +137,31 @@
         <halftoneAngle Value="22.5" />
     </CutSetting>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 20 20</XForm>
-    </Shape>
-    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 20 20</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="(20, 20)" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
-        <XForm>1 0 0 1 23 23</XForm>
-    </Shape>
-    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 70 20</XForm>
-    </Shape>
-    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 70 20</XForm>
-    </Shape>
-    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="(70, 20)" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
-        <XForm>1 0 0 1 73 23</XForm>
-    </Shape>
-    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
         <XForm>1 0 0 1 20 50</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
         <XForm>1 0 0 1 20 50</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="(20, 50)" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
-        <XForm>1 0 0 1 23 53</XForm>
+        <XForm>1 0 0 1 23 47</XForm>
     </Shape>
-    <Notes ShowOnLoad="0" Notes="Mirror test: MirrorX=True, MirrorY=True" />
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 70 50</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 70 50</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="(70, 50)" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
+        <XForm>1 0 0 1 73 47</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 20 20</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 20 20</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="(20, 20)" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
+        <XForm>1 0 0 1 23 17</XForm>
+    </Shape>
+    <Notes ShowOnLoad="0" Notes="Mirror test: MirrorX=False, MirrorY=False" />
 </LightBurnProject>

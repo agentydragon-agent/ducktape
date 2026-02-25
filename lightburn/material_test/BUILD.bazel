@@ -1,17 +1,11 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "lbrn2_writer",
-    srcs = ["lbrn2_writer.py"],
-    imports = ["../.."],
-)
-
-py_library(
     name = "material_test_lib",
     srcs = ["material_test.py"],
     imports = ["../.."],
     deps = [
-        ":lbrn2_writer",
+        "//lightburn:lbrn2_writer",
         "@pypi//pydantic",
     ],
 )
@@ -19,22 +13,8 @@ py_library(
 py_binary(
     name = "material_test",
     imports = ["../.."],
-    main_module = "hack.lightburn_material_test.material_test",
+    main_module = "lightburn.material_test.material_test",
     deps = [":material_test_lib"],
-)
-
-py_library(
-    name = "generate_test_docs_lib",
-    srcs = ["generate_test_docs.py"],
-    imports = ["../.."],
-    deps = [":lbrn2_writer"],
-)
-
-py_binary(
-    name = "generate_test_docs",
-    imports = ["../.."],
-    main_module = "hack.lightburn_material_test.generate_test_docs",
-    deps = [":generate_test_docs_lib"],
 )
 
 py_test(
@@ -43,8 +23,8 @@ py_test(
     data = ["example_config.toml"],
     imports = ["../.."],
     deps = [
-        ":lbrn2_writer",
         ":material_test_lib",
+        "//lightburn:lbrn2_writer",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

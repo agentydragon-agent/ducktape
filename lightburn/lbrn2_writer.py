@@ -60,7 +60,7 @@ class XForm:
         | b  d  ty |
         | 0  0   1 |
 
-    Coordinate system: X right, Y down (screen convention).
+    Coordinate system: X right, Y up (LightBurn / CNC convention).
     """
 
     a: float = 1.0

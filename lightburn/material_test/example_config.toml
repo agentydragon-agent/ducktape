@@ -11,15 +11,16 @@ auto_subtitle = true   # append "Z=-0.1, kerf=0.1 mm, ..." to subtitle
 # ── X axis (columns) ──────────────────────────────────────────────────────────
 [x]
 # Parameter to scan across columns.
-# Values: power, power_min, power_max, speed, kerf, z_offset, z_per_pass, num_passes
-param = "power_max"
+# Values: power_pct, power_min_pct, power_max_pct, speed_mm_s, kerf_mm,
+#         z_offset_mm, z_per_pass_mm, num_passes
+param = "power_max_pct"
 values = [12, 13.5, 15, 16.5, 18]
 label = "Power [%]"          # printed below the column values
 show_annotations = true      # show per-column value labels above grid
 
 # ── Y axis (rows) ─────────────────────────────────────────────────────────────
 [y]
-param = "z_per_pass"
+param = "z_per_pass_mm"
 values = [-0.5, -0.6, -0.7, -0.8]
 label = "\u0394Z/pass [mm]"  # ΔZ/pass [mm] — rotated 90° CCW to the left of grid
 show_annotations = true
@@ -27,41 +28,42 @@ show_annotations = true
 # ── Constant cut parameters ───────────────────────────────────────────────────
 # These apply to every cell; x/y axis values override their entry here per cell.
 [cut]
-# power = 80          # shorthand: sets both power_min and power_max
-power_min = 10        # %
-power_max = 80        # %  (will be overridden by x axis)
-speed = 15            # mm/s
-kerf = 0.1            # mm
-z_offset = -0.1       # mm, initial Z offset for this layer
-z_per_pass = 0.0      # mm  (will be overridden by y axis)
+# power_pct = 80       # shorthand: sets both power_min_pct and power_max_pct
+power_min_pct = 10     # %
+power_max_pct = 80     # %  (will be overridden by x axis)
+speed_mm_s = 15
+kerf_mm = 0.1
+z_offset_mm = -0.1     # initial Z offset for this layer
+z_per_pass_mm = 0.0    # (will be overridden by y axis)
 num_passes = 3
 
 # ── Grid geometry ─────────────────────────────────────────────────────────────
 [geometry]
-cell_size = 15   # mm, square side length
-gap = 8          # mm, gap between adjacent cells
+cell_size_mm = 15   # square side length
+gap_mm = 8          # gap between adjacent cells
 
 # ── In-cell annotations ───────────────────────────────────────────────────────
 [annotations]
-show_cell_text = true   # print x and y parameter values inside each cell
+show_cell_text = true      # print x and y parameter values inside each cell
+cell_text_gap_mm = 0.3     # vertical gap between the two in-cell text lines
 
 # ── Border ────────────────────────────────────────────────────────────────────
 [border]
 enabled = true
-padding = 3      # mm outside the grid cells
-power = 10       # %
-speed = 200      # mm/s
+padding_mm = 3       # outside the grid cells
+power_pct = 10
+speed_mm_s = 200
 
 # ── Text/annotation layer ─────────────────────────────────────────────────────
 [text_layer]
-power = 15       # % — low power just for marking
-speed = 200      # mm/s
+power_pct = 15       # low power just for marking
+speed_mm_s = 200
 
 # ── Font and text sizes ───────────────────────────────────────────────────────
 [font]
 name = "Arial"
-h_title = 10     # mm, title text height
-h_subtitle = 7   # mm
-h_label = 6      # mm, axis labels
-h_value = 5      # mm, axis value annotations
-h_cell = 4       # mm, in-cell parameter text
+h_title_mm = 10      # title text height
+h_subtitle_mm = 7
+h_label_mm = 6       # axis labels
+h_value_mm = 5       # axis value annotations
+h_cell_mm = 4        # in-cell parameter text

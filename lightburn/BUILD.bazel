@@ -1,0 +1,8 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "lbrn2_writer",
+    srcs = ["lbrn2_writer.py"],
+    imports = [".."],
+    visibility = ["//lightburn:__subpackages__"],
+)

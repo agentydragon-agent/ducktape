@@ -19,7 +19,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from hack.lightburn_material_test.lbrn2_writer import (
+from lightburn.lbrn2_writer import (
     AnyShape,
     CutMode,
     CutSetting,
@@ -37,26 +37,27 @@ from hack.lightburn_material_test.lbrn2_writer import (
 class CutParam(StrEnum):
     """Named laser cut parameters that can be scanned or held constant."""
 
-    POWER = "power"  # sets both min_power and max_power simultaneously
-    POWER_MIN = "power_min"
-    POWER_MAX = "power_max"
-    SPEED = "speed"
-    KERF = "kerf"
-    Z_OFFSET = "z_offset"
-    Z_PER_PASS = "z_per_pass"
+    POWER_PCT = "power_pct"  # sets both min_power and max_power simultaneously
+    POWER_MIN_PCT = "power_min_pct"
+    POWER_MAX_PCT = "power_max_pct"
+    SPEED_MM_S = "speed_mm_s"
+    KERF_MM = "kerf_mm"
+    Z_OFFSET_MM = "z_offset_mm"
+    Z_PER_PASS_MM = "z_per_pass_mm"
     NUM_PASSES = "num_passes"
 
 
-# (label, unit) for each cut parameter
-_PARAM: dict[CutParam, tuple[str, str]] = {
-    CutParam.POWER: ("Power", "%"),
-    CutParam.POWER_MIN: ("Power min", "%"),
-    CutParam.POWER_MAX: ("Power max", "%"),
-    CutParam.SPEED: ("Speed", "mm/s"),
-    CutParam.KERF: ("Kerf", "mm"),
-    CutParam.Z_OFFSET: ("Z", "mm"),
-    CutParam.Z_PER_PASS: ("Z/pass", "mm"),
-    CutParam.NUM_PASSES: ("Passes", ""),
+_PARAM: dict[CutParam, tuple[str, str, bool]] = {
+    # (label, unit, abbreviate_in_subtitle) — when abbreviate_in_subtitle is
+    # True, the subtitle omits the label and just prints "value unit".
+    CutParam.POWER_PCT: ("Power", "%", False),
+    CutParam.POWER_MIN_PCT: ("Power min", "%", False),
+    CutParam.POWER_MAX_PCT: ("Power max", "%", False),
+    CutParam.SPEED_MM_S: ("Speed", "mm/s", True),
+    CutParam.KERF_MM: ("Kerf", "mm", False),
+    CutParam.Z_OFFSET_MM: ("Z", "mm", False),
+    CutParam.Z_PER_PASS_MM: ("Z/pass", "mm", False),
+    CutParam.NUM_PASSES: ("Passes", "", False),
 }
 
 
@@ -86,37 +87,37 @@ class CutConfig(BaseModel):
 
     The x/y axis parameters override their respective entries here for each cell.
 
-    Use 'power' to set both min and max simultaneously.
+    Use 'power_pct' to set both power_min_pct and power_max_pct simultaneously.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    power: float | None = None  # shorthand: sets both power_min and power_max
-    power_min: float = 80.0  # %
-    power_max: float = 80.0  # %
-    speed: float = 100.0  # mm/s
-    kerf: float = 0.0  # mm
-    z_offset: float = 0.0  # mm, initial Z offset
-    z_per_pass: float = 0.0  # mm, Z step per pass (negative = deeper)
+    power_pct: float | None = None  # shorthand: sets both power_min_pct and power_max_pct
+    power_min_pct: float = 80.0
+    power_max_pct: float = 80.0
+    speed_mm_s: float = 100.0
+    kerf_mm: float = 0.0
+    z_offset_mm: float = 0.0
+    z_per_pass_mm: float = 0.0  # Z step per pass (negative = deeper)
     num_passes: int = 1
 
     @model_validator(mode="after")
     def apply_power_shorthand(self) -> CutConfig:
-        if self.power is not None:
-            self.power_min = self.power
-            self.power_max = self.power
+        if self.power_pct is not None:
+            self.power_min_pct = self.power_pct
+            self.power_max_pct = self.power_pct
         return self
 
     def to_cut_setting(self, index: int, name: str) -> CutSetting:
         return CutSetting(
             index=index,
             name=name,
-            min_power=self.power_min,
-            max_power=self.power_max,
-            speed=self.speed,
-            kerf=self.kerf,
-            z_offset=self.z_offset,
-            z_per_pass=self.z_per_pass,
+            min_power=self.power_min_pct,
+            max_power=self.power_max_pct,
+            speed=self.speed_mm_s,
+            kerf=self.kerf_mm,
+            z_offset=self.z_offset_mm,
+            z_per_pass=self.z_per_pass_mm,
             num_passes=self.num_passes,
         )
 
@@ -126,8 +127,8 @@ class GeometryConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    cell_size: float = 15.0  # mm, square side length
-    gap: float = 8.0  # mm, gap between adjacent cells
+    cell_size_mm: float = 15.0  # square side length
+    gap_mm: float = 8.0  # gap between adjacent cells
 
 
 class AnnotationConfig(BaseModel):
@@ -136,6 +137,7 @@ class AnnotationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     show_cell_text: bool = False  # print param values inside each cell
+    cell_text_gap_mm: float = 0.3  # vertical gap between the two in-cell text lines
 
 
 class BorderConfig(BaseModel):
@@ -144,9 +146,9 @@ class BorderConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = False
-    padding: float = 3.0  # mm outside the grid cells
-    power: float = 10.0  # %
-    speed: float = 200.0  # mm/s
+    padding_mm: float = 3.0  # outside the grid cells
+    power_pct: float = 10.0
+    speed_mm_s: float = 200.0
 
 
 class TextLayerConfig(BaseModel):
@@ -154,8 +156,8 @@ class TextLayerConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    power: float = 15.0  # %
-    speed: float = 200.0  # mm/s
+    power_pct: float = 15.0
+    speed_mm_s: float = 200.0
 
 
 class FontConfig(BaseModel):
@@ -164,11 +166,11 @@ class FontConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = "Arial"
-    h_title: float = 10.0  # mm, title text height
-    h_subtitle: float = 7.0  # mm
-    h_label: float = 6.0  # mm, axis label
-    h_value: float = 5.0  # mm, axis value annotations
-    h_cell: float = 4.0  # mm, in-cell parameter text
+    h_title_mm: float = 10.0  # title text height
+    h_subtitle_mm: float = 7.0
+    h_label_mm: float = 6.0  # axis label
+    h_value_mm: float = 5.0  # axis value annotations
+    h_cell_mm: float = 4.0  # in-cell parameter text
 
 
 class GridConfig(BaseModel):
@@ -204,20 +206,20 @@ class GridConfig(BaseModel):
 
 def _apply_param(cut: CutSetting, param: CutParam, value: float) -> None:
     """Apply a named parameter value to a CutSetting."""
-    if param == CutParam.POWER:
+    if param == CutParam.POWER_PCT:
         cut.min_power = value
         cut.max_power = value
-    elif param == CutParam.POWER_MIN:
+    elif param == CutParam.POWER_MIN_PCT:
         cut.min_power = value
-    elif param == CutParam.POWER_MAX:
+    elif param == CutParam.POWER_MAX_PCT:
         cut.max_power = value
-    elif param == CutParam.SPEED:
+    elif param == CutParam.SPEED_MM_S:
         cut.speed = value
-    elif param == CutParam.KERF:
+    elif param == CutParam.KERF_MM:
         cut.kerf = value
-    elif param == CutParam.Z_OFFSET:
+    elif param == CutParam.Z_OFFSET_MM:
         cut.z_offset = value
-    elif param == CutParam.Z_PER_PASS:
+    elif param == CutParam.Z_PER_PASS_MM:
         cut.z_per_pass = value
     elif param == CutParam.NUM_PASSES:
         cut.num_passes = round(value)
@@ -225,17 +227,17 @@ def _apply_param(cut: CutSetting, param: CutParam, value: float) -> None:
 
 def _get_param(cut: CutSetting, param: CutParam) -> float:
     """Read a named parameter value from a CutSetting."""
-    if param in (CutParam.POWER, CutParam.POWER_MAX):
+    if param in (CutParam.POWER_PCT, CutParam.POWER_MAX_PCT):
         return cut.max_power
-    if param == CutParam.POWER_MIN:
+    if param == CutParam.POWER_MIN_PCT:
         return cut.min_power
-    if param == CutParam.SPEED:
+    if param == CutParam.SPEED_MM_S:
         return cut.speed
-    if param == CutParam.KERF:
+    if param == CutParam.KERF_MM:
         return cut.kerf
-    if param == CutParam.Z_OFFSET:
+    if param == CutParam.Z_OFFSET_MM:
         return cut.z_offset
-    if param == CutParam.Z_PER_PASS:
+    if param == CutParam.Z_PER_PASS_MM:
         return cut.z_per_pass
     if param == CutParam.NUM_PASSES:
         return float(cut.num_passes)
@@ -245,28 +247,31 @@ def _get_param(cut: CutSetting, param: CutParam) -> float:
 def _auto_subtitle(config: GridConfig) -> str:
     """Build a subtitle listing the parameters constant across all cells."""
     varied: set[CutParam] = {config.x.param, config.y.param}
-    if CutParam.POWER in varied:
-        varied |= {CutParam.POWER_MIN, CutParam.POWER_MAX}
-    if CutParam.POWER_MIN in varied or CutParam.POWER_MAX in varied:
-        varied.add(CutParam.POWER)
+    if CutParam.POWER_PCT in varied:
+        varied |= {CutParam.POWER_MIN_PCT, CutParam.POWER_MAX_PCT}
+    if CutParam.POWER_MIN_PCT in varied or CutParam.POWER_MAX_PCT in varied:
+        varied.add(CutParam.POWER_PCT)
 
     base = config.cut.to_cut_setting(0, "")
     parts: list[str] = []
     for param in [
-        CutParam.Z_OFFSET,
-        CutParam.SPEED,
-        CutParam.KERF,
-        CutParam.Z_PER_PASS,
+        CutParam.Z_OFFSET_MM,
+        CutParam.SPEED_MM_S,
+        CutParam.KERF_MM,
+        CutParam.Z_PER_PASS_MM,
         CutParam.NUM_PASSES,
-        CutParam.POWER,
+        CutParam.POWER_PCT,
     ]:
         if param in varied:
             continue
         v = _get_param(base, param)
         if param == CutParam.NUM_PASSES and v == 1:
             continue
-        label, unit = _PARAM[param]
-        parts.append(f"{label}={fmt_val(v)}{' ' + unit if unit else ''}")
+        label, unit, abbrev = _PARAM[param]
+        if abbrev and unit:
+            parts.append(f"{fmt_val(v)} {unit}")
+        else:
+            parts.append(f"{label}={fmt_val(v)}{' ' + unit if unit else ''}")
     return ", ".join(parts)
 
 
@@ -282,8 +287,8 @@ def _full_subtitle(config: GridConfig) -> str:
 
 
 def _auto_label(param: CutParam) -> str:
-    """Build an axis label from a CutParam (e.g. POWER_MAX → 'Power max [%]')."""
-    label, unit = _PARAM[param]
+    """Build an axis label from a CutParam (e.g. POWER_MAX_PCT → 'Power max [%]')."""
+    label, unit, _abbrev = _PARAM[param]
     return f"{label} [{unit}]" if unit else label
 
 
@@ -307,7 +312,7 @@ def generate(config: GridConfig) -> LightBurnProject:
     """Build a LightBurnProject from the grid configuration."""
     n_cols = len(config.x.values)
     n_rows = len(config.y.values)
-    stride = config.geometry.cell_size + config.geometry.gap
+    stride = config.geometry.cell_size_mm + config.geometry.gap_mm
     font = config.font
 
     cut_settings: list[CutSetting] = []
@@ -319,9 +324,9 @@ def generate(config: GridConfig) -> LightBurnProject:
             index=_TEXT_LAYER,
             name="Text",
             mode=CutMode.CUT,
-            min_power=config.text_layer.power,
-            max_power=config.text_layer.power,
-            speed=config.text_layer.speed,
+            min_power=config.text_layer.power_pct,
+            max_power=config.text_layer.power_pct,
+            speed=config.text_layer.speed_mm_s,
         )
     )
 
@@ -345,9 +350,9 @@ def generate(config: GridConfig) -> LightBurnProject:
                 index=next_index,
                 name="Border",
                 mode=CutMode.CUT,
-                min_power=config.border.power,
-                max_power=config.border.power,
-                speed=config.border.speed,
+                min_power=config.border.power_pct,
+                max_power=config.border.power_pct,
+                speed=config.border.speed_mm_s,
             )
         )
         border_layer_index = next_index
@@ -358,21 +363,20 @@ def generate(config: GridConfig) -> LightBurnProject:
     # horizontal footprint is their font height.
     x = _MARGIN_LEFT
     if config.y.show_annotations:
-        x_y_label_cx = x + font.h_label / 2.0
-        x += font.h_label + _SPACING
-        x_y_val_cx = x + font.h_value / 2.0
-        x += font.h_value + _SPACING
+        x_y_label_cx = x + font.h_label_mm / 2.0
+        x += font.h_label_mm + _SPACING
+        x_y_val_cx = x + font.h_value_mm / 2.0
+        x += font.h_value_mm + _SPACING
     else:
         x_y_label_cx = _MARGIN_LEFT
         x_y_val_cx = _MARGIN_LEFT
     x_grid_left = x
 
-    x_col = [x_grid_left + config.geometry.cell_size / 2.0 + col_j * stride for col_j in range(n_cols)]
-    x_grid_right = x_grid_left + n_cols * stride - config.geometry.gap
+    x_col = [x_grid_left + config.geometry.cell_size_mm / 2.0 + col_j * stride for col_j in range(n_cols)]
+    x_grid_right = x_grid_left + n_cols * stride - config.geometry.gap_mm
     x_grid_centre = (x_grid_left + x_grid_right) / 2.0
 
-    # ── Vertical layout (Y increases upward, LightBurn CNC convention) ─────────
-    y = _MARGIN_TOP
+    # ── Vertical layout (Y increases upward — LightBurn CNC convention) ────────
 
     def add_text(
         text: str,
@@ -388,50 +392,65 @@ def generate(config: GridConfig) -> LightBurnProject:
             TextShape(cut_index=_TEXT_LAYER, text=text, height=height, xform=xform, font=font.name, ah=ah, av=av)
         )
 
-    # Track overall content bounding box for the border.
-    # content_left is already known from x layout; content_right starts at grid right.
-    content_left = 0.0  # left edge with no margin (border padding adds its own)
-    content_right = x_grid_right
-    content_top = _MARGIN_TOP
-
-    if config.title:
-        add_text(config.title, x_grid_centre, y, font.h_title, ah=HAlign.CENTER)
-        title_half_w = _estimate_text_width(config.title, font.h_title) / 2.0
-        content_right = max(content_right, x_grid_centre + title_half_w)
-        y += font.h_title + _SPACING
-
     subtitle_text = _full_subtitle(config)
-    if subtitle_text:
-        add_text(subtitle_text, x_grid_centre, y, font.h_subtitle, ah=HAlign.CENTER)
-        sub_half_w = _estimate_text_width(subtitle_text, font.h_subtitle) / 2.0
-        content_right = max(content_right, x_grid_centre + sub_half_w)
-        y += font.h_subtitle + _SPACING
-
     x_label = config.x.label if config.x.label is not None else _auto_label(config.x.param)
     y_label = config.y.label if config.y.label is not None else _auto_label(config.y.param)
 
+    # Pre-compute total content height so we can start from the top.
+    grid_height = n_rows * stride - config.geometry.gap_mm
+    v_total = 0.0
+    if config.title:
+        v_total += font.h_title_mm + _SPACING
+    if subtitle_text:
+        v_total += font.h_subtitle_mm + _SPACING
+    v_total += grid_height
+    if config.x.show_annotations:
+        v_total += _SPACING + font.h_value_mm
+        if x_label:
+            v_total += _SPACING + font.h_label_mm
+
+    # y starts at the top (large Y) and decreases as we place elements downward.
+    y = v_total + _MARGIN_TOP
+
+    content_left = 0.0  # border padding adds its own offset
+    content_right = x_grid_right
+    content_top = y  # highest Y
+
+    if config.title:
+        add_text(config.title, x_grid_centre, y, font.h_title_mm, ah=HAlign.CENTER)
+        title_half_w = _estimate_text_width(config.title, font.h_title_mm) / 2.0
+        content_right = max(content_right, x_grid_centre + title_half_w)
+        y -= font.h_title_mm + _SPACING
+
+    if subtitle_text:
+        add_text(subtitle_text, x_grid_centre, y, font.h_subtitle_mm, ah=HAlign.CENTER)
+        sub_half_w = _estimate_text_width(subtitle_text, font.h_subtitle_mm) / 2.0
+        content_right = max(content_right, x_grid_centre + sub_half_w)
+        y -= font.h_subtitle_mm + _SPACING
+
+    # Grid: rows go downward from y.
     y_grid_top = y
-    y_row = [y_grid_top + config.geometry.cell_size / 2.0 + row_i * stride for row_i in range(n_rows)]
-    y_grid_bottom = y_grid_top + n_rows * stride - config.geometry.gap
+    y_row = [y_grid_top - config.geometry.cell_size_mm / 2.0 - row_i * stride for row_i in range(n_rows)]
+    y_grid_bottom = y_grid_top - grid_height
     y_grid_centre = (y_grid_top + y_grid_bottom) / 2.0
 
-    # X-axis annotations below the grid: tick values, then label
-    y_below = y_grid_bottom + _SPACING
+    # X-axis annotations below the grid: tick values, then label.
+    y_below = y_grid_bottom - _SPACING
     if config.x.show_annotations:
         for col_j, x_val in enumerate(config.x.values):
-            add_text(fmt_val(x_val), x_col[col_j], y_below, font.h_value, ah=HAlign.CENTER, av=VAlign.TOP)
-        y_below += font.h_value + _SPACING
+            add_text(fmt_val(x_val), x_col[col_j], y_below, font.h_value_mm, ah=HAlign.CENTER, av=VAlign.TOP)
+        y_below -= font.h_value_mm + _SPACING
 
         if x_label:
-            add_text(x_label, x_grid_centre, y_below, font.h_label, ah=HAlign.CENTER)
-            y_below += font.h_label
+            add_text(x_label, x_grid_centre, y_below, font.h_label_mm, ah=HAlign.CENTER)
+            y_below -= font.h_label_mm
 
     content_bottom = y_below if config.x.show_annotations else y_grid_bottom
 
     # Y-axis label (rotated 90° CCW, reads bottom-to-top)
     if config.y.show_annotations and y_label:
         add_text(
-            y_label, x_y_label_cx, y_grid_centre, font.h_label, ah=HAlign.CENTER, av=VAlign.CENTER, rotate90ccw=True
+            y_label, x_y_label_cx, y_grid_centre, font.h_label_mm, ah=HAlign.CENTER, av=VAlign.CENTER, rotate90ccw=True
         )
 
     # Y-axis value annotations (rotated 90° CCW like the axis label, centred on each row)
@@ -441,7 +460,7 @@ def generate(config: GridConfig) -> LightBurnProject:
                 fmt_val(y_val),
                 x_y_val_cx,
                 y_row[row_i],
-                font.h_value,
+                font.h_value_mm,
                 ah=HAlign.CENTER,
                 av=VAlign.CENTER,
                 rotate90ccw=True,
@@ -457,29 +476,31 @@ def generate(config: GridConfig) -> LightBurnProject:
             shapes.append(
                 RectShape(
                     cut_index=cut_idx,
-                    width=config.geometry.cell_size,
-                    height=config.geometry.cell_size,
+                    width=config.geometry.cell_size_mm,
+                    height=config.geometry.cell_size_mm,
                     xform=XForm.translate(cx, cy),
                 )
             )
 
             if config.annotations.show_cell_text:
-                line_half_gap = font.h_cell * 0.15
-                y_line1 = cy - line_half_gap - font.h_cell / 2.0
-                y_line2 = cy + line_half_gap + font.h_cell / 2.0
-                margin = font.h_cell * 0.2
-                half_cell = config.geometry.cell_size / 2.0
-                y_line1 = max(cy - half_cell + margin + font.h_cell / 2.0, y_line1)
-                y_line2 = min(cy + half_cell - margin - font.h_cell / 2.0, y_line2)
+                half_gap = config.annotations.cell_text_gap_mm / 2.0
+                y_line1 = cy + half_gap + font.h_cell_mm / 2.0  # above centre
+                y_line2 = cy - half_gap - font.h_cell_mm / 2.0  # below centre
+                margin = font.h_cell_mm * 0.2
+                half_cell = config.geometry.cell_size_mm / 2.0
+                y_line1 = min(cy + half_cell - margin - font.h_cell_mm / 2.0, y_line1)
+                y_line2 = max(cy - half_cell + margin + font.h_cell_mm / 2.0, y_line2)
 
-                add_text(fmt_val(x_val), cx, y_line1, font.h_cell, ah=HAlign.CENTER, av=VAlign.BOTTOM)
-                add_text(fmt_val(y_val), cx, y_line2, font.h_cell, ah=HAlign.CENTER, av=VAlign.TOP)
+                add_text(fmt_val(x_val), cx, y_line1, font.h_cell_mm, ah=HAlign.CENTER, av=VAlign.BOTTOM)
+                add_text(fmt_val(y_val), cx, y_line2, font.h_cell_mm, ah=HAlign.CENTER, av=VAlign.TOP)
 
     # Optional border — encompasses all content (title, labels, grid), not just cells
+    # TODO: border width estimate doesn't account for actual rendered text width
+    # (we use a rough heuristic), so the border may not fully cover the subtitle.
     if config.border.enabled and border_layer_index is not None:
-        p = config.border.padding
+        p = config.border.padding_mm
         border_w = (content_right - content_left) + 2.0 * p
-        border_h = (content_bottom - content_top) + 2.0 * p
+        border_h = (content_top - content_bottom) + 2.0 * p
         border_cx = (content_left + content_right) / 2.0
         border_cy = (content_top + content_bottom) / 2.0
         shapes.append(

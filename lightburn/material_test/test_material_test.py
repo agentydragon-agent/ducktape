@@ -10,16 +10,8 @@ from xml.etree import ElementTree as ET
 import pytest
 import pytest_bazel
 
-from hack.lightburn_material_test.lbrn2_writer import (
-    CutSetting,
-    HAlign,
-    LightBurnProject,
-    RectShape,
-    TextShape,
-    VAlign,
-    XForm,
-)
-from hack.lightburn_material_test.material_test import (
+from lightburn.lbrn2_writer import CutSetting, HAlign, LightBurnProject, RectShape, TextShape, VAlign, XForm
+from lightburn.material_test.material_test import (
     AnnotationConfig,
     AxisConfig,
     BorderConfig,
@@ -176,8 +168,8 @@ def test_project_xml_valid():
 
 def _minimal_config(**kwargs) -> GridConfig:
     base = {
-        "x": AxisConfig(param=CutParam.POWER_MAX, values=[10, 20, 30]),
-        "y": AxisConfig(param=CutParam.SPEED, values=[50, 100]),
+        "x": AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10, 20, 30]),
+        "y": AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
     }
     base.update(kwargs)
     return GridConfig(**base)
@@ -185,29 +177,30 @@ def _minimal_config(**kwargs) -> GridConfig:
 
 def test_grid_config_minimal():
     cfg = _minimal_config()
-    assert cfg.x.param == CutParam.POWER_MAX
+    assert cfg.x.param == CutParam.POWER_MAX_PCT
     assert cfg.y.values == [50, 100]
 
 
 def test_grid_config_rejects_same_axes():
     with pytest.raises(Exception, match="must be different"):
         GridConfig(
-            x=AxisConfig(param=CutParam.SPEED, values=[10, 20]), y=AxisConfig(param=CutParam.SPEED, values=[50, 100])
+            x=AxisConfig(param=CutParam.SPEED_MM_S, values=[10, 20]),
+            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
         )
 
 
 def test_cut_config_power_shorthand():
-    cc = CutConfig(power=75)
-    assert cc.power_min == 75
-    assert cc.power_max == 75
+    cc = CutConfig(power_pct=75)
+    assert cc.power_min_pct == 75
+    assert cc.power_max_pct == 75
 
 
 def test_cut_config_power_shorthand_does_not_override_explicit():
-    # power_max set explicitly should still be overridden by power shorthand
+    # power_max_pct set explicitly should still be overridden by power_pct shorthand
     # (model_validator runs after all fields are set)
-    cc = CutConfig(power=60, power_max=80)
-    assert cc.power_min == 60
-    assert cc.power_max == 60
+    cc = CutConfig(power_pct=60, power_max_pct=80)
+    assert cc.power_min_pct == 60
+    assert cc.power_max_pct == 60
 
 
 def test_grid_config_from_toml():
@@ -215,24 +208,24 @@ def test_grid_config_from_toml():
         title = "Test"
 
         [x]
-        param = "power_max"
+        param = "power_max_pct"
         values = [10.0, 20.0]
         label = "Power [%]"
 
         [y]
-        param = "speed"
+        param = "speed_mm_s"
         values = [50.0, 100.0]
         label = "Speed [mm/s]"
 
         [cut]
-        speed = 15
-        z_offset = -0.1
+        speed_mm_s = 15
+        z_offset_mm = -0.1
     """)
     data = tomllib.loads(toml_str)
     cfg = GridConfig.model_validate(data)
     assert cfg.title == "Test"
-    assert cfg.x.param == CutParam.POWER_MAX
-    assert cfg.cut.z_offset == -0.1
+    assert cfg.x.param == CutParam.POWER_MAX_PCT
+    assert cfg.cut.z_offset_mm == -0.1
 
 
 # ── generate() ────────────────────────────────────────────────────────────────
@@ -245,8 +238,8 @@ def _make_project(
     resolved_y = y_values if y_values is not None else [50.0, 100.0]
     cfg = GridConfig(
         title="Test grid",
-        x=AxisConfig(param=CutParam.POWER_MAX, values=resolved_x, label="Power [%]"),
-        y=AxisConfig(param=CutParam.SPEED, values=resolved_y, label="Speed [mm/s]"),
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=resolved_x, label="Power [%]"),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=resolved_y, label="Speed [mm/s]"),
         **kwargs,
     )
     return generate(cfg)
@@ -266,7 +259,7 @@ def test_generate_rect_count():
 
 
 def test_generate_border_adds_layer_and_rect():
-    project = _make_project(border=BorderConfig(enabled=True, power=5, speed=100))
+    project = _make_project(border=BorderConfig(enabled=True, power_pct=5, speed_mm_s=100))
     # border layer added
     assert any(cs.name == "Border" for cs in project.cut_settings)
     # border rect added (one extra rect)
@@ -302,8 +295,8 @@ def test_generate_xml_round_trips():
 
 def test_generate_with_cell_text():
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX, values=[10.0, 20.0]),
-        y=AxisConfig(param=CutParam.SPEED, values=[50.0]),
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         annotations=AnnotationConfig(show_cell_text=True),
     )
     project = generate(cfg)
@@ -314,8 +307,8 @@ def test_generate_with_cell_text():
 
 def test_generate_no_annotations():
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX, values=[10.0, 20.0], show_annotations=False),
-        y=AxisConfig(param=CutParam.SPEED, values=[50.0], show_annotations=False),
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0], show_annotations=False),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0], show_annotations=False),
         auto_subtitle=False,  # suppress auto-generated subtitle too
     )
     project = generate(cfg)
@@ -328,9 +321,9 @@ def test_generate_auto_subtitle_omits_varied_params():
     cfg = GridConfig(
         title="T",
         auto_subtitle=True,
-        x=AxisConfig(param=CutParam.POWER_MAX, values=[10.0, 20.0]),
-        y=AxisConfig(param=CutParam.SPEED, values=[50.0, 100.0]),
-        cut=CutConfig(z_offset=-0.1, kerf=0.05),
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0, 100.0]),
+        cut=CutConfig(z_offset_mm=-0.1, kerf_mm=0.05),
     )
     sub = _full_subtitle(cfg)
     assert "Power" not in sub
@@ -340,14 +333,14 @@ def test_generate_auto_subtitle_omits_varied_params():
 
 def test_example_config_parses():
     """example_config.toml must parse without error and produce a valid GridConfig."""
-    path = runfiles.get_required_path("_main/hack/lightburn_material_test/example_config.toml")
+    path = runfiles.get_required_path("_main/lightburn/material_test/example_config.toml")
     with path.open("rb") as f:
         data = tomllib.load(f)
     cfg = GridConfig.model_validate(data)
-    assert cfg.x.param == CutParam.POWER_MAX
-    assert cfg.y.param == CutParam.Z_PER_PASS
+    assert cfg.x.param == CutParam.POWER_MAX_PCT
+    assert cfg.y.param == CutParam.Z_PER_PASS_MM
     assert cfg.border.enabled is True
-    assert cfg.border.power == 10.0
+    assert cfg.border.power_pct == 10.0
 
 
 if __name__ == "__main__":

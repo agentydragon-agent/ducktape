@@ -116,7 +116,7 @@ values is unique per cell. Layer 0 uses a distinct, low-power cut setting for ma
 ## Usage
 
 ```
-bazel run //hack/lightburn_material_test:material_test -- config.toml [-o output.lbrn2]
+bazel run //lightburn/material_test -- config.toml [-o output.lbrn2]
 ```
 
 All parameters are supplied via a TOML configuration file. The output path defaults to the

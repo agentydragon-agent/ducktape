@@ -137,172 +137,172 @@
         <halftoneAngle Value="22.5" />
     </CutSetting>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,75,0,0,0,0,0" Str="Non-rotated" H="7" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
-        <XForm>1 0 0 1 30 25</XForm>
+        <XForm>1 0 0 1 30 130</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 30 40</XForm>
+        <XForm>1 0 0 1 30 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 30 40</XForm>
+        <XForm>1 0 0 1 30 115</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,T" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
-        <XForm>1 0 0 1 30 40</XForm>
+        <XForm>1 0 0 1 30 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 30 80</XForm>
+        <XForm>1 0 0 1 30 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 30 80</XForm>
+        <XForm>1 0 0 1 30 75</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,C" H="5" LS="0" LnS="0" Ah="0" Av="1" Weld="1">
-        <XForm>1 0 0 1 30 80</XForm>
+        <XForm>1 0 0 1 30 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 30 120</XForm>
+        <XForm>1 0 0 1 30 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 30 120</XForm>
+        <XForm>1 0 0 1 30 35</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,B" H="5" LS="0" LnS="0" Ah="0" Av="2" Weld="1">
-        <XForm>1 0 0 1 30 120</XForm>
+        <XForm>1 0 0 1 30 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 70 40</XForm>
+        <XForm>1 0 0 1 70 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 70 40</XForm>
+        <XForm>1 0 0 1 70 115</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,T" H="5" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
-        <XForm>1 0 0 1 70 40</XForm>
+        <XForm>1 0 0 1 70 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 70 80</XForm>
+        <XForm>1 0 0 1 70 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 70 80</XForm>
+        <XForm>1 0 0 1 70 75</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,C" H="5" LS="0" LnS="0" Ah="1" Av="1" Weld="1">
-        <XForm>1 0 0 1 70 80</XForm>
+        <XForm>1 0 0 1 70 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 70 120</XForm>
+        <XForm>1 0 0 1 70 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 70 120</XForm>
+        <XForm>1 0 0 1 70 35</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,B" H="5" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
-        <XForm>1 0 0 1 70 120</XForm>
+        <XForm>1 0 0 1 70 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 110 40</XForm>
+        <XForm>1 0 0 1 110 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 110 40</XForm>
+        <XForm>1 0 0 1 110 115</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,T" H="5" LS="0" LnS="0" Ah="2" Av="0" Weld="1">
-        <XForm>1 0 0 1 110 40</XForm>
+        <XForm>1 0 0 1 110 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 110 80</XForm>
+        <XForm>1 0 0 1 110 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 110 80</XForm>
+        <XForm>1 0 0 1 110 75</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,C" H="5" LS="0" LnS="0" Ah="2" Av="1" Weld="1">
-        <XForm>1 0 0 1 110 80</XForm>
+        <XForm>1 0 0 1 110 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 110 120</XForm>
+        <XForm>1 0 0 1 110 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 110 120</XForm>
+        <XForm>1 0 0 1 110 35</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,B" H="5" LS="0" LnS="0" Ah="2" Av="2" Weld="1">
-        <XForm>1 0 0 1 110 120</XForm>
+        <XForm>1 0 0 1 110 35</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,75,0,0,0,0,0" Str="Rotated 90 CCW" H="7" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
-        <XForm>1 0 0 1 180 25</XForm>
+        <XForm>1 0 0 1 180 130</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 180 40</XForm>
+        <XForm>1 0 0 1 180 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 180 40</XForm>
+        <XForm>1 0 0 1 180 115</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,T" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
-        <XForm>0 1 -1 0 180 40</XForm>
+        <XForm>0 1 -1 0 180 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 180 80</XForm>
+        <XForm>1 0 0 1 180 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 180 80</XForm>
+        <XForm>1 0 0 1 180 75</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,C" H="5" LS="0" LnS="0" Ah="0" Av="1" Weld="1">
-        <XForm>0 1 -1 0 180 80</XForm>
+        <XForm>0 1 -1 0 180 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 180 120</XForm>
+        <XForm>1 0 0 1 180 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 180 120</XForm>
+        <XForm>1 0 0 1 180 35</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,B" H="5" LS="0" LnS="0" Ah="0" Av="2" Weld="1">
-        <XForm>0 1 -1 0 180 120</XForm>
+        <XForm>0 1 -1 0 180 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 220 40</XForm>
+        <XForm>1 0 0 1 220 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 220 40</XForm>
+        <XForm>1 0 0 1 220 115</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,T" H="5" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
-        <XForm>0 1 -1 0 220 40</XForm>
+        <XForm>0 1 -1 0 220 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 220 80</XForm>
+        <XForm>1 0 0 1 220 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 220 80</XForm>
+        <XForm>1 0 0 1 220 75</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,C" H="5" LS="0" LnS="0" Ah="1" Av="1" Weld="1">
-        <XForm>0 1 -1 0 220 80</XForm>
+        <XForm>0 1 -1 0 220 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 220 120</XForm>
+        <XForm>1 0 0 1 220 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 220 120</XForm>
+        <XForm>1 0 0 1 220 35</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,B" H="5" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
-        <XForm>0 1 -1 0 220 120</XForm>
+        <XForm>0 1 -1 0 220 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 260 40</XForm>
+        <XForm>1 0 0 1 260 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 260 40</XForm>
+        <XForm>1 0 0 1 260 115</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,T" H="5" LS="0" LnS="0" Ah="2" Av="0" Weld="1">
-        <XForm>0 1 -1 0 260 40</XForm>
+        <XForm>0 1 -1 0 260 115</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 260 80</XForm>
+        <XForm>1 0 0 1 260 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 260 80</XForm>
+        <XForm>1 0 0 1 260 75</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,C" H="5" LS="0" LnS="0" Ah="2" Av="1" Weld="1">
-        <XForm>0 1 -1 0 260 80</XForm>
+        <XForm>0 1 -1 0 260 75</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
-        <XForm>1 0 0 1 260 120</XForm>
+        <XForm>1 0 0 1 260 35</XForm>
     </Shape>
     <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
-        <XForm>1 0 0 1 260 120</XForm>
+        <XForm>1 0 0 1 260 35</XForm>
     </Shape>
     <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,B" H="5" LS="0" LnS="0" Ah="2" Av="2" Weld="1">
-        <XForm>0 1 -1 0 260 120</XForm>
+        <XForm>0 1 -1 0 260 35</XForm>
     </Shape>
     <Notes ShowOnLoad="0" Notes="Text anchor test: non-rotated (left) and rotated 90 CCW (right). Each HAlign x VAlign combo at its own crosshair." />
 </LightBurnProject>
