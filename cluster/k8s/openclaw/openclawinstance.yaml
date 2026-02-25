@@ -44,6 +44,8 @@ spec:
           key: password
   config:
     raw:
+      cron:
+        enabled: true
       agents:
         defaults:
           model:
