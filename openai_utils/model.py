@@ -49,8 +49,10 @@ class ResponseUsage(BaseModel):
     input_tokens: int
     output_tokens: int
     total_tokens: int
-    input_tokens_details: InputTokensDetails = Field(default_factory=lambda: InputTokensDetails(cached_tokens=0))
-    output_tokens_details: OutputTokensDetails = Field(default_factory=lambda: OutputTokensDetails(reasoning_tokens=0))
+    # Nullable: some OpenAI-compatible upstreams (e.g. LiteLLM proxying Ollama)
+    # return explicit null rather than omitting the fields.
+    input_tokens_details: InputTokensDetails | None = None
+    output_tokens_details: OutputTokensDetails | None = None
     model_config = ConfigDict(extra="allow")
 
     @classmethod

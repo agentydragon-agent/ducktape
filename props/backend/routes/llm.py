@@ -147,7 +147,7 @@ def _log_request(
     if response_body is not None and error is None:
         usage = ResponseUsage.model_validate(response_body["usage"])
         input_tokens = usage.input_tokens
-        cached_input_tokens = usage.input_tokens_details.cached_tokens
+        cached_input_tokens = usage.input_tokens_details.cached_tokens if usage.input_tokens_details else None
         output_tokens = usage.output_tokens
     llm_request = LLMRequest(
         agent_run_id=agent_run_id,
