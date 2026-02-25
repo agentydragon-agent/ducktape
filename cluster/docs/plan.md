@@ -14,6 +14,13 @@ See <changelog.md> for detailed change history.
 
 ### Next Actions
 
+- [ ] **OpenClaw: obfuscation detection forces approval despite `security: full`** —
+      Upstream commit `0e28e50b4` (PR #24287, issue #8592) adds unconditional obfuscation
+      detection that OR-overrides `requiresExecApproval` even when `ask: off` +
+      `security: full`. Triggers on `python3 -c "...exec/eval/base64..."` patterns.
+      Options: patch custom image to check security level before triggering, file
+      upstream issue arguing `security: full` should opt out, or refine agent prompts
+      to avoid inline Python with those keywords.
 - [ ] **OpenClaw: fix Ollama model discovery timeout on startup** — `TimeoutError` on
       every pod restart (KubeSpan not ready). Options: init container wait, retry with
       backoff, or `startupProbe` delay.
