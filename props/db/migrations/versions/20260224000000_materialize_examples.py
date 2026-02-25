@@ -290,6 +290,21 @@ PARETO_FRONTIER_BY_EXAMPLE_SQL = """
 
 
 def upgrade() -> None:
+    # PG 18 (commit 4b74ebf726) changed CREATE MATERIALIZED VIEW ... WITH DATA to
+    # use the REFRESH code path, which calls RestrictSearchPath() — forcing
+    # search_path to 'pg_catalog, pg_temp'. When the planner then tries to inline
+    # a LANGUAGE sql function, it re-parses the function body text. Unqualified
+    # table references (e.g. 'critic_scopes_expected_to_recall') fail to resolve
+    # because 'public' is no longer in the search_path.
+    #
+    # Adding SET search_path = public to the function prevents inlining entirely
+    # (the optimizer skips functions with proconfig set), so the function executes
+    # normally with a correct search_path regardless of caller context.
+    op.execute("""
+        ALTER FUNCTION is_tp_in_expected_recall_scope(text, text, text, example_kind_enum, text)
+        SET search_path = public
+    """)
+
     # Drop the examples VIEW and all dependents via CASCADE
     op.execute("DROP VIEW IF EXISTS examples CASCADE")
 
@@ -314,6 +329,12 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Drop the materialized view and all dependents
     op.execute("DROP MATERIALIZED VIEW IF EXISTS examples CASCADE")
+
+    # Remove the SET search_path added in upgrade (restore original function behavior)
+    op.execute("""
+        ALTER FUNCTION is_tp_in_expected_recall_scope(text, text, text, example_kind_enum, text)
+        RESET search_path
+    """)
 
     # Recreate as regular VIEW
     op.execute(f"CREATE VIEW examples AS {EXAMPLES_SQL}")

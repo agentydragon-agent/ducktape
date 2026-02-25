@@ -112,7 +112,7 @@ def load_image(tarball_rlocation: str) -> None:
 
     Args:
         tarball_rlocation: Runfiles-relative path to the tarball
-            (e.g., "_main/props/testing/fixtures/postgres_16_tarball/tarball.tar").
+            (e.g., "_main/third_party/containers/postgres_18_load/tarball.tar").
     """
     tarball_name = tarball_rlocation.rsplit("/", 1)[-1]
     with tracer.start_as_current_span(f"load_image({tarball_name})"):

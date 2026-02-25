@@ -16,7 +16,7 @@ py_library(
         "//props/testing/fixtures/testdata/specimens/test-fixtures/valid1:specimen_data_blob",
         "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_code_tar",
         "//props/testing/fixtures/testdata/specimens/test-fixtures/valid2:specimen_data_blob",
-        "//third_party/containers:postgres_16_tarball",
+        "//third_party/containers:postgres_18_tarball",
         "//third_party/containers:ryuk_tarball",
     ],
     visibility = ["//props:__subpackages__"],

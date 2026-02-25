@@ -21,7 +21,7 @@ from props.db.database import Database
 from props.db.setup import ensure_database_exists
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
-from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
+from third_party.containers.rlocations import POSTGRES_18_TARBALL, RYUK_TARBALL
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 
@@ -56,11 +56,11 @@ def postgres_container() -> Generator[PostgresContainer]:
     """
     with tracer.start_as_current_span("postgres_container fixture"):
         load_image(RYUK_TARBALL)
-        load_image(POSTGRES_16_TARBALL)
+        load_image(POSTGRES_18_TARBALL)
 
         with tracer.start_as_current_span("PostgresContainer startup"):
             container = PostgresContainer(
-                image="postgres:16", username="postgres", password="postgres", dbname="postgres"
+                image="postgres:18", username="postgres", password="postgres", dbname="postgres"
             )
             container.start()
 

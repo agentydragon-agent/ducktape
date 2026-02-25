@@ -5,7 +5,7 @@
 # Testcontainers starts the containers.
 #
 # Usage in BUILD.bazel data deps:
-#     data = ["//third_party/containers:postgres_16_tarball"]
+#     data = ["//third_party/containers:postgres_18_tarball"]
 
 load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
@@ -20,14 +20,14 @@ py_library(
 )
 
 oci_load(
-    name = "postgres_16_load",
-    image = "@postgres_16_linux_amd64",
-    repo_tags = ["postgres:16"],
+    name = "postgres_18_load",
+    image = "@postgres_18_linux_amd64",
+    repo_tags = ["postgres:18"],
 )
 
 filegroup(
-    name = "postgres_16_tarball",
-    srcs = [":postgres_16_load"],
+    name = "postgres_18_tarball",
+    srcs = [":postgres_18_load"],
     output_group = "tarball",
     visibility = ["//visibility:public"],
 )

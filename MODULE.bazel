@@ -103,13 +103,13 @@ oci.pull(
     tag = "bookworm-slim",
 )
 
-# Test infrastructure: PostgreSQL for Testcontainers
+# Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
-    name = "postgres_16",
-    digest = "sha256:6e9bbed548cc1ca776dd4685cfea9efe60d58df91186ec6bad7328fd03b388a5",
+    name = "postgres_18",
+    digest = "sha256:9b5bd946f3a507db72c55959700e517463e8d5dbb6f7eb30d920d5bcf6951431",
     image = "docker.io/library/postgres",
     platforms = ["linux/amd64"],
-    tag = "16",
+    tag = "18",
 )
 
 # Test infrastructure: Docker registry for e2e tests
@@ -129,7 +129,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "0.8.1",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "postgres_16", "postgres_16_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")

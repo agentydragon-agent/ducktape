@@ -27,3 +27,20 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_materialize_examples",
+    size = "medium",
+    srcs = ["test_materialize_examples.py"],
+    data = [":migrations"],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        "//props:conftest",
+        "//props/db:config",
+        "//props/db:conftest",
+        "@pypi//alembic",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
