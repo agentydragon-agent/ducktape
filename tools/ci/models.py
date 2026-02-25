@@ -60,6 +60,7 @@ class WorkflowConfig(BaseModel):
     targets: bool = False
     inputs: dict[str, str] = Field(default_factory=dict)
     secrets: Literal["inherit"] | None = None
+    rbe: bool = True
 
 
 class ReleaseConfig(BaseModel):

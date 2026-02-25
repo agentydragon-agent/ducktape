@@ -113,6 +113,11 @@ jobs:
     with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
+  openclaw-image:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-image')
+    uses: ./.github/workflows/openclaw-image.yml
+    secrets: inherit
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')
