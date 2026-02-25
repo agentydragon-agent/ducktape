@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { toast } from "svelte-sonner";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import BackButton from "./BackButton.svelte";
@@ -43,7 +43,6 @@
   // State
   let run: AgentRunDetail | null = $state(initialRun ?? null);
   let loading = $state(!initialRun);
-  let pollInterval: ReturnType<typeof setInterval> | null = null;
 
   // Critique viewer state
   let snapshotDetail: SnapshotDetailResponse | null = $state(initialSnapshotDetail ?? null);
@@ -214,8 +213,6 @@
     }
   }
 
-  let polling = false;
-
   onMount(() => {
     // Skip fetching when initial data is provided (visual tests)
     if (initialRun) return;
@@ -226,29 +223,6 @@
         loadLLMRequests();
       }
     });
-    // Poll while in progress, guarding against overlapping calls
-    pollInterval = setInterval(() => {
-      if (!run || run.status !== "in_progress") {
-        if (pollInterval) {
-          clearInterval(pollInterval);
-          pollInterval = null;
-        }
-        return;
-      }
-      if (!polling) {
-        polling = true;
-        loadData(true).finally(() => {
-          polling = false;
-        });
-        if (llmRequestsFetched) {
-          loadLLMRequests();
-        }
-      }
-    }, 1000);
-  });
-
-  onDestroy(() => {
-    if (pollInterval) clearInterval(pollInterval);
   });
 </script>
 
