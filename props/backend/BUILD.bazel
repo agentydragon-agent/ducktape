@@ -6,7 +6,7 @@ load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
-load("//props/specimens:defs.bzl", "specimen_pkg_files")
+load("//props/specimens:defs.bzl", "specimen_layer_tars")
 load("//tools/testing:defs.bzl", "py_test")
 
 # =============================================================================
@@ -275,16 +275,16 @@ _SPECIMENS = [
     ("wt/2025-01-03-00", "//props/specimens/wt/2025-01-03-00"),
 ]
 
-[specimen_pkg_files(
-    name = "specimen_files_" + slug.replace("/", "_").replace("-", "_"),
+_SPECIMEN_NAMES = {
+    slug: "specimen_" + slug.replace("/", "_").replace("-", "_")
+    for slug, _ in _SPECIMENS
+}
+
+[specimen_layer_tars(
+    name_prefix = _SPECIMEN_NAMES[slug],
     slug = slug,
     specimen_package = pkg,
 ) for slug, pkg in _SPECIMENS]
-
-pkg_tar(
-    name = "specimen_assets",
-    srcs = [":specimen_files_" + slug.replace("/", "_").replace("-", "_") for slug, _ in _SPECIMENS],
-)
 
 oci_image(
     name = "image",
@@ -300,7 +300,12 @@ oci_image(
     tars = [
         ":layers",
         ":frontend_assets",
-        ":specimen_assets",
+    ] + [
+        ":" + _SPECIMEN_NAMES[slug] + "_code_layer"
+        for slug, _ in _SPECIMENS
+    ] + [
+        ":" + _SPECIMEN_NAMES[slug] + "_data_layer"
+        for slug, _ in _SPECIMENS
     ],
 )
 

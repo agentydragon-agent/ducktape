@@ -1,6 +1,7 @@
 """Bazel rules for specimen tar generation and testing."""
 
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//tools/testing:defs.bzl", "py_test")
 
 def _create_code_tar_impl(ctx):
@@ -171,4 +172,42 @@ def specimen_pkg_files(name, slug, specimen_package, visibility = None):
         prefix = "/specimens/" + slug,
         strip_prefix = strip_prefix.files_only(),
         visibility = visibility,
+    )
+
+def specimen_layer_tars(name_prefix, slug, specimen_package):
+    """Create per-artifact OCI layer tars for a specimen.
+
+    Generates two pkg_tar targets (one for code, one for data) so each
+    specimen artifact is an independent OCI layer — unchanged specimens
+    produce cached layers on push.
+
+    Targets created:
+        {name_prefix}_code_layer — tar with /specimens/{slug}/specimen_code.tar
+        {name_prefix}_data_layer — tar with /specimens/{slug}/specimen_data.yaml
+
+    Args:
+        name_prefix: Base name for generated targets (e.g., "specimen_ducktape_2025_09_03_00").
+        slug: Specimen slug (e.g., "ducktape/2025-09-03-00"), used as path prefix in the tar.
+        specimen_package: Bazel package label (e.g., "//props/specimens/ducktape/2025-09-03-00").
+    """
+    pkg_files(
+        name = name_prefix + "_code_files",
+        srcs = [specimen_package + ":specimen_code_tar"],
+        prefix = "/specimens/" + slug,
+        strip_prefix = strip_prefix.files_only(),
+    )
+    pkg_tar(
+        name = name_prefix + "_code_layer",
+        srcs = [":" + name_prefix + "_code_files"],
+    )
+
+    pkg_files(
+        name = name_prefix + "_data_files",
+        srcs = [specimen_package + ":specimen_data_blob"],
+        prefix = "/specimens/" + slug,
+        strip_prefix = strip_prefix.files_only(),
+    )
+    pkg_tar(
+        name = name_prefix + "_data_layer",
+        srcs = [":" + name_prefix + "_data_files"],
     )
