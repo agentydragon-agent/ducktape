@@ -371,7 +371,7 @@ def generate(config: GridConfig) -> LightBurnProject:
     x_grid_right = x_grid_left + n_cols * stride - config.geometry.gap
     x_grid_centre = (x_grid_left + x_grid_right) / 2.0
 
-    # ── Vertical layout (Y increases downward) ────────────────────────────────
+    # ── Vertical layout (Y increases upward, LightBurn CNC convention) ─────────
     y = _MARGIN_TOP
 
     def add_text(

@@ -13,4 +13,4 @@ spec:
     services: "5"
     configmaps: "20"
     persistentvolumeclaims: "5"
-    requests.storage: 20Gi
+    requests.storage: 21Gi
