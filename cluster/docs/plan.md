@@ -201,10 +201,56 @@ Provision API tokens for openclaw and Claude Code. Store in Vault at
 Scheduled backups of PVCs (Harbor, Gitea, Loki, Postgres). Critical application data
 currently has no backup strategy. Velero integrates with Proxmox CSI and Hetzner CSI.
 
-### TODO: Default-Deny Cilium Network Policies
+### TODO: CiliumNetworkPolicy Rollout (Security Audit 2026-02-25)
 
-All pods can currently communicate freely. Deploy default-deny `CiliumNetworkPolicy` per
-namespace. Use Hubble to observe traffic flows first, then generate baseline allow-rules.
+Most services lack network policies. Intra-cluster APIs are unprotected — any pod
+(including openclaw sandbox, props evaluators) can reach sensitive services directly.
+Only Loki, ActivityWatch, and Alloy currently have policies.
+
+**End goal**: Default-deny per namespace with explicit allow-rules. Use Hubble to
+observe traffic flows first, then generate baseline allow-rules.
+
+**Priority 1 — Secrets & DNS** (unauthenticated admin APIs, high blast radius):
+
+- [ ] **Vault** — restrict ingress to ESO, tofu-controller runner, Vault namespace only.
+      Any pod can currently reach `instance.vault:8200` and attempt auth method exploitation.
+- [ ] **PowerDNS API** — restrict `powerdns-api.dns-system:8081` to cert-manager webhook
+      and powerdns-operator only. Unauthenticated zone modification = DNS poisoning.
+- [ ] **Authentik API** — restrict `authentik-server.authentik:80` to system namespaces
+      and tofu-controller. Unauthenticated `/api/v3/` enables user enumeration, provider
+      tampering, backdoor user creation.
+- [ ] **Prometheus** — restrict `prometheus.monitoring:9090` to Grafana, Alertmanager.
+      No auth; exposes full cluster topology, node IPs, resource usage, secret cardinality.
+- [ ] **Sealed Secrets webhook** — restrict to flux-system namespace only.
+
+**Priority 2 — Application services** (unauthenticated APIs, medium blast radius):
+
+- [ ] **Harbor** — restrict `harbor.harbor:80` to Flux image-automation, CI pull jobs.
+      Unauthenticated push/pull/API access from any pod.
+- [ ] **Ollama** — restrict `ollama.ollama:11434` to OpenClaw operator, props, LiteLLM.
+      Explicitly exclude openclaw-sandbox (untrusted code → GPU resource exhaustion).
+- [ ] **Grafana** — restrict to Authentik proxy outpost only (intra-cluster dashboard
+      queries bypass SSO).
+- [ ] **Alertmanager** — restrict to Prometheus and webhook receivers. Unauthenticated
+      alert silencing/creation.
+- [ ] **Gitea** — restrict `gitea.gitea:3000` to webhook receivers, Flux, Authentik proxy.
+- [ ] **Tempo** — restrict to Grafana, Alloy only (trace data contains request payloads).
+- [ ] **Langfuse** — restrict to props, OpenClaw telemetry, Authentik proxy.
+- [ ] **Headlamp** — restrict to Authentik proxy only (K8s admin UI).
+- [ ] **Hubble UI** — restrict to Authentik proxy only (network topology visualization).
+
+**Priority 3 — Remaining services** (lower risk, still should be locked down):
+
+- [ ] **Grocy** — restrict to Authentik proxy outpost only.
+- [ ] **Gatus** — restrict ingress; allow egress to health check targets.
+- [ ] **Headscale** — restrict API to Authentik proxy, gateway.
+- [ ] **Cert-Manager** — restrict metrics endpoint to monitoring namespace.
+- [ ] **Metrics Server** — restrict to Prometheus, HPA controllers.
+- [ ] **ESO webhook** — restrict to kube-system, flux-system.
+- [ ] **OpenClaw sandbox egress** — expand existing policies to block sandbox access to
+      Vault, Sealed Secrets, Gitea API, Authentik API.
+- [ ] **Props** — restrict to OpenClaw, Authentik proxy.
+- [ ] **Nix cache** — restrict to build clients, Authentik proxy.
 
 ### TODO: Pod Security Standards
 
