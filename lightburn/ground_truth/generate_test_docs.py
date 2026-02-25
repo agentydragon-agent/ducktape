@@ -155,7 +155,7 @@ def gen_xform(out_dir: Path) -> None:
     # Column 1 (left): Coordinates + negative coordinates
     col1 = 10.0
     shapes.append(_section_label("Coordinates", col1, y_header))
-    for x, y in [(10, y_body), (60, y_body), (10, y_body - 30), (-20, y_body - 60)]:
+    for x, y in [(10.0, y_body), (60.0, y_body), (10.0, y_body - 30), (-20.0, y_body - 60)]:
         shapes.extend(_labeled_marker(x, y))
 
     # Column 2 (middle): Rotation
