@@ -274,6 +274,7 @@ class RunInfo(BaseModel):
     type_config: TypeConfig
     model: str
     status: AgentRunStatus
+    container_exit_code: int | None = None
     created_at: datetime
     updated_at: datetime
     split: Split | None = None
@@ -1025,6 +1026,7 @@ def _build_run_info(
         type_config=run.type_config,
         model=run.model,
         status=run.status,
+        container_exit_code=run.container_exit_code,
         created_at=run.created_at,
         updated_at=run.updated_at,
         split=split,

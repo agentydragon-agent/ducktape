@@ -122,7 +122,10 @@ js_library(
 js_library(
     name = "RunIdLink",
     srcs = ["RunIdLink.svelte"],
-    deps = [":router"],
+    deps = [
+        ":formatters",
+        ":router",
+    ],
 )
 
 js_library(
