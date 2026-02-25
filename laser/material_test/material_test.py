@@ -20,7 +20,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from lightburn.lbrn2_writer import (
+from laser.lightburn.lbrn2_writer import (
     AnyShape,
     CutMode,
     CutSetting,
@@ -31,7 +31,7 @@ from lightburn.lbrn2_writer import (
     VAlign,
     XForm,
 )
-from lightburn.ruida.rd_writer import RdJob, RdLayer, RdRect
+from laser.ruida.rd_writer import RdJob, RdLayer, RdRect
 
 # ── Cut parameter enum ─────────────────────────────────────────────────────────
 

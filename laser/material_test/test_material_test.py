@@ -10,8 +10,8 @@ from xml.etree import ElementTree as ET
 import pytest
 import pytest_bazel
 
-from lightburn.lbrn2_writer import CutSetting, HAlign, LightBurnProject, RectShape, TextShape, VAlign, XForm
-from lightburn.material_test.material_test import (
+from laser.lightburn.lbrn2_writer import CutSetting, HAlign, LightBurnProject, RectShape, TextShape, VAlign, XForm
+from laser.material_test.material_test import (
     AnnotationConfig,
     AxisConfig,
     BorderConfig,
@@ -378,7 +378,7 @@ def test_generate_auto_subtitle_omits_varied_params():
 
 def test_example_config_parses():
     """example_config.toml must parse without error and produce a valid GridConfig."""
-    path = runfiles.get_required_path("_main/lightburn/material_test/example_config.toml")
+    path = runfiles.get_required_path("_main/laser/material_test/example_config.toml")
     with path.open("rb") as f:
         data = tomllib.load(f)
     cfg = GridConfig.model_validate(data)
@@ -390,7 +390,7 @@ def test_example_config_parses():
 
 def test_example_config_3d_parses():
     """example_config_3d.toml must parse and produce a valid GridConfig with cols."""
-    path = runfiles.get_required_path("_main/lightburn/material_test/example_config_3d.toml")
+    path = runfiles.get_required_path("_main/laser/material_test/example_config_3d.toml")
     with path.open("rb") as f:
         data = tomllib.load(f)
     cfg = GridConfig.model_validate(data)

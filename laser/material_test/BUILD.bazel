@@ -5,8 +5,8 @@ py_library(
     srcs = ["material_test.py"],
     imports = ["../.."],
     deps = [
-        "//lightburn:lbrn2_writer",
-        "//lightburn/ruida:rd_writer",
+        "//laser/lightburn:lbrn2_writer",
+        "//laser/ruida:rd_writer",
         "@pypi//pydantic",
     ],
 )
@@ -14,7 +14,7 @@ py_library(
 py_binary(
     name = "material_test",
     imports = ["../.."],
-    main_module = "lightburn.material_test.material_test",
+    main_module = "laser.material_test.material_test",
     deps = [":material_test_lib"],
 )
 
@@ -28,7 +28,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":material_test_lib",
-        "//lightburn:lbrn2_writer",
+        "//laser/lightburn:lbrn2_writer",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

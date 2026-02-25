@@ -125,7 +125,7 @@ known-first-party = [
     "indoor_aqi",
     "inop",
     "inventree_utils",
-    "lightburn",
+    "laser",
     "llm",
     "llm_html",
     "mcp_infra",
