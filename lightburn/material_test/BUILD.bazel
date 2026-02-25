@@ -20,7 +20,10 @@ py_binary(
 py_test(
     name = "test_material_test",
     srcs = ["test_material_test.py"],
-    data = ["example_config.toml"],
+    data = [
+        "example_config.toml",
+        "example_config_3d.toml",
+    ],
     imports = ["../.."],
     deps = [
         ":material_test_lib",

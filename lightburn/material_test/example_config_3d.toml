@@ -1,0 +1,57 @@
+# Material Test Grid — 3D Sweep Example
+# Sweeps power × z_per_pass (inner grid) × num_passes (outer cols).
+# Run: bazel run //lightburn/material_test -- example_config_3d.toml -o /tmp/3d.lbrn2
+
+title = "3D Sweep: Power × Z/pass × Passes"
+auto_subtitle = true
+
+# Inner X axis (columns within each sub-grid)
+[x]
+param = "power_max_pct"
+values = [12, 15, 18]
+label = "Power [%]"
+
+# Inner Y axis (rows within each sub-grid)
+[y]
+param = "z_per_pass_mm"
+values = [-0.5, -0.6, -0.7]
+label = "\u0394Z/pass [mm]"
+
+# Outer columns — one sub-grid per value
+[cols]
+param = "num_passes"
+values = [1, 2, 3]
+label = "Passes"
+
+[cut]
+power_min_pct = 10
+power_max_pct = 15
+speed_mm_s = 15
+z_offset_mm = -0.1
+num_passes = 1
+
+[geometry]
+cell_size_mm = 12
+gap_mm = 6
+subgrid_gap_mm = 20
+
+[annotations]
+show_cell_text = false
+
+[border]
+enabled = true
+padding_mm = 3
+power_pct = 10
+speed_mm_s = 200
+
+[text_layer]
+power_pct = 15
+speed_mm_s = 200
+
+[font]
+name = "Arial"
+h_title_mm = 10
+h_subtitle_mm = 7
+h_label_mm = 6
+h_value_mm = 5
+h_cell_mm = 4

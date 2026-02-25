@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import tomllib
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -129,6 +130,7 @@ class GeometryConfig(BaseModel):
 
     cell_size_mm: float = 15.0  # square side length
     gap_mm: float = 8.0  # gap between adjacent cells
+    subgrid_gap_mm: float = 20.0  # gap between sub-grids (3D/4D sweeps)
 
 
 class AnnotationConfig(BaseModel):
@@ -187,6 +189,8 @@ class GridConfig(BaseModel):
 
     x: AxisConfig
     y: AxisConfig
+    cols: AxisConfig | None = None  # outer column axis (3D sweep)
+    rows: AxisConfig | None = None  # outer row axis (4D sweep)
     cut: CutConfig = CutConfig()
     geometry: GeometryConfig = GeometryConfig()
     annotations: AnnotationConfig = AnnotationConfig()
@@ -196,8 +200,16 @@ class GridConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_axes(self) -> GridConfig:
-        if self.x.param == self.y.param:
-            raise ValueError(f"x.param and y.param must be different; both are {self.x.param!r}")
+        axes: list[tuple[str, CutParam]] = [("x", self.x.param), ("y", self.y.param)]
+        if self.cols is not None:
+            axes.append(("cols", self.cols.param))
+        if self.rows is not None:
+            axes.append(("rows", self.rows.param))
+        seen: dict[CutParam, str] = {}
+        for name, param in axes:
+            if param in seen:
+                raise ValueError(f"{name}.param and {seen[param]}.param must be different; both are {param!r}")
+            seen[param] = name
         return self
 
 
@@ -247,6 +259,10 @@ def _get_param(cut: CutSetting, param: CutParam) -> float:
 def _auto_subtitle(config: GridConfig) -> str:
     """Build a subtitle listing the parameters constant across all cells."""
     varied: set[CutParam] = {config.x.param, config.y.param}
+    if config.cols is not None:
+        varied.add(config.cols.param)
+    if config.rows is not None:
+        varied.add(config.rows.param)
     if CutParam.POWER_PCT in varied:
         varied |= {CutParam.POWER_MIN_PCT, CutParam.POWER_MAX_PCT}
     if CutParam.POWER_MIN_PCT in varied or CutParam.POWER_MAX_PCT in varied:
@@ -308,165 +324,89 @@ def _estimate_text_width(text: str, height: float) -> float:
 # ── Grid generation ────────────────────────────────────────────────────────────
 
 
-def generate(config: GridConfig) -> LightBurnProject:
-    """Build a LightBurnProject from the grid configuration."""
+def _make_text(
+    text: str,
+    x: float,
+    y: float,
+    height: float,
+    font_name: str,
+    ah: HAlign = HAlign.LEFT,
+    av: VAlign = VAlign.TOP,
+    rotate90ccw: bool = False,
+) -> TextShape:
+    xform = XForm.rotate90ccw(x, y) if rotate90ccw else XForm.translate(x, y)
+    return TextShape(cut_index=_TEXT_LAYER, text=text, height=height, xform=xform, font=font_name, ah=ah, av=av)
+
+
+def _y_annot_width(config: GridConfig) -> float:
+    """Horizontal space used by inner Y-axis annotations (left of cell grid)."""
+    if not config.y.show_annotations:
+        return 0.0
+    return config.font.h_label_mm + _SPACING + config.font.h_value_mm + _SPACING
+
+
+def _x_annot_height(config: GridConfig) -> float:
+    """Vertical space used by inner X-axis annotations (below cell grid)."""
+    if not config.x.show_annotations:
+        return 0.0
+    x_label = config.x.label if config.x.label is not None else _auto_label(config.x.param)
+    h = _SPACING + config.font.h_value_mm + _SPACING
+    if x_label:
+        h += config.font.h_label_mm
+    return h
+
+
+@dataclass
+class _SubGridResult:
+    shapes: list[AnyShape] = field(default_factory=list)
+    cut_settings: list[CutSetting] = field(default_factory=list)
+    next_layer_index: int = 0
+
+
+def _generate_subgrid(
+    config: GridConfig,
+    outer_params: list[tuple[CutParam, float]],
+    next_layer_index: int,
+    cell_grid_left: float,
+    cell_grid_top: float,
+) -> _SubGridResult:
+    """Generate a single 2D sub-grid with inner axis annotations.
+
+    Places cells starting at (cell_grid_left, cell_grid_top), with inner Y-axis
+    annotations extending to the left and inner X-axis annotations below.
+    """
     n_cols = len(config.x.values)
     n_rows = len(config.y.values)
     stride = config.geometry.cell_size_mm + config.geometry.gap_mm
     font = config.font
 
-    cut_settings: list[CutSetting] = []
     shapes: list[AnyShape] = []
+    cut_settings: list[CutSetting] = []
 
-    # Layer 0: annotation text
-    cut_settings.append(
-        CutSetting(
-            index=_TEXT_LAYER,
-            name="Text",
-            mode=CutMode.CUT,
-            min_power=config.text_layer.power_pct,
-            max_power=config.text_layer.power_pct,
-            speed=config.text_layer.speed_mm_s,
-        )
-    )
+    # Cell centre positions
+    x_col = [cell_grid_left + config.geometry.cell_size_mm / 2.0 + j * stride for j in range(n_cols)]
+    y_row = [cell_grid_top - config.geometry.cell_size_mm / 2.0 - i * stride for i in range(n_rows)]
 
-    # Layers 1..N*M: one per grid cell
+    cell_grid_right = cell_grid_left + n_cols * stride - config.geometry.gap_mm
+    cell_grid_bottom = cell_grid_top - (n_rows * stride - config.geometry.gap_mm)
+    cell_grid_x_centre = (cell_grid_left + cell_grid_right) / 2.0
+    cell_grid_y_centre = (cell_grid_top + cell_grid_bottom) / 2.0
+
+    # Cell cut settings
     cell_cut_index: dict[tuple[int, int], int] = {}
-    next_index = 1
+    idx = next_layer_index
     for row_i, y_val in enumerate(config.y.values):
         for col_j, x_val in enumerate(config.x.values):
-            cut = config.cut.to_cut_setting(next_index, f"C{next_index:02d}")
+            cut = config.cut.to_cut_setting(idx, f"C{idx:02d}")
             _apply_param(cut, config.x.param, x_val)
             _apply_param(cut, config.y.param, y_val)
+            for param, value in outer_params:
+                _apply_param(cut, param, value)
             cut_settings.append(cut)
-            cell_cut_index[(row_i, col_j)] = next_index
-            next_index += 1
+            cell_cut_index[(row_i, col_j)] = idx
+            idx += 1
 
-    # Optional border layer
-    border_layer_index: int | None = None
-    if config.border.enabled:
-        cut_settings.append(
-            CutSetting(
-                index=next_index,
-                name="Border",
-                mode=CutMode.CUT,
-                min_power=config.border.power_pct,
-                max_power=config.border.power_pct,
-                speed=config.border.speed_mm_s,
-            )
-        )
-        border_layer_index = next_index
-        next_index += 1
-
-    # ── Horizontal layout ─────────────────────────────────────────────────────
-    # Both Y-axis label and value annotations are rotated 90° CCW, so their
-    # horizontal footprint is their font height.
-    x = _MARGIN_LEFT
-    if config.y.show_annotations:
-        x_y_label_cx = x + font.h_label_mm / 2.0
-        x += font.h_label_mm + _SPACING
-        x_y_val_cx = x + font.h_value_mm / 2.0
-        x += font.h_value_mm + _SPACING
-    else:
-        x_y_label_cx = _MARGIN_LEFT
-        x_y_val_cx = _MARGIN_LEFT
-    x_grid_left = x
-
-    x_col = [x_grid_left + config.geometry.cell_size_mm / 2.0 + col_j * stride for col_j in range(n_cols)]
-    x_grid_right = x_grid_left + n_cols * stride - config.geometry.gap_mm
-    x_grid_centre = (x_grid_left + x_grid_right) / 2.0
-
-    # ── Vertical layout (Y increases upward — LightBurn CNC convention) ────────
-
-    def add_text(
-        text: str,
-        x: float,
-        y_pos: float,
-        height: float,
-        ah: HAlign = HAlign.LEFT,
-        av: VAlign = VAlign.TOP,
-        rotate90ccw: bool = False,
-    ) -> None:
-        xform = XForm.rotate90ccw(x, y_pos) if rotate90ccw else XForm.translate(x, y_pos)
-        shapes.append(
-            TextShape(cut_index=_TEXT_LAYER, text=text, height=height, xform=xform, font=font.name, ah=ah, av=av)
-        )
-
-    subtitle_text = _full_subtitle(config)
-    x_label = config.x.label if config.x.label is not None else _auto_label(config.x.param)
-    y_label = config.y.label if config.y.label is not None else _auto_label(config.y.param)
-
-    # Pre-compute total content height so we can start from the top.
-    grid_height = n_rows * stride - config.geometry.gap_mm
-    v_total = 0.0
-    if config.title:
-        v_total += font.h_title_mm + _SPACING
-    if subtitle_text:
-        v_total += font.h_subtitle_mm + _SPACING
-    v_total += grid_height
-    if config.x.show_annotations:
-        v_total += _SPACING + font.h_value_mm
-        if x_label:
-            v_total += _SPACING + font.h_label_mm
-
-    # y starts at the top (large Y) and decreases as we place elements downward.
-    y = v_total + _MARGIN_TOP
-
-    content_left = 0.0  # border padding adds its own offset
-    content_right = x_grid_right
-    content_top = y  # highest Y
-
-    if config.title:
-        add_text(config.title, x_grid_centre, y, font.h_title_mm, ah=HAlign.CENTER)
-        title_half_w = _estimate_text_width(config.title, font.h_title_mm) / 2.0
-        content_right = max(content_right, x_grid_centre + title_half_w)
-        y -= font.h_title_mm + _SPACING
-
-    if subtitle_text:
-        add_text(subtitle_text, x_grid_centre, y, font.h_subtitle_mm, ah=HAlign.CENTER)
-        sub_half_w = _estimate_text_width(subtitle_text, font.h_subtitle_mm) / 2.0
-        content_right = max(content_right, x_grid_centre + sub_half_w)
-        y -= font.h_subtitle_mm + _SPACING
-
-    # Grid: rows go downward from y.
-    y_grid_top = y
-    y_row = [y_grid_top - config.geometry.cell_size_mm / 2.0 - row_i * stride for row_i in range(n_rows)]
-    y_grid_bottom = y_grid_top - grid_height
-    y_grid_centre = (y_grid_top + y_grid_bottom) / 2.0
-
-    # X-axis annotations below the grid: tick values, then label.
-    y_below = y_grid_bottom - _SPACING
-    if config.x.show_annotations:
-        for col_j, x_val in enumerate(config.x.values):
-            add_text(fmt_val(x_val), x_col[col_j], y_below, font.h_value_mm, ah=HAlign.CENTER, av=VAlign.TOP)
-        y_below -= font.h_value_mm + _SPACING
-
-        if x_label:
-            add_text(x_label, x_grid_centre, y_below, font.h_label_mm, ah=HAlign.CENTER)
-            y_below -= font.h_label_mm
-
-    content_bottom = y_below if config.x.show_annotations else y_grid_bottom
-
-    # Y-axis label (rotated 90° CCW, reads bottom-to-top)
-    if config.y.show_annotations and y_label:
-        add_text(
-            y_label, x_y_label_cx, y_grid_centre, font.h_label_mm, ah=HAlign.CENTER, av=VAlign.CENTER, rotate90ccw=True
-        )
-
-    # Y-axis value annotations (rotated 90° CCW like the axis label, centred on each row)
-    if config.y.show_annotations:
-        for row_i, y_val in enumerate(config.y.values):
-            add_text(
-                fmt_val(y_val),
-                x_y_val_cx,
-                y_row[row_i],
-                font.h_value_mm,
-                ah=HAlign.CENTER,
-                av=VAlign.CENTER,
-                rotate90ccw=True,
-            )
-
-    # Grid cells
+    # Cell rectangles and in-cell text
     for row_i, y_val in enumerate(config.y.values):
         for col_j, x_val in enumerate(config.x.values):
             cut_idx = cell_cut_index[(row_i, col_j)]
@@ -484,20 +424,278 @@ def generate(config: GridConfig) -> LightBurnProject:
 
             if config.annotations.show_cell_text:
                 half_gap = config.annotations.cell_text_gap_mm / 2.0
-                y_line1 = cy + half_gap + font.h_cell_mm / 2.0  # above centre
-                y_line2 = cy - half_gap - font.h_cell_mm / 2.0  # below centre
+                y_line1 = cy + half_gap + font.h_cell_mm / 2.0
+                y_line2 = cy - half_gap - font.h_cell_mm / 2.0
                 margin = font.h_cell_mm * 0.2
                 half_cell = config.geometry.cell_size_mm / 2.0
                 y_line1 = min(cy + half_cell - margin - font.h_cell_mm / 2.0, y_line1)
                 y_line2 = max(cy - half_cell + margin + font.h_cell_mm / 2.0, y_line2)
 
-                add_text(fmt_val(x_val), cx, y_line1, font.h_cell_mm, ah=HAlign.CENTER, av=VAlign.BOTTOM)
-                add_text(fmt_val(y_val), cx, y_line2, font.h_cell_mm, ah=HAlign.CENTER, av=VAlign.TOP)
+                shapes.append(
+                    _make_text(
+                        fmt_val(x_val), cx, y_line1, font.h_cell_mm, font.name, ah=HAlign.CENTER, av=VAlign.BOTTOM
+                    )
+                )
+                shapes.append(
+                    _make_text(fmt_val(y_val), cx, y_line2, font.h_cell_mm, font.name, ah=HAlign.CENTER, av=VAlign.TOP)
+                )
 
-    # Optional border — encompasses all content (title, labels, grid), not just cells
-    # TODO: border width estimate doesn't account for actual rendered text width
-    # (we use a rough heuristic), so the border may not fully cover the subtitle.
-    if config.border.enabled and border_layer_index is not None:
+    # Inner X-axis annotations (below grid)
+    x_label = config.x.label if config.x.label is not None else _auto_label(config.x.param)
+    if config.x.show_annotations:
+        y_below = cell_grid_bottom - _SPACING
+        for col_j, x_val in enumerate(config.x.values):
+            shapes.append(
+                _make_text(
+                    fmt_val(x_val), x_col[col_j], y_below, font.h_value_mm, font.name, ah=HAlign.CENTER, av=VAlign.TOP
+                )
+            )
+        y_below -= font.h_value_mm + _SPACING
+
+        if x_label:
+            shapes.append(
+                _make_text(x_label, cell_grid_x_centre, y_below, font.h_label_mm, font.name, ah=HAlign.CENTER)
+            )
+
+    # Inner Y-axis annotations (left of grid, rotated 90° CCW)
+    y_label = config.y.label if config.y.label is not None else _auto_label(config.y.param)
+    if config.y.show_annotations:
+        x_y_val_cx = cell_grid_left - _SPACING - config.font.h_value_mm / 2.0
+        x_y_label_cx = cell_grid_left - _SPACING - config.font.h_value_mm - _SPACING - config.font.h_label_mm / 2.0
+
+        for row_i, y_val in enumerate(config.y.values):
+            shapes.append(
+                _make_text(
+                    fmt_val(y_val),
+                    x_y_val_cx,
+                    y_row[row_i],
+                    font.h_value_mm,
+                    font.name,
+                    ah=HAlign.CENTER,
+                    av=VAlign.CENTER,
+                    rotate90ccw=True,
+                )
+            )
+
+        if y_label:
+            shapes.append(
+                _make_text(
+                    y_label,
+                    x_y_label_cx,
+                    cell_grid_y_centre,
+                    font.h_label_mm,
+                    font.name,
+                    ah=HAlign.CENTER,
+                    av=VAlign.CENTER,
+                    rotate90ccw=True,
+                )
+            )
+
+    return _SubGridResult(shapes=shapes, cut_settings=cut_settings, next_layer_index=idx)
+
+
+def generate(config: GridConfig) -> LightBurnProject:
+    """Build a LightBurnProject from the grid configuration.
+
+    Supports 2D (x x y), 3D (+ cols or rows), and 4D (+ cols + rows) sweeps.
+    For 3D/4D, generates a grid of sub-grids where each sub-grid is a complete
+    2D grid with its own inner axis annotations.
+    """
+    font = config.font
+
+    cut_settings: list[CutSetting] = []
+    shapes: list[AnyShape] = []
+
+    # Layer 0: annotation text
+    cut_settings.append(
+        CutSetting(
+            index=_TEXT_LAYER,
+            name="Text",
+            mode=CutMode.CUT,
+            min_power=config.text_layer.power_pct,
+            max_power=config.text_layer.power_pct,
+            speed=config.text_layer.speed_mm_s,
+        )
+    )
+
+    # Outer grid dimensions
+    n_outer_cols = len(config.cols.values) if config.cols is not None else 1
+    n_outer_rows = len(config.rows.values) if config.rows is not None else 1
+
+    # Sub-grid cell grid dimensions
+    inner_stride = config.geometry.cell_size_mm + config.geometry.gap_mm
+    cell_grid_w = len(config.x.values) * inner_stride - config.geometry.gap_mm
+    cell_grid_h = len(config.y.values) * inner_stride - config.geometry.gap_mm
+    y_aw = _y_annot_width(config)
+    x_ah = _x_annot_height(config)
+    subgrid_w = y_aw + cell_grid_w
+    subgrid_h = cell_grid_h + x_ah
+    subgrid_gap = config.geometry.subgrid_gap_mm
+
+    # ── Horizontal layout ─────────────────────────────────────────────────────
+    x_cursor = _MARGIN_LEFT
+
+    # Outer rows axis annotations (rotated, left side)
+    has_outer_rows = config.rows is not None
+    outer_rows_label = ""
+    x_outer_rows_label_cx = x_cursor
+    x_outer_rows_val_cx = x_cursor
+    if has_outer_rows:
+        assert config.rows is not None
+        outer_rows_label = config.rows.label if config.rows.label is not None else _auto_label(config.rows.param)
+        if config.rows.show_annotations:
+            if outer_rows_label:
+                x_outer_rows_label_cx = x_cursor + font.h_label_mm / 2.0
+                x_cursor += font.h_label_mm + _SPACING
+            x_outer_rows_val_cx = x_cursor + font.h_value_mm / 2.0
+            x_cursor += font.h_value_mm + _SPACING
+
+    # Sub-grid positions
+    subgrid_x_origins = [x_cursor + oc * (subgrid_w + subgrid_gap) for oc in range(n_outer_cols)]
+    cell_grid_lefts = [sx + y_aw for sx in subgrid_x_origins]
+    total_right = subgrid_x_origins[-1] + subgrid_w
+
+    # Centre X for title/subtitle: centred on the cell grids across all sub-grids
+    all_cell_left = cell_grid_lefts[0]
+    all_cell_right = cell_grid_lefts[-1] + cell_grid_w
+    centre_x = (all_cell_left + all_cell_right) / 2.0
+
+    # ── Vertical layout ───────────────────────────────────────────────────────
+    subtitle_text = _full_subtitle(config)
+
+    # Outer cols axis annotations (above sub-grids)
+    has_outer_cols = config.cols is not None
+    outer_cols_label = ""
+    outer_cols_annot_h = 0.0
+    if has_outer_cols:
+        assert config.cols is not None
+        outer_cols_label = config.cols.label if config.cols.label is not None else _auto_label(config.cols.param)
+        if config.cols.show_annotations:
+            outer_cols_annot_h += font.h_value_mm + _SPACING
+            if outer_cols_label:
+                outer_cols_annot_h += font.h_label_mm + _SPACING
+
+    total_subgrids_h = n_outer_rows * subgrid_h + max(0, n_outer_rows - 1) * subgrid_gap
+
+    v_total = 0.0
+    if config.title:
+        v_total += font.h_title_mm + _SPACING
+    if subtitle_text:
+        v_total += font.h_subtitle_mm + _SPACING
+    v_total += outer_cols_annot_h
+    v_total += total_subgrids_h
+
+    # y starts at the top (large Y) and decreases as we place elements downward.
+    y = v_total + _MARGIN_TOP
+
+    content_left = 0.0
+    content_right = total_right
+    content_top = y
+
+    # Title
+    if config.title:
+        shapes.append(_make_text(config.title, centre_x, y, font.h_title_mm, font.name, ah=HAlign.CENTER))
+        title_half_w = _estimate_text_width(config.title, font.h_title_mm) / 2.0
+        content_right = max(content_right, centre_x + title_half_w)
+        y -= font.h_title_mm + _SPACING
+
+    # Subtitle
+    if subtitle_text:
+        shapes.append(_make_text(subtitle_text, centre_x, y, font.h_subtitle_mm, font.name, ah=HAlign.CENTER))
+        sub_half_w = _estimate_text_width(subtitle_text, font.h_subtitle_mm) / 2.0
+        content_right = max(content_right, centre_x + sub_half_w)
+        y -= font.h_subtitle_mm + _SPACING
+
+    # Outer cols annotations (values per column, then label)
+    if has_outer_cols and config.cols is not None and config.cols.show_annotations:
+        for oc, col_val in enumerate(config.cols.values):
+            sg_cell_centre_x = cell_grid_lefts[oc] + cell_grid_w / 2.0
+            shapes.append(
+                _make_text(
+                    fmt_val(col_val), sg_cell_centre_x, y, font.h_value_mm, font.name, ah=HAlign.CENTER, av=VAlign.TOP
+                )
+            )
+        y -= font.h_value_mm + _SPACING
+
+        if outer_cols_label:
+            shapes.append(_make_text(outer_cols_label, centre_x, y, font.h_label_mm, font.name, ah=HAlign.CENTER))
+            y -= font.h_label_mm + _SPACING
+
+    # Generate sub-grids
+    next_layer_index = 1
+    subgrid_cell_grid_tops: list[float] = []
+
+    for or_i in range(n_outer_rows):
+        cell_grid_top_y = y - or_i * (subgrid_h + subgrid_gap)
+        subgrid_cell_grid_tops.append(cell_grid_top_y)
+
+        for oc_j in range(n_outer_cols):
+            outer_params: list[tuple[CutParam, float]] = []
+            if config.cols is not None:
+                outer_params.append((config.cols.param, config.cols.values[oc_j]))
+            if config.rows is not None:
+                outer_params.append((config.rows.param, config.rows.values[or_i]))
+
+            result = _generate_subgrid(
+                config=config,
+                outer_params=outer_params,
+                next_layer_index=next_layer_index,
+                cell_grid_left=cell_grid_lefts[oc_j],
+                cell_grid_top=cell_grid_top_y,
+            )
+            shapes.extend(result.shapes)
+            cut_settings.extend(result.cut_settings)
+            next_layer_index = result.next_layer_index
+
+    # Outer rows annotations (left side, rotated 90° CCW)
+    if has_outer_rows and config.rows is not None and config.rows.show_annotations:
+        for or_i, row_val in enumerate(config.rows.values):
+            sg_cell_centre_y = subgrid_cell_grid_tops[or_i] - cell_grid_h / 2.0
+            shapes.append(
+                _make_text(
+                    fmt_val(row_val),
+                    x_outer_rows_val_cx,
+                    sg_cell_centre_y,
+                    font.h_value_mm,
+                    font.name,
+                    ah=HAlign.CENTER,
+                    av=VAlign.CENTER,
+                    rotate90ccw=True,
+                )
+            )
+
+        if outer_rows_label:
+            all_sg_top = subgrid_cell_grid_tops[0]
+            all_sg_bottom = subgrid_cell_grid_tops[-1] - cell_grid_h
+            all_sg_centre_y = (all_sg_top + all_sg_bottom) / 2.0
+            shapes.append(
+                _make_text(
+                    outer_rows_label,
+                    x_outer_rows_label_cx,
+                    all_sg_centre_y,
+                    font.h_label_mm,
+                    font.name,
+                    ah=HAlign.CENTER,
+                    av=VAlign.CENTER,
+                    rotate90ccw=True,
+                )
+            )
+
+    # Content bottom
+    content_bottom = subgrid_cell_grid_tops[-1] - subgrid_h
+
+    # Optional border
+    if config.border.enabled:
+        cut_settings.append(
+            CutSetting(
+                index=next_layer_index,
+                name="Border",
+                mode=CutMode.CUT,
+                min_power=config.border.power_pct,
+                max_power=config.border.power_pct,
+                speed=config.border.speed_mm_s,
+            )
+        )
         p = config.border.padding_mm
         border_w = (content_right - content_left) + 2.0 * p
         border_h = (content_top - content_bottom) + 2.0 * p
@@ -505,15 +703,21 @@ def generate(config: GridConfig) -> LightBurnProject:
         border_cy = (content_top + content_bottom) / 2.0
         shapes.append(
             RectShape(
-                cut_index=border_layer_index,
-                width=border_w,
-                height=border_h,
-                xform=XForm.translate(border_cx, border_cy),
+                cut_index=next_layer_index, width=border_w, height=border_h, xform=XForm.translate(border_cx, border_cy)
             )
         )
+        next_layer_index += 1
 
-    notes = f"Generated by material_test.py  x={config.x.param}:{config.x.values}  y={config.y.param}:{config.y.values}"
-    return LightBurnProject(cut_settings=cut_settings, shapes=shapes, notes=notes)
+    notes_parts = [
+        "Generated by material_test.py",
+        f"x={config.x.param}:{config.x.values}",
+        f"y={config.y.param}:{config.y.values}",
+    ]
+    if config.cols is not None:
+        notes_parts.append(f"cols={config.cols.param}:{config.cols.values}")
+    if config.rows is not None:
+        notes_parts.append(f"rows={config.rows.param}:{config.rows.values}")
+    return LightBurnProject(cut_settings=cut_settings, shapes=shapes, notes="  ".join(notes_parts))
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
@@ -547,8 +751,20 @@ def main(argv: list[str] | None = None) -> None:
     with Path(output_path).open("w", encoding="utf-8") as f:
         f.write(project.to_xml_str())
 
-    n_cells = len(config.x.values) * len(config.y.values)
-    print(f"Written {output_path}  ({len(config.x.values)} cols x {len(config.y.values)} rows = {n_cells} cells)")
+    inner_cells = len(config.x.values) * len(config.y.values)
+    n_outer_cols = len(config.cols.values) if config.cols else 1
+    n_outer_rows = len(config.rows.values) if config.rows else 1
+    total_cells = inner_cells * n_outer_cols * n_outer_rows
+    inner_desc = f"{len(config.x.values)}x{len(config.y.values)}"
+    if config.cols or config.rows:
+        outer_parts = []
+        if config.cols:
+            outer_parts.append(f"{n_outer_cols} cols")
+        if config.rows:
+            outer_parts.append(f"{n_outer_rows} rows")
+        print(f"Written {output_path}  ({inner_desc} inner x {' x '.join(outer_parts)} = {total_cells} cells)")
+    else:
+        print(f"Written {output_path}  ({inner_desc} = {total_cells} cells)")
 
 
 if __name__ == "__main__":

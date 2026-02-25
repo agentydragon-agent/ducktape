@@ -222,10 +222,93 @@ example.
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+## 3D / 4D Parameter Sweep (Grid of Grids)
+
+For sweeping 3 or 4 parameters simultaneously, add optional `[cols]` and/or `[rows]` sections.
+These define outer axes that produce a grid of sub-grids, where each sub-grid is a complete
+2D grid (with its own inner axis annotations) at a specific combination of outer parameter values.
+
+- **3-parameter sweep**: add `[cols]` alone (row of sub-grids) or `[rows]` alone (column of sub-grids)
+- **4-parameter sweep**: add both `[cols]` and `[rows]` (grid of sub-grids)
+- All axis params (`x`, `y`, `cols`, `rows`) must be distinct
+
+### TOML config additions
+
+**`[cols]` and `[rows]`** — outer axis configuration (same format as `[x]`/`[y]`):
+
+| Key                | Default | Description                                                      |
+| ------------------ | ------- | ---------------------------------------------------------------- |
+| `param`            | —       | Parameter to scan across outer columns/rows                      |
+| `values`           | —       | List of values for the outer sweep                               |
+| `label`            | auto    | Outer axis label; omit to auto-generate from param name and unit |
+| `show_annotations` | `true`  | Show outer axis value labels and the axis label                  |
+
+**`[geometry]` addition:**
+
+| Key              | Default | Description                         |
+| ---------------- | ------- | ----------------------------------- |
+| `subgrid_gap_mm` | 20      | Gap between sub-grids in mm (3D/4D) |
+
+### Layout
+
+```
+              Title
+              Subtitle
+
+              col_val=1        col_val=2        col_val=3
+                         Passes [count]
+
+              ┌─subgrid─┐     ┌─subgrid─┐     ┌─subgrid─┐
+row_val=-0.3  │ inner    │     │ inner    │     │ inner    │
+              │ 2D grid  │     │ 2D grid  │     │ 2D grid  │
+              │ w/ annot │     │ w/ annot │     │ w/ annot │
+              └──────────┘     └──────────┘     └──────────┘
+
+              ┌─subgrid─┐     ┌─subgrid─┐     ┌─subgrid─┐
+row_val=-0.5  │  ...     │     │  ...     │     │  ...     │
+              └──────────┘     └──────────┘     └──────────┘
+
+ΔZ/pass [mm]   (rotated 90° CCW)
+```
+
+- Single shared title/subtitle at top
+- Each sub-grid has its own inner axis annotations (values + label)
+- Outer column values appear above the sub-grid columns, with axis label below them
+- Outer row values appear to the left (rotated 90° CCW), with axis label further left
+- Auto-subtitle excludes all varied parameters (inner + outer)
+
+### Layer structure (3D/4D)
+
+| Layer index    | Content                                             |
+| -------------- | --------------------------------------------------- |
+| 0              | All text (title, labels, values, in-cell text)      |
+| 1 … T          | One cut layer per cell, sequential across sub-grids |
+| T+1 (optional) | Border rectangle layer                              |
+
+Cells are numbered sequentially: outer_row × outer_col × inner_row × inner_col.
+
+### Example (3-parameter TOML)
+
+```toml
+[x]
+param = "power_max_pct"
+values = [12, 15, 18]
+
+[y]
+param = "z_per_pass_mm"
+values = [-0.5, -0.6, -0.7]
+
+[cols]
+param = "num_passes"
+values = [1, 2, 3]
+
+[geometry]
+subgrid_gap_mm = 20
+```
+
+See `example_config_3d.toml` for a complete annotated example.
+
 ## Future Work
 
 - **Engrave mode** (Fill/Scan): expose `interval` (line interval mm) and `crosshatch` (bool).
   Show only engrave-relevant params in auto-subtitle.
-
-- **3D / 4D parameter sweep**: nested sub-grid layout, e.g. a grid of grids for scanning
-  3 or 4 parameters simultaneously.

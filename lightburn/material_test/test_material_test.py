@@ -17,6 +17,7 @@ from lightburn.material_test.material_test import (
     BorderConfig,
     CutConfig,
     CutParam,
+    GeometryConfig,
     GridConfig,
     _full_subtitle,
     fmt_val,
@@ -341,6 +342,238 @@ def test_example_config_parses():
     assert cfg.y.param == CutParam.Z_PER_PASS_MM
     assert cfg.border.enabled is True
     assert cfg.border.power_pct == 10.0
+
+
+def test_example_config_3d_parses():
+    """example_config_3d.toml must parse and produce a valid GridConfig with cols."""
+    path = runfiles.get_required_path("_main/lightburn/material_test/example_config_3d.toml")
+    with path.open("rb") as f:
+        data = tomllib.load(f)
+    cfg = GridConfig.model_validate(data)
+    assert cfg.cols is not None
+    assert cfg.cols.param == CutParam.NUM_PASSES
+
+
+# ── 3D/4D sweep tests ────────────────────────────────────────────────────────
+
+
+def test_grid_config_3param_cols_only():
+    cfg = _minimal_config(cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2, 3]))
+    assert cfg.cols is not None
+    assert len(cfg.cols.values) == 3
+
+
+def test_grid_config_3param_rows_only():
+    cfg = _minimal_config(rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3, -0.5]))
+    assert cfg.rows is not None
+    assert len(cfg.rows.values) == 2
+
+
+def test_grid_config_4param():
+    cfg = _minimal_config(
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
+        rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3, -0.5]),
+    )
+    assert cfg.cols is not None
+    assert cfg.rows is not None
+
+
+def test_grid_config_rejects_duplicate_cols_param():
+    """cols.param must differ from x.param and y.param."""
+    with pytest.raises(Exception, match="must be different"):
+        _minimal_config(cols=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10, 20]))
+
+
+def test_grid_config_rejects_duplicate_rows_param():
+    """rows.param must differ from x.param and y.param."""
+    with pytest.raises(Exception, match="must be different"):
+        _minimal_config(rows=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]))
+
+
+def test_grid_config_rejects_duplicate_cols_rows_param():
+    """cols.param and rows.param must be different from each other."""
+    with pytest.raises(Exception, match="must be different"):
+        _minimal_config(
+            cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
+            rows=AxisConfig(param=CutParam.NUM_PASSES, values=[3, 4]),
+        )
+
+
+def test_generate_3d_layer_count():
+    """3D sweep: text layer + (inner_cells * n_outer_cols) cell layers."""
+    cfg = _minimal_config(cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2, 3]))
+    project = generate(cfg)
+    inner_cells = 3 * 2  # x=3, y=2
+    n_outer_cols = 3
+    assert len(project.cut_settings) == 1 + inner_cells * n_outer_cols
+
+
+def test_generate_3d_rect_count():
+    """3D sweep: one rect per cell across all sub-grids."""
+    cfg = _minimal_config(cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2, 3]))
+    project = generate(cfg)
+    rects = [s for s in project.shapes if isinstance(s, RectShape)]
+    assert len(rects) == 3 * 2 * 3  # inner_cols * inner_rows * outer_cols
+
+
+def test_generate_4d_layer_count():
+    cfg = _minimal_config(
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
+        rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3, -0.5]),
+    )
+    project = generate(cfg)
+    inner_cells = 3 * 2
+    total_subgrids = 2 * 2
+    assert len(project.cut_settings) == 1 + inner_cells * total_subgrids
+
+
+def test_generate_4d_rect_count():
+    cfg = _minimal_config(
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
+        rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3, -0.5]),
+    )
+    project = generate(cfg)
+    rects = [s for s in project.shapes if isinstance(s, RectShape)]
+    assert len(rects) == 3 * 2 * 2 * 2
+
+
+def test_generate_3d_outer_params_applied():
+    """Outer cols param (num_passes) should be applied to each sub-grid's cells."""
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 3]),
+    )
+    project = generate(cfg)
+    # Skip text layer (index 0)
+    cell_layers = [cs for cs in project.cut_settings if cs.index > 0]
+    # First sub-grid (cols[0]=1 pass): 2 cells
+    assert cell_layers[0].num_passes == 1
+    assert cell_layers[1].num_passes == 1
+    # Second sub-grid (cols[1]=3 passes): 2 cells
+    assert cell_layers[2].num_passes == 3
+    assert cell_layers[3].num_passes == 3
+
+
+def test_generate_4d_outer_params_applied():
+    """Both cols and rows params should be applied."""
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
+        rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3, -0.5]),
+    )
+    project = generate(cfg)
+    cell_layers = [cs for cs in project.cut_settings if cs.index > 0]
+    # 4 sub-grids x 1 cell each = 4 cells
+    # Order: (row0,col0), (row0,col1), (row1,col0), (row1,col1)
+    assert cell_layers[0].num_passes == 1
+    assert cell_layers[0].z_per_pass == -0.3
+    assert cell_layers[1].num_passes == 2
+    assert cell_layers[1].z_per_pass == -0.3
+    assert cell_layers[2].num_passes == 1
+    assert cell_layers[2].z_per_pass == -0.5
+    assert cell_layers[3].num_passes == 2
+    assert cell_layers[3].z_per_pass == -0.5
+
+
+def test_generate_2d_backward_compat():
+    """2D generation (no cols/rows) should produce same output as before."""
+    project = _make_project()
+    # Layer 0 (text) + 6 cells
+    assert len(project.cut_settings) == 7
+    rects = [s for s in project.shapes if isinstance(s, RectShape)]
+    assert len(rects) == 6
+    # Verify it produces valid XML
+    xml_str = project.to_xml_str()
+    root = ET.fromstring(xml_str.split("\n", 1)[1])
+    assert root.tag == "LightBurnProject"
+
+
+def test_generate_3d_border():
+    cfg = _minimal_config(cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]), border=BorderConfig(enabled=True))
+    project = generate(cfg)
+    assert any(cs.name == "Border" for cs in project.cut_settings)
+    rects = [s for s in project.shapes if isinstance(s, RectShape)]
+    inner_rects = 3 * 2 * 2  # x * y * outer_cols
+    assert len(rects) == inner_rects + 1  # +1 for border
+
+
+def test_auto_subtitle_excludes_outer_axes():
+    """Auto-subtitle should not mention cols or rows parameters."""
+    cfg = GridConfig(
+        title="T",
+        auto_subtitle=True,
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
+        rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3]),
+    )
+    sub = _full_subtitle(cfg)
+    assert "Passes" not in sub
+    assert "Z/pass" not in sub
+
+
+def test_generate_3d_from_toml():
+    """3D config should parse from TOML correctly."""
+    toml_str = textwrap.dedent("""\
+        title = "3D Test"
+
+        [x]
+        param = "power_max_pct"
+        values = [10.0, 20.0]
+
+        [y]
+        param = "speed_mm_s"
+        values = [50.0, 100.0]
+
+        [cols]
+        param = "num_passes"
+        values = [1, 2, 3]
+    """)
+    data = tomllib.loads(toml_str)
+    cfg = GridConfig.model_validate(data)
+    assert cfg.cols is not None
+    assert cfg.cols.param == CutParam.NUM_PASSES
+    assert cfg.cols.values == [1, 2, 3]
+
+    project = generate(cfg)
+    cell_layers = [cs for cs in project.cut_settings if cs.index > 0]
+    assert len(cell_layers) == 2 * 2 * 3  # x * y * cols
+
+
+def test_generate_rows_only():
+    """rows-only (no cols) should work as a 3D sweep."""
+    cfg = _minimal_config(rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3, -0.5]))
+    project = generate(cfg)
+    cell_layers = [cs for cs in project.cut_settings if cs.index > 0]
+    assert len(cell_layers) == 3 * 2 * 2  # x * y * rows
+
+
+def test_subgrid_gap_affects_layout():
+    """Different subgrid_gap_mm should produce different rect positions."""
+    cfg_small = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
+        geometry=GeometryConfig(subgrid_gap_mm=5.0),
+    )
+    cfg_large = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
+        geometry=GeometryConfig(subgrid_gap_mm=50.0),
+    )
+    p_small = generate(cfg_small)
+    p_large = generate(cfg_large)
+
+    def rect_xs(project: LightBurnProject) -> list[float]:
+        return sorted(s.xform.tx for s in project.shapes if isinstance(s, RectShape))
+
+    xs_small = rect_xs(p_small)
+    xs_large = rect_xs(p_large)
+    # Larger gap → second sub-grid's rect is further to the right
+    assert xs_large[1] > xs_small[1]
 
 
 if __name__ == "__main__":
