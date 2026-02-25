@@ -72,6 +72,7 @@
 
   # System packages
   environment.systemPackages = with pkgs; [
+    acpi # Battery/thermal/AC adapter status
     libsecret # secret-tool for keyring access (used by ansible vault)
     telegram-desktop
     zoom-us

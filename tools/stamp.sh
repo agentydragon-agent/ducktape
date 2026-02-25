@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Workspace status script for Bazel stamping.
 # Outputs key-value pairs used by --stamp builds.
 # See: https://bazel.build/docs/user-manual#workspace-status
