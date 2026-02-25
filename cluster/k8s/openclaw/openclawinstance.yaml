@@ -290,17 +290,25 @@ spec:
             secretKeyRef:
               name: openclaw-gateway-token
               key: token
-              # Note: Commands execute directly inside this container via
-              # child_process.spawn() — no K8s API involved.
-              # The SA token below is ONLY for kubectl: it provides in-cluster
-              # auth scoped to openclaw-sandbox namespace (restricted RBAC).
-              # The namespace file in the mount defaults kubectl's namespace.
+        # Point node at the operator-managed config so it reads
+        # tools.exec.ask=off / security=full (otherwise node defaults
+        # to ask=on-miss / security=allowlist and blocks execution).
+        - name: OPENCLAW_CONFIG_PATH
+          value: /operator-config/openclaw.json
+      # Note: Commands execute directly inside this container via
+      # child_process.spawn() — no K8s API involved.
+      # The SA token below is ONLY for kubectl: it provides in-cluster
+      # auth scoped to openclaw-sandbox namespace (restricted RBAC).
+      # The namespace file in the mount defaults kubectl's namespace.
       volumeMounts:
         - name: sandbox-sa-token
           mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           readOnly: true
         - name: node-data
           mountPath: /home/node/.openclaw
+        - name: operator-config
+          mountPath: /operator-config
+          readOnly: true
       resources:
         requests:
           cpu: 100m
@@ -320,7 +328,11 @@ spec:
           - key: namespace
             path: namespace
     - name: node-data
-      emptyDir: {}
+      persistentVolumeClaim:
+        claimName: openclaw-node-data
+    - name: operator-config
+      configMap:
+        name: openclaw-config
   extraVolumes:
     - name: kube-api-token
       projected:
