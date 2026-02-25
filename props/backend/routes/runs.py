@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import case, func
 
+from openai_utils.model import ResponsesRequest, ResponsesResult
 from props.backend.auth import (
     AgentRole,
     AuthenticatedIdentity,
@@ -295,8 +296,8 @@ class LLMRequestInfo(BaseModel):
 
     id: int
     model: str
-    request_body: dict
-    response_body: dict | None
+    request_body: ResponsesRequest
+    response_body: ResponsesResult | None
     error: str | None
     latency_ms: int | None
     created_at: datetime
