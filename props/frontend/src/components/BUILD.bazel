@@ -31,9 +31,47 @@ js_library(
 )
 
 js_library(
+    name = "ExpandableItem",
+    srcs = ["ExpandableItem.svelte"],
+    deps = ["//props/frontend/src/lib:llmRequestUtils"],
+)
+
+js_library(
+    name = "CollapsibleSection",
+    srcs = ["CollapsibleSection.svelte"],
+    deps = ["//props/frontend/src/lib:llmRequestUtils"],
+)
+
+js_library(
+    name = "LLMRequestSection",
+    srcs = ["LLMRequestSection.svelte"],
+    deps = [
+        ":CollapsibleSection",
+        ":CopyButton",
+        ":ExpandableItem",
+        "//props/frontend/src/lib:llmRequestUtils",
+    ],
+)
+
+js_library(
+    name = "LLMResponseSection",
+    srcs = ["LLMResponseSection.svelte"],
+    deps = [
+        ":CollapsibleSection",
+        ":CopyButton",
+        ":ExpandableItem",
+        "//props/frontend/src/lib:llmRequestUtils",
+    ],
+)
+
+js_library(
     name = "LLMRequestViewer",
     srcs = ["LLMRequestViewer.svelte"],
-    deps = ["//props/frontend/src/lib:client"],
+    deps = [
+        ":LLMRequestSection",
+        ":LLMResponseSection",
+        "//props/frontend/src/lib:client",
+    ],
 )
 
 js_library(
@@ -178,6 +216,13 @@ visual_test(
     name = "visual_LLMRequests",
     srcs = ["visual_test_LLMRequests.mjs"],
     baseline = "baselines/LLMRequests-chromium-linux.png",
+    deps = [":LLMRequestViewer"],
+)
+
+visual_test(
+    name = "visual_LLMRequestsToolCall",
+    srcs = ["visual_test_LLMRequestsToolCall.mjs"],
+    baseline = "baselines/LLMRequestsToolCall-chromium-linux.png",
     deps = [":LLMRequestViewer"],
 )
 

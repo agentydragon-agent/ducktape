@@ -27,6 +27,11 @@ js_library(
 # Standalone utilities (no local deps)
 
 js_library(
+    name = "llmRequestUtils",
+    srcs = ["llmRequestUtils.ts"],
+)
+
+js_library(
     name = "router",
     srcs = ["router.ts"],
 )

@@ -74,6 +74,7 @@ py_library(
     visibility = ["//props/backend:__subpackages__"],
     deps = [
         ":ground_truth",
+        "//openai_utils:model",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/core:agent_types",

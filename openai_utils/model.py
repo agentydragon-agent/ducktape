@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Any, Literal, Self, cast
+from typing import Annotated, Any, Literal, Self, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses import (
@@ -244,9 +244,11 @@ class AssistantMessageOut(BaseModel):
 
     When an assistant message follows a reasoning item, OpenAI requires the message
     id when sending back as input (to link the message to the reasoning item).
+
+    Uses type="message" to match the OpenAI Responses API wire format.
     """
 
-    kind: Literal["assistant_message"] = "assistant_message"
+    type: Literal["message"] = "message"
     content: list[OutputText]
     id: str | None = None  # Message ID from SDK response (required for reasoning continuation)
     model_config = ConfigDict(extra="allow")
@@ -265,7 +267,9 @@ class AssistantMessageOut(BaseModel):
         return AssistantMessage(role="assistant", content=content_parts, id=self.id)
 
 
-ResponseOutItem = ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
+ResponseOutItem = Annotated[
+    ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut, Field(discriminator="type")
+]
 
 
 @singledispatch
@@ -306,8 +310,9 @@ def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMes
 
 class ResponsesResult(BaseModel):
     id: str
-    usage: ResponseUsage | None
-    output: list[ResponseOutItem]
+    usage: ResponseUsage | None = None
+    output: list[ResponseOutItem] = Field(default_factory=list)
+    model_config = ConfigDict(extra="allow")
 
     @classmethod
     def from_sdk(cls, sdk_resp: Response) -> Self:
