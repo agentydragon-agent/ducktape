@@ -13,19 +13,18 @@ Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
 
 ### Recent Changes (2026-02-24)
 
-1. **OpenClaw node-host sidecar architecture** — Replaced standalone node-host Deployment
-   in `openclaw-sandbox` with a sidecar container in the `openclaw-0` StatefulSet pod.
-   The sidecar shares the pod network namespace, so it connects to the gateway via
-   `127.0.0.1:18789` — recognized as a local client and auto-approved for device pairing
-   (no manual token entry for node connections). Agent CLI commands execute inside the
-   sidecar via `child_process.spawn()`, scoped to `openclaw-sandbox` namespace by
-   mounting the sandbox service account token at
-   `/var/run/secrets/kubernetes.io/serviceaccount`. Cross-namespace secret flow:
-   `openclaw-sandbox/sandbox-sa-token` (long-lived SA token) → ClusterSecretStore
-   (`kubernetes-openclaw-sandbox-secret-store`) → ExternalSecret in `openclaw` namespace
-   → sidecar volume mount. Gateway token similarly copied via ClusterSecretStore from
-   `openclaw` namespace. Deleted standalone `node-deployment.yaml`, `node-config.yaml`,
-   `node-pvc.yaml`, `gateway-token-eso.yaml` from `openclaw-sandbox/`.
+1. **OpenClaw: shared-workspace sidecar for MCP token isolation** — Kept the node-host
+   sidecar (`tools.exec.host: node`) but mounted the operator-managed `data` PVC into both
+   the gateway and sidecar containers at `/home/openclaw/.openclaw`. This fixes the
+   split-brain filesystem problem (built-in file tools and shell commands now see the same
+   files) while keeping MCP server API tokens isolated in the gateway's env vars —
+   unreachable from the sidecar via `env` or `/proc/1/environ`. Removed
+   `extraVolumes`/`extraVolumeMounts` (projected SA token) from the gateway; the operator
+   sets `AutomountServiceAccountToken: false`, so the gateway has zero k8s credentials.
+   The sidecar keeps its sandbox SA token scoped to `openclaw-sandbox` namespace. MCP
+   security model: stdio servers are safe (pipe-based IPC), HTTP servers must require
+   bearer token auth. See <operations/2026-02-24-openclaw-execution-model.md> for full
+   analysis.
 2. **OpenClaw default model → Claude Opus 4.6** — Changed `agents.defaults.model.primary`
    from `ollama/gpt-oss:20b` to `anthropic/claude-opus-4-6`.
 3. **Headlamp: direct OIDC with per-user K8s RBAC** — Switched from proxy outpost +
@@ -68,13 +67,8 @@ Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
    namespace. Headscale `persistence.enabled: false` — keys stored in `headscale-keys`
    Secret so the pod can reschedule freely to the surviving VPS node.
 3. **Authentik bundled PostgreSQL → CloudNativePG** — Migrated Authentik database from
-   the bundled Bitnami PostgreSQL (single instance) to a 2-instance CloudNativePG cluster
-   (`authentik-db`) on `hcloud-volumes`. Both CNPG pods run on Hetzner VPS nodes with
-   `topologyKey: kubernetes.io/hostname` for real HA and zero-downtime failover. Removed
-   the Vault-stored `postgres_password` and ESO ExternalSecret; CNPG auto-generates
-   credentials in secret `authentik-db-app`. Server and worker now load the password
-   via `env.valueFrom.secretKeyRef` instead of `envFrom`. Existing data dropped (fresh
-   cluster — acceptable per plan). Old bundled PVC pending deletion.
+   the bundled Bitnami PostgreSQL (single instance) to a 2-instance CloudNativePG cluster.
+   Both CNPG pods run on Hetzner VPS nodes for HA and zero-downtime failover.
 4. **PowerDNS MariaDB → CloudNativePG PostgreSQL** — Migrated PowerDNS backend from
    MariaDB (proxmox-csi-retain) to a 2-instance CloudNativePG PostgreSQL cluster
    (`powerdns-db`) on `hcloud-volumes`. Both PostgreSQL pods run on Hetzner VPS nodes
@@ -88,11 +82,7 @@ Headscale, Tempo, Langfuse, InvenTree, Scanner all deployed.
    FileBrowser, OpenClaw.
 6. **Headscale deployed** — Headscale HelmRelease and kustomization up. Gatus probe
    configured. Device migration from ansible VPS still pending.
-7. **Tempo deployed** — Distributed tracing via Grafana Tempo in `monitoring` namespace.
-8. **Langfuse deployed** — LLM observability platform in `langfuse` namespace.
-9. **Scanner deployed** — Document scanning with FileBrowser frontend in `scanner` namespace.
-10. **InvenTree deployed** — Inventory management in `inventree` namespace.
-11. **Headscale SSO** — Authentik outpost configured for Headscale.
+7. Tempo, Langfuse, Scanner FileBrowser, InvenTree, Headscale SSO deployed
 
 ### Recent Fixes (2026-02-18)
 
@@ -139,13 +129,9 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
    so flipping the toggle re-issues all certificates. Trust bundle also follows the toggle
    via `${LETSENCRYPT_ISSUER}-root-ca` naming convention (staging CA only trusted in staging
    mode). `ingressShim.defaultIssuerName` kept as fallback.
-2. **Authentik MFA blocking login** — Custom flow without MFA stage via Terraform
-   (`sso/users/main.tf`), domain-matched `authentik_brand`.
-3. **Authentik ESO key naming** — All 4 Authentik ExternalSecrets now use direct `secretKey`
+2. **Authentik ESO key naming** — All 4 Authentik ExternalSecrets now use direct `secretKey`
    matching the env var name (`AUTHENTIK_BOOTSTRAP_PASSWORD`, `AUTHENTIK_BOOTSTRAP_TOKEN`, etc.).
-4. **Proxmox CSI `nodeSelector`** — chart uses top-level key, not `controller.nodeSelector`.
-5. **ESO username keys** — Grafana/Gitea charts expect both username+password; added static
-   username fields to ESO templates.
+3. **Proxmox CSI `nodeSelector`** — chart uses top-level key, not `controller.nodeSelector`.
 
 ### Suspended Kustomizations
 
@@ -153,11 +139,14 @@ are not found"`. Added `kubectl wait --for=condition=Established` before Cilium 
 
 ### Next Actions
 
-- [ ] **Grocy: provision API token for agent access** — after first login, create an API key
-      in the Grocy UI (user menu → Manage API keys), store it at `kv/grocy/api-key` in Vault,
-      then wire via ExternalSecret into OpenClaw (`GROCY_API_KEY`) and/or expose for Claude.
-      REST API base: `https://grocy.allegedly.works/api/`.
-- [ ] **Test all SSO flows** — Gitea, Matrix, Grafana, and Vault verified working.
+- [ ] **OpenClaw: fix Ollama model discovery timeout on startup** — Every pod restart
+      logs `Failed to discover Ollama models: TimeoutError`. The discovery probe runs
+      before cross-node connectivity (Proxmox via KubeSpan) is fully ready. Investigate
+      whether the OpenClaw operator or the app itself controls the discovery timing.
+      Options: add an init container that waits for Ollama reachability, add a retry
+      loop with backoff to the discovery code, or configure a `startupProbe` delay.
+- [ ] Grocy: provision API token for agent access
+- [ ] **Test all SSO flows** — Gitea, Matrix, Grafana, and Vault verified.
       Run `scripts/check-authentik-login.py`. Remaining: Harbor SSO.
 - [ ] **Consider moving more PVCs from `proxmox-csi-retain` to `local-path`** — the
       Proxmox CSI driver has a 29 data volume hard limit per node (`lun < 30`).
@@ -285,7 +274,7 @@ No separate ansible-managed VPS. Everything currently on the VPS must move into 
 | Headscale      | Tailscale control      | ✅  | Deployed, untested with real device              |
 | Ollama         | LLM inference          | -   |                                                  |
 | Website        | Static placeholder     | -   |                                                  |
-| OpenClaw       | AI coding agent        | ✅  | Node-host sidecar, sandbox SA token              |
+| OpenClaw       | AI coding agent        | ✅  | Node-host sidecar, shared workspace, sandbox SA  |
 | Gatus          | Health monitoring      | ✅  |                                                  |
 | Grocy          | Household/grocery mgmt | ✅  |                                                  |
 | Headlamp       | Kubernetes cluster UI  | ✅  | Direct OIDC; `oidc:agentydragon` → cluster-admin |

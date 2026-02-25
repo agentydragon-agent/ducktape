@@ -309,6 +309,11 @@ spec:
         - name: operator-config
           mountPath: /operator-config
           readOnly: true
+        # Share workspace PVC with gateway — fixes split-brain filesystem
+        # where built-in file tools (Read/Write/Glob) see gateway fs but
+        # shell exec runs on sidecar fs. Both now see the same files.
+        - name: data
+          mountPath: /home/openclaw/.openclaw
       resources:
         requests:
           cpu: 100m
@@ -333,27 +338,6 @@ spec:
     - name: operator-config
       configMap:
         name: openclaw-config
-  extraVolumes:
-    - name: kube-api-token
-      projected:
-        sources:
-          - serviceAccountToken:
-              path: token
-              expirationSeconds: 2592000 # 30 days
-          - configMap:
-              name: kube-root-ca.crt
-              items:
-                - key: ca.crt
-                  path: ca.crt
-          - downwardAPI:
-              items:
-                - path: namespace
-                  fieldRef:
-                    fieldPath: metadata.namespace
-  extraVolumeMounts:
-    - name: kube-api-token
-      mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
   security:
     networkPolicy:
       additionalEgress:
