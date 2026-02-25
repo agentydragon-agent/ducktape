@@ -61,6 +61,7 @@ class WorkflowConfig(BaseModel):
     inputs: dict[str, str] = Field(default_factory=dict)
     secrets: Literal["inherit"] | None = None
     rbe: bool = True
+    events: frozenset[str] = frozenset({"push", "pull_request", "workflow_dispatch"})
 
 
 class ReleaseConfig(BaseModel):

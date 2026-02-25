@@ -43,10 +43,12 @@ workflows:
   # whose push step failed.
   props-images:
     trigger: { kind: always }
+    events: [push]
     secrets: inherit
 
   openclaw-image:
     trigger: { kind: path, pattern: "^docker/openclaw/" }
+    events: [push]
     secrets: inherit
     rbe: false
 

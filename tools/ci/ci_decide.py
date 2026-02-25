@@ -164,6 +164,9 @@ def compute_decision(env: CIEnvironment, workflows: dict[str, WorkflowConfig]) -
     triggered: set[str] = set()
     workflow_targets: dict[str, list[str]] = {}
     for name, config in workflows.items():
+        if env.event_name not in config.events:
+            logger.info("Skipping %s: event %s not in %s", name, env.event_name, config.events)
+            continue
         should_run, wf_targets = should_trigger(name, config, targets, changed_files)
         if should_run:
             triggered.add(name)
