@@ -63,7 +63,7 @@ spec:
       resourcePolicy: "keep"
       persistentVolumeClaim:
         registry:
-          size: 5Gi
+          size: 300Gi
         jobservice:
           size: 1Gi
         database:
