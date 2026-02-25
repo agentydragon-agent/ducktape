@@ -8,4 +8,5 @@ resources:
   - sandbox-sa-token-eso.yaml
   - telegram-bot-token-sealed.yaml
   - matrix-bot-password-eso.yaml
+  - github-token-sealed.yaml
   - harbor-registry-credentials.yaml
