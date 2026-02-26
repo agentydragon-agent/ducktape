@@ -25,17 +25,17 @@ resource "null_resource" "gateway_api_crds" {
     environment = {
       KUBECONFIG = local_file.kubeconfig.filename
     }
-    # Experimental channel includes TLSRoute CRD required by Cilium 1.16.x.
-    # Standard channel only has GA CRDs and Cilium refuses to start the
-    # gateway controller without TLSRoute.
+    # Standard channel CRDs (GA resources: Gateway, HTTPRoute, GRPCRoute, etc.).
+    # TLSRoute is optional in Cilium 1.18+ — omitted since we don't use it.
+    # Server-side apply required: HTTPRoute CRD exceeds 256KB annotation limit.
     command = <<-EOT
       set -e
-      kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/experimental-install.yaml
+      kubectl apply --server-side --force-conflicts \
+        -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml
       kubectl wait --for=condition=Established \
         crd/gatewayclasses.gateway.networking.k8s.io \
         crd/gateways.gateway.networking.k8s.io \
         crd/httproutes.gateway.networking.k8s.io \
-        crd/tlsroutes.gateway.networking.k8s.io \
         crd/referencegrants.gateway.networking.k8s.io \
         --timeout=60s
     EOT
@@ -56,7 +56,7 @@ resource "null_resource" "cilium_bootstrap" {
       set -e
       helm repo add cilium https://helm.cilium.io/ && helm repo update cilium
       helm upgrade --install cilium cilium/cilium \
-        --version 1.16.5 \
+        --version 1.18.7 \
         --namespace kube-system \
         --create-namespace \
         -f ${path.module}/cilium-values.yaml \
