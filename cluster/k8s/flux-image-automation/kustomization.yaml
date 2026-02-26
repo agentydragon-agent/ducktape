@@ -8,3 +8,6 @@ resources:
   - openclaw-image-repository.yaml
   - openclaw-image-policy.yaml
   - openclaw-image-update-automation.yaml
+  - activitywatch-image-repository.yaml
+  - activitywatch-image-policy.yaml
+  - activitywatch-image-update-automation.yaml
