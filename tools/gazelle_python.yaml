@@ -425,6 +425,7 @@ manifest:
     requests: requests
     requests_cache: requests_cache
     requests_oauthlib: requests_oauthlib
+    respx: respx
     rfc3339_validator: rfc3339_validator
     rfc3986_validator: rfc3986_validator
     rfc3987_syntax: rfc3987_syntax
@@ -465,7 +466,7 @@ manifest:
     supervisor: supervisor
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: TakeTheTime
+    takethetime: takethetime
     tenacity: tenacity
     termcolor: termcolor
     terminado: terminado
@@ -565,4 +566,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: be17ecbaf721fc83c5164da75b93c2d04113abf7aa7c9485b29f7fc436d11d3a
+integrity: b3fcbbd3c647962e1b80f9ef8fe822568e70c40fcc083a6d382cb37d2eab4201
