@@ -61,6 +61,7 @@ oci_image(
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("improve"),
     env = py_image_env(binary_name = "improve"),
+    labels = {"org.opencontainers.image.title": "critic-dev-improve"},
     tars = [
         ":layers",
         ":python3_symlink",

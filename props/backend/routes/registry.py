@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import os
+from dataclasses import dataclass
 from uuid import UUID
 
 import httpx
@@ -77,40 +78,49 @@ async def _proxy_to_upstream(request: Request) -> Response:
         )
 
 
-async def _extract_base_digest(manifest_body: bytes, repository: str) -> str | None:
-    """Extract base image digest from OCI manifest."""
+@dataclass
+class _ImageMetadata:
+    base_digest: str | None
+    display_name: str | None
+
+
+async def _extract_image_metadata(manifest_body: bytes, repository: str) -> _ImageMetadata:
+    """Extract base digest and display name from OCI manifest config labels."""
     try:
         manifest = json.loads(manifest_body)
         config_descriptor = manifest.get("config")
         if not config_descriptor:
-            return None
+            return _ImageMetadata(base_digest=None, display_name=None)
 
         config_digest = config_descriptor.get("digest")
         if not config_digest:
-            return None
+            return _ImageMetadata(base_digest=None, display_name=None)
 
         config_url = f"{_upstream_registry_url()}/v2/{repository}/blobs/{config_digest}"
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(config_url, timeout=5.0)
                 if response.status_code != 200:
-                    return None
+                    return _ImageMetadata(base_digest=None, display_name=None)
 
                 config = response.json()
-                config_annotations = config.get("config", {}).get("Labels", {})
-                base_digest: str | None = config_annotations.get("org.opencontainers.image.base.digest")
+                labels = config.get("config", {}).get("Labels", {})
+                base_digest: str | None = labels.get("org.opencontainers.image.base.digest")
+                display_name: str | None = labels.get("org.opencontainers.image.title")
 
                 if base_digest:
                     logger.info(f"Extracted base_digest from annotation: {base_digest}")
-                return base_digest
+                if display_name:
+                    logger.info(f"Extracted display_name from annotation: {display_name}")
+                return _ImageMetadata(base_digest=base_digest, display_name=display_name)
 
             except (httpx.RequestError, json.JSONDecodeError) as e:
                 logger.warning(f"Error fetching/parsing config blob: {e}")
-                return None
+                return _ImageMetadata(base_digest=None, display_name=None)
 
     except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"Error parsing manifest for base_digest extraction: {e}")
-        return None
+        logger.warning(f"Error parsing manifest for image metadata extraction: {e}")
+        return _ImageMetadata(base_digest=None, display_name=None)
 
 
 async def _record_manifest_push(
@@ -131,16 +141,21 @@ async def _record_manifest_push(
             logger.info(f"Agent definition {digest} already exists, skipping")
             return
 
-        base_digest = await _extract_base_digest(manifest_body, repository)
+        metadata = await _extract_image_metadata(manifest_body, repository)
         definition = AgentDefinition(
-            digest=digest, agent_type=agent_type, created_by_agent_run_id=agent_run_id, base_digest=base_digest
+            digest=digest,
+            agent_type=agent_type,
+            created_by_agent_run_id=agent_run_id,
+            base_digest=metadata.base_digest,
+            display_name=metadata.display_name,
         )
         session.add(definition)
         session.commit()
 
         logger.info(
             f"Recorded agent definition: {repository}@{digest} "
-            f"(type={agent_type}, created_by={agent_run_id}, base={base_digest or 'none'})"
+            f"(type={agent_type}, created_by={agent_run_id}, "
+            f"base={metadata.base_digest or 'none'}, display_name={metadata.display_name or 'none'})"
         )
 
 

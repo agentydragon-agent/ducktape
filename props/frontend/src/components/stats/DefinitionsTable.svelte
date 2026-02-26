@@ -139,7 +139,7 @@
       {#each table.rows as def (def.image_digest)}
         <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
           <td class="px-3 py-2 font-mono text-xs">
-            <DefinitionIdLink id={def.image_digest} />
+            <DefinitionIdLink id={def.image_digest} display_name={def.display_name} />
           </td>
           <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-400">
             {formatTableAge(def.created_at)}

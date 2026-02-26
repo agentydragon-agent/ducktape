@@ -4,9 +4,10 @@
 
   interface Props {
     id: string;
+    display_name?: string | null;
   }
 
-  let { id }: Props = $props();
+  let { id, display_name }: Props = $props();
 </script>
 
 <a
@@ -14,5 +15,5 @@
   class="text-blue-600 dark:text-blue-400 underline hover:text-blue-800 dark:hover:text-blue-300"
   title={id}
 >
-  {formatDigest(id)}
+  {display_name ?? formatDigest(id)}
 </a>

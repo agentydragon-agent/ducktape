@@ -326,6 +326,7 @@ oci_image(
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("grader_bin"),
     env = py_image_env(binary_name = "grader_bin"),
+    labels = {"org.opencontainers.image.title": "grader"},
     tars = [
         ":layers",
         ":python3_symlink",

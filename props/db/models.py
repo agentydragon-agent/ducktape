@@ -1398,6 +1398,9 @@ class AgentDefinition(Base):
     base_digest: Mapped[str | None] = mapped_column(
         String, nullable=True, comment="Parent image digest if this is a layered image"
     )
+    display_name: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="Human-readable name from OCI label org.opencontainers.image.title"
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
