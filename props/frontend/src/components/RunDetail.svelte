@@ -162,8 +162,10 @@
 
     loadingSnapshot = true;
     try {
-      // Fetch snapshot detail to get ground truth
-      snapshotDetail = await fetchSnapshotDetail(snapshotSlug);
+      // Fetch snapshot detail filtered to this example's recall scope
+      const exampleKind = config.example.kind;
+      const filesHash = exampleKind === "file_set" ? config.example.files_hash : undefined;
+      snapshotDetail = await fetchSnapshotDetail(snapshotSlug, exampleKind, filesHash);
 
       // Collect all files mentioned in critique issues or ground truth
       const allFilePaths = new SvelteSet<string>();

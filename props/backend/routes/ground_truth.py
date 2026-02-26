@@ -13,7 +13,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session, selectinload
 
 from props.backend.auth import CallerDb
@@ -169,9 +169,16 @@ def list_snapshots(caller_db: CallerDb) -> SnapshotsListResponse:
 
 
 @router.get("/snapshots/{org}/{snapshot_date}")
-def get_snapshot_detail(org: str, snapshot_date: str, caller_db: CallerDb) -> SnapshotDetailResponse:
+def get_snapshot_detail(
+    org: str, snapshot_date: str, caller_db: CallerDb, example_kind: str | None = None, files_hash: str | None = None
+) -> SnapshotDetailResponse:
+    """Get detailed snapshot info with TPs and FPs.
+
+    When example_kind and files_hash are provided, filters to issues in the recall
+    scope for that example, delegating to the PostgreSQL SSOT functions
+    is_tp_in_expected_recall_scope and is_fp_relevant_for_scope.
+    """
     snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
-    """Get detailed snapshot info with all TPs and FPs."""
     with caller_db.session() as session:
         snapshot = get_snapshot_or_404(session, snapshot_slug)
 
@@ -198,6 +205,39 @@ def get_snapshot_detail(org: str, snapshot_date: str, caller_db: CallerDb) -> Sn
             .all()
         )
 
+        # When example scope is specified, filter using PostgreSQL SSOT functions
+        in_scope_tp_occ_keys: set[tuple[str, str]] | None = None
+        in_scope_fp_ids: set[str] | None = None
+        if example_kind is not None:
+            params = {"slug": str(snapshot_slug), "kind": example_kind, "hash": files_hash}
+            in_scope_tp_occ_keys = {
+                (row.tp_id, row.occurrence_id)
+                for row in session.execute(
+                    text("""
+                        SELECT tp_id, occurrence_id
+                        FROM true_positive_occurrences
+                        WHERE snapshot_slug = :slug
+                          AND is_tp_in_expected_recall_scope(
+                              snapshot_slug, tp_id, occurrence_id,
+                              :kind::example_kind_enum, :hash)
+                    """),
+                    params,
+                ).all()
+            }
+            in_scope_fp_ids = {
+                row.fp_id
+                for row in session.execute(
+                    text("""
+                        SELECT fp_id FROM false_positives
+                        WHERE snapshot_slug = :slug
+                          AND is_fp_relevant_for_scope(
+                              snapshot_slug, fp_id,
+                              :kind::example_kind_enum, :hash)
+                    """),
+                    params,
+                ).all()
+            }
+
         # Pre-fetch all matchable files to avoid N+1 queries
         # Collect all unique match_file_restriction hashes from both TPs and FPs
         # Note: whole-snapshot occurrences have match_file_restriction=None (no file filter)
@@ -218,14 +258,16 @@ def get_snapshot_detail(org: str, snapshot_date: str, caller_db: CallerDb) -> Sn
                 .order_by(FileSetMember.files_hash, FileSetMember.file_path)
                 .all()
             )
-            for files_hash, file_path in members:
-                matchable_files_by_hash[files_hash].append(file_path)
+            for fh, file_path in members:
+                matchable_files_by_hash[fh].append(file_path)
 
-        # Convert TPs
+        # Convert TPs (filtering to in-scope occurrences when example scope provided)
         tp_infos = []
         for tp in tps:
             tp_occ_infos: list[OccurrenceInfo] = []
             for occ in tp.occurrences:
+                if in_scope_tp_occ_keys is not None and (tp.tp_id, occ.occurrence_id) not in in_scope_tp_occ_keys:
+                    continue
                 matchable_files = (
                     matchable_files_by_hash.get(occ.match_file_restriction) if occ.match_file_restriction else None
                 )
@@ -238,13 +280,16 @@ def get_snapshot_detail(org: str, snapshot_date: str, caller_db: CallerDb) -> Sn
                         critic_scopes_expected_to_recall=_get_critic_scopes_expected_to_recall_paths(occ),
                     )
                 )
-            tp_infos.append(
-                TpInfo(tp_id=tp.tp_id, rationale=tp.rationale, occurrences=tp_occ_infos, created_at=tp.created_at)
-            )
+            if tp_occ_infos:
+                tp_infos.append(
+                    TpInfo(tp_id=tp.tp_id, rationale=tp.rationale, occurrences=tp_occ_infos, created_at=tp.created_at)
+                )
 
-        # Convert FPs
+        # Convert FPs (filtering to in-scope FPs when example scope provided)
         fp_infos = []
         for fp in fps:
+            if in_scope_fp_ids is not None and fp.fp_id not in in_scope_fp_ids:
+                continue
             fp_occ_infos: list[OccurrenceInfo] = []
             for fp_occ in fp.occurrences:
                 matchable_files = (
