@@ -45,6 +45,18 @@ spec:
       name: buildbuddy-api-key
       valuesKey: api-key
       targetPath: config.executor.api_key
+  # Chart template uses `{{ .Values.replicas | default 1 }}` — Go template
+  # treats 0 as falsy, so replicas=0 renders as 1. Use postRenderers to force 0.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: buildbuddy-executor
+            patch: |
+              - op: replace
+                path: /spec/replicas
+                value: 0
   values:
     replicas: 0
     resources:
