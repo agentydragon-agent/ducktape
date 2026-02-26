@@ -326,6 +326,47 @@ def get_storage_dir(settings: HookSettings) -> Path | None:
     return settings.get_container_storage_dir()
 
 
+def _log_docker_conflict_info() -> None:
+    """Log diagnostic info about a conflicting dockerd process.
+
+    Called when the Docker socket is not responsive but we're about to try
+    starting a new dockerd.  Helps diagnose cases where a pre-existing daemon
+    owns /var/run/docker.pid but its socket is missing or unresponsive.
+    """
+    sock_file = DEFAULT_DOCKER_SOCKET
+    logger.info("docker socket check: exists=%s", sock_file.exists())
+
+    pid_file = Path("/var/run/docker.pid")
+    if not pid_file.exists():
+        logger.info("No /var/run/docker.pid found")
+        return
+
+    try:
+        pid = int(pid_file.read_text().strip())
+    except (ValueError, OSError) as e:
+        logger.warning("Failed to read /var/run/docker.pid: %s", e)
+        return
+
+    logger.info("Found /var/run/docker.pid with pid=%d", pid)
+
+    cmdline_path = Path(f"/proc/{pid}/cmdline")
+    if cmdline_path.exists():
+        try:
+            cmdline = cmdline_path.read_bytes().replace(b"\x00", b" ").decode(errors="replace").strip()
+            logger.info("PID %d cmdline: %s", pid, cmdline)
+        except OSError as e:
+            logger.warning("Failed to read cmdline for PID %d: %s", pid, e)
+
+    status_path = Path(f"/proc/{pid}/status")
+    if status_path.exists():
+        try:
+            for line in status_path.read_text().splitlines():
+                if line.startswith(("Name:", "PPid:", "State:")):
+                    logger.info("PID %d status: %s", pid, line)
+        except OSError as e:
+            logger.warning("Failed to read status for PID %d: %s", pid, e)
+
+
 async def setup_container_runtime(
     settings: HookSettings, supervisor: SupervisorClient, tmpfs_mounted: bool
 ) -> ContainerRuntimeSetup:
@@ -373,6 +414,11 @@ async def setup_container_runtime(
             storage_driver=spec.storage_driver,
             env_vars=spec.client_env_vars,
         )
+
+    # Log diagnostics before attempting start — helps identify pre-existing
+    # daemons that own /var/run/docker.pid but whose socket is missing/unresponsive.
+    if runtime == "docker":
+        _log_docker_conflict_info()
 
     logger.info("Configuring %s...", spec.service_name)
 
