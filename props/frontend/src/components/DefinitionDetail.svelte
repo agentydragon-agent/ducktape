@@ -45,12 +45,20 @@
       </div>
     </div>
     <Breadcrumb
-      items={[{ label: "Home", href: "/" }, { label: "Definitions", href: "/" }, { label: data.image_digest }]}
+      items={[
+        { label: "Home", href: "/" },
+        { label: "Definitions", href: "/" },
+        { label: data.display_name ?? data.image_digest },
+      ]}
     />
 
     <div class="space-y-3 mt-3">
       <!-- Definition ID and metadata -->
       <div class="flex items-center gap-4 text-sm">
+        {#if data.display_name}
+          <span class="font-semibold text-gray-800 dark:text-gray-200">{data.display_name}</span>
+          <span class="text-gray-400 dark:text-gray-500">|</span>
+        {/if}
         <span class="font-mono text-blue-600 dark:text-blue-400">{data.image_digest}</span>
         <span class="text-gray-400 dark:text-gray-500">|</span>
         <span class="text-gray-600 dark:text-gray-400">{data.agent_type}</span>

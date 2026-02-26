@@ -20,6 +20,7 @@ router = APIRouter()
 
 class DefinitionInfo(BaseModel):
     image_digest: str
+    display_name: str | None
     agent_type: AgentType
     created_at: datetime
 
@@ -38,7 +39,12 @@ def list_definitions(caller_db: CallerDb, agent_type: AgentType | None = None) -
         definitions = query.order_by(AgentDefinition.created_at.desc()).all()
         return DefinitionsResponse(
             definitions=[
-                DefinitionInfo(image_digest=d.digest, agent_type=AgentType(d.agent_type), created_at=d.created_at)
+                DefinitionInfo(
+                    image_digest=d.digest,
+                    display_name=d.display_name,
+                    agent_type=AgentType(d.agent_type),
+                    created_at=d.created_at,
+                )
                 for d in definitions
             ]
         )

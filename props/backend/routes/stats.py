@@ -49,6 +49,7 @@ SplitStats = dict[Split, dict[ExampleKind, SplitScopeStats]]
 
 class DefinitionRow(BaseModel):
     image_digest: str
+    display_name: str | None
     created_at: datetime
     stats: SplitStats
 
@@ -100,7 +101,9 @@ def get_overview(caller_db: CallerDb) -> OverviewResponse:
             return dict(result)
 
         rows = [
-            DefinitionRow(image_digest=d.digest, created_at=d.created_at, stats=build_stats(d.digest))
+            DefinitionRow(
+                image_digest=d.digest, display_name=d.display_name, created_at=d.created_at, stats=build_stats(d.digest)
+            )
             for d in all_definitions
         ]
 
@@ -126,6 +129,7 @@ class ExampleStats(BaseModel):
 
 class DefinitionDetailResponse(BaseModel):
     image_digest: str
+    display_name: str | None
     agent_type: AgentType
     created_at: datetime
     stats: SplitStats
@@ -184,6 +188,7 @@ def get_definition_detail(image_digest: str, caller_db: CallerDb) -> DefinitionD
 
         return DefinitionDetailResponse(
             image_digest=definition.digest,
+            display_name=definition.display_name,
             agent_type=AgentType(definition.agent_type),
             created_at=definition.created_at,
             stats=dict(stats),
