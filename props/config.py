@@ -73,6 +73,7 @@ class CustomModelConfig(BaseModelMetadata):
     name: str
     upstream: str
     upstream_model: str
+    max_parallel_agents: int | None = None
 
 
 class DockerExecutorConfig(BaseModel):

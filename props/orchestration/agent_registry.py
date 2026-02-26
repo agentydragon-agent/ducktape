@@ -39,6 +39,7 @@ import asyncio
 import contextlib
 import logging
 import tempfile
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -177,6 +178,7 @@ class AgentRegistry:
         backend_url: str,
         agent_base_env: dict[str, str],
         registry_config: RegistryProxyConfig,
+        model_parallelism_limits: dict[str, int] | None = None,
     ) -> None:
         self._executor = executor
         self._db = db
@@ -186,6 +188,9 @@ class AgentRegistry:
         self._registry_config = registry_config
         # Track running background critic tasks by agent_run_id to prevent GC and allow lookup
         self._running_critics: dict[UUID, asyncio.Task[None]] = {}
+        self._model_semaphores: dict[str, asyncio.Semaphore] = {
+            model: asyncio.Semaphore(limit) for model, limit in (model_parallelism_limits or {}).items()
+        }
 
     async def close(self) -> None:
         await self._executor.close()
@@ -197,6 +202,24 @@ class AgentRegistry:
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         await self.close()
+
+    # --- Model Parallelism ---
+
+    @contextlib.asynccontextmanager
+    async def _model_slot(self, model: str) -> AsyncIterator[None]:
+        """Acquire a parallelism slot for the given model, if a limit is configured.
+
+        Blocks until a slot is available. No-op when no limit is configured for the model.
+        Held for the entire duration of the agent container run to bound concurrent usage.
+        """
+        sem = self._model_semaphores.get(model)
+        if sem is None:
+            yield
+        else:
+            if sem.locked():
+                logger.info("Model %s at capacity, queuing agent", model)
+            async with sem:
+                yield
 
     # --- Image Resolution ---
 
@@ -436,18 +459,19 @@ class AgentRegistry:
         agent_run_id = uuid4()
         slug_seg = _slug_to_container_segment(example.snapshot_slug)
         container_name = f"critic-{slug_seg}-{str(agent_run_id)[:8]}"
-        handle = await self._create_and_start(
-            agent_run_id,
-            image=image,
-            model=model,
-            type_config=CriticTypeConfig(example=example),
-            budget_usd=budget_usd,
-            parent_run_id=parent_run_id,
-            verify_snapshot=example.snapshot_slug,
-            container_name=container_name,
-            timeout_seconds=timeout_seconds,
-        )
-        await handle
+        async with self._model_slot(model):
+            handle = await self._create_and_start(
+                agent_run_id,
+                image=image,
+                model=model,
+                type_config=CriticTypeConfig(example=example),
+                budget_usd=budget_usd,
+                parent_run_id=parent_run_id,
+                verify_snapshot=example.snapshot_slug,
+                container_name=container_name,
+                timeout_seconds=timeout_seconds,
+            )
+            await handle
         return agent_run_id
 
     async def start_critic(
@@ -484,10 +508,11 @@ class AgentRegistry:
 
         async def _run() -> None:
             try:
-                handle = await self._start_agent(
-                    agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds, name=container_name
-                )
-                await handle
+                async with self._model_slot(model):
+                    handle = await self._start_agent(
+                        agent_run_id, image=image.oci_ref, timeout_seconds=timeout_seconds, name=container_name
+                    )
+                    await handle
             except Exception:
                 logger.exception("Unhandled error in background critic run %s", agent_run_id)
 
@@ -509,18 +534,19 @@ class AgentRegistry:
         """Run a critic-dev optimizer agent. Returns agent run ID (query DB for status)."""
         agent_run_id = uuid4()
         container_name = f"critic-dev-opt-{str(agent_run_id)[:8]}"
-        handle = await self._create_and_start(
-            agent_run_id,
-            image=image,
-            model=optimizer_model,
-            type_config=CriticDevOptimizeTypeConfig(
-                target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
-            ),
-            budget_usd=budget,
-            container_name=container_name,
-            timeout_seconds=timeout_seconds,
-        )
-        await handle
+        async with self._model_slot(optimizer_model):
+            handle = await self._create_and_start(
+                agent_run_id,
+                image=image,
+                model=optimizer_model,
+                type_config=CriticDevOptimizeTypeConfig(
+                    target_metric=target_metric, optimizer_model=optimizer_model, critic_model=critic_model
+                ),
+                budget_usd=budget,
+                container_name=container_name,
+                timeout_seconds=timeout_seconds,
+            )
+            await handle
         return agent_run_id
 
     async def run_critic_dev_improve(
@@ -552,21 +578,22 @@ class AgentRegistry:
 
         agent_run_id = uuid4()
         container_name = f"critic-dev-imp-{str(agent_run_id)[:8]}"
-        handle = await self._create_and_start(
-            agent_run_id,
-            image=image,
-            model=improvement_model,
-            type_config=CriticDevImproveTypeConfig(
-                baseline_image_digests=resolved_baselines,
-                allowed_examples=examples,
-                improvement_model=improvement_model,
-                critic_model=critic_model,
-            ),
-            budget_usd=budget_usd,
-            container_name=container_name,
-            timeout_seconds=timeout_seconds,
-        )
-        await handle
+        async with self._model_slot(improvement_model):
+            handle = await self._create_and_start(
+                agent_run_id,
+                image=image,
+                model=improvement_model,
+                type_config=CriticDevImproveTypeConfig(
+                    baseline_image_digests=resolved_baselines,
+                    allowed_examples=examples,
+                    improvement_model=improvement_model,
+                    critic_model=critic_model,
+                ),
+                budget_usd=budget_usd,
+                container_name=container_name,
+                timeout_seconds=timeout_seconds,
+            )
+            await handle
         return agent_run_id
 
     # --- State Tracking ---
