@@ -219,7 +219,7 @@ def get_snapshot_detail(
                         WHERE snapshot_slug = :slug
                           AND is_tp_in_expected_recall_scope(
                               snapshot_slug, tp_id, occurrence_id,
-                              :kind::example_kind_enum, :hash)
+                              CAST(:kind AS example_kind_enum), :hash)
                     """),
                     params,
                 ).all()
@@ -232,7 +232,7 @@ def get_snapshot_detail(
                         WHERE snapshot_slug = :slug
                           AND is_fp_relevant_for_scope(
                               snapshot_slug, fp_id,
-                              :kind::example_kind_enum, :hash)
+                              CAST(:kind AS example_kind_enum), :hash)
                     """),
                     params,
                 ).all()

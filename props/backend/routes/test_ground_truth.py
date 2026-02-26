@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from props.backend.auth import get_caller_db
 from props.backend.routes import ground_truth
 from props.core.agent_types import CriticDevOptimizeTypeConfig, TargetMetric
+from props.core.models.examples import SingleFileSetExample
 from props.db.database import Database
 from props.db.models import TruePositive
 from props.testing.fixtures.credentials import make_agent_credentials
@@ -136,6 +137,39 @@ async def test_critic_dev_optimize_cannot_see_valid_tps_in_detail(
         RLS policy can_access_snapshot_ground_truth() must block access
         for non-train snapshots to prevent overfitting.
     """)
+
+
+def test_admin_snapshot_detail_with_whole_snapshot_scope(synced_db: Database) -> None:
+    """Exercises the CAST(:kind AS example_kind_enum) SQL path.
+
+    Without the CAST, SQLAlchemy interprets :kind::example_kind_enum as a bind
+    parameter :kind followed by invalid SQL, causing a SyntaxError at query time.
+    Also exercises is_fp_relevant_for_scope which must use normalized tables.
+    """
+    resp = make_gt_client(synced_db).get(
+        "/api/gt/snapshots/test-fixtures/train1", params={"example_kind": "whole_snapshot"}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["slug"] == "test-fixtures/train1"
+    assert len(body["true_positives"]) > 0
+
+
+def test_admin_snapshot_detail_with_file_set_scope(
+    synced_db: Database, subtract_file_example: SingleFileSetExample
+) -> None:
+    """Exercises scope filtering with file_set example_kind and files_hash.
+
+    Uses the subtract.py file-set from train1 git fixtures. Exercises the
+    file_set branch of is_tp_in_expected_recall_scope and is_fp_relevant_for_scope.
+    """
+    resp = make_gt_client(synced_db).get(
+        f"/api/gt/snapshots/{subtract_file_example.snapshot_slug}",
+        params={"example_kind": "file_set", "files_hash": subtract_file_example.files_hash},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["slug"] == str(subtract_file_example.snapshot_slug)
 
 
 if __name__ == "__main__":
