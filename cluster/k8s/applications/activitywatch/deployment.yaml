@@ -19,6 +19,8 @@ spec:
     spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
+      imagePullSecrets:
+        - name: harbor-ci-robot
       containers:
         - name: aw-server
           image: registry.allegedly.works/activitywatch/aw-server:20260226052503-538df67 # {"$imagepolicy": "flux-system:activitywatch"}

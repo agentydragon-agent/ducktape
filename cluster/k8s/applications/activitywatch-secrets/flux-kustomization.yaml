@@ -1,18 +1,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: activitywatch
+  name: activitywatch-secrets
   namespace: flux-system
 spec:
   interval: 10m
-  timeout: 5m
+  path: ./cluster/k8s/applications/activitywatch-secrets
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./cluster/k8s/applications/activitywatch
-  prune: true
-  wait: true
   dependsOn:
     - name: activitywatch-namespace
-    - name: activitywatch-secrets
-    - name: proxmox-csi
+    - name: external-secrets-config
