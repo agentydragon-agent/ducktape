@@ -133,6 +133,23 @@ py_test(
 )
 
 py_test(
+    name = "test_model_metadata_sync",
+    srcs = ["test_model_metadata_sync.py"],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":model_metadata",
+        "//props:config",
+        "//props:conftest",
+        "//props/db:conftest",
+        "//props/db:database",
+        "//props/db:models",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
     name = "test_sync_snapshot_files",
     srcs = ["test_sync_snapshot_files.py"],
     imports = ["../../.."],

@@ -13,11 +13,11 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import case, func
 
 from openai_utils.model import ResponsesRequest, ResponsesResult
@@ -298,7 +298,9 @@ class RunsListResponse(BaseModel):
 class LLMRequestInfo(BaseModel):
     """LLM request information for API response.
 
-    Directly mirrors LLMRequest ORM model fields.
+    Directly mirrors LLMRequest ORM model fields. When the upstream returned
+    an error (4xx/5xx), the raw error JSON is in response_error_body instead
+    of response_body so it doesn't fail ResponsesResult validation.
     """
 
     model_config = {"from_attributes": True}
@@ -307,9 +309,36 @@ class LLMRequestInfo(BaseModel):
     model: str
     request_body: ResponsesRequest
     response_body: ResponsesResult | None
+    response_error_body: dict[str, Any] | None = None
     error: str | None
     latency_ms: int | None
     created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_error_response_body(cls, data: Any) -> Any:
+        """Move error response bodies to response_error_body to avoid ResponsesResult validation failure."""
+        if hasattr(data, "response_body"):
+            # ORM object path (from_attributes)
+            response_body = getattr(data, "response_body", None)
+            if isinstance(response_body, dict) and "id" not in response_body:
+                return {
+                    "id": data.id,
+                    "model": data.model,
+                    "request_body": data.request_body,
+                    "response_body": None,
+                    "response_error_body": response_body,
+                    "error": data.error,
+                    "latency_ms": data.latency_ms,
+                    "created_at": data.created_at,
+                }
+        elif isinstance(data, dict):
+            response_body = data.get("response_body")
+            if isinstance(response_body, dict) and "id" not in response_body:
+                data = dict(data)
+                data["response_error_body"] = data["response_body"]
+                data["response_body"] = None
+        return data
 
 
 class LLMRequestsResponse(BaseModel):
