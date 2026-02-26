@@ -52,13 +52,25 @@ def create_app(providers: dict[str, GenericOAuth2Provider], target_namespace: st
         for name, provider in providers.items():
             token = await get_store().read_token(provider.config.secret_name, target_namespace)
             if token is not None:
-                status = f"Connected (expires {token.expires_at.strftime('%Y-%m-%d')})"
+                if isinstance(provider, PlaidProvider):
+                    status = "Connected"
+                else:
+                    status = f"Connected (expires {token.expires_at.strftime('%Y-%m-%d')})"
                 action = "Reconnect"
             else:
                 status = "Not connected"
                 action = "Connect"
+            plaid_link_token = None
+            if isinstance(provider, PlaidProvider):
+                plaid_link_token = await provider.create_link_token(provider.generate_state())
             provider_rows.append(
-                {"name": name, "display_name": provider.config.display_name, "status": status, "action": action}
+                {
+                    "name": name,
+                    "display_name": provider.config.display_name,
+                    "status": status,
+                    "action": action,
+                    "plaid_link_token": plaid_link_token,
+                }
             )
         return index_template.render(providers=provider_rows)
 
