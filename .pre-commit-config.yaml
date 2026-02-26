@@ -214,8 +214,9 @@ repos:
             cluster/k8s/flux-system/gotk-components\.yaml|
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/blueprints/.*|
-            # Gatus application config, not a K8s manifest
-            cluster/k8s/gatus/config\.yaml
+            # Application config files, not K8s manifests
+            cluster/k8s/gatus/config\.yaml|
+            cluster/k8s/oauth-broker/config\.yaml
           )$
         types: [yaml]
 

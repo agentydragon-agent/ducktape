@@ -20,4 +20,3 @@ spec:
   dependsOn:
     - name: oauth-broker-namespace
     - name: oauth-broker-secrets
-    - name: openclaw-sandbox

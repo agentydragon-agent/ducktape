@@ -68,7 +68,7 @@ async def test_refresh_loop_refreshes_expiring_token(provider: GenericOAuth2Prov
         await _run_loop_briefly({"test": provider}, mock_writer, "test-ns")
 
     mock_writer.read_token.assert_called_with("test-tokens", "test-ns")
-    mock_writer.write_token.assert_called_with("test-tokens", "test-ns", refreshed_token)
+    mock_writer.write_token.assert_called_with("test-tokens", "test-ns", refreshed_token, annotations=None)
 
 
 async def test_refresh_loop_skips_fresh_token(provider: GenericOAuth2Provider) -> None:

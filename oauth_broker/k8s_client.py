@@ -20,10 +20,15 @@ class K8sTokenWriter:
         config.load_incluster_config()
         return cls(client.CoreV1Api())
 
-    async def write_token(self, secret_name: str, namespace: str, token: TokenData) -> None:
+    async def write_token(
+        self, secret_name: str, namespace: str, token: TokenData, annotations: dict[str, str] | None = None
+    ) -> None:
         secret = client.V1Secret(
             metadata=client.V1ObjectMeta(
-                name=secret_name, namespace=namespace, labels={"app.kubernetes.io/managed-by": "oauth-broker"}
+                name=secret_name,
+                namespace=namespace,
+                labels={"app.kubernetes.io/managed-by": "oauth-broker"},
+                annotations=annotations or None,
             ),
             string_data=token.model_dump(mode="json"),
             type="Opaque",

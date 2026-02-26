@@ -27,7 +27,9 @@ async def token_refresh_loop(
                     continue
                 logger.info(f"Refreshing token for {name} (expires {token.expires_at})")
                 new_token = await provider.refresh_tokens(token.refresh_token)
-                await k8s_writer.write_token(secret_name, target_namespace, new_token)
+                await k8s_writer.write_token(
+                    secret_name, target_namespace, new_token, annotations=provider.config.secret_annotations or None
+                )
                 logger.info(f"Refreshed token for {name} (new expiry {new_token.expires_at})")
             except Exception:
                 logger.exception(f"Failed to refresh token for {name}")

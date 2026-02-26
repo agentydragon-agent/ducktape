@@ -17,6 +17,7 @@ py_library(
     deps = [
         "@pypi//httpx",
         "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -129,6 +130,7 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@pypi//respx",
     ],
 )

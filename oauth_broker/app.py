@@ -83,7 +83,9 @@ def create_app(
             raise HTTPException(404, f"Unknown provider: {provider_name}")
 
         token = await provider.exchange_code(code)
-        await k8s_writer.write_token(provider.config.secret_name, target_namespace, token)
+        await k8s_writer.write_token(
+            provider.config.secret_name, target_namespace, token, annotations=provider.config.secret_annotations or None
+        )
         logger.info(f"Stored tokens for {provider_name} (expires {token.expires_at})")
         return RedirectResponse("/")
 

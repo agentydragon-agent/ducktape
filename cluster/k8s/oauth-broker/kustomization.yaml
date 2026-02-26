@@ -11,4 +11,4 @@ configMapGenerator:
   - name: oauth-broker-config
     namespace: oauth-broker
     files:
-      - config.json
+      - config.yaml

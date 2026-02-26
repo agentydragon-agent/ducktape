@@ -1,0 +1,38 @@
+providers:
+  - name: oura
+    display_name: Oura Ring
+    authorize_url: https://cloud.ouraring.com/oauth/authorize
+    token_url: https://api.ouraring.com/oauth/token
+    scopes:
+      - email
+      - personal
+      - daily
+      - heartrate
+      - workout
+      - tag
+      - session
+      - spo2
+    redirect_uri: https://oauth-broker.allegedly.works/callback/oura
+    secret_name: oura-tokens
+    secret_annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+    refresh_margin_seconds: 3600
+
+  - name: google
+    display_name: Google (Gmail, Drive, Calendar)
+    authorize_url: https://accounts.google.com/o/oauth2/v2/auth
+    token_url: https://oauth2.googleapis.com/token
+    scopes:
+      - https://www.googleapis.com/auth/gmail.readonly
+      - https://www.googleapis.com/auth/drive.readonly
+      - https://www.googleapis.com/auth/calendar.readonly
+    redirect_uri: https://oauth-broker.allegedly.works/callback/google
+    secret_name: google-tokens
+    secret_annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+    refresh_margin_seconds: 300
+    extra_auth_params:
+      access_type: offline
+      prompt: consent

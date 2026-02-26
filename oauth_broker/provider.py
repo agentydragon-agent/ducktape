@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
+import yaml
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,11 @@ class ProviderConfig(BaseModel):
     scopes: list[str] = Field(description="OAuth2 scopes to request")
     redirect_uri: str = Field(description="OAuth2 redirect URI")
     secret_name: str = Field(description="K8s secret name for storing tokens")
+    secret_annotations: dict[str, str] = Field(
+        default_factory=dict, description="Annotations to add to the token secret"
+    )
     refresh_margin_seconds: int = Field(default=3600, description="Seconds before expiry to trigger refresh")
+    extra_auth_params: dict[str, str] = Field(default_factory=dict, description="Extra query params for authorize URL")
 
 
 class TokenData(BaseModel):
@@ -32,12 +37,14 @@ class TokenData(BaseModel):
 
 
 class BrokerConfig(BaseModel):
-    target_namespace: str = Field(default="openclaw-sandbox", description="K8s namespace to write token secrets to")
+    target_namespace: str | None = Field(
+        default=None, description="K8s namespace to write token secrets to (auto-detected from pod if omitted)"
+    )
     providers: list[ProviderConfig] = Field(description="OAuth2 provider configurations")
 
     @classmethod
     def from_file(cls, path: Path) -> "BrokerConfig":
-        return cls.model_validate_json(path.read_text())
+        return cls.model_validate(yaml.safe_load(path.read_text()))
 
 
 class GenericOAuth2Provider:
@@ -53,6 +60,7 @@ class GenericOAuth2Provider:
             "redirect_uri": self.config.redirect_uri,
             "scope": " ".join(self.config.scopes),
             "state": state,
+            **self.config.extra_auth_params,
         }
         return f"{self.config.authorize_url}?{urlencode(params)}"
 
@@ -86,7 +94,11 @@ class GenericOAuth2Provider:
                 },
             )
             response.raise_for_status()
-            return _parse_token_response(response.json())
+            token = _parse_token_response(response.json())
+            # Google omits refresh_token on refresh responses — preserve the old one
+            if not token.refresh_token:
+                token = token.model_copy(update={"refresh_token": refresh_token})
+            return token
 
     def needs_refresh(self, token: TokenData) -> bool:
         margin = timedelta(seconds=self.config.refresh_margin_seconds)
@@ -97,7 +109,7 @@ def _parse_token_response(data: dict) -> TokenData:
     expires_in = data.get("expires_in", 2592000)
     return TokenData(
         access_token=data["access_token"],
-        refresh_token=data["refresh_token"],
+        refresh_token=data.get("refresh_token", ""),
         token_type=data.get("token_type", "Bearer"),
         expires_at=datetime.now(UTC) + timedelta(seconds=expires_in),
         scope=data.get("scope", ""),

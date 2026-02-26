@@ -13,9 +13,21 @@ from oauth_broker.provider import BrokerConfig, GenericOAuth2Provider
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
 
+_NAMESPACE_FILE = Path("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+
+
+def _detect_namespace(config: BrokerConfig) -> str:
+    if config.target_namespace is not None:
+        return config.target_namespace
+    if _NAMESPACE_FILE.exists():
+        return _NAMESPACE_FILE.read_text().strip()
+    raise RuntimeError("target_namespace not set in config and not running in a K8s pod")
+
+
 def main() -> None:
-    config_path = Path(os.environ.get("OAUTH_BROKER_CONFIG", "/etc/oauth-broker/config.json"))
+    config_path = Path(os.environ.get("OAUTH_BROKER_CONFIG", "/etc/oauth-broker/config.yaml"))
     config = BrokerConfig.from_file(config_path)
+    target_namespace = _detect_namespace(config)
 
     providers: dict[str, GenericOAuth2Provider] = {}
     for p in config.providers:
@@ -25,7 +37,7 @@ def main() -> None:
         providers[p.name] = GenericOAuth2Provider(p, client_id, client_secret)
 
     k8s_writer = K8sTokenWriter.from_incluster()
-    app = create_app(providers, k8s_writer, config.target_namespace)
+    app = create_app(providers, k8s_writer, target_namespace)
     uvicorn.run(app, host="0.0.0.0", port=8080)
 
 
