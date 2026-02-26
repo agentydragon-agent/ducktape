@@ -7,7 +7,6 @@ fast on repeated invocations.
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from datetime import datetime
@@ -15,6 +14,7 @@ from pathlib import Path
 
 import httpx
 from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,18 @@ CREDENTIALS_PATH = Path.home() / ".claude" / ".credentials.json"
 CACHE_PATH = Path.home() / ".cache" / "claude-hooks" / "usage_cache.json"
 CACHE_TTL_SECONDS = 120
 API_TIMEOUT_SECONDS = 2.0
+
+
+class _OAuthCredentials(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
+
+    access_token: str | None = None
+
+
+class _Credentials(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
+
+    claude_ai_oauth: _OAuthCredentials | None = None
 
 
 class UsageBucket(BaseModel):
@@ -49,9 +61,9 @@ class _CachedUsage(BaseModel):
 def _read_access_token() -> str | None:
     """Read OAuth access token from Claude credentials file."""
     try:
-        data = json.loads(CREDENTIALS_PATH.read_text())
-        return data["claudeAiOauth"]["accessToken"]
-    except (OSError, KeyError, json.JSONDecodeError):
+        creds = _Credentials.model_validate_json(CREDENTIALS_PATH.read_text())
+        return creds.claude_ai_oauth.access_token if creds.claude_ai_oauth else None
+    except (OSError, ValueError):
         logger.debug("Could not read Claude OAuth token from %s", CREDENTIALS_PATH)
         return None
 
