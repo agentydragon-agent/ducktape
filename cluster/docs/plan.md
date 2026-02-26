@@ -47,6 +47,12 @@ See <changelog.md> for detailed change history.
       `photoslibrary.readonly`. Enable Photos Library API in GCP project.
 - [ ] **OAuth broker: add Google Tasks readonly** —
       `tasks.readonly`. Enable Tasks API in GCP project.
+- [ ] **OAuth broker: add Google Slides readonly** —
+      `presentations.readonly`. Enable Slides API in GCP project.
+- [ ] **OAuth broker: add Google Forms readonly** —
+      `forms.body.readonly` + `forms.responses.readonly`. Enable Forms API in GCP project.
+- [ ] **OAuth broker: add Google Keep write scope** —
+      `keep` (full read-write). Requires approval flow for write operations.
 - [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
 - [ ] **Harbor terraform: switch to robot accounts** for least-privilege
 - [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —

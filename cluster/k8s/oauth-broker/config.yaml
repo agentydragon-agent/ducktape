@@ -31,6 +31,7 @@ providers:
       - https://www.googleapis.com/auth/documents.readonly
       - https://www.googleapis.com/auth/spreadsheets.readonly
       - https://www.googleapis.com/auth/youtube.readonly
+      - https://www.googleapis.com/auth/keep.readonly
     redirect_uri: https://oauth-broker.allegedly.works/callback/google
     secret_name: google-tokens
     secret_annotations:
