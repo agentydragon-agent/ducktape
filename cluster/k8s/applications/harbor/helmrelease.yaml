@@ -93,7 +93,7 @@ spec:
       resources:
         requests:
           memory: 128Mi
-          cpu: 100m
+          cpu: 20m
         limits:
           memory: 512Mi
           cpu: 500m
@@ -119,7 +119,7 @@ spec:
         resources:
           requests:
             memory: 128Mi
-            cpu: 100m
+            cpu: 35m
           limits:
             memory: 512Mi
             cpu: 200m
@@ -132,7 +132,7 @@ spec:
         resources:
           requests:
             memory: 64Mi
-            cpu: 100m
+            cpu: 20m
           limits:
             memory: 512Mi
             cpu: 200m
@@ -143,7 +143,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       resources:
         requests:
-          cpu: 200m
+          cpu: 20m
           memory: 64Mi
         limits:
           cpu: 1000m
@@ -160,7 +160,7 @@ spec:
       resources:
         requests:
           memory: 64Mi
-          cpu: 100m
+          cpu: 20m
         limits:
           memory: 512Mi
           cpu: 200m
@@ -172,7 +172,7 @@ spec:
       resources:
         requests:
           memory: 32Mi
-          cpu: 100m
+          cpu: 20m
         limits:
           memory: 512Mi
           cpu: 200m

@@ -96,7 +96,7 @@ spec:
     vault:
       requests:
         memory: "128Mi"
-        cpu: "250m"
+        cpu: "60m"
       limits:
         memory: "512Mi"
         cpu: "500m"
