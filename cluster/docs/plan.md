@@ -53,6 +53,11 @@ See <changelog.md> for detailed change history.
       `forms.body.readonly` + `forms.responses.readonly`. Enable Forms API in GCP project.
 - [ ] **OAuth broker: add Google Keep write scope** —
       `keep` (full read-write). Requires approval flow for write operations.
+- [ ] **OAuth broker: reflect only access tokens** — Currently the Reflector-mirrored
+      secret contains the long-lived refresh token. Consider reflecting only the
+      short-lived access token to consumer namespaces, keeping refresh tokens in the
+      `oauth-broker` namespace only. Reduces blast radius if a consumer namespace is
+      compromised.
 - [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
 - [ ] **Harbor terraform: switch to robot accounts** for least-privilege
 - [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —

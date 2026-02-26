@@ -17,6 +17,8 @@ providers:
     secret_annotations:
       reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
       reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
     refresh_margin_seconds: 3600
 
   - name: google
@@ -37,6 +39,8 @@ providers:
     secret_annotations:
       reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
       reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
     refresh_margin_seconds: 300
     extra_auth_params:
       access_type: offline
