@@ -44,8 +44,9 @@ See <changelog.md> for detailed change history.
       `gmail.send`, `gmail.compose` (drafts + send), `drive` (read-write),
       `spreadsheets` (read-write).
 - [ ] **OAuth broker: add Google Photos readonly** —
-      `https://www.googleapis.com/auth/photoslibrary.readonly`. Add to Google provider
-      scopes and enable Photos Library API in GCP project.
+      `photoslibrary.readonly`. Enable Photos Library API in GCP project.
+- [ ] **OAuth broker: add Google Tasks readonly** —
+      `tasks.readonly`. Enable Tasks API in GCP project.
 - [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
 - [ ] **Harbor terraform: switch to robot accounts** for least-privilege
 - [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —
