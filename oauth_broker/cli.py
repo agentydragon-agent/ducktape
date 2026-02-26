@@ -7,7 +7,7 @@ from pathlib import Path
 import uvicorn
 
 from oauth_broker.app import create_app
-from oauth_broker.provider import BrokerConfig, GenericOAuth2Provider, PlaidProvider
+from oauth_broker.provider import BrokerConfig, GenericOAuth2Provider, PlaidProvider, PlaidProviderConfig, Provider
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -28,12 +28,12 @@ def main() -> None:
     config = BrokerConfig.from_file(config_path)
     target_namespace = _detect_namespace(config)
 
-    providers: dict[str, GenericOAuth2Provider] = {}
+    providers: dict[str, Provider] = {}
     for p in config.providers:
         prefix = p.name.upper()
         client_id = os.environ[f"{prefix}_CLIENT_ID"]
         client_secret = os.environ[f"{prefix}_CLIENT_SECRET"]
-        if p.provider_type == "plaid":
+        if isinstance(p, PlaidProviderConfig):
             providers[p.name] = PlaidProvider(p, client_id, client_secret)
         else:
             providers[p.name] = GenericOAuth2Provider(p, client_id, client_secret)

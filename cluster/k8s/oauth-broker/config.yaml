@@ -1,5 +1,6 @@
 providers:
   - name: oura
+    provider_type: oauth2
     display_name: Oura Ring
     authorize_url: https://cloud.ouraring.com/oauth/authorize
     token_url: https://api.ouraring.com/oauth/token
@@ -22,6 +23,7 @@ providers:
     refresh_margin_seconds: 3600
 
   - name: google
+    provider_type: oauth2
     display_name: Google
     authorize_url: https://accounts.google.com/o/oauth2/v2/auth
     token_url: https://oauth2.googleapis.com/token
@@ -47,11 +49,10 @@ providers:
       prompt: consent
 
   - name: plaid
-    display_name: Plaid
     provider_type: plaid
-    authorize_url: https://cdn.plaid.com/link/v2/stable/link.html # unused; PlaidProvider creates a link_token instead
+    display_name: Plaid
     token_url: https://production.plaid.com/item/public_token/exchange
-    scopes:
+    products:
       - transactions
       - auth
       - identity
@@ -63,5 +64,3 @@ providers:
       reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
       reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
       reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
-    # Plaid access tokens do not expire.
-    refresh_margin_seconds: 0

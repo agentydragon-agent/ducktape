@@ -10,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
 
 from oauth_broker.k8s_client import K8sTokenStore
-from oauth_broker.provider import GenericOAuth2Provider, PlaidProvider
+from oauth_broker.provider import PlaidProvider, Provider
 from oauth_broker.refresh import token_refresh_loop
 
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class _PlaidCallbackBody(BaseModel):
     public_token: str
 
 
-def create_app(providers: dict[str, GenericOAuth2Provider], target_namespace: str) -> FastAPI:
+def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI:
     app = FastAPI(title="OAuth Broker", docs_url=None, redoc_url=None)
     jinja_env = Environment(loader=FileSystemLoader(Path(__file__).parent), autoescape=True)
     index_template = jinja_env.get_template("index.html.j2")
@@ -106,15 +106,15 @@ def create_app(providers: dict[str, GenericOAuth2Provider], target_namespace: st
             return HTMLResponse(plaid_template.render(link_token=link_token, received_redirect_uri=str(request.url)))
 
         code = request.query_params.get("code")
-        state = request.query_params.get("state")
+        state_param = request.query_params.get("state")
         error = request.query_params.get("error")
 
         if error:
             raise HTTPException(400, f"OAuth error: {error}")
-        if not code or not state:
+        if not code or not state_param:
             raise HTTPException(400, "Missing code or state parameter")
 
-        expected_provider = _pending_states.pop(state, None)
+        expected_provider = _pending_states.pop(state_param, None)
         if expected_provider is None:
             raise HTTPException(400, "Invalid or expired state parameter")
         if expected_provider != provider_name:

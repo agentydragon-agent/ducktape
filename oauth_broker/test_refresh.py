@@ -7,14 +7,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_bazel
 
-from oauth_broker.provider import GenericOAuth2Provider, ProviderConfig, TokenData
+from oauth_broker.provider import GenericOAuth2Provider, OAuth2ProviderConfig, TokenData
 from oauth_broker.refresh import token_refresh_loop
 
 
 @pytest.fixture
 def provider() -> GenericOAuth2Provider:
     return GenericOAuth2Provider(
-        ProviderConfig(
+        OAuth2ProviderConfig(
             name="test",
             display_name="Test Provider",
             authorize_url="https://example.com/authorize",
