@@ -39,6 +39,13 @@ See <changelog.md> for detailed change history.
       gateway-side injection, or upstream PR for `"trusted-proxy"` in `sharedAuthOk`.
 - [ ] **Proxy outpost HA: shared session storage** — 1 replica limit (sessions in `/dev/shm`).
       Options: `CiliumEnvoyConfig` cookie hash, Gateway API `BackendLBPolicy`, upstream fix.
+- [ ] **OAuth broker: upgrade Google scopes (needs approval flow)** — Add write
+      scopes once agent approval mechanism is in place: `calendar` (read-write),
+      `gmail.send`, `gmail.compose` (drafts + send), `drive` (read-write),
+      `spreadsheets` (read-write).
+- [ ] **OAuth broker: add Google Photos readonly** —
+      `https://www.googleapis.com/auth/photoslibrary.readonly`. Add to Google provider
+      scopes and enable Photos Library API in GCP project.
 - [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
 - [ ] **Harbor terraform: switch to robot accounts** for least-privilege
 - [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —
