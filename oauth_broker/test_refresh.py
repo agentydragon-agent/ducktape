@@ -48,9 +48,9 @@ def _make_refreshed_token() -> TokenData:
 
 
 async def _run_loop_briefly(
-    providers: dict[str, GenericOAuth2Provider], k8s_writer: AsyncMock, namespace: str, sleep: float = 0.05
+    providers: dict[str, GenericOAuth2Provider], k8s_store: AsyncMock, namespace: str, sleep: float = 0.05
 ) -> None:
-    task = asyncio.create_task(token_refresh_loop(providers, k8s_writer, namespace, check_interval=0))
+    task = asyncio.create_task(token_refresh_loop(providers, k8s_store, namespace, check_interval=0))
     await asyncio.sleep(sleep)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -61,35 +61,35 @@ async def test_refresh_loop_refreshes_expiring_token(provider: GenericOAuth2Prov
     expiring_token = _make_token(hours_until_expiry=0.5)
     refreshed_token = _make_refreshed_token()
 
-    mock_writer = AsyncMock()
-    mock_writer.read_token.return_value = expiring_token
+    mock_store = AsyncMock()
+    mock_store.read_token.return_value = expiring_token
 
     with patch.object(provider, "refresh_tokens", return_value=refreshed_token):
-        await _run_loop_briefly({"test": provider}, mock_writer, "test-ns")
+        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
 
-    mock_writer.read_token.assert_called_with("test-tokens", "test-ns")
-    mock_writer.write_token.assert_called_with("test-tokens", "test-ns", refreshed_token, annotations=None)
+    mock_store.read_token.assert_called_with("test-tokens", "test-ns")
+    mock_store.write_token.assert_called_with("test-tokens", "test-ns", refreshed_token, annotations=None)
 
 
 async def test_refresh_loop_skips_fresh_token(provider: GenericOAuth2Provider) -> None:
     fresh_token = _make_token(hours_until_expiry=720)
 
-    mock_writer = AsyncMock()
-    mock_writer.read_token.return_value = fresh_token
+    mock_store = AsyncMock()
+    mock_store.read_token.return_value = fresh_token
 
     with patch.object(provider, "refresh_tokens") as mock_refresh:
-        await _run_loop_briefly({"test": provider}, mock_writer, "test-ns")
+        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
 
     mock_refresh.assert_not_called()
-    mock_writer.write_token.assert_not_called()
+    mock_store.write_token.assert_not_called()
 
 
 async def test_refresh_loop_skips_unconnected_provider(provider: GenericOAuth2Provider) -> None:
-    mock_writer = AsyncMock()
-    mock_writer.read_token.return_value = None
+    mock_store = AsyncMock()
+    mock_store.read_token.return_value = None
 
     with patch.object(provider, "refresh_tokens") as mock_refresh:
-        await _run_loop_briefly({"test": provider}, mock_writer, "test-ns")
+        await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
 
     mock_refresh.assert_not_called()
 
@@ -97,8 +97,8 @@ async def test_refresh_loop_skips_unconnected_provider(provider: GenericOAuth2Pr
 async def test_refresh_loop_continues_on_error(provider: GenericOAuth2Provider) -> None:
     expiring_token = _make_token(hours_until_expiry=0.5)
 
-    mock_writer = AsyncMock()
-    mock_writer.read_token.return_value = expiring_token
+    mock_store = AsyncMock()
+    mock_store.read_token.return_value = expiring_token
 
     call_count = 0
 
@@ -108,10 +108,10 @@ async def test_refresh_loop_continues_on_error(provider: GenericOAuth2Provider) 
         raise RuntimeError("network error")
 
     with patch.object(provider, "refresh_tokens", side_effect=failing_refresh):
-        await _run_loop_briefly({"test": provider}, mock_writer, "test-ns", sleep=0.1)
+        await _run_loop_briefly({"test": provider}, mock_store, "test-ns", sleep=0.1)
 
     assert call_count >= 2
-    mock_writer.write_token.assert_not_called()
+    mock_store.write_token.assert_not_called()
 
 
 if __name__ == "__main__":

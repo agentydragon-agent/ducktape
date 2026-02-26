@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
 
-from oauth_broker.k8s_client import K8sTokenWriter
+from oauth_broker.k8s_client import K8sTokenStore
 from oauth_broker.provider import GenericOAuth2Provider
 from oauth_broker.refresh import token_refresh_loop
 
@@ -17,19 +17,24 @@ logger = logging.getLogger(__name__)
 _pending_states: dict[str, str] = {}
 
 
-def create_app(
-    providers: dict[str, GenericOAuth2Provider], k8s_writer: K8sTokenWriter, target_namespace: str
-) -> FastAPI:
+def create_app(providers: dict[str, GenericOAuth2Provider], target_namespace: str) -> FastAPI:
     app = FastAPI(title="OAuth Broker", docs_url=None, redoc_url=None)
     jinja_env = Environment(loader=FileSystemLoader(Path(__file__).parent), autoescape=True)
     template = jinja_env.get_template("index.html.j2")
     background_tasks: set[asyncio.Task[None]] = set()
+    k8s_store: K8sTokenStore | None = None
 
     @app.on_event("startup")
-    async def start_refresh_loop() -> None:
-        task = asyncio.create_task(token_refresh_loop(providers, k8s_writer, target_namespace))
+    async def startup() -> None:
+        nonlocal k8s_store
+        k8s_store = await K8sTokenStore.from_incluster()
+        task = asyncio.create_task(token_refresh_loop(providers, k8s_store, target_namespace))
         background_tasks.add(task)
         task.add_done_callback(background_tasks.discard)
+
+    def get_store() -> K8sTokenStore:
+        assert k8s_store is not None, "K8sTokenStore not initialized"
+        return k8s_store
 
     @app.get("/health")
     async def health() -> dict:
@@ -39,7 +44,7 @@ def create_app(
     async def index() -> str:
         provider_rows = []
         for name, provider in providers.items():
-            token = await k8s_writer.read_token(provider.config.secret_name, target_namespace)
+            token = await get_store().read_token(provider.config.secret_name, target_namespace)
             if token is not None:
                 status = f"Connected (expires {token.expires_at.strftime('%Y-%m-%d')})"
                 action = "Reconnect"
@@ -83,7 +88,7 @@ def create_app(
             raise HTTPException(404, f"Unknown provider: {provider_name}")
 
         token = await provider.exchange_code(code)
-        await k8s_writer.write_token(
+        await get_store().write_token(
             provider.config.secret_name, target_namespace, token, annotations=provider.config.secret_annotations or None
         )
         logger.info(f"Stored tokens for {provider_name} (expires {token.expires_at})")
@@ -93,7 +98,7 @@ def create_app(
     async def status() -> dict:
         result = {}
         for name, provider in providers.items():
-            token = await k8s_writer.read_token(provider.config.secret_name, target_namespace)
+            token = await get_store().read_token(provider.config.secret_name, target_namespace)
             if token is not None:
                 result[name] = {"connected": True, "expires_at": token.expires_at.isoformat(), "scope": token.scope}
             else:

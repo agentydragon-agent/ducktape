@@ -11,12 +11,12 @@ from oauth_broker.provider import TokenData
 logger = logging.getLogger(__name__)
 
 
-class K8sTokenWriter:
+class K8sTokenStore:
     def __init__(self, api: client.CoreV1Api) -> None:
         self._api = api
 
     @classmethod
-    def from_incluster(cls) -> "K8sTokenWriter":
+    async def from_incluster(cls) -> "K8sTokenStore":
         config.load_incluster_config()
         return cls(client.CoreV1Api())
 
