@@ -19,7 +19,9 @@ a, button.link { color: #0066cc; background: none; border: none; padding: 0; cur
   <td>{{ p.display_name }}</td>
   <td>{{ p.status }}</td>
   <td>
-    {% if p.plaid_link_token %}
+    {% if p.plaid_error %}
+    <span style="color: #cc0000;">{{ p.plaid_error }}</span>
+    {% elif p.plaid_link_token %}
     <button class="link" onclick="openPlaidLink({{ p.plaid_link_token | tojson }})">{{ p.action }}</button>
     {% else %}
     <a href="/authorize/{{ p.name }}">{{ p.action }}</a>

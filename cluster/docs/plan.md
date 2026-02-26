@@ -24,6 +24,9 @@ See <changelog.md> for detailed change history.
 - [ ] **OpenClaw: fix Ollama model discovery timeout on startup** — `TimeoutError` on
       every pod restart (KubeSpan not ready). Options: init container wait, retry with
       backoff, or `startupProbe` delay.
+- [ ] **Plaid integration: fix onboarding** — `link/token/create` returns 400.
+      Plaid's production onboarding process is involved (redirect URI registration,
+      per-product approval, environment-specific keys). Revisit when needed.
 - [ ] **Grocy: provision API token for agent access**
 - [ ] **Test all SSO flows** — Remaining: Harbor SSO. Run `scripts/check-authentik-login.py`.
 - [ ] **Consider moving more PVCs to `local-path`** — Proxmox CSI has 29 LUN hard limit.

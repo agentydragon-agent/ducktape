@@ -4,6 +4,7 @@ import asyncio
 import logging
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
@@ -61,8 +62,13 @@ def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI
                 status = "Not connected"
                 action = "Connect"
             plaid_link_token = None
+            plaid_error = None
             if isinstance(provider, PlaidProvider):
-                plaid_link_token = await provider.create_link_token(provider.generate_state())
+                try:
+                    plaid_link_token = await provider.create_link_token(provider.generate_state())
+                except httpx.HTTPStatusError as exc:
+                    logger.warning(f"Plaid link token creation failed for {name}: {exc.response.status_code}")
+                    plaid_error = f"Plaid API error ({exc.response.status_code})"
             provider_rows.append(
                 {
                     "name": name,
@@ -70,6 +76,7 @@ def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI
                     "status": status,
                     "action": action,
                     "plaid_link_token": plaid_link_token,
+                    "plaid_error": plaid_error,
                 }
             )
         return index_template.render(providers=provider_rows)
