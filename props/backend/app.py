@@ -115,6 +115,9 @@ def _make_lifespan(deps: BackendDeps):
 
         executor = await create_executor(deps.config.executor, db_config, deps.registry_proxy_config)
         logger.info("Using %s executor", deps.config.executor.type)
+        model_parallelism_limits = {
+            m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
+        }
         app.state.registry = AgentRegistry(
             executor=executor,
             db=db,
@@ -122,6 +125,7 @@ def _make_lifespan(deps: BackendDeps):
             backend_url=deps.backend_url,
             agent_base_env=deps.config.agent_env,
             registry_config=deps.registry_proxy_config,
+            model_parallelism_limits=model_parallelism_limits,
         )
 
         if deps.grader_model:
