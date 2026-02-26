@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - externalsecret.yaml
   - ibkr-flex-query-credentials-sealed.yaml
+  - coinbase-api-credentials-sealed.yaml
