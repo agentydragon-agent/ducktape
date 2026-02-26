@@ -21,7 +21,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       containers:
         - name: aw-server
-          image: 20260226052503-538df67 # {"$imagepolicy": "flux-system:activitywatch:tag"}
+          image: registry.allegedly.works/activitywatch/aw-server:20260226052503-538df67 # {"$imagepolicy": "flux-system:activitywatch"}
           ports:
             - containerPort: 5600
               name: http
