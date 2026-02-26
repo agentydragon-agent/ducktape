@@ -44,16 +44,16 @@ spec:
                 secretKeyRef:
                   name: oura-client-credentials
                   key: client_secret
-            # - name: GOOGLE_CLIENT_ID
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: google-client-credentials
-            #       key: client_id
-            # - name: GOOGLE_CLIENT_SECRET
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: google-client-credentials
-            #       key: client_secret
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_id
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_secret
           volumeMounts:
             - name: config
               mountPath: /etc/oauth-broker

@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
   - oura-client-credentials-sealed.yaml
   - harbor-robot-eso.yaml
-  # google-client-credentials-sealed.yaml — not yet created, re-enable when credentials are available
+  - google-client-credentials-sealed.yaml
