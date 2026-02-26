@@ -54,14 +54,8 @@ def sync_model_metadata_with_session(session: Session, config: PropsConfig | Non
                 upstream_model=custom.upstream_model,
             )
 
-    # Fast path: if count matches, assume synced
-    existing_count = session.query(ModelMetadata).count()
-    if existing_count == len(source_models):
-        logger.debug(f"Model metadata already synced ({existing_count} models)")
-        return SyncStats(added=0, updated=0, deleted=0, total=existing_count)
-
     # Full sync: make DB exactly match source
-    logger.info(f"Syncing model_metadata table (source: {len(source_models)} models, DB: {existing_count})...")
+    logger.info(f"Syncing model_metadata table (source: {len(source_models)} models)...")
 
     db_models = {m.model_id: m for m in session.query(ModelMetadata).all()}
     source_model_ids = set(source_models.keys())
