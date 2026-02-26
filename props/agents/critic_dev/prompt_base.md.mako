@@ -43,7 +43,7 @@ Everything. A critic is any container that writes critique data to the database.
 
 **Remember:** You're building an agent, not just writing a prompt. What matters is the result: critic definitions with good evaluated recall metrics.
 
-${source_inspection("critic", [
+${source_inspection([
     ("props.agents.critic.main", "Critic entry point and tools"),
     ("props.agents.runtime", "Runtime helpers"),
     ("props.db.models", "SQLAlchemy models"),

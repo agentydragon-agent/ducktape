@@ -77,7 +77,7 @@ Each wake cycle:
 3. When `list_pending` returns empty, call `list_clustering_pending` and cluster unmatched issues
 4. When both are empty, you'll be paused until the next change
 
-${source_inspection("grader", [
+${source_inspection([
     ("props.agents.grader.main", "Entry point"),
     ("props.agents.grader.loop", "Grading loop"),
     ("props.agents.grader.tools", "Tool implementations"),

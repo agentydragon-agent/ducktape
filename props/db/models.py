@@ -330,6 +330,9 @@ class TruePositive(Base):
     """
 
     __tablename__ = "true_positives"
+    __table_args__ = (
+        CheckConstraint("tp_id ~ '^[a-z0-9_-]+$' AND length(tp_id) >= 5 AND length(tp_id) <= 40", name="tp_id_format"),
+    )
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
@@ -373,7 +376,10 @@ class FalsePositive(Base):
     """
 
     __tablename__ = "false_positives"
-    __table_args__ = ({"comment": "Patterns the labeler considers acceptable - teaches agents what NOT to flag."},)
+    __table_args__ = (
+        CheckConstraint("fp_id ~ '^[a-z0-9_-]+$' AND length(fp_id) >= 5 AND length(fp_id) <= 40", name="fp_id_format"),
+        {"comment": "Patterns the labeler considers acceptable - teaches agents what NOT to flag."},
+    )
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
@@ -556,6 +562,8 @@ class OccurrenceRangeORM(Base):
             "snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id", name="uq_occurrence_ranges"
         ),
         CheckConstraint("(tp_id IS NULL) <> (fp_id IS NULL)", name="occurrence_range_exclusive_arc"),
+        CheckConstraint("start_line >= 1", name="occurrence_range_start_line_positive"),
+        CheckConstraint("end_line >= start_line", name="occurrence_range_end_gte_start"),
     )
 
     # Relationships - use foreign() to specify which columns to join on
@@ -723,6 +731,11 @@ class ReportedIssue(Base):
     """
 
     __tablename__ = "reported_issues"
+    __table_args__ = (
+        CheckConstraint(
+            "issue_id ~ '^[a-z0-9_-]+$' AND length(issue_id) >= 5 AND length(issue_id) <= 40", name="issue_id_format"
+        ),
+    )
 
     agent_run_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -781,6 +794,7 @@ class ReportedIssueOccurrence(Base):
             ["reported_issues.agent_run_id", "reported_issues.issue_id"],
             ondelete="CASCADE",
         ),
+        CheckConstraint("jsonb_array_length(locations) > 0", name="locations_not_empty"),
     )
 
     # Relationships
@@ -848,7 +862,15 @@ class GradingEdge(Base):
     """
 
     __tablename__ = "grading_edges"
-    __table_args__ = ({"comment": "Bipartite graph edges from critique issues to GT occurrences."},)
+    __table_args__ = (
+        CheckConstraint(
+            "(tp_id IS NOT NULL AND tp_occurrence_id IS NOT NULL AND fp_id IS NULL AND fp_occurrence_id IS NULL) "
+            "OR (fp_id IS NOT NULL AND fp_occurrence_id IS NOT NULL AND tp_id IS NULL AND tp_occurrence_id IS NULL)",
+            name="exactly_one_target_edge",
+        ),
+        CheckConstraint("credit >= 0.0 AND credit <= 1.0", name="credit_range_edge"),
+        {"comment": "Bipartite graph edges from critique issues to GT occurrences."},
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 

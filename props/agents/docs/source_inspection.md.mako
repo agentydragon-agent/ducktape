@@ -11,5 +11,3 @@ You can also write and run Python scripts with `exec`. Key modules:
 % for mod, desc in modules:
 - `${mod}` — ${desc}
 % endfor
-
-You can also extract files from the `${image_name}` image with `crane export` (see the Built-in Critic Internals section).

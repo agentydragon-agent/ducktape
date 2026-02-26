@@ -93,12 +93,10 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
 
     ctx["describe_relation"] = _describe_relation
 
-    def _source_inspection(image_name: str, modules: list[tuple[str, str]]) -> str:
+    def _source_inspection(modules: list[tuple[str, str]]) -> str:
         """Render Source Code Inspection section from Mako template."""
         content = (importlib.resources.files("props") / "agents/docs/source_inspection.md.mako").read_text()
-        rendered: str = Template(content, preprocessor=markdown_heading_preprocessor).render(
-            image_name=image_name, modules=modules
-        )
+        rendered: str = Template(content, preprocessor=markdown_heading_preprocessor).render(modules=modules)
         return rendered
 
     ctx["source_inspection"] = _source_inspection
