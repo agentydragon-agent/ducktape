@@ -45,3 +45,24 @@ providers:
     extra_auth_params:
       access_type: offline
       prompt: consent
+
+  - name: plaid
+    display_name: Plaid
+    # Plaid Link initiation URL. Full flow requires a link_token created server-side;
+    # the authorize URL here is a placeholder until custom Plaid Link flow is wired up.
+    authorize_url: https://cdn.plaid.com/link/v2/stable/link.html
+    token_url: https://production.plaid.com/item/public_token/exchange
+    scopes:
+      - transactions
+      - auth
+      - identity
+      - investments
+    redirect_uri: https://oauth-broker.allegedly.works/callback/plaid
+    secret_name: plaid-tokens
+    secret_annotations:
+      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
+    # Plaid access tokens do not expire.
+    refresh_margin_seconds: 0
