@@ -92,6 +92,8 @@ aspect_py_binary(
 py_image_layer(
     name = "layers",
     binary = ":oauth_broker_bin",
+    group = "1000",
+    owner = "1000",
 )
 
 oci_image(
@@ -100,6 +102,7 @@ oci_image(
     entrypoint = py_image_entrypoint("oauth_broker_bin"),
     env = py_image_env(binary_name = "oauth_broker_bin"),
     tars = [":layers"],
+    user = "1000:1000",
 )
 
 oci_load(
