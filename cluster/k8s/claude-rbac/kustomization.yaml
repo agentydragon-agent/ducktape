@@ -16,3 +16,4 @@ resources:
   - rolebinding-gatus-reader.yaml
   - clusterrole-cluster-diagnostics-reader.yaml
   - clusterrolebinding-cluster-diagnostics-reader.yaml
+  - rolebinding-ollama-reader.yaml

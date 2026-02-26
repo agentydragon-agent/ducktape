@@ -8,3 +8,4 @@ resources:
   - rolebinding-default-sa.yaml
   - rolebinding-openclaw-sa.yaml
   - sa-token-secret.yaml
+  - rolebinding-ollama-reader.yaml
