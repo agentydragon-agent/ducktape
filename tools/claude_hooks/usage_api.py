@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 logger = logging.getLogger(__name__)
@@ -29,12 +29,29 @@ class _OAuthCredentials(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
 
     access_token: str | None = None
+    refresh_token: str | None = None
+    expires_at: int | None = None
+    scopes: list[str] | None = None
+    subscription_type: str | None = None
+    rate_limit_tier: str | None = None
+
+
+class _McpOAuthEntry(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
+
+    server_name: str
+    server_url: str
+    client_id: str
+    access_token: str
+    expires_at: int
+    refresh_token: str
 
 
 class _Credentials(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="ignore")
 
     claude_ai_oauth: _OAuthCredentials | None = None
+    mcp_oauth: dict[str, _McpOAuthEntry] | None = Field(default=None, alias="mcpOAuth")
 
 
 class UsageBucket(BaseModel):
