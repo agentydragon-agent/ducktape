@@ -48,9 +48,8 @@ providers:
 
   - name: plaid
     display_name: Plaid
-    # Plaid Link initiation URL. Full flow requires a link_token created server-side;
-    # the authorize URL here is a placeholder until custom Plaid Link flow is wired up.
-    authorize_url: https://cdn.plaid.com/link/v2/stable/link.html
+    provider_type: plaid
+    authorize_url: https://cdn.plaid.com/link/v2/stable/link.html # unused; PlaidProvider creates a link_token instead
     token_url: https://production.plaid.com/item/public_token/exchange
     scopes:
       - transactions

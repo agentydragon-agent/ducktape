@@ -7,9 +7,10 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader
+from pydantic import BaseModel
 
 from oauth_broker.k8s_client import K8sTokenStore
-from oauth_broker.provider import GenericOAuth2Provider
+from oauth_broker.provider import GenericOAuth2Provider, PlaidProvider
 from oauth_broker.refresh import token_refresh_loop
 
 logger = logging.getLogger(__name__)
@@ -17,10 +18,15 @@ logger = logging.getLogger(__name__)
 _pending_states: dict[str, str] = {}
 
 
+class _PlaidCallbackBody(BaseModel):
+    public_token: str
+
+
 def create_app(providers: dict[str, GenericOAuth2Provider], target_namespace: str) -> FastAPI:
     app = FastAPI(title="OAuth Broker", docs_url=None, redoc_url=None)
     jinja_env = Environment(loader=FileSystemLoader(Path(__file__).parent), autoescape=True)
-    template = jinja_env.get_template("index.html.j2")
+    index_template = jinja_env.get_template("index.html.j2")
+    plaid_template = jinja_env.get_template("plaid_link.html.j2")
     background_tasks: set[asyncio.Task[None]] = set()
     k8s_store: K8sTokenStore | None = None
 
@@ -54,7 +60,7 @@ def create_app(providers: dict[str, GenericOAuth2Provider], target_namespace: st
             provider_rows.append(
                 {"name": name, "display_name": provider.config.display_name, "status": status, "action": action}
             )
-        return template.render(providers=provider_rows)
+        return index_template.render(providers=provider_rows)
 
     @app.get("/authorize/{provider_name}")
     async def authorize(provider_name: str) -> Response:
@@ -63,11 +69,30 @@ def create_app(providers: dict[str, GenericOAuth2Provider], target_namespace: st
             raise HTTPException(404, f"Unknown provider: {provider_name}")
         state = provider.generate_state()
         _pending_states[state] = provider_name
+        if isinstance(provider, PlaidProvider):
+            link_token = await provider.create_link_token(state)
+            return HTMLResponse(plaid_template.render(link_token=link_token, received_redirect_uri=None))
         url = provider.build_authorize_url(state)
         return RedirectResponse(url)
 
     @app.get("/callback/{provider_name}")
-    async def callback(provider_name: str, request: Request) -> Response:
+    async def callback_get(provider_name: str, request: Request) -> Response:
+        provider = providers.get(provider_name)
+        if provider is None:
+            raise HTTPException(404, f"Unknown provider: {provider_name}")
+
+        # Plaid OAuth institution mid-flow: bank redirected here with oauth_state_id.
+        # Re-render the Plaid Link widget with receivedRedirectUri so it can resume.
+        if isinstance(provider, PlaidProvider):
+            oauth_state_id = request.query_params.get("oauth_state_id")
+            if oauth_state_id is None:
+                raise HTTPException(400, "Plaid callback missing oauth_state_id")
+            # Create a fresh link_token for resuming the OAuth session.
+            state = provider.generate_state()
+            _pending_states[state] = provider_name
+            link_token = await provider.create_link_token(state)
+            return HTMLResponse(plaid_template.render(link_token=link_token, received_redirect_uri=str(request.url)))
+
         code = request.query_params.get("code")
         state = request.query_params.get("state")
         error = request.query_params.get("error")
@@ -83,16 +108,27 @@ def create_app(providers: dict[str, GenericOAuth2Provider], target_namespace: st
         if expected_provider != provider_name:
             raise HTTPException(400, "State/provider mismatch")
 
-        provider = providers.get(provider_name)
-        if provider is None:
-            raise HTTPException(404, f"Unknown provider: {provider_name}")
-
         token = await provider.exchange_code(code)
         await get_store().write_token(
             provider.config.secret_name, target_namespace, token, annotations=provider.config.secret_annotations or None
         )
         logger.info(f"Stored tokens for {provider_name} (expires {token.expires_at})")
         return RedirectResponse("/")
+
+    @app.post("/callback/{provider_name}")
+    async def callback_post(provider_name: str, body: _PlaidCallbackBody) -> Response:
+        """Receive the public_token from the Plaid Link JS widget and exchange it."""
+        provider = providers.get(provider_name)
+        if provider is None:
+            raise HTTPException(404, f"Unknown provider: {provider_name}")
+        if not isinstance(provider, PlaidProvider):
+            raise HTTPException(405, f"{provider_name} does not support POST callback")
+        token = await provider.exchange_public_token(body.public_token)
+        await get_store().write_token(
+            provider.config.secret_name, target_namespace, token, annotations=provider.config.secret_annotations or None
+        )
+        logger.info(f"Stored Plaid tokens for {provider_name}")
+        return RedirectResponse("/", status_code=303)
 
     @app.get("/status")
     async def status() -> dict:
