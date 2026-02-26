@@ -33,7 +33,9 @@ providers:
       - https://www.googleapis.com/auth/documents.readonly
       - https://www.googleapis.com/auth/spreadsheets.readonly
       - https://www.googleapis.com/auth/youtube.readonly
-      - https://www.googleapis.com/auth/keep.readonly
+      # keep.readonly is omitted: the Google Keep API is restricted to Google
+      # Workspace Enterprise accounts and is not available for personal Gmail
+      # accounts. Requesting it causes Error 400: invalid_scope for all users.
     redirect_uri: https://oauth-broker.allegedly.works/callback/google
     secret_name: google-tokens
     secret_annotations:
