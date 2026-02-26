@@ -10,7 +10,7 @@ let
   inspection = import ../../lib/inspection-commands.nix { inherit lib; };
   allowed = import ../allowed-commands.nix;
 
-  # Combine all commands from both SSOTs (same logic as claude_code.nix)
+  # Combine all commands from both SSOTs (same logic as claude_code/default.nix)
   allCommands = inspection.exports.noSudo ++ inspection.exports.sudo ++ allowed.noSudo;
 
   # Transform simple { type, cmd } → Bash() permission

@@ -1,7 +1,7 @@
 # Single Source of Truth for AI agent always-allowed commands
 #
 # Used by:
-#   - nix/home/claude_code.nix (Claude Code permissions)
+#   - nix/home/claude_code/default.nix (Claude Code permissions)
 #   - nix/home/gemini_cli.nix (Gemini CLI policies)
 #
 # Commands listed here are safe for AI agents to execute without user approval.

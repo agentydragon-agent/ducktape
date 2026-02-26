@@ -11,7 +11,7 @@ nix/home/
 ├── skills/                # Shared skills for Claude Code and Gemini CLI
 ├── tests/                 # Nix tests for modules and integrations
 ├── allowed-commands.nix   # Personal SSOT: allowed bash commands
-├── claude_code.nix        # Personal integration: Claude Code
+├── claude_code/            # Personal integration: Claude Code
 ├── gemini_cli.nix         # Personal integration: Gemini CLI
 ├── home.nix               # Main home-manager configuration
 └── hosts/*.nix            # Host-specific configurations
@@ -35,7 +35,7 @@ Current modules:
 
 ### Personal Integrations (root `*.nix` files)
 
-Files at the root level (`claude_code.nix`, `gemini_cli.nix`, etc.) are **personal integrations** that:
+Files at the root level (`claude_code/`, `gemini_cli.nix`, etc.) are **personal integrations** that:
 
 - Transform shared data sources (like `allowed-commands.nix`) into module configurations
 - Wire up personal settings and preferences

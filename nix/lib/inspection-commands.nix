@@ -2,7 +2,7 @@
 #
 # Used by:
 #   - nix/nixos/modules/system-inspection-sudo.nix (passwordless sudo)
-#   - nix/home/claude_code.nix (Claude Code permissions)
+#   - nix/home/claude_code/default.nix (Claude Code permissions)
 #   - nix/home/gemini_cli.nix (Gemini CLI policies)
 #
 # The command lists below must be kept in sync with:

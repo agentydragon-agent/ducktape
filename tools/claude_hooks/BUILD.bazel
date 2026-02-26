@@ -91,6 +91,25 @@ py_library(
     deps = ["@pypi//pyjwt"],
 )
 
+py_library(
+    name = "statusline_models",
+    srcs = ["statusline_models.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "usage_api",
+    srcs = ["usage_api.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
 # === Modules with internal deps ===
 
 py_library(
@@ -283,6 +302,10 @@ py_library(
     name = "statusline_lib",
     srcs = ["statusline.py"],
     imports = ["../.."],
+    deps = [
+        ":statusline_models",
+        ":usage_api",
+    ],
 )
 
 py_library(
@@ -390,9 +413,11 @@ py_package(
         ":session_start_lib",
         ":settings",
         ":statusline_lib",
+        ":statusline_models",
         ":streaming",
         ":tmpfs_setup",
         ":tracing",
+        ":usage_api",
         "//tools/claude_hooks/auth_proxy:main",
         "//tools/claude_hooks/auth_proxy:proxy",
         "//tools/claude_hooks/supervisor:client",
@@ -586,6 +611,20 @@ py_test(
     deps = [
         ":proxy_credentials",
         "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_statusline",
+    srcs = ["test_statusline.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":statusline_lib",
+        ":statusline_models",
+        ":usage_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
