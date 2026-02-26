@@ -63,7 +63,7 @@ spec:
             - name: tmp
               mountPath: /tmp
             - name: venv
-              mountPath: /oauth_broker/_oauth_broker_bin.venv
+              mountPath: /oauth_broker/oauth_broker_bin.runfiles/.oauth_broker_bin.venv
           resources:
             requests:
               memory: "64Mi"
