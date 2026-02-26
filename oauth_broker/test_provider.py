@@ -10,12 +10,18 @@ import pytest_bazel
 import respx
 from httpx import Response
 
-from oauth_broker.provider import BrokerConfig, GenericOAuth2Provider, ProviderConfig, TokenData, _parse_token_response
+from oauth_broker.provider import (
+    BrokerConfig,
+    GenericOAuth2Provider,
+    OAuth2ProviderConfig,
+    TokenData,
+    _parse_token_response,
+)
 
 
 @pytest.fixture
-def provider_config() -> ProviderConfig:
-    return ProviderConfig(
+def provider_config() -> OAuth2ProviderConfig:
+    return OAuth2ProviderConfig(
         name="test",
         display_name="Test Provider",
         authorize_url="https://example.com/authorize",
@@ -27,7 +33,7 @@ def provider_config() -> ProviderConfig:
 
 
 @pytest.fixture
-def provider(provider_config: ProviderConfig) -> GenericOAuth2Provider:
+def provider(provider_config: OAuth2ProviderConfig) -> GenericOAuth2Provider:
     return GenericOAuth2Provider(provider_config, "test-client-id", "test-client-secret")
 
 
@@ -46,7 +52,7 @@ def test_build_authorize_url(provider: GenericOAuth2Provider) -> None:
 
 
 def test_build_authorize_url_with_extra_params() -> None:
-    config = ProviderConfig(
+    config = OAuth2ProviderConfig(
         name="google",
         display_name="Google",
         authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
@@ -166,6 +172,7 @@ def test_broker_config_from_yaml(tmp_path: Path) -> None:
         target_namespace: test-ns
         providers:
           - name: test
+            provider_type: oauth2
             display_name: Test
             authorize_url: https://example.com/auth
             token_url: https://example.com/token

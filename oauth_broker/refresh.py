@@ -2,18 +2,16 @@
 
 import asyncio
 import logging
+from collections.abc import Mapping
 
 from oauth_broker.k8s_client import K8sTokenStore
-from oauth_broker.provider import GenericOAuth2Provider
+from oauth_broker.provider import Provider
 
 logger = logging.getLogger(__name__)
 
 
 async def token_refresh_loop(
-    providers: dict[str, GenericOAuth2Provider],
-    k8s_store: K8sTokenStore,
-    target_namespace: str,
-    check_interval: float = 300,
+    providers: Mapping[str, Provider], k8s_store: K8sTokenStore, target_namespace: str, check_interval: float = 300
 ) -> None:
     """Check all provider tokens periodically, refresh if near expiry."""
     while True:

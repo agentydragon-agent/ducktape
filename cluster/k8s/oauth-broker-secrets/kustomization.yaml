@@ -4,3 +4,4 @@ resources:
   - oura-client-credentials-sealed.yaml
   - harbor-robot-eso.yaml
   - google-client-credentials-sealed.yaml
+  - plaid-client-credentials-sealed.yaml

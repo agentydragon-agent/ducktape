@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>OAuth Broker — Plaid Link</title>
+<style>
+body { font-family: system-ui; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+</style>
+</head>
+<body>
+<p>Opening Plaid Link&hellip;</p>
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script>
+(function() {
+  var handler = Plaid.create({
+    token: {{ link_token | tojson }},
+    receivedRedirectUri: {{ received_redirect_uri | tojson }},
+    onSuccess: function(public_token, metadata) {
+      fetch('/callback/plaid', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({public_token: public_token})
+      }).then(function() {
+        window.location.href = '/';
+      }).catch(function(err) {
+        document.body.innerHTML = '<p>Error storing token: ' + err + '</p><a href="/">Back</a>';
+      });
+    },
+    onExit: function(err) {
+      if (err) {
+        document.body.innerHTML = '<p>Plaid Link error: ' + JSON.stringify(err) + '</p><a href="/">Back</a>';
+      } else {
+        window.location.href = '/';
+      }
+    }
+  });
+  handler.open();
+})();
+</script>
+</body>
+</html>
