@@ -41,6 +41,19 @@
           {#if req.response_body}
             <LLMResponseSection responseBody={req.response_body as Record<string, unknown>} />
           {/if}
+          {#if req.response_error_body}
+            <div class="p-4">
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400 mb-2">
+                Error Response
+              </h4>
+              <pre
+                class="bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300 p-3 rounded text-xs overflow-auto">{JSON.stringify(
+                  req.response_error_body,
+                  null,
+                  2
+                )}</pre>
+            </div>
+          {/if}
           {#if req.error}
             <div class="p-4">
               <h4 class="text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400 mb-2">Error</h4>
