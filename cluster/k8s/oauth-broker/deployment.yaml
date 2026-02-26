@@ -24,7 +24,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: oauth-broker
-          image: registry.allegedly.works/oauth-broker/oauth-broker:devel-INITIAL # {"$imagepolicy": "flux-system:oauth-broker"}
+          image: registry.allegedly.works/oauth-broker/oauth-broker:20260226121851-362b2ce # {"$imagepolicy": "flux-system:oauth-broker"}
           ports:
             - name: http
               containerPort: 8080
