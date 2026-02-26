@@ -79,6 +79,9 @@ resources:
   - activitywatch-namespace/flux-kustomization.yaml
   - applications/activitywatch-secrets/flux-kustomization.yaml
   - applications/activitywatch/flux-kustomization.yaml
+  - oauth-broker-namespace/flux-kustomization.yaml
+  - oauth-broker-secrets/flux-kustomization.yaml
+  - oauth-broker/flux-kustomization.yaml
   - scanner-namespace/flux-kustomization.yaml
   - scanner/flux-kustomization.yaml
   - applications/website/flux-kustomization.yaml

@@ -15,3 +15,4 @@ spec:
   dependsOn:
     - name: oauth-broker-namespace
     - name: sealed-secrets
+    - name: external-secrets-config
