@@ -326,17 +326,18 @@ def get_storage_dir(settings: HookSettings) -> Path | None:
     return settings.get_container_storage_dir()
 
 
-def _log_docker_conflict_info() -> None:
-    """Log diagnostic info about a conflicting dockerd process.
+def _cleanup_stale_docker_pid() -> None:
+    """Remove /var/run/docker.pid if it refers to a non-dockerd process.
 
-    Called when the Docker socket is not responsive but we're about to try
-    starting a new dockerd.  Helps diagnose cases where a pre-existing daemon
-    owns /var/run/docker.pid but its socket is missing or unresponsive.
+    Handles the case where a previous session's PID file persists and its PID
+    has since been reused by an unrelated process (e.g. supervisord).  Without
+    this cleanup dockerd refuses to start, mistaking that PID for a live daemon.
     """
+    pid_file = Path("/var/run/docker.pid")
     sock_file = DEFAULT_DOCKER_SOCKET
+
     logger.info("docker socket check: exists=%s", sock_file.exists())
 
-    pid_file = Path("/var/run/docker.pid")
     if not pid_file.exists():
         logger.info("No /var/run/docker.pid found")
         return
@@ -348,6 +349,17 @@ def _log_docker_conflict_info() -> None:
         return
 
     logger.info("Found /var/run/docker.pid with pid=%d", pid)
+
+    comm_path = Path(f"/proc/{pid}/comm")
+    if comm_path.exists():
+        try:
+            comm = comm_path.read_text().strip()
+            logger.info("PID %d comm: %s", pid, comm)
+        except OSError as e:
+            logger.warning("Failed to read comm for PID %d: %s", pid, e)
+            comm = ""
+    else:
+        comm = ""
 
     cmdline_path = Path(f"/proc/{pid}/cmdline")
     if cmdline_path.exists():
@@ -365,6 +377,17 @@ def _log_docker_conflict_info() -> None:
                     logger.info("PID %d status: %s", pid, line)
         except OSError as e:
             logger.warning("Failed to read status for PID %d: %s", pid, e)
+
+    # If the PID exists but isn't dockerd, the pid file is stale — remove it so
+    # dockerd can start.  If the process no longer exists at all, also remove it.
+    is_dockerd = comm == "dockerd"
+    pid_exists = Path(f"/proc/{pid}").exists()
+    if not pid_exists or not is_dockerd:
+        logger.info("Removing stale /var/run/docker.pid (pid=%d, pid_exists=%s, comm=%r)", pid, pid_exists, comm)
+        try:
+            pid_file.unlink()
+        except OSError as e:
+            logger.warning("Failed to remove /var/run/docker.pid: %s", e)
 
 
 async def setup_container_runtime(
@@ -415,10 +438,11 @@ async def setup_container_runtime(
             env_vars=spec.client_env_vars,
         )
 
-    # Log diagnostics before attempting start — helps identify pre-existing
-    # daemons that own /var/run/docker.pid but whose socket is missing/unresponsive.
+    # Clean up stale /var/run/docker.pid before attempting start.  A leftover
+    # pid file whose PID has been reused by a non-dockerd process (e.g.
+    # supervisord) causes dockerd to abort with "process still running".
     if runtime == "docker":
-        _log_docker_conflict_info()
+        _cleanup_stale_docker_pid()
 
     logger.info("Configuring %s...", spec.service_name)
 
