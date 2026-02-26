@@ -34,6 +34,8 @@ spec:
           env:
             - name: OAUTH_BROKER_CONFIG
               value: /etc/oauth-broker/config.yaml
+            - name: UV_PYTHON_PREFERENCE
+              value: only-system
             - name: OURA_CLIENT_ID
               valueFrom:
                 secretKeyRef:
