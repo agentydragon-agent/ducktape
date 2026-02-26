@@ -41,6 +41,11 @@ See <changelog.md> for detailed change history.
       Options: `CiliumEnvoyConfig` cookie hash, Gateway API `BackendLBPolicy`, upstream fix.
 - [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
 - [ ] **Harbor terraform: switch to robot accounts** for least-privilege
+- [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —
+      `activitywatch`, `inventree`, `openclaw`, `props` namespaces all use the same system-level
+      `ci` robot account (`kv/harbor/ci-robot`) which has push+pull on all projects. Create
+      project-scoped read-only robot accounts per namespace for imagePullSecrets (pull-only,
+      scoped to the relevant project). Keep the system-level `ci` robot for CI push only.
 - [ ] **Consider removing `gitea-admin-token` Job** — SSO moved to blueprints, nothing
       consumes the token. May be useful for future Gitea API automation.
 - [ ] **Harbor proxy cache: add GHCR credentials for private repos** — 403 on
