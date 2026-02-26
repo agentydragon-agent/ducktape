@@ -113,6 +113,15 @@ jobs:
     with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
+  oauth-broker-image:
+    needs:
+      - compute-targets
+      - rbe-image
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'oauth-broker-image')
+    uses: ./.github/workflows/oauth-broker-image.yml
+    with:
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+    secrets: inherit
   openclaw-image:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-image')

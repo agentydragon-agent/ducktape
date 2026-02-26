@@ -11,3 +11,6 @@ resources:
   - activitywatch-image-repository.yaml
   - activitywatch-image-policy.yaml
   - activitywatch-image-update-automation.yaml
+  - oauth-broker-image-repository.yaml
+  - oauth-broker-image-policy.yaml
+  - oauth-broker-image-update-automation.yaml

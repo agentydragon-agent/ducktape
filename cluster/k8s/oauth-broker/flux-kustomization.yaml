@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: oauth-broker
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/oauth-broker
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: oauth-broker
+      namespace: oauth-broker
+  dependsOn:
+    - name: oauth-broker-namespace
+    - name: oauth-broker-secrets
+    - name: openclaw-sandbox

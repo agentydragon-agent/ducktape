@@ -46,6 +46,11 @@ workflows:
     events: [push]
     secrets: inherit
 
+  oauth-broker-image:
+    trigger: { kind: always }
+    events: [push]
+    secrets: inherit
+
   openclaw-image:
     trigger: { kind: path, pattern: "^docker/openclaw/" }
     events: [push]

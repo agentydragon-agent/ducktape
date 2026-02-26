@@ -53,6 +53,12 @@ resource "harbor_project" "activitywatch" {
   public = false
 }
 
+# Private project for the OAuth broker image
+resource "harbor_project" "oauth_broker" {
+  name   = "oauth-broker"
+  public = false
+}
+
 # Project-level robot account for CI push + cluster pull (both projects)
 resource "harbor_robot_account" "ci" {
   name        = "ci"
@@ -128,6 +134,28 @@ resource "harbor_robot_account" "ci" {
   permissions {
     kind      = "project"
     namespace = harbor_project.activitywatch.name
+
+    access {
+      action   = "push"
+      resource = "repository"
+    }
+    access {
+      action   = "pull"
+      resource = "repository"
+    }
+    access {
+      action   = "read"
+      resource = "artifact"
+    }
+    access {
+      action   = "create"
+      resource = "tag"
+    }
+  }
+
+  permissions {
+    kind      = "project"
+    namespace = harbor_project.oauth_broker.name
 
     access {
       action   = "push"

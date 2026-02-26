@@ -197,6 +197,7 @@ dependencies = [
     "pytest-playwright",
     "pytest-bazel>=0.1.6",
     "testcontainers[postgres]>=4.14.1",
+    "respx>=0.22",
     "asgi-lifespan>=2.1",
     "syrupy>=4.0",
     "PyHamcrest>=2.1",
