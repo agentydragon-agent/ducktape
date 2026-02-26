@@ -37,6 +37,9 @@ spec:
           litellm_params:
             model: ollama/gpt-oss:20b
             api_base: http://ollama.ollama.svc.cluster.local:11434
+          model_info:
+            mode: chat
+            supports_function_calling: true
         - model_name: gpt-oss-20b-1m
           litellm_params:
             model: ollama/gpt-oss:20b
@@ -44,6 +47,9 @@ spec:
             extra_body:
               options:
                 num_ctx: 1048576
+          model_info:
+            mode: chat
+            supports_function_calling: true
         # Extended context variants: num_ctx override per request.
         # YaRN scaling (baked into GGUF metadata) handles RoPE interpolation.
         - model_name: gpt-oss-20b-256k
@@ -53,6 +59,9 @@ spec:
             extra_body:
               options:
                 num_ctx: 262144
+          model_info:
+            mode: chat
+            supports_function_calling: true
         - model_name: gpt-oss-20b-512k
           litellm_params:
             model: ollama/gpt-oss:20b
@@ -60,10 +69,16 @@ spec:
             extra_body:
               options:
                 num_ctx: 524288
+          model_info:
+            mode: chat
+            supports_function_calling: true
         - model_name: gpt-oss-120b-128k
           litellm_params:
             model: ollama/gpt-oss:120b
             api_base: http://ollama.ollama.svc.cluster.local:11434
+          model_info:
+            mode: chat
+            supports_function_calling: true
       general_settings:
         master_key: os.environ/LITELLM_MASTER_KEY
       litellm_settings:
