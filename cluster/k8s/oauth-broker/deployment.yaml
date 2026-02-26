@@ -71,7 +71,8 @@ spec:
             capabilities:
               drop:
                 - ALL
-            readOnlyRootFilesystem: true
+            # readOnlyRootFilesystem incompatible with aspect_py_binary launcher
+            # (uv needs to write to the venv directory baked into the image)
             runAsNonRoot: true
             runAsUser: 1000
             seccompProfile:
