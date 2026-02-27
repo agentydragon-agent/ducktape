@@ -37,11 +37,8 @@ resource "headscale_user" "subnet_router" {
 # Headscale requires user@ format for user references in policy.
 resource "headscale_policy" "main" {
   policy = jsonencode({
-    groups = {
-      "group:admin" = ["agentydragon@"]
-    }
     tagOwners = {
-      "tag:router" = ["group:admin"]
+      "tag:router" = ["subnet-router@"]
     }
     autoApprovers = {
       routes = {
