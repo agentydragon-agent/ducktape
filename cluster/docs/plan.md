@@ -200,11 +200,10 @@ All Hetzner firewall rules currently allow `0.0.0.0/0`. Keep 80/443/53 public; r
 K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet (10250), KubeSpan (51820),
 VXLAN (8472) to admin IPs and inter-node CIDRs.
 
-### TODO: Remote Proxmox API Access
+### ~~TODO: Remote Proxmox API Access~~ — DONE
 
-Proxmox API only reachable from home network (10.2.0.2:8006). CSI works (pods on Proxmox),
-but `tofu apply` requires home network. Options: split CSI/provisioning hosts, add
-Tailscale route, or accept limitation.
+Proxmox is accessible via Headscale mesh at `atlas.tailnet.allegedly.works`. Any enrolled
+device can reach the API and web UI without being on the home network.
 
 ### TODO: Multi-Endpoint Kubeconfig via DNS
 
