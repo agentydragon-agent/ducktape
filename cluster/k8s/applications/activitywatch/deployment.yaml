@@ -58,7 +58,7 @@ spec:
             - name: TS_AUTHKEY
               valueFrom:
                 secretKeyRef:
-                  name: tailscale-auth
+                  name: activitywatch-authkey
                   key: TS_AUTHKEY
             - name: TS_EXTRA_ARGS
               value: "--login-server=https://headscale.allegedly.works"
