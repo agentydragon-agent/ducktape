@@ -22,6 +22,16 @@ spec:
         - ports:
             - port: "5600"
               protocol: TCP
+    # Read-only proxy for sandbox namespaces (nginx on 5601).
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openclaw-sandbox
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: claude-sandbox
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
   egress:
     # DNS
     - toEndpoints:

@@ -52,6 +52,34 @@ spec:
               port: 5600
             initialDelaySeconds: 5
             periodSeconds: 10
+        - name: readonly-proxy
+          image: nginx:alpine
+          ports:
+            - containerPort: 5601
+              name: readonly
+          volumeMounts:
+            - name: readonly-proxy-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5601
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5601
+            initialDelaySeconds: 2
+            periodSeconds: 10
         - name: tailscale
           image: ghcr.io/tailscale/tailscale:latest
           env:
@@ -90,6 +118,9 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: activitywatch-data
+        - name: readonly-proxy-config
+          configMap:
+            name: activitywatch-readonly-proxy
         - name: dev-tun
           hostPath:
             path: /dev/net/tun

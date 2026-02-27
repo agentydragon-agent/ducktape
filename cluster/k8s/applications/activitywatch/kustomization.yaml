@@ -5,4 +5,11 @@ resources:
   - deployment.yaml
   - rbac.yaml
   - pvc.yaml
+  - service.yaml
   - cilium-network-policy.yaml
+
+configMapGenerator:
+  - name: activitywatch-readonly-proxy
+    namespace: activitywatch
+    files:
+      - default.conf=readonly-proxy.conf
