@@ -365,13 +365,14 @@ spec:
           ports:
             - port: 8008
               protocol: TCP
-        # Allow HTTP/HTTPS egress to the internet (Telegram, browsing, APIs).
-        - ports:
-            - port: 80
+        # Allow egress to mitmproxy for proxied internet access.
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: openclaw-mitmproxy
+          ports:
+            - port: 8080
               protocol: TCP
-            - port: 443
-              protocol: TCP
-              # TODO: Add egress rules for InvenTree and Grocy when deployed.
   availability:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
