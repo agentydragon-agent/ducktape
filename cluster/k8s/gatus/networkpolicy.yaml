@@ -1,0 +1,31 @@
+# Restrict Gatus ingress to Authentik proxy outpost and Prometheus scraping.
+# Gatus trusts X-authentik-username for user identity — any pod that
+# can reach port 8080 can impersonate any user.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gatus-ingress
+  namespace: gatus
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gatus
+  policyTypes:
+    - Ingress
+  ingress:
+    # Authentik proxy outpost → Gatus (SSO-protected external access)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Prometheus → Gatus (ServiceMonitor scraping)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+          protocol: TCP
