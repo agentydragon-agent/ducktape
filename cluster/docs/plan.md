@@ -108,7 +108,7 @@ See <changelog.md> for detailed change history.
 
 - [ ] Migrate remaining devices from ansible VPS headscale to cluster headscale
       (atlas and wyrm already enrolled at `headscale.allegedly.works`)
-- [ ] Atlas Proxmox accessible via headscale mesh (or `atlas.allegedly.works` proxy)
+- [x] Atlas Proxmox accessible via headscale mesh (`atlas.tailnet.allegedly.works`)
 - [ ] Website hosted in cluster, verify accessible
 - [ ] Update `agentydragon.com` DNS to point to cluster
 - [ ] Decommission ansible-managed VPS
