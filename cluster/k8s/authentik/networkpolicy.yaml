@@ -1,6 +1,7 @@
-# Restrict Authentik API (port 80) to authorized cluster consumers.
+# Restrict Authentik server to authorized cluster consumers.
 # Unauthenticated /api/v3/ enables user enumeration, provider tampering,
 # and backdoor user creation — restrict to prevent abuse from any cluster pod.
+# Pod ports: 9000 (HTTP), 9443 (HTTPS), 9300 (metrics).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -20,7 +21,11 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: authentik
       ports:
-        - port: 80
+        - port: 9000
+          protocol: TCP
+        - port: 9443
+          protocol: TCP
+        - port: 9300
           protocol: TCP
     # flux-system: tofu-controller tf-runner calls Authentik API via Terraform
     - from:
@@ -28,7 +33,7 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: flux-system
       ports:
-        - port: 80
+        - port: 9000
           protocol: TCP
     # kube-system: cilium-envoy proxies external HTTPS traffic to server (Gateway API)
     - from:
@@ -36,5 +41,25 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: kube-system
       ports:
-        - port: 80
+        - port: 9000
+          protocol: TCP
+        - port: 9443
+          protocol: TCP
+    # headscale: OIDC discovery and JWKS validation
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: headscale
+      ports:
+        - port: 9000
+          protocol: TCP
+        - port: 9443
+          protocol: TCP
+    # monitoring: Prometheus scrapes metrics endpoint
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 9300
           protocol: TCP
