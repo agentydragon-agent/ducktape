@@ -96,12 +96,15 @@ See <changelog.md> for detailed change history.
 - [ ] **Harbor proxy cache: add GHCR credentials for private repos** — 403 on
       `openclaw/openclaw`. Needs GitHub PAT (`read:packages`) in Vault → ESO → Harbor.
 - [ ] **Verify ntfy.sh notifications** — confirm Flux failure alerts arrive on phone
-- [ ] **ActivityWatch: build and push initial image** — Run `activitywatch-image.yml`
-      workflow manually after Harbor CI creates the project. Verify pod starts.
-- [ ] **ActivityWatch: set up desktop client sync** — see "ActivityWatch Setup" below
-- [x] **ActivityWatch: Headscale subnet route** — Tailscale subnet router deployed
-      (`k8s/tailscale-router/`), advertising `10.96.0.0/12`. Enrolled devices (atlas,
-      wyrm) can reach cluster services directly over the mesh.
+- [x] **ActivityWatch: build and push initial image** — Image built and running.
+- [x] **ActivityWatch: tailscale sidecar** — Pod has tailscale sidecar on Headscale
+      mesh at `activitywatch.tailnet.allegedly.works:5600`. Replaced subnet router
+      (Cilium nftables incompatibility). Pre-auth key created by bootstrap Job
+      (`k8s/activitywatch-authkey-bootstrap/`) to work around upstream provider bug
+      ([PR #28](https://github.com/awlsring/terraform-provider-headscale/pull/28)).
+- [x] **ActivityWatch: desktop client config** — `nix/home/services/activitywatch.nix`
+      points watchers at `activitywatch.tailnet.allegedly.works:5600` via Headscale.
+      Removed legacy SSH tunnel to `agentydragon.com`. Apply with `home-manager switch`.
 - [ ] **ActivityWatch: Android sync** — not feasible with current upstream (`aw-android`
       embeds its own server, no remote sync). Revisit when `aw-sync` ships for Android
 
@@ -412,8 +415,8 @@ clusters. Low priority — current setup survives single-node failure via automa
 ## ActivityWatch Setup
 
 Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
-Cluster-internal only (no public exposure). Access via Headscale subnet router
-(`k8s/tailscale-router/`) which advertises `10.96.0.0/12` to the tailnet.
+Cluster-internal only (no public exposure). The pod has a tailscale sidecar on the
+Headscale mesh — accessible at `activitywatch.tailnet.allegedly.works:5600` via MagicDNS.
 
 ### Security Model
 
@@ -425,36 +428,29 @@ read/write access to ActivityWatch.
 ### Architecture
 
 - **Server**: `aw-server-rust` in `activitywatch` namespace on Proxmox node
+- **Sidecar**: Tailscale container joins Headscale mesh (`TS_HOSTNAME=activitywatch`)
 - **Storage**: SQLite on `proxmox-csi-retain` (1Gi PVC)
 - **Image**: Custom build at `registry.allegedly.works/activitywatch/aw-server`
   (`docker/activitywatch/Dockerfile`), CI at `.github/workflows/activitywatch-image.yml`
 - **Auth**: None — Headscale mesh membership is the access boundary (see above)
 - **Port**: 5600 (REST API + web UI)
+- **Pre-auth key**: Created by `k8s/activitywatch-authkey-bootstrap/` Job (not Terraform,
+  due to upstream provider bug — see PR #28)
 
 ### Desktop Client Setup
 
 Watchers (`aw-watcher-window`, `aw-watcher-afk`) run locally and send heartbeats to the
-cluster server via the Headscale subnet router (advertises `10.96.0.0/12`). Headscale's
-split DNS routes `svc.cluster.local` queries to CoreDNS, so cluster services are
-resolvable by name from tailnet devices.
+cluster server via the Headscale WireGuard mesh. MagicDNS resolves
+`activitywatch.tailnet.allegedly.works` to the pod's tailnet IP.
 
-1. **Install ActivityWatch** on desktop (watchers only, no local server needed)
-2. **Enroll device in Headscale**: `sudo tailscale up --login-server=https://headscale.allegedly.works`
-3. **Enable subnet route** on client: `sudo tailscale up --accept-routes`
-4. **Configure watchers** — set `aw-client.toml`:
+Configuration is managed by Nix home-manager (`nix/home/services/activitywatch.nix`).
+Apply with `home-manager switch --flake ~/code/ducktape/nix/home#<hostname>`.
 
-   ```toml
-   [server]
-   hostname = "activitywatch.activitywatch"
-   port = "5600"
-   ```
-
-   (`svc.cluster.local` is in `search_domains`, so `activitywatch.activitywatch` resolves
-   to the K8s Service ClusterIP via split DNS → CoreDNS)
-
-5. Server must bind to `0.0.0.0` (already configured) which disables the Host header
-   validation check in aw-server-rust
-6. **Verify**: Browse `http://activitywatch.activitywatch:5600` → ActivityWatch web UI
+1. **Enroll device in Headscale**: `sudo tailscale up --login-server=https://headscale.allegedly.works`
+2. **Verify connectivity**: `curl http://activitywatch.tailnet.allegedly.works:5600/api/0/info`
+3. **Apply home-manager**: `home-manager switch --flake ~/code/ducktape/nix/home#wyrm`
+4. **Start watchers**: `aw-qt` (autostart_modules: `aw-watcher-afk`, `aw-watcher-window`)
+5. **Verify**: Browse `http://activitywatch.tailnet.allegedly.works:5600` — buckets appear
 
 ### Android
 
