@@ -18,12 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 class K8sTokenStore:
-    def __init__(self, api: client.CoreV1Api, managed_by: str = "oauth-broker") -> None:
+    def __init__(self, api: client.CoreV1Api, managed_by: str) -> None:
         self._api = api
         self._managed_by = managed_by
 
     @classmethod
-    async def from_incluster(cls, managed_by: str = "oauth-broker") -> "K8sTokenStore":
+    async def from_incluster(cls, managed_by: str) -> "K8sTokenStore":
         config.load_incluster_config()
         return cls(client.CoreV1Api(), managed_by)
 
