@@ -117,6 +117,9 @@ resources:
   - kagent-secrets/flux-kustomization.yaml
   - openclaw-operator/flux-kustomization.yaml
   - openclaw-namespace/flux-kustomization.yaml
+  - openclaw-mitmproxy-namespace/flux-kustomization.yaml
+  - openclaw-mitmproxy-secrets/flux-kustomization.yaml
+  - openclaw-mitmproxy/flux-kustomization.yaml
   - openclaw-secrets/flux-kustomization.yaml
   - openclaw/flux-kustomization.yaml
   - openclaw-sandbox/flux-kustomization.yaml

@@ -4,14 +4,18 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: allow-cloud-api-egress
-  namespace: openclaw
+  namespace: openclaw-mitmproxy
 spec:
-  endpointSelector: {}
+  endpointSelector:
+    matchLabels:
+      app: mitmproxy
   egress:
     - toFQDNs:
         - matchName: generativelanguage.googleapis.com
         - matchName: api.openai.com
         - matchName: api.anthropic.com
+        - matchName: api.telegram.org
+        - matchPattern: "*.telegram.org"
       toPorts:
         - ports:
             - port: "443"

@@ -28,4 +28,10 @@ RUN node -e " \
  && chown -R node:node node_modules
 
 WORKDIR /app
+
+# Proxy preload: always active. Kyverno injects the proxy env vars at runtime;
+# NODE_OPTIONS activates this preload so Node.js uses them from startup.
+COPY proxy-setup.mjs /app/proxy-setup.mjs
+ENV NODE_OPTIONS="--import=file:///app/proxy-setup.mjs"
+
 USER node
