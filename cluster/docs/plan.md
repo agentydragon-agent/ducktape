@@ -65,6 +65,14 @@ See <changelog.md> for detailed change history.
       short-lived access token to consumer namespaces, keeping refresh tokens in the
       `oauth-broker` namespace only. Reduces blast radius if a consumer namespace is
       compromised.
+- [ ] **Proxmox OIDC auth via Authentik** — Proxmox supports native OpenID Connect
+      realms (`Datacenter → Permissions → Realms → Add → OpenID Connect`). Create an
+      OAuth2/OIDC provider in Authentik for Proxmox, configure the realm in PVE with
+      the issuer URL, client ID, and client secret. This lets users authenticate to the
+      Proxmox web UI via Authentik SSO (complementing the proxy outpost layer at
+      `atlas.allegedly.works` which handles network-level access). Needs: Authentik
+      blueprint for OIDC provider, Vault secret for client credentials, PVE realm config
+      (manual or via API).
 - [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
 - [ ] **Harbor terraform: switch to robot accounts** for least-privilege
 - [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —
