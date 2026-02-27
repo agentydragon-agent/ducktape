@@ -92,6 +92,13 @@
           homeManagerHost = "rugged";
           # Physical machine - hardware config is in hosts/rugged/
         };
+
+        k8s-worker-test = mkNixos {
+          hostname = "k8s-worker-test";
+          username = "user";
+          homeManagerHost = "nixos-vm";
+          hardwareModule = ./modules/vm-hardware.nix;
+        };
       };
     };
 }

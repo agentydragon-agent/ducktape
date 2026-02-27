@@ -319,3 +319,42 @@ module "wyrm2" {
     null_resource.cleanup
   ]
 }
+
+# k8s-worker-test - NixOS K8s worker node prototype
+# See nix/nixos/modules/k8s-worker.nix for manual setup steps after boot.
+module "k8s_worker_test" {
+  source = "./modules/nixos-vm"
+  providers = {
+    proxmox = proxmox.user
+  }
+
+  vm_name      = "k8s-worker-test"
+  vm_id        = 111
+  username     = var.username
+  vcpus        = 4
+  memory_mb    = 8192
+  disk_size_gb = 50
+  auto_start   = true
+
+  # NixOS config from flake
+  nixos_flake_url = var.nixos_flake_url
+  nixos_host      = "k8s-worker-test"
+
+  # Home-manager config from flake
+  home_manager_flake_url = var.home_manager_flake_url
+  home_manager_host      = var.home_manager_host
+
+  proxmox_node_name = var.proxmox_node_name
+  storage           = var.storage
+  network_bridge    = var.network_bridge
+  pool_id           = proxmox_virtual_environment_pool.user_pool.pool_id
+  ssh_public_key    = local.ssh_public_key
+
+  depends_on = [
+    proxmox_virtual_environment_acl.pool_admin,
+    proxmox_virtual_environment_acl.storage_access,
+    proxmox_virtual_environment_acl.storage_access_local,
+    null_resource.nixos_cloud_image,
+    null_resource.cleanup
+  ]
+}
