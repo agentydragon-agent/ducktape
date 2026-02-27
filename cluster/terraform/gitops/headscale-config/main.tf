@@ -28,28 +28,25 @@ provider "vault" {
   token   = var.vault_token
 }
 
-# Robot user for the Tailscale subnet router
-resource "headscale_user" "subnet_router" {
-  name = "subnet-router"
+# Robot user for the ActivityWatch tailscale sidecar
+resource "headscale_user" "activitywatch" {
+  name = "activitywatch"
 }
 
-# Pre-auth key for the subnet router to register with headscale
-# ACL policy is managed via ConfigMap (policy.mode: file), not Terraform.
-resource "headscale_pre_auth_key" "router" {
-  user           = headscale_user.subnet_router.id
+resource "headscale_pre_auth_key" "activitywatch" {
+  user           = headscale_user.activitywatch.id
   reusable       = true
-  acl_tags       = ["tag:router"]
+  acl_tags       = ["tag:service"]
   time_to_expire = "8760h"
 }
 
-# Store pre-auth key in Vault for ESO consumption
-resource "vault_kv_secret_v2" "router_authkey" {
+resource "vault_kv_secret_v2" "activitywatch_authkey" {
   mount = "kv"
-  name  = "tailscale-router/authkey"
+  name  = "activitywatch/tailscale-authkey"
   cas   = 0
 
   data_json = jsonencode({
-    authkey = headscale_pre_auth_key.router.key
+    authkey = headscale_pre_auth_key.activitywatch.key
   })
 
   lifecycle {

@@ -3,12 +3,7 @@
     "group:admin": ["agentydragon@"]
   },
   "tagOwners": {
-    "tag:router": ["group:admin", "subnet-router@"]
-  },
-  "autoApprovers": {
-    "routes": {
-      "10.96.0.0/12": ["tag:router"]
-    }
+    "tag:service": ["group:admin", "activitywatch@"]
   },
   "acls": [
     {

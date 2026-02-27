@@ -1,9 +1,7 @@
-# Default-deny with explicit allowlist for ActivityWatch.
-# Ingress: port 5600 from kube-apiserver only (kubectl port-forward traffic).
-# Egress: DNS only (no outbound connections needed — SQLite, no external APIs).
-#
-# kubectl port-forward is proxied through the kube-apiserver, so allowing
-# kube-apiserver ingress is sufficient. No other pods need to reach this service.
+# ActivityWatch with Tailscale sidecar.
+# Ingress: kube-apiserver only (kubectl port-forward, health probes).
+# Egress: DNS, kube-apiserver:6443 (TS_KUBE_SECRET), headscale/DERP:443,
+#         WireGuard:41641/UDP.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -21,14 +19,7 @@ spec:
             - port: "5600"
               protocol: TCP
   egress:
-    - toEntities:
-        - kube-apiserver
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
+    # DNS
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system
@@ -39,3 +30,24 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+    # kube-apiserver for TS_KUBE_SECRET persistence
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+    # Headscale control + DERP relays (HTTPS)
+    - toCIDR:
+        - 0.0.0.0/0
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # WireGuard direct connections
+    - toCIDR:
+        - 0.0.0.0/0
+      toPorts:
+        - ports:
+            - port: "41641"
+              protocol: UDP

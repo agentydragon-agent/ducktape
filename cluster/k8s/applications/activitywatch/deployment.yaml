@@ -5,6 +5,8 @@ metadata:
   namespace: activitywatch
   labels:
     app: activitywatch
+  annotations:
+    reloader.stakater.com/auto: "true"
 spec:
   replicas: 1
   selector:
@@ -17,6 +19,7 @@ spec:
       labels:
         app: activitywatch
     spec:
+      serviceAccountName: activitywatch
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       imagePullSecrets:
@@ -49,7 +52,45 @@ spec:
               port: 5600
             initialDelaySeconds: 5
             periodSeconds: 10
+        - name: tailscale
+          image: ghcr.io/tailscale/tailscale:latest
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-auth
+                  key: TS_AUTHKEY
+            - name: TS_EXTRA_ARGS
+              value: "--login-server=https://headscale.allegedly.works"
+            - name: TS_USERSPACE
+              value: "false"
+            - name: TS_KUBE_SECRET
+              value: "tailscale-state"
+            - name: TS_HOSTNAME
+              value: "activitywatch"
+            # Talos nodes lack ip_tables kernel module; use nftables backend.
+            - name: TS_DEBUG_FIREWALL_MODE
+              value: "nftables"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          volumeMounts:
+            - name: dev-tun
+              mountPath: /dev/net/tun
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
       volumes:
         - name: data
           persistentVolumeClaim:
             claimName: activitywatch-data
+        - name: dev-tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice

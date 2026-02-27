@@ -13,3 +13,4 @@ spec:
   dependsOn:
     - name: activitywatch-namespace
     - name: external-secrets-config
+    - name: headscale-config

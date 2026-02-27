@@ -2,7 +2,7 @@ apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: tailscale-auth
-  namespace: tailscale-router
+  namespace: activitywatch
 spec:
   refreshInterval: 24h
   secretStoreRef:
@@ -14,5 +14,5 @@ spec:
   data:
     - secretKey: TS_AUTHKEY
       remoteRef:
-        key: tailscale-router/authkey
+        key: activitywatch/tailscale-authkey
         property: authkey
