@@ -28,6 +28,9 @@ spec:
                   key: TS_AUTHKEY
             - name: TS_STATE_DIR
               value: /var/lib/tailscale
+            # Disable K8s Secret state storage — we use hostPath instead
+            - name: TS_KUBE_SECRET
+              value: ""
             # Kernel WireGuard — creates host-level tailscale0 interface
             - name: TS_USERSPACE
               value: "false"
