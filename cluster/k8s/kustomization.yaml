@@ -74,6 +74,8 @@ resources:
   - atuin-namespace/flux-kustomization.yaml
   - atuin-secrets/flux-kustomization.yaml
   - applications/atuin/flux-kustomization.yaml
+  - proxmox-proxy-namespace/flux-kustomization.yaml
+  - proxmox-proxy/flux-kustomization.yaml
   - grocy-namespace/flux-kustomization.yaml
   - applications/grocy/flux-kustomization.yaml
   - activitywatch-namespace/flux-kustomization.yaml

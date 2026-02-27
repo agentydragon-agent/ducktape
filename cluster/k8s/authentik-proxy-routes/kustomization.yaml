@@ -10,3 +10,4 @@ resources:
   - grocy-httproute.yaml
   - oauth-broker-httproute.yaml
   - filebrowser-httproute.yaml
+  - proxmox-httproute.yaml

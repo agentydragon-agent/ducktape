@@ -19,6 +19,7 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, loki]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, oauth-broker]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, openclaw]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, scanner-filebrowser]]
       service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
       config:

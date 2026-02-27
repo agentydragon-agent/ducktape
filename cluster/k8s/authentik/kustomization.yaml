@@ -28,5 +28,6 @@ configMapGenerator:
       - blueprints/oauth-broker-sso.yaml
       - blueprints/filebrowser-sso.yaml
       - blueprints/headscale-sso.yaml
+      - blueprints/proxmox-sso.yaml
       - blueprints/shared-proxy-outpost.yaml
     namespace: authentik
