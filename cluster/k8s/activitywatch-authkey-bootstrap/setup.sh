@@ -19,8 +19,8 @@ echo "Headscale is healthy."
 
 echo "Creating pre-auth key for activitywatch..."
 # headscale preauthkeys create outputs the key directly as a string.
-# TODO: Move pre-auth key back to Terraform after upstream provider fix
-# (docs/bugs/headscale-provider-key-masking.md).
+# TODO: Move pre-auth key back to Terraform after upstream provider fix:
+# https://github.com/awlsring/terraform-provider-headscale/pull/28
 AUTHKEY=$(kubectl exec deployment/headscale -n "$NAMESPACE" -- \
   headscale preauthkeys create \
   --user activitywatch \

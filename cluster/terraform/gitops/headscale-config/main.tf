@@ -23,7 +23,8 @@ provider "headscale" {
 # Pre-auth key is created by k8s/activitywatch-authkey-bootstrap/ Job (not
 # Terraform) because the headscale provider masks the key in state after the
 # first Read — see docs/bugs/headscale-provider-key-masking.md.
-# TODO: Move pre-auth key back to Terraform after upstream provider fix.
+# TODO: Move pre-auth key back to Terraform after upstream provider fix:
+# https://github.com/awlsring/terraform-provider-headscale/pull/28
 resource "headscale_user" "activitywatch" {
   name = "activitywatch"
 }
