@@ -312,6 +312,24 @@ observe traffic flows first, then generate baseline allow-rules.
 Apply `restricted` PSS labels to application namespaces. System namespaces (`kube-system`,
 `csi-proxmox`, `cilium`) keep `privileged`. Start with `warn` mode, promote to `enforce`.
 
+### TODO: Scheduling Priorities for Degraded Mode
+
+Define pod priority classes and resource budgets so that when the cluster loses nodes
+(e.g., reduced to 1 VPS only), the scheduler evicts non-critical workloads to keep
+critical services running. Today all pods have roughly equal priority — if a VPS goes
+down there's no guarantee DNS/ingress/Authentik get resources before Langfuse or props.
+
+Options:
+
+- **PriorityClasses**: `system-critical` (DNS, ingress, Authentik, Vault, cert-manager),
+  `important` (Gitea, Harbor, monitoring), `batch` (OpenClaw, props, BuildBuddy).
+  Scheduler preempts lower-priority pods when resources are scarce.
+- **Descheduler**: Rebalance pods after node recovery (avoid packing on survivor).
+- **Pod Disruption Budgets**: Ensure critical services maintain minimum replicas during
+  voluntary disruptions.
+- **Resource reservations**: `LimitRange` defaults + `ResourceQuota` per namespace to
+  prevent any single workload from starving others.
+
 ### TODO: ResourceQuota + LimitRange per Namespace
 
 Prevent resource contention. Set default CPU/memory requests+limits via LimitRange.
