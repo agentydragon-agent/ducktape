@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headscale
+  namespace: headscale
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: headscale
+  template:
+    metadata:
+      labels:
+        app: headscale
+      annotations:
+        reloader.stakater.com/auto: "true"
+    spec:
+      serviceAccountName: headscale
+      containers:
+        - name: headscale
+          image: ghcr.io/juanfont/headscale:0.28.0
+          command: ["headscale"]
+          args: ["serve"]
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: grpc
+              containerPort: 50443
+              protocol: TCP
+          env:
+            - name: HEADSCALE_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: headscale-oidc-client-secret
+                  key: client_secret
+            - name: HEADSCALE_DATABASE_POSTGRES_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: headscale-db-password
+                  key: password
+          volumeMounts:
+            - name: config
+              mountPath: /etc/headscale/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: keys
+              mountPath: /etc/headscale/keys
+              readOnly: true
+            - name: tls
+              mountPath: /etc/headscale/tls
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/headscale
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
+      volumes:
+        - name: config
+          configMap:
+            name: headscale-config
+        - name: keys
+          secret:
+            secretName: headscale-keys
+        - name: tls
+          secret:
+            secretName: headscale-tls
+        - name: data
+          emptyDir: {}
+      nodeSelector:
+        topology.kubernetes.io/region: hetzner
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"

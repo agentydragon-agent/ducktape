@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tailscale-router
+  namespace: tailscale-router
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tailscale-router
+  template:
+    metadata:
+      labels:
+        app: tailscale-router
+      annotations:
+        reloader.stakater.com/auto: "true"
+    spec:
+      serviceAccountName: tailscale-router
+      initContainers:
+        - name: sysctl
+          image: busybox:1.36
+          command: ["sysctl", "-w", "net.ipv4.ip_forward=1"]
+          securityContext:
+            privileged: true
+      containers:
+        - name: tailscale
+          image: ghcr.io/tailscale/tailscale:latest
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-auth
+                  key: TS_AUTHKEY
+            - name: TS_ROUTES
+              value: "10.96.0.0/12"
+            - name: TS_EXTRA_ARGS
+              value: "--login-server=https://headscale.allegedly.works --advertise-tags=tag:router"
+            - name: TS_USERSPACE
+              value: "false"
+            - name: TS_KUBE_SECRET
+              value: "tailscale-state"
+            - name: TS_HOSTNAME
+              value: "k8s-subnet-router"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          volumeMounts:
+            - name: dev-tun
+              mountPath: /dev/net/tun
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      volumes:
+        - name: dev-tun
+          hostPath:
+            path: /dev/net/tun
+      nodeSelector:
+        topology.kubernetes.io/region: hetzner
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"

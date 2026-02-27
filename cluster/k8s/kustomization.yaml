@@ -71,6 +71,11 @@ resources:
   - headscale-db/flux-kustomization.yaml
   - headscale-secrets/flux-kustomization.yaml
   - applications/headscale/flux-kustomization.yaml
+  - headscale-api-key-bootstrap/flux-kustomization.yaml
+  - headscale-config/flux-kustomization.yaml
+  - tailscale-router-namespace/flux-kustomization.yaml
+  - tailscale-router-secrets/flux-kustomization.yaml
+  - tailscale-router/flux-kustomization.yaml
   - atuin-namespace/flux-kustomization.yaml
   - atuin-secrets/flux-kustomization.yaml
   - applications/atuin/flux-kustomization.yaml
