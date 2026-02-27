@@ -25,7 +25,7 @@ spec:
     - name: vault_address
       value: "http://instance.vault.svc.cluster.local:8200"
     - name: headscale_url
-      value: "http://headscale.headscale.svc:8080"
+      value: "https://headscale.allegedly.works"
   varsFrom:
     - kind: Secret
       name: vault-token
