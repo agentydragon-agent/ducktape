@@ -43,6 +43,9 @@ spec:
               value: "tailscale-state"
             - name: TS_HOSTNAME
               value: "k8s-subnet-router"
+            # Talos nodes lack ip_tables kernel module; use nftables backend.
+            - name: TS_DEBUG_FIREWALL_MODE
+              value: "nftables"
           securityContext:
             capabilities:
               add:
