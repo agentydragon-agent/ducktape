@@ -2,6 +2,10 @@
 # Ingress: kube-apiserver only (kubectl port-forward, health probes).
 # Egress: DNS, kube-apiserver:6443 (TS_KUBE_SECRET), headscale/DERP:443,
 #         WireGuard:41641/UDP.
+#
+# toCIDR 0.0.0.0/0 doesn't cover cluster-node IPs in Cilium — headscale
+# runs on VPS nodes whose IPs are part of the cluster identity. Use
+# toEntities: world + cluster for full coverage.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -38,15 +42,17 @@ spec:
             - port: "6443"
               protocol: TCP
     # Headscale control + DERP relays (HTTPS)
-    - toCIDR:
-        - 0.0.0.0/0
+    - toEntities:
+        - world
+        - cluster
       toPorts:
         - ports:
             - port: "443"
               protocol: TCP
     # WireGuard direct connections
-    - toCIDR:
-        - 0.0.0.0/0
+    - toEntities:
+        - world
+        - cluster
       toPorts:
         - ports:
             - port: "41641"

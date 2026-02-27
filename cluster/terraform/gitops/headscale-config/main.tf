@@ -43,13 +43,8 @@ resource "headscale_pre_auth_key" "activitywatch" {
 resource "vault_kv_secret_v2" "activitywatch_authkey" {
   mount = "kv"
   name  = "activitywatch/tailscale-authkey"
-  cas   = 0
 
   data_json = jsonencode({
     authkey = headscale_pre_auth_key.activitywatch.key
   })
-
-  lifecycle {
-    ignore_changes = [data_json]
-  }
 }
