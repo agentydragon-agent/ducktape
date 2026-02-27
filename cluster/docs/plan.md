@@ -73,6 +73,11 @@ See <changelog.md> for detailed change history.
       `atlas.allegedly.works` which handles network-level access). Needs: Authentik
       blueprint for OIDC provider, Vault secret for client credentials, PVE realm config
       (manual or via API).
+- [ ] **File Browser (scanner): switch to native OAuth2** — File Browser supports native
+      OAuth2/OIDC. Currently behind proxy outpost at `scanbox.allegedly.works`. Migration
+      follows the Gatus pattern: OAuth2 provider blueprint, `sso/scanner-filebrowser`
+      Vault secret, ESO into scanner namespace, direct HTTPRoute, updated networkpolicy
+      (gateway-system instead of outpost), remove from `shared-proxy-outpost.yaml`.
 - [ ] **Ollama: per-user auth** — Options: Authentik JWTs, LiteLLM proxy.
 - [ ] **Harbor terraform: switch to robot accounts** for least-privilege
 - [ ] **Harbor CI robot: scope per-namespace pull secrets to read-only on specific projects** —

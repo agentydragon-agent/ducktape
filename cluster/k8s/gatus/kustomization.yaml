@@ -5,7 +5,7 @@ resources:
   - helmrelease.yaml
   - env-configmap.yaml
   - networkpolicy.yaml
-  # HTTPRoute is in authentik-proxy-routes/gatus-httproute.yaml (SSO-protected via Authentik outpost).
+  - httproute.yaml
 
 configMapGenerator:
   - name: gatus-config

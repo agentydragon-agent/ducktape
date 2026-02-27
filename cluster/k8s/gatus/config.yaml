@@ -1,5 +1,13 @@
 # TODO: Consider consolidating the many per-app PostgreSQL instances
 # in the cluster into a shared instance, and using postgres backend.
+security:
+  oidc:
+    issuer-url: https://auth.allegedly.works/application/o/gatus/
+    redirect-url: https://status.allegedly.works/authorization-code/callback
+    client-id: gatus
+    client-secret: ${GATUS_CLIENT_SECRET}
+    scopes: [openid]
+
 storage:
   type: sqlite
   path: /data/gatus.db

@@ -13,7 +13,6 @@ entries:
       type: proxy
       providers:
         - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, gatus]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, grocy]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, loki]]

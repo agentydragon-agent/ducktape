@@ -1,6 +1,5 @@
-# Restrict Gatus ingress to Authentik proxy outpost and Prometheus scraping.
-# Gatus trusts X-authentik-username for user identity — any pod that
-# can reach port 8080 can impersonate any user.
+# Restrict Gatus ingress to the Cilium gateway and Prometheus scraping.
+# With native OIDC, auth is handled by Gatus itself — gateway passes traffic directly.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -13,14 +12,11 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # Authentik proxy outpost → Gatus (SSO-protected external access)
+    # Cilium gateway → Gatus (external access via HTTPRoute)
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: authentik
-          podSelector:
-            matchLabels:
-              goauthentik.io/outpost-name: shared-proxy-outpost
+              kubernetes.io/metadata.name: gateway-system
       ports:
         - port: 8080
           protocol: TCP
