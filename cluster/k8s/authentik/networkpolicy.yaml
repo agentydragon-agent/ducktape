@@ -1,0 +1,40 @@
+# Restrict Authentik API (port 80) to authorized cluster consumers.
+# Unauthenticated /api/v3/ enables user enumeration, provider tampering,
+# and backdoor user creation — restrict to prevent abuse from any cluster pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: authentik-server-ingress
+  namespace: authentik
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/name: authentik
+  policyTypes:
+    - Ingress
+  ingress:
+    # authentik namespace: outposts call server API for config sync
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+      ports:
+        - port: 80
+          protocol: TCP
+    # flux-system: tofu-controller tf-runner calls Authentik API via Terraform
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: flux-system
+      ports:
+        - port: 80
+          protocol: TCP
+    # kube-system: cilium-envoy proxies external HTTPS traffic to server (Gateway API)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 80
+          protocol: TCP

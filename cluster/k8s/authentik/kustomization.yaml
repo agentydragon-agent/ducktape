@@ -5,6 +5,7 @@ resources:
   - authentik-host-configmap.yaml
   - token-secret.yaml
   - httproute.yaml
+  - networkpolicy.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
