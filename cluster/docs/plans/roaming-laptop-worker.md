@@ -195,6 +195,9 @@ establish once UDP 41641 is open on both sides.
 
 **Hetzner firewall**: UDP 41641 open for direct Tailscale peering.
 
+**Mesh connectivity verified from wyrm** (2026-02-27): All 4 cluster nodes reachable via
+Tailscale IPs. Latency: VPS ~55-65ms, Proxmox ~54ms. Stages 1-2 complete.
+
 ## Next Test Stages
 
 ### Stage 1: Verify Tailscale Mesh Health
@@ -212,8 +215,8 @@ ping <node-tailscale-ip>
 
 Verify:
 
-- [ ] All 4 cluster nodes appear in `headscale nodes list`
-- [ ] Tailscale IPs (100.64.x.x) are reachable from a connected device
+- [x] All 4 cluster nodes appear in `headscale nodes list`
+- [x] Tailscale IPs (100.64.x.x) are reachable from a connected device
 - [ ] Direct peer connections establish (not just DERP relay) — check `tailscale status`
 
 ### Stage 2: Register a Laptop with Headscale
@@ -233,8 +236,8 @@ kubectl exec -n headscale deployment/headscale -- \
 
 Verify:
 
-- [ ] Laptop gets a 100.64.x.x IP
-- [ ] Laptop can ping all cluster node Tailscale IPs
+- [x] Laptop gets a 100.64.x.x IP (wyrm: 100.64.0.1)
+- [x] Laptop can ping all cluster node Tailscale IPs
 - [ ] Cluster nodes can ping laptop's Tailscale IP
 - [ ] `--accept-routes` on laptop shows atlas subnet route (10.2.0.0/16)
 
