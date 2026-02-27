@@ -1,0 +1,172 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("//tools/js:openapi.bzl", "js_openapi_schema")
+load(":defs.bzl", "visual_test")
+
+npm_link_all_packages(name = "node_modules")
+
+js_openapi_schema(
+    name = "schema",
+    generator = "//approval_gate:export_schema_bin",
+)
+
+# ── Per-file source libraries ──────────────────────────────────────────────────
+
+js_library(
+    name = "mcp",
+    srcs = ["mcp.ts"],
+    deps = [":node_modules"],
+)
+
+js_library(
+    name = "types",
+    srcs = ["types.ts"],
+    deps = [":schema"],
+)
+
+js_library(
+    name = "api",
+    srcs = ["api.ts"],
+    deps = [
+        ":node_modules",
+        ":schema",
+        ":types",
+    ],
+)
+
+js_library(
+    name = "ActionList",
+    srcs = ["ActionList.svelte"],
+    deps = [":types"],
+)
+
+js_library(
+    name = "ActionDetail",
+    srcs = ["ActionDetail.svelte"],
+    deps = [
+        ":api",
+        ":types",
+    ],
+)
+
+js_library(
+    name = "App",
+    srcs = ["App.svelte"],
+    deps = [
+        ":ActionDetail",
+        ":ActionList",
+        ":api",
+        ":mcp",
+        ":types",
+    ],
+)
+
+js_library(
+    name = "app",
+    srcs = [
+        "app.css",
+        "main.ts",
+    ],
+    deps = [":App"],
+)
+
+# ── Production bundle ──────────────────────────────────────────────────────────
+
+_BUNDLE_CONFIG = [
+    "esbuild.config.mjs",
+    "index.html",
+    "svelte.config.js",
+    "tsconfig.json",
+]
+
+js_binary(
+    name = "build_bundle",
+    data = _BUNDLE_CONFIG + [
+        ":app",
+        ":node_modules",
+    ],
+    entry_point = "esbuild.config.mjs",
+)
+
+js_run_binary(
+    name = "bundle",
+    srcs = _BUNDLE_CONFIG + [":app"],
+    outs = [
+        "dist/index.html",
+        "dist/main.css",
+        "dist/main.css.map",
+        "dist/main.js",
+        "dist/main.js.map",
+    ],
+    args = ["dist"],
+    chdir = package_name(),
+    tool = ":build_bundle",
+    visibility = ["//approval_gate:__pkg__"],
+)
+
+# ── Visual test harness ────────────────────────────────────────────────────────
+
+js_library(
+    name = "harness_lib",
+    srcs = [
+        "tests/harness/HarnessIndex.svelte",
+        "tests/harness/harness.ts",
+        "tests/harness/index.html",
+    ],
+    tags = ["no-lint"],
+    deps = [":app"],
+)
+
+js_binary(
+    name = "build_harness",
+    data = [
+        "tests/harness/esbuild.config.mjs",
+        ":harness_lib",
+        ":node_modules",
+    ],
+    entry_point = "tests/harness/esbuild.config.mjs",
+)
+
+js_run_binary(
+    name = "harness_bundle",
+    srcs = [
+        "tests/harness/esbuild.config.mjs",
+        ":harness_lib",
+    ],
+    outs = ["tests/harness/dist/harness.js"],
+    args = ["tests/harness/dist"],
+    chdir = package_name(),
+    tool = ":build_harness",
+)
+
+filegroup(
+    name = "harness_js",
+    srcs = [":harness_bundle"],
+)
+
+filegroup(
+    name = "visual_test_assets",
+    srcs = ["tests/harness/index.html"],
+)
+
+# ── Visual tests ──────────────────────────────────────────────────────────────
+
+# ListPage: full list view with pending + recently-resolved actions
+visual_test(
+    name = "visual_ListPage",
+    srcs = ["tests/visual_test_ListPage.mjs"],
+)
+
+# DetailPage: action detail showing the approve/reject workflow
+visual_test(
+    name = "visual_DetailPage",
+    srcs = ["tests/visual_test_DetailPage.mjs"],
+)
+
+test_suite(
+    name = "visual_tests",
+    tests = [
+        ":visual_DetailPage",
+        ":visual_ListPage",
+    ],
+)

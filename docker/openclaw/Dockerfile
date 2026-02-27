@@ -1,4 +1,6 @@
-# Custom OpenClaw image with matrix channel plugin pre-installed.
+# Custom OpenClaw image with:
+#   - matrix channel plugin pre-installed
+#   - approval-gate plugin pre-installed
 #
 # The upstream image bundles extension source at /app/extensions/matrix/ but
 # without node_modules/. We install deps directly there so the bundled extension
@@ -10,6 +12,8 @@
 FROM ghcr.io/openclaw/openclaw:2026.2.24
 
 USER root
+
+# ── Matrix plugin (bundled upstream, needs deps installed) ────────────────────
 WORKDIR /app/extensions/matrix
 
 # 1. Strip workspace:* devDependencies (invalid outside the monorepo)
@@ -26,6 +30,15 @@ RUN node -e " \
   fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');" \
  && npm install --omit=dev \
  && chown -R node:node node_modules
+
+# ── Approval gate plugin ──────────────────────────────────────────────────────
+# Plugin source is copied from the repo; deps are installed at build time.
+WORKDIR /app/extensions/approval-gate
+COPY openclaw/approval-gate/package.json ./
+COPY openclaw/approval-gate/index.ts ./
+COPY openclaw/approval-gate/openclaw.plugin.json ./
+RUN npm install --omit=dev \
+ && chown -R node:node .
 
 WORKDIR /app
 

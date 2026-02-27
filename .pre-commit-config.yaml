@@ -217,7 +217,8 @@ repos:
             # Application config files, not K8s manifests
             cluster/k8s/gatus/config\.yaml|
             cluster/k8s/oauth-broker/config\.yaml|
-            cluster/k8s/applications/headscale/config\.yaml
+            cluster/k8s/applications/headscale/config\.yaml|
+            cluster/k8s/approval-gate/config\.yaml
           )$
         types: [yaml]
 

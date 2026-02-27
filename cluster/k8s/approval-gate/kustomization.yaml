@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - externalsecret.yaml
+  - approval-gate-pvc.yaml
+  - exec-backend-deployment.yaml
+  - exec-backend-service.yaml
+  - approval-gate-deployment.yaml
+  - approval-gate-service.yaml
+  - approval-gate-httproute.yaml
+  - ciliumnetworkpolicy.yaml
+
+configMapGenerator:
+  - name: approval-gate-config
+    namespace: approval-gate
+    files:
+      - config.yaml

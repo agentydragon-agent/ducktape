@@ -1,4 +1,5 @@
 packages:
+  - "approval_gate/frontend"
   - "props/frontend"
   - "agent_server/web"
   - "hack/rspcache/admin_ui"

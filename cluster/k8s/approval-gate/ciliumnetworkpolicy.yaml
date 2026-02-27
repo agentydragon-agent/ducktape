@@ -1,0 +1,36 @@
+# CiliumNetworkPolicy for the approval-gate server pod.
+#
+# Security model: single port 8765, auth-based access control.
+#   Authentik outpost (authentik namespace) — reaches /mcp with X-Authentik-Jwt header
+#   OpenClaw pods (openclaw namespace)      — reaches /mcp with Authorization: Bearer header
+#   Both must present valid credentials; the /mcp handler rejects unauthenticated requests.
+#
+# The host entity covers kubelet liveness/readiness probes.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: approval-gate-ingress
+  namespace: approval-gate
+spec:
+  endpointSelector:
+    matchLabels:
+      app: approval-gate
+      component: server
+  ingress:
+    # Kubelet health probes (liveness/readiness) originate from the node host.
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    # Operator UI + REST API + /mcp: Authentik (JWT) and OpenClaw (bearer) auth.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openclaw
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP

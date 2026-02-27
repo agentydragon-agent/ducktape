@@ -1,0 +1,68 @@
+# Build and push approval-gate container images to Harbor.
+#
+# Builds two images:
+#   - approval-gate server  → registry.allegedly.works/approval-gate/approval-gate
+#   - exec backend          → registry.allegedly.works/approval-gate/exec-backend
+#
+# Bazel-built OCI images — same inputs → same image digest.
+# Compares local digest against remote and skips push when unchanged.
+#
+# Triggers:
+#   - workflow_call (from ci.yml): digest comparison handles skip
+#   - workflow_dispatch: manual push
+name: Approval Gate Image
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      BUILDBUDDY_API_KEY:
+        required: false
+      HARBOR_ROBOT_USERNAME:
+        required: true
+      HARBOR_ROBOT_TOKEN:
+        required: true
+
+concurrency:
+  group: approval-gate-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          rbe_image: ${{ inputs.rbe_image }}
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: registry.allegedly.works
+          username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
+          password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+
+      - name: Build and push if changed
+        run: |
+          .github/scripts/harbor_push_if_changed.sh \
+            //approval_gate:load \
+            approval-gate:latest \
+            registry.allegedly.works/approval-gate/approval-gate
+          .github/scripts/harbor_push_if_changed.sh \
+            //mcp_infra/exec:exec_backend_load \
+            approval-gate-exec-backend:latest \
+            registry.allegedly.works/approval-gate/exec-backend
