@@ -23,7 +23,7 @@ class _PlaidCallbackBody(BaseModel):
     public_token: str
 
 
-def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI:
+def create_app(providers: dict[str, Provider], target_namespace: str, managed_by: str = "oauth-broker") -> FastAPI:
     app = FastAPI(title="OAuth Broker", docs_url=None, redoc_url=None)
     jinja_env = Environment(loader=FileSystemLoader(Path(__file__).parent), autoescape=True)
     index_template = jinja_env.get_template("index.html.j2")
@@ -34,7 +34,7 @@ def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI
     @app.on_event("startup")
     async def startup() -> None:
         nonlocal k8s_store
-        k8s_store = await K8sTokenStore.from_incluster()
+        k8s_store = await K8sTokenStore.from_incluster(managed_by=managed_by)
         task = asyncio.create_task(token_refresh_loop(providers, k8s_store, target_namespace))
         background_tasks.add(task)
         task.add_done_callback(background_tasks.discard)
