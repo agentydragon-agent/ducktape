@@ -2,6 +2,7 @@
 
 import base64
 import logging
+from typing import Self
 
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
@@ -23,7 +24,7 @@ class K8sTokenStore:
         self._managed_by = managed_by
 
     @classmethod
-    async def from_incluster(cls, managed_by: str) -> "K8sTokenStore":
+    async def from_incluster(cls, managed_by: str) -> Self:
         config.load_incluster_config()
         return cls(client.CoreV1Api(), managed_by)
 
