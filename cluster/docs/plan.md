@@ -80,8 +80,9 @@ See <changelog.md> for detailed change history.
 - [ ] **ActivityWatch: build and push initial image** — Run `activitywatch-image.yml`
       workflow manually after Harbor CI creates the project. Verify pod starts.
 - [ ] **ActivityWatch: set up desktop client sync** — see "ActivityWatch Setup" below
-- [ ] **ActivityWatch: Headscale direct access** — Headscale verified working with
-      atlas and wyrm. Switch from `kubectl port-forward` to direct mesh access
+- [ ] **ActivityWatch: Headscale subnet route** — Set up a Tailscale subnet router
+      in the cluster advertising the ActivityWatch service IP. Enrolled devices (atlas,
+      wyrm) can then reach the server directly over the mesh
 - [ ] **ActivityWatch: Android sync** — not feasible with current upstream (`aw-android`
       embeds its own server, no remote sync). Revisit when `aw-sync` ships for Android
 
@@ -371,7 +372,14 @@ clusters. Low priority — current setup survives single-node failure via automa
 ## ActivityWatch Setup
 
 Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
-Cluster-internal only (no public exposure). Access via `kubectl port-forward` or Headscale.
+Cluster-internal only (no public exposure). Access via Headscale subnet route.
+
+### Security Model
+
+ActivityWatch has **no built-in auth**. Access control relies entirely on Headscale mesh
+membership as the trust boundary: only devices enrolled via Headscale (authenticated
+through Authentik OIDC) can reach the service. Any device on the tailnet has full
+read/write access to ActivityWatch.
 
 ### Architecture
 
@@ -379,51 +387,18 @@ Cluster-internal only (no public exposure). Access via `kubectl port-forward` or
 - **Storage**: SQLite on `proxmox-csi-retain` (1Gi PVC)
 - **Image**: Custom build at `registry.allegedly.works/activitywatch/aw-server`
   (`docker/activitywatch/Dockerfile`), CI at `.github/workflows/activitywatch-image.yml`
-- **Auth**: No built-in auth — transport-level auth via kubectl/Headscale
+- **Auth**: None — Headscale mesh membership is the access boundary (see above)
 - **Port**: 5600 (REST API + web UI)
 
 ### Desktop Client Setup
 
 Watchers (`aw-watcher-window`, `aw-watcher-afk`) run locally and send heartbeats to the
-cluster server via `kubectl port-forward`.
+cluster server via Headscale subnet route.
 
-1. **Install ActivityWatch** on desktop (watchers + `aw-server-rust` for local fallback)
-
-2. **Set up persistent port-forward** (systemd user service):
-
-   ```ini
-   # ~/.config/systemd/user/aw-port-forward.service
-   [Unit]
-   Description=ActivityWatch kubectl port-forward
-   After=network-online.target
-
-   [Service]
-   ExecStart=/usr/bin/kubectl port-forward svc/activitywatch 5600:5600 -n activitywatch
-   Restart=always
-   RestartSec=5
-
-   [Install]
-   WantedBy=default.target
-   ```
-
-   ```bash
-   systemctl --user enable --now aw-port-forward
-   ```
-
-3. **Configure watchers** — no changes needed, default `aw-client.toml` uses
-   `hostname = "127.0.0.1"`, `port = "5600"` which hits the port-forward
-
-4. **Stop local aw-server** — watchers talk directly to the cluster server via the tunnel.
-   Keep local `aw-server` installed as fallback if the tunnel is down.
-
-5. **Verify**: Browse `http://localhost:5600` → ActivityWatch web UI with bucket data
-
-### Headscale Access
-
-Headscale verified working with atlas and wyrm (OIDC via Authentik).
-
-1. Expose `activitywatch.activitywatch.svc` via Headscale subnet route
-2. Configure `aw-client.toml` on each machine:
+1. **Install ActivityWatch** on desktop (watchers only, no local server needed)
+2. **Enroll device in Headscale**: `sudo tailscale up --login-server=https://headscale.allegedly.works`
+3. **Set up Headscale subnet route** exposing `activitywatch.activitywatch.svc` (TODO)
+4. **Configure watchers** — set `aw-client.toml`:
 
    ```toml
    [server]
@@ -431,8 +406,9 @@ Headscale verified working with atlas and wyrm (OIDC via Authentik).
    port = "5600"
    ```
 
-3. Server must bind to `0.0.0.0` (already configured) which disables the Host header
+5. Server must bind to `0.0.0.0` (already configured) which disables the Host header
    validation check in aw-server-rust
+6. **Verify**: Browse `http://<headscale-ip>:5600` → ActivityWatch web UI with bucket data
 
 ### Android
 
