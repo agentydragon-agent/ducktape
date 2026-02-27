@@ -34,18 +34,19 @@ See <docs/bootstrap.md> for full setup.
 
 ## Services
 
-| Service        | URL                                 | Purpose            |
-| -------------- | ----------------------------------- | ------------------ |
-| Authentik      | <https://auth.allegedly.works>      | SSO provider       |
-| Gitea          | <https://git.allegedly.works>       | Git hosting        |
-| Harbor         | <https://registry.allegedly.works>  | Container registry |
-| Vault          | <https://vault.allegedly.works>     | Secrets management |
-| Matrix/Element | <https://chat.allegedly.works>      | Chat               |
-| Grafana        | <https://grafana.allegedly.works>   | Monitoring         |
-| Nix Cache      | <https://cache.allegedly.works>     | Binary cache       |
-| Headscale      | <https://headscale.allegedly.works> | Tailscale control  |
-| Gatus          | <https://status.allegedly.works>    | Health monitoring  |
-| OpenClaw       | <https://openclaw.allegedly.works>  | AI coding agent    |
+| Service        | URL                                          | Purpose                       |
+| -------------- | -------------------------------------------- | ----------------------------- |
+| Authentik      | <https://auth.allegedly.works>               | SSO provider                  |
+| Gitea          | <https://git.allegedly.works>                | Git hosting                   |
+| Harbor         | <https://registry.allegedly.works>           | Container registry            |
+| Vault          | <https://vault.allegedly.works>              | Secrets management            |
+| Matrix/Element | <https://chat.allegedly.works>               | Chat                          |
+| Grafana        | <https://grafana.allegedly.works>            | Monitoring                    |
+| Nix Cache      | <https://cache.allegedly.works>              | Binary cache                  |
+| Headscale      | <https://headscale.allegedly.works>          | Tailscale control             |
+| Gatus          | <https://status.allegedly.works>             | Health monitoring             |
+| OpenClaw       | <https://openclaw.allegedly.works>           | AI coding agent               |
+| ActivityWatch  | `activitywatch.tailnet.allegedly.works:5600` | Activity tracking (mesh-only) |
 
 Credentials: `get-passwords` (requires direnv in cluster directory).
 OpenClaw requires a one-time gateway token entry in the UI — the token is included in

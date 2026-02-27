@@ -96,15 +96,6 @@ See <changelog.md> for detailed change history.
 - [ ] **Harbor proxy cache: add GHCR credentials for private repos** — 403 on
       `openclaw/openclaw`. Needs GitHub PAT (`read:packages`) in Vault → ESO → Harbor.
 - [ ] **Verify ntfy.sh notifications** — confirm Flux failure alerts arrive on phone
-- [x] **ActivityWatch: build and push initial image** — Image built and running.
-- [x] **ActivityWatch: tailscale sidecar** — Pod has tailscale sidecar on Headscale
-      mesh at `activitywatch.tailnet.allegedly.works:5600`. Replaced subnet router
-      (Cilium nftables incompatibility). Pre-auth key created by bootstrap Job
-      (`k8s/activitywatch-authkey-bootstrap/`) to work around upstream provider bug
-      ([PR #28](https://github.com/awlsring/terraform-provider-headscale/pull/28)).
-- [x] **ActivityWatch: desktop client config** — `nix/home/services/activitywatch.nix`
-      points watchers at `activitywatch.tailnet.allegedly.works:5600` via Headscale.
-      Removed legacy SSH tunnel to `agentydragon.com`. Apply with `home-manager switch`.
 - [ ] **ActivityWatch: Gatus health check** — Add Gatus monitor for
       `activitywatch-readonly.activitywatch:5600/api/0/info` (intra-cluster).
       Detect poisoned-lock / SQLite issues before they go unnoticed.
