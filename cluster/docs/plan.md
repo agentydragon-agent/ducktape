@@ -406,68 +406,15 @@ Current CloudNativePG clusters are 2-instance primary+standby (not active-active
 For stronger HA, consider: Galera for MariaDB workloads, or CNPG with regional standby
 clusters. Low priority — current setup survives single-node failure via automatic failover.
 
-## ActivityWatch Setup
+## ActivityWatch (Future)
 
-Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
-Cluster-internal only (no public exposure). The pod has a tailscale sidecar on the
-Headscale mesh — accessible at `activitywatch.tailnet.allegedly.works:5600` via MagicDNS.
+Setup and architecture details in <../README.md>.
 
-### Security Model
-
-ActivityWatch has **no built-in auth**. Access control relies entirely on Headscale mesh
-membership as the trust boundary: only devices enrolled via Headscale (authenticated
-through Authentik OIDC) can reach the service. Any device on the tailnet has full
-read/write access to ActivityWatch.
-
-### Architecture
-
-- **Server**: `aw-server-rust` in `activitywatch` namespace on Proxmox node
-- **Sidecar**: Tailscale container joins Headscale mesh (`TS_HOSTNAME=activitywatch`)
-- **Storage**: SQLite on `proxmox-csi-retain` (1Gi PVC)
-- **Image**: Custom build at `registry.allegedly.works/activitywatch/aw-server`
-  (`docker/activitywatch/Dockerfile`), CI at `.github/workflows/activitywatch-image.yml`
-- **Auth**: None — Headscale mesh membership is the access boundary (see above)
-- **Port**: 5600 (REST API + web UI)
-- **Pre-auth key**: Created by `k8s/activitywatch-authkey-bootstrap/` Job (not Terraform,
-  due to upstream provider bug — see PR #28)
-
-### Desktop Client Setup
-
-Watchers (`aw-watcher-window`, `aw-watcher-afk`) run locally and send heartbeats to the
-cluster server via the Headscale WireGuard mesh. MagicDNS resolves
-`activitywatch.tailnet.allegedly.works` to the pod's tailnet IP.
-
-Configuration is managed by Nix home-manager (`nix/home/services/activitywatch.nix`).
-Apply with `home-manager switch --flake ~/code/ducktape/nix/home#<hostname>`.
-
-1. **Enroll device in Headscale**: `sudo tailscale up --login-server=https://headscale.allegedly.works`
-2. **Verify connectivity**: `curl http://activitywatch.tailnet.allegedly.works:5600/api/0/info`
-3. **Apply home-manager**: `home-manager switch --flake ~/code/ducktape/nix/home#wyrm`
-4. **Start watchers**: `aw-qt` (autostart_modules: `aw-watcher-afk`, `aw-watcher-window`)
-5. **Verify**: Browse `http://activitywatch.tailnet.allegedly.works:5600` — buckets appear
-
-### Android
-
-`aw-android` embeds its own `aw-server-rust` and cannot point at a remote server.
-No sync mechanism exists. Options when upstream support improves:
-
-- **`aw-sync`**: File-based sync via Syncthing — not yet supported on Android
-- **Custom exporter**: Termux script reading from `localhost:5600` on phone and POSTing
-  to the cluster server's REST API
-- **Accept the gap**: Desktop data (where most work happens) is centralized; phone data
-  stays local
-
-### Public Access (Future, Optional)
-
-If browser access from anywhere is needed, add Authentik proxy outpost following the
-Grocy pattern (no app changes required):
-
-1. Add proxy provider blueprint to `k8s/authentik/blueprints/`
-2. Add provider to shared proxy outpost
-3. Add HTTPRoute to `k8s/authentik-proxy-routes/`
-4. Add `networkpolicy.yaml` restricting backend ingress to the outpost pod
-   (see `cluster/AGENTS.md` SSO Integration for the template)
-5. Watchers would still need `kubectl port-forward` or Headscale (no native auth support)
+- [ ] **Public access via Authentik proxy outpost** — follow Grocy pattern (proxy
+      provider blueprint, shared outpost, HTTPRoute, networkpolicy). Watchers would
+      still need Headscale (no native auth support).
+- [ ] **Android sync** — not feasible (`aw-android` embeds its own server). Revisit
+      when `aw-sync` ships for Android.
 
 ## 📋 Future Services (Lower Priority)
 

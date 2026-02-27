@@ -81,6 +81,31 @@ These services must not depend on `proxmox-csi-retain` storage or Proxmox-pinned
 Both PowerDNS and Authentik now use CloudNativePG on `hcloud-volumes`.
 See <docs/plan.md> for the full invariant definition, compliance tracking, and fix plan.
 
+## ActivityWatch
+
+Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
+Cluster-internal only — accessible at `activitywatch.tailnet.allegedly.works:5600` via
+Headscale mesh (MagicDNS). No built-in auth; Headscale membership is the trust boundary.
+
+- **Server**: `aw-server-rust` on Proxmox, SQLite on `proxmox-csi-retain` (1Gi PVC)
+- **Sidecar**: Tailscale container joins Headscale mesh (`TS_HOSTNAME=activitywatch`)
+- **Image**: `registry.allegedly.works/activitywatch/aw-server`, CI at `.github/workflows/activitywatch-image.yml`
+- **Pre-auth key**: Bootstrap Job (`k8s/activitywatch-authkey-bootstrap/`), not Terraform
+  (upstream provider bug — [PR #28](https://github.com/awlsring/terraform-provider-headscale/pull/28))
+- **Read-only proxy**: nginx sidecar on port 5601 (Service `activitywatch-readonly`),
+  allows GET + POST `/api/0/query` only. `openclaw-sandbox` and `claude-sandbox` namespaces
+  have CiliumNetworkPolicy access to this port.
+
+### Desktop Client Setup
+
+Watchers run locally, heartbeat to cluster via Headscale mesh. Config managed by
+Nix home-manager (`nix/home/services/activitywatch.nix`).
+
+1. Enroll device: `sudo tailscale up --login-server=https://headscale.allegedly.works`
+2. Apply config: `home-manager switch --flake ~/code/ducktape/nix/home#<hostname>`
+3. Start: `aw-qt` (runs `aw-watcher-afk`, `aw-watcher-window`)
+4. Verify: `curl http://activitywatch.tailnet.allegedly.works:5600/api/0/info`
+
 ## Repository Structure
 
 ```text
