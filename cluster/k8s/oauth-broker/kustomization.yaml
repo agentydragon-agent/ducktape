@@ -5,6 +5,7 @@ resources:
   - rbac.yaml
   - deployment.yaml
   - service.yaml
+  - networkpolicy.yaml
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

@@ -1,12 +1,17 @@
-# Allow ingress from authentik namespace (outpost proxy → OpenClaw gateway).
-# Additive with the operator's default-deny NetworkPolicy.
+# Restrict Grocy ingress to the Authentik shared proxy outpost only.
+# Grocy trusts X-authentik-username for user identity — any pod that
+# can reach port 80 can impersonate any user.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-authentik-ingress
-  namespace: openclaw
+  name: grocy-ingress
+  namespace: grocy
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app: grocy
+  policyTypes:
+    - Ingress
   ingress:
     - from:
         - namespaceSelector:
@@ -16,7 +21,5 @@ spec:
             matchLabels:
               goauthentik.io/outpost-name: shared-proxy-outpost
       ports:
-        - port: 18790
+        - port: 80
           protocol: TCP
-  policyTypes:
-    - Ingress

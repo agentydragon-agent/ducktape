@@ -1,0 +1,25 @@
+# Restrict OAuth Broker ingress to the Authentik shared proxy outpost only.
+# OAuth Broker trusts X-authentik-username to identify the authenticated user
+# before initiating OAuth flows on their behalf.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: oauth-broker-ingress
+  namespace: oauth-broker
+spec:
+  podSelector:
+    matchLabels:
+      app: oauth-broker
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              goauthentik.io/outpost-name: shared-proxy-outpost
+      ports:
+        - port: 8080
+          protocol: TCP

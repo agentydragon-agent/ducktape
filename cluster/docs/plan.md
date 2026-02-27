@@ -246,7 +246,8 @@ currently has no backup strategy. Velero integrates with Proxmox CSI and Hetzner
 
 Most services lack network policies. Intra-cluster APIs are unprotected — any pod
 (including openclaw sandbox, props evaluators) can reach sensitive services directly.
-Only Loki, ActivityWatch, and Alloy currently have policies.
+Authentik proxy-backed services (grocy, gatus, hubble-ui, oauth-broker, scanner,
+openclaw, alloy-otlp) now have policies; see the pattern in `cluster/AGENTS.md`.
 
 **End goal**: Default-deny per namespace with explicit allow-rules. Use Hubble to
 observe traffic flows first, then generate baseline allow-rules.
@@ -255,8 +256,8 @@ observe traffic flows first, then generate baseline allow-rules.
 
 - [ ] **Vault** — restrict ingress to ESO, tofu-controller runner, Vault namespace only.
       Any pod can currently reach `instance.vault:8200` and attempt auth method exploitation.
-- [ ] **PowerDNS API** — restrict `powerdns-api.dns-system:8081` to cert-manager webhook
-      and powerdns-operator only. Unauthenticated zone modification = DNS poisoning.
+- [x] **PowerDNS API** — restrict `powerdns-api.dns-system:8081` to cert-manager webhook,
+      powerdns-operator, and external-dns. Unauthenticated zone modification = DNS poisoning.
 - [ ] **Authentik API** — restrict `authentik-server.authentik:80` to system namespaces
       and tofu-controller. Unauthenticated `/api/v3/` enables user enumeration, provider
       tampering, backdoor user creation.
@@ -278,12 +279,9 @@ observe traffic flows first, then generate baseline allow-rules.
 - [ ] **Tempo** — restrict to Grafana, Alloy only (trace data contains request payloads).
 - [ ] **Langfuse** — restrict to props, OpenClaw telemetry, Authentik proxy.
 - [ ] **Headlamp** — restrict to Authentik proxy only (K8s admin UI).
-- [ ] **Hubble UI** — restrict to Authentik proxy only (network topology visualization).
 
 **Priority 3 — Remaining services** (lower risk, still should be locked down):
 
-- [ ] **Grocy** — restrict to Authentik proxy outpost only.
-- [ ] **Gatus** — restrict ingress; allow egress to health check targets.
 - [ ] **Headscale** — restrict API to Authentik proxy, gateway.
 - [ ] **Cert-Manager** — restrict metrics endpoint to monitoring namespace.
 - [ ] **Metrics Server** — restrict to Prometheus, HPA controllers.
@@ -437,7 +435,9 @@ Grocy pattern (no app changes required):
 1. Add proxy provider blueprint to `k8s/authentik/blueprints/`
 2. Add provider to shared proxy outpost
 3. Add HTTPRoute to `k8s/authentik-proxy-routes/`
-4. Watchers would still need `kubectl port-forward` or Headscale (no native auth support)
+4. Add `networkpolicy.yaml` restricting backend ingress to the outpost pod
+   (see `cluster/AGENTS.md` SSO Integration for the template)
+5. Watchers would still need `kubectl port-forward` or Headscale (no native auth support)
 
 ## 📋 Future Services (Lower Priority)
 

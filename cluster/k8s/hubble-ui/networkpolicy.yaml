@@ -1,12 +1,17 @@
-# Allow ingress from authentik namespace (outpost proxy → OpenClaw gateway).
-# Additive with the operator's default-deny NetworkPolicy.
+# Restrict Hubble UI ingress to the Authentik shared proxy outpost only.
+# Hubble UI has no built-in auth — anyone reaching port 8081 sees all
+# cluster network flows.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-authentik-ingress
-  namespace: openclaw
+  name: hubble-ui-ingress
+  namespace: kube-system
 spec:
-  podSelector: {}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: hubble-ui
+  policyTypes:
+    - Ingress
   ingress:
     - from:
         - namespaceSelector:
@@ -16,7 +21,5 @@ spec:
             matchLabels:
               goauthentik.io/outpost-name: shared-proxy-outpost
       ports:
-        - port: 18790
+        - port: 8081
           protocol: TCP
-  policyTypes:
-    - Ingress
