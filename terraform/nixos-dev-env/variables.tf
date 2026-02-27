@@ -12,9 +12,9 @@ variable "proxmox_host" {
 }
 
 variable "proxmox_api_host" {
-  description = "Proxmox API host FQDN"
+  description = "Proxmox API host:port"
   type        = string
-  default     = "atlas.agentydragon.com"
+  default     = "atlas:8006"
 }
 
 variable "proxmox_node_name" {

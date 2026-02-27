@@ -52,7 +52,7 @@ output "instructions" {
        ssh ${var.username}@<vm-ip> 'home-manager generations'
 
     5. Access Proxmox web UI as the user:
-       URL: https://${var.proxmox_api_host}:8006
+       URL: https://${var.proxmox_api_host}
        User: ${local.proxmox_username}
        Password: (set with: ssh root@${var.proxmox_host} "pveum user password ${local.proxmox_username}")
 
