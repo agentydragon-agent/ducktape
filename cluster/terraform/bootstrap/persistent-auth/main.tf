@@ -80,6 +80,7 @@ locals {
         "VM.Config.Network",
         "VM.Config.Options",
         "VM.Console",
+        "VM.GuestAgent.Audit",
         "VM.Migrate",
         "VM.PowerMgmt",
       ])
@@ -89,6 +90,11 @@ locals {
 }
 
 # Auto-provision persistent Proxmox users and tokens via SSH
+# TODO: Token creation is not idempotent — the script unconditionally deletes and
+# recreates tokens on every `tofu apply`, rotating the CSI token and forcing a
+# sealed secret re-seal even when nothing changed. Make this idempotent: check if
+# the token already exists (e.g., `pveum user token list` + grep) and skip
+# delete/add if it does. Store the token value in tofu state on first creation.
 data "external" "pve_persistent_tokens" {
   for_each = local.pve_persistent_users
 
