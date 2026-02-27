@@ -24,7 +24,7 @@ spec:
           command: ["headscale"]
           args: ["serve"]
           ports:
-            - name: http
+            - name: https
               containerPort: 8080
               protocol: TCP
             - name: metrics
@@ -62,14 +62,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: http
+              port: https
               scheme: HTTPS
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /health
-              port: http
+              port: https
               scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 10
