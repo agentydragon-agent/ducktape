@@ -106,7 +106,7 @@ in
       type = lib.types.attrsOf lib.types.str;
       default = {
         "topology.kubernetes.io/region" = "roaming";
-        "node-role.kubernetes.io/roaming" = "true";
+        "node.kubernetes.io/role" = "roaming";
       };
       description = "Labels to apply to the node on registration";
     };
