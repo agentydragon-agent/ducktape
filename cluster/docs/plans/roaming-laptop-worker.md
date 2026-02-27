@@ -217,7 +217,7 @@ Verify:
 
 - [x] All 4 cluster nodes appear in `headscale nodes list`
 - [x] Tailscale IPs (100.64.x.x) are reachable from a connected device
-- [ ] Direct peer connections establish (not just DERP relay) — check `tailscale status`
+- [x] Direct peer connections establish (not just DERP relay) — all 4 direct
 
 ### Stage 2: Register a Laptop with Headscale
 
@@ -238,8 +238,8 @@ Verify:
 
 - [x] Laptop gets a 100.64.x.x IP (wyrm: 100.64.0.1)
 - [x] Laptop can ping all cluster node Tailscale IPs
-- [ ] Cluster nodes can ping laptop's Tailscale IP
-- [ ] `--accept-routes` on laptop shows atlas subnet route (10.2.0.0/16)
+- [x] Cluster nodes can ping laptop's Tailscale IP
+- [x] `--accept-routes` enabled (`RouteAll: true`); atlas subnet route N/A from LAN
 
 ### Stage 3: Test L3 Connectivity for VXLAN
 
