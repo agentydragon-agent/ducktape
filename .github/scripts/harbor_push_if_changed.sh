@@ -3,12 +3,13 @@
 #
 # Runs `bazel run <bazel_load_target>` to build the OCI image and load it
 # into the local Docker daemon, then compares its digest against the remote
-# :latest. If changed, pushes with tags: GITHUB_SHA, YYYYMMDDHHMMSS-sha7,
+# :latest. If changed, pushes with tags: GITHUB_SHA, BRANCH-YYYYMMDDHHMMSS-sha7,
 # and :latest (only when GITHUB_EVENT_NAME != workflow_call).
 # Skips entirely on pull_request builds.
 #
 # Environment variables (set automatically by GitHub Actions):
 #   GITHUB_SHA          - full commit SHA
+#   GITHUB_REF_NAME     - branch or tag name
 #   GITHUB_EVENT_NAME   - event that triggered the workflow
 set -euo pipefail
 
@@ -34,8 +35,9 @@ fi
 
 echo "$remote_repo: changed (local=$local_id, remote=${remote_digest:-<none>}), pushing"
 
+BRANCH="${GITHUB_REF_NAME//\//-}"
 TS="$(date -u +%Y%m%d%H%M%S)"
-TAG="${TS}-${GITHUB_SHA:0:7}"
+TAG="${BRANCH}-${TS}-${GITHUB_SHA:0:7}"
 TAGS="$remote_repo:$GITHUB_SHA,$remote_repo:$TAG"
 if [[ "${GITHUB_EVENT_NAME:-}" != "workflow_call" ]]; then
   TAGS="$TAGS,$remote_repo:latest"
