@@ -57,6 +57,8 @@ spec:
               readOnly: true
             - name: data
               mountPath: /var/lib/headscale
+            - name: run
+              mountPath: /var/run/headscale
           livenessProbe:
             httpGet:
               path: /health
@@ -97,6 +99,8 @@ spec:
           secret:
             secretName: headscale-tls
         - name: data
+          emptyDir: {}
+        - name: run
           emptyDir: {}
       nodeSelector:
         topology.kubernetes.io/region: hetzner
