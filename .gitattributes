@@ -22,8 +22,6 @@ flake.lock linguist-generated=true
 pnpm-lock.yaml linguist-generated=true
 package-lock.json linguist-generated=true
 requirements_bazel.txt linguist-generated=true
-tools/multitool/lockfile.json linguist-generated=true
-MODULE.bazel.lock linguist-generated=true
 
 # Artifacts captured from live Claude Code containers — not our source code
 claude_web_env/rootfs/** rules-lint-ignored=true
