@@ -62,7 +62,7 @@ data "external" "git_status" {
       dirty="true"
     fi
 
-    if [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse origin/devel 2>/dev/null)" ]; then
+    if [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse github/devel 2>/dev/null)" ]; then
       unpushed="true"
     fi
 
@@ -88,7 +88,7 @@ check "git_pushed" {
     error_message = <<-EOT
       WARNING: Ducktape repo has unpushed commits on devel branch!
       The VM will fetch home-manager config from GitHub, not your local commits.
-      Push your changes first: git push origin devel
+      Push your changes first: git push github devel
     EOT
   }
 }
