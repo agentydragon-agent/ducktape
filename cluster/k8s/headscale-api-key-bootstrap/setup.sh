@@ -21,7 +21,8 @@ echo "Creating API key..."
 API_KEY_JSON=$(kubectl exec deployment/headscale -n "$NAMESPACE" -- \
   headscale apikeys create --expiration 87600h --output json)
 
-API_KEY=$(echo "$API_KEY_JSON" | jq -r '.apiKey // .key // empty')
+# v0.28 outputs a plain JSON string, not an object
+API_KEY=$(echo "$API_KEY_JSON" | jq -r 'if type == "string" then . elif type == "object" then (.apiKey // .key // empty) else empty end')
 
 if [ -z "$API_KEY" ]; then
   echo "ERROR: Could not extract API key from response"
