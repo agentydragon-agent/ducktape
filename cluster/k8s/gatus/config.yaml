@@ -200,6 +200,13 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
+  - name: Proxmox proxy
+    group: services
+    url: http://proxmox-proxy.proxmox-proxy.svc.cluster.local:8080
+    interval: 60s
+    conditions:
+      - "[STATUS] == 200"
+
   - name: Atuin
     group: services
     url: http://atuin-server.atuin.svc.cluster.local:8888

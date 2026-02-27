@@ -28,7 +28,6 @@ See <changelog.md> for detailed change history.
       Plaid's production onboarding process is involved (redirect URI registration,
       per-product approval, environment-specific keys). Revisit when needed.
 - [ ] **Grocy: provision API token for agent access**
-- [ ] **Test all SSO flows** — Remaining: Harbor SSO. Run `scripts/check-authentik-login.py`.
 - [ ] **Consider moving more PVCs to `local-path`** — Proxmox CSI has 29 LUN hard limit.
       Candidates: `langfuse/langfuse-s3`, `monitoring/alertmanager-*`, `monitoring/prometheus-*`,
       `monitoring/storage-tempo-0`, `monitoring/kube-prometheus-stack-grafana`,
@@ -58,8 +57,6 @@ See <changelog.md> for detailed change history.
       `presentations.readonly`. Enable Slides API in GCP project.
 - [ ] **OAuth broker: add Google Forms readonly** —
       `forms.body.readonly` + `forms.responses.readonly`. Enable Forms API in GCP project.
-- [ ] **OAuth broker: add Google Keep write scope** —
-      `keep` (full read-write). Requires approval flow for write operations.
 - [ ] **OAuth broker: reflect only access tokens** — Currently the Reflector-mirrored
       secret contains the long-lived refresh token. Consider reflecting only the
       short-lived access token to consumer namespaces, keeping refresh tokens in the
@@ -73,6 +70,15 @@ See <changelog.md> for detailed change history.
       `atlas.allegedly.works` which handles network-level access). Needs: Authentik
       blueprint for OIDC provider, Vault secret for client credentials, PVE realm config
       (manual or via API).
+- [ ] **Proxmox SPICE proxy routing** — Atlas's `spice_proxy` setting currently points
+      elsewhere. When accessing VMs via SPICE through `atlas.allegedly.works`, the proxy
+      needs to route correctly. Configure `spice_proxy` in PVE datacenter config to point
+      at `atlas.allegedly.works` or handle it in the nginx reverse proxy.
+- [ ] **Proxmox: switch to direct HTTPRoute after OIDC auth** — Once PVE uses native
+      Authentik OIDC (see above), the proxy outpost wrapper becomes redundant. Switch
+      from outpost-based HTTPRoute to a direct HTTPRoute (like Vault/Gitea pattern),
+      update Gatus monitor from internal service URL to `https://atlas.allegedly.works`,
+      and remove proxmox from `shared-proxy-outpost.yaml`.
 - [ ] **File Browser (scanner): switch to native OAuth2** — File Browser supports native
       OAuth2/OIDC. Currently behind proxy outpost at `scanbox.allegedly.works`. Migration
       follows the Gatus pattern: OAuth2 provider blueprint, `sso/scanner-filebrowser`
