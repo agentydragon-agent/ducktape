@@ -50,7 +50,9 @@ dns:
     - svc.cluster.local
 
 oidc:
-  only_start_if_oidc_is_available: true
+  # Start even when Authentik is unreachable (OIDC login will fail until
+  # available, but the server won't crash-loop during bootstrap or gateway issues).
+  only_start_if_oidc_is_available: false
   issuer: "https://auth.allegedly.works/application/o/headscale/"
   client_id: "headscale"
   # client_secret overridden by env var HEADSCALE_OIDC_CLIENT_SECRET
