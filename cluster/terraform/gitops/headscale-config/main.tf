@@ -34,10 +34,14 @@ resource "headscale_user" "subnet_router" {
 }
 
 # ACL policy: allow all traffic, auto-approve subnet routes for tag:router
+# Headscale requires user@ format for user references in policy.
 resource "headscale_policy" "main" {
   policy = jsonencode({
+    groups = {
+      "group:admin" = ["agentydragon@"]
+    }
     tagOwners = {
-      "tag:router" = ["autogroup:admin"]
+      "tag:router" = ["group:admin"]
     }
     autoApprovers = {
       routes = {
