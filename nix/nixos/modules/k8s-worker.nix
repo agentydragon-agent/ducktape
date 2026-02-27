@@ -142,13 +142,41 @@ in
             runtime_type = "io.containerd.runc.v2";
             options.SystemdCgroup = true;
           };
-          cni.bin_dir = "${pkgs.cni-plugins}/bin";
+          # Cilium DaemonSet installs cilium-cni to /opt/cni/bin.
+          # We symlink base CNI plugins there too (see systemd.tmpfiles below).
+          cni.bin_dir = "/opt/cni/bin";
           cni.conf_dir = "/etc/cni/net.d";
         };
       };
     };
 
-    # CNI plugins directory (Cilium needs the binary dir to exist)
+    # Symlink base CNI plugins into /opt/cni/bin alongside Cilium's cilium-cni
+    systemd.tmpfiles.rules =
+      let
+        cniPlugins = [
+          "bandwidth"
+          "bridge"
+          "dhcp"
+          "dummy"
+          "firewall"
+          "host-device"
+          "host-local"
+          "ipvlan"
+          "loopback"
+          "macvlan"
+          "portmap"
+          "ptp"
+          "sbr"
+          "static"
+          "tap"
+          "tuning"
+          "vlan"
+          "vrf"
+        ];
+      in
+      [ "d /opt/cni/bin 0755 root root -" ]
+      ++ builtins.map (p: "L+ /opt/cni/bin/${p} - - - - ${pkgs.cni-plugins}/bin/${p}") cniPlugins;
+
     environment.systemPackages = with pkgs; [
       cni-plugins
       kubernetes # for kubelet, kubectl
