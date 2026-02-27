@@ -15,9 +15,10 @@ tls_key_path: /etc/headscale/tls/tls.key
 noise:
   private_key_path: /etc/headscale/keys/noise.key
 
-# ACL policy managed via Terraform headscale provider (database mode)
+# ACL policy from file (mounted ConfigMap)
 policy:
-  mode: database
+  mode: file
+  path: /etc/headscale/policy.json
 
 prefixes:
   v4: 100.64.0.0/10

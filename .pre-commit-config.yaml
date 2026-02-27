@@ -135,7 +135,7 @@ repos:
       # NODE_PATH set by pre-commit's language:node environment
       - id: prettier
         name: prettier
-        entry: prettier --write --ignore-unknown
+        entry: prettier --write --ignore-unknown --list-different
         language: node
         additional_dependencies:
           - prettier@3.7.4

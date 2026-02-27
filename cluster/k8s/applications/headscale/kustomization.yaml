@@ -14,3 +14,7 @@ configMapGenerator:
     namespace: headscale
     files:
       - config.yaml
+  - name: headscale-policy
+    namespace: headscale
+    files:
+      - policy.json

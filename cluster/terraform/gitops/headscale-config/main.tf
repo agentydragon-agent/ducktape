@@ -33,23 +33,8 @@ resource "headscale_user" "subnet_router" {
   name = "subnet-router"
 }
 
-# ACL policy: allow all traffic, auto-approve subnet routes for tag:router
-# Headscale requires user@ format for user references in policy.
-resource "headscale_policy" "main" {
-  policy = jsonencode({
-    tagOwners = {
-      "tag:router" = ["subnet-router@"]
-    }
-    autoApprovers = {
-      routes = {
-        "10.96.0.0/12" = ["tag:router"]
-      }
-    }
-    acls = [{ action = "accept", src = ["*"], dst = ["*:*"] }]
-  })
-}
-
 # Pre-auth key for the subnet router to register with headscale
+# ACL policy is managed via ConfigMap (policy.mode: file), not Terraform.
 resource "headscale_pre_auth_key" "router" {
   user           = headscale_user.subnet_router.id
   reusable       = true

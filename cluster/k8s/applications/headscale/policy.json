@@ -1,0 +1,20 @@
+{
+  "groups": {
+    "group:admin": ["agentydragon@"]
+  },
+  "tagOwners": {
+    "tag:router": ["group:admin"]
+  },
+  "autoApprovers": {
+    "routes": {
+      "10.96.0.0/12": ["tag:router"]
+    }
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["*"],
+      "dst": ["*:*"]
+    }
+  ]
+}
