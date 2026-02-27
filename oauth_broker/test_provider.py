@@ -15,6 +15,7 @@ from oauth_broker.provider import (
     GenericOAuth2Provider,
     OAuth2ProviderConfig,
     TokenData,
+    TokenSecretConfig,
     _parse_token_response,
 )
 
@@ -28,7 +29,8 @@ def provider_config() -> OAuth2ProviderConfig:
         token_url="https://example.com/token",
         scopes=["scope1", "scope2"],
         redirect_uri="http://localhost:8080/callback/test",
-        secret_name="test-tokens",
+        refresh_secret=TokenSecretConfig(name="test-tokens"),
+        access_secret=TokenSecretConfig(name="test-access-token"),
     )
 
 
@@ -59,7 +61,8 @@ def test_build_authorize_url_with_extra_params() -> None:
         token_url="https://oauth2.googleapis.com/token",
         scopes=["email"],
         redirect_uri="http://localhost/callback/google",
-        secret_name="google-tokens",
+        refresh_secret=TokenSecretConfig(name="google-tokens"),
+        access_secret=TokenSecretConfig(name="google-access-token"),
         extra_auth_params={"access_type": "offline", "prompt": "consent"},
     )
     provider = GenericOAuth2Provider(config, "gid", "gsecret")
@@ -178,17 +181,23 @@ def test_broker_config_from_yaml(tmp_path: Path) -> None:
             token_url: https://example.com/token
             scopes: [a]
             redirect_uri: http://localhost/callback/test
-            secret_name: test-tokens
-            secret_annotations:
-              reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+            refresh_secret:
+              name: test-tokens
+            access_secret:
+              name: test-access-token
+              annotations:
+                reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
     """)
     )
     config = BrokerConfig.from_file(config_file)
     assert config.target_namespace == "test-ns"
     assert len(config.providers) == 1
     assert config.providers[0].name == "test"
-    assert config.providers[0].secret_name == "test-tokens"
-    assert config.providers[0].secret_annotations == {"reflector.v1.k8s.emberstack.com/reflection-allowed": "true"}
+    assert config.providers[0].refresh_secret.name == "test-tokens"
+    assert config.providers[0].access_secret.name == "test-access-token"
+    assert config.providers[0].access_secret.annotations == {
+        "reflector.v1.k8s.emberstack.com/reflection-allowed": "true"
+    }
 
 
 def test_broker_config_defaults() -> None:

@@ -21,8 +21,16 @@ class K8sTokenStore:
         return cls(client.CoreV1Api())
 
     async def write_token(
-        self, secret_name: str, namespace: str, token: TokenData, annotations: dict[str, str] | None = None
+        self,
+        secret_name: str,
+        namespace: str,
+        token: TokenData,
+        annotations: dict[str, str] | None = None,
+        fields: frozenset[str] | None = None,
     ) -> None:
+        data = token.model_dump(mode="json")
+        if fields is not None:
+            data = {k: v for k, v in data.items() if k in fields}
         secret = client.V1Secret(
             metadata=client.V1ObjectMeta(
                 name=secret_name,
@@ -30,7 +38,7 @@ class K8sTokenStore:
                 labels={"app.kubernetes.io/managed-by": "oauth-broker"},
                 annotations=annotations or None,
             ),
-            string_data=token.model_dump(mode="json"),
+            string_data=data,
             type="Opaque",
         )
 

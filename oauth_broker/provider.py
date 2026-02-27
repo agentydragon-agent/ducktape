@@ -14,14 +14,20 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
+ACCESS_TOKEN_FIELDS: frozenset[str] = frozenset({"access_token", "token_type", "expires_at", "scope"})
+
+
+class TokenSecretConfig(BaseModel):
+    name: str
+    annotations: dict[str, str] = Field(default_factory=dict)
+
+
 class BaseProviderConfig(BaseModel):
     name: str = Field(description="Provider identifier used in URL paths and env var prefixes")
     display_name: str = Field(description="Human-readable provider name for the UI")
     redirect_uri: str = Field(description="Redirect URI registered with the provider")
-    secret_name: str = Field(description="K8s secret name for storing tokens")
-    secret_annotations: dict[str, str] = Field(
-        default_factory=dict, description="Annotations to add to the token secret"
-    )
+    refresh_secret: TokenSecretConfig = Field(description="Secret holding all token fields; never reflected")
+    access_secret: TokenSecretConfig = Field(description="Secret holding access token + metadata; may be reflected")
 
 
 class OAuth2ProviderConfig(BaseProviderConfig):

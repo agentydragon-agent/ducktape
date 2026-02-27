@@ -14,12 +14,15 @@ providers:
       - session
       - spo2
     redirect_uri: https://oauth-broker.allegedly.works/callback/oura
-    secret_name: oura-tokens
-    secret_annotations:
-      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
-      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
+    refresh_secret:
+      name: oura-tokens
+    access_secret:
+      name: oura-access-token
+      annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
     refresh_margin_seconds: 3600
 
   - name: google
@@ -39,12 +42,15 @@ providers:
       # Workspace Enterprise accounts and is not available for personal Gmail
       # accounts. Requesting it causes Error 400: invalid_scope for all users.
     redirect_uri: https://oauth-broker.allegedly.works/callback/google
-    secret_name: google-tokens
-    secret_annotations:
-      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
-      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
+    refresh_secret:
+      name: google-tokens
+    access_secret:
+      name: google-access-token
+      annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
     refresh_margin_seconds: 300
     extra_auth_params:
       access_type: offline
@@ -60,9 +66,12 @@ providers:
       - identity
       - investments
     redirect_uri: https://oauth-broker.allegedly.works/callback/plaid
-    secret_name: plaid-tokens
-    secret_annotations:
-      reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-      reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
-      reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-      reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox
+    refresh_secret:
+      name: plaid-tokens
+    access_secret:
+      name: plaid-access-token
+      annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox

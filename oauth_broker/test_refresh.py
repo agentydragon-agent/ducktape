@@ -7,7 +7,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_bazel
 
-from oauth_broker.provider import GenericOAuth2Provider, OAuth2ProviderConfig, TokenData
+from oauth_broker.provider import (
+    ACCESS_TOKEN_FIELDS,
+    GenericOAuth2Provider,
+    OAuth2ProviderConfig,
+    TokenData,
+    TokenSecretConfig,
+)
 from oauth_broker.refresh import token_refresh_loop
 
 
@@ -21,7 +27,8 @@ def provider() -> GenericOAuth2Provider:
             token_url="https://example.com/token",
             scopes=["daily"],
             redirect_uri="https://example.com/callback/test",
-            secret_name="test-tokens",
+            refresh_secret=TokenSecretConfig(name="test-tokens"),
+            access_secret=TokenSecretConfig(name="test-access-token"),
             refresh_margin_seconds=3600,
         ),
         client_id="test-id",
@@ -68,7 +75,10 @@ async def test_refresh_loop_refreshes_expiring_token(provider: GenericOAuth2Prov
         await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
 
     mock_store.read_token.assert_called_with("test-tokens", "test-ns")
-    mock_store.write_token.assert_called_with("test-tokens", "test-ns", refreshed_token, annotations=None)
+    mock_store.write_token.assert_any_call("test-tokens", "test-ns", refreshed_token, annotations=None)
+    mock_store.write_token.assert_any_call(
+        "test-access-token", "test-ns", refreshed_token, annotations=None, fields=ACCESS_TOKEN_FIELDS
+    )
 
 
 async def test_refresh_loop_skips_fresh_token(provider: GenericOAuth2Provider) -> None:
