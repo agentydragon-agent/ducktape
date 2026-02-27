@@ -28,3 +28,11 @@ provider "headscale" {
 resource "headscale_user" "activitywatch" {
   name = "activitywatch"
 }
+
+# User for Tailscale DaemonSet running on all cluster nodes.
+# Pre-auth key is created by k8s/tailscale-authkey-bootstrap/ Job (not
+# Terraform) because the headscale provider masks the key in state after the
+# first Read — see docs/bugs/headscale-provider-key-masking.md.
+resource "headscale_user" "tailscale_nodes" {
+  name = "tailscale-nodes"
+}

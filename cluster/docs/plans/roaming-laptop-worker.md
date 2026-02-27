@@ -2,7 +2,7 @@
 
 Join a regular Linux desktop/laptop to the Talos cluster as a worker without VMs.
 
-## Architecture (Recommended: Headscale)
+## Architecture
 
 ```text
 ┌──────────────────────────────┐
@@ -13,19 +13,35 @@ Join a regular Linux desktop/laptop to the Talos cluster as a worker without VMs
 │  ├── HAProxy (localhost:7445)│
 │  └── Cilium agent (DaemonSet)│
 └──────────────────────────────┘
-         │ Tailscale mesh
+         │ Tailscale mesh (UDP 41641)
          ▼
-┌──────────────────────────────┐
-│  atlas (Proxmox host)        │
-│  └── Tailscale (advertises   │
-│      10.2.0.0/16 subnet)     │
-└──────────────────────────────┘
-         │ direct LAN
-         ▼
-   Proxmox cluster nodes (10.2.x.x)
-
-VPS nodes reached directly via public IPs.
+┌──────────────────────────────┐    ┌──────────────────────────────┐
+│  VPS nodes (Hetzner)         │    │  Proxmox K8s nodes           │
+│  ├── Tailscale DaemonSet ◄───┤    │  ├── Tailscale DaemonSet ◄───┤
+│  └── public IP (direct)      │    │  └── 10.2.x.x (via atlas)   │
+└──────────────────────────────┘    └──────────────────────────────┘
+                                             │ direct LAN
+                                             ▼
+                                    ┌──────────────────────────────┐
+                                    │  atlas (Proxmox host)        │
+                                    │  └── Tailscale (advertises   │
+                                    │      10.2.0.0/16 subnet)     │
+                                    └──────────────────────────────┘
 ```
+
+All cluster nodes run a Tailscale DaemonSet (`k8s/tailscale/`) connecting to the
+in-cluster Headscale at `headscale.allegedly.works`. This creates a second WireGuard
+mesh alongside KubeSpan, enabling roaming devices to reach every node.
+
+VPS nodes are also reachable via public IPs (direct). Proxmox nodes (10.2.x.x) are
+reachable via atlas advertising `10.2.0.0/16` as a Headscale subnet route.
+
+## Prerequisites
+
+- **Tailscale DaemonSet deployed**: `k8s/tailscale/` must be reconciled and all node
+  pods running. Verify: `kubectl get ds tailscale -n tailscale`
+- **Atlas advertising subnet route**: atlas must have Tailscale running with
+  `--advertise-routes=10.2.0.0/16` and the route approved in Headscale
 
 ## Motivation
 
@@ -33,32 +49,26 @@ VPS nodes reached directly via public IPs.
 - BuildBuddy remote executors, CI runners, ML jobs
 - No VM overhead — full hardware access, desktop stays usable
 
-## Networking Options Comparison
+## Networking
 
-| Option                      | Roaming                       | Build effort        | Durability        | NAT traversal   |
-| --------------------------- | ----------------------------- | ------------------- | ----------------- | --------------- |
-| **Headscale (recommended)** | Full                          | Trivial             | Survives rebuilds | Yes (DERP)      |
-| Custom kubespan-agent       | Full                          | ~weekend Go project | Survives rebuilds | Yes (discovery) |
-| Static WireGuard            | N/A                           | N/A                 | N/A               | N/A             |
-| VPS WireGuard tunnel        | Full                          | Trivial             | Durable           | Manual          |
-| Direct IP only              | Partial (VPS yes, Proxmox no) | None                | Durable           | No              |
+### Two WireGuard Meshes
 
-### Why Not Static WireGuard?
+| Mesh      | Port      | Interface    | Purpose                          |
+| --------- | --------- | ------------ | -------------------------------- |
+| KubeSpan  | UDP 51820 | `kubespan`   | Intra-cluster (Talos nodes only) |
+| Tailscale | UDP 41641 | `tailscale0` | Roaming device access            |
 
-KubeSpan doesn't support static/extra peers. Talos nodes only accept WireGuard peers
-discovered through the discovery service (`discovery.talos.dev`). A manually configured
-WireGuard peer won't be in the Talos nodes' peer list, so they'll ignore handshake
-attempts. This rules out static WireGuard as an option.
+Different ports, keys, and routing tables — no conflict. KubeSpan handles all
+cluster bootstrap networking. Tailscale is purely additive.
 
-### Why Headscale?
+### Traffic Flows
 
-- Already deployed in the cluster at `headscale.allegedly.works`
-- Tailscale data plane is peer-to-peer WireGuard — established tunnels survive
-  Headscale downtime
-- NAT traversal via DERP relays (Tailscale's external DERP servers, no cluster dependency)
-- Independent of KubeSpan/Talos machine secrets — doesn't break on cluster rebuild
-- atlas (Proxmox host) can advertise `10.2.0.0/16` as a subnet route, giving the
-  laptop connectivity to all Proxmox nodes
+| Source → Dest          | Path                                         |
+| ---------------------- | -------------------------------------------- |
+| Laptop → VPS           | Public IP (direct) or Tailscale              |
+| Laptop → Proxmox nodes | Tailscale → atlas subnet route (10.2.0.0/16) |
+| VPS → Laptop           | Tailscale (100.64.x.x via `tailscale0`)      |
+| Proxmox → Laptop       | Tailscale (100.64.x.x via `tailscale0`)      |
 
 ### Headscale Dependency
 
@@ -72,15 +82,12 @@ Headscale runs inside the cluster (on VPS nodes). Failure modes:
 - **DNS down**: Can't resolve `headscale.allegedly.works`. Mitigate by hardcoding
   the Headscale IP in Tailscale config.
 
-### Custom KubeSpan Agent (Alternative)
+### Why Not Static WireGuard?
 
-Build a Go daemon that implements the Talos discovery protocol to join the KubeSpan
-WireGuard mesh natively. ~500-1000 lines wrapping the existing
-[`siderolabs/discovery-client`](https://github.com/siderolabs/discovery-client) library.
-Reference: `internal/app/machined/pkg/controllers/kubespan/` in the
-[Talos source](https://github.com/siderolabs/talos).
-
-See [KubeSpan internals](#appendix-kubespan-internals) appendix for full details.
+KubeSpan doesn't support static/extra peers. Talos nodes only accept WireGuard peers
+discovered through the discovery service (`discovery.talos.dev`). A manually configured
+WireGuard peer won't be in the Talos nodes' peer list, so they'll ignore handshake
+attempts.
 
 ## Implementation
 

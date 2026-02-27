@@ -143,6 +143,14 @@ locals {
     registries = {
       mirrors = local.registry_mirrors
     }
+    kubelet = {
+      nodeIP = {
+        # Exclude Tailscale CGNAT range — prevents kubelet from registering
+        # with a 100.64.x.x IP when the Tailscale DaemonSet creates a
+        # tailscale0 interface on the host.
+        validSubnets = ["!100.64.0.0/10"]
+      }
+    }
   }
 }
 
@@ -300,6 +308,14 @@ resource "hcloud_firewall" "talos" {
     direction  = "in"
     protocol   = "tcp"
     port       = "10250"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Tailscale WireGuard (direct peer connections for DaemonSet)
+  rule {
+    direction  = "in"
+    protocol   = "udp"
+    port       = "41641"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 

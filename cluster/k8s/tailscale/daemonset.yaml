@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: tailscale
+  namespace: tailscale
+spec:
+  selector:
+    matchLabels:
+      app: tailscale
+  template:
+    metadata:
+      labels:
+        app: tailscale
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      # Run on ALL nodes: control-plane, GPU worker, regular workers
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: tailscale
+          image: ghcr.io/tailscale/tailscale:latest
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: tailscale-node-authkey
+                  key: TS_AUTHKEY
+            - name: TS_STATE_DIR
+              value: /var/lib/tailscale
+            # Kernel WireGuard — creates host-level tailscale0 interface
+            - name: TS_USERSPACE
+              value: "false"
+            # Don't re-auth after initial success (persisted state handles reconnect)
+            - name: TS_AUTH_ONCE
+              value: "true"
+            - name: TS_EXTRA_ARGS
+              value: "--login-server=https://headscale.allegedly.works --accept-routes"
+            # Register each node with its K8s name in Headscale
+            - name: TS_HOSTNAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: dev-tun
+              mountPath: /dev/net/tun
+            - name: state
+              mountPath: /var/lib/tailscale
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: dev-tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice
+        # Talos /var is writable and persists across reboots — stores WireGuard
+        # keys and auth state so nodes don't re-register on every pod restart.
+        - name: state
+          hostPath:
+            path: /var/lib/tailscale
+            type: DirectoryOrCreate
