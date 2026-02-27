@@ -25,18 +25,19 @@ resource "null_resource" "gateway_api_crds" {
     environment = {
       KUBECONFIG = local_file.kubeconfig.filename
     }
-    # Standard channel CRDs (GA resources: Gateway, HTTPRoute, GRPCRoute, etc.).
-    # TLSRoute is optional in Cilium 1.18+ — omitted since we don't use it.
+    # Experimental channel CRDs (superset of standard: adds TLSRoute, etc.).
+    # TLSRoute needed for Headscale passthrough (Tailscale noise protocol).
     # Server-side apply required: HTTPRoute CRD exceeds 256KB annotation limit.
     command = <<-EOT
       set -e
       kubectl apply --server-side --force-conflicts \
-        -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/standard-install.yaml
+        -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/experimental-install.yaml
       kubectl wait --for=condition=Established \
         crd/gatewayclasses.gateway.networking.k8s.io \
         crd/gateways.gateway.networking.k8s.io \
         crd/httproutes.gateway.networking.k8s.io \
         crd/referencegrants.gateway.networking.k8s.io \
+        crd/tlsroutes.gateway.networking.k8s.io \
         --timeout=60s
     EOT
   }

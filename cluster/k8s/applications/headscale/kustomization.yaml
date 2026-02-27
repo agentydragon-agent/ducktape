@@ -3,4 +3,4 @@ kind: Kustomization
 
 resources:
   - helmrelease.yaml
-  - httproute.yaml
+  - tlsroute.yaml
