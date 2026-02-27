@@ -185,6 +185,121 @@ Mitigations:
   No automated upgrades — manual update when the cluster's K8s version changes.
 - **No `talosctl`**: Debugging uses SSH and standard Linux tools, not `talosctl`.
 
+## Current Status
+
+**Tailscale DaemonSet**: Deployed and running on all 4 cluster nodes. Nodes registered in
+Headscale, peer discovery working via DERP relays. Direct peer-to-peer connections will
+establish once UDP 41641 is open on both sides.
+
+**kubelet `validSubnets`**: Applied. Nodes will not register with Tailscale CGNAT IPs.
+
+**Hetzner firewall**: UDP 41641 open for direct Tailscale peering.
+
+## Next Test Stages
+
+### Stage 1: Verify Tailscale Mesh Health
+
+From a machine already registered with Headscale (or register a test device first):
+
+```bash
+# Check all cluster nodes are visible in Headscale
+kubectl exec -n headscale deployment/headscale -- headscale nodes list
+
+# From a Headscale-connected device, ping each node's Tailscale IP
+tailscale status  # shows peer list with IPs
+ping <node-tailscale-ip>
+```
+
+Verify:
+
+- [ ] All 4 cluster nodes appear in `headscale nodes list`
+- [ ] Tailscale IPs (100.64.x.x) are reachable from a connected device
+- [ ] Direct peer connections establish (not just DERP relay) — check `tailscale status`
+
+### Stage 2: Register a Laptop with Headscale
+
+On the laptop (NixOS or any Linux):
+
+```bash
+# Install Tailscale
+sudo tailscale up --login-server=https://headscale.allegedly.works
+
+# Approve in Headscale (from cluster)
+kubectl exec -n headscale deployment/headscale -- \
+  headscale nodes list  # find the pending node
+kubectl exec -n headscale deployment/headscale -- \
+  headscale nodes approve <node-id>  # or register via pre-auth key
+```
+
+Verify:
+
+- [ ] Laptop gets a 100.64.x.x IP
+- [ ] Laptop can ping all cluster node Tailscale IPs
+- [ ] Cluster nodes can ping laptop's Tailscale IP
+- [ ] `--accept-routes` on laptop shows atlas subnet route (10.2.0.0/16)
+
+### Stage 3: Test L3 Connectivity for VXLAN
+
+The laptop worker needs L3 connectivity to all nodes for Cilium VXLAN (UDP 8472).
+
+```bash
+# From laptop, test VXLAN port reachability to each node
+for ip in <vps0-tailscale-ip> <vps1-tailscale-ip> <pve-cp0-tailscale-ip> <pve-gpu-tailscale-ip>; do
+  nc -zuv $ip 8472 2>&1
+done
+
+# Also test kubelet API port
+for ip in <node-ips>; do
+  curl -k https://$ip:10250/healthz 2>&1
+done
+```
+
+Verify:
+
+- [ ] UDP 8472 reachable from laptop to all nodes via Tailscale
+- [ ] TCP 10250 reachable from all nodes to laptop (for kubelet API)
+- [ ] TCP 6443 reachable from laptop to control plane (for API server)
+
+### Stage 4: Join Laptop as Worker Node
+
+Follow the "Manual Steps After Boot" section above. Key sequence:
+
+1. Extract bootstrap kubeconfig + CA cert from Talos
+2. Copy to laptop, configure HAProxy for `localhost:7445`
+3. Start kubelet, approve CSR
+4. Verify node appears in `kubectl get nodes`
+5. Deploy a test pod with roaming toleration, verify it schedules and runs
+
+### Stage 5: End-to-End Workload Test
+
+```bash
+# Deploy a test pod that tolerates the roaming taint
+kubectl run test-roaming --image=busybox --restart=Never \
+  --overrides='{
+    "spec": {
+      "tolerations": [{"key": "node-role.kubernetes.io/roaming", "operator": "Exists"}],
+      "nodeSelector": {"node-role.kubernetes.io/roaming": "true"},
+      "containers": [{"name": "test", "image": "busybox", "command": ["sleep", "3600"]}]
+    }
+  }'
+
+# Verify cross-node pod connectivity (from test pod to a VPS-hosted pod)
+kubectl exec test-roaming -- wget -qO- http://<cluster-service>.<namespace>.svc.cluster.local
+```
+
+Verify:
+
+- [ ] Pod schedules on laptop node
+- [ ] Pod-to-pod networking works (VXLAN over Tailscale)
+- [ ] DNS resolution works inside pods on the laptop node
+- [ ] Pod-to-service networking works (ClusterIP routing)
+
+### Stage 6: Resilience Testing
+
+- [ ] Laptop sleep/wake: node goes `NotReady`, pods evicted after 5min, recovers on wake
+- [ ] Network change (WiFi→Ethernet): Tailscale reconnects, node recovers
+- [ ] Headscale restart: existing tunnels survive, laptop reconnects after Headscale is back
+
 ## Open Questions
 
 - **GPU sharing**: If the laptop has a GPU, it's available to both desktop and cluster
