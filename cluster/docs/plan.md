@@ -37,7 +37,11 @@ See <changelog.md> for detailed change history.
 - [ ] **Wire `scripts/check-authentik-login.py` into bootstrap/CI**
 - [ ] **Gatus: Harbor robot token for authenticated `/v2/` probe**
 - [ ] **Nix cache: initialize Attic cache** — No caches created yet. Run `attic cache create main` + `attic cache configure main --public`. May need init Job or interactive setup.
-- [ ] **Headscale: test with a real device**
+- [x] **Headscale: test with a real device** — Verified with atlas and wyrm via
+      OIDC auth through Authentik. Uses TLSRoute passthrough (not HTTPRoute) because
+      Cilium's Envoy only allows `upgradeType: websocket`, returning 403 for Tailscale's
+      `Upgrade: tailscale-control-protocol`. Headscale terminates TLS itself (cert-manager
+      cert), Envoy routes by SNI without decrypting.
 - [ ] **OpenClaw: eliminate one-time token entry** — Options: operator bootstrap config,
       gateway-side injection, or upstream PR for `"trusted-proxy"` in `sharedAuthOk`.
 - [ ] **Proxy outpost HA: shared session storage** — 1 replica limit (sessions in `/dev/shm`).
@@ -76,8 +80,8 @@ See <changelog.md> for detailed change history.
 - [ ] **ActivityWatch: build and push initial image** — Run `activitywatch-image.yml`
       workflow manually after Harbor CI creates the project. Verify pod starts.
 - [ ] **ActivityWatch: set up desktop client sync** — see "ActivityWatch Setup" below
-- [ ] **ActivityWatch: Headscale direct access** — once Headscale is tested with real
-      devices, switch from `kubectl port-forward` to direct mesh access
+- [ ] **ActivityWatch: Headscale direct access** — Headscale verified working with
+      atlas and wyrm. Switch from `kubectl port-forward` to direct mesh access
 - [ ] **ActivityWatch: Android sync** — not feasible with current upstream (`aw-android`
       embeds its own server, no remote sync). Revisit when `aw-sync` ships for Android
 
@@ -85,7 +89,8 @@ See <changelog.md> for detailed change history.
 
 ## 📋 Production Cutover (`agentydragon.com`)
 
-- [ ] Migrate all devices from ansible VPS headscale to cluster headscale (cluster headscale deployed at `headscale.allegedly.works`)
+- [ ] Migrate remaining devices from ansible VPS headscale to cluster headscale
+      (atlas and wyrm already enrolled at `headscale.allegedly.works`)
 - [ ] Atlas Proxmox accessible via headscale mesh (or `atlas.allegedly.works` proxy)
 - [ ] Website hosted in cluster, verify accessible
 - [ ] Update `agentydragon.com` DNS to point to cluster
@@ -413,9 +418,9 @@ cluster server via `kubectl port-forward`.
 
 5. **Verify**: Browse `http://localhost:5600` → ActivityWatch web UI with bucket data
 
-### Headscale Access (Future)
+### Headscale Access
 
-Once Headscale is tested with real devices:
+Headscale verified working with atlas and wyrm (OIDC via Authentik).
 
 1. Expose `activitywatch.activitywatch.svc` via Headscale subnet route
 2. Configure `aw-client.toml` on each machine:

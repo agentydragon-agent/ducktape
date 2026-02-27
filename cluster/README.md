@@ -27,6 +27,7 @@ See <docs/bootstrap.md> for full setup.
 - Nodes: 2x Hetzner CPX31 (VPS, public IPs) + talos-pve-cp-0 (10.2.1.1) + talos-pve-gpu-worker-0 (10.2.2.1)
 - Domain: `*.allegedly.works` (PowerDNS in-cluster, DNS-01 challenges, dual LE issuers)
 - HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
+  - Exception: Headscale uses TLSRoute passthrough (Envoy routes by SNI, Headscale terminates TLS)
 - KubeSpan: WireGuard mesh between VPS and Proxmox (UDP 51820)
 - Cilium MTU: `MTU: 1370` (uppercase key required — VXLAN 50 + WireGuard 80 = 130 overhead)
 - KubePrism: `localhost:7445` as cluster endpoint (no VIP possible across VPS+home; kubeconfig patched post-bootstrap to real VPS IP)
