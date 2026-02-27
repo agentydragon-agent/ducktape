@@ -65,29 +65,6 @@ js_binary(
 )
 
 # ============================================================
-# OpenAPI TypeScript schema generation (binary + input only;
-# the js_run_binary lives in //props/frontend/src/lib)
-# ============================================================
-
-js_binary(
-    name = "generate_schema_bin",
-    data = [
-        "generate-schema.mjs",
-        ":node_modules",
-    ],
-    entry_point = "generate-schema.mjs",
-    visibility = ["//props/frontend/src/lib:__pkg__"],
-)
-
-genrule(
-    name = "openapi_schema_local",
-    srcs = ["//props/backend:openapi_schema"],
-    outs = ["openapi.json"],
-    cmd = "cp $< $@",
-    visibility = ["//props/frontend/src/lib:__pkg__"],
-)
-
-# ============================================================
 # Production bundle
 # ============================================================
 
