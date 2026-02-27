@@ -25,13 +25,13 @@ spec:
         - name: harbor-ci-robot
       containers:
         - name: props
-          image: registry.allegedly.works/props/props-backend:devel-20260224031012-2ca314f # {"$imagepolicy": "flux-system:props-backend"}
+          image: registry.allegedly.works/props/props-backend:devel-20260227121535-deb1c6b # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
             - name: PROPS_IMAGE_TAG
-              value: devel-20260224031012-2ca314f # {"$imagepolicy": "flux-system:props-backend:tag"}
+              value: devel-20260227121535-deb1c6b # {"$imagepolicy": "flux-system:props-backend:tag"}
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST
