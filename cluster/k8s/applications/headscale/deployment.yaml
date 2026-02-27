@@ -63,12 +63,14 @@ spec:
             httpGet:
               path: /health
               port: http
+              scheme: HTTPS
             initialDelaySeconds: 10
             periodSeconds: 30
           readinessProbe:
             httpGet:
               path: /health
               port: http
+              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 10
           resources:
