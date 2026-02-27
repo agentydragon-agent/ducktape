@@ -214,33 +214,9 @@ js_test(
 # Run one:  bazel test //props/frontend/src/components:visual_DefinitionDetail
 # ============================================================
 
-js_library(
-    name = "visual_test_lib",
-    srcs = ["tests/visual-test-lib.mjs"],
-    tags = ["no-lint"],
-    visibility = ["//props/frontend/src:__subpackages__"],
-    deps = [
-        ":node_modules/pixelmatch",
-        ":node_modules/pngjs",
-        ":node_modules/puppeteer",
-    ],
-)
-
 filegroup(
     name = "visual_test_assets",
-    srcs = [
-        "tests/fonts/Inter.woff2",
-        "tests/fonts/fonts.conf",
-        "tests/harness/index.html",
-        "tests/harness/test-fonts.css",
-    ],
-    visibility = ["//props/frontend/src:__subpackages__"],
-)
-
-# Separate target for FONTCONFIG_FILE env var (rootpath needs a single file).
-filegroup(
-    name = "fonts_conf",
-    srcs = ["tests/fonts/fonts.conf"],
+    srcs = ["tests/harness/index.html"],
     visibility = ["//props/frontend/src:__subpackages__"],
 )
 

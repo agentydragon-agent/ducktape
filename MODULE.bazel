@@ -175,6 +175,7 @@ npm.npm_translate_lock(
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
+        "//:util/frontend_visual_test/package.json",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
     # These fail in Bazel's sandboxed builds (network blocked, gVisor, RBE).
