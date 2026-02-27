@@ -17,13 +17,23 @@ until kubectl exec deployment/headscale -n "$NAMESPACE" -- headscale health >/de
 done
 echo "Headscale is healthy."
 
+echo "Looking up activitywatch user ID..."
+# --user takes a numeric ID, not a name
+USER_ID=$(kubectl exec deployment/headscale -n "$NAMESPACE" -- \
+  headscale users list -o json | jq -r '.[] | select(.name == "activitywatch") | .id')
+
+if [ -z "$USER_ID" ]; then
+  echo "ERROR: Could not find activitywatch user"
+  exit 1
+fi
+echo "Found activitywatch user ID: $USER_ID"
+
 echo "Creating pre-auth key for activitywatch..."
-# headscale preauthkeys create outputs the key directly as a string.
 # TODO: Move pre-auth key back to Terraform after upstream provider fix:
 # https://github.com/awlsring/terraform-provider-headscale/pull/28
 AUTHKEY=$(kubectl exec deployment/headscale -n "$NAMESPACE" -- \
   headscale preauthkeys create \
-  --user activitywatch \
+  --user "$USER_ID" \
   --reusable \
   --expiration 8760h \
   --tags tag:service)
