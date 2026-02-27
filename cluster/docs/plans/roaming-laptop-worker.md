@@ -184,6 +184,12 @@ Mitigations:
 - **Kubelet version**: Must match the cluster's K8s version (or be within version skew policy).
   No automated upgrades — manual update when the cluster's K8s version changes.
 - **No `talosctl`**: Debugging uses SSH and standard Linux tools, not `talosctl`.
+- **Kubelet label restrictions**: Labels in `node-role.kubernetes.io/*` are NOT allowed
+  via `--node-labels` (kubelet rejects them as restricted). Use `node.kubernetes.io/role`
+  instead. The taint `node-role.kubernetes.io/roaming=true:NoSchedule` is fine (taints
+  don't have the same restriction).
+- **K8s version skew**: NixOS `pkgs.kubernetes` may lag behind the cluster version.
+  Check `kubelet --version` vs `kubectl version` — must be within 1 minor version.
 
 ## Current Status
 
@@ -197,6 +203,10 @@ establish once UDP 41641 is open on both sides.
 
 **Mesh connectivity verified from wyrm** (2026-02-27): All 4 cluster nodes reachable via
 Tailscale IPs. Latency: VPS ~55-65ms, Proxmox ~54ms. Stages 1-2 complete.
+
+**k8s-worker-test VM joined** (2026-02-27): NixOS test VM (Proxmox VM 111) successfully
+joined the cluster as a worker node. Bootstrap kubeconfig extracted from Talos, CSR approved.
+Node visible in `kubectl get nodes`. Cilium agent deploying.
 
 ## Next Test Stages
 
@@ -281,7 +291,7 @@ kubectl run test-roaming --image=busybox --restart=Never \
   --overrides='{
     "spec": {
       "tolerations": [{"key": "node-role.kubernetes.io/roaming", "operator": "Exists"}],
-      "nodeSelector": {"node-role.kubernetes.io/roaming": "true"},
+      "nodeSelector": {"node.kubernetes.io/role": "roaming"},
       "containers": [{"name": "test", "image": "busybox", "command": ["sleep", "3600"]}]
     }
   }'

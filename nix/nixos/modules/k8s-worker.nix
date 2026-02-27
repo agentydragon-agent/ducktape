@@ -183,6 +183,21 @@ in
         util-linux
       ];
       serviceConfig = {
+        # NixOS mount wrappers live at /run/wrappers/bin (setuid mount/umount).
+        # Kubelet needs mount(8) to set up projected/tmpfs volumes.
+        Environment = "PATH=/run/wrappers/bin:${
+          lib.makeBinPath (
+            with pkgs;
+            [
+              kubernetes
+              cni-plugins
+              iptables
+              socat
+              conntrack-tools
+              util-linux
+            ]
+          )
+        }:/usr/bin:/bin";
         ExecStart = lib.concatStringsSep " " (
           [
             "${pkgs.kubernetes}/bin/kubelet"
