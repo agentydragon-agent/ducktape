@@ -51,6 +51,11 @@ workflows:
     events: [push]
     secrets: inherit
 
+  inventree-token-provisioner-image:
+    trigger: { kind: always }
+    events: [push]
+    secrets: inherit
+
   openclaw-image:
     trigger: { kind: path, pattern: "^docker/openclaw/" }
     events: [push]

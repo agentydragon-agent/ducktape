@@ -1,0 +1,40 @@
+---
+# Runs weekly to check and renew the sandbox-agent InvenTree API token before
+# it expires. InvenTree tokens expire after 365 days; this renews within 30.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: inventree-token-provisioner
+  namespace: inventree
+spec:
+  schedule: "0 3 * * 0" # Weekly, Sunday 03:00 UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      template:
+        metadata:
+          labels:
+            app: inventree-token-provisioner
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: inventree-token-provisioner
+          imagePullSecrets:
+            - name: harbor-ci-robot
+          containers:
+            - name: provisioner
+              image: registry.allegedly.works/inventree/token-provisioner:latest
+              imagePullPolicy: Always
+              env:
+                - name: INVENTREE_ADMIN_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: inventree-admin-password
+                      key: INVENTREE_ADMIN_USER
+                - name: INVENTREE_ADMIN_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: inventree-admin-password
+                      key: INVENTREE_ADMIN_PASSWORD
