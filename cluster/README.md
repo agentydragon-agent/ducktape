@@ -81,6 +81,22 @@ These services must not depend on `proxmox-csi-retain` storage or Proxmox-pinned
 Both PowerDNS and Authentik now use CloudNativePG on `hcloud-volumes`.
 See <docs/plan.md> for the full invariant definition, compliance tracking, and fix plan.
 
+## SSO (Authentik)
+
+All applications use Authentik for SSO via native blueprints — idempotent YAML in
+`k8s/authentik/sso-blueprints.yaml` (ConfigMap mounted into the worker, re-applied every
+60 min). No Terraform state for Authentik resources.
+
+- **Secret flow**: `terraform/gitops/sso-secrets/` generates OAuth2 client secrets →
+  Vault → ESO `authentik-sso-client-secrets` in authentik namespace → worker `envFrom` →
+  blueprint `!Env` tags
+- **App-side secrets**: ESO in `k8s/authentik-blueprint/{app}-secret/` reads from
+  the same Vault path
+- **Remaining Terraform**: `harbor-oidc-config/` (Harbor API), `vault-oidc-auth/`
+  (Vault OIDC auth backend) — configure non-Authentik systems
+
+See <AGENTS.md> for the proxy-mode NetworkPolicy template when adding new SSO apps.
+
 ## ActivityWatch
 
 Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
