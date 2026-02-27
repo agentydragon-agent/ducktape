@@ -32,6 +32,8 @@ spec:
     envFrom:
       - secretRef:
           name: gatus-ollama-api-key
+      - secretRef:
+          name: gatus-oidc-secret
 
     ingress:
       enabled: false

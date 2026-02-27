@@ -1,11 +1,10 @@
-# HTTPRoute for Gatus via shared Authentik proxy outpost.
-# Traffic flows: Gateway → outpost (auth) → gatus backend.
----
+# HTTPRoute for Gatus. Traffic flows directly: Gateway → Gatus backend.
+# Auth is handled by Gatus's native OIDC integration (no proxy outpost needed).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: gatus
-  namespace: authentik
+  namespace: gatus
 spec:
   parentRefs:
     - name: cluster-gateway
@@ -14,5 +13,5 @@ spec:
     - "status.allegedly.works"
   rules:
     - backendRefs:
-        - name: ak-outpost-shared-proxy-outpost
-          port: 9000
+        - name: gatus
+          port: 80

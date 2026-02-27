@@ -16,3 +16,4 @@ spec:
     - name: gatus-namespace
     - name: external-secrets-operator
     - name: external-secrets-config
+    - name: authentik-blueprint-sso-secrets # gatus OIDC secret written to Vault by sso-secrets terraform
