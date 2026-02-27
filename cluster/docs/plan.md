@@ -105,6 +105,9 @@ See <changelog.md> for detailed change history.
 - [x] **ActivityWatch: desktop client config** — `nix/home/services/activitywatch.nix`
       points watchers at `activitywatch.tailnet.allegedly.works:5600` via Headscale.
       Removed legacy SSH tunnel to `agentydragon.com`. Apply with `home-manager switch`.
+- [ ] **ActivityWatch: Gatus health check** — Add Gatus monitor for
+      `activitywatch-readonly.activitywatch:5600/api/0/info` (intra-cluster).
+      Detect poisoned-lock / SQLite issues before they go unnoticed.
 - [ ] **ActivityWatch: Android sync** — not feasible with current upstream (`aw-android`
       embeds its own server, no remote sync). Revisit when `aw-sync` ships for Android
 

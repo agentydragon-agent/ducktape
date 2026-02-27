@@ -20,6 +20,8 @@ spec:
         app: activitywatch
     spec:
       serviceAccountName: activitywatch
+      securityContext:
+        fsGroup: 999
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       imagePullSecrets:
