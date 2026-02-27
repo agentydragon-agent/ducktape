@@ -6,7 +6,7 @@ import logging
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
 
-from oauth_broker.provider import TokenData
+from oauth_broker.provider import ALL_TOKEN_FIELDS, TokenData
 
 logger = logging.getLogger(__name__)
 
@@ -25,12 +25,11 @@ class K8sTokenStore:
         secret_name: str,
         namespace: str,
         token: TokenData,
+        *,
+        fields: frozenset[str] = ALL_TOKEN_FIELDS,
         annotations: dict[str, str] | None = None,
-        fields: frozenset[str] | None = None,
     ) -> None:
-        data = token.model_dump(mode="json")
-        if fields is not None:
-            data = {k: v for k, v in data.items() if k in fields}
+        data = {k: v for k, v in token.model_dump(mode="json").items() if k in fields}
         secret = client.V1Secret(
             metadata=client.V1ObjectMeta(
                 name=secret_name,
