@@ -124,5 +124,15 @@ async def test_refresh_loop_continues_on_error(provider: GenericOAuth2Provider) 
     mock_store.write_token.assert_not_called()
 
 
+async def test_refresh_loop_deletes_orphaned_secrets(provider: GenericOAuth2Provider) -> None:
+    # delete_orphaned_secrets should be called with the set of names declared in config.
+    mock_store = AsyncMock()
+    mock_store.read_token.return_value = None
+
+    await _run_loop_briefly({"test": provider}, mock_store, "test-ns")
+
+    mock_store.delete_orphaned_secrets.assert_called_with("test-ns", frozenset({"test-tokens", "test-access-token"}))
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

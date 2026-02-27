@@ -61,6 +61,9 @@ class BrokerConfig(BaseModel):
     target_namespace: str | None = Field(
         default=None, description="K8s namespace to write token secrets to (auto-detected from pod if omitted)"
     )
+    managed_by: str = Field(
+        default="oauth-broker", description="Value for app.kubernetes.io/managed-by label on managed secrets"
+    )
     providers: list[ProviderConfig] = Field(description="Provider configurations")
 
     @classmethod

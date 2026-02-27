@@ -38,7 +38,7 @@ def main() -> None:
         else:
             providers[p.name] = GenericOAuth2Provider(p, client_id, client_secret)
 
-    app = create_app(providers, target_namespace)
+    app = create_app(providers, target_namespace, managed_by=config.managed_by)
     uvicorn.run(app, host="0.0.0.0", port=8080)
 
 
