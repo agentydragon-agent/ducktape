@@ -1,27 +1,14 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("//tools/js:openapi.bzl", "js_openapi_schema")
 
 package(default_visibility = [
     "//props/frontend:__pkg__",
     "//props/frontend:__subpackages__",
 ])
 
-# OpenAPI TypeScript schema generation
-js_run_binary(
-    name = "_generate_schema_run",
-    srcs = ["//props/frontend:openapi_schema_local"],
-    outs = ["api/schema.d.ts"],
-    args = [
-        "openapi.json",
-        "src/lib/api/schema.d.ts",
-    ],
-    chdir = "props/frontend",
-    tool = "//props/frontend:generate_schema_bin",
-)
-
-js_library(
+js_openapi_schema(
     name = "schema",
-    srcs = [":_generate_schema_run"],
-    tags = ["no-lint"],
+    generator = "//props/backend:export_schema_bin",
 )
 
 # Standalone utilities (no local deps)
