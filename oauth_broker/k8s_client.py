@@ -6,7 +6,7 @@ import logging
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
 
-from oauth_broker.provider import TokenData
+from oauth_broker.provider import ALL_TOKEN_FIELDS, TokenData
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +21,15 @@ class K8sTokenStore:
         return cls(client.CoreV1Api())
 
     async def write_token(
-        self, secret_name: str, namespace: str, token: TokenData, annotations: dict[str, str] | None = None
+        self,
+        secret_name: str,
+        namespace: str,
+        token: TokenData,
+        *,
+        fields: frozenset[str] = ALL_TOKEN_FIELDS,
+        annotations: dict[str, str] | None = None,
     ) -> None:
+        data = {k: v for k, v in token.model_dump(mode="json").items() if k in fields}
         secret = client.V1Secret(
             metadata=client.V1ObjectMeta(
                 name=secret_name,
@@ -30,7 +37,7 @@ class K8sTokenStore:
                 labels={"app.kubernetes.io/managed-by": "oauth-broker"},
                 annotations=annotations or None,
             ),
-            string_data=token.model_dump(mode="json"),
+            string_data=data,
             type="Opaque",
         )
 

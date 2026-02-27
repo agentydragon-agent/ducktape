@@ -5,7 +5,7 @@ import logging
 from collections.abc import Mapping
 
 from oauth_broker.k8s_client import K8sTokenStore
-from oauth_broker.provider import Provider
+from oauth_broker.provider import ACCESS_TOKEN_FIELDS, Provider
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,7 @@ async def token_refresh_loop(
     while True:
         for name, provider in providers.items():
             try:
-                secret_name = provider.config.secret_name
-                token = await k8s_store.read_token(secret_name, target_namespace)
+                token = await k8s_store.read_token(provider.config.refresh_secret.name, target_namespace)
                 if token is None:
                     continue
                 if not provider.needs_refresh(token):
@@ -26,7 +25,17 @@ async def token_refresh_loop(
                 logger.info(f"Refreshing token for {name} (expires {token.expires_at})")
                 new_token = await provider.refresh_tokens(token.refresh_token)
                 await k8s_store.write_token(
-                    secret_name, target_namespace, new_token, annotations=provider.config.secret_annotations or None
+                    provider.config.refresh_secret.name,
+                    target_namespace,
+                    new_token,
+                    annotations=provider.config.refresh_secret.annotations or None,
+                )
+                await k8s_store.write_token(
+                    provider.config.access_secret.name,
+                    target_namespace,
+                    new_token,
+                    annotations=provider.config.access_secret.annotations or None,
+                    fields=ACCESS_TOKEN_FIELDS,
                 )
                 logger.info(f"Refreshed token for {name} (new expiry {new_token.expires_at})")
             except Exception:

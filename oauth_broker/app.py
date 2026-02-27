@@ -11,7 +11,7 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel
 
 from oauth_broker.k8s_client import K8sTokenStore
-from oauth_broker.provider import PlaidProvider, Provider
+from oauth_broker.provider import ACCESS_TOKEN_FIELDS, PlaidProvider, Provider
 from oauth_broker.refresh import token_refresh_loop
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,7 @@ def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI
     async def index() -> str:
         provider_rows = []
         for name, provider in providers.items():
-            token = await get_store().read_token(provider.config.secret_name, target_namespace)
+            token = await get_store().read_token(provider.config.refresh_secret.name, target_namespace)
             if token is not None:
                 if isinstance(provider, PlaidProvider):
                     status = "Connected"
@@ -129,7 +129,17 @@ def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI
 
         token = await provider.exchange_code(code)
         await get_store().write_token(
-            provider.config.secret_name, target_namespace, token, annotations=provider.config.secret_annotations or None
+            provider.config.refresh_secret.name,
+            target_namespace,
+            token,
+            annotations=provider.config.refresh_secret.annotations or None,
+        )
+        await get_store().write_token(
+            provider.config.access_secret.name,
+            target_namespace,
+            token,
+            annotations=provider.config.access_secret.annotations or None,
+            fields=ACCESS_TOKEN_FIELDS,
         )
         logger.info(f"Stored tokens for {provider_name} (expires {token.expires_at})")
         return RedirectResponse("/")
@@ -144,7 +154,17 @@ def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI
             raise HTTPException(405, f"{provider_name} does not support POST callback")
         token = await provider.exchange_public_token(body.public_token)
         await get_store().write_token(
-            provider.config.secret_name, target_namespace, token, annotations=provider.config.secret_annotations or None
+            provider.config.refresh_secret.name,
+            target_namespace,
+            token,
+            annotations=provider.config.refresh_secret.annotations or None,
+        )
+        await get_store().write_token(
+            provider.config.access_secret.name,
+            target_namespace,
+            token,
+            annotations=provider.config.access_secret.annotations or None,
+            fields=ACCESS_TOKEN_FIELDS,
         )
         logger.info(f"Stored Plaid tokens for {provider_name}")
         return RedirectResponse("/", status_code=303)
@@ -153,7 +173,7 @@ def create_app(providers: dict[str, Provider], target_namespace: str) -> FastAPI
     async def status() -> dict:
         result = {}
         for name, provider in providers.items():
-            token = await get_store().read_token(provider.config.secret_name, target_namespace)
+            token = await get_store().read_token(provider.config.refresh_secret.name, target_namespace)
             if token is not None:
                 result[name] = {"connected": True, "expires_at": token.expires_at.isoformat(), "scope": token.scope}
             else:
