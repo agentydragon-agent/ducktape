@@ -12,6 +12,7 @@ from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from mcp_infra.compositor.resources_server import ResourcesReadArgs
 from mcp_infra.display.event_renderer import DisplayEventsHandler
+from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
 
@@ -24,8 +25,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
     # Mount runtime server and capture Mounted object
     mounted_runtime = await compositor.mount_inproc(MCPMountPrefix("runtime"), docker_exec_server)
 
-    # Get container info URI from server instance (convert to string)
-    container_info_uri = str(docker_exec_server.container_info_resource.uri)
+    container_info_uri = ContainerExecServer.CONTAINER_INFO_URI
 
     @MCPDecoratorMock.mock()
     def mock(m: MCPDecoratorMock):

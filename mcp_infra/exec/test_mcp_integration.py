@@ -45,7 +45,7 @@ async def test_inproc_container_exec_exposes_container_info_resource(docker_exec
 
     # Call the server directly to read the resource; no manager needed here
     async with Client(docker_exec_server) as sess:
-        res = await sess.read_resource_mcp(docker_exec_server.container_info_resource.uri)
+        res = await sess.read_resource_mcp(ContainerExecServer.CONTAINER_INFO_URI)
         assert res.contents, "container.info returned no contents"
 
 

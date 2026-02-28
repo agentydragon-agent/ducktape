@@ -1,36 +1,27 @@
 """Habitify MCP Server implementation."""
 
 from datetime import datetime
-from typing import Literal, cast
 
-from mcp.server.fastmcp import Context, FastMCP
+from fastmcp import Context, FastMCP
 
 from habitify import tools
-from habitify.context import make_lifespan
+from habitify.context import CLIENT_KEY, make_lifespan
 from habitify.habitify_client import HabitifyClient
 from habitify.types import HabitResult, HabitsResult, LogResult, Status, StatusResult
 
 
-def create_habitify(
-    debug: bool = False,
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO",
-    api_key: str | None = None,
-    port: int = 3000,
-) -> FastMCP:
+def create_habitify(api_key: str | None = None) -> FastMCP:
     """Create and configure a Habitify MCP server."""
     server = FastMCP(
         "Habitify",
         instructions="Habitify API for habit tracking through Model Context Protocol",
-        dependencies=["httpx", "python-dotenv"],
-        debug=debug,
-        log_level=log_level,
-        port=port,
         lifespan=make_lifespan(api_key),
     )
 
     def get_client(ctx: Context) -> HabitifyClient:
         """Get the HabitifyClient from the lifespan context."""
-        return cast(HabitifyClient, ctx.request_context.lifespan_context)
+        client: HabitifyClient = ctx.lifespan_context[CLIENT_KEY]
+        return client
 
     @server.tool()
     async def get_habits(ctx: Context, include_archived: bool = False) -> HabitsResult:

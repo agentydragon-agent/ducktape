@@ -32,22 +32,13 @@ class ToolStub[T_Out]:
         args = payload.model_dump(exclude_none=False)
         result = await self._session.call_tool(name=self._name, arguments=args)
 
-        # FastMCP wraps non-object schemas (unions, primitives) in {"result": ...}
-        # (see fastmcp/src/fastmcp/tools/tool.py). For wrapped results, FastMCP's client provides
-        # a .data field with unwrapped content (see fastmcp/src/fastmcp/client/client.py).
-        #
-        # Strategy:
-        # - For wrapped results: use .data (dict with unwrapped content)
-        # - For object results: use .structured_content (dict), NOT .data (Pydantic model instance)
-        #
-        # We distinguish by checking if .data is a dict (usable) vs Pydantic model (needs conversion).
-        if result.data is not None and isinstance(result.data, dict):
-            # FastMCP unwrapped a union/primitive for us
-            return TypeAdapter(self._out_type).validate_python(result.data)
-
         if result.structured_content is not None:
-            # Regular object schema - use the dict directly
-            return TypeAdapter(self._out_type).validate_python(result.structured_content)
+            content = result.structured_content
+            # FastMCP wraps non-object schemas (unions, primitives) in {"result": ...}
+            # (x-fastmcp-wrap-result flag). Unwrap before validation.
+            if isinstance(content, dict) and "result" in content and len(content) == 1:
+                content = content["result"]
+            return TypeAdapter(self._out_type).validate_python(content)
 
         # Fallback: no structured output
         raise RuntimeError(f"{self._name!r} did not return structured_content; tests require structured outputs")
@@ -120,32 +111,25 @@ class TypedClient:
         Requires a server created via FastMCP. Introspects FlatTool instances
         for input_model and return type annotations.
         """
-        try:
-            tm = server._tool_manager
-        except AttributeError as exc:
-            raise RuntimeError("Server does not expose _tool_manager") from exc
-        try:
-            tools_by_name = tm._tools
-        except AttributeError as exc:
-            raise RuntimeError("Server tool manager does not expose _tools") from exc
+        components = server._local_provider._components
 
         client = cls(session)
-        for tool in tools_by_name.values():
+        for component in components.values():
             # Only FlatTool has the typed metadata we need
-            if not isinstance(tool, FlatTool):
+            if not isinstance(component, FlatTool):
                 continue
 
-            input_type: type[BaseModel] = tool.input_model
+            input_type: type[BaseModel] = component.input_model
 
             # Get output type from function's return annotation
             try:
-                hints = get_type_hints(tool.fn, include_extras=True)
+                hints = get_type_hints(component.fn, include_extras=True)
                 hinted_output = hints.get("return")
             except (NameError, TypeError, AttributeError):
                 hinted_output = None
 
             output_type = _resolve_output_type(hinted_output, hinted_output)
-            client._models[tool.key] = ToolModels(Input=input_type, Output=output_type, _arg_model=input_type)
+            client._models[component.name] = ToolModels(Input=input_type, Output=output_type, _arg_model=input_type)
 
         return client
 

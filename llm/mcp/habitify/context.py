@@ -1,12 +1,17 @@
 """Server context for Habitify MCP server."""
 
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 from habitify.config import load_api_key
 from habitify.habitify_client import HabitifyClient
+
+CLIENT_KEY = "habitify_client"
 
 
 def make_lifespan(api_key: str | None = None):
@@ -16,7 +21,7 @@ def make_lifespan(api_key: str | None = None):
     """
 
     @asynccontextmanager
-    async def lifespan(server: FastMCP) -> AsyncIterator[HabitifyClient]:
+    async def lifespan(server: FastMCP) -> AsyncIterator[dict[str, Any]]:
         """Initialize client once at server startup, share across all requests."""
         key = api_key or load_api_key(exit_on_missing=False)
         if not key:
@@ -24,6 +29,6 @@ def make_lifespan(api_key: str | None = None):
                 "HABITIFY_API_KEY environment variable is required. Set it in .env or pass via --api-key."
             )
         async with HabitifyClient(api_key=key) as client:
-            yield client
+            yield {CLIENT_KEY: client}
 
     return lifespan

@@ -1,27 +1,26 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from typing import Any
 
 from fastmcp.client.client import Client
-from fastmcp.server.server import (  # avoids shadowing local add_resource_prefix wrapper below
-    add_resource_prefix as _fastmcp_add_resource_prefix,
-    has_resource_prefix,
-)
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
 from mcp_utils.resources import extract_single_text_content
 
+_URI_PATTERN = re.compile(r"^([^:]+://)(.*?)$")
+
 
 def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:
-    """Add a prefix to a resource URI.
-
-    Wrapper around FastMCP's add_resource_prefix that accepts both str and AnyUrl.
-    FastMCP resources expose .uri as AnyUrl, but add_resource_prefix expects str.
-    """
+    """Add prefix to resource URI: protocol://path -> protocol://prefix/path."""
     uri_str = str(uri) if isinstance(uri, AnyUrl) else uri
-    return _fastmcp_add_resource_prefix(uri_str, prefix)
+    match = _URI_PATTERN.match(uri_str)
+    if match:
+        protocol, path = match.groups()
+        return f"{protocol}{prefix}/{path}"
+    return uri_str
 
 
 async def read_text(client: Client[Any], uri: AnyUrl | str) -> str:
@@ -63,6 +62,15 @@ async def read_text_json_typed[T](client: Client[Any], uri: AnyUrl | str, model:
     contents = await client.read_resource(uri_obj)
     validated: T = TypeAdapter(model).validate_json(extract_single_text_content(contents))
     return validated
+
+
+def has_resource_prefix(uri: str, prefix: str) -> bool:
+    """Check if a resource URI has the given prefix."""
+    match = _URI_PATTERN.match(uri)
+    if match:
+        _, path = match.groups()
+        return path.startswith(f"{prefix}/")
+    return False
 
 
 def derive_origin_server(uri: str, mount_names: Iterable[str]) -> str:

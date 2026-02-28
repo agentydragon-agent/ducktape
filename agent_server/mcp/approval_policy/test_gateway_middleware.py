@@ -21,6 +21,7 @@ from agent_server.mcp.approval_policy.engine import (
     POLICY_GATEWAY_STAMP_KEY,
     CallDecision,
     PendingCallsResponse,
+    PolicyReaderServer,
     _raise_if_reserved_code,
 )
 from agent_server.policies.policy_types import ApprovalDecision
@@ -146,7 +147,7 @@ async def test_policy_gateway_middleware_ask_then_allow(
             pending_data: PendingCallsResponse
             for _ in range(30):  # up to ~3s
                 pending_data = await read_text_json_typed(
-                    reader, comp._approval_engine.reader.pending_calls_resource.uri, PendingCallsResponse
+                    reader, PolicyReaderServer.PENDING_CALLS_URI, PendingCallsResponse
                 )
                 if len(pending_data.pending) > 0:
                     break

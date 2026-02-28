@@ -11,6 +11,7 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.responses import DecoratorMock
+from agent_server.mcp.approval_policy.engine import PolicyReaderServer
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_utils.resources import extract_single_text_content
@@ -35,10 +36,10 @@ async def test_resources_list_and_read_policy(make_typed_mcp, approval_policy_se
         assert isinstance(items, list)
         policy_resource = next((r for r in items if r.name == "policy.py"), None)
         assert policy_resource is not None
-        assert str(policy_resource.uri) == str(server.active_policy_resource.uri)
+        assert str(policy_resource.uri) == str(PolicyReaderServer.ACTIVE_POLICY_URI)
         assert policy_resource.mimeType == "text/x-python"
 
-        result = await sess.read_resource(server.active_policy_resource.uri)
+        result = await sess.read_resource(PolicyReaderServer.ACTIVE_POLICY_URI)
         policy_text = extract_single_text_content(result)
         assert "def decide" in policy_text
         assert "PolicyResponse" in policy_text

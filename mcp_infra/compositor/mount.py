@@ -13,7 +13,7 @@ from fastmcp.client import Client
 from fastmcp.client.transports import ClientTransport
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
-from fastmcp.server.proxy import FastMCPProxy
+from fastmcp.server.providers.proxy import FastMCPProxy
 
 from mcp_infra.prefix import MCPMountPrefix
 
@@ -238,9 +238,7 @@ class Mount:
             await stack.enter_async_context(base_client)
 
             # Create proxy
-            proxy = FastMCP.as_proxy(base_client)
-            # Ensure proxy uses the persistent child client session
-            proxy.client_factory = lambda: base_client
+            proxy = FastMCPProxy(client_factory=lambda: base_client)
 
             # Verify initialize result is accessible
             try:

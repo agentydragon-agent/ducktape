@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
 from aiosqlite import Row
-from fastmcp.resources import FunctionResource, ResourceTemplate
 from pydantic import BaseModel, Field
 
 from agent_server.persist.sqlite import SQLitePersistence
@@ -94,14 +94,14 @@ class ChatStore:
 
     async def _notify_other_head(self, *, author: ChatAuthor) -> None:
         if author is ChatAuthor.USER and self._servers.assistant is not None:
-            await self._servers.assistant.broadcast_resource_updated(self._servers.assistant.head_resource.uri)
+            await self._servers.assistant.broadcast_resource_updated(ChatServer.HEAD_RESOURCE_URI)
         elif author is ChatAuthor.ASSISTANT and self._servers.human is not None:
-            await self._servers.human.broadcast_resource_updated(self._servers.human.head_resource.uri)
+            await self._servers.human.broadcast_resource_updated(ChatServer.HEAD_RESOURCE_URI)
 
     async def _notify_last_read(self, *, author: ChatAuthor) -> None:
         srv = self._servers.human if author is ChatAuthor.USER else self._servers.assistant
         if srv is not None:
-            await srv.broadcast_resource_updated(srv.last_read_resource.uri)
+            await srv.broadcast_resource_updated(ChatServer.LAST_READ_RESOURCE_URI)
 
     async def append(self, *, author: ChatAuthor, mime: str, content: str) -> int:
         self._seq += 1
@@ -248,10 +248,10 @@ class ChatServer(EnhancedFastMCP):
     notifications, and read position management.
     """
 
-    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
-    head_resource: FunctionResource
-    last_read_resource: FunctionResource
-    message_resource: ResourceTemplate
+    # Resource URI constants
+    HEAD_RESOURCE_URI = "chat://head"
+    LAST_READ_RESOURCE_URI = "chat://last-read"
+    MESSAGE_RESOURCE_URI_TEMPLATE = "chat://messages/{id}"
 
     # Tool references (assigned in __init__)
     post_tool: FlatTool[Any, Any]
@@ -268,33 +268,25 @@ class ChatServer(EnhancedFastMCP):
         super().__init__(display, instructions=None)
 
         # Head sentinel: last_id only (small)
-        async def head() -> int | None:
-            return await store.last_id_async()
+        async def head() -> str:
+            return json.dumps(await store.last_id_async())
 
-        self.head_resource = cast(
-            FunctionResource, self.resource("chat://head", name="chat.head", mime_type="application/json")(head)
-        )
+        self.resource(self.HEAD_RESOURCE_URI, name="chat.head", mime_type="application/json")(head)
 
         # Last-read HWM (server-managed)
-        async def last_read() -> int | None:
-            return await store.get_last_read(author)
+        async def last_read() -> str:
+            return json.dumps(await store.get_last_read(author))
 
-        self.last_read_resource = cast(
-            FunctionResource,
-            self.resource("chat://last-read", name="chat.last_read", mime_type="application/json")(last_read),
-        )
+        self.resource(self.LAST_READ_RESOURCE_URI, name="chat.last_read", mime_type="application/json")(last_read)
 
         # Per-message resource for deep links/hydration
-        async def message(id: int) -> ChatMessage:
+        async def message(id: int) -> str:
             got = await store.get_message_async(id)
             if got is None:
                 raise KeyError(str(id))
-            return got
+            return got.model_dump_json()
 
-        self.message_resource = cast(
-            ResourceTemplate,
-            self.resource("chat://messages/{id}", name="chat.message", mime_type="application/json")(message),
-        )
+        self.resource(self.MESSAGE_RESOURCE_URI_TEMPLATE, name="chat.message", mime_type="application/json")(message)
 
         # Tools: post and read_pending_messages (get+advance)
         async def post(input: PostInput) -> PostResult:

@@ -124,8 +124,6 @@ dependencies = [
     "pytimeparse>=1.1.8",
     "ruff>=0.5",
     "pre-commit>=3.5",
-    # checkov is only used via pre-commit (own venv), not Bazel.
-    # Removed from here because it pins packaging<24.0, conflicting with fastmcp v3.
 
     # finance
     "absl-py",

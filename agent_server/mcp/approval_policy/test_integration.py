@@ -11,7 +11,7 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.mcp.responses import EchoMock
-from agent_server.mcp.approval_policy.engine import CallDecision, PendingCallsResponse
+from agent_server.mcp.approval_policy.engine import CallDecision, PendingCallsResponse, PolicyReaderServer
 from agent_server.policies.policy_types import ApprovalDecision
 from agent_server.testing.approval_policy_testdata import make_policy
 from mcp_infra.resource_utils import read_text_json_typed
@@ -59,7 +59,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
             pending_data: PendingCallsResponse
             for _ in range(30):  # up to ~3s
                 pending_data = await read_text_json_typed(
-                    reader_client, comp._approval_engine.reader.pending_calls_resource.uri, PendingCallsResponse
+                    reader_client, PolicyReaderServer.PENDING_CALLS_URI, PendingCallsResponse
                 )
                 if len(pending_data.pending) >= 1:
                     break

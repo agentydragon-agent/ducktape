@@ -545,18 +545,17 @@ async def test_agent_compositor_flat_tools_request_schema(compositor, mcp_tool_p
         props = params_b["properties"]
         assert props["identifier"]["type"] == "string"
         assert props["count"]["type"] == "integer"
-        assert "$ref" in props["nested"]
-        assert "$ref" in props["category"]
+        assert props["nested"]["type"] == "object"
+        assert props["category"]["type"] == "object"
         assert props["flag"]["type"] == "boolean"
         assert set(params_b["required"]) == {"identifier", "count", "nested", "category", "flag"}
 
-        # Nested models in $defs
-        assert "$defs" in params_b
-        nested_def = params_b["$defs"]["NestedInfo"]
+        # Nested models (v3 inlines rather than using $ref/$defs)
+        nested_def = props["nested"]
         assert nested_def["properties"]["regex"]["pattern"] == r"^\d{5}$"
         assert nested_def["properties"]["text_defaultd"]["default"] == "DEFAULT"
 
-        category_def = params_b["$defs"]["CategoryInfo"]
+        category_def = props["category"]
         assert set(category_def["properties"]["type"]["enum"]) == {"type_a", "type_b", "type_c"}
 
         print("\nMCP_A_TOOL_A SCHEMA:")

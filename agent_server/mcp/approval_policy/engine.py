@@ -10,12 +10,11 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import resources
-from typing import Any, Final, cast
+from typing import Any, Final
 
 import aiodocker
 import pydantic_core
 from fastmcp.client import Client
-from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import ServerSession
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
@@ -404,10 +403,10 @@ def _load_instructions(policy_uri: str) -> str:
 class PolicyReaderServer(EnhancedFastMCP):
     """Policy reader server: resources + evaluate_policy tool."""
 
-    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
-    active_policy_resource: FunctionResource
-    proposal_item_resource: ResourceTemplate
-    pending_calls_resource: FunctionResource
+    # Resource URI constants
+    ACTIVE_POLICY_URI = "resource://approval-policy/policy.py"
+    PROPOSAL_ITEM_URI_TEMPLATE = "resource://approval-policy/proposals/{id}"
+    PENDING_CALLS_URI = "pending://calls"
 
     # Typed tool attribute for canonical pattern compliance
     evaluate_policy_tool: FlatTool[Any, Any]
@@ -418,35 +417,25 @@ class PolicyReaderServer(EnhancedFastMCP):
         Args:
             engine: PolicyEngine instance providing policy state and evaluation logic
         """
-        # URI constant for active policy resource (SSOT is server.active_policy_resource.uri after registration)
-        policy_uri = "resource://approval-policy/policy.py"
-
         # Initialize server with instructions rendered using the policy URI
-        super().__init__(name="reader", instructions=_load_instructions(policy_uri))
+        super().__init__(name="reader", instructions=_load_instructions(self.ACTIVE_POLICY_URI))
 
         # Register resources and stash the results
         def active_policy() -> str:
             return engine.get_policy()
 
-        self.active_policy_resource = cast(
-            FunctionResource, self.resource(policy_uri, name="policy.py", mime_type="text/x-python")(active_policy)
-        )
+        self.resource(self.ACTIVE_POLICY_URI, name="policy.py", mime_type="text/x-python")(active_policy)
 
         async def proposal_item(id: str) -> str:
             if (got := await engine.persistence.get_policy_proposal(engine.agent_id, id)) is None:
                 raise KeyError(id)
             return got.content
 
-        self.proposal_item_resource = cast(
-            ResourceTemplate,
-            self.resource("resource://approval-policy/proposals/{id}", name="proposal", mime_type="text/x-python")(
-                proposal_item
-            ),
-        )
+        self.resource(self.PROPOSAL_ITEM_URI_TEMPLATE, name="proposal", mime_type="text/x-python")(proposal_item)
 
-        def pending_calls() -> PendingCallsResponse:
+        def pending_calls() -> str:
             """List all pending tool call approval requests."""
-            return PendingCallsResponse(
+            response = PendingCallsResponse(
                 pending=[
                     PendingCallItem(
                         call_id=call_id,
@@ -456,11 +445,9 @@ class PolicyReaderServer(EnhancedFastMCP):
                     for call_id, req in engine._hub.pending.items()
                 ]
             )
+            return response.model_dump_json()
 
-        self.pending_calls_resource = cast(
-            FunctionResource,
-            self.resource("pending://calls", name="pending_calls", mime_type="application/json")(pending_calls),
-        )
+        self.resource(self.PENDING_CALLS_URI, name="pending_calls", mime_type="application/json")(pending_calls)
 
         # Register tool with typed attribute
         async def evaluate_policy(input: PolicyRequest) -> PolicyResponse:
@@ -624,7 +611,7 @@ class PolicyEngine:
 
     def _on_hub_change(self) -> None:
         """Called when hub pending list changes - broadcast pending://calls."""
-        task = asyncio.create_task(self._broadcast_resource_updated(self.reader.pending_calls_resource.uri))
+        task = asyncio.create_task(self._broadcast_resource_updated(PolicyReaderServer.PENDING_CALLS_URI))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
@@ -653,7 +640,7 @@ class PolicyEngine:
         """Set new policy source and broadcast update."""
         self._policy_source = source
         self._policy_version += 1
-        task = asyncio.create_task(self._broadcast_resource_updated(self.reader.active_policy_resource.uri))
+        task = asyncio.create_task(self._broadcast_resource_updated(PolicyReaderServer.ACTIVE_POLICY_URI))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
         return self._policy_version
@@ -706,7 +693,7 @@ class PolicyEngine:
     def _notify_proposal_change(self, proposal_id: str) -> None:
         """Notify about a specific proposal change and the proposals index."""
         # Notify specific proposal
-        uri = self.reader.proposal_item_resource.uri_template.format(id=proposal_id)
+        uri = PolicyReaderServer.PROPOSAL_ITEM_URI_TEMPLATE.format(id=proposal_id)
         task = asyncio.create_task(self._broadcast_resource_updated(uri))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)

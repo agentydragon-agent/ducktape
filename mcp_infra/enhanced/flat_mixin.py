@@ -76,15 +76,15 @@ class FlatModelMixin(FastMCP):
 
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]
-    ) -> list[mcp_types.ContentBlock] | tuple[list[mcp_types.ContentBlock], dict[str, Any]] | mcp_types.CallToolResult:
+    ) -> (
+        list[mcp_types.ContentBlock]
+        | tuple[list[mcp_types.ContentBlock], dict[str, Any]]
+        | mcp_types.CallToolResult
+        | mcp_types.CreateTaskResult
+    ):
         """Override to format ValidationErrors from flat model tools as flat JSON."""
         try:
-            result: (
-                list[mcp_types.ContentBlock]
-                | tuple[list[mcp_types.ContentBlock], dict[str, Any]]
-                | mcp_types.CallToolResult
-            ) = await super()._call_tool_mcp(key, arguments)
-            return result
+            return await super()._call_tool_mcp(key, arguments)
         except ValidationError as e:
             return mcp_types.CallToolResult(
                 content=[mcp_types.TextContent(type="text", text=format_validation_error(e))], isError=True
@@ -203,7 +203,6 @@ class FlatModelMixin(FastMCP):
                 output_schema=output_schema,
                 annotations=annotations,
                 tags=tags or set(),
-                enabled=True,
                 context_kwarg=context_name,
             )
 

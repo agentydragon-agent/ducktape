@@ -36,11 +36,13 @@ class TestAgentsListResource:
             resources = await sess.list_resources()
             # Should have agents://list and agents://presets
             uris = [str(r.uri) for r in resources]
-            assert str(agents_server.list_resource.uri) in uris
-            assert str(agents_server.presets_resource.uri) in uris
+            assert str(AgentsManagementServer.LIST_RESOURCE_URI) in uris
+            assert str(AgentsManagementServer.PRESETS_RESOURCE_URI) in uris
 
             # Read the list resource and parse as list of AgentInfo
-            agents: list[AgentInfo] = await read_text_json_typed(sess, agents_server.list_resource.uri, list[AgentInfo])
+            agents: list[AgentInfo] = await read_text_json_typed(
+                sess, AgentsManagementServer.LIST_RESOURCE_URI, list[AgentInfo]
+            )
             assert len(agents) == 0
 
     async def test_list_agents_with_running_agent(self, agents_server, mock_registry, sqlite_persistence):
@@ -57,7 +59,9 @@ class TestAgentsListResource:
         mock_registry.is_external.return_value = False
 
         async with Client(agents_server) as sess:
-            agents: list[AgentInfo] = await read_text_json_typed(sess, agents_server.list_resource.uri, list[AgentInfo])
+            agents: list[AgentInfo] = await read_text_json_typed(
+                sess, AgentsManagementServer.LIST_RESOURCE_URI, list[AgentInfo]
+            )
             assert len(agents) == 1
             agent = agents[0]
             assert agent.id == agent_id
@@ -75,7 +79,9 @@ class TestAgentsListResource:
         )
 
         async with Client(agents_server) as sess:
-            agents: list[AgentInfo] = await read_text_json_typed(sess, agents_server.list_resource.uri, list[AgentInfo])
+            agents: list[AgentInfo] = await read_text_json_typed(
+                sess, AgentsManagementServer.LIST_RESOURCE_URI, list[AgentInfo]
+            )
             assert len(agents) == 1
             agent = agents[0]
             assert agent.id == agent_id
@@ -95,7 +101,9 @@ class TestAgentsListResource:
         mock_registry.is_external.return_value = True
 
         async with Client(agents_server) as sess:
-            agents: list[AgentInfo] = await read_text_json_typed(sess, agents_server.list_resource.uri, list[AgentInfo])
+            agents: list[AgentInfo] = await read_text_json_typed(
+                sess, AgentsManagementServer.LIST_RESOURCE_URI, list[AgentInfo]
+            )
             assert len(agents) == 1
             agent = agents[0]
             assert agent.id == agent_id
@@ -109,7 +117,7 @@ class TestAgentsPresetsResource:
         """agents://presets returns available presets."""
         async with Client(agents_server) as sess:
             presets: list[PresetInfo] = await read_text_json_typed(
-                sess, agents_server.presets_resource.uri, list[PresetInfo]
+                sess, AgentsManagementServer.PRESETS_RESOURCE_URI, list[PresetInfo]
             )
             assert isinstance(presets, list)
             # Should have at least the default preset
