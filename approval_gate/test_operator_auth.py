@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import time
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import jwt as pyjwt
@@ -31,7 +30,6 @@ from approval_gate.proxy_server import ApprovalGateServer
 from util.net import pick_free_port
 
 _AGENT_API_KEY = "test-agent-bearer-key"
-_INSTRUCTIONS_TEMPLATE = str(Path(__file__).parent / "instructions.mako")
 
 
 @pytest.fixture
@@ -94,7 +92,6 @@ async def gate_http(tmp_path, mock_jwks_signing_key):
         db_path=tmp_path / "gate.db",
         predicate=lambda tool, args: NeedsHumanDecision(),
         public_base_url="http://test",
-        instructions_template_path=_INSTRUCTIONS_TEMPLATE,
         auth=auth,
     )
     mcp_app = gate.http_app(path="/")
@@ -131,6 +128,7 @@ async def test_agent_cannot_see_operator_tools(agent_tool_names):
     assert "reject_action" not in agent_tool_names
     assert "list_actions" not in agent_tool_names
     assert "echo" in agent_tool_names
+    assert "withdraw_action" in agent_tool_names
 
 
 async def test_operator_jwt_sees_operator_tools(operator_tool_names):
@@ -138,7 +136,8 @@ async def test_operator_jwt_sees_operator_tools(operator_tool_names):
     assert "approve_action" in operator_tool_names
     assert "reject_action" in operator_tool_names
     assert "list_actions" in operator_tool_names
-    assert "echo" in operator_tool_names
+    assert "echo" not in operator_tool_names
+    assert "withdraw_action" not in operator_tool_names
 
 
 if __name__ == "__main__":

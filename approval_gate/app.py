@@ -29,7 +29,6 @@ from approval_gate.proxy_server import ApprovalGateServer
 logger = logging.getLogger(__name__)
 
 _FRONTEND_DIST_DIR = Path(__file__).parent / "frontend" / "dist"
-_INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 
 def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
@@ -42,7 +41,6 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
         db_path=settings.db_path,
         predicate=predicate,
         public_base_url=settings.public_base_url,
-        instructions_template_path=str(_INSTRUCTIONS_TEMPLATE),
         auth=auth,
     )
     mcp_app = gate.http_app(path="/")

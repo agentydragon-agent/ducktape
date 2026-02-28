@@ -50,12 +50,6 @@ interface Action {
   state: ActionState;
 }
 
-/** The structured response the approval gate server always returns from a tool call. */
-interface ApprovalGateToolResponse {
-  action_id: string;
-  approval_url?: string;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 type TerminalStatus = "done" | "rejected" | "withdrawn";
@@ -284,6 +278,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   }
 
   // ── Connect to approval gate MCP server ──────────────────────────────────
+  // TODO: handle approval gate availability changes — unregister/re-register tools on disconnect/reconnect
   const transport = new StreamableHTTPClientTransport(new URL(approvalGateUrl), {
     requestInit: {
       headers: { Authorization: `Bearer ${agentApiKey}` },
@@ -381,8 +376,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         const result = await client.callTool({ name: toolName, arguments: callArgs });
 
         const firstContent = result.content?.[0] as { text: string };
-        const toolResponse = JSON.parse(firstContent.text) as ApprovalGateToolResponse;
-        const { action_id: actionId, approval_url: approvalUrl } = toolResponse;
+        const actionId = JSON.parse(firstContent.text) as string;
 
         const resourceUri = `${ACTION_RESOURCE_PREFIX}${actionId}`;
 
@@ -400,7 +394,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
             content: [
               {
                 type: "text" as const,
-                text: `Action ${actionId} queued for operator approval${approvalUrl ? ` at ${approvalUrl}` : ""}`,
+                text: `Action ${actionId} queued for operator approval`,
               },
             ],
           };
@@ -422,7 +416,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
           content: [
             {
               type: "text" as const,
-              text: `Action ${actionId} queued for operator approval${approvalUrl ? ` at ${approvalUrl}` : ""}`,
+              text: `Action ${actionId} queued for operator approval`,
             },
           ],
         };

@@ -1,15 +1,20 @@
 """E2E tests for the approval gate — fully in-process, no HTTP servers.
 
+FastMCP only skips auth checks for STDIO transport; the in-process memory
+transport enforces auth. The _agent_auth_ctx autouse fixture injects an
+agent-scoped access token via the MCP auth_context_var before the server
+task is started (anyio copies contextvars to new tasks), allowing the
+in-process client to call agent-scoped tools.
+
 Operator actions (approve/reject) are called via gate.decide() directly
-because in-process clients use memory transport (not stdio), so FastMCP's
-per-tool auth check enforces operator scope even without HTTP middleware.
-The MCP auth boundary for operator tools is covered by test_operator_auth.py.
+because in-process clients only have AGENT_SCOPE, not OPERATOR_SCOPE.
+The full MCP auth boundary is covered by test_operator_auth.py.
 """
 
 from __future__ import annotations
 
+import json
 import uuid
-from pathlib import Path
 
 import anyio
 import pytest
@@ -18,12 +23,27 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types as mcp_types
+from mcp.server.auth.middleware.auth_context import auth_context_var
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
+from mcp.server.auth.provider import AccessToken as MCPAccessToken
 
-from approval_gate.models import Action, ActionRef, ActionStatus, ApproveDecision, DenyDecision
+from approval_gate.mcp_auth import AGENT_SCOPE
+from approval_gate.models import Action, ActionStatus, ApproveDecision, DenyDecision
 from approval_gate.predicates import Approved, NeedsHumanDecision
 from approval_gate.proxy_server import ApprovalGateServer
 
-_INSTRUCTIONS_TEMPLATE = str(Path(__file__).parent / "instructions.mako")
+
+@pytest.fixture(autouse=True)
+async def _agent_auth_ctx():
+    """Inject AGENT_SCOPE into the MCP auth context for in-process tests.
+
+    Sets auth_context_var before the server task is created so the server task
+    inherits agent scope (anyio copies contextvars to new asyncio tasks).
+    """
+    user = AuthenticatedUser(MCPAccessToken(token="test-agent", client_id="test", scopes=[AGENT_SCOPE]))
+    token = auth_context_var.set(user)
+    yield
+    auth_context_var.reset(token)
 
 
 @pytest.fixture
@@ -41,11 +61,7 @@ async def backend():
 
 def _make_gate(srv, tmp_path, predicate, db_name="gate.db"):
     return ApprovalGateServer(
-        backend=srv,
-        db_path=tmp_path / db_name,
-        predicate=predicate,
-        public_base_url="http://test",
-        instructions_template_path=_INSTRUCTIONS_TEMPLATE,
+        backend=srv, db_path=tmp_path / db_name, predicate=predicate, public_base_url="http://test"
     )
 
 
@@ -118,10 +134,10 @@ async def test_approve_executes_backend_tool(gate, backend):
     waiter = _ResourceWaiter()
     async with Client(gate, message_handler=waiter) as client:
         result = await client.call_tool_mcp("echo", {"input": {"text": "hello"}, "justification": "test"})
-        action_id = ActionRef.model_validate_json(result.content[0].text).action_id
+        action_id = uuid.UUID(json.loads(result.content[0].text))
         await gate.decide(action_id, ApproveDecision())
         with anyio.fail_after(5.0):
-            await waiter.wait_for(client, action_id, ActionStatus.done)
+            await waiter.wait_for(client, action_id, ActionStatus.DONE)
     assert calls == [{"text": "hello"}]
 
 
@@ -131,10 +147,10 @@ async def test_reject_leaves_action_rejected_and_skips_backend(gate, backend):
     waiter = _ResourceWaiter()
     async with Client(gate, message_handler=waiter) as client:
         result = await client.call_tool_mcp("echo", {"input": {"text": "no-run"}, "justification": "test"})
-        action_id = ActionRef.model_validate_json(result.content[0].text).action_id
+        action_id = uuid.UUID(json.loads(result.content[0].text))
         await gate.decide(action_id, DenyDecision(reason="test rejection"))
         with anyio.fail_after(5.0):
-            await waiter.wait_for(client, action_id, ActionStatus.rejected)
+            await waiter.wait_for(client, action_id, ActionStatus.REJECTED)
     assert calls == []
 
 
@@ -145,9 +161,9 @@ async def test_auto_approve_predicate_skips_queue(backend, tmp_path):
     waiter = _ResourceWaiter()
     async with Client(gate, message_handler=waiter) as client:
         result = await client.call_tool_mcp("echo", {"input": {"text": "auto"}, "justification": "auto"})
-        action_id = ActionRef.model_validate_json(result.content[0].text).action_id
+        action_id = uuid.UUID(json.loads(result.content[0].text))
         with anyio.fail_after(5.0):
-            await waiter.wait_for(client, action_id, ActionStatus.done)
+            await waiter.wait_for(client, action_id, ActionStatus.DONE)
     assert calls == [{"text": "auto"}]
 
 

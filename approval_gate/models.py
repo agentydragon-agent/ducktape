@@ -34,17 +34,17 @@ class ToolCall(BaseModel):
 
 
 class ActionStatus(StrEnum):
-    pending = "pending"
-    executing = "executing"
-    done = "done"
-    rejected = "rejected"
-    withdrawn = "withdrawn"
+    PENDING = "pending"
+    EXECUTING = "executing"
+    DONE = "done"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
 
 
 class PendingState(BaseModel):
     """Awaiting operator decision."""
 
-    status: Literal[ActionStatus.pending] = ActionStatus.pending
+    status: Literal[ActionStatus.PENDING] = ActionStatus.PENDING
 
     model_config = ConfigDict(extra="forbid")
 
@@ -52,7 +52,7 @@ class PendingState(BaseModel):
 class ExecutingState(BaseModel):
     """Approved; backend call in flight."""
 
-    status: Literal[ActionStatus.executing] = ActionStatus.executing
+    status: Literal[ActionStatus.EXECUTING] = ActionStatus.EXECUTING
 
     model_config = ConfigDict(extra="forbid")
 
@@ -60,7 +60,7 @@ class ExecutingState(BaseModel):
 class DoneState(BaseModel):
     """Backend call completed. outcome.isError distinguishes success from tool error."""
 
-    status: Literal[ActionStatus.done] = ActionStatus.done
+    status: Literal[ActionStatus.DONE] = ActionStatus.DONE
     outcome: mcp_types.CallToolResult
 
     model_config = ConfigDict(extra="forbid")
@@ -69,7 +69,7 @@ class DoneState(BaseModel):
 class RejectedState(BaseModel):
     """Operator rejected the action."""
 
-    status: Literal[ActionStatus.rejected] = ActionStatus.rejected
+    status: Literal[ActionStatus.REJECTED] = ActionStatus.REJECTED
     reason: str | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -78,7 +78,7 @@ class RejectedState(BaseModel):
 class WithdrawnState(BaseModel):
     """Agent withdrew the action before it was decided."""
 
-    status: Literal[ActionStatus.withdrawn] = ActionStatus.withdrawn
+    status: Literal[ActionStatus.WITHDRAWN] = ActionStatus.WITHDRAWN
 
     model_config = ConfigDict(extra="forbid")
 
@@ -133,19 +133,4 @@ class WithdrawDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-OperatorDecision = Annotated[ApproveDecision | DenyDecision | WithdrawDecision, Field(discriminator="kind")]
-
-
-# ── Queued-action reference (returned to the agent immediately) ───────────────
-
-
-class ActionRef(BaseModel):
-    """Reference to a queued action, returned immediately when a tool call is submitted.
-
-    The agent should poll resource://actions/{action_id} for the outcome, or subscribe
-    to MCP resource-updated notifications to be notified when the state changes.
-    """
-
-    action_id: uuid.UUID
-
-    model_config = ConfigDict(extra="forbid")
+OperatorDecision = Annotated[ApproveDecision | DenyDecision, Field(discriminator="kind")]

@@ -26,7 +26,7 @@ def test_pending_state_roundtrip():
     json_bytes = _STATE_TA.dump_json(state)
     parsed = _STATE_TA.validate_json(json_bytes)
     assert isinstance(parsed, PendingState)
-    assert parsed.status == ActionStatus.pending
+    assert parsed.status == ActionStatus.PENDING
 
 
 def test_done_state_succeeded_roundtrip():

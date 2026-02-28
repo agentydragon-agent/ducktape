@@ -50,12 +50,12 @@ async def test_list_actions_filter(storage: ActionStorage):
     await storage.create(action_id=_ID4, call=call, justification="b", session_key=None)
     await storage.update_state(_ID4, RejectedState(reason="no"))
 
-    pending = await storage.list_actions(ActionStatus.pending)
+    pending = await storage.list_actions(ActionStatus.PENDING)
     ids = {a.id for a in pending}
     assert _ID3 in ids
     assert _ID4 not in ids
 
-    rejected = await storage.list_actions(ActionStatus.rejected)
+    rejected = await storage.list_actions(ActionStatus.REJECTED)
     assert any(a.id == _ID4 for a in rejected)
 
 

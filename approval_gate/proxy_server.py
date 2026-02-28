@@ -31,9 +31,9 @@ from fastmcp.tools.tool import FunctionTool
 from mako.template import Template
 from mcp import types as mcp_types
 
+from approval_gate.mcp_auth import AGENT_SCOPE, OPERATOR_SCOPE
 from approval_gate.models import (
     Action,
-    ActionRef,
     ActionState,
     ActionStatus,
     ApproveDecision,
@@ -44,7 +44,6 @@ from approval_gate.models import (
     PendingState,
     RejectedState,
     ToolCall,
-    WithdrawDecision,
     WithdrawnState,
 )
 from approval_gate.predicates import Approved, Denied, NeedsHumanDecision, PredicateFn, call_predicate
@@ -52,6 +51,8 @@ from approval_gate.storage import ActionStorage
 from mcp_infra.enhanced.server import EnhancedFastMCP
 
 logger = logging.getLogger(__name__)
+
+_INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 
 def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -97,7 +98,6 @@ class ApprovalGateServer(EnhancedFastMCP):
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
-        instructions_template_path: str,
         **kwargs: Any,
     ) -> None:
         # Instructions are set after backend connection in lifespan; placeholder here.
@@ -111,7 +111,6 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._storage: ActionStorage | None = None
         self._predicate = predicate
         self._public_base_url = public_base_url
-        self._instructions_template_path = instructions_template_path
         # Populated in lifespan
         self._backend_client: Client | None = None
         # Holds references to fire-and-forget background tasks to prevent GC cancellation.
@@ -141,7 +140,7 @@ class ApprovalGateServer(EnhancedFastMCP):
 
             # Render instructions using Mako template
             backend_instructions: str | None = init.instructions if init else None
-            tmpl = Template(filename=self._instructions_template_path)
+            tmpl = Template(filename=str(_INSTRUCTIONS_TEMPLATE))
             rendered_instructions = tmpl.render(
                 backend_instructions=backend_instructions, public_base_url=self._public_base_url
             )
@@ -150,10 +149,9 @@ class ApprovalGateServer(EnhancedFastMCP):
 
             # Register a resource template for individual action state
             @self.resource("resource://actions/{action_id}")
-            async def action_resource(action_id: str) -> str:
+            async def action_resource(action_id: uuid.UUID) -> str:
                 """Current state of a deferred action."""
-                uid = uuid.UUID(action_id)
-                action = await self._req_storage.get(uid)
+                action = await self._req_storage.get(action_id)
                 if action is None:
                     raise ValueError(f"Action not found: {action_id}")
                 return action.model_dump_json()
@@ -167,20 +165,25 @@ class ApprovalGateServer(EnhancedFastMCP):
             # Gated by require_scopes("operator"); bypassed for in-process clients
             # (stdio/memory transport), which allows tests to call these freely.
 
-            @self.tool(auth=require_scopes("operator"))
+            @self.tool(auth=require_scopes(OPERATOR_SCOPE))
             async def list_actions(status: ActionStatus | None = None, limit: int = 100) -> list[Action]:
                 """List queued/processed actions, optionally filtered by status."""
                 return await self._req_storage.list_actions(status, limit=limit)
 
-            @self.tool(auth=require_scopes("operator"))
+            @self.tool(auth=require_scopes(OPERATOR_SCOPE))
             async def approve_action(action_id: uuid.UUID) -> Action:
                 """Approve a pending action, executing it against the backend."""
                 return await self.decide(action_id, ApproveDecision())
 
-            @self.tool(auth=require_scopes("operator"))
+            @self.tool(auth=require_scopes(OPERATOR_SCOPE))
             async def reject_action(action_id: uuid.UUID, reason: str | None = None) -> Action:
                 """Reject a pending action without executing it."""
                 return await self.decide(action_id, DenyDecision(reason=reason))
+
+            @self.tool(auth=require_scopes(AGENT_SCOPE))
+            async def withdraw_action(action_id: uuid.UUID) -> Action:
+                """Withdraw a pending action before it is decided by an operator."""
+                return await self.withdraw(action_id)
 
             yield
 
@@ -216,7 +219,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             justification: str,
             input: dict[str, object] = {},  # noqa: B006
             session_key: str | None = None,
-        ) -> ActionRef:
+        ) -> uuid.UUID:
             call = ToolCall(tool_name=tool_name, arguments=input)
             action_id = uuid.uuid4()
             await self._req_storage.create(
@@ -224,14 +227,20 @@ class ApprovalGateServer(EnhancedFastMCP):
             )
             await self.broadcast_resource_list_changed()
             self._spawn(self._apply_predicate(action_id, tool_name, input))
-            return ActionRef(action_id=action_id)
+            return action_id
 
         # Construct a FunctionTool with the wrapped schema (bypasses schema inference
         # from type hints — we provide the exact JSON schema from the backend tool).
         # Call FastMCP.add_tool directly to skip OpenAIStrictModeMixin validation:
         # proxy tools embed arbitrary backend schemas that may not satisfy OpenAI strict
         # mode (e.g. missing additionalProperties:false, optional fields not in required).
-        tool = FunctionTool(fn=_tool_handler, name=tool_name, description=description, parameters=wrapped_schema)
+        tool = FunctionTool(
+            fn=_tool_handler,
+            name=tool_name,
+            description=description,
+            parameters=wrapped_schema,
+            auth=require_scopes(AGENT_SCOPE),
+        )
         FastMCP.add_tool(self, tool)
 
     async def _apply_predicate(self, action_id: uuid.UUID, tool_name: str, input: dict[str, object]) -> None:
@@ -248,7 +257,7 @@ class ApprovalGateServer(EnhancedFastMCP):
     # ── Operator / agent decisions ────────────────────────────────────────────
 
     async def decide(self, action_id: uuid.UUID, decision: OperatorDecision) -> Action:
-        """Apply an operator or agent decision to a pending action.
+        """Apply an operator decision (approve or deny) to a pending action.
 
         Raises ValueError if the action does not exist or is not pending.
         """
@@ -263,8 +272,16 @@ class ApprovalGateServer(EnhancedFastMCP):
                 return action
             case DenyDecision(reason=reason):
                 return await self._update_and_notify(action_id, RejectedState(reason=reason))
-            case WithdrawDecision():
-                return await self._update_and_notify(action_id, WithdrawnState())
+
+    async def withdraw(self, action_id: uuid.UUID) -> Action:
+        """Agent-initiated withdrawal of a pending action.
+
+        Raises ValueError if the action does not exist or is not pending.
+        """
+        action = _require_action(await self._req_storage.get(action_id), action_id)
+        if not isinstance(action.state, PendingState):
+            raise ValueError(f"Action {action_id} is not pending ({action.state.status=})")
+        return await self._update_and_notify(action_id, WithdrawnState())
 
     async def _execute_and_finish(self, action_id: uuid.UUID, action: Action) -> None:
         """Execute the backend call and update state to done."""

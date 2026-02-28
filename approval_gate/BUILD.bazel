@@ -54,6 +54,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":mcp_auth",
         ":models",
         ":predicates",
         ":storage",
@@ -81,10 +82,7 @@ py_library(
 py_library(
     name = "app",
     srcs = ["app.py"],
-    data = [
-        "instructions.mako",
-        "//approval_gate/frontend:bundle",
-    ],
+    data = ["//approval_gate/frontend:bundle"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
@@ -234,6 +232,7 @@ py_test(
     srcs = ["test_e2e.py"],
     deps = [
         ":conftest",
+        ":mcp_auth",
         ":models",
         ":predicates",
         ":proxy_server",
