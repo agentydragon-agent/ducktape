@@ -105,6 +105,20 @@ Components:
 - **Kernel prereqs**: `overlay`, `br_netfilter`, IP forwarding
 - **Firewall**: VXLAN (UDP 8472), kubelet (TCP 10250)
 
+Key design decisions:
+
+- **CNI path**: containerd points `cni.bin_dir` to `/opt/cni/bin`. Cilium's DaemonSet
+  installs `cilium-cni` and `loopback` there at runtime. No Nix-side CNI plugins needed.
+- **`mount` wrapper**: kubelet's PATH prepends `/run/wrappers/bin` for NixOS setuid
+  `mount`/`umount` (needed for projected/tmpfs volumes).
+- **`--node-ip` from Tailscale**: `ExecStartPre` resolves the Tailscale IPv4 via
+  `tailscale ip --4` and passes it as `--node-ip`. Kubelet won't start until Tailscale
+  is connected.
+- **Tailscale DaemonSet conflict**: The NixOS node runs Tailscale natively via
+  `services.tailscale`. The cluster's Tailscale DaemonSet also schedules on this node
+  and conflicts over `/dev/net/tun`. Needs resolution (node label exclusion or
+  DaemonSet affinity).
+
 Module options under `ducktape.k8sWorker`:
 
 - `enable`, `controlPlaneEndpoints`, `clusterDNS`, `headscaleUrl`, `caCertPath`,
@@ -121,7 +135,7 @@ the `k8s-worker-test` NixOS host config (GNOME desktop + k8s-worker module).
    ```bash
    talosctl -n <vps-ip> cat /etc/kubernetes/bootstrap-kubeconfig > bootstrap-kubelet.conf
    talosctl -n <vps-ip> cat /etc/kubernetes/pki/ca.crt > ca.crt
-   sed -i 's|https://localhost:7445|https://<vps-ip>:6443|g' bootstrap-kubelet.conf
+   # Keep server as https://127.0.0.1:7445 — HAProxy handles routing to control plane
    ```
 2. **Copy to the machine**:
    ```bash
@@ -146,7 +160,7 @@ the `k8s-worker-test` NixOS host config (GNOME desktop + k8s-worker module).
 ## Scheduling
 
 The node registers with taint `node-role.kubernetes.io/roaming=true:NoSchedule`
-and labels `topology.kubernetes.io/region=roaming`, `node-role.kubernetes.io/roaming=true`.
+and labels `topology.kubernetes.io/region=roaming`, `node.kubernetes.io/role=roaming`.
 
 **Good fit** (tolerates interruption):
 
@@ -194,19 +208,27 @@ Mitigations:
 ## Current Status
 
 **Tailscale DaemonSet**: Deployed and running on all 4 cluster nodes. Nodes registered in
-Headscale, peer discovery working via DERP relays. Direct peer-to-peer connections will
-establish once UDP 41641 is open on both sides.
+Headscale, peer discovery working. Direct peer-to-peer connections established (UDP 41641
+open on Hetzner firewall).
 
 **kubelet `validSubnets`**: Applied. Nodes will not register with Tailscale CGNAT IPs.
-
-**Hetzner firewall**: UDP 41641 open for direct Tailscale peering.
 
 **Mesh connectivity verified from wyrm** (2026-02-27): All 4 cluster nodes reachable via
 Tailscale IPs. Latency: VPS ~55-65ms, Proxmox ~54ms. Stages 1-2 complete.
 
 **k8s-worker-test VM joined** (2026-02-27): NixOS test VM (Proxmox VM 111) successfully
 joined the cluster as a worker node. Bootstrap kubeconfig extracted from Talos, CSR approved.
-Node visible in `kubectl get nodes`. Cilium agent deploying.
+Node visible in `kubectl get nodes` as Ready. Cilium agent running, test pod scheduled and
+running with pod IP.
+
+**Remaining issues** (2026-02-27):
+
+- `kubectl exec` fails — API server can't reach kubelet at the node's LAN IP (`10.0.53.87`).
+  Fix committed: kubelet now resolves `--node-ip` from Tailscale IP via `ExecStartPre`.
+  Needs VM rebuild + node re-registration to take effect.
+- Tailscale DaemonSet conflicts with native Tailscale on NixOS nodes (both want `/dev/net/tun`).
+  Needs DaemonSet nodeAffinity or label-based exclusion.
+- `node-feature-discovery` CrashLoopBackOff on the NixOS node (non-critical).
 
 ## Next Test Stages
 
@@ -273,15 +295,22 @@ Verify:
 - [ ] TCP 10250 reachable from all nodes to laptop (for kubelet API)
 - [ ] TCP 6443 reachable from laptop to control plane (for API server)
 
-### Stage 4: Join Laptop as Worker Node
+### Stage 4: Join Test VM as Worker Node
 
-Follow the "Manual Steps After Boot" section above. Key sequence:
+Tested with `k8s-worker-test` VM (Proxmox VM 111). Key sequence:
 
 1. Extract bootstrap kubeconfig + CA cert from Talos
-2. Copy to laptop, configure HAProxy for `localhost:7445`
+2. Copy to VM, HAProxy already configured via NixOS module
 3. Start kubelet, approve CSR
 4. Verify node appears in `kubectl get nodes`
 5. Deploy a test pod with roaming toleration, verify it schedules and runs
+
+Verify:
+
+- [x] Node appears in `kubectl get nodes` as Ready
+- [x] Cilium agent runs on the node (DaemonSet pod healthy)
+- [x] Test pod with roaming toleration schedules on the node
+- [ ] `kubectl exec` works (blocked: node IP must be Tailscale IP, not LAN IP)
 
 ### Stage 5: End-to-End Workload Test
 
@@ -302,7 +331,7 @@ kubectl exec test-roaming -- wget -qO- http://<cluster-service>.<namespace>.svc.
 
 Verify:
 
-- [ ] Pod schedules on laptop node
+- [x] Pod schedules on laptop node
 - [ ] Pod-to-pod networking works (VXLAN over Tailscale)
 - [ ] DNS resolution works inside pods on the laptop node
 - [ ] Pod-to-service networking works (ClusterIP routing)
