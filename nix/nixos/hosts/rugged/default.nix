@@ -78,6 +78,12 @@
     zoom-us
   ];
 
+  # LocalSend: local file sharing across devices (LAN)
+  programs.localsend = {
+    enable = true;
+    openFirewall = true;
+  };
+
   # Steam
   programs.steam.enable = true;
 
