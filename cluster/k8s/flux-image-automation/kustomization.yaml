@@ -14,3 +14,9 @@ resources:
   - oauth-broker-image-repository.yaml
   - oauth-broker-image-policy.yaml
   - oauth-broker-image-update-automation.yaml
+  - approval-gate-image-repository.yaml
+  - approval-gate-image-policy.yaml
+  - approval-gate-image-update-automation.yaml
+  - exec-backend-image-repository.yaml
+  - exec-backend-image-policy.yaml
+  - exec-backend-image-update-automation.yaml

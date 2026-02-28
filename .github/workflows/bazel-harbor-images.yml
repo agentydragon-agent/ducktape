@@ -57,3 +57,15 @@ jobs:
             //props/backend:load \
             props-backend:latest \
             registry.allegedly.works/props/props-backend
+      - name: Build and push approval-gate
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //approval_gate:load \
+            approval-gate:latest \
+            registry.allegedly.works/approval-gate/approval-gate
+      - name: Build and push approval-gate-exec-backend
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //mcp_infra/exec:exec_backend_load \
+            approval-gate-exec-backend:latest \
+            registry.allegedly.works/approval-gate/exec-backend

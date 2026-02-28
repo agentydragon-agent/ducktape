@@ -1,5 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 load("//tools/deps:check.bzl", "assert_no_deps")
 load("//tools/testing:defs.bzl", "py_test")
 
@@ -54,6 +57,63 @@ py_library(
         "//mcp_infra/enhanced:server",
         "@pypi//mcp",
     ],
+)
+
+# Standalone streamable-http entry point for DirectExecServer (approval gate backend)
+py_library(
+    name = "direct_server",
+    srcs = ["direct_server.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [":direct"],
+)
+
+py_binary(
+    name = "direct_server_bin",
+    imports = ["../.."],
+    main_module = "mcp_infra.exec.direct_server",
+    visibility = ["//visibility:public"],
+    deps = [":direct_server"],
+)
+
+# ── OCI Image (approval-gate exec backend) ───────────────────────────────────
+
+aspect_py_binary(
+    name = "exec_backend_bin",
+    imports = ["../.."],
+    main = "direct_server.py",
+    deps = [":direct_server"],
+)
+
+py_image_layer(
+    name = "exec_backend_layers",
+    binary = ":exec_backend_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "exec_backend_image",
+    base = "@debian_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("exec_backend_bin"),
+    env = py_image_env(binary_name = "exec_backend_bin"),
+    tars = [":exec_backend_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "exec_backend_load",
+    image = ":exec_backend_image",
+    repo_tags = ["approval-gate-exec-backend:latest"],
+    visibility = ["//visibility:public"],
+)
+
+oci_push(
+    name = "exec_backend_push",
+    image = ":exec_backend_image",
+    remote_tags = ["latest"],
+    repository = "registry.allegedly.works/approval-gate/exec-backend",
 )
 
 # macOS seatbelt sandbox exec MCP server

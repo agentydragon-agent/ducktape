@@ -1,0 +1,20 @@
+{
+  "id": "approval-gate",
+  "name": "Approval Gate",
+  "description": "Bridges the approval gate MCP proxy: re-registers approval-wrapped tools, subscribes to action notifications, and delivers results via chat.inject.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["approvalGateUrl", "agentApiKey"],
+    "properties": {
+      "approvalGateUrl": {
+        "type": "string",
+        "description": "Base URL of the approval gate MCP endpoint, e.g. http://approval-gate.approval-gate.svc.cluster.local:8765/mcp"
+      },
+      "agentApiKey": {
+        "type": "string",
+        "description": "AGENT_API_KEY for the approval gate MCP endpoint"
+      }
+    }
+  }
+}

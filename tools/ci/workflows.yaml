@@ -118,3 +118,11 @@ harbor_images:
   - bazel_target: //props/backend:load
     local_tag: props-backend:latest
     remote_path: props/props-backend
+
+  - bazel_target: //approval_gate:load
+    local_tag: approval-gate:latest
+    remote_path: approval-gate/approval-gate
+
+  - bazel_target: //mcp_infra/exec:exec_backend_load
+    local_tag: approval-gate-exec-backend:latest
+    remote_path: approval-gate/exec-backend

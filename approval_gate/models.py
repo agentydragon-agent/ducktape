@@ -1,0 +1,136 @@
+"""Data models for the approval gate.
+
+All state variants are discriminated unions — no nullable result fields at the top level.
+Invalid states are unrepresentable by construction.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Literal
+
+from mcp import types as mcp_types
+from pydantic import BaseModel, ConfigDict, Field
+
+# ── The underlying MCP tool call ──────────────────────────────────────────────
+
+
+class ToolCall(BaseModel):
+    """The underlying MCP tool call to forward on approval.
+
+    justification and session_key are stripped before storage here;
+    they live on Action directly.
+    """
+
+    tool_name: str
+    arguments: dict[str, object]
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# ── Action lifecycle states ───────────────────────────────────────────────────
+
+
+class ActionStatus(StrEnum):
+    PENDING = "pending"
+    EXECUTING = "executing"
+    DONE = "done"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
+class PendingState(BaseModel):
+    """Awaiting operator decision."""
+
+    status: Literal[ActionStatus.PENDING] = ActionStatus.PENDING
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExecutingState(BaseModel):
+    """Approved; backend call in flight."""
+
+    status: Literal[ActionStatus.EXECUTING] = ActionStatus.EXECUTING
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DoneState(BaseModel):
+    """Backend call completed. outcome.isError distinguishes success from tool error."""
+
+    status: Literal[ActionStatus.DONE] = ActionStatus.DONE
+    outcome: mcp_types.CallToolResult
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RejectedState(BaseModel):
+    """Operator rejected the action."""
+
+    status: Literal[ActionStatus.REJECTED] = ActionStatus.REJECTED
+    reason: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class WithdrawnState(BaseModel):
+    """Agent withdrew the action before it was decided."""
+
+    status: Literal[ActionStatus.WITHDRAWN] = ActionStatus.WITHDRAWN
+
+    model_config = ConfigDict(extra="forbid")
+
+
+ActionState = Annotated[
+    PendingState | ExecutingState | DoneState | RejectedState | WithdrawnState, Field(discriminator="status")
+]
+
+
+# ── Top-level action record ───────────────────────────────────────────────────
+
+
+class Action(BaseModel):
+    """One pending or resolved action record."""
+
+    id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+    call: ToolCall
+    justification: str
+    session_key: str | None
+    state: ActionState
+
+    model_config = ConfigDict(extra="forbid")
+
+
+# ── Operator decisions ────────────────────────────────────────────────────────
+
+
+class ApproveDecision(BaseModel):
+    """Operator approved the action; gate will execute it against the backend."""
+
+    kind: Literal["approved"] = "approved"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DenyDecision(BaseModel):
+    """Operator denied the action."""
+
+    kind: Literal["denied"] = "denied"
+    reason: str | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class WithdrawDecision(BaseModel):
+    """Agent withdrew the action before a decision was made."""
+
+    kind: Literal["withdrawn"] = "withdrawn"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+OperatorDecision = Annotated[ApproveDecision | DenyDecision, Field(discriminator="kind")]

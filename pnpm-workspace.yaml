@@ -1,5 +1,7 @@
 packages:
+  - "approval_gate/frontend"
   - "props/frontend"
   - "agent_server/web"
   - "hack/rspcache/admin_ui"
   - "util/frontend_visual_test"
+  - "openclaw/approval-gate"

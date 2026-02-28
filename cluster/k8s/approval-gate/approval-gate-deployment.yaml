@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: approval-gate
+  namespace: approval-gate
+  labels:
+    app: approval-gate
+    component: server
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: approval-gate
+      component: server
+  template:
+    metadata:
+      labels:
+        app: approval-gate
+        component: server
+    spec:
+      containers:
+        - name: approval-gate
+          image: registry.allegedly.works/approval-gate/approval-gate:latest # {"$imagepolicy": "flux-system:approval-gate"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          env:
+            - name: AGENT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: approval-gate-secrets
+                  key: agent-api-key
+            - name: CONFIG_PATH
+              value: "/etc/approval-gate/config.yaml"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/approval-gate
+              readOnly: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: approval-gate-data
+        - name: config
+          configMap:
+            name: approval-gate-config

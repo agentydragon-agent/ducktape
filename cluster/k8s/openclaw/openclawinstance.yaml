@@ -373,6 +373,14 @@ spec:
           ports:
             - port: 8080
               protocol: TCP
+        # Allow egress to approval-gate MCP endpoint (unified port 8765).
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: approval-gate
+          ports:
+            - port: 8765
+              protocol: TCP
   availability:
     nodeSelector:
       topology.kubernetes.io/region: proxmox
