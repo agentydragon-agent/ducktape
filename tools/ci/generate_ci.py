@@ -281,14 +281,15 @@ def generate_harbor_images_config(images: list[HarborImageConfig]) -> Workflow:
         ),
     ]
     for img in images:
+        image_name = img.local_tag.split(":")[0]
         steps.append(
             Step(
-                name=f"Build and push {img.name}",
+                name=f"Build and push {image_name}",
                 run=(
                     f".github/scripts/harbor_push.sh \\\n"
                     f"  {img.bazel_target} \\\n"
                     f"  {img.local_tag} \\\n"
-                    f"  {img.remote_repo}"
+                    f"  {HARBOR_REGISTRY}/{img.remote_path}"
                 ),
             )
         )

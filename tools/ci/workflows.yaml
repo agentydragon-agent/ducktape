@@ -107,17 +107,14 @@ releases:
 # The bazel-harbor-images workflow (generated from this config) builds and
 # pushes all images in a single job, sharing Bazel setup and registry login.
 harbor_images:
-  - name: OAuth Broker
-    bazel_target: //oauth_broker:load
+  - bazel_target: //oauth_broker:load
     local_tag: oauth-broker:latest
-    remote_repo: registry.allegedly.works/oauth-broker/oauth-broker
+    remote_path: oauth-broker/oauth-broker
 
-  - name: InvenTree Token Provisioner
-    bazel_target: //cluster/k8s/applications/inventree-token-provisioner:load
+  - bazel_target: //cluster/k8s/applications/inventree-token-provisioner:load
     local_tag: inventree-token-provisioner:latest
-    remote_repo: registry.allegedly.works/inventree/token-provisioner
+    remote_path: inventree/token-provisioner
 
-  - name: Props Backend
-    bazel_target: //props/backend:load
+  - bazel_target: //props/backend:load
     local_tag: props-backend:latest
-    remote_repo: registry.allegedly.works/props/props-backend
+    remote_path: props/props-backend

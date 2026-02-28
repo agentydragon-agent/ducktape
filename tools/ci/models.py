@@ -83,12 +83,15 @@ class ReleaseConfig(BaseModel):
 
 
 class HarborImageConfig(BaseModel):
-    """Configuration for a Bazel-built image pushed to Harbor."""
+    """Configuration for a Bazel-built image pushed to Harbor.
 
-    name: str
+    remote_path is the registry-relative path (e.g. ``oauth-broker/oauth-broker``).
+    The registry host is defined once in generate_ci.py (HARBOR_REGISTRY).
+    """
+
     bazel_target: str
     local_tag: str
-    remote_repo: str
+    remote_path: str
 
 
 class WorkflowManifest(BaseModel):

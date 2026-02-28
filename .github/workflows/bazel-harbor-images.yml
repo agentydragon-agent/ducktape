@@ -39,19 +39,19 @@ jobs:
           registry: registry.allegedly.works
           username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
-      - name: Build and push OAuth Broker
+      - name: Build and push oauth-broker
         run: |-
           .github/scripts/harbor_push.sh \
             //oauth_broker:load \
             oauth-broker:latest \
             registry.allegedly.works/oauth-broker/oauth-broker
-      - name: Build and push InvenTree Token Provisioner
+      - name: Build and push inventree-token-provisioner
         run: |-
           .github/scripts/harbor_push.sh \
             //cluster/k8s/applications/inventree-token-provisioner:load \
             inventree-token-provisioner:latest \
             registry.allegedly.works/inventree/token-provisioner
-      - name: Build and push Props Backend
+      - name: Build and push props-backend
         run: |-
           .github/scripts/harbor_push.sh \
             //props/backend:load \
