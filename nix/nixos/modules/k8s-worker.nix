@@ -150,20 +150,11 @@ in
       };
     };
 
-    # /opt/cni/bin: Cilium DaemonSet installs cilium-cni here at runtime.
-    # Symlink base CNI plugins (loopback, etc.) from the Nix store at activation time.
+    # Cilium DaemonSet installs cilium-cni + loopback into /opt/cni/bin at runtime.
+    # We just need the directory to exist.
     systemd.tmpfiles.rules = [ "d /opt/cni/bin 0755 root root -" ];
-    system.activationScripts.cni-plugins = lib.stringAfter [ "etc" ] ''
-      for bin in ${pkgs.cni-plugins}/bin/*; do
-        name=$(basename "$bin")
-        # L+ semantics: replace existing symlinks, skip non-symlinks (e.g. cilium-cni)
-        [ -e /opt/cni/bin/"$name" ] && [ ! -L /opt/cni/bin/"$name" ] && continue
-        ln -sf "$bin" /opt/cni/bin/"$name"
-      done
-    '';
 
     environment.systemPackages = with pkgs; [
-      cni-plugins
       kubernetes # for kubelet, kubectl
       iptables
       socat
@@ -189,7 +180,6 @@ in
       wantedBy = [ ];
       path = with pkgs; [
         kubernetes
-        cni-plugins
         iptables
         socat
         conntrack-tools
@@ -203,7 +193,6 @@ in
             with pkgs;
             [
               kubernetes
-              cni-plugins
               iptables
               socat
               conntrack-tools
