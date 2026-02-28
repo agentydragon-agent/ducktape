@@ -33,6 +33,19 @@ git_override(
 # Terraform/OpenTofu validation (cluster/)
 bazel_dep(name = "rules_tf", version = "0.0.10")
 
+# Patch: check exit code of `tofu/terraform providers mirror` in the repo rule.
+# Upstream silently ignores failures (stdout >/dev/null, return code unchecked),
+# so a transient registry outage produces an incomplete mirror that Bazel caches,
+# causing validate tests to fail with "provider not found in mirror".
+single_version_override(
+    module_name = "rules_tf",
+    patch_strip = 1,
+    patches = [
+        "//patches:rules_tf_check_tofu_mirror.patch",
+        "//patches:rules_tf_check_terraform_mirror.patch",
+    ],
+)
+
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
 tf.download(
     # Pre-fetch provider plugins at Bazel fetch time so that tf_module validate
