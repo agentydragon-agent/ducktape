@@ -46,12 +46,9 @@ workflows:
     events: [push]
     secrets: inherit
 
-  oauth-broker-image:
-    trigger: { kind: always }
-    events: [push]
-    secrets: inherit
-
-  inventree-token-provisioner-image:
+  # Single workflow that builds and pushes all Bazel-built Harbor images.
+  # The list of images is defined in harbor_images below.
+  bazel-harbor-images:
     trigger: { kind: always }
     events: [push]
     secrets: inherit
@@ -105,3 +102,22 @@ releases:
       gnome-terminal-profile-switcher wheel.
 
       **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
+
+# List of Bazel-built images pushed to Harbor (registry.allegedly.works).
+# The bazel-harbor-images workflow (generated from this config) builds and
+# pushes all images in a single job, sharing Bazel setup and registry login.
+harbor_images:
+  - name: OAuth Broker
+    bazel_target: //oauth_broker:load
+    local_tag: oauth-broker:latest
+    remote_repo: registry.allegedly.works/oauth-broker/oauth-broker
+
+  - name: InvenTree Token Provisioner
+    bazel_target: //cluster/k8s/applications/inventree-token-provisioner:load
+    local_tag: inventree-token-provisioner:latest
+    remote_repo: registry.allegedly.works/inventree/token-provisioner
+
+  - name: Props Backend
+    bazel_target: //props/backend:load
+    local_tag: props-backend:latest
+    remote_repo: registry.allegedly.works/props/props-backend
