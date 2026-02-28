@@ -27,6 +27,14 @@
 let
   cfg = config.ducktape.k8sWorker;
 
+  kubeletDeps = with pkgs; [
+    kubernetes
+    iptables
+    socat
+    conntrack-tools
+    util-linux
+  ];
+
   kubeletConfigYaml = pkgs.writeText "kubelet-config.yaml" (
     builtins.toJSON {
       kind = "KubeletConfiguration";
@@ -154,12 +162,7 @@ in
     # We just need the directory to exist.
     systemd.tmpfiles.rules = [ "d /opt/cni/bin 0755 root root -" ];
 
-    environment.systemPackages = with pkgs; [
-      kubernetes # for kubelet, kubectl
-      iptables
-      socat
-      conntrack-tools
-    ];
+    environment.systemPackages = kubeletDeps;
 
     # Kubelet config file
     environment.etc."kubernetes/kubelet-config.yaml".source = kubeletConfigYaml;
@@ -178,28 +181,9 @@ in
       ];
       # Don't start automatically — wait for manual credential placement
       wantedBy = [ ];
-      path = with pkgs; [
-        kubernetes
-        iptables
-        socat
-        conntrack-tools
-        util-linux
-      ];
       serviceConfig = {
-        # NixOS mount wrappers live at /run/wrappers/bin (setuid mount/umount).
-        # Kubelet needs mount(8) to set up projected/tmpfs volumes.
-        Environment = "PATH=/run/wrappers/bin:${
-          lib.makeBinPath (
-            with pkgs;
-            [
-              kubernetes
-              iptables
-              socat
-              conntrack-tools
-              util-linux
-            ]
-          )
-        }:/usr/bin:/bin";
+        # Prepend /run/wrappers/bin for NixOS setuid mount/umount wrappers.
+        Environment = "PATH=/run/wrappers/bin:${lib.makeBinPath kubeletDeps}:/usr/bin:/bin";
         ExecStart = lib.concatStringsSep " " (
           [
             "${pkgs.kubernetes}/bin/kubelet"
