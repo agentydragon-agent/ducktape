@@ -124,6 +124,7 @@ in
       default = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
       description = "Taints to apply on registration (key=value:effect format)";
     };
+
   };
 
   config = lib.mkIf cfg.enable {
@@ -184,21 +185,26 @@ in
       serviceConfig = {
         # Prepend /run/wrappers/bin for NixOS setuid mount/umount wrappers.
         Environment = "PATH=/run/wrappers/bin:${lib.makeBinPath kubeletDeps}:/usr/bin:/bin";
-        ExecStart = lib.concatStringsSep " " (
-          [
-            "${pkgs.kubernetes}/bin/kubelet"
-            "--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf"
-            "--kubeconfig=/var/lib/kubelet/kubelet.conf"
-            "--config=/etc/kubernetes/kubelet-config.yaml"
-            "--container-runtime-endpoint=unix:///run/containerd/containerd.sock"
-          ]
-          ++ lib.optional (cfg.nodeLabels != { }) (
-            "--node-labels=${lib.concatStringsSep "," (lib.mapAttrsToList (k: v: "${k}=${v}") cfg.nodeLabels)}"
-          )
-          ++ lib.optional (cfg.nodeTaints != [ ]) (
-            "--register-with-taints=${lib.concatStringsSep "," cfg.nodeTaints}"
-          )
-        );
+        # Resolve Tailscale IP before starting kubelet
+        ExecStartPre = pkgs.writeShellScript "resolve-tailscale-ip" ''
+          ${pkgs.tailscale}/bin/tailscale ip --4 | head -1 > /run/kubelet-node-ip
+        '';
+        ExecStart = pkgs.writeShellScript "kubelet-start" ''
+          NODE_IP=$(cat /run/kubelet-node-ip)
+          exec ${pkgs.kubernetes}/bin/kubelet \
+            --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf \
+            --kubeconfig=/var/lib/kubelet/kubelet.conf \
+            --config=/etc/kubernetes/kubelet-config.yaml \
+            --container-runtime-endpoint=unix:///run/containerd/containerd.sock \
+            --node-ip="$NODE_IP" \
+            ${
+              lib.optionalString (cfg.nodeLabels != { })
+                "--node-labels=${lib.concatStringsSep "," (lib.mapAttrsToList (k: v: "${k}=${v}") cfg.nodeLabels)}"
+            } \
+            ${lib.optionalString (
+              cfg.nodeTaints != [ ]
+            ) "--register-with-taints=${lib.concatStringsSep "," cfg.nodeTaints}"}
+        '';
         Restart = "always";
         RestartSec = "10";
       };
