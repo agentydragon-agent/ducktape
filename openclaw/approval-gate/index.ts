@@ -58,11 +58,11 @@ interface ApprovalGateToolResponse {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const TERMINAL_STATUSES = ["done", "rejected", "withdrawn"] as const;
-type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
+type TerminalStatus = "done" | "rejected" | "withdrawn";
+const TERMINAL_STATUSES = new Set<TerminalStatus>(["done", "rejected", "withdrawn"]);
 
 function isTerminal(status: string): status is TerminalStatus {
-  return (TERMINAL_STATUSES as readonly string[]).includes(status);
+  return TERMINAL_STATUSES.has(status as TerminalStatus);
 }
 
 function formatOutcomeMessage(action: Action): string {

@@ -4,6 +4,9 @@
 
 export type ActionStatus = "pending" | "executing" | "done" | "rejected" | "withdrawn";
 
+/** UUID string for an action (matches uuid.UUID in Python models). */
+export type ActionId = string;
+
 export type ToolCall = {
   tool_name: string;
   arguments: Record<string, unknown>;
@@ -21,7 +24,7 @@ export type WithdrawnState = { status: "withdrawn" };
 export type ActionState = PendingState | ExecutingState | DoneState | RejectedState | WithdrawnState;
 
 export type Action = {
-  id: string;
+  id: ActionId;
   created_at: string;
   updated_at: string;
   call: ToolCall;
