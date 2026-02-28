@@ -150,28 +150,17 @@ in
       };
     };
 
-    # /opt/cni/bin: Cilium DaemonSet installs cilium-cni here.
-    # We symlink base CNI plugins (loopback, etc.) from the Nix store alongside it.
-    # Using a oneshot service instead of per-binary tmpfiles rules — automatically
-    # picks up new binaries when cni-plugins is updated.
+    # /opt/cni/bin: Cilium DaemonSet installs cilium-cni here at runtime.
+    # Symlink base CNI plugins (loopback, etc.) from the Nix store at activation time.
     systemd.tmpfiles.rules = [ "d /opt/cni/bin 0755 root root -" ];
-    systemd.services.cni-plugins-link = {
-      description = "Symlink base CNI plugins into /opt/cni/bin";
-      wantedBy = [ "multi-user.target" ];
-      before = [ "containerd.service" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = pkgs.writeShellScript "link-cni-plugins" ''
-          for bin in ${pkgs.cni-plugins}/bin/*; do
-            name=$(basename "$bin")
-            # Don't overwrite Cilium's own binary
-            [ -e /opt/cni/bin/"$name" ] && [ ! -L /opt/cni/bin/"$name" ] && continue
-            ln -sf "$bin" /opt/cni/bin/"$name"
-          done
-        '';
-      };
-    };
+    system.activationScripts.cni-plugins = lib.stringAfter [ "etc" ] ''
+      for bin in ${pkgs.cni-plugins}/bin/*; do
+        name=$(basename "$bin")
+        # L+ semantics: replace existing symlinks, skip non-symlinks (e.g. cilium-cni)
+        [ -e /opt/cni/bin/"$name" ] && [ ! -L /opt/cni/bin/"$name" ] && continue
+        ln -sf "$bin" /opt/cni/bin/"$name"
+      done
+    '';
 
     environment.systemPackages = with pkgs; [
       cni-plugins
