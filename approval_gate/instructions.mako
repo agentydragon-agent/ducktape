@@ -23,18 +23,28 @@ into your session** automatically; otherwise, poll or subscribe to the action re
 
 ## Tool schema additions
 
-Every tool has two extra fields beyond the backend's original schema:
+Every wrapped tool accepts:
 
+- `input` (required `object`): The backend tool's original arguments, nested as-is
+  under this key to avoid collisions with the approval fields.
 - `justification` (required `string`): Explain **why** you want to run this action.
   This is shown to the operator to help them decide. Be specific.
 - `session_key` (optional `string`): Your session key for result notifications.
   This is injected automatically by the OpenClaw plugin — do not set it manually.
 
+Example call shape: `{ "input": { ...backend args... }, "justification": "..." }`
+
 ## Response format
 
-Every tool call returns immediately with `{"action_id": "..."}`.
+Every tool call returns immediately with the `action_id` UUID string.
 
-Auto-denied actions return a tool error with the denial reason instead.
+Actions may be auto-decided by a server-side policy. If auto-denied, the action will
+appear as `rejected` when you read its resource — there is no separate error path.
+
+## Withdrawing an action
+
+Call `withdraw_action(action_id)` to cancel a pending action before an operator
+decides it. Only works on actions in `pending` state.
 
 ## Checking action status
 
