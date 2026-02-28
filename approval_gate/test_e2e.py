@@ -37,16 +37,20 @@ async def backend():
     return srv, calls
 
 
-@pytest.fixture
-async def gate(backend, tmp_path):
-    srv, _ = backend
+def _make_gate(srv, tmp_path, predicate, db_name="gate.db"):
     return ApprovalGateServer(
         backend=srv,
-        db_path=tmp_path / "gate.db",
-        predicate=lambda tool, args: NeedsHumanDecision(),
+        db_path=tmp_path / db_name,
+        predicate=predicate,
         public_base_url="http://test",
         instructions_template_path=_INSTRUCTIONS_TEMPLATE,
     )
+
+
+@pytest.fixture
+async def gate(backend, tmp_path):
+    srv, _ = backend
+    return _make_gate(srv, tmp_path, lambda tool, args: NeedsHumanDecision())
 
 
 async def _wait_for_status(client: Client, action_id: str, status: ActionStatus) -> Action:
@@ -103,13 +107,7 @@ async def test_reject_leaves_action_rejected_and_skips_backend(gate, backend):
 async def test_auto_approve_predicate_skips_queue(backend, tmp_path):
     """Auto-approve predicate: tool call immediately executes without any operator action."""
     srv, calls = backend
-    gate = ApprovalGateServer(
-        backend=srv,
-        db_path=tmp_path / "gate_auto.db",
-        predicate=lambda tool, args: Approved(),
-        public_base_url="http://test",
-        instructions_template_path=_INSTRUCTIONS_TEMPLATE,
-    )
+    gate = _make_gate(srv, tmp_path, lambda tool, args: Approved(), db_name="gate_auto.db")
     async with Client(gate) as client:
         result = await client.call_tool_mcp("echo", {"input": {"text": "auto"}, "justification": "auto"})
         action_id = ActionRef.model_validate_json(result.content[0].text).action_id

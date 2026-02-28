@@ -22,7 +22,7 @@ from sqlalchemy import Index, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from approval_gate.models import Action, ActionState, PendingState, ToolCall
+from approval_gate.models import Action, ActionState, ActionStatus, PendingState, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -113,8 +113,8 @@ class ActionStorage:
             await session.refresh(row)
         return row.to_action()
 
-    async def list_actions(self, status: str | None = None, *, limit: int = 100) -> list[Action]:
-        """List actions, optionally filtered by status string, newest first."""
+    async def list_actions(self, status: ActionStatus | None = None, *, limit: int = 100) -> list[Action]:
+        """List actions, optionally filtered by status, newest first."""
         async with self._session_factory() as session:
             stmt = select(_ActionRow).order_by(_ActionRow.created_at.desc()).limit(limit)
             if status is not None:

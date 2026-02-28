@@ -17,7 +17,7 @@ import asyncio
 import copy
 import logging
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -35,6 +35,7 @@ from approval_gate.models import (
     Action,
     ActionRef,
     ActionState,
+    ActionStatus,
     ApproveDecision,
     DenyDecision,
     DoneState,
@@ -113,7 +114,6 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._instructions_template_path = instructions_template_path
         # Populated in lifespan
         self._backend_client: Client | None = None
-        self._pending_approval_lock = asyncio.Lock()
         # Holds references to fire-and-forget background tasks to prevent GC cancellation.
         self._background_tasks: set[asyncio.Task[Any]] = set()
 
@@ -177,7 +177,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             # (stdio/memory transport), which allows tests to call these freely.
 
             @self.tool(auth=require_scopes("operator"))
-            async def list_actions(status: str | None = None, limit: int = 100) -> list[Action]:
+            async def list_actions(status: ActionStatus | None = None, limit: int = 100) -> list[Action]:
                 """List queued/processed actions, optionally filtered by status."""
                 return await self._req_storage.list_actions(status, limit=limit)
 
@@ -198,7 +198,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             # and leak into the next test or request cycle.
             if self._background_tasks:
                 logger.info("[_lifespan] draining %d background task(s)", len(self._background_tasks))
-                await asyncio.gather(*list(self._background_tasks), return_exceptions=True)
+                await asyncio.gather(*self._background_tasks, return_exceptions=True)
 
         self._backend_client = None
 
@@ -263,7 +263,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         """
         action = _require_action(await self._req_storage.get(action_id), action_id)
         if not isinstance(action.state, PendingState):
-            raise ValueError(f"Action {action_id} is not pending (status={action.state.status!r})")
+            raise ValueError(f"Action {action_id} is not pending ({action.state.status=})")
 
         match decision:
             case ApproveDecision():
@@ -280,7 +280,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         outcome = await self._execute_backend_call(action)
         await self._update_and_notify(action_id, DoneState(outcome=outcome))
 
-    def _spawn(self, coro: Any) -> None:
+    def _spawn(self, coro: Coroutine[Any, Any, Any]) -> None:
         """Schedule a coroutine as a background task, keeping a reference to prevent GC."""
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
