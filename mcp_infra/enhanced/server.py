@@ -79,4 +79,4 @@ class EnhancedFastMCP(OpenAIStrictModeMixin, FlatModelMixin, NotificationsMixin,
                 caps.resources.subscribe = True
             return caps
 
-        mcp_server.get_capabilities = _patched_get_capabilities  # type: ignore[assignment]
+        mcp_server.get_capabilities = _patched_get_capabilities  # type: ignore[method-assign]
