@@ -105,30 +105,40 @@ async def gate_http(tmp_path, mock_jwks_signing_key):
             yield f"http://127.0.0.1:{gate_port}", _AGENT_API_KEY
 
 
-async def test_agent_cannot_see_operator_tools(gate_http):
-    """Agent bearer token must not see approve_action/reject_action/list_actions."""
+@pytest.fixture
+async def agent_tool_names(gate_http) -> set[str]:
+    """Tool names visible to the agent bearer token."""
     gate_url, agent_key = gate_http
     transport = RemoteMCPServer(url=f"{gate_url}/mcp", headers={"Authorization": f"Bearer {agent_key}"}).to_transport()
     async with Client(transport) as client:
         tools = await client.list_tools()
-    names = {t.name for t in tools}
-    assert "approve_action" not in names
-    assert "reject_action" not in names
-    assert "list_actions" not in names
-    assert "echo" in names
+    return {t.name for t in tools}
 
 
-async def test_operator_jwt_sees_operator_tools(gate_http, admin_jwt):
-    """Valid Authentik admin JWT must expose operator MCP tools."""
+@pytest.fixture
+async def operator_tool_names(gate_http, admin_jwt) -> set[str]:
+    """Tool names visible to a valid Authentik admin JWT."""
     gate_url, _ = gate_http
     transport = RemoteMCPServer(url=f"{gate_url}/mcp", headers={"x-authentik-jwt": admin_jwt}).to_transport()
     async with Client(transport) as client:
         tools = await client.list_tools()
-    names = {t.name for t in tools}
-    assert "approve_action" in names
-    assert "reject_action" in names
-    assert "list_actions" in names
-    assert "echo" in names
+    return {t.name for t in tools}
+
+
+async def test_agent_cannot_see_operator_tools(agent_tool_names):
+    """Agent bearer token must not see approve_action/reject_action/list_actions."""
+    assert "approve_action" not in agent_tool_names
+    assert "reject_action" not in agent_tool_names
+    assert "list_actions" not in agent_tool_names
+    assert "echo" in agent_tool_names
+
+
+async def test_operator_jwt_sees_operator_tools(operator_tool_names):
+    """Valid Authentik admin JWT must expose operator MCP tools."""
+    assert "approve_action" in operator_tool_names
+    assert "reject_action" in operator_tool_names
+    assert "list_actions" in operator_tool_names
+    assert "echo" in operator_tool_names
 
 
 if __name__ == "__main__":

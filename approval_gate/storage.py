@@ -22,7 +22,7 @@ from sqlalchemy import Index, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from approval_gate.models import Action, ActionState, ActionStatus, PendingState, ToolCall
+from approval_gate.models import Action, ActionState, PendingState, ToolCall
 
 logger = logging.getLogger(__name__)
 
@@ -50,17 +50,16 @@ class _ActionRow(_Base):
     state_json: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False)
 
-
-def _row_to_action(row: _ActionRow) -> Action:
-    return Action(
-        id=row.id,
-        created_at=datetime.fromisoformat(row.created_at),
-        updated_at=datetime.fromisoformat(row.updated_at),
-        call=ToolCall.model_validate_json(row.call_json),
-        justification=row.justification,
-        session_key=row.session_key,
-        state=_ACTION_STATE_TA.validate_json(row.state_json),
-    )
+    def to_action(self) -> Action:
+        return Action(
+            id=self.id,
+            created_at=datetime.fromisoformat(self.created_at),
+            updated_at=datetime.fromisoformat(self.updated_at),
+            call=ToolCall.model_validate_json(self.call_json),
+            justification=self.justification,
+            session_key=self.session_key,
+            state=_ACTION_STATE_TA.validate_json(self.state_json),
+        )
 
 
 class ActionStorage:
@@ -92,7 +91,7 @@ class ActionStorage:
             session.add(row)
             await session.commit()
         logger.debug("created action id=%s tool=%s", action_id, call.tool_name)
-        return _row_to_action(row)
+        return row.to_action()
 
     async def get(self, action_id: str) -> Action | None:
         """Fetch a single action by ID."""
@@ -100,7 +99,7 @@ class ActionStorage:
             row = await session.get(_ActionRow, action_id)
         if row is None:
             return None
-        return _row_to_action(row)
+        return row.to_action()
 
     async def update_state(self, action_id: str, new_state: ActionState) -> Action | None:
         """Replace the state of an existing action; returns updated action or None."""
@@ -112,14 +111,14 @@ class ActionStorage:
             row.status = new_state.status
             await session.commit()
             await session.refresh(row)
-        return _row_to_action(row)
+        return row.to_action()
 
-    async def list_by_status(self, status: ActionStatus | None = None, *, limit: int = 100) -> list[Action]:
-        """List actions, optionally filtered by status, newest first."""
+    async def list_actions(self, status: str | None = None, *, limit: int = 100) -> list[Action]:
+        """List actions, optionally filtered by status string, newest first."""
         async with self._session_factory() as session:
             stmt = select(_ActionRow).order_by(_ActionRow.created_at.desc()).limit(limit)
             if status is not None:
                 stmt = stmt.where(_ActionRow.status == status)
             result = await session.execute(stmt)
             rows = result.scalars().all()
-        return [_row_to_action(r) for r in rows]
+        return [r.to_action() for r in rows]

@@ -1,5 +1,3 @@
-"""Tests for approval_gate ActionStorage."""
-
 from __future__ import annotations
 
 import pytest_bazel
@@ -39,36 +37,27 @@ async def test_update_state(storage: ActionStorage):
     assert isinstance(updated.state.outcome, CallToolResult)
 
 
-async def test_list_pending(storage: ActionStorage):
+async def test_list_actions_filter(storage: ActionStorage):
     call = ToolCall(tool_name="exec", arguments={})
     await storage.create(action_id="p1", call=call, justification="a", session_key=None)
     await storage.create(action_id="p2", call=call, justification="b", session_key=None)
     await storage.update_state("p2", RejectedState(reason="no"))
 
-    pending = await storage.list_by_status(ActionStatus.pending)
+    pending = await storage.list_actions(ActionStatus.pending)
     ids = {a.id for a in pending}
     assert "p1" in ids
     assert "p2" not in ids
 
-
-async def test_list_by_status_filter(storage: ActionStorage):
-    call = ToolCall(tool_name="exec", arguments={})
-    await storage.create(action_id="r1", call=call, justification="a", session_key=None)
-    await storage.update_state("r1", RejectedState(reason="nope"))
-
-    rejected = await storage.list_by_status(ActionStatus.rejected)
-    assert any(a.id == "r1" for a in rejected)
-
-    pending = await storage.list_by_status(ActionStatus.pending)
-    assert not any(a.id == "r1" for a in pending)
+    rejected = await storage.list_actions(ActionStatus.rejected)
+    assert any(a.id == "p2" for a in rejected)
 
 
-async def test_list_all(storage: ActionStorage):
+async def test_list_actions_all(storage: ActionStorage):
     call = ToolCall(tool_name="exec", arguments={})
     await storage.create(action_id="all-1", call=call, justification="x", session_key=None)
     await storage.create(action_id="all-2", call=call, justification="y", session_key=None)
 
-    all_actions = await storage.list_by_status(None)
+    all_actions = await storage.list_actions(None)
     ids = {a.id for a in all_actions}
     assert "all-1" in ids
     assert "all-2" in ids

@@ -57,9 +57,16 @@ interface ApprovalGateToolResponse {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const TERMINAL_STATUSES = ["done", "rejected", "withdrawn"] as const;
+type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
+
+function isTerminal(status: string): status is TerminalStatus {
+  return (TERMINAL_STATUSES as readonly string[]).includes(status);
+}
+
 function formatOutcomeMessage(action: Action): string {
   const state = action.state;
-  const id = action.id.slice(0, 8);
+  const id = action.id;
 
   if (state.status === "done") {
     const done = state as DoneState;
@@ -113,6 +120,7 @@ type GatewayResFrame = { type: "res"; id: string; ok: boolean; payload?: unknown
 type GatewayFrame = GatewayReqFrame | GatewayResFrame | { type: string; [key: string]: unknown };
 
 type PendingCall = { resolve: () => void; reject: (err: Error) => void; timeout: NodeJS.Timeout };
+type ScopedLogger = ReturnType<typeof scopedLogger>;
 
 /**
  * Persistent WebSocket connection to the OpenClaw gateway.
@@ -132,7 +140,7 @@ class GatewayConnection {
   constructor(
     private readonly url: string,
     private readonly token: string,
-    private readonly logger: OpenClawPluginApi["logger"]
+    private readonly logger: ScopedLogger
   ) {
     this.connect();
   }
@@ -169,7 +177,7 @@ class GatewayConnection {
       // Resolve the connect response via the pending map.
       const timeout = setTimeout(() => {
         this.pending.delete(id);
-        this.logger.error("approval-gate: gateway connect timed out");
+        this.logger.error("gateway connect timed out");
         ws.close();
       }, 12_000);
       this.pending.set(id, {
@@ -178,7 +186,7 @@ class GatewayConnection {
           for (const send of this.preAuthQueue.splice(0)) send();
         },
         reject: (err) => {
-          this.logger.error(`approval-gate: gateway connect failed: ${err.message}`);
+          this.logger.error(`gateway connect failed: ${err.message}`);
           ws.close();
         },
         timeout,
@@ -206,7 +214,7 @@ class GatewayConnection {
     });
 
     ws.on("error", (err: Error) => {
-      this.logger.warn(`approval-gate: gateway WebSocket error: ${err.message}`);
+      this.logger.warn(`gateway WebSocket error: ${err.message}`);
     });
 
     ws.on("close", () => {
@@ -240,30 +248,38 @@ class GatewayConnection {
   }
 }
 
+// ── Scoped logger ─────────────────────────────────────────────────────────────
+
+function scopedLogger(api: OpenClawPluginApi) {
+  const { logger } = api;
+  return {
+    info: (msg: string) => logger.info(`approval-gate: ${msg}`),
+    warn: (msg: string) => logger.warn(`approval-gate: ${msg}`),
+    error: (msg: string) => logger.error(`approval-gate: ${msg}`),
+  };
+}
+
 // ── Plugin entry point ────────────────────────────────────────────────────────
 
 export default async function register(api: OpenClawPluginApi): Promise<void> {
+  const log = scopedLogger(api);
   const cfg = api.pluginConfig as { approvalGateUrl?: string; agentApiKey?: string } | undefined;
 
   const approvalGateUrl = cfg?.approvalGateUrl?.trim();
   const agentApiKey = cfg?.agentApiKey?.trim();
 
   if (!approvalGateUrl || !agentApiKey) {
-    api.logger.warn("approval-gate: approvalGateUrl and agentApiKey are required in plugin config; plugin disabled");
+    log.warn("approvalGateUrl and agentApiKey are required in plugin config; plugin disabled");
     return;
   }
 
   // ── Gateway WebSocket connection (long-lived, authenticates once) ─────────
   const gatewayToken = process.env.OPENCLAW_GATEWAY_TOKEN?.trim() ?? process.env.CLAWDBOT_GATEWAY_TOKEN?.trim();
   const gateway = gatewayToken
-    ? new GatewayConnection(
-        process.env.OPENCLAW_GATEWAY_WS_URL?.trim() ?? DEFAULT_GATEWAY_WS_URL,
-        gatewayToken,
-        api.logger
-      )
+    ? new GatewayConnection(process.env.OPENCLAW_GATEWAY_WS_URL?.trim() ?? DEFAULT_GATEWAY_WS_URL, gatewayToken, log)
     : null;
   if (!gateway) {
-    api.logger.warn("approval-gate: OPENCLAW_GATEWAY_TOKEN not set; action results will not be injected into sessions");
+    log.warn("OPENCLAW_GATEWAY_TOKEN not set; action results will not be injected into sessions");
   }
 
   // ── Connect to approval gate MCP server ──────────────────────────────────
@@ -277,9 +293,9 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
 
   try {
     await client.connect(transport);
-    api.logger.info(`approval-gate: connected to ${approvalGateUrl}`);
+    log.info(`connected to ${approvalGateUrl}`);
   } catch (err) {
-    api.logger.error(`approval-gate: failed to connect to approval gate: ${String(err)}`);
+    log.error(`failed to connect to approval gate: ${String(err)}`);
     return;
   }
 
@@ -305,24 +321,24 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
       try {
         action = await readActionResource(client, uri);
       } catch (err) {
-        api.logger.warn(`approval-gate: failed to read resource ${uri}: ${String(err)}`);
+        log.warn(`failed to read resource ${uri}: ${String(err)}`);
         return;
       }
 
       // Only deliver notifications for terminal states
       const { status } = action.state;
-      if (status !== "done" && status !== "rejected" && status !== "withdrawn") return;
+      if (!isTerminal(status)) return;
 
       // Unsubscribe now that we have a terminal state — no further updates expected.
       try {
         await client.unsubscribeResource({ uri });
       } catch (err) {
-        api.logger.warn(`approval-gate: failed to unsubscribe from ${uri}: ${String(err)}`);
+        log.warn(`failed to unsubscribe from ${uri}: ${String(err)}`);
       }
 
       const sessionKey = action.session_key;
       if (!sessionKey) {
-        api.logger.info(`approval-gate: action ${actionId} has no session_key; skipping chat.inject`);
+        log.info(`action ${actionId} has no session_key; skipping chat.inject`);
         return;
       }
 
@@ -332,9 +348,9 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
 
       try {
         await gateway.inject(sessionKey, message);
-        api.logger.info(`approval-gate: injected result for action ${actionId} into session ${sessionKey}`);
+        log.info(`injected result for action ${actionId} into session ${sessionKey}`);
       } catch (err) {
-        api.logger.error(`approval-gate: failed to inject result for action ${actionId}: ${String(err)}`);
+        log.error(`failed to inject result for action ${actionId}: ${String(err)}`);
       }
     }
   );
@@ -344,7 +360,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   try {
     toolList = await client.listTools();
   } catch (err) {
-    api.logger.error(`approval-gate: failed to list tools: ${String(err)}`);
+    log.error(`failed to list tools: ${String(err)}`);
     return;
   }
 
@@ -378,24 +394,24 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         try {
           action = await readActionResource(client, resourceUri);
         } catch (err) {
-          api.logger.warn(`approval-gate: could not read initial state for ${resourceUri}: ${String(err)}`);
+          log.warn(`could not read initial state for ${resourceUri}: ${String(err)}`);
           return {
             content: [
               {
                 type: "text" as const,
-                text: `Action ${actionId.slice(0, 8)} queued for operator approval${approvalUrl ? ` at ${approvalUrl}` : ""}`,
+                text: `Action ${actionId} queued for operator approval${approvalUrl ? ` at ${approvalUrl}` : ""}`,
               },
             ],
           };
         }
 
         const { status } = action.state;
-        if (status === "done" || status === "rejected" || status === "withdrawn") {
+        if (isTerminal(status)) {
           // Already terminal — unsubscribe (no further notifications expected) and return outcome.
           try {
             await client.unsubscribeResource({ uri: resourceUri });
           } catch (err) {
-            api.logger.warn(`approval-gate: failed to unsubscribe from ${resourceUri}: ${String(err)}`);
+            log.warn(`failed to unsubscribe from ${resourceUri}: ${String(err)}`);
           }
           return { content: [{ type: "text" as const, text: formatOutcomeMessage(action) }] };
         }
@@ -405,7 +421,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
           content: [
             {
               type: "text" as const,
-              text: `Action ${actionId.slice(0, 8)} queued for operator approval${approvalUrl ? ` at ${approvalUrl}` : ""}`,
+              text: `Action ${actionId} queued for operator approval${approvalUrl ? ` at ${approvalUrl}` : ""}`,
             },
           ],
         };
@@ -413,9 +429,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     }));
   }
 
-  api.logger.info(
-    `approval-gate: registered ${toolList.tools.length} tool(s): ${toolList.tools.map((t) => t.name).join(", ")}`
-  );
+  log.info(`registered ${toolList.tools.length} tool(s): ${toolList.tools.map((t) => t.name).join(", ")}`);
 
   // Inject MCP server instructions into the agent context on the first turn of each
   // fresh session (no user messages yet). prependContext ends up in the first user
@@ -433,6 +447,6 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         prependContext: `<approval-gate-instructions>\n${instructions}\n</approval-gate-instructions>`,
       };
     });
-    api.logger.info("approval-gate: registered before_prompt_build hook for instruction injection");
+    log.info("registered before_prompt_build hook for instruction injection");
   }
 }

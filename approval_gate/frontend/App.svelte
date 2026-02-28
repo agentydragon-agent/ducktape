@@ -16,9 +16,7 @@
   let error = $state<string | null>(null);
 
   async function loadList(): Promise<void> {
-    const [pendingRes, recentRes] = await Promise.all([api.listActions("pending"), api.listActions(undefined, 20)]);
-    pending = pendingRes.actions;
-    recent = recentRes.actions;
+    [pending, recent] = await Promise.all([api.listActions("pending"), api.listActions(undefined, 20)]);
   }
 
   onMount(async () => {

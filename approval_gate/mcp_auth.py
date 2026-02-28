@@ -94,9 +94,9 @@ class _DualHeaderAuthBackend(AuthenticationBackend):
             token_str = f"jwt:{jwt_header}"
         else:
             auth = conn.headers.get("authorization", "")
-            if not auth.lower().startswith("bearer "):
+            if not auth.startswith("Bearer "):
                 return None
-            token_str = auth[7:]
+            token_str = auth.removeprefix("Bearer ")
 
         access_token = await self._provider.verify_token(token_str)
         if access_token is None:

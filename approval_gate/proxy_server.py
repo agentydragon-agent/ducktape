@@ -30,13 +30,11 @@ from fastmcp.server.auth import require_scopes
 from fastmcp.tools.tool import FunctionTool
 from mako.template import Template
 from mcp import types as mcp_types
-from pydantic import TypeAdapter
 
 from approval_gate.models import (
     Action,
     ActionRef,
     ActionState,
-    ActionStatus,
     ApproveDecision,
     DenyDecision,
     DoneState,
@@ -53,8 +51,6 @@ from approval_gate.storage import ActionStorage
 from mcp_infra.enhanced.server import EnhancedFastMCP
 
 logger = logging.getLogger(__name__)
-
-_ACTION_STATE_TA: TypeAdapter[ActionState] = TypeAdapter(ActionState)
 
 
 def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
@@ -103,12 +99,12 @@ class ApprovalGateServer(EnhancedFastMCP):
         instructions_template_path: str,
         **kwargs: Any,
     ) -> None:
-        # Instructions are set after backend connection in lifespan; placeholder here
-        super().__init__("Approval Gate", instructions="Approval gate — initialising…", **kwargs)
-        # FastMCP.__init__ sets self._lifespan = default_lifespan as an instance attribute,
-        # which shadows our _lifespan class method override. Remove it so Python's method
-        # resolution finds ApprovalGateServer._lifespan instead.
-        del self.__dict__["_lifespan"]
+        # Instructions are set after backend connection in lifespan; placeholder here.
+        # Pass self._lifespan explicitly so FastMCP stores our bound method as the instance
+        # attribute rather than default_lifespan — no del hack needed.
+        super().__init__(
+            "Approval Gate", lifespan=self._lifespan, instructions="Approval gate — initialising…", **kwargs
+        )
         self._backend_spec = backend
         self._db_path = db_path
         self._storage: ActionStorage | None = None
@@ -183,7 +179,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             @self.tool(auth=require_scopes("operator"))
             async def list_actions(status: str | None = None, limit: int = 100) -> list[Action]:
                 """List queued/processed actions, optionally filtered by status."""
-                return await self._req_storage.list_by_status(ActionStatus(status) if status else None, limit=limit)
+                return await self._req_storage.list_actions(status, limit=limit)
 
             @self.tool(auth=require_scopes("operator"))
             async def approve_action(action_id: str) -> Action:

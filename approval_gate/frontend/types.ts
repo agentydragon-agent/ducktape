@@ -29,8 +29,3 @@ export type Action = {
   session_key: string | null;
   state: ActionState;
 };
-
-// Wrapper types matching what api.ts returns (mirrors old REST response shapes
-// so App.svelte doesn't need changes).
-export type ActionsListResponse = { actions: Action[] };
-export type ActionResponse = { action: Action };
