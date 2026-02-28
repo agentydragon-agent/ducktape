@@ -119,6 +119,13 @@ def sync_snapshot_files_to_db(session: Session, slug: SnapshotSlug, archive_byte
             seen_keys.add((slug, member.name))
             file_rows.append({"snapshot_slug": slug, "file_path": member.name, "line_count": line_count})
 
+    if not file_rows:
+        with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as diag_tar:
+            member_count = len(diag_tar.getmembers())
+        raise ValueError(
+            f"No files found in snapshot archive for {slug} (archive_size={len(archive_bytes)}, members={member_count})"
+        )
+
     # Bulk upsert all files in one statement.
     stmt = insert(SnapshotFile).values(file_rows)
     session.execute(
