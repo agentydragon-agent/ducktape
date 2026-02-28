@@ -14,8 +14,8 @@ spec:
     - "openclaw.allegedly.works"
   rules:
     - backendRefs:
-        - name: ak-outpost-shared-proxy-outpost
-          port: 9000
+        - name: authentik-server
+          port: 80
       timeouts:
         request: "600s"
         backendRequest: "600s"

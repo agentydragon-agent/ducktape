@@ -2,15 +2,17 @@ version: 1
 metadata:
   name: SSO - Shared Proxy Outpost
   labels:
-    blueprints.goauthentik.io/description: "Shared HA proxy outpost for all proxy-mode SSO providers"
+    blueprints.goauthentik.io/description: "Embedded proxy outpost for all proxy-mode SSO providers"
 
 entries:
+  # Assign all proxy providers to the embedded outpost.
+  # The embedded outpost runs inside authentik-server pods and stores sessions
+  # in PostgreSQL, enabling HA across the 2-replica authentik-server deployment.
   - model: authentik_outposts.outpost
     state: present
     identifiers:
-      name: shared-proxy-outpost
+      managed: goauthentik.io/outposts/embedded
     attrs:
-      type: proxy
       providers:
         - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, grocy]]
@@ -21,23 +23,12 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, openclaw-mitmproxy]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, scanner-filebrowser]]
-      service_connection: !Find [authentik_outposts.kubernetesserviceconnection, [name, Local Kubernetes Cluster]]
-      config:
-        authentik_host: "http://authentik-server.authentik:80"
-        authentik_host_browser: "https://auth.allegedly.works"
-        # Single replica: OAuth sessions live in /dev/shm (per-pod, no shared
-        # backend since Authentik 2025.10 removed Redis for outpost sessions).
-        # With multiple replicas, the callback lands on a different pod than
-        # the one that started the OAuth flow → 400. Service sessionAffinity
-        # doesn't help because Cilium Gateway Envoy does its own round-robin
-        # LB to pod endpoints, ignoring Service-level affinity settings.
-        kubernetes_replicas: 1
-        kubernetes_json_patches:
-          deployment:
-            - op: add
-              path: /spec/template/spec/nodeSelector
-              value:
-                topology.kubernetes.io/region: hetzner
+
+  # Remove the standalone k8s outpost deployment (superseded by embedded outpost).
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: shared-proxy-outpost
 
   # Clean up old per-service outposts (replaced by shared-proxy-outpost)
   - model: authentik_outposts.outpost
