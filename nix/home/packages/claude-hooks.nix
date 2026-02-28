@@ -9,13 +9,13 @@
 }:
 let
   # 8-char commit SHA from GitHub release tag
-  shortSha = "98dc865f";
+  shortSha = "d05c944b";
 
   # Fetch wheel directly with fetchurl
   wheelSrc = pkgs.fetchurl {
     url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-${shortSha}/claude_hooks-0.1.0-py3-none-any.whl";
     # After updating shortSha, set to lib.fakeHash and rebuild to get new hash
-    hash = "sha256-736m1zzQsLZ1cJzW17y6kaYw/JWFsSVgCb0kpZ6dWpM=";
+    hash = "sha256-WFuNO8/XZmqP/l1/3uB2Al88G8BMpqmPXvf5h3JD0dI=";
   };
 in
 pkgs.python3Packages.buildPythonApplication {
