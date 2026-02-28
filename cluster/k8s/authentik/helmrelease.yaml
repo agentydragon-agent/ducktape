@@ -73,25 +73,27 @@ spec:
       name: server
       replicas: 2
 
-      # With 2 replicas + required anti-affinity on 2 nodes, surge deadlocks
-      # (can't create 3rd pod). Kill one first, then replace.
+      # Preferred (not required) anti-affinity allows a surge pod to land on
+      # an occupied node while still spreading replicas across nodes when possible.
       deploymentStrategy:
         type: RollingUpdate
         rollingUpdate:
-          maxSurge: 0
-          maxUnavailable: 1
+          maxSurge: 1
+          maxUnavailable: 0
 
       nodeSelector:
         topology.kubernetes.io/region: hetzner
 
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/component: server
-                  app.kubernetes.io/instance: authentik
-              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: server
+                    app.kubernetes.io/instance: authentik
+                topologyKey: kubernetes.io/hostname
 
       # Allow 20 min for DB migrations on first boot (default 10 min).
       # If the startup probe kills the pod mid-migration, the PostgreSQL
@@ -154,20 +156,22 @@ spec:
       deploymentStrategy:
         type: RollingUpdate
         rollingUpdate:
-          maxSurge: 0
-          maxUnavailable: 1
+          maxSurge: 1
+          maxUnavailable: 0
 
       nodeSelector:
         topology.kubernetes.io/region: hetzner
 
       affinity:
         podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  app.kubernetes.io/component: worker
-                  app.kubernetes.io/instance: authentik
-              topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: worker
+                    app.kubernetes.io/instance: authentik
+                topologyKey: kubernetes.io/hostname
 
       # Load ESO-generated secret key via envFrom (plus all global secrets)
       envFrom:

@@ -18,14 +18,15 @@ spec:
       ports:
         - port: 4318
           protocol: TCP
-    # Allow OTLP/HTTP from Authentik shared proxy outpost (proxies external clients).
+    # Allow OTLP/HTTP from Authentik embedded outpost (proxies external clients).
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: authentik
           podSelector:
             matchLabels:
-              goauthentik.io/outpost-name: shared-proxy-outpost
+              app.kubernetes.io/component: server
+              app.kubernetes.io/instance: authentik
       ports:
         - port: 4318
           protocol: TCP
