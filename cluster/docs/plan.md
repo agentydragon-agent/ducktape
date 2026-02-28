@@ -28,6 +28,11 @@ See <changelog.md> for detailed change history.
       Plaid's production onboarding process is involved (redirect URI registration,
       per-product approval, environment-specific keys). Revisit when needed.
 - [ ] **Grocy: provision API token for agent access**
+- [x] **Harbor: co-locate core and Redis on same node** — Harbor core crashes on startup
+      when Redis is on a different node and Cilium hasn't fully programmed the cross-node
+      eBPF datapath yet (`connect: operation not permitted`). Add pod affinity between
+      `harbor-core` and `harbor-redis` (or pin both to the same node) to avoid transient
+      cross-node connectivity failures during rescheduling.
 - [ ] **Consider moving more PVCs to `local-path`** — Proxmox CSI has 29 LUN hard limit.
       Candidates: `langfuse/langfuse-s3`, `monitoring/alertmanager-*`, `monitoring/prometheus-*`,
       `monitoring/storage-tempo-0`, `monitoring/kube-prometheus-stack-grafana`,

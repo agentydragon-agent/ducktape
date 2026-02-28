@@ -88,6 +88,15 @@ spec:
       replicas: 1
       podAnnotations:
         reloader.stakater.com/auto: "true"
+      # Co-locate with Redis to avoid cross-node Cilium eBPF startup failures
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: redis
+                  app.kubernetes.io/instance: harbor
+              topologyKey: kubernetes.io/hostname
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       resources:
@@ -205,6 +214,15 @@ spec:
 
     exporter:
       replicas: 1
+      # Co-locate with Redis (same reason as core)
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: redis
+                  app.kubernetes.io/instance: harbor
+              topologyKey: kubernetes.io/hostname
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       resources:
