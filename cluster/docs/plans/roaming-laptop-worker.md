@@ -100,7 +100,7 @@ Components:
 
 - **containerd** with systemd cgroup driver
 - **kubelet** as a custom systemd service (TLS bootstrap, not auto-started)
-- **HAProxy** at `localhost:7445` → control plane (replaces Talos KubePrism)
+- **HAProxy** at `localhost:7445` → `api.allegedly.works` (replaces Talos KubePrism)
 - **Tailscale** configured for Headscale with `--accept-routes`
 - **Kernel prereqs**: `overlay`, `br_netfilter`, IP forwarding
 - **Firewall**: VXLAN (UDP 8472), kubelet (TCP 10250)
@@ -351,6 +351,21 @@ Verify:
   routes. This is a prerequisite not yet automated.
 - **CSR auto-approval**: Consider deploying a CSR approver controller to avoid manual
   `kubectl certificate approve` on every node join.
+
+### HAProxy Control Plane Endpoint Management
+
+**Resolved**: HAProxy now resolves `api.allegedly.works` via DNS at runtime using
+`server-template` with a `resolvers` section. The DNS record (managed by Terraform in
+`cluster/terraform/gitops/dns-records/main.tf`) round-robins across VPS public IPs.
+
+**Why HAProxy exists**: Cilium is configured cluster-wide with `k8sServiceHost: localhost`,
+`k8sServicePort: 7445`. On Talos nodes, KubePrism (built into `machined`) provides this.
+On non-Talos nodes, nothing listens there without a local proxy. KubePrism is not a
+standalone binary.
+
+The Proxmox CP (`10.2.1.1`) is excluded — it has no public IP, and if both VPS nodes are
+down, Headscale is also down so the NixOS worker would be offline regardless. 2/3 CPs is
+sufficient for API access.
 
 ## Appendix: KubeSpan Internals
 

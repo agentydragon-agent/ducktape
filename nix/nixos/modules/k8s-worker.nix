@@ -1,6 +1,12 @@
 # Kubernetes worker node module
 # Joins a NixOS machine as a worker to an external (Talos) K8s cluster.
-# Does NOT use services.kubernetes (too opinionated toward all-NixOS clusters).
+# Does NOT use services.kubernetes — it's designed as a self-contained cluster
+# provisioner, not for joining external clusters. Specifically:
+#   - Custom CFSSL-based PKI (no --bootstrap-kubeconfig support)
+#   - Forces flannel as CNI and wipes /opt/cni/bin on every kubelet start
+#   - Deploys its own CoreDNS addon (conflicts with existing cluster DNS)
+#   - Kubelet unit depends on local kube-apiserver.service
+#   - Builds/seeds a custom pause container instead of registry.k8s.io/pause
 #
 # Manual steps after boot:
 # 1. Extract bootstrap kubeconfig from Talos control plane:
@@ -54,42 +60,49 @@ let
     }
   );
 
-  haproxyConfig = lib.concatStringsSep "\n" (
-    [
-      "global"
-      "  maxconn 256"
-      ""
-      "defaults"
-      "  mode tcp"
-      "  timeout connect 5s"
-      "  timeout client 30s"
-      "  timeout server 30s"
-      "  retries 3"
-      ""
-      "frontend kube-apiserver-local"
-      "  bind 127.0.0.1:7445"
-      "  default_backend kube-apiserver"
-      ""
-      "backend kube-apiserver"
-      "  option tcp-check"
-      "  balance roundrobin"
-    ]
-    ++ lib.imap0 (
-      i: ep: "  server cp-${toString i} ${ep} check inter 5s fall 3 rise 2"
-    ) cfg.controlPlaneEndpoints
-  );
+  haproxyConfig = ''
+    global
+      maxconn 256
+
+    defaults
+      mode tcp
+      timeout connect 5s
+      timeout client 30s
+      timeout server 30s
+      retries 3
+
+    resolvers dns
+      nameserver cf 1.1.1.1:53
+      nameserver google 8.8.8.8:53
+      resolve_retries 3
+      timeout resolve 1s
+      timeout retry 1s
+      hold valid 30s
+
+    frontend kube-apiserver-local
+      bind 127.0.0.1:7445
+      default_backend kube-apiserver
+
+    backend kube-apiserver
+      option tcp-check
+      balance roundrobin
+      server-template cp 3 ${cfg.apiServerHost}:${toString cfg.apiServerPort} resolvers dns init-addr libc,last check inter 5s fall 3 rise 2
+  '';
 in
 {
   options.ducktape.k8sWorker = {
     enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster)";
 
-    controlPlaneEndpoints = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      description = "Control plane endpoints as ip:port strings for HAProxy backends";
-      example = [
-        "203.0.113.10:6443"
-        "203.0.113.11:6443"
-      ];
+    apiServerHost = lib.mkOption {
+      type = lib.types.str;
+      default = "api.allegedly.works";
+      description = "DNS name for the Kubernetes API server (resolved by HAProxy)";
+    };
+
+    apiServerPort = lib.mkOption {
+      type = lib.types.port;
+      default = 6443;
+      description = "Port for the Kubernetes API server";
     };
 
     clusterDNS = lib.mkOption {
@@ -210,8 +223,9 @@ in
       };
     };
 
-    # HAProxy — replaces KubePrism (localhost:7445 → control plane)
-    # Cilium agent expects k8sServiceHost=localhost, k8sServicePort=7445
+    # HAProxy — replaces KubePrism (localhost:7445 → api.allegedly.works)
+    # Cilium agent expects k8sServiceHost=localhost, k8sServicePort=7445.
+    # Uses DNS resolution with server-template to discover CP endpoints.
     services.haproxy = {
       enable = true;
       config = haproxyConfig;
