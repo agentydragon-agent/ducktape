@@ -3,7 +3,14 @@
 import pytest_bazel
 import yaml
 
-from tools.ci.generate_ci import WORKFLOWS_DIR, WORKFLOWS_YAML, Workflow, generate_ci_config, generate_release_config
+from tools.ci.generate_ci import (
+    WORKFLOWS_DIR,
+    WORKFLOWS_YAML,
+    Workflow,
+    generate_ci_config,
+    generate_harbor_images_config,
+    generate_release_config,
+)
 from tools.ci.models import WorkflowManifest
 
 
@@ -25,6 +32,13 @@ def test_ci_yml_up_to_date() -> None:
     expected = generate_ci_config(manifest)
     ci_yml = WORKFLOWS_DIR / "ci.yml"
     check_workflow(ci_yml, expected)
+
+
+def test_harbor_images_yml_up_to_date() -> None:
+    manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
+    expected = generate_harbor_images_config(manifest.harbor_images)
+    path = WORKFLOWS_DIR / "bazel-harbor-images.yml"
+    check_workflow(path, expected)
 
 
 def test_release_workflows_up_to_date() -> None:

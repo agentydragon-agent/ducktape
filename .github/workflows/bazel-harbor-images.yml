@@ -1,16 +1,12 @@
-# Build and push the InvenTree token provisioner OCI image to Harbor.
-#
-# Triggers:
-#   - workflow_call (from ci.yml)
-#   - workflow_dispatch: manual push
-name: InvenTree Token Provisioner Image
-
-on:
-  workflow_dispatch:
+# AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
+# Regenerate with: bazel run //tools/ci:generate_ci_bin
+name: Bazel Harbor Images
+"on":
+  workflow_dispatch: null
   workflow_call:
     inputs:
       rbe_image:
-        description: "Override RBE container image (optional)"
+        description: Override RBE container image (optional)
         required: false
         type: string
         default: ""
@@ -21,37 +17,43 @@ on:
         required: true
       HARBOR_ROBOT_TOKEN:
         required: true
-
 concurrency:
-  group: inventree-token-provisioner-image-${{ github.ref }}
+  group: bazel-harbor-images-${{ github.ref }}
   cancel-in-progress: true
-
 permissions:
   contents: read
-
 jobs:
   build-and-push:
     name: Build and Push
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
       - uses: ./.github/actions/setup-bazel
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
           rbe_image: ${{ inputs.rbe_image }}
-
       - name: Login to Harbor
         uses: docker/login-action@v3
         with:
           registry: registry.allegedly.works
           username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
-
-      - name: Build and push
-        run: |
+      - name: Build and push oauth-broker
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //oauth_broker:load \
+            oauth-broker:latest \
+            registry.allegedly.works/oauth-broker/oauth-broker
+      - name: Build and push inventree-token-provisioner
+        run: |-
           .github/scripts/harbor_push.sh \
             //cluster/k8s/applications/inventree-token-provisioner:load \
             inventree-token-provisioner:latest \
             registry.allegedly.works/inventree/token-provisioner
+      - name: Build and push props-backend
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //props/backend:load \
+            props-backend:latest \
+            registry.allegedly.works/props/props-backend

@@ -1,10 +1,6 @@
-# Build and push all props container images (backend + agents).
+# Build and push all props agent images to the props registry.
 #
-# Combines backend and agent image builds into a single workflow to share
-# Bazel setup, RBE warm cache, and checkout overhead.
-#
-# Backend image → registry.allegedly.works (Harbor)
-# Agent images  → props registry (PROPS_REGISTRY_URL)
+# The props backend image is now pushed via bazel-harbor-images.yml.
 #
 # Triggers:
 #   - workflow_call (from ci.yml)
@@ -23,10 +19,6 @@ on:
     secrets:
       BUILDBUDDY_API_KEY:
         required: false
-      HARBOR_ROBOT_USERNAME:
-        required: true
-      HARBOR_ROBOT_TOKEN:
-        required: true
       PROPS_REGISTRY_USERNAME:
         required: true
       PROPS_REGISTRY_PASSWORD:
@@ -52,26 +44,12 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
           rbe_image: ${{ inputs.rbe_image }}
 
-      - name: Login to Harbor
-        uses: docker/login-action@v3
-        with:
-          registry: registry.allegedly.works
-          username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
-          password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
-
       - name: Login to Props Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ vars.PROPS_REGISTRY_URL }}
           username: ${{ secrets.PROPS_REGISTRY_USERNAME }}
           password: ${{ secrets.PROPS_REGISTRY_PASSWORD }}
-
-      - name: Push backend image
-        run: |
-          .github/scripts/harbor_push.sh \
-            //props/backend:load \
-            props-backend:latest \
-            registry.allegedly.works/props/props-backend
 
       - name: Build and load agent images
         run: |

@@ -8,6 +8,7 @@ exports_files(["workflows.yaml"])
 filegroup(
     name = "generated_workflows",
     srcs = [
+        "//.github/workflows:bazel-harbor-images.yml",
         "//.github/workflows:ci.yml",
         "//.github/workflows:ducktape-release.yml",
         "//.github/workflows:gnome-terminal-profile-switcher-release.yml",

@@ -113,21 +113,12 @@ jobs:
     with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
-  oauth-broker-image:
+  bazel-harbor-images:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'oauth-broker-image')
-    uses: ./.github/workflows/oauth-broker-image.yml
-    with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
-  inventree-token-provisioner-image:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'inventree-token-provisioner-image')
-    uses: ./.github/workflows/inventree-token-provisioner-image.yml
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-harbor-images')
+    uses: ./.github/workflows/bazel-harbor-images.yml
     with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
