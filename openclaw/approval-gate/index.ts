@@ -25,6 +25,10 @@ const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:18789";
 const ACTION_RESOURCE_PREFIX = "resource://actions/";
 
 // ── Action state types (mirrors approval_gate/models.py + mcp_types.CallToolResult) ─
+// TODO: These types overlap with approval_gate/frontend/types.ts. The two packages live in
+// different environments (Node.js plugin vs browser SPA) and carry different field sets, so
+// a shared package would add more complexity than it removes for now. If a third consumer
+// appears, consider extracting a shared @ducktape/approval-gate-types workspace package.
 
 interface ActionState {
   status: "pending" | "executing" | "done" | "rejected" | "withdrawn";

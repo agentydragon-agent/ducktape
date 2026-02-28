@@ -182,6 +182,7 @@ npm.npm_translate_lock(
         "//:agent_server/web/package.json",
         "//:approval_gate/frontend/package.json",
         "//:hack/rspcache/admin_ui/package.json",
+        "//:openclaw/approval-gate/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
