@@ -9,7 +9,7 @@ import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
 
-from agent_server.mcp.approval_policy.engine import PolicyEngine
+from agent_server.mcp.approval_policy.engine import PolicyEngine, PolicyReaderServer
 from agent_server.presets import create_agent_from_preset, discover_presets
 from agent_server.testing.approval_policy_testdata import fetch_policy
 from mcp_utils.resources import extract_single_text_content
@@ -116,7 +116,7 @@ class TestPresetPolicyLoading:
         engine = await make_approval_policy_server(policy_allow_all)
 
         async with Client(engine.reader) as sess:
-            result = await sess.read_resource(engine.reader.active_policy_resource.uri)
+            result = await sess.read_resource(PolicyReaderServer.ACTIVE_POLICY_URI)
             policy_text = extract_single_text_content(result)
             assert "approve_all" in policy_text.lower() or "allow" in policy_text.lower()
 
@@ -127,7 +127,7 @@ class TestPresetPolicyLoading:
         engine = await make_approval_policy_server(custom_policy)
 
         async with Client(engine.reader) as sess:
-            result = await sess.read_resource(engine.reader.active_policy_resource.uri)
+            result = await sess.read_resource(PolicyReaderServer.ACTIVE_POLICY_URI)
             policy_text = extract_single_text_content(result)
             assert "const" in policy_text.lower() or "PolicyResponse" in policy_text
 

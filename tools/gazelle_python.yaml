@@ -13,14 +13,13 @@ manifest:
     OpenSSL: pyopenssl
     PIL: pillow
     absl: absl_py
-    aiodns: aiodns
     aiodocker: aiodocker
+    aiofile: aiofile
     aiofiles: aiofiles
     aiohappyeyeballs: aiohappyeyeballs
     aiohttp: aiohttp
     aiohttp_client_cache: aiohttp_client_cache
     aiohttp_socks: aiohttp_socks
-    aiomultiprocess: aiomultiprocess
     aiosignal: aiosignal
     aiosqlite: aiosqlite
     alembic: alembic
@@ -30,11 +29,9 @@ manifest:
     anyio: anyio
     apiclient: google_api_python_client
     appdirs: appdirs
-    argcomplete: argcomplete
     argon2: argon2_cffi
     arrow: arrow
     asgi_lifespan: asgi_lifespan
-    asteval: asteval
     asttokens: asttokens
     asyncpg: asyncpg
     attr: attrs
@@ -45,40 +42,28 @@ manifest:
     aw_datastore: aw_core
     aw_query: aw_core
     aw_transform: aw_core
-    bc_jsonpath_ng: bc_jsonpath_ng
     bcrypt: bcrypt
     beartype: beartype
     bleach: bleach
-    boolean: boolean_py
-    boto3: boto3
-    botocore: botocore
     bs4: beautifulsoup4
-    cached_property: cached_property
     cachetools: cachetools
+    caio: caio
     canonicaljson: canonicaljson
     cattr: cattrs
     cattrs: cattrs
-    cdk_integration_tests: checkov
     certifi: certifi
     cffi: cffi
     cfgv: cfgv
     charset_normalizer: charset_normalizer
-    checkov: checkov
     claude_code_sdk: claude_code_sdk
     click: click
-    click_option_group: click_option_group
-    cloudpickle: cloudpickle
-    cloudsplaining: cloudsplaining
     colorama: colorama
     comm: comm
     compact_json: compact_json
-    configargparse: configargparse
-    contextlib2: contextlib2
     contourpy: contourpy
     coverage: coverage
     cryptography: cryptography
     cycler: cycler
-    cyclonedx: cyclonedx_python_lib
     cyclopts: cyclopts
     dateutil: python_dateutil
     dbus_fast: dbus_fast
@@ -86,18 +71,13 @@ manifest:
     decorator: decorator
     defusedxml: defusedxml
     deprecation: deprecation
-    detect_secrets: bc_detect_secrets
-    diskcache: diskcache
     distlib: distlib
     distro: distro
     dns: dnspython
     docker: docker
-    dockerfile_parse: dockerfile_parse
-    docket: pydocket
     docstring_parser: docstring_parser
     docutils: docutils
     dotenv: python_dotenv
-    dpath: dpath
     durationpy: durationpy
     e2e-tests: splitwise
     email_reply_parser: email_reply_parser
@@ -105,7 +85,6 @@ manifest:
     exceptiongroup: exceptiongroup
     execnet: execnet
     executing: executing
-    fakeredis: fakeredis
     fastapi: fastapi
     fastapi_csrf_protect: fastapi_csrf_protect
     fastapi_sessions: fastapi_sessions
@@ -122,8 +101,6 @@ manifest:
     frozenlist: frozenlist
     fsspec: fsspec
     gepa: gepa
-    git: gitpython
-    gitdb: gitdb
     github: pygithub
     google.api.annotations_pb2: googleapis_common_protos
     google.api.auth_pb2: googleapis_common_protos
@@ -205,7 +182,6 @@ manifest:
     h11: h11
     h2: h2
     hamcrest: pyhamcrest
-    hcl2: bc_python_hcl2
     hf_xet: hf_xet
     homeassistant_api: homeassistant_api
     hpack: hpack
@@ -237,13 +213,11 @@ manifest:
     jeepney: jeepney
     jinja2: jinja2
     jiter: jiter
-    jmespath: jmespath
     jsonpointer: jsonpointer
     jsonref: jsonref
     jsonschema: jsonschema
     jsonschema_path: jsonschema_path
     jsonschema_specifications: jsonschema_specifications
-    junit_xml: junit_xml
     jupyter: jupyter_core
     jupyter_client: jupyter_client
     jupyter_core: jupyter_core
@@ -260,16 +234,13 @@ manifest:
     jupyter_ydoc: jupyter_ydoc
     jupyterlab_pygments: jupyterlab_pygments
     jwt: PyJWT
-    key_value.aio: py_key_value_aio
-    key_value.shared: py_key_value_shared
+    key_value: py_key_value_aio
     keyring: keyring
     kiwisolver: kiwisolver
     kubernetes: kubernetes
     kubernetes_asyncio: kubernetes_asyncio
     lark: lark
-    license_expression: license_expression
     litellm: litellm
-    lupa: lupa
     lxml: lxml
     makefun: makefun
     mako: mako
@@ -300,7 +271,6 @@ manifest:
     nbconvert: nbconvert
     nbformat: nbformat
     nest_asyncio: nest_asyncio
-    networkx: networkx
     nio: matrix_nio
     nodeenv: nodeenv
     numpy: numpy
@@ -313,18 +283,6 @@ manifest:
     opentelemetry.environment_variables: opentelemetry_api
     opentelemetry.exporter.otlp.proto.common: opentelemetry_exporter_otlp_proto_common
     opentelemetry.exporter.otlp.proto.http: opentelemetry_exporter_otlp_proto_http
-    opentelemetry.exporter.prometheus: opentelemetry_exporter_prometheus
-    opentelemetry.instrumentation.auto_instrumentation: opentelemetry_instrumentation
-    opentelemetry.instrumentation.bootstrap: opentelemetry_instrumentation
-    opentelemetry.instrumentation.bootstrap_gen: opentelemetry_instrumentation
-    opentelemetry.instrumentation.dependencies: opentelemetry_instrumentation
-    opentelemetry.instrumentation.distro: opentelemetry_instrumentation
-    opentelemetry.instrumentation.environment_variables: opentelemetry_instrumentation
-    opentelemetry.instrumentation.instrumentor: opentelemetry_instrumentation
-    opentelemetry.instrumentation.propagators: opentelemetry_instrumentation
-    opentelemetry.instrumentation.sqlcommenter_utils: opentelemetry_instrumentation
-    opentelemetry.instrumentation.utils: opentelemetry_instrumentation
-    opentelemetry.instrumentation.version: opentelemetry_instrumentation
     opentelemetry.metrics: opentelemetry_api
     opentelemetry.propagate: opentelemetry_api
     opentelemetry.propagators.composite: opentelemetry_api
@@ -342,8 +300,6 @@ manifest:
     opentelemetry.util.re: opentelemetry_api
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
-    orjson: orjson
-    packageurl: packageurl_python
     packaging: packaging
     pandas: pandas
     pandocfilters: pandocfilters
@@ -352,7 +308,6 @@ manifest:
     passlib: passlib
     pathable: pathable
     pathspec: pathspec
-    pathvalidate: pathvalidate
     patsy: patsy
     peewee: peewee
     persistqueue: persist_queue
@@ -364,12 +319,9 @@ manifest:
     playwright: playwright
     plotnine: plotnine
     pluggy: pluggy
-    ply: ply
-    policy_sentry: policy_sentry
     port_for: port_for
     pproxy: pproxy
     pre_commit: pre_commit
-    prettytable: prettytable
     prometheus_client: prometheus_client
     prompt_toolkit: prompt_toolkit
     propcache: propcache
@@ -388,8 +340,6 @@ manifest:
     pyarrow: pyarrow
     pyasn1: pyasn1
     pyasn1_modules: pyasn1_modules
-    pycares: pycares
-    pycep: pycep_parser
     pycparser: pycparser
     pycrdt: pycrdt
     pydantic: pydantic
@@ -417,9 +367,7 @@ manifest:
     pythonjsonlogger: python_json_logger
     pytimeparse: pytimeparse
     pytz: pytz
-    rdflib: rdflib
     reaktiv: reaktiv
-    redis: redis
     referencing: referencing
     regex: regex
     requests: requests
@@ -434,27 +382,16 @@ manifest:
     rpds: rpds_py
     rsa: rsa
     ruff: ruff
-    rustworkx: rustworkx
-    s3transfer: s3transfer
-    sast_integration_tests: checkov
-    schema: schema
     scipy: scipy
     secretstorage: secretstorage
-    semantic_version: semantic_version
     send2trash: send2trash
-    serializable: py_serializable
     setuptools: setuptools
     shellingham: shellingham
     simplejson: simplejson
     six: six
     slugify: python_slugify
-    smmap: smmap
     sniffio: sniffio
-    sortedcontainers: sortedcontainers
     soupsieve: soupsieve
-    spdx_tools.common: spdx_tools
-    spdx_tools.spdx: spdx_tools
-    spdx_tools.spdx3: spdx_tools
     splitwise: splitwise
     sqlalchemy: sqlalchemy
     sse_starlette: sse_starlette
@@ -468,9 +405,7 @@ manifest:
     tabulate: tabulate
     takethetime: takethetime
     tenacity: tenacity
-    termcolor: termcolor
     terminado: terminado
-    test: bc_python_hcl2
     testcontainers.arangodb: testcontainers
     testcontainers.aws: testcontainers
     testcontainers.azurite: testcontainers
@@ -542,7 +477,6 @@ manifest:
     unpaddedbase64: unpaddedbase64
     uri_template: uri_template
     uritemplate: uritemplate
-    uritools: uritools
     url_normalize: url_normalize
     urllib3: urllib3
     uvicorn: uvicorn
@@ -558,7 +492,6 @@ manifest:
     websockets: websockets
     wrapt: wrapt
     xdist: pytest_xdist
-    xmltodict: xmltodict
     yaml: pyyaml
     yamllint: yamllint
     yarl: yarl
@@ -566,4 +499,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: b3fcbbd3c647962e1b80f9ef8fe822568e70c40fcc083a6d382cb37d2eab4201
+integrity: 07682314b25dc58d973e826e80a363b443570eeca4cd65e99b79bb815551f0ef

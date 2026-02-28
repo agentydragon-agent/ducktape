@@ -4,10 +4,9 @@ import asyncio
 import logging
 from collections.abc import Iterator, Sequence
 from enum import StrEnum
-from typing import Annotated, Final, Literal, cast
+from typing import Annotated, Final, Literal
 
 from fastmcp.exceptions import ToolError
-from fastmcp.resources import FunctionResource
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
@@ -303,8 +302,8 @@ class ResourcesServer(EnhancedFastMCP):
     - Base64 parts are sliced as base64 text; decoding is the caller's responsibility.
     """
 
-    # Resource attribute (stashed result of @resource decorator - single source of truth for URI access)
-    subscriptions_index_resource: FunctionResource
+    # Resource URI constant
+    SUBSCRIPTIONS_INDEX_URI = "resources://subscriptions"
 
     # Tool references
     list_tool: FlatTool
@@ -358,7 +357,7 @@ class ResourcesServer(EnhancedFastMCP):
         )
 
         # Register subscriptions index resource FIRST (before tools) and stash the result
-        async def subscriptions_index() -> SubscriptionsIndex:
+        async def subscriptions_index() -> str:
             present = await self._present_servers()
             async with self._subs_lock:
                 items = list(self._subs.values())
@@ -377,17 +376,14 @@ class ResourcesServer(EnhancedFastMCP):
             list_out: list[ListSubscriptionSummary] = [
                 ListSubscriptionSummary(server=s, present=(s in present), active=(s in present)) for s in sorted(lss)
             ]
-            return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out)
+            return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out).model_dump_json()
 
-        self.subscriptions_index_resource = cast(
-            FunctionResource,
-            self.resource(
-                "resources://subscriptions",
-                name="resources.subscriptions",
-                mime_type="application/json",
-                description=("Index of resource subscriptions made via the resources server."),
-            )(subscriptions_index),
-        )
+        self.resource(
+            self.SUBSCRIPTIONS_INDEX_URI,
+            name="resources.subscriptions",
+            mime_type="application/json",
+            description="Index of resource subscriptions made via the resources server.",
+        )(subscriptions_index)
 
         # Register tools (8 tools total)
         async def list_resources(input: ResourcesListArgs) -> ResourcesListResult:
@@ -751,7 +747,7 @@ class ResourcesServer(EnhancedFastMCP):
         # to enable list_changed semantics. For now, a single index resource is enough.
 
     async def _broadcast_subs_updated(self) -> None:
-        await self.broadcast_resource_updated(self.subscriptions_index_resource.uri)
+        await self.broadcast_resource_updated(self.SUBSCRIPTIONS_INDEX_URI)
 
     async def _present_servers(self) -> set[str]:
         # Include all mounted servers, including in-proc mounts without typed specs.

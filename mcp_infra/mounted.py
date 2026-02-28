@@ -65,8 +65,6 @@ class Mounted[T: FastMCP]:
             Prefixed URI string
 
         Example:
-            prefixed = comp.compositor_meta.add_resource_prefix(
-                meta_server.servers_list_resource.uri
-            )
+            prefixed = comp.compositor_meta.add_resource_prefix("compositor://servers")
         """
         return add_resource_prefix(uri, self.prefix)

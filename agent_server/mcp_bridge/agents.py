@@ -10,10 +10,10 @@ Provides tools and resources for managing agents:
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 
-from fastmcp.resources import FunctionResource
 from pydantic import BaseModel, Field
 
 from agent_server.presets import discover_presets
@@ -103,9 +103,9 @@ class AgentsManagementServer(EnhancedFastMCP):
     - boot_agent tool: boot existing agent from DB
     """
 
-    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
-    list_resource: FunctionResource
-    presets_resource: FunctionResource
+    # Resource URI constants
+    LIST_RESOURCE_URI = "agents://list"
+    PRESETS_RESOURCE_URI = "agents://presets"
 
     # Tool references (assigned in __init__)
     create_agent_tool: FlatTool[Any, Any]
@@ -122,7 +122,7 @@ class AgentsManagementServer(EnhancedFastMCP):
         self._registry = registry
 
         # Register resources and stash the results
-        async def list_agents() -> list[AgentInfo]:
+        async def list_agents() -> str:
             """List all agents with their state.
 
             Returns agents from both:
@@ -149,22 +149,23 @@ class AgentsManagementServer(EnhancedFastMCP):
                     preset = row.metadata.preset if row.metadata else None
                     agents.append(AgentInfo(id=row.id, preset=preset, external=False, booted=False))
 
-            return agents
+            return json.dumps([a.model_dump() for a in agents])
 
-        self.list_resource = cast(FunctionResource, self.resource("agents://list")(list_agents))
+        self.resource(self.LIST_RESOURCE_URI)(list_agents)
 
-        async def list_presets() -> list[PresetInfo]:
+        async def list_presets() -> str:
             """List available agent presets."""
             presets = discover_presets()
-            return [PresetInfo(name=p.name, description=p.description) for p in presets.values()]
+            items = [PresetInfo(name=p.name, description=p.description) for p in presets.values()]
+            return json.dumps([i.model_dump() for i in items])
 
-        self.presets_resource = cast(FunctionResource, self.resource("agents://presets")(list_presets))
+        self.resource(self.PRESETS_RESOURCE_URI)(list_presets)
 
         # Register tools - names derived from function names
         async def create_agent(input: CreateAgentInput) -> CreateAgentOutput:
             """Create a new agent from a preset and boot it."""
             container = await self._registry.create_agent(preset=input.preset)
-            await self.broadcast_resource_updated(self.list_resource.uri)
+            await self.broadcast_resource_updated(self.LIST_RESOURCE_URI)
             return CreateAgentOutput(id=container.agent_id, status="created", preset=input.preset or "default")
 
         self.create_agent_tool = self.flat_model()(create_agent)
@@ -173,7 +174,7 @@ class AgentsManagementServer(EnhancedFastMCP):
             """Delete an agent."""
             await self._registry.shutdown_agent(input.agent_id)
             await self._registry.persistence.delete_agent(input.agent_id)
-            await self.broadcast_resource_updated(self.list_resource.uri)
+            await self.broadcast_resource_updated(self.LIST_RESOURCE_URI)
             return DeleteAgentOutput(id=input.agent_id, status="deleted")
 
         self.delete_agent_tool = self.flat_model()(delete_agent)
@@ -181,7 +182,7 @@ class AgentsManagementServer(EnhancedFastMCP):
         async def boot_agent(input: BootAgentInput) -> BootAgentOutput:
             """Boot an existing agent from the database."""
             container = await self._registry.boot_agent(input.agent_id)
-            await self.broadcast_resource_updated(self.list_resource.uri)
+            await self.broadcast_resource_updated(self.LIST_RESOURCE_URI)
             return BootAgentOutput(id=container.agent_id, status="booted")
 
         self.boot_agent_tool = self.flat_model()(boot_agent)

@@ -7,11 +7,12 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, get_args, get_type_hints
 
 import pydantic_core
-from fastmcp.tools.tool import FunctionTool
+from fastmcp.tools.function_tool import FunctionTool
 
 from mcp_infra.exec.models import ExecInput
 from mcp_infra.flat_tool import FlatTool
 from mcp_infra.naming import parse_tool_name
+from mcp_infra.tool_schemas import _iter_tools
 from openai_utils.model import ReasoningItem
 
 if TYPE_CHECKING:
@@ -68,8 +69,7 @@ class DisplayEventsHandler(BaseHandler):
         if server is None:
             return None
 
-        # Use synchronous tool access via _tool_manager
-        tool = server._tool_manager.get_tool(tool_name)
+        tool = next((t for t in _iter_tools(server) if t.name == tool_name), None)
 
         # FlatTool has direct access to input_model
         if isinstance(tool, FlatTool):

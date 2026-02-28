@@ -48,7 +48,7 @@ dependencies = [
 
     # MCP
     "mcp[cli]>=1.13.1",
-    "fastmcp>=2.13",
+    "fastmcp>=3.0.0,<4",
 
     # Docker
     "docker>=7.0.0",
@@ -124,7 +124,6 @@ dependencies = [
     "pytimeparse>=1.1.8",
     "ruff>=0.5",
     "pre-commit>=3.5",
-    "checkov>=3.2",
 
     # finance
     "absl-py",

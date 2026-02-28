@@ -152,12 +152,11 @@ async def test_flat_model_union_return_unwrapped():
         assert tool.outputSchema["x-fastmcp-wrap-result"] is True
         assert "result" in tool.outputSchema["properties"]
 
-        # Verify raw result has wrapping
+        # Verify raw structured_content has wrapping
         result = await client.call_tool("get_page", {})
         assert result.structured_content == {"result": {"type": "A", "value": "hello"}}
-        assert result.data == {"type": "A", "value": "hello"}
 
-        # Verify TypedClient unwraps via .data field
+        # Verify TypedClient unwraps correctly
         typed_client = TypedClient.from_server(m, client)
         page = await typed_client.get_page(EmptyInput())
         assert isinstance(page, PageA)

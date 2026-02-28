@@ -47,9 +47,9 @@ def main() -> int:
     # Import here so we only import after checking API key
 
     try:
-        # Create the server (with port configuration)
+        # Create the server
         logger.info("Creating Habitify MCP server...")
-        server = create_habitify(port=args.port)
+        server = create_habitify()
 
         # Run the server with the specified transport
         if args.transport == "stdio":
@@ -57,7 +57,7 @@ def main() -> int:
             server.run(transport="stdio")
         else:
             logger.info(f"Starting server with SSE transport on port {args.port}...")
-            server.run(transport="sse")  # Port is already configured in the server
+            server.run(transport="sse", port=args.port)
 
         return 0
     except KeyboardInterrupt:

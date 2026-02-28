@@ -6,7 +6,6 @@ from typing import Any
 
 from fastmcp.client.messages import MessageHandler
 from mcp import types
-from pydantic import AnyUrl
 
 from openai_utils.model import InputTextPart, UserMessage
 
@@ -15,15 +14,10 @@ class ResourceUpdatedCapture(MessageHandler):
     """MessageHandler that captures resource updated notifications."""
 
     def __init__(self) -> None:
-        self.updated: list[AnyUrl] = []
+        self.updated: list[str] = []
 
     async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:
-        self.updated.append(message.params.uri)
-
-
-async def subscribe_head(session, chat_server) -> None:
-    """Subscribe to chat head updates for the connected server."""
-    await session.subscribe_resource(chat_server.head_resource.uri)
+        self.updated.append(str(message.params.uri))
 
 
 def _iter_text_parts(message: UserMessage) -> Iterable[str]:
