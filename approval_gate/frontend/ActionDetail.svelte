@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api } from "./api.ts";
+  import { getMcpClient } from "./mcp.ts";
   import type { Action, DoneState, RejectedState } from "./types.ts";
 
   let { action }: { action: Action } = $props();
@@ -17,7 +17,7 @@
   async function onApprove() {
     approving = true;
     try {
-      await api.approve(action.id);
+      await (await getMcpClient()).approve(action.id);
     } catch (e) {
       alert(`Approve failed: ${String(e)}`);
       approving = false;
@@ -27,7 +27,7 @@
   async function onReject() {
     rejecting = true;
     try {
-      await api.reject(action.id, rejectReason.trim() || undefined);
+      await (await getMcpClient()).reject(action.id, rejectReason.trim() || undefined);
     } catch (e) {
       alert(`Reject failed: ${String(e)}`);
       rejecting = false;

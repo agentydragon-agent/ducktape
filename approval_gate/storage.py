@@ -14,6 +14,7 @@ it always matches action.state.status.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -76,11 +77,13 @@ class ActionStorage:
             await conn.run_sync(_Base.metadata.create_all)
         return cls(async_sessionmaker(engine, expire_on_commit=False))
 
-    async def create(self, *, action_id: str, call: ToolCall, justification: str, session_key: str | None) -> Action:
+    async def create(
+        self, *, action_id: uuid.UUID, call: ToolCall, justification: str, session_key: str | None
+    ) -> Action:
         """Insert a new pending action."""
         state = PendingState()
         row = _ActionRow(
-            id=action_id,
+            id=str(action_id),
             call_json=call.model_dump_json(),
             justification=justification,
             session_key=session_key,
@@ -93,18 +96,18 @@ class ActionStorage:
         logger.debug("created action id=%s tool=%s", action_id, call.tool_name)
         return row.to_action()
 
-    async def get(self, action_id: str) -> Action | None:
+    async def get(self, action_id: uuid.UUID) -> Action | None:
         """Fetch a single action by ID."""
         async with self._session_factory() as session:
-            row = await session.get(_ActionRow, action_id)
+            row = await session.get(_ActionRow, str(action_id))
         if row is None:
             return None
         return row.to_action()
 
-    async def update_state(self, action_id: str, new_state: ActionState) -> Action | None:
+    async def update_state(self, action_id: uuid.UUID, new_state: ActionState) -> Action | None:
         """Replace the state of an existing action; returns updated action or None."""
         async with self._session_factory() as session:
-            row = await session.get(_ActionRow, action_id)
+            row = await session.get(_ActionRow, str(action_id))
             if row is None:
                 return None
             row.state_json = _ACTION_STATE_TA.dump_json(new_state).decode()

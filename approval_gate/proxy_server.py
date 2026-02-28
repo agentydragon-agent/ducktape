@@ -81,7 +81,7 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _require_action(action: Action | None, action_id: str) -> Action:
+def _require_action(action: Action | None, action_id: uuid.UUID) -> Action:
     if action is None:
         raise ValueError(f"Action not found: {action_id}")
     return action
@@ -120,16 +120,6 @@ class ApprovalGateServer(EnhancedFastMCP):
     # ── Lifespan: connect backend, register wrapped tools + resources ─────────
 
     @asynccontextmanager
-    async def _docket_lifespan(self) -> AsyncGenerator[None]:
-        """No-op: the approval gate uses asyncio.create_task directly, not FastMCP's docket task system.
-
-        Overriding this prevents the shared in-memory FakeServer (used by FastMCP's default
-        memory:// docket backend) from accumulating stale asyncio state across tests, which
-        would cause Worker startup to fail and retry with 5-second delays.
-        """
-        yield
-
-    @asynccontextmanager
     async def _lifespan(self, app: FastMCP) -> AsyncGenerator[None]:
         # Initialise storage here so the server can be constructed synchronously.
         self._storage = await ActionStorage.initialize(self._db_path)
@@ -162,7 +152,8 @@ class ApprovalGateServer(EnhancedFastMCP):
             @self.resource("resource://actions/{action_id}")
             async def action_resource(action_id: str) -> str:
                 """Current state of a deferred action."""
-                action = await self._req_storage.get(action_id)
+                uid = uuid.UUID(action_id)
+                action = await self._req_storage.get(uid)
                 if action is None:
                     raise ValueError(f"Action not found: {action_id}")
                 return action.model_dump_json()
@@ -182,12 +173,12 @@ class ApprovalGateServer(EnhancedFastMCP):
                 return await self._req_storage.list_actions(status, limit=limit)
 
             @self.tool(auth=require_scopes("operator"))
-            async def approve_action(action_id: str) -> Action:
+            async def approve_action(action_id: uuid.UUID) -> Action:
                 """Approve a pending action, executing it against the backend."""
                 return await self.decide(action_id, ApproveDecision())
 
             @self.tool(auth=require_scopes("operator"))
-            async def reject_action(action_id: str, reason: str | None = None) -> Action:
+            async def reject_action(action_id: uuid.UUID, reason: str | None = None) -> Action:
                 """Reject a pending action without executing it."""
                 return await self.decide(action_id, DenyDecision(reason=reason))
 
@@ -227,7 +218,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             session_key: str | None = None,
         ) -> ActionRef:
             call = ToolCall(tool_name=tool_name, arguments=input)
-            action_id = str(uuid.uuid4())
+            action_id = uuid.uuid4()
             await self._req_storage.create(
                 action_id=action_id, call=call, justification=justification, session_key=session_key
             )
@@ -243,7 +234,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         tool = FunctionTool(fn=_tool_handler, name=tool_name, description=description, parameters=wrapped_schema)
         FastMCP.add_tool(self, tool)
 
-    async def _apply_predicate(self, action_id: str, tool_name: str, input: dict[str, object]) -> None:
+    async def _apply_predicate(self, action_id: uuid.UUID, tool_name: str, input: dict[str, object]) -> None:
         """Evaluate the predicate and auto-decide if not NeedsHumanDecision."""
         decision = call_predicate(self._predicate, tool_name, input)
         match decision:
@@ -256,7 +247,7 @@ class ApprovalGateServer(EnhancedFastMCP):
 
     # ── Operator / agent decisions ────────────────────────────────────────────
 
-    async def decide(self, action_id: str, decision: OperatorDecision) -> Action:
+    async def decide(self, action_id: uuid.UUID, decision: OperatorDecision) -> Action:
         """Apply an operator or agent decision to a pending action.
 
         Raises ValueError if the action does not exist or is not pending.
@@ -275,7 +266,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             case WithdrawDecision():
                 return await self._update_and_notify(action_id, WithdrawnState())
 
-    async def _execute_and_finish(self, action_id: str, action: Action) -> None:
+    async def _execute_and_finish(self, action_id: uuid.UUID, action: Action) -> None:
         """Execute the backend call and update state to done."""
         outcome = await self._execute_backend_call(action)
         await self._update_and_notify(action_id, DoneState(outcome=outcome))
@@ -286,7 +277,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
 
-    async def _update_and_notify(self, action_id: str, new_state: ActionState) -> Action:
+    async def _update_and_notify(self, action_id: uuid.UUID, new_state: ActionState) -> Action:
         """Update action state in storage and broadcast a resource-updated notification."""
         action = _require_action(await self._req_storage.update_state(action_id, new_state), action_id)
         await self.broadcast_resource_updated(f"resource://actions/{action_id}")

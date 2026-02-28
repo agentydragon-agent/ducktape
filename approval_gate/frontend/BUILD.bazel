@@ -9,22 +9,16 @@ npm_link_all_packages(name = "node_modules")
 js_library(
     name = "mcp",
     srcs = ["mcp.ts"],
-    deps = [":node_modules"],
+    deps = [
+        ":node_modules",
+        ":types",
+    ],
 )
 
 js_library(
     name = "types",
     srcs = ["types.ts"],
     deps = [],
-)
-
-js_library(
-    name = "api",
-    srcs = ["api.ts"],
-    deps = [
-        ":mcp",
-        ":types",
-    ],
 )
 
 js_library(
@@ -37,7 +31,7 @@ js_library(
     name = "ActionDetail",
     srcs = ["ActionDetail.svelte"],
     deps = [
-        ":api",
+        ":mcp",
         ":types",
     ],
 )
@@ -48,7 +42,6 @@ js_library(
     deps = [
         ":ActionDetail",
         ":ActionList",
-        ":api",
         ":mcp",
         ":types",
     ],

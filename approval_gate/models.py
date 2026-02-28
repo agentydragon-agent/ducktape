@@ -6,6 +6,7 @@ Invalid states are unrepresentable by construction.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -93,7 +94,7 @@ ActionState = Annotated[
 class Action(BaseModel):
     """One pending or resolved action record."""
 
-    id: str
+    id: uuid.UUID
     created_at: datetime
     updated_at: datetime
     call: ToolCall
@@ -145,6 +146,6 @@ class ActionRef(BaseModel):
     to MCP resource-updated notifications to be notified when the state changes.
     """
 
-    action_id: str
+    action_id: uuid.UUID
 
     model_config = ConfigDict(extra="forbid")

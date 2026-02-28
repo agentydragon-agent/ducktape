@@ -22,6 +22,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import WebSocket from "ws";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:18789";
+const ACTION_RESOURCE_PREFIX = "resource://actions/";
 
 // ── Action state types (mirrors approval_gate/models.py + mcp_types.CallToolResult) ─
 
@@ -313,9 +314,9 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     { method: "notifications/resources/updated" } as Parameters<typeof client.setNotificationHandler>[0],
     async (notification) => {
       const uri = (notification.params as { uri?: string }).uri;
-      if (!uri?.startsWith("resource://actions/")) return;
+      if (!uri?.startsWith(ACTION_RESOURCE_PREFIX)) return;
 
-      const actionId = uri.replace("resource://actions/", "");
+      const actionId = uri.slice(ACTION_RESOURCE_PREFIX.length);
 
       let action: Action;
       try {
@@ -383,7 +384,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         const toolResponse = JSON.parse(firstContent.text) as ApprovalGateToolResponse;
         const { action_id: actionId, approval_url: approvalUrl } = toolResponse;
 
-        const resourceUri = `resource://actions/${actionId}`;
+        const resourceUri = `${ACTION_RESOURCE_PREFIX}${actionId}`;
 
         // Subscribe so ResourceUpdated notifications reach our handler above.
         await client.subscribeResource({ uri: resourceUri });

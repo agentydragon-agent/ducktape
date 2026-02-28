@@ -237,6 +237,7 @@ py_test(
         ":models",
         ":predicates",
         ":proxy_server",
+        "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pytest",

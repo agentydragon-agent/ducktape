@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api } from "./api.ts";
   import { getMcpClient } from "./mcp.ts";
   import ActionList from "./ActionList.svelte";
   import ActionDetail from "./ActionDetail.svelte";
@@ -16,7 +15,8 @@
   let error = $state<string | null>(null);
 
   async function loadList(): Promise<void> {
-    [pending, recent] = await Promise.all([api.listActions("pending"), api.listActions(undefined, 20)]);
+    const mcp = await getMcpClient();
+    [pending, recent] = await Promise.all([mcp.listActions("pending"), mcp.listActions(undefined, 20)]);
   }
 
   onMount(async () => {
@@ -52,17 +52,21 @@
   });
 </script>
 
-{#if loading}
+{#snippet defaultHeader()}
   <header><h1>Approval Gate</h1></header>
+{/snippet}
+
+{#if loading}
+  {@render defaultHeader()}
   <main><p>Loading…</p></main>
 {:else if error}
-  <header><h1>Approval Gate</h1></header>
+  {@render defaultHeader()}
   <main><p class="error">Failed to load: {error}</p></main>
 {:else if actionId !== null}
   {#if action}
     <ActionDetail {action} />
   {:else}
-    <header><h1>Approval Gate</h1></header>
+    {@render defaultHeader()}
     <main><p class="error">Action not found.</p></main>
   {/if}
 {:else}
