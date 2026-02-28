@@ -75,6 +75,13 @@ export class ApprovalGateMcpClient {
     };
   }
 
+  async callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
+    const result = await this.client.callTool({ name, arguments: args });
+    const first = result.content[0];
+    if (!first || first.type !== "text") throw new Error(`No text content from tool ${name}`);
+    return JSON.parse(first.text as string) as T;
+  }
+
   async readAction<T>(uri: string): Promise<T> {
     const result = await this.client.readResource({ uri });
     const first = result.contents[0];

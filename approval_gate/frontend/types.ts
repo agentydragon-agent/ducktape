@@ -1,16 +1,36 @@
-// Re-export types from generated schema (Bazel: //approval_gate/frontend:schema)
-import type { components } from "./api/schema";
+// Types matching the approval_gate Python models (approval_gate/models.py).
+// Defined directly here — no generated schema needed now that the frontend
+// uses MCP tool calls instead of the REST API.
 
-export type Action = components["schemas"]["Action"];
-export type ActionStatus = components["schemas"]["ActionStatus"];
-export type ToolCall = components["schemas"]["ToolCall"];
-export type PendingState = components["schemas"]["PendingState"];
-export type ExecutingState = components["schemas"]["ExecutingState"];
-export type DoneState = components["schemas"]["DoneState"];
-export type RejectedState = components["schemas"]["RejectedState"];
-export type WithdrawnState = components["schemas"]["WithdrawnState"];
-export type ActionsListResponse = components["schemas"]["ActionsListResponse"];
-export type ActionResponse = components["schemas"]["ActionResponse"];
+export type ActionStatus = "pending" | "executing" | "done" | "rejected" | "withdrawn";
 
-// Composed types not present as named schemas (discriminated unions)
+export type ToolCall = {
+  tool_name: string;
+  arguments: Record<string, unknown>;
+};
+
+export type PendingState = { status: "pending" };
+export type ExecutingState = { status: "executing" };
+export type DoneState = {
+  status: "done";
+  outcome: { isError?: boolean; content: unknown[] };
+};
+export type RejectedState = { status: "rejected"; reason: string | null };
+export type WithdrawnState = { status: "withdrawn" };
+
 export type ActionState = PendingState | ExecutingState | DoneState | RejectedState | WithdrawnState;
+
+export type Action = {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  call: ToolCall;
+  justification: string;
+  session_key: string | null;
+  state: ActionState;
+};
+
+// Wrapper types matching what api.ts returns (mirrors old REST response shapes
+// so App.svelte doesn't need changes).
+export type ActionsListResponse = { actions: Action[] };
+export type ActionResponse = { action: Action };

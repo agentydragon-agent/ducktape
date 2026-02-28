@@ -1,30 +1,37 @@
-"""Tests for operator API authentication boundaries.
+"""Tests for MCP tool visibility with different auth credentials.
 
-Verifies that the agent bearer token cannot reach operator endpoints, while a
-valid Authentik admin JWT can.
+Verifies that the agent bearer token cannot see operator-only MCP tools,
+while a valid Authentik admin JWT can. Uses a real HTTP server to ensure
+FastMCP's auth enforcement works end-to-end.
 """
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+import asyncio
+import time
+from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import httpx
 import jwt as pyjwt
 import pytest
 import pytest_bazel
+import uvicorn
 from cryptography.hazmat.primitives.asymmetric import rsa
+from fastmcp import FastMCP
+from fastmcp.client import Client
 from fastmcp.mcp_config import RemoteMCPServer
-from httpx import ASGITransport
+from jwt import PyJWKClient
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
-from approval_gate.app import create_app
-from approval_gate.config import Settings
-from approval_gate.models import Action, PendingState, ToolCall
+from approval_gate.mcp_auth import ApprovalGateAuthProvider
+from approval_gate.predicates import NeedsHumanDecision
 from approval_gate.proxy_server import ApprovalGateServer
+from util.net import pick_free_port
 
 _AGENT_API_KEY = "test-agent-bearer-key"
-_ACTION_ID = "00000000-0000-0000-0000-000000000001"
+_INSTRUCTIONS_TEMPLATE = str(Path(__file__).parent / "instructions.mako")
 
 
 @pytest.fixture
@@ -34,7 +41,7 @@ def rsa_private_key():
 
 @pytest.fixture
 def admin_jwt(rsa_private_key):
-    return pyjwt.encode({"sub": "admin", "groups": ["authentik Admins"]}, rsa_private_key, algorithm="RS256")
+    return pyjwt.encode({"sub": "admin"}, rsa_private_key, algorithm="RS256")
 
 
 @pytest.fixture
@@ -45,71 +52,83 @@ def mock_jwks_signing_key(rsa_private_key):
 
 
 @asynccontextmanager
-async def _stub_lifespan(self, app):
-    yield
-
-
-async def _stub_decide(self, action_id, decision):
-    return Action(
-        id=action_id,
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
-        call=ToolCall(tool_name="echo", arguments={}),
-        justification="test",
-        session_key=None,
-        state=PendingState(),
-    )
+async def _serve_app(app, *, port: int):
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    task = asyncio.create_task(server.serve())
+    deadline = time.monotonic() + 10.0
+    while not server.started:
+        if task.done():
+            try:
+                task.result()
+            except Exception as exc:
+                raise RuntimeError(f"uvicorn exited: {exc}") from exc
+            raise RuntimeError("uvicorn exited before starting")
+        if time.monotonic() > deadline:
+            server.should_exit = True
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            raise TimeoutError(f"server did not start on port {port}")
+        await asyncio.sleep(0.02)
+    try:
+        yield
+    finally:
+        server.should_exit = True
+        await task
 
 
 @pytest.fixture
-async def app(tmp_path, mock_jwks_signing_key):
-    settings = Settings(
-        agent_api_key=_AGENT_API_KEY,
-        backend=RemoteMCPServer(url="http://localhost:0/mcp"),
+async def gate_http(tmp_path, mock_jwks_signing_key):
+    """HTTP gate with an in-process FastMCP backend; yields (gate_url, agent_key)."""
+    backend = FastMCP("test-backend")
+
+    @backend.tool()
+    async def echo(text: str) -> str:
+        return f"echoed: {text}"
+
+    jwks_client = PyJWKClient("http://test/jwks")
+    auth = ApprovalGateAuthProvider(agent_api_key=_AGENT_API_KEY, jwks_client=jwks_client)
+    gate = ApprovalGateServer(
+        backend=backend,
+        db_path=tmp_path / "gate.db",
+        predicate=lambda tool, args: NeedsHumanDecision(),
         public_base_url="http://test",
-        operator_jwks_url="http://test/jwks",
-        db_path=tmp_path / "test.db",
+        instructions_template_path=_INSTRUCTIONS_TEMPLATE,
+        auth=auth,
     )
-    with (
-        patch.object(ApprovalGateServer, "_lifespan", _stub_lifespan),
-        patch.object(ApprovalGateServer, "decide", _stub_decide),
-        patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=mock_jwks_signing_key),
-    ):
-        the_app = create_app(settings, include_static=False)
-        async with the_app.router.lifespan_context(the_app):
-            yield the_app
+    mcp_app = gate.http_app(path="/")
+    app = Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
+    gate_port = pick_free_port()
+    with patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=mock_jwks_signing_key):
+        async with _serve_app(app, port=gate_port):
+            yield f"http://127.0.0.1:{gate_port}", _AGENT_API_KEY
 
 
-async def test_bearer_token_rejected_on_approve(app):
-    """Agent bearer token must be rejected (403) on approve endpoint."""
-    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            f"/api/actions/{_ACTION_ID}/approve", headers={"Authorization": f"Bearer {_AGENT_API_KEY}"}
-        )
-    assert response.status_code == 403
+async def test_agent_cannot_see_operator_tools(gate_http):
+    """Agent bearer token must not see approve_action/reject_action/list_actions."""
+    gate_url, agent_key = gate_http
+    transport = RemoteMCPServer(url=f"{gate_url}/mcp", headers={"Authorization": f"Bearer {agent_key}"}).to_transport()
+    async with Client(transport) as client:
+        tools = await client.list_tools()
+    names = {t.name for t in tools}
+    assert "approve_action" not in names
+    assert "reject_action" not in names
+    assert "list_actions" not in names
+    assert "echo" in names
 
 
-async def test_bearer_token_rejected_on_reject(app):
-    """Agent bearer token must be rejected (403) on reject endpoint."""
-    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(
-            f"/api/actions/{_ACTION_ID}/reject", headers={"Authorization": f"Bearer {_AGENT_API_KEY}"}
-        )
-    assert response.status_code == 403
-
-
-async def test_admin_jwt_accepted_on_approve(app, admin_jwt):
-    """Valid Authentik admin JWT must be accepted (200) on approve endpoint."""
-    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(f"/api/actions/{_ACTION_ID}/approve", headers={"X-Authentik-Jwt": admin_jwt})
-    assert response.status_code == 200
-
-
-async def test_admin_jwt_accepted_on_reject(app, admin_jwt):
-    """Valid Authentik admin JWT must be accepted (200) on reject endpoint."""
-    async with httpx.AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(f"/api/actions/{_ACTION_ID}/reject", headers={"X-Authentik-Jwt": admin_jwt})
-    assert response.status_code == 200
+async def test_operator_jwt_sees_operator_tools(gate_http, admin_jwt):
+    """Valid Authentik admin JWT must expose operator MCP tools."""
+    gate_url, _ = gate_http
+    transport = RemoteMCPServer(url=f"{gate_url}/mcp", headers={"x-authentik-jwt": admin_jwt}).to_transport()
+    async with Client(transport) as client:
+        tools = await client.list_tools()
+    names = {t.name for t in tools}
+    assert "approve_action" in names
+    assert "reject_action" in names
+    assert "list_actions" in names
+    assert "echo" in names
 
 
 if __name__ == "__main__":

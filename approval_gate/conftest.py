@@ -29,7 +29,7 @@ from approval_gate.storage import ActionStorage
 
 
 @asynccontextmanager
-async def _noop_docket_lifespan(self: FastMCP):  # type: ignore[type-arg]
+async def _noop_docket_lifespan(self: FastMCP):
     yield
 
 
@@ -45,7 +45,7 @@ def pytest_configure(config: pytest.Config) -> None:
     # one test's background tasks or anyio cancel scopes outlive the test.
     # config.override_ini is only available from pytest 9.1+; for 9.0.x we write
     # directly to _inicache, which getini() consults on every subsequent call.
-    config._inicache["asyncio_default_fixture_loop_scope"] = "function"  # type: ignore[attr-defined]
+    config._inicache["asyncio_default_fixture_loop_scope"] = "function"
 
 
 @pytest.fixture

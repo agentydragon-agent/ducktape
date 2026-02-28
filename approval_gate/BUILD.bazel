@@ -66,14 +66,15 @@ py_library(
 )
 
 py_library(
-    name = "auth",
-    srcs = ["auth.py"],
+    name = "mcp_auth",
+    srcs = ["mcp_auth.py"],
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        "@pypi//cryptography",
-        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//mcp",
         "@pypi//pyjwt",
+        "@pypi//starlette",
     ],
 )
 
@@ -84,14 +85,10 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":auth",
         ":config",
-        ":models",
+        ":mcp_auth",
         ":predicates",
         ":proxy_server",
-        ":storage",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//starlette",
         "@pypi//uvicorn",
@@ -108,14 +105,10 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
-        ":auth",
         ":config",
-        ":models",
+        ":mcp_auth",
         ":predicates",
         ":proxy_server",
-        ":storage",
-        "@pypi//fastapi",
-        "@pypi//pydantic",
         "@pypi//pyjwt",
         "@pypi//starlette",
         "@pypi//uvicorn",
@@ -128,27 +121,6 @@ py_binary(
     main_module = "approval_gate.app",
     visibility = ["//visibility:public"],
     deps = [":app"],
-)
-
-# ── OpenAPI schema export ──────────────────────────────────────────────────────
-
-py_library(
-    name = "export_schema",
-    srcs = ["export_schema.py"],
-    imports = [".."],
-    deps = [
-        ":app_no_ui",
-        ":config",
-        "@pypi//fastmcp",
-    ],
-)
-
-py_binary(
-    name = "export_schema_bin",
-    imports = [".."],
-    main_module = "approval_gate.export_schema",
-    visibility = ["//approval_gate/frontend:__pkg__"],
-    deps = [":export_schema"],
 )
 
 # ── OCI Image ─────────────────────────────────────────────────────────────────
@@ -258,18 +230,19 @@ py_test(
     name = "test_operator_auth",
     srcs = ["test_operator_auth.py"],
     deps = [
-        ":app_no_ui",
-        ":config",
         ":conftest",
-        ":models",
+        ":mcp_auth",
+        ":predicates",
         ":proxy_server",
+        "//util:net",
         "@pypi//cryptography",
         "@pypi//fastmcp",
-        "@pypi//httpx",
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//starlette",
+        "@pypi//uvicorn",
     ],
 )
 
@@ -278,19 +251,14 @@ py_test(
     size = "small",
     srcs = ["test_e2e.py"],
     deps = [
-        ":app_no_ui",
-        ":config",
         ":conftest",
         ":models",
         ":predicates",
-        "//util:net",
-        "@pypi//cryptography",
+        ":proxy_server",
         "@pypi//fastmcp",
-        "@pypi//httpx",
-        "@pypi//pyjwt",
+        "@pypi//mcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
-        "@pypi//uvicorn",
     ],
 )

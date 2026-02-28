@@ -19,11 +19,14 @@ import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.transports import ClientTransport
 from fastmcp.mcp_config import MCPServerTypes
+from fastmcp.server.auth import require_scopes
 from fastmcp.tools.tool import FunctionTool
 from mako.template import Template
 from mcp import types as mcp_types
@@ -33,6 +36,7 @@ from approval_gate.models import (
     Action,
     ActionRef,
     ActionState,
+    ActionStatus,
     ApproveDecision,
     DenyDecision,
     DoneState,
@@ -92,20 +96,22 @@ class ApprovalGateServer(EnhancedFastMCP):
     def __init__(
         self,
         *,
-        backend: MCPServerTypes,
-        storage: ActionStorage,
+        backend: MCPServerTypes | FastMCP,
+        db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
         instructions_template_path: str,
+        **kwargs: Any,
     ) -> None:
         # Instructions are set after backend connection in lifespan; placeholder here
-        super().__init__("Approval Gate", instructions="Approval gate — initialising…")
+        super().__init__("Approval Gate", instructions="Approval gate — initialising…", **kwargs)
         # FastMCP.__init__ sets self._lifespan = default_lifespan as an instance attribute,
         # which shadows our _lifespan class method override. Remove it so Python's method
         # resolution finds ApprovalGateServer._lifespan instead.
         del self.__dict__["_lifespan"]
         self._backend_spec = backend
-        self._storage = storage
+        self._db_path = db_path
+        self._storage: ActionStorage | None = None
         self._predicate = predicate
         self._public_base_url = public_base_url
         self._instructions_template_path = instructions_template_path
@@ -129,8 +135,17 @@ class ApprovalGateServer(EnhancedFastMCP):
 
     @asynccontextmanager
     async def _lifespan(self, app: FastMCP) -> AsyncGenerator[None]:
-        transport = self._backend_spec.to_transport()
-        backend = Client(transport)
+        # Initialise storage here so the server can be constructed synchronously.
+        self._storage = await ActionStorage.initialize(self._db_path)
+
+        # Support both MCPServerTypes config objects (HTTP/stdio) and direct FastMCP
+        # instances (in-process, used by tests).
+        backend: Client
+        if isinstance(self._backend_spec, FastMCP):
+            backend = Client(self._backend_spec)
+        else:
+            transport: ClientTransport = self._backend_spec.to_transport()
+            backend = Client(transport)
 
         logger.info("[_lifespan] connecting to backend: %s", self._backend_spec)
         async with backend:
@@ -149,17 +164,36 @@ class ApprovalGateServer(EnhancedFastMCP):
 
             # Register a resource template for individual action state
             @self.resource("resource://actions/{action_id}")
-            async def action_resource(action_id: str) -> Action:
+            async def action_resource(action_id: str) -> str:
                 """Current state of a deferred action."""
-                action = await self._storage.get(action_id)
+                action = await self._req_storage.get(action_id)
                 if action is None:
                     raise ValueError(f"Action not found: {action_id}")
-                return action
+                return action.model_dump_json()
 
             # Discover and register wrapped tools from backend
             backend_tools = await backend.list_tools()
             for tool in backend_tools:
                 self._register_wrapped_tool(tool)
+
+            # ── Operator MCP tools ────────────────────────────────────────────
+            # Gated by require_scopes("operator"); bypassed for in-process clients
+            # (stdio/memory transport), which allows tests to call these freely.
+
+            @self.tool(auth=require_scopes("operator"))
+            async def list_actions(status: str | None = None, limit: int = 100) -> list[Action]:
+                """List queued/processed actions, optionally filtered by status."""
+                return await self._req_storage.list_by_status(ActionStatus(status) if status else None, limit=limit)
+
+            @self.tool(auth=require_scopes("operator"))
+            async def approve_action(action_id: str) -> Action:
+                """Approve a pending action, executing it against the backend."""
+                return await self.decide(action_id, ApproveDecision())
+
+            @self.tool(auth=require_scopes("operator"))
+            async def reject_action(action_id: str, reason: str | None = None) -> Action:
+                """Reject a pending action without executing it."""
+                return await self.decide(action_id, DenyDecision(reason=reason))
 
             yield
 
@@ -171,6 +205,12 @@ class ApprovalGateServer(EnhancedFastMCP):
                 await asyncio.gather(*list(self._background_tasks), return_exceptions=True)
 
         self._backend_client = None
+
+    @property
+    def _req_storage(self) -> ActionStorage:
+        if self._storage is None:
+            raise RuntimeError("storage not initialised — gate not started")
+        return self._storage
 
     def _register_wrapped_tool(self, backend_tool: mcp_types.Tool) -> None:
         """Register an approval-wrapped version of a backend tool."""
@@ -192,7 +232,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         ) -> ActionRef:
             call = ToolCall(tool_name=tool_name, arguments=input)
             action_id = str(uuid.uuid4())
-            await self._storage.create(
+            await self._req_storage.create(
                 action_id=action_id, call=call, justification=justification, session_key=session_key
             )
             await self.broadcast_resource_list_changed()
@@ -225,7 +265,7 @@ class ApprovalGateServer(EnhancedFastMCP):
 
         Raises ValueError if the action does not exist or is not pending.
         """
-        action = _require_action(await self._storage.get(action_id), action_id)
+        action = _require_action(await self._req_storage.get(action_id), action_id)
         if not isinstance(action.state, PendingState):
             raise ValueError(f"Action {action_id} is not pending (status={action.state.status!r})")
 
@@ -252,7 +292,7 @@ class ApprovalGateServer(EnhancedFastMCP):
 
     async def _update_and_notify(self, action_id: str, new_state: ActionState) -> Action:
         """Update action state in storage and broadcast a resource-updated notification."""
-        action = _require_action(await self._storage.update_state(action_id, new_state), action_id)
+        action = _require_action(await self._req_storage.update_state(action_id, new_state), action_id)
         await self.broadcast_resource_updated(f"resource://actions/{action_id}")
         return action
 
