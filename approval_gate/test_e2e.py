@@ -49,16 +49,15 @@ async def gate(backend, tmp_path):
     )
 
 
-async def _wait_for_status(client: Client, action_id: str, status: ActionStatus, wait_secs: float = 5.0) -> Action:
-    async with asyncio.timeout(wait_secs):
-        while True:
-            contents = await client.read_resource(f"resource://actions/{action_id}")
-            item = contents[0]
-            assert isinstance(item, mcp_types.TextResourceContents)
-            action = Action.model_validate_json(item.text)
-            if action.state.status == status:
-                return action
-            await asyncio.sleep(0.05)
+async def _wait_for_status(client: Client, action_id: str, status: ActionStatus) -> Action:
+    while True:
+        contents = await client.read_resource(f"resource://actions/{action_id}")
+        item = contents[0]
+        assert isinstance(item, mcp_types.TextResourceContents)
+        action = Action.model_validate_json(item.text)
+        if action.state.status == status:
+            return action
+        await asyncio.sleep(0.05)
 
 
 async def test_tool_list_wraps_backend_tools(gate):
@@ -84,7 +83,8 @@ async def test_approve_executes_backend_tool(gate, backend):
         result = await client.call_tool_mcp("echo", {"input": {"text": "hello"}, "justification": "test"})
         action_id = ActionRef.model_validate_json(result.content[0].text).action_id
         await gate.decide(action_id, ApproveDecision())
-        await _wait_for_status(client, action_id, ActionStatus.done)
+        async with asyncio.timeout(5.0):
+            await _wait_for_status(client, action_id, ActionStatus.done)
     assert calls == [{"text": "hello"}]
 
 
@@ -95,7 +95,8 @@ async def test_reject_leaves_action_rejected_and_skips_backend(gate, backend):
         result = await client.call_tool_mcp("echo", {"input": {"text": "no-run"}, "justification": "test"})
         action_id = ActionRef.model_validate_json(result.content[0].text).action_id
         await gate.decide(action_id, DenyDecision(reason="test rejection"))
-        await _wait_for_status(client, action_id, ActionStatus.rejected)
+        async with asyncio.timeout(5.0):
+            await _wait_for_status(client, action_id, ActionStatus.rejected)
     assert calls == []
 
 
@@ -112,7 +113,8 @@ async def test_auto_approve_predicate_skips_queue(backend, tmp_path):
     async with Client(gate) as client:
         result = await client.call_tool_mcp("echo", {"input": {"text": "auto"}, "justification": "auto"})
         action_id = ActionRef.model_validate_json(result.content[0].text).action_id
-        await _wait_for_status(client, action_id, ActionStatus.done)
+        async with asyncio.timeout(5.0):
+            await _wait_for_status(client, action_id, ActionStatus.done)
     assert calls == [{"text": "auto"}]
 
 
