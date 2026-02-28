@@ -4,9 +4,9 @@ metadata:
   name: headscale
   namespace: headscale
 spec:
-  replicas: 1
+  replicas: 2
   strategy:
-    type: Recreate
+    type: RollingUpdate
   selector:
     matchLabels:
       app: headscale
@@ -111,6 +111,13 @@ spec:
           emptyDir: {}
         - name: run
           emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: headscale
+              topologyKey: kubernetes.io/hostname
       nodeSelector:
         topology.kubernetes.io/region: hetzner
       tolerations:
