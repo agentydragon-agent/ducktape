@@ -7,10 +7,8 @@ from typing import Any
 
 from fastmcp.server import FastMCP
 from fastmcp.server.auth import AuthProvider
-from fastmcp.server.low_level import LowLevelServer
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from mcp import types as mcp_types
-from mcp.server.lowlevel.server import NotificationOptions
 from mcp.server.session import ServerSession
 
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
@@ -18,46 +16,6 @@ from mcp_infra.enhanced.oob_notify_mixin import NotificationsMixin
 from mcp_infra.enhanced.openai_strict_mixin import OpenAIStrictModeMixin
 
 logger = logging.getLogger(__name__)
-
-
-class _CapabilitiesServer(LowLevelServer):
-    """LowLevelServer with extended capabilities.
-
-    Adds:
-    - Merge custom experimental capabilities into initialization
-    - Advertise resources.subscribe when a handler is registered
-    """
-
-    def __init__(
-        self, fastmcp: FastMCP, *a: Any, experimental_capabilities: dict[str, dict[str, Any]] | None = None, **kw: Any
-    ):
-        super().__init__(fastmcp, *a, **kw)
-        self._experimental_capabilities = experimental_capabilities or {}
-
-    def create_initialization_options(
-        self,
-        notification_options: NotificationOptions | None = None,
-        experimental_capabilities: dict[str, dict[str, Any]] | None = None,
-        **kwargs: Any,
-    ):
-        caps = dict(experimental_capabilities or {})
-        for group, values in (self._experimental_capabilities or {}).items():
-            merged = dict(caps.get(group) or {})
-            merged.update(values or {})
-            caps[group] = merged
-        return super().create_initialization_options(
-            notification_options=notification_options, experimental_capabilities=caps, **kwargs
-        )
-
-    def get_capabilities(
-        self, notification_options: NotificationOptions, experimental_capabilities: dict[str, dict[str, Any]]
-    ):
-        caps = super().get_capabilities(notification_options, experimental_capabilities)
-        if mcp_types.SubscribeRequest in self.request_handlers:
-            if caps.resources is None:
-                caps.resources = mcp_types.ResourcesCapability()
-            caps.resources.subscribe = True
-        return caps
 
 
 class _SessionCapturingMiddleware(Middleware):
@@ -92,18 +50,8 @@ class EnhancedFastMCP(OpenAIStrictModeMixin, FlatModelMixin, NotificationsMixin,
     - FlatModelMixin: ValidationError formatting + .flat_model() convenience
     - NotificationsMixin: Out-of-band broadcast methods
     - Plus: Session capturing via middleware (v3 on_initialize hook)
-    - Plus: Experimental capabilities support via _CapabilitiesServer
-
-    Features:
-    - Session capturing & out-of-band notification broadcasts
-    - Structured ValidationError formatting (for flat-model tools)
-    - OpenAI strict mode schema validation (unconditional)
-    - Auto-advertise subscribe capability
-    - Experimental capabilities support
-    - .flat_model() convenience method
+    - Plus: Auto-advertise resources.subscribe when a handler is registered
     """
-
-    _mcp_server: LowLevelServer
 
     def __init__(
         self,
@@ -111,24 +59,24 @@ class EnhancedFastMCP(OpenAIStrictModeMixin, FlatModelMixin, NotificationsMixin,
         *,
         instructions: str | None = None,
         lifespan: Callable[[FastMCP], AbstractAsyncContextManager[object]] | None = None,
-        experimental_capabilities: dict[str, dict[str, object]] | None = None,
         auth: AuthProvider | None = None,
         version: str | None = None,
     ) -> None:
         super().__init__(name=name, instructions=instructions, lifespan=lifespan, auth=auth, version=version)
-        self._experimental_capabilities = experimental_capabilities or {}
 
-        # Add session-capturing middleware
         self.middleware.append(_SessionCapturingMiddleware(self))
 
-        # Replace LowLevelServer with capabilities-enhanced variant
-        capabilities_server = _CapabilitiesServer(
-            self,
-            name=self.name,
-            instructions=self.instructions,
-            lifespan=self._mcp_server.lifespan,
-            experimental_capabilities=self._experimental_capabilities,
-            version=version,
-        )
-        self._mcp_server = capabilities_server
-        self._setup_handlers()
+        # Patch get_capabilities to auto-advertise resources.subscribe
+        # when a subscribe handler is registered. fastmcp v3 doesn't do this natively.
+        mcp_server = self._mcp_server
+        _base_get_caps = mcp_server.get_capabilities
+
+        def _patched_get_capabilities(*args: Any, **kwargs: Any) -> mcp_types.ServerCapabilities:
+            caps = _base_get_caps(*args, **kwargs)
+            if mcp_types.SubscribeRequest in mcp_server.request_handlers:
+                if caps.resources is None:
+                    caps.resources = mcp_types.ResourcesCapability()
+                caps.resources.subscribe = True
+            return caps
+
+        mcp_server.get_capabilities = _patched_get_capabilities  # type: ignore[assignment]
