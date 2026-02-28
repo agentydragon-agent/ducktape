@@ -52,8 +52,23 @@ ${source_inspection([
     ("props.agents.critic_dev.eval_client", "Eval client — read this for run_critic internals"),
     ("props.agents.critic_dev.grading", "Grading status polling — read this for wait_until_graded internals"),
     ("props.agents.critic_dev.loop", "Your tool definitions and argument types"),
+    ("props.agents.critic_dev.recipes.ground_truth", "Recipe: querying TPs/FPs for snapshots"),
+    ("props.agents.critic_dev.recipes.recall_metrics", "Recipe: checking definition recall metrics"),
+    ("props.agents.critic_dev.recipes.run_analysis", "Recipe: analyzing critic runs and costs"),
+    ("props.agents.critic_dev.recipes.examples_and_scopes", "Recipe: working with examples and scopes"),
 ])}
 Read source to understand tool argument schemas and implementation details rather than guessing.
+
+## Build Script
+
+A tested shell script for building custom critic images is bundled in your container. You can import and use the recipe modules directly, or read them as reference for your own queries:
+
+```python
+from props.agents.critic_dev.recipes.ground_truth import summarize_ground_truth
+from props.agents.critic_dev.recipes.recall_metrics import get_definition_leaderboard
+from props.agents.critic_dev.recipes.run_analysis import get_recent_critic_runs
+from props.agents.critic_dev.recipes.examples_and_scopes import list_train_examples
+```
 
 ## Reference
 
