@@ -52,8 +52,27 @@ ${source_inspection([
     ("props.agents.critic_dev.eval_client", "Eval client — read this for run_critic internals"),
     ("props.agents.critic_dev.grading", "Grading status polling — read this for wait_until_graded internals"),
     ("props.agents.critic_dev.loop", "Your tool definitions and argument types"),
+    ("props.agents.critic_dev.recipes.ground_truth", "Recipe: querying TPs/FPs for snapshots"),
+    ("props.agents.critic_dev.recipes.recall_metrics", "Recipe: checking definition recall metrics"),
+    ("props.agents.critic_dev.recipes.run_analysis", "Recipe: analyzing critic runs and costs"),
+    ("props.agents.critic_dev.recipes.examples_and_scopes", "Recipe: working with examples and scopes"),
 ])}
 Read source to understand tool argument schemas and implementation details rather than guessing.
+
+## Build Script
+
+A tested shell script for building custom critic images is bundled in your container. Locate and run it:
+
+```bash
+SCRIPT=$(python3 -c "import importlib.resources; print(importlib.resources.files('props') / 'agents/critic_dev/recipes/build_critic.sh')")
+bash $SCRIPT <path-to-custom-main.py> [variant-name]
+```
+
+Relative paths are resolved from the script's directory. The script derives the registry from `PROPS_BACKEND_URL` automatically.
+
+## Recipe Modules
+
+Tested Python recipes are bundled in your container under `props.agents.critic_dev.recipes`. Read their source for examples of how to query ground truth, recall metrics, run analysis, and training examples.
 
 ## Reference
 
