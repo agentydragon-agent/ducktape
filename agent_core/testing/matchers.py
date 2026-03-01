@@ -54,12 +54,12 @@ class HasErrorText(BaseMatcher):
         self.text_matcher = text_matcher
 
     def _matches(self, result):
-        """Match ToolResult with is_error=True and TextContent."""
+        """Match ToolResult with is_error=True and a single TextContent."""
         if not isinstance(result, ToolResult):
             return False
         if not result.is_error:
             return False
-        if not result.content:
+        if len(result.content) != 1:
             return False
         content_item = result.content[0]
         if not isinstance(content_item, TextContent):
@@ -67,7 +67,7 @@ class HasErrorText(BaseMatcher):
         return self.text_matcher.matches(content_item.text)
 
     def describe_to(self, description: Description):
-        description.append_text("error ToolResult with text content matching ")
+        description.append_text("error ToolResult with single text content matching ")
         self.text_matcher.describe_to(description)
 
     def describe_mismatch(self, result, mismatch_description: Description):
@@ -77,12 +77,12 @@ class HasErrorText(BaseMatcher):
         if not result.is_error:
             mismatch_description.append_text("was not an error (is_error=False)")
             return
-        if not result.content:
-            mismatch_description.append_text("had empty content")
+        if len(result.content) != 1:
+            mismatch_description.append_text(f"expected 1 content item, got {len(result.content)}")
             return
         content_item = result.content[0]
         if not isinstance(content_item, TextContent):
-            mismatch_description.append_text(f"first content was {type(content_item).__name__}, not TextContent")
+            mismatch_description.append_text(f"content was {type(content_item).__name__}, not TextContent")
             return
         mismatch_description.append_text("error text ")
         self.text_matcher.describe_mismatch(content_item.text, mismatch_description)

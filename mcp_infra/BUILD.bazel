@@ -46,8 +46,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//fastmcp",
-        "@pypi//mcp",
-        "@pypi//pydantic_core",
     ],
 )
 

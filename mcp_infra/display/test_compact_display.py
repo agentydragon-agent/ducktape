@@ -207,10 +207,7 @@ def test_compact_display_handler_with_read_resource_result():
     handler.on_tool_result_event(output)
     output_text = output_buffer.getvalue()
     assert len(output_text) > 0, "Handler should have produced output"
-    # Should contain the resource URI or content
-    assert "resource://" in output_text or "test content" in output_text, (
-        f"Output missing expected content: {output_text}"
-    )
+    assert "resource://" in output_text, f"Output missing resource URI: {output_text}"
 
 
 if __name__ == "__main__":

@@ -31,22 +31,6 @@ class MCPToolProvider:
         return fastmcp_result_to_tool_result(fastmcp_result)
 
 
-def tool_result_to_mcp(result: ToolResult) -> mcp_types.CallToolResult:
-    """Convert our ToolResult to mcp.types.CallToolResult."""
-    mcp_content: list[mcp_types.TextContent | mcp_types.ImageContent] = []
-    for block in result.content:
-        if isinstance(block, TextContent):
-            mcp_content.append(mcp_types.TextContent(type="text", text=block.text))
-        elif isinstance(block, ImageContent):
-            mcp_content.append(mcp_types.ImageContent(type="image", mimeType=block.mime_type, data=block.data))
-        else:
-            raise TypeError(f"Unhandled content block type: {type(block)}")
-
-    return mcp_types.CallToolResult(
-        content=mcp_content, structuredContent=result.structured_content, isError=result.is_error
-    )
-
-
 def fastmcp_result_to_tool_result(fastmcp_result: FastMCPCallToolResult) -> ToolResult:
     """Convert fastmcp.client.CallToolResult to our ToolResult.
 

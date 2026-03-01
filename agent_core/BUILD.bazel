@@ -249,6 +249,7 @@ py_test(
         "//openai_utils:pydantic_strict_mode",
         "//openai_utils/testing:openai_mock",
         "@pypi//fastmcp",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//pytest",

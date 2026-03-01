@@ -116,7 +116,7 @@ class TestPresetPolicyLoading:
         async with Client(engine.reader) as sess:
             result = await sess.read_resource(PolicyReaderServer.ACTIVE_POLICY_URI)
             policy_text = extract_single_text_content(result)
-            assert "approve_all" in policy_text.lower() or "allow" in policy_text.lower()
+            assert "ApprovalDecision.ALLOW" in policy_text
 
     async def test_policy_engine_returns_custom_policy(self, make_approval_policy_server):
         """PolicyEngine correctly returns custom policy source."""
@@ -127,7 +127,7 @@ class TestPresetPolicyLoading:
         async with Client(engine.reader) as sess:
             result = await sess.read_resource(PolicyReaderServer.ACTIVE_POLICY_URI)
             policy_text = extract_single_text_content(result)
-            assert "const" in policy_text.lower() or "PolicyResponse" in policy_text
+            assert "CONST_X" in policy_text
 
     async def test_get_policy_returns_source(self, make_approval_policy_server, policy_allow_all):
         """PolicyEngine.get_policy returns policy source."""

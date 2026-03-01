@@ -83,7 +83,7 @@ async def test_sandbox_exec_echo_roundtrip(seatbelt_session) -> None:
     assert res.stdout == "HELLO_MINIMAL\n"
     # stderr should be empty or None
     assert isinstance(res.stderr, str)  # Short error should not be truncated
-    assert res.stderr in ("", None)
+    assert res.stderr == ""
     # duration exists and is a non-negative int
     assert isinstance(res.duration_ms, int)
     assert res.duration_ms >= 0

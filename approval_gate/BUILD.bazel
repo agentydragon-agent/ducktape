@@ -194,6 +194,7 @@ py_test(
     deps = [
         ":models",
         "@pypi//mcp",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

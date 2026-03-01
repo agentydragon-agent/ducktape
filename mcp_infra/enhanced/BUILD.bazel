@@ -76,6 +76,8 @@ py_test(
         "//mcp_infra/stubs:typed_stubs",
         "//openai_utils:pydantic_strict_mode",
         "@pypi//fastmcp",
+        "@pypi//mcp",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

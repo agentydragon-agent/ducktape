@@ -8,6 +8,8 @@ import pytest
 import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.server.context import Context
+from mcp import types as mcp_types
+from more_itertools import one
 from pydantic import Field, field_validator
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -194,7 +196,9 @@ async def test_flat_model_validation_error_formatting():
         assert result.is_error
 
         # Parse the error message as JSON
-        error_json = json.loads(result.content[0].text)
+        error_block = one(result.content)
+        assert isinstance(error_block, mcp_types.TextContent)
+        error_json = json.loads(error_block.text)
         assert isinstance(error_json, list)
         assert len(error_json) == 1
 
