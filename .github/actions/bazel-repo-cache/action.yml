@@ -1,7 +1,12 @@
-# Restore Bazel repository cache (compressed downloads + Bazelisk binary).
-# See .github/docs/bazel-caching.md for design rationale.
+# Restore and save Bazel repository cache (compressed downloads + Bazelisk binary).
+# See .github/docs/bazel_caching.md for design rationale.
+#
+# Uses the unified actions/cache@v4 which restores at step time and saves as a
+# post step. The save only fires when the exact key was NOT found during restore,
+# avoiding the duplicate-key problem that broke the previous actions/cache/save@v4
+# approach (see bazel_caching.md § Duplicate-key problem).
 name: Bazel Repo Cache
-description: Setup Bazelisk and restore Bazel repository cache
+description: Setup Bazelisk and restore/save Bazel repository cache
 
 inputs:
   extra_hash:
@@ -49,12 +54,13 @@ runs:
         KEY="bazel-repo-cache-${HASH}"
         echo "key=$KEY" >> $GITHUB_OUTPUT
 
-    - name: Restore Bazel repository cache
+    - name: Restore/save Bazel repository cache
       id: cache-restore
-      uses: actions/cache/restore@v4
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/bazelisk
           ~/.cache/bazel/_bazel_runner/cache/repos/v1
         key: ${{ steps.cache-key.outputs.key }}
         restore-keys: bazel-repo-cache-
+        save-always: true
