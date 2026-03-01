@@ -63,7 +63,4 @@ async def call_simple_ok(client: Client, *, name: str, arguments: dict) -> None:
     except Exception as exc:
         raise RuntimeError(f"{name} failed: {exc}") from exc
     if bool(res.is_error):
-        detail = extract_error_detail_from_fastmcp(res)
-        if detail:
-            raise RuntimeError(f"{name} failed: {detail}")
-        raise RuntimeError(f"{name} failed")
+        raise RuntimeError(f"{name} failed (is_error=True)")
