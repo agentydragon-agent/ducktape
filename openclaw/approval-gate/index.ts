@@ -444,7 +444,9 @@ function scopedLogger(api: OpenClawPluginApi) {
 
 export default async function register(api: OpenClawPluginApi): Promise<void> {
   const log = scopedLogger(api);
-  const cfg = api.pluginConfig as { approvalGateUrl?: string; agentApiKey?: string } | undefined;
+  const cfg = api.pluginConfig as
+    | { approvalGateUrl?: string; agentApiKey?: string; registerTools?: boolean }
+    | undefined;
 
   const approvalGateUrl = cfg?.approvalGateUrl?.trim();
   const agentApiKey = cfg?.agentApiKey?.trim();
@@ -514,72 +516,97 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   }
 
   // ── Discover and re-register approval gate tools ──────────────────────────
-  // Tools are registered once at startup. If the initial connection fails,
-  // tools won't be available until a manual restart. Once registered, tools
-  // survive reconnections — execute() checks connection state and returns
-  // a user-friendly error if the server is temporarily unavailable.
-  if (!connection.connected) {
-    log.warn("not connected on startup; no tools registered — plugin will reconnect in background");
-    return;
-  }
+  // Gated behind registerTools config (default off). When disabled, the plugin
+  // still listens for action notifications and delivers results via chat.inject,
+  // but does not expose approval-gate-wrapped tools to agents.
+  const registerTools = cfg?.registerTools ?? false;
 
-  let toolList: Awaited<ReturnType<Client["listTools"]>>;
-  try {
-    toolList = await connection.listTools();
-  } catch (err) {
-    log.error(`failed to list tools: ${String(err)}`);
-    return;
-  }
+  if (registerTools) {
+    // Tools are registered once at startup. If the initial connection fails,
+    // tools won't be available until a manual restart. Once registered, tools
+    // survive reconnections — execute() checks connection state and returns
+    // a user-friendly error if the server is temporarily unavailable.
+    if (!connection.connected) {
+      log.warn("not connected on startup; no tools registered — plugin will reconnect in background");
+      return;
+    }
 
-  for (const tool of toolList.tools) {
-    const toolName = tool.name;
-    const toolDescription = tool.description ?? "";
-    // session_key is injected by us; agents should not see or set it
-    const schema = stripSessionKey((tool.inputSchema ?? {}) as Record<string, unknown>);
+    let toolList: Awaited<ReturnType<Client["listTools"]>>;
+    try {
+      toolList = await connection.listTools();
+    } catch (err) {
+      log.error(`failed to list tools: ${String(err)}`);
+      return;
+    }
 
-    api.registerTool((ctx: OpenClawPluginToolContext) => ({
-      name: toolName,
-      label: toolName,
-      description: toolDescription,
-      parameters: schema,
-      async execute(_id: string, params: Record<string, unknown>) {
-        const callArgs = { ...params, session_key: ctx.sessionKey ?? null };
+    for (const tool of toolList.tools) {
+      const toolName = tool.name;
+      const toolDescription = tool.description ?? "";
+      // session_key is injected by us; agents should not see or set it
+      const schema = stripSessionKey((tool.inputSchema ?? {}) as Record<string, unknown>);
 
-        let result: Awaited<ReturnType<Client["callTool"]>>;
-        try {
-          result = await connection.callTool(toolName, callArgs);
-        } catch (err) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Approval gate server is currently unavailable. Please retry shortly. (${String(err)})`,
-              },
-            ],
-          };
-        }
+      api.registerTool((ctx: OpenClawPluginToolContext) => ({
+        name: toolName,
+        label: toolName,
+        description: toolDescription,
+        parameters: schema,
+        async execute(_id: string, params: Record<string, unknown>) {
+          const callArgs = { ...params, session_key: ctx.sessionKey ?? null };
 
-        const firstContent = result.content?.[0] as { text: string };
-        const actionId = JSON.parse(firstContent.text) as string;
-        const resourceUri = `${ACTION_RESOURCE_PREFIX}${actionId}`;
+          let result: Awaited<ReturnType<Client["callTool"]>>;
+          try {
+            result = await connection.callTool(toolName, callArgs);
+          } catch (err) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Approval gate server is currently unavailable. Please retry shortly. (${String(err)})`,
+                },
+              ],
+            };
+          }
 
-        // Track this action for re-subscription on reconnect
-        connection.trackAction(actionId, resourceUri, ctx.sessionKey ?? null);
+          const firstContent = result.content?.[0] as { text: string };
+          const actionId = JSON.parse(firstContent.text) as string;
+          const resourceUri = `${ACTION_RESOURCE_PREFIX}${actionId}`;
 
-        // Subscribe so ResourceUpdated notifications reach our handler above.
-        try {
-          await connection.subscribeResource(resourceUri);
-        } catch (err) {
-          log.warn(`failed to subscribe to ${resourceUri}: ${String(err)}`);
-        }
+          // Track this action for re-subscription on reconnect
+          connection.trackAction(actionId, resourceUri, ctx.sessionKey ?? null);
 
-        // Read current state immediately — action may already be resolved
-        // (auto-approved by predicate or instantly denied).
-        let action: Action;
-        try {
-          action = await connection.readResource(resourceUri);
-        } catch (err) {
-          log.warn(`could not read initial state for ${resourceUri}: ${String(err)}`);
+          // Subscribe so ResourceUpdated notifications reach our handler above.
+          try {
+            await connection.subscribeResource(resourceUri);
+          } catch (err) {
+            log.warn(`failed to subscribe to ${resourceUri}: ${String(err)}`);
+          }
+
+          // Read current state immediately — action may already be resolved
+          // (auto-approved by predicate or instantly denied).
+          let action: Action;
+          try {
+            action = await connection.readResource(resourceUri);
+          } catch (err) {
+            log.warn(`could not read initial state for ${resourceUri}: ${String(err)}`);
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Action ${actionId} queued for operator approval`,
+                },
+              ],
+            };
+          }
+
+          const { status } = action.state;
+          if (isTerminal(status)) {
+            // Already terminal — clean up and return outcome.
+            connection.resolveAction(actionId);
+            await connection.unsubscribeResource(resourceUri);
+            return { content: [{ type: "text" as const, text: formatOutcomeMessage(action) }] };
+          }
+
+          // Still pending — tell the agent its action is queued.
           return {
             content: [
               {
@@ -588,30 +615,14 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
               },
             ],
           };
-        }
+        },
+      }));
+    }
 
-        const { status } = action.state;
-        if (isTerminal(status)) {
-          // Already terminal — clean up and return outcome.
-          connection.resolveAction(actionId);
-          await connection.unsubscribeResource(resourceUri);
-          return { content: [{ type: "text" as const, text: formatOutcomeMessage(action) }] };
-        }
-
-        // Still pending — tell the agent its action is queued.
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Action ${actionId} queued for operator approval`,
-            },
-          ],
-        };
-      },
-    }));
+    log.info(`registered ${toolList.tools.length} tool(s): ${toolList.tools.map((t) => t.name).join(", ")}`);
+  } else {
+    log.info("registerTools is off; skipping tool registration (notification listener still active)");
   }
-
-  log.info(`registered ${toolList.tools.length} tool(s): ${toolList.tools.map((t) => t.name).join(", ")}`);
 
   // Inject MCP server instructions into the agent context on the first turn of each
   // fresh session (no user messages yet). prependContext ends up in the first user
