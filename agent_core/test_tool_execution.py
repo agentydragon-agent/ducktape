@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 from fastmcp.exceptions import ToolError
 from hamcrest import all_of, assert_that, contains_string, greater_than_or_equal_to, has_entries, has_length
+from more_itertools import one
 from pydantic import BaseModel, ConfigDict, Field
 
 from agent_core.agent import Agent, _sanitize_tool_result
@@ -135,7 +136,9 @@ async def test_tool_error_continues_turn(compositor, mcp_tool_provider, validati
     # First call should fail with validation error
     first_output = outputs[0]
     assert first_output.result.is_error is True
-    error_content = first_output.result.content[0].text
+    error_block = one(first_output.result.content)
+    assert isinstance(error_block, TextContent)
+    error_content = error_block.text
     assert_that(error_content.lower(), contains_string("error"))
     assert "text/markdown" in error_content or "literal" in error_content.lower()
 

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import pytest
 import pytest_bazel
 from mcp.types import CallToolResult, TextContent
+from more_itertools import one
 from pydantic import TypeAdapter, ValidationError
 
 from approval_gate.models import (
@@ -166,7 +167,7 @@ def test_log_entry_with_execution_finished_detail():
     )
     parsed = LogEntry.model_validate_json(entry.model_dump_json())
     assert isinstance(parsed.detail, ExecutionFinishedDetail)
-    content_item = parsed.detail.outcome.content[0]
+    content_item = one(parsed.detail.outcome.content)
     assert isinstance(content_item, TextContent)
     assert content_item.text == "done"
 
