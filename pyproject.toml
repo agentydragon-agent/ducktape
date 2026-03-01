@@ -30,6 +30,8 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "httpx>=0.27.0",
+    "websockets>=15.0",
+    "hass-client>=1.2.0",
     "aiohttp>=3.9.0",
     "requests>=2.32.5",
 
