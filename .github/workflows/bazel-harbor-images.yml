@@ -66,7 +66,7 @@ jobs:
       - name: Build and push approval-gate-exec-backend
         run: |-
           .github/scripts/harbor_push.sh \
-            //mcp_infra/exec:exec_backend_load \
+            //mcp_infra/exec:direct_load \
             approval-gate-exec-backend:latest \
             registry.allegedly.works/approval-gate/exec-backend
       - name: Build and push homeassistant-proxy

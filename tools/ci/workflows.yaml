@@ -123,7 +123,7 @@ harbor_images:
     local_tag: approval-gate:latest
     remote_path: approval-gate/approval-gate
 
-  - bazel_target: //mcp_infra/exec:exec_backend_load
+  - bazel_target: //mcp_infra/exec:direct_load
     local_tag: approval-gate-exec-backend:latest
     remote_path: approval-gate/exec-backend
 

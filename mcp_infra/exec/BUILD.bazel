@@ -59,59 +59,50 @@ py_library(
     ],
 )
 
-# Standalone streamable-http entry point for DirectExecServer (approval gate backend)
-py_library(
-    name = "direct_server",
-    srcs = ["direct_server.py"],
+py_binary(
+    name = "direct_bin",
     imports = ["../.."],
+    main_module = "mcp_infra.exec.direct",
     visibility = ["//visibility:public"],
     deps = [":direct"],
-)
-
-py_binary(
-    name = "direct_server_bin",
-    imports = ["../.."],
-    main_module = "mcp_infra.exec.direct_server",
-    visibility = ["//visibility:public"],
-    deps = [":direct_server"],
 )
 
 # ── OCI Image (approval-gate exec backend) ───────────────────────────────────
 
 aspect_py_binary(
-    name = "exec_backend_bin",
+    name = "direct_aspect_bin",
     imports = ["../.."],
-    main = "direct_server.py",
-    deps = [":direct_server"],
+    main = "direct.py",
+    deps = [":direct"],
 )
 
 py_image_layer(
-    name = "exec_backend_layers",
-    binary = ":exec_backend_bin",
+    name = "direct_layers",
+    binary = ":direct_aspect_bin",
     group = "1000",
     owner = "1000",
 )
 
 oci_image(
-    name = "exec_backend_image",
+    name = "direct_image",
     base = "@debian_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("exec_backend_bin"),
-    env = py_image_env(binary_name = "exec_backend_bin"),
-    tars = [":exec_backend_layers"],
+    entrypoint = py_image_entrypoint("direct_aspect_bin"),
+    env = py_image_env(binary_name = "direct_aspect_bin"),
+    tars = [":direct_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
 )
 
 oci_load(
-    name = "exec_backend_load",
-    image = ":exec_backend_image",
+    name = "direct_load",
+    image = ":direct_image",
     repo_tags = ["approval-gate-exec-backend:latest"],
     visibility = ["//visibility:public"],
 )
 
 oci_push(
-    name = "exec_backend_push",
-    image = ":exec_backend_image",
+    name = "direct_push",
+    image = ":direct_image",
     remote_tags = ["latest"],
     repository = "registry.allegedly.works/approval-gate/exec-backend",
 )
