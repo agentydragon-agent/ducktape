@@ -249,7 +249,7 @@ async def test_malformed_json_in_tool_arguments(mcp_tool_provider_echo, recordin
     text, events = await _run_malformed_json_test(mcp_tool_provider_echo, recording_handler, make_turn)
 
     # Agent should complete successfully despite malformed JSON
-    assert "error" in text.lower()
+    assert text == "I received an error"
 
     # Check that error was emitted as a tool result
     tool_outputs = [evt for evt in events if isinstance(evt, ToolCallOutput)]
