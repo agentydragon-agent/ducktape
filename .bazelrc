@@ -87,4 +87,5 @@ common:quiet --show_progress_rate_limit=30
 
 # CI and AI agent modes both use quiet output.
 common:ci --config=quiet
+common:ci --announce_rc
 common:ai_agent --config=quiet
