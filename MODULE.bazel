@@ -37,6 +37,7 @@ bazel_dep(name = "rules_tf", version = "0.0.10")
 # Upstream silently ignores failures (stdout >/dev/null, return code unchecked),
 # so a transient registry outage produces an incomplete mirror that Bazel caches,
 # causing validate tests to fail with "provider not found in mirror".
+# TODO: remove patches once https://github.com/yanndegat/rules_tf/pull/28 is merged
 single_version_override(
     module_name = "rules_tf",
     patch_strip = 1,
