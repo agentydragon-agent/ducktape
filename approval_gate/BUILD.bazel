@@ -10,8 +10,30 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        "@pypi//mcp",
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "export_schema",
+    srcs = ["export_schema.py"],
+    imports = [".."],
+    deps = [
+        ":models",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "export_schema_bin",
+    imports = [".."],
+    main_module = "approval_gate.export_schema",
+    visibility = [
+        "//approval_gate:__subpackages__",
+        "//openclaw/approval-gate:__pkg__",
+    ],
+    deps = [":export_schema"],
 )
 
 py_library(
@@ -62,6 +84,7 @@ py_library(
         "//mcp_infra:naming",
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:server",
+        "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mako",
         "@pypi//mcp",
@@ -156,7 +179,10 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
+        ":models",
         ":storage",
+        "//mcp_utils",
+        "@pypi//fastmcp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
     ],
@@ -241,6 +267,7 @@ py_test(
         ":predicates",
         ":proxy_server",
         "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
@@ -261,6 +288,7 @@ py_test(
         ":predicates",
         ":proxy_server",
         "//mcp_infra:prefix",
+        "//mcp_infra:resource_utils",
         "//util:net",
         "@pypi//anyio",
         "@pypi//cryptography",
