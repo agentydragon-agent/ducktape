@@ -48,12 +48,12 @@ func calculateBackoff(attempt int64, config *RetryConfig) time.Duration {
 //
 // It retries on specific HTTP status codes: 408, 429, 500, 502, 503.
 // For each retry attempt:
-//   1. Clones the original request
-//   2. Resets the request body (if body data was provided)
-//   3. Logs the attempt with slog at Debug level
-//   4. Executes the HTTP request via HttpClient.Client.Do
-//   5. On retryable status or error, calculates backoff and waits
-//   6. If context is cancelled during wait, returns context error
+//  1. Clones the original request
+//  2. Resets the request body (if body data was provided)
+//  3. Logs the attempt with slog at Debug level
+//  4. Executes the HTTP request via HttpClient.Client.Do
+//  5. On retryable status or error, calculates backoff and waits
+//  6. If context is cancelled during wait, returns context error
 //
 // Parameters:
 //   - ctx: context for cancellation

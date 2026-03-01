@@ -28,19 +28,21 @@ type MCPRegistrationResult struct {
 // Source: manager/mcp.go
 //
 // Parameters (from register ABI):
-//   AX = *Manager (self)
-//   BX, CX = ctx (context.Context interface pair)
-//   DI = logger *slog.Logger (or related)
-//   SI, R8, R9, R10 = additional session/config params
+//
+//	AX = *Manager (self)
+//	BX, CX = ctx (context.Context interface pair)
+//	DI = logger *slog.Logger (or related)
+//	SI, R8, R9, R10 = additional session/config params
 //
 // Returns:
-//   AX = []MCPRegistrationResult (data ptr)
-//   BX = len
-//   CX = cap
-//   DI = []error (data ptr)
-//   SI = len(errors)
-//   R8 = cap(errors)
-//   R9, R10 = zero (unused)
+//
+//	AX = []MCPRegistrationResult (data ptr)
+//	BX = len
+//	CX = cap
+//	DI = []error (data ptr)
+//	SI = len(errors)
+//	R8 = cap(errors)
+//	R9, R10 = zero (unused)
 func (m *Manager) registerMCPServers(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -51,7 +53,7 @@ func (m *Manager) registerMCPServers(
 	// Binary: 0xb70315 call to mcp.GetMCPRegistrations
 	// m.Config.Session.MCPRegistrations or similar - accessed via offset 0x18 -> 0x20
 	// m.TunnelInfo at offset 0x48
-	registrations := mcp.GetMCPRegistrations( /* envType */ "", /* sessionMode */ "")
+	registrations := mcp.GetMCPRegistrations( /* envType */ "" /* sessionMode */, "")
 	totalCount := len(registrations)
 
 	m.Logger.Info("registering MCP servers", "count", totalCount)
@@ -67,7 +69,6 @@ func (m *Manager) registerMCPServers(
 		// Call setupMCPServerWithRegistration for each.
 		// Binary: 0xb70462 call to setupMCPServerWithRegistration
 		result, err := m.setupMCPServerWithRegistration(ctx, logger, reg)
-
 		if err != nil {
 			// Error case at 0xb7051c:
 			// Log the error with diag.LogEnvManagerNoPII
@@ -109,17 +110,19 @@ func (m *Manager) registerMCPServers(
 // Source: manager/mcp.go
 //
 // Parameters (from register ABI):
-//   AX = *Manager (self)
-//   BX, CX = ctx (context.Context interface pair)
-//   DI = logger *slog.Logger
-//   SI = MCP registration socket path
-//   R8, R9, R10, R11 = additional registration params
+//
+//	AX = *Manager (self)
+//	BX, CX = ctx (context.Context interface pair)
+//	DI = logger *slog.Logger
+//	SI = MCP registration socket path
+//	R8, R9, R10, R11 = additional registration params
 //
 // Returns:
-//   AX = *MCPRegistrationResult (nil on error)
-//   BX = sockDir string
-//   CX = error (interface type ptr, nil on success)
-//   DI = error (interface data ptr)
+//
+//	AX = *MCPRegistrationResult (nil on error)
+//	BX = sockDir string
+//	CX = error (interface type ptr, nil on success)
+//	DI = error (interface data ptr)
 func (m *Manager) setupMCPServerWithRegistration(
 	ctx context.Context,
 	logger *slog.Logger,

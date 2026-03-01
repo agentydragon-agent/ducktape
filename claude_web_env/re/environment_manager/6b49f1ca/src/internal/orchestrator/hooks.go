@@ -27,13 +27,13 @@ type Hook struct {
 	// Offset 0x38: timeout time.Duration
 	// Offset 0x40: useSandbox bool
 	// Offset 0x48-0x60: sandbox config (paths, etc.)
-	Name       string
-	Command    string
-	Args       []string
-	Timeout    time.Duration
-	UseSandbox bool
+	Name          string
+	Command       string
+	Args          []string
+	Timeout       time.Duration
+	UseSandbox    bool
 	SandboxConfig *sandbox.SandboxConfig
-	Logger     *slog.Logger
+	Logger        *slog.Logger
 }
 
 // SessionInput is the JSON payload passed to hooks via stdin.
@@ -50,13 +50,15 @@ type SessionInput struct {
 // Source: orchestrator/hooks.go
 //
 // Parameters:
-//   AX = *Hook (self)
-//   BX, CX = ctx (context.Context interface pair)
-//   DI = logger *slog.Logger
+//
+//	AX = *Hook (self)
+//	BX, CX = ctx (context.Context interface pair)
+//	DI = logger *slog.Logger
 //
 // Returns:
-//   AX = error (interface type, nil on success)
-//   BX = error (interface data)
+//
+//	AX = error (interface type, nil on success)
+//	BX = error (interface data)
 func (h *Hook) Execute(ctx context.Context) error {
 	// Check if hook command is set (offset 0x18 != 0).
 	// Binary: 0xa8afa5 CMPQ 0x18(AX), $0x0; JE 0xa8b658 (nil return)
@@ -138,16 +140,18 @@ func (h *Hook) Execute(ctx context.Context) error {
 // Source: orchestrator/hooks.go
 //
 // Parameters:
-//   AX = *Hook (self)
-//   BX, CX = ctx (context.Context interface pair)
-//   DI = logger *slog.Logger
-//   SI = session data ([]byte ptr)
-//   R8 = session data ([]byte len)
-//   R9 = session data ([]byte cap)
+//
+//	AX = *Hook (self)
+//	BX, CX = ctx (context.Context interface pair)
+//	DI = logger *slog.Logger
+//	SI = session data ([]byte ptr)
+//	R8 = session data ([]byte len)
+//	R9 = session data ([]byte cap)
 //
 // Returns:
-//   AX = error (interface type, nil on success)
-//   BX = error (interface data)
+//
+//	AX = error (interface type, nil on success)
+//	BX = error (interface data)
 func (h *Hook) ExecuteWithStdin(ctx context.Context, session *SessionResponse) error {
 	// Check if hook command is set.
 	// Binary: 0xa8b70c CMPQ 0x18(AX), $0x0; JE 0xa8c5fb

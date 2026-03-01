@@ -451,9 +451,9 @@ func doSingleAttempt(ctx context.Context, url string, body []byte, token string,
 //     a. Call doSingleAttempt
 //     b. On success: return result immediately
 //     c. If more attempts remain (attempt < maxAttempts):
-//        - Calculate backoff via calculateBackoff(attempt+1, ...)
-//        - Log to stderr: "MCP server request failed (attempt %d/%d), retrying in %v: %v\n"
-//        - time.Sleep(backoff)
+//     - Calculate backoff via calculateBackoff(attempt+1, ...)
+//     - Log to stderr: "MCP server request failed (attempt %d/%d), retrying in %v: %v\n"
+//     - time.Sleep(backoff)
 //     d. Continue loop
 //  2. If all attempts exhausted: return fmt.Errorf("MCP server request failed after %d retries: %w", ...)
 func doAttemptsWithRetry(ctx context.Context, url string, body []byte, token string, httpClient *http.Client, maxAttempts int, baseBackoff time.Duration, maxBackoff time.Duration, factor float64) ([]byte, error) {

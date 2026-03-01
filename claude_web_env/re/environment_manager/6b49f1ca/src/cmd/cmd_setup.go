@@ -28,16 +28,18 @@ import (
 // Source: cmd/cmd_setup.go
 //
 // Parameters:
-//   AX = *cobra.Command (parent/root command)
+//
+//	AX = *cobra.Command (parent/root command)
 //
 // Flags registered (from pflag.(*FlagSet).StringVar/BoolVarP calls):
-//   --log-level              (StringVar, default "info")   "Log level (debug, info, warn, error)"
-//   --claude-code-version    (StringVar, default "latest") "Version of Claude Code to install..."
-//   --sandbox-runtime-version (StringVar, default "latest") "Version of sandbox-runtime to install..."
-//   --skip-claude-code       (BoolVarP, default false)     "Skip Claude Code installation"
-//   --skip-sandbox-runtime   (BoolVarP, default false)     "Skip sandbox-runtime installation"
-//   --api-url                (StringVar, default "https://api.anthropic.com") "API base URL..."
-//   --service-key-file       (StringVar, default "")       "Path to environment service key file..."
+//
+//	--log-level              (StringVar, default "info")   "Log level (debug, info, warn, error)"
+//	--claude-code-version    (StringVar, default "latest") "Version of Claude Code to install..."
+//	--sandbox-runtime-version (StringVar, default "latest") "Version of sandbox-runtime to install..."
+//	--skip-claude-code       (BoolVarP, default false)     "Skip Claude Code installation"
+//	--skip-sandbox-runtime   (BoolVarP, default false)     "Skip sandbox-runtime installation"
+//	--api-url                (StringVar, default "https://api.anthropic.com") "API base URL..."
+//	--service-key-file       (StringVar, default "")       "Path to environment service key file..."
 func AddSetupCommand(rootCmd *cobra.Command) {
 	// Allocate flag variables.
 	// Binary: 0xb76f22-0xb76f93 - multiple runtime.newobject calls
@@ -95,26 +97,27 @@ func AddSetupCommand(rootCmd *cobra.Command) {
 // Source: cmd/cmd_setup.go
 //
 // Parameters (from closure in AddSetupCommand.func1 at 0xb772a0):
-//   AX/BX = ctx (context.Context interface)
-//   CX/DI = logLevel (string)
-//   SI/R8 = claudeCodeVersion (string)
-//   R9/R10 = sandboxRuntimeVersion (string)
-//   R11 = skipClaudeCode (bool)
-//   stack 0(SP) = skipSandboxRuntime (bool)
-//   stack 0x8(SP)/0x10(SP) = apiURL (string)
-//   stack 0x18(SP)/0x20(SP) = serviceKeyFile (string)
+//
+//	AX/BX = ctx (context.Context interface)
+//	CX/DI = logLevel (string)
+//	SI/R8 = claudeCodeVersion (string)
+//	R9/R10 = sandboxRuntimeVersion (string)
+//	R11 = skipClaudeCode (bool)
+//	stack 0(SP) = skipSandboxRuntime (bool)
+//	stack 0x8(SP)/0x10(SP) = apiURL (string)
+//	stack 0x18(SP)/0x20(SP) = serviceKeyFile (string)
 //
 // Flow:
-//   1. parseLogLevel(logLevel) -> error if invalid
-//   2. CreateLoggerWithFileOutput(level) -> logger
-//   3. Log "Starting setup" with 4 attrs (versions + skip flags)
-//   4. If !(skipClaudeCode && skipSandboxRuntime): runPreflightChecks
-//   5. loadServiceKey(serviceKeyFile)
-//   6. If serviceKey non-empty: runAPIHealthcheck; if error -> return
-//      If serviceKey empty: log warning
-//   7. If !skipClaudeCode: installClaudeCode; else log skip message
-//   8. If !skipSandboxRuntime: installSandboxRuntime; else log skip message
-//   9. Log "Setup complete..." and return nil
+//  1. parseLogLevel(logLevel) -> error if invalid
+//  2. CreateLoggerWithFileOutput(level) -> logger
+//  3. Log "Starting setup" with 4 attrs (versions + skip flags)
+//  4. If !(skipClaudeCode && skipSandboxRuntime): runPreflightChecks
+//  5. loadServiceKey(serviceKeyFile)
+//  6. If serviceKey non-empty: runAPIHealthcheck; if error -> return
+//     If serviceKey empty: log warning
+//  7. If !skipClaudeCode: installClaudeCode; else log skip message
+//  8. If !skipSandboxRuntime: installSandboxRuntime; else log skip message
+//  9. Log "Setup complete..." and return nil
 func runSetup(
 	ctx context.Context,
 	logLevel string,
@@ -210,22 +213,24 @@ func runSetup(
 // Source: cmd/cmd_setup.go
 //
 // Parameters:
-//   AX = secretPath string data pointer
-//   BX = secretPath string length
+//
+//	AX = secretPath string data pointer
+//	BX = secretPath string length
 //
 // Returns:
-//   AX = service key string data pointer
-//   BX = service key string length
-//   CX = error interface type (0 if nil)
-//   DI = error interface data (0 if nil)
+//
+//	AX = service key string data pointer
+//	BX = service key string length
+//	CX = error interface type (0 if nil)
+//	DI = error interface data (0 if nil)
 //
 // Flow:
-//   1. If secretPath is empty (BX==0): jump to os.Getenv fallback
-//   2. Call os.ReadFile(secretPath)
-//   3. If error: return fmt.Errorf("failed to read service key file %q: %w", secretPath, err)
-//   4. Convert bytes to string, call strings.TrimSpace
-//   5. If result is empty: fall through to env var fallback
-//   6. Fallback: return os.Getenv("ENVIRONMENT_SERVICE_KEY"), nil
+//  1. If secretPath is empty (BX==0): jump to os.Getenv fallback
+//  2. Call os.ReadFile(secretPath)
+//  3. If error: return fmt.Errorf("failed to read service key file %q: %w", secretPath, err)
+//  4. Convert bytes to string, call strings.TrimSpace
+//  5. If result is empty: fall through to env var fallback
+//  6. Fallback: return os.Getenv("ENVIRONMENT_SERVICE_KEY"), nil
 func loadServiceKey(secretPath string) (string, error) {
 	// Binary: 0xb77397-0xb773a0 - check empty path
 	if secretPath == "" {
@@ -259,19 +264,20 @@ func loadServiceKey(secretPath string) (string, error) {
 // Source: cmd/cmd_setup.go
 //
 // Parameters:
-//   AX/BX = ctx (context.Context)
-//   CX = *slog.Logger
-//   DI/SI = apiURL (string)
-//   R8/R9 = serviceKey (string)
+//
+//	AX/BX = ctx (context.Context)
+//	CX = *slog.Logger
+//	DI/SI = apiURL (string)
+//	R8/R9 = serviceKey (string)
 //
 // Flow:
-//   1. Log "Running API connectivity healthcheck"
-//   2. Call orchestrator.NewWhoamiClient(apiURL, serviceKey, logger)
-//   3. Call client.GetIdentity(ctx)
-//   4. If error: return fmt.Errorf("API connectivity healthcheck failed: %w", err)
-//   5. Log identity info with "environment_id" and "organization_uuid" attrs
-//   6. Log "API connectivity verified"
-//   7. Return nil
+//  1. Log "Running API connectivity healthcheck"
+//  2. Call orchestrator.NewWhoamiClient(apiURL, serviceKey, logger)
+//  3. Call client.GetIdentity(ctx)
+//  4. If error: return fmt.Errorf("API connectivity healthcheck failed: %w", err)
+//  5. Log identity info with "environment_id" and "organization_uuid" attrs
+//  6. Log "API connectivity verified"
+//  7. Return nil
 func runAPIHealthcheck(ctx context.Context, log *slog.Logger, apiURL string, serviceKey string) error {
 	// Binary: 0xb774f3-0xb7751a - slog.Info
 	log.Info("Running API connectivity healthcheck")
@@ -303,15 +309,16 @@ func runAPIHealthcheck(ctx context.Context, log *slog.Logger, apiURL string, ser
 // Source: cmd/cmd_setup.go
 //
 // Parameters:
-//   AX/BX = ctx (context.Context)
-//   CX = *slog.Logger
+//
+//	AX/BX = ctx (context.Context)
+//	CX = *slog.Logger
 //
 // Flow:
-//   1. Log "Running pre-flight checks"
-//   2. Call checkNpmAvailable(ctx, logger)
-//   3. If error: return error
-//   4. Log "Pre-flight checks passed"
-//   5. Return nil
+//  1. Log "Running pre-flight checks"
+//  2. Call checkNpmAvailable(ctx, logger)
+//  3. If error: return error
+//  4. Log "Pre-flight checks passed"
+//  5. Return nil
 func runPreflightChecks(ctx context.Context, log *slog.Logger) error {
 	// Binary: 0xb77ca2-0xb77cc9 - slog.Info
 	log.Info("Running pre-flight checks")
@@ -336,15 +343,16 @@ func runPreflightChecks(ctx context.Context, log *slog.Logger) error {
 // Source: cmd/cmd_setup.go
 //
 // Parameters:
-//   AX/BX = ctx (context.Context)
-//   CX = *slog.Logger
+//
+//	AX/BX = ctx (context.Context)
+//	CX = *slog.Logger
 //
 // Flow:
-//   1. Log debug "Checking npm availability"
-//   2. Run exec.CommandContext(ctx, "npm", "--version").Output()
-//   3. If error: return fmt.Errorf with detailed npm-not-found message
-//   4. Log debug "npm is available" with "version" attr
-//   5. Return nil
+//  1. Log debug "Checking npm availability"
+//  2. Run exec.CommandContext(ctx, "npm", "--version").Output()
+//  3. If error: return fmt.Errorf with detailed npm-not-found message
+//  4. Log debug "npm is available" with "version" attr
+//  5. Return nil
 func checkNpmAvailable(ctx context.Context, log *slog.Logger) error {
 	// Binary: 0xb77d93-0xb77dc0 - slog.Debug (level -4)
 	log.Debug("Checking npm availability")
@@ -374,17 +382,18 @@ func checkNpmAvailable(ctx context.Context, log *slog.Logger) error {
 // Source: cmd/cmd_setup.go
 //
 // Parameters:
-//   AX/BX = ctx (context.Context)
-//   CX = *slog.Logger
-//   DI/SI = claudeCodeVersion (string)
+//
+//	AX/BX = ctx (context.Context)
+//	CX = *slog.Logger
+//	DI/SI = claudeCodeVersion (string)
 //
 // Flow:
-//   1. Log "Installing Claude Code" with "version" attr
-//   2. Get CLAUDE_DEFAULT_PATH env var; if empty, default to "claude"
-//   3. Call claude.InstallOrUpdateClaudeCode(ctx, version, defaultPath, &noopActivityRecorder{})
-//   4. If error: return fmt.Errorf("failed to install Claude Code: %w", err)
-//   5. Log "Claude Code installation completed"
-//   6. Return nil
+//  1. Log "Installing Claude Code" with "version" attr
+//  2. Get CLAUDE_DEFAULT_PATH env var; if empty, default to "claude"
+//  3. Call claude.InstallOrUpdateClaudeCode(ctx, version, defaultPath, &noopActivityRecorder{})
+//  4. If error: return fmt.Errorf("failed to install Claude Code: %w", err)
+//  5. Log "Claude Code installation completed"
+//  6. Return nil
 func installClaudeCode(ctx context.Context, log *slog.Logger, claudeCodeVersion string) error {
 	// Binary: 0xb77f82-0xb7800b - slog.Info with "version" attr
 	log.Info("Installing Claude Code", "version", claudeCodeVersion)
@@ -417,16 +426,17 @@ func installClaudeCode(ctx context.Context, log *slog.Logger, claudeCodeVersion 
 // Source: cmd/cmd_setup.go
 //
 // Parameters:
-//   AX/BX = ctx (context.Context)
-//   CX = *slog.Logger
-//   DI/SI = sandboxRuntimeVersion (string)
+//
+//	AX/BX = ctx (context.Context)
+//	CX = *slog.Logger
+//	DI/SI = sandboxRuntimeVersion (string)
 //
 // Flow:
-//   1. Log "Installing sandbox-runtime" with "version" attr
-//   2. Call sandbox.InstallSandboxRuntime(ctx, version, logger)
-//   3. If error: return fmt.Errorf("failed to install sandbox-runtime: %w", err)
-//   4. Log "sandbox-runtime installation completed"
-//   5. Return nil
+//  1. Log "Installing sandbox-runtime" with "version" attr
+//  2. Call sandbox.InstallSandboxRuntime(ctx, version, logger)
+//  3. If error: return fmt.Errorf("failed to install sandbox-runtime: %w", err)
+//  4. Log "sandbox-runtime installation completed"
+//  5. Return nil
 func installSandboxRuntime(ctx context.Context, log *slog.Logger, sandboxRuntimeVersion string) error {
 	// Binary: 0xb781a2-0xb7822b - slog.Info with "version" attr
 	log.Info("Installing sandbox-runtime", "version", sandboxRuntimeVersion)

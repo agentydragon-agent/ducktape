@@ -22,8 +22,9 @@ import (
 // Implementations include anthropic.anthropicEnvironmentType and byoc.byocEnvironmentType.
 //
 // Interface reconstructed from itab entries:
-//   go:itab.*anthropic.anthropicEnvironmentType,envtype.EnvironmentType (0xf60ac0)
-//   go:itab.*byoc.byocEnvironmentType,envtype.EnvironmentType (0xf60ae8)
+//
+//	go:itab.*anthropic.anthropicEnvironmentType,envtype.EnvironmentType (0xf60ac0)
+//	go:itab.*byoc.byocEnvironmentType,envtype.EnvironmentType (0xf60ae8)
 //
 // Method set derived from common methods across both implementing types.
 type EnvironmentType interface {

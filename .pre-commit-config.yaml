@@ -109,6 +109,17 @@ repos:
     hooks:
       - id: fmt
 
+  # gofumpt - Go code formatting (strict superset of gofmt, isolated via language: golang)
+  - repo: local
+    hooks:
+      - id: gofumpt
+        name: gofumpt
+        entry: gofumpt -w
+        language: golang
+        additional_dependencies:
+          - mvdan.cc/gofumpt@v0.9.2
+        types: [go]
+
   # ============================================================================
   # LOCAL HOOKS
   # ============================================================================

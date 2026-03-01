@@ -10,8 +10,8 @@ import (
 
 // WorkSecret represents the decoded work secret containing sources.
 type WorkSecret struct {
-	Version int              `json:"version"`
-	Sources []config.Source  `json:"-"`
+	Version int             `json:"version"`
+	Sources []config.Source `json:"-"`
 
 	// rawSources holds the intermediate unmarshaled source entries.
 	rawSources []rawSource
@@ -78,9 +78,9 @@ func DecodeWorkSecret(secret string) (*WorkSecret, error) {
 
 // V1WorkResponse represents the parsed V1 work response from the API.
 type V1WorkResponse struct {
-	ID     string     `json:"id"`
-	Type   string     `json:"type"`
-	Data   V1WorkData `json:"data"`
+	ID   string     `json:"id"`
+	Type string     `json:"type"`
+	Data V1WorkData `json:"data"`
 }
 
 // V1WorkData contains the data portion of a V1 work response.

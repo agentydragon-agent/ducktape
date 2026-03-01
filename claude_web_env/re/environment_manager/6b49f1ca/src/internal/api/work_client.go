@@ -19,15 +19,17 @@ import (
 // WorkClient is the client for the work/environments API (v1).
 //
 // Struct layout (from AcknowledgeWork disassembly):
-//   0x00:      *HttpClient     (pointer, dereferenced at 0x831f75)
-//   0x08-0x17: ApiKey string   (used in setAuthHeader and auth context error)
-//   0x18:      Logger *slog.Logger (not directly visible but inferred from pattern)
+//
+//	0x00:      *HttpClient     (pointer, dereferenced at 0x831f75)
+//	0x08-0x17: ApiKey string   (used in setAuthHeader and auth context error)
+//	0x18:      Logger *slog.Logger (not directly visible but inferred from pattern)
 //
 // Additional known work endpoints from strings:
-//   "%s/v1/environments/%s/work/poll"         (work polling)
-//   "%s/v1/environments/%s/work/%s/ack"       (acknowledge work)
-//   "%s/v1/environments/%s/work/%s/heartbeat" (heartbeat)
-//   "%s/v1/environments/%s/work/%s/stop"      (stop work)
+//
+//	"%s/v1/environments/%s/work/poll"         (work polling)
+//	"%s/v1/environments/%s/work/%s/ack"       (acknowledge work)
+//	"%s/v1/environments/%s/work/%s/heartbeat" (heartbeat)
+//	"%s/v1/environments/%s/work/%s/stop"      (stop work)
 type WorkClient struct {
 	Client *HttpClient  // offset 0x00
 	ApiKey string       // offset 0x08 (string: ptr + len)

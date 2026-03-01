@@ -34,10 +34,11 @@ var ErrEndpointNotImplemented = errors.New("endpoint not implemented")
 // Binary type eq: 0x832f20
 //
 // Struct layout (verified via type:.eq at 0x832f20):
-//   0x00:      *HttpClient   (pointer, compared directly)
-//   0x08-0x17: ApiKey string (ptr + len, compared via memequal on ptr, len compared)
-//   0x18:      Logger *slog.Logger (pointer, compared directly)
-//   0x20:      UseV2  bool   (byte, compared directly)
+//
+//	0x00:      *HttpClient   (pointer, compared directly)
+//	0x08-0x17: ApiKey string (ptr + len, compared via memequal on ptr, len compared)
+//	0x18:      Logger *slog.Logger (pointer, compared directly)
+//	0x20:      UseV2  bool   (byte, compared directly)
 type HttpSessionIngressClient struct {
 	Client *HttpClient  // offset 0x00
 	ApiKey string       // offset 0x08 (string: ptr at 0x08, len at 0x10)

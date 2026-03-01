@@ -115,7 +115,8 @@ func NewSourceHandlerManager(
 // Source file: sources.go
 //
 // Closure:
-//   deferwrap at runtime.deferprocStack - deferred o11y metric recording
+//
+//	deferwrap at runtime.deferprocStack - deferred o11y metric recording
 func (m *SourceHandlerManager) ProcessSources(
 	ctx context.Context,
 	logger *slog.Logger,

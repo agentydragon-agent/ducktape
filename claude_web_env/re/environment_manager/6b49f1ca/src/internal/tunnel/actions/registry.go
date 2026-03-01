@@ -54,8 +54,8 @@ type ActionResult struct {
 //
 // Binary address: 0xb3d6c0 (SendProgress)
 type tunnelProgressReporter struct {
-	client     interface{} // tunnel client for sending responses
-	requestID  string
+	client         interface{} // tunnel client for sending responses
+	requestID      string
 	responseSender ResponseSender
 }
 
@@ -83,7 +83,7 @@ func (r *tunnelProgressReporter) SendProgress(step string, message string, perce
 
 	// Create tunnel response with body data and send as streaming chunk
 	resp := &tunnelpb.TunnelResponse{
-		Body:     data,
+		Body:      data,
 		Streaming: true,
 	}
 
@@ -96,12 +96,12 @@ func (r *tunnelProgressReporter) SendProgress(step string, message string, perce
 //
 // Binary address: Register at 0xb3b960, Execute at 0xb3bac0
 type Registry struct {
-	logger   *slog.Logger            // offset 0x00
-	actions  map[string]Action       // offset 0x08
-	mu       isync.Mutex             // offset 0x10
-	running  map[string]bool         // secondary map for deduplication
-	client   interface{}             // tunnel client reference
-	sender   ResponseSender
+	logger  *slog.Logger      // offset 0x00
+	actions map[string]Action // offset 0x08
+	mu      isync.Mutex       // offset 0x10
+	running map[string]bool   // secondary map for deduplication
+	client  interface{}       // tunnel client reference
+	sender  ResponseSender
 }
 
 // NewRegistry creates a new action registry with the given logger.
@@ -125,16 +125,16 @@ func (r *Registry) Register(action Action) {
 }
 
 // Execute handles an incoming action request. It:
-// 1. Strips the "/__actions/" prefix (11 bytes) from the path
-// 2. Splits the remaining path on "/" using stringslite.Cut to get action name and sub-path
-// 3. Looks up the action in the registry map
-// 4. If not found, returns 404 with JSON error "action %s not found"
-// 5. Acquires a mutex and checks a deduplication map
-// 6. If the action+path is already running, returns 409 with JSON error "action %s is already running"
-// 7. Marks the action as running, sets up defer cleanup (Execute.func1)
-// 8. Gets the action's timeout via Timeout() (defaults to 5 min if 0)
-// 9. Creates context.WithTimeout
-// 10. Launches goroutine (Execute.func2) that creates a tunnelProgressReporter,
+//  1. Strips the "/__actions/" prefix (11 bytes) from the path
+//  2. Splits the remaining path on "/" using stringslite.Cut to get action name and sub-path
+//  3. Looks up the action in the registry map
+//  4. If not found, returns 404 with JSON error "action %s not found"
+//  5. Acquires a mutex and checks a deduplication map
+//  6. If the action+path is already running, returns 409 with JSON error "action %s is already running"
+//  7. Marks the action as running, sets up defer cleanup (Execute.func1)
+//  8. Gets the action's timeout via Timeout() (defaults to 5 min if 0)
+//  9. Creates context.WithTimeout
+//  10. Launches goroutine (Execute.func2) that creates a tunnelProgressReporter,
 //     calls the action's Execute method, and handles the result
 //
 // Binary address: 0xb3bac0

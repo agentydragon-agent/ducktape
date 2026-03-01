@@ -19,9 +19,10 @@ import "context"
 // StreamType identifies the output stream (stdout or stderr).
 //
 // Reconstructed from process.streamPipe (0xae45e0):
-//   CMP StreamType, $0x0 → "stdout" (6 chars)
-//   CMP StreamType, $0x1 → "stderr" (6 chars)
-//   default → "unknown" (7 chars)
+//
+//	CMP StreamType, $0x0 → "stdout" (6 chars)
+//	CMP StreamType, $0x1 → "stderr" (6 chars)
+//	default → "unknown" (7 chars)
 type StreamType int
 
 const (
@@ -45,8 +46,9 @@ type OutputStreamer func(ctx context.Context, streamType StreamType, data []byte
 // Stopper is an interface for stopping a long-running component.
 //
 // Reconstructed from itab entries:
-//   go:itab.*session.noopStopper,util.Stopper (b71486df, new location)
-//   go:itab.*util.PeriodicInvoker,util.Stopper (0xf5b480)
+//
+//	go:itab.*session.noopStopper,util.Stopper (b71486df, new location)
+//	go:itab.*util.PeriodicInvoker,util.Stopper (0xf5b480)
 //
 // The noopStopper.Stop method is a single RET instruction,
 // confirming the interface has only a Stop() method with no parameters

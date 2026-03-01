@@ -2,20 +2,23 @@
 // the current balance of simple accounts.
 //
 // homebank, err := homebank.ParseHomebankFile("/home/me/homebank.xhb")
-// if err != nil {
-//   panic(err)
-// }
+//
+//	if err != nil {
+//	  panic(err)
+//	}
+//
 // total := float64(0)
-// for _, account := range homebank.Accounts {
-//   if account.Flags != nil && (*account.Flags)&homebank.FLAG_CLOSED == homebank.FLAG_CLOSED {
-//     // Skip closed accounts.
-//     continue
-//   }
-//   if account.Type == homebank.ASSETS_ACCOUNT {
-//     continue
-//   }
-//   fmt.Println(homebank.GetAccountBalance(account.Key))
-// }
+//
+//	for _, account := range homebank.Accounts {
+//	  if account.Flags != nil && (*account.Flags)&homebank.FLAG_CLOSED == homebank.FLAG_CLOSED {
+//	    // Skip closed accounts.
+//	    continue
+//	  }
+//	  if account.Type == homebank.ASSETS_ACCOUNT {
+//	    continue
+//	  }
+//	  fmt.Println(homebank.GetAccountBalance(account.Key))
+//	}
 package homebank
 
 // TODO: Make the format more complete?
@@ -37,8 +40,10 @@ const FLAG_CLOSED = 2
 // Flag on take side
 const FLAG_TAKE_SIDE = 2
 
-const PAYMODE_CC = 3
-const PAYMODE_CROSSTRANSFER = 5
+const (
+	PAYMODE_CC            = 3
+	PAYMODE_CROSSTRANSFER = 5
+)
 
 type Account struct {
 	Key     int     `xml:"key,attr"`

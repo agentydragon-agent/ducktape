@@ -25,16 +25,17 @@ type supabaseConfig struct {
 // AuthContext holds authentication tokens for various providers.
 //
 // Binary struct layout (new binary b71486df):
-//   offset 0x00: sessionIngressToken string (ptr+len)
-//   offset 0x10: anthropicAPIToken string (ptr+len)
-//   offset 0x20: anthropicOAuthToken string (ptr+len)
-//   offset 0x30: vercelDeployToken string (ptr+len)
-//   offset 0x40: supabaseProjectRef string (ptr+len)  ← new
-//   offset 0x50: supabaseAnonKey string (ptr+len)     ← new
-//   offset 0x60: supabaseDBPass string (ptr+len)      ← new
-//   offset 0x70: supabasePAT string (ptr+len)         ← new
-//   offset 0x80: sessionID string (ptr+len)           ← shifted from 0x40
-//   offset 0x90: logger *slog.Logger
+//
+//	offset 0x00: sessionIngressToken string (ptr+len)
+//	offset 0x10: anthropicAPIToken string (ptr+len)
+//	offset 0x20: anthropicOAuthToken string (ptr+len)
+//	offset 0x30: vercelDeployToken string (ptr+len)
+//	offset 0x40: supabaseProjectRef string (ptr+len)  ← new
+//	offset 0x50: supabaseAnonKey string (ptr+len)     ← new
+//	offset 0x60: supabaseDBPass string (ptr+len)      ← new
+//	offset 0x70: supabasePAT string (ptr+len)         ← new
+//	offset 0x80: sessionID string (ptr+len)           ← shifted from 0x40
+//	offset 0x90: logger *slog.Logger
 type AuthContext struct {
 	sessionIngressToken string
 	anthropicAPIToken   string

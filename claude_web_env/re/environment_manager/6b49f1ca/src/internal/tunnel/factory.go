@@ -21,14 +21,15 @@ func init() {
 // It extracts parameters from the opts slice and calls NewClient.
 //
 // Expected parameters in opts (matching binary calling convention):
-//   0: logger (*slog.Logger)
-//   1: ctx (context.Context) - not used by NewClient
-//   2: sessionID (string) - used as metricsKey and tunnelID
-//   3: apiURL (string) - not directly used
-//   4: tunnelEndpoint (string)
-//   5: sessionConfig (interface{}) - not directly used
-//   6: authToken (string)
-//   7: actionRegistry (*actions.Registry) - optional
+//
+//	0: logger (*slog.Logger)
+//	1: ctx (context.Context) - not used by NewClient
+//	2: sessionID (string) - used as metricsKey and tunnelID
+//	3: apiURL (string) - not directly used
+//	4: tunnelEndpoint (string)
+//	5: sessionConfig (interface{}) - not directly used
+//	6: authToken (string)
+//	7: actionRegistry (*actions.Registry) - optional
 func newTunnelClientFactory(opts ...interface{}) manager.TunnelClient {
 	// Validate minimum parameters
 	if len(opts) < 7 {
@@ -68,8 +69,8 @@ func newTunnelClientFactory(opts ...interface{}) manager.TunnelClient {
 	// Use sessionID as both metricsKey and tunnelID (common pattern in the codebase)
 	client := NewClient(
 		logger,
-		sessionID,      // metricsKey
-		sessionID,      // tunnelID
+		sessionID, // metricsKey
+		sessionID, // tunnelID
 		tunnelEndpoint,
 		authToken,
 		registry,

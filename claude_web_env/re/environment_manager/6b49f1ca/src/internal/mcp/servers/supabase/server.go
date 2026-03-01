@@ -224,9 +224,9 @@ func (s *SupabaseMCPServer) handleMigrate(ctx context.Context, req mcplib.CallTo
 		typesMsg = fmt.Sprintf("\nWarning: type generation failed: %v", err)
 	} else {
 		typesPath := filepath.Join(s.getProjectDir(), "src", "lib", "database.types.ts")
-		if mkErr := os.MkdirAll(filepath.Dir(typesPath), 0755); mkErr != nil {
+		if mkErr := os.MkdirAll(filepath.Dir(typesPath), 0o755); mkErr != nil {
 			typesMsg = "\nWarning: failed to write types file"
-		} else if writeErr := os.WriteFile(typesPath, []byte(types), 0644); writeErr != nil {
+		} else if writeErr := os.WriteFile(typesPath, []byte(types), 0o644); writeErr != nil {
 			typesMsg = "\nWarning: failed to write types file"
 		} else {
 			typesMsg = "\nTypeScript types regenerated at src/lib/database.types.ts"
@@ -333,12 +333,12 @@ func (s *SupabaseMCPServer) handleGenerateTypes(ctx context.Context, req mcplib.
 	}
 
 	typesPath := filepath.Join(s.getProjectDir(), "src", "lib", "database.types.ts")
-	if err := os.MkdirAll(filepath.Dir(typesPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(typesPath), 0o755); err != nil {
 		// TODO(re): error string "Failed to create types directory: %v" inferred; not confirmed.
 		return errorResult(fmt.Sprintf("Failed to create types directory: %v", err)), nil
 	}
 
-	if err := os.WriteFile(typesPath, []byte(types), 0644); err != nil {
+	if err := os.WriteFile(typesPath, []byte(types), 0o644); err != nil {
 		return errorResult(fmt.Sprintf("Failed to write types file: %v", err)), nil
 	}
 

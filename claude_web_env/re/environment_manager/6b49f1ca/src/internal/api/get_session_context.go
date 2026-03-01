@@ -19,9 +19,10 @@ import (
 // SessionsClient is the client for the sessions API (v2).
 //
 // Struct layout (from GetSessionContext disassembly):
-//   0x00:      *HttpClient      (pointer to shared HTTP client)
-//   0x08-0x17: ApiKey   string  (API key for authorization)
-//   0x18:      Logger   *slog.Logger
+//
+//	0x00:      *HttpClient      (pointer to shared HTTP client)
+//	0x08-0x17: ApiKey   string  (API key for authorization)
+//	0x18:      Logger   *slog.Logger
 type SessionsClient struct {
 	Client *HttpClient  // offset 0x00
 	ApiKey string       // offset 0x08 (string: ptr + len)

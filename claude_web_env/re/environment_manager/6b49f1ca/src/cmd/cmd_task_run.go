@@ -37,46 +37,48 @@ import (
 // Source: cmd/cmd_task_run.go
 //
 // Parameters:
-//   AX = *cobra.Command (parent/root command)
+//
+//	AX = *cobra.Command (parent/root command)
 //
 // Flags registered (from pflag calls):
-//   --api-url           (0x07=7 chars) StringVar, desc (0x26=38 chars)
-//   --work-id           (0x09=9 chars) StringVar, default "mode" (0x04), desc (0x24=36 chars)
-//   --stdin             (0x05=5 chars) BoolVarP, default false, desc (0x3b=59 chars)
-//   --output-file       (0x0c=12 chars) StringVar, short "o" (0x02), desc (0x6f=111 chars)
-//   --working-dir       (0x0c=12 chars) StringVar, short "dir" (0x03), desc (0xa0=160 chars)
-//   --script-path       (0x0d=13 chars) StringVar, desc (0xa0=160 chars)
-//   --input-format      (0x0d=13 chars) BoolVarP, desc (0x65=101 chars)
-//   --sandbox-enabled   (0x13=19 chars) BoolVarP, default 1, desc (0x6d=109 chars)
-//   --sandbox-command   (0x14=20 chars) StringVar, desc (0xcd=205 chars)
-//   --debug             (0x05=5 chars) BoolVarP, default false, desc (0x32=50 chars)
-//   --sandbox-disabled  (0x13=19 chars) BoolVarP, desc (0x65=101 chars)
-//   --sandbox-backend   (0x0f=15 chars) BoolVarP, desc (0x43=67 chars)
-//   --log-file          StringVar
-//   --secret-path       StringVar
+//
+//	--api-url           (0x07=7 chars) StringVar, desc (0x26=38 chars)
+//	--work-id           (0x09=9 chars) StringVar, default "mode" (0x04), desc (0x24=36 chars)
+//	--stdin             (0x05=5 chars) BoolVarP, default false, desc (0x3b=59 chars)
+//	--output-file       (0x0c=12 chars) StringVar, short "o" (0x02), desc (0x6f=111 chars)
+//	--working-dir       (0x0c=12 chars) StringVar, short "dir" (0x03), desc (0xa0=160 chars)
+//	--script-path       (0x0d=13 chars) StringVar, desc (0xa0=160 chars)
+//	--input-format      (0x0d=13 chars) BoolVarP, desc (0x65=101 chars)
+//	--sandbox-enabled   (0x13=19 chars) BoolVarP, default 1, desc (0x6d=109 chars)
+//	--sandbox-command   (0x14=20 chars) StringVar, desc (0xcd=205 chars)
+//	--debug             (0x05=5 chars) BoolVarP, default false, desc (0x32=50 chars)
+//	--sandbox-disabled  (0x13=19 chars) BoolVarP, desc (0x65=101 chars)
+//	--sandbox-backend   (0x0f=15 chars) BoolVarP, desc (0x43=67 chars)
+//	--log-file          StringVar
+//	--secret-path       StringVar
 func AddTaskRunCommand(rootCmd *cobra.Command) {
 	// Allocate flag storage variables.
 	// Binary: 0xb78365-0xb78492 - many runtime.newobject + mallocgc calls
-	var apiURL string          // offset 0xb0
-	var workID string          // offset 0xc8
-	var stdin bool             // offset 0x78[0] - byte 0 of 7-byte bool block
-	var outputFile string      // offset 0xe0
-	var workingDir string      // offset 0xa8
-	var scriptPath string      // offset 0x108
-	var inputFormat string     // offset 0x78[1-2] - bytes 1-2
-	var sandboxEnabled bool    // offset 0x78[3-5] - bytes 3-5
-	var sandboxCommand string  // offset 0x100
-	var debug bool             // offset 0x78[6] - byte 6
+	var apiURL string         // offset 0xb0
+	var workID string         // offset 0xc8
+	var stdin bool            // offset 0x78[0] - byte 0 of 7-byte bool block
+	var outputFile string     // offset 0xe0
+	var workingDir string     // offset 0xa8
+	var scriptPath string     // offset 0x108
+	var inputFormat string    // offset 0x78[1-2] - bytes 1-2
+	var sandboxEnabled bool   // offset 0x78[3-5] - bytes 3-5
+	var sandboxCommand string // offset 0x100
+	var debug bool            // offset 0x78[6] - byte 6
 	var sandboxDisabled bool
-	var sandboxBackend string  // offset 0x80
-	var logFile string         // offset 0xe8
-	var secretPath string      // offset 0xc0
-	var logLevel string        // offset 0xd8
+	var sandboxBackend string // offset 0x80
+	var logFile string        // offset 0xe8
+	var secretPath string     // offset 0xc0
+	var logLevel string       // offset 0xd8
 	var enableTelemetry bool
 	var metricsEnabled bool
 	var sessionID string
 	var mode string
-	var secretKeyVar string    // offset 0xf8
+	var secretKeyVar string // offset 0xf8
 
 	// Create the cobra.Command.
 	// Binary: 0xb78492-0xb784db
@@ -401,11 +403,11 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 			// TODO(re): config parameter should be *config.ClaudeConfig, but that type
 			// hasn't been fully reconstructed yet. Using parsedCtx.StartupContext for now.
 			executor := claude.NewClaudeCodeExecutor(
-				slogger,              // logger
-				context.Background(), // ctx
+				slogger,                  // logger
+				context.Background(),     // ctx
 				parsedCtx.StartupContext, // config (TODO: should be *config.ClaudeConfig)
-				outcomes,             // outcomes
-				diagService,          // diagReporter
+				outcomes,                 // outcomes
+				diagService,              // diagReporter
 			)
 
 			// Execute Claude Code process
@@ -455,8 +457,9 @@ func AddTaskRunCommand(rootCmd *cobra.Command) {
 // Implementations: V0Parser (legacy), V1Parser (work response format).
 //
 // Binary itabs:
-//   go:itab.*input.V0Parser,input.InputParser at 0xf5a200
-//   go:itab.*input.V1Parser,input.InputParser at 0xf5a220
+//
+//	go:itab.*input.V0Parser,input.InputParser at 0xf5a200
+//	go:itab.*input.V1Parser,input.InputParser at 0xf5a220
 type InputParser interface {
 	Parse(data []byte) (*input.ParsedContext, error)
 }
@@ -469,20 +472,22 @@ type InputParser interface {
 // Source: cmd/cmd_task_run.go
 //
 // Parameters (register-based ABI):
-//   AX = logger (*slog.Logger) - data ptr
-//   BX = logger (*slog.Logger) - handler
-//   CX = logger (*slog.Logger) - level
-//   DI = inputFormat string data
-//   SI = inputFormat string len
-//   R8 = secretPath string data
-//   R9 = secretPath string len
-//   R10 = secretKeyVar string data
-//   R11 = secretKeyVar string len
+//
+//	AX = logger (*slog.Logger) - data ptr
+//	BX = logger (*slog.Logger) - handler
+//	CX = logger (*slog.Logger) - level
+//	DI = inputFormat string data
+//	SI = inputFormat string len
+//	R8 = secretPath string data
+//	R9 = secretPath string len
+//	R10 = secretKeyVar string data
+//	R11 = secretKeyVar string len
 //
 // Returns:
-//   AX = *input.ParsedContext (nil on error)
-//   BX = error interface type
-//   CX = error interface data
+//
+//	AX = *input.ParsedContext (nil on error)
+//	BX = error interface type
+//	CX = error interface data
 //
 // Flow:
 //  1. time.Now() for timing
@@ -585,19 +590,21 @@ func loadContextFromStdin(
 // Source: cmd/cmd_task_run.go
 //
 // Parameters (register-based ABI):
-//   AX = logger (*slog.Logger) data
-//   BX = logger (*slog.Logger) handler
-//   CX = secretPath string data
-//   DI = session (*config.Session) pointer
-//   SI = workID string data
-//   R8 = workID string len
-//   R9 = envServiceKey string data
-//   R10 = envServiceKey string len
-//   R11 = hasContext bool
+//
+//	AX = logger (*slog.Logger) data
+//	BX = logger (*slog.Logger) handler
+//	CX = secretPath string data
+//	DI = session (*config.Session) pointer
+//	SI = workID string data
+//	R8 = workID string len
+//	R9 = envServiceKey string data
+//	R10 = envServiceKey string len
+//	R11 = hasContext bool
 //
 // Returns:
-//   AX = error interface type
-//   BX = error interface data
+//
+//	AX = error interface type
+//	BX = error interface data
 //
 // Flow:
 //  1. Early return nil if workID is empty, envServiceKey is empty, or !hasContext
@@ -701,10 +708,11 @@ func acknowledgeWorkIfNeeded(
 // methods for the environment config, auth context, and outcomes.
 //
 // Struct layout (from GetEnvironmentForSession disassembly):
-//   offset 0x00: *input.ParsedContext - main parsed data
-//   offset 0x08: *auth.AuthContext    - extracted auth context
-//   offset 0x10: *claude.Outcomes     - extracted outcomes
-//   offset 0x18: *slog.Logger         - logger instance
+//
+//	offset 0x00: *input.ParsedContext - main parsed data
+//	offset 0x08: *auth.AuthContext    - extracted auth context
+//	offset 0x10: *claude.Outcomes     - extracted outcomes
+//	offset 0x18: *slog.Logger         - logger instance
 //
 // Binary itab: go:itab.*cmd.stdinConfigClient,api.Client at 0xf5a240
 type stdinConfigClient struct {
@@ -723,15 +731,17 @@ type stdinConfigClient struct {
 // Source: cmd/cmd_task_run.go
 //
 // Parameters (register-based ABI):
-//   AX = *stdinConfigClient (receiver)
-//   BX, CX = logger context (handler, level)
-//   DI = context (for slog)
-//   SI = session ID string data / len
+//
+//	AX = *stdinConfigClient (receiver)
+//	BX, CX = logger context (handler, level)
+//	DI = context (for slog)
+//	SI = session ID string data / len
 //
 // Returns:
-//   AX = *input.ParsedContext.EnvironmentConfig (the first field of ParsedContext, JSON raw message)
-//   BX = error interface type (always nil)
-//   CX = error interface data (always nil)
+//
+//	AX = *input.ParsedContext.EnvironmentConfig (the first field of ParsedContext, JSON raw message)
+//	BX = error interface type (always nil)
+//	CX = error interface data (always nil)
 //
 // Flow:
 //  1. Read logger from offset 0x18
@@ -783,8 +793,9 @@ func (s *stdinConfigClient) GetEnvironmentForSession(ctx context.Context, sessio
 // Source: cmd/cmd_task_run.go
 //
 // Disassembly (2 instructions):
-//   0xb7bae0  MOVQ 0x8(AX), AX    ; load field at offset 0x08
-//   0xb7bae4  RET
+//
+//	0xb7bae0  MOVQ 0x8(AX), AX    ; load field at offset 0x08
+//	0xb7bae4  RET
 func (s *stdinConfigClient) GetAuthContext() *auth.AuthContext {
 	// 0xb7bae0: MOVQ 0x8(AX), AX - return field at offset 0x08
 	return s.authCtx
@@ -798,8 +809,9 @@ func (s *stdinConfigClient) GetAuthContext() *auth.AuthContext {
 // Source: cmd/cmd_task_run.go
 //
 // Disassembly (2 instructions):
-//   0xb7bb00  MOVQ 0x10(AX), AX   ; load field at offset 0x10
-//   0xb7bb04  RET
+//
+//	0xb7bb00  MOVQ 0x10(AX), AX   ; load field at offset 0x10
+//	0xb7bb04  RET
 func (s *stdinConfigClient) GetOutcomes() *claude.Outcomes {
 	// 0xb7bb00: MOVQ 0x10(AX), AX - return field at offset 0x10
 	return s.outcomes

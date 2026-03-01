@@ -30,12 +30,12 @@ var Registration *mcp.ServerRegistration
 // Source file: registration.go
 //
 // Assembly flow:
-//   1. LEA "code-sign" string → name (0xb0cbf7)
-//   2. LEA description string "codesign server for signing operations..." (0xb0cc01)
-//   3. LEA configureServer func ref (0xb0cc0d)
-//   4. LEA init.func1 (shouldRegister wrapper) (0xb0cc19)
-//   5. CALL mcp.NewRegistration (0xb0cc25)
-//   6. Store result in Registration (0xb0cc40)
+//  1. LEA "code-sign" string → name (0xb0cbf7)
+//  2. LEA description string "codesign server for signing operations..." (0xb0cc01)
+//  3. LEA configureServer func ref (0xb0cc0d)
+//  4. LEA init.func1 (shouldRegister wrapper) (0xb0cc19)
+//  5. CALL mcp.NewRegistration (0xb0cc25)
+//  6. Store result in Registration (0xb0cc40)
 func init() {
 	Registration = mcp.NewRegistration(
 		"code-sign",
@@ -52,9 +52,10 @@ func init() {
 // Source file: registration.go
 //
 // Assembly:
-//   XORL AX, AX    ; returns false (0)
-//   XORL BX, BX
-//   RET
+//
+//	XORL AX, AX    ; returns false (0)
+//	XORL BX, BX
+//	RET
 //
 // Note: This returns (nil, nil) - effectively a no-op closure. The actual
 // shouldRegister function always returns true.
@@ -69,8 +70,9 @@ func shouldRegisterWrapper() bool {
 // Source file: registration.go
 //
 // Assembly (trivial):
-//   MOVL $0x1, AX   ; return true
-//   RET
+//
+//	MOVL $0x1, AX   ; return true
+//	RET
 func shouldRegister() bool {
 	return true
 }
@@ -82,10 +84,10 @@ func shouldRegister() bool {
 // Source file: registration.go
 //
 // Assembly flow:
-//   1. Allocates CodeSignMCPServer via runtime.newobject (0xb0cca0)
-//   2. Creates BaseServer: sets name "code-sign", version (0xb0ccba)
-//   3. Stores logger and configuration on the struct
-//   4. Returns as MCPServer interface via itab
+//  1. Allocates CodeSignMCPServer via runtime.newobject (0xb0cca0)
+//  2. Creates BaseServer: sets name "code-sign", version (0xb0ccba)
+//  3. Stores logger and configuration on the struct
+//  4. Returns as MCPServer interface via itab
 func configureServer(logger *slog.Logger, name string, envCfg interface{}, authCtx interface{}, sessionCfg interface{}) (mcp.MCPServer, error) {
 	server := &CodeSignMCPServer{
 		BaseServer: &mcp.BaseServer{},

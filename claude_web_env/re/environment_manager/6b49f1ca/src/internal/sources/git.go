@@ -59,7 +59,7 @@ type GitHandler struct {
 	sessionID         string                  // offset 0x18
 	gitProxyConfig    interface{}             // offset 0x28 — single pointer to proxy config
 	outcomes          map[string][]string     // offset 0x30 — branch outcomes keyed by repo name
-	authProvider      auth.SourceAuthProvider  // offset 0x38 — set per-source in Process via createSourceAuthProvider
+	authProvider      auth.SourceAuthProvider // offset 0x38 — set per-source in Process via createSourceAuthProvider
 	activityRecorder  interface{}             // offset 0x48
 	processMode       string                  // offset 0x58 — e.g. "fresh", "allow-prefetched", "resume"
 	gitProxyManager   gitproxy.Manager        // offset 0x68 — concrete Manager interface, set post-construction
@@ -125,7 +125,7 @@ func NewGitHandler(
 		outcomes:          outcomes,          // 0x30
 		activityRecorder:  activityRecorder,  // 0x48
 		processMode:       processMode,       // 0x58
-		isResume:          isResume,           // 0x78
+		isResume:          isResume,          // 0x78
 		postCloneHookPath: postCloneHookPath, // 0x80
 	}
 }
