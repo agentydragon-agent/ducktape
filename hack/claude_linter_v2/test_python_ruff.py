@@ -41,7 +41,7 @@ except:
     e722 = [v for v in violations if v.rule == "ruff:E722"]
     assert len(e722) == 1
     assert e722[0].line == 3
-    assert "bare" in e722[0].message.lower() or "except" in e722[0].message.lower()
+    assert "bare" in e722[0].message.lower()
     assert e722[0].fixable is False
 
 

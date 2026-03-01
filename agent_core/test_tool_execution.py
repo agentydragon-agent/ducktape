@@ -139,8 +139,7 @@ async def test_tool_error_continues_turn(compositor, mcp_tool_provider, validati
     error_block = one(first_output.result.content)
     assert isinstance(error_block, TextContent)
     error_content = error_block.text
-    assert_that(error_content.lower(), contains_string("error"))
-    assert "text/markdown" in error_content or "literal" in error_content.lower()
+    assert_that(error_content, contains_string("text/markdown"))
 
     # Second call should succeed
     second_output = outputs[1]
@@ -250,7 +249,7 @@ async def test_malformed_json_in_tool_arguments(mcp_tool_provider_echo, recordin
     text, events = await _run_malformed_json_test(mcp_tool_provider_echo, recording_handler, make_turn)
 
     # Agent should complete successfully despite malformed JSON
-    assert "error" in text.lower() or "invalid" in text.lower()
+    assert "error" in text.lower()
 
     # Check that error was emitted as a tool result
     tool_outputs = [evt for evt in events if isinstance(evt, ToolCallOutput)]

@@ -46,7 +46,7 @@ def test_cli_columns_actually_shows_content(runner, git_repo_with_changes, monke
     assert result_tree_only.exit_code == 0
     assert "main.py" in result_tree_only.output
     # Should not have +/- counts when counts column is disabled
-    assert "+2" not in result_tree_only.output or "counts" not in result_tree_only.output.lower()
+    assert "+2" not in result_tree_only.output
 
     # Test with tree and counts - should have counts
     result_with_counts = runner.invoke(main, ["--columns", "tree,counts"], obj={}, catch_exceptions=False)
