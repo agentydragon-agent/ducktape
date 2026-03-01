@@ -17,3 +17,4 @@ resources:
   - clusterrole-cluster-diagnostics-reader.yaml
   - clusterrolebinding-cluster-diagnostics-reader.yaml
   - rolebinding-ollama-reader.yaml
+  - rolebinding-openclaw-reader.yaml
