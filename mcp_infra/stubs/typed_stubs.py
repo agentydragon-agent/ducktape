@@ -6,10 +6,8 @@ from typing import Any, cast, get_origin, get_type_hints
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
 from fastmcp.server import FastMCP
-from mcp import types as mcp_types
 from pydantic import BaseModel, TypeAdapter
 
-from mcp_infra.client_helpers import extract_error_detail_from_fastmcp
 from mcp_infra.enhanced.flat_mixin import FlatTool
 
 
@@ -64,18 +62,6 @@ class ToolModels:
     # Internal wiring details for FastMCP registry
     _arg_model: type[BaseModel] | None = None
     # No output wrapping; servers should return structured content matching Output
-
-
-def _extract_error_message(resp: FastMCPCallToolResult) -> str:
-    detail = extract_error_detail_from_fastmcp(resp)
-    if detail:
-        return cast(str, detail)
-    nontext: list[str] = [
-        type(block).__name__ for block in resp.content or [] if not isinstance(block, mcp_types.TextContent)
-    ]
-    if nontext:
-        raise NotImplementedError(f"Unsupported tool error content types: {', '.join(nontext)}")
-    return "tool error"
 
 
 class TypedClient:
@@ -134,6 +120,11 @@ class TypedClient:
         return client
 
     def error(self, name: str) -> Callable[[BaseModel], Awaitable[str]]:
+        """Return an async callable that invokes the tool expecting failure.
+
+        FastMCP's default raise_on_error=True means tool errors surface as
+        exceptions. The returned string is str(exc) from that exception.
+        """
         models = self._models.get(name)
         if not models:
             raise AttributeError(name)
@@ -143,14 +134,13 @@ class TypedClient:
             if models.Input is not None and not isinstance(payload, models.Input):
                 raise TypeError(f"{name} expects {models.Input.__name__}, got {type(payload).__name__}")
             args_dict = payload.model_dump(exclude_none=False)
-            # Call; FastMCP raises on tool error by default. Capture and return message.
             try:
                 result = await session.call_tool(name=name, arguments=args_dict)
             except Exception as exc:
                 return str(exc)
             if not result.is_error:
                 raise AssertionError("expected tool error")
-            return _extract_error_message(result)
+            raise AssertionError(f"expected exception from {name}, got is_error=True result instead")
 
         return _err
 

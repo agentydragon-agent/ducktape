@@ -31,10 +31,8 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        "//mcp_infra:client_helpers",
         "//mcp_infra/enhanced:flat_mixin",
         "@pypi//fastmcp",
-        "@pypi//mcp",
         "@pypi//pydantic",
     ],
 )
