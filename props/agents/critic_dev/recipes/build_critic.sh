@@ -55,7 +55,10 @@ fi
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-MAIN_PY_PATH="props/agents/critic/main.py"
+# The critic image uses aspect_py_binary "critic_bin", so main.py lives under
+# the runfiles tree at this path.  Appending a layer with the same path shadows
+# the original file.
+MAIN_PY_PATH="props/agents/critic/critic_bin.runfiles/_main/props/agents/critic/main.py"
 echo "Overlaying ${CUSTOM_MAIN} at ${MAIN_PY_PATH}" >&2
 
 # 1. Create a tarball with the custom main.py at the correct runfiles path
@@ -77,7 +80,7 @@ crane mutate "${BASE_REF}" \
 # 3. Compute the digest from the local tarball
 DIGEST="$(crane digest --tarball "${WORK_DIR}/image.tar")"
 
-# 4. Push and print digest
-crane push "${WORK_DIR}/image.tar" "${REGISTRY}/critic:${VARIANT}" --insecure
+# 4. Push by digest (agents are not allowed to push by tag)
+crane push "${WORK_DIR}/image.tar" "${REGISTRY}/critic@${DIGEST}" --insecure
 
 echo "${DIGEST}"
