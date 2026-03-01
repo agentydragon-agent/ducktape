@@ -15,18 +15,18 @@ import (
 // Type size: 136 bytes.
 // JSON-serialized and written to a temp config file for the sandbox runtime.
 type SandboxConfig struct {
-	AllowedDomains             []string       `json:"allowedDomains"`
-	DeniedDomains              []string       `json:"deniedDomains"`
-	AllowWrite                 []string       `json:"allowWrite"`
-	DenyRead                   []string       `json:"denyRead"`
-	DenyWrite                  []string       `json:"denyWrite"`
-	Network                    *NetworkConfig `json:"network"`
-	AllowedTools               []string       `json:"allowed_tools,omitempty"`
-	DisallowedTools            []string       `json:"disallowed_tools,omitempty"`
-	EnableWeakerNestedSandbox  bool           `json:"enableWeakerNestedSandbox"`
-	UseSandboxGatewayConfig    bool           `json:"use_sandbox_gateway_config,omitempty"`
-	AllowUnrestrictedGitPush   bool           `json:"allow_unrestricted_git_push,omitempty"`
-	AllowGitConfig             bool           `json:"allowGitConfig,omitempty"`
+	AllowedDomains            []string       `json:"allowedDomains"`
+	DeniedDomains             []string       `json:"deniedDomains"`
+	AllowWrite                []string       `json:"allowWrite"`
+	DenyRead                  []string       `json:"denyRead"`
+	DenyWrite                 []string       `json:"denyWrite"`
+	Network                   *NetworkConfig `json:"network"`
+	AllowedTools              []string       `json:"allowed_tools,omitempty"`
+	DisallowedTools           []string       `json:"disallowed_tools,omitempty"`
+	EnableWeakerNestedSandbox bool           `json:"enableWeakerNestedSandbox"`
+	UseSandboxGatewayConfig   bool           `json:"use_sandbox_gateway_config,omitempty"`
+	AllowUnrestrictedGitPush  bool           `json:"allow_unrestricted_git_push,omitempty"`
+	AllowGitConfig            bool           `json:"allowGitConfig,omitempty"`
 }
 
 // NetworkConfig holds network-related sandbox configuration.

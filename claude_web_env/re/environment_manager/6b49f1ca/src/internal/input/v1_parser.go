@@ -19,13 +19,14 @@ import (
 //
 // Binary: type:.eq at 0xb0c860
 // Struct fields accessed in buildSessionResult (offsets 0x00, 0x18, 0x20, 0x30, 0x48, 0x50, 0x58):
-//   0x00: Logger        *slog.Logger
-//   0x08: SessionID     string (0x08 data, 0x10 len)
-//   0x18: APIUrl        string (0x18 data, 0x20 len)
-//   0x28: SecretKey     string (0x28 data, 0x30 len)
-//   0x38: O11y          o11y.O11yService (interface: 0x38 itab, 0x40 data)
-//   0x48: SecretPath    string (0x48 data, 0x50 len)
-//   0x58: ConfigClient  *api.SessionsClient (0x58)
+//
+//	0x00: Logger        *slog.Logger
+//	0x08: SessionID     string (0x08 data, 0x10 len)
+//	0x18: APIUrl        string (0x18 data, 0x20 len)
+//	0x28: SecretKey     string (0x28 data, 0x30 len)
+//	0x38: O11y          o11y.O11yService (interface: 0x38 itab, 0x40 data)
+//	0x48: SecretPath    string (0x48 data, 0x50 len)
+//	0x58: ConfigClient  *api.SessionsClient (0x58)
 type V1Parser struct {
 	Logger       *slog.Logger
 	SessionID    string
@@ -135,11 +136,11 @@ func (p *V1Parser) buildSessionResult(workResp *V1WorkResponse, authCtx *auth.Au
 
 // sessionContext represents the session context data from the API.
 type sessionContext struct {
-	StartupContext    json.RawMessage          `json:"startup_context"`
-	EnvironmentConfig json.RawMessage          `json:"environment"`
-	AuthConfigs       json.RawMessage          `json:"auth_configs"`
-	Outcomes          json.RawMessage          `json:"outcomes"`
-	McpConfigFile     *config.McpConfigFile    `json:"mcp_config_file"`
+	StartupContext    json.RawMessage       `json:"startup_context"`
+	EnvironmentConfig json.RawMessage       `json:"environment"`
+	AuthConfigs       json.RawMessage       `json:"auth_configs"`
+	Outcomes          json.RawMessage       `json:"outcomes"`
+	McpConfigFile     *config.McpConfigFile `json:"mcp_config_file"`
 }
 
 // fetchSessionContext retrieves the session context from the Anthropic API.
@@ -155,10 +156,10 @@ type sessionContext struct {
 //     and AuthContext structs to get the actual API key and endpoint.
 //  3. At 0xb0b209-0xb0b22a: constructs a SessionsClient on the stack at
 //     0xd8(SP) with fields:
-//       - 0xd8: HttpClient    (from NewHttpClient return)
-//       - 0xe0: ApiKey.ptr    (from authCtx[0x00] = sessionIngressToken ptr)
-//       - 0xe8: ApiKey.len    (from authCtx[0x08] = sessionIngressToken len)
-//       - 0xf0: Logger        (p.Logger)
+//     - 0xd8: HttpClient    (from NewHttpClient return)
+//     - 0xe0: ApiKey.ptr    (from authCtx[0x00] = sessionIngressToken ptr)
+//     - 0xe8: ApiKey.len    (from authCtx[0x08] = sessionIngressToken len)
+//     - 0xf0: Logger        (p.Logger)
 //  4. At 0xb0b232-0xb0b25a: loads workResp.Data.SessionID (offsets 0x50, 0x58
 //     of workResp) and calls GetSessionContext(ctx, sessionID)
 //  5. On error (BX != nil at 0xb0b260): wraps with

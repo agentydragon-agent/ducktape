@@ -18,9 +18,10 @@ import (
 // RepoAuth holds authentication configuration for a single git repository.
 //
 // Struct layout (from type equality function at 0xaea320):
-//   offset 0x00: Repo string (ptr + len)
-//   offset 0x10: Token string (ptr + len)
-//   offset 0x20: UpstreamURL string (ptr + len)
+//
+//	offset 0x00: Repo string (ptr + len)
+//	offset 0x10: Token string (ptr + len)
+//	offset 0x20: UpstreamURL string (ptr + len)
 type RepoAuth struct {
 	Repo        string // offset 0x00: repository identifier (e.g., "owner/repo")
 	Token       string // offset 0x10: authentication token
@@ -30,16 +31,17 @@ type RepoAuth struct {
 // ServerConfig holds configuration for creating a git proxy server.
 //
 // Struct layout (from NewServer field access patterns):
-//   offset 0x00: SessionID string (ptr + len) - checked at offset 0x08 for len
-//   offset 0x10: SessionIngressURL string (ptr + len) - checked at offset 0x18 for len
-//   offset 0x20: RepoAuths []RepoAuth (ptr + len + cap) - iterated at offset 0x28 for len
-//   offset 0x38: MaxRetries int
-//   offset 0x40: Logger *slog.Logger
+//
+//	offset 0x00: SessionID string (ptr + len) - checked at offset 0x08 for len
+//	offset 0x10: SessionIngressURL string (ptr + len) - checked at offset 0x18 for len
+//	offset 0x20: RepoAuths []RepoAuth (ptr + len + cap) - iterated at offset 0x28 for len
+//	offset 0x38: MaxRetries int
+//	offset 0x40: Logger *slog.Logger
 type ServerConfig struct {
-	SessionID         string     // offset 0x00
-	SessionIngressURL string     // offset 0x10
-	RepoAuths         []RepoAuth // offset 0x20
-	MaxRetries        int        // offset 0x38
+	SessionID         string       // offset 0x00
+	SessionIngressURL string       // offset 0x10
+	RepoAuths         []RepoAuth   // offset 0x20
+	MaxRetries        int          // offset 0x38
 	Logger            *slog.Logger // offset 0x40
 }
 
@@ -60,26 +62,27 @@ type Server interface {
 // server is the concrete implementation of Server.
 //
 // Struct layout (from type equality at 0xaea240 and field accesses):
-//   offset 0x00: config *ServerConfig
-//   offset 0x08: httpServer *http.Server
-//   offset 0x10: listener net.Listener
-//   offset 0x18: port int
-//   offset 0x20: logger *slog.Logger
-//   offset 0x28: mu sync.RWMutex (embedded, size 0x18)
-//   offset 0x40: started bool
+//
+//	offset 0x00: config *ServerConfig
+//	offset 0x08: httpServer *http.Server
+//	offset 0x10: listener net.Listener
+//	offset 0x18: port int
+//	offset 0x20: logger *slog.Logger
+//	offset 0x28: mu sync.RWMutex (embedded, size 0x18)
+//	offset 0x40: started bool
 //
 // Implements: Server (itab at 0xf65948)
 type server struct {
-	config           *ServerConfig  // offset 0x00
-	httpServer       *http.Server   // offset 0x08
-	listener         net.Listener   // offset 0x10 (interface: itab + data)
-	port             int            // offset 0x18 (not used directly; derived from listener addr)
-	logger           *slog.Logger   // offset 0x20
-	mu               sync.RWMutex  // offset 0x28 (size 0x18)
-	started          bool           // offset 0x40
-	sessionIngressURL string        // accessed via config
-	sessionID        string         // accessed via config
-	repoAuths        map[string]RepoAuth // built from config.RepoAuths
+	config            *ServerConfig       // offset 0x00
+	httpServer        *http.Server        // offset 0x08
+	listener          net.Listener        // offset 0x10 (interface: itab + data)
+	port              int                 // offset 0x18 (not used directly; derived from listener addr)
+	logger            *slog.Logger        // offset 0x20
+	mu                sync.RWMutex        // offset 0x28 (size 0x18)
+	started           bool                // offset 0x40
+	sessionIngressURL string              // accessed via config
+	sessionID         string              // accessed via config
+	repoAuths         map[string]RepoAuth // built from config.RepoAuths
 }
 
 // NewServer creates a new git proxy server from the given config.
@@ -138,9 +141,10 @@ func NewServer(config *ServerConfig) (*server, error) {
 // Source file: server.go
 //
 // Closures:
-//   func1 at 0xae9a20 - goroutine running http.Server.Serve
-//   deferwrap1 at 0xae9be0 - deferred RWMutex unlock
-//   newHandler.func2 at 0xaea220 - handler factory
+//
+//	func1 at 0xae9a20 - goroutine running http.Server.Serve
+//	deferwrap1 at 0xae9be0 - deferred RWMutex unlock
+//	newHandler.func2 at 0xaea220 - handler factory
 func (s *server) Start(ctx context.Context, logger *slog.Logger) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -235,7 +239,8 @@ func (s *server) Start(ctx context.Context, logger *slog.Logger) error {
 // Source file: server.go
 //
 // Closure:
-//   deferwrap1 at 0xae9fc0 - deferred RWMutex unlock
+//
+//	deferwrap1 at 0xae9fc0 - deferred RWMutex unlock
 func (s *server) Stop(ctx context.Context, logger *slog.Logger) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -279,7 +284,8 @@ func (s *server) Stop(ctx context.Context, logger *slog.Logger) error {
 // Source file: server.go
 //
 // Closure:
-//   deferwrap1 at 0xaea140 - deferred RWMutex read-unlock
+//
+//	deferwrap1 at 0xaea140 - deferred RWMutex read-unlock
 func (s *server) Port() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

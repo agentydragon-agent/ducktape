@@ -54,12 +54,12 @@ func (b BaseSource) GetDirectory(baseDir string) string {
 //
 //	Auth (offset 48), AllowUnrestrictedGitPush (offset 56).
 type GitInfo struct {
-	Type                     string `json:"type"`
-	Repo                     string `json:"repo"`
-	Ref                      *string `json:"ref"`
-	URL                      *string `json:"url"`
+	Type                     string      `json:"type"`
+	Repo                     string      `json:"repo"`
+	Ref                      *string     `json:"ref"`
+	URL                      *string     `json:"url"`
 	Auth                     *AuthConfig `json:"auth"`
-	AllowUnrestrictedGitPush bool `json:"allow_unrestricted_git_push,omitempty"`
+	AllowUnrestrictedGitPush bool        `json:"allow_unrestricted_git_push,omitempty"`
 }
 
 // AuthConfig holds source-level authentication configuration.
@@ -273,22 +273,22 @@ type StartupContext struct {
 // It deserializes sources as raw JSON messages so they can be dispatched by type.
 // Reconstructed from DWARF: the anonymous struct used in (*StartupContext).UnmarshalJSON.
 type startupContextJSON struct {
-	Sources                 []json.RawMessage `json:"sources"`
-	APIBaseURL              string            `json:"api_base_url,omitempty"`
-	Outcomes                []OutcomeField    `json:"outcomes,omitempty"`
-	CustomSystemPrompt      string            `json:"custom_system_prompt,omitempty"`
-	AppendSystemPrompt      string            `json:"append_system_prompt,omitempty"`
-	Model                   string            `json:"model,omitempty"`
+	Sources                 []json.RawMessage      `json:"sources"`
+	APIBaseURL              string                 `json:"api_base_url,omitempty"`
+	Outcomes                []OutcomeField         `json:"outcomes,omitempty"`
+	CustomSystemPrompt      string                 `json:"custom_system_prompt,omitempty"`
+	AppendSystemPrompt      string                 `json:"append_system_prompt,omitempty"`
+	Model                   string                 `json:"model,omitempty"`
 	McpConfig               map[string]interface{} `json:"mcp_config,omitempty"`
-	AllowedTools            []string          `json:"allowed_tools,omitempty"`
-	DisallowedTools         []string          `json:"disallowed_tools,omitempty"`
-	EnabledTools            []string          `json:"enabled_tools,omitempty"`
-	ClaudeCodeArgs          map[string]string `json:"claude_code_args,omitempty"`
-	McpConfigFile           *McpConfigFile    `json:"mcp_config_file,omitempty"`
-	UseSandboxGatewayConfig bool              `json:"use_sandbox_gateway_config,omitempty"`
-	Entrypoint              string            `json:"entrypoint,omitempty"`
-	EnvironmentVariables    map[string]string `json:"environment_variables,omitempty"`
-	EnvironmentSubType      string            `json:"environment_sub_type,omitempty"`
+	AllowedTools            []string               `json:"allowed_tools,omitempty"`
+	DisallowedTools         []string               `json:"disallowed_tools,omitempty"`
+	EnabledTools            []string               `json:"enabled_tools,omitempty"`
+	ClaudeCodeArgs          map[string]string      `json:"claude_code_args,omitempty"`
+	McpConfigFile           *McpConfigFile         `json:"mcp_config_file,omitempty"`
+	UseSandboxGatewayConfig bool                   `json:"use_sandbox_gateway_config,omitempty"`
+	Entrypoint              string                 `json:"entrypoint,omitempty"`
+	EnvironmentVariables    map[string]string      `json:"environment_variables,omitempty"`
+	EnvironmentSubType      string                 `json:"environment_sub_type,omitempty"`
 }
 
 // sourceTypeJSON is used to peek at a source's type field before full deserialization.

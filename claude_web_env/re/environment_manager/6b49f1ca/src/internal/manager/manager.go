@@ -34,11 +34,12 @@ type TunnelClient interface {
 // registration, git signing configuration, and environment initialization.
 //
 // Binary struct layout:
-//   Offset 0x00: Ctx context.Context (interface, 16 bytes)
-//   Offset 0x10: Logger *slog.Logger (pointer, 8 bytes)
-//   Offset 0x18: Config interface{} (can be envtype.EnvironmentType or api.Client, 16 bytes)
-//   Offset 0x28: TunnelInfo *TunnelInfo
-//   Offset 0x48: tunnelClient (may be nil, checked at runtime)
+//
+//	Offset 0x00: Ctx context.Context (interface, 16 bytes)
+//	Offset 0x10: Logger *slog.Logger (pointer, 8 bytes)
+//	Offset 0x18: Config interface{} (can be envtype.EnvironmentType or api.Client, 16 bytes)
+//	Offset 0x28: TunnelInfo *TunnelInfo
+//	Offset 0x48: tunnelClient (may be nil, checked at runtime)
 type Manager struct {
 	Ctx           context.Context // Context for manager operations
 	Logger        *slog.Logger    // Structured logger
@@ -273,7 +274,7 @@ func (m *Manager) configureGitSigning() {
 //  3. If environment type supports GetCWD (typeAssert.7 at 0xb6f989):
 //     retrieves the working directory string
 //     - If CWD is non-empty: calls os.Setenv or os.Chdir to set it,
-//       logs "Set working directory from environment config" with session_id
+//     logs "Set working directory from environment config" with session_id
 //     - If CWD is empty: logs "No working directory specified in environment config"
 //  4. If environment type does NOT support GetCWD:
 //     logs "No working directory specified in environment config" (0x34=52 chars)
@@ -319,15 +320,15 @@ func (m *Manager) applyEnvironmentConfig(ctx context.Context, logger *slog.Logge
 //  7. Calls environment type's Initialize method via vtable dispatch (0xb6f44c)
 //  8. Stores result into shared result variable
 //  9. Calculates elapsed time
-// 10. If Initialize returned error:
+//  10. If Initialize returned error:
 //     Logs ERROR "Environment initialization failed (parallel)" (0x2c=44 chars)
 //     with error, error_string, duration_ms
-// 11. If Initialize succeeded:
+//  11. If Initialize succeeded:
 //     Logs INFO "Environment initialization completed (parallel)" (0x2f=47 chars)
 //     with duration_ms
 //     Creates map with "duration_ms" key, logs diag "env_init_completed" (0x12=18 chars)
-// 12. Calls applyEnvironmentConfig (0xb6f756)
-// 13. Invokes deferred o11y cleanup functions
+//  12. Calls applyEnvironmentConfig (0xb6f756)
+//  13. Invokes deferred o11y cleanup functions
 func (m *Manager) initializeEnvironmentAsync(ctx context.Context, logger *slog.Logger) {
 	defer func() {
 		// Deferred o11y recording cleanup
@@ -442,15 +443,16 @@ func (m *Manager) addOfficialPluginMarketplaceAsync(ctx context.Context, logger 
 //     - Logs "Creating tunnel client" with session_id, tunnel_endpoint
 //  5. If not "baku" or tunnel info is nil:
 //     - Logs WARN "control_plane_deploy_unavailable" (0x20=32 chars)
-//       with session_id, environment_sub_type, has_tunnel_info
+//     with session_id, environment_sub_type, has_tunnel_info
 //
 // Parameters:
-//   AX = *Manager
-//   BX = API base URL string ptr
-//   CX = API base URL string len
-//   DI = tunnel info interface itab (may be nil)
-//   SI = tunnel info interface data
-//   R8 = session config pointer
+//
+//	AX = *Manager
+//	BX = API base URL string ptr
+//	CX = API base URL string len
+//	DI = tunnel info interface itab (may be nil)
+//	SI = tunnel info interface data
+//	R8 = session config pointer
 func (m *Manager) createTunnelClient(ctx context.Context, logger *slog.Logger) {
 	// Parse API base URL and convert scheme for WebSocket
 	// Binary: 0xb6db2b net/url.Parse
@@ -495,14 +497,14 @@ func (m *Manager) createTunnelClient(ctx context.Context, logger *slog.Logger) {
 		// Binary: 0xb6dfc0-0xb6e018 — URL.String(), NewTunnelClient call
 		tunnelEndpoint := parsedURL.String()
 		NewTunnelClient(
-			logger,              // [0]
-			ctx,                 // [1]
-			m.SessionID,         // [2]
-			m.APIBaseURL,        // [3]
-			tunnelEndpoint,      // [4]
-			m.SessionConfig,     // [5]
-			m.GetAuthToken(),    // [6]
-			registry,            // [7]
+			logger,           // [0]
+			ctx,              // [1]
+			m.SessionID,      // [2]
+			m.APIBaseURL,     // [3]
+			tunnelEndpoint,   // [4]
+			m.SessionConfig,  // [5]
+			m.GetAuthToken(), // [6]
+			registry,         // [7]
 		)
 
 		// Log success
@@ -563,6 +565,7 @@ func (m *Manager) registerMCPServersAsync(ctx context.Context, logger *slog.Logg
 		"failed", len(errors),
 	)
 }
+
 // Helper methods to extract configuration values from the Config interface.
 // These use type assertions to access fields from the environment config.
 // Binary: Config interface is accessed via struct field reads in createTunnelClient.

@@ -45,19 +45,19 @@ type WSResponseSender interface {
 //
 // Binary address: type at multiple locations; see individual methods.
 type Client struct {
-	logger       *slog.Logger        // offset 0x00
-	metricsKey   string              // offset 0x08 (ptr + len)
-	httpClient   *httpClientWrapper  // offset 0x10
-	wsHandler    *WSHandler          // offset 0x18
-	tunnelID     string              // offset 0x20 (ptr + len)
-	endpoint     string              // offset 0x30 (ptr + len)
-	authToken    string              // offset 0x40 (ptr + len)
-	registry     *actions.Registry   // offset 0x50
-	conn         *websocket.Conn     // offset 0x58
-	mu           isync.Mutex         // offset 0x60
+	logger     *slog.Logger       // offset 0x00
+	metricsKey string             // offset 0x08 (ptr + len)
+	httpClient *httpClientWrapper // offset 0x10
+	wsHandler  *WSHandler         // offset 0x18
+	tunnelID   string             // offset 0x20 (ptr + len)
+	endpoint   string             // offset 0x30 (ptr + len)
+	authToken  string             // offset 0x40 (ptr + len)
+	registry   *actions.Registry  // offset 0x50
+	conn       *websocket.Conn    // offset 0x58
+	mu         isync.Mutex        // offset 0x60
 	// ... additional internal fields
 	handler      *Handler
-	writeTimeout time.Duration       // offset 0x110, default 30s (0x6fc23ac00)
+	writeTimeout time.Duration // offset 0x110, default 30s (0x6fc23ac00)
 }
 
 type httpClientWrapper struct {
@@ -70,10 +70,10 @@ type httpClientWrapper struct {
 //
 // Binary address: methods at 0xb656a0, 0xb65760, 0xb65820
 type httpResponseSender struct {
-	client     *Client
-	requestID  string
-	bodyLen    int
-	logger     *slog.Logger
+	client    *Client
+	requestID string
+	bodyLen   int
+	logger    *slog.Logger
 }
 
 // wsResponseSender wraps the client to send WebSocket responses through the tunnel.

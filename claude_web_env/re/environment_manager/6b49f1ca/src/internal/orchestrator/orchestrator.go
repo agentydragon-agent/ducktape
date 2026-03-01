@@ -54,19 +54,21 @@ type SessionResponse struct {
 // Source: orchestrator/orchestrator.go
 //
 // Parameters (register ABI):
-//   AX = apiClient (interface itab ptr, validated != nil)
-//   BX = apiClient (interface data ptr)
-//   CX = sessionID string ptr
-//   DI = sessionID string len
-//   SI = pollInterval time.Duration (defaults to 5min=0x45d964b800 if 0)
-//   R8 = timeout time.Duration (defaults to 5min if 0)
-//   R9 = hookCommand string ptr
-//   R10 = logger *slog.Logger (defaults to slog.Default() if nil)
+//
+//	AX = apiClient (interface itab ptr, validated != nil)
+//	BX = apiClient (interface data ptr)
+//	CX = sessionID string ptr
+//	DI = sessionID string len
+//	SI = pollInterval time.Duration (defaults to 5min=0x45d964b800 if 0)
+//	R8 = timeout time.Duration (defaults to 5min if 0)
+//	R9 = hookCommand string ptr
+//	R10 = logger *slog.Logger (defaults to slog.Default() if nil)
 //
 // Returns:
-//   AX = *Orchestrator
-//   BX = error (interface type, nil on success)
-//   CX = error (interface data, nil on success)
+//
+//	AX = *Orchestrator
+//	BX = error (interface type, nil on success)
+//	CX = error (interface data, nil on success)
 func NewOrchestrator(
 	apiClient interface{},
 	sessionID string,
@@ -132,12 +134,14 @@ func NewOrchestrator(
 // Source: orchestrator/orchestrator.go
 //
 // Parameters:
-//   AX = *Orchestrator (self)
-//   BX, CX = ctx (context.Context interface pair)
+//
+//	AX = *Orchestrator (self)
+//	BX, CX = ctx (context.Context interface pair)
 //
 // Returns:
-//   AX = error (interface type, nil on success)
-//   BX = error (interface data)
+//
+//	AX = error (interface type, nil on success)
+//	BX = error (interface data)
 func (o *Orchestrator) Run(ctx context.Context) error {
 	// Log startup with 3 slog attrs at Info level.
 	// Binary: 0xa8d9e2 slog call with level=0, 3 attrs
@@ -247,17 +251,17 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 // Source: orchestrator/orchestrator.go
 //
 // Assembly flow:
-//   1. time.Since(lastPollTime) at 0xa8ca15
-//   2. Compute remaining = o.PollInterval (offset 0x28) - elapsed
-//   3. If remaining > 0: return early (sleep for remaining duration)
-//   4. If remaining <= 0 (timeout):
-//      a. Log "poll interval exceeded, resetting timer" (0x2d=45 chars) at Info level
-//      b. Increment o11y.OrchestratorTimeoutCounter via o11y.Increment
-//      c. If o.Hook (offset 0x10) is non-nil: call Hook.Execute at 0xa8cac3
-//         If Hook.Execute returns error: log at Error level (0x08)
-//           "timeout hook failed" (0x13=19 chars) with 1 attr "error"
-//      d. time.Now() at 0xa8cb85
-//      e. Return new time + o.PollInterval
+//  1. time.Since(lastPollTime) at 0xa8ca15
+//  2. Compute remaining = o.PollInterval (offset 0x28) - elapsed
+//  3. If remaining > 0: return early (sleep for remaining duration)
+//  4. If remaining <= 0 (timeout):
+//     a. Log "poll interval exceeded, resetting timer" (0x2d=45 chars) at Info level
+//     b. Increment o11y.OrchestratorTimeoutCounter via o11y.Increment
+//     c. If o.Hook (offset 0x10) is non-nil: call Hook.Execute at 0xa8cac3
+//     If Hook.Execute returns error: log at Error level (0x08)
+//     "timeout hook failed" (0x13=19 chars) with 1 attr "error"
+//     d. time.Now() at 0xa8cb85
+//     e. Return new time + o.PollInterval
 func (o *Orchestrator) handleLoopTimeout(
 	ctx context.Context,
 	lastPollTime time.Time,
@@ -299,13 +303,13 @@ func (o *Orchestrator) pollForSession(ctx context.Context) (*SessionResponse, er
 // Source: orchestrator/orchestrator.go
 //
 // Assembly flow:
-//   1. Log "outputting session data to stdout" (0x28=40 chars) at Info level
-//   2. o11y.Increment(ctx, OrchestratorSessionStartCounter, nil)
-//   3. slicebytetostring + convTstring on session data
-//   4. fmt.Fprintf(os.Stdout, "%s\n", sessionStr)
-//   5. If Fprintf error: fmt.Errorf("failed to write session output to stdout: %w") (0x2a=42 chars)
-//   6. Log "session output completed successfully" (0x27=39 chars) at Info level
-//   7. o11y.IncrementOrchestratorSessionEnd(ctx, nil)
+//  1. Log "outputting session data to stdout" (0x28=40 chars) at Info level
+//  2. o11y.Increment(ctx, OrchestratorSessionStartCounter, nil)
+//  3. slicebytetostring + convTstring on session data
+//  4. fmt.Fprintf(os.Stdout, "%s\n", sessionStr)
+//  5. If Fprintf error: fmt.Errorf("failed to write session output to stdout: %w") (0x2a=42 chars)
+//  6. Log "session output completed successfully" (0x27=39 chars) at Info level
+//  7. o11y.IncrementOrchestratorSessionEnd(ctx, nil)
 func (o *Orchestrator) outputSession(ctx context.Context, session *SessionResponse) error {
 	o.Logger.Info("outputting session data to stdout")
 	o11y.Increment(ctx, o11y.OrchestratorSessionStartCounter, nil)

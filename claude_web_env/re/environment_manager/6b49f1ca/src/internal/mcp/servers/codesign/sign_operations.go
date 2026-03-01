@@ -42,12 +42,13 @@ var ErrSigningFailed = errors.New("Signing failed")
 // type:.eq at 0xb11760 confirms this is a comparable struct.
 //
 // Struct layout (from field access patterns in executeSign at 0xb0f990-0xb0f9a5):
-//   offset 0x00: Content string       `json:"content"`
-//   offset 0x10: FilePath string      `json:"file_path"`
-//   offset 0x20: Source string        `json:"source"`
-//   offset 0x30: Namespace string     `json:"namespace"`
-//   offset 0x40: SigningKeyPath string `json:"signing_key_path"`
-//   offset 0x50: SourceIdentifier string `json:"source_identifier"`
+//
+//	offset 0x00: Content string       `json:"content"`
+//	offset 0x10: FilePath string      `json:"file_path"`
+//	offset 0x20: Source string        `json:"source"`
+//	offset 0x30: Namespace string     `json:"namespace"`
+//	offset 0x40: SigningKeyPath string `json:"signing_key_path"`
+//	offset 0x50: SourceIdentifier string `json:"source_identifier"`
 type RemoteSignRequest struct {
 	Content          string `json:"content"`
 	FilePath         string `json:"file_path"`
@@ -64,16 +65,16 @@ type RemoteSignRequest struct {
 // Source file: sign_operations.go
 //
 // Assembly flow (0xb109a0-0xb10ca9):
-//   1. Get logger from receiver (0xb10a07-0xb10a0d)
-//   2. Build slog attributes: "source", "file_path", "data_size_bytes", etc. (0xb10a33-0xb10ab6)
-//   3. Log "Signing content for source" at info level (0xb10b08-0xb10b26)
-//      Message: "Signing content for source" (len 0x1a = 26 at 0xb10b08)
-//   4. If sourceItf != nil: call sanitizeSource (0xb10b40)
-//   5. Check if content is empty (size == 0 at 0xb10b9e):
-//      a. If empty: return nil, ErrEmptyContent (0xb10ba6-0xb10bb4)
-//   6. Call executeSign (0xb10be6)
-//   7. If executeSign returns error: wrap with "Signing failed: %v" (0xb10c46-0xb10c90)
-//   8. Return result
+//  1. Get logger from receiver (0xb10a07-0xb10a0d)
+//  2. Build slog attributes: "source", "file_path", "data_size_bytes", etc. (0xb10a33-0xb10ab6)
+//  3. Log "Signing content for source" at info level (0xb10b08-0xb10b26)
+//     Message: "Signing content for source" (len 0x1a = 26 at 0xb10b08)
+//  4. If sourceItf != nil: call sanitizeSource (0xb10b40)
+//  5. Check if content is empty (size == 0 at 0xb10b9e):
+//     a. If empty: return nil, ErrEmptyContent (0xb10ba6-0xb10bb4)
+//  6. Call executeSign (0xb10be6)
+//  7. If executeSign returns error: wrap with "Signing failed: %v" (0xb10c46-0xb10c90)
+//  8. Return result
 func (s *CodeSignMCPServer) signContent(
 	ctx context.Context,
 	filePath string,
@@ -118,30 +119,30 @@ func (s *CodeSignMCPServer) signContent(
 // Source file: sign_operations.go
 //
 // Assembly flow (0xb0f740-0xb1090b):
-//   1. Get logger from receiver.BaseServer (0xb0f7a1-0xb0f7a7)
-//   2. Build slog attributes for logging (0xb0f7bb-0xb0f8e1):
-//      - "has_content" (bool, whether content slice has data)
-//      - "data_size_bytes" (int, length of content)
-//      - "has_signing_key" (bool)
-//      - "source" (string)
-//      - "source_identifier" (string)
-//   3. Log "Executing sign operation..." at 0xb0f903 (len 0x2a = 42)
-//      "Executing sign operation via remote server"
-//   4. Build RemoteSignRequest struct (0xb0f926-0xb0f988):
-//      - Set Content, FilePath, Source, Namespace, SigningKeyPath, SourceIdentifier
-//   5. Marshal request to JSON via json.Marshal (0xb0f9af)
-//   6. If marshal error: fmt.Errorf("failed to marshal sign request: %w") at 0xb0f9d8
-//      (len 0x1d = 29)
-//   7. Get signing server URL from config (0xb0fa37):
-//      - If config.SigningKeyPath is non-empty, use it
-//      - Else fall back to empty/default
-//   8. Build log message: fmt.Sprintf("Executing sign operation via remote server" + details)
-//      at 0xb0fadc-0xb0faf8
-//   9. Create bytes.Buffer for request body (0xb0fb0e)
+//  1. Get logger from receiver.BaseServer (0xb0f7a1-0xb0f7a7)
+//  2. Build slog attributes for logging (0xb0f7bb-0xb0f8e1):
+//     - "has_content" (bool, whether content slice has data)
+//     - "data_size_bytes" (int, length of content)
+//     - "has_signing_key" (bool)
+//     - "source" (string)
+//     - "source_identifier" (string)
+//  3. Log "Executing sign operation..." at 0xb0f903 (len 0x2a = 42)
+//     "Executing sign operation via remote server"
+//  4. Build RemoteSignRequest struct (0xb0f926-0xb0f988):
+//     - Set Content, FilePath, Source, Namespace, SigningKeyPath, SourceIdentifier
+//  5. Marshal request to JSON via json.Marshal (0xb0f9af)
+//  6. If marshal error: fmt.Errorf("failed to marshal sign request: %w") at 0xb0f9d8
+//     (len 0x1d = 29)
+//  7. Get signing server URL from config (0xb0fa37):
+//     - If config.SigningKeyPath is non-empty, use it
+//     - Else fall back to empty/default
+//  8. Build log message: fmt.Sprintf("Executing sign operation via remote server" + details)
+//     at 0xb0fadc-0xb0faf8
+//  9. Create bytes.Buffer for request body (0xb0fb0e)
 //  10. Create HTTP request: net/http.NewRequestWithContext(ctx, "POST", url, body) at 0xb0fb89
-//      Method "POST" (len 4 at 0xb0fb62)
+//     Method "POST" (len 4 at 0xb0fb62)
 //  11. If request creation error: fmt.Errorf("failed to create sign request: %w") at 0xb0fbb2
-//      (len 0x1c = 28)
+//     (len 0x1c = 28)
 //  12. Set Content-Type header: "application/json" at 0xb0fc20
 //  13. If bearerToken: set Authorization header "Bearer <token>" at 0xb0fc69
 //  14. Execute HTTP request: http.DefaultClient.Do(req) at 0xb0fd06
@@ -150,7 +151,7 @@ func (s *CodeSignMCPServer) signContent(
 //  17. Read response body: io.ReadAll(resp.Body) at 0xb0fdb0
 //  18. If error: fmt.Errorf("failed to read signing response: %w") at 0xb0fde0
 //  19. Check status code (200 range): if not OK:
-//      fmt.Errorf("MCP server returned status %d: %s") at 0xb0fe5a
+//     fmt.Errorf("MCP server returned status %d: %s") at 0xb0fe5a
 //  20. Log success, extract signature from response
 //  21. Write signature to temporary file / return as CallToolResult
 func (s *CodeSignMCPServer) executeSign(
@@ -257,19 +258,19 @@ func (s *CodeSignMCPServer) executeSign(
 // Source file: sign_operations.go
 //
 // Assembly flow (0xb10d20-0xb11106):
-//   1. If sourceItf is nil (0xb10d4d): jump to zero-source path (0xb110e4)
-//   2. Check if source is GitRepositorySource via itab comparison (0xb10d53-0xb10d5d):
-//      a. itab == go:itab.GitRepositorySource,Source → git repo branch
-//      b. Otherwise → base source branch (memcpy fallback at 0xb10d7f)
-//   3. For GitRepositorySource:
-//      a. makemap_small() for properties (0xb10dc9)
-//      b. Set "type" key = source.GetType() (mapassign_faststr at 0xb10e05)
-//      c. makemap_small() for inner map (0xb10e43)
-//      d. Set "repo" key = GitInfo.Repo (0xb10e80)
-//      e. Set "ref" key = GitInfo.Ref (0xb10eed)
-//   4. For BaseSource:
-//      a. Similar map construction with type only (0xb11039-0xb110d0)
-//   5. Return map[string]interface{} with sanitized fields
+//  1. If sourceItf is nil (0xb10d4d): jump to zero-source path (0xb110e4)
+//  2. Check if source is GitRepositorySource via itab comparison (0xb10d53-0xb10d5d):
+//     a. itab == go:itab.GitRepositorySource,Source → git repo branch
+//     b. Otherwise → base source branch (memcpy fallback at 0xb10d7f)
+//  3. For GitRepositorySource:
+//     a. makemap_small() for properties (0xb10dc9)
+//     b. Set "type" key = source.GetType() (mapassign_faststr at 0xb10e05)
+//     c. makemap_small() for inner map (0xb10e43)
+//     d. Set "repo" key = GitInfo.Repo (0xb10e80)
+//     e. Set "ref" key = GitInfo.Ref (0xb10eed)
+//  4. For BaseSource:
+//     a. Similar map construction with type only (0xb11039-0xb110d0)
+//  5. Return map[string]interface{} with sanitized fields
 func sanitizeSource(sourceItf interface{}, sourceMeta interface{}) interface{} {
 	if sourceItf == nil {
 		return nil
@@ -299,17 +300,17 @@ func sanitizeSource(sourceItf interface{}, sourceMeta interface{}) interface{} {
 // Source file: sign_operations.go
 //
 // Assembly flow (0xb11140-0xb113d3):
-//   1. os.OpenFile(filePath, 0, 0) at 0xb1118a (read-only)
-//   2. If open error: fmt.Errorf("cannot open file %s: %w", filePath, err) at 0xb11208
-//      (string "cannot open file %s: %w" len 0x17 = 23)
-//   3. defer file.Close() via deferwrap1 (0xb11400)
-//   4. io.ReadAll(file) at 0xb11285
-//      (itab go:itab.*os.File,io.Reader at 0xb1127e)
-//   5. If read error: fmt.Errorf("cannot read file %s: %w", filePath, err) at 0xb11304
-//      (string "cannot read file %s: %w" len 0x17 = 23)
-//   6. If file path is not absolute, resolve it:
-//      filepath.Abs at 0xb113a0 (0xb11365 area)
-//   7. Return (content []byte, nil)
+//  1. os.OpenFile(filePath, 0, 0) at 0xb1118a (read-only)
+//  2. If open error: fmt.Errorf("cannot open file %s: %w", filePath, err) at 0xb11208
+//     (string "cannot open file %s: %w" len 0x17 = 23)
+//  3. defer file.Close() via deferwrap1 (0xb11400)
+//  4. io.ReadAll(file) at 0xb11285
+//     (itab go:itab.*os.File,io.Reader at 0xb1127e)
+//  5. If read error: fmt.Errorf("cannot read file %s: %w", filePath, err) at 0xb11304
+//     (string "cannot read file %s: %w" len 0x17 = 23)
+//  6. If file path is not absolute, resolve it:
+//     filepath.Abs at 0xb113a0 (0xb11365 area)
+//  7. Return (content []byte, nil)
 func readFileContent(filePath string) ([]byte, error) {
 	file, err := os.OpenFile(filePath, os.O_RDONLY, 0)
 	if err != nil {

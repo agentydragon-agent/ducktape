@@ -49,17 +49,18 @@ func runPrintSandboxSettings() error {
 // constants representing the default sandbox configuration.
 //
 // Assembly analysis of runPrintSandboxSettings (0xb76bc0-0xb76e61):
-//  Struct 1 (4 fields): AllowWrite paths
-//    /tmp (4), /tmp/claude (11), "" (empty), /workspace (10)
-//  Struct 2 (3 fields): AllowedDomains
-//    api.anthropic.com (17), api-staging.anthropic.com (25), *.anthropic.com (15)
-//  Struct 3 (6 fields): DenyRead paths
-//    ~/.ssh (6), ~/.aws (6), ~/.config/gcloud (16), /etc/shadow (11), /etc/passwd- (12), /secrets (8)
-//  Final assembly: SandboxConfig with:
-//    AllowedDomains = Struct 2 (3 entries, cap 3)
-//    DenyRead = Struct 3 (6 entries, cap 6)
-//    AllowWrite = Struct 1 (4 entries, cap 4)
-//    EnableWeakerNestedSandbox = true (0xb76da5: MOVB $0x1, 0x78(AX))
+//
+//	Struct 1 (4 fields): AllowWrite paths
+//	  /tmp (4), /tmp/claude (11), "" (empty), /workspace (10)
+//	Struct 2 (3 fields): AllowedDomains
+//	  api.anthropic.com (17), api-staging.anthropic.com (25), *.anthropic.com (15)
+//	Struct 3 (6 fields): DenyRead paths
+//	  ~/.ssh (6), ~/.aws (6), ~/.config/gcloud (16), /etc/shadow (11), /etc/passwd- (12), /secrets (8)
+//	Final assembly: SandboxConfig with:
+//	  AllowedDomains = Struct 2 (3 entries, cap 3)
+//	  DenyRead = Struct 3 (6 entries, cap 6)
+//	  AllowWrite = Struct 1 (4 entries, cap 4)
+//	  EnableWeakerNestedSandbox = true (0xb76da5: MOVB $0x1, 0x78(AX))
 func getSandboxSettings() interface{} {
 	return &sandbox.SandboxConfig{
 		AllowedDomains: []string{

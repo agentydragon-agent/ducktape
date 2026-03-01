@@ -21,8 +21,9 @@ type LogCategory string
 // Known implementors: ClaudeCodeExecutionError, SourceProcessingError
 //
 // Binary itabs:
-//   go:itab.ClaudeCodeExecutionError,SessionError at 0xf60a98
-//   go:itab.SourceProcessingError,SessionError at 0xf611b0
+//
+//	go:itab.ClaudeCodeExecutionError,SessionError at 0xf60a98
+//	go:itab.SourceProcessingError,SessionError at 0xf611b0
 type SessionError interface {
 	GetUserMessage() string
 	IsFatal() bool
@@ -32,14 +33,16 @@ type SessionError interface {
 // Known implementor: *EnvManagerLogEventData
 //
 // Binary itab:
-//   go:itab.*EnvManagerLogEventData,EventData at 0xf5b440
+//
+//	go:itab.*EnvManagerLogEventData,EventData at 0xf5b440
 type EventData interface{}
 
 // MessageContent is the interface for message content in ingress events.
 // Known implementor: AssistantMessage
 //
 // Binary itab:
-//   go:itab.AssistantMessage,MessageContent at 0xf5b420
+//
+//	go:itab.AssistantMessage,MessageContent at 0xf5b420
 type MessageContent interface{}
 
 // ContentBlock represents a content block in a message.
@@ -71,21 +74,21 @@ type DiagLogEntry struct {
 
 // SessionIngressEvent is the top-level event structure sent to the session ingress API.
 type SessionIngressEvent struct {
-	Type    string      `json:"type"`     // offset 0x00: event type string (e.g., "env_manager_log")
-	ID      string      `json:"id"`       // offset 0x10: UUID string
-	Data    EventData   `json:"data"`     // offset 0x20: interface (itab + data ptr)
+	Type string    `json:"type"` // offset 0x00: event type string (e.g., "env_manager_log")
+	ID   string    `json:"id"`   // offset 0x10: UUID string
+	Data EventData `json:"data"` // offset 0x20: interface (itab + data ptr)
 }
 
 // EnvManagerLogEventData is the data payload for env_manager_log events.
 //
 // Binary address (constructor): 0x831740
 type EnvManagerLogEventData struct {
-	Message   string            `json:"message"`    // offset 0x00 (string: ptr + len)
-	Level     string            `json:"level"`      // offset 0x10 (string: ptr + len)
-	Source    string            `json:"source"`     // offset 0x20 (string: ptr + len)
-	Timestamp time.Time         `json:"timestamp"`  // offset 0x30 (wall), 0x38 (ext)
-	Nanos     int64             `json:"nanos"`      // offset 0x40
-	Fields    map[string]string `json:"fields"`     // offset 0x48
+	Message   string            `json:"message"`   // offset 0x00 (string: ptr + len)
+	Level     string            `json:"level"`     // offset 0x10 (string: ptr + len)
+	Source    string            `json:"source"`    // offset 0x20 (string: ptr + len)
+	Timestamp time.Time         `json:"timestamp"` // offset 0x30 (wall), 0x38 (ext)
+	Nanos     int64             `json:"nanos"`     // offset 0x40
+	Fields    map[string]string `json:"fields"`    // offset 0x48
 }
 
 // ResultEvent represents the result/completion event for a session.

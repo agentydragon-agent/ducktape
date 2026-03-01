@@ -23,8 +23,9 @@ import (
 // stopAPIError represents an error response from the stop API.
 //
 // Struct layout (from type equality at 0xad8680 and Error method at 0xad7480):
-//   offset 0x00: StatusCode int
-//   offset 0x08: Message string (ptr + len)
+//
+//	offset 0x00: StatusCode int
+//	offset 0x08: Message string (ptr + len)
 //
 // Implements: error (itab at 0xf5b6a0)
 type stopAPIError struct {
@@ -44,54 +45,55 @@ func (e *stopAPIError) Error() string {
 // graceful shutdown when the lease expires or heartbeats fail permanently.
 //
 // Struct layout (from NewLeaseManager at 0xad42a0 and field access patterns):
-//   offset 0x00:  environmentID string (ptr + len)
-//   offset 0x10:  logger *slog.Logger
-//   offset 0x18:  heartbeatInterval time.Duration
-//   offset 0x20:  leaseDuration time.Duration
-//   offset 0x28:  workID string (ptr + len)
-//   offset 0x38:  sessionID string (ptr + len)
-//   offset 0x48:  apiBaseURL string (ptr + len)
-//   offset 0x58:  sessionIngressToken string (ptr + len)
-//   offset 0x68:  healthFilePath string (ptr + len)
-//   offset 0x70:  defaultHeartbeatInterval time.Duration (default: 600s = 10min)
-//   offset 0x78:  mu sync.RWMutex (size ~0x18)
-//   offset 0x90:  leaseExpiresAt string (ptr + len) - protected by mu
-//   offset 0xa0:  consecutiveFailures int - protected by mu
-//   offset 0xa8:  lastHeartbeatError string (ptr + len) - protected by mu
-//   offset 0xb0:  lastError error (interface) - protected by mu
-//   offset 0xc0:  gracePeriod time.Duration - protected by mu
-//   offset 0xc8:  stuckThresholdSeconds string (ptr + len) - protected by mu
-//   offset 0xd0:  expectedLastHeartbeat string (ptr + len) - protected by mu
-//   offset 0x120: apiClient interface (type+data) - for heartbeat/stop calls
-//   offset 0x130: ctx context.Context (interface: type+data)
-//   offset 0x138: ctxValue interface
-//   offset 0x140: cancel context.CancelFunc
-//   offset 0x148: done chan struct{}
+//
+//	offset 0x00:  environmentID string (ptr + len)
+//	offset 0x10:  logger *slog.Logger
+//	offset 0x18:  heartbeatInterval time.Duration
+//	offset 0x20:  leaseDuration time.Duration
+//	offset 0x28:  workID string (ptr + len)
+//	offset 0x38:  sessionID string (ptr + len)
+//	offset 0x48:  apiBaseURL string (ptr + len)
+//	offset 0x58:  sessionIngressToken string (ptr + len)
+//	offset 0x68:  healthFilePath string (ptr + len)
+//	offset 0x70:  defaultHeartbeatInterval time.Duration (default: 600s = 10min)
+//	offset 0x78:  mu sync.RWMutex (size ~0x18)
+//	offset 0x90:  leaseExpiresAt string (ptr + len) - protected by mu
+//	offset 0xa0:  consecutiveFailures int - protected by mu
+//	offset 0xa8:  lastHeartbeatError string (ptr + len) - protected by mu
+//	offset 0xb0:  lastError error (interface) - protected by mu
+//	offset 0xc0:  gracePeriod time.Duration - protected by mu
+//	offset 0xc8:  stuckThresholdSeconds string (ptr + len) - protected by mu
+//	offset 0xd0:  expectedLastHeartbeat string (ptr + len) - protected by mu
+//	offset 0x120: apiClient interface (type+data) - for heartbeat/stop calls
+//	offset 0x130: ctx context.Context (interface: type+data)
+//	offset 0x138: ctxValue interface
+//	offset 0x140: cancel context.CancelFunc
+//	offset 0x148: done chan struct{}
 type LeaseManager struct {
-	environmentID            string          // offset 0x00
-	logger                   *slog.Logger    // offset 0x10
-	heartbeatInterval        time.Duration   // offset 0x18
-	leaseDuration            time.Duration   // offset 0x20
-	workID                   string          // offset 0x28
-	sessionID                string          // offset 0x38
-	apiBaseURL               string          // offset 0x48
-	sessionIngressToken      string          // offset 0x58
-	healthFilePath           string          // offset 0x68
-	defaultHeartbeatInterval time.Duration   // offset 0x70
+	environmentID            string        // offset 0x00
+	logger                   *slog.Logger  // offset 0x10
+	heartbeatInterval        time.Duration // offset 0x18
+	leaseDuration            time.Duration // offset 0x20
+	workID                   string        // offset 0x28
+	sessionID                string        // offset 0x38
+	apiBaseURL               string        // offset 0x48
+	sessionIngressToken      string        // offset 0x58
+	healthFilePath           string        // offset 0x68
+	defaultHeartbeatInterval time.Duration // offset 0x70
 
-	mu                    sync.RWMutex    // offset 0x78
-	leaseExpiresAt        string          // offset 0x90
-	consecutiveFailures   int             // offset 0xa0
-	lastHeartbeatError    string          // offset 0xa8
-	lastError             error           // offset 0xb0
-	gracePeriod           time.Duration   // offset 0xc0
-	stuckThresholdSeconds string          // offset 0xc8
-	expectedLastHeartbeat string          // offset 0xd0
+	mu                    sync.RWMutex  // offset 0x78
+	leaseExpiresAt        string        // offset 0x90
+	consecutiveFailures   int           // offset 0xa0
+	lastHeartbeatError    string        // offset 0xa8
+	lastError             error         // offset 0xb0
+	gracePeriod           time.Duration // offset 0xc0
+	stuckThresholdSeconds string        // offset 0xc8
+	expectedLastHeartbeat string        // offset 0xd0
 
-	httpClient *http.Client               // offset 0x120 area (simplified)
-	ctx        context.Context             // offset 0x130
-	cancel     context.CancelFunc          // offset 0x140
-	done       chan struct{}               // offset 0x148
+	httpClient *http.Client       // offset 0x120 area (simplified)
+	ctx        context.Context    // offset 0x130
+	cancel     context.CancelFunc // offset 0x140
+	done       chan struct{}      // offset 0x148
 }
 
 // GetDefaultHealthFilePath returns the default path for the health file.
@@ -113,11 +115,13 @@ func GetDefaultHealthFilePath() string {
 // permanent HTTP status codes and status text.
 //
 // Permanent error indicators (first group - checked via string contains):
-//   "124" (timeout), "403", "404", "412"
-//   "Unauthorized", "Forbidden", "Precondition Failed"
+//
+//	"124" (timeout), "403", "404", "412"
+//	"Unauthorized", "Forbidden", "Precondition Failed"
 //
 // Additional checked codes (second group - if not matched in first):
-//   "429", "500", "502"
+//
+//	"429", "500", "502"
 //
 // Binary address: 0xad3ae0
 // Source file: lease_manager.go
@@ -205,16 +209,17 @@ func isRetriableStopError(err error) bool {
 // NewLeaseManager creates a new LeaseManager with the given configuration.
 //
 // Parameters (from register mapping in disassembly):
-//   AX: environmentID string ptr
-//   BX: environmentID string len
-//   CX: logger *slog.Logger
-//   DI: heartbeatInterval time.Duration
-//   SI: leaseDuration time.Duration
-//   R8: apiClient (interface data)
-//   R9: workID string ptr
-//   R10: sessionID string ptr
-//   R11: apiBaseURL string ptr
-//   (stack): additional string lengths and remaining fields
+//
+//	AX: environmentID string ptr
+//	BX: environmentID string len
+//	CX: logger *slog.Logger
+//	DI: heartbeatInterval time.Duration
+//	SI: leaseDuration time.Duration
+//	R8: apiClient (interface data)
+//	R9: workID string ptr
+//	R10: sessionID string ptr
+//	R11: apiBaseURL string ptr
+//	(stack): additional string lengths and remaining fields
 //
 // Binary address: 0xad42a0
 // Source file: lease_manager.go
@@ -260,7 +265,8 @@ func NewLeaseManager(
 // Source file: lease_manager.go
 //
 // Closures:
-//   gowrap1 at 0xad47c0 - goroutine wrapper for heartbeatLoop
+//
+//	gowrap1 at 0xad47c0 - goroutine wrapper for heartbeatLoop
 func (lm *LeaseManager) Start(ctx context.Context) error {
 	// Send initial heartbeat
 	err := lm.sendHeartbeat()
@@ -311,7 +317,8 @@ func (lm *LeaseManager) Context() context.Context {
 // Source file: lease_manager.go
 //
 // Closure:
-//   deferwrap1 at 0xad4240 - deferred RWMutex read-unlock
+//
+//	deferwrap1 at 0xad4240 - deferred RWMutex read-unlock
 func (lm *LeaseManager) GetGracePeriod() time.Duration {
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
@@ -324,7 +331,8 @@ func (lm *LeaseManager) GetGracePeriod() time.Duration {
 // Source file: lease_manager.go
 //
 // Closure:
-//   deferwrap1 at 0xad73a0 - deferred RWMutex read-unlock
+//
+//	deferwrap1 at 0xad73a0 - deferred RWMutex read-unlock
 func (lm *LeaseManager) GetLeaseInfo() (string, int) {
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
@@ -338,7 +346,8 @@ func (lm *LeaseManager) GetLeaseInfo() (string, int) {
 // Source file: lease_manager.go
 //
 // Closure:
-//   func1 at 0xad40a0 - timer callback that calls cancel
+//
+//	func1 at 0xad40a0 - timer callback that calls cancel
 func (lm *LeaseManager) setGracePeriodAndCancel(gracePeriod time.Duration) {
 	lm.mu.Lock()
 	lm.gracePeriod = gracePeriod
@@ -356,7 +365,8 @@ func (lm *LeaseManager) setGracePeriodAndCancel(gracePeriod time.Duration) {
 // Source file: lease_manager.go
 //
 // Closure:
-//   deferwrap1 at 0xad5060 - deferred RWMutex read-unlock
+//
+//	deferwrap1 at 0xad5060 - deferred RWMutex read-unlock
 func (lm *LeaseManager) timeUntilExpiry() time.Duration {
 	lm.mu.RLock()
 	defer lm.mu.RUnlock()
@@ -382,9 +392,10 @@ func (lm *LeaseManager) timeUntilExpiry() time.Duration {
 // Source file: lease_manager.go
 //
 // Closures:
-//   deferwrap1 at 0xad5fc0 - deferred close(done) channel
-//   deferwrap2 at 0xad5e00 - deferred ticker.Stop()
-//   func1 at 0xad5e60 - deferred updateHealthFile call
+//
+//	deferwrap1 at 0xad5fc0 - deferred close(done) channel
+//	deferwrap2 at 0xad5e00 - deferred ticker.Stop()
+//	func1 at 0xad5e60 - deferred updateHealthFile call
 func (lm *LeaseManager) heartbeatLoop() {
 	defer close(lm.done)
 	defer lm.updateHealthFile()
@@ -463,7 +474,8 @@ func (lm *LeaseManager) heartbeatLoop() {
 // Source file: lease_manager.go
 //
 // Closure:
-//   deferwrap1 at 0xad7160 - deferred response body close
+//
+//	deferwrap1 at 0xad7160 - deferred response body close
 func (lm *LeaseManager) sendHeartbeat() error {
 	now := time.Now()
 
@@ -551,8 +563,9 @@ func (lm *LeaseManager) sendHeartbeat() error {
 // Source file: lease_manager.go
 //
 // Closures:
-//   func1 at 0xad53a0 - timer callback for lease expiry
-//   deferwrap1 at 0xad54a0 - deferred cleanup
+//
+//	func1 at 0xad53a0 - timer callback for lease expiry
+//	deferwrap1 at 0xad54a0 - deferred cleanup
 func (lm *LeaseManager) scheduleLeaseExpiryCheck() {
 	ttl := lm.timeUntilExpiry()
 	if ttl <= 0 {
@@ -578,8 +591,9 @@ func (lm *LeaseManager) scheduleLeaseExpiryCheck() {
 // Source file: lease_manager.go
 //
 // Closures:
-//   func1 at 0xad4be0 - timer callback for stuck check
-//   deferwrap1 at 0xad4ea0 - deferred cleanup
+//
+//	func1 at 0xad4be0 - timer callback for stuck check
+//	deferwrap1 at 0xad4ea0 - deferred cleanup
 func (lm *LeaseManager) scheduleClaudeCodeStuckCheck() {
 	// Check if stuck threshold is configured
 	lm.mu.RLock()
@@ -607,8 +621,9 @@ func (lm *LeaseManager) scheduleClaudeCodeStuckCheck() {
 // Source file: lease_manager.go
 //
 // Closures:
-//   func1 at 0xad7960 - retry loop body
-//   func1.deferwrap1 at 0xad8040 - deferred response body close
+//
+//	func1 at 0xad7960 - retry loop body
+//	func1.deferwrap1 at 0xad8040 - deferred response body close
 func (lm *LeaseManager) callStopAPI(ctx context.Context, forced bool) {
 	lm.logger.Info("calling_stop_api",
 		"forced", forced,

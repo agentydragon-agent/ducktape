@@ -109,6 +109,15 @@ repos:
     hooks:
       - id: fmt
 
+  # gofmt - Go code formatting
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: gofmt -w
+        language: system
+        types: [go]
+
   # ============================================================================
   # LOCAL HOOKS
   # ============================================================================

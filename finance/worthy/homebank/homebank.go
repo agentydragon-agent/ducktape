@@ -2,20 +2,23 @@
 // the current balance of simple accounts.
 //
 // homebank, err := homebank.ParseHomebankFile("/home/me/homebank.xhb")
-// if err != nil {
-//   panic(err)
-// }
+//
+//	if err != nil {
+//	  panic(err)
+//	}
+//
 // total := float64(0)
-// for _, account := range homebank.Accounts {
-//   if account.Flags != nil && (*account.Flags)&homebank.FLAG_CLOSED == homebank.FLAG_CLOSED {
-//     // Skip closed accounts.
-//     continue
-//   }
-//   if account.Type == homebank.ASSETS_ACCOUNT {
-//     continue
-//   }
-//   fmt.Println(homebank.GetAccountBalance(account.Key))
-// }
+//
+//	for _, account := range homebank.Accounts {
+//	  if account.Flags != nil && (*account.Flags)&homebank.FLAG_CLOSED == homebank.FLAG_CLOSED {
+//	    // Skip closed accounts.
+//	    continue
+//	  }
+//	  if account.Type == homebank.ASSETS_ACCOUNT {
+//	    continue
+//	  }
+//	  fmt.Println(homebank.GetAccountBalance(account.Key))
+//	}
 package homebank
 
 // TODO: Make the format more complete?

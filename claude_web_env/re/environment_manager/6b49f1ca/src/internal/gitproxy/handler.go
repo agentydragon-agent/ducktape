@@ -18,13 +18,16 @@ import (
 // handler implements http.Handler for the git proxy.
 //
 // Struct layout (from type equality at 0xaea3a0 cross-referenced with field access):
-//   offset 0x00: server *server (pointer to parent server config)
-//   offset 0x08: httpClient *http.Client
-//   offset 0x10: logger *slog.Logger
+//
+//	offset 0x00: server *server (pointer to parent server config)
+//	offset 0x08: httpClient *http.Client
+//	offset 0x10: logger *slog.Logger
+//
 // Additional fields accessed via the server pointer:
-//   server.repoAuths []RepoAuth (at server offset 0x20)
-//   server.sessionIngressURL string (at server offset 0x10)
-//   server.sessionID string (at server offset 0x00)
+//
+//	server.repoAuths []RepoAuth (at server offset 0x20)
+//	server.sessionIngressURL string (at server offset 0x10)
+//	server.sessionID string (at server offset 0x00)
 //
 // Implements: net/http.Handler (itab at 0xf5cc00)
 type handler struct {
@@ -36,12 +39,12 @@ type handler struct {
 // validGitPaths contains the set of recognized git HTTP protocol path suffixes.
 // Used by isValidGitPath to validate incoming requests.
 var validGitPaths = []string{
-	"info/refs",      // 9 chars
-	"git-upload-pack", // 15 chars
+	"info/refs",        // 9 chars
+	"git-upload-pack",  // 15 chars
 	"git-receive-pack", // 16 chars
-	"HEAD",           // 4 chars
-	"objects/",       // 8 chars (prefix match)
-	"refs/",          // 5 chars (prefix match)
+	"HEAD",             // 4 chars
+	"objects/",         // 8 chars (prefix match)
+	"refs/",            // 5 chars (prefix match)
 }
 
 // isValidGitPath checks whether the given path is a valid git HTTP protocol path.

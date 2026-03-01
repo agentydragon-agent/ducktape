@@ -18,11 +18,11 @@ type O11yMetric struct {
 // with increment and distribution sub-metric names and a prefix.
 // Binary: type:.eq at 0xa58060
 type O11yFunctionMetric struct {
-	Prefix          string
-	IncrementName   string
+	Prefix           string
+	IncrementName    string
 	DistributionName string
-	Tags            []string
-	Unit            string // e.g., "ms"
+	Tags             []string
+	Unit             string // e.g., "ms"
 }
 
 // TagProvider is an interface for objects that provide metric tags.
