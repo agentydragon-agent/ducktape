@@ -182,6 +182,7 @@ manifest:
     h11: h11
     h2: h2
     hamcrest: pyhamcrest
+    hass_client: hass_client
     hf_xet: hf_xet
     homeassistant_api: homeassistant_api
     hpack: hpack
@@ -499,4 +500,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: 07682314b25dc58d973e826e80a363b443570eeca4cd65e99b79bb815551f0ef
+integrity: d48c8ec3df218cfb20c8c62ba0ac0d8138cbd5d4218f0881e5f9467fbe3506a8
