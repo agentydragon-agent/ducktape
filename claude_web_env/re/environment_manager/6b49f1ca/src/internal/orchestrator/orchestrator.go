@@ -185,7 +185,6 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		// Poll for a session.
 		// Binary: 0xa8daba call to pollForSession
 		session, err := o.pollForSession(ctx)
-
 		if err != nil {
 			// Poll error path at 0xa8ddc3: propagate error
 			return err

@@ -659,13 +659,13 @@ func (e *anthropicEnvironmentType) bootstrapClaudeSkillsUnderDir(ctx context.Con
 	}
 
 	// 0xb01fc0: os.MkdirAll(skillDir, 0755)
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		// 0xb02056: fmt.Errorf("failed to create skills directory: %w", err)
 		return fmt.Errorf("failed to create skills directory: %w", err)
 	}
 
 	// 0xb02078: os.WriteFile(skillPath, sessionStartHookSkill, 0600)
-	if err := os.WriteFile(skillPath, []byte(sessionStartHookSkill), 0600); err != nil {
+	if err := os.WriteFile(skillPath, []byte(sessionStartHookSkill), 0o600); err != nil {
 		// 0xb020e9: fmt.Errorf("failed to write skill file: %w", err)
 		return fmt.Errorf("failed to write skill file: %w", err)
 	}
@@ -757,7 +757,7 @@ func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, d
 	stopHookPath := filepath.Join(claudeDir, e.config.StopHookPath)
 
 	// 0xb0188f: os.MkdirAll(claudeDir, 0755)
-	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		// 0xb018bf: fmt.Errorf("failed to create .claude directory: %w", err)
 		return fmt.Errorf("failed to create .claude directory: %w", err)
 	}
@@ -766,7 +766,7 @@ func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, d
 	if _, err := os.Stat(settingsPath); err != nil {
 		// File doesn't exist, write it
 		// 0xb01922: os.WriteFile(settingsPath, defaultSettingsJSON, 0600)
-		if err := os.WriteFile(settingsPath, defaultSettingsJSON, 0600); err != nil {
+		if err := os.WriteFile(settingsPath, defaultSettingsJSON, 0o600); err != nil {
 			// 0xb01952: fmt.Errorf("failed to write settings.json: %w", err)
 			return fmt.Errorf("failed to write settings.json: %w", err)
 		}
@@ -785,7 +785,7 @@ func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, d
 	if _, err := os.Stat(stopHookPath); err != nil {
 		// File doesn't exist, write it
 		// 0xb01b11: os.WriteFile(stopHookPath, stopHookScript, 0755)
-		if err := os.WriteFile(stopHookPath, stopHookScript, 0755); err != nil {
+		if err := os.WriteFile(stopHookPath, stopHookScript, 0o755); err != nil {
 			// 0xb01b41: fmt.Errorf("failed to write stop hook script: %w", err)
 			return fmt.Errorf("failed to write stop hook script: %w", err)
 		}
@@ -974,7 +974,7 @@ func copyDir(src, dst string) error {
 		targetPath := filepath.Join(dst, relPath)
 
 		if d.IsDir() {
-			return os.MkdirAll(targetPath, 0755)
+			return os.MkdirAll(targetPath, 0o755)
 		}
 
 		// Copy file contents.
@@ -990,7 +990,6 @@ func copyDir(src, dst string) error {
 
 		return os.WriteFile(targetPath, data, info.Mode())
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to copy directory %s to %s: %w", src, dst, err)
 	}
@@ -1027,7 +1026,7 @@ func (e *anthropicEnvironmentType) writeSupabaseEnvFiles(
 		projectRef, anonKey,
 	)
 	envPath := filepath.Join(workDir, ".env")
-	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
+	if err := os.WriteFile(envPath, []byte(envContent), 0o600); err != nil {
 		return fmt.Errorf("write .env: %w", err)
 	}
 
@@ -1040,7 +1039,7 @@ func (e *anthropicEnvironmentType) writeSupabaseEnvFiles(
 		dbPass, projectRef,
 	)
 	envLocalPath := filepath.Join(workDir, ".env.local")
-	if err := os.WriteFile(envLocalPath, []byte(dbContent), 0600); err != nil {
+	if err := os.WriteFile(envLocalPath, []byte(dbContent), 0o600); err != nil {
 		return fmt.Errorf("write .env.local: %w", err)
 	}
 

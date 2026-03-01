@@ -65,7 +65,6 @@ func InstallSandboxRuntime(logger *slog.Logger, ctx context.Context, version str
 	// Run: npm install -g <packageSpec>
 	cmd := exec.CommandContext(ctx, "npm", "install", "-g", packageSpec)
 	output, err := cmd.CombinedOutput()
-
 	if err != nil {
 		if lookErr != nil {
 			// npm install failed and we had no existing binary either.

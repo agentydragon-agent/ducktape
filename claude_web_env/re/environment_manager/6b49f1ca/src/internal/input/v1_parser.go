@@ -1,12 +1,11 @@
 package input
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
-
-	"context"
 
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/api"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/auth"

@@ -69,7 +69,6 @@ func (m *Manager) registerMCPServers(
 		// Call setupMCPServerWithRegistration for each.
 		// Binary: 0xb70462 call to setupMCPServerWithRegistration
 		result, err := m.setupMCPServerWithRegistration(ctx, logger, reg)
-
 		if err != nil {
 			// Error case at 0xb7051c:
 			// Log the error with diag.LogEnvManagerNoPII

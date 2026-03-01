@@ -738,14 +738,14 @@ func (lm *LeaseManager) updateHealthFile() {
 
 	// Ensure directory exists
 	dir := filepath.Dir(lm.healthFilePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		lm.logger.Error("failed to create health file directory",
 			"error", err,
 		)
 		return
 	}
 
-	if err := os.WriteFile(lm.healthFilePath, data, 0644); err != nil {
+	if err := os.WriteFile(lm.healthFilePath, data, 0o644); err != nil {
 		lm.logger.Error("failed to write health file",
 			"error", err,
 			"path", lm.healthFilePath,

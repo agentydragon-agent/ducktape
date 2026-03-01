@@ -116,7 +116,6 @@ func installViaNpm(
 
 	// 0xae1925: cmd.CombinedOutput()
 	output, err := cmd.CombinedOutput()
-
 	if err != nil {
 		// 0xae192f-0xae19a0: fmt.Errorf with format length 0x22 = 34
 		// "npm install failed: %s, output: %s"
@@ -156,7 +155,6 @@ func upgradeViaCLI(
 
 	// 0xae1bf6: cmd.CombinedOutput()
 	output, err := cmd.CombinedOutput()
-
 	if err != nil {
 		// 0xae1c05-0xae1c72: fmt.Errorf with format length 0x25 = 37
 		// "claude upgrade failed: %s, output: %s"

@@ -483,7 +483,7 @@ func (e *ClaudeCodeExecutor) writeMCPConfigFileFromGateway(ctx context.Context) 
 
 	filePerms := os.FileMode(mcpConfigFile.Mode)
 	if filePerms == 0 {
-		filePerms = 0600
+		filePerms = 0o600
 	}
 
 	// 0xae0002: os.WriteFile
@@ -526,7 +526,6 @@ func (e *ClaudeCodeExecutor) Destroy(ctx context.Context) error {
 	// 0xae02cb-0xae02d7: os.Remove with path length 0x32 = 50
 	// The path is "/tmp/claude_code_mcp_config.json" or similar
 	err := os.Remove("/tmp/claude_code_mcp_config.json")
-
 	if err != nil {
 		// 0xae02f3-0xae0306: check if os.ErrNotExist
 		if !os.IsNotExist(err) {
@@ -570,7 +569,6 @@ func (e *ClaudeCodeExecutor) SetClaudePath(path string) {
 func (e *ClaudeCodeExecutor) printCodeLogs(ctx context.Context) {
 	// 0xae0535: os.ReadFile("/tmp/claude_code_logs") — length 0x14 = 20
 	content, err := os.ReadFile("/tmp/claude_code_logs")
-
 	if err != nil {
 		// 0xae054f-0xae0613: slog.Warn (level 4)
 		// Message length 0x1f = 31: "Failed to read claude code logs"

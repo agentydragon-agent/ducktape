@@ -9,8 +9,10 @@ import (
 	"github.com/agentydragon/worthy/ibdock"
 )
 
-var login = flag.String("login", "", "IB login to test")
-var password = flag.String("password", "", "IB password to test")
+var (
+	login    = flag.String("login", "", "IB login to test")
+	password = flag.String("password", "", "IB password to test")
+)
 
 func main() {
 	flag.Parse()

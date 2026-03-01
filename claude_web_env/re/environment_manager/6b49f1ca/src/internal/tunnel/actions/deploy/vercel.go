@@ -179,7 +179,6 @@ func CollectFiles(dir string) ([]FileEntry, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect files: %w", err)
 	}
