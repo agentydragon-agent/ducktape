@@ -228,8 +228,10 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		Name:   tableName,
 	}
 
-	// Atomically replace: delete existing table, then re-create.
+	// Delete existing table first (separate Flush to tolerate ENOENT on first run).
 	conn.DelTable(table)
+	_ = conn.Flush() // ignore error if table doesn't exist yet
+
 	table = conn.AddTable(table)
 
 	v4Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return p.Addr().Is4() })
