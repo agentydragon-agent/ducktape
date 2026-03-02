@@ -162,8 +162,27 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 
 	for _, aff := range rawAffiliates {
 		if aff.Affiliate == nil || aff.Affiliate.Kubespan == nil {
+			hasKubespan := false
+			hostname := ""
+			nodeID := ""
+			machType := ""
+			opSys := ""
+			if aff.Affiliate != nil {
+				hasKubespan = aff.Affiliate.Kubespan != nil
+				hostname = aff.Affiliate.Hostname
+				nodeID = aff.Affiliate.NodeId
+				machType = aff.Affiliate.MachineType
+				opSys = aff.Affiliate.OperatingSystem
+			}
 			dm.logger.Info("skipping affiliate: nil Affiliate or Kubespan",
-				zap.Bool("affiliate_nil", aff.Affiliate == nil))
+				zap.Bool("affiliate_nil", aff.Affiliate == nil),
+				zap.Bool("kubespan_nil", !hasKubespan),
+				zap.String("hostname", hostname),
+				zap.String("node_id", nodeID),
+				zap.String("machine_type", machType),
+				zap.String("operating_system", opSys),
+				zap.Int("endpoints", len(aff.Endpoints)),
+			)
 			continue
 		}
 		ks := aff.Affiliate.Kubespan
