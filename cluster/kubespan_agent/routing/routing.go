@@ -228,11 +228,30 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		Name:   tableName,
 	}
 
-	// Delete existing table first (separate Flush to tolerate ENOENT on first run).
-	conn.DelTable(table)
-	_ = conn.Flush() // ignore error if table doesn't exist yet
-
+	// Check if table exists; create it if not. Matches Talos approach
+	// (never DelTable, which would ENOENT on first run).
+	existingTables, err := conn.ListTablesOfFamily(nftables.TableFamilyINet)
+	if err != nil {
+		return fmt.Errorf("listing nftables tables: %w", err)
+	}
+	for _, t := range existingTables {
+		if t.Name == tableName {
+			table = t
+			break
+		}
+	}
 	table = conn.AddTable(table)
+
+	// Delete existing chains in our table (they'll be re-created below).
+	existingChains, err := conn.ListChains()
+	if err != nil {
+		return fmt.Errorf("listing nftables chains: %w", err)
+	}
+	for _, chain := range existingChains {
+		if chain.Table.Name == tableName {
+			conn.DelChain(chain)
+		}
+	}
 
 	v4Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return p.Addr().Is4() })
 	v6Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return !p.Addr().Is4() })
