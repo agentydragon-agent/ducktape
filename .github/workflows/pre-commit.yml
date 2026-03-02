@@ -92,8 +92,10 @@ jobs:
         id: cache-precommit-restore
         uses: actions/cache/restore@v4
         with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          path: |
+            ~/.cache/pre-commit
+            ~/.cache/nixfmt-bin
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', 'tools/multitool/lockfile.json') }}
           restore-keys: |
             pre-commit-${{ runner.os }}-
 
@@ -126,7 +128,9 @@ jobs:
         if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: ~/.cache/pre-commit
+          path: |
+            ~/.cache/pre-commit
+            ~/.cache/nixfmt-bin
           key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}
 
       - name: Save Ansible Galaxy roles cache
