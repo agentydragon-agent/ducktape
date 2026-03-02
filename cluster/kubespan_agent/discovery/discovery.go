@@ -158,12 +158,18 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 	rawAffiliates := dm.client.GetAffiliates()
 	result := make(map[string]cluster.AffiliateSpec, len(rawAffiliates))
 
+	dm.logger.Info("raw affiliates from discovery client", zap.Int("count", len(rawAffiliates)))
+
 	for _, aff := range rawAffiliates {
 		if aff.Affiliate == nil || aff.Affiliate.Kubespan == nil {
+			dm.logger.Info("skipping affiliate: nil Affiliate or Kubespan",
+				zap.Bool("affiliate_nil", aff.Affiliate == nil))
 			continue
 		}
 		ks := aff.Affiliate.Kubespan
 		if ks.PublicKey == "" {
+			dm.logger.Info("skipping affiliate: empty KubeSpan public key",
+				zap.String("hostname", aff.Affiliate.Hostname))
 			continue
 		}
 

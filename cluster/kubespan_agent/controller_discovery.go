@@ -130,7 +130,9 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 					case <-dmCtx.Done():
 						return
 					case <-dm.NotifyCh():
-						logger.Info("discovery notification received, queuing reconcile")
+						affs := dm.GetAffiliates()
+						logger.Info("discovery notification received, queuing reconcile",
+							zap.Int("affiliates_at_notification", len(affs)))
 						r.QueueReconcile()
 					}
 				}
