@@ -228,7 +228,29 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		Name:   tableName,
 	}
 
-	// Check if table exists; create it if not. Matches Talos approach
+	// Diagnostic: log existing nftables state to help debug EBUSY errors.
+	for _, family := range []nftables.TableFamily{
+		nftables.TableFamilyIPv4, nftables.TableFamilyIPv6, nftables.TableFamilyINet,
+	} {
+		tables, _ := conn.ListTablesOfFamily(family)
+		for _, t := range tables {
+			rm.logger.Debug("existing nftables table", zap.String("name", t.Name), zap.Uint8("family", uint8(t.Family)))
+		}
+	}
+	existingChains, err := conn.ListChains()
+	if err != nil {
+		rm.logger.Warn("failed to list nftables chains", zap.Error(err))
+	} else {
+		for _, chain := range existingChains {
+			rm.logger.Debug("existing nftables chain",
+				zap.String("table", chain.Table.Name),
+				zap.String("chain", chain.Name),
+				zap.String("type", string(chain.Type)),
+			)
+		}
+	}
+
+	// Check if our table exists; create it if not. Matches Talos approach
 	// (never DelTable, which would ENOENT on first run).
 	existingTables, err := conn.ListTablesOfFamily(nftables.TableFamilyINet)
 	if err != nil {
@@ -242,13 +264,12 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	}
 	table = conn.AddTable(table)
 
-	// Delete existing chains in our table (they'll be re-created below).
-	existingChains, err := conn.ListChains()
-	if err != nil {
-		return fmt.Errorf("listing nftables chains: %w", err)
-	}
+	// Flush rules from existing chains in our table, then delete them.
+	// FlushChain must precede DelChain to avoid EBUSY from deleting
+	// chains that still contain rules or are referenced by verdict maps.
 	for _, chain := range existingChains {
 		if chain.Table.Name == tableName {
+			conn.FlushChain(chain)
 			conn.DelChain(chain)
 		}
 	}
