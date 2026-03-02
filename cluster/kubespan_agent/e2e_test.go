@@ -85,11 +85,12 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		_ = client.RemoveNetwork(network.ID)
 	})
 
-	// Start discovery service (plain gRPC, no TLS).
+	// Start discovery service (plain gRPC, no TLS, debug logging).
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
 			Image: discoveryRepoTag,
+			Cmd:   []string{"-debug"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
@@ -124,7 +125,7 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		Name: kubespandName,
 		Config: &docker.Config{
 			Image: kubespandRepoTag,
-			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "30s"},
+			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "30s", "-debug"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
@@ -186,13 +187,9 @@ func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.C
 
 // dumpContainerLogs writes a container's logs to TEST_UNDECLARED_OUTPUTS_DIR
 // so they appear as test artifacts in CI (BuildBuddy/Bazel).
-// Only dumps on test failure to avoid noisy artifacts on success.
+// Always dumps for postmortem analysis.
 func dumpContainerLogs(t *testing.T, client *docker.Client, containerID, name string) {
 	t.Helper()
-
-	if !t.Failed() {
-		return
-	}
 
 	outputDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
 	if outputDir == "" {
@@ -503,11 +500,12 @@ func TestKubeSpanNetworking(t *testing.T) {
 		_ = client.RemoveNetwork(network.ID)
 	})
 
-	// Start discovery service (plain gRPC, no TLS).
+	// Start discovery service (plain gRPC, no TLS, debug logging).
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
 			Image: discoveryRepoTag,
+			Cmd:   []string{"-debug"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
@@ -542,7 +540,7 @@ func TestKubeSpanNetworking(t *testing.T) {
 		Name: kubespandName,
 		Config: &docker.Config{
 			Image: kubespandTestRepoTag,
-			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml"},
+			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-debug"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,

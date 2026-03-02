@@ -130,6 +130,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 					case <-dmCtx.Done():
 						return
 					case <-dm.NotifyCh():
+						logger.Info("discovery notification received, queuing reconcile")
 						r.QueueReconcile()
 					}
 				}
@@ -182,7 +183,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			return fmt.Errorf("cleaning up affiliates: %w", err)
 		}
 
-		logger.Debug("discovery reconciled", zap.Int("affiliates", len(affiliates)))
+		logger.Info("discovery reconciled", zap.Int("affiliates", len(affiliates)))
 		r.ResetRestartBackoff()
 	}
 }

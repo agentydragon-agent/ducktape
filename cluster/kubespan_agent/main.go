@@ -29,9 +29,16 @@ func main() {
 	configPath := flag.String("config", "/etc/kubespan/agent.yaml", "path to config file")
 	discoveryOnly := flag.Bool("discovery-only", false, "run discovery only (no WireGuard/routing), exit when peers found")
 	discoveryTimeout := flag.Duration("timeout", 0, "timeout for discovery-only mode (0 = no timeout)")
+	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
-	logger, err := zap.NewProduction()
+	var logger *zap.Logger
+	var err error
+	if *debug {
+		logger, err = zap.NewDevelopment()
+	} else {
+		logger, err = zap.NewProduction()
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger: %v\n", err)
 		os.Exit(1)
