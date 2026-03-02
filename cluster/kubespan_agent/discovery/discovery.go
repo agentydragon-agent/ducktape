@@ -49,20 +49,21 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 		return nil, fmt.Errorf("AES cipher from shared_secret: %w", err)
 	}
 
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-	if cfg.InsecureDiscovery {
-		tlsConfig.InsecureSkipVerify = true //nolint:gosec // intentional for self-hosted testing
-	}
-
-	client, err := discoveryclient.NewClient(discoveryclient.Options{
+	opts := discoveryclient.Options{
 		Cipher:        cipherBlock,
 		Endpoint:      cfg.DiscoveryEndpoint,
 		ClusterID:     cfg.ClusterID,
 		AffiliateID:   affiliateID,
 		TTL:           discoveryTTL,
 		ClientVersion: "kubespand/0.1.0",
-		TLSConfig:     tlsConfig,
-	})
+	}
+	if cfg.InsecureDiscovery {
+		opts.Insecure = true
+	} else {
+		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
+	client, err := discoveryclient.NewClient(opts)
 	if err != nil {
 		return nil, fmt.Errorf("creating discovery client: %w", err)
 	}

@@ -45,7 +45,7 @@ type AgentConfig struct {
 	// MachineType is advertised to the discovery service ("worker" or "controlplane").
 	MachineType string `yaml:"machine_type"`
 
-	// InsecureDiscovery disables TLS certificate verification for the discovery service.
+	// InsecureDiscovery uses plaintext gRPC (no TLS) for the discovery service.
 	InsecureDiscovery bool `yaml:"insecure_discovery"`
 
 	// KubeconfigPath is the path to a kubeconfig file for K8s API access.
