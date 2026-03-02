@@ -175,7 +175,41 @@ func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.C
 		t.Fatalf("starting container %s: %v", opts.Name, err)
 	}
 
+	// Dump logs to undeclared test outputs on cleanup for postmortem analysis.
+	t.Cleanup(func() {
+		dumpContainerLogs(t, client, container.ID, opts.Name)
+	})
+
 	return container
+}
+
+// dumpContainerLogs writes a container's logs to TEST_UNDECLARED_OUTPUTS_DIR
+// so they appear as test artifacts in CI (BuildBuddy/Bazel).
+func dumpContainerLogs(t *testing.T, client *docker.Client, containerID, name string) {
+	t.Helper()
+
+	outputDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if outputDir == "" {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	var buf bytes.Buffer
+	_ = client.Logs(docker.LogsOptions{
+		Context:      ctx,
+		Container:    containerID,
+		OutputStream: &buf,
+		ErrorStream:  &buf,
+		Stdout:       true,
+		Stderr:       true,
+	})
+
+	logFile := filepath.Join(outputDir, name+".log")
+	if err := os.WriteFile(logFile, buf.Bytes(), 0644); err != nil {
+		t.Logf("failed to write container logs for %s: %v", name, err)
+	}
 }
 
 func containerLogs(t *testing.T, ctx context.Context, client *docker.Client, containerID string) string {
