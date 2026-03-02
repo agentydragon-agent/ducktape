@@ -136,9 +136,13 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		if err := ctrl.routing.Install(nil); err != nil {
 			return fmt.Errorf("routing: %w", err)
 		}
-		logger.Info("routing rules installed",
-			zap.Int("table", constants.KubeSpanDefaultRoutingTable),
-		)
+		if ctrl.routing.Degraded() {
+			logger.Warn("routing in degraded mode (no nftables), using direct routes")
+		} else {
+			logger.Info("routing rules installed",
+				zap.Int("table", constants.KubeSpanDefaultRoutingTable),
+			)
+		}
 	}
 
 	// List all discovered peers.
