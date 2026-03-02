@@ -69,7 +69,7 @@ go_test(
         "//third_party/siderolabs:talos_v1_9_5_tarball",
     ],
     embed = [":kubespan_agent_lib"],
-    tags = ["requires_docker"],
+    tags = ["requires_privileged_docker"],
     deps = [
         "//cluster/kubespan_agent/agentconfig",
         "@com_github_fsouza_go_dockerclient//:go-dockerclient",
