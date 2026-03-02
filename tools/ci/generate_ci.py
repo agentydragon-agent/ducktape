@@ -9,12 +9,14 @@ Usage:
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import yaml
 
 from tools.ci.github_actions import Job, Step, Workflow
 from tools.ci.models import HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
+from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 SCRIPT_DIR = Path(__file__).parent
@@ -328,15 +330,30 @@ def write_workflow(path: Path, workflow: Workflow) -> None:
     print(f"Generated {path}")
 
 
+_PRETTIER_RLOCATION = "_main/tools/ci/prettier_/prettier"
+
+
+def format_with_prettier(paths: list[Path]) -> None:
+    """Run prettier on generated workflow files to match pre-commit formatting."""
+    prettier = get_required_path(_PRETTIER_RLOCATION)
+    subprocess.run([prettier, "--write", "--no-config", "--print-width", "120", "--tab-width", "2", *paths], check=True)
+
+
 def main() -> None:
     """Main entry point."""
     manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
 
     out_dir = get_build_workspace_directory() / ".github" / "workflows"
-    write_workflow(out_dir / "ci.yml", generate_ci_config(manifest))
-    write_workflow(out_dir / "bazel-harbor-images.yml", generate_harbor_images_config(manifest.harbor_images))
+    generated: list[Path] = []
+    generated.append(out_dir / "ci.yml")
+    write_workflow(generated[-1], generate_ci_config(manifest))
+    generated.append(out_dir / "bazel-harbor-images.yml")
+    write_workflow(generated[-1], generate_harbor_images_config(manifest.harbor_images))
     for name, config in manifest.releases.items():
-        write_workflow(out_dir / f"{name}-release.yml", generate_release_config(name, config))
+        generated.append(out_dir / f"{name}-release.yml")
+        write_workflow(generated[-1], generate_release_config(name, config))
+
+    format_with_prettier(generated)
 
 
 if __name__ == "__main__":
