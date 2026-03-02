@@ -1,3 +1,4 @@
+load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//tools/testing:defs.bzl", "py_test")
 
@@ -14,6 +15,16 @@ filegroup(
         "//.github/workflows:gnome-terminal-profile-switcher-release.yml",
         "//.github/workflows:headscale-cleanup-release.yml",
     ],
+)
+
+prettier_bin.prettier_binary(
+    name = "prettier",
+    data = ["//:prettierrc"],
+    fixed_args = [
+        "--config",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
+    ],
+    visibility = ["//visibility:private"],
 )
 
 # === Base modules (no internal deps) ===
@@ -98,12 +109,16 @@ py_library(
 py_library(
     name = "generate_ci",
     srcs = ["generate_ci.py"],
-    data = [":workflows.yaml"],
+    data = [
+        ":prettier",
+        ":workflows.yaml",
+    ],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":github_actions",
         ":models",
+        "//util/bazel:runfiles",
         "//util/bazel:workspace",
         "@pypi//pyyaml",
     ],

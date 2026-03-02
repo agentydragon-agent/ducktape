@@ -9,12 +9,14 @@ Usage:
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import yaml
 
 from tools.ci.github_actions import Job, Step, Workflow
 from tools.ci.models import HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
+from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 SCRIPT_DIR = Path(__file__).parent
@@ -322,9 +324,14 @@ def generate_harbor_images_config(images: list[HarborImageConfig]) -> Workflow:
     )
 
 
+_PRETTIER_RLOCATION = "_main/tools/ci/prettier_/prettier"
+
+
 def write_workflow(path: Path, workflow: Workflow) -> None:
-    """Write a workflow file."""
+    """Write a workflow file and run prettier to match pre-commit formatting."""
     path.write_text(generate_ci_yml(workflow))
+    prettier = get_required_path(_PRETTIER_RLOCATION)
+    subprocess.run([prettier, "--write", path], check=True)
     print(f"Generated {path}")
 
 
