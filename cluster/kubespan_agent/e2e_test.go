@@ -558,12 +558,13 @@ func TestKubeSpanNetworking(t *testing.T) {
 	t.Log("waiting for kubespand to discover and configure peer...")
 	peerAddr := pollLogsForField(t, ctx, client, kubespandContainer.ID, "configuring peer", "address", 60*time.Second)
 
-	// Validate and parse the discovered address (logged as netip.Prefix like "fd63:.../128").
-	prefix, err := netip.ParsePrefix(peerAddr)
+	// Parse the discovered address. PeerSpecSpec.Address is netip.Addr, so the
+	// log value is a bare IPv6 address (no /128 suffix).
+	addr, err := netip.ParseAddr(peerAddr)
 	if err != nil {
 		t.Fatalf("invalid peer address %q from container logs: %v", peerAddr, err)
 	}
-	peerAddr = prefix.Addr().String()
+	peerAddr = addr.String()
 	t.Logf("peer KubeSpan address: %s", peerAddr)
 
 	// Verify connectivity by pinging the peer through the WireGuard tunnel.
