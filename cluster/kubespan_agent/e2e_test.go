@@ -42,7 +42,9 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// 4 minutes: leaves 1 minute buffer before the 300s Bazel test timeout
+	// so t.Cleanup can dump container logs if the test fails.
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
 	client, err := docker.NewClientFromEnv()
@@ -123,6 +125,10 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	t.Log("waiting for Talos to register with discovery service...")
 	time.Sleep(15 * time.Second)
 
+	// Verify containers are healthy before starting kubespand.
+	logContainerStatus(t, ctx, client, "discovery", discoveryContainer.ID)
+	logContainerStatus(t, ctx, client, "talos", talosContainer.ID)
+
 	// Run kubespand in discovery-only mode.
 	kubespandName := fmt.Sprintf("kubespand-%s", testID)
 	t.Log("starting kubespand in discovery-only mode...")
@@ -144,8 +150,14 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: kubespandContainer.ID, Force: true})
 	})
 
-	// Wait for kubespand to exit and collect logs.
-	exitCode, err := client.WaitContainerWithContext(kubespandContainer.ID, ctx)
+	// Wait for kubespand to exit. Use 150s deadline (kubespand has -timeout 120s
+	// internally, so 150s gives it 30s buffer to exit after its own timeout).
+	diagContainers := map[string]string{
+		discoveryName: discoveryContainer.ID,
+		talosName:     talosContainer.ID,
+		kubespandName: kubespandContainer.ID,
+	}
+	exitCode, err := waitContainerOrFail(t, ctx, client, kubespandContainer.ID, 150*time.Second, diagContainers)
 	if err != nil {
 		t.Fatalf("waiting for kubespand container: %v", err)
 	}
@@ -439,7 +451,9 @@ func TestKubeSpanNetworking(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// 4 minutes: leaves 1 minute buffer before the 300s Bazel test timeout
+	// so t.Cleanup can dump container logs if the test fails.
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
 	defer cancel()
 
 	client, err := docker.NewClientFromEnv()
@@ -520,6 +534,10 @@ func TestKubeSpanNetworking(t *testing.T) {
 	t.Log("waiting for Talos to register with discovery service...")
 	time.Sleep(15 * time.Second)
 
+	// Verify containers are healthy before starting kubespand.
+	logContainerStatus(t, ctx, client, "discovery", discoveryContainer.ID)
+	logContainerStatus(t, ctx, client, "talos", talosContainer.ID)
+
 	// Run kubespand in FULL mode (with WireGuard and routing).
 	kubespandName := fmt.Sprintf("kubespand-%s", testID)
 	t.Log("starting kubespand in full mode...")
@@ -598,6 +616,84 @@ func pollLogsForField(t *testing.T, ctx context.Context, client *docker.Client, 
 	logs := containerLogs(t, ctx, client, containerID)
 	t.Fatalf("timed out waiting for log line %q with field %q; logs:\n%s", logMsg, fieldName, logs)
 	return ""
+}
+
+// logContainerStatus logs the current state of a container.
+func logContainerStatus(t *testing.T, ctx context.Context, client *docker.Client, name, containerID string) {
+	t.Helper()
+
+	info, err := client.InspectContainerWithContext(containerID, ctx)
+	if err != nil {
+		t.Logf("[status] %s: inspect failed: %v", name, err)
+		return
+	}
+	t.Logf("[status] %s: status=%s running=%v exitCode=%d pid=%d",
+		name, info.State.Status, info.State.Running, info.State.ExitCode, info.State.Pid)
+}
+
+// waitContainerOrFail waits for a container to exit, logging periodic status
+// updates. If the container doesn't exit within the deadline, it dumps logs
+// from all diagnostic containers before failing the test.
+func waitContainerOrFail(t *testing.T, ctx context.Context, client *docker.Client, containerID string, timeout time.Duration, diagContainers map[string]string) (int, error) {
+	t.Helper()
+
+	waitCtx, waitCancel := context.WithTimeout(ctx, timeout)
+	defer waitCancel()
+
+	type waitResult struct {
+		exitCode int
+		err      error
+	}
+	resultCh := make(chan waitResult, 1)
+	go func() {
+		code, err := client.WaitContainerWithContext(containerID, waitCtx)
+		resultCh <- waitResult{code, err}
+	}()
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case r := <-resultCh:
+			if r.err != nil {
+				t.Logf("container wait failed: %v — collecting diagnostics", r.err)
+				dumpAllContainerLogs(t, client, diagContainers)
+			}
+			return r.exitCode, r.err
+
+		case <-ticker.C:
+			for name, id := range diagContainers {
+				logContainerStatus(t, ctx, client, name, id)
+			}
+		}
+	}
+}
+
+// dumpAllContainerLogs dumps logs from all containers to the test log
+// for postmortem debugging. Uses a fresh context to avoid inheriting
+// a cancelled parent.
+func dumpAllContainerLogs(t *testing.T, client *docker.Client, containers map[string]string) {
+	t.Helper()
+
+	diagCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	for name, id := range containers {
+		logContainerStatus(t, diagCtx, client, name, id)
+
+		var buf bytes.Buffer
+		_ = client.Logs(docker.LogsOptions{
+			Context:      diagCtx,
+			Container:    id,
+			OutputStream: &buf,
+			ErrorStream:  &buf,
+			Stdout:       true,
+			Stderr:       true,
+			Tail:         "200",
+		})
+		t.Logf("[diag] %s logs (last 200 lines):\n%s", name, buf.String())
+	}
 }
 
 // dockerExec runs a command inside a container and returns the exit code and combined output.
