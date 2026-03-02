@@ -401,11 +401,6 @@ func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Clien
 			"controlPlane": map[string]interface{}{
 				"endpoint": "https://localhost:6443",
 			},
-			"clusterNetwork": map[string]interface{}{
-				"dnsDomain":      "cluster.local",
-				"podSubnets":     []string{"10.244.0.0/16"},
-				"serviceSubnets": []string{"10.96.0.0/12"},
-			},
 		},
 	}
 
