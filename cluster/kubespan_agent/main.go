@@ -85,6 +85,10 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	}()
 
 	// Inject config as a COSI resource using upstream kubespan.Config type.
+	logger.Info("creating COSI config resource",
+		zap.String("namespace", kubespan.NamespaceName),
+		zap.String("id", kubespan.ConfigID),
+	)
 	if err := st.Create(ctx, kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID)); err != nil {
 		return fmt.Errorf("creating config resource: %w", err)
 	}
@@ -97,12 +101,14 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	); err != nil {
 		return fmt.Errorf("populating config resource: %w", err)
 	}
+	logger.Info("COSI config resource populated")
 
 	// Create COSI controller runtime.
 	rt, err := controllerruntime.NewRuntime(st, logger)
 	if err != nil {
 		return fmt.Errorf("creating controller runtime: %w", err)
 	}
+	logger.Info("COSI controller runtime created")
 
 	// Register controllers.
 	if err := rt.RegisterController(&IdentityController{}); err != nil {
@@ -128,10 +134,18 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		}
 	}
 
+	logger.Info("starting COSI runtime")
+
 	// Start the COSI runtime in a goroutine.
 	runtimeErrCh := make(chan error, 1)
 	go func() {
-		runtimeErrCh <- rt.Run(ctx)
+		err := rt.Run(ctx)
+		if err != nil {
+			logger.Error("COSI runtime exited with error", zap.Error(err))
+		} else {
+			logger.Info("COSI runtime exited cleanly")
+		}
+		runtimeErrCh <- err
 	}()
 
 	if discoveryOnly {
@@ -172,8 +186,10 @@ func waitForPeers(ctx context.Context, st state.State, runtimeErrCh <-chan error
 		case <-ticker.C:
 			list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, st)
 			if err != nil {
+				logger.Debug("listing peers failed", zap.Error(err))
 				continue
 			}
+			logger.Info("polling for peers", zap.Int("count", list.Len()))
 			if list.Len() == 0 {
 				continue
 			}
