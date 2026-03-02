@@ -276,11 +276,13 @@ func (ctrl *ManagerController) cleanup(logger *zap.Logger) {
 		if err := ctrl.routing.Cleanup(); err != nil {
 			logger.Error("routing cleanup failed", zap.Error(err))
 		}
+		ctrl.routing = nil
 	}
 	if ctrl.wg != nil {
 		if err := ctrl.wg.Cleanup(); err != nil {
 			logger.Error("wireguard cleanup failed", zap.Error(err))
 		}
 		ctrl.wg.Close()
+		ctrl.wg = nil
 	}
 }
