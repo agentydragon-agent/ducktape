@@ -5,8 +5,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.23.0",
     "openapi-fetch": "^0.15.0",
-    "svelte": "^5.38.1",
-    "tailwindcss": "^4.1.18"
+    "svelte": "^5.38.1"
   },
   "devDependencies": {
     "esbuild": "^0.25.1",
@@ -17,6 +16,7 @@
     "pngjs": "^7.0.0",
     "puppeteer": "^23.11.1",
     "svelte-check": "^4.3.1",
+    "tailwindcss": "^4.1.18",
     "typescript": "^5.7.0"
   },
   "pnpm": {

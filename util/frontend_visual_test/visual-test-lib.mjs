@@ -118,9 +118,25 @@ function compareBaseline(name, screenshot, outputDir, baselineDir, updateWriteDi
  */
 export async function main(scenarioName, callerUrl = null, options = {}) {
   const baselineName = options.baselineName || scenarioName;
-  const baselineDir = callerUrl
-    ? join(dirname(fileURLToPath(callerUrl)), "baselines")
-    : DEFAULT_BASELINE_DIR;
+
+  // Resolve baseline directory. Prefer BASELINE_WORKSPACE_PATH (set by the
+  // visual_test() Bazel macro) so baselines resolve correctly even when the
+  // test file lives in a subdirectory (e.g., tests/) separate from baselines/.
+  let baselineDir;
+  const baselineWsPath = process.env.BASELINE_WORKSPACE_PATH;
+  if (baselineWsPath && callerUrl) {
+    const callerDir = dirname(fileURLToPath(callerUrl));
+    const pkgPath = dirname(baselineWsPath);
+    const idx = callerDir.lastIndexOf(pkgPath);
+    if (idx >= 0 && (idx === 0 || callerDir[idx - 1] === "/")) {
+      baselineDir = join(callerDir.substring(0, idx), baselineWsPath);
+    }
+  }
+  if (!baselineDir) {
+    baselineDir = callerUrl
+      ? join(dirname(fileURLToPath(callerUrl)), "baselines")
+      : DEFAULT_BASELINE_DIR;
+  }
   const harnessPath = process.env.HARNESS_PATH || join(__dirname, "harness/dist/harness.js");
   const distDir = dirname(harnessPath);
   const harnessDir = distDir.endsWith("/dist") ? dirname(distDir) : distDir;
