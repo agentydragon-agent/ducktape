@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"sort"
 	"syscall"
+	"time"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
@@ -219,11 +220,42 @@ func (rm *Manager) Cleanup() error {
 }
 
 // installNftables creates the talos_kubespan nftables table with two chains.
-// Everything is committed in a single atomic Flush() to avoid issues with
-// anonymous sets needing to be in the same batch as their referencing rules,
-// and to minimize commit mutex contention with Docker's iptables-nft.
+// Retries on EBUSY (nft_commit_mutex contention, e.g. from Docker's iptables-nft)
+// with a tight retry loop before propagating the error to the controller runtime.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
+	const (
+		maxRetries    = 50
+		retryInterval = 200 * time.Millisecond
+	)
+
+	var lastErr error
+	for attempt := range maxRetries {
+		if attempt > 0 {
+			time.Sleep(retryInterval)
+		}
+		lastErr = rm.tryInstallNftables(routedPrefixes)
+		if lastErr == nil {
+			if attempt > 0 {
+				rm.logger.Info("nftables installed after EBUSY retries", zap.Int("attempts", attempt+1))
+			}
+			return nil
+		}
+		if !errors.Is(lastErr, syscall.EBUSY) {
+			return lastErr
+		}
+		if attempt == 0 || (attempt+1)%10 == 0 {
+			rm.logger.Debug("nftables EBUSY, retrying", zap.Int("attempt", attempt+1))
+		}
+	}
+	rm.logger.Error("nftables install failed after retries", zap.Error(lastErr), zap.Int("attempts", maxRetries))
+	return lastErr
+}
+
+// tryInstallNftables performs a single attempt to install nftables rules.
+// Everything is committed in a single atomic Flush() to avoid issues with
+// anonymous sets needing to be in the same batch as their referencing rules.
+func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 	conn, err := nftables.New()
 	if err != nil {
 		return fmt.Errorf("nftables conn: %w", err)
@@ -317,8 +349,6 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 
 	// Single atomic commit: table + chain cleanup + sets + chains + rules.
 	if err := conn.Flush(); err != nil {
-		rm.logger.Error("nftables install failed", zap.Error(err),
-			zap.Bool("is_ebusy", errors.Is(err, syscall.EBUSY)))
 		return fmt.Errorf("nftables install: %w", err)
 	}
 	rm.logger.Debug("nftables installed")

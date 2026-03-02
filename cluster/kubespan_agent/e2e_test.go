@@ -175,7 +175,11 @@ func TestKubeSpanNetworking(t *testing.T) {
 	discoveryName := fmt.Sprintf("discovery-%s", testID)
 
 	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
-		Name:    networkName,
+		Name:     networkName,
+		Internal: true, // No external routing — avoids Docker iptables-nft NAT/masquerade rules.
+		Options: map[string]any{
+			"com.docker.network.bridge.enable_ip_masquerade": "false",
+		},
 		Context: ctx,
 	})
 	if err != nil {
