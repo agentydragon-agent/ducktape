@@ -43,9 +43,9 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	// 4 minutes: leaves 1 minute buffer before the 300s Bazel test timeout
-	// so t.Cleanup can dump container logs if the test fails.
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	// 90s for test logic (images are pre-cached by Bazel). Leaves buffer
+	// before the 300s Bazel test timeout so t.Cleanup runs on failure.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	client, err := docker.NewClientFromEnv()
@@ -131,7 +131,7 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		Name: kubespandName,
 		Config: &docker.Config{
 			Image: kubespandRepoTag,
-			Cmd:   []string{"/kubespand", "-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "120s"},
+			Cmd:   []string{"/kubespand", "-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "30s"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
@@ -142,14 +142,14 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		Context: ctx,
 	})
 
-	// Wait for kubespand to exit. Use 150s deadline (kubespand has -timeout 120s
-	// internally, so 150s gives it 30s buffer to exit after its own timeout).
+	// Wait for kubespand to exit. 45s deadline (kubespand has -timeout 30s
+	// internally, so 45s gives it 15s buffer to exit after its own timeout).
 	diagContainers := map[string]string{
 		discoveryName: discoveryContainer.ID,
 		talosName:     talosContainer.ID,
 		kubespandName: kubespandContainer.ID,
 	}
-	exitCode, err := waitContainerOrFail(t, ctx, client, kubespandContainer.ID, 150*time.Second, diagContainers)
+	exitCode, err := waitContainerOrFail(t, ctx, client, kubespandContainer.ID, 45*time.Second, diagContainers)
 	if err != nil {
 		t.Fatalf("waiting for kubespand container: %v", err)
 	}
@@ -454,9 +454,10 @@ func TestKubeSpanNetworking(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	// 4 minutes: leaves 1 minute buffer before the 300s Bazel test timeout
-	// so t.Cleanup can dump container logs if the test fails.
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	// 120s for test logic (images are pre-cached by Bazel, but full mode
+	// needs WireGuard setup + connectivity probe). Leaves buffer before
+	// the 300s Bazel test timeout so t.Cleanup runs on failure.
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	client, err := docker.NewClientFromEnv()
@@ -556,7 +557,7 @@ func TestKubeSpanNetworking(t *testing.T) {
 
 	// Wait for kubespand to discover a peer and extract its KubeSpan address.
 	t.Log("waiting for kubespand to discover and configure peer...")
-	peerAddr := pollLogsForField(t, ctx, client, kubespandContainer.ID, "configuring peer", "address", 120*time.Second)
+	peerAddr := pollLogsForField(t, ctx, client, kubespandContainer.ID, "configuring peer", "address", 60*time.Second)
 
 	// Validate and parse the discovered address (logged as netip.Prefix like "fd63:.../128").
 	prefix, err := netip.ParsePrefix(peerAddr)
