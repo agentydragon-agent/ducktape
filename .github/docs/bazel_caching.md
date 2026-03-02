@@ -45,7 +45,7 @@ compute-targets job
         post step: save skipped (exact-key hit from compute-targets)
 ```
 
-The `bazel-repo-cache` action uses the unified `actions/cache@v4` with `save-always: true`. This saves the cache as a post step even if the job fails, since external repos are fetched during the analysis phase regardless of build outcome. The unified action only saves when the exact key was NOT found during restore, avoiding duplicate entries.
+The `bazel-repo-cache` action uses the unified `actions/cache@v4`, which saves the cache as a post step on job success. The unified action only saves when the exact key was NOT found during restore, avoiding duplicate entries.
 
 There is **no prewarm step**. The `compute-targets` job runs `bazel query` via `bazel-diff`, which fetches all external repos during analysis. Downstream jobs benefit from the cache saved by `compute-targets`.
 
