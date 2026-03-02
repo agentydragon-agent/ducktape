@@ -29,11 +29,11 @@ spec:
               containerPort: 8765
               protocol: TCP
           env:
-            - name: AGENT_API_KEY
+            - name: AGENT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: approval-gate-secrets
-                  key: agent-api-key
+                  key: agent-token
             - name: CONFIG_PATH
               value: "/etc/approval-gate/config.yaml"
           volumeMounts:

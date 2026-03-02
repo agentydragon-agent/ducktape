@@ -55,6 +55,7 @@ py_library(
         ":subprocess",
         "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/enhanced:server",
+        "@pypi//fastmcp",
         "@pypi//mcp",
     ],
 )

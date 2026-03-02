@@ -4,8 +4,9 @@ resources:
   - namespace.yaml
   - externalsecret.yaml
   - approval-gate-pvc.yaml
-  - exec-backend-deployment.yaml
-  - exec-backend-service.yaml
+  - kubeapi-admin-exec-mcp-deployment.yaml
+  - kubeapi-admin-exec-mcp-service.yaml
+  - kubeapi-admin-exec-mcp-rbac.yaml
   - approval-gate-deployment.yaml
   - approval-gate-service.yaml
   - approval-gate-httproute.yaml

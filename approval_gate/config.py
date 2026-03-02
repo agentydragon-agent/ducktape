@@ -7,10 +7,8 @@ config files are read from environment variables.
 Config file format (YAML):
 
   backends:
-    exec:
-      url: http://exec-backend:8766/mcp
-      headers:
-        Authorization: "Bearer ..."
+    kubeapi_admin:
+      url: http://kubeapi-admin-exec-mcp:8766/mcp
     files:
       command: /usr/bin/file-server
       args: [--mcp]
@@ -20,7 +18,7 @@ Config file format (YAML):
   db_path: "/data/approval_gate.db"      # optional, defaults to /data/approval_gate.db
 
 Environment variables (secrets):
-  AGENT_API_KEY — bearer token for agent/plugin MCP access (required)
+  AGENT_TOKEN — bearer token for agent/plugin MCP access (required)
 
 Each backend entry matches fastmcp's MCPConfig mcpServers entry format.
 Backend keys are validated as MCPMountPrefix (lowercase alphanumeric + underscore).
@@ -41,7 +39,7 @@ from mcp_infra.prefix import MCPMountPrefix
 class Settings(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    agent_api_key: str
+    agent_token: str
     backends: dict[MCPMountPrefix, MCPServerTypes]
     public_base_url: str
     db_path: Path = Path("/data/approval_gate.db")
@@ -65,5 +63,13 @@ class Settings(BaseModel):
     def load(cls) -> Settings:
         config_path = Path(os.environ.get("CONFIG_PATH", "/etc/approval-gate/config.yaml"))
         data = yaml.safe_load(config_path.read_text())
-        data["agent_api_key"] = os.environ["AGENT_API_KEY"]
+        agent_token = os.environ["AGENT_TOKEN"]
+        data["agent_token"] = agent_token
+        # Inject agent token as Authorization header for URL-based backends that
+        # don't already have explicit auth. This avoids putting secrets in the
+        # ConfigMap.
+        for backend in data.get("backends", {}).values():
+            if isinstance(backend, dict) and "url" in backend:
+                headers = backend.setdefault("headers", {})
+                headers.setdefault("Authorization", f"Bearer {agent_token}")
         return cls.model_validate(data)

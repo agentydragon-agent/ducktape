@@ -1,11 +1,14 @@
-# CiliumNetworkPolicy for the approval-gate server pod.
+# CiliumNetworkPolicy for the approval-gate namespace pods.
 #
-# Security model: single port 8765, auth-based access control.
+# approval-gate server (component: server, port 8765):
 #   Authentik outpost (authentik namespace) — reaches /mcp with X-Authentik-Jwt header
 #   OpenClaw pods (openclaw-gateway namespace) — reaches /mcp with Authorization: Bearer header
 #   Both must present valid credentials; the /mcp handler rejects unauthenticated requests.
 #
-# The host entity covers kubelet liveness/readiness probes.
+# kubeapi-admin-exec-mcp (component: kubeapi-admin-exec-mcp, port 8766):
+#   Only the approval-gate server (same namespace) connects to it with a bearer token.
+#
+# The host entity covers kubelet liveness/readiness probes for both pods.
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -24,7 +27,7 @@ spec:
         - ports:
             - port: "8765"
               protocol: TCP
-    # Operator UI + REST API + /mcp: Authentik (JWT) and OpenClaw (bearer) auth.
+    # Operator UI + /mcp: Authentik (JWT) and OpenClaw (bearer) auth.
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: authentik
@@ -33,4 +36,31 @@ spec:
       toPorts:
         - ports:
             - port: "8765"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kubeapi-admin-exec-mcp-ingress
+  namespace: approval-gate
+spec:
+  endpointSelector:
+    matchLabels:
+      app: approval-gate
+      component: kubeapi-admin-exec-mcp
+  ingress:
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8766"
+              protocol: TCP
+    # Only the approval-gate server pod connects to the exec backend.
+    - fromEndpoints:
+        - matchLabels:
+            app: approval-gate
+            component: server
+      toPorts:
+        - ports:
+            - port: "8766"
               protocol: TCP

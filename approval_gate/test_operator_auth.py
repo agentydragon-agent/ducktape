@@ -30,7 +30,7 @@ from approval_gate.proxy_server import ApprovalGateServer
 from mcp_infra.prefix import MCPMountPrefix
 from util.net import pick_free_port
 
-_AGENT_API_KEY = "test-agent-bearer-key"
+_TOKEN = "test-agent-bearer-key"
 _TEST_NS = MCPMountPrefix("test")
 
 
@@ -88,7 +88,7 @@ async def gate_http(tmp_path, mock_jwks_signing_key):
         return f"echoed: {text}"
 
     jwks_client = PyJWKClient("http://test/jwks")
-    auth = ApprovalGateAuthProvider(agent_api_key=_AGENT_API_KEY, jwks_client=jwks_client)
+    auth = ApprovalGateAuthProvider(agent_token=_TOKEN, jwks_client=jwks_client)
     gate = ApprovalGateServer(
         backends={_TEST_NS: backend},
         db_path=tmp_path / "gate.db",
@@ -101,7 +101,7 @@ async def gate_http(tmp_path, mock_jwks_signing_key):
     gate_port = pick_free_port()
     with patch("jwt.PyJWKClient.get_signing_key_from_jwt", return_value=mock_jwks_signing_key):
         async with _serve_app(app, port=gate_port):
-            yield f"http://127.0.0.1:{gate_port}", _AGENT_API_KEY
+            yield f"http://127.0.0.1:{gate_port}", _TOKEN
 
 
 @pytest.fixture
