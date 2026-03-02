@@ -6,6 +6,7 @@ import (
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/siderolabs/talos/pkg/machinery/resources/config"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 )
@@ -51,7 +52,7 @@ func (ctrl *ConfigController) Run(ctx context.Context, r controller.Runtime, log
 		}
 
 		if err := safe.WriterModify(ctx, r,
-			kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID),
+			kubespan.NewConfig(config.NamespaceName, kubespan.ConfigID),
 			func(res *kubespan.Config) error {
 				*res.TypedSpec() = ctrl.spec
 				return nil
