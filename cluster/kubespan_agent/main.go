@@ -91,6 +91,13 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	}
 
 	// Register controllers.
+	// ConfigController injects the parsed YAML config as a COSI resource.
+	// It must go through a controller (not direct state manipulation) so that
+	// the COSI runtime's internal watches detect the creation and trigger
+	// downstream controllers via EventCh.
+	if err := rt.RegisterController(&ConfigController{spec: cfgSpec}); err != nil {
+		return fmt.Errorf("registering config controller: %w", err)
+	}
 	if err := rt.RegisterController(&IdentityController{}); err != nil {
 		return fmt.Errorf("registering identity controller: %w", err)
 	}
@@ -127,28 +134,6 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		}
 		runtimeErrCh <- err
 	}()
-
-	// Inject config as a COSI resource AFTER the runtime starts.
-	// Controllers use InputWeak for Config, so creating the resource before
-	// the runtime starts means the watches miss the creation event and the
-	// controller's initial reconciliation finds nothing.
-	logger.Info("injecting COSI config resource",
-		zap.String("namespace", kubespan.NamespaceName),
-		zap.String("id", kubespan.ConfigID),
-	)
-	if err := st.Create(ctx, kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID)); err != nil {
-		return fmt.Errorf("creating config resource: %w", err)
-	}
-	if err := safe.StateModify(ctx, st,
-		kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID),
-		func(res *kubespan.Config) error {
-			*res.TypedSpec() = cfgSpec
-			return nil
-		},
-	); err != nil {
-		return fmt.Errorf("populating config resource: %w", err)
-	}
-	logger.Info("COSI config resource injected")
 
 	if discoveryOnly {
 		return waitForPeers(ctx, st, runtimeErrCh, logger)

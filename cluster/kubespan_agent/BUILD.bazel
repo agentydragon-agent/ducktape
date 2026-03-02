@@ -5,6 +5,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 go_library(
     name = "kubespan_agent_lib",
     srcs = [
+        "controller_config.go",
         "controller_discovery.go",
         "controller_identity.go",
         "controller_k8s_node.go",
