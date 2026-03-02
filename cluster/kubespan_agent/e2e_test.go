@@ -411,7 +411,7 @@ func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Clien
 	t.Helper()
 	t.Log("generating Talos machine config...")
 
-	caCrt, caKey := generateMachineCA(t)
+	caCrt, _ := generateMachineCA(t)
 
 	talosConfig := map[string]interface{}{
 		"version": "v1alpha1",
@@ -420,7 +420,6 @@ func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Clien
 			"type": "worker",
 			"ca": map[string]interface{}{
 				"crt": caCrt,
-				"key": caKey,
 			},
 			"network": map[string]interface{}{
 				"kubespan": map[string]interface{}{
