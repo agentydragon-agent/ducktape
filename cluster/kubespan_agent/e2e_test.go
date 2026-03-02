@@ -436,8 +436,10 @@ func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discovery
 	}
 }
 
-// pollLogsForField polls a container's logs for a JSON log line with the given
-// msg field, then returns the value of the specified field from that line.
+// pollLogsForField polls a container's logs for a log line containing logMsg,
+// then returns the value of the specified field from the JSON-structured part
+// of that line. Handles both JSON (production) and tab-delimited (development)
+// zap output formats.
 func pollLogsForField(t *testing.T, ctx context.Context, client *docker.Client, containerID, logMsg, fieldName string, timeout time.Duration) string {
 	t.Helper()
 
@@ -446,15 +448,16 @@ func pollLogsForField(t *testing.T, ctx context.Context, client *docker.Client, 
 		logs := containerLogs(t, ctx, client, containerID)
 		for _, line := range strings.Split(logs, "\n") {
 			line = strings.TrimSpace(line)
-			if line == "" || line[0] != '{' {
+			if !strings.Contains(line, logMsg) {
+				continue
+			}
+			// Find JSON part of the line (works for both formats).
+			jsonIdx := strings.Index(line, "{")
+			if jsonIdx < 0 {
 				continue
 			}
 			var entry map[string]interface{}
-			if err := json.Unmarshal([]byte(line), &entry); err != nil {
-				continue
-			}
-			msg, _ := entry["msg"].(string)
-			if msg != logMsg {
+			if err := json.Unmarshal([]byte(line[jsonIdx:]), &entry); err != nil {
 				continue
 			}
 			val, _ := entry[fieldName].(string)
