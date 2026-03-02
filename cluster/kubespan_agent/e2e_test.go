@@ -372,18 +372,65 @@ func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discovery
 	}
 }
 
+// generateMachineCA creates a self-signed CA certificate and key for the Talos
+// machine config. Returns base64-encoded PEM cert and key strings.
+func generateMachineCA(t *testing.T) (crtB64, keyB64 string) {
+	t.Helper()
+
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generating CA key: %v", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "talos-test-ca"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatalf("creating CA cert: %v", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(caKey)
+	if err != nil {
+		t.Fatalf("marshaling CA key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	return base64.StdEncoding.EncodeToString(certPEM), base64.StdEncoding.EncodeToString(keyPEM)
+}
+
 func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Client, name, network, clusterID, sharedSecret, discoveryHost string) *docker.Container {
 	t.Helper()
 	t.Log("generating Talos machine config...")
 
+	caCrt, caKey := generateMachineCA(t)
+
 	talosConfig := map[string]interface{}{
 		"version": "v1alpha1",
-		"persist": false,
+		"persist": true,
 		"machine": map[string]interface{}{
 			"type": "worker",
+			"ca": map[string]interface{}{
+				"crt": caCrt,
+				"key": caKey,
+			},
 			"network": map[string]interface{}{
 				"kubespan": map[string]interface{}{
 					"enabled": true,
+				},
+			},
+			"features": map[string]interface{}{
+				"hostDNS": map[string]interface{}{
+					"enabled":              true,
+					"forwardKubeDNSToHost": true,
 				},
 			},
 		},
