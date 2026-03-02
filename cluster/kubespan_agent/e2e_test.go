@@ -16,7 +16,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
-	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -71,11 +70,8 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	// Create temp directory for test artifacts.
 	tmpDir := t.TempDir()
 
-	// Compute discovery container name up front so we can include it in the TLS cert.
+	// Compute discovery container name up front.
 	discoveryName := fmt.Sprintf("discovery-%s", testID)
-
-	// Generate self-signed TLS cert for the discovery service.
-	certFile, keyFile := generateTLSCert(t, tmpDir, discoveryName)
 
 	// Create Docker network.
 	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
@@ -89,19 +85,14 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		_ = client.RemoveNetwork(network.ID)
 	})
 
-	// Start discovery service.
+	// Start discovery service (plain gRPC, no TLS).
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
 			Image: discoveryRepoTag,
-			Cmd:   []string{"-certificate-path", "/tls/cert.pem", "-key-path", "/tls/key.pem"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
-			Binds: []string{
-				certFile + ":/tls/cert.pem:ro",
-				keyFile + ":/tls/key.pem:ro",
-			},
 		},
 		Context: ctx,
 	})
@@ -305,51 +296,6 @@ func randomHex(n int) string {
 	return fmt.Sprintf("%x", randomBytes(n))
 }
 
-func generateTLSCert(t *testing.T, dir string, extraDNSNames ...string) (certFile, keyFile string) {
-	t.Helper()
-
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generating TLS key: %v", err)
-	}
-
-	dnsNames := append([]string{"discovery-test", "localhost"}, extraDNSNames...)
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "discovery-test"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     dnsNames,
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
-	}
-
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
-	if err != nil {
-		t.Fatalf("creating self-signed cert: %v", err)
-	}
-
-	certFile = filepath.Join(dir, "cert.pem")
-	keyFile = filepath.Join(dir, "key.pem")
-
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	if err := os.WriteFile(certFile, certPEM, 0644); err != nil {
-		t.Fatalf("writing cert: %v", err)
-	}
-
-	keyDER, err := x509.MarshalECPrivateKey(key)
-	if err != nil {
-		t.Fatalf("marshaling key: %v", err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
-	if err := os.WriteFile(keyFile, keyPEM, 0600); err != nil {
-		t.Fatalf("writing key: %v", err)
-	}
-
-	return certFile, keyFile
-}
-
 // writeKubespandConfig writes a kubespand YAML config file using AgentConfig struct.
 func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discoveryEndpoint string) {
 	t.Helper()
@@ -443,7 +389,7 @@ func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Clien
 				"enabled": true,
 				"registries": map[string]interface{}{
 					"service": map[string]interface{}{
-						"endpoint": fmt.Sprintf("https://%s:3000/", discoveryHost),
+						"endpoint": fmt.Sprintf("http://%s:3000/", discoveryHost),
 					},
 				},
 			},
@@ -542,11 +488,8 @@ func TestKubeSpanNetworking(t *testing.T) {
 	// Create temp directory for test artifacts.
 	tmpDir := t.TempDir()
 
-	// Compute discovery container name up front so we can include it in the TLS cert.
+	// Compute discovery container name up front.
 	discoveryName := fmt.Sprintf("discovery-%s", testID)
-
-	// Generate self-signed TLS cert for the discovery service.
-	certFile, keyFile := generateTLSCert(t, tmpDir, discoveryName)
 
 	// Create Docker network.
 	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
@@ -560,19 +503,14 @@ func TestKubeSpanNetworking(t *testing.T) {
 		_ = client.RemoveNetwork(network.ID)
 	})
 
-	// Start discovery service.
+	// Start discovery service (plain gRPC, no TLS).
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
 			Image: discoveryRepoTag,
-			Cmd:   []string{"-certificate-path", "/tls/cert.pem", "-key-path", "/tls/key.pem"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
-			Binds: []string{
-				certFile + ":/tls/cert.pem:ro",
-				keyFile + ":/tls/key.pem:ro",
-			},
 		},
 		Context: ctx,
 	})
