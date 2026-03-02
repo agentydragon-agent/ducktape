@@ -1,5 +1,10 @@
 common --enable_bzlmod
 
+# The //external pseudo-package was a WORKSPACE concept for bind() rules.
+# With Bzlmod, WORKSPACE is disabled (Bazel 8 default), but `//...` still
+# tries to enumerate //external, producing a noisy error. Suppress it.
+common --deleted_packages=external
+
 # Disable host CC auto-detection to prevent Nix store paths leaking into builds.
 # CI overrides this to 0 (in .github/actions/bazel-repo-cache) to use the GHA
 # runner's system GCC. The BuildBuddy GCC toolchain handles RBE independently.
