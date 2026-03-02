@@ -124,7 +124,7 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		Name: kubespandName,
 		Config: &docker.Config{
 			Image: kubespandRepoTag,
-			Cmd:   []string{"/kubespand", "-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "30s"},
+			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "30s"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
@@ -542,7 +542,7 @@ func TestKubeSpanNetworking(t *testing.T) {
 		Name: kubespandName,
 		Config: &docker.Config{
 			Image: kubespandTestRepoTag,
-			Cmd:   []string{"/kubespand", "-config", "/etc/kubespan/agent.yaml"},
+			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
