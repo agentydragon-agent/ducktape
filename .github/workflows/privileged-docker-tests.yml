@@ -48,14 +48,25 @@ jobs:
       - name: Load kernel modules for WireGuard and nftables
         run: |
           sudo modprobe wireguard
+          # Diagnostics: show kernel version, available nf_tables modules, and
+          # which are already loaded. This info is needed to debug nftables
+          # failures inside privileged Docker containers.
+          uname -r
+          find /lib/modules/$(uname -r)/kernel/net/netfilter -name 'nf_tables*' -o -name 'nft_*' 2>/dev/null | sort || true
+          lsmod | grep -i nf_tab || true
           # nftables modules needed by KubeSpan: inet family tables, filter and
           # route chain types. Matches Talos kernel config (CONFIG_NF_TABLES_INET,
           # CONFIG_NF_TABLES_IPV4, CONFIG_NF_TABLES_IPV6 etc.).
           for mod in nf_tables nf_tables_inet nft_chain_filter nft_chain_route; do
-            sudo modprobe "$mod" 2>/dev/null || true
+            sudo modprobe "$mod" 2>/dev/null && echo "loaded $mod" || echo "SKIP $mod (not available)"
           done
-          # Verify nftables works
-          sudo nft list ruleset > /dev/null
+          lsmod | grep -i nf_tab || true
+          # Verify: create and delete an inet table with a route-type chain,
+          # which is the exact pattern kubespand uses.
+          sudo nft add table inet test_probe
+          sudo nft add chain inet test_probe test_route '{ type route hook output priority 0; policy accept; }'
+          sudo nft delete table inet test_probe
+          echo "nftables inet route chain: OK"
 
       - name: Run privileged Docker tests
         run: |
