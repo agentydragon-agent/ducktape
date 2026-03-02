@@ -420,6 +420,7 @@ func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discovery
 		SharedSecret:      sharedSecret,
 		DiscoveryEndpoint: discoveryEndpoint,
 		InsecureDiscovery: true,
+		ForceRouting:      true,
 		ListenPort:        listenPort,
 		MTU:               1420,
 		IdentityFile:      identityFile,

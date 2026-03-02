@@ -40,6 +40,7 @@ type DiscoveryController struct {
 	// publish → discovery notification → ...
 	lastOtherEndpointCount  int
 	lastAdditionalAddrCount int
+	lastPubIPLen            int
 }
 
 // Name implements controller.Controller.
@@ -143,23 +144,29 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			}
 			ctrl.lastOtherEndpointCount = len(otherEndpoints)
 			ctrl.lastAdditionalAddrCount = len(additionalAddresses)
+			ctrl.lastPubIPLen = len(dm.GetPublicIP())
 
 			logger.Info("discovery client started")
 		} else {
-			// Re-publish only when data actually changes (new endpoints or
-			// additional addresses). This avoids a feedback loop where each
-			// publish triggers a Watch notification, which triggers a reconcile,
-			// which triggers another publish. TTL refresh is handled automatically
-			// by the discovery client's internal TTL/2 ticker.
-			if len(otherEndpoints) != ctrl.lastOtherEndpointCount || len(additionalAddresses) != ctrl.lastAdditionalAddrCount {
+			// Re-publish when data actually changes: new endpoints, additional
+			// addresses, or public IP becoming available (the initial PublishLocal
+			// may race with the Hello completing). This avoids a feedback loop
+			// where each publish triggers a Watch notification → reconcile → publish.
+			// TTL refresh is handled by the discovery client's internal TTL/2 ticker.
+			pubIPLen := len(ctrl.dm.GetPublicIP())
+			if len(otherEndpoints) != ctrl.lastOtherEndpointCount ||
+				len(additionalAddresses) != ctrl.lastAdditionalAddrCount ||
+				pubIPLen != ctrl.lastPubIPLen {
 				if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
 					logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
 				}
 				ctrl.lastOtherEndpointCount = len(otherEndpoints)
 				ctrl.lastAdditionalAddrCount = len(additionalAddresses)
+				ctrl.lastPubIPLen = pubIPLen
 				logger.Info("re-published local affiliate (data changed)",
 					zap.Int("other_endpoints", len(otherEndpoints)),
 					zap.Int("additional_addresses", len(additionalAddresses)),
+					zap.Int("pub_ip_len", pubIPLen),
 				)
 			}
 		}

@@ -80,6 +80,12 @@ func (dm *Manager) NotifyCh() <-chan struct{} {
 	return dm.notifyCh
 }
 
+// GetPublicIP returns this node's public IP as reported by the discovery service.
+// Returns nil before the initial Hello completes.
+func (dm *Manager) GetPublicIP() []byte {
+	return dm.client.GetPublicIP()
+}
+
 // Run starts the discovery client event loop. Blocks until ctx is cancelled.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (Run, client.Run)
 func (dm *Manager) Run(ctx context.Context) error {
