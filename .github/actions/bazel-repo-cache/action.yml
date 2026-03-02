@@ -2,9 +2,10 @@
 # See .github/docs/bazel_caching.md for design rationale.
 #
 # Uses the unified actions/cache@v4 which restores at step time and saves as a
-# post step. The save only fires when the exact key was NOT found during restore,
-# avoiding the duplicate-key problem that broke the previous actions/cache/save@v4
-# approach (see bazel_caching.md § Duplicate-key problem).
+# post step (on job success). The save only fires when the exact key was NOT
+# found during restore, avoiding the duplicate-key problem that broke the
+# previous actions/cache/save@v4 approach (see bazel_caching.md §
+# Duplicate-key problem).
 name: Bazel Repo Cache
 description: Setup Bazelisk and restore/save Bazel repository cache
 
@@ -63,4 +64,3 @@ runs:
           ~/.cache/bazel/_bazel_runner/cache/repos/v1
         key: ${{ steps.cache-key.outputs.key }}
         restore-keys: bazel-repo-cache-
-        save-always: true
