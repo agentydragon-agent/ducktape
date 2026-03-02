@@ -33,11 +33,13 @@ def visual_test(name, srcs, deps = [], baseline = None, size = "small"):
     env = dict(_VISUAL_ENV)
     env["BASELINE_WORKSPACE_PATH"] = native.package_name() + "/baselines"
 
+    baseline_data = [baseline] if baseline else native.glob(["baselines/*.png"])
+
     js_test(
         name = name,
         size = size,
         entry_point = srcs[0],
-        data = _VISUAL_BASE_DATA + deps + ([baseline] if baseline else []),
+        data = _VISUAL_BASE_DATA + deps + baseline_data,
         env = env,
         no_copy_to_bin = _VISUAL_BASE_DATA,
     )
