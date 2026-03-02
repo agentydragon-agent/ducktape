@@ -230,7 +230,7 @@ endpoints:
 
   - name: OpenClaw
     group: services
-    url: http://openclaw.openclaw.svc.cluster.local:18789
+    url: http://openclaw.openclaw-gateway.svc.cluster.local:18789
     interval: 60s
     conditions:
       - "[STATUS] == any(200, 302)"

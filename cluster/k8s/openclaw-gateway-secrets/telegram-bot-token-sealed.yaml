@@ -3,11 +3,11 @@ apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
   name: openclaw-telegram-bot-token
-  namespace: openclaw
+  namespace: openclaw-gateway
 spec:
   encryptedData:
     token: AgCmd+fR6joLWO+rM4WesVJaaACv+QzrTyy9GnvkhZJPz8nrYjSKV2hgHRciBtUA1Sg5JiyuYrP/RRmZmwPLI1oa/f5TOAiKxGWxPbwqPgc2xxv2XziQqAH7lusiQV7/czjrdg7YLc6HjmLLAJZUEOcUi6vtxOBwhr94XPCUdclw3R1pLaDtsX399J3MTzr/avnHlvEINlKOLl3a+FDu8wXRCtRYSwRpnvhJKpf/QRFU04+c7TB53ue0NZQoNSJTQtGSqUWWeatXDZ8RB0jSEOSWjOIwgzIT3TIbZICHmFMB7Vcv+ldvp0ag5I9XxYpwvdZKZVpHyXASd3+zHercUlv7FUm2w3U/XSthADsFMkMnTd5z190rRh4POayb5Ak9L5rJZJBNOPDJePdhaK1MhaC5tpcqMUKxt5L+PrpAeGbvPvZC5j7zLY3tua/jgLnXl4syEe7if2qMYVgRfP7e4UqMwEf2c2Q1Xt4evLOFhyxg9GPg3VxrwrNcvNIS5Tw8mIGeBUJoGhuR5Vov+HA0byeXaCbfEtz3V9YlgGxko/QpS954MdKAqucf4ggSGc2YMLNdQ8OGiU6n+rafSD4WImwv4kX3BNJh3Fo7jgaCyuvsw8KjpYAhVNLuFE+3WeHFTeFi6oX3kjdhMxOSDF4b2ymb1ANnuXjpVk0hUa19xI0OU6yMCBmb0yZqnZ2RaYp6e9e1+D7ZT4FFyx3Yqip3llrapQjQXHkmCL1pYzFgTxZfctl8Kph1IrJ0TBG9eTGY
   template:
     metadata:
       name: openclaw-telegram-bot-token
-      namespace: openclaw
+      namespace: openclaw-gateway

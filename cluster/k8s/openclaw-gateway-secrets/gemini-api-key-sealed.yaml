@@ -3,14 +3,14 @@ apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
   name: openclaw-gemini-api-key
-  namespace: openclaw
+  namespace: openclaw-gateway
 spec:
   encryptedData:
     api-key: AgBGvtMAZmB3kWC0MgY+upoOwnmiAeJv6dX3GtArHLjCZwS7vgacwjSAlbD6+K1BwCRvFFFsqju26vRuWzUEDO9RNgfGL3NbpzU2ks9l653jSUgrbXUTyYSjje/jiBIb7gxBfOl3WIIr9ZpBCIBkqPDhbenSJ9SDy0dURVGgDRQ4tT3IvNzjEU0ug4WaVtWhSi2tpcb9ri4mGcGALb4NpEwtZ859ZX/mUgS5SorfTGJ+I7PBr+T9dSH1LpO+eKhSreEcIfkbCg46SKKdIEHHVwFdtK/wfSzlnP7IDjm1idD5paeLdeUlBGlG+HaFxw2iv/cuYikabKYwywjFm5WiwxwjyrlVXEfo1+BWLD/90yoNVZuBfIUFmuiWq9QPvM7u+FRqeJO7lsE0LV7bGaI+JZNt4PCd1EX1cAb9urTLAiZAK1dYsKQ2VJUBJljZYOz0mM2/yC2L8T+RlRwKXHrgfrm5dwRUVas5FGWjojj1OTidVqoFylA9w8vl1y3rdBNl/K0COVEG/be0H8ySR759nzUrtrabvKOVKRsc8JO7XykXFlAcEzU3b1+GMutsvbuIbObjx7CUZL9P6IV2QfEg64IhZVW/1I0AcSRgTE5MtaDt5O+RYsr1goYUDEBvxWwRKPAQLmcTkL38lEfQvfCRw4fe7YUltLb3fnYU2bVX2LeFsMNGIbMovZqzl9Vzn3jdb4PeO1/LbV4Y3fQTg2MCnMmsqOerQIEVgzJrpzdszXRRqLP08sjWxQY=
   template:
     metadata:
       name: openclaw-gemini-api-key
-      namespace: openclaw
+      namespace: openclaw-gateway
       annotations:
         reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
         reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "claude-sandbox"

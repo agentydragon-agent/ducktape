@@ -2,7 +2,7 @@ apiVersion: openclaw.rocks/v1alpha1
 kind: OpenClawInstance
 metadata:
   name: openclaw
-  namespace: openclaw
+  namespace: openclaw-gateway
 spec:
   image:
     repository: registry.allegedly.works/openclaw/openclaw-matrix

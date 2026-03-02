@@ -2,7 +2,7 @@
 #
 # Security model: single port 8765, auth-based access control.
 #   Authentik outpost (authentik namespace) — reaches /mcp with X-Authentik-Jwt header
-#   OpenClaw pods (openclaw namespace)      — reaches /mcp with Authorization: Bearer header
+#   OpenClaw pods (openclaw-gateway namespace) — reaches /mcp with Authorization: Bearer header
 #   Both must present valid credentials; the /mcp handler rejects unauthenticated requests.
 #
 # The host entity covers kubelet liveness/readiness probes.
@@ -29,7 +29,7 @@ spec:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: authentik
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: openclaw
+            k8s:io.kubernetes.pod.namespace: openclaw-gateway
       toPorts:
         - ports:
             - port: "8765"

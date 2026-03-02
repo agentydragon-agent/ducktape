@@ -1,11 +1,11 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: openclaw
+  name: openclaw-gateway
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./cluster/k8s/openclaw
+  path: ./cluster/k8s/openclaw-gateway
   prune: true
   sourceRef:
     kind: GitRepository
@@ -13,7 +13,7 @@ spec:
   timeout: 5m
   dependsOn:
     - name: openclaw-operator
-    - name: openclaw-namespace
-    - name: openclaw-secrets
+    - name: openclaw-gateway-namespace
+    - name: openclaw-gateway-secrets
     - name: openclaw-mitmproxy
     - name: authentik # Wait for Authentik worker to apply SSO blueprints

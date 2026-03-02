@@ -27,4 +27,4 @@ spec:
       branch: devel
   update:
     strategy: Setters
-    path: ./cluster/k8s/openclaw
+    path: ./cluster/k8s/openclaw-gateway

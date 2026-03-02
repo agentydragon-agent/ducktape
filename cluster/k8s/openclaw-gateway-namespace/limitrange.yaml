@@ -2,7 +2,7 @@ apiVersion: v1
 kind: LimitRange
 metadata:
   name: openclaw-limits
-  namespace: openclaw
+  namespace: openclaw-gateway
 spec:
   limits:
     - max:

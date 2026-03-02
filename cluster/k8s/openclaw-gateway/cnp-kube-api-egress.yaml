@@ -5,7 +5,7 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: allow-kube-api-egress
-  namespace: openclaw
+  namespace: openclaw-gateway
 spec:
   endpointSelector: {}
   egress:

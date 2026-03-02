@@ -13,4 +13,4 @@ subjects:
     namespace: openclaw-sandbox
   - kind: ServiceAccount
     name: openclaw
-    namespace: openclaw
+    namespace: openclaw-gateway
