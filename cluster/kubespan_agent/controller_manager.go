@@ -186,6 +186,12 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		ps, ok := statusMap[pubKey]
 		if !ok {
 			ps = &kubespan.PeerStatusSpec{Label: peerSpec.Label}
+			logger.Info("configuring peer",
+				zap.String("label", peerSpec.Label),
+				zap.String("public_key", pubKey),
+				zap.Stringer("address", peerSpec.Address),
+				zap.Int("allowed_ips", len(peerSpec.AllowedIPs)),
+			)
 		}
 
 		// Update from WireGuard peer data.

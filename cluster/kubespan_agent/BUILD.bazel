@@ -64,6 +64,7 @@ go_test(
     srcs = ["e2e_test.go"],
     data = [
         ":kubespand_tarball",
+        ":kubespand_test_tarball",
         "//third_party/siderolabs:discovery_service_tarball",
         "//third_party/siderolabs:talos_v1_9_5_tarball",
     ],
@@ -105,4 +106,36 @@ filegroup(
     srcs = [":kubespand_load"],
     output_group = "tarball",
     visibility = ["//visibility:public"],
+)
+
+pkg_tar(
+    name = "testprobe_layer",
+    testonly = True,
+    srcs = ["//cluster/kubespan_agent/testprobe"],
+    package_dir = "/",
+)
+
+oci_image(
+    name = "kubespand_test_image",
+    testonly = True,
+    base = "@debian_slim_linux_amd64",
+    entrypoint = ["/kubespand"],
+    tars = [
+        ":kubespand_layer",
+        ":testprobe_layer",
+    ],
+)
+
+oci_load(
+    name = "kubespand_test_load",
+    testonly = True,
+    image = ":kubespand_test_image",
+    repo_tags = ["kubespand-test:latest"],
+)
+
+filegroup(
+    name = "kubespand_test_tarball",
+    testonly = True,
+    srcs = [":kubespand_test_load"],
+    output_group = "tarball",
 )
