@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,9 +103,6 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		},
 		Context: ctx,
 	})
-	t.Cleanup(func() {
-		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: discoveryContainer.ID, Force: true})
-	})
 	t.Log("discovery service started")
 
 	// Wait for discovery service to be ready.
@@ -117,9 +115,6 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	// Generate Talos machine config and start Talos container.
 	talosName := fmt.Sprintf("talos-%s", testID)
 	talosContainer := startTalosContainer(t, ctx, client, talosName, networkName, clusterID, sharedSecret, discoveryName)
-	t.Cleanup(func() {
-		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: talosContainer.ID, Force: true})
-	})
 
 	// Give Talos a moment to start KubeSpan and register with discovery.
 	t.Log("waiting for Talos to register with discovery service...")
@@ -145,9 +140,6 @@ func TestKubeSpanDiscovery(t *testing.T) {
 			},
 		},
 		Context: ctx,
-	})
-	t.Cleanup(func() {
-		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: kubespandContainer.ID, Force: true})
 	})
 
 	// Wait for kubespand to exit. Use 150s deadline (kubespand has -timeout 120s
@@ -187,7 +179,11 @@ func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.C
 		t.Fatalf("starting container %s: %v", opts.Name, err)
 	}
 
-	// Dump logs to undeclared test outputs on cleanup for postmortem analysis.
+	// LIFO: removal registered first (runs last), log dump registered second
+	// (runs first, while container still exists).
+	t.Cleanup(func() {
+		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: container.ID, Force: true})
+	})
 	t.Cleanup(func() {
 		dumpContainerLogs(t, client, container.ID, opts.Name)
 	})
@@ -197,8 +193,13 @@ func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.C
 
 // dumpContainerLogs writes a container's logs to TEST_UNDECLARED_OUTPUTS_DIR
 // so they appear as test artifacts in CI (BuildBuddy/Bazel).
+// Only dumps on test failure to avoid noisy artifacts on success.
 func dumpContainerLogs(t *testing.T, client *docker.Client, containerID, name string) {
 	t.Helper()
+
+	if !t.Failed() {
+		return
+	}
 
 	outputDir := os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
 	if outputDir == "" {
@@ -209,14 +210,16 @@ func dumpContainerLogs(t *testing.T, client *docker.Client, containerID, name st
 	defer cancel()
 
 	var buf bytes.Buffer
-	_ = client.Logs(docker.LogsOptions{
+	if err := client.Logs(docker.LogsOptions{
 		Context:      ctx,
 		Container:    containerID,
 		OutputStream: &buf,
 		ErrorStream:  &buf,
 		Stdout:       true,
 		Stderr:       true,
-	})
+	}); err != nil {
+		t.Logf("failed to collect container logs for %s (%s): %v", name, containerID, err)
+	}
 
 	logFile := filepath.Join(outputDir, name+".log")
 	if err := os.WriteFile(logFile, buf.Bytes(), 0644); err != nil {
@@ -511,9 +514,6 @@ func TestKubeSpanNetworking(t *testing.T) {
 		},
 		Context: ctx,
 	})
-	t.Cleanup(func() {
-		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: discoveryContainer.ID, Force: true})
-	})
 	t.Log("discovery service started")
 
 	// Wait for discovery service to be ready.
@@ -526,9 +526,6 @@ func TestKubeSpanNetworking(t *testing.T) {
 	// Generate Talos machine config and start Talos container.
 	talosName := fmt.Sprintf("talos-%s", testID)
 	talosContainer := startTalosContainer(t, ctx, client, talosName, networkName, clusterID, sharedSecret, discoveryName)
-	t.Cleanup(func() {
-		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: talosContainer.ID, Force: true})
-	})
 
 	// Give Talos a moment to start KubeSpan and register with discovery.
 	t.Log("waiting for Talos to register with discovery service...")
@@ -556,18 +553,17 @@ func TestKubeSpanNetworking(t *testing.T) {
 		},
 		Context: ctx,
 	})
-	t.Cleanup(func() {
-		_ = client.RemoveContainer(docker.RemoveContainerOptions{ID: kubespandContainer.ID, Force: true})
-	})
 
 	// Wait for kubespand to discover a peer and extract its KubeSpan address.
 	t.Log("waiting for kubespand to discover and configure peer...")
 	peerAddr := pollLogsForField(t, ctx, client, kubespandContainer.ID, "configuring peer", "address", 120*time.Second)
 
-	// Strip the /128 prefix length if present to get the bare IPv6 address.
-	if idx := strings.Index(peerAddr, "/"); idx != -1 {
-		peerAddr = peerAddr[:idx]
+	// Validate and parse the discovered address (logged as netip.Prefix like "fd63:.../128").
+	prefix, err := netip.ParsePrefix(peerAddr)
+	if err != nil {
+		t.Fatalf("invalid peer address %q from container logs: %v", peerAddr, err)
 	}
+	peerAddr = prefix.Addr().String()
 	t.Logf("peer KubeSpan address: %s", peerAddr)
 
 	// Verify connectivity by pinging the peer through the WireGuard tunnel.
