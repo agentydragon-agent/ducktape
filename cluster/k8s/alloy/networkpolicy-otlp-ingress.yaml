@@ -14,7 +14,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: openclaw
+              kubernetes.io/metadata.name: openclaw-gateway
       ports:
         - port: 4318
           protocol: TCP

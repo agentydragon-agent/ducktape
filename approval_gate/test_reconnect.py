@@ -44,7 +44,7 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import read_text_json_typed
 from util.net import pick_free_port
 
-_AGENT_API_KEY = "test-agent-key"
+_TOKEN = "test-agent-key"
 _TEST_NS = MCPMountPrefix("test")
 _SESSION = "reconnect-session"
 
@@ -91,7 +91,7 @@ def _make_backend():
 def _make_gate_app(backend: FastMCP, db_path: Path, mock_jwks_signing_key):
     """Create a Starlette app with an ApprovalGateServer."""
     jwks_client = pyjwt.PyJWKClient("http://test/jwks")
-    auth = ApprovalGateAuthProvider(agent_api_key=_AGENT_API_KEY, jwks_client=jwks_client)
+    auth = ApprovalGateAuthProvider(agent_token=_TOKEN, jwks_client=jwks_client)
     gate = ApprovalGateServer(
         backends={_TEST_NS: backend},
         db_path=db_path,
@@ -107,7 +107,7 @@ def _make_gate_app(backend: FastMCP, db_path: Path, mock_jwks_signing_key):
 def _agent_transport(port: int):
     """Create an agent-scoped MCP client transport."""
     return RemoteMCPServer(
-        url=f"http://127.0.0.1:{port}/mcp", headers={"Authorization": f"Bearer {_AGENT_API_KEY}"}
+        url=f"http://127.0.0.1:{port}/mcp", headers={"Authorization": f"Bearer {_TOKEN}"}
     ).to_transport()
 
 

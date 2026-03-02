@@ -1,7 +1,7 @@
 apiVersion: image.toolkit.fluxcd.io/v1beta2
 kind: ImageUpdateAutomation
 metadata:
-  name: openclaw-matrix
+  name: openclaw-exec
   namespace: flux-system
 spec:
   interval: 5m
@@ -17,7 +17,7 @@ spec:
         name: flux-image-automation
         email: flux@allegedly.works
       messageTemplate: |-
-        chore: update openclaw-matrix image [skip ci]
+        chore: update openclaw-exec image [skip ci]
         {{ range $resource, $changes := .Changed.Objects -}}
         {{ range $_, $change := $changes -}}
         {{ $change.OldValue }} -> {{ $change.NewValue }}
@@ -27,4 +27,4 @@ spec:
       branch: devel
   update:
     strategy: Setters
-    path: ./cluster/k8s/openclaw-gateway
+    path: ./cluster/k8s/approval-gate

@@ -1,0 +1,18 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: openclaw-openai-api-key
+  namespace: openclaw-gateway
+spec:
+  encryptedData:
+    api-key: AgAkoHwRp0Cv09ww+0mRndnR550RgQv3TyJTlx1TPM2kmyiucwfEkLRy1tXXIBydr5BxJw8K219KLZJ9oCEvLgPmnzQEBThk4g9T+eLYtBIzMuMlJbEc0nqqPEH9ZVpwG5bTv6VzI5JSvjOQTyTmWCzom7BdB72Wze2sP5OdZkmBTe5z450xdVEeHWD9YJ9On9V3TsstQyT1YEpRTiW853GD6kVcJSRjoLEM3UC2D0dO6wf1J9OxZmdz7LPA+4VhmsrJ1/qu1JkOXQS+VyUsE9QK2ynub+Z1roXSsa2W+06BziCRMqF8hl8SMGfyBn0i8nybcFoPrsgH32dMDt6wBecmMyyNG0H/vMP3mOrKkQOVHjM3U1Y4ZCv/mcIP8xk1vijdNo5PvPsvQcuNTn5+KV4tsV++ZsaOGppLlkzwkXQsfBOZpQm8g5CnEvXZZVmbqB5tVL6LxRptFkE67pRWuT8KvpFresetgCwugC0VAxmI0h+lN8bDfQiTxgazAt3dGZvaHfAqb6+pglVwOWXksdnZTIh2jBwo/3gCqDKajor/dziFMKPKUObzH/9jCBEXYcfzrZVnbNZVm//2zUTGqSMRhk3N2WKxnZRdM706f1EHQV8zs8tWRIcPDXdIw1iwhg4uYNLDfjaXO28IWGRyF3CSrjFWNqGKbOaNMPH6xQzdkbHzR4GaJhwfTYCXoMhdqwSXjmu8n83lXJXspCEWd1MeqXUTQUqCQ5D/t0//WzAUSnbZTXVAcmQQ/Dy7vRmuJ+AvHThsn6M3ql/t2txGIazqUq96lvxB4a0oly0HL5SE9X1sVLuj6PQSYCKdDE+HMyR+vWkx50T4Jnqtl401LSMfiO36Wrw2OWQbDzH2qJ+XZNcUhhoZeRXgzPOhVn6I9tgNbaDxUy0f1FQWl5doxrpsHtYZHg==
+  template:
+    metadata:
+      name: openclaw-openai-api-key
+      namespace: openclaw-gateway
+      annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "claude-sandbox"
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "claude-sandbox"

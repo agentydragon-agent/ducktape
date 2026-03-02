@@ -117,12 +117,12 @@ resources:
   - kagent/flux-kustomization.yaml
   - kagent-secrets/flux-kustomization.yaml
   - openclaw-operator/flux-kustomization.yaml
-  - openclaw-namespace/flux-kustomization.yaml
+  - openclaw-gateway-namespace/flux-kustomization.yaml
   - openclaw-mitmproxy-namespace/flux-kustomization.yaml
   - openclaw-mitmproxy-secrets/flux-kustomization.yaml
   - openclaw-mitmproxy/flux-kustomization.yaml
-  - openclaw-secrets/flux-kustomization.yaml
-  - openclaw/flux-kustomization.yaml
+  - openclaw-gateway-secrets/flux-kustomization.yaml
+  - openclaw-gateway/flux-kustomization.yaml
   - openclaw-sandbox/flux-kustomization.yaml
   - openclaw-sandbox-secrets/flux-kustomization.yaml
   - authentik-blueprint/sso-secrets/flux-kustomization.yaml

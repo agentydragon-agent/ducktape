@@ -12,7 +12,7 @@ entries:
       name: openclaw
     attrs:
       external_host: "https://openclaw.allegedly.works"
-      internal_host: "http://openclaw.openclaw.svc.cluster.local:18789"
+      internal_host: "http://openclaw.openclaw-gateway.svc.cluster.local:18789"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]

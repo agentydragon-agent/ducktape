@@ -1,0 +1,18 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: openclaw-github-token
+  namespace: openclaw-gateway
+spec:
+  encryptedData:
+    token: AgA291uzcHAxhQLWDrwvNOpusGbGf2J3jAB6BHxlUjwyddHfnG5G+QOWe16yj/+ggbMG9NyWMQ7JdEIBzVxEhfnCVWE7FsZHo1GZNPHgfcNmDGKO1ZMHhfXLdXRpTgmKmksc6JPq3XrdKs5oloPriR5bffUC8WsOXu6CJtjH+KwVmhehOGrqGpp6LYwtR2NWufEqau7jIGyAKvHfJN889E1EJ1N3HsMKQwE72zkx43ejyk4Npn6gH0Gd1+sTBtnKM9X/FxNU0CedoPaVZb16mF+N9tYq7z+5c0/xzY9Jpk+UQrqTf9g1jq4tMmKdZ08yMo8pfrpsZKVKrW0UltzqUdNomYbOimsAt0v6ULWYmaF58ghYJcJHJbI1zU3zOkO+Vroj2SfshM+dPViw2IXdiwu8afdNkHvfHfWFVac0W1zvkWKhiVoHGFdg0EELKAk8HhOtbL2zxPje8Q9vsCnXrCzTiXbya51VHpzQ06H+uKjcZSjNI+4AFWR1nd88Hlq4r/kfGIgj3tBcu5m1Q2CS+t/rXLIMExcYI3Rp1klkpIjls2+agtCGHnED103x3bJJuBX732ybJEB8fRInphZ+TMbxzzTPADd5CKqO4x4Brp5aFCs2WDrQT3irCu2uL0g5bS2oG6vDukOhf/vd1+7bwstcdmWLi38CP97ozgmKRYv/LeOlfT6LIw4mPK6qfKIfqHCckuUAu3hE8Edioh1iixV+2+IWOnf81Q/kfk0oSCwdAbx3+hKjr7LT
+  template:
+    metadata:
+      name: openclaw-github-token
+      namespace: openclaw-gateway
+      annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "claude-sandbox,openclaw-sandbox"
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "claude-sandbox,openclaw-sandbox"

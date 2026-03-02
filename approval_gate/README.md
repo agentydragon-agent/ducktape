@@ -18,8 +18,7 @@ Backend MCP servers (streamable-http or stdio)
 ApprovalGateServer (FastMCP proxy)        port 8765
   ├── /mcp  — unified MCP endpoint
   │           x-authentik-jwt → operator browser (JWT-verified)
-  │           Authorization: Bearer → OpenClaw agent (AGENT_API_KEY)
-  ├── /api  — operator REST API (Authentik JWT auth)
+  │           Authorization: Bearer → OpenClaw agent (AGENT_TOKEN)
   └── /     — operator Svelte SPA (Authentik SSO, JWT-verified)
         │  MCP ResourceUpdated: resource://actions/{id}
         ▼
@@ -30,7 +29,7 @@ OpenClaw plugin (openclaw/approval-gate/)
 
 `CiliumNetworkPolicy` allows both the Authentik outpost and OpenClaw pods to reach
 port 8765. Access to `/mcp` is controlled by auth header: JWT for the operator
-browser, `AGENT_API_KEY` bearer for the OpenClaw plugin.
+browser, `AGENT_TOKEN` bearer for the OpenClaw plugin.
 
 ## Running
 
@@ -48,12 +47,10 @@ with the backend spec (see below).
 | `models.py`         | Discriminated union types (`Action`, `ActionState`, `ToolCallOutcome`) |
 | `storage.py`        | aiosqlite CRUD; indexed `status` column                                |
 | `predicates.py`     | Three-way predicate: `Approved \| Denied \| NeedsHumanDecision`        |
-| `config.py`         | `Settings` (Pydantic); backend spec from YAML, auth keys from env      |
+| `config.py`         | `Settings` (Pydantic); backend spec from YAML, token from env          |
 | `proxy_server.py`   | `ApprovalGateServer` — core MCP proxy, tool wrapping, notifications    |
-| `operator_api.py`   | FastAPI operator REST router (`/api/actions/*`)                        |
-| `ui.py`             | Serves the Svelte SPA `index.html` for operator routes                 |
-| `app.py`            | Combined FastAPI app factory (`create_app()`)                          |
-| `main.py`           | `uvicorn` entry point (single server, single port)                     |
+| `mcp_auth.py`       | Dual-header auth: Authentik JWT (operators) + bearer token (agents)    |
+| `app.py`            | Starlette app factory (`create_app()`) + uvicorn entry point           |
 | `instructions.mako` | Mako template for MCP `initialize` instructions                        |
 | `frontend/`         | Svelte 5 operator SPA (action list + detail, approve/reject workflow)  |
 
@@ -67,10 +64,8 @@ prefix (lowercase alphanumeric + underscore).
 
 ```yaml
 backends:
-  exec:
-    url: http://exec-backend:8766/mcp
-    headers:
-      Authorization: "Bearer token123"
+  kubeapi_admin:
+    url: http://kubeapi-admin-exec-mcp:8766/mcp
   files:
     command: /usr/bin/file-server
     args:
@@ -78,13 +73,15 @@ backends:
 ```
 
 Each backend entry supports the full `MCPServerTypes` config (URL + headers for
-streamable-http, command + args + env for stdio).
+streamable-http, command + args + env for stdio). URL-based backends that don't
+specify an explicit `Authorization` header automatically get the `AGENT_TOKEN` injected
+as `Authorization: Bearer <AGENT_TOKEN>` at startup.
 
 ### Environment variables
 
 | Variable            | Required | Description                                                                                   |
 | ------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| `AGENT_API_KEY`     | yes      | Bearer token for the agent-facing `/mcp` endpoint                                             |
+| `AGENT_TOKEN`       | yes      | Bearer token for agent `/mcp` auth and auto-injected into backend headers                     |
 | `PUBLIC_BASE_URL`   | yes      | Base URL for approval links shown to agents                                                   |
 | `OPERATOR_JWKS_URL` | yes      | JWKS endpoint for verifying operator UI JWTs (e.g. Authentik's `/application/o/<slug>/jwks/`) |
 | `CONFIG_PATH`       | no       | Path to YAML config file (default `/etc/approval-gate/config.yaml`)                           |

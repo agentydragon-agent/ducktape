@@ -20,7 +20,7 @@ apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
 metadata:
   name: openclaw
-  namespace: openclaw
+  namespace: openclaw-gateway
 spec:
   targetRef:
     apiVersion: apps/v1

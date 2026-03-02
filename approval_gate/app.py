@@ -35,7 +35,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
     """Build the Starlette app serving UI and MCP on a single port."""
     predicate = load_predicate(settings.predicate_path)
     jwks_client = PyJWKClient(settings.operator_jwks_url)
-    auth = ApprovalGateAuthProvider(agent_api_key=settings.agent_api_key, jwks_client=jwks_client)
+    auth = ApprovalGateAuthProvider(agent_token=settings.agent_token, jwks_client=jwks_client)
     gate = ApprovalGateServer(
         backends=settings.backends,
         db_path=settings.db_path,

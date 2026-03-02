@@ -34,15 +34,15 @@ class ApprovalGateAuthProvider(AuthProvider):
     """Authenticates both Authentik JWT (operators) and bearer API keys (agents).
 
     Both roles include ``READER_SCOPE`` for resource reads and ``list_actions``.
-    Agents carry ``Authorization: Bearer <AGENT_API_KEY>`` and additionally receive ``AGENT_SCOPE``,
-    which gates wrapped backend tools and ``withdraw_action``.
+    Agents carry ``Authorization: Bearer <AGENT_TOKEN>`` and additionally receive
+    ``AGENT_SCOPE``, which gates wrapped backend tools and ``withdraw_action``.
     Operators carry ``x-authentik-jwt: <jwt>`` and additionally receive ``OPERATOR_SCOPE``,
     which gates approve_action / reject_action.
     """
 
-    def __init__(self, *, agent_api_key: str, jwks_client: PyJWKClient) -> None:
+    def __init__(self, *, agent_token: str, jwks_client: PyJWKClient) -> None:
         super().__init__(required_scopes=[])
-        self._agent_api_key = agent_api_key
+        self._agent_token = agent_token
         self._jwks_client = jwks_client
 
     def get_middleware(self) -> list:
@@ -64,7 +64,7 @@ class ApprovalGateAuthProvider(AuthProvider):
         return self._verify_agent_bearer(token)
 
     def _verify_agent_bearer(self, token: str) -> AccessToken | None:
-        if token == self._agent_api_key:
+        if token == self._agent_token:
             return AccessToken(token=token, client_id="agent", scopes=[AGENT_SCOPE, READER_SCOPE])
         return None
 

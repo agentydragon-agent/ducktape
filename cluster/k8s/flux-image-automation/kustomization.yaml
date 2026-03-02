@@ -17,9 +17,9 @@ resources:
   - approval-gate-image-repository.yaml
   - approval-gate-image-policy.yaml
   - approval-gate-image-update-automation.yaml
-  - exec-backend-image-repository.yaml
-  - exec-backend-image-policy.yaml
-  - exec-backend-image-update-automation.yaml
+  - openclaw-exec-image-repository.yaml
+  - openclaw-exec-image-policy.yaml
+  - openclaw-exec-image-update-automation.yaml
   - homeassistant-proxy-image-repository.yaml
   - homeassistant-proxy-image-policy.yaml
   - homeassistant-proxy-image-update-automation.yaml
