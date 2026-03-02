@@ -3,10 +3,12 @@ package routing
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
 	"sort"
+	"syscall"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
@@ -223,34 +225,23 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		return fmt.Errorf("nftables conn: %w", err)
 	}
 
+	// Diagnostic: log existing nftables state.
+	rm.logNftablesState(conn)
+
+	// Canary: test if ANY nftables commit works in this namespace.
+	if err := rm.nftablesCanary(); err != nil {
+		rm.logger.Error("nftables canary failed: nftables commits do not work in this namespace",
+			zap.Error(err))
+		return fmt.Errorf("nftables canary: %w", err)
+	}
+	rm.logger.Info("nftables canary passed")
+
 	table := &nftables.Table{
 		Family: nftables.TableFamilyINet,
 		Name:   tableName,
 	}
 
-	// Diagnostic: log existing nftables state to help debug EBUSY errors.
-	for _, family := range []nftables.TableFamily{
-		nftables.TableFamilyIPv4, nftables.TableFamilyIPv6, nftables.TableFamilyINet,
-	} {
-		tables, _ := conn.ListTablesOfFamily(family)
-		for _, t := range tables {
-			rm.logger.Debug("existing nftables table", zap.String("name", t.Name), zap.Uint8("family", uint8(t.Family)))
-		}
-	}
-	existingChains, err := conn.ListChains()
-	if err != nil {
-		rm.logger.Warn("failed to list nftables chains", zap.Error(err))
-	} else {
-		for _, chain := range existingChains {
-			rm.logger.Debug("existing nftables chain",
-				zap.String("table", chain.Table.Name),
-				zap.String("chain", chain.Name),
-				zap.String("type", string(chain.Type)),
-			)
-		}
-	}
-
-	// Check if our table exists; create it if not. Matches Talos approach
+	// Phase 1: Create/ensure our table exists. Matches Talos approach
 	// (never DelTable, which would ENOENT on first run).
 	existingTables, err := conn.ListTablesOfFamily(nftables.TableFamilyINet)
 	if err != nil {
@@ -265,8 +256,10 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	table = conn.AddTable(table)
 
 	// Flush rules from existing chains in our table, then delete them.
-	// FlushChain must precede DelChain to avoid EBUSY from deleting
-	// chains that still contain rules or are referenced by verdict maps.
+	existingChains, err := conn.ListChains()
+	if err != nil {
+		rm.logger.Warn("failed to list nftables chains", zap.Error(err))
+	}
 	for _, chain := range existingChains {
 		if chain.Table.Name == tableName {
 			conn.FlushChain(chain)
@@ -274,23 +267,46 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		}
 	}
 
+	if err := conn.Flush(); err != nil {
+		rm.logger.Error("nftables phase 1 (table+cleanup) flush failed", zap.Error(err),
+			zap.Bool("is_ebusy", errors.Is(err, syscall.EBUSY)))
+		return fmt.Errorf("nftables phase 1 flush: %w", err)
+	}
+	rm.logger.Debug("nftables phase 1 (table+cleanup) committed")
+
+	// Phase 2: Create sets, chains, and rules.
+	conn2, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables conn2: %w", err)
+	}
+
+	// Re-fetch the table reference after phase 1 commit.
+	existingTables2, err := conn2.ListTablesOfFamily(nftables.TableFamilyINet)
+	if err != nil {
+		return fmt.Errorf("re-listing tables: %w", err)
+	}
+	for _, t := range existingTables2 {
+		if t.Name == tableName {
+			table = t
+			break
+		}
+	}
+
 	v4Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return p.Addr().Is4() })
 	v6Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return !p.Addr().Is4() })
 
-	// Share sets between prerouting and output chains (same prefixes).
 	v4Set := makeIPv4Set(table, v4Prefixes)
 	v6Set := makeIPv6Set(table, v6Prefixes)
 
-	if err := conn.AddSet(v4Set.set, v4Set.elements); err != nil {
+	if err := conn2.AddSet(v4Set.set, v4Set.elements); err != nil {
 		return fmt.Errorf("adding v4 set: %w", err)
 	}
-	if err := conn.AddSet(v6Set.set, v6Set.elements); err != nil {
+	if err := conn2.AddSet(v6Set.set, v6Set.elements); err != nil {
 		return fmt.Errorf("adding v6 set: %w", err)
 	}
 
-	// Prerouting chain: mark incoming packets destined for routed IPs.
 	policy := nftables.ChainPolicyAccept
-	prerouteChain := conn.AddChain(&nftables.Chain{
+	prerouteChain := conn2.AddChain(&nftables.Chain{
 		Name:     "kubespan_prerouting",
 		Table:    table,
 		Type:     nftables.ChainTypeFilter,
@@ -299,26 +315,11 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		Policy:   &policy,
 	})
 
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: prerouteChain,
-		Exprs: skipWGMarkExprs(),
-	})
+	conn2.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: skipWGMarkExprs()})
+	conn2.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv4Exprs(v4Set.set)})
+	conn2.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv6Exprs(v6Set.set)})
 
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: prerouteChain,
-		Exprs: markIPv4Exprs(v4Set.set),
-	})
-
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: prerouteChain,
-		Exprs: markIPv6Exprs(v6Set.set),
-	})
-
-	// Output chain: mark outgoing packets + MSS clamping.
-	outputChain := conn.AddChain(&nftables.Chain{
+	outputChain := conn2.AddChain(&nftables.Chain{
 		Name:     "kubespan_outgoing",
 		Table:    table,
 		Type:     nftables.ChainTypeRoute,
@@ -327,52 +328,86 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		Policy:   &policy,
 	})
 
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: outputChain,
-		Exprs: skipWGMarkExprs(),
-	})
-
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: outputChain,
-		Exprs: skipLoopbackExprs(),
-	})
+	conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipWGMarkExprs()})
+	conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipLoopbackExprs()})
 
 	mss4 := rm.mtu - 40
 	if mss4 > 0 {
-		conn.AddRule(&nftables.Rule{
-			Table: table,
-			Chain: outputChain,
-			Exprs: mssClampIPv4Exprs(v4Set.set, uint16(mss4)),
-		})
+		conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv4Exprs(v4Set.set, uint16(mss4))})
 	}
 	mss6 := rm.mtu - 60
 	if mss6 > 0 {
-		conn.AddRule(&nftables.Rule{
-			Table: table,
-			Chain: outputChain,
-			Exprs: mssClampIPv6Exprs(v6Set.set, uint16(mss6)),
-		})
+		conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv6Exprs(v6Set.set, uint16(mss6))})
 	}
 
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: outputChain,
-		Exprs: markIPv4Exprs(v4Set.set),
-	})
+	conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv4Exprs(v4Set.set)})
+	conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv6Exprs(v6Set.set)})
 
-	conn.AddRule(&nftables.Rule{
-		Table: table,
-		Chain: outputChain,
-		Exprs: markIPv6Exprs(v6Set.set),
-	})
-
-	if err := conn.Flush(); err != nil {
-		return fmt.Errorf("nftables flush: %w", err)
+	if err := conn2.Flush(); err != nil {
+		rm.logger.Error("nftables phase 2 (chains+rules) flush failed", zap.Error(err),
+			zap.Bool("is_ebusy", errors.Is(err, syscall.EBUSY)))
+		return fmt.Errorf("nftables phase 2 flush: %w", err)
 	}
+	rm.logger.Debug("nftables phase 2 (chains+rules) committed")
 
 	return nil
+}
+
+// nftablesCanary tests whether nftables commits work at all in the current
+// network namespace. Creates and immediately deletes a throwaway table.
+func (rm *Manager) nftablesCanary() error {
+	c, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("conn: %w", err)
+	}
+	c.AddTable(&nftables.Table{
+		Family: nftables.TableFamilyINet,
+		Name:   "kubespand_canary",
+	})
+	if err := c.Flush(); err != nil {
+		return fmt.Errorf("create canary table: %w (errno EBUSY=%v)", err, errors.Is(err, syscall.EBUSY))
+	}
+	c2, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("conn2: %w", err)
+	}
+	c2.DelTable(&nftables.Table{
+		Family: nftables.TableFamilyINet,
+		Name:   "kubespand_canary",
+	})
+	if err := c2.Flush(); err != nil {
+		return fmt.Errorf("delete canary table: %w", err)
+	}
+	return nil
+}
+
+// logNftablesState dumps the existing nftables tables and chains for diagnostics.
+func (rm *Manager) logNftablesState(conn *nftables.Conn) {
+	for _, family := range []nftables.TableFamily{
+		nftables.TableFamilyIPv4, nftables.TableFamilyIPv6, nftables.TableFamilyINet,
+	} {
+		tables, _ := conn.ListTablesOfFamily(family)
+		for _, t := range tables {
+			rm.logger.Debug("existing nftables table",
+				zap.String("name", t.Name),
+				zap.Uint8("family", uint8(t.Family)),
+				zap.Uint32("use", t.Use),
+				zap.Uint32("flags", t.Flags),
+			)
+		}
+	}
+	chains, err := conn.ListChains()
+	if err != nil {
+		rm.logger.Warn("failed to list nftables chains", zap.Error(err))
+		return
+	}
+	for _, chain := range chains {
+		rm.logger.Debug("existing nftables chain",
+			zap.String("table", chain.Table.Name),
+			zap.String("chain", chain.Name),
+			zap.String("type", string(chain.Type)),
+		)
+	}
 }
 
 // intervalSet holds an nftables set and its pre-computed elements.
