@@ -92,9 +92,9 @@ jobs:
         id: cache-precommit-restore
         uses: actions/cache/restore@v4
         with:
-          path: |
-            ~/.cache/pre-commit
-            ~/.cache/nixfmt-bin
+          path: ~/.cache/pre-commit
+          # lockfile.json: nixfmt binary is cached under ~/.cache/pre-commit/nixfmt-bin
+          # by tools/precommit/run_nixfmt.sh; bust cache when version changes.
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', 'tools/multitool/lockfile.json') }}
           restore-keys: |
             pre-commit-${{ runner.os }}-
@@ -128,9 +128,7 @@ jobs:
         if: always() && steps.cache-precommit-restore.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: |
-            ~/.cache/pre-commit
-            ~/.cache/nixfmt-bin
+          path: ~/.cache/pre-commit
           key: ${{ steps.cache-precommit-restore.outputs.cache-primary-key }}
 
       - name: Save Ansible Galaxy roles cache

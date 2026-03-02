@@ -11,8 +11,8 @@ LOCKFILE="${SCRIPT_DIR}/../multitool/lockfile.json"
 NIXFMT_URL="$(jq -r '.nixfmt.binaries[] | select(.os == "linux" and .cpu == "x86_64") | .url' "$LOCKFILE")"
 NIXFMT_SHA256="$(jq -r '.nixfmt.binaries[] | select(.os == "linux" and .cpu == "x86_64") | .sha256' "$LOCKFILE")"
 
-# Cache directory: use XDG_CACHE_HOME if set, otherwise ~/.cache
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/nixfmt-bin"
+# Cache under pre-commit's cache dir so CI's ~/.cache/pre-commit cache covers it.
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/pre-commit/nixfmt-bin"
 NIXFMT_BIN="${CACHE_DIR}/nixfmt-${NIXFMT_SHA256}"
 
 if [[ ! -x "$NIXFMT_BIN" ]]; then
