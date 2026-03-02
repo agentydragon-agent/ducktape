@@ -467,8 +467,23 @@ func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Clien
 			},
 		},
 		HostConfig: &docker.HostConfig{
-			NetworkMode: network,
-			Privileged:  true,
+			NetworkMode:    network,
+			Privileged:     true,
+			SecurityOpt:    []string{"seccomp=unconfined"},
+			ReadonlyRootfs: true,
+			Tmpfs: map[string]string{
+				"/run":    "",
+				"/system": "",
+				"/tmp":    "",
+			},
+			Mounts: []docker.HostMount{
+				{Target: "/system/state", Type: "volume"},
+				{Target: "/var", Type: "volume"},
+				{Target: "/etc/cni", Type: "volume"},
+				{Target: "/etc/kubernetes", Type: "volume"},
+				{Target: "/usr/libexec/kubernetes", Type: "volume"},
+				{Target: "/opt", Type: "volume"},
+			},
 		},
 		Context: ctx,
 	})
