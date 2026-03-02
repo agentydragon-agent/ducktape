@@ -71,8 +71,11 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	// Create temp directory for test artifacts.
 	tmpDir := t.TempDir()
 
+	// Compute discovery container name up front so we can include it in the TLS cert.
+	discoveryName := fmt.Sprintf("discovery-%s", testID)
+
 	// Generate self-signed TLS cert for the discovery service.
-	certFile, keyFile := generateTLSCert(t, tmpDir)
+	certFile, keyFile := generateTLSCert(t, tmpDir, discoveryName)
 
 	// Create Docker network.
 	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
@@ -87,7 +90,6 @@ func TestKubeSpanDiscovery(t *testing.T) {
 	})
 
 	// Start discovery service.
-	discoveryName := fmt.Sprintf("discovery-%s", testID)
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
@@ -303,7 +305,7 @@ func randomHex(n int) string {
 	return fmt.Sprintf("%x", randomBytes(n))
 }
 
-func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
+func generateTLSCert(t *testing.T, dir string, extraDNSNames ...string) (certFile, keyFile string) {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -311,6 +313,7 @@ func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 		t.Fatalf("generating TLS key: %v", err)
 	}
 
+	dnsNames := append([]string{"discovery-test", "localhost"}, extraDNSNames...)
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: "discovery-test"},
@@ -318,7 +321,7 @@ func generateTLSCert(t *testing.T, dir string) (certFile, keyFile string) {
 		NotAfter:     time.Now().Add(24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     []string{"discovery-test", "localhost"},
+		DNSNames:     dnsNames,
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
 	}
 
@@ -539,8 +542,11 @@ func TestKubeSpanNetworking(t *testing.T) {
 	// Create temp directory for test artifacts.
 	tmpDir := t.TempDir()
 
+	// Compute discovery container name up front so we can include it in the TLS cert.
+	discoveryName := fmt.Sprintf("discovery-%s", testID)
+
 	// Generate self-signed TLS cert for the discovery service.
-	certFile, keyFile := generateTLSCert(t, tmpDir)
+	certFile, keyFile := generateTLSCert(t, tmpDir, discoveryName)
 
 	// Create Docker network.
 	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
@@ -555,7 +561,6 @@ func TestKubeSpanNetworking(t *testing.T) {
 	})
 
 	// Start discovery service.
-	discoveryName := fmt.Sprintf("discovery-%s", testID)
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
