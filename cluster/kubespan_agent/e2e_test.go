@@ -1,21 +1,15 @@
 // Integration tests for kubespand: verifies peer discovery and network
-// connectivity against a real Talos container and local discovery service.
-// Requires Docker, ~2–3 minutes.
+// connectivity between two kubespand instances via a local discovery service.
+// Requires Docker, ~1 minute.
 package main
 
 import (
 	"bytes"
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
-	"math/big"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -31,19 +25,18 @@ import (
 
 const (
 	discoveryRepoTag     = "ghcr.io/siderolabs/discovery-service:latest"
-	talosRepoTag         = "ghcr.io/siderolabs/talos:v1.9.5"
 	kubespandRepoTag     = "kubespand:latest"
 	kubespandTestRepoTag = "kubespand-test:latest"
 	networkPrefix        = "kubespan-e2e"
 )
 
+// TestKubeSpanDiscovery runs two kubespand instances in discovery-only mode and
+// verifies they discover each other via the discovery service.
 func TestKubeSpanDiscovery(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	// 90s for test logic (images are pre-cached by Bazel). Leaves buffer
-	// before the 300s Bazel test timeout so t.Cleanup runs on failure.
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
@@ -52,28 +45,20 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		t.Fatalf("creating Docker client: %v", err)
 	}
 
-	// Load all container images from Bazel tarballs.
 	loadImage(t, client, "third_party/siderolabs/discovery_service_load/tarball.tar", discoveryRepoTag)
-	loadImage(t, client, "third_party/siderolabs/talos_v1_9_5_load/tarball.tar", talosRepoTag)
 	loadImage(t, client, "cluster/kubespan_agent/kubespand_load/tarball.tar", kubespandRepoTag)
 
-	// Generate unique test ID for resource names.
 	testID := randomHex(8)
 	networkName := fmt.Sprintf("%s-%s", networkPrefix, testID)
 	t.Logf("test ID: %s, network: %s", testID, networkName)
 
-	// Generate shared cluster credentials.
 	clusterID := base64.StdEncoding.EncodeToString(randomBytes(32))
 	sharedSecret := base64.StdEncoding.EncodeToString(randomBytes(32))
 	t.Logf("cluster_id: %s", clusterID)
 
-	// Create temp directory for test artifacts.
 	tmpDir := t.TempDir()
-
-	// Compute discovery container name up front.
 	discoveryName := fmt.Sprintf("discovery-%s", testID)
 
-	// Create Docker network.
 	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
 		Name:    networkName,
 		Context: ctx,
@@ -85,7 +70,6 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		_ = client.RemoveNetwork(network.ID)
 	})
 
-	// Start discovery service (plain gRPC, no TLS, debug logging).
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
@@ -98,66 +82,186 @@ func TestKubeSpanDiscovery(t *testing.T) {
 		Context: ctx,
 	})
 	t.Log("discovery service started")
-
-	// Wait for discovery service to be ready.
 	waitForContainer(t, ctx, client, discoveryContainer.ID, 30*time.Second)
 
-	// Write kubespand config.
-	configFile := filepath.Join(tmpDir, "agent.yaml")
-	writeKubespandConfig(t, configFile, clusterID, sharedSecret, discoveryName+":3000")
+	// Write configs for two kubespand instances (same cluster, different identity files).
+	configA := filepath.Join(tmpDir, "agent-a.yaml")
+	configB := filepath.Join(tmpDir, "agent-b.yaml")
+	writeKubespandConfig(t, configA, clusterID, sharedSecret, discoveryName+":3000", 51820, "/tmp/kubespan-identity-a.yaml")
+	writeKubespandConfig(t, configB, clusterID, sharedSecret, discoveryName+":3000", 51821, "/tmp/kubespan-identity-b.yaml")
 
-	// Generate Talos machine config and start Talos container.
-	talosName := fmt.Sprintf("talos-%s", testID)
-	talosContainer := startTalosContainer(t, ctx, client, talosName, networkName, clusterID, sharedSecret, discoveryName)
+	// Start both kubespand instances in discovery-only mode.
+	nameA := fmt.Sprintf("kubespand-a-%s", testID)
+	nameB := fmt.Sprintf("kubespand-b-%s", testID)
 
-	// Give Talos a moment to start KubeSpan and register with discovery.
-	t.Log("waiting for Talos to register with discovery service...")
-	time.Sleep(15 * time.Second)
-
-	// Verify containers are healthy before starting kubespand.
-	logContainerStatus(t, ctx, client, "discovery", discoveryContainer.ID)
-	logContainerStatus(t, ctx, client, "talos", talosContainer.ID)
-
-	// Run kubespand in discovery-only mode.
-	kubespandName := fmt.Sprintf("kubespand-%s", testID)
-	t.Log("starting kubespand in discovery-only mode...")
-	kubespandContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
-		Name: kubespandName,
+	t.Log("starting kubespand-a in discovery-only mode...")
+	containerA := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: nameA,
 		Config: &docker.Config{
 			Image: kubespandRepoTag,
 			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "30s", "-debug"},
 		},
 		HostConfig: &docker.HostConfig{
 			NetworkMode: networkName,
-			Binds: []string{
-				configFile + ":/etc/kubespan/agent.yaml:ro",
-			},
+			Binds:       []string{configA + ":/etc/kubespan/agent.yaml:ro"},
 		},
 		Context: ctx,
 	})
 
-	// Wait for kubespand to exit. 45s deadline (kubespand has -timeout 30s
-	// internally, so 45s gives it 15s buffer to exit after its own timeout).
+	t.Log("starting kubespand-b in discovery-only mode...")
+	containerB := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: nameB,
+		Config: &docker.Config{
+			Image: kubespandRepoTag,
+			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-discovery-only", "-timeout", "30s", "-debug"},
+		},
+		HostConfig: &docker.HostConfig{
+			NetworkMode: networkName,
+			Binds:       []string{configB + ":/etc/kubespan/agent.yaml:ro"},
+		},
+		Context: ctx,
+	})
+
+	// Wait for kubespand-a to exit (it should find kubespand-b as a peer).
 	diagContainers := map[string]string{
 		discoveryName: discoveryContainer.ID,
-		talosName:     talosContainer.ID,
-		kubespandName: kubespandContainer.ID,
+		nameA:         containerA.ID,
+		nameB:         containerB.ID,
 	}
-	exitCode, err := waitContainerOrFail(t, ctx, client, kubespandContainer.ID, 45*time.Second, diagContainers)
+	exitCode, err := waitContainerOrFail(t, ctx, client, containerA.ID, 45*time.Second, diagContainers)
 	if err != nil {
-		t.Fatalf("waiting for kubespand container: %v", err)
+		t.Fatalf("waiting for kubespand-a: %v", err)
 	}
 
-	out := containerLogs(t, ctx, client, kubespandContainer.ID)
-	t.Logf("kubespand output:\n%s", out)
+	out := containerLogs(t, ctx, client, containerA.ID)
+	t.Logf("kubespand-a output:\n%s", out)
 
 	if exitCode != 0 {
-		t.Fatalf("kubespand exited with code %d; output:\n%s", exitCode, out)
+		t.Fatalf("kubespand-a exited with code %d; output:\n%s", exitCode, out)
 	}
 
-	// The test passes if kubespand exited 0 (peers found).
 	if !strings.Contains(out, "peers found") {
-		t.Errorf("kubespand did not find peers; output:\n%s", out)
+		t.Errorf("kubespand-a did not find peers; output:\n%s", out)
+	}
+}
+
+// TestKubeSpanNetworking runs two kubespand instances in full mode and verifies
+// ICMPv6 connectivity through the WireGuard tunnel.
+func TestKubeSpanNetworking(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	client, err := docker.NewClientFromEnv()
+	if err != nil {
+		t.Fatalf("creating Docker client: %v", err)
+	}
+
+	loadImage(t, client, "third_party/siderolabs/discovery_service_load/tarball.tar", discoveryRepoTag)
+	loadImage(t, client, "cluster/kubespan_agent/kubespand_test_load/tarball.tar", kubespandTestRepoTag)
+
+	testID := randomHex(8)
+	networkName := fmt.Sprintf("%s-%s", networkPrefix, testID)
+	t.Logf("test ID: %s, network: %s", testID, networkName)
+
+	clusterID := base64.StdEncoding.EncodeToString(randomBytes(32))
+	sharedSecret := base64.StdEncoding.EncodeToString(randomBytes(32))
+	t.Logf("cluster_id: %s", clusterID)
+
+	tmpDir := t.TempDir()
+	discoveryName := fmt.Sprintf("discovery-%s", testID)
+
+	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
+		Name:    networkName,
+		Context: ctx,
+	})
+	if err != nil {
+		t.Fatalf("creating Docker network: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.RemoveNetwork(network.ID)
+	})
+
+	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: discoveryName,
+		Config: &docker.Config{
+			Image: discoveryRepoTag,
+			Cmd:   []string{"-debug"},
+		},
+		HostConfig: &docker.HostConfig{
+			NetworkMode: networkName,
+		},
+		Context: ctx,
+	})
+	t.Log("discovery service started")
+	waitForContainer(t, ctx, client, discoveryContainer.ID, 30*time.Second)
+
+	// Write configs for two kubespand instances.
+	configA := filepath.Join(tmpDir, "agent-a.yaml")
+	configB := filepath.Join(tmpDir, "agent-b.yaml")
+	writeKubespandConfig(t, configA, clusterID, sharedSecret, discoveryName+":3000", 51820, "/tmp/kubespan-identity-a.yaml")
+	writeKubespandConfig(t, configB, clusterID, sharedSecret, discoveryName+":3000", 51821, "/tmp/kubespan-identity-b.yaml")
+
+	// Start both kubespand instances in full mode (privileged for WireGuard).
+	nameA := fmt.Sprintf("kubespand-a-%s", testID)
+	nameB := fmt.Sprintf("kubespand-b-%s", testID)
+
+	t.Log("starting kubespand-a in full mode...")
+	containerA := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: nameA,
+		Config: &docker.Config{
+			Image: kubespandTestRepoTag,
+			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-debug"},
+		},
+		HostConfig: &docker.HostConfig{
+			NetworkMode: networkName,
+			Privileged:  true,
+			Binds:       []string{configA + ":/etc/kubespan/agent.yaml:ro"},
+		},
+		Context: ctx,
+	})
+
+	t.Log("starting kubespand-b in full mode...")
+	containerB := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: nameB,
+		Config: &docker.Config{
+			Image: kubespandTestRepoTag,
+			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-debug"},
+		},
+		HostConfig: &docker.HostConfig{
+			NetworkMode: networkName,
+			Privileged:  true,
+			Binds:       []string{configB + ":/etc/kubespan/agent.yaml:ro"},
+		},
+		Context: ctx,
+	})
+
+	// Wait for kubespand-a to discover and configure its peer (kubespand-b).
+	t.Log("waiting for kubespand-a to discover and configure peer...")
+	peerAddr := pollLogsForField(t, ctx, client, containerA.ID, "configuring peer", "address", 60*time.Second)
+
+	addr, err := netip.ParseAddr(peerAddr)
+	if err != nil {
+		t.Fatalf("invalid peer address %q from container logs: %v", peerAddr, err)
+	}
+	peerAddr = addr.String()
+	t.Logf("peer KubeSpan address: %s", peerAddr)
+
+	// Verify connectivity by pinging kubespand-b through the WireGuard tunnel.
+	t.Log("probing peer KubeSpan address via ICMPv6...")
+	exitCode, probeOut := dockerExec(t, ctx, client, containerA.ID, []string{"/testprobe", "-timeout", "60s", peerAddr})
+
+	logs := containerLogs(t, ctx, client, containerA.ID)
+	t.Logf("kubespand-a logs:\n%s", logs)
+	t.Logf("probe output: %s", probeOut)
+
+	if exitCode != 0 {
+		logsB := containerLogs(t, ctx, client, containerB.ID)
+		t.Logf("kubespand-b logs:\n%s", logsB)
+		t.Fatalf("connectivity probe failed (exit %d): %s", exitCode, probeOut)
 	}
 }
 
@@ -235,6 +339,20 @@ func containerLogs(t *testing.T, ctx context.Context, client *docker.Client, con
 	return buf.String()
 }
 
+func waitForContainer(t *testing.T, ctx context.Context, client *docker.Client, containerID string, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		container, err := client.InspectContainerWithContext(containerID, ctx)
+		if err == nil && container.State.Running {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	t.Fatalf("container %s did not start within %v", containerID, timeout)
+}
+
 func loadImage(t *testing.T, client *docker.Client, rlocation, repoTag string) {
 	t.Helper()
 
@@ -294,7 +412,7 @@ func randomHex(n int) string {
 }
 
 // writeKubespandConfig writes a kubespand YAML config file using AgentConfig struct.
-func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discoveryEndpoint string) {
+func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discoveryEndpoint string, listenPort int, identityFile string) {
 	t.Helper()
 
 	cfg := agentconfig.AgentConfig{
@@ -302,9 +420,9 @@ func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discovery
 		SharedSecret:      sharedSecret,
 		DiscoveryEndpoint: discoveryEndpoint,
 		InsecureDiscovery: true,
-		ListenPort:        51820,
+		ListenPort:        listenPort,
 		MTU:               1420,
-		IdentityFile:      "/tmp/kubespan-identity.yaml",
+		IdentityFile:      identityFile,
 		MachineType:       "worker",
 	}
 
@@ -315,266 +433,6 @@ func writeKubespandConfig(t *testing.T, path, clusterID, sharedSecret, discovery
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		t.Fatalf("writing kubespand config: %v", err)
-	}
-}
-
-// generateMachineCA creates a self-signed CA certificate and key for the Talos
-// machine config. Returns base64-encoded PEM cert and key strings.
-func generateMachineCA(t *testing.T) (crtB64, keyB64 string) {
-	t.Helper()
-
-	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("generating CA key: %v", err)
-	}
-
-	template := &x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "talos-test-ca"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-	}
-
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &caKey.PublicKey, caKey)
-	if err != nil {
-		t.Fatalf("creating CA cert: %v", err)
-	}
-
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyDER, err := x509.MarshalECPrivateKey(caKey)
-	if err != nil {
-		t.Fatalf("marshaling CA key: %v", err)
-	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
-
-	return base64.StdEncoding.EncodeToString(certPEM), base64.StdEncoding.EncodeToString(keyPEM)
-}
-
-func startTalosContainer(t *testing.T, ctx context.Context, client *docker.Client, name, network, clusterID, sharedSecret, discoveryHost string) *docker.Container {
-	t.Helper()
-	t.Log("generating Talos machine config...")
-
-	caCrt, _ := generateMachineCA(t)
-
-	talosConfig := map[string]interface{}{
-		"version": "v1alpha1",
-		"persist": true,
-		"machine": map[string]interface{}{
-			"type": "worker",
-			"ca": map[string]interface{}{
-				"crt": caCrt,
-			},
-			"network": map[string]interface{}{
-				"kubespan": map[string]interface{}{
-					"enabled": true,
-				},
-			},
-			"features": map[string]interface{}{
-				"hostDNS": map[string]interface{}{
-					"enabled":              true,
-					"forwardKubeDNSToHost": true,
-				},
-			},
-		},
-		"cluster": map[string]interface{}{
-			"id":     clusterID,
-			"secret": sharedSecret,
-			"discovery": map[string]interface{}{
-				"enabled": true,
-				"registries": map[string]interface{}{
-					"service": map[string]interface{}{
-						"endpoint": fmt.Sprintf("http://%s:3000/", discoveryHost),
-					},
-				},
-			},
-			"controlPlane": map[string]interface{}{
-				"endpoint": "https://localhost:6443",
-			},
-		},
-	}
-
-	configJSON, err := json.Marshal(talosConfig)
-	if err != nil {
-		t.Fatalf("marshaling Talos config: %v", err)
-	}
-	configB64 := base64.StdEncoding.EncodeToString(configJSON)
-
-	t.Log("starting Talos container...")
-	container := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
-		Name: name,
-		Config: &docker.Config{
-			Image: talosRepoTag,
-			Env: []string{
-				"PLATFORM=container",
-				"USERDATA=" + configB64,
-			},
-		},
-		HostConfig: &docker.HostConfig{
-			NetworkMode:    network,
-			Privileged:     true,
-			SecurityOpt:    []string{"seccomp=unconfined"},
-			ReadonlyRootfs: true,
-			Tmpfs: map[string]string{
-				"/run":    "",
-				"/system": "",
-				"/tmp":    "",
-			},
-			Mounts: []docker.HostMount{
-				{Target: "/system/state", Type: "volume"},
-				{Target: "/var", Type: "volume"},
-				{Target: "/etc/cni", Type: "volume"},
-				{Target: "/etc/kubernetes", Type: "volume"},
-				{Target: "/usr/libexec/kubernetes", Type: "volume"},
-				{Target: "/opt", Type: "volume"},
-			},
-		},
-		Context: ctx,
-	})
-	t.Log("Talos container started")
-	return container
-}
-
-func waitForContainer(t *testing.T, ctx context.Context, client *docker.Client, containerID string, timeout time.Duration) {
-	t.Helper()
-
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		container, err := client.InspectContainerWithContext(containerID, ctx)
-		if err == nil && container.State.Running {
-			return
-		}
-		time.Sleep(time.Second)
-	}
-	t.Fatalf("container %s did not start within %v", containerID, timeout)
-}
-
-func TestKubeSpanNetworking(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	// 120s for test logic (images are pre-cached by Bazel, but full mode
-	// needs WireGuard setup + connectivity probe). Leaves buffer before
-	// the 300s Bazel test timeout so t.Cleanup runs on failure.
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
-
-	client, err := docker.NewClientFromEnv()
-	if err != nil {
-		t.Fatalf("creating Docker client: %v", err)
-	}
-
-	// Load all container images from Bazel tarballs.
-	loadImage(t, client, "third_party/siderolabs/discovery_service_load/tarball.tar", discoveryRepoTag)
-	loadImage(t, client, "third_party/siderolabs/talos_v1_9_5_load/tarball.tar", talosRepoTag)
-	loadImage(t, client, "cluster/kubespan_agent/kubespand_test_load/tarball.tar", kubespandTestRepoTag)
-
-	// Generate unique test ID for resource names.
-	testID := randomHex(8)
-	networkName := fmt.Sprintf("%s-%s", networkPrefix, testID)
-	t.Logf("test ID: %s, network: %s", testID, networkName)
-
-	// Generate shared cluster credentials.
-	clusterID := base64.StdEncoding.EncodeToString(randomBytes(32))
-	sharedSecret := base64.StdEncoding.EncodeToString(randomBytes(32))
-	t.Logf("cluster_id: %s", clusterID)
-
-	// Create temp directory for test artifacts.
-	tmpDir := t.TempDir()
-
-	// Compute discovery container name up front.
-	discoveryName := fmt.Sprintf("discovery-%s", testID)
-
-	// Create Docker network.
-	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
-		Name:    networkName,
-		Context: ctx,
-	})
-	if err != nil {
-		t.Fatalf("creating Docker network: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.RemoveNetwork(network.ID)
-	})
-
-	// Start discovery service (plain gRPC, no TLS, debug logging).
-	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
-		Name: discoveryName,
-		Config: &docker.Config{
-			Image: discoveryRepoTag,
-			Cmd:   []string{"-debug"},
-		},
-		HostConfig: &docker.HostConfig{
-			NetworkMode: networkName,
-		},
-		Context: ctx,
-	})
-	t.Log("discovery service started")
-
-	// Wait for discovery service to be ready.
-	waitForContainer(t, ctx, client, discoveryContainer.ID, 30*time.Second)
-
-	// Write kubespand config.
-	configFile := filepath.Join(tmpDir, "agent.yaml")
-	writeKubespandConfig(t, configFile, clusterID, sharedSecret, discoveryName+":3000")
-
-	// Generate Talos machine config and start Talos container.
-	talosName := fmt.Sprintf("talos-%s", testID)
-	talosContainer := startTalosContainer(t, ctx, client, talosName, networkName, clusterID, sharedSecret, discoveryName)
-
-	// Give Talos a moment to start KubeSpan and register with discovery.
-	t.Log("waiting for Talos to register with discovery service...")
-	time.Sleep(15 * time.Second)
-
-	// Verify containers are healthy before starting kubespand.
-	logContainerStatus(t, ctx, client, "discovery", discoveryContainer.ID)
-	logContainerStatus(t, ctx, client, "talos", talosContainer.ID)
-
-	// Run kubespand in FULL mode (with WireGuard and routing).
-	kubespandName := fmt.Sprintf("kubespand-%s", testID)
-	t.Log("starting kubespand in full mode...")
-	kubespandContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
-		Name: kubespandName,
-		Config: &docker.Config{
-			Image: kubespandTestRepoTag,
-			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-debug"},
-		},
-		HostConfig: &docker.HostConfig{
-			NetworkMode: networkName,
-			Privileged:  true,
-			Binds: []string{
-				configFile + ":/etc/kubespan/agent.yaml:ro",
-			},
-		},
-		Context: ctx,
-	})
-
-	// Wait for kubespand to discover a peer and extract its KubeSpan address.
-	t.Log("waiting for kubespand to discover and configure peer...")
-	peerAddr := pollLogsForField(t, ctx, client, kubespandContainer.ID, "configuring peer", "address", 60*time.Second)
-
-	// Parse the discovered address. PeerSpecSpec.Address is netip.Addr, so the
-	// log value is a bare IPv6 address (no /128 suffix).
-	addr, err := netip.ParseAddr(peerAddr)
-	if err != nil {
-		t.Fatalf("invalid peer address %q from container logs: %v", peerAddr, err)
-	}
-	peerAddr = addr.String()
-	t.Logf("peer KubeSpan address: %s", peerAddr)
-
-	// Verify connectivity by pinging the peer through the WireGuard tunnel.
-	t.Log("probing peer KubeSpan address via ICMPv6...")
-	exitCode, probeOut := dockerExec(t, ctx, client, kubespandContainer.ID, []string{"/testprobe", "-timeout", "60s", peerAddr})
-
-	logs := containerLogs(t, ctx, client, kubespandContainer.ID)
-	t.Logf("kubespand logs:\n%s", logs)
-	t.Logf("probe output: %s", probeOut)
-
-	if exitCode != 0 {
-		t.Fatalf("connectivity probe failed (exit %d): %s", exitCode, probeOut)
 	}
 }
 
@@ -607,7 +465,6 @@ func pollLogsForField(t *testing.T, ctx context.Context, client *docker.Client, 
 		time.Sleep(2 * time.Second)
 	}
 
-	// Dump logs on failure for debugging.
 	logs := containerLogs(t, ctx, client, containerID)
 	t.Fatalf("timed out waiting for log line %q with field %q; logs:\n%s", logMsg, fieldName, logs)
 	return ""
