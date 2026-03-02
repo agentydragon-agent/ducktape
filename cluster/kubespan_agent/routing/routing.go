@@ -137,12 +137,6 @@ type Manager struct {
 	mtu          int
 	logger       *zap.Logger
 	rulesManager RulesManager
-
-	// degraded is set when nftables is unavailable (e.g. gVisor). In degraded
-	// mode, policy routing (nftables marks + ip rules + table 180) is skipped
-	// and per-prefix direct routes are added to the main routing table instead.
-	degraded     bool
-	directRoutes []netip.Prefix
 }
 
 // NewManager creates a new routing manager.
@@ -156,12 +150,6 @@ func NewManager(mtu int, logger *zap.Logger) *Manager {
 			constants.KubeSpanDefaultFirewallMask,
 		),
 	}
-}
-
-// Degraded returns true when nftables is unavailable and the manager is using
-// direct per-prefix routes instead of policy routing.
-func (rm *Manager) Degraded() bool {
-	return rm.degraded
 }
 
 // Install sets up nftables rules, ip policy routing rules, and default routes.
@@ -178,9 +166,6 @@ func (rm *Manager) Degraded() bool {
 // Routes:
 //   - Default routes in table 180 via kubespan interface
 //
-// If nftables is unavailable (e.g. gVisor), falls back to degraded mode where
-// per-prefix direct routes are used instead of policy routing.
-//
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/routing_rules.go
 func (rm *Manager) Install(routedPrefixes []netip.Prefix) error {
@@ -190,9 +175,7 @@ func (rm *Manager) Install(routedPrefixes []netip.Prefix) error {
 	}
 
 	if err := rm.installNftables(routedPrefixes); err != nil {
-		rm.logger.Warn("nftables unavailable, using direct routes (degraded mode)", zap.Error(err))
-		rm.degraded = true
-		return nil
+		return fmt.Errorf("nftables: %w", err)
 	}
 
 	if err := rm.rulesManager.Install(); err != nil {
@@ -207,31 +190,12 @@ func (rm *Manager) Install(routedPrefixes []netip.Prefix) error {
 }
 
 // Update refreshes the nftables rules with the current set of routed prefixes.
-// In degraded mode, manages per-prefix direct routes instead.
 func (rm *Manager) Update(routedPrefixes []netip.Prefix) error {
-	if rm.degraded {
-		return rm.updateDirectRoutes(routedPrefixes)
-	}
 	return rm.installNftables(routedPrefixes)
 }
 
-// Cleanup removes all nftables rules, ip rules, routes, and direct routes
-// installed by kubespand.
+// Cleanup removes all nftables rules, ip rules, and routes installed by kubespand.
 func (rm *Manager) Cleanup() error {
-	// Clean up direct routes from degraded mode.
-	if len(rm.directRoutes) > 0 {
-		if link, err := netlink.LinkByName(constants.KubeSpanLinkName); err == nil {
-			linkIdx := link.Attrs().Index
-			for _, p := range rm.directRoutes {
-				_ = netlink.RouteDel(&netlink.Route{
-					LinkIndex: linkIdx,
-					Dst:       prefixToIPNet(p),
-				})
-			}
-		}
-		rm.directRoutes = nil
-	}
-
 	conn, err := nftables.New()
 	if err != nil {
 		rm.logger.Warn("nftables conn for cleanup failed, skipping", zap.Error(err))
@@ -249,55 +213,6 @@ func (rm *Manager) Cleanup() error {
 
 	// Routes in table 180 disappear when the kubespan interface is deleted.
 	return nil
-}
-
-// updateDirectRoutes manages per-prefix routes in the main routing table,
-// used as a fallback when nftables is unavailable.
-func (rm *Manager) updateDirectRoutes(prefixes []netip.Prefix) error {
-	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
-	if err != nil {
-		return fmt.Errorf("finding %s for direct routes: %w", constants.KubeSpanLinkName, err)
-	}
-	linkIdx := link.Attrs().Index
-
-	// Build set of new prefixes for stale route removal.
-	newSet := make(map[string]bool, len(prefixes))
-	for _, p := range prefixes {
-		newSet[p.String()] = true
-	}
-
-	// Remove stale routes.
-	for _, old := range rm.directRoutes {
-		if !newSet[old.String()] {
-			_ = netlink.RouteDel(&netlink.Route{
-				LinkIndex: linkIdx,
-				Dst:       prefixToIPNet(old),
-			})
-		}
-	}
-
-	// Add/update current routes.
-	for _, p := range prefixes {
-		if err := netlink.RouteReplace(&netlink.Route{
-			LinkIndex: linkIdx,
-			Dst:       prefixToIPNet(p),
-			MTU:       rm.mtu,
-		}); err != nil {
-			rm.logger.Warn("failed to add direct route", zap.Stringer("prefix", p), zap.Error(err))
-		}
-	}
-
-	rm.directRoutes = append(rm.directRoutes[:0], prefixes...)
-	return nil
-}
-
-func prefixToIPNet(p netip.Prefix) *net.IPNet {
-	p = p.Masked()
-	addr := p.Addr()
-	return &net.IPNet{
-		IP:   addr.AsSlice(),
-		Mask: net.CIDRMask(p.Bits(), addr.BitLen()),
-	}
 }
 
 // installNftables creates the talos_kubespan nftables table with two chains.

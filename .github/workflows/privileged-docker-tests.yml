@@ -48,7 +48,14 @@ jobs:
       - name: Load kernel modules for WireGuard and nftables
         run: |
           sudo modprobe wireguard
-          sudo modprobe nf_tables
+          # nftables modules needed by KubeSpan: inet family tables, filter and
+          # route chain types. Matches Talos kernel config (CONFIG_NF_TABLES_INET,
+          # CONFIG_NF_TABLES_IPV4, CONFIG_NF_TABLES_IPV6 etc.).
+          for mod in nf_tables nf_tables_inet nft_chain_filter nft_chain_route; do
+            sudo modprobe "$mod" 2>/dev/null || true
+          done
+          # Verify nftables works
+          sudo nft list ruleset > /dev/null
 
       - name: Run privileged Docker tests
         run: |

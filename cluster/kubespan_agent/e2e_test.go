@@ -263,11 +263,6 @@ func TestKubeSpanNetworking(t *testing.T) {
 		t.Logf("kubespand-b logs:\n%s", logsB)
 		t.Fatalf("connectivity probe failed (exit %d): %s", exitCode, probeOut)
 	}
-
-	// Verify nftables routing was used (not degraded direct-route fallback).
-	if strings.Contains(logs, "nftables unavailable") {
-		t.Error("kubespand-a fell back to degraded routing mode; expected nftables")
-	}
 }
 
 func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.Client, opts docker.CreateContainerOptions) *docker.Container {
