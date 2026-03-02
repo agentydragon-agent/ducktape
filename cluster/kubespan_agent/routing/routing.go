@@ -275,21 +275,13 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	rm.logger.Debug("nftables phase 1 (table+cleanup) committed")
 
 	// Phase 2: Create sets, chains, and rules.
-	conn2, err := nftables.New()
-	if err != nil {
-		return fmt.Errorf("nftables conn2: %w", err)
-	}
+	// Each step uses a fresh connection and individual Flush() to identify
+	// which operation causes EBUSY.
 
 	// Re-fetch the table reference after phase 1 commit.
-	existingTables2, err := conn2.ListTablesOfFamily(nftables.TableFamilyINet)
+	table, err = rm.fetchTable(tableName)
 	if err != nil {
-		return fmt.Errorf("re-listing tables: %w", err)
-	}
-	for _, t := range existingTables2 {
-		if t.Name == tableName {
-			table = t
-			break
-		}
+		return fmt.Errorf("re-fetch table: %w", err)
 	}
 
 	v4Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return p.Addr().Is4() })
@@ -298,87 +290,256 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	v4Set := makeIPv4Set(table, v4Prefixes)
 	v6Set := makeIPv6Set(table, v6Prefixes)
 
-	if err := conn2.AddSet(v4Set.set, v4Set.elements); err != nil {
-		return fmt.Errorf("adding v4 set: %w", err)
-	}
-	if err := conn2.AddSet(v6Set.set, v6Set.elements); err != nil {
-		return fmt.Errorf("adding v6 set: %w", err)
+	// Step 2a: Add sets.
+	if err := rm.nftFlush("sets", func(c *nftables.Conn) error {
+		if err := c.AddSet(v4Set.set, v4Set.elements); err != nil {
+			return fmt.Errorf("adding v4 set: %w", err)
+		}
+		if err := c.AddSet(v6Set.set, v6Set.elements); err != nil {
+			return fmt.Errorf("adding v6 set: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
+	// Step 2b: Add prerouting chain.
 	policy := nftables.ChainPolicyAccept
-	prerouteChain := conn2.AddChain(&nftables.Chain{
-		Name:     "kubespan_prerouting",
-		Table:    table,
-		Type:     nftables.ChainTypeFilter,
-		Hooknum:  nftables.ChainHookPrerouting,
-		Priority: nftables.ChainPriorityRaw,
-		Policy:   &policy,
-	})
+	if err := rm.nftFlush("prerouting chain", func(c *nftables.Conn) error {
+		c.AddChain(&nftables.Chain{
+			Name:     "kubespan_prerouting",
+			Table:    table,
+			Type:     nftables.ChainTypeFilter,
+			Hooknum:  nftables.ChainHookPrerouting,
+			Priority: nftables.ChainPriorityRaw,
+			Policy:   &policy,
+		})
+		return nil
+	}); err != nil {
+		return err
+	}
 
-	conn2.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: skipWGMarkExprs()})
-	conn2.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv4Exprs(v4Set.set)})
-	conn2.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv6Exprs(v6Set.set)})
+	// Step 2c: Add output chain.
+	if err := rm.nftFlush("output chain", func(c *nftables.Conn) error {
+		c.AddChain(&nftables.Chain{
+			Name:     "kubespan_outgoing",
+			Table:    table,
+			Type:     nftables.ChainTypeRoute,
+			Hooknum:  nftables.ChainHookOutput,
+			Priority: nftables.ChainPriorityRaw,
+			Policy:   &policy,
+		})
+		return nil
+	}); err != nil {
+		return err
+	}
 
-	outputChain := conn2.AddChain(&nftables.Chain{
-		Name:     "kubespan_outgoing",
-		Table:    table,
+	// Re-fetch chains for AddRule references.
+	prerouteChain, outputChain, err := rm.fetchChains(tableName)
+	if err != nil {
+		return fmt.Errorf("fetching chains: %w", err)
+	}
+
+	// Step 2d: Add prerouting rules.
+	if err := rm.nftFlush("prerouting rules", func(c *nftables.Conn) error {
+		c.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: skipWGMarkExprs()})
+		c.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv4Exprs(v4Set.set)})
+		c.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv6Exprs(v6Set.set)})
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Step 2e: Add output rules.
+	if err := rm.nftFlush("output rules", func(c *nftables.Conn) error {
+		c.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipWGMarkExprs()})
+		c.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipLoopbackExprs()})
+		mss4 := rm.mtu - 40
+		if mss4 > 0 {
+			c.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv4Exprs(v4Set.set, uint16(mss4))})
+		}
+		mss6 := rm.mtu - 60
+		if mss6 > 0 {
+			c.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv6Exprs(v6Set.set, uint16(mss6))})
+		}
+		c.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv4Exprs(v4Set.set)})
+		c.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv6Exprs(v6Set.set)})
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// nftablesCanary tests whether nftables commits work in the current network
+// namespace, including hooked chains (which are needed for actual routing).
+func (rm *Manager) nftablesCanary() error {
+	canaryTable := &nftables.Table{
+		Family: nftables.TableFamilyINet,
+		Name:   "kubespand_canary",
+	}
+
+	// Step 1: create table only.
+	c1, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("conn1: %w", err)
+	}
+	c1.AddTable(canaryTable)
+	if err := c1.Flush(); err != nil {
+		return fmt.Errorf("create table: %w (EBUSY=%v)", err, errors.Is(err, syscall.EBUSY))
+	}
+	rm.logger.Debug("canary: table created")
+
+	// Step 2: add a hooked chain (route/output — same type we need for real routing).
+	c2, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("conn2: %w", err)
+	}
+	policy := nftables.ChainPolicyAccept
+	c2.AddChain(&nftables.Chain{
+		Name:     "canary_output",
+		Table:    canaryTable,
 		Type:     nftables.ChainTypeRoute,
 		Hooknum:  nftables.ChainHookOutput,
 		Priority: nftables.ChainPriorityRaw,
 		Policy:   &policy,
 	})
-
-	conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipWGMarkExprs()})
-	conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipLoopbackExprs()})
-
-	mss4 := rm.mtu - 40
-	if mss4 > 0 {
-		conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv4Exprs(v4Set.set, uint16(mss4))})
-	}
-	mss6 := rm.mtu - 60
-	if mss6 > 0 {
-		conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv6Exprs(v6Set.set, uint16(mss6))})
-	}
-
-	conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv4Exprs(v4Set.set)})
-	conn2.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv6Exprs(v6Set.set)})
-
-	if err := conn2.Flush(); err != nil {
-		rm.logger.Error("nftables phase 2 (chains+rules) flush failed", zap.Error(err),
+	if err := c2.Flush(); err != nil {
+		// This is the key test: can we create hooked chains?
+		rm.logger.Error("canary: hooked chain creation FAILED",
+			zap.Error(err),
 			zap.Bool("is_ebusy", errors.Is(err, syscall.EBUSY)))
-		return fmt.Errorf("nftables phase 2 flush: %w", err)
+		// Still try to clean up.
+		c2b, _ := nftables.New()
+		if c2b != nil {
+			c2b.DelTable(canaryTable)
+			_ = c2b.Flush()
+		}
+		return fmt.Errorf("create hooked chain: %w (EBUSY=%v)", err, errors.Is(err, syscall.EBUSY))
 	}
-	rm.logger.Debug("nftables phase 2 (chains+rules) committed")
+	rm.logger.Debug("canary: hooked chain created")
 
+	// Step 3: add a set and a rule (matching real usage).
+	c3, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("conn3: %w", err)
+	}
+	// Re-fetch table handle.
+	tables, _ := c3.ListTablesOfFamily(nftables.TableFamilyINet)
+	for _, t := range tables {
+		if t.Name == "kubespand_canary" {
+			canaryTable = t
+			break
+		}
+	}
+	chains, _ := c3.ListChains()
+	var canaryChain *nftables.Chain
+	for _, ch := range chains {
+		if ch.Table.Name == "kubespand_canary" && ch.Name == "canary_output" {
+			canaryChain = ch
+			break
+		}
+	}
+	if canaryChain != nil {
+		c3.AddRule(&nftables.Rule{
+			Table: canaryTable,
+			Chain: canaryChain,
+			Exprs: []expr.Any{
+				&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+				&expr.Verdict{Kind: expr.VerdictAccept},
+			},
+		})
+	}
+	if err := c3.Flush(); err != nil {
+		rm.logger.Error("canary: rule creation FAILED",
+			zap.Error(err),
+			zap.Bool("is_ebusy", errors.Is(err, syscall.EBUSY)))
+	} else {
+		rm.logger.Debug("canary: rule added")
+	}
+
+	// Step 4: cleanup.
+	c4, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("conn4: %w", err)
+	}
+	c4.DelTable(canaryTable)
+	if err := c4.Flush(); err != nil {
+		return fmt.Errorf("delete canary table: %w", err)
+	}
+	rm.logger.Debug("canary: cleaned up")
 	return nil
 }
 
-// nftablesCanary tests whether nftables commits work at all in the current
-// network namespace. Creates and immediately deletes a throwaway table.
-func (rm *Manager) nftablesCanary() error {
+// nftFlush creates a fresh connection, runs the provided setup function to queue
+// operations, then flushes. Logs the step name and any EBUSY errors.
+func (rm *Manager) nftFlush(step string, setup func(c *nftables.Conn) error) error {
 	c, err := nftables.New()
 	if err != nil {
-		return fmt.Errorf("conn: %w", err)
+		return fmt.Errorf("nftables conn for %s: %w", step, err)
 	}
-	c.AddTable(&nftables.Table{
-		Family: nftables.TableFamilyINet,
-		Name:   "kubespand_canary",
-	})
+	if err := setup(c); err != nil {
+		return fmt.Errorf("setup %s: %w", step, err)
+	}
 	if err := c.Flush(); err != nil {
-		return fmt.Errorf("create canary table: %w (errno EBUSY=%v)", err, errors.Is(err, syscall.EBUSY))
+		rm.logger.Error("nftables flush failed",
+			zap.String("step", step),
+			zap.Error(err),
+			zap.Bool("is_ebusy", errors.Is(err, syscall.EBUSY)))
+		return fmt.Errorf("nftables %s: %w", step, err)
 	}
-	c2, err := nftables.New()
-	if err != nil {
-		return fmt.Errorf("conn2: %w", err)
-	}
-	c2.DelTable(&nftables.Table{
-		Family: nftables.TableFamilyINet,
-		Name:   "kubespand_canary",
-	})
-	if err := c2.Flush(); err != nil {
-		return fmt.Errorf("delete canary table: %w", err)
-	}
+	rm.logger.Debug("nftables step committed", zap.String("step", step))
 	return nil
+}
+
+// fetchTable returns the kernel's table handle for the named inet table.
+func (rm *Manager) fetchTable(name string) (*nftables.Table, error) {
+	c, err := nftables.New()
+	if err != nil {
+		return nil, fmt.Errorf("conn: %w", err)
+	}
+	tables, err := c.ListTablesOfFamily(nftables.TableFamilyINet)
+	if err != nil {
+		return nil, fmt.Errorf("list tables: %w", err)
+	}
+	for _, t := range tables {
+		if t.Name == name {
+			return t, nil
+		}
+	}
+	return nil, fmt.Errorf("table %q not found", name)
+}
+
+// fetchChains returns the prerouting and output chain handles.
+func (rm *Manager) fetchChains(tableName string) (*nftables.Chain, *nftables.Chain, error) {
+	c, err := nftables.New()
+	if err != nil {
+		return nil, nil, fmt.Errorf("conn: %w", err)
+	}
+	chains, err := c.ListChains()
+	if err != nil {
+		return nil, nil, fmt.Errorf("list chains: %w", err)
+	}
+	var preroute, output *nftables.Chain
+	for _, ch := range chains {
+		if ch.Table.Name != tableName {
+			continue
+		}
+		switch ch.Name {
+		case "kubespan_prerouting":
+			preroute = ch
+		case "kubespan_outgoing":
+			output = ch
+		}
+	}
+	if preroute == nil {
+		return nil, nil, fmt.Errorf("kubespan_prerouting chain not found")
+	}
+	if output == nil {
+		return nil, nil, fmt.Errorf("kubespan_outgoing chain not found")
+	}
+	return preroute, output, nil
 }
 
 // logNftablesState dumps the existing nftables tables and chains for diagnostics.
