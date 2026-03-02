@@ -45,8 +45,10 @@ jobs:
         with:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
-      - name: Load WireGuard kernel module
-        run: sudo modprobe wireguard
+      - name: Load kernel modules for WireGuard and nftables
+        run: |
+          sudo modprobe wireguard
+          sudo modprobe nf_tables
 
       - name: Run privileged Docker tests
         run: |
