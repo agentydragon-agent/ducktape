@@ -32,11 +32,10 @@ RUN node -e " \
  && chown -R node:node node_modules
 
 # ── Approval gate plugin ──────────────────────────────────────────────────────
-# Plugin source is copied from the repo; deps are installed at build time.
+# Plugin source built by Bazel (//openclaw/approval-gate:plugin_tar).
+# CI stages the tar at docker/openclaw/approval-gate-plugin.tar before build.
 WORKDIR /app/extensions/approval-gate
-COPY openclaw/approval-gate/package.json ./
-COPY openclaw/approval-gate/index.ts ./
-COPY openclaw/approval-gate/openclaw.plugin.json ./
+ADD docker/openclaw/approval-gate-plugin.tar .
 RUN npm install --omit=dev \
  && chown -R node:node .
 
@@ -44,7 +43,7 @@ WORKDIR /app
 
 # Proxy preload: always active. Kyverno injects the proxy env vars at runtime;
 # NODE_OPTIONS activates this preload so Node.js uses them from startup.
-COPY proxy-setup.mjs /app/proxy-setup.mjs
+COPY docker/openclaw/proxy-setup.mjs /app/proxy-setup.mjs
 ENV NODE_OPTIONS="--import=file:///app/proxy-setup.mjs"
 
 USER node
