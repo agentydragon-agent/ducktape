@@ -84,31 +84,11 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		}
 	}()
 
-	// Inject config as a COSI resource using upstream kubespan.Config type.
-	logger.Info("creating COSI config resource",
-		zap.String("namespace", kubespan.NamespaceName),
-		zap.String("id", kubespan.ConfigID),
-	)
-	if err := st.Create(ctx, kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID)); err != nil {
-		return fmt.Errorf("creating config resource: %w", err)
-	}
-	if err := safe.StateModify(ctx, st,
-		kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID),
-		func(res *kubespan.Config) error {
-			*res.TypedSpec() = cfgSpec
-			return nil
-		},
-	); err != nil {
-		return fmt.Errorf("populating config resource: %w", err)
-	}
-	logger.Info("COSI config resource populated")
-
 	// Create COSI controller runtime.
 	rt, err := controllerruntime.NewRuntime(st, logger)
 	if err != nil {
 		return fmt.Errorf("creating controller runtime: %w", err)
 	}
-	logger.Info("COSI controller runtime created")
 
 	// Register controllers.
 	if err := rt.RegisterController(&IdentityController{}); err != nil {
@@ -147,6 +127,28 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		}
 		runtimeErrCh <- err
 	}()
+
+	// Inject config as a COSI resource AFTER the runtime starts.
+	// Controllers use InputWeak for Config, so creating the resource before
+	// the runtime starts means the watches miss the creation event and the
+	// controller's initial reconciliation finds nothing.
+	logger.Info("injecting COSI config resource",
+		zap.String("namespace", kubespan.NamespaceName),
+		zap.String("id", kubespan.ConfigID),
+	)
+	if err := st.Create(ctx, kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID)); err != nil {
+		return fmt.Errorf("creating config resource: %w", err)
+	}
+	if err := safe.StateModify(ctx, st,
+		kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID),
+		func(res *kubespan.Config) error {
+			*res.TypedSpec() = cfgSpec
+			return nil
+		},
+	); err != nil {
+		return fmt.Errorf("populating config resource: %w", err)
+	}
+	logger.Info("COSI config resource injected")
 
 	if discoveryOnly {
 		return waitForPeers(ctx, st, runtimeErrCh, logger)
