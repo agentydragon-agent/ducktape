@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net"
 	"net/netip"
 	"syscall"
@@ -221,11 +222,19 @@ func (rm *Manager) Cleanup() error {
 
 // installNftables creates the talos_kubespan nftables table with two chains.
 // Retries on EBUSY (nft_commit_mutex contention) before propagating the error.
+//
+// The kernel's nf_tables_commit_mutex is GLOBAL (not per-namespace) and uses
+// mutex_trylock, returning EBUSY immediately when any other nftables operation
+// is in progress system-wide. Exponential backoff with random jitter prevents
+// synchronized retries (thundering herd) across multiple kubespand instances
+// and Docker daemon, all competing for the same mutex.
+//
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	const (
-		maxRetries    = 20
-		retryInterval = 200 * time.Millisecond
+		maxTimeout = 30 * time.Second
+		baseDelay  = 50 * time.Millisecond
+		maxDelay   = 2 * time.Second
 	)
 
 	// Log existing nftables state on first call for diagnostics.
@@ -234,10 +243,17 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		rm.logNftablesDiag()
 	}
 
+	deadline := time.Now().Add(maxTimeout)
+	delay := baseDelay
+
 	var lastErr error
-	for attempt := range maxRetries {
+	for attempt := 0; time.Now().Before(deadline); attempt++ {
 		if attempt > 0 {
-			time.Sleep(retryInterval)
+			// Exponential backoff with random jitter to desynchronize
+			// from other nftables users (other kubespand instances, Docker).
+			jitter := time.Duration(rand.Int64N(int64(delay)))
+			time.Sleep(delay + jitter)
+			delay = min(delay*2, maxDelay)
 		}
 		lastErr = rm.tryInstallNftables(routedPrefixes)
 		if lastErr == nil {
@@ -250,10 +266,13 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 			return lastErr
 		}
 		if attempt == 0 || (attempt+1)%10 == 0 {
-			rm.logger.Debug("nftables EBUSY, retrying", zap.Int("attempt", attempt+1))
+			rm.logger.Debug("nftables EBUSY, retrying",
+				zap.Int("attempt", attempt+1),
+				zap.Duration("next_delay", delay),
+			)
 		}
 	}
-	rm.logger.Error("nftables install failed after retries", zap.Error(lastErr), zap.Int("attempts", maxRetries))
+	rm.logger.Error("nftables install failed after retries", zap.Error(lastErr))
 	return lastErr
 }
 
@@ -282,6 +301,7 @@ func (rm *Manager) logNftablesDiag() {
 // anonymous sets needing to be in the same batch as their referencing rules.
 //
 // Matches Talos's NfTablesChainController approach:
+//   - Delete all existing chains first (clears stale rules + anonymous sets).
 //   - Anonymous interval sets are ONLY created when there are prefixes for
 //     that address family. Empty/nil prefix lists skip set creation entirely.
 //   - The kernel rejects anonymous sets that have no rule bindings (EINVAL
@@ -293,6 +313,24 @@ func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 	conn, err := nftables.New()
 	if err != nil {
 		return fmt.Errorf("nftables conn: %w", err)
+	}
+
+	// Delete the old table first (separate batch) to get a clean slate.
+	// This removes all chains, rules, and anonymous sets from the previous
+	// install. Creating from scratch avoids kernel EBUSY on AddChain/AddSet
+	// for existing tables (nf_tables_commit uses mutex_trylock on a global
+	// commit_mutex, and operations on existing objects seem to hold it longer).
+	// ENOENT (table doesn't exist on first run) is expected and ignored.
+	// EBUSY is propagated to trigger a retry with jitter.
+	delConn, delErr := nftables.New()
+	if delErr == nil {
+		delConn.DelTable(&nftables.Table{
+			Family: nftables.TableFamilyINet,
+			Name:   tableName,
+		})
+		if flushErr := delConn.Flush(); flushErr != nil && !isErrnoENOENT(flushErr) {
+			return fmt.Errorf("nftables delete old table: %w", flushErr)
+		}
 	}
 
 	table := conn.AddTable(&nftables.Table{
@@ -704,6 +742,11 @@ func mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
 			Op:             expr.ExthdrOpTcpopt,
 		},
 	}
+}
+
+// isErrnoENOENT checks if an error wraps syscall.ENOENT (e.g. table not found).
+func isErrnoENOENT(err error) bool {
+	return errors.Is(err, syscall.ENOENT)
 }
 
 // installRoutes adds default routes in table 180 pointing to the kubespan interface.
