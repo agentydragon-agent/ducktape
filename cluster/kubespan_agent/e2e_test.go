@@ -251,17 +251,16 @@ func TestKubeSpanNetworking(t *testing.T) {
 	t.Log("waiting for kubespand-a to discover and configure peer...")
 	peerAddrRaw := pollLogsForField(t, ctx, client, containerA.ID, "configuring peer", "address", 60*time.Second)
 
-	// The address field is a netip.Prefix (e.g., "fd.../128"). Parse and extract the address.
-	prefix, err := netip.ParsePrefix(peerAddrRaw)
+	// The address field is a netip.Addr (e.g., "fd77:51bb:..."). Parse it directly.
+	peerAddr, err := netip.ParseAddr(peerAddrRaw)
 	if err != nil {
-		t.Fatalf("invalid peer address prefix %q from container logs: %v", peerAddrRaw, err)
+		t.Fatalf("invalid peer address %q from container logs: %v", peerAddrRaw, err)
 	}
-	peerAddr := prefix.Addr().String()
 	t.Logf("peer KubeSpan address: %s", peerAddr)
 
 	// Verify connectivity by pinging kubespand-b through the WireGuard tunnel.
 	t.Log("probing peer KubeSpan address via ICMPv6...")
-	exitCode, probeOut := dockerExec(t, ctx, client, containerA.ID, []string{"/testprobe", "-timeout", "60s", peerAddr})
+	exitCode, probeOut := dockerExec(t, ctx, client, containerA.ID, []string{"/testprobe", "-timeout", "60s", peerAddr.String()})
 
 	logs := containerLogs(t, ctx, client, containerA.ID)
 	t.Logf("kubespand-a logs:\n%s", logs)
