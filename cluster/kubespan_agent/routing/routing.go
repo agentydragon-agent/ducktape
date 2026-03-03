@@ -313,10 +313,14 @@ func (rm *Manager) logNftablesDiag() {
 // separate commits (the kernel's deferred commit_release holds the mutex
 // after a successful commit, causing the next commit to fail with EBUSY).
 //
-// Approach: AddTable (create-or-update) + FlushTable (delete all old rules) +
-// AddChain + AddSet + AddRule, all in ONE Flush. This gives a single
-// commit_mutex acquisition, eliminating the EBUSY window between delete
-// and create.
+// Approach: ListChains (read-only, no commit_mutex) to discover existing state,
+// then AddTable + conditional FlushChain + AddChain + AddSet + AddRule in ONE
+// Flush. A single commit_mutex acquisition, no prior Flush to trigger
+// commit_release.
+//
+// We use FlushChain (NFT_MSG_DELRULE per chain) instead of FlushTable
+// (NFT_MSG_DELTABLE) because FlushTable deactivates the table within the
+// transaction, causing subsequent AddChain to fail with the table invisible.
 //
 // Matches Talos's NfTablesChainController approach:
 //   - Anonymous interval sets are ONLY created when there are prefixes for
@@ -332,6 +336,17 @@ func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 		return fmt.Errorf("nftables conn: %w", err)
 	}
 
+	// Check which of our chains already exist. ListChains is a read-only
+	// netlink dump — it does NOT acquire commit_mutex, so it cannot cause
+	// EBUSY or trigger commit_release.
+	existingChains, _ := conn.ListChains()
+	ourChains := map[string]bool{}
+	for _, c := range existingChains {
+		if c.Table != nil && c.Table.Name == tableName && c.Table.Family == nftables.TableFamilyINet {
+			ourChains[c.Name] = true
+		}
+	}
+
 	// AddTable: create the table if it doesn't exist, or no-op update if it
 	// does (NLM_F_CREATE without NLM_F_EXCL).
 	table := conn.AddTable(&nftables.Table{
@@ -339,12 +354,15 @@ func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 		Name:   tableName,
 	})
 
-	// FlushTable: delete all existing rules in the table (and implicitly their
-	// anonymous sets). For a newly created table (first run), this is a no-op
-	// since there are no rules yet. For subsequent calls, this clears the old
-	// rules so we can add fresh ones below. Crucially, this is in the SAME
-	// batch as AddTable, so the kernel processes it in a single commit.
-	conn.FlushTable(table)
+	// If chains exist from a prior install, flush their rules (and bound
+	// anonymous sets). FlushChain sends NFT_MSG_DELRULE which fails with
+	// ENOENT if the chain doesn't exist — so only flush chains we know exist.
+	if ourChains["kubespan_prerouting"] {
+		conn.FlushChain(&nftables.Chain{Table: table, Name: "kubespan_prerouting"})
+	}
+	if ourChains["kubespan_outgoing"] {
+		conn.FlushChain(&nftables.Chain{Table: table, Name: "kubespan_outgoing"})
+	}
 
 	// Build an IPSet and split by address family, matching Talos's approach:
 	// manager.go builds IPSetBuilder → .IPSet() → .Prefixes()
