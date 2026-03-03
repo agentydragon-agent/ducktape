@@ -227,12 +227,14 @@ func TestNftablesSmoke(t *testing.T) {
 // TestKubeSpanNetworking runs two kubespand instances in full mode and verifies
 // ICMPv6 connectivity through the WireGuard tunnel.
 //
-// Sequence: start kubespand containers on a bridge network, flush Docker's
-// iptables-nft rules (nat table) from each container's netns, THEN start the
-// discovery service. This ensures kubespand installs its nftables rules in a
-// clean namespace. Docker's bridge networking creates iptables-nft rules in each
-// container's netns, and the kernel's nf_tables_commit_mutex causes persistent
-// EBUSY when kubespand tries to commit nftables while Docker's rules exist.
+// Docker bridge networking creates iptables-nft rules (nat table) in each
+// container's netns. The kernel's nf_tables_commit_mutex causes persistent
+// EBUSY when kubespand tries to commit nftables while these rules exist.
+//
+// Mitigation: start each kubespand container and immediately flush its nftables
+// ruleset (via testprobe -nft-flush) before peer discovery triggers nftables
+// installation. Uses IP addresses for discovery (not DNS names) since flushing
+// the ruleset removes Docker's DNS NAT rules.
 func TestKubeSpanNetworking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -271,20 +273,46 @@ func TestKubeSpanNetworking(t *testing.T) {
 		_ = client.RemoveNetwork(network.ID)
 	})
 
-	// Write kubespand configs. Use container name as discovery endpoint
-	// (Docker DNS resolves container names on custom networks).
+	// Start discovery service first to get its IP address. kubespand configs
+	// use IP directly since flushing Docker's nftables breaks DNS.
+	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
+		Name: discoveryName,
+		Config: &docker.Config{
+			Image: discoveryRepoTag,
+			Cmd:   []string{"-debug"},
+		},
+		HostConfig: &docker.HostConfig{
+			NetworkMode: networkName,
+		},
+		Context: ctx,
+	})
+	t.Log("discovery service started")
+	waitForContainer(t, ctx, client, discoveryContainer.ID, 30*time.Second)
+
+	discInfo, err := client.InspectContainerWithContext(discoveryContainer.ID, ctx)
+	if err != nil {
+		t.Fatalf("inspecting discovery container: %v", err)
+	}
+	discoveryIP := discInfo.NetworkSettings.Networks[networkName].IPAddress
+	if discoveryIP == "" {
+		t.Fatal("discovery container has no IP address on network")
+	}
+	discoveryEndpoint := fmt.Sprintf("%s:3000", discoveryIP)
+	t.Logf("discovery endpoint: %s", discoveryEndpoint)
+
 	configA := filepath.Join(tmpDir, "agent-a.yaml")
 	configB := filepath.Join(tmpDir, "agent-b.yaml")
-	writeKubespandConfig(t, configA, clusterID, sharedSecret, discoveryName+":3000", 51820, "/tmp/kubespan-identity-a.yaml")
-	writeKubespandConfig(t, configB, clusterID, sharedSecret, discoveryName+":3000", 51821, "/tmp/kubespan-identity-b.yaml")
+	writeKubespandConfig(t, configA, clusterID, sharedSecret, discoveryEndpoint, 51820, "/tmp/kubespan-identity-a.yaml")
+	writeKubespandConfig(t, configB, clusterID, sharedSecret, discoveryEndpoint, 51821, "/tmp/kubespan-identity-b.yaml")
 
 	nameA := fmt.Sprintf("kubespand-a-%s", testID)
 	nameB := fmt.Sprintf("kubespand-b-%s", testID)
 
-	// Start kubespand containers BEFORE discovery service. kubespand will
-	// retry discovery connections (COSI controllers), giving us time to
-	// flush Docker's nftables before any nftables installation happens.
-	t.Log("starting kubespand containers...")
+	// Start each kubespand container and immediately flush Docker's nftables
+	// from its netns. The flush must complete before kubespand discovers a
+	// peer and tries to install nftables (~0.8s from container start).
+	// Flushing removes Docker's nat table which causes persistent EBUSY.
+	t.Log("starting kubespand containers with nftables flush...")
 	containerA := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: nameA,
 		Config: &docker.Config{
@@ -298,6 +326,11 @@ func TestKubeSpanNetworking(t *testing.T) {
 		},
 		Context: ctx,
 	})
+	flushExitA, flushOutA := dockerExec(t, ctx, client, containerA.ID, []string{"/testprobe", "-nft-flush"})
+	t.Logf("nft-flush A: exit=%d output:\n%s", flushExitA, flushOutA)
+	if flushExitA != 0 {
+		t.Fatalf("nft-flush failed in container A (exit %d)", flushExitA)
+	}
 
 	containerB := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: nameB,
@@ -312,40 +345,11 @@ func TestKubeSpanNetworking(t *testing.T) {
 		},
 		Context: ctx,
 	})
-
-	// Flush Docker's iptables-nft rules (nat table) from each container's
-	// netns. This removes the nftables state that causes persistent EBUSY
-	// when kubespand tries to commit its own nftables rules.
-	t.Log("flushing Docker nftables from containers...")
-	for _, c := range []struct {
-		name string
-		id   string
-	}{
-		{"container-a", containerA.ID},
-		{"container-b", containerB.ID},
-	} {
-		exitCode, out := dockerExec(t, ctx, client, c.id, []string{"/testprobe", "-nft-flush"})
-		t.Logf("nft-flush %s: exit=%d output:\n%s", c.name, exitCode, out)
-		if exitCode != 0 {
-			t.Fatalf("nft-flush failed in %s (exit %d)", c.name, exitCode)
-		}
+	flushExitB, flushOutB := dockerExec(t, ctx, client, containerB.ID, []string{"/testprobe", "-nft-flush"})
+	t.Logf("nft-flush B: exit=%d output:\n%s", flushExitB, flushOutB)
+	if flushExitB != 0 {
+		t.Fatalf("nft-flush failed in container B (exit %d)", flushExitB)
 	}
-
-	// NOW start the discovery service. kubespand containers will connect
-	// and discover peers, triggering nftables installation in clean netns.
-	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
-		Name: discoveryName,
-		Config: &docker.Config{
-			Image: discoveryRepoTag,
-			Cmd:   []string{"-debug"},
-		},
-		HostConfig: &docker.HostConfig{
-			NetworkMode: networkName,
-		},
-		Context: ctx,
-	})
-	t.Log("discovery service started")
-	waitForContainer(t, ctx, client, discoveryContainer.ID, 30*time.Second)
 
 	// Wait for kubespand-a to discover and configure its peer.
 	t.Log("waiting for kubespand-a to discover and configure peer...")
