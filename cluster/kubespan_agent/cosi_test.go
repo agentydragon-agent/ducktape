@@ -38,32 +38,22 @@ func (ctrl *configReaderController) Outputs() []controller.Output {
 }
 
 func (ctrl *configReaderController) Run(ctx context.Context, r controller.Runtime, logger *zap.Logger) error {
-	logger.Info("reader controller started, waiting for events")
-
-	eventCount := 0
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("reader controller context cancelled", zap.Int("total_events", eventCount))
 			return nil
 		case <-r.EventCh():
 		}
 
-		eventCount++
-		logger.Info("reader controller received event", zap.Int("event_number", eventCount))
-
 		cfg, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
-				logger.Info("config not found via reader, trying direct state read")
-				// Try reading directly from state to see if the resource exists
-				// in the underlying state but isn't visible through the controller runtime
 				continue
 			}
 			return fmt.Errorf("getting config: %w", err)
 		}
 
-		logger.Info("CONFIG FOUND!", zap.String("cluster_id", cfg.TypedSpec().ClusterID))
+		logger.Info("config propagated", zap.String("cluster_id", cfg.TypedSpec().ClusterID))
 		close(ctrl.configSeen)
 		r.ResetRestartBackoff()
 
@@ -112,42 +102,12 @@ func TestCOSIConfigPropagation(t *testing.T) {
 		runtimeErrCh <- rt.Run(ctx)
 	}()
 
-	// Also poll the underlying state directly to check if Config exists
-	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				cfg, err := safe.StateGetByID[*kubespan.Config](ctx, st, kubespan.ConfigID)
-				if err != nil {
-					if state.IsNotFoundError(err) {
-						t.Log("direct state poll: Config not found")
-					} else {
-						t.Logf("direct state poll error: %v", err)
-					}
-				} else {
-					t.Logf("direct state poll: Config EXISTS in state, cluster_id=%s", cfg.TypedSpec().ClusterID)
-				}
-			}
-		}
-	}()
-
 	select {
 	case <-reader.configSeen:
-		t.Log("SUCCESS: reader controller saw the Config resource")
+		t.Log("reader controller saw the Config resource")
 	case err := <-runtimeErrCh:
 		t.Fatalf("runtime exited unexpectedly: %v", err)
 	case <-ctx.Done():
-		// Check final state
-		cfg, err := safe.StateGetByID[*kubespan.Config](context.Background(), st, kubespan.ConfigID)
-		if err != nil {
-			t.Logf("final check: Config NOT in state: %v", err)
-		} else {
-			t.Logf("final check: Config IS in state (cluster_id=%s) but reader never saw it", cfg.TypedSpec().ClusterID)
-		}
-		t.Fatal("TIMEOUT: reader controller never saw the Config resource")
+		t.Fatal("timeout: reader controller never saw the Config resource")
 	}
 }

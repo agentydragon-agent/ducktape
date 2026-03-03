@@ -227,21 +227,31 @@ func TestNftablesSmoke(t *testing.T) {
 // TestKubeSpanNetworking runs two kubespand instances in full mode and verifies
 // ICMPv6 connectivity through the WireGuard tunnel.
 //
-// SKIPPED IN CI: Docker containers on GHA get persistent nftables EBUSY errors
-// when kubespand tries to commit nftables rules (table + chains with hooks +
-// anonymous interval sets + rules). Docker's daemon continuously manages
-// iptables-nft rules in each container's netns, holding the kernel's
-// nf_tables_commit_mutex and blocking kubespand's commits. Even flushing
-// Docker's NAT table doesn't help — Docker recreates it.
+// SKIPPED IN CI: Docker containers get persistent nftables EBUSY when kubespand
+// tries to commit rules. Root cause (verified on GHA Azure kernel 6.x):
 //
-// This matches Talos upstream behavior: KubeSpan is only tested with QEMU VMs,
-// never Docker containers. See:
+//  1. Basic nftables operations (create table, add chains with hooks, flush,
+//     delete) succeed in Docker containers — TestNftablesSmoke passes in both
+//     --network=none and default bridge configurations.
+//
+//  2. Docker's bridge networking injects iptables-nft state (nat table) into
+//     each container's network namespace via its daemon.
+//
+//  3. Even after successfully flushing Docker's nat table, kubespand still gets
+//     EBUSY within ~1 second. Docker's daemon detects the missing nat table and
+//     recreates it, continuously re-acquiring the kernel's nf_tables_commit_mutex
+//     and blocking kubespand's commits.
+//
+//  4. --network=none avoids iptables-nft pollution but Docker prohibits
+//     connecting such containers to any network afterward.
+//
+// This matches Talos upstream: KubeSpan is only tested with QEMU VMs. See:
 //   - siderolabs/talos CI: all KubeSpan tests use e2e-qemu
 //   - kubernetes/kubernetes#122604, #128829 (kube-proxy nftables EBUSY)
 //   - containers/podman#23404 (netavark nftables EBUSY)
 //   - siderolabs/talos#9426, #8498 (KubeSpan nftables EBUSY)
 //
-// Set KUBESPAN_TEST_NETWORKING=1 to run this test (requires VM or non-Docker runtime).
+// Set KUBESPAN_TEST_NETWORKING=1 to run (requires VM or non-Docker runtime).
 func TestKubeSpanNetworking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -642,21 +652,6 @@ func dumpAllContainerLogs(t *testing.T, client *docker.Client, containers map[st
 			Tail:         "200",
 		})
 		t.Logf("[diag] %s logs (last 200 lines):\n%s", name, buf.String())
-	}
-}
-
-// dumpContainerDiagnostics captures networking state inside a container.
-func dumpContainerDiagnostics(t *testing.T, ctx context.Context, client *docker.Client, name, containerID string) {
-	t.Helper()
-
-	cmds := [][]string{
-		{"ls", "-la", "/proc/sys/net/netfilter/"},
-	}
-	for _, cmd := range cmds {
-		_, out := dockerExec(t, ctx, client, containerID, cmd)
-		if out != "" {
-			t.Logf("[diag] %s exec %v:\n%s", name, cmd, out)
-		}
 	}
 }
 
