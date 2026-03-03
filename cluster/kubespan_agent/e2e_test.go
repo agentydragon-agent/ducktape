@@ -243,6 +243,12 @@ func TestKubeSpanNetworking(t *testing.T) {
 		Context: ctx,
 	})
 
+	// Dump nftables/networking diagnostics inside both containers.
+	// This captures Docker's initial iptables-nft state and any early
+	// nftables errors from kubespand's first attempt.
+	dumpContainerDiagnostics(t, ctx, client, "kubespand-a", containerA.ID)
+	dumpContainerDiagnostics(t, ctx, client, "kubespand-b", containerB.ID)
+
 	// Wait for kubespand-a to discover and configure its peer (kubespand-b).
 	t.Log("waiting for kubespand-a to discover and configure peer...")
 	peerAddr := pollLogsForField(t, ctx, client, containerA.ID, "configuring peer", "address", 60*time.Second)
@@ -553,6 +559,29 @@ func dumpAllContainerLogs(t *testing.T, client *docker.Client, containers map[st
 			Tail:         "200",
 		})
 		t.Logf("[diag] %s logs (last 200 lines):\n%s", name, buf.String())
+	}
+}
+
+// dumpContainerDiagnostics captures nftables, iptables, and kernel state
+// inside a container for debugging EBUSY issues.
+func dumpContainerDiagnostics(t *testing.T, ctx context.Context, client *docker.Client, name, containerID string) {
+	t.Helper()
+
+	cmds := [][]string{
+		{"nft", "list", "ruleset"},
+		{"iptables-nft", "-L", "-n", "-v", "-t", "nat"},
+		{"ip", "rule", "show"},
+		{"ip", "route", "show", "table", "all"},
+		{"cat", "/proc/net/nf_conntrack_count"},
+		{"ls", "-la", "/proc/sys/net/netfilter/"},
+		{"dmesg", "--level=err,warn,info"},
+	}
+
+	for _, cmd := range cmds {
+		_, out := dockerExec(t, ctx, client, containerID, cmd)
+		if out != "" {
+			t.Logf("[diag] %s %v:\n%s", name, cmd, out)
+		}
 	}
 }
 

@@ -57,6 +57,54 @@ jobs:
           uname -r
           lsmod | grep -iE "wireguard|nf_tables|nft_" | sort || echo "none"
 
+      - name: Enable nftables kernel debug tracing
+        run: |
+          # Raise kernel log level to capture all messages
+          echo 8 | sudo tee /proc/sys/kernel/printk
+          # Enable dynamic debug for nf_tables module
+          echo "module nf_tables +p" | sudo tee /sys/kernel/debug/dynamic_debug/control 2>/dev/null || echo "dynamic_debug not available"
+          echo "module nft_* +p" | sudo tee /sys/kernel/debug/dynamic_debug/control 2>/dev/null || echo "nft_* debug not available"
+          # Allow nf_log in all network namespaces (for containers)
+          echo 1 | sudo tee /proc/sys/net/netfilter/nf_log_all_netns 2>/dev/null || echo "nf_log_all_netns not available"
+          # Show current nftables state on host
+          sudo nft list ruleset 2>/dev/null | head -50 || echo "nft not available on host"
+          # Clear dmesg to get clean baseline
+          sudo dmesg --clear
+
+      - name: Probe nftables in privileged Docker container
+        run: |
+          # Test nftables operations inside a privileged Docker container
+          # on the same kind of network the test uses (internal bridge).
+          docker network create --internal nft-probe-net 2>/dev/null || true
+          docker run --rm --privileged --network=nft-probe-net ubuntu:24.04 bash -c '
+            apt-get update -qq && apt-get install -qq -y nftables iptables >/dev/null 2>&1
+            echo "=== initial nft ruleset ==="
+            nft list ruleset
+            echo ""
+            echo "=== iptables-nft nat ==="
+            iptables-nft -L -t nat -n -v 2>/dev/null || echo "(iptables-nft not available)"
+            echo ""
+            echo "=== canary: table + chain + rule (no sets) ==="
+            nft add table inet canary
+            nft add chain inet canary test_chain "{ type filter hook input priority 0 ; policy accept ; }"
+            nft add rule inet canary test_chain accept
+            echo "canary OK"
+            nft delete table inet canary
+            echo ""
+            echo "=== canary: table + chain + anonymous set ==="
+            nft add table inet settest
+            nft add chain inet settest test_out "{ type route hook output priority -300 ; policy accept ; }"
+            nft add set inet settest v4addrs "{ type ipv4_addr ; flags interval,constant ; elements = { 10.0.0.0/24 } ; }"
+            nft add rule inet settest test_out ip daddr @v4addrs accept
+            echo "set canary OK"
+            nft list ruleset
+            nft delete table inet settest
+            echo ""
+            echo "=== dmesg (nftables related) ==="
+            dmesg 2>/dev/null | grep -iE "nf_tables|nft|netfilter" | tail -30 || echo "(no relevant dmesg)"
+          ' || echo "probe container failed"
+          docker network rm nft-probe-net 2>/dev/null || true
+
       - name: Run privileged Docker tests
         run: |
           # Use per-workflow target file if available, otherwise test all
@@ -86,6 +134,15 @@ jobs:
             --strategy=TestRunner=local \
             --test_timeout=300 \
             $TARGET_ARG
+
+      - name: Dump dmesg (nftables debug)
+        if: always()
+        run: |
+          echo "=== dmesg (nf_tables related) ==="
+          sudo dmesg | grep -iE "nf_tables|nft|netfilter|EBUSY|commit_mutex" | tail -200 || true
+          echo ""
+          echo "=== full dmesg (last 500 lines) ==="
+          sudo dmesg | tail -500
 
       - uses: ./.github/actions/collect-test-logs
         if: always()
