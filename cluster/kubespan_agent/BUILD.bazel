@@ -80,7 +80,10 @@ go_test(
 
 go_test(
     name = "e2e_test",
-    srcs = ["e2e_test.go"],
+    srcs = [
+        "e2e_test.go",
+        "nft_smoke_test.go",
+    ],
     data = [
         ":kubespand_tarball",
         ":kubespand_test_tarball",
