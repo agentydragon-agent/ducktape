@@ -140,6 +140,7 @@ type Manager struct {
 	mtu          int
 	logger       *zap.Logger
 	rulesManager RulesManager
+	nftDiagDone  bool
 }
 
 // NewManager creates a new routing manager.
@@ -228,6 +229,12 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		retryInterval = 200 * time.Millisecond
 	)
 
+	// Log existing nftables state on first call for diagnostics.
+	if !rm.nftDiagDone {
+		rm.nftDiagDone = true
+		rm.logNftablesDiag()
+	}
+
 	var lastErr error
 	for attempt := range maxRetries {
 		if attempt > 0 {
@@ -249,6 +256,30 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	}
 	rm.logger.Error("nftables install failed after retries", zap.Error(lastErr), zap.Int("attempts", maxRetries))
 	return lastErr
+}
+
+// logNftablesDiag logs diagnostic info about the current nftables state.
+func (rm *Manager) logNftablesDiag() {
+	conn, err := nftables.New()
+	if err != nil {
+		rm.logger.Warn("nftables diag: cannot create conn", zap.Error(err))
+		return
+	}
+
+	// Try a simple canary: just AddTable + Flush (no sets, no chains).
+	canary := &nftables.Table{Family: nftables.TableFamilyINet, Name: "__nft_diag_canary"}
+	conn.AddTable(canary)
+	if err := conn.Flush(); err != nil {
+		rm.logger.Warn("nftables diag: simple canary FAILED (AddTable+Flush)", zap.Error(err))
+	} else {
+		rm.logger.Info("nftables diag: simple canary OK")
+		// Clean up the canary table.
+		cleanConn, _ := nftables.New()
+		if cleanConn != nil {
+			cleanConn.DelTable(canary)
+			_ = cleanConn.Flush()
+		}
+	}
 }
 
 // tryInstallNftables performs a single attempt to install nftables rules.

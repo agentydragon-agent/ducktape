@@ -164,8 +164,7 @@ func TestKubeSpanNetworking(t *testing.T) {
 	loadImage(t, client, "cluster/kubespan_agent/kubespand_test_load/tarball.tar", kubespandTestRepoTag)
 
 	testID := randomHex(8)
-	networkName := fmt.Sprintf("%s-%s", networkPrefix, testID)
-	t.Logf("test ID: %s, network: %s", testID, networkName)
+	t.Logf("test ID: %s", testID)
 
 	clusterID := base64.StdEncoding.EncodeToString(randomBytes(32))
 	sharedSecret := base64.StdEncoding.EncodeToString(randomBytes(32))
@@ -174,40 +173,41 @@ func TestKubeSpanNetworking(t *testing.T) {
 	tmpDir := t.TempDir()
 	discoveryName := fmt.Sprintf("discovery-%s", testID)
 
-	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
-		Name:     networkName,
-		Internal: true, // No external routing — avoids Docker iptables-nft NAT/masquerade rules.
-		Options: map[string]any{
-			"com.docker.network.bridge.enable_ip_masquerade": "false",
-		},
-		Context: ctx,
-	})
-	if err != nil {
-		t.Fatalf("creating Docker network: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = client.RemoveNetwork(network.ID)
-	})
-
+	// Use the default bridge network (no custom network).
+	// Docker's user-defined bridge networks run an embedded DNS proxy that
+	// continuously manages iptables-nft rules inside each container's
+	// network namespace, holding the nftables commit_mutex and causing
+	// persistent EBUSY for kubespand's nftables operations.
+	// The default bridge doesn't use embedded DNS, avoiding this contention.
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
 			Image: discoveryRepoTag,
 			Cmd:   []string{"-debug"},
 		},
-		HostConfig: &docker.HostConfig{
-			NetworkMode: networkName,
-		},
-		Context: ctx,
+		HostConfig: &docker.HostConfig{},
+		Context:    ctx,
 	})
 	t.Log("discovery service started")
 	waitForContainer(t, ctx, client, discoveryContainer.ID, 30*time.Second)
 
+	// Get discovery container IP (default bridge doesn't support name resolution).
+	discInfo, err := client.InspectContainerWithContext(discoveryContainer.ID, ctx)
+	if err != nil {
+		t.Fatalf("inspecting discovery container: %v", err)
+	}
+	discoveryIP := discInfo.NetworkSettings.IPAddress
+	if discoveryIP == "" {
+		t.Fatal("discovery container has no IP address")
+	}
+	discoveryEndpoint := fmt.Sprintf("%s:3000", discoveryIP)
+	t.Logf("discovery endpoint: %s", discoveryEndpoint)
+
 	// Write configs for two kubespand instances.
 	configA := filepath.Join(tmpDir, "agent-a.yaml")
 	configB := filepath.Join(tmpDir, "agent-b.yaml")
-	writeKubespandConfig(t, configA, clusterID, sharedSecret, discoveryName+":3000", 51820, "/tmp/kubespan-identity-a.yaml")
-	writeKubespandConfig(t, configB, clusterID, sharedSecret, discoveryName+":3000", 51821, "/tmp/kubespan-identity-b.yaml")
+	writeKubespandConfig(t, configA, clusterID, sharedSecret, discoveryEndpoint, 51820, "/tmp/kubespan-identity-a.yaml")
+	writeKubespandConfig(t, configB, clusterID, sharedSecret, discoveryEndpoint, 51821, "/tmp/kubespan-identity-b.yaml")
 
 	// Start both kubespand instances in full mode (privileged for WireGuard).
 	nameA := fmt.Sprintf("kubespand-a-%s", testID)
@@ -221,9 +221,8 @@ func TestKubeSpanNetworking(t *testing.T) {
 			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-debug"},
 		},
 		HostConfig: &docker.HostConfig{
-			NetworkMode: networkName,
-			Privileged:  true,
-			Binds:       []string{configA + ":/etc/kubespan/agent.yaml:ro"},
+			Privileged: true,
+			Binds:      []string{configA + ":/etc/kubespan/agent.yaml:ro"},
 		},
 		Context: ctx,
 	})
@@ -236,9 +235,8 @@ func TestKubeSpanNetworking(t *testing.T) {
 			Cmd:   []string{"-config", "/etc/kubespan/agent.yaml", "-debug"},
 		},
 		HostConfig: &docker.HostConfig{
-			NetworkMode: networkName,
-			Privileged:  true,
-			Binds:       []string{configB + ":/etc/kubespan/agent.yaml:ro"},
+			Privileged: true,
+			Binds:      []string{configB + ":/etc/kubespan/agent.yaml:ro"},
 		},
 		Context: ctx,
 	})
@@ -251,13 +249,14 @@ func TestKubeSpanNetworking(t *testing.T) {
 
 	// Wait for kubespand-a to discover and configure its peer (kubespand-b).
 	t.Log("waiting for kubespand-a to discover and configure peer...")
-	peerAddr := pollLogsForField(t, ctx, client, containerA.ID, "configuring peer", "address", 60*time.Second)
+	peerAddrRaw := pollLogsForField(t, ctx, client, containerA.ID, "configuring peer", "address", 60*time.Second)
 
-	addr, err := netip.ParseAddr(peerAddr)
+	// The address field is a netip.Prefix (e.g., "fd.../128"). Parse and extract the address.
+	prefix, err := netip.ParsePrefix(peerAddrRaw)
 	if err != nil {
-		t.Fatalf("invalid peer address %q from container logs: %v", peerAddr, err)
+		t.Fatalf("invalid peer address prefix %q from container logs: %v", peerAddrRaw, err)
 	}
-	peerAddr = addr.String()
+	peerAddr := prefix.Addr().String()
 	t.Logf("peer KubeSpan address: %s", peerAddr)
 
 	// Verify connectivity by pinging kubespand-b through the WireGuard tunnel.
