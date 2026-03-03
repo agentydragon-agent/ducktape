@@ -1,6 +1,7 @@
 // Binary testprobe provides test utilities for KubeSpan e2e tests:
 //   - Default mode: sends ICMPv6 echo requests to verify tunnel connectivity
 //   - -nft-smoke: tests nftables create/flush/delete to detect EBUSY issues
+//   - -nft-flush: flushes entire nftables ruleset (removes Docker's nat table)
 package main
 
 import (
@@ -18,7 +19,12 @@ import (
 func main() {
 	timeout := flag.Duration("timeout", 30*time.Second, "overall timeout for probe")
 	nftSmoke := flag.Bool("nft-smoke", false, "test nftables create/flush/delete instead of ping")
+	nftFlush := flag.Bool("nft-flush", false, "flush entire nftables ruleset")
 	flag.Parse()
+
+	if *nftFlush {
+		os.Exit(runNftFlush())
+	}
 
 	if *nftSmoke {
 		os.Exit(runNftSmoke())
@@ -147,6 +153,34 @@ func runNftSmoke() int {
 	}
 	fmt.Println("DelTable flushed OK")
 	fmt.Println("nft-smoke: PASS")
+	return 0
+}
+
+// runNftFlush flushes the entire nftables ruleset. Used to remove Docker's
+// iptables-nft rules (nat table) from the container's network namespace before
+// kubespand installs its own rules, avoiding EBUSY from conflicting nftables state.
+func runNftFlush() int {
+	conn, err := nftables.New()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "nftables.New: %v\n", err)
+		return 1
+	}
+
+	tables, _ := conn.ListTables()
+	fmt.Printf("tables before flush: %d\n", len(tables))
+	for _, t := range tables {
+		fmt.Printf("  table %s family=%d\n", t.Name, t.Family)
+	}
+
+	conn.FlushRuleset()
+	if err := conn.Flush(); err != nil {
+		fmt.Fprintf(os.Stderr, "FlushRuleset: %v\n", err)
+		return 1
+	}
+
+	tables2, _ := conn.ListTables()
+	fmt.Printf("tables after flush: %d\n", len(tables2))
+	fmt.Println("nft-flush: OK")
 	return 0
 }
 
