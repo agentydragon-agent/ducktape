@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -228,10 +227,10 @@ func TestNftablesSmoke(t *testing.T) {
 // TestKubeSpanNetworking runs two kubespand instances in full mode and verifies
 // ICMPv6 connectivity through the WireGuard tunnel.
 //
-// Uses --network=none for kubespand containers to avoid Docker's bridge
-// networking polluting the netns with iptables-nft rules that cause persistent
-// nftables EBUSY. Connectivity between containers is established via manually
-// created veth pairs through the host netns.
+// Containers start with --network=none so kubespand installs nftables rules
+// in a clean netns (no Docker-managed iptables-nft rules). After nftables
+// setup, containers are connected to the default bridge via Docker API for
+// discovery service access.
 func TestKubeSpanNetworking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -291,11 +290,12 @@ func TestKubeSpanNetworking(t *testing.T) {
 	nameA := fmt.Sprintf("kubespand-a-%s", testID)
 	nameB := fmt.Sprintf("kubespand-b-%s", testID)
 
-	// kubespand containers use --network=none for a clean netns free of
-	// Docker-managed iptables/nftables rules. Bind mounts work with
-	// --network=none (filesystem operation, not networking).
-	// kubespand will fail to reach discovery initially until veth is set up,
-	// but COSI controllers retry automatically.
+	// kubespand containers start with --network=none for a clean netns
+	// free of Docker-managed iptables/nftables rules. kubespand installs
+	// its nftables rules in this clean namespace. We then connect the
+	// containers to a Docker bridge for discovery service connectivity.
+	// COSI controllers retry failed operations, so kubespand will
+	// recover once networking becomes available.
 	t.Log("starting kubespand containers with --network=none...")
 	containerA := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: nameA,
@@ -333,39 +333,28 @@ func TestKubeSpanNetworking(t *testing.T) {
 		t.Skipf("nftables unavailable in --network=none container (exit %d); skipping networking test", nftExitCode)
 	}
 
-	// Set up veth pairs to connect containers to the host network.
-	// Each container gets a veth peer; the host end provides routing to
-	// the docker0 bridge where the discovery service is reachable.
-	infoA, err := client.InspectContainerWithContext(containerA.ID, ctx)
-	if err != nil {
-		t.Fatalf("inspecting container A: %v", err)
+	// Give kubespand a moment to install nftables rules in the clean netns
+	// before we add Docker bridge networking (which adds its own iptables-nft rules).
+	t.Log("waiting for kubespand to install nftables rules...")
+	time.Sleep(5 * time.Second)
+
+	// Connect containers to the default bridge for discovery service access.
+	// Docker's bridge setup adds iptables-nft rules to the container's netns,
+	// but kubespand's nftables are already installed by this point.
+	t.Log("connecting containers to default bridge for discovery...")
+	if err := client.ConnectNetwork("bridge", docker.NetworkConnectionOptions{
+		Container: containerA.ID,
+		Context:   ctx,
+	}); err != nil {
+		t.Fatalf("connecting container A to bridge: %v", err)
 	}
-	pidA := infoA.State.Pid
-
-	infoB, err := client.InspectContainerWithContext(containerB.ID, ctx)
-	if err != nil {
-		t.Fatalf("inspecting container B: %v", err)
+	if err := client.ConnectNetwork("bridge", docker.NetworkConnectionOptions{
+		Container: containerB.ID,
+		Context:   ctx,
+	}); err != nil {
+		t.Fatalf("connecting container B to bridge: %v", err)
 	}
-	pidB := infoB.State.Pid
-	t.Logf("container PIDs: A=%d B=%d", pidA, pidB)
-
-	setupVethNetwork(t, "a", testID, pidA, "10.200.0")
-	setupVethNetwork(t, "b", testID, pidB, "10.200.1")
-
-	// Add cross-routes so containers can reach each other and discovery.
-	// Container A (10.200.0.2) needs route to 10.200.1.0/24 and docker0 subnet.
-	// Container B (10.200.1.2) needs route to 10.200.0.0/24 and docker0 subnet.
-	execHostCmdOrFail(t, "sysctl -w net.ipv4.ip_forward=1")
-
-	// Route from container A to container B's subnet.
-	execHostCmdOrFail(t, fmt.Sprintf("nsenter -t %d -n ip route add 10.200.1.0/24 via 10.200.0.1", pidA))
-	// Route from container B to container A's subnet.
-	execHostCmdOrFail(t, fmt.Sprintf("nsenter -t %d -n ip route add 10.200.0.0/24 via 10.200.1.1", pidB))
-
-	// Verify containers can reach each other on the underlay.
-	t.Log("verifying underlay connectivity...")
-	verifyPing(t, ctx, client, containerA.ID, "10.200.1.2", "A→B underlay")
-	verifyPing(t, ctx, client, containerB.ID, "10.200.0.2", "B→A underlay")
+	t.Log("containers connected to bridge network")
 
 	// Wait for kubespand-a to discover and configure its peer.
 	t.Log("waiting for kubespand-a to discover and configure peer...")
@@ -389,76 +378,6 @@ func TestKubeSpanNetworking(t *testing.T) {
 		t.Logf("kubespand-b logs:\n%s", logsB)
 		t.Fatalf("connectivity probe failed (exit %d): %s", probeExitCode, probeOut)
 	}
-}
-
-// setupVethNetwork creates a veth pair connecting a --network=none container
-// to the host netns.
-//
-// label: short identifier (e.g., "a") for naming
-// testID: unique test ID to avoid collisions
-// pid: container's init PID (for nsenter)
-// subnet: first 3 octets (e.g., "10.200.0"); host gets .1, container gets .2
-func setupVethNetwork(t *testing.T, label, testID string, pid int, subnet string) {
-	t.Helper()
-
-	// Veth names: max 15 chars (IFNAMSIZ).
-	hostVeth := fmt.Sprintf("vks%s%s", label, testID[:6])
-	if len(hostVeth) > 15 {
-		hostVeth = hostVeth[:15]
-	}
-	peerVeth := hostVeth + "p"
-	if len(peerVeth) > 15 {
-		peerVeth = peerVeth[:15]
-	}
-	hostIP := subnet + ".1"
-	containerIP := subnet + ".2"
-
-	cmds := []string{
-		fmt.Sprintf("ip link add %s type veth peer name %s", hostVeth, peerVeth),
-		fmt.Sprintf("ip link set %s netns %d", peerVeth, pid),
-		fmt.Sprintf("ip addr add %s/24 dev %s", hostIP, hostVeth),
-		fmt.Sprintf("ip link set %s up", hostVeth),
-		fmt.Sprintf("nsenter -t %d -n ip addr add %s/24 dev %s", pid, containerIP, peerVeth),
-		fmt.Sprintf("nsenter -t %d -n ip link set %s up", pid, peerVeth),
-		fmt.Sprintf("nsenter -t %d -n ip link set lo up", pid),
-		fmt.Sprintf("nsenter -t %d -n ip route add default via %s", pid, hostIP),
-	}
-	for _, cmd := range cmds {
-		execHostCmdOrFail(t, cmd)
-	}
-
-	t.Cleanup(func() {
-		execHostCmd("ip link del " + hostVeth + " 2>/dev/null")
-	})
-	t.Logf("veth %s: host=%s/24 container=%s/24 (pid %d)", label, hostIP, containerIP, pid)
-}
-
-// execHostCmd runs a shell command on the host and returns output.
-func execHostCmd(cmd string) (string, error) {
-	out, err := exec.CommandContext(context.Background(), "sh", "-c", cmd).CombinedOutput()
-	return string(out), err
-}
-
-// execHostCmdOrFail runs a shell command on the host, failing the test on error.
-func execHostCmdOrFail(t *testing.T, cmd string) {
-	t.Helper()
-	out, err := execHostCmd(cmd)
-	if err != nil {
-		t.Fatalf("host cmd %q failed: %v\noutput: %s", cmd, err, out)
-	}
-}
-
-// verifyPing runs ping from inside a container and logs the result.
-func verifyPing(t *testing.T, ctx context.Context, client *docker.Client, containerID, target, label string) {
-	t.Helper()
-	// Use testprobe-level exec since debian_slim has no ping binary.
-	// Just try a TCP connect or similar. Actually, we'll check if we can
-	// at least see the route. The actual WireGuard test below is the real test.
-	exitCode, out := dockerExec(t, ctx, client, containerID, []string{
-		"sh", "-c",
-		fmt.Sprintf("ip route get %s 2>&1", target),
-	})
-	t.Logf("[verify] %s: ip route get %s → exit=%d output=%s", label, target, exitCode, strings.TrimSpace(out))
 }
 
 func createAndStartContainer(t *testing.T, ctx context.Context, client *docker.Client, opts docker.CreateContainerOptions) *docker.Container {

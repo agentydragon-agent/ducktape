@@ -96,6 +96,31 @@ func runNftSmoke() int {
 	}
 	fmt.Println("AddTable flushed OK")
 
+	// Add chains with hook registrations (matching kubespand's pattern).
+	// This tests whether hook registration conflicts cause EBUSY.
+	policy := nftables.ChainPolicyAccept
+	conn2.AddChain(&nftables.Chain{
+		Name:     "test_prerouting",
+		Table:    table,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookPrerouting,
+		Priority: nftables.ChainPriorityRaw,
+		Policy:   &policy,
+	})
+	conn2.AddChain(&nftables.Chain{
+		Name:     "test_output",
+		Table:    table,
+		Type:     nftables.ChainTypeRoute,
+		Hooknum:  nftables.ChainHookOutput,
+		Priority: nftables.ChainPriorityRaw,
+		Policy:   &policy,
+	})
+	if err := conn2.Flush(); err != nil {
+		fmt.Fprintf(os.Stderr, "Flush (AddChains): %v\n", err)
+		return 1
+	}
+	fmt.Println("AddChains flushed OK")
+
 	// Flush the table (remove all chains/rules).
 	conn3, err := nftables.New()
 	if err != nil {
