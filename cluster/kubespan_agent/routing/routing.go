@@ -225,8 +225,8 @@ func (rm *Manager) Cleanup() error {
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	const (
-		maxRetries    = 200
-		retryInterval = 50 * time.Millisecond
+		maxRetries    = 20
+		retryInterval = 200 * time.Millisecond
 	)
 
 	var lastErr error
@@ -255,26 +255,32 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 // tryInstallNftables performs a single attempt to install nftables rules.
 // Everything is committed in a single atomic Flush() to avoid issues with
 // anonymous sets needing to be in the same batch as their referencing rules.
-//
-// Critically, this function avoids netlink dump operations (ListTables,
-// ListChains) which use mutex_lock() on the kernel's nft_net->commit_mutex.
-// The commit (Flush) uses mutex_trylock() and returns EBUSY if the mutex is
-// held. Dump operations block-wait for the mutex and consume the brief
-// availability windows that the commit's trylock needs, causing persistent
-// EBUSY failures in environments with nftables contention (e.g. Docker
-// iptables-nft on the host).
 func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
+	// First, try to delete our specific table from a prior run. This is a
+	// targeted operation that only removes "talos_kubespan" — it does NOT
+	// touch other tables in the namespace (e.g. Docker's iptables-nft DNS
+	// NAT rules). Errors are ignored: table may not exist on first run.
+	//
+	// IMPORTANT: Do NOT use FlushRuleset() here. FlushRuleset sends
+	// NFT_MSG_DELTABLE with family=0, which deletes ALL tables from ALL
+	// families. In Docker containers, this nukes Docker's DNS NAT tables,
+	// triggering the Docker daemon to recreate them while holding the
+	// kernel's nft_net->commit_mutex. Since nf_tables_commit() uses
+	// mutex_trylock(), our subsequent Flush() gets persistent EBUSY as
+	// Docker continuously holds the mutex. Each retry's FlushRuleset
+	// deletes Docker's tables again, perpetuating the feedback loop.
+	if cleanup, cleanupErr := nftables.New(); cleanupErr == nil {
+		cleanup.DelTable(&nftables.Table{
+			Family: nftables.TableFamilyINet,
+			Name:   tableName,
+		})
+		_ = cleanup.Flush()
+	}
+
 	conn, err := nftables.New()
 	if err != nil {
 		return fmt.Errorf("nftables conn: %w", err)
 	}
-
-	// FlushRuleset deletes all existing tables (including any stale
-	// talos_kubespan table from a prior run). This is a batch message (not a
-	// dump), so it doesn't block-wait on the commit_mutex. Safe no-op if no
-	// tables exist. In the kubespand container there are no other nftables
-	// users whose tables we need to preserve.
-	conn.FlushRuleset()
 
 	table := conn.AddTable(&nftables.Table{
 		Family: nftables.TableFamilyINet,
