@@ -225,8 +225,8 @@ func (rm *Manager) Cleanup() error {
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	const (
-		maxRetries    = 50
-		retryInterval = 200 * time.Millisecond
+		maxRetries    = 200
+		retryInterval = 50 * time.Millisecond
 	)
 
 	var lastErr error
@@ -255,43 +255,31 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 // tryInstallNftables performs a single attempt to install nftables rules.
 // Everything is committed in a single atomic Flush() to avoid issues with
 // anonymous sets needing to be in the same batch as their referencing rules.
+//
+// Critically, this function avoids netlink dump operations (ListTables,
+// ListChains) which use mutex_lock() on the kernel's nft_net->commit_mutex.
+// The commit (Flush) uses mutex_trylock() and returns EBUSY if the mutex is
+// held. Dump operations block-wait for the mutex and consume the brief
+// availability windows that the commit's trylock needs, causing persistent
+// EBUSY failures in environments with nftables contention (e.g. Docker
+// iptables-nft on the host).
 func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 	conn, err := nftables.New()
 	if err != nil {
 		return fmt.Errorf("nftables conn: %w", err)
 	}
 
-	table := &nftables.Table{
+	// FlushRuleset deletes all existing tables (including any stale
+	// talos_kubespan table from a prior run). This is a batch message (not a
+	// dump), so it doesn't block-wait on the commit_mutex. Safe no-op if no
+	// tables exist. In the kubespand container there are no other nftables
+	// users whose tables we need to preserve.
+	conn.FlushRuleset()
+
+	table := conn.AddTable(&nftables.Table{
 		Family: nftables.TableFamilyINet,
 		Name:   tableName,
-	}
-
-	// Check if our table already exists (from a prior run / failed cleanup).
-	existingTables, err := conn.ListTablesOfFamily(nftables.TableFamilyINet)
-	if err != nil {
-		return fmt.Errorf("listing nftables tables: %w", err)
-	}
-	for _, t := range existingTables {
-		if t.Name == tableName {
-			table = t
-			break
-		}
-	}
-
-	// AddTable is idempotent (NLM_F_CREATE without NLM_F_EXCL).
-	table = conn.AddTable(table)
-
-	// Delete existing chains in our table (from prior run).
-	existingChains, err := conn.ListChains()
-	if err != nil {
-		rm.logger.Warn("failed to list nftables chains", zap.Error(err))
-	}
-	for _, chain := range existingChains {
-		if chain.Table.Name == tableName {
-			conn.FlushChain(chain)
-			conn.DelChain(chain)
-		}
-	}
+	})
 
 	// Create sets (anonymous, must be in same batch as referencing rules).
 	v4Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return p.Addr().Is4() })
