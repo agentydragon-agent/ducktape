@@ -223,11 +223,11 @@ func (rm *Manager) Cleanup() error {
 // installNftables creates the talos_kubespan nftables table with two chains.
 // Retries on EBUSY (nft_commit_mutex contention) before propagating the error.
 //
-// The kernel's nf_tables_commit_mutex is GLOBAL (not per-namespace) and uses
-// mutex_trylock, returning EBUSY immediately when any other nftables operation
-// is in progress system-wide. Exponential backoff with random jitter prevents
-// synchronized retries (thundering herd) across multiple kubespand instances
-// and Docker daemon, all competing for the same mutex.
+// The kernel's nf_tables_commit_mutex uses mutex_trylock, returning EBUSY
+// immediately when the mutex is held. The kernel's deferred commit_release
+// work item holds the mutex (blocking) after a successful commit, so rapid
+// sequential commits can hit EBUSY. Exponential backoff with random jitter
+// handles this gracefully.
 //
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
@@ -298,10 +298,17 @@ func (rm *Manager) logNftablesDiag() {
 
 // tryInstallNftables performs a single attempt to install nftables rules.
 // Everything is committed in a single atomic Flush() to avoid issues with
-// anonymous sets needing to be in the same batch as their referencing rules.
+// anonymous sets needing to be in the same batch as their referencing rules,
+// and to avoid EBUSY from the kernel's nf_tables_commit_mutex between two
+// separate commits (the kernel's deferred commit_release holds the mutex
+// after a successful commit, causing the next commit to fail with EBUSY).
+//
+// Approach: AddTable (create-or-update) + FlushTable (delete all old rules) +
+// AddChain + AddSet + AddRule, all in ONE Flush. This gives a single
+// commit_mutex acquisition, eliminating the EBUSY window between delete
+// and create.
 //
 // Matches Talos's NfTablesChainController approach:
-//   - Delete all existing chains first (clears stale rules + anonymous sets).
 //   - Anonymous interval sets are ONLY created when there are prefixes for
 //     that address family. Empty/nil prefix lists skip set creation entirely.
 //   - The kernel rejects anonymous sets that have no rule bindings (EINVAL
@@ -315,28 +322,19 @@ func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 		return fmt.Errorf("nftables conn: %w", err)
 	}
 
-	// Delete the old table first (separate batch) to get a clean slate.
-	// This removes all chains, rules, and anonymous sets from the previous
-	// install. Creating from scratch avoids kernel EBUSY on AddChain/AddSet
-	// for existing tables (nf_tables_commit uses mutex_trylock on a global
-	// commit_mutex, and operations on existing objects seem to hold it longer).
-	// ENOENT (table doesn't exist on first run) is expected and ignored.
-	// EBUSY is propagated to trigger a retry with jitter.
-	delConn, delErr := nftables.New()
-	if delErr == nil {
-		delConn.DelTable(&nftables.Table{
-			Family: nftables.TableFamilyINet,
-			Name:   tableName,
-		})
-		if flushErr := delConn.Flush(); flushErr != nil && !isErrnoENOENT(flushErr) {
-			return fmt.Errorf("nftables delete old table: %w", flushErr)
-		}
-	}
-
+	// AddTable: create the table if it doesn't exist, or no-op update if it
+	// does (NLM_F_CREATE without NLM_F_EXCL).
 	table := conn.AddTable(&nftables.Table{
 		Family: nftables.TableFamilyINet,
 		Name:   tableName,
 	})
+
+	// FlushTable: delete all existing rules in the table (and implicitly their
+	// anonymous sets). For a newly created table (first run), this is a no-op
+	// since there are no rules yet. For subsequent calls, this clears the old
+	// rules so we can add fresh ones below. Crucially, this is in the SAME
+	// batch as AddTable, so the kernel processes it in a single commit.
+	conn.FlushTable(table)
 
 	// Build an IPSet and split by address family, matching Talos's approach:
 	// manager.go builds IPSetBuilder → .IPSet() → .Prefixes()
@@ -742,11 +740,6 @@ func mssClampIPv6Exprs(set *nftables.Set, mss uint16) []expr.Any {
 			Op:             expr.ExthdrOpTcpopt,
 		},
 	}
-}
-
-// isErrnoENOENT checks if an error wraps syscall.ENOENT (e.g. table not found).
-func isErrnoENOENT(err error) bool {
-	return errors.Is(err, syscall.ENOENT)
 }
 
 // installRoutes adds default routes in table 180 pointing to the kubespan interface.
