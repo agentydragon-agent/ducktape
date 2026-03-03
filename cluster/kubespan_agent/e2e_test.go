@@ -227,10 +227,9 @@ func TestNftablesSmoke(t *testing.T) {
 // TestKubeSpanNetworking runs two kubespand instances in full mode and verifies
 // ICMPv6 connectivity through the WireGuard tunnel.
 //
-// Containers start with --network=none so kubespand installs nftables rules
-// in a clean netns (no Docker-managed iptables-nft rules). After nftables
-// setup, containers are connected to the default bridge via Docker API for
-// discovery service access.
+// All containers share a custom Docker bridge network. nftables EBUSY is
+// mitigated by the FlushChain approach (flushing individual chains instead
+// of FlushTable, which avoids kernel commit_mutex contention).
 func TestKubeSpanNetworking(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
@@ -256,47 +255,44 @@ func TestKubeSpanNetworking(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	discoveryName := fmt.Sprintf("discovery-%s", testID)
+	networkName := fmt.Sprintf("%s-net-%s", networkPrefix, testID)
 
-	// Discovery service runs on default bridge (doesn't need nftables).
+	network, err := client.CreateNetwork(docker.CreateNetworkOptions{
+		Name:    networkName,
+		Context: ctx,
+	})
+	if err != nil {
+		t.Fatalf("creating Docker network: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = client.RemoveNetwork(network.ID)
+	})
+
 	discoveryContainer := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: discoveryName,
 		Config: &docker.Config{
 			Image: discoveryRepoTag,
 			Cmd:   []string{"-debug"},
 		},
-		HostConfig: &docker.HostConfig{},
-		Context:    ctx,
+		HostConfig: &docker.HostConfig{
+			NetworkMode: networkName,
+		},
+		Context: ctx,
 	})
 	t.Log("discovery service started")
 	waitForContainer(t, ctx, client, discoveryContainer.ID, 30*time.Second)
 
-	discInfo, err := client.InspectContainerWithContext(discoveryContainer.ID, ctx)
-	if err != nil {
-		t.Fatalf("inspecting discovery container: %v", err)
-	}
-	discoveryIP := discInfo.NetworkSettings.IPAddress
-	if discoveryIP == "" {
-		t.Fatal("discovery container has no IP address")
-	}
-	discoveryEndpoint := fmt.Sprintf("%s:3000", discoveryIP)
-	t.Logf("discovery endpoint: %s", discoveryEndpoint)
-
-	// Write kubespand configs before starting containers (bind-mounted in).
+	// Write kubespand configs. Use container name as discovery endpoint
+	// (Docker DNS resolves container names on custom networks).
 	configA := filepath.Join(tmpDir, "agent-a.yaml")
 	configB := filepath.Join(tmpDir, "agent-b.yaml")
-	writeKubespandConfig(t, configA, clusterID, sharedSecret, discoveryEndpoint, 51820, "/tmp/kubespan-identity-a.yaml")
-	writeKubespandConfig(t, configB, clusterID, sharedSecret, discoveryEndpoint, 51821, "/tmp/kubespan-identity-b.yaml")
+	writeKubespandConfig(t, configA, clusterID, sharedSecret, discoveryName+":3000", 51820, "/tmp/kubespan-identity-a.yaml")
+	writeKubespandConfig(t, configB, clusterID, sharedSecret, discoveryName+":3000", 51821, "/tmp/kubespan-identity-b.yaml")
 
 	nameA := fmt.Sprintf("kubespand-a-%s", testID)
 	nameB := fmt.Sprintf("kubespand-b-%s", testID)
 
-	// kubespand containers start with --network=none for a clean netns
-	// free of Docker-managed iptables/nftables rules. kubespand installs
-	// its nftables rules in this clean namespace. We then connect the
-	// containers to a Docker bridge for discovery service connectivity.
-	// COSI controllers retry failed operations, so kubespand will
-	// recover once networking becomes available.
-	t.Log("starting kubespand containers with --network=none...")
+	t.Log("starting kubespand containers...")
 	containerA := createAndStartContainer(t, ctx, client, docker.CreateContainerOptions{
 		Name: nameA,
 		Config: &docker.Config{
@@ -305,7 +301,7 @@ func TestKubeSpanNetworking(t *testing.T) {
 		},
 		HostConfig: &docker.HostConfig{
 			Privileged:  true,
-			NetworkMode: "none",
+			NetworkMode: networkName,
 			Binds:       []string{configA + ":/etc/kubespan/agent.yaml:ro"},
 		},
 		Context: ctx,
@@ -319,42 +315,11 @@ func TestKubeSpanNetworking(t *testing.T) {
 		},
 		HostConfig: &docker.HostConfig{
 			Privileged:  true,
-			NetworkMode: "none",
+			NetworkMode: networkName,
 			Binds:       []string{configB + ":/etc/kubespan/agent.yaml:ro"},
 		},
 		Context: ctx,
 	})
-
-	// Verify nftables works in the clean netns.
-	t.Log("verifying nftables in clean netns...")
-	nftExitCode, nftOut := dockerExec(t, ctx, client, containerA.ID, []string{"/testprobe", "-nft-smoke"})
-	t.Logf("nft-smoke in container-a: exit=%d output:\n%s", nftExitCode, nftOut)
-	if nftExitCode != 0 {
-		t.Skipf("nftables unavailable in --network=none container (exit %d); skipping networking test", nftExitCode)
-	}
-
-	// Give kubespand a moment to install nftables rules in the clean netns
-	// before we add Docker bridge networking (which adds its own iptables-nft rules).
-	t.Log("waiting for kubespand to install nftables rules...")
-	time.Sleep(5 * time.Second)
-
-	// Connect containers to the default bridge for discovery service access.
-	// Docker's bridge setup adds iptables-nft rules to the container's netns,
-	// but kubespand's nftables are already installed by this point.
-	t.Log("connecting containers to default bridge for discovery...")
-	if err := client.ConnectNetwork("bridge", docker.NetworkConnectionOptions{
-		Container: containerA.ID,
-		Context:   ctx,
-	}); err != nil {
-		t.Fatalf("connecting container A to bridge: %v", err)
-	}
-	if err := client.ConnectNetwork("bridge", docker.NetworkConnectionOptions{
-		Container: containerB.ID,
-		Context:   ctx,
-	}); err != nil {
-		t.Fatalf("connecting container B to bridge: %v", err)
-	}
-	t.Log("containers connected to bridge network")
 
 	// Wait for kubespand-a to discover and configure its peer.
 	t.Log("waiting for kubespand-a to discover and configure peer...")
