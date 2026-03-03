@@ -83,8 +83,31 @@ func runNftSmoke(level int) int {
 		err = smokeLevel5()
 	case 6:
 		err = smokeLevel6()
+	// Isolation sub-levels: bisect which expression in level 3 causes EBUSY.
+	case 10:
+		err = smokeMarkRead()
+	case 11:
+		err = smokeMarkReadBitwise()
+	case 12:
+		err = smokeMarkWrite()
+	case 13:
+		err = smokeMarkReadWrite()
+	case 14:
+		err = smokeSetLookupOnly()
+	case 15:
+		err = smokeLookupThenMark()
+	case 16:
+		err = smokeTwoRulesSetAndMark()
+	case 17:
+		err = smokeSetLookupMarkInOneRule()
+	case 18:
+		err = smokeFiveRulesOneChain()
+	case 19:
+		err = smokeTwoChainsTwoRules()
+	case 20:
+		err = smokeLevel3MinusOneRule()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown level %d (valid: 1-6)\n", level)
+		fmt.Fprintf(os.Stderr, "unknown level %d\n", level)
 		return 2
 	}
 
@@ -472,6 +495,392 @@ func smokeLevel6() error {
 		return fmt.Errorf("Flush (full kubespand pattern): %w", err)
 	}
 	fmt.Println("  Full kubespand pattern (dual-stack sets, mark, MSS clamp) OK")
+	return nil
+}
+
+// Isolation sub-levels: each tests a single expression type to bisect EBUSY.
+// All use smokeLevel1() as baseline (table + chains already exist).
+
+// smokeMarkRead: single rule that only READS meta mark (no bitwise, no write).
+func smokeMarkRead() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+			&expr.Verdict{Kind: expr.VerdictAccept},
+		},
+	})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (mark read only): %w", err)
+	}
+	fmt.Println("  mark read only: OK")
+	return nil
+}
+
+// smokeMarkReadBitwise: read meta mark + bitwise mask + compare.
+func smokeMarkReadBitwise() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+	fwMark := uint32(0x00000060)
+	fwMask := uint32(0x000000e0)
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: skipMarkExprs(fwMark, fwMask),
+	})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (mark read+bitwise): %w", err)
+	}
+	fmt.Println("  mark read+bitwise+cmp: OK")
+	return nil
+}
+
+// smokeMarkWrite: write meta mark directly (no read, no set lookup).
+func smokeMarkWrite() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+	fwMark := uint32(0x00000060)
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: []expr.Any{
+			&expr.Immediate{Register: 1, Data: nativeUint32(fwMark)},
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+			&expr.Verdict{Kind: expr.VerdictAccept},
+		},
+	})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (mark write): %w", err)
+	}
+	fmt.Println("  mark write (immediate + meta set): OK")
+	return nil
+}
+
+// smokeMarkReadWrite: read mark, mask, write back (no set lookup).
+func smokeMarkReadWrite() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+	fwMark := uint32(0x00000060)
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+			&expr.Bitwise{
+				SourceRegister: 1, DestRegister: 1, Len: 4,
+				Mask: nativeUint32(^fwMark),
+				Xor:  nativeUint32(fwMark),
+			},
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+			&expr.Verdict{Kind: expr.VerdictAccept},
+		},
+	})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (mark read+write): %w", err)
+	}
+	fmt.Println("  mark read+bitwise+write: OK")
+	return nil
+}
+
+// smokeSetLookupOnly: set lookup + accept (no mark). Like level 2 but with
+// the same table/chain creation pattern as the isolation tests.
+func smokeSetLookupOnly() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+	set := &nftables.Set{
+		Table: table, Anonymous: true, Constant: true, Interval: true,
+		KeyType: nftables.TypeIPAddr,
+	}
+	if err := conn.AddSet(set, []nftables.SetElement{
+		{Key: []byte{10, 244, 0, 0}, IntervalEnd: false},
+		{Key: []byte{10, 245, 0, 0}, IntervalEnd: true},
+	}); err != nil {
+		return fmt.Errorf("AddSet: %w", err)
+	}
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.NFPROTO_IPV4}},
+			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+			&expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID},
+			&expr.Verdict{Kind: expr.VerdictAccept},
+		},
+	})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (set lookup only): %w", err)
+	}
+	fmt.Println("  set lookup only (no mark): OK")
+	return nil
+}
+
+// smokeLookupThenMark: set lookup rule + separate mark-write rule in same batch.
+func smokeLookupThenMark() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+
+	set := &nftables.Set{
+		Table: table, Anonymous: true, Constant: true, Interval: true,
+		KeyType: nftables.TypeIPAddr,
+	}
+	if err := conn.AddSet(set, []nftables.SetElement{
+		{Key: []byte{10, 244, 0, 0}, IntervalEnd: false},
+		{Key: []byte{10, 245, 0, 0}, IntervalEnd: true},
+	}); err != nil {
+		return fmt.Errorf("AddSet: %w", err)
+	}
+
+	// Rule 1: set lookup + accept (no mark).
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.NFPROTO_IPV4}},
+			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+			&expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID},
+			&expr.Verdict{Kind: expr.VerdictAccept},
+		},
+	})
+	// Rule 2: mark write + accept (no set).
+	fwMark := uint32(0x00000060)
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: []expr.Any{
+			&expr.Immediate{Register: 1, Data: nativeUint32(fwMark)},
+			&expr.Meta{Key: expr.MetaKeyMARK, SourceRegister: true, Register: 1},
+			&expr.Verdict{Kind: expr.VerdictAccept},
+		},
+	})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (lookup rule + mark rule): %w", err)
+	}
+	fmt.Println("  set lookup rule + mark write rule (separate): OK")
+	return nil
+}
+
+// smokeTwoRulesSetAndMark: skip-mark rule + set lookup rule (no mark write).
+func smokeTwoRulesSetAndMark() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+
+	set := &nftables.Set{
+		Table: table, Anonymous: true, Constant: true, Interval: true,
+		KeyType: nftables.TypeIPAddr,
+	}
+	if err := conn.AddSet(set, []nftables.SetElement{
+		{Key: []byte{10, 244, 0, 0}, IntervalEnd: false},
+		{Key: []byte{10, 245, 0, 0}, IntervalEnd: true},
+	}); err != nil {
+		return fmt.Errorf("AddSet: %w", err)
+	}
+
+	fwMark := uint32(0x00000060)
+	fwMask := uint32(0x000000e0)
+	// Rule 1: skip if already marked (read mark + bitwise + cmp).
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: skipMarkExprs(fwMark, fwMask),
+	})
+	// Rule 2: set lookup + accept (no mark write).
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+			&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.NFPROTO_IPV4}},
+			&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+			&expr.Lookup{SourceRegister: 1, SetName: set.Name, SetID: set.ID},
+			&expr.Verdict{Kind: expr.VerdictAccept},
+		},
+	})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (skip-mark + lookup): %w", err)
+	}
+	fmt.Println("  skip-mark rule + set lookup rule: OK")
+	return nil
+}
+
+// smokeSetLookupMarkInOneRule: single rule with set lookup + mark write.
+// This is the lookupAndMarkIPv4Exprs pattern from kubespand.
+func smokeSetLookupMarkInOneRule() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+
+	set := &nftables.Set{
+		Table: table, Anonymous: true, Constant: true, Interval: true,
+		KeyType: nftables.TypeIPAddr,
+	}
+	if err := conn.AddSet(set, []nftables.SetElement{
+		{Key: []byte{10, 244, 0, 0}, IntervalEnd: false},
+		{Key: []byte{10, 245, 0, 0}, IntervalEnd: true},
+	}); err != nil {
+		return fmt.Errorf("AddSet: %w", err)
+	}
+
+	fwMark := uint32(0x00000060)
+	// Single rule: lookup in set + write mark.
+	conn.AddRule(&nftables.Rule{
+		Table: table, Chain: chain,
+		Exprs: lookupAndMarkIPv4Exprs(set, fwMark, 0x000000e0),
+	})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (lookup+mark in one rule): %w", err)
+	}
+	fmt.Println("  set lookup + mark write (single rule): OK")
+	return nil
+}
+
+// smokeFiveRulesOneChain: 5 rules all on one chain (same as level 3 but single chain).
+func smokeFiveRulesOneChain() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	chain := &nftables.Chain{Table: table, Name: "test_prerouting"}
+
+	set := &nftables.Set{
+		Table: table, Anonymous: true, Constant: true, Interval: true,
+		KeyType: nftables.TypeIPAddr,
+	}
+	if err := conn.AddSet(set, []nftables.SetElement{
+		{Key: []byte{10, 244, 0, 0}, IntervalEnd: false},
+		{Key: []byte{10, 245, 0, 0}, IntervalEnd: true},
+	}); err != nil {
+		return fmt.Errorf("AddSet: %w", err)
+	}
+
+	fwMark := uint32(0x00000060)
+	fwMask := uint32(0x000000e0)
+	// Same 5 rules as level 3, but all on test_prerouting.
+	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: skipMarkExprs(fwMark, fwMask)})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: lookupAndMarkExprs(set, fwMark, fwMask)})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: skipMarkExprs(fwMark, fwMask)})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: skipLoopbackExprs()})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: lookupAndMarkExprs(set, fwMark, fwMask)})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (5 rules, 1 chain): %w", err)
+	}
+	fmt.Println("  5 rules on single chain: OK")
+	return nil
+}
+
+// smokeTwoChainsTwoRules: one simple rule per chain (tests multi-chain batch).
+func smokeTwoChainsTwoRules() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	preroute := &nftables.Chain{Table: table, Name: "test_prerouting"}
+	output := &nftables.Chain{Table: table, Name: "test_output"}
+
+	fwMark := uint32(0x00000060)
+	fwMask := uint32(0x000000e0)
+	conn.AddRule(&nftables.Rule{Table: table, Chain: preroute, Exprs: skipMarkExprs(fwMark, fwMask)})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: skipMarkExprs(fwMark, fwMask)})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (2 rules, 2 chains): %w", err)
+	}
+	fmt.Println("  1 rule per chain (2 chains): OK")
+	return nil
+}
+
+// smokeLevel3MinusOneRule: level 3 with last rule removed (4 rules instead of 5).
+func smokeLevel3MinusOneRule() error {
+	if err := smokeLevel1(); err != nil {
+		return err
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return fmt.Errorf("nftables.New: %w", err)
+	}
+	table := &nftables.Table{Family: nftables.TableFamilyINet, Name: smokeTableName}
+	preroute := &nftables.Chain{Table: table, Name: "test_prerouting"}
+	output := &nftables.Chain{Table: table, Name: "test_output"}
+
+	set := &nftables.Set{
+		Table: table, Anonymous: true, Constant: true, Interval: true,
+		KeyType: nftables.TypeIPAddr,
+	}
+	if err := conn.AddSet(set, []nftables.SetElement{
+		{Key: []byte{10, 244, 0, 0}, IntervalEnd: false},
+		{Key: []byte{10, 245, 0, 0}, IntervalEnd: true},
+	}); err != nil {
+		return fmt.Errorf("AddSet: %w", err)
+	}
+
+	fwMark := uint32(0x00000060)
+	fwMask := uint32(0x000000e0)
+	// Level 3 minus the last lookupAndMark on output chain.
+	conn.AddRule(&nftables.Rule{Table: table, Chain: preroute, Exprs: skipMarkExprs(fwMark, fwMask)})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: preroute, Exprs: lookupAndMarkExprs(set, fwMark, fwMask)})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: skipMarkExprs(fwMark, fwMask)})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: output, Exprs: skipLoopbackExprs()})
+	if err := conn.Flush(); err != nil {
+		return fmt.Errorf("Flush (4 rules, 2 chains): %w", err)
+	}
+	fmt.Println("  level 3 minus last rule (4 rules, 2 chains): OK")
 	return nil
 }
 
