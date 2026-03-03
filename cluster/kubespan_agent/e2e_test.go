@@ -227,23 +227,25 @@ func TestNftablesSmoke(t *testing.T) {
 // TestKubeSpanNetworking runs two kubespand instances in full mode and verifies
 // ICMPv6 connectivity through the WireGuard tunnel.
 //
-// SKIPPED IN CI: Docker containers get persistent nftables EBUSY when kubespand
-// tries to commit rules. Root cause (verified on GHA Azure kernel 6.x):
+// SKIPPED IN CI: kubespand gets deterministic nftables EBUSY in Docker
+// containers with bridge networking. Observed on GHA Azure kernel 6.x:
 //
-//  1. Basic nftables operations (create table, add chains with hooks, flush,
-//     delete) succeed in Docker containers — TestNftablesSmoke passes in both
-//     --network=none and default bridge configurations.
+//   - TestNftablesSmoke passes on both --network=none and default bridge:
+//     basic nftables ops (create table, add chains with hooks, flush, delete)
+//     work fine. The kernel nftables subsystem is functional.
+//   - kubespand's full nftables batch (table + chains + anonymous interval
+//     sets + rules) fails with EBUSY deterministically on bridge networks,
+//     persisting through 30+ seconds of retries.
+//   - Docker's bridge networking injects iptables-nft state (nat table,
+//     family 2) into each container's netns.
+//   - Flushing Docker's nat table doesn't help — EBUSY returns within ~1s.
+//   - --network=none avoids the issue but Docker prohibits connecting such
+//     containers to any network afterward.
 //
-//  2. Docker's bridge networking injects iptables-nft state (nat table) into
-//     each container's network namespace via its daemon.
-//
-//  3. Even after successfully flushing Docker's nat table, kubespand still gets
-//     EBUSY within ~1 second. Docker's daemon detects the missing nat table and
-//     recreates it, continuously re-acquiring the kernel's nf_tables_commit_mutex
-//     and blocking kubespand's commits.
-//
-//  4. --network=none avoids iptables-nft pollution but Docker prohibits
-//     connecting such containers to any network afterward.
+// The exact mechanism is not fully understood. Simple mutex contention from
+// Docker occasionally updating the nat table would be intermittent, not
+// deterministic. The interaction between Docker's iptables-nft state and
+// kubespand's nftables batch may be a state conflict rather than a race.
 //
 // This matches Talos upstream: KubeSpan is only tested with QEMU VMs. See:
 //   - siderolabs/talos CI: all KubeSpan tests use e2e-qemu
