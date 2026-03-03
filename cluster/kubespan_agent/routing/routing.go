@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"sort"
 	"syscall"
 	"time"
 
@@ -15,10 +14,10 @@ import (
 	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 	"github.com/jsimonetti/rtnetlink/v2"
-	"github.com/siderolabs/gen/xslices"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
+	"go4.org/netipx"
 	"golang.org/x/sys/unix"
 )
 
@@ -259,9 +258,7 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 }
 
 // logNftablesDiag logs diagnostic info about the current nftables state.
-// Uses graduated canaries to isolate exactly which nftables operation triggers EBUSY.
 func (rm *Manager) logNftablesDiag() {
-	// List existing tables.
 	listConn, err := nftables.New()
 	if err != nil {
 		rm.logger.Warn("nftables diag: cannot create conn", zap.Error(err))
@@ -278,155 +275,20 @@ func (rm *Manager) logNftablesDiag() {
 			rm.logger.Info("nftables diag: no existing tables")
 		}
 	}
-
-	canaryTable := &nftables.Table{Family: nftables.TableFamilyINet, Name: "__nft_diag_canary"}
-
-	// Level 1: AddTable only.
-	rm.tryCanary("L1_table", func(c *nftables.Conn) {
-		c.AddTable(canaryTable)
-	})
-
-	// Level 2: AddTable + AddChain.
-	rm.tryCanary("L2_table_chain", func(c *nftables.Conn) {
-		t := c.AddTable(canaryTable)
-		c.AddChain(&nftables.Chain{
-			Name:     "__diag_chain",
-			Table:    t,
-			Type:     nftables.ChainTypeFilter,
-			Hooknum:  nftables.ChainHookPrerouting,
-			Priority: nftables.ChainPriorityRaw,
-		})
-	})
-
-	// Level 3: AddTable + AddChain + anonymous interval set (empty).
-	rm.tryCanary("L3_table_chain_emptyset", func(c *nftables.Conn) {
-		t := c.AddTable(canaryTable)
-		c.AddChain(&nftables.Chain{
-			Name:     "__diag_chain",
-			Table:    t,
-			Type:     nftables.ChainTypeFilter,
-			Hooknum:  nftables.ChainHookPrerouting,
-			Priority: nftables.ChainPriorityRaw,
-		})
-		_ = c.AddSet(&nftables.Set{
-			Table:     t,
-			Anonymous: true,
-			Constant:  true,
-			Interval:  true,
-			KeyType:   nftables.TypeIPAddr,
-		}, nil)
-	})
-
-	// Level 4: AddTable + AddChain + anonymous interval set with elements.
-	rm.tryCanary("L4_table_chain_set_elems", func(c *nftables.Conn) {
-		t := c.AddTable(canaryTable)
-		c.AddChain(&nftables.Chain{
-			Name:     "__diag_chain",
-			Table:    t,
-			Type:     nftables.ChainTypeFilter,
-			Hooknum:  nftables.ChainHookPrerouting,
-			Priority: nftables.ChainPriorityRaw,
-		})
-		_ = c.AddSet(&nftables.Set{
-			Table:     t,
-			Anonymous: true,
-			Constant:  true,
-			Interval:  true,
-			KeyType:   nftables.TypeIPAddr,
-		}, []nftables.SetElement{
-			{Key: []byte{10, 0, 0, 0}, IntervalEnd: false},
-			{Key: []byte{10, 255, 255, 255}, IntervalEnd: true},
-		})
-	})
-
-	// Level 5: Full batch — table + 2 chains + anonymous sets + rules (like real install).
-	rm.tryCanary("L5_full_batch", func(c *nftables.Conn) {
-		t := c.AddTable(canaryTable)
-		policy := nftables.ChainPolicyAccept
-		chain := c.AddChain(&nftables.Chain{
-			Name:     "__diag_chain",
-			Table:    t,
-			Type:     nftables.ChainTypeFilter,
-			Hooknum:  nftables.ChainHookPrerouting,
-			Priority: nftables.ChainPriorityRaw,
-			Policy:   &policy,
-		})
-		set := &nftables.Set{
-			Table:     t,
-			Anonymous: true,
-			Constant:  true,
-			Interval:  true,
-			KeyType:   nftables.TypeIPAddr,
-		}
-		_ = c.AddSet(set, []nftables.SetElement{
-			{Key: []byte{10, 0, 0, 0}, IntervalEnd: false},
-			{Key: []byte{10, 255, 255, 255}, IntervalEnd: true},
-		})
-		c.AddRule(&nftables.Rule{
-			Table: t,
-			Chain: chain,
-			Exprs: []expr.Any{
-				&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
-				&expr.Cmp{
-					Op:       expr.CmpOpEq,
-					Register: 1,
-					Data:     []byte{unix.NFPROTO_IPV4},
-				},
-				&expr.Payload{
-					DestRegister: 1,
-					Base:         expr.PayloadBaseNetworkHeader,
-					Offset:       16,
-					Len:          4,
-				},
-				&expr.Lookup{
-					SourceRegister: 1,
-					SetName:        set.Name,
-					SetID:          set.ID,
-				},
-				&expr.Verdict{Kind: expr.VerdictAccept},
-			},
-		})
-	})
-
-	// Clean up any canary leftovers.
-	cleanConn, _ := nftables.New()
-	if cleanConn != nil {
-		cleanConn.DelTable(canaryTable)
-		_ = cleanConn.Flush()
-	}
-}
-
-// tryCanary runs a single graduated canary test and logs the result.
-func (rm *Manager) tryCanary(name string, build func(c *nftables.Conn)) {
-	conn, err := nftables.New()
-	if err != nil {
-		rm.logger.Warn("nftables diag: canary conn failed", zap.String("canary", name), zap.Error(err))
-		return
-	}
-	build(conn)
-	if err := conn.Flush(); err != nil {
-		rm.logger.Warn("nftables diag: canary FAILED", zap.String("canary", name), zap.Error(err),
-			zap.Bool("is_ebusy", errors.Is(err, syscall.EBUSY)))
-	} else {
-		rm.logger.Info("nftables diag: canary OK", zap.String("canary", name))
-	}
 }
 
 // tryInstallNftables performs a single attempt to install nftables rules.
 // Everything is committed in a single atomic Flush() to avoid issues with
 // anonymous sets needing to be in the same batch as their referencing rules.
 //
-// No prior cleanup (DelTable/FlushRuleset) is performed. AddTable is an
-// upsert (NLM_F_CREATE without NLM_F_EXCL), so it creates the table if it
-// doesn't exist or returns the existing one. AddChain similarly upserts.
-// Anonymous sets and rules accumulate on repeated calls, but this is
-// acceptable for the use case (short-lived test, infrequent reconcile).
+// Matches Talos's NfTablesChainController approach:
+//   - Anonymous interval sets are ONLY created when there are prefixes for
+//     that address family. Empty/nil prefix lists skip set creation entirely.
+//   - The kernel rejects anonymous sets that have no rule bindings (EINVAL
+//     on kernel 6.14+, "nftables ruleset with unbound set" warning).
 //
-// A prior cleanup batch is intentionally avoided: on some kernel versions
-// (observed on GitHub Actions runners), a failed nftables batch (e.g.,
-// DelTable for a non-existent table → ENOENT) can leave the per-namespace
-// nft_net->commit_mutex in a locked state, causing all subsequent
-// nf_tables_commit() calls to return persistent EBUSY.
+// Ref: talos/internal/app/machined/pkg/controllers/network/nftables_chain.go
+// Ref: talos/internal/app/machined/pkg/adapters/network/nftables_rule.go
 func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 	conn, err := nftables.New()
 	if err != nil {
@@ -438,18 +300,39 @@ func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 		Name:   tableName,
 	})
 
-	// Create sets (anonymous, must be in same batch as referencing rules).
-	v4Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return p.Addr().Is4() })
-	v6Prefixes := xslices.Filter(routedPrefixes, func(p netip.Prefix) bool { return !p.Addr().Is4() })
-
-	v4Set := makeIPv4Set(table, v4Prefixes)
-	v6Set := makeIPv6Set(table, v6Prefixes)
-
-	if err := conn.AddSet(v4Set.set, v4Set.elements); err != nil {
-		return fmt.Errorf("adding v4 set: %w", err)
+	// Build an IPSet and split by address family, matching Talos's approach:
+	// manager.go builds IPSetBuilder → .IPSet() → .Prefixes()
+	// nftables_rule.go Compile() → BuildIPSet() → SplitIPSet()
+	// When SplitIPSet returns nil for an address family, no set or rules
+	// are created for that family.
+	// Ref: talos/internal/app/machined/pkg/adapters/network/ipset.go
+	var builder netipx.IPSetBuilder
+	for _, p := range routedPrefixes {
+		builder.AddPrefix(p)
 	}
-	if err := conn.AddSet(v6Set.set, v6Set.elements); err != nil {
-		return fmt.Errorf("adding v6 set: %w", err)
+	ipSet, err := builder.IPSet()
+	if err != nil {
+		return fmt.Errorf("building routed IP set: %w", err)
+	}
+	v4Ranges, v6Ranges := splitIPSet(ipSet)
+
+	// Create sets only when there are addresses for that family.
+	// Talos skips set+rule creation entirely when there are no addresses to match
+	// (nftables_rule.go Compile() returns os.ErrNotExist → rule is dropped).
+	var v4Set *intervalSet
+	if v4Ranges != nil {
+		v4Set = makeIPv4Set(table, v4Ranges)
+		if err := conn.AddSet(v4Set.set, v4Set.elements); err != nil {
+			return fmt.Errorf("adding v4 set: %w", err)
+		}
+	}
+
+	var v6Set *intervalSet
+	if v6Ranges != nil {
+		v6Set = makeIPv6Set(table, v6Ranges)
+		if err := conn.AddSet(v6Set.set, v6Set.elements); err != nil {
+			return fmt.Errorf("adding v6 set: %w", err)
+		}
 	}
 
 	// Create chains.
@@ -472,33 +355,60 @@ func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
 		Policy:   &policy,
 	})
 
-	// Create rules.
+	// Prerouting rules: always add skip-mark, conditionally add address matching.
 	conn.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: skipWGMarkExprs()})
-	conn.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv4Exprs(v4Set.set)})
-	conn.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv6Exprs(v6Set.set)})
+	if v4Set != nil {
+		conn.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv4Exprs(v4Set.set)})
+	}
+	if v6Set != nil {
+		conn.AddRule(&nftables.Rule{Table: table, Chain: prerouteChain, Exprs: markIPv6Exprs(v6Set.set)})
+	}
 
+	// Output rules: always add skip-mark and skip-loopback, conditionally add MSS clamp and address matching.
 	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipWGMarkExprs()})
 	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: skipLoopbackExprs()})
 
-	mss4 := rm.mtu - 40
-	if mss4 > 0 {
-		conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv4Exprs(v4Set.set, uint16(mss4))})
-	}
-	mss6 := rm.mtu - 60
-	if mss6 > 0 {
-		conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv6Exprs(v6Set.set, uint16(mss6))})
+	if v4Set != nil {
+		mss4 := rm.mtu - 40
+		if mss4 > 0 {
+			conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv4Exprs(v4Set.set, uint16(mss4))})
+		}
+		conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv4Exprs(v4Set.set)})
 	}
 
-	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv4Exprs(v4Set.set)})
-	conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv6Exprs(v6Set.set)})
+	if v6Set != nil {
+		mss6 := rm.mtu - 60
+		if mss6 > 0 {
+			conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: mssClampIPv6Exprs(v6Set.set, uint16(mss6))})
+		}
+		conn.AddRule(&nftables.Rule{Table: table, Chain: outputChain, Exprs: markIPv6Exprs(v6Set.set)})
+	}
 
-	// Single atomic commit: table + chain cleanup + sets + chains + rules.
+	// Single atomic commit: table + chains + sets + rules.
 	if err := conn.Flush(); err != nil {
 		return fmt.Errorf("nftables install: %w", err)
 	}
-	rm.logger.Debug("nftables installed")
+	rm.logger.Debug("nftables installed",
+		zap.Int("v4_ranges", len(v4Ranges)),
+		zap.Int("v6_ranges", len(v6Ranges)),
+	)
 
 	return nil
+}
+
+// splitIPSet splits the given IPSet into IPv4 and IPv6 ranges.
+// Copied verbatim from Talos (internal, cannot import):
+// Ref: talos/internal/app/machined/pkg/adapters/network/ipset.go (SplitIPSet)
+func splitIPSet(set *netipx.IPSet) (ipv4, ipv6 []netipx.IPRange) {
+	for _, rng := range set.Ranges() {
+		if rng.From().Is4() {
+			ipv4 = append(ipv4, rng)
+		} else {
+			ipv6 = append(ipv6, rng)
+		}
+	}
+
+	return ipv4, ipv6
 }
 
 // intervalSet holds an nftables set and its pre-computed elements.
@@ -507,7 +417,7 @@ type intervalSet struct {
 	elements []nftables.SetElement
 }
 
-func makeIPv4Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
+func makeIPv4Set(table *nftables.Table, ranges []netipx.IPRange) *intervalSet {
 	set := &nftables.Set{
 		Table:     table,
 		Anonymous: true,
@@ -517,11 +427,11 @@ func makeIPv4Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
 	}
 	return &intervalSet{
 		set:      set,
-		elements: prefixesToSetElements(prefixes, 4),
+		elements: rangesToSetElements(ranges),
 	}
 }
 
-func makeIPv6Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
+func makeIPv6Set(table *nftables.Table, ranges []netipx.IPRange) *intervalSet {
 	set := &nftables.Set{
 		Table:     table,
 		Anonymous: true,
@@ -531,93 +441,33 @@ func makeIPv6Set(table *nftables.Table, prefixes []netip.Prefix) *intervalSet {
 	}
 	return &intervalSet{
 		set:      set,
-		elements: prefixesToSetElements(prefixes, 16),
+		elements: rangesToSetElements(ranges),
 	}
 }
 
-// prefixesToSetElements converts IP prefixes into nftables interval set elements.
+// rangesToSetElements converts IP ranges into nftables interval set elements.
+// Mirrors Talos's NfTablesSet.SetElements() for SetKindIPv4/SetKindIPv6:
 // Ref: talos/internal/app/machined/pkg/adapters/network/nftables_rule.go (SetElements)
-func prefixesToSetElements(prefixes []netip.Prefix, addrLen int) []nftables.SetElement {
-	if len(prefixes) == 0 {
-		return nil
-	}
+func rangesToSetElements(ranges []netipx.IPRange) []nftables.SetElement {
+	elements := make([]nftables.SetElement, 0, len(ranges)*2)
 
-	sorted := make([]netip.Prefix, len(prefixes))
-	copy(sorted, prefixes)
-	sort.Slice(sorted, func(i, j int) bool {
-		ai, aj := sorted[i].Addr(), sorted[j].Addr()
-		if c := ai.Compare(aj); c != 0 {
-			return c < 0
-		}
-		return sorted[i].Bits() < sorted[j].Bits()
-	})
-
-	var elements []nftables.SetElement
-	for _, p := range sorted {
-		p = p.Masked()
-		startBytes := p.Addr().As16()
-
-		endAddr := prefixEnd(p)
-		endBytes := endAddr.As16()
-
-		var start, end []byte
-		if addrLen == 4 {
-			start = startBytes[12:16]
-			end = endBytes[12:16]
-		} else {
-			start = startBytes[:]
-			end = endBytes[:]
-		}
+	for _, r := range ranges {
+		fromBin, _ := r.From().MarshalBinary()    //nolint:errcheck // doesn't fail
+		toBin, _ := r.To().Next().MarshalBinary() //nolint:errcheck // doesn't fail
 
 		elements = append(elements,
-			nftables.SetElement{Key: start, IntervalEnd: false},
-			nftables.SetElement{Key: end, IntervalEnd: true},
+			nftables.SetElement{
+				Key:         fromBin,
+				IntervalEnd: false,
+			},
+			nftables.SetElement{
+				Key:         toBin,
+				IntervalEnd: true,
+			},
 		)
 	}
 
 	return elements
-}
-
-func prefixEnd(p netip.Prefix) netip.Addr {
-	addr := p.Addr()
-	bits := p.Bits()
-
-	totalBits := 128
-	if addr.Is4() {
-		totalBits = 32
-	}
-
-	if bits == totalBits {
-		return incrementAddr(addr)
-	}
-
-	if addr.Is4() {
-		ip4 := addr.As4()
-		for i := bits; i < 32; i++ {
-			ip4[i/8] |= 1 << (7 - i%8)
-		}
-		return incrementAddr(netip.AddrFrom4(ip4))
-	}
-
-	b := addr.As16()
-	for i := bits; i < 128; i++ {
-		b[i/8] |= 1 << (7 - i%8)
-	}
-	return incrementAddr(netip.AddrFrom16(b))
-}
-
-func incrementAddr(addr netip.Addr) netip.Addr {
-	b := addr.As16()
-	for i := len(b) - 1; i >= 0; i-- {
-		b[i]++
-		if b[i] != 0 {
-			break
-		}
-	}
-	if addr.Is4() {
-		return netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]})
-	}
-	return netip.AddrFrom16(b)
 }
 
 func skipWGMarkExprs() []expr.Any {
