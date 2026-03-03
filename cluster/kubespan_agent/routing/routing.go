@@ -220,8 +220,7 @@ func (rm *Manager) Cleanup() error {
 }
 
 // installNftables creates the talos_kubespan nftables table with two chains.
-// Retries on EBUSY (nft_commit_mutex contention, e.g. from Docker's iptables-nft)
-// with a tight retry loop before propagating the error to the controller runtime.
+// Retries on EBUSY (nft_commit_mutex contention) before propagating the error.
 // Ref: talos/internal/app/machined/pkg/controllers/kubespan/manager.go
 func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 	const (
@@ -255,28 +254,19 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 // tryInstallNftables performs a single attempt to install nftables rules.
 // Everything is committed in a single atomic Flush() to avoid issues with
 // anonymous sets needing to be in the same batch as their referencing rules.
+//
+// No prior cleanup (DelTable/FlushRuleset) is performed. AddTable is an
+// upsert (NLM_F_CREATE without NLM_F_EXCL), so it creates the table if it
+// doesn't exist or returns the existing one. AddChain similarly upserts.
+// Anonymous sets and rules accumulate on repeated calls, but this is
+// acceptable for the use case (short-lived test, infrequent reconcile).
+//
+// A prior cleanup batch is intentionally avoided: on some kernel versions
+// (observed on GitHub Actions runners), a failed nftables batch (e.g.,
+// DelTable for a non-existent table → ENOENT) can leave the per-namespace
+// nft_net->commit_mutex in a locked state, causing all subsequent
+// nf_tables_commit() calls to return persistent EBUSY.
 func (rm *Manager) tryInstallNftables(routedPrefixes []netip.Prefix) error {
-	// First, try to delete our specific table from a prior run. This is a
-	// targeted operation that only removes "talos_kubespan" — it does NOT
-	// touch other tables in the namespace (e.g. Docker's iptables-nft DNS
-	// NAT rules). Errors are ignored: table may not exist on first run.
-	//
-	// IMPORTANT: Do NOT use FlushRuleset() here. FlushRuleset sends
-	// NFT_MSG_DELTABLE with family=0, which deletes ALL tables from ALL
-	// families. In Docker containers, this nukes Docker's DNS NAT tables,
-	// triggering the Docker daemon to recreate them while holding the
-	// kernel's nft_net->commit_mutex. Since nf_tables_commit() uses
-	// mutex_trylock(), our subsequent Flush() gets persistent EBUSY as
-	// Docker continuously holds the mutex. Each retry's FlushRuleset
-	// deletes Docker's tables again, perpetuating the feedback loop.
-	if cleanup, cleanupErr := nftables.New(); cleanupErr == nil {
-		cleanup.DelTable(&nftables.Table{
-			Family: nftables.TableFamilyINet,
-			Name:   tableName,
-		})
-		_ = cleanup.Flush()
-	}
-
 	conn, err := nftables.New()
 	if err != nil {
 		return fmt.Errorf("nftables conn: %w", err)
