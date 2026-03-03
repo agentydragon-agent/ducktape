@@ -20,7 +20,7 @@ import asyncio
 import copy
 import logging
 from collections import defaultdict
-from collections.abc import AsyncGenerator, Coroutine
+from collections.abc import AsyncGenerator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -36,7 +36,6 @@ from mcp import types as mcp_types
 from mcp.server.session import ServerSession
 from pydantic.networks import AnyUrl
 
-from approval_gate.mcp_auth import AGENT_SCOPE, OPERATOR_SCOPE, READER_SCOPE
 from approval_gate.models import (
     Action,
     ActionKey,
@@ -66,6 +65,10 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.urls import parse_any_url
 
 logger = logging.getLogger(__name__)
+
+PROPOSE_SCOPE = "propose"
+DECIDE_SCOPE = "decide"
+READ_SCOPE = "read"
 
 _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
@@ -102,7 +105,7 @@ class ApprovalGateServer(EnhancedFastMCP):
     def __init__(
         self,
         *,
-        backends: dict[MCPMountPrefix, MCPServerTypes | FastMCP],
+        backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP],
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
@@ -207,22 +210,22 @@ class ApprovalGateServer(EnhancedFastMCP):
     def _register_tools(self) -> None:
         """Register operator and agent MCP tools."""
 
-        @self.tool(auth=require_scopes(READER_SCOPE))
+        @self.tool(auth=require_scopes(READ_SCOPE))
         async def list_actions(status: ActionStatus | None = None, limit: int = 100, offset: int = 0) -> list[Action]:
             """List queued/processed actions, optionally filtered by status."""
             return await self._req_storage.list_actions(status, limit=limit, offset=offset)
 
-        @self.tool(auth=require_scopes(OPERATOR_SCOPE))
+        @self.tool(auth=require_scopes(DECIDE_SCOPE))
         async def approve_action(key: ActionKey) -> Action:
             """Approve a pending action, executing it against the backend."""
             return await self.decide(key, ApproveDecision())
 
-        @self.tool(auth=require_scopes(OPERATOR_SCOPE))
+        @self.tool(auth=require_scopes(DECIDE_SCOPE))
         async def reject_action(key: ActionKey, reason: str | None = None) -> Action:
             """Reject a pending action without executing it."""
             return await self.decide(key, DenyDecision(reason=reason))
 
-        @self.tool(auth=require_scopes(AGENT_SCOPE))
+        @self.tool(auth=require_scopes(PROPOSE_SCOPE))
         async def withdraw_action(key: ActionKey) -> Action:
             """Withdraw a pending action before it is decided by an operator."""
             return await self.withdraw(key)
@@ -264,7 +267,7 @@ class ApprovalGateServer(EnhancedFastMCP):
             name=prefixed_name,
             description=description,
             parameters=wrapped_schema,
-            auth=require_scopes(AGENT_SCOPE),
+            auth=require_scopes(PROPOSE_SCOPE),
         )
         FastMCP.add_tool(self, tool)
 

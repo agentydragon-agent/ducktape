@@ -1,16 +1,37 @@
-"""pytest configuration for approval_gate tests."""
+"""pytest configuration and shared test infrastructure for approval_gate tests."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+import asyncio
+import threading
+import time
+from collections.abc import AsyncGenerator, Callable, Mapping
+from contextlib import asynccontextmanager
 from pathlib import Path
 
+import anyio
 import pytest
+import uvicorn
+from fastmcp import FastMCP
 from fastmcp.client import Client
+from fastmcp.client.messages import MessageHandler
+from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer
+from fastmcp.server.auth.providers.jwt import JWTVerifier, RSAKeyPair
+from mcp import types as mcp_types
+from pydantic import AnyUrl
+from starlette.applications import Starlette
+from starlette.routing import Mount
 
-from approval_gate.models import Action, ActionKey
+from approval_gate.models import Action, ActionKey, ActionStatus
+from approval_gate.predicates import NeedsHumanDecision, PredicateFn
+from approval_gate.proxy_server import DECIDE_SCOPE, PROPOSE_SCOPE, READ_SCOPE, ApprovalGateServer
 from approval_gate.storage import ActionStorage
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.resource_utils import read_text_json_typed
 from mcp_utils.resources import parse_tool_result_as
+from util.net import pick_free_port
+
+TEST_NS = MCPMountPrefix("test")
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -25,8 +46,51 @@ def pytest_configure(config: pytest.Config) -> None:
     config._inicache["asyncio_default_fixture_loop_scope"] = "function"
 
 
-class GateClient(Client):
-    """MCP Client subclass with typed methods for approval gate tools."""
+# ── Shared helpers ────────────────────────────────────────────────────────────
+
+
+@asynccontextmanager
+async def serve_app(app: Starlette, *, port: int):
+    """Start a uvicorn server in a dedicated thread; yield when ready; shut down on exit."""
+    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 10.0
+    while not server.started:
+        if not thread.is_alive():
+            raise RuntimeError("uvicorn thread exited before starting")
+        if time.monotonic() > deadline:
+            server.should_exit = True
+            thread.join(timeout=3.0)
+            raise TimeoutError(f"server did not start on port {port}")
+        await asyncio.sleep(0.02)
+    try:
+        yield
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5.0)
+        if thread.is_alive():
+            server.force_exit = True
+            thread.join(timeout=3.0)
+
+
+class GateClient(Client, MessageHandler):
+    """MCP Client subclass with typed methods for approval gate tools.
+
+    Also acts as its own MessageHandler to receive resource-updated notifications
+    for ``wait_for``.
+    """
+
+    def __init__(self, transport: object, **kwargs: object) -> None:
+        self._events: dict[str, anyio.Event] = {}
+        super().__init__(transport, message_handler=self, **kwargs)
+
+    async def on_resource_updated(self, notification: mcp_types.ResourceUpdatedNotification) -> None:
+        uri = str(notification.params.uri)
+        evt = self._events.get(uri)
+        if evt is not None:
+            evt.set()
 
     async def call_gate_tool(self, tool_name: str, args: dict[str, object]) -> ActionKey:
         """Call a gate-wrapped tool and parse the ActionKey from the result."""
@@ -45,6 +109,56 @@ class GateClient(Client):
             await self.call_tool_mcp("reject_action", {"key": key.model_dump(), "reason": reason}), Action
         )
 
+    async def wait_for(self, key: ActionKey, status: ActionStatus) -> Action:
+        """Wait until the action reaches ``status`` via resource-updated notifications."""
+        action_uri = f"resource://sessions/{key.session_key}/actions/{key.action_seq}"
+        hwm_uri = f"resource://sessions/{key.session_key}/log_hwm"
+        await self.session.subscribe_resource(AnyUrl(action_uri))
+        await self.session.subscribe_resource(AnyUrl(hwm_uri))
+        while True:
+            event = anyio.Event()
+            self._events[hwm_uri] = event
+            self._events[action_uri] = event
+            action: Action = await read_text_json_typed(self, action_uri, Action)
+            if action.state.status == status:
+                self._events.pop(hwm_uri, None)
+                self._events.pop(action_uri, None)
+                return action
+            await event.wait()
+
+
+def agent_transport(base_url: str, agent_jwt: str):
+    """Create an agent-scoped MCP client transport with Bearer auth."""
+    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {agent_jwt}"}).to_transport()
+
+
+def operator_transport(base_url: str, operator_jwt: str):
+    """Create an operator-scoped MCP client transport with Bearer auth."""
+    return RemoteMCPServer(url=f"{base_url}/mcp", headers={"Authorization": f"Bearer {operator_jwt}"}).to_transport()
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def free_port() -> int:
+    return pick_free_port()
+
+
+@pytest.fixture
+def rsa_key_pair():
+    return RSAKeyPair.generate()
+
+
+@pytest.fixture
+def agent_jwt(rsa_key_pair):
+    return rsa_key_pair.create_token(subject="agent", scopes=[PROPOSE_SCOPE, READ_SCOPE])
+
+
+@pytest.fixture
+def operator_jwt(rsa_key_pair):
+    return rsa_key_pair.create_token(subject="operator", scopes=[DECIDE_SCOPE, READ_SCOPE])
+
 
 @pytest.fixture
 async def storage(tmp_path: Path) -> AsyncGenerator[ActionStorage]:
@@ -54,3 +168,46 @@ async def storage(tmp_path: Path) -> AsyncGenerator[ActionStorage]:
         yield store
     finally:
         await store.close()
+
+
+GateServerFactory = Callable[..., ApprovalGateServer]
+
+
+@pytest.fixture
+def make_gate_server(rsa_key_pair: RSAKeyPair, tmp_path: Path) -> GateServerFactory:
+    """Fixture factory: creates a JWTVerifier-protected ApprovalGateServer.
+
+    ``predicate`` defaults to NeedsHumanDecision for all tools.
+    """
+
+    def _factory(
+        backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], *, predicate: PredicateFn | None = None
+    ) -> ApprovalGateServer:
+        return ApprovalGateServer(
+            backends=dict(backends),
+            db_path=tmp_path / "gate.db",
+            predicate=predicate or (lambda ns, tool, args: NeedsHumanDecision()),
+            public_base_url="http://test",
+            auth=JWTVerifier(public_key=rsa_key_pair.public_key),
+        )
+
+    return _factory
+
+
+def gate_http_app(gate: ApprovalGateServer) -> Starlette:
+    """Wrap an ApprovalGateServer in a Starlette app with /mcp mount."""
+    mcp_app = gate.http_app(path="/")
+    return Starlette(routes=[Mount("/mcp", app=mcp_app)], lifespan=mcp_app.lifespan)
+
+
+GateAppFactory = Callable[..., Starlette]
+
+
+@pytest.fixture
+def make_gate_app(make_gate_server: GateServerFactory) -> GateAppFactory:
+    """Convenience fixture: creates a gate server and wraps it in a Starlette app."""
+
+    def _factory(backends: Mapping[MCPMountPrefix, MCPServerTypes | FastMCP], **kwargs: object) -> Starlette:
+        return gate_http_app(make_gate_server(backends, **kwargs))
+
+    return _factory
