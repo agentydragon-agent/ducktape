@@ -148,27 +148,8 @@ func TestKubeSpanDiscovery(t *testing.T) {
 // TestKubeSpanNetworking runs two kubespand instances in full mode and verifies
 // ICMPv6 connectivity through the WireGuard tunnel.
 //
-// SKIPPED IN CI: nftables batches containing mark expressions (meta mark
-// read/write + bitwise mask) return EBUSY deterministically on GHA runners
-// (Azure VMs, kernel 6.x). Graduated smoke tests (TestNftablesSmoke) isolate
-// the trigger:
-//
-//   - Levels 1-2 PASS: table + chains with hooks, anonymous interval sets,
-//     lookup rules — all succeed on both --network=none and default bridge.
-//   - Level 3 FAILS: adding rules with Meta{Key:MetaKeyMARK} + Bitwise
-//     expressions triggers EBUSY. Fails on BOTH network modes, including
-//     --network=none with 0 existing tables/chains.
-//   - Levels 4-6 FAIL: all build on level 3's mark expressions.
-//
-// Docker's bridge networking is NOT the cause — the failure reproduces in
-// clean network namespaces with no Docker nftables state. The issue appears
-// specific to mark-related nftables expressions on these CI kernels.
-//
-// Talos upstream only tests KubeSpan with QEMU VMs, never Docker. See:
-//   - kubernetes/kubernetes#122604, #128829 (kube-proxy nftables EBUSY)
-//   - containers/podman#23404 (netavark nftables EBUSY)
-//   - siderolabs/talos#9426, #8498 (KubeSpan nftables EBUSY)
-//
+// SKIPPED IN CI: nftables mark expressions get deterministic EBUSY on GHA
+// runners. See NFTABLES_EBUSY.md for investigation details.
 // Set KUBESPAN_TEST_NETWORKING=1 to run (requires VM or non-Docker runtime).
 func TestKubeSpanNetworking(t *testing.T) {
 	if testing.Short() {

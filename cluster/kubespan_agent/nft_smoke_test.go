@@ -9,26 +9,9 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 )
 
-// TestNftablesSmoke runs graduated nftables smoke tests inside Docker containers
-// to isolate which specific nftables operation triggers EBUSY on GHA runners.
-//
-// Each level adds one feature kubespand uses:
-//
-//	1: table + chains with hooks (separate batches)
-//	2: + anonymous interval set + lookup rule
-//	3: + multiple rules with mark read/write expressions
-//	4: all of level 3 in a single New()+Flush() batch
-//	5: single batch with FlushChain (re-install over existing state)
-//	6: full kubespand pattern (dual-stack sets, mark, MSS clamp, FlushChain)
-//
-// Each level runs on two network modes:
-//   - network-none: clean netns, no Docker-managed iptables/nftables
-//   - default-bridge: Docker adds iptables-nft rules (nat table) to netns
-//
-// Results (GHA kernel 6.x): levels 1-2 pass on both modes, level 3+ fails on
-// BOTH modes. The trigger is mark expressions (Meta{Key:MetaKeyMARK} + Bitwise),
-// not Docker's bridge networking — --network=none with 0 existing tables still
-// gets EBUSY.
+// TestNftablesSmoke runs graduated nftables smoke tests (levels 1-6) inside
+// Docker containers to isolate which nftables operation triggers EBUSY.
+// See NFTABLES_EBUSY.md for results and analysis.
 func TestNftablesSmoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
