@@ -259,26 +259,156 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 }
 
 // logNftablesDiag logs diagnostic info about the current nftables state.
+// Uses graduated canaries to isolate exactly which nftables operation triggers EBUSY.
 func (rm *Manager) logNftablesDiag() {
-	conn, err := nftables.New()
+	// List existing tables.
+	listConn, err := nftables.New()
 	if err != nil {
 		rm.logger.Warn("nftables diag: cannot create conn", zap.Error(err))
 		return
 	}
-
-	// Try a simple canary: just AddTable + Flush (no sets, no chains).
-	canary := &nftables.Table{Family: nftables.TableFamilyINet, Name: "__nft_diag_canary"}
-	conn.AddTable(canary)
-	if err := conn.Flush(); err != nil {
-		rm.logger.Warn("nftables diag: simple canary FAILED (AddTable+Flush)", zap.Error(err))
+	tables, err := listConn.ListTables()
+	if err != nil {
+		rm.logger.Warn("nftables diag: ListTables failed", zap.Error(err))
 	} else {
-		rm.logger.Info("nftables diag: simple canary OK")
-		// Clean up the canary table.
-		cleanConn, _ := nftables.New()
-		if cleanConn != nil {
-			cleanConn.DelTable(canary)
-			_ = cleanConn.Flush()
+		for _, t := range tables {
+			rm.logger.Info("nftables diag: existing table", zap.String("name", t.Name), zap.Uint8("family", uint8(t.Family)))
 		}
+		if len(tables) == 0 {
+			rm.logger.Info("nftables diag: no existing tables")
+		}
+	}
+
+	canaryTable := &nftables.Table{Family: nftables.TableFamilyINet, Name: "__nft_diag_canary"}
+
+	// Level 1: AddTable only.
+	rm.tryCanary("L1_table", func(c *nftables.Conn) {
+		c.AddTable(canaryTable)
+	})
+
+	// Level 2: AddTable + AddChain.
+	rm.tryCanary("L2_table_chain", func(c *nftables.Conn) {
+		t := c.AddTable(canaryTable)
+		c.AddChain(&nftables.Chain{
+			Name:     "__diag_chain",
+			Table:    t,
+			Type:     nftables.ChainTypeFilter,
+			Hooknum:  nftables.ChainHookPrerouting,
+			Priority: nftables.ChainPriorityRaw,
+		})
+	})
+
+	// Level 3: AddTable + AddChain + anonymous interval set (empty).
+	rm.tryCanary("L3_table_chain_emptyset", func(c *nftables.Conn) {
+		t := c.AddTable(canaryTable)
+		c.AddChain(&nftables.Chain{
+			Name:     "__diag_chain",
+			Table:    t,
+			Type:     nftables.ChainTypeFilter,
+			Hooknum:  nftables.ChainHookPrerouting,
+			Priority: nftables.ChainPriorityRaw,
+		})
+		_ = c.AddSet(&nftables.Set{
+			Table:     t,
+			Anonymous: true,
+			Constant:  true,
+			Interval:  true,
+			KeyType:   nftables.TypeIPAddr,
+		}, nil)
+	})
+
+	// Level 4: AddTable + AddChain + anonymous interval set with elements.
+	rm.tryCanary("L4_table_chain_set_elems", func(c *nftables.Conn) {
+		t := c.AddTable(canaryTable)
+		c.AddChain(&nftables.Chain{
+			Name:     "__diag_chain",
+			Table:    t,
+			Type:     nftables.ChainTypeFilter,
+			Hooknum:  nftables.ChainHookPrerouting,
+			Priority: nftables.ChainPriorityRaw,
+		})
+		_ = c.AddSet(&nftables.Set{
+			Table:     t,
+			Anonymous: true,
+			Constant:  true,
+			Interval:  true,
+			KeyType:   nftables.TypeIPAddr,
+		}, []nftables.SetElement{
+			{Key: []byte{10, 0, 0, 0}, IntervalEnd: false},
+			{Key: []byte{10, 255, 255, 255}, IntervalEnd: true},
+		})
+	})
+
+	// Level 5: Full batch — table + 2 chains + anonymous sets + rules (like real install).
+	rm.tryCanary("L5_full_batch", func(c *nftables.Conn) {
+		t := c.AddTable(canaryTable)
+		policy := nftables.ChainPolicyAccept
+		chain := c.AddChain(&nftables.Chain{
+			Name:     "__diag_chain",
+			Table:    t,
+			Type:     nftables.ChainTypeFilter,
+			Hooknum:  nftables.ChainHookPrerouting,
+			Priority: nftables.ChainPriorityRaw,
+			Policy:   &policy,
+		})
+		set := &nftables.Set{
+			Table:     t,
+			Anonymous: true,
+			Constant:  true,
+			Interval:  true,
+			KeyType:   nftables.TypeIPAddr,
+		}
+		_ = c.AddSet(set, []nftables.SetElement{
+			{Key: []byte{10, 0, 0, 0}, IntervalEnd: false},
+			{Key: []byte{10, 255, 255, 255}, IntervalEnd: true},
+		})
+		c.AddRule(&nftables.Rule{
+			Table: t,
+			Chain: chain,
+			Exprs: []expr.Any{
+				&expr.Meta{Key: expr.MetaKeyNFPROTO, Register: 1},
+				&expr.Cmp{
+					Op:       expr.CmpOpEq,
+					Register: 1,
+					Data:     []byte{unix.NFPROTO_IPV4},
+				},
+				&expr.Payload{
+					DestRegister: 1,
+					Base:         expr.PayloadBaseNetworkHeader,
+					Offset:       16,
+					Len:          4,
+				},
+				&expr.Lookup{
+					SourceRegister: 1,
+					SetName:        set.Name,
+					SetID:          set.ID,
+				},
+				&expr.Verdict{Kind: expr.VerdictAccept},
+			},
+		})
+	})
+
+	// Clean up any canary leftovers.
+	cleanConn, _ := nftables.New()
+	if cleanConn != nil {
+		cleanConn.DelTable(canaryTable)
+		_ = cleanConn.Flush()
+	}
+}
+
+// tryCanary runs a single graduated canary test and logs the result.
+func (rm *Manager) tryCanary(name string, build func(c *nftables.Conn)) {
+	conn, err := nftables.New()
+	if err != nil {
+		rm.logger.Warn("nftables diag: canary conn failed", zap.String("canary", name), zap.Error(err))
+		return
+	}
+	build(conn)
+	if err := conn.Flush(); err != nil {
+		rm.logger.Warn("nftables diag: canary FAILED", zap.String("canary", name), zap.Error(err),
+			zap.Bool("is_ebusy", errors.Is(err, syscall.EBUSY)))
+	} else {
+		rm.logger.Info("nftables diag: canary OK", zap.String("canary", name))
 	}
 }
 

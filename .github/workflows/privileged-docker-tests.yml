@@ -66,6 +66,25 @@ jobs:
           echo "module nft_* +p" | sudo tee /sys/kernel/debug/dynamic_debug/control 2>/dev/null || echo "nft_* debug not available"
           # Allow nf_log in all network namespaces (for containers)
           echo 1 | sudo tee /proc/sys/net/netfilter/nf_log_all_netns 2>/dev/null || echo "nf_log_all_netns not available"
+
+          # Enable ftrace function tracing for nftables commit path
+          TRACEFS=/sys/kernel/debug/tracing
+          if [[ -d "$TRACEFS" ]]; then
+            echo "Enabling ftrace for nf_tables_commit and nfnetlink_rcv_batch..."
+            # Use function_graph tracer to see call chains
+            echo nop | sudo tee $TRACEFS/current_tracer
+            # Set up kprobes for nf_tables_commit return value
+            sudo sh -c "echo 'r:nft_commit_ret nf_tables_commit \$retval' >> $TRACEFS/kprobe_events" 2>/dev/null || echo "kprobe for nf_tables_commit failed"
+            sudo sh -c "echo 'r:nfnl_batch_ret nfnetlink_rcv_batch \$retval' >> $TRACEFS/kprobe_events" 2>/dev/null || echo "kprobe for nfnetlink_rcv_batch failed"
+            # Enable the kprobes
+            echo 1 | sudo tee $TRACEFS/events/kprobes/enable 2>/dev/null || echo "kprobe enable failed"
+            echo 1 | sudo tee $TRACEFS/tracing_on 2>/dev/null || echo "tracing_on failed"
+            echo "ftrace kprobes enabled"
+            cat $TRACEFS/kprobe_events 2>/dev/null || true
+          else
+            echo "tracefs not available at $TRACEFS"
+          fi
+
           # Show current nftables state on host
           sudo nft list ruleset 2>/dev/null | head -50 || echo "nft not available on host"
           # Clear dmesg to get clean baseline
@@ -135,9 +154,22 @@ jobs:
             --test_timeout=300 \
             $TARGET_ARG
 
-      - name: Dump dmesg (nftables debug)
+      - name: Dump kernel debug info (nftables)
         if: always()
         run: |
+          echo "=== ftrace kprobe events (nf_tables_commit / nfnetlink_rcv_batch return values) ==="
+          TRACEFS=/sys/kernel/debug/tracing
+          if [[ -d "$TRACEFS" ]]; then
+            # Stop tracing and dump results
+            echo 0 | sudo tee $TRACEFS/tracing_on 2>/dev/null || true
+            sudo cat $TRACEFS/trace 2>/dev/null | grep -E "nft_commit_ret|nfnl_batch_ret" | tail -500 || echo "(no kprobe events captured)"
+            echo ""
+            echo "=== full ftrace trace (last 200 lines) ==="
+            sudo cat $TRACEFS/trace 2>/dev/null | tail -200 || echo "(no trace data)"
+          else
+            echo "(tracefs not available)"
+          fi
+          echo ""
           echo "=== dmesg (nf_tables related) ==="
           sudo dmesg | grep -iE "nf_tables|nft|netfilter|EBUSY|commit_mutex" | tail -200 || true
           echo ""

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -563,23 +564,50 @@ func dumpAllContainerLogs(t *testing.T, client *docker.Client, containers map[st
 
 // dumpContainerDiagnostics captures nftables, iptables, and kernel state
 // inside a container for debugging EBUSY issues.
+// Uses nsenter for commands available on the host but not in the container
+// (nft, ip, iptables-nft), and docker exec for commands in the container.
 func dumpContainerDiagnostics(t *testing.T, ctx context.Context, client *docker.Client, name, containerID string) {
 	t.Helper()
 
-	cmds := [][]string{
-		{"nft", "list", "ruleset"},
-		{"iptables-nft", "-L", "-n", "-v", "-t", "nat"},
-		{"ip", "rule", "show"},
-		{"ip", "route", "show", "table", "all"},
-		{"cat", "/proc/net/nf_conntrack_count"},
-		{"ls", "-la", "/proc/sys/net/netfilter/"},
-		{"dmesg", "--level=err,warn,info"},
+	// Get container PID for nsenter.
+	info, err := client.InspectContainerWithContext(containerID, ctx)
+	if err != nil {
+		t.Logf("[diag] %s: inspect failed: %v", name, err)
+		return
+	}
+	pid := info.State.Pid
+	if pid == 0 {
+		t.Logf("[diag] %s: container not running (pid=0), skipping nsenter diag", name)
+		return
 	}
 
-	for _, cmd := range cmds {
+	// nsenter-based commands: enter the container's network namespace
+	// and run host-side tools (nft, ip, iptables-nft) against it.
+	nsenterCmds := [][]string{
+		{"nft", "list", "ruleset"},
+		{"ip", "rule", "show"},
+		{"ip", "route", "show", "table", "all"},
+		{"ip", "link", "show"},
+		{"iptables-nft", "-L", "-n", "-v", "-t", "nat"},
+	}
+	for _, cmd := range nsenterCmds {
+		args := append([]string{"-t", fmt.Sprintf("%d", pid), "-n"}, cmd...)
+		out, err := exec.CommandContext(ctx, "nsenter", args...).CombinedOutput()
+		if err != nil {
+			t.Logf("[diag] %s nsenter %v: err=%v output=%s", name, cmd, err, string(out))
+		} else {
+			t.Logf("[diag] %s nsenter %v:\n%s", name, cmd, string(out))
+		}
+	}
+
+	// docker-exec-based commands: run inside the container.
+	execCmds := [][]string{
+		{"ls", "-la", "/proc/sys/net/netfilter/"},
+	}
+	for _, cmd := range execCmds {
 		_, out := dockerExec(t, ctx, client, containerID, cmd)
 		if out != "" {
-			t.Logf("[diag] %s %v:\n%s", name, cmd, out)
+			t.Logf("[diag] %s exec %v:\n%s", name, cmd, out)
 		}
 	}
 }
