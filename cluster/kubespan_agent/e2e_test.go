@@ -148,28 +148,23 @@ func TestKubeSpanDiscovery(t *testing.T) {
 // TestKubeSpanNetworking runs two kubespand instances in full mode and verifies
 // ICMPv6 connectivity through the WireGuard tunnel.
 //
-// SKIPPED IN CI: kubespand gets deterministic nftables EBUSY in Docker
-// containers with bridge networking. Observed on GHA Azure kernel 6.x:
+// SKIPPED IN CI: nftables batches containing mark expressions (meta mark
+// read/write + bitwise mask) return EBUSY deterministically on GHA runners
+// (Azure VMs, kernel 6.x). Graduated smoke tests (TestNftablesSmoke) isolate
+// the trigger:
 //
-//   - TestNftablesSmoke passes on both --network=none and default bridge:
-//     basic nftables ops (create table, add chains with hooks, flush, delete)
-//     work fine. The kernel nftables subsystem is functional.
-//   - kubespand's full nftables batch (table + chains + anonymous interval
-//     sets + rules) fails with EBUSY deterministically on bridge networks,
-//     persisting through 30+ seconds of retries.
-//   - Docker's bridge networking injects iptables-nft state (nat table,
-//     family 2) into each container's netns.
-//   - Flushing Docker's nat table doesn't help — EBUSY returns within ~1s.
-//   - --network=none avoids the issue but Docker prohibits connecting such
-//     containers to any network afterward.
+//   - Levels 1-2 PASS: table + chains with hooks, anonymous interval sets,
+//     lookup rules — all succeed on both --network=none and default bridge.
+//   - Level 3 FAILS: adding rules with Meta{Key:MetaKeyMARK} + Bitwise
+//     expressions triggers EBUSY. Fails on BOTH network modes, including
+//     --network=none with 0 existing tables/chains.
+//   - Levels 4-6 FAIL: all build on level 3's mark expressions.
 //
-// The exact mechanism is not fully understood. Simple mutex contention from
-// Docker occasionally updating the nat table would be intermittent, not
-// deterministic. The interaction between Docker's iptables-nft state and
-// kubespand's nftables batch may be a state conflict rather than a race.
+// Docker's bridge networking is NOT the cause — the failure reproduces in
+// clean network namespaces with no Docker nftables state. The issue appears
+// specific to mark-related nftables expressions on these CI kernels.
 //
-// This matches Talos upstream: KubeSpan is only tested with QEMU VMs. See:
-//   - siderolabs/talos CI: all KubeSpan tests use e2e-qemu
+// Talos upstream only tests KubeSpan with QEMU VMs, never Docker. See:
 //   - kubernetes/kubernetes#122604, #128829 (kube-proxy nftables EBUSY)
 //   - containers/podman#23404 (netavark nftables EBUSY)
 //   - siderolabs/talos#9426, #8498 (KubeSpan nftables EBUSY)
