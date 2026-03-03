@@ -71,7 +71,17 @@ func (ctrl *ManagerController) Outputs() []controller.Output {
 func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, logger *zap.Logger) error {
 	ctrl.ticker = time.NewTicker(PeerReconcileInterval)
 	defer ctrl.ticker.Stop()
-	defer ctrl.cleanup(logger)
+
+	// Only clean up on permanent shutdown (context cancellation), not on
+	// transient reconcile errors. COSI restarts the controller after errors,
+	// and the existing WireGuard interface + nftables state should be reused.
+	// Cleaning up on every restart triggers nf_tables_commit_release() which
+	// holds the kernel's commit_mutex, causing EBUSY on the next install.
+	defer func() {
+		if ctx.Err() != nil {
+			ctrl.cleanup(logger)
+		}
+	}()
 
 	go func() {
 		for {

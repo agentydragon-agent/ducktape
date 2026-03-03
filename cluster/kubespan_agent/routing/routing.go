@@ -243,6 +243,16 @@ func (rm *Manager) installNftables(routedPrefixes []netip.Prefix) error {
 		rm.logNftablesDiag()
 	}
 
+	// Skip nftables entirely when there are no prefixes to route.
+	// Without prefixes, the mark rules have nothing to match, so the table
+	// is unnecessary. More importantly, this avoids a kernel nftables Flush
+	// (commit) whose deferred commit_release holds the commit_mutex, causing
+	// EBUSY on the next Flush that installs the actual routed prefixes.
+	if len(routedPrefixes) == 0 {
+		rm.logger.Debug("nftables skipped (no routed prefixes)")
+		return nil
+	}
+
 	deadline := time.Now().Add(maxTimeout)
 	delay := baseDelay
 
