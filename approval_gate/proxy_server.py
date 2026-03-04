@@ -94,6 +94,13 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
                 "type": "string",
                 "description": "Session key for result notifications. Injected by plugin.",
             },
+            "approval_timeout_seconds": {
+                "type": "number",
+                "description": (
+                    "Seconds to wait for action resolution before returning. "
+                    "Overrides server default. Omit to use server default."
+                ),
+            },
         },
         "required": ["input", "justification", "session_key"],
     }
@@ -109,6 +116,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
+        approval_timeout_seconds: float | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -119,9 +127,11 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._storage: ActionStorage | None = None
         self._predicate = predicate
         self._public_base_url = public_base_url
+        self._approval_timeout_seconds = approval_timeout_seconds
         self._backend_clients: dict[MCPMountPrefix, Client] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
+        self._action_resolved_events: dict[ActionKey, asyncio.Event] = {}
 
     # ── Lifespan ──────────────────────────────────────────────────────────────
 
@@ -251,7 +261,8 @@ class ApprovalGateServer(EnhancedFastMCP):
             justification: str,
             session_key: str,
             input: dict[str, object] = {},  # noqa: B006
-        ) -> ActionKey:
+            approval_timeout_seconds: float | None = None,
+        ) -> Action:
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
             action = await self._req_storage.create_action(
                 session_key=session_key, call=call, justification=justification
@@ -259,8 +270,36 @@ class ApprovalGateServer(EnhancedFastMCP):
             key = action.key
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
+
+            effective_timeout = (
+                approval_timeout_seconds if approval_timeout_seconds is not None else self._approval_timeout_seconds
+            )
+
+            if effective_timeout is not None and effective_timeout > 0:
+                event = asyncio.Event()
+                self._action_resolved_events[key] = event
+            else:
+                event = None
+
             self._spawn(self._apply_predicate(key, namespace, tool_name, input))
-            return key
+
+            if event is not None:
+                with anyio.move_on_after(effective_timeout):
+                    while True:
+                        await event.wait()
+                        current = await self._req_storage.get_action(key)
+                        if current is not None and isinstance(
+                            current.state, (DoneState, RejectedState, WithdrawnState)
+                        ):
+                            break
+                        # Intermediate transition (e.g. PENDING → EXECUTING); reset and wait again
+                        event = asyncio.Event()
+                        self._action_resolved_events[key] = event
+                self._action_resolved_events.pop(key, None)
+
+            result = await self._req_storage.get_action(key)
+            assert result is not None
+            return result
 
         tool = FunctionTool(
             fn=_tool_handler,
@@ -360,4 +399,9 @@ class ApprovalGateServer(EnhancedFastMCP):
         action, _ = await self._req_storage.update_state_and_log(key, new_state, detail)
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
+        # Signal any waiter for this action on non-pending transitions
+        if not isinstance(new_state, PendingState):
+            event = self._action_resolved_events.get(key)
+            if event is not None:
+                event.set()
         return action

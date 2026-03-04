@@ -11,9 +11,18 @@ import anyio
 import pytest_bazel
 from fastmcp import FastMCP
 
-from approval_gate.conftest import TEST_NS, GateAppFactory, GateClient, agent_transport, operator_transport, serve_app
-from approval_gate.models import ActionStatus
-from approval_gate.predicates import Approved
+from approval_gate.conftest import (
+    TEST_NS,
+    GateAppFactory,
+    GateClient,
+    GateServerFactory,
+    agent_transport,
+    gate_http_app,
+    operator_transport,
+    serve_app,
+)
+from approval_gate.models import ActionStatus, DoneState, RejectedState
+from approval_gate.predicates import Approved, Denied
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resource_utils import read_text
 
@@ -193,6 +202,86 @@ async def test_log_hwm_increments_on_state_changes(
 
         hwm_after_done = int(await read_text(agent, f"resource://sessions/{_SESSION}/log_hwm"))
         assert hwm_after_done > hwm_after_create
+
+
+async def test_auto_approve_with_timeout_returns_done(
+    make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
+):
+    """With approval_timeout_seconds and auto-approve predicate, tool call returns done Action."""
+    backend, calls = _make_backend()
+    gate = make_gate_server(
+        {TEST_NS: backend}, predicate=lambda ns, tool, args: Approved(), approval_timeout_seconds=5.0
+    )
+    app = gate_http_app(gate)
+    base_url = f"http://127.0.0.1:{free_port}"
+
+    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        action = await agent.call_echo_full("hello", session_key=_SESSION)
+
+    assert action.state.status == ActionStatus.DONE
+    assert isinstance(action.state, DoneState)
+    assert calls == ["hello"]
+
+
+async def test_auto_deny_with_timeout_returns_rejected(
+    make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
+):
+    """With approval_timeout_seconds and auto-deny predicate, tool call returns rejected Action."""
+    backend, calls = _make_backend()
+    gate = make_gate_server(
+        {TEST_NS: backend}, predicate=lambda ns, tool, args: Denied(reason="nope"), approval_timeout_seconds=5.0
+    )
+    app = gate_http_app(gate)
+    base_url = f"http://127.0.0.1:{free_port}"
+
+    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        action = await agent.call_echo_full("deny-me", session_key=_SESSION)
+
+    assert action.state.status == ActionStatus.REJECTED
+    assert isinstance(action.state, RejectedState)
+    assert action.state.reason == "nope"
+    assert calls == []
+
+
+async def test_no_timeout_returns_pending(make_gate_app: GateAppFactory, free_port: int, agent_jwt: str):
+    """Without approval_timeout_seconds (default None), tool call returns pending Action."""
+    backend, _ = _make_backend()
+    app = make_gate_app({TEST_NS: backend})
+    base_url = f"http://127.0.0.1:{free_port}"
+
+    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        action = await agent.call_echo_full("pending", session_key=_SESSION)
+
+    assert action.state.status == ActionStatus.PENDING
+
+
+async def test_per_call_timeout_overrides_server_default(
+    make_gate_server: GateServerFactory, free_port: int, agent_jwt: str
+):
+    """Per-call approval_timeout_seconds overrides server default (None)."""
+    backend, calls = _make_backend()
+    gate = make_gate_server({TEST_NS: backend}, predicate=lambda ns, tool, args: Approved())
+    app = gate_http_app(gate)
+    base_url = f"http://127.0.0.1:{free_port}"
+
+    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        action = await agent.call_echo_full("override", session_key=_SESSION, approval_timeout_seconds=5.0)
+
+    assert action.state.status == ActionStatus.DONE
+    assert calls == ["override"]
+
+
+async def test_timeout_expires_returns_pending(make_gate_server: GateServerFactory, free_port: int, agent_jwt: str):
+    """When timeout expires before resolution, tool call returns pending/executing Action."""
+    backend, _ = _make_backend()
+    gate = make_gate_server({TEST_NS: backend}, approval_timeout_seconds=0.1)
+    app = gate_http_app(gate)
+    base_url = f"http://127.0.0.1:{free_port}"
+
+    async with serve_app(app, port=free_port), GateClient(agent_transport(base_url, agent_jwt)) as agent:
+        action = await agent.call_echo_full("slow", session_key=_SESSION)
+
+    assert action.state.status == ActionStatus.PENDING
 
 
 if __name__ == "__main__":

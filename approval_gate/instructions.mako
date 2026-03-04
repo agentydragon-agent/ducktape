@@ -13,15 +13,21 @@ exposes a tool called `run_command`, it appears here as `exec_run_command`.
 
 ## How it works
 
-When you call any tool here, the call is **queued for operator approval** and returns
-immediately with an `ActionKey` (`session_key` + `action_seq`). Your call is **not executed yet**.
+When you call any tool here, the call is **queued for operator approval**. The tool returns
+a full `Action` JSON object whose `state.status` tells you what happened:
 
-Share the approval URL `${public_base_url}/sessions/<session_key>/actions/<action_seq>`
-with the user so they can approve or reject the action.
+- `done` — action was approved and executed; result in `state.outcome`
+- `rejected` — action was denied; reason in `state.reason`
+- `pending` — still waiting for operator approval
+- `executing` — approved, backend call in flight
 
-Once the operator approves it, the call is forwarded to the correct backend server and the
-result is recorded. If the OpenClaw plugin is active, the outcome will be **injected
-into your session** automatically; otherwise, poll or subscribe to the session log HWM.
+If the action is already terminal (`done` or `rejected`), you have the result immediately.
+If it is `pending` or `executing`, the outcome will be **delivered later** via system
+notification (if the OpenClaw plugin is active) or you can poll the action resource.
+
+For `pending` actions, share the approval URL
+`${public_base_url}/sessions/<session_key>/actions/<action_seq>` with the user so they
+can approve or reject it.
 
 ## Tool schema additions
 
@@ -33,16 +39,27 @@ Every wrapped tool accepts:
   This is shown to the operator to help them decide. Be specific.
 - `session_key` (required `string`): Your session key for result notifications.
   This is injected automatically by the OpenClaw plugin — do not set it manually.
+- `approval_timeout_seconds` (optional `number`): Seconds to wait for the action to
+  resolve before returning. If the action completes within this time (via auto-approval
+  policy or fast operator decision), you get the result immediately. Omit to use the
+  server default (which may be no wait).
 
-Example call shape: `{ "input": { ...backend args... }, "justification": "...", "session_key": "..." }`
+Example call shape: `{ "input": { ...backend args... }, "justification": "...", "session_key": "...", "approval_timeout_seconds": 30 }`
 
 ## Response format
 
-Every tool call returns immediately with an `ActionKey` JSON object:
-`{ "session_key": "...", "action_seq": 1 }`
+Every tool call returns a full `Action` JSON object:
+`{ "key": { "session_key": "...", "action_seq": 1 }, "state": { "status": "..." }, ... }`
 
-Actions may be auto-decided by a server-side policy. If auto-denied, the action will
-appear as `rejected` when you read its resource — there is no separate error path.
+Check `state.status` to determine the outcome:
+- `done`: `state.outcome.content` holds the backend result; `state.outcome.isError`
+  indicates whether the backend reported an error.
+- `rejected`: `state.reason` contains the denial reason (if provided).
+- `pending`: Awaiting operator decision. The outcome will arrive via notification.
+- `executing`: Approved; backend call in flight. The outcome will arrive via notification.
+
+Actions may be auto-decided by a server-side policy. With `approval_timeout_seconds`,
+auto-decided actions resolve within the tool call itself.
 
 ## Withdrawing an action
 
@@ -52,13 +69,8 @@ operator decides it. Only works on actions in `pending` state.
 ## Checking action status
 
 Read the action resource `resource://sessions/{session_key}/actions/{action_seq}` to
-get the current state.
-
-The resource returns the full `Action` JSON including `state.status` which is one of:
-`pending`, `executing`, `done`, `rejected`, `withdrawn`.
-
-For `done` actions, `state.outcome.content` holds the backend result and
-`state.outcome.isError` indicates whether the backend reported an error.
+get the current state. This is useful for `pending` or `executing` actions where the
+tool call returned before resolution.
 
 ## Session event log
 

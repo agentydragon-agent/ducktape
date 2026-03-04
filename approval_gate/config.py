@@ -47,6 +47,12 @@ class Settings(BaseModel):
     )
     oidc_issuer: str
     oidc_client_id: str
+    approval_timeout_seconds: float | None = Field(
+        default=None,
+        description=(
+            "Default seconds to wait for action resolution before returning. None = return immediately without waiting."
+        ),
+    )
     host: str = "0.0.0.0"
     port: int = 8765
 

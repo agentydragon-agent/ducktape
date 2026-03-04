@@ -85,6 +85,19 @@ backends:
 Each backend entry supports the full `MCPServerTypes` config (URL + headers for
 streamable-http, command + args + env for stdio).
 
+### Approval timeout
+
+The `approval_timeout_seconds` config field controls how long tool calls wait for
+action resolution before returning. When set, actions that resolve within the timeout
+(via auto-approval predicate or fast operator decision) return the result directly
+in the tool call response. When `null` or omitted, tool calls return immediately with
+the current action state (typically `pending`). Callers can also override the server
+default on a per-call basis via the `approval_timeout_seconds` tool parameter.
+
+```yaml
+approval_timeout_seconds: 30 # wait up to 30s for resolution
+```
+
 ### Environment variables
 
 | Variable      | Required | Description                                                         |

@@ -169,6 +169,9 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   // ── Resilient MCP connection to approval gate server ──────────────────────
   const connection = new ApprovalGateConnection(approvalGateUrl, approvalGateToken, log);
 
+  // Actions resolved inline (within approval_timeout_seconds) — skip notifications for these
+  const inlineResolvedActions = new Set<string>();
+
   async function catchUpSession(sessionKey: string): Promise<void> {
     let newHwm: number;
     try {
@@ -195,6 +198,10 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
       if (!entry || !isTerminalLogKind(entry.detail.kind)) continue;
 
       const keyStr = `${sessionKey}/${entry.action_seq}`;
+
+      // Skip notification for actions that were resolved inline within the tool call
+      if (inlineResolvedActions.delete(keyStr)) continue;
+
       const message = formatTerminalMessage(keyStr, entry.detail);
       enqueueSystemEvent(message, { sessionKey });
       log.info(`enqueued system event for action ${keyStr}`);
@@ -269,7 +276,35 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
           }
 
           const firstContent = result.content?.[0] as { text: string };
-          const actionKey = JSON.parse(firstContent.text) as ActionKey;
+          const parsed = JSON.parse(firstContent.text) as Action | ActionKey;
+
+          // New server returns full Action; old server returns bare ActionKey
+          if ("state" in parsed) {
+            const action = parsed as Action;
+            const keyStr = `${action.key.session_key}/${action.key.action_seq}`;
+            const { status } = action.state;
+
+            if (status === "done" || status === "rejected" || status === "withdrawn") {
+              // Resolved inline — return result directly, suppress duplicate notification
+              inlineResolvedActions.add(keyStr);
+              await connection.trackSession(action.key.session_key);
+              const outcome = formatTerminalMessage(keyStr, {
+                kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
+                ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
+                ...(status === "rejected" ? { reason: (action.state as RejectedState).reason } : {}),
+              } as LogEventDetail);
+              return { content: [{ type: "text" as const, text: outcome }] };
+            }
+
+            // Still pending or executing — set up notifications for later delivery
+            await connection.trackSession(action.key.session_key);
+            return {
+              content: [{ type: "text" as const, text: `Action ${keyStr} is ${status}` }],
+            };
+          }
+
+          // Old server format: bare ActionKey — existing behavior
+          const actionKey = parsed as ActionKey;
           const keyStr = `${actionKey.session_key}/${actionKey.action_seq}`;
 
           await connection.trackSession(actionKey.session_key);
@@ -280,9 +315,6 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
             const action = JSON.parse(text) as Action;
             const { status } = action.state;
             if (status === "done" || status === "rejected" || status === "withdrawn") {
-              // TODO: The mapping from action state to log detail kind is awkward because
-              // Action.state and LogEntry.detail have overlapping but different shapes.
-              // Consider unifying the terminal state representation upstream.
               const outcome = formatTerminalMessage(keyStr, {
                 kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
                 ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
