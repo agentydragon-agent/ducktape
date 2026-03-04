@@ -8,7 +8,7 @@ import time
 from hass_client import HomeAssistantClient
 from hass_client.exceptions import AuthenticationFailed, CannotConnect, ConnectionFailed, NotConnected
 
-from homeassistant_proxy.config import Action, EntityInfo, Policy
+from homeassistant.proxy.config import Action, EntityInfo, Policy
 
 logger = logging.getLogger(__name__)
 

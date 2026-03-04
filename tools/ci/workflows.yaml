@@ -135,6 +135,6 @@ harbor_images:
     local_tag: approval-gate-exec-backend:latest
     remote_path: approval-gate/exec-backend
 
-  - bazel_target: //homeassistant_proxy:load
+  - bazel_target: //homeassistant/proxy:load
     local_tag: homeassistant-proxy:latest
     remote_path: homeassistant-proxy/homeassistant-proxy

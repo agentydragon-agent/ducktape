@@ -72,6 +72,6 @@ jobs:
       - name: Build and push homeassistant-proxy
         run: |-
           .github/scripts/harbor_push.sh \
-            //homeassistant_proxy:load \
+            //homeassistant/proxy:load \
             homeassistant-proxy:latest \
             registry.allegedly.works/homeassistant-proxy/homeassistant-proxy

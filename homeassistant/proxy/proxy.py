@@ -10,8 +10,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from homeassistant_proxy.config import Settings, TokenConfig
-from homeassistant_proxy.policy import AccessDeniedError, PolicyEnforcer
+from homeassistant.proxy.config import Settings, TokenConfig
+from homeassistant.proxy.policy import AccessDeniedError, PolicyEnforcer
 
 logger = logging.getLogger(__name__)
 

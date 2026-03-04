@@ -13,7 +13,7 @@ load("//tools/testing:defs.bzl", "py_test")
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         "@pypi//pydantic",
         "@pypi//pyyaml",
@@ -23,7 +23,7 @@ py_library(
 py_library(
     name = "policy",
     srcs = ["policy.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":config",
         "@pypi//hass_client",
@@ -33,7 +33,7 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":config",
         ":policy",
@@ -49,8 +49,8 @@ py_library(
 
 py_binary(
     name = "homeassistant_proxy",
-    imports = [".."],
-    main_module = "homeassistant_proxy.proxy",
+    imports = ["../.."],
+    main_module = "homeassistant.proxy.proxy",
     deps = [":proxy"],
 )
 
@@ -60,7 +60,7 @@ py_binary(
 
 aspect_py_binary(
     name = "homeassistant_proxy_bin",
-    imports = [".."],
+    imports = ["../.."],
     main = "proxy.py",
     deps = [":proxy"],
 )
@@ -95,13 +95,13 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = [".."],
+    imports = ["../.."],
 )
 
 py_test(
     name = "test_policy",
     srcs = ["test_policy.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":config",
         ":conftest",
@@ -115,7 +115,7 @@ py_test(
 py_test(
     name = "test_proxy",
     srcs = ["test_proxy.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":config",
         ":conftest",

@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_bazel
 
-from homeassistant_proxy.config import AccessRule, Action, EntityInfo, Policy
-from homeassistant_proxy.policy import AccessDeniedError, PolicyEnforcer
+from homeassistant.proxy.config import AccessRule, Action, EntityInfo, Policy
+from homeassistant.proxy.policy import AccessDeniedError, PolicyEnforcer
 
 
 def _info(entity_id: str, device_id: str | None = None, area_id: str | None = None) -> EntityInfo:
