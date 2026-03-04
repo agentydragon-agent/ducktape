@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tana-mcp
+  namespace: tana-mcp
+  labels:
+    app: tana-mcp
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tana-mcp
+  template:
+    metadata:
+      labels:
+        app: tana-mcp
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      imagePullSecrets:
+        - name: harbor-ci-robot
+      containers:
+        # Tana Desktop running under Xvfb with noVNC for graphical admin access
+        - name: tana-desktop
+          image: registry.allegedly.works/tana-mcp/tana-desktop:latest # {"$imagepolicy": "flux-system:tana-mcp"}
+          ports:
+            - name: mcp
+              containerPort: 8262
+              protocol: TCP
+            - name: novnc
+              containerPort: 6080
+              protocol: TCP
+          env:
+            - name: RESOLUTION
+              value: "1280x800x24"
+          volumeMounts:
+            - name: tana-config
+              mountPath: /home/tana/.config/Tana
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          # Generous startup probe: /health won't respond until Tana is logged in
+          # and MCP server is enabled (done manually via noVNC).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8262
+            failureThreshold: 120
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8262
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8262
+            periodSeconds: 15
+
+        # nginx sidecar: bearer token auth in front of Tana's MCP endpoint
+        - name: auth-proxy
+          image: nginx:alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - envsubst '${TANA_MCP_BEARER_TOKEN}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'
+          env:
+            - name: TANA_MCP_BEARER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: tana-mcp-bearer-token
+                  key: token
+          ports:
+            - name: mcp-auth
+              containerPort: 8263
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/templates
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          livenessProbe:
+            tcpSocket:
+              port: 8263
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 8263
+            periodSeconds: 10
+
+      volumes:
+        - name: tana-config
+          persistentVolumeClaim:
+            claimName: tana-mcp-config
+        - name: nginx-config
+          configMap:
+            name: tana-mcp-nginx-config

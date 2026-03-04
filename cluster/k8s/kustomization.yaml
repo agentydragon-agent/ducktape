@@ -145,4 +145,7 @@ resources:
   - homeassistant-proxy-namespace/flux-kustomization.yaml
   - homeassistant-proxy-secrets/flux-kustomization.yaml
   - homeassistant-proxy/flux-kustomization.yaml
+  - tana-mcp-namespace/flux-kustomization.yaml
+  - tana-mcp-secrets/flux-kustomization.yaml
+  - tana-mcp/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml

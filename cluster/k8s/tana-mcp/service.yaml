@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tana-mcp
+  namespace: tana-mcp
+spec:
+  type: ClusterIP
+  selector:
+    app: tana-mcp
+  ports:
+    - name: mcp-auth
+      port: 8263
+      targetPort: mcp-auth
+      protocol: TCP
+    - name: novnc
+      port: 6080
+      targetPort: novnc
+      protocol: TCP

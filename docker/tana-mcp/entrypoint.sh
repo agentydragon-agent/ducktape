@@ -1,0 +1,22 @@
+#!/bin/bash
+set -e
+
+RESOLUTION="${RESOLUTION:-1280x800x24}"
+
+# Start virtual framebuffer
+Xvfb :99 -screen 0 "$RESOLUTION" &
+XVFB_PID=$!
+sleep 1
+
+# Start VNC server (listens on localhost only — noVNC proxies it)
+x11vnc -display :99 -forever -nopw -listen 127.0.0.1 -rfbport 5900 &
+
+# Start noVNC web client
+websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 &
+
+# Start Tana Desktop (--no-sandbox required in containers)
+/opt/tana/Tana --no-sandbox --disable-gpu &
+TANA_PID=$!
+
+# Wait for Tana to exit (or for the container to be stopped)
+wait "$TANA_PID"

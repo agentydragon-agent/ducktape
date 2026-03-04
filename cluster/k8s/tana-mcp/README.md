@@ -1,0 +1,105 @@
+# Tana MCP Server
+
+Runs the [Tana](https://tana.inc) desktop app in a Kubernetes container with an
+nginx bearer-token auth proxy in front of its built-in MCP server.
+
+## Architecture
+
+- **tana-desktop container**: Ubuntu + Xvfb + noVNC + Tana Desktop. Tana's MCP
+  server listens on `localhost:8262` inside the pod.
+- **auth-proxy sidecar**: `nginx:alpine` checking `Authorization: Bearer <token>`
+  before proxying to port 8262. Exposed on port 8263.
+- **PVC**: Persists `~/.config/Tana` (login session, MCP client approvals).
+
+## Initial Setup (Graphical Login)
+
+The Tana desktop app requires a one-time graphical login to your Tana account.
+After login, the session persists in the PVC across pod restarts.
+
+### 1. Connect via noVNC
+
+```bash
+kubectl port-forward -n tana-mcp svc/tana-mcp 6080:6080
+```
+
+Open <http://localhost:6080> in your browser. You'll see the Tana desktop app
+running in a virtual display.
+
+### 2. Sign into Tana
+
+- The Tana app shows its login screen on startup
+- Sign in with your Tana account (email + password, or SSO)
+- The login flow may open a browser window inside the virtual desktop — this is
+  expected, the embedded Chromium handles it
+
+### 3. Enable the MCP Server
+
+- Open Tana Settings (gear icon, or Menu > Options)
+- Navigate to **Tana Labs**
+- Enable **"Local API/MCP server (Alpha)"**
+- The MCP server starts on port 8262 inside the container
+
+### 4. Approve MCP Client Access
+
+- When the first MCP client connects, Tana shows an approval modal
+- Approve the connection via the noVNC session
+- Subsequent connections from the same client are auto-approved
+
+### 5. Disconnect noVNC
+
+Close the browser tab. The Tana app continues running headlessly. You only need
+noVNC again if the session expires or for troubleshooting.
+
+## Connecting MCP Clients
+
+- **Endpoint**: `https://tana-mcp.allegedly.works/mcp`
+- **Auth**: `Authorization: Bearer <token>` (token stored in k8s secret
+  `tana-mcp-bearer-token` in namespace `tana-mcp`)
+
+Retrieve the token:
+
+```bash
+kubectl get secret tana-mcp-bearer-token -n tana-mcp \
+  -o jsonpath='{.data.token}' | base64 -d
+```
+
+### Claude Code (`~/.claude/settings.json`)
+
+```json
+{
+  "mcpServers": {
+    "tana": {
+      "url": "https://tana-mcp.allegedly.works/mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
+    }
+  }
+}
+```
+
+### Health Check
+
+```bash
+curl https://tana-mcp.allegedly.works/health
+```
+
+## Troubleshooting
+
+- **Pod stuck in startup**: The `startupProbe` allows 20 minutes for initial
+  login. Connect via noVNC and complete the setup flow.
+- **MCP health check failing**: Tana may not be running or MCP not enabled.
+  Connect via noVNC to check.
+- **Session expired**: Connect via noVNC and sign in again. The PVC preserves
+  state across normal pod restarts but Tana may expire the session after
+  prolonged inactivity.
+- **Updating Tana version**: Change `TANA_VERSION` in
+  `docker/tana-mcp/Dockerfile` and push. CI rebuilds the image and Flux
+  auto-deploys.
+
+## Secrets
+
+| Secret                  | Key                 | Source                           |
+| ----------------------- | ------------------- | -------------------------------- |
+| `tana-mcp-bearer-token` | `token`             | Vault `kv/tana-mcp/bearer-token` |
+| `harbor-ci-robot`       | `.dockerconfigjson` | Vault `kv/harbor/ci-robot`       |
