@@ -43,37 +43,6 @@ _MODULES = {
     for mod, path in _MODULES.items()
 ]
 
-# ─ Extract QEMU binary from Ubuntu .deb ───────────────────────────────────────
-genrule(
-    name = "qemu_binary",
-    srcs = ["@qemu_system_x86_deb//file"],
-    outs = ["qemu-system-x86_64"],
-    cmd = """
-        set -e
-        DEB=$$(realpath $(location @qemu_system_x86_deb//file))
-        OUT=$$(realpath $@)
-        TMPDIR=$$(mktemp -d)
-        cd $$TMPDIR
-        ar x "$$DEB"
-        # Ubuntu 24.04 uses zstd for data compression.
-        if [ -f data.tar.zst ]; then
-            zstd -d data.tar.zst -o data.tar
-        elif [ -f data.tar.xz ]; then
-            xz -d data.tar.xz
-        elif [ -f data.tar.gz ]; then
-            gunzip data.tar.gz
-        fi
-        tar -xf data.tar ./usr/bin/qemu-system-x86_64
-        cp usr/bin/qemu-system-x86_64 "$$OUT"
-        chmod +x "$$OUT"
-        cd /
-        rm -rf "$$TMPDIR"
-    """,
-    # .deb is an ar archive; data is in data.tar.zst (Ubuntu 24.04).
-    # Runs locally because ar/zstd may not be on RBE workers.
-    local = True,
-)
-
 # ─ Build initramfs (cpio.gz) ──────────────────────────────────────────────────
 # Contains: /init (init.sh), /bin/busybox, /testprobe, /modules/*.ko
 genrule(
@@ -115,8 +84,6 @@ genrule(
         (cd $$INITRAMFS_DIR && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
         rm -rf $$INITRAMFS_DIR
     """,
-    # Runs locally because cpio is not available on RBE workers.
-    local = True,
 )
 
 # ─ Test: nft-smoke levels 1-6 in QEMU ────────────────────────────────────────
@@ -127,20 +94,14 @@ sh_test(
     args = [
         "$(location :vmlinuz)",
         "$(location :initramfs)",
-        "$(location :qemu_binary)",
         "1,2,3,4,5,6",
     ],
     data = [
         ":initramfs",
-        ":qemu_binary",
         ":vmlinuz",
     ],
-    # QEMU is dynamically linked and needs host shared libraries.
-    # Run locally where qemu-system-data is installed.
-    local = True,
     tags = [
         "manual",
-        "no-remote",
         "requires_qemu",
     ],
 )
@@ -152,7 +113,7 @@ sh_test(
 # service and establish a WireGuard tunnel. VM-A sends ICMPv6 probes to VM-B's
 # KubeSpan address to verify end-to-end connectivity.
 #
-# Requires: Docker (for discovery service), QEMU shared libraries on host.
+# Requires: Docker (for discovery service), qemu-system-x86 (apt-installed on RBE workers).
 
 # ─ Extract full kernel modules tree for modprobe ─────────────────────────────
 # The integration test needs WireGuard, nftables, virtio_net, and all their
@@ -181,7 +142,6 @@ genrule(
         tar -cf $@ -C $$TMPDIR lib/modules/
         rm -rf $$TMPDIR
     """,
-    local = True,
 )
 
 # ─ Build integration initramfs ───────────────────────────────────────────────
@@ -231,7 +191,6 @@ genrule(
         (cd $$INITRAMFS_DIR && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
         rm -rf $$INITRAMFS_DIR
     """,
-    local = True,
 )
 
 # ─ Test: KubeSpan integration in QEMU ────────────────────────────────────────
@@ -242,19 +201,15 @@ sh_test(
     args = [
         "$(location :vmlinuz)",
         "$(location :integration_initramfs)",
-        "$(location :qemu_binary)",
         "$(location //third_party/siderolabs:discovery_service_tarball)",
     ],
     data = [
         ":integration_initramfs",
-        ":qemu_binary",
         ":vmlinuz",
         "//third_party/siderolabs:discovery_service_tarball",
     ],
-    local = True,
     tags = [
         "manual",
-        "no-remote",
         "requires_docker",
         "requires_qemu",
     ],

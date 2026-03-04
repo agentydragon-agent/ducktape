@@ -22,6 +22,11 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         # dbus-daemon: needed by tests that spawn a private D-Bus session
         # (e.g. experimental/dbus_fast_example)
         dbus-daemon \
+        # cpio: needed to build initramfs for QEMU-based tests
+        cpio \
+        # qemu-system-x86: QEMU emulator + firmware/BIOS for nftables and
+        # KubeSpan integration tests (TCG software emulation, no KVM needed)
+        qemu-system-x86 \
         # Chromium headless shell shared library dependencies
         libasound2t64 \
         libatk-bridge2.0-0t64 \
