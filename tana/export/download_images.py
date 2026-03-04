@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import logging
 import mimetypes
@@ -43,7 +44,7 @@ def _collect_media_nodes(
 ) -> list[tuple[BaseNode, str]]:
     """Find all nodes with a media URL. Returns (node, url) pairs."""
     return [
-        (node, url)
+        (node, html.unescape(url))
         for node in store.values()
         if (url := get_image_url(node, store))
     ]
