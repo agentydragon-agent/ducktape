@@ -49,20 +49,21 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 		return nil, fmt.Errorf("AES cipher from shared_secret: %w", err)
 	}
 
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-	if cfg.InsecureDiscovery {
-		tlsConfig.InsecureSkipVerify = true //nolint:gosec // intentional for self-hosted testing
-	}
-
-	client, err := discoveryclient.NewClient(discoveryclient.Options{
+	opts := discoveryclient.Options{
 		Cipher:        cipherBlock,
 		Endpoint:      cfg.DiscoveryEndpoint,
 		ClusterID:     cfg.ClusterID,
 		AffiliateID:   affiliateID,
 		TTL:           discoveryTTL,
 		ClientVersion: "kubespand/0.1.0",
-		TLSConfig:     tlsConfig,
-	})
+	}
+	if cfg.InsecureDiscovery {
+		opts.Insecure = true
+	} else {
+		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
+	client, err := discoveryclient.NewClient(opts)
 	if err != nil {
 		return nil, fmt.Errorf("creating discovery client: %w", err)
 	}
@@ -77,6 +78,12 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 // NotifyCh returns the channel that receives notifications when the peer list changes.
 func (dm *Manager) NotifyCh() <-chan struct{} {
 	return dm.notifyCh
+}
+
+// GetPublicIP returns this node's public IP as reported by the discovery service.
+// Returns nil before the initial Hello completes.
+func (dm *Manager) GetPublicIP() []byte {
+	return dm.client.GetPublicIP()
 }
 
 // Run starts the discovery client event loop. Blocks until ctx is cancelled.

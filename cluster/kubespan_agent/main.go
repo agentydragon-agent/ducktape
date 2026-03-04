@@ -18,7 +18,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/agentconfig"
-	"github.com/agentydragon/ducktape/cluster/kubespan_agent/endpoint"
+	endpoint "github.com/agentydragon/ducktape/cluster/kubespan_agent/endpoint"
+	networkadapter "github.com/agentydragon/ducktape/cluster/kubespan_agent/nftables"
+	peerspec "github.com/agentydragon/ducktape/cluster/kubespan_agent/peerspec"
 )
 
 // agentCfg is the parsed agent configuration, accessible to controllers
@@ -29,9 +31,16 @@ func main() {
 	configPath := flag.String("config", "/etc/kubespan/agent.yaml", "path to config file")
 	discoveryOnly := flag.Bool("discovery-only", false, "run discovery only (no WireGuard/routing), exit when peers found")
 	discoveryTimeout := flag.Duration("timeout", 0, "timeout for discovery-only mode (0 = no timeout)")
+	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
-	logger, err := zap.NewProduction()
+	var logger *zap.Logger
+	var err error
+	if *debug {
+		logger, err = zap.NewDevelopment()
+	} else {
+		logger, err = zap.NewProduction()
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger: %v\n", err)
 		os.Exit(1)
@@ -84,20 +93,6 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		}
 	}()
 
-	// Inject config as a COSI resource using upstream kubespan.Config type.
-	if err := st.Create(ctx, kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID)); err != nil {
-		return fmt.Errorf("creating config resource: %w", err)
-	}
-	if err := safe.StateModify(ctx, st,
-		kubespan.NewConfig(kubespan.NamespaceName, kubespan.ConfigID),
-		func(res *kubespan.Config) error {
-			*res.TypedSpec() = cfgSpec
-			return nil
-		},
-	); err != nil {
-		return fmt.Errorf("populating config resource: %w", err)
-	}
-
 	// Create COSI controller runtime.
 	rt, err := controllerruntime.NewRuntime(st, logger)
 	if err != nil {
@@ -105,13 +100,20 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	}
 
 	// Register controllers.
+	// ConfigController injects the parsed YAML config as a COSI resource.
+	// It must go through a controller (not direct state manipulation) so that
+	// the COSI runtime's internal watches detect the creation and trigger
+	// downstream controllers via EventCh.
+	if err := rt.RegisterController(&ConfigController{spec: cfgSpec}); err != nil {
+		return fmt.Errorf("registering config controller: %w", err)
+	}
 	if err := rt.RegisterController(&IdentityController{}); err != nil {
 		return fmt.Errorf("registering identity controller: %w", err)
 	}
 	if err := rt.RegisterController(&DiscoveryController{}); err != nil {
 		return fmt.Errorf("registering discovery controller: %w", err)
 	}
-	if err := rt.RegisterController(&PeerSpecController{}); err != nil {
+	if err := rt.RegisterController(&peerspec.PeerSpecController{}); err != nil {
 		return fmt.Errorf("registering peerspec controller: %w", err)
 	}
 	if agentCfg.AdvertiseKubernetesNetworks && !discoveryOnly {
@@ -123,15 +125,26 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		if err := rt.RegisterController(&ManagerController{}); err != nil {
 			return fmt.Errorf("registering manager controller: %w", err)
 		}
-		if err := rt.RegisterController(&endpoint.Controller{}); err != nil {
+		if err := rt.RegisterController(&networkadapter.NfTablesChainController{}); err != nil {
+			return fmt.Errorf("registering nftables chain controller: %w", err)
+		}
+		if err := rt.RegisterController(&endpoint.EndpointController{}); err != nil {
 			return fmt.Errorf("registering endpoint controller: %w", err)
 		}
 	}
 
+	logger.Info("starting COSI runtime")
+
 	// Start the COSI runtime in a goroutine.
 	runtimeErrCh := make(chan error, 1)
 	go func() {
-		runtimeErrCh <- rt.Run(ctx)
+		err := rt.Run(ctx)
+		if err != nil {
+			logger.Error("COSI runtime exited with error", zap.Error(err))
+		} else {
+			logger.Info("COSI runtime exited cleanly")
+		}
+		runtimeErrCh <- err
 	}()
 
 	if discoveryOnly {
@@ -172,8 +185,10 @@ func waitForPeers(ctx context.Context, st state.State, runtimeErrCh <-chan error
 		case <-ticker.C:
 			list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, st)
 			if err != nil {
+				logger.Debug("listing peers failed", zap.Error(err))
 				continue
 			}
+			logger.Info("polling for peers", zap.Int("count", list.Len()))
 			if list.Len() == 0 {
 				continue
 			}

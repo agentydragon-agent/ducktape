@@ -1,13 +1,38 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("//cluster/kubespan_agent:upstream.bzl", "TALOS_ADAPTERS_KUBESPAN", "talos_copy")
+
+# Upstream Talos kubespan adapters pulled at a pinned tag.
+# See MODULE.bazel http_archive "talos_internal" for the pinned version.
+# Patches in third_party/siderolabs/talos_internal/patches/ are applied at
+# fetch time (inlines PeerDownInterval constant from wireguard adapter).
+
+talos_copy(
+    name = "upstream_peer_status",
+    src = TALOS_ADAPTERS_KUBESPAN + "peer_status.go",
+    out = "peer_status.go",
+)
+
+talos_copy(
+    name = "upstream_identity",
+    src = TALOS_ADAPTERS_KUBESPAN + "identity.go",
+    out = "identity.go",
+)
 
 go_library(
     name = "peerstate",
-    srcs = ["peerstate.go"],
+    srcs = [
+        ":upstream_identity",
+        ":upstream_peer_status",
+    ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespan_agent/peerstate",
     visibility = ["//cluster/kubespan_agent:__subpackages__"],
     deps = [
+        "@com_github_mdlayher_netx//eui64",
+        "@com_github_siderolabs_gen//value",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
         "@com_zx2c4_golang_wireguard_wgctrl//wgtypes",
+        "@org_go4_netipx//:netipx",
     ],
 )
 

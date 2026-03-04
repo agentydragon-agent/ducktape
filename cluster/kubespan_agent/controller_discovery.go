@@ -26,10 +26,21 @@ import (
 // Identity become available, forwarding discovery notifications to the COSI
 // event loop, and cleaning up on shutdown.
 //
+// Re-publishing is rate-limited: the controller only calls PublishLocal when
+// otherEndpoints or additionalAddresses actually change, not on every reconcile.
+// TTL refresh is handled automatically by the discovery client's internal ticker.
+//
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
 type DiscoveryController struct {
 	dm       *discovery.Manager
 	cancelDM context.CancelFunc
+
+	// Track previous publish data to avoid re-publishing unchanged data.
+	// This breaks the feedback loop: discovery notification → reconcile →
+	// publish → discovery notification → ...
+	lastOtherEndpointCount  int
+	lastAdditionalAddrCount int
+	lastPubIPLen            int
 }
 
 // Name implements controller.Controller.
@@ -120,6 +131,9 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 					case <-dmCtx.Done():
 						return
 					case <-dm.NotifyCh():
+						affs := dm.GetAffiliates()
+						logger.Info("discovery notification received, queuing reconcile",
+							zap.Int("affiliates_at_notification", len(affs)))
 						r.QueueReconcile()
 					}
 				}
@@ -128,13 +142,33 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			if pubErr := dm.PublishLocal(agentCfg, idSpec, agentCfg.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
 				logger.Error("publishing local affiliate", zap.Error(pubErr))
 			}
+			ctrl.lastOtherEndpointCount = len(otherEndpoints)
+			ctrl.lastAdditionalAddrCount = len(additionalAddresses)
+			ctrl.lastPubIPLen = len(dm.GetPublicIP())
 
 			logger.Info("discovery client started")
-		}
-
-		// Re-publish to keep TTL fresh and update harvested endpoints + additional addresses.
-		if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
-			logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
+		} else {
+			// Re-publish when data actually changes: new endpoints, additional
+			// addresses, or public IP becoming available (the initial PublishLocal
+			// may race with the Hello completing). This avoids a feedback loop
+			// where each publish triggers a Watch notification → reconcile → publish.
+			// TTL refresh is handled by the discovery client's internal TTL/2 ticker.
+			pubIPLen := len(ctrl.dm.GetPublicIP())
+			if len(otherEndpoints) != ctrl.lastOtherEndpointCount ||
+				len(additionalAddresses) != ctrl.lastAdditionalAddrCount ||
+				pubIPLen != ctrl.lastPubIPLen {
+				if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
+					logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
+				}
+				ctrl.lastOtherEndpointCount = len(otherEndpoints)
+				ctrl.lastAdditionalAddrCount = len(additionalAddresses)
+				ctrl.lastPubIPLen = pubIPLen
+				logger.Info("re-published local affiliate (data changed)",
+					zap.Int("other_endpoints", len(otherEndpoints)),
+					zap.Int("additional_addresses", len(additionalAddresses)),
+					zap.Int("pub_ip_len", pubIPLen),
+				)
+			}
 		}
 
 		// Reconcile cluster.Affiliate resources from discovered peers.
@@ -158,7 +192,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			return fmt.Errorf("cleaning up affiliates: %w", err)
 		}
 
-		logger.Debug("discovery reconciled", zap.Int("affiliates", len(affiliates)))
+		logger.Info("discovery reconciled", zap.Int("affiliates", len(affiliates)))
 		r.ResetRestartBackoff()
 	}
 }
