@@ -7,9 +7,9 @@ import pytest
 import pytest_bazel
 import respx
 
-from homeassistant_proxy.config import AccessRule, EntityInfo, HomeAssistantSettings, Policy, Settings, TokenConfig
-from homeassistant_proxy.policy import PolicyEnforcer
-from homeassistant_proxy.proxy import create_app
+from homeassistant.proxy.config import AccessRule, EntityInfo, HomeAssistantSettings, Policy, Settings, TokenConfig
+from homeassistant.proxy.policy import PolicyEnforcer
+from homeassistant.proxy.proxy import create_app
 
 _HA_URL = "http://ha.test:8123"
 
