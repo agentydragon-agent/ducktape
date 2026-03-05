@@ -147,6 +147,7 @@ class WithdrawnDetail(BaseModel):
 
 class ExecutionStartedDetail(BaseModel):
     kind: Literal[LogEventKind.EXECUTION_STARTED] = LogEventKind.EXECUTION_STARTED
+    started_at: datetime
     model_config = ConfigDict(extra="forbid")
 
 
@@ -195,3 +196,26 @@ class DenyDecision(BaseModel):
 
 
 OperatorDecision = Annotated[ApproveDecision | DenyDecision, Field(discriminator="kind")]
+
+
+# ── Wait mode for tool calls ──────────────────────────────────────────────
+
+
+class BlockingWait(BaseModel):
+    """Wait indefinitely until terminal resolution."""
+
+    mode: Literal["blocking"] = "blocking"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class YieldAfterMs(BaseModel):
+    """Wait up to timeout_ms then return current state."""
+
+    mode: Literal["yield_after_ms"] = "yield_after_ms"
+    timeout_ms: float
+
+    model_config = ConfigDict(extra="forbid")
+
+
+WaitMode = Annotated[BlockingWait | YieldAfterMs, Field(discriminator="mode")]

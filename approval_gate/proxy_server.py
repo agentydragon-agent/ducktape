@@ -22,6 +22,7 @@ import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Coroutine, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ from fastmcp.tools.tool import FunctionTool
 from mako.template import Template
 from mcp import types as mcp_types
 from mcp.server.session import ServerSession
+from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
 
 from approval_gate.models import (
@@ -43,6 +45,7 @@ from approval_gate.models import (
     ActionState,
     ActionStatus,
     ApproveDecision,
+    BlockingWait,
     DeniedDetail,
     DenyDecision,
     DoneState,
@@ -54,8 +57,10 @@ from approval_gate.models import (
     PendingState,
     RejectedState,
     ToolCall,
+    WaitMode,
     WithdrawnDetail,
     WithdrawnState,
+    YieldAfterMs,
 )
 from approval_gate.predicates import Approved, Denied, NeedsHumanDecision, PredicateFn, call_predicate
 from approval_gate.storage import ActionStorage
@@ -73,11 +78,15 @@ READ_SCOPE = "read"
 _INSTRUCTIONS_TEMPLATE = Path(__file__).parent / "instructions.mako"
 
 
+_WAIT_MODE_SCHEMA: dict[str, Any] = TypeAdapter(WaitMode).json_schema()
+_DEFAULT_WAIT_MODE = YieldAfterMs(timeout_ms=0)
+
+
 def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
     """Wrap a backend tool's input schema in an approval envelope.
 
     Produces:
-      { input: <original_schema>, justification: str, session_key: str }
+      { input: <original_schema>, justification: str, session_key: str, wait_mode?: WaitMode }
 
     The nested `input` property holds the backend's original schema unchanged,
     avoiding any risk of name collisions with the approval fields.
@@ -94,9 +103,22 @@ def _wrap_tool_schema(original_schema: dict[str, Any]) -> dict[str, Any]:
                 "type": "string",
                 "description": "Session key for result notifications. Injected by plugin.",
             },
+            "wait_mode": _WAIT_MODE_SCHEMA,
         },
         "required": ["input", "justification", "session_key"],
     }
+
+
+def _wait_mode_to_timeout(wait_mode: WaitMode) -> float:
+    """Convert a WaitMode to a timeout in seconds.
+
+    Returns float('inf') = wait forever, N = bounded (0 = immediate).
+    """
+    match wait_mode:
+        case BlockingWait():
+            return float("inf")
+        case YieldAfterMs(timeout_ms=ms):
+            return max(0, ms / 1000)
 
 
 class ApprovalGateServer(EnhancedFastMCP):
@@ -109,6 +131,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         db_path: Path,
         predicate: PredicateFn,
         public_base_url: str,
+        default_wait_mode: WaitMode = _DEFAULT_WAIT_MODE,
         **kwargs: Any,
     ) -> None:
         super().__init__(
@@ -119,9 +142,11 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._storage: ActionStorage | None = None
         self._predicate = predicate
         self._public_base_url = public_base_url
+        self._default_wait_mode = default_wait_mode
         self._backend_clients: dict[MCPMountPrefix, Client] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
+        self._action_resolved_events: dict[ActionKey, asyncio.Event] = {}
 
     # ── Lifespan ──────────────────────────────────────────────────────────────
 
@@ -251,7 +276,8 @@ class ApprovalGateServer(EnhancedFastMCP):
             justification: str,
             session_key: str,
             input: dict[str, object] = {},  # noqa: B006
-        ) -> ActionKey:
+            wait_mode: WaitMode | None = None,
+        ) -> Action:
             call = ToolCall(server_namespace=namespace, tool_name=tool_name, arguments=input)
             action = await self._req_storage.create_action(
                 session_key=session_key, call=call, justification=justification
@@ -259,8 +285,35 @@ class ApprovalGateServer(EnhancedFastMCP):
             key = action.key
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
+
+            effective = wait_mode if wait_mode is not None else self._default_wait_mode
+            effective_timeout = _wait_mode_to_timeout(effective)
+
+            if effective_timeout > 0:
+                event = asyncio.Event()
+                self._action_resolved_events[key] = event
+            else:
+                event = None
+
             self._spawn(self._apply_predicate(key, namespace, tool_name, input))
-            return key
+
+            if event is not None:
+                with anyio.move_on_after(effective_timeout):
+                    while True:
+                        await event.wait()
+                        current = await self._req_storage.get_action(key)
+                        if current is not None and isinstance(
+                            current.state, (DoneState, RejectedState, WithdrawnState)
+                        ):
+                            break
+                        # Intermediate transition (e.g. PENDING → EXECUTING); reset and wait again
+                        event = asyncio.Event()
+                        self._action_resolved_events[key] = event
+                self._action_resolved_events.pop(key, None)
+
+            result = await self._req_storage.get_action(key)
+            assert result is not None
+            return result
 
         tool = FunctionTool(
             fn=_tool_handler,
@@ -322,7 +375,10 @@ class ApprovalGateServer(EnhancedFastMCP):
             raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
         match decision:
             case ApproveDecision():
-                action = await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail())
+                started_at = datetime.now(tz=UTC)
+                action = await self._update_and_notify(
+                    key, ExecutingState(), ExecutionStartedDetail(started_at=started_at)
+                )
                 self._spawn(self._execute_and_finish(key, action))
                 return action
             case DenyDecision(reason=reason):
@@ -346,6 +402,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         client = self._backend_clients.get(namespace)
         if client is None:
             raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
+
         outcome = await client.call_tool_mcp(action.call.tool_name, action.call.arguments)
         await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
 
@@ -360,4 +417,9 @@ class ApprovalGateServer(EnhancedFastMCP):
         action, _ = await self._req_storage.update_state_and_log(key, new_state, detail)
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
+        # Signal any waiter for this action on non-pending transitions
+        if not isinstance(new_state, PendingState):
+            event = self._action_resolved_events.get(key)
+            if event is not None:
+                event.set()
         return action

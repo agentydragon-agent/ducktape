@@ -51,6 +51,7 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
         db_path=settings.db_path,
         predicate=predicate,
         public_base_url=settings.public_base_url,
+        default_wait_mode=settings.default_wait_mode,
         auth=JWTVerifier(jwks_uri=discovery["jwks_uri"]),
     )
     mcp_app = gate.http_app(path="/")

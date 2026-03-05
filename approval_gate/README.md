@@ -85,6 +85,24 @@ backends:
 Each backend entry supports the full `MCPServerTypes` config (URL + headers for
 streamable-http, command + args + env for stdio).
 
+### Default wait mode
+
+The `default_wait_mode` config field sets the server-wide default for how long tool
+calls wait for action resolution before returning. Agents can override per-call via
+the `wait_mode` tool parameter. When omitted, tool calls return immediately with
+the current action state (typically `pending`).
+
+```yaml
+# Wait up to 30s for resolution
+default_wait_mode:
+  mode: yield_after_ms
+  timeout_ms: 30000
+
+# Or wait indefinitely
+default_wait_mode:
+  mode: blocking
+```
+
 ### Environment variables
 
 | Variable      | Required | Description                                                         |

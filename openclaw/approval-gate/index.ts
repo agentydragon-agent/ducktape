@@ -31,20 +31,22 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ApprovalGateConnection, parseSessionKeyFromHwmUri } from "./approval-gate-connection.js";
 import { ReconnectingMcpClient } from "./reconnecting-mcp-client.js";
 import { scopedLogger } from "./util.js";
-import type { Action, ActionKey, Detail as LogEventDetail, DoneState, RejectedState } from "./types.js";
+import type { Action, Detail as LogEventDetail, DoneState, ExecutionStartedDetail, RejectedState } from "./types.js";
 
 const DEFAULT_EXEC_SERVER_URL = "http://127.0.0.1:8766/mcp";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const TERMINAL_LOG_KINDS = new Set(["execution_finished", "denied", "withdrawn"]);
+const TERMINAL_STATUSES = new Set(["done", "rejected", "withdrawn"]);
+const NOTIFY_LOG_KINDS = new Set([...TERMINAL_LOG_KINDS, "execution_started"]);
 
-function isTerminalLogKind(kind: string): boolean {
-  return TERMINAL_LOG_KINDS.has(kind);
+function shouldNotifyLogKind(kind: string): boolean {
+  return NOTIFY_LOG_KINDS.has(kind);
 }
 
-/** Format a human-readable message from a terminal log entry detail. */
-function formatTerminalMessage(keyStr: string, detail: LogEventDetail): string {
+/** Format a human-readable message from a notifiable log entry detail. */
+function formatNotificationMessage(keyStr: string, detail: LogEventDetail): string {
   if (detail.kind === "execution_finished") {
     const parts = detail.outcome.content.filter((c) => c.type === "text" && c.text).map((c) => c.text as string);
     const body = parts.join("\n") || JSON.stringify(detail.outcome.content, null, 2);
@@ -53,6 +55,12 @@ function formatTerminalMessage(keyStr: string, detail: LogEventDetail): string {
     } else {
       return `Action ${keyStr} was approved but execution returned an error:\n\n${body}`;
     }
+  }
+  if (detail.kind === "execution_started") {
+    const suffix = (detail as ExecutionStartedDetail).started_at
+      ? ` (started at ${(detail as ExecutionStartedDetail).started_at})`
+      : "";
+    return `Action ${keyStr} execution started${suffix}`;
   }
   if (detail.kind === "denied") {
     return `Action ${keyStr} was rejected by the user. Reason: ${detail.reason ?? "none given"}`;
@@ -169,6 +177,9 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   // ── Resilient MCP connection to approval gate server ──────────────────────
   const connection = new ApprovalGateConnection(approvalGateUrl, approvalGateToken, log);
 
+  // Actions resolved inline (within approval_timeout_seconds) — skip notifications for these
+  const inlineResolvedActions = new Set<string>();
+
   async function catchUpSession(sessionKey: string): Promise<void> {
     let newHwm: number;
     try {
@@ -192,10 +203,21 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     );
 
     for (const entry of entries) {
-      if (!entry || !isTerminalLogKind(entry.detail.kind)) continue;
+      if (!entry || !shouldNotifyLogKind(entry.detail.kind)) continue;
 
       const keyStr = `${sessionKey}/${entry.action_seq}`;
-      const message = formatTerminalMessage(keyStr, entry.detail);
+
+      // Skip notification for actions that were resolved inline within the tool call.
+      // Only consume the suppression on terminal events — non-terminal events
+      // (execution_started) should not eat the suppression token.
+      if (inlineResolvedActions.has(keyStr)) {
+        if (TERMINAL_LOG_KINDS.has(entry.detail.kind)) {
+          inlineResolvedActions.delete(keyStr);
+        }
+        continue;
+      }
+
+      const message = formatNotificationMessage(keyStr, entry.detail);
       enqueueSystemEvent(message, { sessionKey });
       log.info(`enqueued system event for action ${keyStr}`);
     }
@@ -252,7 +274,10 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
         description: toolDescription,
         parameters: schema,
         async execute(_id: string, params: Record<string, unknown>) {
-          const callArgs = { ...params, session_key: ctx.sessionKey };
+          const callArgs = {
+            ...params,
+            session_key: ctx.sessionKey,
+          };
 
           let result: Awaited<ReturnType<Client["callTool"]>>;
           try {
@@ -269,38 +294,26 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
           }
 
           const firstContent = result.content?.[0] as { text: string };
-          const actionKey = JSON.parse(firstContent.text) as ActionKey;
-          const keyStr = `${actionKey.session_key}/${actionKey.action_seq}`;
+          const action = JSON.parse(firstContent.text) as Action;
+          const keyStr = `${action.key.session_key}/${action.key.action_seq}`;
+          const { status } = action.state;
 
-          await connection.trackSession(actionKey.session_key);
-
-          const actionUri = `resource://sessions/${actionKey.session_key}/actions/${actionKey.action_seq}`;
-          try {
-            const text = await connection.readResourceText(actionUri);
-            const action = JSON.parse(text) as Action;
-            const { status } = action.state;
-            if (status === "done" || status === "rejected" || status === "withdrawn") {
-              // TODO: The mapping from action state to log detail kind is awkward because
-              // Action.state and LogEntry.detail have overlapping but different shapes.
-              // Consider unifying the terminal state representation upstream.
-              const outcome = formatTerminalMessage(keyStr, {
-                kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
-                ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
-                ...(status === "rejected" ? { reason: (action.state as RejectedState).reason } : {}),
-              } as LogEventDetail);
-              return { content: [{ type: "text" as const, text: outcome }] };
-            }
-          } catch (err) {
-            log.warn(`could not read initial state for ${actionUri}: ${String(err)}`);
+          if (TERMINAL_STATUSES.has(status)) {
+            // Resolved inline — return result directly, suppress duplicate notification
+            inlineResolvedActions.add(keyStr);
+            await connection.trackSession(action.key.session_key);
+            const outcome = formatNotificationMessage(keyStr, {
+              kind: status === "done" ? "execution_finished" : status === "rejected" ? "denied" : "withdrawn",
+              ...(status === "done" ? { outcome: (action.state as DoneState).outcome } : {}),
+              ...(status === "rejected" ? { reason: (action.state as RejectedState).reason } : {}),
+            } as LogEventDetail);
+            return { content: [{ type: "text" as const, text: outcome }] };
           }
 
+          // Still pending or executing — set up notifications for later delivery
+          await connection.trackSession(action.key.session_key);
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Action ${keyStr} queued for user approval`,
-              },
-            ],
+            content: [{ type: "text" as const, text: `Action ${keyStr} is ${status}` }],
           };
         },
       }));

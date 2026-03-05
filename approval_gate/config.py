@@ -29,6 +29,7 @@ import yaml
 from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from approval_gate.models import WaitMode, YieldAfterMs
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -38,17 +39,17 @@ class Settings(BaseModel):
     backends: dict[MCPMountPrefix, MCPServerTypes]
     public_base_url: str
     db_path: Path = Path("/data/approval_gate.db")
-    predicate_path: Path | None = Field(
-        default=None,
+    predicate_path: Path = Field(
         description=(
             "Path to a Python module exporting "
             "decide(server_namespace, tool_name, arguments) → Approved|Denied|NeedsHumanDecision."
-        ),
+        )
     )
     oidc_issuer: str
     oidc_client_id: str
+    default_wait_mode: WaitMode = YieldAfterMs(timeout_ms=0)
     host: str = "0.0.0.0"
-    port: int = 8765
+    port: int
 
     @field_validator("public_base_url", mode="after")
     @classmethod
