@@ -212,94 +212,30 @@ jobs:
             Branch: ${{ github.ref_name }}
           files: dist/*.whl
 
-      - name: Cleanup old releases
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./.github/actions/update-latest-release
+        with:
+          package_prefix: claude-hooks
+          latest_tag: claude-hooks-latest
+          title: "claude-hooks (latest)"
+          body: |
+            claude_hooks wheel for Claude Code web environments.
+
+            Contains:
+            - `claude-session-start` - Session start hook for Claude Code web
+            - `bazel` / `bazelisk` - Bazel wrapper with proxy support
+
+            Requires Python 3.13+
+          files: dist/*.whl
+
+      - name: Update Claude settings wheel URL
         run: |
-          # Keep last 10 commit-tagged releases (exclude latest-* tags)
-          gh release list --limit 100 \
-            | grep "^claude-hooks-" \
-            | grep -v "^claude-hooks-latest" \
-            | tail -n +11 \
-            | cut -f1 \
-            | xargs -r -I{} gh release delete {} --yes --cleanup-tag
+          sed -i "s|releases/download/claude-hooks-[a-f0-9]*/claude_hooks|releases/download/claude-hooks-${{ env.SHORT_SHA }}/claude_hooks|g" .claude/settings.json
 
-      - name: Update latest release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="claude-hooks-latest"
-
-          # Delete existing release if it exists (we'll recreate it)
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --yes --cleanup-tag
-          fi
-
-          # Create the latest release
-          gh release create "$TAG" \
-            --title "claude-hooks (latest)" \
-            --notes "$(cat <<'EOF'
-          claude_hooks wheel for Claude Code web environments.
-
-          Contains:
-          - \`claude-session-start\` - Session start hook for Claude Code web
-          - \`bazel\` / \`bazelisk\` - Bazel wrapper with proxy support
-
-          Requires Python 3.13+
-
-          **This is a rolling release that always points to the latest build.**
-
-          Latest commit: ${{ github.sha }}
-          Branch: ${{ github.ref_name }}
-          EOF
-          )" \
-            dist/*.whl
-
-      - name: Bump Nix package to new release
-        run: |
-          set -x  # Print commands for debugging
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Pull with rebase before making changes (rebase fails with dirty working tree)
-          if ! git pull --rebase origin ${{ github.ref_name }}; then
-            echo "::error::Rebase failed. Git status:"
-            git status
-            echo "Conflicting files:"
-            git diff --name-only --diff-filter=U
-            exit 1
-          fi
-
-          # Bump Nix package (shortSha + SRI hash)
-          NIX_PKG="nix/home/packages/claude-hooks.nix"
-          WHEEL_FILE="dist/claude_hooks-0.1.0-py3-none-any.whl"
-          SHA256=$(sha256sum "$WHEEL_FILE" | cut -d' ' -f1)
-          SRI_HASH="sha256-$(echo -n "$SHA256" | xxd -r -p | base64 -w0)"
-          sed -i "s|shortSha = \".*\"|shortSha = \"${{ env.SHORT_SHA }}\"|" "$NIX_PKG"
-          sed -i "s|hash = \"sha256-.*\"|hash = \"${SRI_HASH}\"|" "$NIX_PKG"
-
-          # Bump wheel URL in Claude Code settings (both SessionStart and PreToolUse hooks)
-          CLAUDE_SETTINGS=".claude/settings.json"
-          sed -i "s|releases/download/claude-hooks-[a-f0-9]*/claude_hooks|releases/download/claude-hooks-${{ env.SHORT_SHA }}/claude_hooks|g" "$CLAUDE_SETTINGS"
-
-          if git diff --quiet "$NIX_PKG" "$CLAUDE_SETTINGS"; then
-            echo "No change needed"
-            exit 0
-          fi
-
-          TAG="claude-hooks-${{ env.SHORT_SHA }}"
-          git add "$NIX_PKG" "$CLAUDE_SETTINGS"
-          git commit -m "chore: bump claude-hooks to ${TAG} [skip ci]"
-
-          # Push with error diagnostics
-          if ! git push origin HEAD:${{ github.ref_name }}; then
-            echo "::error::Push failed. Diagnostics:"
-            echo "Git status:"
-            git status
-            echo "Recent commits:"
-            git log --oneline -5
-            echo "Remote state:"
-            git fetch origin ${{ github.ref_name }}
-            git log --oneline HEAD..origin/${{ github.ref_name }}
-            exit 1
-          fi
+      - uses: ./.github/actions/bump-nix-release
+        with:
+          nix_package_path: nix/home/packages/claude-hooks.nix
+          artifact_file: dist/claude_hooks-0.1.0-py3-none-any.whl
+          short_sha: ${{ env.SHORT_SHA }}
+          package_prefix: claude-hooks
+          extra_files: .claude/settings.json
+          branch: ${{ github.ref_name }}

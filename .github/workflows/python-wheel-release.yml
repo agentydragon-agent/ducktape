@@ -97,41 +97,10 @@ jobs:
             Branch: ${{ github.ref_name }}
           files: dist/*.whl
 
-      - name: Cleanup old releases
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Keep last 10 releases with this package prefix (excluding latest tag)
-          # TODO: Replace this fragile grep pipeline with a Python script using
-          # `gh api` + JSON parsing for more reliable release filtering.
-          gh release list --limit 100 \
-            | grep "^${{ inputs.package_name }}-" \
-            | grep -v "^${{ inputs.latest_release_tag }}" \
-            | tail -n +11 \
-            | cut -f1 \
-            | xargs -r -I{} gh release delete {} --yes --cleanup-tag
-
-      - name: Update latest release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ inputs.latest_release_tag }}"
-
-          # Delete existing release if it exists (we'll recreate it)
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --yes --cleanup-tag
-          fi
-
-          # Create the latest release
-          gh release create "$TAG" \
-            --title "${{ inputs.package_name }} (latest)" \
-            --notes "$(cat <<'EOF'
-          ${{ inputs.release_body }}
-
-          **This is a rolling release that always points to the latest build.**
-
-          Latest commit: ${{ github.sha }}
-          Branch: ${{ github.ref_name }}
-          EOF
-          )" \
-            dist/*.whl
+      - uses: ./.github/actions/update-latest-release
+        with:
+          package_prefix: ${{ inputs.package_name }}
+          latest_tag: ${{ inputs.latest_release_tag }}
+          title: "${{ inputs.package_name }} (latest)"
+          body: ${{ inputs.release_body }}
+          files: dist/*.whl

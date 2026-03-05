@@ -1,0 +1,88 @@
+name: Bump Nix package release
+description: |
+  Updates a Nix package's shortSha and SRI hash from a built artifact,
+  then commits and pushes the change. Used by CI release workflows to
+  keep Nix packages in sync with GitHub releases.
+
+inputs:
+  nix_package_path:
+    description: "Path to the .nix file to update (e.g., nix/home/packages/claude-hooks.nix)"
+    required: true
+  artifact_file:
+    description: "Path to the built artifact for SHA256 computation"
+    required: true
+  short_sha:
+    description: "8-char commit SHA for the shortSha field"
+    required: true
+  package_prefix:
+    description: "Release tag prefix (e.g., claude-hooks, kubespand)"
+    required: true
+  extra_files:
+    description: "Space-separated extra files to stage and diff-check (optional)"
+    required: false
+    default: ""
+  branch:
+    description: "Branch to push to (pass github.ref_name)"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Bump Nix package to new release
+      shell: bash
+      env:
+        NIX_PKG: ${{ inputs.nix_package_path }}
+        ARTIFACT_FILE: ${{ inputs.artifact_file }}
+        SHORT_SHA: ${{ inputs.short_sha }}
+        PACKAGE_PREFIX: ${{ inputs.package_prefix }}
+        EXTRA_FILES: ${{ inputs.extra_files }}
+        BRANCH: ${{ inputs.branch }}
+      run: |
+        set -x
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        if ! git pull --rebase origin "$BRANCH"; then
+          echo "::error::Rebase failed. Git status:"
+          git status
+          echo "Conflicting files:"
+          git diff --name-only --diff-filter=U
+          exit 1
+        fi
+
+        # Compute SRI hash from artifact
+        SHA256=$(sha256sum "$ARTIFACT_FILE" | cut -d' ' -f1)
+        SRI_HASH="sha256-$(echo -n "$SHA256" | xxd -r -p | base64 -w0)"
+
+        # Update shortSha and hash in the Nix package
+        sed -i "s|shortSha = \".*\"|shortSha = \"${SHORT_SHA}\"|" "$NIX_PKG"
+        sed -i "s|hash = \"sha256-.*\"|hash = \"${SRI_HASH}\"|" "$NIX_PKG"
+
+        # Check if anything changed (nix file + extra files)
+        DIFF_FILES="$NIX_PKG"
+        if [[ -n "$EXTRA_FILES" ]]; then
+          DIFF_FILES="$DIFF_FILES $EXTRA_FILES"
+        fi
+        # shellcheck disable=SC2086
+        if git diff --quiet $DIFF_FILES; then
+          echo "No change needed"
+          exit 0
+        fi
+
+        TAG="${PACKAGE_PREFIX}-${SHORT_SHA}"
+        # shellcheck disable=SC2086
+        git add "$NIX_PKG" $EXTRA_FILES
+        git commit -m "chore: bump ${PACKAGE_PREFIX} to ${TAG} [skip ci]"
+
+        if ! git push origin "HEAD:${BRANCH}"; then
+          echo "::error::Push failed. Diagnostics:"
+          echo "Git status:"
+          git status
+          echo "Recent commits:"
+          git log --oneline -5
+          echo "Remote state:"
+          git fetch origin "$BRANCH"
+          git log --oneline "HEAD..origin/${BRANCH}"
+          exit 1
+        fi
