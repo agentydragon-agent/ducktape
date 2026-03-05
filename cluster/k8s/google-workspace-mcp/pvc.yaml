@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: google-workspace-mcp-creds
+  namespace: google-workspace-mcp
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: proxmox-csi-retain
+  resources:
+    requests:
+      storage: 1Gi
