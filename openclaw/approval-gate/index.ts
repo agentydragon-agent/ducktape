@@ -22,8 +22,9 @@
  * event queue and would not work from a node process.
  *
  * Notification delivery uses `enqueueSystemEvent` (OpenClaw's in-memory
- * per-session event queue). Events are drained and prepended to the agent's
- * next prompt automatically by the heartbeat mechanism.
+ * per-session event queue) followed by `requestHeartbeatNow` to immediately
+ * flush the event to the agent rather than waiting for the next scheduled
+ * heartbeat.
  */
 
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk";
@@ -108,7 +109,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
     return;
   }
 
-  const { enqueueSystemEvent } = api.runtime.system;
+  const { enqueueSystemEvent, requestHeartbeatNow } = api.runtime.system;
 
   // ── Exec sidecar MCP connection ───────────────────────────────────────────
   const execConnection = new ReconnectingMcpClient(execServerUrl, "openclaw-exec", execLog);
@@ -219,6 +220,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
 
       const message = formatNotificationMessage(keyStr, entry.detail);
       enqueueSystemEvent(message, { sessionKey });
+      requestHeartbeatNow({ reason: "approval-gate:notification", sessionKey });
       log.info(`enqueued system event for action ${keyStr}`);
     }
 
