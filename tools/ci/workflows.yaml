@@ -132,8 +132,8 @@ harbor_images:
     remote_path: airlock/airlock
 
   - bazel_target: //mcp_infra/exec:direct_load
-    local_tag: airlock-exec-backend:latest
-    remote_path: airlock/exec-backend
+    local_tag: exec-backend:latest
+    remote_path: mcp_infra/exec-backend
 
   - bazel_target: //homeassistant/proxy:load
     local_tag: homeassistant-proxy:latest

@@ -60,9 +60,9 @@ class DirectExecServer(EnhancedFastMCP):
 def main() -> None:
     """Standalone entry point for DirectExecServer over streamable-http.
 
-    This is the privileged exec backend for the airlock. Run in a container
-    with the required secrets/credentials mounted. The airlock connects to
-    this server over HTTP and forwards approved tool calls.
+    Standalone privileged exec backend. Run in a container with the required
+    secrets/credentials mounted. Any MCP proxy (e.g. airlock) can connect to
+    this server over HTTP and forward approved tool calls.
 
     Environment variables:
       TOKEN        — if set, require this bearer token on incoming requests

@@ -1,7 +1,7 @@
 packages:
-  - "airlock/frontend"
-  - "props/frontend"
   - "agent_server/web"
-  - "hack/rspcache/admin_ui"
-  - "util/frontend_visual_test"
+  - "airlock/frontend"
   - "airlock/openclaw"
+  - "hack/rspcache/admin_ui"
+  - "props/frontend"
+  - "util/frontend_visual_test"
