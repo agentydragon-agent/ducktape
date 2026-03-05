@@ -1,0 +1,16 @@
+rationale: |
+  `SEATBELT_EXEC_MOUNT_PREFIX` (line 36) is only used by
+  `bad_template.py`, which is itself dead test data. The constant
+  is effectively unused. Remove it.
+
+should_flag: true
+
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/constants.py:
+        - [36, 36]
+    note: "Dead constant; sole consumer is dead file bad_template.py"
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/constants.py]
+      - [agent_server/testing/testdata/approval_policy/bad_template.py]

@@ -2,22 +2,22 @@
 description: Capture a code quality issue in the specimens repository (user)
 ---
 
-Capture a code quality issue in the specimens repository at `~/code/specimens`.
+Capture a code quality issue in the specimens repository at `props/specimens/`.
 
 ## First: Read the Specimens Documentation
 
 **Before creating any issue, read the local documentation:**
 
-- `~/code/specimens/CLAUDE.md` - Overview and key docs
-- `~/code/specimens/docs/format-spec.md` - YAML format specification
-- `~/code/specimens/docs/authoring-guide.md` - How to write good issues
+- `props/specimens/AGENTS.md` - Main guide
+- `props/specimens/docs/format_spec.md` - YAML format specification
+- `props/specimens/docs/authoring_guide.md` - How to write good issues
 
 These docs are the source of truth for the current format (YAML, not libsonnet).
 
 ## Workflow
 
 1. **Determine current repo**: `basename $(git rev-parse --show-toplevel)`
-2. **Find latest snapshot**: `ls -1d ~/code/specimens/$REPO_NAME/20* | tail -1`
+2. **Find latest snapshot**: `ls -1d props/specimens/$REPO_NAME/20* | tail -1`
 3. **Check if issue exists**: Search `issues/*.yaml` in that snapshot
 4. **If not documented**: Create new `.yaml` file in `<snapshot>/issues/`
 5. **Verify YAML syntax**: `python3 -c "import yaml; yaml.safe_load(open('path/to/issue.yaml'))"`

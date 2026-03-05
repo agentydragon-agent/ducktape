@@ -17,7 +17,7 @@ Find and read all `.md` files in `props/` to understand already defined formal p
 
 ### Specimens
 
-Specimens are in the external repository at `~/code/specimens/`. Read the specimens there to find examples of bad code with critique. Canonical ground‑truth is now recorded in
+Specimens are in `props/specimens/`. Read the specimens there to find examples of bad code with critique. Canonical ground‑truth is now recorded in
 `issues/*.yaml` files. Use these to identify:
 
 - Issues to flag (should_flag=true) — candidates to generalize into new/edited properties
