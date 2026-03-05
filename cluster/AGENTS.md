@@ -181,6 +181,26 @@ logs from all nodes. Grafana has Loki as a datasource for interactive log explor
 
 @docs/lessons_learned/2025-11-28-eso-password-generator-desync.md
 
+## Harbor CI (Container Registry)
+
+**Single `ducktape` project**: All CI-built images are pushed to `registry.allegedly.works/ducktape/<image>`.
+Managed by `terraform/gitops/harbor-ci/main.tf` (tofu-controller).
+
+**Gotcha — removing Harbor projects via Terraform**: Harbor projects containing repositories
+cannot be destroyed without `force_destroy = true`. When consolidating or removing projects,
+use OpenTofu `removed` blocks with `lifecycle { destroy = false }` to orphan them from state
+instead of destroying them. This lets you stop managing them in Terraform while keeping the
+images accessible until they've been migrated.
+
+**Gotcha — Flux image automation race condition**: If you rename image paths in deployments
+(e.g., `old-project/image` → `ducktape/image`) but the new path doesn't have images yet,
+Flux `ImageUpdateAutomation` will revert your deployment files to the old paths (because the
+old `ImageRepository` still finds tags and the new one doesn't). To avoid this:
+
+1. Create the new Harbor project first (let terraform reconcile)
+2. Push at least one image to the new path (trigger CI or manually retag)
+3. Only then update `ImageRepository` resources and deployment image references
+
 ## Flux Kustomization Layering (CRD Dependencies)
 
 **Never mix HelmReleases with CRD instances in the same Kustomization.** helm-controller
