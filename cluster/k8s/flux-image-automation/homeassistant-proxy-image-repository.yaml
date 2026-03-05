@@ -4,7 +4,7 @@ metadata:
   name: homeassistant-proxy
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/homeassistant-proxy/homeassistant-proxy
+  image: registry.allegedly.works/ducktape/homeassistant-proxy
   interval: 5m
   secretRef:
     name: harbor-ci-robot

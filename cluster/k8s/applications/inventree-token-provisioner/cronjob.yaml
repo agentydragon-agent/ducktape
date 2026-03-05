@@ -25,7 +25,7 @@ spec:
             - name: harbor-ci-robot
           containers:
             - name: provisioner
-              image: registry.allegedly.works/inventree/token-provisioner:latest
+              image: registry.allegedly.works/ducktape/token-provisioner:latest
               imagePullPolicy: Always
               env:
                 - name: INVENTREE_ADMIN_USER

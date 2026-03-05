@@ -35,7 +35,7 @@ jobs:
 
       - uses: ./.github/actions/harbor-build-push
         with:
-          image: registry.allegedly.works/openclaw/openclaw-matrix
+          image: registry.allegedly.works/ducktape/openclaw-matrix
           context: .
           file: docker/openclaw/Dockerfile
           harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}

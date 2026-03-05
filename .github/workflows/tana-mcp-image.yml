@@ -30,7 +30,7 @@ jobs:
 
       - uses: ./.github/actions/harbor-build-push
         with:
-          image: registry.allegedly.works/tana-mcp/tana-desktop
+          image: registry.allegedly.works/ducktape/tana-desktop
           context: docker/tana-mcp
           harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           harbor_robot_token: ${{ secrets.HARBOR_ROBOT_TOKEN }}

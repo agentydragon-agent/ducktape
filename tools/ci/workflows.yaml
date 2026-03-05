@@ -117,28 +117,32 @@ releases:
 harbor_images:
   - bazel_target: //oauth_broker:load
     local_tag: oauth-broker:latest
-    remote_path: oauth-broker/oauth-broker
+    remote_path: ducktape/oauth-broker
 
   - bazel_target: //cluster/k8s/applications/inventree-token-provisioner:load
     local_tag: inventree-token-provisioner:latest
-    remote_path: inventree/token-provisioner
+    remote_path: ducktape/token-provisioner
 
   - bazel_target: //props/backend:load
     local_tag: props-backend:latest
-    remote_path: props/props-backend
+    remote_path: ducktape/props-backend
 
   - bazel_target: //airlock:load
     local_tag: airlock:latest
-    remote_path: airlock/airlock
+    remote_path: ducktape/airlock
 
   - bazel_target: //mcp_infra/exec:direct_load
     local_tag: exec-backend:latest
-    remote_path: mcp_infra/exec-backend
+    remote_path: ducktape/exec-backend
 
   - bazel_target: //homeassistant/proxy:load
     local_tag: homeassistant-proxy:latest
-    remote_path: homeassistant-proxy/homeassistant-proxy
+    remote_path: ducktape/homeassistant-proxy
 
   - bazel_target: //inventree_utils/rai_plugin:load
     local_tag: inventree-custom:latest
-    remote_path: inventree/inventree
+    remote_path: ducktape/inventree
+
+  - bazel_target: //tana/token_broker:load
+    local_tag: tana-token-broker:latest
+    remote_path: ducktape/tana-token-broker

@@ -1,10 +1,8 @@
 # Harbor CI infrastructure
 #
 # Creates:
-#   - props project (private, for hosting CI-pushed images)
-#   - inventree project (private, for hosting the custom InvenTree image)
-#   - openclaw project (private, for hosting the custom OpenClaw+matrix image)
-#   - ci robot account with push+pull on all projects
+#   - ducktape project (private, single project for all CI-pushed images)
+#   - ci robot account with push+pull on the ducktape project
 #   - webhook token for the Flux harbor Receiver
 #   - github webhook token for the Flux github Receiver
 #
@@ -29,37 +27,13 @@ provider "vault" {
   token   = var.vault_token
 }
 
-# Private project for CI-built images
-resource "harbor_project" "props" {
-  name   = "props"
+# Single project for all CI-built images
+resource "harbor_project" "ducktape" {
+  name   = "ducktape"
   public = false
 }
 
-# Private project for the custom InvenTree image
-resource "harbor_project" "inventree" {
-  name   = "inventree"
-  public = false
-}
-
-# Private project for the custom OpenClaw+matrix image
-resource "harbor_project" "openclaw" {
-  name   = "openclaw"
-  public = false
-}
-
-# Private project for the ActivityWatch server image
-resource "harbor_project" "activitywatch" {
-  name   = "activitywatch"
-  public = false
-}
-
-# Private project for the OAuth broker image
-resource "harbor_project" "oauth_broker" {
-  name   = "oauth-broker"
-  public = false
-}
-
-# Project-level robot account for CI push + cluster pull (both projects)
+# System-level robot account for CI push + cluster pull
 resource "harbor_robot_account" "ci" {
   name        = "ci"
   description = "CI/CD robot account — pushes images from GitHub Actions, used as imagePullSecret in app namespaces"
@@ -67,95 +41,7 @@ resource "harbor_robot_account" "ci" {
 
   permissions {
     kind      = "project"
-    namespace = harbor_project.props.name
-
-    access {
-      action   = "push"
-      resource = "repository"
-    }
-    access {
-      action   = "pull"
-      resource = "repository"
-    }
-    access {
-      action   = "read"
-      resource = "artifact"
-    }
-    access {
-      action   = "create"
-      resource = "tag"
-    }
-  }
-
-  permissions {
-    kind      = "project"
-    namespace = harbor_project.inventree.name
-
-    access {
-      action   = "push"
-      resource = "repository"
-    }
-    access {
-      action   = "pull"
-      resource = "repository"
-    }
-    access {
-      action   = "read"
-      resource = "artifact"
-    }
-    access {
-      action   = "create"
-      resource = "tag"
-    }
-  }
-
-  permissions {
-    kind      = "project"
-    namespace = harbor_project.openclaw.name
-
-    access {
-      action   = "push"
-      resource = "repository"
-    }
-    access {
-      action   = "pull"
-      resource = "repository"
-    }
-    access {
-      action   = "read"
-      resource = "artifact"
-    }
-    access {
-      action   = "create"
-      resource = "tag"
-    }
-  }
-
-  permissions {
-    kind      = "project"
-    namespace = harbor_project.activitywatch.name
-
-    access {
-      action   = "push"
-      resource = "repository"
-    }
-    access {
-      action   = "pull"
-      resource = "repository"
-    }
-    access {
-      action   = "read"
-      resource = "artifact"
-    }
-    access {
-      action   = "create"
-      resource = "tag"
-    }
-  }
-
-  permissions {
-    kind      = "project"
-    namespace = harbor_project.oauth_broker.name
+    namespace = harbor_project.ducktape.name
 
     access {
       action   = "push"

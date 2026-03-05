@@ -4,7 +4,7 @@ metadata:
   name: oauth-broker
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/oauth-broker/oauth-broker
+  image: registry.allegedly.works/ducktape/oauth-broker
   interval: 5m
   secretRef:
     name: harbor-ci-robot

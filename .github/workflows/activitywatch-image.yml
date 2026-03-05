@@ -30,7 +30,7 @@ jobs:
 
       - uses: ./.github/actions/harbor-build-push
         with:
-          image: registry.allegedly.works/activitywatch/aw-server
+          image: registry.allegedly.works/ducktape/aw-server
           context: docker/activitywatch
           harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           harbor_robot_token: ${{ secrets.HARBOR_ROBOT_TOKEN }}

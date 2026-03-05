@@ -4,7 +4,7 @@ metadata:
   name: activitywatch
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/activitywatch/aw-server
+  image: registry.allegedly.works/ducktape/aw-server
   interval: 5m
   secretRef:
     name: harbor-ci-robot

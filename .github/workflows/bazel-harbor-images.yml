@@ -44,40 +44,46 @@ jobs:
           .github/scripts/harbor_push.sh \
             //oauth_broker:load \
             oauth-broker:latest \
-            registry.allegedly.works/oauth-broker/oauth-broker
+            registry.allegedly.works/ducktape/oauth-broker
       - name: Build and push inventree-token-provisioner
         run: |-
           .github/scripts/harbor_push.sh \
             //cluster/k8s/applications/inventree-token-provisioner:load \
             inventree-token-provisioner:latest \
-            registry.allegedly.works/inventree/token-provisioner
+            registry.allegedly.works/ducktape/token-provisioner
       - name: Build and push props-backend
         run: |-
           .github/scripts/harbor_push.sh \
             //props/backend:load \
             props-backend:latest \
-            registry.allegedly.works/props/props-backend
-      - name: Build and push approval-gate
+            registry.allegedly.works/ducktape/props-backend
+      - name: Build and push airlock
         run: |-
           .github/scripts/harbor_push.sh \
-            //approval_gate:load \
-            approval-gate:latest \
-            registry.allegedly.works/approval-gate/approval-gate
-      - name: Build and push approval-gate-exec-backend
+            //airlock:load \
+            airlock:latest \
+            registry.allegedly.works/ducktape/airlock
+      - name: Build and push exec-backend
         run: |-
           .github/scripts/harbor_push.sh \
             //mcp_infra/exec:direct_load \
-            approval-gate-exec-backend:latest \
-            registry.allegedly.works/approval-gate/exec-backend
+            exec-backend:latest \
+            registry.allegedly.works/ducktape/exec-backend
       - name: Build and push homeassistant-proxy
         run: |-
           .github/scripts/harbor_push.sh \
             //homeassistant/proxy:load \
             homeassistant-proxy:latest \
-            registry.allegedly.works/homeassistant-proxy/homeassistant-proxy
+            registry.allegedly.works/ducktape/homeassistant-proxy
       - name: Build and push inventree-custom
         run: |-
           .github/scripts/harbor_push.sh \
             //inventree_utils/rai_plugin:load \
             inventree-custom:latest \
-            registry.allegedly.works/inventree/inventree
+            registry.allegedly.works/ducktape/inventree
+      - name: Build and push tana-token-broker
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //tana/token_broker:load \
+            tana-token-broker:latest \
+            registry.allegedly.works/ducktape/tana-token-broker

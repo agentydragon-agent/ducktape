@@ -4,7 +4,7 @@ metadata:
   name: airlock
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/airlock/airlock
+  image: registry.allegedly.works/ducktape/airlock
   interval: 5m
   secretRef:
     name: harbor-ci-robot

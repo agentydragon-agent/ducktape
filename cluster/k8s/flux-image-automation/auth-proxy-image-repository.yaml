@@ -4,7 +4,7 @@ metadata:
   name: auth-proxy
   namespace: flux-system
 spec:
-  image: registry.allegedly.works/airlock/auth-proxy
+  image: registry.allegedly.works/ducktape/auth-proxy
   interval: 5m
   secretRef:
     name: harbor-ci-robot
