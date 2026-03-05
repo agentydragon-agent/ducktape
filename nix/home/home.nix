@@ -143,6 +143,12 @@ in
 
   nix.package = pkgs.nix;
 
+  nix.gc = {
+    automatic = true;
+    frequency = "weekly";
+    options = "--delete-older-than 14d";
+  };
+
   nix.settings = {
     experimental-features = [
       "nix-command"
