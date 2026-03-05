@@ -71,7 +71,7 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 				return fmt.Errorf("detecting MAC: %w", err)
 			}
 
-			id, err := identity.LoadOrCreate(agentCfg.IdentityFile, cfgSpec.ClusterID)
+			id, err := identity.LoadOrCreate(agentCfg.Kubespan.IdentityFile, cfgSpec.ClusterID)
 			if err != nil {
 				return fmt.Errorf("loading identity: %w", err)
 			}

@@ -39,25 +39,25 @@ type Manager struct {
 // shared secret as the key. The discovery service never sees plaintext node data.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (Run)
 func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Logger) (*Manager, error) {
-	secretBytes, err := base64.StdEncoding.DecodeString(cfg.SharedSecret)
+	secretBytes, err := base64.StdEncoding.DecodeString(cfg.Cluster.Secret)
 	if err != nil {
-		return nil, fmt.Errorf("decoding shared_secret: %w", err)
+		return nil, fmt.Errorf("decoding cluster.secret: %w", err)
 	}
 
 	cipherBlock, err := aes.NewCipher(secretBytes)
 	if err != nil {
-		return nil, fmt.Errorf("AES cipher from shared_secret: %w", err)
+		return nil, fmt.Errorf("AES cipher from cluster.secret: %w", err)
 	}
 
 	opts := discoveryclient.Options{
 		Cipher:        cipherBlock,
-		Endpoint:      cfg.DiscoveryEndpoint,
-		ClusterID:     cfg.ClusterID,
+		Endpoint:      cfg.Discovery.Endpoint,
+		ClusterID:     cfg.Cluster.ID,
 		AffiliateID:   affiliateID,
 		TTL:           discoveryTTL,
 		ClientVersion: "kubespand/0.1.0",
 	}
-	if cfg.InsecureDiscovery {
+	if cfg.Discovery.Insecure {
 		opts.Insecure = true
 	} else {
 		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -103,7 +103,7 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 
 	// Build endpoint list from extra_endpoints config.
 	var endpoints []*clientpb.Endpoint
-	for _, addrPort := range cfg.ExtraEndpoints {
+	for _, addrPort := range cfg.Kubespan.ExtraEndpoints {
 		ipBytes, _ := addrPort.Addr().MarshalBinary()
 		endpoints = append(endpoints, &clientpb.Endpoint{
 			Ip:   ipBytes,
@@ -136,7 +136,7 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 			NodeId:          id.PublicKey,
 			Hostname:        hostname,
 			Nodename:        hostname,
-			MachineType:     cfg.MachineType,
+			MachineType:     cfg.Discovery.MachineType,
 			OperatingSystem: runtime.GOOS + "/" + runtime.GOARCH + " (kubespand)",
 			Kubespan: &clientpb.KubeSpan{
 				PublicKey:           id.PublicKey,

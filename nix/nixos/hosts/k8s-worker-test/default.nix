@@ -1,6 +1,7 @@
 # k8s-worker-test — NixOS VM for testing K8s worker node enrollment
 #
 # This is a test VM that runs GNOME desktop + Kubernetes worker.
+# Uses KubeSpan fabric (kubespand) for mesh connectivity.
 # See nix/nixos/modules/k8s-worker.nix for manual setup steps.
 {
   config,
@@ -20,7 +21,10 @@
 
   time.timeZone = "UTC";
 
-  ducktape.k8sWorker.enable = true;
+  ducktape.k8sWorker = {
+    enable = true;
+    fabric = "kubespan";
+  };
 
   users.users.${username} = {
     openssh.authorizedKeys.keys = [

@@ -218,7 +218,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 
 	// Initialize WireGuard and routing rules if needed.
 	if ctrl.wg == nil {
-		wg, wgErr := ctrl.WireguardManagerFactory(idSpec.PrivateKey, cfgSpec.SharedSecret, agentCfg.ListenPort, int(cfgSpec.MTU))
+		wg, wgErr := ctrl.WireguardManagerFactory(idSpec.PrivateKey, cfgSpec.SharedSecret, agentCfg.Kubespan.ListenPort, int(cfgSpec.MTU))
 		if wgErr != nil {
 			return fmt.Errorf("wireguard manager: %w", wgErr)
 		}

@@ -17,8 +17,7 @@
 #      sudo mkdir -p /etc/kubernetes/pki
 #      sudo cp ca.crt /etc/kubernetes/pki/
 #      sudo cp bootstrap-kubelet.conf /etc/kubernetes/
-# 3. Register with Headscale:
-#      sudo tailscale up --login-server=https://headscale.allegedly.works
+# 3. Place kubespand config (kubespan fabric) or register with Headscale (tailscale fabric)
 # 4. Start kubelet:
 #      sudo systemctl start kubelet
 # 5. Approve the CSR on the cluster:
@@ -32,6 +31,9 @@
 }:
 let
   cfg = config.ducktape.k8sWorker;
+
+  isKubespan = cfg.fabric == "kubespan";
+  isTailscale = cfg.fabric == "tailscale";
 
   kubeletDeps = with pkgs; [
     kubernetes
@@ -88,10 +90,43 @@ let
       balance roundrobin
       server-template cp 3 ${cfg.apiServerHost}:${toString cfg.apiServerPort} resolvers dns init-addr libc,last check inter 5s fall 3 rise 2
   '';
+
+  # Resolve node IP based on fabric choice
+  resolveNodeIp =
+    if isKubespan then
+      # Read the KubeSpan ULA IPv6 from the already-up kubespan interface
+      pkgs.writeShellScript "resolve-kubespan-ip" ''
+        ${pkgs.iproute2}/bin/ip -6 addr show dev kubespan scope global \
+          | ${pkgs.gnugrep}/bin/grep -oP 'fd[0-9a-f:]+' | head -1 > /run/kubelet-node-ip
+        if [ ! -s /run/kubelet-node-ip ]; then
+          echo "Failed to read KubeSpan ULA from kubespan interface" >&2
+          exit 1
+        fi
+      ''
+    else
+      # Resolve Tailscale IP
+      pkgs.writeShellScript "resolve-tailscale-ip" ''
+        ${pkgs.tailscale}/bin/tailscale ip --4 | head -1 > /run/kubelet-node-ip
+      '';
 in
 {
+  imports = [ ./kubespand.nix ];
+
   options.ducktape.k8sWorker = {
     enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster)";
+
+    fabric = lib.mkOption {
+      type = lib.types.enum [
+        "tailscale"
+        "kubespan"
+      ];
+      default = "tailscale";
+      description = ''
+        Mesh fabric for inter-node connectivity.
+        "tailscale" uses Headscale/Tailscale (separate mesh alongside KubeSpan).
+        "kubespan" uses kubespand to join the Talos KubeSpan WireGuard mesh directly.
+      '';
+    };
 
     apiServerHost = lib.mkOption {
       type = lib.types.str;
@@ -114,7 +149,7 @@ in
     headscaleUrl = lib.mkOption {
       type = lib.types.str;
       default = "https://headscale.allegedly.works";
-      description = "Headscale control server URL for Tailscale";
+      description = "Headscale control server URL for Tailscale (only used with fabric = tailscale)";
     };
 
     caCertPath = lib.mkOption {
@@ -188,20 +223,20 @@ in
         "network-online.target"
         "containerd.service"
         "haproxy.service"
-      ];
+      ]
+      ++ lib.optional isKubespan "kubespand.service";
       wants = [
         "network-online.target"
         "containerd.service"
       ];
+      # kubespand: hard dependency — kubelet stops if kubespand dies
+      requires = lib.optional isKubespan "kubespand.service";
       # Don't start automatically — wait for manual credential placement
       wantedBy = [ ];
       serviceConfig = {
         # Prepend /run/wrappers/bin for NixOS setuid mount/umount wrappers.
         Environment = "PATH=/run/wrappers/bin:${lib.makeBinPath kubeletDeps}:/usr/bin:/bin";
-        # Resolve Tailscale IP before starting kubelet
-        ExecStartPre = pkgs.writeShellScript "resolve-tailscale-ip" ''
-          ${pkgs.tailscale}/bin/tailscale ip --4 | head -1 > /run/kubelet-node-ip
-        '';
+        ExecStartPre = resolveNodeIp;
         ExecStart = pkgs.writeShellScript "kubelet-start" ''
           NODE_IP=$(cat /run/kubelet-node-ip)
           exec ${pkgs.kubernetes}/bin/kubelet \
@@ -231,8 +266,8 @@ in
       config = haproxyConfig;
     };
 
-    # Tailscale for Headscale mesh connectivity
-    services.tailscale = {
+    # Tailscale for Headscale mesh connectivity (tailscale fabric only)
+    services.tailscale = lib.mkIf isTailscale {
       enable = true;
       extraUpFlags = [
         "--login-server=${cfg.headscaleUrl}"
@@ -240,6 +275,9 @@ in
       ];
       openFirewall = true;
     };
+
+    # KubeSpan fabric: enable kubespand
+    ducktape.kubespand = lib.mkIf isKubespan { enable = true; };
 
     # Firewall: allow VXLAN (Cilium) and kubelet
     networking.firewall.allowedUDPPorts = [

@@ -60,10 +60,10 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		return fmt.Errorf("config: %w", err)
 	}
 	logger.Info("loaded config",
-		zap.String("cluster_id", agentCfg.ClusterID),
-		zap.String("discovery_endpoint", agentCfg.DiscoveryEndpoint),
-		zap.Int("listen_port", agentCfg.ListenPort),
-		zap.Uint32("mtu", agentCfg.MTU),
+		zap.String("cluster_id", agentCfg.Cluster.ID),
+		zap.String("discovery_endpoint", agentCfg.Discovery.Endpoint),
+		zap.Int("listen_port", agentCfg.Kubespan.ListenPort),
+		zap.Uint32("mtu", agentCfg.Kubespan.MTU),
 		zap.Bool("discovery_only", discoveryOnly),
 	)
 
@@ -116,7 +116,7 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	if err := rt.RegisterController(&peerspec.PeerSpecController{}); err != nil {
 		return fmt.Errorf("registering peerspec controller: %w", err)
 	}
-	if agentCfg.AdvertiseKubernetesNetworks && !discoveryOnly {
+	if agentCfg.Kubernetes.AdvertiseNetworks && !discoveryOnly {
 		if err := rt.RegisterController(&KubernetesNodeController{}); err != nil {
 			return fmt.Errorf("registering k8s node controller: %w", err)
 		}

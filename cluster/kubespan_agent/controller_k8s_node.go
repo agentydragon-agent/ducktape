@@ -86,7 +86,7 @@ func (ctrl *KubernetesNodeController) Run(ctx context.Context, r controller.Runt
 		prefixes := ctrl.getPodCIDRs(logger)
 
 		// Merge static ServiceCIDRs from config.
-		prefixes = append(prefixes, agentCfg.ServiceCIDRs...)
+		prefixes = append(prefixes, agentCfg.Kubernetes.ServiceCIDRs...)
 
 		// Write KubernetesNetworks resource.
 		if err := safe.WriterModify(ctx, r, k8snet.New(), func(res *k8snet.KubernetesNetworks) error {
@@ -106,10 +106,10 @@ func (ctrl *KubernetesNodeController) initInformer(ctx context.Context, r contro
 	var config *rest.Config
 	var err error
 
-	if agentCfg.KubeconfigPath != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", agentCfg.KubeconfigPath)
+	if agentCfg.Kubernetes.KubeconfigPath != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", agentCfg.Kubernetes.KubeconfigPath)
 		if err != nil {
-			return fmt.Errorf("building kubeconfig from %s: %w", agentCfg.KubeconfigPath, err)
+			return fmt.Errorf("building kubeconfig from %s: %w", agentCfg.Kubernetes.KubeconfigPath, err)
 		}
 	} else {
 		config, err = rest.InClusterConfig()
@@ -127,7 +127,7 @@ func (ctrl *KubernetesNodeController) initInformer(ctx context.Context, r contro
 	ctrl.factory = informers.NewSharedInformerFactoryWithOptions(
 		clientset, 0,
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", agentCfg.NodeName).String()
+			opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", agentCfg.Kubernetes.NodeName).String()
 		}),
 	)
 
@@ -148,7 +148,7 @@ func (ctrl *KubernetesNodeController) initInformer(ctx context.Context, r contro
 		return fmt.Errorf("timed out waiting for K8s node informer to sync")
 	}
 
-	logger.Info("K8s node informer started", zap.String("node", agentCfg.NodeName))
+	logger.Info("K8s node informer started", zap.String("node", agentCfg.Kubernetes.NodeName))
 	return nil
 }
 
