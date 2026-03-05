@@ -13,7 +13,7 @@ locals {
   proxmox_username   = "${local.proxmox_user_base}@pve"
 
   # VM admin privileges for the pool
-  vm_admin_privs = "Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback"
+  vm_admin_privs = "Pool.Allocate,Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback"
 
   # SSH key handling - try common key types in order of preference
   ssh_key_candidates = [
@@ -51,14 +51,15 @@ check "ssh_key_required" {
   }
 }
 
-# Check if ducktape repo has uncommitted changes or unpushed commits
+# Check if nix/ tree has uncommitted changes or unpushed commits
+# (only nix/ matters — VMs fetch NixOS/home-manager config from GitHub)
 data "external" "git_status" {
   program = ["bash", "-c", <<-EOT
     cd "${path.module}/../.."
     dirty="false"
     unpushed="false"
 
-    if ! git diff --quiet HEAD 2>/dev/null || [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    if ! git diff --quiet HEAD -- nix/ 2>/dev/null || [ -n "$(git status --porcelain -- nix/ 2>/dev/null)" ]; then
       dirty="true"
     fi
 
@@ -75,8 +76,8 @@ check "git_clean" {
   assert {
     condition     = data.external.git_status.result.dirty == "false"
     error_message = <<-EOT
-      WARNING: Ducktape repo has uncommitted changes!
-      The VM will fetch home-manager config from GitHub, not your local changes.
+      WARNING: nix/ tree has uncommitted changes!
+      The VM will fetch NixOS/home-manager config from GitHub, not your local changes.
       Commit and push your changes first, or your VM config may be outdated.
     EOT
   }
@@ -128,7 +129,8 @@ data "external" "pool_user" {
   program = ["bash", "-c", <<-EOT
     ssh ${local.proxmox_host} '
       pveum user add ${local.proxmox_username} --comment "${var.user_comment}" 2>/dev/null || true
-      pveum role add VMAdmin-${local.proxmox_user_base} -privs "${local.vm_admin_privs}" 2>/dev/null || true
+      pveum role add VMAdmin-${local.proxmox_user_base} -privs "${local.vm_admin_privs}" 2>/dev/null || \
+      pveum role modify VMAdmin-${local.proxmox_user_base} -privs "${local.vm_admin_privs}"
     '
     printf '{"success":"true"}'
   EOT
@@ -197,9 +199,11 @@ resource "proxmox_virtual_environment_pool" "user_pool" {
 
 resource "proxmox_virtual_environment_acl" "pool_admin" {
   path      = "/pool/${proxmox_virtual_environment_pool.user_pool.pool_id}"
-  role_id   = "PVEVMAdmin"
+  role_id   = "VMAdmin-${local.proxmox_user_base}"
   user_id   = local.proxmox_username
   propagate = true
+
+  depends_on = [data.external.pool_user]
 }
 
 resource "proxmox_virtual_environment_acl" "storage_access" {
