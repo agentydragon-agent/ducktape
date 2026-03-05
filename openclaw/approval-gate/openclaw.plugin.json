@@ -42,12 +42,12 @@
         "type": "string",
         "enum": ["immediate", "bounded", "blocking"],
         "default": "bounded",
-        "description": "Default resolution mode for tool calls. 'immediate': return thunk without waiting. 'bounded': wait up to approvalTimeoutSeconds then return thunk. 'blocking': wait indefinitely for terminal resolution."
+        "description": "Default wait_mode for tool calls. 'immediate': return current action state without waiting. 'bounded': wait up to approvalTimeoutSeconds for terminal resolution. 'blocking': wait indefinitely for terminal resolution."
       },
       "approvalTimeoutSeconds": {
         "type": "number",
         "default": 30,
-        "description": "Seconds to wait in 'bounded' mode before returning a thunk. Ignored in 'immediate' and 'blocking' modes."
+        "description": "Seconds to wait in 'bounded' mode before returning. Ignored in 'immediate' and 'blocking' modes."
       }
     }
   }

@@ -18,3 +18,4 @@ configMapGenerator:
     namespace: approval-gate
     files:
       - config.yaml
+      - predicate.py

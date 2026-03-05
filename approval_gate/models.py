@@ -147,7 +147,7 @@ class WithdrawnDetail(BaseModel):
 
 class ExecutionStartedDetail(BaseModel):
     kind: Literal[LogEventKind.EXECUTION_STARTED] = LogEventKind.EXECUTION_STARTED
-    started_at: datetime
+    started_at: datetime | None = None
     model_config = ConfigDict(extra="forbid")
 
 
