@@ -75,3 +75,9 @@ jobs:
             //homeassistant/proxy:load \
             homeassistant-proxy:latest \
             registry.allegedly.works/homeassistant-proxy/homeassistant-proxy
+      - name: Build and push inventree-custom
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //inventree_utils/rai_plugin:load \
+            inventree-custom:latest \
+            registry.allegedly.works/inventree/inventree

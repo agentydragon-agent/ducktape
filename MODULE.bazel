@@ -162,7 +162,17 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v1.9.5",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_v1_9_5", "talos_v1_9_5_linux_amd64")
+
+# InvenTree application base image — for layering in the rai_plugin wheel.
+# To update: docker manifest inspect inventree/inventree:stable | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
+oci.pull(
+    name = "inventree_stable",
+    digest = "sha256:874bfdc56d524c545c38667b98873749bc5daf68130d47fc372fd32322288699",
+    image = "docker.io/inventree/inventree",
+    platforms = ["linux/amd64"],
+    tag = "stable",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_v1_9_5", "talos_v1_9_5_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")

@@ -138,3 +138,7 @@ harbor_images:
   - bazel_target: //homeassistant/proxy:load
     local_tag: homeassistant-proxy:latest
     remote_path: homeassistant-proxy/homeassistant-proxy
+
+  - bazel_target: //inventree_utils/rai_plugin:load
+    local_tag: inventree-custom:latest
+    remote_path: inventree/inventree
