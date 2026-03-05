@@ -97,7 +97,7 @@ let
       # Read the KubeSpan ULA IPv6 from the already-up kubespan interface
       pkgs.writeShellScript "resolve-kubespan-ip" ''
         ${pkgs.iproute2}/bin/ip -6 addr show dev kubespan scope global \
-          | ${pkgs.gnugrep}/bin/grep -oP 'fd[0-9a-f:]+' | head -1 > /run/kubelet-node-ip
+          | ${pkgs.gnugrep}/bin/grep -oP 'fd[0-9a-f:]+' | ${pkgs.coreutils}/bin/head -1 > /run/kubelet-node-ip
         if [ ! -s /run/kubelet-node-ip ]; then
           echo "Failed to read KubeSpan ULA from kubespan interface" >&2
           exit 1
@@ -106,7 +106,7 @@ let
     else
       # Resolve Tailscale IP
       pkgs.writeShellScript "resolve-tailscale-ip" ''
-        ${pkgs.tailscale}/bin/tailscale ip --4 | head -1 > /run/kubelet-node-ip
+        ${pkgs.tailscale}/bin/tailscale ip --4 | ${pkgs.coreutils}/bin/head -1 > /run/kubelet-node-ip
       '';
 in
 {
