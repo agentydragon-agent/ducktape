@@ -27,11 +27,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build approval-gate plugin tar
-        run: bazel build //openclaw/approval-gate:plugin_tar
+      - name: Build airlock plugin tar
+        run: bazel build //airlock/openclaw:plugin_tar
 
       - name: Stage plugin tar for Docker
-        run: cp bazel-bin/openclaw/approval-gate/plugin_tar.tar docker/openclaw/approval-gate-plugin.tar
+        run: cp bazel-bin/airlock/openclaw/plugin_tar.tar docker/openclaw/airlock-plugin.tar
 
       - uses: ./.github/actions/harbor-build-push
         with:

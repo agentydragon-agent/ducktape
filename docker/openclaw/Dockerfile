@@ -1,6 +1,6 @@
 # Custom OpenClaw image with:
 #   - matrix channel plugin pre-installed
-#   - approval-gate plugin pre-installed
+#   - airlock plugin pre-installed
 #
 # The upstream image bundles extension source at /app/extensions/matrix/ but
 # without node_modules/. We install deps directly there so the bundled extension
@@ -31,11 +31,11 @@ RUN node -e " \
  && npm install --omit=dev \
  && chown -R node:node node_modules
 
-# ── Approval gate plugin ──────────────────────────────────────────────────────
-# Plugin source built by Bazel (//openclaw/approval-gate:plugin_tar).
-# CI stages the tar at docker/openclaw/approval-gate-plugin.tar before build.
-WORKDIR /app/extensions/approval-gate
-ADD docker/openclaw/approval-gate-plugin.tar .
+# ── Airlock plugin ────────────────────────────────────────────────────────────
+# Plugin source built by Bazel (//airlock/openclaw:plugin_tar).
+# CI stages the tar at docker/openclaw/airlock-plugin.tar before build.
+WORKDIR /app/extensions/airlock
+ADD docker/openclaw/airlock-plugin.tar .
 RUN npm install --omit=dev \
  && chown -R node:node .
 

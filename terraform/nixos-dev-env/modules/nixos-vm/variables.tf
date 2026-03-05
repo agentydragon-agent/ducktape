@@ -94,3 +94,17 @@ variable "ssh_public_key" {
   description = "SSH public key for VM access"
   type        = string
 }
+
+# K8s cluster join credentials (optional)
+variable "k8s_cluster_join" {
+  description = "K8s cluster join credentials. When set, cloud-init writes credential files for kubelet and kubespand."
+  type = object({
+    bootstrap_kubeconfig = string
+    ca_cert              = string
+    cluster_id           = string
+    cluster_secret       = string
+    node_name            = string
+  })
+  default   = null
+  sensitive = true
+}

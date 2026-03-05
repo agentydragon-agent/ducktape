@@ -19,6 +19,7 @@ locals {
     nixos_host             = var.nixos_host
     home_manager_flake_url = var.home_manager_flake_url
     home_manager_host      = var.home_manager_host
+    k8s_cluster_join       = var.k8s_cluster_join
   })
 }
 

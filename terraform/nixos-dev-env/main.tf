@@ -279,6 +279,32 @@ resource "null_resource" "cleanup" {
 }
 
 # =============================================================================
+# K8S CLUSTER JOIN CREDENTIALS (conditional)
+# =============================================================================
+
+locals {
+  talosconfig_resolved = var.talosconfig_path != "" ? var.talosconfig_path : "${path.module}/../../cluster/talosconfig"
+}
+
+# Extract cluster credentials from Talos control plane via talosctl.
+# Only runs when k8s cluster join is enabled.
+data "external" "k8s_credentials" {
+  count = var.enable_k8s_cluster_join ? 1 : 0
+
+  program = [
+    "bash", "-c",
+    "export CP_NODE='${var.k8s_controlplane_node}' TALOSCONFIG='${local.talosconfig_resolved}'; exec bash '${path.module}/scripts/extract-k8s-credentials.sh'"
+  ]
+}
+
+check "k8s_join_prerequisites" {
+  assert {
+    condition     = !var.enable_k8s_cluster_join || var.k8s_controlplane_node != ""
+    error_message = "k8s_controlplane_node is required when enable_k8s_cluster_join is true."
+  }
+}
+
+# =============================================================================
 # VM INSTANCES
 # =============================================================================
 
@@ -321,7 +347,9 @@ module "wyrm2" {
 }
 
 # k8s-worker-test - NixOS K8s worker node prototype
-# See nix/nixos/modules/k8s-worker.nix for manual setup steps after boot.
+# With cluster join enabled, cloud-init writes kubelet + kubespand credentials.
+# After boot: systemctl start kubespand && systemctl start kubelet
+# Then approve CSR: kubectl certificate approve <csr-name>
 module "k8s_worker_test" {
   source = "./modules/nixos-vm"
   providers = {
@@ -349,6 +377,15 @@ module "k8s_worker_test" {
   network_bridge    = var.network_bridge
   pool_id           = proxmox_virtual_environment_pool.user_pool.pool_id
   ssh_public_key    = local.ssh_public_key
+
+  # K8s cluster join credentials (conditional)
+  k8s_cluster_join = var.enable_k8s_cluster_join ? {
+    bootstrap_kubeconfig = data.external.k8s_credentials[0].result.bootstrap_kubeconfig
+    ca_cert              = data.external.k8s_credentials[0].result.ca_cert
+    cluster_id           = data.external.k8s_credentials[0].result.cluster_id
+    cluster_secret       = data.external.k8s_credentials[0].result.cluster_secret
+    node_name            = "k8s-worker-test"
+  } : null
 
   depends_on = [
     proxmox_virtual_environment_acl.pool_admin,

@@ -20,6 +20,39 @@ users:
 package_update: false
 package_upgrade: false
 
+%{ if k8s_cluster_join != null ~}
+write_files:
+  # Kubernetes cluster CA certificate
+  - path: /etc/kubernetes/pki/ca.crt
+    owner: root:root
+    permissions: '0644'
+    content: |
+      ${indent(6, k8s_cluster_join.ca_cert)}
+
+  # Bootstrap kubeconfig for kubelet TLS bootstrap
+  # Server URL is https://localhost:7445 — HAProxy proxies to api.allegedly.works:6443
+  - path: /etc/kubernetes/bootstrap-kubelet.conf
+    owner: root:root
+    permissions: '0600'
+    content: |
+      ${indent(6, k8s_cluster_join.bootstrap_kubeconfig)}
+
+  # kubespand configuration (KubeSpan mesh credentials)
+  - path: /etc/kubespan/agent.yaml
+    owner: root:root
+    permissions: '0600'
+    content: |
+      cluster:
+        id: "${k8s_cluster_join.cluster_id}"
+        secret: "${k8s_cluster_join.cluster_secret}"
+      kubernetes:
+        advertise_networks: true
+        kubeconfig_path: "/var/lib/kubelet/kubelet.conf"
+        node_name: "${k8s_cluster_join.node_name}"
+        service_cidrs:
+          - "10.96.0.0/12"
+%{ endif ~}
+
 runcmd:
   # Step 1: Generate hardware configuration
   - /run/current-system/sw/bin/nixos-generate-config --show-hardware-config > /etc/nixos/hardware-configuration.nix

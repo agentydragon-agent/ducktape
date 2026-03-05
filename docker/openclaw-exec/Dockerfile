@@ -4,12 +4,12 @@
 # The OpenClaw gateway plugin connects to this server pod-locally and
 # proxies exec tool calls with OPENCLAW_SESSION_ID injection.
 #
-# Includes mcporter (MCP CLI tool) so the agent can call approval-gated
+# Includes mcporter (MCP CLI tool) so the agent can call airlock-gated
 # MCP tools from the command line, and kubectl for sandbox namespace access.
 #
-# Built from the approval-gate exec-backend OCI image (contains Python
+# Built from the airlock exec-backend OCI image (contains Python
 # runtime + DirectExecServer), extended with Node.js tools.
-FROM registry.allegedly.works/approval-gate/exec-backend:latest
+FROM registry.allegedly.works/ducktape/exec-backend:latest
 
 USER root
 
