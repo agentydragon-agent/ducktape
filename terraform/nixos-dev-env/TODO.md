@@ -51,6 +51,31 @@
 - [ ] Add to NixOS configuration for persistent env vars
 - [ ] Update README with API key provisioning documentation
 
+## Split Cluster Testing from Dev VM Infrastructure
+
+The `k8s-worker-test` VM doesn't need most of the infrastructure in this module:
+separate PVE user, API token, pool, ACLs, custom role. It just needs a VM on Proxmox
+with cluster credentials in cloud-init.
+
+Currently everything lives in one Terraform root module (`nixos-dev-env/`):
+
+- PVE user/token provisioning (terraform@pve, agent-test@pve)
+- Pool creation + ACLs (storage, SDN, pool admin)
+- NixOS cloud image build + upload
+- wyrm2 (dev workstation VM)
+- k8s-worker-test (cluster worker prototype)
+
+The k8s-worker-test VM uses the user provider (pool-scoped permissions) even though
+the cluster's own Terraform (`cluster/terraform/bootstrap/infrastructure/`) already
+has a fully privileged Proxmox provider that manages Talos VMs.
+
+**Proposed**: Move `k8s-worker-test` into `cluster/terraform/bootstrap/infrastructure/`
+(or a sibling module) where it can reuse the existing Proxmox provider, Talos credentials,
+and node network config. The credential extraction (`extract_k8s_credentials.py`) and
+cloud-init `write_files` logic would move with it. This leaves `nixos-dev-env/` focused
+on dev workstation VMs (wyrm2) with their own user isolation, and keeps cluster
+infrastructure together.
+
 ## Future Enhancements
 
 - [ ] Support for multiple API providers (Claude, GPT-4, etc.)
