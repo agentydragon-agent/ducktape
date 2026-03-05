@@ -32,5 +32,8 @@
     ];
     extraGroups = [ "systemd-journal" ];
   };
+  # Passwordless sudo for test VM
+  security.sudo.wheelNeedsPassword = false;
+
   boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
 }
