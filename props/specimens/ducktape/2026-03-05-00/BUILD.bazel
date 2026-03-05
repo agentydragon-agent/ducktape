@@ -1,0 +1,11 @@
+load("//props/specimens:defs.bzl", "specimen_targets")
+
+# Snapshot of ducktape at fb39b0ad (merge-base with devel at session start).
+# Included: mcp_infra and all first-party dependencies needed to compile it with Bazel.
+# Excluded: everything else (agent_server, props, ansible, cluster, etc.)
+specimen_targets(
+    name = "specimen",
+    code_srcs = glob(["code/**/*"]),
+    slug = "ducktape/2026-03-05-00",
+    split = "train",
+)

@@ -20,7 +20,6 @@ Standard prefixes from `mcp_infra.constants`:
 
 - `RESOURCES_MOUNT_PREFIX`, `RUNTIME_MOUNT_PREFIX`, `COMPOSITOR_META_MOUNT_PREFIX`
 - `POLICY_READER_MOUNT_PREFIX`, `POLICY_PROPOSER_MOUNT_PREFIX`
-- `SEATBELT_EXEC_MOUNT_PREFIX`
 
 **Rule: NEVER construct prefixed tool names inline** (e.g., `prefix + "_" + tool`). ALWAYS use `build_mcp_function(prefix, tool)` from `mcp_infra.naming` - it is the single source of truth for the namespacing logic.
 

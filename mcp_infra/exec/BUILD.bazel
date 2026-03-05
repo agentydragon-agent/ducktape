@@ -153,6 +153,7 @@ py_library(
         "docker/container_session.py",
         "docker/launcher.py",
         "docker/server.py",
+        "docker/types.py",
     ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
@@ -160,7 +161,6 @@ py_library(
         ":models",
         ":read_image",
         "//mcp_infra:constants",
-        "//mcp_infra:mcp_types",
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/enhanced:server",
@@ -171,6 +171,7 @@ py_library(
         "@pypi//anyio",
         "@pypi//fastmcp",
         "@pypi//mcp",
+        "@pypi//pydantic",
         "@pypi//typer_di",
     ],
 )

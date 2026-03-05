@@ -50,7 +50,6 @@ py_library(
         "//inop/engine:models",
         "//inop/io:file_utils",
         "//mcp_infra:constants",
-        "//mcp_infra:mcp_types",
         "//mcp_infra:prefix",
         "//mcp_infra/compositor",
         "//mcp_infra/display:event_renderer",

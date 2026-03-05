@@ -1,0 +1,16 @@
+rationale: |
+  `SEATBELT_EXEC_MOUNT_PREFIX` is defined in `mcp_infra/constants.py` but
+  never imported or used within the `mcp_infra` package. The only import
+  in the broader repo is in a test-data template in `agent_server/`, which is
+  itself not compiled under normal Bazel targets. The seatbelt exec server
+  was removed; the orphaned constant should be deleted along with its mention
+  in `docs/compositor.md`.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/constants.py:
+        - [36, 36]
+    note: "Defined but never imported anywhere in mcp_infra"
+    match_file_restriction:
+      - mcp_infra/constants.py

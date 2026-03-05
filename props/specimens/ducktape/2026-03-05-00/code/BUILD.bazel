@@ -1,0 +1,208 @@
+# Gazelle exclusions
+# Most .gitignore patterns are handled by .bazelignore (root-level directories)
+# or don't need exclusion (cache dirs with no .py files like __pycache__)
+# gazelle:exclude ansible
+# gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
+# gazelle:exclude hack/claude_hooks  # complex internal imports
+# gazelle:exclude k8s_old  # legacy k8s configs, deps not in main requirements
+
+# gazelle:python_root
+# gazelle:python_generation_mode file
+# gazelle:python_default_visibility NONE
+# gazelle:python_manifest_file_name tools/gazelle_python.yaml
+#
+# Bazel-provided libraries (not from PyPI)
+# gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
+# gazelle:resolve py python.runfiles @rules_python//python/runfiles
+#
+# Non-standard import paths (import name doesn't match directory structure)
+# gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
+
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@bazel_skylib//rules:native_binary.bzl", "native_test")
+load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("@rules_python//python/uv:lock.bzl", "lock")
+
+# Visibility is controlled per-target. Gazelle uses python_default_visibility NONE
+# so targets default to private. Public targets explicitly set visibility.
+
+# Link workspace npm packages
+npm_link_all_packages(name = "node_modules")
+
+# Export workspace files for npm_translate_lock data tracking
+exports_files([
+    "mypy.ini",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "requirements_bazel.txt",
+    "ruff.toml",
+])
+
+# Root conftest.py for shared pytest configuration
+# Tests can depend on this for pytest-asyncio auto mode and common markers
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+    ],
+)
+
+# ESLint configuration as js_library
+# This makes the config and its npm dependencies available to the ESLint aspect
+# no-lint: This is a config file, not a target to lint (avoids aspect self-application)
+js_library(
+    name = "eslintrc",
+    srcs = ["eslint.config.js"],
+    tags = ["no-lint"],
+    visibility = ["//tools:__subpackages__"],
+    deps = [
+        ":node_modules/@eslint/js",
+        ":node_modules/@typescript-eslint/eslint-plugin",
+        ":node_modules/@typescript-eslint/parser",
+        ":node_modules/eslint-plugin-import",
+        ":node_modules/eslint-plugin-react",
+        ":node_modules/eslint-plugin-svelte",
+        ":node_modules/globals",
+        ":node_modules/svelte",  # peer dep of svelte-eslint-parser & eslint-plugin-svelte
+        ":node_modules/svelte-eslint-parser",
+        ":node_modules/typescript",  # peer dep of @typescript-eslint/parser & plugin
+    ],
+)
+
+# Prettier configuration as js_library
+# Makes the config and its plugins available to the prettier binary in tools/ci
+# no-lint: This is a config file, not a target to lint
+js_library(
+    name = "prettierrc",
+    srcs = [".prettierrc.cjs"],
+    tags = ["no-lint"],
+    visibility = ["//tools:__subpackages__"],
+    deps = [
+        ":node_modules/prettier-plugin-svelte",
+        ":node_modules/svelte",
+    ],
+)
+
+# Generate requirements_bazel.txt from pyproject.toml
+# Run: bazel run //:requirements.update
+#
+# IMPORTANT: This target requires direct network access to PyPI for dependency resolution.
+# dockerNetwork=bridge gives the RBE action outbound internet access (off by default).
+lock(
+    name = "requirements",
+    srcs = ["pyproject.toml"],
+    out = "requirements_bazel.txt",
+    exec_properties = {"dockerNetwork": "bridge"},
+)
+
+# Test that requirements_bazel.txt is up to date
+# Run: bazel test //:requirements_test
+native_test(
+    name = "requirements_test",
+    src = ":requirements.update",
+    tags = [
+        "no-cache",
+        "requires-network",
+    ],
+)
+
+platform(
+    name = "linux_x64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+platform(
+    name = "rbe_linux_x64",
+    exec_properties = {
+        # Custom image layered on BuildBuddy's rbe-ubuntu24-04 with git,
+        # ca-certificates, and podman for e2e tests.
+        # Built by .github/workflows/rbe-image.yml
+        "container-image": "docker://ghcr.io/agentydragon/rbe-worker:latest",
+        # BuildBuddy Firecracker isolation for all RBE actions (better isolation + runner recycling)
+        "workload-isolation-type": "firecracker",
+        "recycle-runner": "true",
+        # Start Docker daemon for tests (lightweight with Firecracker).
+        # Defined here (not via --remote_default_exec_properties in .bazelrc)
+        # to avoid duplicate-key crash when --config=rbe is expanded twice
+        # (e.g., both buildbuddy.bazelrc and auth-proxy/bazelrc enable it).
+        "test.init-dockerd": "true",
+        "EstimatedComputeUnits": "3",
+    },
+    parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
+)
+
+# Ducktape wheel - bundles CLI tools for distribution
+py_package(
+    name = "ducktape_pkg",
+    packages = [
+        "agent_core",
+        "cli_util",
+        "difftree",
+        "fmt_util",
+        "git_commit_ai",
+        "gmail_archiver",
+        "gmail_archiver.cli",
+        "gmail_archiver.planners",
+        "mcp_infra",
+        "mcp_utils",
+        "openai_utils",
+    ],
+    deps = [
+        "//difftree:cli",
+        "//git_commit_ai:git_commit_ai_lib",
+    ],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "ducktape",
+    entry_points = {
+        "console_scripts": [
+            "git-commit-ai = git_commit_ai.cli:main",
+            "difftree = difftree.cli:main",
+            "gmail-archiver = gmail_archiver.main:app",
+        ],
+    },
+    python_requires = ">=3.13",
+    requires = [
+        # git_commit_ai deps
+        "aiodocker",
+        "anyio",
+        "compact-json",
+        "fastmcp>=3.0.0",
+        "httpx",
+        "jinja2",
+        "mako>=1.3",
+        "mcp",
+        "openai",
+        "pydantic>=2.0",
+        "pyhamcrest",
+        "pygit2>=1.14",
+        "rich",
+        "structlog",
+        "tenacity",
+        "typer",
+        # difftree deps
+        "click>=8.0",
+        "unidiff>=0.7.0",
+        # gmail_archiver deps
+        "beautifulsoup4",
+        "email-reply-parser",
+        "google-api-python-client",
+        "google-auth-httplib2",
+        "google-auth-oauthlib",
+        "pydantic-settings",
+        "python-dateutil",
+        "pyyaml",
+    ],
+    version = "0.1.0",
+    deps = [":ducktape_pkg"],
+)

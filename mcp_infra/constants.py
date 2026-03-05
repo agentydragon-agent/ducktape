@@ -29,8 +29,3 @@ UI_MOUNT_PREFIX: Final[MCPMountPrefix] = MCPMountPrefix("ui")
 POLICY_READER_MOUNT_PREFIX: Final[MCPMountPrefix] = MCPMountPrefix("policy_reader")
 POLICY_PROPOSER_MOUNT_PREFIX: Final[MCPMountPrefix] = MCPMountPrefix("policy_proposer")
 APPROVAL_ADMIN_MOUNT_PREFIX: Final[MCPMountPrefix] = MCPMountPrefix("approval_admin")
-
-# ============================================================================
-# Server Mount Prefixes - Optional/Specialized
-# ============================================================================
-SEATBELT_EXEC_MOUNT_PREFIX: Final[MCPMountPrefix] = MCPMountPrefix("seatbelt_exec")

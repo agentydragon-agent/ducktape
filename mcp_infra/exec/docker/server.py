@@ -23,9 +23,9 @@ from mcp_infra.exec.docker.container_session import (
     run_session_container,
     session_state_from_ctx,
 )
+from mcp_infra.exec.docker.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
 from mcp_infra.exec.models import BaseExecResult, ExecInput, async_timer
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
-from mcp_infra.mcp_types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
 from mcp_infra.prefix import MCPMountPrefix
 
 # URI template for file:// resource (file:///absolute/path format)

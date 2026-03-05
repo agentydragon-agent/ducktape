@@ -1,0 +1,22 @@
+rationale: |
+  `NetworkMode`, `ContainerImageInfo`, `ContainerImageHistoryEntry`, and
+  `ContainerInfo` are Docker-specific types that live in the generic
+  `mcp_infra/mcp_types.py` module alongside protocol-level types like
+  `McpServerSpecs` and `SimpleOk`. These four types are only imported by
+  `mcp_infra/exec/docker/server.py` and `mcp_infra/exec/docker/launcher.py`.
+  They should live in a docker-specific module (e.g.,
+  `mcp_infra/exec/docker/types.py`) so the generic module only contains
+  broadly shared MCP infrastructure types.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      mcp_infra/mcp_types.py:
+        - [27, 65]
+    note: |
+      `ContainerImageInfo`, `NetworkMode`, `ContainerImageHistoryEntry`, and
+      `ContainerInfo` defined here; only used in `exec/docker/`
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/mcp_types.py]
+      - [mcp_infra/exec/docker/server.py]
+      - [mcp_infra/exec/docker/launcher.py]

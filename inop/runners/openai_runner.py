@@ -39,7 +39,7 @@ from mcp_infra.exec.bwrap import BwrapExecServer
 from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.exec.docker.container_session import BindMount, ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.mcp_types import NetworkMode
+from mcp_infra.exec.docker.types import NetworkMode
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 
