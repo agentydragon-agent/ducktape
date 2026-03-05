@@ -84,13 +84,13 @@ variable "ssh_public_key" {
 variable "nixos_flake_url" {
   description = "Flake URL for NixOS system configuration"
   type        = string
-  default     = "github:agentydragon/ducktape?dir=nix/nixos&ref=devel"
+  default     = "github:agentydragon/ducktape?dir=nix&ref=devel"
 }
 
 variable "home_manager_flake_url" {
   description = "Flake URL for home-manager configuration"
   type        = string
-  default     = "github:agentydragon/ducktape?dir=nix/home&ref=devel"
+  default     = "github:agentydragon/ducktape?dir=nix&ref=devel"
 }
 
 variable "home_manager_host" {
