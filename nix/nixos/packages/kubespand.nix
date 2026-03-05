@@ -18,7 +18,7 @@ pkgs.stdenv.mkDerivation {
   src = pkgs.fetchurl {
     url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-${shortSha}/kubespand";
     # After updating shortSha, set to lib.fakeHash and rebuild to get new hash
-    hash = "sha256-RtJnN5kvOnp9wqMUy5ALLGt21M+w/mu0tkMEH7Ewm3U=";
+    hash = "sha256-LQoV5LbDY2IJQc78PlT7ekiCm6PkjDSxdPKFUamTINY=";
     executable = true;
   };
 

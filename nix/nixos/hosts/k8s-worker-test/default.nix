@@ -1,6 +1,6 @@
-# k8s-worker-test — NixOS VM for testing K8s worker node enrollment
+# k8s-worker-test — lean NixOS VM for testing K8s worker node enrollment
 #
-# This is a test VM that runs GNOME desktop + Kubernetes worker.
+# Headless (SSH + console only) for fast provisioning.
 # Uses KubeSpan fabric (kubespand) for mesh connectivity.
 # See nix/nixos/modules/k8s-worker.nix for manual setup steps.
 {
@@ -12,10 +12,6 @@
 }:
 {
   imports = [
-    ../../modules/gui.nix
-    ../../modules/vm-unattended.nix
-    ../../modules/dev-workstation.nix
-    ../../modules/hm-bootstrap.nix
     ../../modules/k8s-worker.nix
   ];
 
@@ -25,6 +21,10 @@
     enable = true;
     fabric = "kubespan";
   };
+
+  # Headless auto-login on console
+  users.users.${username}.initialHashedPassword = "";
+  services.getty.autologinUser = username;
 
   users.users.${username} = {
     openssh.authorizedKeys.keys = [
