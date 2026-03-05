@@ -28,7 +28,7 @@
   users.users.${username} = {
     initialHashedPassword = "";
     openssh.authorizedKeys.keys = [
-      # Add your SSH public key here after initial provisioning
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@popvm"
     ];
     extraGroups = [ "systemd-journal" ];
   };
