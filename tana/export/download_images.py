@@ -39,32 +39,16 @@ def _extension_from_url(url: str) -> str | None:
     return None
 
 
-def _collect_media_nodes(
-    store: TanaGraph,
-) -> list[tuple[BaseNode, str]]:
+def _collect_media_nodes(store: TanaGraph) -> list[tuple[BaseNode, str]]:
     """Find all nodes with a media URL. Returns (node, url) pairs."""
-    return [
-        (node, html.unescape(url))
-        for node in store.values()
-        if (url := get_image_url(node, store))
-    ]
+    return [(node, html.unescape(url)) for node in store.values() if (url := get_image_url(node, store))]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="Path to Tana JSON export")
-    parser.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        required=True,
-        help="Output directory for downloaded media",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="List media URLs without downloading",
-    )
+    parser.add_argument("-o", "--output", type=Path, required=True, help="Output directory for downloaded media")
+    parser.add_argument("--dry-run", action="store_true", help="List media URLs without downloading")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -116,7 +100,7 @@ def main() -> None:
             continue
 
         try:
-            urllib.request.urlretrieve(url, dest)  # noqa: S310
+            urllib.request.urlretrieve(url, dest)
             logger.info("[%d/%d] %s", i, len(media_nodes), filename)
             downloaded += 1
         except Exception:
@@ -128,12 +112,7 @@ def main() -> None:
     manifest_path = output_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
-    logger.info(
-        "Done: %d downloaded, %d failed. Manifest: %s",
-        downloaded,
-        failed,
-        manifest_path,
-    )
+    logger.info("Done: %d downloaded, %d failed. Manifest: %s", downloaded, failed, manifest_path)
 
 
 if __name__ == "__main__":
