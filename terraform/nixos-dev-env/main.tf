@@ -283,7 +283,7 @@ resource "null_resource" "cleanup" {
 # =============================================================================
 
 locals {
-  talosconfig_resolved = var.talosconfig_path != "" ? var.talosconfig_path : "${path.module}/../../cluster/talosconfig"
+  talosconfig_resolved = var.talosconfig_path != "" ? var.talosconfig_path : "${path.module}/../../cluster/terraform/bootstrap/infrastructure/talosconfig.yml"
 }
 
 # Extract cluster credentials from Talos control plane via talosctl.
@@ -293,7 +293,7 @@ data "external" "k8s_credentials" {
 
   program = [
     "bash", "-c",
-    "export CP_NODE='${var.k8s_controlplane_node}' TALOSCONFIG='${local.talosconfig_resolved}'; exec bash '${path.module}/scripts/extract-k8s-credentials.sh'"
+    "export CP_NODE='${var.k8s_controlplane_node}' TALOSCONFIG='${local.talosconfig_resolved}'; exec python3 '${path.module}/scripts/extract_k8s_credentials.py'"
   ]
 }
 
