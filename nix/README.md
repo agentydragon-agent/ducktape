@@ -1,30 +1,34 @@
 # Nix Configuration
 
-Nix flakes for system (NixOS) and user (home-manager) configuration.
+Single flake for both NixOS system and home-manager user configuration.
 
 ## Directory Structure
 
 ```
 nix/
-├── nixos/     # NixOS system configurations (flake)
-├── home/      # home-manager user configurations (flake)
-└── TODO.md    # Future improvements
+├── flake.nix      # Combined NixOS + home-manager flake
+├── nixos/         # NixOS system configurations
+│   ├── modules/   # Shared NixOS modules
+│   └── hosts/     # Per-host system config
+├── home/          # home-manager user configurations
+│   ├── home.nix   # Shared home-manager config
+│   ├── hosts/     # Per-host home config
+│   └── packages/  # Custom Nix packages
+└── TODO.md        # Future improvements
 ```
 
 ## Usage
 
-### NixOS Machines (rugged, wyrm2)
+All commands run from `~/code/ducktape/nix/`.
 
-Two commands - system config and user config are managed separately:
+### NixOS Machines (rugged, wyrm2)
 
 ```bash
 # System configuration (requires sudo)
-cd ~/code/ducktape/nix/nixos
-sudo nixos-rebuild switch --flake .#<hostname>
+sudo nixos-rebuild switch --flake ~/code/ducktape/nix#<hostname>
 
 # User configuration
-cd ~/code/ducktape/nix/home
-home-manager switch --flake .#<hostname> --impure
+home-manager switch --flake ~/code/ducktape/nix#<hostname> --impure
 ```
 
 ### Non-NixOS Machines (agentydragon, gpd, vps)
@@ -32,22 +36,21 @@ home-manager switch --flake .#<hostname> --impure
 Only home-manager (user config):
 
 ```bash
-cd ~/code/ducktape/nix/home
-home-manager switch --flake .#<hostname> --impure
+home-manager switch --flake ~/code/ducktape/nix#<hostname> --impure
 ```
 
 Note: `--impure` is required for nixGL (GPU driver detection).
 
 ## Available Hosts
 
-### NixOS System Configs (`nix/nixos`)
+### NixOS System Configs (`nixosConfigurations`)
 
 | Host     | Type     | Description           |
 | -------- | -------- | --------------------- |
 | `rugged` | Physical | Dell Rugged 12 tablet |
 | `wyrm2`  | VM       | Dev workstation VM    |
 
-### Home-Manager Configs (`nix/home`)
+### Home-Manager Configs (`homeConfigurations`)
 
 | Host           | OS       | Description           |
 | -------------- | -------- | --------------------- |
@@ -61,12 +64,12 @@ Note: `--impure` is required for nixGL (GPU driver detection).
 
 ```bash
 # Test build without applying
-sudo nixos-rebuild build --flake .#<hostname>
-home-manager build --flake .#<hostname> --impure
+sudo nixos-rebuild build --flake ~/code/ducktape/nix#<hostname>
+home-manager build --flake ~/code/ducktape/nix#<hostname> --impure
 
 # Build from GitHub directly (no local checkout needed)
-sudo nixos-rebuild switch --flake github:agentydragon/ducktape?dir=nix/nixos&ref=devel#<hostname>
-home-manager switch --flake github:agentydragon/ducktape?dir=nix/home&ref=devel#<hostname> --impure
+sudo nixos-rebuild switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#<hostname>
+home-manager switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#<hostname> --impure
 
 # List home-manager generations
 home-manager generations

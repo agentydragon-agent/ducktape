@@ -1,5 +1,5 @@
 {
-  description = "Home Manager configurations for agentydragon's machines";
+  description = "agentydragon's NixOS and home-manager configurations";
 
   inputs = {
     # NixOS 25.11 stable release
@@ -39,19 +39,19 @@
       nix-colors,
       claude-code-router,
       nixGL,
-    }:
+      ...
+    }@inputs:
     let
       system = "x86_64-linux";
 
-      # Helper to create home configuration
       mkHome =
         {
           hostname,
           enableGui ? true,
           enableKube ? true,
-          isNixOS ? false, # Whether this is a NixOS system (uses system packages for heavy apps)
-          isPopOS ? false, # Whether this is a Pop!_OS system (has system76/ubuntu extensions)
-          enableHeavyPackages ? true, # Whether to install heavy creative/CAD packages
+          isNixOS ? false,
+          isPopOS ? false,
+          enableHeavyPackages ? true,
           extraModules ? [ ],
         }:
         let
@@ -78,7 +78,7 @@
 
           modules = [
             claude-code-router.homeManagerModules.claude-code-router
-            ./hosts/${hostname}.nix
+            ./home/hosts/${hostname}.nix
             {
               _module.args = {
                 inherit
@@ -99,6 +99,52 @@
           ]
           ++ extraModules;
         };
+
+      mkNixos =
+        {
+          hostname,
+          username ? "agentydragon",
+          homeManagerHost ? hostname,
+          hardwareModule ? null,
+          extraModules ? [ ],
+        }:
+        nixpkgs.lib.nixosSystem {
+          inherit system;
+          specialArgs = {
+            inherit
+              inputs
+              hostname
+              username
+              homeManagerHost
+              ;
+          };
+          modules = [
+            ./nixos/modules/base.nix
+            ./nixos/hosts/${hostname}
+            home-manager.nixosModules.home-manager
+            {
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              # Home-manager config is applied separately via home-manager switch
+            }
+          ]
+          ++ (
+            if hardwareModule != null then
+              [
+                hardwareModule
+                # For VMs: also try to import hardware-configuration.nix from /etc/nixos (requires --impure)
+                (
+                  if builtins.pathExists /etc/nixos/hardware-configuration.nix then
+                    /etc/nixos/hardware-configuration.nix
+                  else
+                    { }
+                )
+              ]
+            else
+              [ ]
+          )
+          ++ extraModules;
+        };
     in
     {
       # Packages exposed for nix-update and direct builds
@@ -110,8 +156,8 @@
           };
         in
         {
-          tana = pkgs.callPackage ./packages/tana.nix { };
-          gmail-mcp = pkgs.callPackage ./packages/gmail-mcp.nix { };
+          tana = pkgs.callPackage ./home/packages/tana.nix { };
+          gmail-mcp = pkgs.callPackage ./home/packages/gmail-mcp.nix { };
         };
 
       homeConfigurations = {
@@ -141,7 +187,7 @@
           enableGui = true;
           enableKube = true;
           isNixOS = false;
-          enableHeavyPackages = false; # Skip FreeCAD, GIMP, Chrome, etc. to save bandwidth
+          enableHeavyPackages = false;
         };
 
         # NixOS VM
@@ -149,8 +195,8 @@
           hostname = "nixos-vm";
           enableGui = true;
           enableKube = false;
-          isNixOS = true; # NixOS system
-          enableHeavyPackages = false; # Lightweight VM - no heavy packages
+          isNixOS = true;
+          enableHeavyPackages = false;
         };
 
         # VPS server (minimal, no GUI)
@@ -159,15 +205,15 @@
           enableGui = false;
           enableKube = false;
           isNixOS = false;
-          enableHeavyPackages = false; # Server doesn't need creative apps
+          enableHeavyPackages = false;
         };
 
         # Dell Rugged 12 tablet
         rugged = mkHome {
           hostname = "rugged";
           enableGui = true;
-          enableKube = false; # TODO: set true and provision kubeconfig when needed
-          isNixOS = true; # NixOS system - heavy packages via system config
+          enableKube = false;
+          isNixOS = true;
           enableHeavyPackages = true;
         };
 
@@ -177,7 +223,30 @@
           enableGui = true;
           enableKube = false;
           isNixOS = false;
-          enableHeavyPackages = false; # Minimal Proxmox host - no creative apps
+          enableHeavyPackages = false;
+        };
+      };
+
+      nixosConfigurations = {
+        wyrm2 = mkNixos {
+          hostname = "wyrm2";
+          username = "user";
+          homeManagerHost = "nixos-vm";
+          hardwareModule = ./nixos/modules/vm-hardware.nix;
+        };
+
+        rugged = mkNixos {
+          hostname = "rugged";
+          username = "agentydragon";
+          homeManagerHost = "rugged";
+          # Physical machine - hardware config is in hosts/rugged/
+        };
+
+        k8s-worker-test = mkNixos {
+          hostname = "k8s-worker-test";
+          username = "user";
+          homeManagerHost = "nixos-vm";
+          hardwareModule = ./nixos/modules/vm-hardware.nix;
         };
       };
     };

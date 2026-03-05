@@ -177,7 +177,7 @@ The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <tools/rb
 
 ### Deployment
 
-- **Nix config**: `home-manager switch --flake ~/code/ducktape/nix/home#<hostname>`
+- **Nix config**: `home-manager switch --flake ~/code/ducktape/nix#<hostname>`
 - **Remaining dotfiles**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
 
 See `dotfiles/docs/shell_configuration.md` for detailed loading order and migration status.
