@@ -24,7 +24,7 @@ spec:
       automountServiceAccountToken: true
       containers:
         - name: kubeapi-admin-exec-mcp
-          image: registry.allegedly.works/ducktape/openclaw-exec:latest # {"$imagepolicy": "flux-system:openclaw-exec"}
+          image: registry.allegedly.works/ducktape/openclaw-exec:20260305093137-69771a8 # {"$imagepolicy": "flux-system:openclaw-exec"}
           imagePullPolicy: Always
           ports:
             - name: mcp
@@ -38,11 +38,7 @@ spec:
                   key: password
             - name: INSTRUCTIONS
               value: >-
-                This server lets you run commands on a container with a
-                Kubernetes cluster-admin token mounted. Use `kubectl` to
-                manage cluster resources. The service account token is
-                auto-mounted at the standard path
-                (`/var/run/secrets/kubernetes.io/serviceaccount/token`).
+                This server lets you run commands on a container with a Kubernetes cluster-admin token mounted. Use `kubectl` to manage cluster resources. The service account token is auto-mounted at the standard path (`/var/run/secrets/kubernetes.io/serviceaccount/token`).
           resources:
             requests:
               memory: "256Mi"
