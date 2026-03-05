@@ -20,9 +20,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  IMAGE: registry.allegedly.works/tana-mcp/tana-desktop
-
 jobs:
   build-and-push:
     name: Build and Push
@@ -31,28 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Compute image tags
-        id: meta
-        run: |
-          SHA="${{ github.sha }}"
-          TS="$(date -u +%Y%m%d%H%M%S)"
-          SEMVER_TAG="${TS}-${SHA:0:7}"
-          TAGS="${{ env.IMAGE }}:$SHA,${{ env.IMAGE }}:$SEMVER_TAG"
-          if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
-            TAGS="$TAGS,${{ env.IMAGE }}:latest"
-          fi
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
-
-      - name: Login to Harbor
-        uses: docker/login-action@v3
+      - uses: ./.github/actions/harbor-build-push
         with:
-          registry: registry.allegedly.works
-          username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
-          password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
+          image: registry.allegedly.works/tana-mcp/tana-desktop
           context: docker/tana-mcp
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
+          harbor_robot_token: ${{ secrets.HARBOR_ROBOT_TOKEN }}
