@@ -1,6 +1,8 @@
 backends:
   kubeapi_admin:
     url: http://kubeapi-admin-exec-mcp.airlock.svc.cluster.local:8766/mcp
+  google_workspace_mcp:
+    url: http://google-workspace-mcp.google-workspace-mcp.svc.cluster.local:8000/mcp
 
 public_base_url: "https://airlock.allegedly.works"
 oidc_issuer: "https://auth.allegedly.works/application/o/airlock/"
