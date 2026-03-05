@@ -28,7 +28,7 @@ spec:
         - name: harbor-ci-robot
       containers:
         - name: aw-server
-          image: registry.allegedly.works/activitywatch/aw-server:20260226052503-538df67 # {"$imagepolicy": "flux-system:activitywatch"}
+          image: registry.allegedly.works/ducktape/aw-server:20260305091849-69e5c5d # {"$imagepolicy": "flux-system:activitywatch"}
           ports:
             - containerPort: 5600
               name: http
