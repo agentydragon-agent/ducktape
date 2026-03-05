@@ -306,9 +306,17 @@ class ApprovalGateServer(EnhancedFastMCP):
                             current.state, (DoneState, RejectedState, WithdrawnState)
                         ):
                             break
-                        # Intermediate transition (e.g. PENDING → EXECUTING); reset and wait again
+                        # Intermediate transition (e.g. PENDING → EXECUTING); reset and wait again.
+                        # Re-check state immediately after installing the new event to avoid a race
+                        # where the terminal transition fires between the get_action call above and
+                        # the new event being registered (which would leave the new event never set).
                         event = asyncio.Event()
                         self._action_resolved_events[key] = event
+                        current = await self._req_storage.get_action(key)
+                        if current is not None and isinstance(
+                            current.state, (DoneState, RejectedState, WithdrawnState)
+                        ):
+                            break
                 self._action_resolved_events.pop(key, None)
 
             result = await self._req_storage.get_action(key)
