@@ -215,7 +215,7 @@ spec:
                 maxTokens: 64000
       plugins:
         entries:
-          approval-gate:
+          airlock:
             config:
               approvalGate:
                 # Via local auth-proxy sidecar (injects OAuth2 Bearer token upstream)
@@ -223,7 +223,7 @@ spec:
               execServer:
                 url: "http://127.0.0.1:8766/mcp"
       tools:
-        # Built-in exec is disabled. The approval-gate plugin registers an exec
+        # Built-in exec is disabled. The airlock plugin registers an exec
         # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
         # injection, replacing the node-host exec path entirely.
         exec:
@@ -293,21 +293,21 @@ spec:
         memory: "2Gi"
   sidecars:
     - name: auth-proxy
-      image: registry.allegedly.works/approval-gate/auth-proxy:latest # {"$imagepolicy": "flux-system:auth-proxy"}
+      image: registry.allegedly.works/airlock/auth-proxy:latest # {"$imagepolicy": "flux-system:auth-proxy"}
       env:
         - name: UPSTREAM_URL
-          value: "http://approval-gate.approval-gate.svc.cluster.local:8765"
+          value: "http://airlock.airlock.svc.cluster.local:8765"
         - name: TOKEN_URL
           value: "http://authentik-server.authentik.svc.cluster.local/application/o/openclaw-agent/token/"
         - name: CLIENT_ID
           valueFrom:
             secretKeyRef:
-              name: approval-gate-secrets
+              name: airlock-secrets
               key: client-id
         - name: CLIENT_SECRET
           valueFrom:
             secretKeyRef:
-              name: approval-gate-secrets
+              name: airlock-secrets
               key: client-secret
         - name: SCOPE
           value: "openid propose read"
@@ -380,11 +380,11 @@ spec:
           ports:
             - port: 8080
               protocol: TCP
-        # Allow egress to approval-gate MCP endpoint (unified port 8765).
+        # Allow egress to airlock MCP endpoint (unified port 8765).
         - to:
             - namespaceSelector:
                 matchLabels:
-                  kubernetes.io/metadata.name: approval-gate
+                  kubernetes.io/metadata.name: airlock
           ports:
             - port: 8765
               protocol: TCP

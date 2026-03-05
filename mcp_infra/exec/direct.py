@@ -60,8 +60,8 @@ class DirectExecServer(EnhancedFastMCP):
 def main() -> None:
     """Standalone entry point for DirectExecServer over streamable-http.
 
-    This is the privileged exec backend for the approval gate. Run in a container
-    with the required secrets/credentials mounted. The approval gate connects to
+    This is the privileged exec backend for the airlock. Run in a container
+    with the required secrets/credentials mounted. The airlock connects to
     this server over HTTP and forwards approved tool calls.
 
     Environment variables:

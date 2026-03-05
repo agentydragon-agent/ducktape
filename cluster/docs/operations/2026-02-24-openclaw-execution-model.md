@@ -75,7 +75,7 @@ which is recognized as a local client for device pairing auto-approval.
 
 ### MCP Server Security
 
-The gateway process hosts MCP servers. The agent interacts with them through approval-gated
+The gateway process hosts MCP servers. The agent interacts with them through airlockd
 gateway tools. Two transport types with different security properties:
 
 - **Stdio MCP servers**: Safe by default. Pipe-based IPC, child process of gateway. The
@@ -89,7 +89,7 @@ gateway tools. Two transport types with different security properties:
 
 `host=gateway` would let the agent extract MCP server API tokens from gateway env vars via
 `env | grep TOKEN` or `cat /proc/1/environ`. The sidecar approach keeps secrets in the
-gateway process while letting the agent use them through approval-gated tools.
+gateway process while letting the agent use them through airlockd tools.
 
 ### Why Not Sandbox Mode
 

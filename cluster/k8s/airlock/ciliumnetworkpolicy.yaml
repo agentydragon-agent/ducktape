@@ -1,0 +1,66 @@
+# CiliumNetworkPolicy for the airlock namespace pods.
+#
+# airlock server (component: server, port 8765):
+#   Cilium gateway (gateway-system) — operator SPA with OAuth2 JWT (PKCE)
+#   OpenClaw pods (openclaw-gateway) — auth-proxy sidecar with OAuth2 JWT (client_credentials)
+#   Both present JWTs verified by JWTVerifier against the Authentik JWKS endpoint.
+#
+# kubeapi-admin-exec-mcp (component: kubeapi-admin-exec-mcp, port 8766):
+#   Only the airlock server (same namespace) connects to it.
+#
+# The host entity covers kubelet liveness/readiness probes for both pods.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: airlock-ingress
+  namespace: airlock
+spec:
+  endpointSelector:
+    matchLabels:
+      app: airlock
+      component: server
+  ingress:
+    # Kubelet health probes (liveness/readiness) originate from the node host.
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    # Operator SPA (via gateway) and OpenClaw agent (auth proxy sidecar).
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: gateway-system
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openclaw-gateway
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: kubeapi-admin-exec-mcp-ingress
+  namespace: airlock
+spec:
+  endpointSelector:
+    matchLabels:
+      app: airlock
+      component: kubeapi-admin-exec-mcp
+  ingress:
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8766"
+              protocol: TCP
+    # Only the airlock server pod connects to the exec backend.
+    - fromEndpoints:
+        - matchLabels:
+            app: airlock
+            component: server
+      toPorts:
+        - ports:
+            - port: "8766"
+              protocol: TCP

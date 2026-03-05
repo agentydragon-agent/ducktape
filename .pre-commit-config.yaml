@@ -229,7 +229,7 @@ repos:
             cluster/k8s/gatus/config\.yaml|
             cluster/k8s/oauth-broker/config\.yaml|
             cluster/k8s/applications/headscale/config\.yaml|
-            cluster/k8s/approval-gate/config\.yaml|
+            cluster/k8s/airlock/config\.yaml|
             cluster/k8s/homeassistant-proxy/config\.yaml
           )$
         types: [yaml]

@@ -227,7 +227,7 @@ importers:
         specifier: ^2.1.1
         version: 2.1.9(@types/node@25.3.3)(jsdom@25.0.1)(lightningcss@1.31.1)
 
-  approval_gate/frontend:
+  airlock/frontend:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.23.0
@@ -275,7 +275,7 @@ importers:
 
   hack/rspcache/admin_ui: {}
 
-  openclaw/approval-gate:
+  openclaw/airlock:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0
