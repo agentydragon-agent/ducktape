@@ -15,10 +15,12 @@ import (
 
 	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
 	discoveryclient "github.com/siderolabs/discovery-client/pkg/client"
+	"github.com/siderolabs/talos/pkg/machinery/client/dialer"
 	"github.com/siderolabs/talos/pkg/machinery/config/machine"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	"github.com/agentydragon/ducktape/cluster/kubespan_agent/agentconfig"
 )
@@ -49,6 +51,11 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 		return nil, fmt.Errorf("AES cipher from cluster.secret: %w", err)
 	}
 
+	// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
+	tlsConfigFunc := func() *tls.Config {
+		return &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
 	opts := discoveryclient.Options{
 		Cipher:        cipherBlock,
 		Endpoint:      cfg.Discovery.Endpoint,
@@ -60,7 +67,10 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 	if cfg.Discovery.Insecure {
 		opts.Insecure = true
 	} else {
-		opts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+		opts.TLSConfig = tlsConfigFunc
+		opts.DialOptions = []grpc.DialOption{
+			grpc.WithContextDialer(dialer.DynamicProxyDialerWithTLSConfig(tlsConfigFunc)),
+		}
 	}
 
 	client, err := discoveryclient.NewClient(opts)

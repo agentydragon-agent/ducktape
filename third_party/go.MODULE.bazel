@@ -363,13 +363,13 @@ go_deps.module(
 )
 go_deps.module(
     path = "github.com/siderolabs/discovery-api",
-    sum = "h1:fcHVkLkWla7C5+9IeOGEUQ4N8Yp9R7a/kcKbiay2QKw=",
-    version = "v0.1.5",
+    sum = "h1:/LhsF1ytqFEfWwV0UKfUgn90k9fk5+rhYMJ9yeUB2yc=",
+    version = "v0.1.6",
 )
 go_deps.module(
     path = "github.com/siderolabs/discovery-client",
-    sum = "h1:bTAvFLiISSzVXyYL1cIgAz8cPYd9ZfvhxwdebgtxARA=",
-    version = "v0.1.10",
+    sum = "h1:s0iK2ixopCFFgQ5zZmzsQ8xf8Hd+SygrUdlhE+um6iQ=",
+    version = "v0.1.13",
 )
 go_deps.module(
     path = "github.com/siderolabs/gen",
