@@ -31,7 +31,7 @@ py_binary(
     main_module = "airlock.export_schema",
     visibility = [
         "//airlock:__subpackages__",
-        "//openclaw/airlock:__pkg__",
+        "//airlock/openclaw:__pkg__",
     ],
     deps = [":export_schema"],
 )

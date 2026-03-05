@@ -275,7 +275,7 @@ importers:
 
   hack/rspcache/admin_ui: {}
 
-  openclaw/airlock:
+  airlock/openclaw:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.0

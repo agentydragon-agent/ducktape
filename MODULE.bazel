@@ -223,8 +223,8 @@ npm.npm_translate_lock(
     data = [
         "//:agent_server/web/package.json",
         "//:airlock/frontend/package.json",
+        "//:airlock/openclaw/package.json",
         "//:hack/rspcache/admin_ui/package.json",
-        "//:openclaw/airlock/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",

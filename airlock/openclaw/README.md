@@ -47,7 +47,7 @@ The plugin is included in the custom OpenClaw Docker image
 To install manually:
 
 ```bash
-cd openclaw/airlock
+cd airlock/openclaw
 npm install
 ```
 

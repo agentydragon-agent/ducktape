@@ -4,4 +4,4 @@ packages:
   - "agent_server/web"
   - "hack/rspcache/admin_ui"
   - "util/frontend_visual_test"
-  - "openclaw/airlock"
+  - "airlock/openclaw"
