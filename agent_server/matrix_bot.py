@@ -24,8 +24,8 @@ from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.container_session import ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import NetworkMode
 from mcp_infra.exec.models import BaseExecResult, make_exec_input
-from mcp_infra.mcp_types import NetworkMode
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.client_factory import build_client

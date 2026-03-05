@@ -90,7 +90,7 @@ class BaseCompositor(FastMCP):
 
     MUST be used as async context manager:
         async with BaseCompositor() as comp:
-            await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, runtime_server)
+            await comp.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, runtime_server)
             ...
 
     Features:
@@ -301,7 +301,7 @@ class BaseCompositor(FastMCP):
 
         Example:
             async with Compositor() as comp:
-                await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, runtime_server)
+                await comp.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, runtime_server)
                 async with Client(comp) as mcp_client:
                     agent = await Agent.create(
                         mcp_client=mcp_client,
@@ -390,7 +390,7 @@ class BaseCompositor(FastMCP):
             ValueError: If prefix is already mounted
 
         Example:
-            self.runtime = await self.mount_inproc(RUNTIME_MOUNT_PREFIX, ContainerExecServer(...), pinned=True)
+            self.runtime = await self.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer(...), pinned=True)
         """
         # Check state
         async with self._state_lock:

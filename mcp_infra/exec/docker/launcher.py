@@ -14,7 +14,7 @@ from typer_di import TyperDI
 
 from mcp_infra.exec.docker.container_session import BindMount, ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.mcp_types import NetworkMode
+from mcp_infra.exec.docker.types import NetworkMode
 from util.typer import async_run
 
 app = TyperDI(help="Run docker_exec MCP over stdio")

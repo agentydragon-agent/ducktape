@@ -18,7 +18,7 @@ class Compositor(BaseCompositor):
 
     MUST be used as async context manager:
         async with Compositor() as comp:
-            await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, runtime_server)
+            await comp.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, runtime_server)
             async with Client(comp) as client:
                 result = await client.call_tool("runtime_exec", {"command": ["ls"]})
 
@@ -26,7 +26,7 @@ class Compositor(BaseCompositor):
 
     1. Short-lived script:
         async with Compositor() as comp:
-            await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, RuntimeServer(...))
+            await comp.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, RuntimeServer(...))
             async with Client(comp) as client:
                 agent = await Agent.create(mcp_client=client)
                 await agent.run("review this code")

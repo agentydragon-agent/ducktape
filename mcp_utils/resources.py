@@ -15,15 +15,8 @@ def parse_tool_result_as[T](result: mcp_types.CallToolResult, model: type[T]) ->
 
 
 def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:
-    """Return the single text part from a read_resource result or raise.
-
-    - Requires exactly one TextResourceContents part.
-    - Raises RuntimeError if zero or multiple text parts, or if blob content present.
-    """
-    text_parts = [p for p in res if isinstance(p, mcp_types.TextResourceContents)]
-    if any(isinstance(p, mcp_types.BlobResourceContents) for p in res):
-        raise RuntimeError("expected a single text part, found blob content")
-    text: str | None = one(text_parts).text
-    if text is None:
-        raise RuntimeError("text content part missing text payload")
-    return text
+    """Return the text from the single TextResourceContents part, or raise."""
+    item = one(res)
+    if not isinstance(item, mcp_types.TextResourceContents):
+        raise RuntimeError(f"expected TextResourceContents, got {type(item).__name__}")
+    return item.text

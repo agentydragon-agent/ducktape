@@ -146,6 +146,15 @@ py_library(
     ],
 )
 
+# Docker container types (no MCP dependencies)
+py_library(
+    name = "docker_types",
+    srcs = ["docker/types.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
 # Docker container exec MCP server
 py_library(
     name = "docker",
@@ -157,10 +166,10 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":docker_types",
         ":models",
         ":read_image",
         "//mcp_infra:constants",
-        "//mcp_infra:mcp_types",
         "//mcp_infra:prefix",
         "//mcp_infra/enhanced:flat_mixin",
         "//mcp_infra/enhanced:server",
