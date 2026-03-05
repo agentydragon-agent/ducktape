@@ -5,7 +5,7 @@ Before committing a snapshot, verify all of these criteria:
 ### Structure & Organization
 
 - [ ] **Snapshot slug format**: Directory path follows `{project}/{YYYY-MM-DD-NN}` pattern (e.g., `ducktape/2025-11-20-00`). Date is snapshot creation date, NN is zero-padded sequence number for that day
-- [ ] **manifest.yaml exists**: `manifest.yaml` in snapshot directory with `source` (github/git/local) and `split` (train/valid/test) fields
+- [ ] **BUILD.bazel exists**: `BUILD.bazel` in snapshot directory calling `specimen_targets()` with `slug` and `split`
 - [ ] **Issue files location**: All issues in `{project}/{slug}/issues/*.yaml` directory
 - [ ] **Slug-based naming**: Issue files use descriptive slugs (e.g., `dead-code.yaml`, `inline-vars.yaml`), not numerical indices. **Prefer shorter names** - `walrus-operator.yaml` not `walrus-operator-opportunities.yaml`. Slugs 0-30 chars, lowercase with hyphens
 - [ ] **One logical issue per file**: Each `.yaml` describes ONE logical problem type
@@ -19,7 +19,7 @@ Before committing a snapshot, verify all of these criteria:
 - [ ] **Brief code citations**: No long code blocks (>10 lines), reader can look up details. Use brief verbal descriptions when sufficient
 - [ ] **Proper grouping**: Issues grouped by logical problem, not by location
 - [ ] **Accurate line ranges**: Line ranges verified using `adgn-properties snapshot exec <slug> -- sed -n '<start>,<end>p' <file>` to ensure cited lines match what the issue describes
-- [ ] **Calibrated rationale**: Detail level matches obviousness (see authoring-guide.md §7). Obvious Pareto improvements (dead code, wrong types, stdlib replacements) need only 1-2 sentences. Complex tradeoffs or judgment calls need substantiation
+- [ ] **Calibrated rationale**: Detail level matches obviousness (see authoring_guide.md §7). Obvious Pareto improvements (dead code, wrong types, stdlib replacements) need only 1-2 sentences. Complex tradeoffs or judgment calls need substantiation
 - [ ] **No unnecessary justification**: Don't explain why types/less-code/safety are good—everyone knows. Only justify when there's a tradeoff or the improvement is non-obvious
 - [ ] **Concise rationale**: Rationale is between 10-5000 characters (after whitespace stripping). If over limit, trim unnecessary detail or reconsider if this is actually multiple distinct issues
 - [ ] **Verifiable external references**: External code/API/package references include verifiable links (docs URLs, GitHub permalinks with SHAs, package versions)
@@ -32,7 +32,7 @@ Before committing a snapshot, verify all of these criteria:
 - [ ] **should_flag: true**: True positives have `should_flag: true`
 - [ ] **critic_scopes_expected_to_recall**: Single-file issues auto-infer; multi-file issues have explicit `critic_scopes_expected_to_recall`
 - [ ] **Detection standard applied**: Each file set in `critic_scopes_expected_to_recall` passes the test: "If a high-quality critic reviewed these files (including following imports, searching for patterns, etc.), would failing to find this issue be a failure on their part?"
-- [ ] **graders_match_only_if_reported_on validated**: If set, passes the validation test: "Can you produce a valid critique phrasing that accurately describes this issue but tags a file outside the set?" If yes, the set is too narrow. When unsure, use NULL (omit the field)
+- [ ] **match_file_restriction validated**: If set, passes the validation test: "Can you produce a valid critique phrasing that accurately describes this issue but tags a file outside the set?" If yes, the set is too narrow. When unsure, use NULL (omit the field)
 - [ ] **Multi-occurrence notes**: Issues with multiple occurrences have a `note` for each occurrence
 - [ ] **Problem code only**: For "absence of use" issues, include only code that needs to change (violators), not reference/solution code (helpers, fixtures, base classes, constants, patterns, etc.) - unless the solution itself is broken
 

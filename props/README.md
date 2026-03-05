@@ -119,11 +119,11 @@ Specimens live in `props/specimens/` (previously a [separate repository](https:/
 
 Specimens are frozen code states with labeled issues (true positives and false positives) used for training and evaluating the LLM critic. The dataset includes:
 
-- Per-snapshot directories with `manifest.yaml` (source, split, bundle metadata) and issue files (`.yaml`)
-- Each snapshot has its own `manifest.yaml` defining source commit and train/valid/test split
+- Per-snapshot directories with `BUILD.bazel` (slug, split via `specimen_targets()`) and issue files (`.yaml`)
+- Each snapshot's `BUILD.bazel` defines the code source and train/valid/test split
 
 The `ADGN_PROPS_SPECIMENS_ROOT` environment variable is set automatically by direnv (`.envrc`) to
-`props/specimens/`. See <specimens/docs/authoring-guide.md> for the format spec.
+`props/specimens/`. See <specimens/docs/authoring_guide.md> for the format spec.
 
 ## Evaluation Workflow
 

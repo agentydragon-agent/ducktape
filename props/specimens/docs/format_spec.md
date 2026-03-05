@@ -6,158 +6,52 @@ Technical reference for the specimens dataset format. This document defines the 
 
 Specimens use:
 
-- **YAML** for all configuration and issue definitions (`manifest.yaml` per snapshot, `critic_scopes.yaml`, issue files)
-- **Git commits** for code snapshots (via VCS references - GitHub, git URLs, or local directories)
+- **Bazel BUILD files** for snapshot metadata (`slug`, `split`, provenance comments)
+- **YAML** for issue definitions (issue files in `issues/`)
+- **Git commits** for code snapshots (via local directories or `http_archive`)
 
 ## Directory Structure
 
-```
-specimens/
-├── critic_scopes.yaml          # Training example specifications
-└── {project}/                  # Project-specific snapshots
-    └── {slug}/                 # YYYY-MM-DD-NN format
-        ├── manifest.yaml       # Snapshot metadata (source, split, bundle)
-        ├── code/               # Source code (for vcs: local)
-        └── issues/             # Issue files directory
-            └── *.yaml          # Issue files (one per logical issue)
-```
+See <../README.md> for the directory layout with concrete examples.
 
-## manifest.yaml Schema
+## Snapshot Metadata (BUILD.bazel)
 
-Each snapshot has its own `manifest.yaml` defining source, split, and optional bundle metadata.
-The slug is derived from the directory path (e.g., `ducktape/2025-11-26-00`).
+Each snapshot has a `BUILD.bazel` file that calls `specimen_targets()` from `//props/specimens:defs.bzl`. This defines the specimen's `slug`, `split`, and code source. Source provenance (commit SHA, include/exclude paths) is captured as natural language comments.
 
 ### Structure
 
-```yaml
-source:
-  vcs: {github|git|local}       # Version control system type
-  # Additional fields depend on vcs type
-split: {train|valid|test}       # Dataset split assignment
-bundle:                         # Optional historical metadata
-  source_commit: {sha}          # Git commit SHA (40 hex chars)
-  include:                      # Paths that were included
-    - {path}/
-  exclude:                      # Paths that were excluded (optional)
-    - {path}/
+```python
+load("//props/specimens:defs.bzl", "specimen_targets")
+
+# Provenance comments (optional, for traceability)
+# Snapshot of {repo} at {commit_sha}.
+# Included: {paths}
+# Excluded: {paths}
+specimen_targets(
+    name = "specimen",
+    code_srcs = glob(["code/**/*"]),  # or external repo label
+    slug = "{project}/{YYYY-MM-DD-NN}",
+    split = "{train|valid|test}",
+)
 ```
-
-### Source Types
-
-**GitHub source** - fetches from GitHub tarball API:
-
-```yaml
-source:
-  vcs: github
-  org: agentydragon
-  repo: ducktape
-  ref: 4ad33013af27e159863bed92ffcfdb55b388e46c # commit SHA or branch/tag
-```
-
-**Generic Git source** - clones from any git URL:
-
-```yaml
-source:
-  vcs: git
-  url: https://github.com/agentydragon/crush.git
-  commit: a2a1ffa00943aa373f688ac05b667083ac3230b1
-```
-
-**Local source** - copies from a local directory:
-
-```yaml
-source:
-  vcs: local
-  root: code # Path relative to snapshot directory (default: ".")
-```
-
-Use `vcs: local` with `root: code` when the source code is stored directly in the specimen (in a `code/` subdirectory).
 
 ### Examples
 
-**Local source with bundle metadata** (`ducktape/2025-11-26-00/manifest.yaml`):
+**Local source with provenance comments:** See <../ducktape/2025-11-26-00/BUILD.bazel>
 
-```yaml
-source:
-  vcs: local
-  root: code
-split: valid
-bundle:
-  source_commit: 751a2a33c8b7daaf18f6c004e31ed6485a62a6a9
-  include:
-    - adgn/
-  exclude:
-    - adgn/src/adgn/props/
-```
+**Minimal local source:** See <../gmail-archiver/2025-12-17-00/BUILD.bazel>
 
-**Git source** (`crush/2025-08-30-internal_db/manifest.yaml`):
-
-```yaml
-source:
-  vcs: git
-  url: https://github.com/agentydragon/crush.git
-  commit: a2a1ffa00943aa373f688ac05b667083ac3230b1
-split: train
-```
-
-**Minimal local source** (`gmail-archiver/2025-12-17-00/manifest.yaml`):
-
-```yaml
-source:
-  vcs: local
-  root: code
-split: train
-```
+**External repo source:** See <../crush/2025-08-30-internal_db/BUILD.bazel>
 
 ### Fields
 
-- **`source`** (object, required): Defines where code comes from
+- **`slug`** (string, required): Specimen identifier in `{project}/{YYYY-MM-DD-NN}` format
 - **`split`** (string, required): Dataset split assignment
   - `train`: Training data (full access to labels and execution traces)
   - `valid`: Validation data (can evaluate, but cannot read labels)
   - `test`: Test data (reserved for final holdout evaluation)
-- **`bundle`** (object | null, optional): Historical metadata for provenance (not used at runtime)
-  - `source_commit`: Full 40-character Git SHA that was captured
-  - `include`: Subdirectories that were included during capture
-  - `exclude`: Subdirectories that were excluded during capture
-
-## critic_scopes.yaml Schema
-
-Defines which file combinations to use as training examples for each snapshot.
-
-### Structure
-
-```yaml
-{project}/{slug}:
-  # Comment describing rationale for this grouping
-  - files: [{file_path}, ...]
-
-  # Another grouping
-  - files: [{file_path}, ...]
-```
-
-### Example
-
-```yaml
-ducktape/2025-11-26-00:
-  # Server initialization and lifecycle issues
-  - files: [adgn/src/adgn/agent/server.py]
-
-  # Approval hub logic and state management
-  - files: [adgn/src/adgn/agent/approvals.py]
-
-  # Check for duplicated type definitions across layers
-  - files: [adgn/src/mcp/types.py, adgn/src/mcp/persist.py]
-
-  # UI component patterns and style consistency
-  - files: [adgn/src/agent/web/src/components/*.svelte]
-```
-
-### Fields
-
-- **`files`** (list[string], required): File paths or glob patterns
-  - Must match hydrated bundle structure (include `include` prefixes)
-  - Supports glob patterns (`*.py`, `**/*.svelte`)
+- **`code_srcs`** (label list, required): Source code files — `glob(["code/**/*"])` for local, external repo label for remote
+- **Provenance comments** (optional): Natural language comments capturing source commit SHA, included/excluded paths for traceability
 
 ## Issue File Format (YAML)
 
@@ -506,6 +400,7 @@ class TruePositiveOccurrence(BaseModel):
     files: dict[Path, list[LineRange] | None]
     note: str | None = None     # Required if multiple occurrences
     critic_scopes_expected_to_recall: set[frozenset[Path]]
+    match_file_restriction: set[Path] | None = None
 
 class LineRange(BaseModel):
     start_line: int             # 1-based, >= 1
@@ -525,6 +420,7 @@ class FalsePositiveOccurrence(BaseModel):
     files: dict[Path, list[LineRange] | None]
     note: str | None = None     # Required if multiple occurrences
     relevant_files: set[Path]
+    match_file_restriction: set[Path] | None = None
 ```
 
 ## Validation Rules
@@ -538,7 +434,6 @@ class FalsePositiveOccurrence(BaseModel):
 ### File Paths
 
 - Must match hydrated bundle structure exactly
-- Include `include` prefixes from `snapshots.yaml`
 - Use forward slashes (Unix-style paths)
 
 ### Line Ranges
@@ -573,7 +468,7 @@ Issue files use descriptive slugs (lowercase with hyphens), not numerical indice
 
 **Prefer shorter names when meaning is preserved.** Verbose names add noise without value.
 
-@canonical-slugs.md
+@canonical_slugs.md
 
 **General examples:**
 
@@ -590,6 +485,6 @@ Slugs should be 0-30 characters and convey the issue type.
 
 ## Related Documentation
 
-- [Authoring Guide](authoring-guide.md) - How to write good specimens
-- [Quality Checklist](quality-checklist.md) - Pre-commit verification
+- [Authoring Guide](authoring_guide.md) - How to write good specimens
+- [Quality Checklist](quality_checklist.md) - Pre-commit verification
 - System integration: See <../../README.md>

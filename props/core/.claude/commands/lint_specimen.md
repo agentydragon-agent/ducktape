@@ -3,8 +3,8 @@
 Read the specimens repository documentation first:
 
 - `~/code/specimens/CLAUDE.md` — Main guide
-- `~/code/specimens/docs/authoring-guide.md` — Authoring rules
-- `~/code/specimens/docs/format-spec.md` — Format specification
+- `~/code/specimens/docs/authoring_guide.md` — Authoring rules
+- `~/code/specimens/docs/format_spec.md` — Format specification
 
 ## What this command does
 
@@ -18,7 +18,7 @@ Report only lints/errors and offer concrete fix suggestions. Do not modify files
 
 Do not duplicate requirement lists here. The linter MUST read the authoring guide at runtime and derive all rules from it.
 
-Read `~/code/specimens/docs/quality-checklist.md` for the pre-commit verification checklist.
+Read `~/code/specimens/docs/quality_checklist.md` for the pre-commit verification checklist.
 
 ## Input
 

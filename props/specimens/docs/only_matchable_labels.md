@@ -1,12 +1,12 @@
-# graders_match_only_if_reported_on Labeling Dataset
+# match_file_restriction Labeling Dataset
 
-Purpose: Human-labeled examples to train pattern recognition for safe `graders_match_only_if_reported_on` assignment.
+Purpose: Human-labeled examples to train pattern recognition for safe `match_file_restriction` assignment.
 
 ## Key Semantic Distinction
 
 **`critic_scopes_expected_to_recall`**: TRAINING SIGNAL. Some known files such that IF a critic is shown these files, THEN we want it to catch this issue. NOT exhaustive - does not enumerate all possible detection sources.
 
-**`graders_match_only_if_reported_on`**: GRADING OPTIMIZATION. Restricts which critique outputs can match this occurrence. If set, a critique reporting issues only in files OUTSIDE this set will be skipped during matching (assumed non-match without semantic comparison).
+**`match_file_restriction`**: GRADING OPTIMIZATION. Restricts which critique outputs can match this occurrence. If set, a critique reporting issues only in files OUTSIDE this set will be skipped during matching (assumed non-match without semantic comparison).
 
 - **NULL** = allow matching from any file. Conservative default when we haven't determined the closed set, OR for genuinely cross-cutting issues.
 - **Non-empty set (≥1 file)** = we know the closed set; skip matching if critique's files don't overlap.
@@ -15,11 +15,11 @@ Purpose: Human-labeled examples to train pattern recognition for safe `graders_m
 These are independent concepts:
 
 - An issue might be detectable from file A (`critic_scopes_expected_to_recall: [[A]]`)
-- But once detected, it could be validly reported in files A, B, or C (`graders_match_only_if_reported_on: [A, B, C]`)
+- But once detected, it could be validly reported in files A, B, or C (`match_file_restriction: [A, B, C]`)
 
 ## Validation Test
 
-**To check if a proposed `graders_match_only_if_reported_on` value is correct:**
+**To check if a proposed `match_file_restriction` value is correct:**
 
 Can you produce a valid critique phrasing that accurately describes this issue but tags a file outside the set?
 
@@ -119,26 +119,26 @@ Can you produce a valid critique phrasing that accurately describes this issue b
 ### 4. has-inflight-always-false (original structure)
 
 - **File:** `ducktape/2025-11-22-00/issues/has-inflight-always-false.yaml`
-- **Original structure:** Two occurrences, each with narrow `graders_match_only_if_reported_on`:
-  - occ-0: `files: {runtime.py}`, `graders_match_only_if_reported_on: [runtime.py]`
-  - occ-1: `files: {status_shared.py}`, `graders_match_only_if_reported_on: [status_shared.py]`
+- **Original structure:** Two occurrences, each with narrow `match_file_restriction`:
+  - occ-0: `files: {runtime.py}`, `match_file_restriction: [runtime.py]`
+  - occ-1: `files: {status_shared.py}`, `match_file_restriction: [status_shared.py]`
 - **Issue:** `mcp_has_inflight` always False in runtime.py makes `TOOLS_RUNNING` unreachable in status_shared.py
 - **Why NOT OK:** Producer/consumer relationship creates dual framing:
   - Tag runtime.py: "Hardcoded False makes TOOLS_RUNNING unreachable"
   - Tag status_shared.py: "TOOLS_RUNNING is dead code because callers always pass False"
-- **Fix applied:** Merged into single occurrence with both files in `graders_match_only_if_reported_on`
+- **Fix applied:** Merged into single occurrence with both files in `match_file_restriction`
 
 ### 5. nonexistent-ws-approvals (original structure)
 
 - **File:** `ducktape/2025-11-22-02/issues/nonexistent-ws-approvals.yaml`
-- **Original structure:** Two occurrences, each with narrow `graders_match_only_if_reported_on`:
-  - occ-0: `files: {ApprovalTimeline.test.ts}`, `graders_match_only_if_reported_on: [test.ts]`
-  - occ-1: `files: {app.py}`, `graders_match_only_if_reported_on: [app.py]`
+- **Original structure:** Two occurrences, each with narrow `match_file_restriction`:
+  - occ-0: `files: {ApprovalTimeline.test.ts}`, `match_file_restriction: [test.ts]`
+  - occ-1: `files: {app.py}`, `match_file_restriction: [app.py]`
 - **Issue:** Tests reference `/ws/approvals` endpoint that's commented out in app.py
 - **Why NOT OK:** Consumer/provider relationship creates dual framing:
   - Tag test.ts: "Tests call endpoint that doesn't exist"
   - Tag app.py: "Commented-out routes break dependent tests"
-- **Fix applied:** Merged into single occurrence with both files in `graders_match_only_if_reported_on`
+- **Fix applied:** Merged into single occurrence with both files in `match_file_restriction`
 
 ## Pending Review
 

@@ -4,29 +4,17 @@
 
 This guide explains how to author issue files for code review snapshots. Snapshots are frozen code states with labeled issues used as training/evaluation data for the LLM critic.
 
-**For the broader context** on how snapshots fit into the training strategy (per-file examples, `critic_scopes_expected_to_recall` filtering, optimization approaches), see [Training Strategy](training_strategy.md).
+**For the broader context** on how snapshots fit into the training strategy (per-file examples, `critic_scopes_expected_to_recall` filtering, optimization approaches), see [Training Strategy](../../docs/training_strategy.md).
 
 ## File Structure
 
-```
-specimens/
-  ducktape/
-    2025-11-26-00/
-      manifest.yaml               # Snapshot metadata (source, split, bundle)
-      code/                       # Source code (for vcs: local)
-      issues/                     # Issues directory for this snapshot
-        dead-code.yaml            # One issue per file
-        missing-types.yaml
-        fp-intentional-duplication.yaml  # FPs mixed with TPs
-```
-
-**Naming convention:** Issue files use descriptive slugs (lowercase with hyphens), not numerical indices. **Prefer shorter names when meaning is preserved** - verbose names add noise. Slugs should be 0-30 characters. See format-spec.md for canonical slug names.
+See <../README.md> for the directory layout. Issue files use descriptive slugs (lowercase with hyphens), not numerical indices. **Prefer shorter names when meaning is preserved** — slugs should be 0-30 characters. See <format_spec.md> for canonical slug names.
 
 ## Critical: Snapshots are Frozen Code States
 
 **Snapshots are training/evaluation data representing code quality issues at a specific commit.**
 
-- Each snapshot is pinned to a specific commit (see `manifest.yaml` source field)
+- Each snapshot is pinned to a specific commit (see provenance comments in `BUILD.bazel`)
 - Issue files (`.yaml`) describe what was **wrong at that commit**
 - **NEVER** update issue files to record resolution status or mark issues "COMPLETED"
 - Issue files should remain accurate descriptions of problems as they existed
@@ -76,14 +64,7 @@ When a snapshot bundle is created with `include: [adgn/]`, the hydrated snapshot
 
 **Verification steps:**
 
-1. **Check the bundle configuration** in `manifest.yaml`:
-
-   ```yaml
-   bundle:
-     source_commit: abc123...
-     include:
-       - adgn/ # ← This prefix will be in all hydrated paths
-   ```
+1. **Check the provenance comments** in `BUILD.bazel` for include/exclude paths
 
 2. **Verify paths match** by hydrating the snapshot and listing files:
 
@@ -131,7 +112,7 @@ occurrences:
       - [src/persist.py]
 ```
 
-**Note on `critic_scopes_expected_to_recall`:** This field specifies which minimal file sets are needed to detect the issue. It's used to generate focused training examples per-file rather than only full-snapshot reviews. See [Training Strategy](training_strategy.md) for details on how this enables the per-file examples approach and tighter optimization feedback loops.
+**Note on `critic_scopes_expected_to_recall`:** This field specifies which minimal file sets are needed to detect the issue. It's used to generate focused training examples per-file rather than only full-snapshot reviews. See [Training Strategy](../../docs/training_strategy.md) for details on how this enables the per-file examples approach and tighter optimization feedback loops.
 
 **Multiple occurrences (with notes):**
 
@@ -236,7 +217,7 @@ The exact phrasing can vary - the key is to acknowledge what looks problematic w
 
 ### 4. Detection Standard for `critic_scopes_expected_to_recall`
 
-See format-spec.md for line range formats and auto-inference rules.
+See format_spec.md for line range formats and auto-inference rules.
 
 **The key question:** "If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"
 
@@ -323,14 +304,14 @@ Dead code issues have two possible fixes: (1) delete the dead code, or (2) wire 
 
 When the plausible fix is "wire it up," note this in the occurrence's `note` field so graders understand the dual-fix nature (e.g., "Dead helper; `cli.py` lines 80-95 duplicate this logic and should call it instead").
 
-### 5. Setting `graders_match_only_if_reported_on` (Optional)
+### 5. Setting `match_file_restriction` (Optional)
 
 **Purpose:** This field is a grading optimization. When set, critiques that report issues only in files OUTSIDE this set are skipped during matching (assumed non-match without semantic comparison).
 
 **Relationship to `critic_scopes_expected_to_recall`:**
 
 - `critic_scopes_expected_to_recall` = where the issue can be DETECTED from (training signal)
-- `graders_match_only_if_reported_on` = where the issue can be validly REPORTED (grading optimization)
+- `match_file_restriction` = where the issue can be validly REPORTED (grading optimization)
 
 These are independent. An issue detectable from file A might be validly reported in files A, B, or C.
 
@@ -355,7 +336,7 @@ These are independent. An issue detectable from file A might be validly reported
 ```yaml
 # Issue: Useless docstring that restates the function signature
 # Can only be reported from the file containing the docstring
-graders_match_only_if_reported_on:
+match_file_restriction:
   - src/persist.py
 ```
 
@@ -366,14 +347,14 @@ graders_match_only_if_reported_on:
 # Valid framings:
 #   - "agents.py calls nonexistent method" (tag agents.py)
 #   - "agent.py missing abort() that callers expect" (tag agent.py)
-graders_match_only_if_reported_on:
+match_file_restriction:
   - src/agents.py
   - src/agent.py
 ```
 
 **Antipattern - splitting producer/consumer issues:**
 
-Don't split a single logical issue into separate occurrences by file with narrow `graders_match_only_if_reported_on`. Example of what NOT to do:
+Don't split a single logical issue into separate occurrences by file with narrow `match_file_restriction`. Example of what NOT to do:
 
 ```yaml
 # WRONG: Split into two occurrences with narrow sets
@@ -382,12 +363,12 @@ occurrences:
     files:
       runtime.py:
         - [249, 253] # passes hardcoded False
-    graders_match_only_if_reported_on: [runtime.py] # TOO NARROW
+    match_file_restriction: [runtime.py] # TOO NARROW
   - occurrence_id: occ-1
     files:
       status_shared.py:
         - [42, 56] # has unreachable code
-    graders_match_only_if_reported_on: [status_shared.py] # TOO NARROW
+    match_file_restriction: [status_shared.py] # TOO NARROW
 ```
 
 This fails because a critique like "status_shared.py has dead code because runtime.py passes False" could validly tag either file. Instead, merge into one occurrence:
@@ -401,12 +382,12 @@ occurrences:
         - [249, 253]
       status_shared.py:
         - [42, 56]
-    graders_match_only_if_reported_on:
+    match_file_restriction:
       - runtime.py
       - status_shared.py
 ```
 
-See @docs/only-matchable-labels.md for more labeled examples.
+See @only_matchable_labels.md for more labeled examples.
 
 ### 6. Issue Organization: Logical Problems, Not Locations
 
@@ -622,7 +603,7 @@ files:
 
 Note: These comments help human readers but aren't parsed into the data model.
 
-@quality-checklist.md
+@quality_checklist.md
 
 ## Why This Structure?
 
