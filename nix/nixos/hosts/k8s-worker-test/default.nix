@@ -23,10 +23,10 @@
   };
 
   # Headless auto-login on console
-  users.users.${username}.initialHashedPassword = "";
   services.getty.autologinUser = username;
 
   users.users.${username} = {
+    initialHashedPassword = "";
     openssh.authorizedKeys.keys = [
       # Add your SSH public key here after initial provisioning
     ];
