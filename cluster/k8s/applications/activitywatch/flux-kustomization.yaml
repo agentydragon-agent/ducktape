@@ -16,3 +16,4 @@ spec:
     - name: activitywatch-namespace
     - name: activitywatch-secrets
     - name: proxmox-csi
+    - name: harbor # Image hosted on registry.allegedly.works

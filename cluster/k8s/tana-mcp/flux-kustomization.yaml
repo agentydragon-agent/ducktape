@@ -20,3 +20,4 @@ spec:
   dependsOn:
     - name: tana-mcp-namespace
     - name: tana-mcp-secrets
+    - name: harbor # Image hosted on registry.allegedly.works
