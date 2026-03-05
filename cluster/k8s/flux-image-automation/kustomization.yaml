@@ -14,9 +14,9 @@ resources:
   - oauth-broker-image-repository.yaml
   - oauth-broker-image-policy.yaml
   - oauth-broker-image-update-automation.yaml
-  - approval-gate-image-repository.yaml
-  - approval-gate-image-policy.yaml
-  - approval-gate-image-update-automation.yaml
+  - airlock-image-repository.yaml
+  - airlock-image-policy.yaml
+  - airlock-image-update-automation.yaml
   - openclaw-exec-image-repository.yaml
   - openclaw-exec-image-policy.yaml
   - openclaw-exec-image-update-automation.yaml

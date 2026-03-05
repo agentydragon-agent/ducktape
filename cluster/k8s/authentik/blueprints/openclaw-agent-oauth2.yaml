@@ -14,27 +14,27 @@ entries:
     id: scope-propose
     state: present
     identifiers:
-      name: "approval-gate: propose"
+      name: "airlock: propose"
       scope_name: propose
     attrs:
-      description: "Propose actions via approval gate backend tools"
+      description: "Propose actions via airlock backend tools"
       expression: "return {}"
 
   - model: authentik_providers_oauth2.scopemapping
     id: scope-read
     state: present
     identifiers:
-      name: "approval-gate: read"
+      name: "airlock: read"
       scope_name: read
     attrs:
-      description: "Read approval gate action state and logs"
+      description: "Read airlock action state and logs"
       expression: "return {}"
 
   - model: authentik_providers_oauth2.scopemapping
     id: scope-decide
     state: present
     identifiers:
-      name: "approval-gate: decide"
+      name: "airlock: decide"
       scope_name: decide
     attrs:
       description: "Approve or reject pending actions"

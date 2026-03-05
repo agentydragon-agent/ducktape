@@ -10,7 +10,7 @@ js_library(
     srcs = ["visual-test-lib.mjs"],
     tags = ["no-lint"],
     visibility = [
-        "//approval_gate/frontend:__pkg__",
+        "//airlock/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
     ],
@@ -30,7 +30,7 @@ filegroup(
         "test-fonts.css",
     ],
     visibility = [
-        "//approval_gate/frontend:__pkg__",
+        "//airlock/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
     ],
@@ -41,7 +41,7 @@ filegroup(
     name = "fonts_conf",
     srcs = ["fonts/fonts.conf"],
     visibility = [
-        "//approval_gate/frontend:__pkg__",
+        "//airlock/frontend:__pkg__",
         "//props/frontend:__pkg__",
         "//props/frontend/src:__subpackages__",
     ],

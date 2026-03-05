@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: airlock
+  namespace: airlock
+  labels:
+    app: airlock
+    component: server
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airlock
+      component: server
+  template:
+    metadata:
+      labels:
+        app: airlock
+        component: server
+    spec:
+      containers:
+        - name: airlock
+          image: registry.allegedly.works/airlock/airlock:latest # {"$imagepolicy": "flux-system:airlock"}
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          env:
+            - name: CONFIG_PATH
+              value: "/etc/airlock/config.yaml"
+            - name: EXEC_BACKEND_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: exec-backend-token
+                  key: password
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/airlock
+              readOnly: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: airlock-data
+        - name: config
+          configMap:
+            name: airlock-config

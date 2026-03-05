@@ -1,7 +1,7 @@
 packages:
-  - "approval_gate/frontend"
-  - "props/frontend"
   - "agent_server/web"
+  - "airlock/frontend"
+  - "airlock/openclaw"
   - "hack/rspcache/admin_ui"
+  - "props/frontend"
   - "util/frontend_visual_test"
-  - "openclaw/approval-gate"
