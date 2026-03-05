@@ -1,0 +1,21 @@
+rationale: |
+  `agent_server/testing/testdata/approval_policy/bad_template.py` is dead
+  testdata. No call to `fetch_policy("bad_template")` exists anywhere in the
+  codebase. The comment in `test_eval_abort.py:11` — "Removed: template-based
+  seatbelt tests. Seatbelt now accepts only explicit policy." — confirms the
+  tests that exercised this template were intentionally deleted. The file
+  should be deleted along with it.
+
+  This is also the only caller of `SEATBELT_EXEC_MOUNT_PREFIX` from
+  `mcp_infra/constants.py`, so deleting it unblocks deletion of that orphaned
+  constant too.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      agent_server/testing/testdata/approval_policy/bad_template.py:
+        - [1, 24]
+    note: "Dead policy template — never loaded by fetch_policy(); its tests were removed"
+    critic_scopes_expected_to_recall:
+      - [agent_server/testing/testdata/approval_policy/bad_template.py]
+      - [agent_server/mcp/approval_policy/test_eval_abort.py]

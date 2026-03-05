@@ -1,0 +1,10 @@
+source:
+  vcs: local
+  root: code
+split: train
+bundle:
+  source_commit: fb39b0ad7c6f4ddae7aa0ab6c13e0e2b56c24d26
+  include:
+    - agent_server/
+    - approval_gate/
+    - tools/frontend/

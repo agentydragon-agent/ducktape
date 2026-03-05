@@ -1,9 +1,8 @@
 from agent_server.approvals import WellKnownTools
 from agent_server.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from agent_server.policies.scaffold import run_with_tests
-from mcp_infra.constants import UI_MOUNT_PREFIX
+from mcp_infra.constants import SEATBELT_EXEC_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from mcp_infra.naming import build_mcp_function, parse_tool_name
-from mcp_infra.prefix import MCPMountPrefix
 
 TEST_CASES = [
     (
@@ -14,7 +13,7 @@ TEST_CASES = [
 
 
 def decide(req: PolicyRequest) -> PolicyResponse:
-    if parse_tool_name(req.name) == (MCPMountPrefix("seatbelt_exec"), WellKnownTools.SANDBOX_EXEC):
+    if parse_tool_name(req.name) == (SEATBELT_EXEC_MOUNT_PREFIX, WellKnownTools.SANDBOX_EXEC):
         # Intentionally error to simulate failing seatbelt resolution → deny-abort upstream
         raise RuntimeError("seatbelt policy resolution failed")
     return PolicyResponse(decision=ApprovalDecision.ASK, rationale="default")

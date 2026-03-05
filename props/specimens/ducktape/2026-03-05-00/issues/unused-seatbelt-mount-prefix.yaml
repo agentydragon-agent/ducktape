@@ -1,16 +1,20 @@
 rationale: |
   `SEATBELT_EXEC_MOUNT_PREFIX` is defined in `mcp_infra/constants.py` but
-  never imported or used within the `mcp_infra` package. The only import
-  in the broader repo is in a test-data template in `agent_server/`, which is
-  itself not compiled under normal Bazel targets. The seatbelt exec server
-  was removed; the orphaned constant should be deleted along with its mention
-  in `docs/compositor.md`.
+  has no live callers. Its only importer is
+  `agent_server/testing/testdata/approval_policy/bad_template.py`, which is
+  itself dead: no test calls `fetch_policy("bad_template")` anywhere, and the
+  comment in `test_eval_abort.py` confirms the seatbelt template tests were
+  explicitly removed ("Seatbelt now accepts only explicit policy.").
+
+  The correct fix is to delete both `bad_template.py` and the constant —
+  not to patch `bad_template.py` to inline `MCPMountPrefix("seatbelt_exec")`,
+  since there is no point keeping dead testdata alive to preserve a dead constant.
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
     files:
       mcp_infra/constants.py:
         - [36, 36]
-    note: "Defined but never imported anywhere in mcp_infra"
-    match_file_restriction:
-      - mcp_infra/constants.py
+    note: "Defined but never imported from live code"
+    critic_scopes_expected_to_recall:
+      - [mcp_infra/constants.py]

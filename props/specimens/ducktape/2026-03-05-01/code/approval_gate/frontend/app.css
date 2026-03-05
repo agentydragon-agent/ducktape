@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* Status pill colors — kept as classes because status names are data-driven */
+@layer components {
+  .status-pill {
+    @apply inline-block rounded-full px-2.5 py-0.5 text-xs font-bold;
+  }
+  .status-pill-pending {
+    @apply bg-amber-100 text-amber-800;
+  }
+  .status-pill-executing {
+    @apply bg-blue-100 text-blue-800;
+  }
+  .status-pill-done {
+    @apply bg-green-100 text-green-800;
+  }
+  .status-pill-rejected {
+    @apply bg-red-100 text-red-800;
+  }
+  .status-pill-withdrawn {
+    @apply bg-gray-100 text-gray-600;
+  }
+}

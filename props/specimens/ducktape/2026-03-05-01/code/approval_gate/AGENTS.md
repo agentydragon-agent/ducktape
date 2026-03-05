@@ -1,0 +1,12 @@
+@README.md
+
+# approval_gate — Agent Instructions
+
+## Conventions
+
+- State transitions are append-only: once an action leaves `pending`, it cannot go back.
+- `session_key` is injected by the OpenClaw plugin; agents must not set it manually.
+- `justification` is required; operators see it when deciding whether to approve.
+- The `resource://actions/{id}` MCP resource is the source of truth for action state.
+- Tool call results always contain `action_id`; the plugin reads state via the resource.
+  The server never embeds the tool execution result in the immediate tool response.
