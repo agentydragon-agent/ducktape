@@ -6,7 +6,7 @@ via StreamableHttpTransport's httpx_client_factory — the OAuth2 client IS the
 HTTP client, so token fetch/cache/refresh happens transparently on every request.
 
 Designed as a sidecar container in the OpenClaw gateway pod so the OpenClaw
-plugin can reach the airlock without managing OAuth2 tokens itself.
+plugin can reach the Airlock without managing OAuth2 tokens itself.
 """
 
 from __future__ import annotations

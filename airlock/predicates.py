@@ -1,4 +1,4 @@
-"""Auto-approval predicate for the airlock.
+"""Auto-approval predicate for Airlock.
 
 The predicate is a Python file loaded at startup that exports a function:
 

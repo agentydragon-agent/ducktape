@@ -8,7 +8,7 @@ and provides the exec tool via a DirectExecServer sidecar.
 1. **Exec tool**: Registers an `exec` tool backed by the DirectExecServer sidecar
    (pod-local, unauthenticated). Discovers the tool schema from the sidecar at
    startup and injects `OPENCLAW_SESSION_ID` into the command environment.
-2. **Airlock notifications**: Connects to the airlock MCP server,
+2. **Airlock notifications**: Connects to the Airlock MCP server,
    subscribes to session log HWM resources, and delivers terminal action results
    (approved/denied/withdrawn) to the agent via `enqueueSystemEvent`.
 3. **Airlock tools** (optional, `registerTools: true`): Discovers and
@@ -25,9 +25,9 @@ Add to your OpenClaw config:
     "entries": {
       "airlock": {
         "config": {
-          "approvalGate": {
+          "airlock": {
             "url": "http://airlock.airlock.svc.cluster.local:8765/mcp",
-            "token": "<token from the airlock>",
+            "token": "<token from Airlock>",
           },
           "execServer": {
             "url": "http://127.0.0.1:8766/mcp",

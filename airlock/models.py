@@ -1,4 +1,4 @@
-"""Data models for the airlock.
+"""Data models for Airlock.
 
 All state variants are discriminated unions — no nullable result fields at the top level.
 Invalid states are unrepresentable by construction.

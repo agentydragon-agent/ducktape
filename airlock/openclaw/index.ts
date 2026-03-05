@@ -6,21 +6,21 @@
  *   1. **Exec tool** (optional): Two mutually exclusive modes:
  *      - **Sidecar** (`execServer.url` configured): Registers an `exec` tool
  *        that proxies calls to the DirectExecServer sidecar (pod-local,
- *        unauthenticated). Injects `OPENCLAW_SESSION_ID` and `APPROVAL_GATE_URL`
+ *        unauthenticated). Injects `OPENCLAW_SESSION_ID` and `AIRLOCK_URL`
  *        as env vars.
  *      - **Native injection** (`nativeExecInjection: true`): Intercepts the
  *        built-in `exec` tool via `before_tool_call` and injects
- *        `OPENCLAW_SESSION_ID` and `APPROVAL_GATE_URL` into the env. No sidecar
+ *        `OPENCLAW_SESSION_ID` and `AIRLOCK_URL` into the env. No sidecar
  *        required. Use this when the agent uses the built-in exec tool directly.
  *
- *   2. **Airlock notifications**: Connects to the airlock MCP server,
+ *   2. **Airlock notifications**: Connects to the Airlock MCP server,
  *      subscribes to session log HWM resources, and delivers terminal action
  *      results (approved/denied/withdrawn) to the agent via OpenClaw's system
  *      notification queue (`enqueueSystemEvent`).
  *
  * Auth:
  *   - Exec sidecar: unauthenticated (pod-local, 127.0.0.1)
- *   - Airlock MCP endpoint: Bearer token (approvalGateToken from plugin config)
+ *   - Airlock MCP endpoint: Bearer token (airlockToken from plugin config)
  *
  * This plugin MUST run inside the gateway process (not a node). The
  * `enqueueSystemEvent` API writes to the gateway's in-memory per-session
@@ -99,20 +99,20 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   const execLog = scopedLogger(api, "exec");
   const cfg = api.pluginConfig as
     | {
-        approvalGate?: { url?: string; token?: string };
+        airlock?: { url?: string; token?: string };
         execServer?: { url?: string };
         nativeExecInjection?: boolean;
         registerTools?: boolean;
       }
     | undefined;
 
-  const approvalGateUrl = cfg?.approvalGate?.url?.trim();
-  const approvalGateToken = cfg?.approvalGate?.token?.trim();
+  const airlockUrl = cfg?.airlock?.url?.trim();
+  const airlockToken = cfg?.airlock?.token?.trim();
   const execServerUrl = cfg?.execServer?.url?.trim();
   const nativeExecInjection = cfg?.nativeExecInjection ?? false;
 
-  if (!approvalGateUrl || !approvalGateToken) {
-    log.warn("approvalGate.url and approvalGate.token are required in plugin config; plugin disabled");
+  if (!airlockUrl || !airlockToken) {
+    log.warn("airlock.url and airlock.token are required in plugin config; plugin disabled");
     return;
   }
 
@@ -159,7 +159,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
             "OPENCLAW_SESSION_ID is automatically set in the environment.",
           parameters: execSchema,
           async execute(_id: string, params: Record<string, unknown>) {
-            const env = [`OPENCLAW_SESSION_ID=${ctx.sessionKey ?? ""}`, `APPROVAL_GATE_URL=${approvalGateUrl}`];
+            const env = [`OPENCLAW_SESSION_ID=${ctx.sessionKey ?? ""}`, `AIRLOCK_URL=${airlockUrl}`];
             const cwd = (params.cwd as string | undefined) ?? ctx.workspaceDir;
             const callArgs = { ...params, env, ...(cwd ? { cwd } : {}) };
 
@@ -186,7 +186,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
 
   // ── Native exec injection via before_tool_call (optional) ─────────────────
   // Intercepts the built-in `exec` tool and injects OPENCLAW_SESSION_ID and
-  // APPROVAL_GATE_URL into the env Record, so the agent knows its session
+  // AIRLOCK_URL into the env Record, so the agent knows its session
   // identity without a sidecar. Mutually exclusive with the sidecar approach.
   if (nativeExecInjection) {
     api.on("before_tool_call", (event, ctx) => {
@@ -198,7 +198,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
           env: {
             ...existing,
             OPENCLAW_SESSION_ID: ctx.sessionKey ?? "",
-            APPROVAL_GATE_URL: approvalGateUrl,
+            AIRLOCK_URL: airlockUrl,
           },
         },
       };
@@ -207,7 +207,7 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
   }
 
   // ── Resilient MCP connection to airlock server ──────────────────────
-  const connection = new AirlockConnection(approvalGateUrl, approvalGateToken, log);
+  const connection = new AirlockConnection(airlockUrl, airlockToken, log);
 
   // Actions resolved inline (within approval_timeout_seconds) — skip notifications for these
   const inlineResolvedActions = new Set<string>();
@@ -359,5 +359,5 @@ export default async function register(api: OpenClawPluginApi): Promise<void> {
 
   // Agent instructions for airlock usage are provided via an OpenClaw
   // skill (SKILL.md) in the repo, not injected here. The skill tells the agent
-  // how to use mcporter for airlockd actions and how to read results.
+  // how to use mcporter for airlock actions and how to read results.
 }

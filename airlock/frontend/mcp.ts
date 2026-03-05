@@ -1,5 +1,5 @@
 /**
- * MCP client for the airlock operator frontend.
+ * MCP client for the Airlock operator frontend.
  *
  * Connects to the operator-facing MCP endpoint at /mcp (port 8765).
  * Auth is handled by an OAuth2 JWT (Authorization Code + PKCE flow).

@@ -1,4 +1,4 @@
-"""Configuration for the airlock server.
+"""Configuration for the Airlock server.
 
 The bulk of settings are loaded from a YAML config file (CONFIG_PATH env var,
 default /etc/airlock/config.yaml).

@@ -1,6 +1,6 @@
 """Integration tests: client reconnection after airlock server restart.
 
-Verifies that a client can reconnect to the airlock MCP server after the
+Verifies that a client can reconnect to the Airlock MCP server after the
 server goes down and comes back up. Covers three scenarios:
 
 1. Basic reconnection — new client connects after server restart, calls tools

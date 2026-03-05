@@ -3,8 +3,8 @@
 You have access to privileged tools which require user approval. Access to the
 MCP servers providing these tools is gated by an airlock MCP server.
 
-The exec environment provides `APPROVAL_GATE_URL` and `OPENCLAW_SESSION_ID`
-automatically. You can interact with the airlock using any MCP client;
+The exec environment provides `AIRLOCK_URL` and `OPENCLAW_SESSION_ID`
+automatically. You can interact with the Airlock using any MCP client;
 `mcporter` is one such tool available in the exec environment.
 
 ## Discovering available tools
@@ -13,8 +13,8 @@ Read the server's instructions and list available tools before submitting
 actions:
 
 ```bash
-mcporter instructions "$APPROVAL_GATE_URL"
-mcporter list-tools "$APPROVAL_GATE_URL"
+mcporter instructions "$AIRLOCK_URL"
+mcporter list-tools "$AIRLOCK_URL"
 ```
 
 Follow the instructions when submitting actions. Use `list-tools` to see
@@ -23,7 +23,7 @@ tool names, descriptions, and input schemas.
 ## Requesting an action
 
 ```bash
-mcporter call "$APPROVAL_GATE_URL" <tool-name> '{"arg": "value", "session_key": "'$OPENCLAW_SESSION_ID'"}'
+mcporter call "$AIRLOCK_URL" <tool-name> '{"arg": "value", "session_key": "'$OPENCLAW_SESSION_ID'"}'
 ```
 
 You will receive an immediate acknowledgment with an action key
@@ -40,14 +40,14 @@ automatically.
 Read the state of a specific action:
 
 ```bash
-mcporter read "$APPROVAL_GATE_URL" "resource://sessions/$OPENCLAW_SESSION_ID/actions/<action_seq>"
+mcporter read "$AIRLOCK_URL" "resource://sessions/$OPENCLAW_SESSION_ID/actions/<action_seq>"
 ```
 
 Browse the session event log:
 
 ```bash
-mcporter read "$APPROVAL_GATE_URL" "resource://sessions/$OPENCLAW_SESSION_ID/log_hwm"
-mcporter read "$APPROVAL_GATE_URL" "resource://sessions/$OPENCLAW_SESSION_ID/log/<entry_id>"
+mcporter read "$AIRLOCK_URL" "resource://sessions/$OPENCLAW_SESSION_ID/log_hwm"
+mcporter read "$AIRLOCK_URL" "resource://sessions/$OPENCLAW_SESSION_ID/log/<entry_id>"
 ```
 
 ## Withdrawing a pending action
@@ -55,5 +55,5 @@ mcporter read "$APPROVAL_GATE_URL" "resource://sessions/$OPENCLAW_SESSION_ID/log
 If you no longer need a pending action, you can withdraw it:
 
 ```bash
-mcporter call "$APPROVAL_GATE_URL" withdraw '{"session_key": "'$OPENCLAW_SESSION_ID'", "action_seq": <seq>}'
+mcporter call "$AIRLOCK_URL" withdraw '{"session_key": "'$OPENCLAW_SESSION_ID'", "action_seq": <seq>}'
 ```

@@ -1,4 +1,4 @@
-# HTTPRoute for the airlock. Traffic flows directly: Gateway → backend.
+# HTTPRoute for Airlock. Traffic flows directly: Gateway → backend.
 # Auth is handled by the SPA's native OIDC integration (no proxy outpost).
 # Agent MCP traffic uses OAuth2 JWTs (client_credentials grant) with JWTVerifier.
 ---

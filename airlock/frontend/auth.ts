@@ -1,5 +1,5 @@
 /**
- * OIDC authentication for the airlock operator SPA.
+ * OIDC authentication for the Airlock operator SPA.
  *
  * Uses Authorization Code + PKCE flow via oidc-client-ts.
  * OIDC configuration (authority, client_id) is fetched from the backend's

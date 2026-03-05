@@ -1,4 +1,4 @@
-# CiliumNetworkPolicy for the airlock namespace pods.
+# CiliumNetworkPolicy for the Airlock namespace pods.
 #
 # airlock server (component: server, port 8765):
 #   Cilium gateway (gateway-system) — operator SPA with OAuth2 JWT (PKCE)
@@ -6,7 +6,7 @@
 #   Both present JWTs verified by JWTVerifier against the Authentik JWKS endpoint.
 #
 # kubeapi-admin-exec-mcp (component: kubeapi-admin-exec-mcp, port 8766):
-#   Only the airlock server (same namespace) connects to it.
+#   Only the Airlock server (same namespace) connects to it.
 #
 # The host entity covers kubelet liveness/readiness probes for both pods.
 apiVersion: cilium.io/v2
@@ -55,7 +55,7 @@ spec:
         - ports:
             - port: "8766"
               protocol: TCP
-    # Only the airlock server pod connects to the exec backend.
+    # Only the Airlock server pod connects to the exec backend.
     - fromEndpoints:
         - matchLabels:
             app: airlock

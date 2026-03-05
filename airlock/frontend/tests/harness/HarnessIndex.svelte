@@ -6,7 +6,7 @@
   {#if error}
     <p class="error">Unknown page: {error}</p>
   {/if}
-  <h1>Approval Gate Visual Test Harness</h1>
+  <h1>Airlock Visual Test Harness</h1>
   <ul>
     {#each pages as name}
       <li><a href="?page={name}">{name}</a></li>

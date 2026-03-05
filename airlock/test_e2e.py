@@ -1,4 +1,4 @@
-"""E2E tests for the airlock over real HTTP transport.
+"""E2E tests for the Airlock over real HTTP transport.
 
 Each test spins up a uvicorn server with JWT authentication, using agent and
 operator MCP clients with proper Bearer tokens. This exercises the full auth
@@ -29,7 +29,7 @@ from mcp_infra.resource_utils import read_text
 
 
 async def test_tool_list_wraps_backend_tools(echo_gate_app: Starlette, free_port: int, agent_client_transport: object):
-    """MCP tool list exposes backend tools wrapped with the airlock schema envelope."""
+    """MCP tool list exposes backend tools wrapped with the Airlock schema envelope."""
     async with serve_app(echo_gate_app, port=free_port), GateClient(agent_client_transport) as client:
         tools = await client.list_tools()
 

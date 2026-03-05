@@ -49,7 +49,7 @@ entries:
       meta_launch_url: "https://airlock.allegedly.works"
       open_in_new_tab: true
 
-  # Only authentik Admins may access the airlock UI.
+  # Only authentik Admins may access the Airlock UI.
   - model: authentik_policies.policybinding
     state: present
     identifiers:

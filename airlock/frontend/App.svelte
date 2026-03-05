@@ -56,7 +56,7 @@
 
 {#snippet defaultHeader()}
   <header class="bg-blue-800 px-4 py-3 sm:px-6 flex items-center gap-3">
-    <h1 class="text-white text-lg font-semibold m-0">Approval Gate</h1>
+    <h1 class="text-white text-lg font-semibold m-0">Airlock</h1>
   </header>
 {/snippet}
 

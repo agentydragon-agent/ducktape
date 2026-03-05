@@ -13,7 +13,7 @@
 </script>
 
 <header class="bg-blue-800 px-4 py-3 sm:px-6 flex items-center gap-3">
-  <h1 class="text-white text-lg font-semibold m-0">Approval Gate</h1>
+  <h1 class="text-white text-lg font-semibold m-0">Airlock</h1>
   {#if pending.length > 0}
     <span class="bg-red-500 text-white text-xs font-bold rounded-full px-2.5 py-0.5">{pending.length} pending</span>
   {/if}

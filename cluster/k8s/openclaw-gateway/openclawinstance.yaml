@@ -217,13 +217,13 @@ spec:
         entries:
           airlock:
             config:
-              approvalGate:
+              airlock:
                 # Via local auth-proxy sidecar (injects OAuth2 Bearer token upstream)
                 url: "http://127.0.0.1:8767/mcp"
               execServer:
                 url: "http://127.0.0.1:8766/mcp"
       tools:
-        # Built-in exec is disabled. The airlock plugin registers an exec
+        # Built-in exec is disabled. The Airlock plugin registers an exec
         # tool that calls the DirectExecServer sidecar with OPENCLAW_SESSION_ID
         # injection, replacing the node-host exec path entirely.
         exec:

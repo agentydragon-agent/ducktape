@@ -37,7 +37,7 @@
 
 <header class="bg-blue-800 px-4 py-3 sm:px-6 flex items-center gap-3">
   <h1 class="text-white text-lg font-semibold m-0">
-    <a href="#/" class="text-blue-200 hover:text-white hover:underline">Approval Gate</a>
+    <a href="#/" class="text-blue-200 hover:text-white hover:underline">Airlock</a>
     <span class="text-blue-300 font-normal"> / </span>
     <span class="text-sm font-normal text-blue-100">Action {action.key.session_key}/{action.key.action_seq}</span>
   </h1>

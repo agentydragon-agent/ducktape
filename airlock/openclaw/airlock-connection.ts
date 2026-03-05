@@ -1,5 +1,5 @@
 /**
- * Resilient MCP client connection to the airlock server.
+ * Resilient MCP client connection to the Airlock server.
  *
  * Extends `ReconnectingMcpClient` with Bearer auth, session HWM tracking,
  * and resource subscription management. Tracks session HWMs and
