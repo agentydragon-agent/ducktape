@@ -32,8 +32,8 @@
     ];
     extraGroups = [ "systemd-journal" ];
   };
-  # Passwordless sudo for test VM
-  security.sudo.wheelNeedsPassword = false;
+  # Passwordless sudo for test VM (overrides base.nix default)
+  security.sudo.wheelNeedsPassword = lib.mkForce false;
 
   boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
 }
