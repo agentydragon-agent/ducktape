@@ -146,7 +146,8 @@ class ApprovalGateServer(EnhancedFastMCP):
         self._backend_clients: dict[MCPMountPrefix, Client] = {}
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
-        self._action_resolved_events: dict[ActionKey, asyncio.Event] = {}
+        # Keyed by ActionKey while action is parked awaiting a human decision.
+        self._pending_decisions: dict[ActionKey, asyncio.Future[OperatorDecision]] = {}
 
     # ── Lifespan ──────────────────────────────────────────────────────────────
 
@@ -159,6 +160,7 @@ class ApprovalGateServer(EnhancedFastMCP):
         await stack.__aenter__()
         try:
             await self._connect_backends(stack)
+            await self._rehydrate_pending_actions()
             self._register_resources()
             self._register_tools()
             yield
@@ -175,6 +177,17 @@ class ApprovalGateServer(EnhancedFastMCP):
                 self._backend_clients.clear()
                 if self._storage is not None:
                     await self._storage.close()
+
+    async def _rehydrate_pending_actions(self) -> None:
+        """Recreate in-memory decision futures for PENDING actions that survived a server restart.
+
+        Without this, decide() would fail for any PENDING action from a prior run because
+        _pending_decisions only lives in memory and is empty on startup.
+        """
+        pending = await self._req_storage.list_actions(ActionStatus.PENDING)
+        for action in pending:
+            namespace = MCPMountPrefix(action.call.server_namespace)
+            self._spawn(self._await_human_decision(action.key, namespace, action.call.tool_name, action.call.arguments))
 
     async def _connect_backends(self, stack: AsyncExitStack) -> None:
         """Connect to all backend servers, register wrapped tools, and render instructions."""
@@ -241,14 +254,14 @@ class ApprovalGateServer(EnhancedFastMCP):
             return await self._req_storage.list_actions(status, limit=limit, offset=offset)
 
         @self.tool(auth=require_scopes(DECIDE_SCOPE))
-        async def approve_action(key: ActionKey) -> Action:
+        async def approve_action(key: ActionKey) -> None:
             """Approve a pending action, executing it against the backend."""
-            return await self.decide(key, ApproveDecision())
+            await self.decide(key, ApproveDecision())
 
         @self.tool(auth=require_scopes(DECIDE_SCOPE))
-        async def reject_action(key: ActionKey, reason: str | None = None) -> Action:
+        async def reject_action(key: ActionKey, reason: str | None = None) -> None:
             """Reject a pending action without executing it."""
-            return await self.decide(key, DenyDecision(reason=reason))
+            await self.decide(key, DenyDecision(reason=reason))
 
         @self.tool(auth=require_scopes(PROPOSE_SCOPE))
         async def withdraw_action(key: ActionKey) -> Action:
@@ -289,35 +302,11 @@ class ApprovalGateServer(EnhancedFastMCP):
             effective = wait_mode if wait_mode is not None else self._default_wait_mode
             effective_timeout = _wait_mode_to_timeout(effective)
 
+            pipeline = self._spawn(self._run_action_pipeline(key, namespace, tool_name, input))
+
             if effective_timeout > 0:
-                event = asyncio.Event()
-                self._action_resolved_events[key] = event
-            else:
-                event = None
-
-            self._spawn(self._apply_predicate(key, namespace, tool_name, input))
-
-            if event is not None:
                 with anyio.move_on_after(effective_timeout):
-                    while True:
-                        await event.wait()
-                        current = await self._req_storage.get_action(key)
-                        if current is not None and isinstance(
-                            current.state, (DoneState, RejectedState, WithdrawnState)
-                        ):
-                            break
-                        # Intermediate transition (e.g. PENDING → EXECUTING); reset and wait again.
-                        # Re-check state immediately after installing the new event to avoid a race
-                        # where the terminal transition fires between the get_action call above and
-                        # the new event being registered (which would leave the new event never set).
-                        event = asyncio.Event()
-                        self._action_resolved_events[key] = event
-                        current = await self._req_storage.get_action(key)
-                        if current is not None and isinstance(
-                            current.state, (DoneState, RejectedState, WithdrawnState)
-                        ):
-                            break
-                self._action_resolved_events.pop(key, None)
+                    await asyncio.shield(pipeline)
 
             result = await self._req_storage.get_action(key)
             assert result is not None
@@ -332,20 +321,59 @@ class ApprovalGateServer(EnhancedFastMCP):
         )
         FastMCP.add_tool(self, tool)
 
-    async def _apply_predicate(
+    # ── Action pipeline ───────────────────────────────────────────────────────
+
+    async def _run_action_pipeline(
         self, key: ActionKey, namespace: MCPMountPrefix, tool_name: str, input: dict[str, object]
     ) -> None:
-        """Evaluate the predicate and auto-decide if not NeedsHumanDecision."""
-        decision = call_predicate(self._predicate, namespace, tool_name, input)
-        match decision:
+        """Walk one action through its full lifecycle: predicate → decision → execution."""
+        match call_predicate(self._predicate, namespace, tool_name, input):
             case Approved():
-                await self.decide(key, ApproveDecision())
+                await self._apply_decision(key, namespace, tool_name, input, ApproveDecision())
             case Denied(reason=reason):
-                await self.decide(key, DenyDecision(reason=reason or "automatically denied"))
+                await self._apply_decision(
+                    key, namespace, tool_name, input, DenyDecision(reason=reason or "automatically denied")
+                )
             case NeedsHumanDecision():
                 logger.info(
                     "queued action %s/%d server=%s tool=%s", key.session_key, key.action_seq, namespace, tool_name
                 )
+                await self._await_human_decision(key, namespace, tool_name, input)
+
+    async def _await_human_decision(
+        self, key: ActionKey, namespace: MCPMountPrefix, tool_name: str, input: dict[str, object]
+    ) -> None:
+        """Park until a human decision arrives via decide(), then apply it."""
+        fut: asyncio.Future[OperatorDecision] = asyncio.get_running_loop().create_future()
+        self._pending_decisions[key] = fut
+        try:
+            decision = await fut
+        except asyncio.CancelledError:
+            return  # withdrawn externally; state already updated by withdraw()
+        finally:
+            self._pending_decisions.pop(key, None)
+        await self._apply_decision(key, namespace, tool_name, input, decision)
+
+    async def _apply_decision(
+        self,
+        key: ActionKey,
+        namespace: MCPMountPrefix,
+        tool_name: str,
+        input: dict[str, object],
+        decision: OperatorDecision,
+    ) -> None:
+        """Apply a decision: transition state and execute backend if approved."""
+        match decision:
+            case ApproveDecision():
+                started_at = datetime.now(tz=UTC)
+                await self._update_and_notify(key, ExecutingState(), ExecutionStartedDetail(started_at=started_at))
+                client = self._backend_clients.get(namespace)
+                if client is None:
+                    raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
+                outcome = await client.call_tool_mcp(tool_name, input)
+                await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
+            case DenyDecision(reason=reason):
+                await self._update_and_notify(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
 
     # ── Event log + notification helpers ──────────────────────────────────────
 
@@ -371,26 +399,21 @@ class ApprovalGateServer(EnhancedFastMCP):
 
     # ── Operator / agent decisions ────────────────────────────────────────────
 
-    async def decide(self, key: ActionKey, decision: OperatorDecision) -> Action:
-        """Apply an operator decision (approve or deny) to a pending action.
+    async def decide(self, key: ActionKey, decision: OperatorDecision) -> None:
+        """Inject an operator decision for an action awaiting human input.
 
-        Raises ValueError if the action does not exist or is not pending.
+        Raises ValueError if the action does not exist, is not pending, or is not
+        awaiting a human decision (e.g. still processing an auto-predicate).
         """
         action = await self._req_storage.get_action(key)
         if action is None:
             raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
         if not isinstance(action.state, PendingState):
             raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
-        match decision:
-            case ApproveDecision():
-                started_at = datetime.now(tz=UTC)
-                action = await self._update_and_notify(
-                    key, ExecutingState(), ExecutionStartedDetail(started_at=started_at)
-                )
-                self._spawn(self._execute_and_finish(key, action))
-                return action
-            case DenyDecision(reason=reason):
-                return await self._update_and_notify(key, RejectedState(reason=reason), DeniedDetail(reason=reason))
+        fut = self._pending_decisions.get(key)
+        if fut is None or fut.done():
+            raise ValueError(f"Action {key.session_key}/{key.action_seq} is not awaiting a human decision")
+        fut.set_result(decision)
 
     async def withdraw(self, key: ActionKey) -> Action:
         """Agent-initiated withdrawal of a pending action.
@@ -402,32 +425,22 @@ class ApprovalGateServer(EnhancedFastMCP):
             raise ValueError(f"Action not found: {key.session_key}/{key.action_seq}")
         if not isinstance(action.state, PendingState):
             raise ValueError(f"Action {key.session_key}/{key.action_seq} is not pending ({action.state.status=})")
-        return await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
+        result = await self._update_and_notify(key, WithdrawnState(), WithdrawnDetail())
+        fut = self._pending_decisions.pop(key, None)
+        if fut is not None and not fut.done():
+            fut.cancel()
+        return result
 
-    async def _execute_and_finish(self, key: ActionKey, action: Action) -> None:
-        """Execute the backend call and update state to done."""
-        namespace = MCPMountPrefix(action.call.server_namespace)
-        client = self._backend_clients.get(namespace)
-        if client is None:
-            raise RuntimeError(f"backend client not connected for namespace: {namespace!r}")
-
-        outcome = await client.call_tool_mcp(action.call.tool_name, action.call.arguments)
-        await self._update_and_notify(key, DoneState(outcome=outcome), ExecutionFinishedDetail(outcome=outcome))
-
-    def _spawn(self, coro: Coroutine[Any, Any, Any]) -> None:
+    def _spawn(self, coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         """Schedule a coroutine as a background task, keeping a reference to prevent GC."""
         task = asyncio.create_task(coro)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+        return task
 
     async def _update_and_notify(self, key: ActionKey, new_state: ActionState, detail: LogEventDetail) -> Action:
         """Update action state and append log entry atomically, then notify subscribers."""
         action, _ = await self._req_storage.update_state_and_log(key, new_state, detail)
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
-        # Signal any waiter for this action on non-pending transitions
-        if not isinstance(new_state, PendingState):
-            event = self._action_resolved_events.get(key)
-            if event is not None:
-                event.set()
         return action
