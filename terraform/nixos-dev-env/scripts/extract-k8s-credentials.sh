@@ -8,7 +8,7 @@
 set -euo pipefail
 
 # Terraform data "external" sends query JSON on stdin — consume it
-cat > /dev/null
+cat >/dev/null
 
 : "${CP_NODE:?CP_NODE env var required (control plane IP)}"
 : "${TALOSCONFIG:?TALOSCONFIG env var required (path to talosconfig)}"
