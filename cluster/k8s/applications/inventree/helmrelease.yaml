@@ -30,7 +30,7 @@ spec:
 
   values:
     image:
-      repository: registry.allegedly.works/inventree/inventree
+      repository: registry.allegedly.works/ducktape/inventree
       tag: latest
       pullPolicy: Always
 

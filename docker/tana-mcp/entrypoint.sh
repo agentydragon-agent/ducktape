@@ -15,7 +15,7 @@ x11vnc -display :99 -forever -nopw -listen 127.0.0.1 -rfbport 5900 &
 websockify --web=/usr/share/novnc 6080 127.0.0.1:5900 &
 
 # Start Tana Desktop (--no-sandbox required in containers)
-/opt/tana/Tana --no-sandbox --disable-gpu &
+/opt/tana/Tana-linux-x64/Tana --no-sandbox --disable-gpu &
 TANA_PID=$!
 
 # Wait for Tana to exit (or for the container to be stopped)

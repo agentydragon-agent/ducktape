@@ -28,7 +28,7 @@ RUN curl -fsSL \
       -o /tmp/tana.zip \
  && unzip -q /tmp/tana.zip -d /opt/tana \
  && rm /tmp/tana.zip \
- && chmod +x /opt/tana/Tana
+ && chmod +x /opt/tana/Tana-linux-x64/Tana
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
