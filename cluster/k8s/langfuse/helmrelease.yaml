@@ -102,6 +102,34 @@ spec:
         existingSecretKey: clickhouse-password
       replicaCount: 1
       resourcesPreset: medium
+      # Disable ClickHouse's built-in self-profiling system logs. By default
+      # ClickHouse samples its own CPU/memory stack traces every few ms and
+      # writes them to system.trace_log, system.text_log, system.metric_log,
+      # and system.asynchronous_metric_log. On a small node with no actual
+      # Langfuse trace data these logs are the only thing in ClickHouse and
+      # grew to 3.8 GiB in ~2 weeks, causing repeated OOMKills at the 1.5 GiB
+      # limit. None of this data is useful to us.
+      extraOverrides: |
+        <clickhouse>
+          <trace_log>
+            <flush_interval_milliseconds>0</flush_interval_milliseconds>
+            <max_size_rows>0</max_size_rows>
+          </trace_log>
+          <text_log>
+            <flush_interval_milliseconds>0</flush_interval_milliseconds>
+            <max_size_rows>0</max_size_rows>
+          </text_log>
+          <metric_log>
+            <flush_interval_milliseconds>0</flush_interval_milliseconds>
+            <collect_interval_milliseconds>0</collect_interval_milliseconds>
+          </metric_log>
+          <asynchronous_metric_log>
+            <flush_interval_milliseconds>0</flush_interval_milliseconds>
+          </asynchronous_metric_log>
+          <query_log>
+            <max_size_rows>1000</max_size_rows>
+          </query_log>
+        </clickhouse>
       clusterEnabled: false
       zookeeper:
         replicaCount: 1
