@@ -1,3 +1,4 @@
+---
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
@@ -5,7 +6,7 @@ metadata:
   namespace: homeassistant-proxy
 spec:
   encryptedData:
-    token: FILL_WITH_KUBESEAL
+    token: AgArO0yP2KgJ91OPqCgxye1HNveiQBmJ+t5+cGw4/0KwfrAB3kigUgiNyWT3HsdHaZaRSvlm7mKj18trFs4+o8bCUN/khJnPVg4xdynF8sZ1eIdq8M2zLjziaITuHtb5I6Qfvb8lvUUPyXDU2OdkXoZcXd28yGczdd3U1Yx1dKU112wCDDNfnHskrIrGr/2T195k94m8PMiTe9vkVrm4reRTq0MtRkgbfnQ3h/xyISunJsRxnkQR4M9YAXAjjexKn3EkbdOo6VZyS3G49JLuANSK6P+kJ43sKzaPvxTzGS0bPVVxZBv7EyyClAOfyUT2VCp62ajzUvKUXjSUzHuwg+yOrHw8qxW3xAicv56/YOV0D0VO6Cx0+GdaurtdmfHy6hXpm0Bw7p+51lKioSOQyih3+u7c2b4SJ7X7Kj6WXWSaofdu+UDaFPM/jPYZ53HIR400w5MeLRNxbcubImJWtfNZ+nfgiXOC/NgVpD4JIFSMxh7Xc/GiERFO+TZxlL2BxoFGVv2YmDh7PYlIkI4mDASfN/NGAvh0EmI9hbsH19WLAWJKtaSY2BTpHDjSphn7PDD74iJbdWwVaS2NmXD4pxCmOCOKIn5pyi11BGsnpRSiC08EU9i9lcODgSKZCHzDJw8AYDzTiQkvr8mpPe+7pfSR4aXbjMaxiMKVyYJbuzWD8CKeviHp8J/DvKFOOIwL25bsobkqRsuShxE6XAYhV/20NCI0J/6NPiRp04ZmjXGgttX4mjFI3r4qlW47y8bz5aVuY7jgSi0EmeCrYsrU4OirfcubC24zerc4T1mFK8YfBlcrV0pXj9R6w5qTWjkyZEJA1gBErXEXBQaUzdDuiObi07UqSBKNbfwUTFnhsIK+kWYj2hAmKKonjKfegBxvcTHzV0zO2Juev7mxsqNuX134bdepXfwKSlSOr91ScfaH77/EdsDK7L2T
   template:
     metadata:
       name: homeassistant-proxy-ha-token

@@ -3,7 +3,7 @@
 # not from this file.
 
 homeassistant:
-  url: http://homeassistant.home.local:8123
+  url: https://home.e621.co.uk
   # token is set via HOMEASSISTANT_PROXY_HA_TOKEN env var
 
 tokens:
