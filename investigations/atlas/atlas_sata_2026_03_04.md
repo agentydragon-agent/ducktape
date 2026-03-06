@@ -2,7 +2,7 @@
 
 ## Summary
 
-Atlas (Proxmox host, ASUS ProArt X870E-CREATOR WIFI) has recurring SATA link failures on the second AHCI controller (`ata7`–`ata10`) that escalate to full system hangs. Two incidents so far, ~5 days apart. SATA cables have **not yet been reseated**.
+Atlas (Proxmox host, ASUS ProArt X870E-CREATOR WIFI) has recurring SATA link failures on the second AHCI controller (`ata7`–`ata10`) that escalate to full system hangs. Two incidents so far, ~5 days apart. SATA cables **partially reseated** on Mar 6 (see Interventions below).
 
 ## Recurrence Log
 
@@ -62,11 +62,31 @@ Atlas (Proxmox host, ASUS ProArt X870E-CREATOR WIFI) has recurring SATA link fai
 
 **Conclusion**: Most likely a SATA controller or physical interconnect issue. The PCI-level failure and NIC drop in incident 2 _could_ indicate a chipset-level problem, but the Atlantic NIC's independent flakiness weakens that signal. Reseating SATA cables remains the top priority.
 
+## Interventions
+
+### Mar 6 ~17:35 — Partial cable reseat and reroute
+
+The motherboard has 4 SATA connectors: 2 on the right side, 2 on the bottom.
+
+**Done:**
+
+- Reseated both SATA cables on the **right side** of the motherboard
+- Reseated SATA cables on the **disk side** of all drives
+- Rerouted the 2 right-side cables — they had been at a questionable 90-degree twist, now rerouted to follow a less strained path
+
+**Not done:**
+
+- The 2 **bottom** SATA connectors were not reseated — accessing them requires removing probably both GPUs, too inconvenient for now
+
+**Status:** Monitoring. System booted after intervention. If failures recur, the bottom connectors and GPU removal become the next step.
+
+**Notes:** The 90-degree cable twist on the right-side connectors is a plausible contributor to signal integrity issues, but not confirmed. Will need a failure-free run of several days to consider this resolved.
+
 ## Recommended Next Steps
 
 ### Immediate — do these now
 
-1. **Reseat all SATA cables** on the second AHCI controller (`ata7`–`ata10`). **Not yet done** as of Mar 5. Check for bent pins, loose connectors, cables routed near heat sources. While the PCI-level failure suggests something deeper, this is zero-cost and eliminates the simplest hypothesis.
+1. ~~**Reseat all SATA cables**~~ **Partially done** (2026-03-06). Right-side mobo connectors and all disk-side connectors reseated; right-side cables rerouted to fix 90-degree twist. Bottom mobo connectors not yet reseated (blocked by GPUs). Monitoring for recurrence.
 
 2. **Check PCIe slot seating** — if the Atlantic NIC or any SATA controller is on an add-in card or riser, reseat it. The PCIe device going inaccessible could be a loose card.
 
