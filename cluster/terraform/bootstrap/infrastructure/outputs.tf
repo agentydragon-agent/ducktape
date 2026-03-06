@@ -93,3 +93,31 @@ output "expected_node_count" {
   description = "Expected number of nodes in the cluster"
   value       = local.expected_node_count
 }
+
+# ============================================================================
+# K8S WORKER JOIN CREDENTIALS (consumed by nixos-k8s-worker module)
+# ============================================================================
+
+output "k8s_ca_cert" {
+  description = "Kubernetes CA certificate (PEM, base64-encoded)"
+  value       = talos_machine_secrets.cluster.machine_secrets.certs.k8s.cert
+  sensitive   = true
+}
+
+output "k8s_bootstrap_token" {
+  description = "Kubernetes bootstrap token for kubelet TLS bootstrap"
+  value       = talos_machine_secrets.cluster.machine_secrets.secrets.bootstrap_token
+  sensitive   = true
+}
+
+output "kubespan_cluster_id" {
+  description = "KubeSpan cluster ID for mesh discovery"
+  value       = talos_machine_secrets.cluster.machine_secrets.cluster.id
+  sensitive   = true
+}
+
+output "kubespan_cluster_secret" {
+  description = "KubeSpan shared secret for mesh authentication"
+  value       = talos_machine_secrets.cluster.machine_secrets.cluster.secret
+  sensitive   = true
+}

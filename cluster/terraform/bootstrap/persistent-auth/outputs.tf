@@ -1,12 +1,12 @@
 output "csi_config" {
-  description = "Proxmox CSI configuration JSON for use by infrastructure layer"
-  value       = jsondecode(data.external.pve_persistent_tokens["csi"].result.config_json)
+  description = "Proxmox CSI configuration for use by infrastructure layer"
+  value       = local.pve_token_configs["csi"]
   sensitive   = true
 }
 
 output "terraform_pve_token" {
   description = "Proxmox terraform API token for infrastructure layer"
-  value       = jsondecode(data.external.pve_persistent_tokens["terraform"].result.config_json)
+  value       = local.pve_token_configs["terraform"]
   sensitive   = true
 }
 
@@ -23,7 +23,7 @@ output "persistent_auth_ready" {
   description = "Indicates that persistent auth layer is ready"
   value = {
     timestamp = timestamp()
-    csi_ready = length(data.external.pve_persistent_tokens) > 0
+    csi_ready = length(proxmox_virtual_environment_user_token.persistent) > 0
   }
 }
 

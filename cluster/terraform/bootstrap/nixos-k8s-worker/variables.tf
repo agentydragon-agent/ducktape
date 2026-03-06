@@ -71,19 +71,3 @@ variable "home_manager_host" {
   type        = string
   default     = "nixos-vm"
 }
-
-# =============================================================================
-# K8S CLUSTER JOIN
-# =============================================================================
-
-variable "enable_k8s_cluster_join" {
-  description = "Enable K8s cluster join credentials for the worker VM"
-  type        = bool
-  default     = true
-}
-
-variable "k8s_controlplane_node" {
-  description = "IP of a Talos control plane node for credential extraction"
-  type        = string
-  default     = ""
-}

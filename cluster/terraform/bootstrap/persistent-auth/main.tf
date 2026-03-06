@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/external"
       version = "~> 2.3.0"
     }
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = "~> 0.91.0"
+    }
     local = {
       source  = "hashicorp/local"
       version = "~> 2.5.0"
@@ -30,31 +34,32 @@ terraform {
 }
 
 # DRY configuration for persistent auth
+# TODO: Consider whether terraform@pve is still needed now that root@pam!tofu exists.
+# Infrastructure and nixos-k8s-worker could read the root token from the keyring via
+# their own .envrc instead. Keeping for now for least-privilege (TerraformAdmin is
+# narrower than root). kubernetes-csi@pve is definitely still needed — it runs inside
+# the cluster and can't access the keyring.
 locals {
-  # NOTE: SSH uses proxmox_ssh_host (atlas) not proxmox_api_host (FQDN)
-  # because the FQDN routes through VPS nginx, but SSH needs direct Tailscale access
-  proxmox_ssh_target = "root@${var.proxmox_ssh_host}"
-
   # Persistent Proxmox users - survive VM lifecycle
   pve_persistent_users = {
     csi = {
       name    = "kubernetes-csi@pve"
       comment = "Kubernetes CSI driver service account (persistent)"
       role    = "CSI"
-      privs = join(",", [
+      privs = [
         "Datastore.Allocate",
         "Datastore.AllocateSpace",
         "Datastore.Audit",
         "VM.Audit",
         "VM.Config.Disk",
-      ])
+      ]
       token = "csi"
     }
     terraform = {
       name    = "terraform@pve"
       comment = "Terraform automation user (persistent)"
       role    = "TerraformAdmin"
-      privs = join(",", [
+      privs = [
         "Datastore.Allocate",
         "Datastore.AllocateSpace",
         "Datastore.AllocateTemplate",
@@ -83,70 +88,72 @@ locals {
         "VM.GuestAgent.Audit",
         "VM.Migrate",
         "VM.PowerMgmt",
-      ])
+      ]
       token = "terraform-token"
     }
   }
 }
 
-# Auto-provision persistent Proxmox users and tokens via SSH
-# TODO: Token creation is not idempotent — the script unconditionally deletes and
-# recreates tokens on every `tofu apply`, rotating the CSI token and forcing a
-# sealed secret re-seal even when nothing changed. Make this idempotent: check if
-# the token already exists (e.g., `pveum user token list` + grep) and skip
-# delete/add if it does. Store the token value in tofu state on first creation.
-data "external" "pve_persistent_tokens" {
-  for_each = local.pve_persistent_users
-
-  program = ["bash", "-c", <<-EOT
-    token_json=$(ssh ${local.proxmox_ssh_target} '
-      # Create user if not exists
-      pveum user add ${each.value.name} --comment "${each.value.comment}" 2>/dev/null || true
-
-      # Create or update role (add then modify to handle both new and existing roles)
-      pveum role add ${each.value.role} -privs "${each.value.privs}" 2>/dev/null || \
-        pveum role modify ${each.value.role} -privs "${each.value.privs}"
-
-      # Set ACL permissions
-      pveum aclmod / -user ${each.value.name} -role ${each.value.role}
-
-      # Create/recreate API token with JSON output
-      pveum user token delete ${each.value.name} ${each.value.token} 2>/dev/null || true
-      pveum user token add ${each.value.name} ${each.value.token} --privsep 0 --output-format json
-    ')
-    # Extract the token value and create complete CSI configuration
-    token_value=$(echo "$token_json" | jq -r '.value')
-    token_id="${each.value.name}!${each.value.token}"
-
-    # Create CSI config JSON and properly escape it as a string
-    csi_config_json=$(cat <<JSON
-{"url":"https://${var.proxmox_api_host}:8006/api2/json","insecure":true,"token_id":"$token_id","token_secret":"$token_value","region":"proxmox","token":"$token_id=$token_value"}
-JSON
-)
-    # Output for terraform external - wrap JSON as escaped string
-    printf '{"config_json":"%s"}' "$(echo "$csi_config_json" | sed 's/"/\\"/g')"
-  EOT
-  ]
+# Proxmox provider — authenticated via PROXMOX_VE_API_TOKEN env var (root@pam!tofu
+# token from GNOME keyring, exported by .envrc via direnv).
+provider "proxmox" {
+  endpoint = "https://${var.proxmox_api_host}:8006/"
+  insecure = true
 }
 
-# Sealed secrets keypair now managed in secrets.tf using tls_private_key
-# No libsecret dependency - keys persist in terraform state
+# Manage Proxmox roles, users, and API tokens as native resources.
+# Token values persist in state and are only created once (idempotent).
+resource "proxmox_virtual_environment_role" "persistent" {
+  for_each   = local.pve_persistent_users
+  role_id    = each.value.role
+  privileges = each.value.privs
+}
+
+resource "proxmox_virtual_environment_user" "persistent" {
+  for_each = local.pve_persistent_users
+  user_id  = each.value.name
+  comment  = each.value.comment
+  acl {
+    path      = "/"
+    role_id   = proxmox_virtual_environment_role.persistent[each.key].role_id
+    propagate = true
+  }
+}
+
+resource "proxmox_virtual_environment_user_token" "persistent" {
+  for_each              = local.pve_persistent_users
+  user_id               = proxmox_virtual_environment_user.persistent[each.key].user_id
+  token_name            = each.value.token
+  privileges_separation = false
+  comment               = "Managed by OpenTofu"
+}
+
+locals {
+  pve_token_configs = {
+    for key, user in local.pve_persistent_users : key => {
+      url          = "https://${var.proxmox_api_host}:8006/api2/json"
+      insecure     = true
+      token_id     = proxmox_virtual_environment_user_token.persistent[key].id
+      token_secret = proxmox_virtual_environment_user_token.persistent[key].value
+      region       = "proxmox"
+      token        = "${proxmox_virtual_environment_user_token.persistent[key].id}=${proxmox_virtual_environment_user_token.persistent[key].value}"
+    }
+  }
+}
 
 # Generate Proxmox CSI storage secrets using terraform-generated sealed-secrets keypair
 resource "null_resource" "proxmox_csi_sealed_secret" {
   # Re-run when PVE auth tokens or keypair change
   triggers = {
-    csi_config_hash = sha256(jsonencode(data.external.pve_persistent_tokens["csi"].result.config_json))
+    csi_config_hash = sha256(jsonencode(local.pve_token_configs["csi"]))
     keypair_hash    = sha256(tls_self_signed_cert.sealed_secrets.cert_pem)
   }
 
   provisioner "local-exec" {
     command = <<-EOT
       set -e
-      # Create temporary secret file with CSI configuration
-      csi_config='${data.external.pve_persistent_tokens["csi"].result.config_json}'
 
-      # Create kubernetes secret YAML
+      # Create kubernetes secret YAML with CSI configuration
       cat > /tmp/proxmox-csi-secret.yaml <<EOF
 apiVersion: v1
 kind: Secret
@@ -157,11 +164,11 @@ type: Opaque
 stringData:
   config.yaml: |
     clusters:
-      - url: $(echo "$csi_config" | jq -r .url)
-        insecure: $(echo "$csi_config" | jq -r .insecure)
-        token_id: $(echo "$csi_config" | jq -r .token_id)
-        token_secret: $(echo "$csi_config" | jq -r .token_secret)
-        region: $(echo "$csi_config" | jq -r .region)
+      - url: ${local.pve_token_configs["csi"].url}
+        insecure: ${local.pve_token_configs["csi"].insecure}
+        token_id: ${local.pve_token_configs["csi"].token_id}
+        token_secret: ${local.pve_token_configs["csi"].token_secret}
+        region: ${local.pve_token_configs["csi"].region}
 EOF
 
       # Seal the secret using terraform-generated keypair
@@ -175,7 +182,7 @@ CERTEOF
       # Clean up temporary file
       rm /tmp/proxmox-csi-secret.yaml
 
-      echo "✅ Generated sealed secret for Proxmox CSI"
+      echo "Generated sealed secret for Proxmox CSI"
     EOT
   }
 }

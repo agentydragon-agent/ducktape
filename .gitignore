@@ -63,7 +63,7 @@ k8s_old/helm/*/charts/
 !example.tfvars
 
 # NixOS build artifacts
-terraform/nixos-dev-env/nixos-cloud-image
+**/nixos-cloud-image
 nix/**/result
 
 # Web and build artifacts

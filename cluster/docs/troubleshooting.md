@@ -718,9 +718,11 @@ kubeseal --cert <(tofu output -raw sealed_secrets_cert_pem) \
 rm /tmp/csi-config.yaml
 cd -
 
-# 7. Check if CSI token exists in Proxmox (via SSH)
-ssh root@atlas "pveum token list kubernetes-csi@pve"
-# Should show the csi token, if missing need to recreate via infrastructure tofu
+# 7. Check if CSI token exists in tofu state (managed by bpg/proxmox provider)
+cd terraform/bootstrap/persistent-auth
+tofu state show 'proxmox_virtual_environment_user_token.persistent["csi"]'
+# Should show token details; if missing, run tofu apply in persistent-auth
+cd -
 ```
 
 ## 🔧 Stable SealedSecret Keypair Issues

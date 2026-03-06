@@ -41,7 +41,8 @@
 ### Bootstrap Flow (tofu apply)
 
 1. `persistent-auth` generates/uses keypair from tofu state
-2. `persistent-auth` SSHs to Proxmox, creates API tokens
+2. `persistent-auth` uses bpg/proxmox provider to manage Proxmox users, roles, and API
+   tokens (authenticated via `root@pam!tofu` token from GNOME keyring / direnv)
 3. `persistent-auth` runs `kubeseal` to create SealedSecrets (writes to k8s/\*.yaml)
 4. User commits SealedSecrets to git manually
 5. `infrastructure` reads keypair via `terraform_remote_state`
