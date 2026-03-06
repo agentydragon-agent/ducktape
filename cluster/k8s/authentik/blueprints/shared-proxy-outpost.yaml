@@ -13,6 +13,9 @@ entries:
     identifiers:
       managed: goauthentik.io/outposts/embedded
     attrs:
+      config:
+        authentik_host: "http://authentik-server.authentik:80"
+        authentik_host_browser: "https://auth.allegedly.works"
       providers:
         - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, gatus]]
