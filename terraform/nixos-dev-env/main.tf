@@ -1,5 +1,5 @@
 # NixOS Dev Environment Infrastructure
-# Shared Proxmox infrastructure + VM instances using the nixos-vm module
+# Proxmox infrastructure + dev workstation VMs using the shared nixos-vm module
 
 locals {
   # Proxmox configuration
@@ -225,10 +225,10 @@ resource "proxmox_virtual_environment_acl" "sdn_access" {
   propagate = true
 }
 
-# NixOS cloud image (shared by all VMs)
+# NixOS cloud image (shared definition in terraform/modules/nixos-vm/)
 resource "null_resource" "nixos_cloud_image" {
   triggers = {
-    cloud_image_config = filemd5("${path.module}/cloud-image.nix")
+    cloud_image_config = filemd5("${path.module}/../modules/nixos-vm/cloud-image.nix")
     proxmox_host       = var.proxmox_host
     storage            = var.storage
   }
@@ -240,7 +240,7 @@ resource "null_resource" "nixos_cloud_image" {
 
       nix run github:nix-community/nixos-generators -- \
         --format qcow-efi \
-        --configuration ${path.module}/cloud-image.nix \
+        --configuration ${path.module}/../modules/nixos-vm/cloud-image.nix \
         -o nixos-cloud-image
 
       QCOW2_PATH=$(readlink -f nixos-cloud-image)/nixos.qcow2
@@ -283,38 +283,12 @@ resource "null_resource" "cleanup" {
 }
 
 # =============================================================================
-# K8S CLUSTER JOIN CREDENTIALS (conditional)
-# =============================================================================
-
-locals {
-  talosconfig_resolved = var.talosconfig_path != "" ? var.talosconfig_path : "${path.module}/../../cluster/terraform/bootstrap/infrastructure/talosconfig.yml"
-}
-
-# Extract cluster credentials from Talos control plane via talosctl.
-# Only runs when k8s cluster join is enabled.
-data "external" "k8s_credentials" {
-  count = var.enable_k8s_cluster_join ? 1 : 0
-
-  program = [
-    "bash", "-c",
-    "export CP_NODE='${var.k8s_controlplane_node}' TALOSCONFIG='${local.talosconfig_resolved}'; exec python3 '${path.module}/scripts/extract_k8s_credentials.py'"
-  ]
-}
-
-check "k8s_join_prerequisites" {
-  assert {
-    condition     = !var.enable_k8s_cluster_join || var.k8s_controlplane_node != ""
-    error_message = "k8s_controlplane_node is required when enable_k8s_cluster_join is true."
-  }
-}
-
-# =============================================================================
 # VM INSTANCES
 # =============================================================================
 
 # Wyrm2 - NixOS dev workstation
 module "wyrm2" {
-  source = "./modules/nixos-vm"
+  source = "../modules/nixos-vm"
   providers = {
     proxmox = proxmox.user
   }
@@ -340,56 +314,6 @@ module "wyrm2" {
   network_bridge    = var.network_bridge
   pool_id           = proxmox_virtual_environment_pool.user_pool.pool_id
   ssh_public_key    = local.ssh_public_key
-
-  depends_on = [
-    proxmox_virtual_environment_acl.pool_admin,
-    proxmox_virtual_environment_acl.storage_access,
-    proxmox_virtual_environment_acl.storage_access_local,
-    null_resource.nixos_cloud_image,
-    null_resource.cleanup
-  ]
-}
-
-# k8s-worker-test - NixOS K8s worker node prototype
-# With cluster join enabled, cloud-init writes kubelet + kubespand credentials.
-# After boot: systemctl start kubespand && systemctl start kubelet
-# Then approve CSR: kubectl certificate approve <csr-name>
-module "k8s_worker_test" {
-  source = "./modules/nixos-vm"
-  providers = {
-    proxmox = proxmox.user
-  }
-
-  vm_name      = "k8s-worker-test"
-  vm_id        = 111
-  username     = var.username
-  vcpus        = 4
-  memory_mb    = 8192
-  disk_size_gb = 50
-  auto_start   = true
-
-  # NixOS config from flake
-  nixos_flake_url = var.nixos_flake_url
-  nixos_host      = "k8s-worker-test"
-
-  # Home-manager config from flake
-  home_manager_flake_url = var.home_manager_flake_url
-  home_manager_host      = var.home_manager_host
-
-  proxmox_node_name = var.proxmox_node_name
-  storage           = var.storage
-  network_bridge    = var.network_bridge
-  pool_id           = proxmox_virtual_environment_pool.user_pool.pool_id
-  ssh_public_key    = local.ssh_public_key
-
-  # K8s cluster join credentials (conditional)
-  k8s_cluster_join = var.enable_k8s_cluster_join ? {
-    bootstrap_kubeconfig = data.external.k8s_credentials[0].result.bootstrap_kubeconfig
-    ca_cert              = data.external.k8s_credentials[0].result.ca_cert
-    cluster_id           = data.external.k8s_credentials[0].result.cluster_id
-    cluster_secret       = data.external.k8s_credentials[0].result.cluster_secret
-    node_name            = "k8s-worker-test"
-  } : null
 
   depends_on = [
     proxmox_virtual_environment_acl.pool_admin,

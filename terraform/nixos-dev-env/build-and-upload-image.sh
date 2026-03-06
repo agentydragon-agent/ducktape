@@ -11,7 +11,7 @@ IMAGE_NAME="nixos-cloud-image"
 echo "Building NixOS qcow2 cloud image..."
 nix run github:nix-community/nixos-generators -- \
   --format qcow-efi \
-  --configuration ./cloud-image.nix \
+  --configuration "$(dirname "$0")/../modules/nixos-vm/cloud-image.nix" \
   -o "$IMAGE_NAME"
 
 echo "Uploading image to Proxmox ($PROXMOX_HOST)..."

@@ -63,12 +63,6 @@ variable "home_manager_host" {
   type        = string
 }
 
-variable "rebuild_trigger" {
-  description = "Change this value to force a rebuild (e.g., timestamp)"
-  type        = string
-  default     = ""
-}
-
 # Passed from parent (infrastructure context)
 variable "proxmox_node_name" {
   description = "Proxmox node name"
@@ -86,8 +80,9 @@ variable "network_bridge" {
 }
 
 variable "pool_id" {
-  description = "Proxmox pool ID to place VM in"
+  description = "Proxmox pool ID to place VM in (empty string = no pool)"
   type        = string
+  default     = ""
 }
 
 variable "ssh_public_key" {

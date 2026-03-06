@@ -11,7 +11,7 @@ tf_providers_versions(
 )
 
 tf_module(
-    name = "nixos-dev-env",
+    name = "nixos-k8s-worker",
     providers = [
         "external",
         "null",

@@ -3,15 +3,18 @@
 # Configuration is managed via flake after initial bootstrap
 
 terraform {
+  required_version = ">= 1.0"
+
   required_providers {
     proxmox = {
-      source = "bpg/proxmox"
+      source  = "bpg/proxmox"
+      version = ">= 0.91.0"
     }
   }
 }
 
 locals {
-  cloud_init_user_data = templatefile("${path.module}/../../cloud-init.yaml.tpl", {
+  cloud_init_user_data = templatefile("${path.module}/cloud-init.yaml.tpl", {
     username               = var.username
     ssh_public_key         = var.ssh_public_key
     hostname               = var.vm_name
@@ -41,7 +44,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
   description = "NixOS VM - managed via flake ${var.nixos_flake_url}#${var.nixos_host}"
   node_name   = var.proxmox_node_name
   vm_id       = var.vm_id
-  pool_id     = var.pool_id
+  pool_id     = var.pool_id != "" ? var.pool_id : null
   bios        = "ovmf" # UEFI boot required for qcow-efi images
 
   cpu {
@@ -106,65 +109,3 @@ resource "proxmox_virtual_environment_vm" "vm" {
     ]
   }
 }
-
-# Note: Initial NixOS and home-manager setup is done by cloud-init
-# The provisioners below are commented out because:
-# 1. On first create, cloud-init already handles the flake setup
-# 2. The VM's ipv4_addresses isn't available until after QEMU agent reports
-# 3. For updates, use: terraform apply -var="rebuild_trigger=$(date +%s)"
-#    or SSH directly: ssh user@<ip> 'sudo nixos-rebuild switch --flake ...'
-#
-# TODO: Consider using a time_sleep resource or external data source to wait
-# for IP availability if automatic terraform-driven updates are needed.
-
-# Trigger NixOS rebuild when flake config changes
-# Disabled on initial create - cloud-init handles this
-# resource "null_resource" "nixos_rebuild" {
-#   triggers = {
-#     nixos_flake_url = var.nixos_flake_url
-#     nixos_host      = var.nixos_host
-#     rebuild_trigger = var.rebuild_trigger
-#   }
-#
-#   provisioner "remote-exec" {
-#     inline = [
-#       "echo 'Rebuilding NixOS from flake...'",
-#       "sudo nixos-rebuild switch --flake ${var.nixos_flake_url}#${var.nixos_host}",
-#     ]
-#
-#     connection {
-#       type        = "ssh"
-#       user        = var.username
-#       host        = proxmox_virtual_environment_vm.vm.ipv4_addresses[1][0]
-#       agent       = true
-#       timeout     = "5m"
-#     }
-#   }
-#
-#   depends_on = [proxmox_virtual_environment_vm.vm]
-# }
-#
-# resource "null_resource" "home_manager" {
-#   triggers = {
-#     home_manager_flake_url = var.home_manager_flake_url
-#     home_manager_host      = var.home_manager_host
-#     rebuild_trigger        = var.rebuild_trigger
-#   }
-#
-#   provisioner "remote-exec" {
-#     inline = [
-#       "echo 'Rebuilding home-manager from flake...'",
-#       "home-manager switch --flake ${var.home_manager_flake_url}#${var.home_manager_host}",
-#     ]
-#
-#     connection {
-#       type        = "ssh"
-#       user        = var.username
-#       host        = proxmox_virtual_environment_vm.vm.ipv4_addresses[1][0]
-#       agent       = true
-#       timeout     = "5m"
-#     }
-#   }
-#
-#   depends_on = [null_resource.nixos_rebuild]
-# }
