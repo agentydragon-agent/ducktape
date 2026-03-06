@@ -129,14 +129,16 @@ resource "proxmox_virtual_environment_user_token" "persistent" {
 }
 
 locals {
+  # bpg/proxmox user_token.value returns "token_id=secret_uuid" (full API token string).
+  # Split to extract just the UUID for consumers that need token_id and secret separately.
   pve_token_configs = {
     for key, user in local.pve_persistent_users : key => {
       url          = "https://${var.proxmox_api_host}:8006/api2/json"
       insecure     = true
       token_id     = proxmox_virtual_environment_user_token.persistent[key].id
-      token_secret = proxmox_virtual_environment_user_token.persistent[key].value
+      token_secret = element(split("=", proxmox_virtual_environment_user_token.persistent[key].value), 1)
       region       = "proxmox"
-      token        = "${proxmox_virtual_environment_user_token.persistent[key].id}=${proxmox_virtual_environment_user_token.persistent[key].value}"
+      token        = proxmox_virtual_environment_user_token.persistent[key].value
     }
   }
 }
