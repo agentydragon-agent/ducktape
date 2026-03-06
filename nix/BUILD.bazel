@@ -1,9 +1,0 @@
-# gazelle:ignore
-# Nix home-manager config; Python scripts here use deps from Nix, not Bazel
-
-# All nix files in this package
-filegroup(
-    name = "nix_files",
-    srcs = glob(["**/*.nix"]),
-    visibility = ["//visibility:public"],
-)
