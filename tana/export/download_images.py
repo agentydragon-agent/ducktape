@@ -65,8 +65,8 @@ def main() -> None:
 
     if args.dry_run:
         for node, url in media_nodes:
-            mime = get_mime_type(node, store) or "unknown"
-            logger.info("  %s  %s  %s", node.id, mime, url)
+            mime_label = get_mime_type(node, store) or "unknown"
+            logger.info("  %s  %s  %s", node.id, mime_label, url)
         return
 
     output_dir: Path = args.output
