@@ -76,5 +76,8 @@ in
   # Allow Claude Code to read Bazel repository cache on HDD
   programs.claude-code.extraAllowedReadDirs = [ "/wyrmhdd/bazel" ];
   # Allow Claude Code to write to Bazel output base on SSD
-  programs.claude-code.additionalDirectories = [ "~/.cache/bazel" ];
+  programs.claude-code.additionalDirectories = [
+    "~/.cache/bazel"
+    "/wyrmhdd/bazel"
+  ];
 }
