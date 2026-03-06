@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: airlock
-          image: registry.allegedly.works/ducktape/airlock:devel-20260306035253-72758cb # {"$imagepolicy": "flux-system:airlock"}
+          image: registry.allegedly.works/ducktape/airlock:devel-20260306040430-ba0e9d9 # {"$imagepolicy": "flux-system:airlock"}
           imagePullPolicy: Always
           ports:
             - name: http
