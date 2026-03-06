@@ -6,13 +6,8 @@ metadata:
   namespace: openclaw-gateway
 spec:
   encryptedData:
-    token: AgA291uzcHAxhQLWDrwvNOpusGbGf2J3jAB6BHxlUjwyddHfnG5G+QOWe16yj/+ggbMG9NyWMQ7JdEIBzVxEhfnCVWE7FsZHo1GZNPHgfcNmDGKO1ZMHhfXLdXRpTgmKmksc6JPq3XrdKs5oloPriR5bffUC8WsOXu6CJtjH+KwVmhehOGrqGpp6LYwtR2NWufEqau7jIGyAKvHfJN889E1EJ1N3HsMKQwE72zkx43ejyk4Npn6gH0Gd1+sTBtnKM9X/FxNU0CedoPaVZb16mF+N9tYq7z+5c0/xzY9Jpk+UQrqTf9g1jq4tMmKdZ08yMo8pfrpsZKVKrW0UltzqUdNomYbOimsAt0v6ULWYmaF58ghYJcJHJbI1zU3zOkO+Vroj2SfshM+dPViw2IXdiwu8afdNkHvfHfWFVac0W1zvkWKhiVoHGFdg0EELKAk8HhOtbL2zxPje8Q9vsCnXrCzTiXbya51VHpzQ06H+uKjcZSjNI+4AFWR1nd88Hlq4r/kfGIgj3tBcu5m1Q2CS+t/rXLIMExcYI3Rp1klkpIjls2+agtCGHnED103x3bJJuBX732ybJEB8fRInphZ+TMbxzzTPADd5CKqO4x4Brp5aFCs2WDrQT3irCu2uL0g5bS2oG6vDukOhf/vd1+7bwstcdmWLi38CP97ozgmKRYv/LeOlfT6LIw4mPK6qfKIfqHCckuUAu3hE8Edioh1iixV+2+IWOnf81Q/kfk0oSCwdAbx3+hKjr7LT
+    token: AgBjCWpXabI5iN0iw8ZvJNAtSgd4lUYx0neJAIRw7QaYR9peNpbdHSxQz1dKah8t9CbeuTiVSDls+SIdbKxg2wqhYqcGpkKdALItSYIMlymaaEo6ap+HPPXu4gp9Gna6RfMu/b74yosyoZlxXr7zDynxekBZZg6Bt/50IgEWeG70zWWFkLZ3I1KhrITTvQT3/qBnt8yACsBgZY379VppysllzLHirOYH7hTfvUoL+BvLUG5TGaGhaWvjrPidX0Kv7ftA70glu0ZpKWgwefcQ3NVoDHUUUCE28RpQwYOn7oITpajjWypExkq4puw8hSttFtvgCxeonTKKjcXrUVD9AF6o0zeE3WijbCTVM/+vun+0T1ga9zcRJydSoJzE0vG2BFqaRmfGRhStUEN/QIChpakhYwpcVxPI12Jc/qU38mOnIVhnegEJy3qtRQWDYRvqBRrxe+J/KnAkuFgqjE9H88ELr0KlAlx9751wXRQgm/6Y+xe9sSBw2v+9YPqn1lbx8J3fLgTQH7cqp8scLVh36YvxnM3ood54AEE6UMUArG9TgXh/ea7uzNgm3kBFyJHAyYXJe5E71Bk5vKhf2QoX4MVb6+sG3BmwkSLDTSvi/2+lOI+U+TzIS1li4mM1g1969xki9GWCGrXum0naMSjT/iH5x6zDbiJ2pxOO64Htw9JWMddR8uWldOL1Iu9fXmTFWj9jyh/lyj/hI50Xb64KLHkxqoATrQHN2OM/vCmMx5t8E3cejyzGV/KY
   template:
     metadata:
       name: openclaw-github-token
       namespace: openclaw-gateway
-      annotations:
-        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "claude-sandbox,openclaw-sandbox"
-        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "claude-sandbox,openclaw-sandbox"

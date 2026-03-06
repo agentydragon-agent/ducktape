@@ -6,13 +6,8 @@ metadata:
   namespace: openclaw-gateway
 spec:
   encryptedData:
-    api-key: AgAFOzhsSafSezmJKJx0k9+JHtEpSv43/HoPUzAc3XuL0PEz4VyM+zXakbWxVl303iOkKtye6vSg1ZKZDIW+gKYO71jzDpCNUhSxl70IhYD8YhsimzzlxqngyD0jX6GRtnXNMBDGaU5h3V9YayqWYjcD15/P4pYyAAUKL82J/t8IQYwPk0s3f+sT0SIJoftlMsWsUWKYLtWYSYg1nSxwRLXU+MKHH9i4fIN41zJeSYpiGbekkFARKQSl/Nz+Xl/j00FmPNpi/U0DZ+//iQ074FROfwgOSNMTFHbvR3qcyv+Oazx6b0R8fSJASxo5Ex8OT8ewb2M6tY1I+6SiCa7c+aFZZa0bd9FgvI4VLfS50tOM9yqoQYcHll9mM8A4EpogOZ64t8/pAYe9HW5rE+uaBR5MIiKYVjY9buvHMv+qy5xjMGAbJMFw7la038fJVon1LJCUBH8sUfmO/WudqjSFUuuIWSQ80cAgHLqU8qT0SrUAsz6p7U8+3TQrslkR7b84u+RR+HPGMYuwHx+WvIf65JIxhI5hLb/qSkT27ZhLn20MErH01fv+Dxs8jlG4VgL7J5cGOVXHiMyyIejCGl8DdhpbsO2zz7PCeFJ7jGZ06Ce/3RXNrQ4ssQ/cISD+A/LGYgvC3xHV6BCqvitiIUEn5GWTMYcI7zlyuRiHVGnQ2e97xg1/gpjnajnYGIDr4P5xpFmAeZg8krWyxTGItTHXdZhz8wala4Asbq6gTrivcXuJZd+pdK3O1S9pEdwItYfSbStjOvOCpQizYVvKZiIwOi1JOcfVEwBQ643dawX5ToBxasPvFcCyOT0SBqfuuTgMrATptm40oZV/8aZFMF4=
+    api-key: AgBcFU0l1rU2KzQ6MZXpCrN8MIzs3B78cGTX54kvfD6G5AaRHq9A4YKy8eLkmQVoq0dzK8EdmjqDWxMXjmqOhhReNHSOFe5xT2vJxWCgbgdFd3UVFnmh0Pec/HUj3fVsGcvLskOXGCRVWniymkUyyNmpodtRQpbyW0rH18h1VI6RfSJh5TgkfPDJYTRaAcIO75j0IYSmei4JDl3JSBvmfpvYxhNRzWcDhjBF3RSvPHGGekGZ8SvoJZnL8u7ElkyqVEuf2vceiaOvQdnqiQz0uuuF06UGEYAyrBf0BI1IVm7X3xZM3sDlWPnTXes13SXhL4kZClmmFDuIF9Rns68JDauy902OsAE67CzPd/OatTB69aug3ZYCQYVsc6iVl5moHKGGWteb4UMaMN2YBRZWIxHf57k0z2pn1WNRWGt+/5YRPjwlppB9z+6rkaCMMSANjivhAOfTRjFWogUln/JJs75SSNKsJ5DdMc9PLNs/S2PEufEp5pDNBlVvkQxAp3x8/10OPu47yw1qE4NRRNuxQrqGHU2M7TqN3gUzWJDVT+o5gxSM3Gmr7rcjXVgQB7NK2HLwJpiKPYNe8+m6ROyPwpIpyYivUxm7XxF+Qw4SHPx8b9f/w2zHyrppaO/hGXZlkjTXvF1vrKnHJ9VwZ3tO/d2xQLrR0Y9/bqiXpzwE4DKQyWYNrwiBbCb+AzTi7BKhv7UIUAnhitUARRunUWuXR+6ELa9kthUskgBRCEQKSWf5ztTStgC/wPkroI/krZySRd38MBxNyZh63Ehm3InkbrrLvk44yTLC+63FjUxauV271kim7rebVomU3FjK/cji9AYqYZNSMmMpxf0Rd+M=
   template:
     metadata:
       name: openclaw-anthropic-api-key
       namespace: openclaw-gateway
-      annotations:
-        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "claude-sandbox"
-        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "claude-sandbox"
