@@ -730,7 +730,7 @@ ssh root@atlas "pveum token list kubernetes-csi@pve"
 **Validate all SealedSecrets offline before deployment:**
 
 ```bash
-bazel run //cluster/scripts:validate_sealed_secrets
+bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
 ```
 
 This uses `kubeseal --recovery-unseal` to verify each SealedSecret in the repo can be decrypted
