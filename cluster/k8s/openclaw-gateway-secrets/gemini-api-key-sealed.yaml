@@ -6,13 +6,8 @@ metadata:
   namespace: openclaw-gateway
 spec:
   encryptedData:
-    api-key: AgBGvtMAZmB3kWC0MgY+upoOwnmiAeJv6dX3GtArHLjCZwS7vgacwjSAlbD6+K1BwCRvFFFsqju26vRuWzUEDO9RNgfGL3NbpzU2ks9l653jSUgrbXUTyYSjje/jiBIb7gxBfOl3WIIr9ZpBCIBkqPDhbenSJ9SDy0dURVGgDRQ4tT3IvNzjEU0ug4WaVtWhSi2tpcb9ri4mGcGALb4NpEwtZ859ZX/mUgS5SorfTGJ+I7PBr+T9dSH1LpO+eKhSreEcIfkbCg46SKKdIEHHVwFdtK/wfSzlnP7IDjm1idD5paeLdeUlBGlG+HaFxw2iv/cuYikabKYwywjFm5WiwxwjyrlVXEfo1+BWLD/90yoNVZuBfIUFmuiWq9QPvM7u+FRqeJO7lsE0LV7bGaI+JZNt4PCd1EX1cAb9urTLAiZAK1dYsKQ2VJUBJljZYOz0mM2/yC2L8T+RlRwKXHrgfrm5dwRUVas5FGWjojj1OTidVqoFylA9w8vl1y3rdBNl/K0COVEG/be0H8ySR759nzUrtrabvKOVKRsc8JO7XykXFlAcEzU3b1+GMutsvbuIbObjx7CUZL9P6IV2QfEg64IhZVW/1I0AcSRgTE5MtaDt5O+RYsr1goYUDEBvxWwRKPAQLmcTkL38lEfQvfCRw4fe7YUltLb3fnYU2bVX2LeFsMNGIbMovZqzl9Vzn3jdb4PeO1/LbV4Y3fQTg2MCnMmsqOerQIEVgzJrpzdszXRRqLP08sjWxQY=
+    api-key: AgChIkANmbNok1ZnuZMQ3UyrPc3zLqnb8YXtBidj5v8S4KMo1vEGORQ1c5usBAG9xRZQRo5vb5OgElyMGc7mHZ4WAn6n07GnmsHkT8crkdPz29VmqtO4l29VSljm9eM3HzOWOvtxRg6NhaeAnTvi3Oi1s4wOcarLzfR+EmJFXOoHVS+W+eFo4opEtJlMtphWMlO+Mpx23P5CJFVOKgY6fHWkluiH7UmeCauM2KmLv6LAabu9K7DU+5JhnktrvjA+lkkTq2OPuxJJdLC7LJp7uxWFI8vzyWBiTv+qowflOkqcxgkmA3j35YYqLTOUQ54hM2wsoVnQv66O5J3AQqjtoU3oKN/nuI4mStnmeBgIRYVKx5AylBWkVU29NEMtkEgmCnjoQ4tZEC6PeKbCI7j/eoBKenYocVanPJTmtCHy0P45ruO/pz/qs0auGM0yhXkXJyHd+e2BQ/HY4RzKVEsiFkOB58tfIz9DZW0VktDo7UtPO9yj0YJR3hcuuJD7VKOzN90qU+Ng8pRQ0IMw1Yjjk5G6eTrvZNdlYReQyksuOhfrLMBe22UKun43HvbRv9dLSPlpN61VYXeCLNeWdLopLGVShQBaURHxC1gVdDtu9J8S5/ZWO5v2eHJKdJVnzEav4I4lYXO6ejqgrPHj6jGFcbaVd9qrmaO/3qHP3CA2xhln/Y5XP4TWS7DtwXhUOdvZ7Kb2vylcrBXNSTDlJnQWJ5Rk46nZ6X70GIQ0QG3FQqv4zPtnGpfRD6w=
   template:
     metadata:
       name: openclaw-gemini-api-key
       namespace: openclaw-gateway
-      annotations:
-        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: "claude-sandbox"
-        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: "claude-sandbox"
