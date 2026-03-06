@@ -3,8 +3,8 @@
 # Lifecycle: Independent of the cluster bootstrap (infrastructure/).
 # Destroying the cluster does not destroy this VM.
 #
-# After boot: systemctl start kubespand && systemctl start kubelet
-# Then approve CSR: kubectl certificate approve <csr-name>
+# After boot, kubespand and kubelet auto-start.
+# Approve the CSR: kubectl certificate approve <csr-name>
 
 # =============================================================================
 # REMOTE STATE

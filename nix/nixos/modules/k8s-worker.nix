@@ -8,21 +8,14 @@
 #   - Kubelet unit depends on local kube-apiserver.service
 #   - Builds/seeds a custom pause container instead of registry.k8s.io/pause
 #
-# Manual steps after boot:
-# 1. Extract bootstrap kubeconfig from Talos control plane:
-#      talosctl -n <cp-ip> cat /etc/kubernetes/bootstrap-kubeconfig > bootstrap-kubelet.conf
-#      talosctl -n <cp-ip> cat /etc/kubernetes/pki/ca.crt > ca.crt
-#      sed -i 's|https://localhost:7445|https://<cp-ip>:6443|g' bootstrap-kubelet.conf
-# 2. Copy to this machine:
-#      sudo mkdir -p /etc/kubernetes/pki
-#      sudo cp ca.crt /etc/kubernetes/pki/
-#      sudo cp bootstrap-kubelet.conf /etc/kubernetes/
-# 3. Place kubespand config (kubespan fabric) or register with Headscale (tailscale fabric)
-# 4. Start kubelet:
-#      sudo systemctl start kubelet
-# 5. Approve the CSR on the cluster:
-#      kubectl get csr
-#      kubectl certificate approve <csr-name>
+# Credential placement:
+#   Cloud-init (via terraform/modules/nixos-vm) writes bootstrap kubeconfig, CA cert,
+#   and kubespand config. Services auto-start on boot.
+#
+# Manual step after boot:
+#   Approve the CSR on the cluster:
+#     kubectl get csr
+#     kubectl certificate approve <csr-name>
 {
   config,
   pkgs,
@@ -231,8 +224,7 @@ in
       ];
       # kubespand: hard dependency — kubelet stops if kubespand dies
       requires = lib.optional isKubespan "kubespand.service";
-      # Don't start automatically — wait for manual credential placement
-      wantedBy = [ ];
+      wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         # Prepend /run/wrappers/bin for NixOS setuid mount/umount wrappers.
         Environment = "PATH=/run/wrappers/bin:${lib.makeBinPath kubeletDeps}:/usr/bin:/bin";

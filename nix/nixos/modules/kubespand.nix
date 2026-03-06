@@ -2,7 +2,7 @@
 #
 # Manages the kubespand systemd service, WireGuard kernel module, firewall,
 # and IPv6 forwarding. Config file (/etc/kubespan/agent.yaml) contains secrets
-# and must be placed manually — never in the Nix store.
+# and is placed by cloud-init (not in the Nix store).
 {
   config,
   pkgs,
@@ -58,8 +58,7 @@ in
       description = "kubespand — standalone KubeSpan daemon";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
-      # Don't start automatically — config file with secrets must be placed first
-      wantedBy = [ ];
+      wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
         Type = "simple";
