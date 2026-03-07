@@ -293,7 +293,7 @@ spec:
         memory: "2Gi"
   sidecars:
     - name: airlock
-      image: registry.allegedly.works/ducktape/airlock:devel-20260307231820-75c6320 # {"$imagepolicy": "flux-system:airlock"}
+      image: registry.allegedly.works/ducktape/airlock:devel-20260307234443-c456366 # {"$imagepolicy": "flux-system:airlock"}
       env:
         - name: UPSTREAM_URL
           value: "http://airlock.airlock.svc.cluster.local:8765"
