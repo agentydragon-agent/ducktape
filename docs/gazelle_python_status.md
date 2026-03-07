@@ -10,7 +10,7 @@ Gazelle Python is **fully configured and operational**. The repository has ~95% 
 - `//tools:modules_map` generates wheel metadata correctly
 - `gazelle_python.yaml` manifest is populated with 500+ module mappings
 - Go dependencies download without network issues
-- System packages are filtered via `filter_wheels.bzl`
+- System packages are filtered via `tools/filter_wheels.bzl`
 
 ### Running Gazelle
 
@@ -33,7 +33,7 @@ bazel run //tools:gazelle_python_manifest.update
 
 2. **Configuration Files**:
    - `gazelle_python.yaml` - generated manifest mapping imports to PyPI packages
-   - `filter_wheels.bzl` - filters system packages (pygobject, dbus-python, pycairo)
+   - `tools/filter_wheels.bzl` - filters system packages (pygobject, dbus-python, pycairo)
    - `//tools:gazelle` target in `tools/BUILD.bazel`
 
 3. **Directives** (in root `BUILD.bazel`):
