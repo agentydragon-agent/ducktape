@@ -207,6 +207,41 @@ Each `<CutSetting>` defines one laser layer (colour). Shapes reference their lay
 
 Layer index 0 is conventionally used for text/annotations at low power.
 
+LightBurn supports up to **30 layers** (indices 0–29). Files with more than 30 `<CutSetting>`
+elements produce undefined behaviour in the UI.
+
+### Sublayers
+
+A `<CutSetting>` may contain one or more `<SubLayer>` child elements. Sublayers execute
+additional passes on the **same shapes** with different cut parameters — shapes still reference
+only the parent `CutIndex`. Sublayers do not count toward the 30-layer limit.
+
+```xml
+<CutSetting type="Cut">
+  <index Value="0"/>
+  <name Value="C00"/>
+  <maxPower Value="20"/>
+  <speed Value="100"/>
+  <subname Value="sub1(100m/s 20%)"/>
+  <priority Value="0"/>
+  <!-- ... other params ... -->
+  <SubLayer type="Cut" index="1">
+    <maxPower Value="30"/>
+    <speed Value="200"/>
+    <subname Value="sub2(200m/s 30%)"/>
+  </SubLayer>
+</CutSetting>
+```
+
+| Detail             | Notes                                                                   |
+| ------------------ | ----------------------------------------------------------------------- |
+| Element            | `<SubLayer>` nested inside `<CutSetting>`                               |
+| Attributes         | `type` (cut mode) and `index` (1-based) on the element itself           |
+| Parameter children | Same `<name Value="..."/>` format as parent, but only overridden params |
+| `<subname>`        | Display label; present on both parent and sublayer                      |
+| Inheritance        | Sublayer inherits all parent params; only explicitly set values differ  |
+| Shape references   | Shapes use parent `CutIndex` — sublayers add passes, not new shapes     |
+
 ## Shape: Rect
 
 ```xml

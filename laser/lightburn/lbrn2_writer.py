@@ -15,6 +15,7 @@ from xml.etree import ElementTree as ET
 
 LBRN2_APP_VERSION = "1.6.00"
 LBRN2_FORMAT_VERSION = "1"
+MAX_LAYERS = 30
 
 
 # ── Enums ──────────────────────────────────────────────────────────────────────
@@ -106,6 +107,42 @@ class XForm:
         return f"{_f(self.a)} {_f(self.b)} {_f(self.c)} {_f(self.d)} {_f(self.tx)} {_f(self.ty)}"
 
 
+# ── SubLayer ──────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class SubLayer:
+    """Additional pass within a parent CutSetting with overridden parameters.
+
+    Only non-None fields are emitted as XML children; the rest are inherited
+    from the parent CutSetting at runtime.
+    """
+
+    index: int  # 1-based within parent
+    mode: CutMode = CutMode.CUT
+    subname: str = ""
+    min_power: float | None = None
+    max_power: float | None = None
+    speed: float | None = None
+
+    def to_element(self) -> ET.Element:
+        el = ET.Element("SubLayer", type=str(self.mode), index=str(self.index))
+
+        def f(name: str, value: float | int | str) -> None:
+            ET.SubElement(el, name, Value=str(value))
+
+        if self.max_power is not None:
+            f("maxPower", self.max_power)
+        if self.min_power is not None:
+            f("minPower", self.min_power)
+        if self.speed is not None:
+            f("speed", self.speed)
+        if self.subname:
+            f("subname", self.subname)
+
+        return el
+
+
 # ── CutSetting ────────────────────────────────────────────────────────────────
 
 
@@ -136,6 +173,9 @@ class CutSetting:
     interval: float = 0.1  # mm, line interval for Scan mode
     bidir: bool = True
     crosshatch: bool = False
+    # Sublayer support
+    subname: str = ""
+    sublayers: list[SubLayer] = field(default_factory=list)
 
     def to_element(self) -> ET.Element:
         """Build a <CutSetting type="…"> Element with all child fields."""
@@ -199,6 +239,10 @@ class CutSetting:
         f("angle", 0)
         f("cellsPerInch", 50)
         f("halftoneAngle", 22.5)
+        if self.subname:
+            f("subname", self.subname)
+        for sublayer in self.sublayers:
+            el.append(sublayer.to_element())
         return el
 
 
@@ -318,6 +362,10 @@ class LightBurnProject:
 
     def to_element(self) -> ET.Element:
         """Build the complete <LightBurnProject> Element tree."""
+        n = len(self.cut_settings)
+        if n > MAX_LAYERS:
+            raise ValueError(f"LightBurn supports at most {MAX_LAYERS} layers, got {n}")
+
         root = ET.Element(
             "LightBurnProject",
             AppVersion=LBRN2_APP_VERSION,
