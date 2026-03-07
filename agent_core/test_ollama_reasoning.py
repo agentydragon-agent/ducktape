@@ -1,7 +1,7 @@
 """Ollama-specific test: verify reasoning items are parsed from thinking models.
 
-Run manually against a local Ollama instance with a thinking model (e.g., gpt-oss).
-Tagged 'manual' + 'ollama' so it never runs in CI.
+Tagged 'ollama'. The mock target runs in CI; the live target requires an Ollama
+instance with a thinking model and OPENAI_API_KEY pointing at it.
 
 Ollama returns reasoning via the OpenAI-compatible Responses API in `summary` and
 leaves `content` empty:
