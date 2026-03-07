@@ -114,7 +114,6 @@ sh_test(
         ":vmlinuz",
     ],
     tags = [
-        "manual",
         "requires_qemu",
     ],
 )
@@ -140,7 +139,6 @@ sh_test(
         "//third_party/siderolabs:discovery_service_tarball",
     ],
     tags = [
-        "manual",
         "requires_docker",
         "requires_qemu",
     ],
