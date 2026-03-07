@@ -1,69 +1,124 @@
 # Material Test Grid — Example Configuration
-# Run: python material_test.py example_config.toml [-o output.lbrn2]
-# See SPEC.md for full documentation.
+#
+# Generates a parametric material test grid as a LightBurn .lbrn2 file.
+# Each cell is cut with a unique (x-param, y-param) combination.
+#
+# Run:  bazel run //laser/material_test -- example_config.toml [-o output.lbrn2]
 
-# Optional title and subtitle shown above the grid.
-# subtitle is prepended to the auto-generated constant-parameter summary.
+# ── Title / subtitle ────────────────────────────────────────────────────────────
+# title:         Main title printed above the grid.
+# subtitle:      Extra text prepended to the auto-generated constant-parameter summary.
+# auto_subtitle: When true, appends a summary of constant parameters (those not
+#                varied on any axis) to the subtitle.
 title = "6.08mm ply, Lauan"
 subtitle = ""
-auto_subtitle = true   # append "Z=-0.1, kerf=0.1 mm, ..." to subtitle
+auto_subtitle = true
 
-# ── X axis (columns) ──────────────────────────────────────────────────────────
+# ── X axis (columns) ────────────────────────────────────────────────────────────
+# param:            Which cut parameter to sweep across columns.
+# values:           List of values for the sweep.
+# label:            Axis label printed below the column values. Omit to auto-
+#                   generate from param name and unit; set to "" to suppress.
+# show_labels: Show per-column value labels above the grid and the axis label.
+#
+# Available params:
+#   power_pct      — Min and max power set together (%)
+#   power_min_pct  — Minimum power only (%)
+#   power_max_pct  — Maximum power only (%)
+#   speed_mm_s     — Cut speed (mm/s)
+#   kerf_mm        — Kerf compensation offset (mm)
+#   z_offset_mm    — Z offset at start of layer (mm)
+#   z_per_pass_mm  — Z step per pass, typically ≤ 0 (mm)
+#   num_passes     — Number of passes (integer)
 [x]
-# Parameter to scan across columns.
-# Values: power_pct, power_min_pct, power_max_pct, speed_mm_s, kerf_mm,
-#         z_offset_mm, z_per_pass_mm, num_passes
 param = "power_max_pct"
 values = [12, 13.5, 15, 16.5, 18]
-label = "Power [%]"          # printed below the column values
-show_annotations = true      # show per-column value labels above grid
+label = "Power [%]"
+show_labels = true
 
-# ── Y axis (rows) ─────────────────────────────────────────────────────────────
+# ── Y axis (rows) ───────────────────────────────────────────────────────────────
+# Same keys and available params as [x].
 [y]
 param = "z_per_pass_mm"
 values = [-0.5, -0.6, -0.7, -0.8]
-label = "\u0394Z/pass [mm]"  # ΔZ/pass [mm] — rotated 90° CCW to the left of grid
-show_annotations = true
+label = "\u0394Z/pass [mm]"
+show_labels = true
 
-# ── Constant cut parameters ───────────────────────────────────────────────────
-# These apply to every cell; x/y axis values override their entry here per cell.
+# ── Constant cut parameters ─────────────────────────────────────────────────────
+# Base cut settings applied to every cell. The x/y axis parameters override
+# their respective entries here per cell.
+#
+# power_pct:     Shorthand — sets both power_min_pct and power_max_pct (default: none)
+# power_min_pct: Minimum power, % (default: 80)
+# power_max_pct: Maximum power, % (default: 80)
+# speed_mm_s:    Cut speed, mm/s (default: 100)
+# kerf_mm:       Kerf compensation, mm (default: 0)
+# z_offset_mm:   Initial Z offset, mm (default: 0)
+# z_per_pass_mm: Z step per pass, mm, typically ≤ 0 (default: 0)
+# num_passes:    Number of passes (default: 1)
 [cut]
 # power_pct = 80       # shorthand: sets both power_min_pct and power_max_pct
-power_min_pct = 10     # %
-power_max_pct = 80     # %  (will be overridden by x axis)
+power_min_pct = 10
+power_max_pct = 80     # overridden by x axis
 speed_mm_s = 15
 kerf_mm = 0.1
-z_offset_mm = -0.1     # initial Z offset for this layer
-z_per_pass_mm = 0.0    # (will be overridden by y axis)
+z_offset_mm = -0.1
+z_per_pass_mm = 0.0    # overridden by y axis
 num_passes = 3
 
-# ── Grid geometry ─────────────────────────────────────────────────────────────
+# ── Grid geometry ───────────────────────────────────────────────────────────────
+# cell_size_mm:    Square cell side length, mm (default: 15)
+# gap_mm:          Gap between adjacent cells, mm (default: 8)
+# subgrid_gap_mm:  Gap between sub-grids in 3D/4D sweeps, mm (default: 20)
 [geometry]
-cell_size_mm = 15   # square side length
-gap_mm = 8          # gap between adjacent cells
+cell_size_mm = 15
+gap_mm = 8
 
-# ── In-cell annotations ───────────────────────────────────────────────────────
-[annotations]
-cell_content = "values_with_units"  # "nothing", "values", or "values_with_units"
-cell_text_gap_mm = 0.3     # vertical gap between the two in-cell text lines
+# ── Text labels ────────────────────────────────────────────────────────────────
+# cell_text: What to print inside each cell.
+#   "nothing"          — no in-cell text
+#   "values"           — parameter values without units (e.g. "25", "12")
+#   "values_with_units" — parameter values with units (e.g. "25%", "12 mm/s")
+# cell_text_gap_mm: Vertical gap between the two in-cell text lines, mm (default: 0.3)
+# show_legend:      Draw a legend cell in the bottom-left corner showing short
+#                   parameter labels for the two in-cell text lines (e.g. "mm/s"
+#                   and "Power %"). Requires cell_text != "nothing". (default: false)
+[labels]
+cell_text = "values_with_units"
+cell_text_gap_mm = 0.3
+show_legend = true
 
-# ── Border ────────────────────────────────────────────────────────────────────
+# ── Border ──────────────────────────────────────────────────────────────────────
+# enabled:    Draw a border rectangle around the entire grid (default: false)
+# padding_mm: Padding outside the grid cells, mm (default: 3)
+# power_pct:  Border layer power, % (default: 10)
+# speed_mm_s: Border layer speed, mm/s (default: 200)
+# num_passes: Border layer passes (default: 1)
 [border]
 enabled = true
-padding_mm = 3       # outside the grid cells
+padding_mm = 3
 power_pct = 10
 speed_mm_s = 200
 
-# ── Text/annotation layer ─────────────────────────────────────────────────────
+# ── Text layer ─────────────────────────────────────────────────────────────────
+# Cut settings for all text (title, labels, values, in-cell text) — layer 0.
+# power_pct:  Text layer power, % (default: 15)
+# speed_mm_s: Text layer speed, mm/s (default: 200)
 [text_layer]
-power_pct = 15       # low power just for marking
+power_pct = 15
 speed_mm_s = 200
 
-# ── Font and text sizes ───────────────────────────────────────────────────────
+# ── Font and text sizes ─────────────────────────────────────────────────────────
+# name:          Font family for all text (default: "Arial")
+# h_title_mm:    Title text height, mm (default: 10)
+# h_subtitle_mm: Subtitle text height, mm (default: 7)
+# h_label_mm:    Axis label text height, mm (default: 6)
+# h_value_mm:    Axis value label height, mm (default: 5)
+# h_cell_mm:     In-cell parameter text height, mm (default: 4)
 [font]
 name = "zzSTENCIL"
-h_title_mm = 10      # title text height
+h_title_mm = 10
 h_subtitle_mm = 7
-h_label_mm = 6       # axis labels
-h_value_mm = 5       # axis value annotations
-h_cell_mm = 4        # in-cell parameter text
+h_label_mm = 6
+h_value_mm = 5
+h_cell_mm = 4

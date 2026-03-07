@@ -1,23 +1,29 @@
 # Material Test Grid — 3D Sweep Example
+#
 # Sweeps power × z_per_pass (inner grid) × num_passes (outer cols).
-# Run: bazel run //lightburn/material_test -- example_config_3d.toml -o /tmp/3d.lbrn2
+# Each outer column value produces a complete inner 2D sub-grid.
+#
+# Run:  bazel run //laser/material_test -- example_config_3d.toml -o /tmp/3d.lbrn2
 
 title = "3D Sweep: Power × Z/pass × Passes"
 auto_subtitle = true
 
-# Inner X axis (columns within each sub-grid)
+# ── Inner X axis (columns within each sub-grid) ─────────────────────────────────
 [x]
 param = "power_max_pct"
 values = [12, 15, 18]
 label = "Power [%]"
 
-# Inner Y axis (rows within each sub-grid)
+# ── Inner Y axis (rows within each sub-grid) ────────────────────────────────────
 [y]
 param = "z_per_pass_mm"
 values = [-0.5, -0.6, -0.7]
 label = "\u0394Z/pass [mm]"
 
-# Outer columns — one sub-grid per value
+# ── Outer columns — one sub-grid per value ──────────────────────────────────────
+# Same keys as [x]/[y]: param, values, label, show_labels.
+# For a 4-parameter sweep, add [rows] as well.
+# All axis params (x, y, cols, rows) must be distinct.
 [cols]
 param = "num_passes"
 values = [1, 2, 3]
@@ -33,10 +39,10 @@ num_passes = 1
 [geometry]
 cell_size_mm = 12
 gap_mm = 6
-subgrid_gap_mm = 20
+subgrid_gap_mm = 20   # gap between sub-grids
 
-[annotations]
-cell_content = "nothing"
+[labels]
+cell_text = "nothing"
 
 [border]
 enabled = true

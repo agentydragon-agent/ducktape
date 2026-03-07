@@ -79,6 +79,19 @@ def _fmt_val_with_unit(param: CutParam, v: float) -> str:
     return f"{formatted}{unit}"
 
 
+def _param_short_label(param: CutParam) -> str:
+    """Short label for a parameter, used in the legend cell.
+
+    - Abbreviable + has unit → just unit (e.g. "mm/s")
+    - Not abbreviable + has unit → "Label unit" (e.g. "Power %")
+    - No unit → just label (e.g. "Passes")
+    """
+    label, unit, abbrev = _PARAM[param]
+    if unit:
+        return unit if abbrev else f"{label} {unit}"
+    return label
+
+
 # ── Pydantic config models ─────────────────────────────────────────────────────
 
 
@@ -90,7 +103,7 @@ class AxisConfig(BaseModel):
     param: CutParam
     values: list[float]
     label: str | None = None  # None = auto-generate from param name + unit; "" = no label
-    show_annotations: bool = True
+    show_labels: bool = True
 
 
 class CutConfig(BaseModel):
@@ -151,13 +164,14 @@ class CellContent(StrEnum):
     VALUES_WITH_UNITS = "values_with_units"  # parameter values with units (e.g. "25%")
 
 
-class AnnotationConfig(BaseModel):
-    """In-cell text annotations."""
+class LabelsConfig(BaseModel):
+    """Text label configuration for the grid."""
 
     model_config = ConfigDict(extra="forbid")
 
-    cell_content: CellContent = CellContent.NOTHING
+    cell_text: CellContent = CellContent.NOTHING
     cell_text_gap_mm: float = 0.3  # vertical gap between the two in-cell text lines
+    show_legend: bool = False  # show a legend cell explaining in-cell text lines
 
 
 class BorderConfig(BaseModel):
@@ -173,7 +187,7 @@ class BorderConfig(BaseModel):
 
 
 class TextLayerConfig(BaseModel):
-    """Cut settings for the annotation text layer (layer 0)."""
+    """Cut settings for the text label layer (layer 0)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -190,7 +204,7 @@ class FontConfig(BaseModel):
     h_title_mm: float = 10.0  # title text height
     h_subtitle_mm: float = 7.0
     h_label_mm: float = 6.0  # axis label
-    h_value_mm: float = 5.0  # axis value annotations
+    h_value_mm: float = 5.0  # axis value labels
     h_cell_mm: float = 4.0  # in-cell parameter text
 
 
@@ -212,7 +226,7 @@ class GridConfig(BaseModel):
     rows: AxisConfig | None = None  # outer row axis (4D sweep)
     cut: CutConfig = CutConfig()
     geometry: GeometryConfig = GeometryConfig()
-    annotations: AnnotationConfig = AnnotationConfig()
+    labels: LabelsConfig = LabelsConfig()
     border: BorderConfig = BorderConfig()
     text_layer: TextLayerConfig = TextLayerConfig()
     font: FontConfig = FontConfig()
@@ -350,7 +364,7 @@ def _cell_energy(config: GridConfig, outer_params: list[tuple[CutParam, float]],
 _SPACING = 3.0  # mm between text elements
 _MARGIN_LEFT = 5.0  # mm left of the Y-axis label
 _MARGIN_TOP = 5.0  # mm above the title
-_TEXT_LAYER = 0  # layer index reserved for annotation text
+_TEXT_LAYER = 0  # layer index reserved for text labels
 
 
 def _estimate_text_width(text: str, height: float) -> float:
@@ -375,16 +389,16 @@ def _make_text(
     return TextShape(cut_index=_TEXT_LAYER, text=text, height=height, xform=xform, font=font_name, ah=ah, av=av)
 
 
-def _y_annot_width(config: GridConfig) -> float:
-    """Horizontal space used by inner Y-axis annotations (left of cell grid)."""
-    if not config.y.show_annotations:
+def _y_label_width(config: GridConfig) -> float:
+    """Horizontal space used by inner Y-axis labels (left of cell grid)."""
+    if not config.y.show_labels:
         return 0.0
     return config.font.h_label_mm + _SPACING + config.font.h_value_mm + _SPACING
 
 
-def _x_annot_height(config: GridConfig) -> float:
-    """Vertical space used by inner X-axis annotations (below cell grid)."""
-    if not config.x.show_annotations:
+def _x_label_height(config: GridConfig) -> float:
+    """Vertical space used by inner X-axis labels (below cell grid)."""
+    if not config.x.show_labels:
         return 0.0
     x_label = config.x.label if config.x.label is not None else _auto_label(config.x.param)
     h = _SPACING + config.font.h_value_mm + _SPACING
@@ -453,17 +467,17 @@ def _cell_cut_setting(config: GridConfig, spec: _CellSpec, index: int, name: str
     return cut
 
 
-def _generate_subgrid_annotations(
+def _generate_subgrid_labels(
     config: GridConfig,
     cell_grid_left: float,
     cell_grid_top: float,
     *,
-    emit_x_annotations: bool = True,
-    emit_y_annotations: bool = True,
+    emit_x_labels: bool = True,
+    emit_y_labels: bool = True,
 ) -> list[AnyShape]:
-    """Generate text annotations for a single 2D sub-grid.
+    """Generate text labels for a single 2D sub-grid.
 
-    Places annotations around cells starting at (cell_grid_left, cell_grid_top)
+    Places labels around cells starting at (cell_grid_left, cell_grid_top)
     in LightBurn's Y-up coordinate system.
 
     Cell rectangles are NOT created here — they are generated after global
@@ -485,19 +499,19 @@ def _generate_subgrid_annotations(
     cell_grid_x_centre = (cell_grid_left + cell_grid_right) / 2.0
     cell_grid_y_centre = (cell_grid_top + cell_grid_bottom) / 2.0
 
-    # In-cell text annotations
+    # In-cell text labels
     for row_i, y_val in enumerate(config.y.values):
         for col_j, x_val in enumerate(config.x.values):
             cx = x_col[col_j]
             cy = y_row[row_i]
 
-            if config.annotations.cell_content != CellContent.NOTHING:
+            if config.labels.cell_text != CellContent.NOTHING:
                 _cell_fmt = (
                     _fmt_val_with_unit
-                    if config.annotations.cell_content == CellContent.VALUES_WITH_UNITS
+                    if config.labels.cell_text == CellContent.VALUES_WITH_UNITS
                     else lambda _p, v: fmt_val(v)
                 )
-                half_gap = config.annotations.cell_text_gap_mm / 2.0
+                half_gap = config.labels.cell_text_gap_mm / 2.0
                 y_line1 = cy + half_gap + font.h_cell_mm / 2.0
                 y_line2 = cy - half_gap - font.h_cell_mm / 2.0
                 margin = font.h_cell_mm * 0.2
@@ -528,9 +542,9 @@ def _generate_subgrid_annotations(
                     )
                 )
 
-    # Inner X-axis annotations (below grid)
+    # Inner X-axis labels (below grid)
     x_label = config.x.label if config.x.label is not None else _auto_label(config.x.param)
-    if config.x.show_annotations and emit_x_annotations:
+    if config.x.show_labels and emit_x_labels:
         y_below = cell_grid_bottom - _SPACING
         for col_j, x_val in enumerate(config.x.values):
             shapes.append(
@@ -545,9 +559,9 @@ def _generate_subgrid_annotations(
                 _make_text(x_label, cell_grid_x_centre, y_below, font.h_label_mm, font.name, ah=HAlign.CENTER)
             )
 
-    # Inner Y-axis annotations (left of grid, rotated 90° CCW)
+    # Inner Y-axis labels (left of grid, rotated 90° CCW)
     y_label = config.y.label if config.y.label is not None else _auto_label(config.y.param)
-    if config.y.show_annotations and emit_y_annotations:
+    if config.y.show_labels and emit_y_labels:
         x_y_val_cx = cell_grid_left - _SPACING - config.font.h_value_mm / 2.0
         x_y_label_cx = cell_grid_left - _SPACING - config.font.h_value_mm - _SPACING - config.font.h_label_mm / 2.0
 
@@ -587,14 +601,14 @@ def generate(config: GridConfig) -> LightBurnProject:
 
     Supports 2D (x x y), 3D (+ cols or rows), and 4D (+ cols + rows) sweeps.
     For 3D/4D, generates a grid of sub-grids where each sub-grid is a complete
-    2D grid with its own inner axis annotations.
+    2D grid with its own inner axis labels.
     """
     font = config.font
 
     cut_settings: list[CutSetting] = []
     shapes: list[AnyShape] = []
 
-    # Layer 0: annotation text
+    # Layer 0: text labels
     cut_settings.append(
         CutSetting(
             index=_TEXT_LAYER,
@@ -614,14 +628,14 @@ def generate(config: GridConfig) -> LightBurnProject:
     inner_stride = config.geometry.cell_size_mm + config.geometry.gap_mm
     cell_grid_w = len(config.x.values) * inner_stride - config.geometry.gap_mm
     cell_grid_h = len(config.y.values) * inner_stride - config.geometry.gap_mm
-    y_aw = _y_annot_width(config)
-    x_ah = _x_annot_height(config)
+    y_aw = _y_label_width(config)
+    x_ah = _x_label_height(config)
     subgrid_gap = config.geometry.subgrid_gap_mm
 
     # ── Horizontal layout ─────────────────────────────────────────────────────
     x_cursor = _MARGIN_LEFT
 
-    # Outer rows axis annotations (rotated, left side)
+    # Outer rows axis labels (rotated, left side)
     has_outer_rows = config.rows is not None
     outer_rows_label = ""
     x_outer_rows_label_cx = x_cursor
@@ -629,14 +643,14 @@ def generate(config: GridConfig) -> LightBurnProject:
     if has_outer_rows:
         assert config.rows is not None
         outer_rows_label = config.rows.label if config.rows.label is not None else _auto_label(config.rows.param)
-        if config.rows.show_annotations:
+        if config.rows.show_labels:
             if outer_rows_label:
                 x_outer_rows_label_cx = x_cursor + font.h_label_mm / 2.0
                 x_cursor += font.h_label_mm + _SPACING
             x_outer_rows_val_cx = x_cursor + font.h_value_mm / 2.0
             x_cursor += font.h_value_mm + _SPACING
 
-    # Sub-grid positions — Y annotations only on the first column, so y_aw
+    # Sub-grid positions — Y labels only on the first column, so y_aw
     # space is reserved once (not per sub-grid).
     cell_grid_lefts = [x_cursor + y_aw + oc * (cell_grid_w + subgrid_gap) for oc in range(n_outer_cols)]
     total_right = cell_grid_lefts[-1] + cell_grid_w
@@ -649,19 +663,19 @@ def generate(config: GridConfig) -> LightBurnProject:
     # ── Vertical layout ───────────────────────────────────────────────────────
     subtitle_text = _full_subtitle(config)
 
-    # Outer cols axis annotations (above sub-grids)
+    # Outer cols axis labels (above sub-grids)
     has_outer_cols = config.cols is not None
     outer_cols_label = ""
-    outer_cols_annot_h = 0.0
+    outer_cols_label_h = 0.0
     if has_outer_cols:
         assert config.cols is not None
         outer_cols_label = config.cols.label if config.cols.label is not None else _auto_label(config.cols.param)
-        if config.cols.show_annotations:
-            outer_cols_annot_h += font.h_value_mm + _SPACING
+        if config.cols.show_labels:
+            outer_cols_label_h += font.h_value_mm + _SPACING
             if outer_cols_label:
-                outer_cols_annot_h += font.h_label_mm + _SPACING
+                outer_cols_label_h += font.h_label_mm + _SPACING
 
-    # X annotations only on the last row, so x_ah space is reserved once.
+    # X labels only on the last row, so x_ah space is reserved once.
     total_subgrids_h = n_outer_rows * cell_grid_h + max(0, n_outer_rows - 1) * subgrid_gap + x_ah
 
     v_total = 0.0
@@ -669,7 +683,7 @@ def generate(config: GridConfig) -> LightBurnProject:
         v_total += font.h_title_mm + _SPACING
     if subtitle_text:
         v_total += font.h_subtitle_mm + _SPACING
-    v_total += outer_cols_annot_h
+    v_total += outer_cols_label_h
     v_total += total_subgrids_h
 
     # y starts at the top (large Y) and decreases as we place elements downward.
@@ -693,8 +707,8 @@ def generate(config: GridConfig) -> LightBurnProject:
         content_right = max(content_right, centre_x + sub_half_w)
         y -= font.h_subtitle_mm + _SPACING
 
-    # Outer cols annotations (values per column, then label)
-    if has_outer_cols and config.cols is not None and config.cols.show_annotations:
+    # Outer cols labels (values per column, then label)
+    if has_outer_cols and config.cols is not None and config.cols.show_labels:
         for oc, col_val in enumerate(config.cols.values):
             sg_cell_centre_x = cell_grid_lefts[oc] + cell_grid_w / 2.0
             shapes.append(
@@ -708,7 +722,7 @@ def generate(config: GridConfig) -> LightBurnProject:
             shapes.append(_make_text(outer_cols_label, centre_x, y, font.h_label_mm, font.name, ah=HAlign.CENTER))
             y -= font.h_label_mm + _SPACING
 
-    # Generate sub-grid text annotations
+    # Generate sub-grid text labels
     subgrid_cell_grid_tops: list[float] = []
 
     for or_i in range(n_outer_rows):
@@ -717,14 +731,65 @@ def generate(config: GridConfig) -> LightBurnProject:
 
         for oc_j in range(n_outer_cols):
             shapes.extend(
-                _generate_subgrid_annotations(
+                _generate_subgrid_labels(
                     config=config,
                     cell_grid_left=cell_grid_lefts[oc_j],
                     cell_grid_top=cell_grid_top_y,
-                    emit_y_annotations=oc_j == 0,
-                    emit_x_annotations=or_i == n_outer_rows - 1,
+                    emit_y_labels=oc_j == 0,
+                    emit_x_labels=or_i == n_outer_rows - 1,
                 )
             )
+
+    # Legend cell in the bottom-left corner (Y-label area x X-label area)
+    if config.labels.show_legend and config.labels.cell_text != CellContent.NOTHING:
+        last_subgrid_bottom = subgrid_cell_grid_tops[-1] - cell_grid_h
+        # Use label area if present, otherwise position just outside the cell grid
+        effective_y_aw = y_aw if y_aw > 0 else config.geometry.cell_size_mm + _SPACING
+        effective_x_ah = x_ah if x_ah > 0 else config.geometry.cell_size_mm + _SPACING
+        corner_top = last_subgrid_bottom
+        corner_bottom = corner_top - effective_x_ah
+        legend_cx = cell_grid_lefts[0] - effective_y_aw / 2.0
+        legend_cy = (corner_top + corner_bottom) / 2.0
+
+        shapes.append(
+            RectShape(
+                cut_index=_TEXT_LAYER,
+                width=config.geometry.cell_size_mm,
+                height=config.geometry.cell_size_mm,
+                xform=XForm.translate(legend_cx, legend_cy),
+            )
+        )
+
+        half_gap = config.labels.cell_text_gap_mm / 2.0
+        y_line1 = legend_cy + half_gap + font.h_cell_mm / 2.0
+        y_line2 = legend_cy - half_gap - font.h_cell_mm / 2.0
+        margin = font.h_cell_mm * 0.2
+        half_cell = config.geometry.cell_size_mm / 2.0
+        y_line1 = min(legend_cy + half_cell - margin - font.h_cell_mm / 2.0, y_line1)
+        y_line2 = max(legend_cy - half_cell + margin + font.h_cell_mm / 2.0, y_line2)
+
+        shapes.append(
+            _make_text(
+                _param_short_label(config.x.param),
+                legend_cx,
+                y_line1,
+                font.h_cell_mm,
+                font.name,
+                ah=HAlign.CENTER,
+                av=VAlign.BOTTOM,
+            )
+        )
+        shapes.append(
+            _make_text(
+                _param_short_label(config.y.param),
+                legend_cx,
+                y_line2,
+                font.h_cell_mm,
+                font.name,
+                ah=HAlign.CENTER,
+                av=VAlign.TOP,
+            )
+        )
 
     # Create cell layers sorted by ascending energy.
     # Cell positions use LightBurn's Y-up coordinate system.
@@ -747,8 +812,8 @@ def generate(config: GridConfig) -> LightBurnProject:
         )
         next_layer_index += 1
 
-    # Outer rows annotations (left side, rotated 90° CCW)
-    if has_outer_rows and config.rows is not None and config.rows.show_annotations:
+    # Outer rows labels (left side, rotated 90° CCW)
+    if has_outer_rows and config.rows is not None and config.rows.show_labels:
         for or_i, row_val in enumerate(config.rows.values):
             sg_cell_centre_y = subgrid_cell_grid_tops[or_i] - cell_grid_h / 2.0
             shapes.append(

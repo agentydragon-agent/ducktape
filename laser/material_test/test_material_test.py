@@ -12,7 +12,6 @@ import pytest_bazel
 
 from laser.lightburn.lbrn2_writer import CutSetting, HAlign, LightBurnProject, RectShape, TextShape, VAlign, XForm
 from laser.material_test.material_test import (
-    AnnotationConfig,
     AxisConfig,
     BorderConfig,
     CellContent,
@@ -20,7 +19,9 @@ from laser.material_test.material_test import (
     CutParam,
     GeometryConfig,
     GridConfig,
+    LabelsConfig,
     _full_subtitle,
+    _param_short_label,
     fmt_val,
     generate,
 )
@@ -342,18 +343,18 @@ def test_generate_with_cell_text():
     cfg = GridConfig(
         x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
-        annotations=AnnotationConfig(cell_content=CellContent.VALUES_WITH_UNITS),
+        labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS),
     )
     project = generate(cfg)
     texts = [s for s in project.shapes if isinstance(s, TextShape)]
-    # Should have in-cell texts (2 per cell x 2 cells = 4) plus axis annotations
+    # Should have in-cell texts (2 per cell x 2 cells = 4) plus axis labels
     assert len(texts) >= 4
 
 
-def test_generate_no_annotations():
+def test_generate_no_labels():
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0], show_annotations=False),
-        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0], show_annotations=False),
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0], show_labels=False),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0], show_labels=False),
         auto_subtitle=False,  # suppress auto-generated subtitle too
     )
     project = generate(cfg)
@@ -624,6 +625,70 @@ def test_subgrid_gap_affects_layout():
     xs_large = rect_xs(p_large)
     # Larger gap → second sub-grid's rect is further to the right
     assert xs_large[1] > xs_small[1]
+
+
+# ── _param_short_label ──────────────────────────────────────────────────────────
+
+
+def test_param_short_label():
+    assert _param_short_label(CutParam.SPEED_MM_S) == "mm/s"  # abbreviable + unit
+    assert _param_short_label(CutParam.POWER_PCT) == "Power %"  # not abbreviable + unit
+    assert _param_short_label(CutParam.NUM_PASSES) == "Passes"  # no unit
+
+
+# ── Legend cell ─────────────────────────────────────────────────────────────────
+
+
+def test_generate_legend_cell():
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS, show_legend=True),
+    )
+    project = generate(cfg)
+    # Legend rect on layer 0
+    legend_rects = [s for s in project.shapes if isinstance(s, RectShape) and s.cut_index == 0]
+    assert len(legend_rects) == 1
+    # Two legend text labels
+    texts = [s for s in project.shapes if isinstance(s, TextShape)]
+    legend_texts = [t for t in texts if t.text in ("Power max %", "mm/s")]
+    assert len(legend_texts) == 2
+
+
+def test_generate_legend_not_shown_when_no_cell_content():
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        labels=LabelsConfig(cell_text=CellContent.NOTHING, show_legend=True),
+    )
+    project = generate(cfg)
+    legend_rects = [s for s in project.shapes if isinstance(s, RectShape) and s.cut_index == 0]
+    assert len(legend_rects) == 0
+
+
+def test_generate_legend_shown_when_labels_hidden():
+    """Legend is shown even when axis labels are disabled."""
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0], show_labels=False),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0], show_labels=False),
+        labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS, show_legend=True),
+        auto_subtitle=False,
+    )
+    project = generate(cfg)
+    legend_rects = [s for s in project.shapes if isinstance(s, RectShape) and s.cut_index == 0]
+    assert len(legend_rects) == 1
+
+
+def test_generate_legend_default_off():
+    """Default show_legend=False should not add legend rect."""
+    cfg = GridConfig(
+        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
+        labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS),
+    )
+    project = generate(cfg)
+    legend_rects = [s for s in project.shapes if isinstance(s, RectShape) and s.cut_index == 0]
+    assert len(legend_rects) == 0
 
 
 if __name__ == "__main__":
