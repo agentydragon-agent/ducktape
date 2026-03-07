@@ -91,6 +91,17 @@ py_library(
     ],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//agent_server/runtime:__subpackages__"],
+    deps = [
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_notifications_handler",
     size = "medium",
@@ -102,6 +113,7 @@ py_test(
     imports = ["../.."],
     requires_docker = True,
     deps = [
+        ":conftest",
         "//agent_core/testing/mcp:responses",
         "//agent_server:conftest",
         "//agent_server/mcp/approval_policy:engine",
@@ -111,6 +123,7 @@ py_test(
         "@pypi//fastmcp",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )
