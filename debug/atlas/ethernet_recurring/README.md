@@ -71,7 +71,7 @@ The atlantic NIC link drops are entangled with SATA controller failures (documen
 
 The atlantic link drops in these incidents appear to be a **consequence** of the chipset-level SATA cascade, not an independent network problem. Both the SATA controller and Aquantia NIC are behind the same Promontory chipset.
 
-### Mar 6 — No link after atlantic driver crash (CURRENT)
+### Mar 6 — No link after atlantic driver crash
 
 **File**: `~/2026-03-06-network-problems` (01:13)
 
@@ -92,6 +92,10 @@ Three consecutive boots without link (boot -1, boot 0, and after driver reload o
 Key difference from SATA-cascade incidents: drivers load cleanly, no errors, no crashes — just no physical link. SATA drives appear healthy on these boots.
 
 The atlantic driver crash on the immediately preceding boot (-2, RIP in `aq_hw_read_reg64` at 00:03) is suspicious but the NIC initializes cleanly on subsequent boots.
+
+### Mar 7 — Replaced cable, link restored (monitoring)
+
+Replaced the self-crimped cable with a factory-made Cat6a cable (Amazon). Link came up immediately. Whether this makes the network stable long-term remains to be seen — the SATA/chipset cascade is a separate potential cause of link drops.
 
 ## Current Network Config
 
@@ -174,27 +178,15 @@ The progressive shortening of connection durations from days to hours over a mon
 
 **Note**: The "dangered Switch" and "dangered Server Switch" (both USW Flex 2.5G 5) are **not** in the atlas path. The intermediate switch is unmanaged (no telemetry).
 
-## Recommended Next Steps
+## Resolution
 
-### Immediate
+**Cable replaced** on Mar 7 with factory-made Cat6a — link came up immediately. Monitoring whether this resolves the chronic flapping. The SATA/chipset cascade remains a separate potential cause of link drops.
 
-1. **Try the other ethernet port** — move cable from current port to the other RJ45 jack. If the cable is in the Aquantia port, try Intel (and vice versa). This isolates port vs cable.
+## Remaining Next Steps
 
-2. **Try a known-good cable** — replace the self-crimped cable with a factory-made Cat6 cable. This is the single most likely fix for "no link on either NIC." A marginal crimp can pass signal at some times and fail at others.
+1. **Monitor for link flaps** — `journalctl -f -k | grep atlantic` to verify the new cable stays stable. If flaps recur, the SATA/chipset cascade is a separate problem to address.
 
-3. **Check the switch port** — verify the upstream switch port shows link/activity with another device or cable.
-
-4. **Use USB tethering** as a stopgap to restore connectivity while debugging.
-
-### If link comes back
-
-5. **Monitor link speed** — `ethtool enp12s0 | grep Speed` should show the negotiated speed. A self-crimped cable negotiating at lower speeds (100M instead of 10G) is a sign of marginal signal integrity.
-
-6. **Check `dmesg` for atlantic link changes** — `journalctl -f -k | grep atlantic` to catch any link flaps in real time.
-
-### If Mode 2 recurs despite good cable
-
-7. **Pin interface names by MAC** — add udev rules to assign stable names regardless of PCI enumeration:
+2. **Pin interface names by MAC** — add udev rules to assign stable names regardless of PCI enumeration:
 
    ```
    # /etc/udev/rules.d/70-persistent-net.rules
@@ -204,7 +196,7 @@ The progressive shortening of connection durations from days to hours over a mon
 
    Update `/etc/network/interfaces` to match. This prevents future confusion if PCI layout changes again.
 
-8. **Address PCI BAR conflicts** — try BIOS option "Above 4G Decoding" (should already be on for GPU passthrough) and "Resize BAR" settings. The `AMDIF031:00` conflict with the bridge window is the root cause of the cascading `can't claim` errors.
+3. **Address PCI BAR conflicts** — try BIOS option "Above 4G Decoding" (should already be on for GPU passthrough) and "Resize BAR" settings. The `AMDIF031:00` conflict with the bridge window is the root cause of the cascading `can't claim` errors.
 
 ## Source Files
 

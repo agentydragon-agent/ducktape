@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
 from pathlib import Path
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
+
+from devinfra.claude_hooks.claude_api.usage import UsageResponse
 
 logger = logging.getLogger(__name__)
 
@@ -52,22 +53,6 @@ class _Credentials(BaseModel):
 
     claude_ai_oauth: _OAuthCredentials | None = None
     mcp_oauth: dict[str, _McpOAuthEntry] | None = Field(default=None, alias="mcpOAuth")
-
-
-class UsageBucket(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    utilization: float
-    resets_at: datetime | None = None
-
-
-class UsageResponse(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    five_hour: UsageBucket | None = None
-    seven_day: UsageBucket | None = None
-    seven_day_opus: UsageBucket | None = None
-    seven_day_sonnet: UsageBucket | None = None
 
 
 class _CachedUsage(BaseModel):

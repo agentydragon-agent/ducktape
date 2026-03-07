@@ -13,8 +13,8 @@ import pytest_bazel
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 
-from devinfra.claude_hooks import proxy_setup
-from devinfra.claude_hooks.proxy_setup import AUTH_PROXY_SERVICE
+from devinfra.claude_hooks.auth_proxy import setup as proxy_setup
+from devinfra.claude_hooks.auth_proxy.setup import AUTH_PROXY_SERVICE
 from devinfra.claude_hooks.settings import HookSettings
 from devinfra.claude_hooks.supervisor.setup import start as supervisor_start
 from devinfra.claude_hooks.testing.fixtures import MockEgressProxyFixture, supervisor_is_running

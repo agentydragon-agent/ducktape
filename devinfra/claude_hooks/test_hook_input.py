@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import pytest_bazel
 
-from devinfra.claude_hooks.session_start import HookInput
+from devinfra.claude_hooks.claude_api.hook_input import HookInput
 
 
 def test_hook_input_without_permission_mode() -> None:

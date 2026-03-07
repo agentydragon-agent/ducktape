@@ -37,10 +37,10 @@ from typing import Literal
 
 import httpx
 
+from devinfra.claude_hooks.auth_proxy.setup import SSL_CA_ENV_VARS
+from devinfra.claude_hooks.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude_hooks.errors import SkipError
 from devinfra.claude_hooks.managed_files import write_config
-from devinfra.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
-from devinfra.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from devinfra.claude_hooks.settings import HookSettings
 from devinfra.claude_hooks.supervisor.client import ProcessInfo, ProcessState, SupervisorClient
 from devinfra.claude_hooks.supervisor.service_utils import log_service_failure, wait_for_service_socket

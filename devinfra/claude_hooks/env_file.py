@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from devinfra.claude_hooks.auth_proxy.setup import SSL_CA_ENV_VARS
 from devinfra.claude_hooks.managed_files import write_config
-from devinfra.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
 from devinfra.claude_hooks.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
 from util.bazel.subprocess import exports_from_dict
 

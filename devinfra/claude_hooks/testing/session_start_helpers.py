@@ -20,9 +20,9 @@ from pathlib import Path
 import pytest
 
 from devinfra.claude_hooks import settings
-from devinfra.claude_hooks.proxy_setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
-from devinfra.claude_hooks.proxy_vars import PROXY_ENV_VARS
-from devinfra.claude_hooks.session_start import HookSource
+from devinfra.claude_hooks.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
+from devinfra.claude_hooks.auth_proxy.vars import PROXY_ENV_VARS
+from devinfra.claude_hooks.claude_api.hook_input import HookSource
 from devinfra.claude_hooks.testing import shell_helpers
 from devinfra.claude_hooks.testing.mock_egress_proxy import MockEgressProxy
 from devinfra.claude_hooks.tmpfs_setup import unmount_tmpfs_under

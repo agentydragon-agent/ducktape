@@ -17,13 +17,10 @@ import shutil
 import sys
 import traceback
 from datetime import datetime
-from enum import StrEnum
 from pathlib import Path
-from typing import Literal
 
 from mako.template import Template
 from opentelemetry import trace
-from pydantic import BaseModel
 
 from devinfra.build_info import get_build_info
 from devinfra.claude_hooks import (
@@ -38,10 +35,11 @@ from devinfra.claude_hooks import (
     nix_setup,
     otel,
     precommit_setup,
-    proxy_setup,
     secrets_setup,
     tmpfs_setup,
 )
+from devinfra.claude_hooks.auth_proxy import setup as proxy_setup
+from devinfra.claude_hooks.claude_api.hook_input import HookInput
 from devinfra.claude_hooks.debug import log_entrypoint_debug
 from devinfra.claude_hooks.errors import SkipError
 from devinfra.claude_hooks.managed_files import write_config
@@ -57,31 +55,6 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 # Per-repo config directory, resolved from CLAUDE_PROJECT_DIR at runtime.
 # Secrets and repo-specific templates live here, NOT in the wheel.
 _HOOKS_DOTDIR = ".claude_hooks"
-
-
-class HookSource(StrEnum):
-    """Source of the SessionStart hook event."""
-
-    STARTUP = "startup"
-    RESUME = "resume"
-    CLEAR = "clear"
-    COMPACT = "compact"
-
-
-class HookInput(BaseModel):
-    """Input passed to Claude Code hooks via stdin.
-
-    Note: permission_mode is optional because Claude Code Web was observed
-    (2025-01-18) not sending it for SessionStart:resume events, despite
-    documentation claiming it's required.
-    """
-
-    session_id: str
-    cwd: Path
-    transcript_path: str
-    permission_mode: Literal["default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"] = "default"
-    hook_event_name: Literal["SessionStart"]
-    source: HookSource
 
 
 # ============================================================================

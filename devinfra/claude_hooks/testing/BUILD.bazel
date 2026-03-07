@@ -8,8 +8,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//devinfra/claude_hooks:__subpackages__"],
     deps = [
-        "//devinfra/claude_hooks:proxy_setup",
-        "//devinfra/claude_hooks:proxy_vars",
+        "//devinfra/claude_hooks/auth_proxy:setup",
+        "//devinfra/claude_hooks/auth_proxy:vars",
         "@pypi//cryptography",
     ],
 )
@@ -71,11 +71,11 @@ py_library(
     deps = [
         ":mock_egress_proxy",
         ":shell_helpers",
-        "//devinfra/claude_hooks:proxy_setup",
-        "//devinfra/claude_hooks:proxy_vars",
-        "//devinfra/claude_hooks:session_start_lib",
         "//devinfra/claude_hooks:settings",
         "//devinfra/claude_hooks:tmpfs_setup",
+        "//devinfra/claude_hooks/auth_proxy:setup",
+        "//devinfra/claude_hooks/auth_proxy:vars",
+        "//devinfra/claude_hooks/claude_api:hook_input",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

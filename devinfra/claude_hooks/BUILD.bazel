@@ -33,13 +33,6 @@ py_library(
 )
 
 py_library(
-    name = "proxy_vars",
-    srcs = ["proxy_vars.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "settings",
     srcs = ["settings.py"],
     data = [
@@ -84,27 +77,12 @@ py_library(
 )
 
 py_library(
-    name = "proxy_credentials",
-    srcs = ["proxy_credentials.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pyjwt"],
-)
-
-py_library(
-    name = "statusline_models",
-    srcs = ["statusline_models.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
     name = "usage_api",
     srcs = ["usage_api.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//devinfra/claude_hooks/claude_api:usage",
         "@pypi//httpx",
         "@pypi//pydantic",
     ],
@@ -119,9 +97,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":managed_files",
-        ":proxy_setup",
-        ":proxy_vars",
         ":settings",
+        "//devinfra/claude_hooks/auth_proxy:setup",
         "//util/bazel:subprocess",
     ],
 )
@@ -206,26 +183,6 @@ py_library(
 )
 
 py_library(
-    name = "proxy_setup",
-    srcs = ["proxy_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":errors",
-        ":managed_files",
-        ":proxy_vars",
-        ":settings",
-        "//devinfra/claude_hooks/supervisor:client",
-        "//util:net",
-        "//util/bazel:runfiles",
-        "//util/bazel:subprocess",
-        "@pypi//cryptography",
-        "@pypi//mako",
-        "@pypi//opentelemetry_api",
-    ],
-)
-
-py_library(
     name = "precommit_setup",
     srcs = ["precommit_setup.py"],
     imports = ["../.."],
@@ -241,9 +198,9 @@ py_library(
     deps = [
         ":errors",
         ":managed_files",
-        ":proxy_setup",
-        ":proxy_vars",
         ":settings",
+        "//devinfra/claude_hooks/auth_proxy:setup",
+        "//devinfra/claude_hooks/auth_proxy:vars",
         "//devinfra/claude_hooks/supervisor:client",
         "//devinfra/claude_hooks/supervisor:service_utils",
         "@pypi//httpx",
@@ -282,10 +239,10 @@ py_library(
         ":debug",
         ":env_file",
         ":errors",
-        ":proxy_credentials",
-        ":proxy_setup",
-        ":proxy_vars",
         ":settings",
+        "//devinfra/claude_hooks/auth_proxy:credentials",
+        "//devinfra/claude_hooks/auth_proxy:setup",
+        "//devinfra/claude_hooks/auth_proxy:vars",
         "//devinfra/claude_hooks/supervisor:client",
         "//util:env",
     ],
@@ -295,7 +252,7 @@ py_library(
     name = "pre_tool_use_lib",
     srcs = ["pre_tool_use.py"],
     imports = ["../.."],
-    deps = ["@pypi//pydantic"],
+    deps = ["//devinfra/claude_hooks/claude_api:pre_tool_use"],
 )
 
 py_library(
@@ -303,8 +260,8 @@ py_library(
     srcs = ["statusline.py"],
     imports = ["../.."],
     deps = [
-        ":statusline_models",
         ":usage_api",
+        "//devinfra/claude_hooks/claude_api:statusline",
     ],
 )
 
@@ -328,18 +285,17 @@ py_library(
         ":nix_setup",
         ":otel",
         ":precommit_setup",
-        ":proxy_credentials",
-        ":proxy_setup",
         ":secrets_setup",
         ":settings",
         ":tmpfs_setup",
         ":tracing",
         "//devinfra:build_info",
+        "//devinfra/claude_hooks/auth_proxy:setup",
+        "//devinfra/claude_hooks/claude_api:hook_input",
         "//devinfra/claude_hooks/supervisor:setup",
         "//util:env",
         "@pypi//mako",
         "@pypi//opentelemetry_api",
-        "@pypi//pydantic",
     ],
 )
 
@@ -385,6 +341,7 @@ py_package(
     packages = [
         "devinfra.claude_hooks",
         "devinfra.claude_hooks.auth_proxy",
+        "devinfra.claude_hooks.claude_api",
         "devinfra.claude_hooks.supervisor",
         "tools",
         "util",
@@ -406,20 +363,23 @@ py_package(
         ":platform_utils",
         ":pre_tool_use_lib",
         ":precommit_setup",
-        ":proxy_credentials",
-        ":proxy_setup",
-        ":proxy_vars",
         ":secrets_setup",
         ":session_start_lib",
         ":settings",
         ":statusline_lib",
-        ":statusline_models",
         ":streaming",
         ":tmpfs_setup",
         ":tracing",
         ":usage_api",
+        "//devinfra/claude_hooks/auth_proxy:credentials",
         "//devinfra/claude_hooks/auth_proxy:main",
         "//devinfra/claude_hooks/auth_proxy:proxy",
+        "//devinfra/claude_hooks/auth_proxy:setup",
+        "//devinfra/claude_hooks/auth_proxy:vars",
+        "//devinfra/claude_hooks/claude_api:hook_input",
+        "//devinfra/claude_hooks/claude_api:pre_tool_use",
+        "//devinfra/claude_hooks/claude_api:statusline",
+        "//devinfra/claude_hooks/claude_api:usage",
         "//devinfra/claude_hooks/supervisor:client",
         "//devinfra/claude_hooks/supervisor:setup",
         "//util:net",
@@ -498,7 +458,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":conftest",
-        ":session_start_lib",
+        "//devinfra/claude_hooks/claude_api:hook_input",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -609,7 +569,7 @@ py_test(
     srcs = ["test_proxy.py"],
     imports = ["../.."],
     deps = [
-        ":proxy_credentials",
+        "//devinfra/claude_hooks/auth_proxy:credentials",
         "@pypi//pyjwt",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -623,8 +583,8 @@ py_test(
     deps = [
         ":conftest",
         ":statusline_lib",
-        ":statusline_models",
         ":usage_api",
+        "//devinfra/claude_hooks/claude_api:statusline",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -647,8 +607,8 @@ py_test(
     tags = ["e2e"],
     deps = [
         ":conftest",
-        ":proxy_setup",
         ":settings",
+        "//devinfra/claude_hooks/auth_proxy:setup",
         "//devinfra/claude_hooks/supervisor:client",
         "//devinfra/claude_hooks/supervisor:setup",
         "//devinfra/claude_hooks/testing:fixtures",

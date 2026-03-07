@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest_bazel
 
-from devinfra.claude_hooks import statusline_models as sl
+from devinfra.claude_hooks.claude_api.statusline import Input
 from devinfra.claude_hooks.statusline import _format_quota
 from devinfra.claude_hooks.usage_api import (
     CACHE_TTL_SECONDS,
@@ -60,7 +60,7 @@ FULL_INPUT_JSON = json.dumps(
 
 
 def test_parse_full_input():
-    data = sl.Input.model_validate_json(FULL_INPUT_JSON)
+    data = Input.model_validate_json(FULL_INPUT_JSON)
     assert data.session_id == "abc12345xyz"
     assert data.model is not None
     assert data.model.display_name == "Opus"
@@ -80,7 +80,7 @@ def test_parse_full_input():
 
 
 def test_parse_minimal_input():
-    data = sl.Input.model_validate_json("{}")
+    data = Input.model_validate_json("{}")
     assert data.session_id == ""
     assert data.model is None
     assert data.cost is None
@@ -88,13 +88,13 @@ def test_parse_minimal_input():
 
 def test_extra_fields_ignored():
     raw = json.dumps({"session_id": "abc", "some_future_field": True, "nested": {"x": 1}})
-    data = sl.Input.model_validate_json(raw)
+    data = Input.model_validate_json(raw)
     assert data.session_id == "abc"
 
 
 def test_null_context_usage():
     raw = json.dumps({"context_window": {"used_percentage": None, "remaining_percentage": None, "current_usage": None}})
-    data = sl.Input.model_validate_json(raw)
+    data = Input.model_validate_json(raw)
     assert data.context_window is not None
     assert data.context_window.used_percentage is None
     assert data.context_window.current_usage is None

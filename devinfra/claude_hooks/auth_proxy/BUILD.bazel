@@ -1,6 +1,39 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
+    name = "vars",
+    srcs = ["vars.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pyjwt"],
+)
+
+py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":vars",
+        "//devinfra/claude_hooks:errors",
+        "//devinfra/claude_hooks:settings",
+        "//devinfra/claude_hooks/supervisor:client",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/bazel:subprocess",
+        "@pypi//cryptography",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
     name = "proxy",
     srcs = ["proxy.py"],
     imports = ["../../.."],

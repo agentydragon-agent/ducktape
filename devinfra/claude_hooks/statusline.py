@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import sys
 
-from devinfra.claude_hooks import statusline_models as sl
+from devinfra.claude_hooks.claude_api.statusline import Input
 from devinfra.claude_hooks.usage_api import UsageResponse, get_cached_usage
 
 # ANSI escapes
@@ -31,7 +31,7 @@ def _format_quota(usage: UsageResponse | None) -> str:
 
 
 def main() -> None:
-    data = sl.Input.model_validate_json(sys.stdin.read())
+    data = Input.model_validate_json(sys.stdin.read())
 
     model_name = (data.model.display_name or data.model.id) if data.model else "unknown"
 

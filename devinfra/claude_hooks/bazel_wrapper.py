@@ -18,12 +18,12 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from devinfra.claude_hooks import proxy_setup
+from devinfra.claude_hooks.auth_proxy import setup as proxy_setup
+from devinfra.claude_hooks.auth_proxy.credentials import check_credential_expiry
+from devinfra.claude_hooks.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude_hooks.debug import log_entrypoint_debug
 from devinfra.claude_hooks.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
 from devinfra.claude_hooks.errors import AuthProxyError
-from devinfra.claude_hooks.proxy_credentials import check_credential_expiry
-from devinfra.claude_hooks.proxy_vars import PROXY_ENV_VARS
 from devinfra.claude_hooks.settings import HookSettings
 from devinfra.claude_hooks.supervisor.client import SupervisorClient
 from util.env import get_required_env, get_required_existing_path

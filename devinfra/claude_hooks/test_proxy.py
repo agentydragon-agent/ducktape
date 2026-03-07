@@ -9,7 +9,7 @@ import jwt
 import pytest
 import pytest_bazel
 
-from devinfra.claude_hooks.proxy_credentials import (
+from devinfra.claude_hooks.auth_proxy.credentials import (
     CredentialStatus,
     build_upstream_uri,
     check_credential_expiry,

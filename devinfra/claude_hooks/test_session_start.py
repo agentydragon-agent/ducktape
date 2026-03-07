@@ -15,7 +15,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.claude_hooks import settings
-from devinfra.claude_hooks.session_start import HookSource
+from devinfra.claude_hooks.claude_api.hook_input import HookSource
 from devinfra.claude_hooks.testing import shell_helpers
 from devinfra.claude_hooks.testing.fixtures import MockEgressProxyFixture, collect_supervisor_logs
 from devinfra.claude_hooks.testing.session_start_helpers import IsolatedDirs, run_session_start_hook, setup_hook_env

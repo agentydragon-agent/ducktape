@@ -28,8 +28,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-from devinfra.claude_hooks.proxy_setup import SSL_CA_ENV_VARS
-from devinfra.claude_hooks.proxy_vars import get_upstream_proxy_url
+from devinfra.claude_hooks.auth_proxy.setup import SSL_CA_ENV_VARS
+from devinfra.claude_hooks.auth_proxy.vars import get_upstream_proxy_url
 
 logger = logging.getLogger(__name__)
 

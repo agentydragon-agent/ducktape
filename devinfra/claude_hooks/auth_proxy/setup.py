@@ -20,8 +20,8 @@ from pathlib import Path
 from cryptography import x509
 from opentelemetry import trace
 
+from devinfra.claude_hooks.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude_hooks.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
-from devinfra.claude_hooks.proxy_vars import get_upstream_proxy_url
 from devinfra.claude_hooks.settings import HookSettings
 from devinfra.claude_hooks.supervisor.client import SupervisorClient
 from util.bazel.subprocess import python_env

@@ -25,9 +25,7 @@ if [[ ! -x "$NIXFMT_BIN" ]]; then
 
   ACTUAL_SHA256="$(sha256sum "$TMP" | cut -d' ' -f1)"
   if [[ "$ACTUAL_SHA256" != "$NIXFMT_SHA256" ]]; then
-    echo "ERROR: nixfmt checksum mismatch" >&2
-    echo "  expected: $NIXFMT_SHA256" >&2
-    echo "  got:      $ACTUAL_SHA256" >&2
+    echo "ERROR: nixfmt checksum mismatch: $NIXFMT_SHA256 != $ACTUAL_SHA256" >&2
     exit 1
   fi
 

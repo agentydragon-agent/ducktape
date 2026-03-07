@@ -1,2 +1,1 @@
 # Bazel macros for testing infrastructure.
-# NOTE: No aggregator target - use :defs.bzl for py_test wrapper
