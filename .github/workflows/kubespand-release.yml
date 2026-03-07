@@ -2,7 +2,7 @@
 #
 # Runs on:
 # - Every push to devel/main (tests always run, release only if changes detected)
-# - PRs that touch kubespan_agent files (tests only)
+# - PRs that touch kubespand files (tests only)
 # - Manual workflow_dispatch
 name: kubespand CI
 
@@ -11,7 +11,7 @@ on:
     branches: [devel, main]
   pull_request:
     paths:
-      - "cluster/kubespan_agent/**"
+      - "cluster/kubespand/**"
       - ".github/workflows/kubespand-release.yml"
   workflow_dispatch:
     inputs:
@@ -51,7 +51,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: kubespand
-          bazel_target: //cluster/kubespan_agent:kubespand
+          bazel_target: //cluster/kubespand:kubespand
           latest_release_tag: kubespand-latest
 
   test:
@@ -73,7 +73,7 @@ jobs:
             --test_output=all \
             --nocache_test_results \
             --test_env=CI=true \
-            //cluster/kubespan_agent/...
+            //cluster/kubespand/...
 
       - uses: ./.github/actions/collect-test-logs
         if: always()
@@ -111,7 +111,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build kubespand
-        run: bazel build --remote_download_toplevel //cluster/kubespan_agent:kubespand
+        run: bazel build --remote_download_toplevel //cluster/kubespand:kubespand
 
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
@@ -119,7 +119,7 @@ jobs:
       - name: Prepare binary for release
         run: |
           mkdir -p dist
-          cp bazel-bin/cluster/kubespan_agent/kubespand_/kubespand dist/
+          cp bazel-bin/cluster/kubespand/kubespand_/kubespand dist/
 
       - name: Create commit-tagged release
         uses: softprops/action-gh-release@v2
@@ -129,7 +129,7 @@ jobs:
           body: |
             kubespand — standalone KubeSpan daemon for non-Talos Linux.
 
-            Static x86_64 binary. See `cluster/kubespan_agent/README.md` for usage.
+            Static x86_64 binary. See `cluster/kubespand/README.md` for usage.
 
             Commit: ${{ github.sha }}
             Branch: ${{ github.ref_name }}
@@ -143,7 +143,7 @@ jobs:
           body: |
             kubespand — standalone KubeSpan daemon for non-Talos Linux.
 
-            Static x86_64 binary. See `cluster/kubespan_agent/README.md` for usage.
+            Static x86_64 binary. See `cluster/kubespand/README.md` for usage.
           files: dist/kubespand
 
       - uses: ./.github/actions/bump-nix-release

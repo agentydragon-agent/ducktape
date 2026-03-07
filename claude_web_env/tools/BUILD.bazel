@@ -3,8 +3,10 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 py_library(
     name = "manifest",
     srcs = ["manifest.py"],
+    data = ["//claude_web_env:exclusions.yaml"],
     imports = ["../.."],
     deps = [
+        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -53,4 +55,24 @@ py_binary(
     imports = ["../.."],
     main_module = "claude_web_env.tools.diff_manifests",
     deps = [":diff_manifests_lib"],
+)
+
+py_library(
+    name = "build_and_diff_lib",
+    srcs = ["build_and_diff.py"],
+    imports = ["../.."],
+    deps = [
+        ":capture_manifest_lib",
+        ":capture_versions_lib",
+        ":diff_manifests_lib",
+        ":manifest",
+        "//util/bazel:workspace",
+    ],
+)
+
+py_binary(
+    name = "build_and_diff",
+    imports = ["../.."],
+    main_module = "claude_web_env.tools.build_and_diff",
+    deps = [":build_and_diff_lib"],
 )

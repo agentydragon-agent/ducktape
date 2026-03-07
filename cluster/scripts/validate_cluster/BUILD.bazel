@@ -12,11 +12,11 @@
 #   bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//tools/testing:defs.bzl", "py_test")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 package(default_visibility = [
     "//cluster:__subpackages__",
-    "//tools/precommit:__pkg__",
+    "//devinfra/precommit:__pkg__",
 ])
 
 # ============================================================================

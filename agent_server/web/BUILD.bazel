@@ -99,7 +99,7 @@ js_run_devserver(
     args = ["dev"],
     chdir = package_name(),
     data = _SRCS + [":node_modules"],
-    tool = "//tools/frontend:vite",
+    tool = "//devinfra/frontend:vite",
 )
 
 # ESLint linting is handled via workspace-level aspect

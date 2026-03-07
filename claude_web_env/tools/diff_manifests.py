@@ -15,8 +15,8 @@ file and apply *very narrow* rules:
 
 Usage:
     bazel run //claude_web_env/tools:diff_manifests -- live.ndjson built.ndjson
-    bazel run //claude_web_env/tools:diff_manifests -- live.ndjson built.ndjson --exclusions exclusions.yaml
     bazel run //claude_web_env/tools:diff_manifests -- live.ndjson built.ndjson -o report.md
+    bazel run //claude_web_env/tools:diff_manifests -- live.ndjson built.ndjson --no-exclusions
 """
 
 import argparse
@@ -26,7 +26,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from claude_web_env.tools.manifest import Entry, Exclusions, load_exclusions, parse_ndjson
+from claude_web_env.tools.manifest import Entry, Exclusions, load_default_exclusions, load_exclusions, parse_ndjson
 
 REAL_DIFF_STATUSES = {"only_left", "only_right", "type_changed", "content_changed", "link_changed", "metadata_changed"}
 
@@ -345,11 +345,17 @@ def main() -> int:
     parser.add_argument("right", help="Right manifest (e.g., built container)")
     parser.add_argument("--left-label", default="live")
     parser.add_argument("--right-label", default="built")
-    parser.add_argument("--exclusions", help="JSON exclusion config file")
+    parser.add_argument("--exclusions", help="Exclusion config file (default: bundled exclusions.yaml)")
+    parser.add_argument("--no-exclusions", action="store_true", help="Disable all exclusions")
     parser.add_argument("-o", "--output", help="Output markdown report file")
     args = parser.parse_args()
 
-    excl = load_exclusions(args.exclusions)
+    if args.no_exclusions:
+        excl = Exclusions()
+    elif args.exclusions:
+        excl = load_exclusions(args.exclusions)
+    else:
+        excl = load_default_exclusions()
 
     print(f"Parsing {args.left}...", file=sys.stderr)
     left = parse_ndjson(args.left)

@@ -7,5 +7,5 @@ exports_files(
         "gterm-theme-release.yml",
         "headscale-cleanup-release.yml",
     ],
-    visibility = ["//tools/ci:__pkg__"],
+    visibility = ["//devinfra/ci:__pkg__"],
 )

@@ -48,7 +48,7 @@ Keep a **timestamped append-at-bottom markdown file** with:
 Use permanent storage structure (NOT temporary folders):
 
 ```
-investigations/
+debug/
   <issue_name>/
     LAB_NOTEBOOK.md
     <collection_script>.py

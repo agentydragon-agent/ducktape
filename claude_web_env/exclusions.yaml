@@ -184,7 +184,7 @@ only_in_live:
   # Live has extra mkcert CAs which can push system certs to .1/.2/etc.
   - "/etc/ssl/certs/*.[0-9]"
 
-  # mkcert session-specific dev CAs (installed by tools/claude_hooks/mkcert_setup.py)
+  # mkcert session-specific dev CAs (installed by devinfra/claude_hooks/mkcert_setup.py)
   - "/etc/ssl/certs/mkcert_*"
   - "/usr/local/share/ca-certificates/mkcert_*"
 

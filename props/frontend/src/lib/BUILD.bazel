@@ -1,5 +1,5 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library")
-load("//tools/js:openapi.bzl", "js_openapi_schema")
+load("//devinfra/js:openapi.bzl", "js_openapi_schema")
 
 package(default_visibility = [
     "//props/frontend:__pkg__",

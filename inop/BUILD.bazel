@@ -1,20 +1,13 @@
 """Instruction optimizer package."""
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/testing:defs.bzl", "py_test")
-
-# no-mypy: statsmodels (transitive dep of plotnine) has broken __init__.py structure
-# that causes mypy to error with "Source file found twice under different module names".
-# rules_mypy adds all transitive deps to MYPYPATH, and mypy's exclude pattern doesn't
-# help because the error occurs during module discovery, not import following.
-# See: https://github.com/python/mypy/issues/8944
+load("//devinfra/testing:defs.bzl", "py_test")
 
 py_test(
     name = "test_optimizer_two_iters",
     srcs = ["test_optimizer_two_iters.py"],
     imports = [".."],
     requires_docker = True,
-    tags = ["no-mypy"],  # see comment on inop library
     deps = [
         ":config",
         ":conftest",
@@ -57,10 +50,13 @@ py_library(
     ],
 )
 
+# no-mypy: statsmodels (transitive dep of plotnine) has broken module discovery
+# that rules_mypy can't work around (mypy.ini exclude doesn't help here).
+# See: https://github.com/python/mypy/issues/8944
 py_library(
     name = "plots",
     srcs = ["plots.py"],
-    tags = ["no-mypy"],  # statsmodels (transitive dep of plotnine) breaks mypy module discovery
+    tags = ["no-mypy"],
     visibility = ["//:__subpackages__"],
     deps = [
         "//inop/io:logging_utils",

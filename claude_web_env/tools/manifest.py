@@ -13,6 +13,8 @@ from typing import IO
 import yaml
 from pydantic import BaseModel
 
+from util.bazel.runfiles import get_required_path
+
 
 class Entry(BaseModel):
     """Single filesystem entry."""
@@ -126,7 +128,14 @@ def load_exclusions(path: str | None) -> Exclusions:
     return Exclusions.model_validate_json(text)
 
 
-def parse_ndjson(path: str) -> dict[str, Entry]:
+def load_default_exclusions() -> Exclusions:
+    """Load the bundled exclusions.yaml from runfiles."""
+    path = get_required_path("_main/claude_web_env/exclusions.yaml")
+    data = yaml.safe_load(path.read_text())
+    return Exclusions.model_validate(data)
+
+
+def parse_ndjson(path: str | Path) -> dict[str, Entry]:
     """Parse an NDJSON manifest file into a dict keyed by path."""
     entries: dict[str, Entry] = {}
     with Path(path).open() as fh:

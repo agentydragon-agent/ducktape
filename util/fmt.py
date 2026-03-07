@@ -1,7 +1,7 @@
 """Formatting utilities for displaying truncated collections.
 
 Provides generic functions for formatting collections with overflow indicators,
-used across multiple packages (props, tools/ci, gmail_archiver, etc.).
+used across multiple packages (props, devinfra/ci, gmail_archiver, etc.).
 """
 
 from __future__ import annotations

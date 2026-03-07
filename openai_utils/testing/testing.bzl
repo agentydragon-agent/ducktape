@@ -1,7 +1,7 @@
 """Test macros for tests with mock and live OpenAI API variants."""
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/testing:defs.bzl", "py_test")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 _DEFAULT_LIVE_ENV = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"]
 

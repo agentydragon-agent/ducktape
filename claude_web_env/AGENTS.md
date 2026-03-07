@@ -11,7 +11,7 @@
 
 The goal is **zero exclusions** that aren't:
 
-1. **Session start hook artifacts** — files created by `tools/claude_hooks` at runtime
+1. **Session start hook artifacts** — files created by `devinfra/claude_hooks` at runtime
 2. **Unavoidable runtime differences** — `/proc`, `/sys`, `/dev`, caches, runtime state
 
 If a difference can be fixed by updating the Dockerfile (pinning a version, adding a file), **fix it in the Dockerfile** rather than adding an exclusion. Exclusions should be a last resort for truly unavoidable runtime differences.
@@ -25,7 +25,7 @@ After making changes to the Dockerfile or `rootfs/` content, **always run a buil
 
 ```bash
 cd claude_web_env
-./tools/build_and_diff.sh
+bazel run //claude_web_env/tools:build_and_diff
 ```
 
 This script:
@@ -37,12 +37,12 @@ This script:
 If you only need to regenerate the diff (image already built):
 
 ```bash
-./tools/build_and_diff.sh --diff-only
+bazel run //claude_web_env/tools:build_and_diff -- --diff-only
 ```
 
 **Commit `diff_report.md`** along with your Dockerfile/rootfs changes. The diff report documents the current delta between built and live containers.
 
-> **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build_and_diff.sh`.
+> **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build_and_diff.py`.
 
 ### Tool Availability
 
@@ -58,7 +58,7 @@ freezer mock, no keyring injection needed. Docker data-root is on tmpfs at
 outbound traffic goes through the egress proxy in `$https_proxy`. Docker build
 containers do not inherit env vars from the build host, so the proxy must be
 passed explicitly as `--build-arg https_proxy=... --build-arg http_proxy=...`.
-`build_and_diff.sh` handles this automatically. Docker excludes predefined proxy
+`build_and_diff` handles this automatically. Docker excludes predefined proxy
 ARG names from the cache key, so session-specific JWT proxy URLs don't break
 layer caching.
 
@@ -130,7 +130,7 @@ For `environment_discovery.md` specifically, check:
 #### 5. Rebuild and diff
 
 ```bash
-./tools/build_and_diff.sh
+bazel run //claude_web_env/tools:build_and_diff
 ```
 
 Review `diff_report.md` and update `PLAN.md` with the new diff summary.

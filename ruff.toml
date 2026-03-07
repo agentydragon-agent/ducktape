@@ -11,7 +11,7 @@ target-version = "py313"
 
 # Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
 # .gitattributes is the source of truth; this list must stay in sync.
-# Reason: tools/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
+# Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
 # See README.md "Lint/Format Exclusions" section for details.
 exclude = [
     "k8s_old",
@@ -95,9 +95,8 @@ known-third-party = ["ansible", "docker"]
 # First-party = our workspace packages (ruff uses heuristics otherwise)
 # TODO: Auto-generate this list from Bazel once bazelized
 known-first-party = [
-    "tools",
+    "devinfra",
     "util",
-    "mcp_starter",
     "agent_core",
     "agent_pkg",
     "agent_server",
@@ -152,8 +151,8 @@ split-on-trailing-comma = false
 "py_detectors/tests/fixtures/**" = ["ALL"]
 "prompts/scans/scan_*.py" = ["N802"]
 # sys.path manipulation must happen before imports in uv run scripts and pytest
-"tools/ci/check_release.py" = ["E402"]
-"tools/ci/ci_decide.py" = ["E402"]
+"devinfra/ci/check_release.py" = ["E402"]
+"devinfra/ci/ci_decide.py" = ["E402"]
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)
 "**/conftest.py" = ["F401", "F811"]

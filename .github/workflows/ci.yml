@@ -1,5 +1,5 @@
-# AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
-# Regenerate with: bazel run //tools/ci:generate_ci_bin
+# AUTO-GENERATED from devinfra/ci/workflows.yaml - DO NOT EDIT DIRECTLY
+# Regenerate with: bazel run //devinfra/ci:generate_ci_bin
 name: CI
 "on":
   push:
@@ -56,7 +56,7 @@ jobs:
           echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
           echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
           echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV
-          echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV
+          echo "CI_WORKFLOWS_MANIFEST=$PWD/devinfra/ci/workflows.yaml" >> $GITHUB_ENV
           # Full build on main/master pushes; incremental everywhere else (PRs, devel, feature branches)
           if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master)$ ]]; then
             echo "CI_PUSH_STRATEGY=full" >> $GITHUB_ENV
@@ -65,7 +65,7 @@ jobs:
           fi
       - name: Compute CI decision
         id: decide
-        run: uv run tools/ci/ci_decide.py
+        run: uv run devinfra/ci/ci_decide.py
       - name: Upload targets files
         uses: actions/upload-artifact@v4
         if: always()

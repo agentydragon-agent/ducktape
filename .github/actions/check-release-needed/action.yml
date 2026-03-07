@@ -45,4 +45,4 @@ runs:
         LATEST_RELEASE_TAG: ${{ inputs.latest_release_tag }}
         CI_PUSH_STRATEGY: incremental
       run: |
-        uv run tools/ci/check_release.py
+        uv run devinfra/ci/check_release.py

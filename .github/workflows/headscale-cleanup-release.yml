@@ -1,5 +1,5 @@
-# AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
-# Regenerate with: bazel run //tools/ci:generate_ci_bin
+# AUTO-GENERATED from devinfra/ci/workflows.yaml - DO NOT EDIT DIRECTLY
+# Regenerate with: bazel run //devinfra/ci:generate_ci_bin
 name: headscale-cleanup Release
 "on":
   push:

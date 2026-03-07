@@ -1,6 +1,6 @@
 # Lint/Format Exclusions
 # This file is the source of truth for files excluded from linting and formatting.
-# tools/format/format.py reads these via `git check-attr`.
+# devinfra/format/format.py reads these via `git check-attr`.
 # For Python files, patterns must also be mirrored in ruff.toml exclude.
 # See README.md "Lint/Format Exclusions" section for details.
 

@@ -135,8 +135,8 @@ in `nix/nixos/packages/kubespand.nix`). Deployed automatically via NixOS config.
 For iterative development, override with local build:
 
 ```bash
-bazel build //cluster/kubespan_agent:kubespand
-scp bazel-bin/cluster/kubespan_agent/kubespand_/kubespand user@<vm>:/tmp/
+bazel build //cluster/kubespand:kubespand
+scp bazel-bin/cluster/kubespand/kubespand_/kubespand user@<vm>:/tmp/
 ssh user@<vm> 'sudo cp /tmp/kubespand /usr/local/bin/ && sudo systemctl restart kubespand'
 ```
 

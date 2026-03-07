@@ -80,7 +80,7 @@ def test_path_property(label: BazelLabel, expected: Path | None) -> None:
     [
         (BazelLabel(repo="", package=Path("cluster/charts/attic"), name="attic"), Path("cluster/charts/attic")),
         (BazelLabel(repo="", package=Path(), name="root"), Path()),
-        (BazelLabel(repo="", package=Path("tools/orphans"), name="find_orphans"), Path("tools/orphans")),
+        (BazelLabel(repo="", package=Path("devinfra/orphans"), name="find_orphans"), Path("devinfra/orphans")),
         # external → None
         (BazelLabel(repo="repo", package=Path("foo"), name="bar"), None),
     ],

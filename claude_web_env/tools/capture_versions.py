@@ -225,14 +225,8 @@ def yaml_dump(data: dict, indent: int = 0) -> str:
     return "\n".join(lines)
 
 
-def main() -> None:
-    if len(sys.argv) > 1 and sys.argv[1] == "--diff":
-        if len(sys.argv) < 3:
-            print("Usage: capture_versions.py --diff <previous-versions.yaml>", file=sys.stderr)
-            sys.exit(1)
-        diff_mode(sys.argv[2])
-        return
-
+def capture_versions_yaml() -> str:
+    """Capture all version info and return as YAML string."""
     captured = datetime.datetime.now(datetime.UTC).isoformat()
 
     data: dict[str, object] = {}
@@ -290,11 +284,25 @@ def main() -> None:
     # Claude Code
     data["claude_code"] = {"version": version_line("claude --version"), "path": run("which claude")}
 
-    print("# Claude Code Web Container Versions")
-    print(f"# Captured: {captured}")
-    print("# Use 'bazel run //claude_web_env/tools:capture_versions -- --diff <prev>.yaml' to compare")
-    print()
-    print(yaml_dump(data))
+    lines = [
+        "# Claude Code Web Container Versions",
+        f"# Captured: {captured}",
+        "# Use 'bazel run //claude_web_env/tools:capture_versions -- --diff <prev>.yaml' to compare",
+        "",
+        yaml_dump(data),
+    ]
+    return "\n".join(lines)
+
+
+def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "--diff":
+        if len(sys.argv) < 3:
+            print("Usage: capture_versions.py --diff <previous-versions.yaml>", file=sys.stderr)
+            sys.exit(1)
+        diff_mode(sys.argv[2])
+        return
+
+    print(capture_versions_yaml())
 
 
 def diff_mode(previous_path: str) -> None:

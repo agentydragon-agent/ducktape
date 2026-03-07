@@ -145,7 +145,7 @@ Style and convention rules for this repository. Package-specific elaborations be
   # CORRECT - main_module, no srcs
   py_binary(
       name = "session_start",
-      main_module = "tools.claude_hooks.session_start",
+      main_module = "devinfra.claude_hooks.session_start",
       imports = ["../.."],
       deps = [":session_start_lib"],
   )

@@ -1,6 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
-load("//tools/js:json_schema.bzl", "js_json_schema")
+load("//devinfra/js:json_schema.bzl", "js_json_schema")
 load(":defs.bzl", "visual_test")
 
 npm_link_all_packages(name = "node_modules")

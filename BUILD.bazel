@@ -9,7 +9,7 @@
 # gazelle:python_root
 # gazelle:python_generation_mode file
 # gazelle:python_default_visibility NONE
-# gazelle:python_manifest_file_name tools/gazelle_python.yaml
+# gazelle:python_manifest_file_name devinfra/gazelle_python.yaml
 #
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
@@ -59,7 +59,7 @@ js_library(
     name = "eslintrc",
     srcs = ["eslint.config.js"],
     tags = ["no-lint"],
-    visibility = ["//tools:__subpackages__"],
+    visibility = ["//devinfra:__subpackages__"],
     deps = [
         ":node_modules/@eslint/js",
         ":node_modules/@typescript-eslint/eslint-plugin",
@@ -75,13 +75,13 @@ js_library(
 )
 
 # Prettier configuration as js_library
-# Makes the config and its plugins available to the prettier binary in tools/ci
+# Makes the config and its plugins available to the prettier binary in devinfra/ci
 # no-lint: This is a config file, not a target to lint
 js_library(
     name = "prettierrc",
     srcs = [".prettierrc.cjs"],
     tags = ["no-lint"],
-    visibility = ["//tools:__subpackages__"],
+    visibility = ["//devinfra:__subpackages__"],
     deps = [
         ":node_modules/prettier-plugin-svelte",
         ":node_modules/svelte",

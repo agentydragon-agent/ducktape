@@ -14,7 +14,7 @@ on:
     branches: [devel, main]
   pull_request:
     paths:
-      - "tools/claude_hooks/**"
+      - "devinfra/claude_hooks/**"
       - ".github/workflows/claude-hooks-release.yml"
   workflow_dispatch:
     inputs:
@@ -56,7 +56,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: claude-hooks
-          bazel_target: //tools/claude_hooks:wheel
+          bazel_target: //devinfra/claude_hooks:wheel
           latest_release_tag: claude-hooks-latest
 
   # Unit and E2E tests run on all pushes and PRs
@@ -81,7 +81,7 @@ jobs:
             --test_tag_filters=-e2e \
             --test_env=CI=true \
             --test_env=GITHUB_ACTIONS=true \
-            //tools/claude_hooks:all
+            //devinfra/claude_hooks:all
 
       - name: Run e2e tests (no sandbox for podman)
         run: |
@@ -94,7 +94,7 @@ jobs:
             --test_env=CI=true \
             --test_env=GITHUB_ACTIONS=true \
             --test_env=PATH \
-            //tools/claude_hooks:all
+            //devinfra/claude_hooks:all
 
       - uses: ./.github/actions/collect-test-logs
         if: always()
@@ -136,17 +136,17 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build --remote_download_toplevel //tools/claude_hooks:wheel
+        run: bazel build --remote_download_toplevel //devinfra/claude_hooks:wheel
 
       - name: Install wheel
-        run: uv tool install bazel-bin/tools/claude_hooks/claude_hooks-*.whl
+        run: uv tool install bazel-bin/devinfra/claude_hooks/claude_hooks-*.whl
 
       - name: Test installed wheel (including podman integration)
         run: |
           # E2E tests run against the installed wheel (DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1).
           # PATH is passed through so podman (pre-installed on GitHub runners) is available.
           # --spawn_strategy=local is required for podman to create Unix sockets.
-          bazel test //tools/claude_hooks:test_session_start \
+          bazel test //devinfra/claude_hooks:test_session_start \
             --test_output=all \
             --nocache_test_results \
             --spawn_strategy=local \
@@ -184,7 +184,7 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Build wheel
-        run: bazel build --remote_download_toplevel //tools/claude_hooks:wheel
+        run: bazel build --remote_download_toplevel //devinfra/claude_hooks:wheel
 
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
@@ -192,7 +192,7 @@ jobs:
       - name: Prepare wheel for release
         run: |
           mkdir -p dist
-          cp bazel-bin/tools/claude_hooks/claude_hooks-*.whl dist/
+          cp bazel-bin/devinfra/claude_hooks/claude_hooks-*.whl dist/
 
       - name: Create commit-tagged release
         uses: softprops/action-gh-release@v2

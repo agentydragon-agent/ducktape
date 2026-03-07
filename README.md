@@ -13,19 +13,20 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 
 ### Active Development
 
-| Directory       | Purpose                          |
-| --------------- | -------------------------------- |
-| `agent_cli/`    | Agent REPL CLI                   |
-| `agent_server/` | FastAPI backend, runtime, policy |
-| `cluster/`      | k8s cluster                      |
-| `mcp_infra/`    | MCP compositor and utilities     |
-| `agent_pkg/`    | Agent package infrastructure     |
-| `tana/`         | Tana export toolkit              |
-| `wt/`           | Worktree management              |
-| `ansible/`      | System configuration             |
-| `docker/`       | Container images                 |
-| `dotfiles/`     | Shell configs, scripts           |
-| `props/`        | LLM critic eval system           |
+| Directory       | Purpose                             |
+| --------------- | ----------------------------------- |
+| `agent_cli/`    | Agent REPL CLI                      |
+| `agent_server/` | FastAPI backend, runtime, policy    |
+| `cluster/`      | k8s cluster                         |
+| `mcp_infra/`    | MCP compositor and utilities        |
+| `agent_pkg/`    | Agent package infrastructure        |
+| `tana/`         | Tana export toolkit                 |
+| `wt/`           | Worktree management                 |
+| `ansible/`      | System configuration                |
+| `docker/`       | Container images                    |
+| `dotfiles/`     | Shell configs, scripts              |
+| `devinfra/`     | Repo build, CI, lint infrastructure |
+| `props/`        | LLM critic eval system              |
 
 ### Less Active
 
@@ -142,13 +143,13 @@ common --remote_header=x-buildbuddy-api-key=YOUR_API_KEY_HERE
 
 This file is loaded via `try-import` in `~/.bazelrc` and is silently ignored if missing.
 
-Alternatively, run `tools/setup_buildbuddy.sh` to generate the file interactively.
+Alternatively, run `devinfra/setup_buildbuddy.sh` to generate the file interactively.
 
 ### Remote Execution (RBE)
 
 When BuildBuddy is configured via `setup_buildbuddy.sh`, remote execution is enabled automatically. Build and test actions run on BuildBuddy workers (falling back to local), using the `//:rbe_linux_x64` platform.
 
-The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <tools/rbe_image/Dockerfile>, based on BuildBuddy's `rbe-ubuntu24-04` image (which provides Docker CE, iptables-legacy for Firecracker compatibility, build-essential, python3, git, etc.). We layer on Rust toolchain deps, GHC's libtinfo5, and Chromium shared libraries. The image is built and pushed by the `rbe-image.yml` CI workflow.
+The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <devinfra/rbe_image/Dockerfile>, based on BuildBuddy's `rbe-ubuntu24-04` image (which provides Docker CE, iptables-legacy for Firecracker compatibility, build-essential, python3, git, etc.). We layer on Rust toolchain deps, GHC's libtinfo5, and Chromium shared libraries. The image is built and pushed by the `rbe-image.yml` CI workflow.
 
 ## Dotfiles and Shell Configuration
 
@@ -246,7 +247,7 @@ BuildBuddy Workflows provides fast, Bazel-native CI with remote execution. The `
 **Setup**:
 
 1. Enable BuildBuddy Workflows for this repository at <https://app.buildbuddy.io>
-2. BuildBuddy will automatically use your RBE configuration from `tools/setup_buildbuddy.sh`
+2. BuildBuddy will automatically use your RBE configuration from `devinfra/setup_buildbuddy.sh`
 3. Workflow runs appear in GitHub PRs as status checks
 
 **Architecture**:
@@ -284,7 +285,7 @@ bazel run //:requirements.update
 To format Bazel configuration files:
 
 ```bash
-bazel run //tools/lint:buildifier
+bazel run //devinfra/lint:buildifier
 ```
 
 ## Running GitHub Actions Locally

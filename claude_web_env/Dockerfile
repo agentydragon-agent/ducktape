@@ -17,7 +17,7 @@
 #
 # Prerequisites:
 #   Proprietary binaries must be captured first (run from within live container):
-#     ./tools/build_and_diff.sh --capture-binaries
+#     bazel run //claude_web_env/tools:build_and_diff -- --capture-binaries
 #   This writes reference/environment-manager.gz and reference/process_api.gz
 #   which the Dockerfile COPYs and decompresses at build time.
 

@@ -27,7 +27,7 @@ common --lockfile_mode=off
 # Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant).
 # To skip lint (e.g. for fast iterative builds): bazel build --config=nolint //...
 build --@rules_python//python/config_settings:python_version=3.13
-build --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%mypy_aspect,//tools/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
+build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
 build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 
 # Skip lint/typecheck. Bazel evaluates aspects lazily, so removing their
@@ -62,12 +62,12 @@ build:rbe --noslim_profile
 build:rbe --experimental_profile_include_target_label
 build:rbe --experimental_profile_include_primary_output
 
-# Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
+# Formatting: use bazel run //devinfra/format (fix) or //devinfra/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)
 
 # Stamping - embeds build metadata (commit hash, etc.) into build artifacts
 # Only targets that depend on ctx.info_file (like build_info_gen) are invalidated on commit change
-build --stamp --workspace_status_command=tools/stamp.sh
+build --stamp --workspace_status_command=devinfra/stamp.sh
 
 # Use shell-based bootstrap instead of system_python.  The default
 # (system_python) starts with `#!/usr/bin/env python3` which picks up whatever

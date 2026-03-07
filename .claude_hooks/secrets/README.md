@@ -41,7 +41,7 @@ into the kubeconfig so kubectl trusts the proxy's certificate.
 
 The kubeconfig secret is regenerated automatically by `bazel run //cluster:bootstrap` after
 cluster deployment. The bootstrap script uses `KubeconfigSecret` from
-<tools/claude_hooks/kubeconfig_setup.py> to build and encrypt the secret.
+<devinfra/claude_hooks/kubeconfig_setup.py> to build and encrypt the secret.
 
 ## Security
 

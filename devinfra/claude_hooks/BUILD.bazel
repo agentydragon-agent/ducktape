@@ -1,0 +1,664 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+# === Base modules (no internal deps) ===
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "streaming",
+    srcs = ["streaming.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "debug",
+    srcs = ["debug.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "managed_files",
+    srcs = ["managed_files.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "proxy_vars",
+    srcs = ["proxy_vars.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    data = [
+        "config/bazelrc.mako",
+        "config/nix.conf",
+        "//devinfra/claude_hooks/config/podman:containers.conf",
+        "//devinfra/claude_hooks/config/podman:crun_gvisor_wrapper.py",
+        "//devinfra/claude_hooks/config/podman:policy.json",
+        "//devinfra/claude_hooks/config/podman:registries.conf",
+    ],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "tracing",
+    srcs = ["tracing.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
+    name = "otel",
+    srcs = ["otel.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":settings",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_exporter_otlp_proto_http",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
+    name = "proxy_credentials",
+    srcs = ["proxy_credentials.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pyjwt"],
+)
+
+py_library(
+    name = "statusline_models",
+    srcs = ["statusline_models.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "usage_api",
+    srcs = ["usage_api.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+# === Modules with internal deps ===
+
+py_library(
+    name = "env_file",
+    srcs = ["env_file.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":managed_files",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":settings",
+        "//util/bazel:subprocess",
+    ],
+)
+
+py_library(
+    name = "buildbuddy_setup",
+    srcs = ["buildbuddy_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "cli_tools_setup",
+    srcs = ["cli_tools_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [":platform_utils"],
+)
+
+py_library(
+    name = "bazelisk_setup",
+    srcs = ["bazelisk_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":platform_utils",
+        ":settings",
+        "//util/bazel:subprocess",
+    ],
+)
+
+py_library(
+    name = "platform_utils",
+    srcs = ["platform_utils.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "kubeconfig_setup",
+    srcs = ["kubeconfig_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "mkcert_setup",
+    srcs = ["mkcert_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":platform_utils",
+        ":settings",
+        "@pypi//httpx",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
+    name = "nix_setup",
+    srcs = ["nix_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":managed_files",
+        ":settings",
+        ":streaming",
+    ],
+)
+
+py_library(
+    name = "tmpfs_setup",
+    srcs = ["tmpfs_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//psutil"],
+)
+
+py_library(
+    name = "proxy_setup",
+    srcs = ["proxy_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":managed_files",
+        ":proxy_vars",
+        ":settings",
+        "//devinfra/claude_hooks/supervisor:client",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/bazel:subprocess",
+        "@pypi//cryptography",
+        "@pypi//mako",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
+    name = "precommit_setup",
+    srcs = ["precommit_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "container_runtime",
+    srcs = ["container_runtime.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":errors",
+        ":managed_files",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":settings",
+        "//devinfra/claude_hooks/supervisor:client",
+        "//devinfra/claude_hooks/supervisor:service_utils",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "secrets_setup",
+    srcs = ["secrets_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":kubeconfig_setup",
+        "@pypi//pyrage",
+    ],
+)
+
+py_library(
+    name = "fork_remote_setup",
+    srcs = ["fork_remote_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
+)
+
+# === Libraries for binary sources ===
+# py_library targets for source files that are also py_binary entry points.
+# py_package depends on these (not the py_binary targets) to avoid pulling in
+# venv artifacts that break py_wheel packaging.
+
+py_library(
+    name = "bazel_wrapper_lib",
+    srcs = ["bazel_wrapper.py"],
+    imports = ["../.."],
+    deps = [
+        ":debug",
+        ":env_file",
+        ":errors",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":settings",
+        "//devinfra/claude_hooks/supervisor:client",
+        "//util:env",
+    ],
+)
+
+py_library(
+    name = "pre_tool_use_lib",
+    srcs = ["pre_tool_use.py"],
+    imports = ["../.."],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "statusline_lib",
+    srcs = ["statusline.py"],
+    imports = ["../.."],
+    deps = [
+        ":statusline_models",
+        ":usage_api",
+    ],
+)
+
+py_library(
+    name = "session_start_lib",
+    srcs = ["session_start.py"],
+    data = ["templates/session_context.mako"],
+    imports = ["../.."],
+    visibility = ["//devinfra/claude_hooks:__subpackages__"],
+    deps = [
+        ":bazelisk_setup",
+        ":buildbuddy_setup",
+        ":cli_tools_setup",
+        ":container_runtime",
+        ":debug",
+        ":env_file",
+        ":errors",
+        ":fork_remote_setup",
+        ":kubeconfig_setup",
+        ":mkcert_setup",
+        ":nix_setup",
+        ":otel",
+        ":precommit_setup",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":secrets_setup",
+        ":settings",
+        ":tmpfs_setup",
+        ":tracing",
+        "//devinfra:build_info",
+        "//devinfra/claude_hooks/supervisor:setup",
+        "//util:env",
+        "@pypi//mako",
+        "@pypi//opentelemetry_api",
+        "@pypi//pydantic",
+    ],
+)
+
+# === Binaries ===
+
+py_binary(
+    name = "pre_tool_use",
+    imports = ["../.."],
+    main_module = "devinfra.claude_hooks.pre_tool_use",
+    visibility = ["//visibility:public"],
+    deps = [":pre_tool_use_lib"],
+)
+
+py_binary(
+    name = "bazel_wrapper",
+    imports = ["../.."],
+    main_module = "devinfra.claude_hooks.bazel_wrapper",
+    visibility = ["//visibility:public"],
+    deps = [":bazel_wrapper_lib"],
+)
+
+py_binary(
+    name = "statusline",
+    imports = ["../.."],
+    main_module = "devinfra.claude_hooks.statusline",
+    visibility = ["//visibility:public"],
+    deps = [":statusline_lib"],
+)
+
+py_binary(
+    name = "session_start",
+    data = [":bazel_wrapper"],
+    imports = ["../.."],
+    main_module = "devinfra.claude_hooks.session_start",
+    visibility = ["//visibility:public"],
+    deps = [":session_start_lib"],
+)
+
+# === Packaging ===
+
+py_package(
+    name = "claude_hooks_pkg",
+    packages = [
+        "devinfra.claude_hooks",
+        "devinfra.claude_hooks.auth_proxy",
+        "devinfra.claude_hooks.supervisor",
+        "tools",
+        "util",
+        "util.bazel",
+    ],
+    deps = [
+        ":bazel_wrapper_lib",
+        ":bazelisk_setup",
+        ":buildbuddy_setup",
+        ":cli_tools_setup",
+        ":container_runtime",
+        ":env_file",
+        ":errors",
+        ":fork_remote_setup",
+        ":kubeconfig_setup",
+        ":managed_files",
+        ":mkcert_setup",
+        ":nix_setup",
+        ":platform_utils",
+        ":pre_tool_use_lib",
+        ":precommit_setup",
+        ":proxy_credentials",
+        ":proxy_setup",
+        ":proxy_vars",
+        ":secrets_setup",
+        ":session_start_lib",
+        ":settings",
+        ":statusline_lib",
+        ":statusline_models",
+        ":streaming",
+        ":tmpfs_setup",
+        ":tracing",
+        ":usage_api",
+        "//devinfra/claude_hooks/auth_proxy:main",
+        "//devinfra/claude_hooks/auth_proxy:proxy",
+        "//devinfra/claude_hooks/supervisor:client",
+        "//devinfra/claude_hooks/supervisor:setup",
+        "//util:net",
+        "//util/bazel:subprocess",
+    ],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "claude_hooks",
+    entry_points = {"console_scripts": [
+        "claude-pre-tool-use = devinfra.claude_hooks.pre_tool_use:main",
+        "claude-session-start = devinfra.claude_hooks.session_start:main",
+        "claude-statusline = devinfra.claude_hooks.statusline:main",
+    ]},
+    python_requires = ">=3.13",
+    requires = [
+        "cryptography",
+        "httpx",
+        "mako",
+        "opentelemetry-api",
+        "opentelemetry-exporter-otlp-proto-http",
+        "opentelemetry-sdk",
+        "platformdirs",
+        "psutil",
+        "pydantic",
+        "pydantic-settings",
+        "pyjwt",
+        "pyrage",
+        "pygit2",
+        "pyyaml",
+        "supervisor",
+        "tenacity",
+    ],
+    version = "0.1.0",
+    deps = [":claude_hooks_pkg"],
+)
+
+# === Tests ===
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pytest"],
+)
+
+py_test(
+    name = "test_pre_tool_use",
+    srcs = ["test_pre_tool_use.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":pre_tool_use_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_envrc_propagation",
+    srcs = ["test_envrc_propagation.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":env_file",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hook_input",
+    srcs = ["test_hook_input.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":session_start_lib",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start",
+    size = "medium",
+    srcs = ["test_session_start.py"],
+    data = [
+        ":session_start",
+        "//devinfra/claude_hooks/auth_proxy:run",
+        "//devinfra/claude_hooks/testdata/test_workspace:workspace_files",
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
+    ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    env_inherit = [
+        "CURL_CA_BUNDLE",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    ],
+    imports = ["../.."],
+    # local: keytool (Adoptium JDK) needs libjli.so which isn't on the RBE worker image
+    local = True,
+    tags = [
+        "e2e",
+        "external",
+    ],
+    deps = [
+        ":conftest",
+        ":settings",
+        "//devinfra/claude_hooks/testing:fixtures",
+        "//devinfra/claude_hooks/testing:session_start_helpers",
+        "//devinfra/claude_hooks/testing:shell_helpers",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start_podman",
+    size = "medium",
+    srcs = ["test_session_start_podman.py"],
+    data = [
+        ":session_start",
+        "//devinfra/claude_hooks/auth_proxy:run",
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
+    ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    env_inherit = [
+        "CURL_CA_BUNDLE",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    ],
+    imports = ["../.."],
+    # local: podman needs mount/networking capabilities blocked by linux-sandbox and RBE
+    local = True,
+    tags = [
+        "e2e",
+        "external",
+        "manual",  # podman path not used in prod currently
+    ],
+    deps = [
+        ":conftest",
+        "//devinfra/claude_hooks/testing:fixtures",
+        "//devinfra/claude_hooks/testing:session_start_helpers",
+        "//devinfra/claude_hooks/testing:shell_helpers",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_secrets_setup",
+    srcs = ["test_secrets_setup.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":kubeconfig_setup",
+        ":secrets_setup",
+        "@pypi//pyrage",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_proxy",
+    srcs = ["test_proxy.py"],
+    imports = ["../.."],
+    deps = [
+        ":proxy_credentials",
+        "@pypi//pyjwt",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_statusline",
+    srcs = ["test_statusline.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":statusline_lib",
+        ":statusline_models",
+        ":usage_api",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_integration",
+    srcs = ["test_integration.py"],
+    data = [
+        # The proxy binary is spawned as a subprocess by supervisor
+        "//devinfra/claude_hooks/auth_proxy:run",
+    ],
+    env_inherit = [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "SSL_CERT_FILE",
+        "REQUESTS_CA_BUNDLE",
+    ],
+    imports = ["../.."],
+    tags = ["e2e"],
+    deps = [
+        ":conftest",
+        ":proxy_setup",
+        ":settings",
+        "//devinfra/claude_hooks/supervisor:client",
+        "//devinfra/claude_hooks/supervisor:setup",
+        "//devinfra/claude_hooks/testing:fixtures",
+        "//devinfra/claude_hooks/testing:mock_egress_proxy",
+        "//util:net",
+        "@pypi//cryptography",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# === Linting ===

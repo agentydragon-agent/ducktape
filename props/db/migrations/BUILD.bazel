@@ -5,7 +5,7 @@
 # gazelle:exclude versions
 
 # Removed py_test load - using defs.bzl version
-load("//tools/testing:defs.bzl", "py_test")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 filegroup(
     name = "migrations",

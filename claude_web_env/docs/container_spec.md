@@ -49,7 +49,7 @@ JWT-based, passed via `Proxy-Authorization: Basic` header.
 
 The proxy returns non-standard HTTP 401 (not 407) with `www-authenticate` (not
 `Proxy-Authenticate`), which breaks Java's `Authenticator` class. See
-`tools/claude_hooks/proxy_setup.py` for the local proxy workaround.
+`devinfra/claude_hooks/proxy_setup.py` for the local proxy workaround.
 
 ## gVisor Constraints
 
@@ -62,7 +62,7 @@ The proxy returns non-standard HTTP 401 (not 407) with `www-authenticate` (not
 ## Nix
 
 Nix is installed with a minimal store (~30 packages). `sandbox = false` is
-required (gVisor breaks the build sandbox). See `tools/claude_hooks/nix_setup.py`.
+required (gVisor breaks the build sandbox). See `devinfra/claude_hooks/nix_setup.py`.
 
 ## Users
 

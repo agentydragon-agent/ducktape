@@ -2,7 +2,7 @@
 
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//tools/testing:defs.bzl", "py_test")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 def _create_code_tar_impl(ctx):
     """Implementation for create_code_tar rule."""
