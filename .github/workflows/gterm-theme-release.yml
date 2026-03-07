@@ -1,6 +1,6 @@
 # AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
 # Regenerate with: bazel run //tools/ci:generate_ci_bin
-name: gnome-terminal-profile-switcher Release
+name: gterm-theme Release
 "on":
   push:
     branches:
@@ -37,22 +37,22 @@ jobs:
         id: check
         uses: ./.github/actions/check-release-needed
         with:
-          package_prefix: gnome-terminal-profile-switcher
-          bazel_target: //gnome_terminal_profile_switcher:wheel
-          latest_release_tag: gnome-terminal-profile-switcher-latest
+          package_prefix: gterm-theme
+          bazel_target: //gterm_theme:wheel
+          latest_release_tag: gterm-theme-latest
   release:
     needs: check
     if: needs.check.outputs.release_needed == 'true' || inputs.force_release == true
     uses: ./.github/workflows/python-wheel-release.yml
     with:
-      package_name: gnome-terminal-profile-switcher
-      wheel_name: gnome_terminal_profile_switcher
-      bazel_target: //gnome_terminal_profile_switcher:wheel
-      wheel_path: bazel-bin/gnome_terminal_profile_switcher
+      package_name: gterm-theme
+      wheel_name: gterm_theme
+      bazel_target: //gterm_theme:wheel
+      wheel_path: bazel-bin/gterm_theme
       release_body: |
-        gnome-terminal-profile-switcher wheel.
+        gterm-theme wheel (GNOME Terminal theme follower).
 
         **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
-      latest_release_tag: gnome-terminal-profile-switcher-latest
+      latest_release_tag: gterm-theme-latest
       apt_packages: libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev pkg-config
     secrets: inherit

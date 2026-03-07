@@ -4,7 +4,7 @@ exports_files(
         "bazel-harbor-images.yml",
         "ci.yml",
         "ducktape-release.yml",
-        "gnome-terminal-profile-switcher-release.yml",
+        "gterm-theme-release.yml",
         "headscale-cleanup-release.yml",
     ],
     visibility = ["//tools/ci:__pkg__"],

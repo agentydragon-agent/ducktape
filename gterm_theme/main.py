@@ -1,4 +1,4 @@
-"""GNOME terminal profile switching functionality."""
+"""GNOME Terminal theme follower — copies a named profile's colors to a mutable "Auto" profile."""
 
 import ast
 import subprocess

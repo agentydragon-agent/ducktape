@@ -68,7 +68,7 @@ actions:
     bazel_commands:
       # Build all wheel targets for potential release
       # These are built but not published (GitHub Actions handles publishing)
-      # Note: gnome_terminal_profile_switcher:wheel excluded (requires system deps: libdbus-1-dev, libgirepository1.0-dev)
+      # Note: gterm_theme:wheel excluded (requires system deps: libdbus-1-dev, libgirepository1.0-dev)
       - >
         build --config=rbe
         //:wheel

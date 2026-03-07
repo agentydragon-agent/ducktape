@@ -103,11 +103,11 @@ releases:
 
       CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
 
-  gnome-terminal-profile-switcher:
-    bazel_target: //gnome_terminal_profile_switcher:wheel
+  gterm-theme:
+    bazel_target: //gterm_theme:wheel
     apt_packages: [libcairo2-dev, libgirepository-2.0-dev, libdbus-1-dev, libxcb1-dev, pkg-config]
     release_body: |
-      gnome-terminal-profile-switcher wheel.
+      gterm-theme wheel (GNOME Terminal theme follower).
 
       **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
 

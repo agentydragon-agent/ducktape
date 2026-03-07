@@ -119,7 +119,7 @@ known-first-party = [
     "finance",
     "git_commit_ai",
     "gmail_archiver",
-    "gnome_terminal_profile_switcher",
+    "gterm_theme",
     "habitify",
     "homeassistant",
     "indoor_aqi",

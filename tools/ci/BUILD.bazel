@@ -12,7 +12,7 @@ filegroup(
         "//.github/workflows:bazel-harbor-images.yml",
         "//.github/workflows:ci.yml",
         "//.github/workflows:ducktape-release.yml",
-        "//.github/workflows:gnome-terminal-profile-switcher-release.yml",
+        "//.github/workflows:gterm-theme-release.yml",
         "//.github/workflows:headscale-cleanup-release.yml",
     ],
 )

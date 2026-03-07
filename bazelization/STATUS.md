@@ -42,11 +42,11 @@ Shell script categories: CI/Ansible (`.github/scripts/`, `ansible/scripts/`), Do
 
 ### Manual Targets (require special environment)
 
-| Target                                | Reason                      |
-| ------------------------------------- | --------------------------- |
-| `//gnome_terminal_profile_switcher:*` | Requires DBUS/GNOME session |
-| `//mcp_starter:integration_test`      | Requires running MCP server |
-| `//website:*`                         | Haskell/stack build system  |
+| Target                           | Reason                      |
+| -------------------------------- | --------------------------- |
+| `//gterm_theme:*`                | Requires DBUS/GNOME session |
+| `//mcp_starter:integration_test` | Requires running MCP server |
+| `//website:*`                    | Haskell/stack build system  |
 
 ## Reference
 

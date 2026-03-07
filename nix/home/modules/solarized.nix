@@ -43,7 +43,7 @@ in
     ]
     ++ lib.optionals enableGui [
       gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher
-      # TODO: Add gnome-terminal-profile-switcher once wheel is published to GitHub Releases
+      # TODO: Add gterm-theme once wheel is published to GitHub Releases
     ];
 
   # Bat theme environment variables for light/dark mode switching
