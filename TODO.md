@@ -9,7 +9,6 @@
 ## Dotfiles
 
 - [ ] Merge agentydragon & gpd dotfiles (rcrc)
-- [ ] Use rcm's `symlink_dirs` feature
 
 ## System Configuration
 
