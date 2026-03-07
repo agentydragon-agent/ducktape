@@ -21,7 +21,6 @@ Run `bazel run //tools/orphans:find_orphans` to list orphaned files. The checker
 ### High Priority
 
 - **Unified check command (Phase 3)**: Create `bazel check //...` that runs all linters + type checkers. Simplify pre-commit to single command. Update CI to use it.
-- **Migrate `claude_optimizer` Docker images**: 8 variant Dockerfiles in `claude/claude_optimizer/docker/` (go, node, python, python-data, ruby, rust, system, claude-base).
 
 ### Lower Priority
 

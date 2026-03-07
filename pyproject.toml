@@ -165,7 +165,6 @@ dependencies = [
     "pyrage>=1.0",
     "supervisor>=4.2",
 
-    # claude_optimizer
     "numpy",
 
     # git_commit_ai

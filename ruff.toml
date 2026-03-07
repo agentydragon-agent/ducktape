@@ -107,7 +107,6 @@ known-first-party = [
     "claude_hooks",
     "claude_linter",
     "claude_linter_v2",
-    "claude_optimizer",
     "cli_util",
     "cotrl",
     "dbus_fast_example",
