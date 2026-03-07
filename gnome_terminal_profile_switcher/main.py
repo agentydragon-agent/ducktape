@@ -1,4 +1,4 @@
-# GNOME terminal profile switching functionality
+"""GNOME terminal profile switching functionality."""
 
 import ast
 import subprocess
@@ -12,11 +12,7 @@ from gi.repository import Gio
 
 _PROFILE = flags.DEFINE_string("profile", None, "Name or UUID of profile to set everywhere")
 
-# Source profiles to copy colors from in auto mode
-THEME_SOURCE_PROFILES = {"light": "Solarized Light", "dark": "Solarized Dark"}
-
 AUTO_PROFILE_NAME = "Auto"
-GSETTINGS_PROFILES_LIST = Gio.Settings.new("org.gnome.Terminal.ProfilesList")
 
 
 class GSettingsProfiles:
@@ -38,9 +34,9 @@ class GSettingsProfiles:
         """Get the default profile UUID from gsettings."""
         return UUID(self.settings.get_string("default"))
 
-
-def gsettings_set_default_profile_uuid(profile_uuid: UUID) -> None:
-    GSETTINGS_PROFILES_LIST.set_string("default", str(profile_uuid))
+    @default_profile_uuid.setter
+    def default_profile_uuid(self, profile_uuid: UUID) -> None:
+        self.settings.set_string("default", str(profile_uuid))
 
 
 class ProfileDConf:
@@ -51,7 +47,7 @@ class ProfileDConf:
         """Construct the dconf path for the given property."""
         return f"/org/gnome/terminal/legacy/profiles:/:{self.profile_uuid}/{property_name}"
 
-    def read_property(self, property_name: str) -> str | bool:
+    def read_property(self, property_name: str) -> str | bool | list[str]:
         try:
             out = subprocess.check_output(["dconf", "read", self._path(property_name)]).decode("utf-8").strip()
             if not out:
@@ -63,7 +59,9 @@ class ProfileDConf:
             value = ast.literal_eval(out)
             if isinstance(value, str | bool):
                 return value
-            raise ValueError(f"Unsupported dconf value type: {type(value)}")
+            if isinstance(value, list) and all(isinstance(x, str) for x in value):
+                return value
+            raise TypeError(f"Unsupported dconf value type: {type(value)}")
         except subprocess.CalledProcessError as e:
             raise KeyError(f"Reading '{property_name}' from {self.profile_uuid} failed") from e
 
@@ -78,7 +76,7 @@ class ProfileDConf:
         assert isinstance(name, str), "Name must be a string"
         self.write_property("visible-name", name)
 
-    def write_property(self, property_name: str, value: bool | str) -> None:
+    def write_property(self, property_name: str, value: bool | str | list[str]) -> None:
         """Write a property to the profile."""
         if value is True:
             v = "true"
@@ -90,7 +88,7 @@ class ProfileDConf:
         elif isinstance(value, list) and all(isinstance(x, str) for x in value):
             v = repr(value)
         else:
-            raise ValueError(f"Unsupported value type: {type(value)}. Must be bool or str.")
+            raise TypeError(f"Unsupported value type: {type(value)}. Must be bool, str, or list[str].")
         subprocess.check_call(["dconf", "write", self._path(property_name), v])
 
 
@@ -120,11 +118,11 @@ def copy_profile_colors(source_uuid: UUID, target_uuid: UUID) -> None:
         target_dconf.write_property(prop, value)
 
 
-def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
+def get_profile_uuid_by_name_mapping(gsettings_profiles: GSettingsProfiles) -> dict[str, UUID]:
     """Build a mapping of profile names to UUIDs."""
     uuid_by_name: dict[str, UUID] = {}
 
-    for profile_uuid in GSettingsProfiles().profile_uuids:
+    for profile_uuid in gsettings_profiles.profile_uuids:
         try:
             name = ProfileDConf(profile_uuid).visible_name
         except (KeyError, AssertionError, ValueError) as e:
@@ -138,10 +136,9 @@ def get_profile_uuid_by_name_mapping() -> dict[str, UUID]:
     return uuid_by_name
 
 
-def create_auto_profile():
+def create_auto_profile(gsettings_profiles: GSettingsProfiles):
     auto_uuid = uuid.uuid4()
 
-    gsettings_profiles = GSettingsProfiles()
     gsettings_profiles.profile_uuids = gsettings_profiles.profile_uuids | {auto_uuid}
 
     auto_dconf = ProfileDConf(auto_uuid)
@@ -149,9 +146,9 @@ def create_auto_profile():
     return auto_uuid
 
 
-def create_or_update_auto_profile(source_profile_name: str) -> UUID:
+def create_or_update_auto_profile(source_profile_name: str, gsettings_profiles: GSettingsProfiles) -> UUID:
     """Create or update the auto profile with colors from the specified theme."""
-    uuid_by_name = get_profile_uuid_by_name_mapping()
+    uuid_by_name = get_profile_uuid_by_name_mapping(gsettings_profiles)
 
     # Check if auto profile exists
     auto = [name for name in uuid_by_name if name.startswith(AUTO_PROFILE_NAME)]
@@ -161,7 +158,7 @@ def create_or_update_auto_profile(source_profile_name: str) -> UUID:
         auto_uuid = uuid_by_name[auto[0]]
         logging.info(f"Found existing Auto profile: {auto_uuid}")
     else:
-        auto_uuid = create_auto_profile()
+        auto_uuid = create_auto_profile(gsettings_profiles)
         logging.info(f"Created new Auto profile: {auto_uuid}")
 
     logging.info(f"Applying {source_profile_name} colors to Auto profile")
@@ -197,10 +194,9 @@ def dbus_update_profile_on_all_windows(new_uuid: UUID) -> None:
 
 
 def _main(_):
-    # Create or update the auto profile with colors from the profile
-    auto_uuid = create_or_update_auto_profile(_PROFILE.value)
-    # Set as default
-    gsettings_set_default_profile_uuid(auto_uuid)
+    gsettings_profiles = GSettingsProfiles()
+    auto_uuid = create_or_update_auto_profile(_PROFILE.value, gsettings_profiles)
+    gsettings_profiles.default_profile_uuid = auto_uuid
 
 
 def main():
