@@ -16,21 +16,16 @@ ip route show
 
 # Is there a link? (quick check)
 cat /sys/class/net/enp12s0/carrier    # 1 = link, 0 = no link
-cat /sys/class/net/enp11s0/carrier
 
 # Detailed NIC status (speed, duplex, link)
 ethtool enp12s0
-ethtool enp11s0
 ```
 
 ## Bring Interfaces Up/Down
 
 ```bash
-# Bring a NIC up
+# Bring a NIC up/down
 ip link set enp12s0 up
-ip link set enp11s0 up
-
-# Bring a NIC down
 ip link set enp12s0 down
 
 # Restart all networking (re-reads /etc/network/interfaces)
