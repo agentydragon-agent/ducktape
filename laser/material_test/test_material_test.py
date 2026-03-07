@@ -171,7 +171,7 @@ def test_project_xml_valid():
 
 def _minimal_config(**kwargs) -> GridConfig:
     base = {
-        "x": AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10, 20, 30]),
+        "x": AxisConfig(param=CutParam.POWER_PCT, values=[10, 20, 30]),
         "y": AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
     }
     base.update(kwargs)
@@ -180,7 +180,7 @@ def _minimal_config(**kwargs) -> GridConfig:
 
 def test_grid_config_minimal():
     cfg = _minimal_config()
-    assert cfg.x.param == CutParam.POWER_MAX_PCT
+    assert cfg.x.param == CutParam.POWER_PCT
     assert cfg.y.values == [50, 100]
 
 
@@ -188,6 +188,22 @@ def test_grid_config_rejects_same_axes():
     with pytest.raises(Exception, match="must be different"):
         GridConfig(
             x=AxisConfig(param=CutParam.SPEED_MM_S, values=[10, 20]),
+            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
+        )
+
+
+def test_grid_config_rejects_power_min_pct_axis():
+    with pytest.raises(Exception, match="use 'power_pct'"):
+        GridConfig(
+            x=AxisConfig(param=CutParam.POWER_MIN_PCT, values=[10, 20]),
+            y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
+        )
+
+
+def test_grid_config_rejects_power_max_pct_axis():
+    with pytest.raises(Exception, match="use 'power_pct'"):
+        GridConfig(
+            x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10, 20]),
             y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]),
         )
 
@@ -227,7 +243,7 @@ def test_grid_config_from_toml():
     data = tomllib.loads(toml_str)
     cfg = GridConfig.model_validate(data)
     assert cfg.title == "Test"
-    assert cfg.x.param == CutParam.POWER_MAX_PCT
+    assert cfg.x.param == CutParam.POWER_PCT
     assert cfg.cut.z_offset_mm == -0.1
 
 
@@ -241,7 +257,7 @@ def _make_project(
     resolved_y = y_values if y_values is not None else [50.0, 100.0]
     cfg = GridConfig(
         title="Test grid",
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=resolved_x, label="Power [%]"),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=resolved_x, label="Power [%]"),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=resolved_y, label="Speed [mm/s]"),
         **kwargs,
     )
@@ -274,7 +290,7 @@ def test_generate_cell_cut_settings_have_correct_params():
     """Each cell layer should have x_param and y_param set correctly.
 
     Cells are sorted by ascending energy (max_power * num_passes / speed).
-    x=power_max_pct [10, 20], y=speed_mm_s [50, 100]:
+    x=power_pct [10, 20], y=speed_mm_s [50, 100]:
       (r0,c0) 10/50=0.2, (r0,c1) 20/50=0.4, (r1,c0) 10/100=0.1, (r1,c1) 20/100=0.2
     Sorted: 0.1 → 0.2 → 0.2 → 0.4
     """
@@ -300,7 +316,7 @@ def test_generate_cell_cut_settings_have_correct_params():
 def test_cells_sorted_by_ascending_energy():
     """Cell layers must be in ascending energy order (max_power * num_passes / speed)."""
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 50.0, 90.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 50.0, 90.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[25.0, 100.0, 200.0]),
     )
     project = generate(cfg)
@@ -312,7 +328,7 @@ def test_cells_sorted_by_ascending_energy():
 def test_cells_sorted_by_energy_across_subgrids():
     """Energy sorting is global across sub-grids, not per-sub-grid."""
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 50.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 50.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[100.0]),
         cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 5]),
     )
@@ -341,7 +357,7 @@ def test_generate_xml_round_trips():
 
 def test_generate_with_cell_text():
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS),
     )
@@ -353,7 +369,7 @@ def test_generate_with_cell_text():
 
 def test_generate_no_labels():
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0], show_labels=False),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0], show_labels=False),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0], show_labels=False),
         auto_subtitle=False,  # suppress auto-generated subtitle too
     )
@@ -367,7 +383,7 @@ def test_generate_auto_subtitle_omits_varied_params():
     cfg = GridConfig(
         title="T",
         auto_subtitle=True,
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0, 100.0]),
         cut=CutConfig(z_offset_mm=-0.1, kerf_mm=0.05),
     )
@@ -383,7 +399,7 @@ def test_example_config_parses():
     with path.open("rb") as f:
         data = tomllib.load(f)
     cfg = GridConfig.model_validate(data)
-    assert cfg.x.param == CutParam.POWER_MAX_PCT
+    assert cfg.x.param == CutParam.POWER_PCT
     assert cfg.y.param == CutParam.Z_PER_PASS_MM
     assert cfg.border.enabled is True
     assert cfg.border.power_pct == 10.0
@@ -426,7 +442,7 @@ def test_grid_config_4param():
 def test_grid_config_rejects_duplicate_cols_param():
     """cols.param must differ from x.param and y.param."""
     with pytest.raises(Exception, match="must be different"):
-        _minimal_config(cols=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10, 20]))
+        _minimal_config(cols=AxisConfig(param=CutParam.POWER_PCT, values=[10, 20]))
 
 
 def test_grid_config_rejects_duplicate_rows_param():
@@ -485,7 +501,7 @@ def test_generate_4d_rect_count():
 def test_generate_3d_outer_params_applied():
     """Outer cols param (num_passes) should be applied to each sub-grid's cells."""
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 3]),
     )
@@ -509,7 +525,7 @@ def test_generate_4d_outer_params_applied():
     order (row0 before row1).
     """
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
         rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3, -0.5]),
@@ -555,7 +571,7 @@ def test_auto_subtitle_excludes_outer_axes():
     cfg = GridConfig(
         title="T",
         auto_subtitle=True,
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
         rows=AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3]),
@@ -604,13 +620,13 @@ def test_generate_rows_only():
 def test_subgrid_gap_affects_layout():
     """Different subgrid_gap_mm should produce different rect positions."""
     cfg_small = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
         geometry=GeometryConfig(subgrid_gap_mm=5.0),
     )
     cfg_large = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
         geometry=GeometryConfig(subgrid_gap_mm=50.0),
@@ -641,7 +657,7 @@ def test_param_short_label():
 
 def test_generate_legend_cell():
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS, show_legend=True),
     )
@@ -657,7 +673,7 @@ def test_generate_legend_cell():
 
 def test_generate_legend_not_shown_when_no_cell_content():
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         labels=LabelsConfig(cell_text=CellContent.NOTHING, show_legend=True),
     )
@@ -669,7 +685,7 @@ def test_generate_legend_not_shown_when_no_cell_content():
 def test_generate_legend_shown_when_labels_hidden():
     """Legend is shown even when axis labels are disabled."""
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0], show_labels=False),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0], show_labels=False),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0], show_labels=False),
         labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS, show_legend=True),
         auto_subtitle=False,
@@ -682,7 +698,7 @@ def test_generate_legend_shown_when_labels_hidden():
 def test_generate_legend_default_off():
     """Default show_legend=False should not add legend rect."""
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_MAX_PCT, values=[10.0, 20.0]),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
         y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
         labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS),
     )

@@ -10,7 +10,7 @@ auto_subtitle = true
 
 # ── Inner X axis (columns within each sub-grid) ─────────────────────────────────
 [x]
-param = "power_max_pct"
+param = "power_pct"
 values = [12, 15, 18]
 label = "Power [%]"
 
@@ -30,8 +30,7 @@ values = [1, 2, 3]
 label = "Passes"
 
 [cut]
-power_min_pct = 10
-power_max_pct = 15
+power_pct = 15
 speed_mm_s = 15
 z_offset_mm = -0.1
 num_passes = 1

@@ -23,15 +23,13 @@ auto_subtitle = true
 #
 # Available params:
 #   power_pct      — Min and max power set together (%)
-#   power_min_pct  — Minimum power only (%)
-#   power_max_pct  — Maximum power only (%)
 #   speed_mm_s     — Cut speed (mm/s)
 #   kerf_mm        — Kerf compensation offset (mm)
 #   z_offset_mm    — Z offset at start of layer (mm)
 #   z_per_pass_mm  — Z step per pass, typically ≤ 0 (mm)
 #   num_passes     — Number of passes (integer)
 [x]
-param = "power_max_pct"
+param = "power_pct"
 values = [12, 13.5, 15, 16.5, 18]
 label = "Power [%]"
 show_labels = true
@@ -58,8 +56,7 @@ show_labels = true
 # num_passes:    Number of passes (default: 1)
 [cut]
 # power_pct = 80       # shorthand: sets both power_min_pct and power_max_pct
-power_min_pct = 10
-power_max_pct = 80     # overridden by x axis
+power_pct = 80         # overridden by x axis
 speed_mm_s = 15
 kerf_mm = 0.1
 z_offset_mm = -0.1
