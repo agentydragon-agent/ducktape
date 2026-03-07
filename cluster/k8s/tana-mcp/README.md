@@ -87,7 +87,7 @@ curl http://localhost:8263/health
   state across normal pod restarts but Tana may expire the session after
   prolonged inactivity.
 - **Updating Tana version**: Change `TANA_VERSION` in
-  `docker/tana-mcp/Dockerfile` and push. CI rebuilds the image and Flux
+  `tana/mcp_server/Dockerfile` and push. CI rebuilds the image and Flux
   auto-deploys.
 
 ## Secrets

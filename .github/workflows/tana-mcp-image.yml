@@ -1,7 +1,7 @@
 # Build and push the Tana MCP Desktop image to Harbor.
 #
 # Triggers:
-#   - push to devel changing docker/tana-mcp/** (tags :latest too)
+#   - push to devel changing tana/mcp_server/** (tags :latest too)
 #   - workflow_dispatch: manual trigger (tags :latest too)
 #   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
 name: Tana MCP Image
@@ -9,7 +9,7 @@ name: Tana MCP Image
 on:
   push:
     branches: [devel]
-    paths: ["docker/tana-mcp/**"]
+    paths: ["tana/mcp_server/**"]
   workflow_dispatch:
   workflow_call:
 
@@ -31,6 +31,6 @@ jobs:
       - uses: ./.github/actions/harbor-build-push
         with:
           image: registry.allegedly.works/ducktape/tana-desktop
-          context: docker/tana-mcp
+          context: tana/mcp_server
           harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           harbor_robot_token: ${{ secrets.HARBOR_ROBOT_TOKEN }}
