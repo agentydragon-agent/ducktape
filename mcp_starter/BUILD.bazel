@@ -58,8 +58,6 @@ py_test(
 py_test(
     name = "integration_test",
     srcs = ["integration_test.py"],
-    # Requires running MCP server
-    tags = ["manual"],
     deps = [
         ":conftest",
         ":main",

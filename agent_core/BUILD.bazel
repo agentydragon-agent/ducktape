@@ -347,10 +347,7 @@ py_test(
 live_openai_py_test(
     name = "test_ollama_reasoning",
     srcs = ["test_ollama_reasoning.py"],
-    tags = [
-        "manual",
-        "ollama",
-    ],
+    tags = ["ollama"],
     deps = [
         ":agent",
         ":conftest",
