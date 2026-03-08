@@ -498,7 +498,7 @@ class AgentContainer:
     async def start(self, *, mcp_config: MCPConfig) -> None:
         self._ensure_actor()
         await self._post_msg(_StartMsg(mcp_config=mcp_config))
-        await self._ready.wait()
+        self._ready.set()
 
     async def close(self) -> CloseResult:
         if self._actor_task is None:
