@@ -3,6 +3,9 @@ set -e
 
 RESOLUTION="${RESOLUTION:-1280x800x24}"
 
+# Start dbus session bus (required by Chromium/Electron)
+eval "$(dbus-launch --sh-syntax)"
+
 # Start virtual framebuffer
 Xvfb :99 -screen 0 "$RESOLUTION" &
 XVFB_PID=$!

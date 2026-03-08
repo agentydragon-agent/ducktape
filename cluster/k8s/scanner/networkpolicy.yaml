@@ -23,7 +23,8 @@ spec:
               kubernetes.io/metadata.name: authentik
           podSelector:
             matchLabels:
-              goauthentik.io/outpost-name: shared-proxy-outpost
+              app.kubernetes.io/component: server
+              app.kubernetes.io/name: authentik
       ports:
         - port: 8080
           protocol: TCP

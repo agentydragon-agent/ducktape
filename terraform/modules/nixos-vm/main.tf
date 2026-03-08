@@ -99,7 +99,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
 
   agent {
     enabled = true
-    timeout = "10m" # Wait longer for guest agent to report IP (cloud-init takes time)
+    timeout = "2m"
   }
 
   # Ignore changes to cloud-init after creation - updates happen via nixos-rebuild

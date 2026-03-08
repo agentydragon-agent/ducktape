@@ -172,6 +172,10 @@ spec:
     redis-cluster:
       enabled: false
 
+    # Valkey (disabled — using db sessions, memory cache, level queues)
+    valkey-cluster:
+      enabled: false
+
     # Memcached (disabled)
     memcached:
       enabled: false

@@ -59,11 +59,13 @@ spec:
             - port: "9443"
               protocol: TCP
 
-    # monitoring: Prometheus scrapes metrics endpoint
+    # monitoring: Grafana OIDC token exchange + Prometheus metrics scraping
     - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: monitoring
       toPorts:
         - ports:
+            - port: "9000"
+              protocol: TCP
             - port: "9300"
               protocol: TCP

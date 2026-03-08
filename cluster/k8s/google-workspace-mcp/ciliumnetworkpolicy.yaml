@@ -24,7 +24,8 @@ spec:
     # Authentik embedded outpost — SSO-protected browser access for OAuth setup.
     - fromEndpoints:
         - matchLabels:
-            goauthentik.io/outpost-name: shared-proxy-outpost
+            app.kubernetes.io/component: server
+            app.kubernetes.io/name: authentik
             k8s:io.kubernetes.pod.namespace: authentik
       toPorts:
         - ports:

@@ -8,14 +8,18 @@ entries:
   # Assign all proxy providers to the embedded outpost.
   # The embedded outpost runs inside authentik-server pods and stores sessions
   # in PostgreSQL, enabling HA across the 2-replica authentik-server deployment.
+  #
+  # The embedded outpost does NOT support authentik_host_browser (only standalone
+  # proxy outposts do). It uses authentik_host for both internal communication
+  # and browser-facing redirects. Internal connectivity uses localhost implicitly
+  # since the outpost runs in the server process.
   - model: authentik_outposts.outpost
     state: present
     identifiers:
       managed: goauthentik.io/outposts/embedded
     attrs:
       config:
-        authentik_host: "http://authentik-server.authentik:80"
-        authentik_host_browser: "https://auth.allegedly.works"
+        authentik_host: "https://auth.allegedly.works"
       providers:
         - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, grocy]]

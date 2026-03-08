@@ -113,11 +113,11 @@ spec:
         <clickhouse>
           <trace_log>
             <flush_interval_milliseconds>0</flush_interval_milliseconds>
-            <max_size_rows>0</max_size_rows>
+            <max_size_rows>1</max_size_rows>
           </trace_log>
           <text_log>
             <flush_interval_milliseconds>0</flush_interval_milliseconds>
-            <max_size_rows>0</max_size_rows>
+            <max_size_rows>1</max_size_rows>
           </text_log>
           <metric_log>
             <flush_interval_milliseconds>0</flush_interval_milliseconds>
