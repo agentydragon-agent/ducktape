@@ -14,6 +14,11 @@
 #                                         ▼                               ▼
 #                              discovery service (host:3000, --network=host)
 #
+# TODO: Simplify by running the discovery service on the socket mcast network
+# instead of --network=host. Both VMs already share the 192.168.50.0/24 L2
+# segment, so the discovery service could listen there, eliminating the need
+# for the separate SLIRP user NIC (eth0/10.0.2.x) entirely.
+#
 # Exit codes:
 #   0 = connectivity test passed
 #   1 = test failed or QEMU exited abnormally
