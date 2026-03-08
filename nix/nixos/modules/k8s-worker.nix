@@ -87,12 +87,16 @@ let
   # Resolve node IP based on fabric choice
   resolveNodeIp =
     if isKubespan then
-      # Read the KubeSpan ULA IPv6 from the already-up kubespan interface
+      # Use the host's real IPv4 (from default route) as kubelet node IP.
+      # NOT the KubeSpan IPv6 ULA — using that causes Cilium to detect the
+      # kubespan interface (IPv6-only) as the direct routing device, which
+      # fails with "IPv4 direct routing device IP not found" since Cilium
+      # needs IPv4 for VXLAN tunnel mode.
       pkgs.writeShellScript "resolve-kubespan-ip" ''
-        ${pkgs.iproute2}/bin/ip -6 addr show dev kubespan scope global \
-          | ${pkgs.gnugrep}/bin/grep -oP 'fd[0-9a-f:]+' | ${pkgs.coreutils}/bin/head -1 > /run/kubelet-node-ip
+        ${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 \
+          | ${pkgs.gnugrep}/bin/grep -oP 'src \K\S+' > /run/kubelet-node-ip
         if [ ! -s /run/kubelet-node-ip ]; then
-          echo "Failed to read KubeSpan ULA from kubespan interface" >&2
+          echo "Failed to read host IPv4 from default route" >&2
           exit 1
         fi
       ''

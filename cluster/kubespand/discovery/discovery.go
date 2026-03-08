@@ -169,6 +169,20 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 		}
 	}
 
+	// Detect node's routed IPv4 addresses for inclusion in Affiliate.Addresses.
+	// This matches Talos's LocalAffiliateController which sets spec.Addresses from
+	// routedNodeIPs (NodeAddressRoutedID). Without this, other nodes won't add our
+	// real IPv4 to their WireGuard AllowedIPs, and VXLAN traffic won't route through
+	// KubeSpan to us.
+	nodeAddrs := routedNodeAddresses()
+	var addrBytesSlice [][]byte
+	for _, addr := range nodeAddrs {
+		b, err := addr.MarshalBinary()
+		if err == nil {
+			addrBytesSlice = append(addrBytesSlice, b)
+		}
+	}
+
 	affiliate := &discoveryclient.Affiliate{
 		Affiliate: &clientpb.Affiliate{
 			NodeId:          id.PublicKey,
@@ -176,6 +190,7 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 			Nodename:        hostname,
 			MachineType:     cfg.Discovery.MachineType,
 			OperatingSystem: runtime.GOOS + "/" + runtime.GOARCH + " (kubespand)",
+			Addresses:       addrBytesSlice,
 			Kubespan: &clientpb.KubeSpan{
 				PublicKey:           id.PublicKey,
 				Address:             addrBytes,
@@ -260,6 +275,58 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 	}
 
 	return result
+}
+
+// routedNodeAddresses returns the node's routed IPv4 addresses, excluding loopback
+// and the kubespan WireGuard interface. These are the real addresses that need to be
+// included in Affiliate.Addresses so that other nodes add them to WireGuard AllowedIPs,
+// enabling VXLAN encapsulated traffic to route through the KubeSpan mesh.
+//
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go
+// which sets spec.Addresses from NodeAddressRoutedID.
+func routedNodeAddresses() []netip.Addr {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+
+	var addrs []netip.Addr
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		// Skip the kubespan WireGuard interface itself.
+		if iface.Name == "kubespan" {
+			continue
+		}
+
+		ifAddrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range ifAddrs {
+			ipNet, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			addr, ok := netip.AddrFromSlice(ipNet.IP)
+			if !ok {
+				continue
+			}
+			addr = addr.Unmap()
+			if !addr.Is4() {
+				continue
+			}
+			if addr.IsLoopback() || addr.IsLinkLocalUnicast() {
+				continue
+			}
+			addrs = append(addrs, addr)
+		}
+	}
+	return addrs
 }
 
 // prefixesToPBAddresses converts netip.Prefix slices to protobuf IPPrefix messages

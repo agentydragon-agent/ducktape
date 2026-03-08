@@ -13,7 +13,7 @@ variable "proxmox_host" {
 variable "proxmox_api_host" {
   description = "Proxmox API host:port"
   type        = string
-  default     = "atlas:8006"
+  default     = "10.0.182.102:8006"
 }
 
 variable "proxmox_node_name" {
