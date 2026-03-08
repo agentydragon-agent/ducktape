@@ -1,5 +1,4 @@
 # gazelle:ignore
-# InvenTree plugin - requires Django from InvenTree environment (not in @pypi)
 
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
@@ -7,18 +6,16 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "custom_tags",
     srcs = ["custom_tags.py"],
-    # TODO: Add Django to requirements_bazel.txt to make hermetic
-    tags = ["manual"],
     visibility = ["//inventree_utils/rai_plugin:__pkg__"],
+    deps = ["@pypi//django"],
 )
 
 py_test(
     name = "test_custom_tags",
     srcs = ["test_custom_tags.py"],
-    # TODO: Add Django to requirements_bazel.txt to make hermetic
-    tags = ["manual"],
     deps = [
         ":custom_tags",
+        "@pypi//django",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

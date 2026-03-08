@@ -100,8 +100,6 @@ class ParametersProcessor:
     @staticmethod
     def displayer(*attrs):
         def decorator(fn):
-            logger.error(f"Not callable: {fn}")
-
             @functools.wraps(fn)
             def wrapped(self, *args, **kwargs):
                 out = fn(self, *(self.get(x) for x in attrs), *args, **kwargs)
@@ -109,7 +107,7 @@ class ParametersProcessor:
 
             frame = inspect.currentframe().f_back  # Get the caller frame (class body)
             frame.f_locals["_displayers"].append((attrs, wrapped))  # Get class-local variables
-            return wrapped
+            return property(wrapped)
 
         return decorator
 
