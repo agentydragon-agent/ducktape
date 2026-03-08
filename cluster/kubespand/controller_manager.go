@@ -223,7 +223,12 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 			return fmt.Errorf("wireguard manager: %w", wgErr)
 		}
 
-		if err := wg.EnsureInterface(idSpec.Address); err != nil {
+		// Use the Subnet prefix length (/64) instead of Address (/128) so
+		// the kernel creates a connected route covering all peer ULA addresses
+		// in the same cluster. Upstream Talos does the same in its AddressSpec:
+		//   spec.Address = netip.PrefixFrom(localSpec.Address.Addr(), localSpec.Subnet.Bits())
+		ifaceAddr := netip.PrefixFrom(idSpec.Address.Addr(), idSpec.Subnet.Bits())
+		if err := wg.EnsureInterface(ifaceAddr); err != nil {
 			wg.Close()
 			return fmt.Errorf("wireguard interface: %w", err)
 		}
