@@ -2,6 +2,17 @@
 # Builds a per-host qcow2 image via `nix build` and uploads it to Proxmox.
 # Uses system.build.images.qemu-efi (nixos-generators upstreamed in nixpkgs 25.05+).
 
+terraform {
+  required_version = ">= 1.0"
+
+  required_providers {
+    null = {
+      source  = "hashicorp/null"
+      version = ">= 3.2.0"
+    }
+  }
+}
+
 resource "null_resource" "image" {
   triggers = {
     # Rebuild when any nix config changes (NixOS + HM are baked into the image)

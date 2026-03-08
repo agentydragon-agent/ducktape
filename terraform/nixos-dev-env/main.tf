@@ -260,13 +260,13 @@ module "wyrm2" {
     proxmox = proxmox.user
   }
 
-  vm_name          = "wyrm2"
-  vm_id            = 110
-  username         = var.username
-  vcpus            = 8
-  memory_mb        = 16384
-  disk_size_gb     = 100
-  auto_start       = true
+  vm_name           = "wyrm2"
+  vm_id             = 110
+  username          = var.username
+  vcpus             = 8
+  memory_mb         = 16384
+  disk_size_gb      = 100
+  auto_start        = true
   image_import_path = module.wyrm2_image.import_path
 
   proxmox_node_name = var.proxmox_node_name

@@ -1,5 +1,4 @@
-# NixOS K8s Worker — Provider Versions
-# NixOS VM that joins the Talos cluster via KubeSpan + kubelet TLS bootstrap
+# K8s Worker (Proxmox) — Provider Versions
 
 terraform {
   required_version = ">= 1.0"
@@ -12,10 +11,6 @@ terraform {
     proxmox = {
       source  = "bpg/proxmox"
       version = "~> 0.91.0"
-    }
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.2.0"
     }
   }
 }
