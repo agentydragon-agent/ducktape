@@ -105,7 +105,10 @@ class ParametersProcessor:
                 out = fn(self, *(self.get(x) for x in attrs), *args, **kwargs)
                 return SafeString(out) if out is not None else None
 
-            frame = inspect.currentframe().f_back  # Get the caller frame (class body)
+            current = inspect.currentframe()
+            assert current is not None
+            frame = current.f_back  # Get the caller frame (class body)
+            assert frame is not None
             frame.f_locals["_displayers"].append((attrs, wrapped))  # Get class-local variables
             return property(wrapped)
 
