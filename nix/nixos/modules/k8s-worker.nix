@@ -230,7 +230,7 @@ in
         Environment = "PATH=/run/wrappers/bin:${lib.makeBinPath kubeletDeps}:/usr/bin:/bin";
         ExecStartPre = resolveNodeIp;
         ExecStart = pkgs.writeShellScript "kubelet-start" ''
-          NODE_IP=$(cat /run/kubelet-node-ip)
+          NODE_IP=$(</run/kubelet-node-ip)
           exec ${pkgs.kubernetes}/bin/kubelet \
             --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf \
             --kubeconfig=/var/lib/kubelet/kubelet.conf \
