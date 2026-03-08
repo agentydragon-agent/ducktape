@@ -14,7 +14,8 @@ resource "talos_image_factory_schematic" "hcloud" {
     customization = {
       systemExtensions = {
         officialExtensions = [
-          "siderolabs/qemu-guest-agent"
+          "siderolabs/qemu-guest-agent",
+          "siderolabs/iscsi-tools",
         ]
       }
     }
@@ -98,13 +99,12 @@ resource "hcloud_server" "vps" {
     ipv6_enabled = true
   }
 
-  # Hetzner treats user_data as immutable — any change forces server replacement.
-  # Talos only reads user_data on first boot; ongoing config is managed via the
-  # Talos API (talos_machine_configuration_apply). Ignore user_data changes so
-  # that machine config updates (registry mirrors, labels, kubelet args, etc.)
-  # don't destroy and recreate VPS servers.
+  # Hetzner treats user_data and image as immutable — any change forces server
+  # replacement. Talos only reads user_data on first boot; ongoing config is
+  # managed via the Talos API (talos_machine_configuration_apply). Image changes
+  # (new schematic) are applied via talosctl upgrade, not server replacement.
   lifecycle {
-    ignore_changes = [user_data]
+    ignore_changes = [user_data, image]
   }
 }
 
@@ -141,8 +141,14 @@ data "talos_machine_configuration" "vps" {
       })
       cluster = local.common_cluster_config
     }),
-    # Hostname: hcloud platform auto-detects from server name (hcloud_server.vps.name)
-    # Do NOT add explicit HostnameConfig — conflicts with platform's auto hostname
+    # Explicit hostname — platform auto-detection doesn't survive talosctl upgrade
+    yamlencode({
+      machine = {
+        network = {
+          hostname = each.value.name
+        }
+      }
+    }),
   ]
 }
 

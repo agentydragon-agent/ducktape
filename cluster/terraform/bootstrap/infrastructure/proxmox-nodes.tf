@@ -14,7 +14,8 @@ resource "talos_image_factory_schematic" "proxmox" {
       extraKernelArgs = ["net.ifnames=0"]
       systemExtensions = {
         officialExtensions = [
-          "siderolabs/qemu-guest-agent"
+          "siderolabs/qemu-guest-agent",
+          "siderolabs/iscsi-tools",
         ]
       }
     }
@@ -37,6 +38,7 @@ resource "talos_image_factory_schematic" "proxmox_gpu" {
       systemExtensions = {
         officialExtensions = [
           "siderolabs/qemu-guest-agent",
+          "siderolabs/iscsi-tools",
           "siderolabs/nvidia-open-gpu-kernel-modules",
           "siderolabs/nvidia-container-toolkit",
         ]
@@ -373,6 +375,14 @@ data "talos_machine_configuration" "proxmox" {
         }
       })
     }))],
+    # Explicit hostname — platform auto-detection doesn't survive talosctl upgrade
+    [yamlencode({
+      machine = {
+        network = {
+          hostname = each.value.name
+        }
+      }
+    })],
     each.value.type == "worker" ? [local.worker_link_config] : [],
   )
 }
@@ -402,6 +412,14 @@ data "talos_machine_configuration" "proxmox_gpu" {
         }
       })
     }))],
+    # Explicit hostname — platform auto-detection doesn't survive talosctl upgrade
+    [yamlencode({
+      machine = {
+        network = {
+          hostname = each.value.name
+        }
+      }
+    })],
     local.nvidia_config_patches,
     [local.worker_link_config], # GPU nodes are always workers
   )

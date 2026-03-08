@@ -94,7 +94,7 @@ export default [
 
   // Agent server web (Svelte+Vite) - with import plugin
   {
-    files: ["agent_server/src/agent_server/web/**/*.ts"],
+    files: ["x/agent_server/src/agent_server/web/**/*.ts"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
@@ -142,7 +142,7 @@ export default [
   // Agent server web (Svelte files)
   ...sveltePlugin.configs["flat/recommended"],
   {
-    files: ["agent_server/src/agent_server/web/**/*.svelte"],
+    files: ["x/agent_server/src/agent_server/web/**/*.svelte"],
     languageOptions: {
       parser: svelteParser,
       parserOptions: {
@@ -189,7 +189,7 @@ export default [
 
   // RSPCache admin UI (React)
   {
-    files: ["hack/rspcache/admin_ui/**/*.{ts,tsx}"],
+    files: ["x/rspcache/admin_ui/**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {

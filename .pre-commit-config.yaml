@@ -4,14 +4,14 @@
 exclude: |
   (?x)^(
     # Legacy/archived directories
-    hack/k8s_old/.*|
+    x/k8s_old/.*|
 
     # Artifacts captured from live Claude Code containers — not our source code
     claude_web_env/(rootfs|reference)/.*|
     claude_web_env/live-dpkg-versions\.txt|
 
     # Test data
-    hack/claude_hooks/testdata/.*\.md|
+    x/claude_hooks/testdata/.*\.md|
     tana/testdata/.*|
 
     # Generated content
@@ -86,7 +86,7 @@ repos:
   # NOTE: ESLint and svelte-check are handled by Bazel:
   # - ESLint: bazel build //... (lint aspects run by default)
   # - svelte-check: bazel test //props/frontend:svelte_check_test
-  #                 bazel test //agent_server/web:svelte_check_test
+  #                 bazel test //x/agent_server/web:svelte_check_test
 
   # Buildifier - Bazel/Starlark formatting and linting
   # TODO: Sync buildifier version with Bazel (currently keith=8.2.1.1, Bazel=8.2.1.2 in MODULE.bazel)

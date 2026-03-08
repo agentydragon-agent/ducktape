@@ -46,6 +46,11 @@ See <changelog.md> for detailed change history.
       Cilium's Envoy only allows `upgradeType: websocket`, returning 403 for Tailscale's
       `Upgrade: tailscale-control-protocol`. Headscale terminates TLS itself (cert-manager
       cert), Envoy routes by SNI without decrypting.
+- [ ] **Headscale: migrate from CNPG to SQLite on Longhorn** — PostgreSQL is upstream
+      "maintenance mode" (latest migrations SQLite-only). Data is tiny (~20 rows, <1 MB).
+      Deploy Longhorn, create a Hetzner-resident PVC, switch Headscale to SQLite. Eliminates
+      a 2-instance CNPG cluster for negligible data. Re-enroll devices or use community
+      pg→sqlite migration tool.
 - [ ] **OpenClaw: eliminate one-time token entry** — Options: operator bootstrap config,
       gateway-side injection, or upstream PR for `"trusted-proxy"` in `sharedAuthOk`.
 - [ ] **Proxy outpost HA: shared session storage** — 1 replica limit (sessions in `/dev/shm`).

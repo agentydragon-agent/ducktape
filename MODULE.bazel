@@ -63,6 +63,7 @@ tf.download(
         "headscale": "awlsring/headscale:0.5.0",
         "helm": "hashicorp/helm:3.1.1",
         "kubernetes": "hashicorp/kubernetes:2.38.0",
+        "libvirt": "dmacvicar/libvirt:0.9.3",
         "local": "hashicorp/local:2.5.3",
         "null": "hashicorp/null:3.2.4",
         "powerdns": "pan-net/powerdns:1.5.0",
@@ -221,14 +222,14 @@ npm.npm_translate_lock(
     },
     # Track package.json and workspace files for auto-update
     data = [
-        "//:agent_server/web/package.json",
         "//:airlock/frontend/package.json",
         "//:airlock/openclaw/package.json",
-        "//:hack/rspcache/admin_ui/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
         "//:util/frontend_visual_test/package.json",
+        "//:x/agent_server/web/package.json",
+        "//:x/rspcache/admin_ui/package.json",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
     # These fail in Bazel's sandboxed builds (network blocked, gVisor, RBE).

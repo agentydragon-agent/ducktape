@@ -4,6 +4,57 @@ Quick diagnostic commands for common cluster issues.
 
 ## Known Issues
 
+### talosctl upgrade: Hostname Loss
+
+**Symptoms**:
+
+- After `talosctl upgrade`, nodes register with random hostnames (e.g., `talos-6we-boc`)
+- Old node entries remain as `NotReady,SchedulingDisabled`
+- `kubectl get nodes` shows duplicate entries (old name + new random name)
+
+**Root Cause**:
+
+Talos derives hostnames from platform metadata (cloud-init, Hetzner metadata API). During
+`talosctl upgrade`, the node kexecs into the new image but **does not re-read platform
+metadata**. Without explicit `machine.network.hostname`, Talos generates a random hostname.
+
+**Fix**: Always set `machine.network.hostname` explicitly in Terraform config patches:
+
+```hcl
+yamlencode({
+  machine = {
+    network = {
+      hostname = each.value.name
+    }
+  }
+})
+```
+
+**Lessons Learned**: See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>
+
+### Hetzner VPS Accidental Replacement via tofu apply
+
+**Symptoms**:
+
+- `hcloud server list` shows different server IDs / IPs than expected
+- Kubernetes API unreachable, etcd quorum lost
+- `tofu plan` shows `must be replaced` due to `image` change
+
+**Root Cause**:
+
+Changing the Talos schematic rebuilds the Packer snapshot, changing the `image` ID on
+`hcloud_server`. Without `image` in `lifecycle.ignore_changes`, Terraform plans a
+destroy+recreate. Even targeted applies (`-target=...machine_configuration_apply...`)
+resolve dependencies and pull in the server replacement.
+
+**Fix**: `lifecycle { ignore_changes = [user_data, image] }` on `hcloud_server`.
+Schematic changes are applied via `talosctl upgrade`, not server replacement.
+
+**Prevention**: Never run `tofu apply -auto-approve` with `-target` flags without
+reviewing the full plan first.
+
+**Lessons Learned**: See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>
+
 ### Cilium Gateway Controller Dies After Talos Machine Config Apply
 
 **Symptoms**:

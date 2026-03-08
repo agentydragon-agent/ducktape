@@ -7,5 +7,5 @@ output "vm_name" {
 
 output "ip_addresses" {
   description = "The IP addresses of the VM (from DHCP lease)"
-  value       = libvirt_domain.vm.network_interface[*].addresses
+  value       = data.libvirt_domain_interface_addresses.vm.interfaces[*].addrs[*].addr
 }

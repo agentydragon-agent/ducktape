@@ -95,4 +95,4 @@ actions:
       - >
         build --config=rbe
         //props/backend:image
-        //agent_server:image
+        //x/agent_server:image

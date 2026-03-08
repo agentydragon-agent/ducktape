@@ -13,20 +13,20 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 
 ### Active Development
 
-| Directory       | Purpose                             |
-| --------------- | ----------------------------------- |
-| `agent_cli/`    | Agent REPL CLI                      |
-| `agent_server/` | FastAPI backend, runtime, policy    |
-| `cluster/`      | k8s cluster                         |
-| `mcp_infra/`    | MCP compositor and utilities        |
-| `agent_pkg/`    | Agent package infrastructure        |
-| `tana/`         | Tana export toolkit                 |
-| `wt/`           | Worktree management                 |
-| `ansible/`      | System configuration                |
-| `docker/`       | Container images                    |
-| `dotfiles/`     | Shell configs, scripts              |
-| `devinfra/`     | Repo build, CI, lint infrastructure |
-| `props/`        | LLM critic eval system              |
+| Directory         | Purpose                             |
+| ----------------- | ----------------------------------- |
+| `agent_cli/`      | Agent REPL CLI                      |
+| `x/agent_server/` | FastAPI backend, runtime, policy    |
+| `cluster/`        | k8s cluster                         |
+| `mcp_infra/`      | MCP compositor and utilities        |
+| `agent_pkg/`      | Agent package infrastructure        |
+| `tana/`           | Tana export toolkit                 |
+| `wt/`             | Worktree management                 |
+| `ansible/`        | System configuration                |
+| `docker/`         | Container images                    |
+| `dotfiles/`       | Shell configs, scripts              |
+| `devinfra/`       | Repo build, CI, lint infrastructure |
+| `props/`          | LLM critic eval system              |
 
 ### Less Active
 
@@ -36,7 +36,7 @@ Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2),
 | `trilium/`         | Trilium Notes extensions  |
 | `inventree_utils/` | InventTree plugins        |
 | `website/`         | Personal website (Hakyll) |
-| `hack/k8s_old/`    | legacy k3s cluster        |
+| `x/k8s_old/`       | legacy k3s cluster        |
 
 ### Less Active Components
 

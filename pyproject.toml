@@ -97,7 +97,7 @@ dependencies = [
     "tabulate>=0.9",
     "watchdog>=4.0",
 
-    # hack/gatelet
+    # x/gatelet
     "cryptography>=41.0.0",
     "python-multipart>=0.0.9",
     "passlib",
