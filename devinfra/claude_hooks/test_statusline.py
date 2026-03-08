@@ -10,15 +10,9 @@ from unittest.mock import patch
 import pytest_bazel
 
 from devinfra.claude_hooks.claude_api.statusline import Input
+from devinfra.claude_hooks.claude_api.usage import UsageBucket, UsageResponse
 from devinfra.claude_hooks.statusline import _format_quota
-from devinfra.claude_hooks.usage_api import (
-    CACHE_TTL_SECONDS,
-    UsageBucket,
-    UsageResponse,
-    _CachedUsage,
-    _read_access_token,
-    get_cached_usage,
-)
+from devinfra.claude_hooks.usage_api import CACHE_TTL_SECONDS, _CachedUsage, _read_access_token, get_cached_usage
 
 # === statusline_models tests ===
 
