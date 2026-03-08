@@ -139,14 +139,17 @@ platform(
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
 
-# Ducktape wheel - bundles CLI tools for distribution
+# Ducktape wheel - bundles CLI tools and Claude Code hooks for distribution
 py_package(
     name = "ducktape_pkg",
     packages = [
         "agent_core",
-        "cli_util",
+        "devinfra",
+        "devinfra.claude_hooks",
+        "devinfra.claude_hooks.auth_proxy",
+        "devinfra.claude_hooks.claude_api",
+        "devinfra.claude_hooks.supervisor",
         "difftree",
-        "fmt_util",
         "git_commit_ai",
         "gmail_archiver",
         "gmail_archiver.cli",
@@ -154,8 +157,18 @@ py_package(
         "mcp_infra",
         "mcp_utils",
         "openai_utils",
+        "util",
+        "util.bazel",
     ],
     deps = [
+        # Claude hooks entry points (transitively pull in all claude_hooks deps)
+        "//devinfra/claude_hooks:pre_tool_use_lib",
+        "//devinfra/claude_hooks:session_start_lib",
+        "//devinfra/claude_hooks:statusline_lib",
+        # Auth proxy main module — invoked as subprocess by supervisor
+        # (not transitively reachable from session_start_lib)
+        "//devinfra/claude_hooks/auth_proxy:main",
+        # CLI tool entry points
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
     ],
@@ -169,6 +182,9 @@ py_wheel(
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
+            "claude-pre-tool-use = devinfra.claude_hooks.pre_tool_use:main",
+            "claude-session-start = devinfra.claude_hooks.session_start:main",
+            "claude-statusline = devinfra.claude_hooks.statusline:main",
         ],
     },
     python_requires = ">=3.13",
@@ -202,6 +218,16 @@ py_wheel(
         "pydantic-settings",
         "python-dateutil",
         "pyyaml",
+        # claude_hooks deps
+        "cryptography",
+        "opentelemetry-api",
+        "opentelemetry-exporter-otlp-proto-http",
+        "opentelemetry-sdk",
+        "platformdirs",
+        "psutil",
+        "pyjwt",
+        "pyrage",
+        "supervisor",
     ],
     version = "0.1.0",
     deps = [":ducktape_pkg"],
