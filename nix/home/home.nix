@@ -138,7 +138,7 @@ in
   # TODO: Re-enable when google-drive-service module is re-enabled (see imports above)
   # services.google-drive.enable = lib.mkDefault false;
 
-  nix.package = pkgs.nix;
+  nix.package = lib.mkDefault pkgs.nix;
 
   nix.gc = {
     automatic = true;
