@@ -342,6 +342,7 @@ py_binary(
 py_package(
     name = "claude_hooks_pkg",
     packages = [
+        "devinfra",
         "devinfra.claude_hooks",
         "devinfra.claude_hooks.auth_proxy",
         "devinfra.claude_hooks.claude_api",
