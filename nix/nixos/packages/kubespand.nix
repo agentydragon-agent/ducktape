@@ -9,7 +9,7 @@
 }:
 let
   # 8-char commit SHA from GitHub release tag (CI-managed)
-  shortSha = "8b7da3ce";
+  shortSha = "9eba46ef";
 in
 pkgs.stdenv.mkDerivation {
   pname = "kubespand";
