@@ -32,19 +32,6 @@ spec:
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
 metadata:
-  name: attic
-  namespace: nix-cache
-spec:
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: attic
-  updatePolicy:
-    updateMode: "Off"
----
-apiVersion: autoscaling.k8s.io/v1
-kind: VerticalPodAutoscaler
-metadata:
   name: harbor-core
   namespace: harbor
 spec:
