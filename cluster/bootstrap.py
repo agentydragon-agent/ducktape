@@ -243,7 +243,7 @@ def _check_cilium_health(v1: client.CoreV1Api) -> bool:
                 stderr[:200] if stderr else "",
             )
             return False
-        for node in data.get("nodes", []):
+        for node in data.get("nodes") or []:
             for section in ("host", "health-endpoint"):
                 addr = node.get(section, {}).get("primary-address", {})
                 for proto in ("icmp", "http"):
