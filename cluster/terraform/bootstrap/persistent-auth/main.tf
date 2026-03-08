@@ -35,7 +35,7 @@ terraform {
 
 # DRY configuration for persistent auth
 # TODO: Consider whether terraform@pve is still needed now that root@pam!tofu exists.
-# Infrastructure and nixos-k8s-worker could read the root token from the keyring via
+# Infrastructure and k8s-worker-proxmox could read the root token from the keyring via
 # their own .envrc instead. Keeping for now for least-privilege (TerraformAdmin is
 # narrower than root). kubernetes-csi@pve is definitely still needed — it runs inside
 # the cluster and can't access the keyring.

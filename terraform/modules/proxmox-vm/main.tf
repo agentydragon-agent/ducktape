@@ -1,5 +1,5 @@
-# NixOS VM Module
-# Creates a NixOS VM from a pre-built qcow2 image.
+# Proxmox VM Module
+# Creates a VM from a pre-built qcow2 image on Proxmox.
 # SSH keys are injected via Proxmox cloud-init.
 # K8s secrets are optionally injected via cloud-init userdata.
 

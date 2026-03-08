@@ -1,4 +1,4 @@
-# NixOS VM Module Outputs
+# Proxmox VM Module Outputs
 
 output "vm_id" {
   description = "The VM ID"

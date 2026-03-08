@@ -1,4 +1,4 @@
-# NixOS K8s Worker Outputs
+# K8s Worker (Proxmox) Outputs
 
 output "k8s_worker_test" {
   description = "k8s-worker-test VM info"

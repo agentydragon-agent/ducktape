@@ -1,4 +1,4 @@
-# NixOS K8s Worker — NixOS VM joining the Talos cluster via KubeSpan
+# K8s Worker (Proxmox) — NixOS VM joining the Talos cluster via KubeSpan
 #
 # Lifecycle: Independent of the cluster bootstrap (infrastructure/).
 # Destroying the cluster does not destroy this VM.
@@ -46,6 +46,10 @@ locals {
   ssh_public_key = var.ssh_public_key != "" ? var.ssh_public_key : (
     local.ssh_key_path != "" ? trimspace(file(local.ssh_key_path)) : ""
   )
+
+  # NixOS image build inputs
+  nix_dir_hash = sha1(join("", [for f in sort(fileset("${path.module}/../../../../nix", "**/*.nix")) : filesha1("${path.module}/../../../../nix/${f}")]))
+  repo_root    = "${path.module}/../../../.."
 
   # K8s credentials from infrastructure state
   infra = data.terraform_remote_state.infrastructure.outputs
@@ -115,37 +119,16 @@ check "ssh_key_required" {
 }
 
 # =============================================================================
-# NIXOS CLOUD IMAGE
+# NIXOS IMAGE
 # =============================================================================
 
-# Build and upload NixOS cloud image (idempotent — same image as nixos-dev-env)
-resource "null_resource" "nixos_cloud_image" {
-  triggers = {
-    cloud_image_config = filemd5("${path.module}/../../../../terraform/modules/nixos-vm/cloud-image.nix")
-    proxmox_host       = var.proxmox_host
-    storage            = var.storage
-  }
-
-  provisioner "local-exec" {
-    command     = <<-EOT
-      set -e
-      echo "Building NixOS qcow2 cloud image..."
-
-      nix run github:nix-community/nixos-generators -- \
-        --format qcow-efi \
-        --configuration ${path.module}/../../../../terraform/modules/nixos-vm/cloud-image.nix \
-        -o nixos-cloud-image
-
-      QCOW2_PATH=$(readlink -f nixos-cloud-image)/nixos.qcow2
-
-      echo "Uploading qcow2 to Proxmox import directory..."
-      ssh root@${var.proxmox_host} "mkdir -p /var/lib/vz/import"
-      scp "$QCOW2_PATH" "root@${var.proxmox_host}:/var/lib/vz/import/nixos-cloud.qcow2"
-
-      echo "qcow2 image ready for import at local:import/nixos-cloud.qcow2"
-    EOT
-    working_dir = path.module
-  }
+# Build and upload per-host NixOS qcow2 image (same pattern as nixos-dev-env)
+module "k8s_worker_test_image" {
+  source       = "../../../../terraform/modules/nixos-image"
+  flake_target = "k8s-worker-test"
+  proxmox_host = var.proxmox_host
+  repo_root    = local.repo_root
+  nix_dir_hash = local.nix_dir_hash
 }
 
 # =============================================================================
@@ -153,20 +136,16 @@ resource "null_resource" "nixos_cloud_image" {
 # =============================================================================
 
 module "k8s_worker_test" {
-  source = "../../../../terraform/modules/nixos-vm"
+  source = "../../../../terraform/modules/proxmox-vm"
 
-  vm_name      = "k8s-worker-test"
-  vm_id        = 111
-  username     = var.username
-  vcpus        = 4
-  memory_mb    = 8192
-  disk_size_gb = 50
-  auto_start   = true
-
-  nixos_flake_url        = var.nixos_flake_url
-  nixos_host             = "k8s-worker-test"
-  home_manager_flake_url = var.home_manager_flake_url
-  home_manager_host      = var.home_manager_host
+  vm_name           = "k8s-worker-test"
+  vm_id             = 111
+  username          = var.username
+  vcpus             = 4
+  memory_mb         = 8192
+  disk_size_gb      = 50
+  auto_start        = true
+  image_import_path = module.k8s_worker_test_image.import_path
 
   proxmox_node_name = var.proxmox_node_name
   storage           = var.storage
@@ -181,5 +160,5 @@ module "k8s_worker_test" {
     node_name            = "k8s-worker-test"
   }
 
-  depends_on = [null_resource.nixos_cloud_image]
+  depends_on = [module.k8s_worker_test_image]
 }

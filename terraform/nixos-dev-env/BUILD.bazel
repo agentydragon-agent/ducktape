@@ -19,6 +19,7 @@ tf_module(
     ],
     providers_versions = ":providers",
     deps = [
-        "//terraform/modules/nixos-vm",
+        "//terraform/modules/nixos-image",
+        "//terraform/modules/proxmox-vm",
     ],
 )

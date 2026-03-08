@@ -10,13 +10,14 @@ tf_providers_versions(
 )
 
 tf_module(
-    name = "nixos-k8s-worker",
+    name = "k8s-worker-proxmox",
     providers = [
         "null",
         "proxmox",
     ],
     providers_versions = ":providers",
     deps = [
-        "//terraform/modules/nixos-vm",
+        "//terraform/modules/nixos-image",
+        "//terraform/modules/proxmox-vm",
     ],
 )

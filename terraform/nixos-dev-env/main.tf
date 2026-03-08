@@ -1,5 +1,5 @@
 # NixOS Dev Environment Infrastructure
-# Proxmox infrastructure + dev workstation VMs using the shared nixos-vm module
+# Proxmox infrastructure + dev workstation VMs using the shared proxmox-vm module
 
 locals {
   # Proxmox configuration
@@ -255,7 +255,7 @@ resource "null_resource" "cleanup" {
 
 # Wyrm2 - NixOS dev workstation (pre-built image, no cloud-init bootstrap)
 module "wyrm2" {
-  source = "../modules/nixos-vm"
+  source = "../modules/proxmox-vm"
   providers = {
     proxmox = proxmox.user
   }

@@ -95,7 +95,7 @@ output "expected_node_count" {
 }
 
 # ============================================================================
-# K8S WORKER JOIN CREDENTIALS (consumed by nixos-k8s-worker module)
+# K8S WORKER JOIN CREDENTIALS (consumed by k8s-worker-proxmox / k8s-worker-libvirt)
 # ============================================================================
 
 output "k8s_ca_cert" {

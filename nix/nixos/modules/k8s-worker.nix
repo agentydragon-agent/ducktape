@@ -9,7 +9,7 @@
 #   - Builds/seeds a custom pause container instead of registry.k8s.io/pause
 #
 # Credential placement:
-#   Cloud-init (via terraform/modules/nixos-vm) writes bootstrap kubeconfig, CA cert,
+#   Cloud-init (via terraform/modules/proxmox-vm) writes bootstrap kubeconfig, CA cert,
 #   and kubespand config. Services auto-start on boot.
 #
 # Manual step after boot:
