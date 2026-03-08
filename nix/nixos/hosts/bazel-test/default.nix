@@ -5,10 +5,10 @@
 # system.build.tarball — a complete NixOS filesystem tarball for docker import.
 # On container start, /init (systemd) runs NixOS activation: /etc, nix-ld,
 # home-manager (bazelrc, direnv), etc. No manual wiring needed.
-{ pkgs, ... }:
+{ modulesPath, pkgs, ... }:
 {
   imports = [
-    "${pkgs.path}/nixos/modules/virtualisation/docker-image.nix"
+    (modulesPath + "/virtualisation/docker-image.nix")
     ../../modules/bazel-dev.nix
   ];
 
