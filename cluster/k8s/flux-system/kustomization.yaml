@@ -12,8 +12,3 @@ patches:
         path: /spec/sparseCheckout
         value:
           - cluster/
-      - op: add
-        path: /spec/ignore
-        value: |
-          /*
-          !/cluster/
