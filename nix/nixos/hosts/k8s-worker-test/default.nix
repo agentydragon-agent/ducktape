@@ -17,6 +17,14 @@
 
   time.timeZone = "UTC";
 
+  # Cloud-init: consumes Proxmox-injected user data to write
+  # /etc/kubespan/agent.yaml, /etc/kubernetes/pki/ca.crt, bootstrap kubeconfig
+  services.cloud-init.enable = true;
+
+  # kubespand and kubelet must wait for cloud-init to write config files
+  systemd.services.kubespand.after = [ "cloud-final.service" ];
+  systemd.services.kubelet.after = [ "cloud-final.service" ];
+
   ducktape.k8sWorker = {
     enable = true;
     fabric = "kubespan";
