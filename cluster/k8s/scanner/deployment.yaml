@@ -36,12 +36,14 @@ spec:
         - name: configure-auth
           image: filebrowser/filebrowser:latest
           command:
-            - filebrowser
-            - config
-            - set
-            - --auth.method=proxy
-            - --auth.header=X-authentik-username
-            - --database=/data/.filebrowser/filebrowser.db
+            - sh
+            - -c
+            - |
+              filebrowser config init --database=/data/.filebrowser/filebrowser.db 2>/dev/null || true
+              filebrowser config set \
+                --auth.method=proxy \
+                --auth.header=X-authentik-username \
+                --database=/data/.filebrowser/filebrowser.db
           volumeMounts:
             - name: data
               mountPath: /data
