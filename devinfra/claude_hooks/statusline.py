@@ -10,7 +10,8 @@ import os
 import sys
 
 from devinfra.claude_hooks.claude_api.statusline import Input
-from devinfra.claude_hooks.usage_api import UsageResponse, get_cached_usage
+from devinfra.claude_hooks.claude_api.usage import UsageResponse
+from devinfra.claude_hooks.usage_cache import get_cached_usage
 
 # ANSI escapes
 _DIM = "\033[2m"

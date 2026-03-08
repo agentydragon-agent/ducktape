@@ -77,11 +77,12 @@ py_library(
 )
 
 py_library(
-    name = "usage_api",
-    srcs = ["usage_api.py"],
+    name = "usage_cache",
+    srcs = ["usage_cache.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//devinfra/claude_hooks/claude_api:credentials",
         "//devinfra/claude_hooks/claude_api:usage",
         "@pypi//httpx",
         "@pypi//pydantic",
@@ -260,8 +261,9 @@ py_library(
     srcs = ["statusline.py"],
     imports = ["../.."],
     deps = [
-        ":usage_api",
+        ":usage_cache",
         "//devinfra/claude_hooks/claude_api:statusline",
+        "//devinfra/claude_hooks/claude_api:usage",
     ],
 )
 
@@ -272,6 +274,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//devinfra/claude_hooks:__subpackages__"],
     deps = [
+        ":bazel_wrapper_lib",
         ":bazelisk_setup",
         ":buildbuddy_setup",
         ":cli_tools_setup",
@@ -370,12 +373,13 @@ py_package(
         ":streaming",
         ":tmpfs_setup",
         ":tracing",
-        ":usage_api",
+        ":usage_cache",
         "//devinfra/claude_hooks/auth_proxy:credentials",
         "//devinfra/claude_hooks/auth_proxy:main",
         "//devinfra/claude_hooks/auth_proxy:proxy",
         "//devinfra/claude_hooks/auth_proxy:setup",
         "//devinfra/claude_hooks/auth_proxy:vars",
+        "//devinfra/claude_hooks/claude_api:credentials",
         "//devinfra/claude_hooks/claude_api:hook_input",
         "//devinfra/claude_hooks/claude_api:pre_tool_use",
         "//devinfra/claude_hooks/claude_api:statusline",
@@ -583,7 +587,8 @@ py_test(
     deps = [
         ":conftest",
         ":statusline_lib",
-        ":usage_api",
+        ":usage_cache",
+        "//devinfra/claude_hooks/claude_api:credentials",
         "//devinfra/claude_hooks/claude_api:statusline",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

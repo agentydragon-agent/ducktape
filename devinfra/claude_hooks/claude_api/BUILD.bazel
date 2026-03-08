@@ -25,6 +25,14 @@ py_library(
 )
 
 py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "usage",
     srcs = ["usage.py"],
     imports = ["../../.."],

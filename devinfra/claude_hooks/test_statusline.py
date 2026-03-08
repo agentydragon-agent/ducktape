@@ -9,10 +9,11 @@ from unittest.mock import patch
 
 import pytest_bazel
 
+from devinfra.claude_hooks.claude_api.credentials import read_access_token
 from devinfra.claude_hooks.claude_api.statusline import Input
 from devinfra.claude_hooks.claude_api.usage import UsageBucket, UsageResponse
 from devinfra.claude_hooks.statusline import _format_quota
-from devinfra.claude_hooks.usage_api import CACHE_TTL_SECONDS, _CachedUsage, _read_access_token, get_cached_usage
+from devinfra.claude_hooks.usage_cache import CACHE_TTL_SECONDS, _CachedUsage, get_cached_usage
 
 # === statusline_models tests ===
 
@@ -94,7 +95,7 @@ def test_null_context_usage():
     assert data.context_window.current_usage is None
 
 
-# === usage_api tests ===
+# === usage_cache tests ===
 
 
 def test_usage_response_parsing():
@@ -125,21 +126,21 @@ def test_read_access_token(tmp_path: Path):
     creds_file = tmp_path / ".credentials.json"
     creds_file.write_text(json.dumps(creds))
 
-    with patch("devinfra.claude_hooks.usage_api.CREDENTIALS_PATH", creds_file):
-        assert _read_access_token() == "test-token-123"
+    with patch("devinfra.claude_hooks.claude_api.credentials.CREDENTIALS_PATH", creds_file):
+        assert read_access_token() == "test-token-123"
 
 
 def test_read_access_token_missing_file(tmp_path: Path):
-    with patch("devinfra.claude_hooks.usage_api.CREDENTIALS_PATH", tmp_path / "nonexistent"):
-        assert _read_access_token() is None
+    with patch("devinfra.claude_hooks.claude_api.credentials.CREDENTIALS_PATH", tmp_path / "nonexistent"):
+        assert read_access_token() is None
 
 
 def test_read_access_token_malformed(tmp_path: Path):
     creds_file = tmp_path / ".credentials.json"
     creds_file.write_text("not json")
 
-    with patch("devinfra.claude_hooks.usage_api.CREDENTIALS_PATH", creds_file):
-        assert _read_access_token() is None
+    with patch("devinfra.claude_hooks.claude_api.credentials.CREDENTIALS_PATH", creds_file):
+        assert read_access_token() is None
 
 
 def test_get_cached_usage_fresh_cache(tmp_path: Path):
@@ -148,7 +149,7 @@ def test_get_cached_usage_fresh_cache(tmp_path: Path):
     cached = _CachedUsage(fetched_at=time.time(), usage=usage)
     cache_file.write_text(cached.model_dump_json())
 
-    with patch("devinfra.claude_hooks.usage_api.CACHE_PATH", cache_file):
+    with patch("devinfra.claude_hooks.usage_cache.CACHE_PATH", cache_file):
         result = get_cached_usage()
 
     assert result is not None
@@ -166,8 +167,8 @@ def test_get_cached_usage_stale_cache_no_token(tmp_path: Path):
     creds_file = tmp_path / "nonexistent"
 
     with (
-        patch("devinfra.claude_hooks.usage_api.CACHE_PATH", cache_file),
-        patch("devinfra.claude_hooks.usage_api.CREDENTIALS_PATH", creds_file),
+        patch("devinfra.claude_hooks.usage_cache.CACHE_PATH", cache_file),
+        patch("devinfra.claude_hooks.claude_api.credentials.CREDENTIALS_PATH", creds_file),
     ):
         result = get_cached_usage()
 
@@ -179,8 +180,8 @@ def test_get_cached_usage_stale_cache_no_token(tmp_path: Path):
 
 def test_get_cached_usage_no_cache_no_token(tmp_path: Path):
     with (
-        patch("devinfra.claude_hooks.usage_api.CACHE_PATH", tmp_path / "nonexistent"),
-        patch("devinfra.claude_hooks.usage_api.CREDENTIALS_PATH", tmp_path / "also_nonexistent"),
+        patch("devinfra.claude_hooks.usage_cache.CACHE_PATH", tmp_path / "nonexistent"),
+        patch("devinfra.claude_hooks.claude_api.credentials.CREDENTIALS_PATH", tmp_path / "also_nonexistent"),
     ):
         result = get_cached_usage()
 
