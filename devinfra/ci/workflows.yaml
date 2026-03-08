@@ -131,6 +131,10 @@ harbor_images:
     local_tag: airlock:latest
     remote_path: ducktape/airlock
 
+  - bazel_target: //airlock/auth_proxy:load
+    local_tag: airlock-auth-proxy:latest
+    remote_path: ducktape/auth-proxy
+
   - bazel_target: //mcp_infra/exec:direct_load
     local_tag: exec-backend:latest
     remote_path: ducktape/exec-backend

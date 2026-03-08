@@ -69,3 +69,12 @@ spec:
               protocol: TCP
             - port: "9300"
               protocol: TCP
+
+    # gatus: health check probes (liveness endpoint)
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: gatus
+      toPorts:
+        - ports:
+            - port: "9000"
+              protocol: TCP

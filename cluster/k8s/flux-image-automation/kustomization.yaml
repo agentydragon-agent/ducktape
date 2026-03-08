@@ -17,6 +17,9 @@ resources:
   - airlock-image-repository.yaml
   - airlock-image-policy.yaml
   - airlock-image-update-automation.yaml
+  - auth-proxy-image-repository.yaml
+  - auth-proxy-image-policy.yaml
+  - auth-proxy-image-update-automation.yaml
   - openclaw-exec-image-repository.yaml
   - openclaw-exec-image-policy.yaml
   - openclaw-exec-image-update-automation.yaml

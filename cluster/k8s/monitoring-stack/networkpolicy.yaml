@@ -35,3 +35,14 @@ spec:
       ports:
         - port: 9090
           protocol: TCP
+    # Gatus: health check probes
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gatus
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gatus
+      ports:
+        - port: 9090
+          protocol: TCP

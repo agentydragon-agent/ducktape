@@ -63,6 +63,12 @@ jobs:
             //airlock:load \
             airlock:latest \
             registry.allegedly.works/ducktape/airlock
+      - name: Build and push airlock-auth-proxy
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //airlock/auth_proxy:load \
+            airlock-auth-proxy:latest \
+            registry.allegedly.works/ducktape/auth-proxy
       - name: Build and push exec-backend
         run: |-
           .github/scripts/harbor_push.sh \
