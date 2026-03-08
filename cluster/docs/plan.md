@@ -478,12 +478,27 @@ Authentik, PowerDNS, and Headscale each have dedicated 2-instance CloudNativePG 
 on `local-path`, pinned to VPS nodes. Individual CNPG clusters preferred over a single
 shared PostgreSQL for fault isolation.
 
+### Headscale: Single Replica (No HA)
+
+**Decision**: Run Headscale at 1 replica — multi-replica is architecturally impossible.
+
+**Rationale**: Headscale holds extensive in-memory state (node store, long-poll connections,
+OIDC state, registration cache, route primary election, IP allocation) that serves as the
+authoritative data plane. The database is used for persistence only, not as a coordination
+layer. Running 2 replicas causes OIDC split-brain (callback hits wrong replica) and node
+update desync (map responses built from per-process snapshots). PostgreSQL backend exists
+but is "highly discouraged" upstream and wouldn't help — the problem is in-process state,
+not the DB.
+
+See <lessons_learned/2026-03-07-headscale-single-replica-only.md> for full analysis.
+
 ## 🔗 Related Documentation
 
 - **Bootstrap Procedures**: <bootstrap.md>
 - **Troubleshooting**: <troubleshooting.md>
 - **Changelog**: <changelog.md>
 - **Secret Sync Analysis**: <lessons_learned/2025-11-28-eso-password-generator-desync.md>
+- **Headscale Single Replica**: <lessons_learned/2026-03-07-headscale-single-replica-only.md>
 
 ## 📊 Cluster Specifications
 
