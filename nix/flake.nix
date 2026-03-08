@@ -158,6 +158,12 @@
         {
           tana = pkgs.callPackage ./home/packages/tana.nix { };
           gmail-mcp = pkgs.callPackage ./home/packages/gmail-mcp.nix { };
+          # NixOS container tarball for docker import.
+          # Build: nix build path:./nix#bazel-test-docker
+          # Load:  docker import result ducktape-nixos-bazel
+          # Run:   docker run --rm -it ducktape-nixos-bazel /init
+          # Exec:  docker exec -it <container> bash -l
+          bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
         };
 
       homeConfigurations = {
@@ -247,6 +253,16 @@
           username = "user";
           homeManagerHost = "nixos-vm";
           hardwareModule = ./nixos/modules/vm-hardware.nix;
+        };
+
+        # Minimal NixOS container for testing Bazel compatibility.
+        # Not a real host — see nixos/hosts/bazel-test/ for config.
+        bazel-test = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            ./nixos/hosts/bazel-test
+            home-manager.nixosModules.home-manager
+          ];
         };
       };
     };
