@@ -375,14 +375,9 @@ data "talos_machine_configuration" "proxmox" {
         }
       })
     }))],
-    # Explicit hostname — platform auto-detection doesn't survive talosctl upgrade
-    [yamlencode({
-      machine = {
-        network = {
-          hostname = each.value.name
-        }
-      }
-    })],
+    # Proxmox nocloud platform derives hostname from VM name — no explicit
+    # hostname needed (unlike Hetzner where platform metadata isn't re-read
+    # during talosctl upgrade kexec)
     each.value.type == "worker" ? [local.worker_link_config] : [],
   )
 }
@@ -412,14 +407,7 @@ data "talos_machine_configuration" "proxmox_gpu" {
         }
       })
     }))],
-    # Explicit hostname — platform auto-detection doesn't survive talosctl upgrade
-    [yamlencode({
-      machine = {
-        network = {
-          hostname = each.value.name
-        }
-      }
-    })],
+    # Proxmox nocloud platform derives hostname from VM name
     local.nvidia_config_patches,
     [local.worker_link_config], # GPU nodes are always workers
   )
