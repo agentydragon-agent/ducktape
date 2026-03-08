@@ -141,14 +141,10 @@ data "talos_machine_configuration" "vps" {
       })
       cluster = local.common_cluster_config
     }),
-    # Explicit hostname — platform auto-detection doesn't survive talosctl upgrade
-    yamlencode({
-      machine = {
-        network = {
-          hostname = each.value.name
-        }
-      }
-    }),
+    # Hostname: hcloud platform derives from server name on first boot.
+    # TODO: explicit hostname needed for talosctl upgrade (platform metadata
+    # not re-read during kexec), but conflicts with platform on first boot.
+    # Need separate user_data vs machine_configuration_apply configs to fix.
   ]
 }
 
