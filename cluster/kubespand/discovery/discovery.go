@@ -277,10 +277,10 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 	return result
 }
 
-// routedNodeAddresses returns the node's routed IPv4 addresses, excluding loopback
-// and the kubespan WireGuard interface. These are the real addresses that need to be
-// included in Affiliate.Addresses so that other nodes add them to WireGuard AllowedIPs,
-// enabling VXLAN encapsulated traffic to route through the KubeSpan mesh.
+// routedNodeAddresses returns the node's routed addresses (IPv4 and IPv6),
+// excluding loopback, link-local, and the kubespan WireGuard interface. These
+// are included in Affiliate.Addresses so other nodes add them to WireGuard
+// AllowedIPs, enabling VXLAN traffic to route through KubeSpan.
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go
 // which sets spec.Addresses from NodeAddressRoutedID.
@@ -317,10 +317,7 @@ func routedNodeAddresses() []netip.Addr {
 				continue
 			}
 			addr = addr.Unmap()
-			if !addr.Is4() {
-				continue
-			}
-			if addr.IsLoopback() || addr.IsLinkLocalUnicast() {
+			if addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast() {
 				continue
 			}
 			addrs = append(addrs, addr)
