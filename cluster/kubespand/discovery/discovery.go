@@ -7,7 +7,9 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"runtime"
 	"slices"
@@ -51,6 +53,32 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 		return nil, fmt.Errorf("AES cipher from cluster.secret: %w", err)
 	}
 
+	// Normalize endpoint URL to host:port for gRPC.
+	// Talos stores the default as "https://discovery.talos.dev/" (a URL), but gRPC
+	// expects "host:port". Talos's ConfigController does this normalization in
+	// internal/app/machined/pkg/controllers/cluster/config.go.
+	endpoint := cfg.Discovery.Endpoint
+	insecure := cfg.Discovery.Insecure
+
+	if u, err := url.ParseRequestURI(endpoint); err == nil && u.Scheme != "" {
+		host := u.Hostname()
+		port := u.Port()
+
+		if port == "" {
+			if u.Scheme == "http" {
+				port = "80"
+			} else {
+				port = "443"
+			}
+		}
+
+		endpoint = net.JoinHostPort(host, port)
+
+		if u.Scheme == "http" {
+			insecure = true
+		}
+	}
+
 	// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
 	tlsConfigFunc := func() *tls.Config {
 		return &tls.Config{MinVersion: tls.VersionTLS12}
@@ -58,13 +86,13 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 
 	opts := discoveryclient.Options{
 		Cipher:        cipherBlock,
-		Endpoint:      cfg.Discovery.Endpoint,
+		Endpoint:      endpoint,
 		ClusterID:     cfg.Cluster.ID,
 		AffiliateID:   affiliateID,
 		TTL:           discoveryTTL,
 		ClientVersion: "kubespand/0.1.0",
 	}
-	if cfg.Discovery.Insecure {
+	if insecure {
 		opts.Insecure = true
 	} else {
 		opts.TLSConfig = tlsConfigFunc
