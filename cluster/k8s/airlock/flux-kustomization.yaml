@@ -18,5 +18,5 @@ spec:
       name: airlock
       namespace: airlock
   dependsOn:
-    - name: external-secrets-config
+    - name: harbor-pull-secret
     - name: gateway

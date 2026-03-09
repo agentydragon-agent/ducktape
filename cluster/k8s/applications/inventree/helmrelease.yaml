@@ -35,7 +35,7 @@ spec:
       pullPolicy: Always
 
     imagePullSecrets:
-      - name: harbor-ci-robot
+      - name: harbor-pull-robot
 
     global:
       siteUrl: "https://inventree.allegedly.works"

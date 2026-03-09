@@ -23,7 +23,7 @@ spec:
       securityContext:
         fsGroup: 1000
       imagePullSecrets:
-        - name: harbor-ci-robot
+        - name: harbor-pull-robot
       containers:
         - name: oauth-broker
           image: registry.allegedly.works/ducktape/oauth-broker:devel-20260308042935-4229f90 # {"$imagepolicy": "flux-system:oauth-broker"}

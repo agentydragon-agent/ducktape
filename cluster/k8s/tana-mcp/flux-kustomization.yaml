@@ -19,5 +19,5 @@ spec:
       namespace: tana-mcp
   dependsOn:
     - name: tana-mcp-namespace
-    - name: tana-mcp-secrets
+    - name: harbor-pull-secret
     - name: harbor # Image hosted on registry.allegedly.works

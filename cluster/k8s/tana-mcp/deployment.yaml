@@ -23,7 +23,7 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       imagePullSecrets:
-        - name: harbor-ci-robot
+        - name: harbor-pull-robot
       containers:
         # Tana Desktop running under Xvfb with noVNC for graphical admin access
         - name: tana-desktop

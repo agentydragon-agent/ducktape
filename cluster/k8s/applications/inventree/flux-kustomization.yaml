@@ -20,6 +20,7 @@ spec:
   dependsOn:
     - name: inventree-namespace
     - name: inventree-secrets
+    - name: harbor-pull-secret
     - name: authentik-blueprint-inventree-secret
     - name: gateway
     - name: external-dns

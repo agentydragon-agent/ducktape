@@ -9,7 +9,7 @@ spec:
     tag: "20260305093303-69771a8" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
     pullSecrets:
-      - name: harbor-registry-credentials
+      - name: harbor-pull-robot
   env:
     # OpenClaw requires an API key for every provider. Ollama has no auth,
     # but a dummy value satisfies the auth-profiles check.

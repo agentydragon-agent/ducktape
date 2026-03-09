@@ -2,12 +2,13 @@
 #
 # Creates:
 #   - ducktape project (private, single project for all CI-pushed images)
-#   - ci robot account with push+pull on the ducktape project
+#   - ci robot account with push+pull on the ducktape project (CI push)
+#   - pull robot account with read-only access (imagePullSecrets in app namespaces)
 #   - webhook token for the Flux harbor Receiver
 #   - github webhook token for the Flux github Receiver
 #
-# Stores all credentials in Vault at kv/harbor/{ci-robot,webhook-token} and
-# kv/flux/github-webhook-token.
+# Stores all credentials in Vault at kv/harbor/{ci-robot,pull-robot,webhook-token}
+# and kv/flux/github-webhook-token.
 
 data "kubernetes_secret" "harbor_admin_password" {
   metadata {
@@ -57,10 +58,10 @@ resource "harbor_project" "ducktape" {
   public = false
 }
 
-# System-level robot account for CI push + cluster pull
+# System-level robot account for CI push (GitHub Actions)
 resource "harbor_robot_account" "ci" {
   name        = "ci"
-  description = "CI/CD robot account — pushes images from GitHub Actions, used as imagePullSecret in app namespaces"
+  description = "CI/CD robot account — pushes images from GitHub Actions"
   level       = "system"
 
   permissions {
@@ -86,6 +87,28 @@ resource "harbor_robot_account" "ci" {
   }
 }
 
+# Read-only robot account for imagePullSecrets in app namespaces.
+# Distributed via Reflector from flux-system to consumer namespaces.
+resource "harbor_robot_account" "pull" {
+  name        = "pull"
+  description = "Read-only robot for imagePullSecrets in app namespaces"
+  level       = "system"
+
+  permissions {
+    kind      = "project"
+    namespace = harbor_project.ducktape.name
+
+    access {
+      action   = "pull"
+      resource = "repository"
+    }
+    access {
+      action   = "read"
+      resource = "artifact"
+    }
+  }
+}
+
 # Webhook token for the Flux harbor Receiver (Harbor → Flux ImageRepository)
 resource "random_password" "harbor_webhook_token" {
   length  = 40
@@ -105,6 +128,16 @@ resource "vault_kv_secret_v2" "harbor_ci_robot" {
   data_json = jsonencode({
     username = harbor_robot_account.ci.full_name
     password = harbor_robot_account.ci.secret
+  })
+}
+
+resource "vault_kv_secret_v2" "harbor_pull_robot" {
+  mount = "kv"
+  name  = "harbor/pull-robot"
+
+  data_json = jsonencode({
+    username = harbor_robot_account.pull.full_name
+    password = harbor_robot_account.pull.secret
   })
 }
 

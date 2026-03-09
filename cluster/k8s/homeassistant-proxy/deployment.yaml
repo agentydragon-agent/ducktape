@@ -23,7 +23,7 @@ spec:
       securityContext:
         fsGroup: 1000
       imagePullSecrets:
-        - name: harbor-ci-robot
+        - name: harbor-pull-robot
       containers:
         - name: homeassistant-proxy
           image: registry.allegedly.works/ducktape/homeassistant-proxy:devel-20260308043334-4229f90 # {"$imagepolicy": "flux-system:homeassistant-proxy"}

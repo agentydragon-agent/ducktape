@@ -22,7 +22,7 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       imagePullSecrets:
-        - name: harbor-ci-robot
+        - name: harbor-pull-robot
       containers:
         - name: props
           image: registry.allegedly.works/ducktape/props-backend:devel-20260308043059-4229f90 # {"$imagepolicy": "flux-system:props-backend"}

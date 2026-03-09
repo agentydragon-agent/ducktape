@@ -1,16 +1,16 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: activitywatch-secrets
+  name: harbor-pull-secret
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./cluster/k8s/applications/activitywatch-secrets
-  prune: true
+  timeout: 5m
   sourceRef:
     kind: GitRepository
     name: flux-system
+  path: ./cluster/k8s/harbor-pull-secret
+  prune: true
+  wait: true
   dependsOn:
-    - name: activitywatch-namespace
     - name: external-secrets-config
-    - name: activitywatch-authkey-bootstrap

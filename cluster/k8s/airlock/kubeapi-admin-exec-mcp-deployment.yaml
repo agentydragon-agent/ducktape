@@ -20,6 +20,8 @@ spec:
         app: airlock
         component: kubeapi-admin-exec-mcp
     spec:
+      imagePullSecrets:
+        - name: harbor-pull-robot
       serviceAccountName: kubeapi-admin-exec-mcp
       automountServiceAccountToken: true
       containers:

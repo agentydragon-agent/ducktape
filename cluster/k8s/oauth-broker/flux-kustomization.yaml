@@ -20,4 +20,5 @@ spec:
   dependsOn:
     - name: oauth-broker-namespace
     - name: oauth-broker-secrets
+    - name: harbor-pull-secret
     - name: harbor # Image hosted on registry.allegedly.works

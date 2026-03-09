@@ -59,6 +59,7 @@ resources:
   - applications/harbor-secrets/flux-kustomization.yaml
   - harbor-proxy-cache/flux-kustomization.yaml
   - harbor-ci/flux-kustomization.yaml
+  - harbor-pull-secret/flux-kustomization.yaml
   - harbor-webhook/flux-kustomization.yaml
   - gitea-namespace/flux-kustomization.yaml
   - applications/gitea/flux-kustomization.yaml
@@ -86,7 +87,6 @@ resources:
   - grocy-namespace/flux-kustomization.yaml
   - applications/grocy/flux-kustomization.yaml
   - activitywatch-namespace/flux-kustomization.yaml
-  - applications/activitywatch-secrets/flux-kustomization.yaml
   - applications/activitywatch/flux-kustomization.yaml
   - oauth-broker-namespace/flux-kustomization.yaml
   - oauth-broker-secrets/flux-kustomization.yaml
@@ -147,6 +147,5 @@ resources:
   - homeassistant-proxy-namespace/flux-kustomization.yaml
   - homeassistant-proxy/flux-kustomization.yaml
   - tana-mcp-namespace/flux-kustomization.yaml
-  - tana-mcp-secrets/flux-kustomization.yaml
   - tana-mcp/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml

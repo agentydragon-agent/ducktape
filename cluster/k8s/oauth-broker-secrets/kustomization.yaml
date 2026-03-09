@@ -2,6 +2,5 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - oura-client-credentials-sealed.yaml
-  - harbor-robot-eso.yaml
   - google-client-credentials-sealed.yaml
   - plaid-client-credentials-sealed.yaml

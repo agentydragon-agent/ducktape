@@ -5,4 +5,3 @@ resources:
   - evaluator-credentials-externalsecret.yaml
   - openai-api-key-sealed.yaml
   - ollama-api-key-externalsecret.yaml
-  - harbor-robot-secret.yaml

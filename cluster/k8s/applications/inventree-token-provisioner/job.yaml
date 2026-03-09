@@ -20,7 +20,7 @@ spec:
       restartPolicy: OnFailure
       serviceAccountName: inventree-token-provisioner
       imagePullSecrets:
-        - name: harbor-ci-robot
+        - name: harbor-pull-robot
       containers:
         - name: provisioner
           image: registry.allegedly.works/ducktape/token-provisioner:latest

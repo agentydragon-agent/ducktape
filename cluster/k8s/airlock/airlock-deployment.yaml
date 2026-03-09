@@ -20,6 +20,8 @@ spec:
         app: airlock
         component: server
     spec:
+      imagePullSecrets:
+        - name: harbor-pull-robot
       containers:
         - name: airlock
           image: registry.allegedly.works/ducktape/airlock:devel-20260308043157-4229f90 # {"$imagepolicy": "flux-system:airlock"}

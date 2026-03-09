@@ -7,4 +7,4 @@ spec:
   image: registry.allegedly.works/ducktape/openclaw-matrix
   interval: 5m
   secretRef:
-    name: harbor-ci-robot
+    name: harbor-pull-robot
