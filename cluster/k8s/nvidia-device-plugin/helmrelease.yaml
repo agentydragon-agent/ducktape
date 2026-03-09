@@ -26,4 +26,10 @@ spec:
         kind: HelmRepository
         name: nvidia
         namespace: nvidia-device-plugin
-  values: {}
+  values:
+    # NixOS uses CDI for GPU device injection (no NVML inside containers).
+    # The host's nvidia-container-toolkit generates CDI specs at /run/cdi/.
+    # cdi-cri uses the CRI CDIDevices field; cdi-annotations is the legacy path.
+    deviceListStrategy: "cdi-cri,cdi-annotations"
+    cdi:
+      enabled: true
