@@ -9,7 +9,7 @@
 }:
 let
   # 8-char commit SHA from GitHub release tag (CI-managed)
-  shortSha = "b7479298";
+  shortSha = "2784ebd8";
 in
 pkgs.stdenv.mkDerivation {
   pname = "kubespand";
@@ -17,7 +17,7 @@ pkgs.stdenv.mkDerivation {
 
   src = pkgs.fetchurl {
     url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-${shortSha}/kubespand";
-    hash = "sha256-MAGgoWQ+xQTIAlhPfZztGVW87sCMSMinRLQ8BGaC60A=";
+    hash = "sha256-EGRGO3Tcbvya+/vAB1GKNpOMTFFVWeg/zwicXJ2I+RM=";
     executable = true;
   };
 
