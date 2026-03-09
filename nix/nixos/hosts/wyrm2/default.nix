@@ -33,7 +33,7 @@
       "topology.kubernetes.io/zone" = "atlas";
       "csi.proxmox.sinextra.dev/max-volume-attachments" = "29";
     };
-    nodeTaints = [ ]; # Accept all workloads (no roaming taint)
+    # nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
 
   # NVIDIA GPU (2x RTX 5090 via VFIO passthrough)
@@ -44,6 +44,24 @@
     nvidiaSettings = false; # No X settings app for headless GPU compute
   };
   hardware.nvidia-container-toolkit.enable = true;
+
+  # Separate data disks (Proxmox virtual disks).
+  # scsi30 avoids collision with Proxmox CSI PVCs (scsi1-29).
+  # virtio0 uses a different controller, no SCSI slot conflict.
+  # by-id paths are stable across reboots.
+  # autoFormat creates ext4 on first boot; autoResize grows to full disk size.
+  fileSystems."/var/lib/containerd" = {
+    device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi30";
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+  };
+  fileSystems."/var/local-path-provisioner" = {
+    device = "/dev/vda";
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+  };
 
   time.timeZone = "America/Los_Angeles";
 

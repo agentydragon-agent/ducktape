@@ -142,11 +142,13 @@ in
 
     nodeTaints = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
+      default = [ ];
+      # Example for roaming/laptop nodes:
+      # [ "node-role.kubernetes.io/roaming=true:NoSchedule" ]
       description = "Taints to apply on registration (key=value:effect format)";
     };
 
-    enableNvidiaRuntime = lib.mkEnableOption "NVIDIA containerd runtime as default (for GPU pods)";
+    enableNvidiaRuntime = lib.mkEnableOption "NVIDIA GPU support via CDI (Container Device Interface)";
 
   };
 
@@ -181,22 +183,32 @@ in
         version = 2;
         plugins."io.containerd.grpc.v1.cri" = {
           sandbox_image = "registry.k8s.io/pause:3.10";
-          containerd.default_runtime_name = if cfg.enableNvidiaRuntime then "nvidia" else "runc";
+          containerd.default_runtime_name = "runc";
           containerd.runtimes.runc = {
             runtime_type = "io.containerd.runc.v2";
             options.SystemdCgroup = true;
           };
-          containerd.runtimes.nvidia = lib.mkIf cfg.enableNvidiaRuntime {
-            runtime_type = "io.containerd.runc.v2";
-            options.BinaryName = "${lib.getOutput "tools" pkgs.nvidia-container-toolkit}/bin/nvidia-container-runtime";
-            options.SystemdCgroup = true;
-          };
+          # GPU support uses CDI (Container Device Interface), not a custom runtime.
+          # hardware.nvidia-container-toolkit generates CDI specs at /run/cdi/.
+          # The NVIDIA device plugin injects CDI annotations; containerd resolves
+          # them via CDI specs. No nvidia-container-runtime shim needed.
+          enable_cdi = lib.mkIf cfg.enableNvidiaRuntime true;
+          cdi_spec_dirs = lib.mkIf cfg.enableNvidiaRuntime [
+            "/etc/cdi"
+            "/var/run/cdi"
+          ];
           # Cilium DaemonSet installs cilium-cni to /opt/cni/bin.
           # We symlink base CNI plugins there too (see systemd.tmpfiles below).
           cni.bin_dir = "/opt/cni/bin";
           cni.conf_dir = "/etc/cni/net.d";
         };
       };
+    };
+
+    # Ensure CDI specs are generated before containerd starts
+    systemd.services.containerd = lib.mkIf cfg.enableNvidiaRuntime {
+      after = [ "nvidia-container-toolkit-cdi-generator.service" ];
+      wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
     };
 
     # Cilium DaemonSet installs cilium-cni + loopback into /opt/cni/bin at runtime.

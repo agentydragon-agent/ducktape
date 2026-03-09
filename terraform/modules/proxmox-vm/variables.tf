@@ -92,6 +92,16 @@ variable "gpu_mappings" {
   default     = []
 }
 
+variable "additional_disks" {
+  description = "Additional data disks to attach at explicit SCSI slot numbers"
+  type = list(object({
+    interface    = string           # SCSI interface, e.g. "scsi30"
+    size_gb      = number
+    datastore_id = optional(string) # Defaults to var.storage
+  }))
+  default = []
+}
+
 # K8s cluster join credentials (optional)
 variable "k8s_cluster_join" {
   description = "K8s cluster join credentials. When set, cloud-init writes credential files for kubelet and kubespand."

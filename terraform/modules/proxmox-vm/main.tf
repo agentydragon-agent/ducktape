@@ -81,6 +81,19 @@ resource "proxmox_virtual_environment_vm" "vm" {
     size         = var.disk_size_gb
   }
 
+  # Additional data disks at explicit SCSI slots (use high numbers to avoid CSI range)
+  dynamic "disk" {
+    for_each = { for d in var.additional_disks : d.interface => d }
+    content {
+      datastore_id = coalesce(disk.value.datastore_id, var.storage)
+      interface    = disk.value.interface
+      iothread     = true
+      discard      = "on"
+      size         = disk.value.size_gb
+      file_format  = "raw"
+    }
+  }
+
   network_device {
     bridge = var.network_bridge
     model  = "virtio"
