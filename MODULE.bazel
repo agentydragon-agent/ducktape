@@ -275,12 +275,15 @@ npm.npm_translate_lock(
 )
 use_repo(npm, "npm_ducktape")
 
-# aw-webui standalone npm universe (separate from the main pnpm workspace so we
-# don't have to vendor the JS source into this repo).
+# aw-webui standalone npm universe — separate extension instance because its
+# lock file lives in third_party/activitywatch/, a different workspace root
+# from the main pnpm-lock.yaml.  rules_js forbids mixing workspace roots within
+# a single extension instance ("cannot seed_root twice with different workspaces").
 # The pnpm lockfile is auto-regenerated from upstream's package-lock.json via
 # `pnpm import` when update_pnpm_lock detects a change. If the lockfile is stale,
 # the build fails with "pnpm-lock.yaml file updated. Please run your build again."
-npm.npm_translate_lock(
+npm_activitywatch = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+npm_activitywatch.npm_translate_lock(
     name = "npm_aw_webui",
     bins = {
         "vite": ["vite=./bin/vite.js"],
@@ -304,7 +307,7 @@ npm.npm_translate_lock(
     update_pnpm_lock = True,
     use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
 )
-use_repo(npm, "npm_aw_webui")
+use_repo(npm_activitywatch, "npm_aw_webui")
 
 # Custom multitool lockfile with newer ruff (0.14.0 vs 0.8.3 in aspect_rules_lint)
 multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
