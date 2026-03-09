@@ -64,7 +64,6 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/discovery"
-	"github.com/agentydragon/ducktape/cluster/kubespand/routing"
 	"github.com/agentydragon/ducktape/cluster/kubespand/wireguard"
 	kubespanadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/kubespan"
 	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
@@ -81,7 +80,6 @@ const DefaultPeerReconcileInterval = 30 * time.Second
 // so this interface includes both read and write operations.
 type WireguardManager interface {
 	EnsureInterface(address netip.Prefix) error
-	AddAddress(address netip.Prefix) error
 	PresharedKey() *wgtypes.Key
 	ConfigurePeers(peers []wgtypes.PeerConfig) error
 	GetPeers() ([]wgtypes.Peer, error)
@@ -125,8 +123,8 @@ func (ctrl *ManagerController) Inputs() []controller.Input {
 }
 
 // Outputs implements controller.Controller.
-// NfTablesChain is OutputExclusive because kubespand is the sole producer
-// (upstream uses OutputShared since Talos has multiple chain producers).
+// Ref: Talos manager.go Outputs() — we add AddressSpec and RouteSpec for COSI
+// address/route management, matching the upstream declarative model.
 func (ctrl *ManagerController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
@@ -135,6 +133,14 @@ func (ctrl *ManagerController) Outputs() []controller.Output {
 		},
 		{
 			Type: network.NfTablesChainType,
+			Kind: controller.OutputExclusive,
+		},
+		{
+			Type: network.AddressSpecType,
+			Kind: controller.OutputExclusive,
+		},
+		{
+			Type: network.RouteSpecType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -235,18 +241,6 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 			wg.Close()
 			return fmt.Errorf("wireguard interface: %w", err)
 		}
-		// Add the node's routed IPv4/IPv6 addresses to the kubespan interface.
-		// When a reply packet arrives on kubespan destined to the node's own
-		// address (which lives on another interface like eth0), the kernel
-		// rejects it with "Invalid cross-device link" if ip_forward=1 and the
-		// address isn't configured on kubespan. Adding it as a secondary
-		// address resolves this.
-		for _, nodeAddr := range discovery.RoutedNodeAddresses() {
-			prefix := netip.PrefixFrom(nodeAddr, nodeAddr.BitLen())
-			if err := wg.AddAddress(prefix); err != nil {
-				logger.Warn("failed to add node address to kubespan", zap.String("address", prefix.String()), zap.Error(err))
-			}
-		}
 		logger.Info("WireGuard interface ready", zap.String("interface", constants.KubeSpanLinkName))
 
 		ctrl.wg = wg
@@ -264,12 +258,108 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		if err := ctrl.rules.Install(); err != nil {
 			return fmt.Errorf("ip rules: %w", err)
 		}
-		if err := routing.InstallRoutes(int(cfgSpec.MTU)); err != nil {
-			return fmt.Errorf("routes: %w", err)
-		}
 		logger.Info("routing rules installed",
 			zap.Int("table", constants.KubeSpanDefaultRoutingTable),
 		)
+	}
+
+	// Write COSI AddressSpec for the ULA address on the kubespan interface.
+	// Ref: Talos manager.go AddressSpec write
+	if err := safe.WriterModify(ctx, r,
+		network.NewAddressSpec(
+			network.NamespaceName,
+			network.AddressID(constants.KubeSpanLinkName, idSpec.Address),
+		),
+		func(res *network.AddressSpec) error {
+			spec := res.TypedSpec()
+			spec.Address = netip.PrefixFrom(idSpec.Address.Addr(), idSpec.Subnet.Bits())
+			spec.ConfigLayer = network.ConfigOperator
+			spec.Family = nethelpers.FamilyInet6
+			spec.Flags = nethelpers.AddressFlags(nethelpers.AddressPermanent)
+			spec.LinkName = constants.KubeSpanLinkName
+			spec.Scope = nethelpers.ScopeGlobal
+			return nil
+		},
+	); err != nil {
+		return fmt.Errorf("error writing ULA address spec: %w", err)
+	}
+
+	// Write COSI AddressSpec for each node routed address on kubespan.
+	// When a reply arrives on kubespan destined to the node's own address
+	// (on another interface like eth0), the kernel rejects it with
+	// "Invalid cross-device link" if ip_forward=1 and the address isn't
+	// on kubespan. Adding it as a secondary address resolves this.
+	for _, nodeAddr := range discovery.RoutedNodeAddresses() {
+		prefix := netip.PrefixFrom(nodeAddr, nodeAddr.BitLen())
+		if err := safe.WriterModify(ctx, r,
+			network.NewAddressSpec(
+				network.NamespaceName,
+				network.AddressID(constants.KubeSpanLinkName, prefix),
+			),
+			func(res *network.AddressSpec) error {
+				spec := res.TypedSpec()
+				spec.Address = prefix
+				spec.ConfigLayer = network.ConfigOperator
+				if nodeAddr.Is4() {
+					spec.Family = nethelpers.FamilyInet4
+				} else {
+					spec.Family = nethelpers.FamilyInet6
+				}
+				spec.Flags = nethelpers.AddressFlags(nethelpers.AddressPermanent)
+				spec.LinkName = constants.KubeSpanLinkName
+				spec.Scope = nethelpers.ScopeGlobal
+				return nil
+			},
+		); err != nil {
+			logger.Warn("failed to write node address spec", zap.String("address", prefix.String()), zap.Error(err))
+		}
+	}
+
+	// Write COSI RouteSpec for default routes in table 180.
+	// Ref: Talos manager.go RouteSpec writes
+	mtu := cfgSpec.MTU
+	for _, routeSpec := range []network.RouteSpecSpec{
+		{
+			Family:      nethelpers.FamilyInet4,
+			Destination: netip.Prefix{},
+			Source:      netip.Addr{},
+			Gateway:     netip.Addr{},
+			MTU:         mtu,
+			OutLinkName: constants.KubeSpanLinkName,
+			Table:       nethelpers.RoutingTable(constants.KubeSpanDefaultRoutingTable),
+			Priority:    1,
+			Scope:       nethelpers.ScopeGlobal,
+			Type:        nethelpers.TypeUnicast,
+			Protocol:    nethelpers.ProtocolStatic,
+			ConfigLayer: network.ConfigOperator,
+		},
+		{
+			Family:      nethelpers.FamilyInet6,
+			Destination: netip.Prefix{},
+			Source:      netip.Addr{},
+			Gateway:     netip.Addr{},
+			MTU:         mtu,
+			OutLinkName: constants.KubeSpanLinkName,
+			Table:       nethelpers.RoutingTable(constants.KubeSpanDefaultRoutingTable),
+			Priority:    1,
+			Scope:       nethelpers.ScopeGlobal,
+			Type:        nethelpers.TypeUnicast,
+			Protocol:    nethelpers.ProtocolStatic,
+			ConfigLayer: network.ConfigOperator,
+		},
+	} {
+		if err := safe.WriterModify(ctx, r,
+			network.NewRouteSpec(
+				network.NamespaceName,
+				network.RouteID(routeSpec.Table, routeSpec.Family, routeSpec.Destination, routeSpec.Gateway, routeSpec.Priority, routeSpec.OutLinkName),
+			),
+			func(res *network.RouteSpec) error {
+				*res.TypedSpec() = routeSpec
+				return nil
+			},
+		); err != nil {
+			return fmt.Errorf("error writing route spec: %w", err)
+		}
 	}
 
 	// List all discovered peers.

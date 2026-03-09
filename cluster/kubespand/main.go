@@ -127,6 +127,12 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		if err := rt.RegisterController(&taloscontrollersnetwork.NfTablesChainController{}); err != nil {
 			return fmt.Errorf("registering nftables chain controller: %w", err)
 		}
+		if err := rt.RegisterController(&taloscontrollersnetwork.AddressSpecController{}); err != nil {
+			return fmt.Errorf("registering address spec controller: %w", err)
+		}
+		if err := rt.RegisterController(&taloscontrollersnetwork.RouteSpecController{}); err != nil {
+			return fmt.Errorf("registering route spec controller: %w", err)
+		}
 		if err := rt.RegisterController(&taloscontrollerskubespan.EndpointController{}); err != nil {
 			return fmt.Errorf("registering endpoint controller: %w", err)
 		}
