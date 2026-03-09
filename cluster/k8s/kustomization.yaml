@@ -120,7 +120,6 @@ resources:
   - openclaw-operator/flux-kustomization.yaml
   - openclaw-gateway-namespace/flux-kustomization.yaml
   - openclaw-mitmproxy-namespace/flux-kustomization.yaml
-  - openclaw-mitmproxy-secrets/flux-kustomization.yaml
   - openclaw-mitmproxy/flux-kustomization.yaml
   - openclaw-gateway-secrets/flux-kustomization.yaml
   - openclaw-gateway/flux-kustomization.yaml
@@ -145,7 +144,6 @@ resources:
   - user-agentydragon-namespace/flux-kustomization.yaml
   - user-agentydragon/flux-kustomization.yaml
   - homeassistant-proxy-namespace/flux-kustomization.yaml
-  - homeassistant-proxy-secrets/flux-kustomization.yaml
   - homeassistant-proxy/flux-kustomization.yaml
   - tana-mcp-namespace/flux-kustomization.yaml
   - tana-mcp-secrets/flux-kustomization.yaml

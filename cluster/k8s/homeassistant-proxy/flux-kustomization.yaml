@@ -19,5 +19,5 @@ spec:
       namespace: homeassistant-proxy
   dependsOn:
     - name: homeassistant-proxy-namespace
-    - name: homeassistant-proxy-secrets
+    - name: external-secrets-config
     - name: harbor # Image hosted on registry.allegedly.works
