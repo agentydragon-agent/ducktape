@@ -103,25 +103,6 @@ func (wm *Manager) EnsureInterface(address netip.Prefix) error {
 	return nil
 }
 
-// AddAddress adds a secondary IP address to the kubespan interface.
-// Used to add the node's routed IPv4 addresses so the kernel accepts
-// reply packets arriving on kubespan destined to these addresses.
-// Without this, the kernel rejects replies with "Invalid cross-device link"
-// when ip_forward=1 and the address belongs to a different interface.
-func (wm *Manager) AddAddress(address netip.Prefix) error {
-	link, err := netlink.LinkByName(constants.KubeSpanLinkName)
-	if err != nil {
-		return fmt.Errorf("finding %s: %w", constants.KubeSpanLinkName, err)
-	}
-	addr := &netlink.Addr{
-		IPNet: prefixToIPNet(address),
-	}
-	if err := netlink.AddrReplace(link, addr); err != nil {
-		return fmt.Errorf("adding address %s to %s: %w", address, constants.KubeSpanLinkName, err)
-	}
-	return nil
-}
-
 // PresharedKey returns the WireGuard preshared key for peer configuration.
 func (wm *Manager) PresharedKey() *wgtypes.Key {
 	return &wm.psk
