@@ -290,6 +290,7 @@ npm_activitywatch.npm_translate_lock(
     # resolve in the http_archive where npm_link_all_packages() creates them,
     # not in the main workspace where the lockfile lives.
     link_workspace = "aw_webui",
+    npmrc = "@@//:.npmrc",
     # vue-demi's postinstall switches lib/index.mjs to the correct Vue version
     # variant, but lifecycle hooks are disabled in sandboxed builds.  Patch the
     # default (Vue 3) stub to add the missing hasInjectionContext export that
