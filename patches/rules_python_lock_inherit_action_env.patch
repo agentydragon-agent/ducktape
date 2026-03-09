@@ -1,0 +1,27 @@
+--- a/python/uv/private/lock.bzl	2026-03-09 12:19:18.662832117 +0000
++++ b/python/uv/private/lock.bzl	2026-03-09 12:19:18.669196605 +0000
+@@ -15,6 +15,7 @@
+ """An implementation for a simple macro to lock the requirements.
+ """
+ 
++load("@bazel_skylib//lib:dicts.bzl", "dicts")
+ load("@bazel_skylib//lib:shell.bzl", "shell")
+ load("//python:py_binary.bzl", "py_binary")
+ load("//python/private:bzlmod_enabled.bzl", "BZLMOD_ENABLED")  # buildifier: disable=bzl-visibility
+@@ -143,14 +144,14 @@
+             python_files,
+         ],
+         progress_message = "Creating a requirements.txt with uv: %{label}",
+-        env = ctx.attr.env,
++        env = dicts.add(ctx.configuration.default_shell_env, ctx.attr.env),
+     )
+ 
+     return [
+         DefaultInfo(files = depset([output])),
+         _RunLockInfo(
+             args = args.run_info,
+-            env = ctx.attr.env,
++            env = dicts.add(ctx.configuration.default_shell_env, ctx.attr.env),
+             srcs = depset(
+                 srcs + [uv],
+                 transitive = [python_files],

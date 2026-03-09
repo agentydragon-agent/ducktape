@@ -28,6 +28,25 @@ common --repo_env=GOSUMDB=sum.golang.org
 common --repo_env=GIT_SSL_CAINFO=${combined_ca_path | sh}
 common --repo_env=SSL_CERT_FILE=${combined_ca_path | sh}
 
+# Force PyRequirementsLockUv (uv pip compile) to run locally, not on RBE.
+# This ensures the action can reach the auth proxy at localhost:18081.
+# In CI/RBE, the lock rule uses exec_properties dockerNetwork:bridge instead.
+build --strategy=PyRequirementsLockUv=local
+
+# Pass proxy and TLS CA into local build sandbox actions.
+# Required for //:requirements (uv pip compile) which runs locally (see above).
+# rules_python's lock() rule inherits these via ctx.configuration.default_shell_env
+# after our patch (patches/rules_python_lock_inherit_action_env.patch).
+# Explicit values (not inherited from server env) so the proxy URL doesn't vary
+# with JWT rotation in the Bazel server environment.
+build --action_env=http_proxy=http://127.0.0.1:${proxy_port}
+build --action_env=https_proxy=http://127.0.0.1:${proxy_port}
+build --action_env=HTTP_PROXY=http://127.0.0.1:${proxy_port}
+build --action_env=HTTPS_PROXY=http://127.0.0.1:${proxy_port}
+build --action_env=SSL_CERT_FILE=${combined_ca_path | sh}
+build --action_env=REQUESTS_CA_BUNDLE=${combined_ca_path | sh}
+build --action_env=CURL_CA_BUNDLE=${combined_ca_path | sh}
+
 # Tag invocations for BuildBuddy filtering
 build --build_metadata=ROLE=claude-code
 

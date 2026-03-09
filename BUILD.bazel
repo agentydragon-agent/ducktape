@@ -89,14 +89,25 @@ js_library(
 )
 
 # Generate requirements_bazel.txt from pyproject.toml
-# Run: bazel run //:requirements.update
+# Run: bazel run //:requirements.run     # Direct uv invocation, uses shell proxy env vars
+# Run: bazel run //:requirements.update  # Via build action (sandbox), needs proxy env passed
 #
 # IMPORTANT: This target requires direct network access to PyPI for dependency resolution.
-# dockerNetwork=bridge gives the RBE action outbound internet access (off by default).
+# - RBE: exec_properties dockerNetwork=bridge gives outbound internet access.
+# - Local (Claude Code containers): proxy vars (https_proxy, SSL_CERT_FILE) are passed
+#   via --action_env in .bazelrc. UV_NATIVE_TLS=1 makes uv use OpenSSL (reads SSL_CERT_FILE)
+#   rather than bundled rustls (which ignores SSL_CERT_FILE). ~/.bazelrc adds a
+#   --sandbox_add_mount_pair for /root/.claude so the session cert is accessible.
 lock(
     name = "requirements",
     srcs = ["pyproject.toml"],
     out = "requirements_bazel.txt",
+    env = {
+        # Use OpenSSL TLS stack so SSL_CERT_FILE (passed via --action_env) is respected.
+        # Without this, uv uses bundled rustls which ignores SSL_CERT_FILE, so the proxy
+        # CA cert is not trusted and HTTPS connections through TLS-inspecting proxies fail.
+        "UV_NATIVE_TLS": "1",
+    },
     exec_properties = {"dockerNetwork": "bridge"},
 )
 
