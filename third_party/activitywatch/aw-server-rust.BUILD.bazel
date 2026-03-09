@@ -1,0 +1,155 @@
+"""Injected BUILD file for the @aw_server_rust http_archive.
+
+Defines rust_library / rust_binary targets for all aw-server-rust workspace
+members.  External crate deps are referenced from @aw_server_crates (the
+crate_universe hub for this workspace).
+
+The aw-server library embeds the aw-webui frontend at compile time via
+rust-embed's interpolate-folder-path feature.  The Bazel-built dist/ directory
+is wired in through the rustc_env + compile_data attributes below.
+"""
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
+exports_files([
+    "Cargo.toml",
+    "Cargo.lock",
+] + glob([
+    "*/Cargo.toml",
+]))
+
+# ── aw-models ─────────────────────────────────────────────────────────────────
+
+rust_library(
+    name = "aw_models",
+    srcs = glob(["aw-models/src/**/*.rs"]),
+    crate_root = "aw-models/src/lib.rs",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:schemars",
+        "@aw_server_crates//:serde",
+        "@aw_server_crates//:serde_json",
+    ],
+)
+
+# ── aw-transform ──────────────────────────────────────────────────────────────
+
+rust_library(
+    name = "aw_transform",
+    srcs = glob(["aw-transform/src/**/*.rs"]),
+    crate_root = "aw-transform/src/lib.rs",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_models",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:fancy-regex",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:serde",
+        "@aw_server_crates//:serde_json",
+        "@aw_server_crates//:url",
+    ],
+)
+
+# ── aw-datastore ──────────────────────────────────────────────────────────────
+
+rust_library(
+    name = "aw_datastore",
+    srcs = glob(["aw-datastore/src/**/*.rs"]),
+    crate_root = "aw-datastore/src/lib.rs",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_models",
+        ":aw_transform",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:dirs",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:mpsc_requests",
+        "@aw_server_crates//:rusqlite",
+        "@aw_server_crates//:serde",
+        "@aw_server_crates//:serde_json",
+    ],
+)
+
+# ── aw-query ──────────────────────────────────────────────────────────────────
+
+rust_library(
+    name = "aw_query",
+    srcs = glob(["aw-query/src/**/*.rs"]),
+    crate_root = "aw-query/src/lib.rs",
+    edition = "2021",
+    proc_macro_deps = [
+        "@aw_server_crates//:plex",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_datastore",
+        ":aw_models",
+        ":aw_transform",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:fancy-regex",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:serde",
+        "@aw_server_crates//:serde_json",
+    ],
+)
+
+# ── aw-server (library + binary) ──────────────────────────────────────────────
+#
+# rust-embed with the interpolate-folder-path feature reads AW_WEBUI_DIR from
+# the compiler environment (via std::env::var in the proc macro).  We pass it
+# through rustc_env and make the dist/ TreeArtifact available in the sandbox
+# via compile_data.
+
+rust_library(
+    name = "aw_server",
+    srcs = glob(["aw-server/src/**/*.rs"]),
+    compile_data = ["@aw_webui//:dist"],
+    crate_root = "aw-server/src/lib.rs",
+    edition = "2021",
+    rustc_env = {
+        "AW_WEBUI_DIR": "$(execpath @aw_webui//:dist)",
+    },
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_datastore",
+        ":aw_models",
+        ":aw_query",
+        ":aw_transform",
+        "@aw_server_crates//:chrono",
+        "@aw_server_crates//:clap",
+        "@aw_server_crates//:dirs",
+        "@aw_server_crates//:fern",
+        "@aw_server_crates//:gethostname",
+        "@aw_server_crates//:lazy_static",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:log-panics",
+        "@aw_server_crates//:rocket",
+        "@aw_server_crates//:rocket_cors",
+        "@aw_server_crates//:rust-embed",
+        "@aw_server_crates//:serde",
+        "@aw_server_crates//:serde_json",
+        "@aw_server_crates//:toml",
+        "@aw_server_crates//:uuid",
+    ],
+)
+
+rust_binary(
+    name = "aw_server_bin",
+    srcs = ["aw-server/src/main.rs"],
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aw_datastore",
+        ":aw_server",
+        "@aw_server_crates//:clap",
+        "@aw_server_crates//:log",
+        "@aw_server_crates//:rocket",
+        # Linux-only deps (select() not used here; on non-Linux these are just unused)
+        "@aw_server_crates//:sd-notify",
+    ],
+)

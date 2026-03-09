@@ -1,0 +1,58 @@
+"""Injected BUILD file for the @aw_webui http_archive.
+
+Runs `vite build` to produce the frontend bundle at :dist (a TreeArtifact).
+The Rust binary (aw-server) embeds this at compile time via rust-embed's
+interpolate-folder-path feature (controlled by AW_WEBUI_DIR env var).
+
+Build the bundle:
+  bazel build @aw_webui//:dist
+"""
+
+load("@aspect_rules_js//js:defs.bzl", "js_run_binary")
+load("@npm_aw_webui//:defs.bzl", "npm_link_all_packages")
+load("@npm_aw_webui//:vite/package_json.bzl", vite_bin = "bin")
+
+exports_files(["package-lock.json"])
+
+npm_link_all_packages(name = "node_modules")
+
+# Vite binary — declared here so node_modules are in its RUNFILES.
+vite_bin.vite_binary(
+    name = "vite",
+    visibility = ["//visibility:public"],
+)
+
+# Run `vite build` to produce dist/.
+# chdir = "." normalises to "external/<canonical-repo-name>" for external repos,
+# which is the directory in BAZEL_BINDIR where node_modules and copied sources live.
+js_run_binary(
+    name = "dist",
+    srcs = [
+        ":node_modules",
+        "vite.config.js",
+        "index.html",
+        "package.json",
+    ] + glob(
+        [
+            "src/**",
+            "static/**",
+        ],
+        allow_empty = False,
+    ),
+    out_dirs = ["dist"],
+    args = [
+        "build",
+        "--outDir",
+        "dist",
+        "--emptyOutDir",
+    ],
+    chdir = ".",
+    env = {
+        "NODE_ENV": "production",
+        # Stable placeholder so the build is hermetic (avoids shelling out to
+        # `git rev-parse`).
+        "COMMIT_HASH": "bazel",
+    },
+    tool = ":vite",
+    visibility = ["//visibility:public"],
+)

@@ -93,3 +93,9 @@ jobs:
             //tana/token_broker:load \
             tana-token-broker:latest \
             registry.allegedly.works/ducktape/tana-token-broker
+      - name: Build and push aw-server
+        run: |-
+          .github/scripts/harbor_push.sh \
+            //third_party/activitywatch:load \
+            aw-server:latest \
+            registry.allegedly.works/ducktape/aw-server
