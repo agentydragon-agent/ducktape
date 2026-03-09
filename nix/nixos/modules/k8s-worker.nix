@@ -36,6 +36,9 @@ let
     util-linux
     nftables
     wireguard-tools
+    tcpdump
+    conntrack-tools
+    iproute2
   ];
 
   kubeletConfigYaml = pkgs.writeText "kubelet-config.yaml" (
@@ -184,13 +187,20 @@ in
       "net.bridge.bridge-nf-call-iptables" = 1;
       "net.bridge.bridge-nf-call-ip6tables" = 1;
       "net.ipv4.ip_forward" = 1;
+    }
+    // lib.optionalAttrs isKubespan {
+      # Disable reverse path filtering on kubespan. Packets decrypted by
+      # WireGuard arrive on kubespan with source IPs whose reverse path goes
+      # through ens18 (e.g., VPS public IPs). Both the kernel sysctl rpfilter
+      # and iptables rpfilter module must be disabled/loosened independently.
+      # default.rp_filter controls new interfaces (kubespan is created at
+      # runtime by kubespand); all.rp_filter is max'd with per-interface value.
+      "net.ipv4.conf.default.rp_filter" = 0;
+      "net.ipv4.conf.all.rp_filter" = 0;
     };
 
-    # KubeSpan requires loose reverse path filtering. Packets decrypted by
-    # WireGuard arrive on the kubespan interface with source IPs (e.g., VPS
-    # public IPs) whose reverse path goes through ens18, not kubespan.
-    # Strict rpfilter drops these. Loose mode only checks that a route to
-    # the source exists via *any* interface.
+    # Loose iptables rpfilter for the same reason as above — the iptables
+    # rpfilter module is a separate check from the kernel sysctl.
     networking.firewall.checkReversePath = lib.mkIf isKubespan "loose";
 
     # Containerd
