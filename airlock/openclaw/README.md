@@ -42,7 +42,7 @@ Add to your OpenClaw config:
 ## Installation
 
 The plugin is included in the custom OpenClaw Docker image
-(`docker/openclaw/Dockerfile`). The image installs plugin deps at build time.
+(`openclaw/Dockerfile`). The image installs plugin deps at build time.
 
 To install manually:
 

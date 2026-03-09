@@ -78,7 +78,7 @@ jobs:
       - name: Build and push openclaw-exec
         run: |-
           .github/scripts/harbor_push.sh \
-            //docker/openclaw-exec:load \
+            //openclaw/exec:load \
             openclaw-exec:latest \
             registry.allegedly.works/ducktape/openclaw-exec
       - name: Build and push homeassistant-proxy

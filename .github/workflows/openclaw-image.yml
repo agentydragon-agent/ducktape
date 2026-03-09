@@ -31,12 +31,12 @@ jobs:
         run: bazel build //airlock/openclaw:plugin_tar
 
       - name: Stage plugin tar for Docker
-        run: cp bazel-bin/airlock/openclaw/plugin_tar.tar docker/openclaw/airlock-plugin.tar
+        run: cp bazel-bin/airlock/openclaw/plugin_tar.tar openclaw/airlock-plugin.tar
 
       - uses: ./.github/actions/harbor-build-push
         with:
           image: registry.allegedly.works/ducktape/openclaw-matrix
           context: .
-          file: docker/openclaw/Dockerfile
+          file: openclaw/Dockerfile
           harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           harbor_robot_token: ${{ secrets.HARBOR_ROBOT_TOKEN }}

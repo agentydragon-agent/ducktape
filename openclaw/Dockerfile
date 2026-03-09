@@ -33,9 +33,9 @@ RUN node -e " \
 
 # ── Airlock plugin ────────────────────────────────────────────────────────────
 # Plugin source built by Bazel (//airlock/openclaw:plugin_tar).
-# CI stages the tar at docker/openclaw/airlock-plugin.tar before build.
+# CI stages the tar at openclaw/airlock-plugin.tar before build.
 WORKDIR /app/extensions/airlock
-ADD docker/openclaw/airlock-plugin.tar .
+ADD openclaw/airlock-plugin.tar .
 RUN npm install --omit=dev \
  && chown -R node:node .
 
@@ -43,7 +43,7 @@ WORKDIR /app
 
 # Proxy preload: always active. Kyverno injects the proxy env vars at runtime;
 # NODE_OPTIONS activates this preload so Node.js uses them from startup.
-COPY docker/openclaw/proxy-setup.mjs /app/proxy-setup.mjs
+COPY openclaw/proxy-setup.mjs /app/proxy-setup.mjs
 ENV NODE_OPTIONS="--import=file:///app/proxy-setup.mjs"
 
 USER node
