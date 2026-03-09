@@ -1,23 +1,32 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 
 go_library(
-    name = "testprobe_lib",
-    srcs = ["main.go"],
-    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/testprobe",
+    name = "qemu_init_lib",
+    testonly = True,
+    srcs = [
+        "main.go",
+        "nft_exprs.go",
+        "nft_smoke.go",
+        "ping.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu/qemu_init",
     visibility = ["//visibility:private"],
     deps = [
+        "//cluster/kubespand/qemu",
         "@com_github_google_nftables//:nftables",
+        "@com_github_google_nftables//binaryutil",
         "@com_github_google_nftables//expr",
         "@org_golang_x_net//icmp",
+        "@org_golang_x_net//ipv4",
         "@org_golang_x_net//ipv6",
         "@org_golang_x_sys//unix",
     ],
 )
 
 go_binary(
-    name = "testprobe",
+    name = "qemu_init",
     testonly = True,
-    embed = [":testprobe_lib"],
+    embed = [":qemu_init_lib"],
     goarch = "amd64",
     goos = "linux",
     static = "on",

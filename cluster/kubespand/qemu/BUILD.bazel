@@ -1,17 +1,25 @@
 # QEMU-based nftables and KubeSpan integration tests.
 #
-# nft_smoke_qemu: Boots a minimal Linux VM with testprobe and nftables modules.
-#   Runs graduated nft-smoke levels (1-6). No Docker or KVM required.
+# Three test functions in a single go_test:
+#   TestNftSmoke:             nft-smoke levels 1-6 in a single QEMU VM
+#   TestKubeSpanFlat:         flat topology (same subnet, IPv6 ULA probe)
+#   TestKubeSpanCrossSubnet:  cross-subnet topology (rpfilter + IPv4 probe)
 #
-# kubespan_qemu: Boots two QEMU VMs running kubespand, connected via a virtual
-#   L2 network with a discovery service on the host (Docker). Verifies WireGuard
-#   tunnel connectivity through ICMPv6 probes.
-#
-# Both tests share a single initramfs with the full Alpine linux-virt kernel
-# modules tree, busybox, testprobe, and kubespand. The init script dispatches
-# on a mode= kernel cmdline parameter. QEMU TCG (software emulation) is used.
+# All tests share a single initramfs with the full Alpine linux-virt kernel
+# modules tree, busybox, and a Go init binary (qemu_init) that links in
+# testprobe and kubespand functionality. QEMU TCG (software emulation) is used.
 
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+# ─ Shared event schema ────────────────────────────────────────────────────
+# Imported by both qemu_init (VM-side, emits events) and qemu_test (host-side, parses events).
+go_library(
+    name = "qemu",
+    testonly = True,
+    srcs = ["events.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
 
 # ─ Extract vmlinuz from Alpine linux-virt .apk ────────────────────────────────
 genrule(
@@ -50,18 +58,17 @@ genrule(
 )
 
 # ─ Build initramfs (cpio.gz) ────────────────────────────────────────────────
-# Unified initramfs for both tests. Uses Alpine minirootfs as the base
+# Unified initramfs for all tests. Uses Alpine minirootfs as the base
 # filesystem (provides /bin, /sbin, /etc, busybox + symlinks, musl libc).
-# Overlays: /init (init.sh), /kubespand, /testprobe, kernel modules.
-# The init script dispatches on mode= kernel cmdline parameter.
+# Overlays: /init (Go binary with testprobe linked in), /kubespand, kernel modules.
+# The init binary dispatches on mode= kernel cmdline parameter.
 genrule(
     name = "initramfs",
     testonly = True,
     srcs = [
-        "init.sh",
         "@alpine_minirootfs_x86_64//file",
         "//cluster/kubespand",
-        "//cluster/kubespand/testprobe",
+        "//cluster/kubespand/qemu/qemu_init",
         ":modules_tree",
     ],
     outs = ["initramfs.cpio.gz"],
@@ -76,17 +83,13 @@ genrule(
         mkdir -p $$INITRAMFS_DIR/var/lib/kubespan \
                  $$INITRAMFS_DIR/etc/kubespan
 
-        # Install init script.
-        cp $(location init.sh) $$INITRAMFS_DIR/init
+        # Install init binary (Go, replaces init.sh).
+        cp $(location //cluster/kubespand/qemu/qemu_init) $$INITRAMFS_DIR/init
         chmod +x $$INITRAMFS_DIR/init
 
         # Install kubespand.
         cp $(location //cluster/kubespand:kubespand) $$INITRAMFS_DIR/kubespand
         chmod +x $$INITRAMFS_DIR/kubespand
-
-        # Install testprobe.
-        cp $(location //cluster/kubespand/testprobe) $$INITRAMFS_DIR/testprobe
-        chmod +x $$INITRAMFS_DIR/testprobe
 
         # Install full kernel modules tree (for modprobe dependency resolution).
         tar -xf $(location :modules_tree) -C $$INITRAMFS_DIR
@@ -97,47 +100,24 @@ genrule(
     """,
 )
 
-# ─ Test: nft-smoke levels 1-6 in QEMU ────────────────────────────────────────
-sh_test(
-    name = "nft_smoke_qemu",
-    timeout = "long",
-    srcs = ["run_qemu_test.sh"],
-    args = [
-        "$(location :vmlinuz)",
-        "$(location :initramfs)",
-        "1,2,3,4,5,6",
-    ],
-    data = [
-        ":initramfs",
-        ":vmlinuz",
-    ],
-    tags = [
-        "requires_qemu",
-    ],
-)
-
-# ─ Test: KubeSpan integration in QEMU ────────────────────────────────────────
-# Two QEMU VMs running kubespand discover each other via a local discovery
-# service and establish a WireGuard tunnel. VM-A sends ICMPv6 probes to VM-B's
-# KubeSpan address to verify end-to-end connectivity.
-#
-# Requires: Docker (for discovery service), qemu-system-x86 (apt-installed on RBE workers).
-sh_test(
-    name = "kubespan_qemu",
+# ─ Test: QEMU integration tests ────────────────────────────────────────────
+# Single go_test with three test functions covering nft-smoke, flat topology,
+# and cross-subnet topology. Structured JSON event output, artifact collection.
+go_test(
+    name = "qemu_test",
     timeout = "eternal",
-    srcs = ["run_integration_test.sh"],
-    args = [
-        "$(location :vmlinuz)",
-        "$(location :initramfs)",
-        "$(location //third_party/siderolabs:discovery_service_tarball)",
-    ],
+    srcs = ["qemu_test.go"],
     data = [
         ":initramfs",
         ":vmlinuz",
         "//third_party/siderolabs:discovery_service_tarball",
     ],
+    embed = [":qemu"],
     tags = [
         "requires_docker",
         "requires_qemu",
+    ],
+    deps = [
+        "@io_bazel_rules_go//go/runfiles",
     ],
 )
