@@ -13,10 +13,6 @@ from datetime import UTC, datetime, timedelta
 from devinfra.claude_hooks.claude_api.statusline import Input
 from devinfra.claude_hooks.usage_cache import CachedUsage, get_cached_usage
 
-# ANSI escapes
-_DIM = "\033[2m"
-_RESET = "\033[0m"
-
 _STALE_THRESHOLD = timedelta(seconds=10)
 
 
@@ -84,8 +80,7 @@ def main() -> None:
     if quota:
         sections.append(quota)
 
-    sep = f" {_DIM}|{_RESET} "
-    print(sep.join(sections))
+    print(" ".join(sections))
 
 
 if __name__ == "__main__":
