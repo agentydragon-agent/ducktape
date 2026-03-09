@@ -43,6 +43,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
   vm_id       = var.vm_id
   pool_id     = var.pool_id != "" ? var.pool_id : null
   bios        = "ovmf" # UEFI boot required for qcow-efi images
+  machine     = var.machine_type
 
   cpu {
     cores = var.vcpus
@@ -51,6 +52,18 @@ resource "proxmox_virtual_environment_vm" "vm" {
 
   memory {
     dedicated = var.memory_mb
+    floating  = var.memory_floating_mb
+  }
+
+  # GPU passthrough via PCI hardware mappings
+  dynamic "hostpci" {
+    for_each = { for i, name in var.gpu_mappings : i => name }
+    content {
+      device  = "hostpci${hostpci.key}"
+      mapping = hostpci.value
+      pcie    = true
+      rombar  = true
+    }
   }
 
   efi_disk {

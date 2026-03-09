@@ -12,19 +12,18 @@ data "terraform_remote_state" "infrastructure" {
   }
 }
 
+data "terraform_remote_state" "persistent_auth" {
+  backend = "local"
+  config = {
+    path = "${path.module}/../../cluster/terraform/bootstrap/persistent-auth/terraform.tfstate"
+  }
+}
+
 locals {
   # Proxmox configuration
   proxmox_host     = "root@${var.proxmox_host}"
   proxmox_endpoint = "https://${var.proxmox_api_host}/"
   proxmox_insecure = true # Accept self-signed certs
-
-  # User and pool
-  proxmox_user_base  = var.proxmox_username != "" ? var.proxmox_username : var.username
-  pool_name_computed = var.pool_name != "" ? var.pool_name : "pool-${local.proxmox_user_base}"
-  proxmox_username   = "${local.proxmox_user_base}@pve"
-
-  # VM admin privileges for the pool
-  vm_admin_privs = "Pool.Allocate,Sys.Audit,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.PowerMgmt,VM.Snapshot,VM.Snapshot.Rollback"
 
   # SSH key handling - try common key types in order of preference
   ssh_key_candidates = [
@@ -128,80 +127,36 @@ check "git_clean" {
 }
 
 # =============================================================================
-# PROXMOX USER/TOKEN PROVISIONING
+# PROXMOX USER/TOKEN PROVISIONING (agent-test — commented out, using
+# persistent-auth terraform@pve token instead for full Mapping.Use etc.)
 # =============================================================================
 
-data "external" "terraform_user" {
-  program = ["bash", "-c", <<-EOT
-    ssh ${local.proxmox_host} '
-      pveum user add terraform@pve --comment "Terraform automation (ephemeral)" 2>/dev/null || true
-      pveum role add TerraformAdmin -privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.PowerMgmt,User.Modify,Permissions.Modify" 2>/dev/null || \
-      pveum role modify TerraformAdmin -privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.PowerMgmt,User.Modify,Permissions.Modify"
-      pveum aclmod / -user terraform@pve -role TerraformAdmin
-    '
-    printf '{"success":"true"}'
-  EOT
-  ]
-}
-
-data "external" "terraform_token" {
-  program = ["bash", "-c", <<-EOT
-    token_json=$(ssh ${local.proxmox_host} '
-      pveum user token delete terraform@pve terraform 2>/dev/null || true
-      pveum user token add terraform@pve terraform --privsep 0 --output-format json
-    ')
-    token_value=$(echo "$token_json" | jq -r '.value')
-    token="terraform@pve!terraform=$token_value"
-    printf '{"token":"%s"}' "$token"
-  EOT
-  ]
-  depends_on = [data.external.terraform_user]
-}
-
-data "external" "pool_user" {
-  program = ["bash", "-c", <<-EOT
-    ssh ${local.proxmox_host} '
-      pveum user add ${local.proxmox_username} --comment "${var.user_comment}" 2>/dev/null || true
-      pveum role add VMAdmin-${local.proxmox_user_base} -privs "${local.vm_admin_privs}" 2>/dev/null || \
-      pveum role modify VMAdmin-${local.proxmox_user_base} -privs "${local.vm_admin_privs}"
-    '
-    printf '{"success":"true"}'
-  EOT
-  ]
-  depends_on = [data.external.terraform_user]
-}
-
-data "external" "user_token" {
-  program = ["bash", "-c", <<-EOT
-    token_json=$(ssh ${local.proxmox_host} '
-      pveum user token delete ${local.proxmox_username} api 2>/dev/null || true
-      pveum user token add ${local.proxmox_username} api --privsep 0 --output-format json
-    ')
-    token_value=$(echo "$token_json" | jq -r '.value')
-    token="${local.proxmox_username}!api=$token_value"
-    printf '{"token":"%s"}' "$token"
-  EOT
-  ]
-  depends_on = [data.external.pool_user]
-}
+# data "external" "terraform_user" {
+#   program = ["bash", "-c", <<-EOT
+#     ssh ${local.proxmox_host} '
+#       pveum user add terraform@pve --comment "Terraform automation (ephemeral)" 2>/dev/null || true
+#       pveum role add TerraformAdmin -privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.PowerMgmt,User.Modify,Permissions.Modify" 2>/dev/null || \
+#       pveum role modify TerraformAdmin -privs "Datastore.Allocate,Datastore.AllocateSpace,Datastore.AllocateTemplate,Datastore.Audit,Pool.Allocate,Pool.Audit,SDN.Use,Sys.Audit,Sys.Console,Sys.Modify,VM.Allocate,VM.Audit,VM.Clone,VM.Config.CDROM,VM.Config.CPU,VM.Config.Cloudinit,VM.Config.Disk,VM.Config.HWType,VM.Config.Memory,VM.Config.Network,VM.Config.Options,VM.Console,VM.Migrate,VM.PowerMgmt,User.Modify,Permissions.Modify"
+#       pveum aclmod / -user terraform@pve -role TerraformAdmin
+#     '
+#     printf '{"success":"true"}'
+#   EOT
+#   ]
+# }
+#
+# data "external" "terraform_token" { ... }
+# data "external" "pool_user" { ... }
+# data "external" "user_token" { ... }
 
 # =============================================================================
-# PROXMOX PROVIDERS
+# PROXMOX PROVIDER
+# Uses terraform@pve token from persistent-auth (same as cluster infrastructure)
 # =============================================================================
 
 provider "proxmox" {
-  alias     = "admin"
   endpoint  = local.proxmox_endpoint
   username  = "terraform@pve"
-  api_token = data.external.terraform_token.result.token
-  insecure  = local.proxmox_insecure
-}
-
-provider "proxmox" {
-  alias     = "user"
-  endpoint  = local.proxmox_endpoint
-  username  = local.proxmox_username
-  api_token = data.external.user_token.result.token
+  api_token = data.terraform_remote_state.persistent_auth.outputs.terraform_pve_token.token
   insecure  = local.proxmox_insecure
 
   ssh {
@@ -214,49 +169,20 @@ provider "proxmox" {
   }
 }
 
-provider "proxmox" {
-  endpoint  = local.proxmox_endpoint
-  username  = "terraform@pve"
-  api_token = data.external.terraform_token.result.token
-  insecure  = local.proxmox_insecure
-}
-
 # =============================================================================
 # SHARED INFRASTRUCTURE
+# Agent-test pool/ACL resources commented out — using persistent-auth token.
 # =============================================================================
 
-resource "proxmox_virtual_environment_pool" "user_pool" {
-  comment = "Resource pool for ${local.proxmox_user_base}"
-  pool_id = local.pool_name_computed
-}
-
-resource "proxmox_virtual_environment_acl" "pool_admin" {
-  path      = "/pool/${proxmox_virtual_environment_pool.user_pool.pool_id}"
-  role_id   = "VMAdmin-${local.proxmox_user_base}"
-  user_id   = local.proxmox_username
-  propagate = true
-
-  depends_on = [data.external.pool_user]
-}
-
-resource "proxmox_virtual_environment_acl" "storage_access" {
-  path    = "/storage/${var.storage}"
-  role_id = "PVEDatastoreUser"
-  user_id = local.proxmox_username
-}
-
-resource "proxmox_virtual_environment_acl" "storage_access_local" {
-  path    = "/storage/local"
-  role_id = "PVEDatastoreAdmin"
-  user_id = local.proxmox_username
-}
-
-resource "proxmox_virtual_environment_acl" "sdn_access" {
-  path      = "/sdn"
-  role_id   = "PVESDNUser"
-  user_id   = local.proxmox_username
-  propagate = true
-}
+# resource "proxmox_virtual_environment_pool" "user_pool" {
+#   comment = "Resource pool for ${local.proxmox_user_base}"
+#   pool_id = local.pool_name_computed
+# }
+#
+# resource "proxmox_virtual_environment_acl" "pool_admin" { ... }
+# resource "proxmox_virtual_environment_acl" "storage_access" { ... }
+# resource "proxmox_virtual_environment_acl" "storage_access_local" { ... }
+# resource "proxmox_virtual_environment_acl" "sdn_access" { ... }
 
 # Per-host NixOS qcow2 images (built via nix, uploaded to Proxmox)
 # Uses system.build.images.qemu-efi (nixos-generators upstreamed in nixpkgs 25.05+)
@@ -268,32 +194,8 @@ module "wyrm2_image" {
   nix_dir_hash = local.nix_dir_hash
 }
 
-# Cleanup on destroy
-resource "null_resource" "cleanup" {
-  triggers = {
-    username     = local.proxmox_username
-    proxmox_host = local.proxmox_host
-    role_name    = "VMAdmin-${local.proxmox_user_base}"
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      echo "Cleaning up Proxmox users and roles"
-      ssh ${self.triggers.proxmox_host} '
-        pveum user token delete ${self.triggers.username} api 2>/dev/null || true
-        pveum user token delete terraform@pve terraform 2>/dev/null || true
-        pveum user delete ${self.triggers.username} 2>/dev/null || true
-        pveum user delete terraform@pve 2>/dev/null || true
-        if [ "$(pveum aclmod / -role ${self.triggers.role_name} 2>/dev/null | wc -l)" -eq 0 ]; then
-          pveum role delete ${self.triggers.role_name} 2>/dev/null || true
-        fi
-        pveum role delete TerraformAdmin 2>/dev/null || true
-        echo "Cleanup completed"
-      ' || true
-    EOT
-  }
-}
+# Cleanup on destroy (agent-test user — commented out, no longer provisioned)
+# resource "null_resource" "cleanup" { ... }
 
 # =============================================================================
 # VM INSTANCES
@@ -302,18 +204,18 @@ resource "null_resource" "cleanup" {
 # Wyrm2 - NixOS dev workstation + k8s worker (pre-built image, cloud-init for k8s creds)
 module "wyrm2" {
   source = "../modules/proxmox-vm"
-  providers = {
-    proxmox = proxmox.user
-  }
 
-  vm_name           = "wyrm2"
-  vm_id             = 110
-  username          = "agentydragon"
-  vcpus             = 8
-  memory_mb         = 16384
-  disk_size_gb      = 100
-  auto_start        = true
-  image_import_path = module.wyrm2_image.import_path
+  vm_name            = "wyrm2"
+  vm_id              = 110
+  username           = "agentydragon"
+  vcpus              = 16
+  memory_mb          = 49152 # 48GB
+  disk_size_gb       = 300
+  auto_start         = true
+  image_import_path  = module.wyrm2_image.import_path
+  machine_type       = "q35"
+  memory_floating_mb = 0 # Disable balloon (VFIO incompatible)
+  gpu_mappings       = ["gpu0", "gpu1"]
 
   proxmox_node_name = var.proxmox_node_name
   storage           = var.storage
@@ -328,11 +230,5 @@ module "wyrm2" {
     node_name            = "wyrm2"
   }
 
-  depends_on = [
-    proxmox_virtual_environment_acl.pool_admin,
-    proxmox_virtual_environment_acl.storage_access,
-    proxmox_virtual_environment_acl.storage_access_local,
-    module.wyrm2_image,
-    null_resource.cleanup
-  ]
+  depends_on = [module.wyrm2_image]
 }

@@ -74,6 +74,24 @@ variable "ssh_public_key" {
   type        = string
 }
 
+variable "machine_type" {
+  description = "Machine type (null = provider default; 'q35' required for PCIe passthrough)"
+  type        = string
+  default     = null
+}
+
+variable "memory_floating_mb" {
+  description = "Balloon minimum memory in MB (0 = disable balloon for VFIO; null = provider default)"
+  type        = number
+  default     = null
+}
+
+variable "gpu_mappings" {
+  description = "PCI hardware mapping names for GPU passthrough"
+  type        = list(string)
+  default     = []
+}
+
 # K8s cluster join credentials (optional)
 variable "k8s_cluster_join" {
   description = "K8s cluster join credentials. When set, cloud-init writes credential files for kubelet and kubespand."

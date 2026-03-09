@@ -38,9 +38,11 @@ locals {
     pve_cp0 = { name = "talos-pve-cp-0", type = "controlplane", vm_id = 10000, ip = "10.2.1.1" }
   }
 
-  # GPU worker nodes (separate: different image, VFIO passthrough, NVIDIA config)
+  # GPU worker nodes — emptied: wyrm2 (NixOS) now handles GPU duties.
+  # Kept as empty map so for_each references remain valid (no-op).
+  # TODO: Delete all proxmox_gpu_nodes references once wyrm2 is confirmed stable.
   proxmox_gpu_nodes = {
-    pve_gpu_worker0 = { name = "talos-pve-gpu-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
+    # pve_gpu_worker0 = { name = "talos-pve-gpu-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
   }
 
   # Proxmox network configuration

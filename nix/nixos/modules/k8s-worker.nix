@@ -146,6 +146,8 @@ in
       description = "Taints to apply on registration (key=value:effect format)";
     };
 
+    enableNvidiaRuntime = lib.mkEnableOption "NVIDIA containerd runtime as default (for GPU pods)";
+
   };
 
   config = lib.mkIf cfg.enable {
@@ -179,7 +181,7 @@ in
         version = 2;
         plugins."io.containerd.grpc.v1.cri" = {
           sandbox_image = "registry.k8s.io/pause:3.10";
-          containerd.default_runtime_name = "runc";
+          containerd.default_runtime_name = if cfg.enableNvidiaRuntime then "nvidia" else "runc";
           containerd.runtimes.runc = {
             runtime_type = "io.containerd.runc.v2";
             options.SystemdCgroup = true;

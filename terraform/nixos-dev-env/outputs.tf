@@ -1,21 +1,5 @@
 # Outputs for NixOS Dev Environment
 
-output "pool_id" {
-  description = "Resource pool ID"
-  value       = proxmox_virtual_environment_pool.user_pool.pool_id
-}
-
-output "username" {
-  description = "Proxmox username"
-  value       = local.proxmox_username
-}
-
-output "user_api_token" {
-  description = "User API token (sensitive)"
-  value       = data.external.user_token.result.token
-  sensitive   = true
-}
-
 # Wyrm2 outputs
 output "wyrm2" {
   description = "Wyrm2 VM info"
@@ -31,9 +15,6 @@ output "instructions" {
   value       = <<-EOT
 
     ✅ Environment created successfully!
-
-    Pool: ${proxmox_virtual_environment_pool.user_pool.pool_id}
-    User: ${local.proxmox_username}
 
     VMs:
     - wyrm2 (ID: ${module.wyrm2.vm_id}) — dev workstation + k8s worker

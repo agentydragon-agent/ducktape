@@ -25,7 +25,25 @@
   services.cloud-init.enable = true;
   systemd.services.kubespand.after = [ "cloud-final.service" ];
   systemd.services.kubelet.after = [ "cloud-final.service" ];
-  ducktape.k8sWorker.enable = true;
+  ducktape.k8sWorker = {
+    enable = true;
+    enableNvidiaRuntime = true;
+    nodeLabels = {
+      "topology.kubernetes.io/region" = "proxmox";
+      "topology.kubernetes.io/zone" = "atlas";
+      "csi.proxmox.sinextra.dev/max-volume-attachments" = "29";
+    };
+    nodeTaints = [ ]; # Accept all workloads (no roaming taint)
+  };
+
+  # NVIDIA GPU (2x RTX 5090 via VFIO passthrough)
+  services.xserver.videoDrivers = [ "nvidia" ];
+  hardware.nvidia = {
+    modesetting.enable = true;
+    open = true; # Open kernel modules (matches Talos nvidia-open-gpu-kernel-modules)
+    nvidiaSettings = false; # No X settings app for headless GPU compute
+  };
+  hardware.nvidia-container-toolkit.enable = true;
 
   time.timeZone = "America/Los_Angeles";
 

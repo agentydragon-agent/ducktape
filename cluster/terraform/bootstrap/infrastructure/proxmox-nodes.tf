@@ -166,12 +166,12 @@ resource "proxmox_virtual_environment_vm" "talos" {
 
   cpu {
     type  = "host"
-    cores = 16
+    cores = 4
   }
 
   memory {
-    dedicated = 24 * 1024 # 24GB (consolidated from cp + worker)
-    floating  = 12 * 1024 # 12GB minimum
+    dedicated = 8 * 1024 # 8GB (pure control plane, no workloads)
+    floating  = 4 * 1024 # 4GB minimum
   }
 
   vga {
@@ -415,6 +415,7 @@ data "talos_machine_configuration" "proxmox" {
           extraArgs = {
             provider-id            = "proxmox://cluster/${each.value.vm_id}"
             allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
+            register-with-taints   = "node-role.kubernetes.io/control-plane=:NoSchedule"
           }
         }
       })
