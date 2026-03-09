@@ -292,21 +292,14 @@
       nixosConfigurations = {
         wyrm2 = mkNixos {
           hostname = "wyrm2";
-          username = "user";
-          homeManagerHost = "nixos-vm";
+          username = "agentydragon";
+          homeManagerHost = "wyrm2";
           hardwareModule = ./nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = true;
             enableKube = false;
             enableHeavyPackages = false;
-            module =
-              { lib, ... }:
-              {
-                imports = [ ./home/hosts/nixos-vm.nix ];
-                # Override home.nix defaults (which hardcode "agentydragon")
-                home.username = lib.mkForce "user";
-                home.homeDirectory = lib.mkForce "/home/user";
-              };
+            module = ./home/hosts/wyrm2.nix;
           };
         };
 

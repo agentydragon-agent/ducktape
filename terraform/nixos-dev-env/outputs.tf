@@ -36,22 +36,24 @@ output "instructions" {
     User: ${local.proxmox_username}
 
     VMs:
-    - wyrm2 (ID: ${module.wyrm2.vm_id})
+    - wyrm2 (ID: ${module.wyrm2.vm_id}) — dev workstation + k8s worker
 
     Next steps:
 
-    1. Wait for VM to boot (~30 seconds, no cloud-init rebuild needed)
+    1. Wait for VM to boot (~30 seconds)
 
     2. Get VM IP address:
        terraform output wyrm2
 
     3. SSH into the VM:
-       ssh ${var.username}@<vm-ip>
+       ssh agentydragon@<vm-ip>
 
-    4. Access Proxmox web UI:
-       URL: https://${var.proxmox_api_host}
-       User: ${local.proxmox_username}
-       Password: (set with: ssh root@${var.proxmox_host} "pveum user password ${local.proxmox_username}")
+    4. Approve the kubelet CSR to join the cluster:
+       kubectl get csr
+       kubectl certificate approve <csr-name>
+
+    5. Verify node joined:
+       kubectl get nodes
 
     To update VM config:
     - Rebuild image: nix build ./nix#wyrm2-image

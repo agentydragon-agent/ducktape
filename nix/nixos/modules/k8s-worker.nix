@@ -1,5 +1,7 @@
 # Kubernetes worker node module
-# Joins a NixOS machine as a worker to an external (Talos) K8s cluster.
+# Joins a NixOS machine as a worker to an external (Talos) K8s cluster
+# via KubeSpan (WireGuard mesh).
+#
 # Does NOT use services.kubernetes — it's designed as a self-contained cluster
 # provisioner, not for joining external clusters. Specifically:
 #   - Custom CFSSL-based PKI (no --bootstrap-kubeconfig support)
@@ -25,9 +27,6 @@
 let
   cfg = config.ducktape.k8sWorker;
 
-  isKubespan = cfg.fabric == "kubespan";
-  isTailscale = cfg.fabric == "tailscale";
-
   kubeletDeps = with pkgs; [
     kubernetes
     iptables
@@ -37,7 +36,6 @@ let
     nftables
     wireguard-tools
     tcpdump
-    conntrack-tools
     iproute2
   ];
 
@@ -89,46 +87,25 @@ let
       server-template cp 3 ${cfg.apiServerHost}:${toString cfg.apiServerPort} resolvers dns init-addr libc,last check inter 5s fall 3 rise 2
   '';
 
-  # Resolve node IP based on fabric choice
-  resolveNodeIp =
-    if isKubespan then
-      # Use the host's real IPv4 (from default route) as kubelet node IP.
-      # NOT the KubeSpan IPv6 ULA — using that causes Cilium to detect the
-      # kubespan interface (IPv6-only) as the direct routing device, which
-      # fails with "IPv4 direct routing device IP not found" since Cilium
-      # needs IPv4 for VXLAN tunnel mode.
-      pkgs.writeShellScript "resolve-kubespan-ip" ''
-        ${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 \
-          | ${pkgs.gnugrep}/bin/grep -oP 'src \K\S+' > /run/kubelet-node-ip
-        if [ ! -s /run/kubelet-node-ip ]; then
-          echo "Failed to read host IPv4 from default route" >&2
-          exit 1
-        fi
-      ''
-    else
-      # Resolve Tailscale IP
-      pkgs.writeShellScript "resolve-tailscale-ip" ''
-        ${pkgs.tailscale}/bin/tailscale ip --4 | ${pkgs.coreutils}/bin/head -1 > /run/kubelet-node-ip
-      '';
+  # Use the host's real IPv4 (from default route) as kubelet node IP.
+  # NOT the KubeSpan IPv6 ULA — using that causes Cilium to detect the
+  # kubespan interface (IPv6-only) as the direct routing device, which
+  # fails with "IPv4 direct routing device IP not found" since Cilium
+  # needs IPv4 for VXLAN tunnel mode.
+  resolveNodeIp = pkgs.writeShellScript "resolve-kubespan-ip" ''
+    ${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 \
+      | ${pkgs.gnugrep}/bin/grep -oP 'src \K\S+' > /run/kubelet-node-ip
+    if [ ! -s /run/kubelet-node-ip ]; then
+      echo "Failed to read host IPv4 from default route" >&2
+      exit 1
+    fi
+  '';
 in
 {
   imports = [ ./kubespand.nix ];
 
   options.ducktape.k8sWorker = {
-    enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster)";
-
-    fabric = lib.mkOption {
-      type = lib.types.enum [
-        "tailscale"
-        "kubespan"
-      ];
-      default = "tailscale";
-      description = ''
-        Mesh fabric for inter-node connectivity.
-        "tailscale" uses Headscale/Tailscale (separate mesh alongside KubeSpan).
-        "kubespan" uses kubespand to join the Talos KubeSpan WireGuard mesh directly.
-      '';
-    };
+    enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster via KubeSpan)";
 
     apiServerHost = lib.mkOption {
       type = lib.types.str;
@@ -146,12 +123,6 @@ in
       type = lib.types.str;
       default = "10.96.0.10";
       description = "Cluster DNS service IP";
-    };
-
-    headscaleUrl = lib.mkOption {
-      type = lib.types.str;
-      default = "https://headscale.allegedly.works";
-      description = "Headscale control server URL for Tailscale (only used with fabric = tailscale)";
     };
 
     caCertPath = lib.mkOption {
@@ -187,9 +158,7 @@ in
       "net.bridge.bridge-nf-call-iptables" = 1;
       "net.bridge.bridge-nf-call-ip6tables" = 1;
       "net.ipv4.ip_forward" = 1;
-    }
-    // lib.optionalAttrs isKubespan {
-      # Disable reverse path filtering on kubespan. Packets decrypted by
+      # Disable reverse path filtering for KubeSpan. Packets decrypted by
       # WireGuard arrive on kubespan with source IPs whose reverse path goes
       # through ens18 (e.g., VPS public IPs). Both the kernel sysctl rpfilter
       # and iptables rpfilter module must be disabled/loosened independently.
@@ -201,7 +170,7 @@ in
 
     # Loose iptables rpfilter for the same reason as above — the iptables
     # rpfilter module is a separate check from the kernel sysctl.
-    networking.firewall.checkReversePath = lib.mkIf isKubespan "loose";
+    networking.firewall.checkReversePath = "loose";
 
     # Containerd
     virtualisation.containerd = {
@@ -239,14 +208,14 @@ in
         "network-online.target"
         "containerd.service"
         "haproxy.service"
-      ]
-      ++ lib.optional isKubespan "kubespand.service";
+        "kubespand.service"
+      ];
       wants = [
         "network-online.target"
         "containerd.service"
       ];
-      # kubespand: hard dependency — kubelet stops if kubespand dies
-      requires = lib.optional isKubespan "kubespand.service";
+      # Hard dependency — kubelet stops if kubespand dies
+      requires = [ "kubespand.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         # Prepend /run/wrappers/bin for NixOS setuid mount/umount wrappers.
@@ -280,18 +249,8 @@ in
       config = haproxyConfig;
     };
 
-    # Tailscale for Headscale mesh connectivity (tailscale fabric only)
-    services.tailscale = lib.mkIf isTailscale {
-      enable = true;
-      extraUpFlags = [
-        "--login-server=${cfg.headscaleUrl}"
-        "--accept-routes=true"
-      ];
-      openFirewall = true;
-    };
-
-    # KubeSpan fabric: enable kubespand
-    ducktape.kubespand = lib.mkIf isKubespan { enable = true; };
+    # KubeSpan mesh
+    ducktape.kubespand.enable = true;
 
     # Firewall: allow VXLAN (Cilium) and kubelet
     networking.firewall.allowedUDPPorts = [

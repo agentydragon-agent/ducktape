@@ -25,10 +25,7 @@
   systemd.services.kubespand.after = [ "cloud-final.service" ];
   systemd.services.kubelet.after = [ "cloud-final.service" ];
 
-  ducktape.k8sWorker = {
-    enable = true;
-    fabric = "kubespan";
-  };
+  ducktape.k8sWorker.enable = true;
 
   # Headless auto-login on console
   services.getty.autologinUser = username;

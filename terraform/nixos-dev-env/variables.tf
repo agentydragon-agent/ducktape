@@ -40,9 +40,9 @@ variable "network_bridge" {
 # =============================================================================
 
 variable "username" {
-  description = "Username for VM user accounts"
+  description = "Username for Proxmox pool user (VM username is hardcoded per-VM)"
   type        = string
-  default     = "user"
+  default     = "agentydragon"
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]*$", var.username))
     error_message = "Username must start with a letter and contain only lowercase letters, numbers, and hyphens."
