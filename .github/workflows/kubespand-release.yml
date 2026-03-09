@@ -146,9 +146,4 @@ jobs:
             Static x86_64 binary. See `cluster/kubespand/README.md` for usage.
           files: dist/kubespand
 
-      - uses: ./.github/actions/bump-nix-flake-input
-        with:
-          flake_input: kubespand-bin
-          flake_dir: nix
-          package_prefix: kubespand
-          branch: ${{ github.ref_name }}
+      # Flake input update handled by nix-flake-update.yml (triggered on workflow completion)

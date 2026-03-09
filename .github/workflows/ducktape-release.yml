@@ -241,12 +241,20 @@ jobs:
 
       - name: Update Claude settings wheel URL
         run: |
-          sed -i "s|releases/download/ducktape-[a-f0-9]*/ducktape|releases/download/ducktape-${{ env.SHORT_SHA }}/ducktape|g" .claude/settings.json
+          set -x
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - uses: ./.github/actions/bump-nix-flake-input
-        with:
-          flake_input: ducktape-wheel
-          flake_dir: nix
-          package_prefix: ducktape
-          extra_files: .claude/settings.json
-          branch: ${{ github.ref_name }}
+          sed -i "s|releases/download/ducktape-[a-f0-9]*/ducktape|releases/download/ducktape-${{ env.SHORT_SHA }}/ducktape|g" .claude/settings.json
+          git add .claude/settings.json
+
+          if git diff --cached --quiet; then
+            echo "No settings change needed"
+          else
+            git commit -m "chore: bump ducktape URL in claude settings [skip ci]"
+            BRANCH="${{ github.ref_name }}"
+            git pull --rebase origin "$BRANCH" || true
+            git push origin "HEAD:${BRANCH}"
+          fi
+
+      # Flake input update handled by nix-flake-update.yml (triggered on workflow completion)

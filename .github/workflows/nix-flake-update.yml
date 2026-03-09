@@ -1,0 +1,61 @@
+# Update all CI-released Nix flake inputs in a single commit.
+# Runs after release workflows complete, or manually via workflow_dispatch.
+name: Update Nix flake inputs
+
+on:
+  workflow_run:
+    workflows: ["kubespand CI", "ducktape Release"]
+    types: [completed]
+    branches: [devel, main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: nix-flake-update-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    name: Update flake inputs
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+
+      - name: Update all release flake inputs
+        run: |
+          set -x
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+
+          # Update all CI-released inputs at once
+          nix flake update kubespand-bin ducktape-wheel headscale-cleanup-wheel --flake ./nix
+
+          git add nix/flake.lock
+
+          if git diff --cached --quiet; then
+            echo "No flake input changes"
+            exit 0
+          fi
+
+          git commit -m "chore: update nix flake inputs [skip ci]"
+
+          if ! git pull --rebase origin "$BRANCH"; then
+            echo "::error::Rebase failed"
+            git status
+            exit 1
+          fi
+
+          git push origin "HEAD:${BRANCH}"
