@@ -23,15 +23,6 @@ provider "vault" {
   token   = var.vault_token
 }
 
-resource "random_password" "postgres_password" {
-  length  = 32
-  special = false
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
 resource "random_password" "evaluator_password" {
   length  = 24
   special = false
@@ -47,7 +38,6 @@ resource "vault_kv_secret_v2" "props_secrets" {
   cas   = 0
 
   data_json = jsonencode({
-    postgres_password  = random_password.postgres_password.result
     evaluator_password = random_password.evaluator_password.result
   })
 

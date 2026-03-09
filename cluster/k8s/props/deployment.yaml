@@ -35,18 +35,18 @@ spec:
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST
-              value: props-postgresql
+              value: props-db-rw
             - name: PGPORT
               value: "5432"
             - name: PGDATABASE
               value: eval_results
             - name: PGUSER
-              value: postgres
+              value: props
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: props-postgresql
-                  key: postgres-password
+                  name: props-db-app
+                  key: password
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:

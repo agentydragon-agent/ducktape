@@ -1,0 +1,28 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: props-db
+  namespace: props
+spec:
+  instances: 1
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
+  storage:
+    storageClass: local-path
+    size: 10Gi
+
+  bootstrap:
+    initdb:
+      database: eval_results
+      owner: props
+      # CNPG auto-generates credentials in secret props-db-app

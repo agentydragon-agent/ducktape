@@ -119,19 +119,6 @@ spec:
     name: matrix-synapse-postgresql
   updatePolicy:
     updateMode: "Off"
----
-apiVersion: autoscaling.k8s.io/v1
-kind: VerticalPodAutoscaler
-metadata:
-  name: props-postgresql
-  namespace: props
-spec:
-  targetRef:
-    apiVersion: apps/v1
-    kind: StatefulSet
-    name: props-postgresql
-  updatePolicy:
-    updateMode: "Off"
 # Biggest consumers
 ---
 apiVersion: autoscaling.k8s.io/v1
