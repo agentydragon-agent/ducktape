@@ -17,9 +17,7 @@ go_library(
         "//cluster/kubespand/discovery",
         "//cluster/kubespand/identity",
         "//cluster/kubespand/k8snet",
-        "//cluster/kubespand/talos/adapters/kubespan",
-        "//cluster/kubespand/talos/controllers/kubespan",
-        "//cluster/kubespand/talos/controllers/network",
+        "//cluster/kubespand/peerspec",
         "//cluster/kubespand/wireguard",
         "@com_github_cosi_project_runtime//pkg/controller",
         "@com_github_cosi_project_runtime//pkg/controller/runtime",
@@ -48,6 +46,8 @@ go_library(
         "@io_k8s_client_go//tools/clientcmd",
         "@org_go4_netipx//:netipx",
         "@org_uber_go_zap//:zap",
+        "@talos_internal//:adapters_kubespan",
+        "@talos_internal//:controllers_network",
     ],
 )
 

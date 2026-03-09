@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+# Local wrapper that extends the upstream controllers/kubespan package with
+# kubespand-only endpoint filtering logic. Embeds the overlay target so all
+# upstream symbols are available alongside our additions.
+
+go_library(
+    name = "peerspec",
+    srcs = ["peer_spec_filters.go"],
+    embed = ["@talos_internal//:controllers_kubespan"],
+    importpath = "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
+
+go_test(
+    name = "peerspec_test",
+    srcs = ["peer_spec_filters_test.go"],
+    embed = [":peerspec"],
+)

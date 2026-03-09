@@ -10,33 +10,35 @@ kubespand reimplements Talos's KubeSpan for non-Talos Linux. Maintain structural
 correspondence with upstream Talos (`github.com/siderolabs/talos`):
 
 ```text
-cluster/kubespand/                                ↔  github.com/siderolabs/talos/
-├── talos/adapters/kubespan/                      ↔  internal/.../adapters/kubespan/      (talos_copy)
-├── talos/adapters/network/                       ↔  internal/.../adapters/network/       (talos_copy)
-├── talos/controllers/kubespan/                   ↔  internal/.../controllers/kubespan/   (talos_copy)
-│   └── peer_spec_filters.go                           (kubespand-only addition)
-├── talos/controllers/network/                    ↔  internal/.../controllers/network/    (talos_copy)
-├── controller_manager.go                         ↔  controllers/kubespan/manager.go      (reimplemented)
-├── controller_identity.go                        ↔  controllers/kubespan/identity.go     (reimplemented)
-├── controller_discovery.go                       ↔  controllers/cluster/discovery_service.go (reimplemented)
-├── controller_config.go                          ↔  (kubespand-only)
-├── controller_k8s_node.go                        ↔  controllers/cluster/local_affiliate.go (reimplemented)
-├── identity/                                     ↔  (kubespand-only: disk identity)
-├── discovery/                                    ↔  (kubespand-only: discovery client)
-├── wireguard/                                    ↔  (kubespand-only: WG via netlink)
-├── routing/routes.go                             ↔  (kubespand-only: to be replaced by COSI RouteSpec)
-├── agentconfig/                                  ↔  (kubespand-only: YAML config)
-└── k8snet/                                       ↔  (kubespand-only: KubernetesNetworks resource)
+Upstream Talos code:
+  @talos_internal//:adapters_kubespan        ↔  internal/.../adapters/kubespan/
+  @talos_internal//:adapters_network         ↔  internal/.../adapters/network/
+  @talos_internal//:controllers_kubespan     ↔  internal/.../controllers/kubespan/
+  @talos_internal//:controllers_network      ↔  internal/.../controllers/network/
+  (go_library targets in BUILD.overlay.bazel, importpath matches Talos)
+
+kubespand code:
+  peerspec/                  embeds @talos_internal controllers_kubespan + peer_spec_filters.go
+  controller_manager.go      ↔  controllers/kubespan/manager.go           (reimplemented)
+  controller_identity.go     ↔  controllers/kubespan/identity.go          (reimplemented)
+  controller_discovery.go    ↔  controllers/cluster/discovery_service.go  (reimplemented)
+  controller_config.go       ↔  (kubespand-only)
+  controller_k8s_node.go     ↔  controllers/cluster/local_affiliate.go    (reimplemented)
+  identity/                  ↔  (kubespand-only: disk identity)
+  discovery/                 ↔  (kubespand-only: discovery client)
+  wireguard/                 ↔  (kubespand-only: WG via netlink)
+  agentconfig/               ↔  (kubespand-only: YAML config)
+  k8snet/                    ↔  (kubespand-only: KubernetesNetworks resource)
 ```
 
 **Rules:**
 
-1. **`talos/` subtree mirrors Talos** — each subdirectory's `importpath` matches
-   the Talos internal path, so `talos_copy`'d files need zero import patches.
-   Only functional patches (removing Talos-specific runtime deps) are allowed.
-2. **Prefer `talos_copy`** — use the `talos_copy` genrule (defined in `upstream.bzl`)
-   to import Talos source files verbatim. Check if `talos_copy` works before
-   reimplementing.
+1. **Upstream Talos code lives in `@talos_internal`** — `go_library` targets in
+   `BUILD.overlay.bazel` with `importpath` matching Talos internal paths. Patches
+   are functional-only (no import rewrites). Consumer code deps on
+   `@talos_internal//:target_name`.
+2. **Check if Talos has it before reimplementing** — prefer adding a `go_library`
+   target to `BUILD.overlay.bazel` over writing new code.
 3. **Reimplemented files** must reference the Talos equivalent at the top:
    `// Ref: internal/.../controllers/kubespan/manager.go`
 4. **kubespand-only files** exist where Talos's approach doesn't apply (disk identity
