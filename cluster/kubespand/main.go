@@ -19,7 +19,7 @@ import (
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	endpoint "github.com/agentydragon/ducktape/cluster/kubespand/endpoint"
-	networkadapter "github.com/agentydragon/ducktape/cluster/kubespand/nftables"
+	talosnet "github.com/agentydragon/ducktape/cluster/kubespand/network"
 	peerspec "github.com/agentydragon/ducktape/cluster/kubespand/peerspec"
 )
 
@@ -125,7 +125,7 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		if err := rt.RegisterController(&ManagerController{}); err != nil {
 			return fmt.Errorf("registering manager controller: %w", err)
 		}
-		if err := rt.RegisterController(&networkadapter.NfTablesChainController{}); err != nil {
+		if err := rt.RegisterController(&talosnet.NfTablesChainController{}); err != nil {
 			return fmt.Errorf("registering nftables chain controller: %w", err)
 		}
 		if err := rt.RegisterController(&endpoint.EndpointController{}); err != nil {

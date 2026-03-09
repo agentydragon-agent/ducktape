@@ -18,7 +18,7 @@ go_library(
         "//cluster/kubespand/endpoint",
         "//cluster/kubespand/identity",
         "//cluster/kubespand/k8snet",
-        "//cluster/kubespand/nftables",
+        "//cluster/kubespand/network",
         "//cluster/kubespand/peerspec",
         "//cluster/kubespand/peerstate",
         "//cluster/kubespand/routing",
