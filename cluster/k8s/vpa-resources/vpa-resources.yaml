@@ -143,7 +143,7 @@ spec:
   targetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: monitoring-grafana
+    name: kube-prometheus-stack-grafana
   updatePolicy:
     updateMode: "Off"
 ---
