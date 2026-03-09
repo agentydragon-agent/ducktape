@@ -123,9 +123,6 @@ claude_web_env/rootfs/**
 # Compressed data files
 *.zst
 
-# Local registry patches
-devinfra/local_registry/**
-
 # Data/archive files
 *.edn
 # Tana paste export reference files

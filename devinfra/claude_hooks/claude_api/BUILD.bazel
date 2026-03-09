@@ -45,5 +45,8 @@ py_library(
     srcs = ["usage.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
 )

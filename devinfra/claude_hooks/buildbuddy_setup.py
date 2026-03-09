@@ -10,6 +10,13 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+BUILDBUDDY_BAZELRC = Path.home() / ".config" / "bazel" / "buildbuddy.bazelrc"
+
+
+def is_buildbuddy_configured() -> bool:
+    """Check if BuildBuddy remote cache is configured on this machine."""
+    return BUILDBUDDY_BAZELRC.exists()
+
 
 @dataclass
 class BuildbuddySetup:

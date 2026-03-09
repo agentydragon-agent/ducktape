@@ -83,7 +83,6 @@ py_library(
     deps = [
         "//devinfra/claude_hooks/claude_api:credentials",
         "//devinfra/claude_hooks/claude_api:usage",
-        "@pypi//httpx",
         "@pypi//pydantic",
     ],
 )
@@ -266,6 +265,7 @@ py_library(
         ":usage_cache",
         "//devinfra/claude_hooks/claude_api:statusline",
         "//devinfra/claude_hooks/claude_api:usage",
+        "@pypi//rich",
     ],
 )
 

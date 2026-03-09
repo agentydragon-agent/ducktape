@@ -1,7 +1,11 @@
 # Claude Code session start hook [build: ${build_commit}] — ${status}
 
+% if proxy:
 **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
 **Bazel:** wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
+% else:
+**Environment:** CLI (local)
+% endif
 % if container:
 
 ## ${container.runtime.capitalize()}
@@ -47,9 +51,11 @@ Skipped (key mismatch): ${", ".join(secrets.skipped_files)}.
 `kubectl`: configured for `${secrets.kubeconfig.server}`, namespace `claude-sandbox` (full admin), read-only in `props`.
 % endif
 % endif
+% if buildbuddy_configured:
 
 ## BuildBuddy
 API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
+% endif
 
 % if any(r.levelno >= WARNING for r in log_entries):
 

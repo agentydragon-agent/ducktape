@@ -1,7 +1,8 @@
 """Claude Code status line script.
 
 Receives JSON on stdin, outputs formatted status to stdout.
-Displays session info, model, cwd, cost, and subscription quota utilization.
+Displays session info, model, cwd, cost, context window usage,
+session duration, and subscription quota utilization.
 """
 
 from __future__ import annotations
@@ -10,10 +11,14 @@ import os
 import sys
 from datetime import UTC, datetime, timedelta
 
-from devinfra.claude_hooks.claude_api.statusline import Input
+from rich.console import Console
+from rich.text import Text
+
+from devinfra.claude_hooks.claude_api.statusline import ContextWindow, Input
 from devinfra.claude_hooks.usage_cache import CachedUsage, get_cached_usage
 
 _STALE_THRESHOLD = timedelta(seconds=10)
+_SEP = Text(" ")
 
 
 def _format_delta(delta: timedelta) -> str:
@@ -31,9 +36,9 @@ def _format_delta(delta: timedelta) -> str:
     return f"{total_seconds}s"
 
 
-def _format_quota(cached: CachedUsage | None, now: datetime | None = None) -> list[str]:
+def _format_quota(cached: CachedUsage | None, now: datetime | None = None) -> Text | None:
     if cached is None:
-        return []
+        return None
     usage = cached.usage
     if now is None:
         now = datetime.now(UTC)
@@ -51,7 +56,22 @@ def _format_quota(cached: CachedUsage | None, now: datetime | None = None) -> li
         age = now - cached.fetched_at
         if age > _STALE_THRESHOLD:
             parts.append(f"({_format_delta(age)} ago)")
-    return parts
+    if not parts:
+        return None
+    return Text(" ".join(parts), style="dim")
+
+
+def _format_context(ctx: ContextWindow | None) -> Text | None:
+    if ctx is None or ctx.used_percentage is None:
+        return None
+    pct = ctx.used_percentage
+    if pct >= 90:
+        style = "bold red"
+    elif pct >= 60:
+        style = "yellow"
+    else:
+        style = "green"
+    return Text(f"ctx:{pct:.0f}%", style=style)
 
 
 def main() -> None:
@@ -73,9 +93,21 @@ def main() -> None:
 
     # TODO: Wire up Admin API (/v1/organizations/cost_report) with a read-only
     # admin key to show current-month API cost in the statusline.
-    parts = [model_name, cwd, f"${cost:.2f}", *_format_quota(get_cached_usage())]
+    segments: list[Text] = [Text(f"{model_name} {cwd} ${cost:.2f}")]
 
-    print(" ".join(parts))
+    context_text = _format_context(data.context_window)
+    if context_text is not None:
+        segments.append(context_text)
+
+    if data.cost and data.cost.total_duration_ms > 0:
+        segments.append(Text(_format_delta(timedelta(milliseconds=data.cost.total_duration_ms))))
+
+    quota_text = _format_quota(get_cached_usage())
+    if quota_text is not None:
+        segments.append(quota_text)
+
+    console = Console(highlight=False)
+    console.print(_SEP.join(segments), end="")
 
 
 if __name__ == "__main__":

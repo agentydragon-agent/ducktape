@@ -16,6 +16,7 @@ import os
 import shutil
 import sys
 import traceback
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -58,186 +59,51 @@ _HOOKS_DOTDIR = ".claude_hooks"
 
 
 # ============================================================================
-# Shared helpers (used by both web and CLI modes)
+# Platform setup result
 # ============================================================================
 
 
-def _get_local_registry_path() -> Path | None:
-    """Get local registry path if it exists in the project directory.
+@dataclass
+class PlatformSetup:
+    """Results of platform-specific setup (web or CLI).
 
-    Used by bazelrc rendering to configure local registry with patched ape module.
+    Carries everything from the platform-specific setup phase to the shared
+    downstream steps (bazelrc render, env file write, session context emit).
     """
-    project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
-    if not project_dir:
-        return None
-    local_registry = Path(project_dir) / "tools" / "local_registry"
-    if local_registry.exists() and (local_registry / "bazel_registry.json").exists():
-        return local_registry
-    return None
 
+    # Bazelrc rendering params
+    proxy_port: int | None = None
+    truststore_path: Path | None = None
+    truststore_password: str | None = None
+    local_proxy: str | None = None
+    combined_ca_path: Path | None = None
+    bazel_cache_dir: Path | None = None
 
-def _render_session_bazelrc(
-    session_dir: Path,
-    *,
-    web_proxy: bool,
-    proxy_port: int | None,
-    truststore_path: Path | None,
-    truststore_password: str | None,
-    local_proxy: str | None,
-    combined_ca_path: Path | None,
-    local_registry_path: Path | None,
-    buildbuddy_configured: bool,
-    bazel_cache_dir: Path | None = None,
-) -> Path:
-    """Render bazelrc.mako template to session_dir/bazelrc.
+    # EnvVars params
+    session_dir: Path | None = None
+    supervisor_port: int | None = None
+    repo_root: Path | None = None
+    bazelisk_path: Path | None = None
+    nix_paths: list[Path] = field(default_factory=list)
+    docker_env: dict[str, str] | None = None
+    mkcert_cert: Path | None = None
+    mkcert_key: Path | None = None
+    secrets_env_vars: dict[str, str] | None = None
+    with_direnv: bool = False
 
-    Unified rendering engine for both modes:
-    - CLI mode: web_proxy=False, all optional params are None
-    - Web mode: web_proxy=True with proxy configuration parameters
-    """
-    template = Template(CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"])
-    result: str = template.render(
-        web_proxy=web_proxy,
-        proxy_port=proxy_port,
-        truststore_path=truststore_path,
-        truststore_password=truststore_password,
-        local_proxy=local_proxy,
-        combined_ca_path=combined_ca_path,
-        local_registry_path=local_registry_path,
-        buildbuddy_configured=buildbuddy_configured,
-        bazel_cache_dir=bazel_cache_dir,
-    )
-    bazelrc_path = session_dir / "bazelrc"
-    write_config(bazelrc_path, result, "session bazelrc")
-    return bazelrc_path
+    # Session context params
+    auth_proxy: proxy_setup.ProxySetup | None = None
+    container: container_runtime.ContainerRuntimeSetup | None = None
+    precommit: precommit_setup.PrecommitSetup | None = None
+    secrets: secrets_setup.SecretsSetup | None = None
+    mkcert: mkcert_setup.MkcertSetup | None = None
+    fork_result: fork_remote_setup.ForkRemoteSetup | None = None
+    buildbuddy_configured: bool = False
 
 
 # ============================================================================
-# CLI mode: per-session bazel wrapper with direnv integration
+# Shared helpers
 # ============================================================================
-
-
-async def run_cli_mode(hook_input: HookInput, settings: HookSettings, env_file_path: Path) -> None:
-    """CLI mode: set up per-session bazel wrapper and direnv eval.
-
-    Renders a per-session bazelrc (with --config=ai_agent for quiet output),
-    installs a bazel/bazelisk wrapper, and writes CLAUDE_ENV_FILE with the
-    wrapper on PATH and direnv eval for .envrc propagation.
-    """
-    _collector, log_file = setup_logging(settings, print_banner=False)
-    tracer, trace_file = init_tracing(hook_input.session_id, settings.session_dir)
-
-    with tracer.start_as_current_span(
-        "session_start_cli", attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source}
-    ):
-        logger.info("Session start hook (CLI mode)")
-        logger.info("Hook input: %s", hook_input.model_dump_json())
-        log_entrypoint_debug("session_start")
-
-        with tracer.start_as_current_span("render_bazelrc"):
-            session_bazelrc = _render_session_bazelrc(
-                settings.session_dir,
-                web_proxy=False,
-                proxy_port=None,
-                truststore_path=None,
-                truststore_password=None,
-                local_proxy=None,
-                combined_ca_path=None,
-                local_registry_path=None,
-                buildbuddy_configured=False,
-            )
-
-        with tracer.start_as_current_span("install_bazel_wrappers"):
-            bazelisk_setup.install_wrapper(settings)
-
-        with tracer.start_as_current_span("write_env_file"):
-            env_file.write_env_file(
-                env_file_path,
-                env_file.EnvVars(
-                    bazel_wrapper_dir=settings.get_wrapper_dir(), session_bazelrc=session_bazelrc, with_direnv=True
-                ),
-            )
-
-        logger.info("CLI session configured: %s", settings.session_dir)
-        print(f"Claude Code CLI session configured (log: {log_file})")
-
-    shutdown_tracing()
-    logger.info("Trace file: %s", trace_file)
-
-
-# ============================================================================
-# Web mode: Auth proxy and environment setup
-# ============================================================================
-
-
-def get_nix_status() -> str:
-    """Get status of nix installation."""
-    nix_bin = nix_setup.find_nix_bin()
-    if nix_bin:
-        return f"installed ({nix_bin})"
-    return "not installed"
-
-
-def format_environment_summary() -> str:
-    """Format a compact environment summary with deduplicated proxy values."""
-    env = dict(os.environ)
-
-    # Group env vars by their value to deduplicate long proxy URLs
-    value_to_vars: dict[str, list[str]] = {}
-    for key, value in sorted(env.items()):
-        if value not in value_to_vars:
-            value_to_vars[value] = []
-        value_to_vars[value].append(key)
-
-    lines = []
-
-    # Find proxy-related values (long URLs that appear in multiple vars)
-    proxy_vars = {}
-    other_vars = {}
-
-    for value, keys in value_to_vars.items():
-        # Identify proxy values by checking if they're long URLs used by multiple vars
-        is_proxy = len(value) > 100 and any(
-            k for k in keys if "PROXY" in k.upper() or k in ("http_proxy", "https_proxy")
-        )
-        if is_proxy and len(keys) > 1:
-            proxy_vars[value] = keys
-        else:
-            for key in keys:
-                other_vars[key] = value
-
-    # Output proxy values with their aliases
-    if proxy_vars:
-        lines.append("Proxy configuration:")
-        for i, (value, keys) in enumerate(proxy_vars.items(), 1):
-            # Truncate the URL for display
-            truncated = value[:80] + "..." if len(value) > 80 else value
-            lines.append(f"  proxy_{i}: {truncated}")
-            lines.append(f"    Used by: {', '.join(sorted(keys))}")
-
-    # Output key environment vars (not all, just important ones)
-    important_keys = [
-        "CLAUDE_CODE_REMOTE",
-        "CLAUDE_CODE_VERSION",
-        "CLAUDE_PROJECT_DIR",
-        "CLAUDE_ENV_FILE",
-        "NODE_EXTRA_CA_CERTS",
-        "SSL_CERT_FILE",
-        "REQUESTS_CA_BUNDLE",
-        "DOCKER_HOST",
-        "PATH",
-    ]
-
-    lines.append("Key environment:")
-    for key in important_keys:
-        if key in other_vars:
-            value = other_vars[key]
-            # Truncate long values
-            if len(value) > 100:
-                value = value[:97] + "..."
-            lines.append(f"  {key}={value}")
-
-    return "\n".join(lines)
 
 
 def _render_extra_context(
@@ -252,46 +118,6 @@ def _render_extra_context(
     template = Template(extra_template_path.read_text())
     result: str = template.render(secrets=secrets, fork_result=fork_result)
     return result.rstrip("\n")
-
-
-def emit_session_context(
-    collector: LogCollector,
-    log_file: Path,
-    project_dir: Path,
-    auth_proxy: proxy_setup.ProxySetup,
-    container: container_runtime.ContainerRuntimeSetup | None,
-    precommit: precommit_setup.PrecommitSetup | None,
-    secrets: secrets_setup.SecretsSetup | None,
-    mkcert: mkcert_setup.MkcertSetup | None = None,
-    fork_result: fork_remote_setup.ForkRemoteSetup | None = None,
-) -> None:
-    """Emit compact context summary for Claude Code transcript.
-
-    Renders the generic session_context.mako (from the wheel) with structured
-    setup results, then appends repo-specific context from
-    .claude_hooks/templates/context.mako if it exists.
-    """
-    status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
-
-    extra_context = _render_extra_context(project_dir, secrets, fork_result)
-
-    template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
-    result: str = template.render(
-        WARNING=logging.WARNING,
-        build_commit=get_build_info().commit,
-        status=status,
-        proxy=auth_proxy,
-        container=container,
-        precommit=precommit,
-        PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
-        mkcert=mkcert,
-        log_entries=collector.buffer,
-        secrets=secrets,
-        extra_context=extra_context,
-        log_file=log_file,
-    )
-    print(result.rstrip("\n"))
-    sys.stdout.flush()
 
 
 class LogCollector(logging.handlers.MemoryHandler):
@@ -354,42 +180,19 @@ async def run_in_thread(func, *args):
 
 
 # ============================================================================
-# Web mode: async setup with parallelization
+# Platform-specific setup
 # ============================================================================
 
 
-async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_path: Path) -> None:
-    """Web mode with parallelized operations.
+async def _setup_web(
+    settings: HookSettings, project_dir: Path, tracer: trace.Tracer, root_ctx: trace.Context
+) -> PlatformSetup:
+    """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
-    Uses asyncio to parallelize independent installations (git hook, cluster
-    tools, nix) while maintaining correct sequencing for dependent operations.
-
-    Writes CLAUDE_ENV_FILE once at the end with all collected environment
-    variables.
+    Returns a fully populated PlatformSetup with all results needed by the
+    shared downstream steps.
     """
-    collector, log_file = setup_logging(settings)
-    tracer, trace_file = init_tracing(hook_input.session_id, settings.session_dir)
-    root_span = tracer.start_span(
-        "session_start_web", attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source}
-    )
-    root_ctx = trace.set_span_in_context(root_span)
-
-    logger.info("Session start hook")
-    logger.info("Hook: %s", __file__)
-    logger.info("Log:  %s", log_file)
-    logger.info("Hook input: %s", hook_input.model_dump_json())
-    log_entrypoint_debug("session_start")
     logger.info("Setting up dev environment...")
-    logger.info(format_environment_summary())
-
-    # Get required project directory
-    project_dir = env.get_required_env_path("CLAUDE_PROJECT_DIR")
-    logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
-    logger.info("Session directory: %s", settings.session_dir)
-
-    # --- Traced async helpers ---
-    # Each helper creates its own child span under root_ctx so the parallel
-    # tasks all show up as direct children of the root span.
 
     async def traced_supervisor_start():
         with tracer.start_as_current_span("supervisor_start", context=root_ctx):
@@ -444,7 +247,7 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
 
     @tracer.start_as_current_span("install_bazelisk", context=root_ctx)
     def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
-        """Install bazelisk and wrapper as separate tasks.
+        """Install bazelisk and wrapper.
 
         Always installs the wrapper. Optionally downloads bazelisk unless
         DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK is False.
@@ -534,58 +337,52 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
-    auth_proxy: proxy_setup.ProxySetup | BaseException = results[0]
-    container: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
-    precommit: precommit_setup.PrecommitSetup | BaseException = results[2]
-    nix: nix_setup.NixSetup | BaseException = results[3]
-    bazelisk: bazelisk_setup.BazeliskSetup | BaseException = results[4]
-    tmpfs: tmpfs_setup.TmpfsSetup | BaseException = results[5]
-    mkcert: mkcert_setup.MkcertSetup | BaseException = results[6]
+    auth_proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
+    container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
+    precommit_result: precommit_setup.PrecommitSetup | BaseException = results[2]
+    nix_result: nix_setup.NixSetup | BaseException = results[3]
+    bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[4]
+    tmpfs_result: tmpfs_setup.TmpfsSetup | BaseException = results[5]
+    mkcert_result: mkcert_setup.MkcertSetup | BaseException = results[6]
     cli_tools_result: list[str] | BaseException = results[7]
     # buildbuddy was set up earlier (before parallel tasks)
     buildbuddy: buildbuddy_setup.BuildbuddySetup | BaseException = buildbuddy_result
 
     # Log non-critical failures
-    if isinstance(precommit, BaseException):
-        logger.warning("Failed to install git pre-commit: %s", precommit)
-    if isinstance(bazelisk, BaseException):
-        logger.warning("Failed to install bazelisk: %s", bazelisk)
+    if isinstance(precommit_result, BaseException):
+        logger.warning("Failed to install git pre-commit: %s", precommit_result)
+    if isinstance(bazelisk_result, BaseException):
+        logger.warning("Failed to install bazelisk: %s", bazelisk_result)
     if isinstance(buildbuddy, BaseException):
         logger.warning("Failed to configure BuildBuddy: %s", buildbuddy)
-    if isinstance(tmpfs, BaseException):
-        logger.warning("Failed to set up tmpfs caches: %s", tmpfs)
-    if isinstance(mkcert, SkipError):
-        logger.info("mkcert setup skipped: %s", mkcert)
-    elif isinstance(mkcert, BaseException):
-        logger.warning("Failed to set up mkcert: %s", mkcert)
+    if isinstance(tmpfs_result, BaseException):
+        logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
+    if isinstance(mkcert_result, SkipError):
+        logger.info("mkcert setup skipped: %s", mkcert_result)
+    elif isinstance(mkcert_result, BaseException):
+        logger.warning("Failed to set up mkcert: %s", mkcert_result)
     if isinstance(cli_tools_result, BaseException):
         logger.warning("Failed to install CLI tools: %s", cli_tools_result)
 
     # Handle nix result
-    if isinstance(nix, SkipError):
-        logger.info("Nix setup skipped: %s", nix)
-    elif isinstance(nix, BaseException):
-        logger.warning("Failed to install nix: %s", nix)
+    if isinstance(nix_result, SkipError):
+        logger.info("Nix setup skipped: %s", nix_result)
+    elif isinstance(nix_result, BaseException):
+        logger.warning("Failed to install nix: %s", nix_result)
 
     # Handle container runtime result
     docker_env: dict[str, str] | None = None
-    if isinstance(container, SkipError):
-        logger.info("Container runtime setup skipped: %s", container)
-    elif isinstance(container, BaseException):
-        logger.warning("Failed to configure container runtime: %s", container)
+    if isinstance(container_result, SkipError):
+        logger.info("Container runtime setup skipped: %s", container_result)
+    elif isinstance(container_result, BaseException):
+        logger.warning("Failed to configure container runtime: %s", container_result)
     else:
-        docker_env = container.env_vars
-
-    # Generate timestamp
-    hook_timestamp = datetime.now()
-    timestamp_file = settings.session_dir / "session-hook-last-run"
-    timestamp_file.write_text(f"{hook_timestamp.isoformat()}\n")
-    logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
+        docker_env = container_result.env_vars
 
     # Proxy setup is required - propagate failure with clear error message
-    if isinstance(auth_proxy, BaseException):
-        logger.error("Proxy setup failed: %s", auth_proxy)
-        raise RuntimeError(f"Proxy setup failed: {auth_proxy}") from auth_proxy
+    if isinstance(auth_proxy_result, BaseException):
+        logger.error("Proxy setup failed: %s", auth_proxy_result)
+        raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
 
     # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
     combined_ca = settings.get_auth_proxy_combined_ca()
@@ -613,32 +410,8 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
         except Exception as e:
             logger.warning("Fork remote setup failed: %s", e)
 
-    # Render session bazelrc (unified for web mode with proxy configuration)
-    with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
-        truststore = settings.get_auth_proxy_truststore()
-        proxy_port = settings.get_auth_proxy_port()
-        local_proxy = f"http://localhost:{proxy_port}"
-        local_registry = _get_local_registry_path()
-        if local_registry:
-            logger.info("Found local registry at %s (patched ape for native ELF)", local_registry)
-
-        session_bazelrc = _render_session_bazelrc(
-            settings.session_dir,
-            web_proxy=True,
-            proxy_port=proxy_port,
-            truststore_path=truststore,
-            truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
-            local_proxy=local_proxy,
-            combined_ca_path=combined_ca,
-            local_registry_path=local_registry,
-            buildbuddy_configured=buildbuddy_configured,
-            bazel_cache_dir=tmpfs.bazel_cache if isinstance(tmpfs, tmpfs_setup.TmpfsSetup) else None,
-        )
-
-    nix_paths = nix.paths if isinstance(nix, nix_setup.NixSetup) else []
-
     # Determine bazelisk_path: use system_bazel if install_bazelisk=False, otherwise downloaded bazelisk
-    if isinstance(bazelisk, bazelisk_setup.BazeliskSetup) and bazelisk.bazelisk_skipped:
+    if isinstance(bazelisk_result, bazelisk_setup.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
         if settings.system_bazel is not None:
             bazelisk_path = settings.system_bazel
         else:
@@ -650,58 +423,155 @@ async def run_web_mode(hook_input: HookInput, settings: HookSettings, env_file_p
     else:
         bazelisk_path = settings.get_bazelisk_path()
 
-    mkcert_cert: Path | None = None
-    mkcert_key: Path | None = None
-    if isinstance(mkcert, mkcert_setup.MkcertSetup):
-        mkcert_cert = mkcert.cert_path
-        mkcert_key = mkcert.key_path
+    # TODO: Share log status summary to CLI mode
+    if isinstance(bazelisk_result, SkipError):
+        bazel_status = "skipped"
+    elif isinstance(bazelisk_result, BaseException):
+        bazel_status = "not installed"
+    else:
+        bazel_status = bazelisk_result.status
+    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, auth_proxy_result.status, auth_proxy_result.ca_status)
+    nix_bin = nix_setup.find_nix_bin()
+    logger.info("Nix: %s", f"installed ({nix_bin})" if nix_bin else "not installed")
+    if not isinstance(container_result, BaseException):
+        logger.info("%s: %s", container_result.runtime.capitalize(), container_result.status)
 
-    env_vars = env_file.EnvVars(
-        bazel_wrapper_dir=settings.get_wrapper_dir(),
-        session_bazelrc=session_bazelrc,
-        session_dir=settings.session_dir,
+    return PlatformSetup(
+        # Bazelrc rendering
         proxy_port=settings.get_auth_proxy_port(),
+        truststore_path=settings.get_auth_proxy_truststore(),
+        truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
+        local_proxy=f"http://localhost:{settings.get_auth_proxy_port()}",
+        combined_ca_path=combined_ca,
+        bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs_setup.TmpfsSetup) else None,
+        # EnvVars
+        session_dir=settings.session_dir,
         supervisor_port=settings.get_supervisor_port(),
         repo_root=project_dir,
-        combined_ca=combined_ca,
         bazelisk_path=bazelisk_path,
-        nix_paths=nix_paths,
+        nix_paths=nix_result.paths if isinstance(nix_result, nix_setup.NixSetup) else [],
         docker_env=docker_env,
-        hook_timestamp=hook_timestamp,
-        mkcert_cert=mkcert_cert,
-        mkcert_key=mkcert_key,
+        mkcert_cert=mkcert_result.cert_path if isinstance(mkcert_result, mkcert_setup.MkcertSetup) else None,
+        mkcert_key=mkcert_result.key_path if isinstance(mkcert_result, mkcert_setup.MkcertSetup) else None,
         secrets_env_vars=secrets.env_vars if secrets else None,
+        # Session context
+        auth_proxy=auth_proxy_result,
+        container=None if isinstance(container_result, BaseException) else container_result,
+        precommit=None if isinstance(precommit_result, BaseException) else precommit_result,
+        secrets=secrets,
+        mkcert=None if isinstance(mkcert_result, BaseException) else mkcert_result,
+        fork_result=fork_result,
+        buildbuddy_configured=buildbuddy_configured,
     )
 
-    # Write environment file ONCE
+
+# ============================================================================
+# Unified session entry point
+# ============================================================================
+
+
+async def run_session(hook_input: HookInput, settings: HookSettings, env_file_path: Path, *, web_mode: bool) -> None:
+    """Unified session setup for both web and CLI modes.
+
+    Dispatches platform-specific setup, then runs shared steps:
+    bazelrc render, wrapper install, env file write, session context emit.
+    """
+    collector, log_file = setup_logging(settings, print_banner=web_mode)
+    tracer, trace_file = init_tracing(hook_input.session_id, settings.session_dir)
+    mode_label = "web" if web_mode else "cli"
+    root_span = tracer.start_span(
+        "session_start",
+        attributes={"session.id": hook_input.session_id, "hook.source": hook_input.source, "mode": mode_label},
+    )
+    root_ctx = trace.set_span_in_context(root_span)
+
+    logger.info("Session start hook (%s mode)", mode_label)
+    logger.info("Hook input: %s", hook_input.model_dump_json())
+    log_entrypoint_debug("session_start")
+    logger.info("Environment: %s", dict(os.environ))
+
+    project_dir = env.get_required_env_path("CLAUDE_PROJECT_DIR")
+    logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
+    logger.info("Session directory: %s", settings.session_dir)
+
+    # Platform-specific setup
+    if web_mode:
+        setup = await _setup_web(settings, project_dir, tracer, root_ctx)
+    else:
+        setup = PlatformSetup(buildbuddy_configured=buildbuddy_setup.is_buildbuddy_configured(), with_direnv=True)
+
+    # Render session bazelrc
+    with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
+        bazelrc_template = Template(
+            CONFIG_FILES.joinpath("bazelrc.mako").read_text(), imports=["from shlex import quote as sh"]
+        )
+        bazelrc_content: str = bazelrc_template.render(
+            web_proxy=web_mode,
+            proxy_port=setup.proxy_port,
+            truststore_path=setup.truststore_path,
+            truststore_password=setup.truststore_password,
+            local_proxy=setup.local_proxy,
+            combined_ca_path=setup.combined_ca_path,
+            buildbuddy_configured=setup.buildbuddy_configured,
+            bazel_cache_dir=setup.bazel_cache_dir,
+        )
+        session_bazelrc = settings.session_dir / "bazelrc"
+        write_config(session_bazelrc, bazelrc_content, "session bazelrc")
+
+    # Install bazel wrapper (web mode already downloaded bazelisk in parallel)
+    with tracer.start_as_current_span("install_bazel_wrappers", context=root_ctx):
+        bazelisk_setup.install_wrapper(settings)
+
+    # Generate timestamp
+    hook_timestamp = datetime.now()
+    timestamp_file = settings.session_dir / "session-hook-last-run"
+    timestamp_file.write_text(f"{hook_timestamp.isoformat()}\n")
+    logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
+
+    # Write environment file
     with tracer.start_as_current_span("write_env_file", context=root_ctx):
+        env_vars = env_file.EnvVars(
+            bazel_wrapper_dir=settings.get_wrapper_dir(),
+            session_bazelrc=session_bazelrc,
+            session_dir=setup.session_dir,
+            proxy_port=setup.proxy_port,
+            supervisor_port=setup.supervisor_port,
+            repo_root=setup.repo_root,
+            combined_ca=setup.combined_ca_path,
+            bazelisk_path=setup.bazelisk_path,
+            nix_paths=setup.nix_paths,
+            docker_env=setup.docker_env,
+            hook_timestamp=hook_timestamp,
+            mkcert_cert=setup.mkcert_cert,
+            mkcert_key=setup.mkcert_key,
+            secrets_env_vars=setup.secrets_env_vars,
+            with_direnv=setup.with_direnv,
+        )
         env_file.write_env_file(env_file_path, env_vars)
     logger.info("Wrote environment to %s", env_file_path)
 
-    # Emit status to log
-    if isinstance(bazelisk, SkipError):
-        bazel_status = "skipped"
-    elif isinstance(bazelisk, BaseException):
-        bazel_status = "not installed"
-    else:
-        bazel_status = bazelisk.status
-    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, auth_proxy.status, auth_proxy.ca_status)
-    logger.info("Nix: %s", get_nix_status())
-    if not isinstance(container, BaseException):
-        logger.info("%s: %s", container.runtime.capitalize(), container.status)
-
+    # Emit session context to Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
-        emit_session_context(
-            collector=collector,
+        status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
+        extra_context = _render_extra_context(project_dir, setup.secrets, setup.fork_result)
+        template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
+        context_output: str = template.render(
+            WARNING=logging.WARNING,
+            build_commit=get_build_info().commit,
+            status=status,
+            proxy=setup.auth_proxy,
+            container=setup.container,
+            precommit=setup.precommit,
+            PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
+            mkcert=setup.mkcert,
+            log_entries=collector.buffer,
+            secrets=setup.secrets,
+            extra_context=extra_context,
             log_file=log_file,
-            project_dir=project_dir,
-            auth_proxy=auth_proxy,
-            container=None if isinstance(container, BaseException) else container,
-            precommit=None if isinstance(precommit, BaseException) else precommit,
-            secrets=secrets,
-            mkcert=None if isinstance(mkcert, BaseException) else mkcert,
-            fork_result=fork_result,
+            buildbuddy_configured=setup.buildbuddy_configured,
         )
+        print(context_output.rstrip("\n"))
+        sys.stdout.flush()
 
     root_span.end()
     shutdown_tracing()
@@ -722,10 +592,8 @@ async def async_main() -> None:
     settings = HookSettings(session_dir=env_file_path.parent)
     otel.init(settings)
 
-    if os.environ.get("CLAUDE_CODE_REMOTE") == "true":
-        await run_web_mode(hook_input, settings, env_file_path)
-    else:
-        await run_cli_mode(hook_input, settings, env_file_path)
+    web_mode = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
+    await run_session(hook_input, settings, env_file_path, web_mode=web_mode)
 
 
 def main() -> None:

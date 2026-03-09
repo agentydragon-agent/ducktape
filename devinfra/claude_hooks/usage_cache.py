@@ -10,17 +10,15 @@ import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import httpx
 from pydantic import BaseModel
 
 from devinfra.claude_hooks.claude_api.credentials import read_access_token
-from devinfra.claude_hooks.claude_api.usage import USAGE_API_URL, UsageResponse
+from devinfra.claude_hooks.claude_api.usage import UsageResponse, fetch_usage
 
 logger = logging.getLogger(__name__)
 
 CACHE_PATH = Path.home() / ".cache" / "claude-hooks" / "usage_cache.json"
 CACHE_TTL = timedelta(seconds=120)
-API_TIMEOUT_SECONDS = 2.0
 
 
 class CachedUsage(BaseModel):
@@ -46,20 +44,6 @@ def _write_cache(usage: UsageResponse) -> CachedUsage:
     return cached
 
 
-def _fetch_usage(token: str) -> UsageResponse | None:
-    try:
-        response = httpx.get(
-            USAGE_API_URL,
-            headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"},
-            timeout=API_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        return UsageResponse.model_validate(response.json())
-    except (httpx.HTTPError, ValueError):
-        logger.debug("Usage API request failed", exc_info=True)
-        return None
-
-
 def get_cached_usage() -> CachedUsage | None:
     """Return subscription usage, using cache when fresh enough."""
     cached = _read_cache()
@@ -71,8 +55,10 @@ def get_cached_usage() -> CachedUsage | None:
     if token is None:
         return cached
 
-    fresh = _fetch_usage(token)
-    if fresh is not None:
-        return _write_cache(fresh)
+    try:
+        fresh = fetch_usage(token)
+    except Exception:
+        logger.debug("Usage API fetch failed, using stale cache", exc_info=True)
+        return cached
 
-    return cached
+    return _write_cache(fresh)

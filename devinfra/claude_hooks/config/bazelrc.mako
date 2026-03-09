@@ -33,14 +33,6 @@ build --build_metadata=ROLE=claude-code
 
 # Skip live OpenAI tests in wildcard expansion (no API key available)
 test --test_tag_filters=-live_openai_api
-% if local_registry_path:
-
-# Local registry with patched ape module (native ELF instead of APE binaries)
-# This avoids binfmt_misc requirement in Claude Code web containers
-# Note: Local registry is checked first, then BCR as fallback
-common --registry=file://${local_registry_path | sh}
-common --registry=https://bcr.bazel.build
-% endif
 % endif
 
 # AI agent quiet mode (suppress verbose progress for agent transcript)
