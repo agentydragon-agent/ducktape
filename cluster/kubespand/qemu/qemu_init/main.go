@@ -278,6 +278,15 @@ func modeKubespan(params map[string]string) {
 		os.WriteFile("/proc/sys/net/ipv4/conf/default/rp_filter", []byte("0"), 0o644)
 	}
 
+	// Enable IP forwarding (matches real NixOS VM with kubelet).
+	// When ip_forward=1, the kernel sets rp_filter defaults and applies
+	// stricter routing validation. We set rp_filter=2 (loose) on kubespan
+	// to match NixOS defaults, and also set it on all/default to simulate
+	// the real environment.
+	os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0o644)
+	os.WriteFile("/proc/sys/net/ipv4/conf/all/rp_filter", []byte("2"), 0o644)
+	os.WriteFile("/proc/sys/net/ipv4/conf/default/rp_filter", []byte("2"), 0o644)
+
 	emitEvent(qemu.Event{Type: qemu.EventNetwork, Message: fmt.Sprintf("eth1=%s/%s, topology=%s", linkIP, linkMask, topology)})
 
 	// Write kubespand config.

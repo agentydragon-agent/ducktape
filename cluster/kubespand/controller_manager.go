@@ -63,6 +63,7 @@ import (
 	"go4.org/netipx"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/discovery"
 	kubespanadapter "github.com/agentydragon/ducktape/cluster/kubespand/peerstate"
 	routing "github.com/agentydragon/ducktape/cluster/kubespand/routing"
 	"github.com/agentydragon/ducktape/cluster/kubespand/wireguard"
@@ -79,6 +80,7 @@ const DefaultPeerReconcileInterval = 30 * time.Second
 // so this interface includes both read and write operations.
 type WireguardManager interface {
 	EnsureInterface(address netip.Prefix) error
+	AddAddress(address netip.Prefix) error
 	PresharedKey() *wgtypes.Key
 	ConfigurePeers(peers []wgtypes.PeerConfig) error
 	GetPeers() ([]wgtypes.Peer, error)
@@ -231,6 +233,18 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		if err := wg.EnsureInterface(ifaceAddr); err != nil {
 			wg.Close()
 			return fmt.Errorf("wireguard interface: %w", err)
+		}
+		// Add the node's routed IPv4/IPv6 addresses to the kubespan interface.
+		// When a reply packet arrives on kubespan destined to the node's own
+		// address (which lives on another interface like eth0), the kernel
+		// rejects it with "Invalid cross-device link" if ip_forward=1 and the
+		// address isn't configured on kubespan. Adding it as a secondary
+		// address resolves this.
+		for _, nodeAddr := range discovery.RoutedNodeAddresses() {
+			prefix := netip.PrefixFrom(nodeAddr, nodeAddr.BitLen())
+			if err := wg.AddAddress(prefix); err != nil {
+				logger.Warn("failed to add node address to kubespan", zap.String("address", prefix.String()), zap.Error(err))
+			}
 		}
 		logger.Info("WireGuard interface ready", zap.String("interface", constants.KubeSpanLinkName))
 

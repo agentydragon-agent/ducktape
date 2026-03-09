@@ -174,7 +174,7 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 	// routedNodeIPs (NodeAddressRoutedID). Without this, other nodes won't add our
 	// real IPv4 to their WireGuard AllowedIPs, and VXLAN traffic won't route through
 	// KubeSpan to us.
-	nodeAddrs := routedNodeAddresses()
+	nodeAddrs := RoutedNodeAddresses()
 	var addrBytesSlice [][]byte
 	for _, addr := range nodeAddrs {
 		b, err := addr.MarshalBinary()
@@ -284,7 +284,11 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go
 // which sets spec.Addresses from NodeAddressRoutedID.
-func routedNodeAddresses() []netip.Addr {
+// RoutedNodeAddresses returns all routable IP addresses from non-loopback,
+// non-kubespan interfaces. Used by the discovery controller to advertise
+// node addresses, and by the manager controller to add them to the kubespan
+// interface (so the kernel accepts reply packets arriving on kubespan).
+func RoutedNodeAddresses() []netip.Addr {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil
