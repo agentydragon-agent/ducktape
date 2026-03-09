@@ -316,13 +316,17 @@ kubespan:
 	peerAddr := waitForPeer(kubespandCmd)
 	emitEvent(qemu.Event{Type: qemu.EventDiscovery, Message: "peer discovered", PeerAddr: peerAddr, PeerIPv4: peerEth1IP})
 
-	// Only VM-A runs probes. VM-B stays alive.
-	if role == "a" {
-		runProbes(peerAddr, peerEth1IP, topology)
-		emitEvent(qemu.Event{Type: qemu.EventDone, Message: "probes completed"})
-	} else {
-		emitEvent(qemu.Event{Type: qemu.EventDone, Message: "role=b waiting for probe (180s max)"})
+	// VM-B starts a TCP listener for probe testing.
+	// VM-A probes with ICMP and TCP.
+	const probePort = 9999
+	if role == "b" {
+		cancel := serveTCP(probePort)
+		defer cancel()
+		emitEvent(qemu.Event{Type: qemu.EventDone, Message: fmt.Sprintf("role=b listening on tcp/%d, waiting (180s max)", probePort)})
 		time.Sleep(180 * time.Second)
+	} else {
+		runProbes(peerAddr, peerEth1IP, topology, probePort)
+		emitEvent(qemu.Event{Type: qemu.EventDone, Message: "probes completed"})
 	}
 
 	kubespandCmd.Process.Kill()
@@ -393,20 +397,32 @@ func dumpLog(path string) {
 	os.Stderr.Write(data)
 }
 
-func runProbes(peerAddr, peerEth1IP, topology string) {
-	v6ok := probe(peerAddr, 60*time.Second)
-	emitEvent(qemu.Event{Type: qemu.EventProbe, Message: "ipv6 ULA connectivity", Target: peerAddr, Success: &v6ok, Error: boolErr(!v6ok, "probe failed")})
-	if !v6ok {
+func runProbes(peerAddr, peerEth1IP, topology string, tcpPort int) {
+	// 1. ICMPv6 to peer's KubeSpan ULA address (WireGuard handles directly).
+	emitProbe("ipv6 ULA icmp", peerAddr, probe(peerAddr, 60*time.Second))
+
+	// 2. ICMPv4 to peer's eth1 IP through KubeSpan.
+	// In flat topology, this IP is also the WireGuard endpoint — tests
+	// that the fwmark mechanism correctly avoids routing loops.
+	emitProbe("ipv4 peer eth1 icmp", peerEth1IP, probe(peerEth1IP, 60*time.Second))
+
+	// 3. TCP to peer's KubeSpan ULA address (tests L4 over WireGuard).
+	emitProbe("ipv6 ULA tcp", fmt.Sprintf("[%s]:%d", peerAddr, tcpPort),
+		tcpProbe(peerAddr, tcpPort, 30*time.Second))
+
+	// 4. TCP to peer's eth1 IPv4 through KubeSpan (tests the full stack:
+	//    nftables mark → policy route → WireGuard → TCP handshake).
+	emitProbe("ipv4 peer eth1 tcp", fmt.Sprintf("%s:%d", peerEth1IP, tcpPort),
+		tcpProbe(peerEth1IP, tcpPort, 30*time.Second))
+}
+
+func emitProbe(msg, target string, ok bool) {
+	evt := qemu.Event{Type: qemu.EventProbe, Message: msg, Target: target, Success: &ok}
+	if !ok {
+		evt.Error = "probe failed"
 		dumpLog("/tmp/kubespand.log")
 	}
-
-	if topology == "cross_subnet" {
-		v4ok := probe(peerEth1IP, 60*time.Second)
-		emitEvent(qemu.Event{Type: qemu.EventProbe, Message: "ipv4 cross-subnet connectivity", Target: peerEth1IP, Success: &v4ok, Error: boolErr(!v4ok, "probe failed")})
-		if !v4ok {
-			dumpLog("/tmp/kubespand.log")
-		}
-	}
+	emitEvent(evt)
 }
 
 func boolErr(cond bool, msg string) string {

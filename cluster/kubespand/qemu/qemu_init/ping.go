@@ -11,6 +11,59 @@ import (
 	"golang.org/x/net/ipv6"
 )
 
+// tcpProbe attempts a TCP connection to target:port with retry until timeout.
+// Returns true on first successful connection.
+func tcpProbe(target string, port int, timeout time.Duration) bool {
+	addr := net.JoinHostPort(target, fmt.Sprintf("%d", port))
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+		if err == nil {
+			conn.Close()
+			fmt.Printf("tcp connect %s succeeded\n", addr)
+			return true
+		}
+		time.Sleep(time.Second)
+	}
+
+	fmt.Fprintf(os.Stderr, "timeout after %s: no TCP connection to %s\n", timeout, addr)
+	return false
+}
+
+// serveTCP starts a TCP listener on the given port that accepts connections
+// and immediately closes them (for probe testing). Runs until the returned
+// cancel function is called.
+// serveTCP starts TCP listeners on the given port on both IPv4 and IPv6.
+// Accepts connections and immediately closes them (for probe testing).
+// Runs until the returned cancel function is called.
+func serveTCP(port int) (cancel func()) {
+	addr := fmt.Sprintf(":%d", port)
+	var listeners []net.Listener
+	for _, network := range []string{"tcp4", "tcp6"} {
+		ln, err := net.Listen(network, addr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "serveTCP %s: %v\n", network, err)
+			continue
+		}
+		listeners = append(listeners, ln)
+		go func(l net.Listener) {
+			for {
+				conn, err := l.Accept()
+				if err != nil {
+					return
+				}
+				conn.Close()
+			}
+		}(ln)
+	}
+	return func() {
+		for _, ln := range listeners {
+			ln.Close()
+		}
+	}
+}
+
 // probe sends ICMP echo requests to the target address with retry until
 // timeout. Auto-detects IPv4 vs IPv6 from the target. Returns true on
 // first successful echo reply.

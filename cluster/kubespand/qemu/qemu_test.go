@@ -359,19 +359,18 @@ func assertProbes(t *testing.T, events []Event, topology string) {
 		}
 	}
 
-	// IPv6 ULA probe must pass for all topologies.
-	if s, ok := probes["ipv6 ULA connectivity"]; !ok {
-		t.Error("missing ipv6 ULA probe event")
-	} else if !*s {
-		t.Error("ipv6 ULA probe failed")
+	// All topologies must pass these probes.
+	requiredProbes := []string{
+		"ipv6 ULA icmp",
+		"ipv4 peer eth1 icmp",
+		"ipv6 ULA tcp",
+		"ipv4 peer eth1 tcp",
 	}
-
-	// Cross-subnet must also have IPv4 probe.
-	if topology == "cross_subnet" {
-		if s, ok := probes["ipv4 cross-subnet connectivity"]; !ok {
-			t.Error("missing ipv4 cross-subnet probe event")
+	for _, name := range requiredProbes {
+		if s, ok := probes[name]; !ok {
+			t.Errorf("missing probe event: %s", name)
 		} else if !*s {
-			t.Error("ipv4 cross-subnet probe failed")
+			t.Errorf("probe failed: %s", name)
 		}
 	}
 
