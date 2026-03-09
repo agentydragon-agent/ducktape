@@ -46,12 +46,8 @@ ansible/collections/
 
 # Kubernetes and Helm
 **/Chart.lock
-**/tmpcharts-*
-**/.helm-cache/
-**/.helm-config/
 # Helm subchart dependencies (downloaded by helm dep update)
 cluster/charts/*/charts/
-k8s_old/helm/*/charts/
 
 # Terraform
 **/.terraform/
@@ -59,7 +55,6 @@ k8s_old/helm/*/charts/
 **/.terraform.tfstate.lock.info
 **/terraform.tfstate*
 *.tfvars
-!*.tfvars.example
 !example.tfvars
 
 # NixOS build artifacts
@@ -72,7 +67,6 @@ nix/**/result
 
 # Project-specific
 **/.claude/settings.local.json
-**/.claude/session-start.log
 worktrees
 cluster/.git
 cluster/.claude/
@@ -95,8 +89,6 @@ cluster/.claude/
 .claude/agents
 
 **/config
-!devinfra/claude_hooks/config
-!claude_web_env/rootfs/root/**/config
 !**/nix/home/config
 !**/nix/home/config/nvim/lua/config
 !cluster/k8s/**/config
@@ -114,7 +106,6 @@ cluster/.claude/
 !/props/specimens/hooks
 !/props/specimens/**/gitea_pr_gate/hooks
 !/props/specimens/**/claude_linter_v2/hooks
-!finance/worthy/hooks
 !x/claude_linter_v2/hooks
 !x/gitea/pr_gate/hooks
 
