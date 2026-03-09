@@ -156,7 +156,7 @@ spec:
   targetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: kube-prometheus-stack-grafana
+    name: monitoring-grafana
   updatePolicy:
     updateMode: "Off"
 ---
@@ -169,7 +169,7 @@ spec:
   targetRef:
     apiVersion: apps/v1
     kind: StatefulSet
-    name: prometheus-kube-prometheus-stack-prometheus
+    name: prometheus-monitoring
   updatePolicy:
     updateMode: "Off"
 ---

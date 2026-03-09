@@ -157,7 +157,7 @@ endpoints:
 
   - name: Prometheus
     group: cluster
-    url: http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/-/ready
+    url: http://monitoring-prometheus.monitoring.svc.cluster.local:9090/-/ready
     interval: 60s
     conditions:
       - "[STATUS] == 200"

@@ -66,7 +66,7 @@ spec:
                 namespace: openclaw-operator
           - subjects:
               - kind: ServiceAccount
-                name: kube-prometheus-stack-operator
+                name: monitoring-operator
                 namespace: monitoring
           # Allow Authentik (creates outpost Deployments from provider CRs)
           - subjects:

@@ -26,6 +26,12 @@ spec:
       name: grafana-oidc-config
       valuesKey: values.yaml
   values:
+    # Shorten resource names: "kube-prometheus-stack-*" → "monitoring-*"
+    fullnameOverride: monitoring
+    # Remove redundant "-prometheus"/"-alertmanager" suffix from CR names
+    # (avoids e.g. "prometheus-monitoring-prometheus" → "prometheus-monitoring")
+    cleanPrometheusOperatorObjectNames: true
+
     # Global settings
     defaultRules:
       create: true
@@ -62,6 +68,8 @@ spec:
       alertmanagerSpec:
         storage:
           volumeClaimTemplate:
+            metadata:
+              name: db
             spec:
               storageClassName: proxmox-csi-retain
               accessModes: ["ReadWriteOnce"]
@@ -206,6 +214,8 @@ spec:
         # Storage configuration
         storageSpec:
           volumeClaimTemplate:
+            metadata:
+              name: db
             spec:
               storageClassName: proxmox-csi-retain
               accessModes: ["ReadWriteOnce"]
