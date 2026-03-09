@@ -1,6 +1,6 @@
 // Kubespand-only: InstallRoutes adds default routes to the kubespan routing table.
 // Talos manages routes via COSI network.RouteSpec resources instead.
-package kubespan
+package routing
 
 import (
 	"fmt"

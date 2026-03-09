@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/identity"
-	kubespanadapter "github.com/agentydragon/ducktape/cluster/kubespand/peerstate"
+	kubespanadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/kubespan"
 )
 
 // IdentityController watches Config and produces the node's KubeSpan Identity.

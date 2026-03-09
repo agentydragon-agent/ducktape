@@ -1,17 +1,8 @@
---- internal/app/machined/pkg/controllers/network/nftables_chain.go	2026-03-04 05:49:49.298666240 +0000
-+++ internal/app/machined/pkg/controllers/network/nftables_chain.go	2026-03-04 05:49:49.332666241 +0000
-@@ -15,8 +15,6 @@
- 	"github.com/google/nftables"
- 	"github.com/google/nftables/expr"
- 	"go.uber.org/zap"
--
--	networkadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/network"
- 	"github.com/siderolabs/talos/pkg/machinery/constants"
- 	"github.com/siderolabs/talos/pkg/machinery/resources/network"
- )
-@@ -63,11 +61,6 @@
+--- internal/app/machined/pkg/controllers/network/nftables_chain.go
++++ internal/app/machined/pkg/controllers/network/nftables_chain.go
+@@ -63,11 +63,6 @@
  		}
- 
+
  		var conn nftables.Conn
 -
 -		if err := ctrl.preCreateIptablesNFTable(logger, &conn); err != nil {
@@ -21,16 +12,7 @@
  		list, err := safe.ReaderListAll[*network.NfTablesChain](ctx, r)
  		if err != nil {
  			return fmt.Errorf("error listing nftables chains: %w", err)
-@@ -120,7 +113,7 @@
- 			})
- 
- 			for _, rule := range chain.TypedSpec().Rules {
--				compiled, err := networkadapter.NfTablesRule(&rule).Compile()
-+				compiled, err := NfTablesRule(&rule).Compile()
- 				if err != nil {
- 					return fmt.Errorf("error compiling nftables rule for chain %s: %w", nfChain.Name, err)
- 				}
-@@ -177,34 +170,3 @@
+@@ -177,34 +172,3 @@
  		r.ResetRestartBackoff()
  	}
  }

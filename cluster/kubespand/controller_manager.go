@@ -64,9 +64,10 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/discovery"
-	kubespanadapter "github.com/agentydragon/ducktape/cluster/kubespand/peerstate"
-	routing "github.com/agentydragon/ducktape/cluster/kubespand/routing"
+	"github.com/agentydragon/ducktape/cluster/kubespand/routing"
 	"github.com/agentydragon/ducktape/cluster/kubespand/wireguard"
+	kubespanadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/kubespan"
+	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
 )
 
 // DefaultPeerReconcileInterval is how often we poll WireGuard for handshake
@@ -94,7 +95,7 @@ type WireguardManagerFactory func(privateKey string, psk string, listenPort, mtu
 
 // RulesManagerFactory creates a RulesManager.
 // Ref: upstream RulesManagerFactory (identical signature)
-type RulesManagerFactory func(targetTable uint8, internalMark, markMask uint32) routing.RulesManager
+type RulesManagerFactory func(targetTable uint8, internalMark, markMask uint32) taloscontrollerskubespan.RulesManager
 
 // ManagerController manages the KubeSpan WireGuard interface, routing rules,
 // and peer state. It watches Config, Identity, and PeerSpec resources, and
@@ -105,7 +106,7 @@ type ManagerController struct {
 	PeerReconcileInterval   time.Duration
 
 	wg     WireguardManager
-	rules  routing.RulesManager
+	rules  taloscontrollerskubespan.RulesManager
 	ticker *time.Ticker
 }
 
@@ -147,7 +148,7 @@ func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, lo
 		}
 	}
 	if ctrl.RulesManagerFactory == nil {
-		ctrl.RulesManagerFactory = routing.NewRulesManager
+		ctrl.RulesManagerFactory = taloscontrollerskubespan.NewRulesManager
 	}
 	if ctrl.PeerReconcileInterval == 0 {
 		ctrl.PeerReconcileInterval = DefaultPeerReconcileInterval
