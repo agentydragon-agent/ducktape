@@ -185,7 +185,11 @@ async def run_in_thread(func, *args):
 
 
 async def _setup_web(
-    settings: HookSettings, project_dir: Path, tracer: trace.Tracer, root_ctx: trace.Context
+    settings: HookSettings,
+    project_dir: Path,
+    tracer: trace.Tracer,
+    root_ctx: trace.Context,
+    secrets: secrets_setup.SecretsSetup | None,
 ) -> PlatformSetup:
     """Web mode: supervisor, proxy, containers, secrets, parallel installs.
 
@@ -264,11 +268,6 @@ async def _setup_web(
             settings=settings,
             bazelisk_skipped=skipped,
         )
-
-    # Decrypt age-encrypted secrets from .claude_hooks/secrets/ in the repo checkout.
-    with tracer.start_as_current_span("setup_secrets", context=root_ctx):
-        secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
-        secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
 
     # Run BuildBuddy setup first so we know if RBE is available
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
@@ -423,18 +422,11 @@ async def _setup_web(
     else:
         bazelisk_path = settings.get_bazelisk_path()
 
-    # TODO: Share log status summary to CLI mode
-    if isinstance(bazelisk_result, SkipError):
-        bazel_status = "skipped"
-    elif isinstance(bazelisk_result, BaseException):
-        bazel_status = "not installed"
-    else:
-        bazel_status = bazelisk_result.status
-    logger.info("Ready: bazel=%s, proxy=%s, CA=%s", bazel_status, auth_proxy_result.status, auth_proxy_result.ca_status)
-    nix_bin = nix_setup.find_nix_bin()
-    logger.info("Nix: %s", f"installed ({nix_bin})" if nix_bin else "not installed")
-    if not isinstance(container_result, BaseException):
-        logger.info("%s: %s", container_result.runtime.capitalize(), container_result.status)
+    logger.info(
+        "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_result, auth_proxy_result.status, auth_proxy_result.ca_status
+    )
+    logger.info("Nix: %s", nix_setup.find_nix_bin())
+    logger.info("Container: %s", container_result)
 
     return PlatformSetup(
         # Bazelrc rendering
@@ -494,11 +486,21 @@ async def run_session(hook_input: HookInput, settings: HookSettings, env_file_pa
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
     logger.info("Session directory: %s", settings.session_dir)
 
+    # Decrypt age-encrypted secrets (shared across both modes).
+    # Returns None gracefully when age_key is unset or secrets_dir doesn't exist.
+    secrets_dir = project_dir / _HOOKS_DOTDIR / "secrets"
+    secrets = secrets_setup.setup_secrets(age_key=settings.secrets_age_key, secrets_dir=secrets_dir)
+
     # Platform-specific setup
     if web_mode:
-        setup = await _setup_web(settings, project_dir, tracer, root_ctx)
+        setup = await _setup_web(settings, project_dir, tracer, root_ctx, secrets)
     else:
-        setup = PlatformSetup(buildbuddy_configured=buildbuddy_setup.is_buildbuddy_configured(), with_direnv=True)
+        setup = PlatformSetup(
+            buildbuddy_configured=buildbuddy_setup.is_buildbuddy_configured(),
+            with_direnv=True,
+            secrets=secrets,
+            secrets_env_vars=secrets.env_vars if secrets else None,
+        )
 
     # Render session bazelrc
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
