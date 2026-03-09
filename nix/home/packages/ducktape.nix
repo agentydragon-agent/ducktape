@@ -11,7 +11,7 @@ let
   compact-json = pkgs.callPackage ./compact-json.nix { };
 
   # 8-char commit SHA from GitHub release tag
-  shortSha = "86ed3844";
+  shortSha = "c42aa81f";
 
   # Wheel filename follows PEP 427: {name}-{version}-{python}-{abi}-{platform}.whl
   wheelFilename = "ducktape-0.1.0-py3-none-any.whl";
@@ -20,7 +20,7 @@ let
   wheelSrc = pkgs.fetchurl {
     url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-${shortSha}/${wheelFilename}";
     # After updating shortSha, set to lib.fakeHash and rebuild to get new hash
-    hash = "sha256-k+ontR/76uJIsTmrsmAleblkdUXTn5w8sPq8D+HCGs4=";
+    hash = "sha256-8zNpSXYTnZpHiVsbEZB9K4CcERHIXB5OT0a0EQIrQ58=";
   };
 
   ducktape = pkgs.python3Packages.buildPythonApplication {
