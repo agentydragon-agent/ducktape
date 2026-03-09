@@ -610,8 +610,8 @@ http_archive(
 http_file(
     name = "alpine_linux_virt",
     downloaded_file_path = "linux-virt.apk",
-    sha256 = "ec7a28f3a7fb8c1d08bdfb0459aa845e551ff14a2d88b7e446e33a901f996653",
-    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/linux-virt-6.12.74-r0.apk"],
+    sha256 = "af9a379fa2a4e26a365fbc050da0a54b873cc96074a4c1d2a4541f5b57b39b2b",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/linux-virt-6.12.76-r0.apk"],
 )
 
 # Alpine minirootfs tarball for QEMU initramfs base filesystem.
