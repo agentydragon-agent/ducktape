@@ -44,7 +44,6 @@ manifest:
     aw_datastore: aw_core
     aw_query: aw_core
     aw_transform: aw_core
-    backports: backports.tarfile
     bcrypt: bcrypt
     beartype: beartype
     bleach: bleach
@@ -305,7 +304,6 @@ manifest:
     opentelemetry.util.re: opentelemetry_api
     opentelemetry.util.types: opentelemetry_api
     opentelemetry.version: opentelemetry_api
-    overrides: overrides
     packaging: packaging
     pandas: pandas
     pandocfilters: pandocfilters
@@ -410,7 +408,7 @@ manifest:
     supervisor: supervisor
     syrupy: syrupy
     tabulate: tabulate
-    takethetime: takethetime
+    takethetime: TakeTheTime
     tenacity: tenacity
     terminado: terminado
     testcontainers.arangodb: testcontainers
@@ -507,4 +505,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: b7b8cad676a9d7eb473a47444a73086ec828a33e89f844fd01c8c9fcb3c5ec19
+integrity: 48ff857d5d45f472b10762ae110bf4deefd66b6e43c2885ecfaab1894753e861
