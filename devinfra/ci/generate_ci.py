@@ -280,6 +280,7 @@ def generate_harbor_images_config(images: list[HarborImageConfig]) -> Workflow:
                 "password": "${{ secrets.HARBOR_ROBOT_TOKEN }}",
             },
         ),
+        Step(uses="imjasonh/setup-crane@v0.4"),
     ]
     for img in images:
         image_name = img.local_tag.split(":")[0]

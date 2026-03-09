@@ -132,6 +132,16 @@ jobs:
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-exec-image')
     uses: ./.github/workflows/openclaw-exec-image.yml
     secrets: inherit
+  tana-mcp-image:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'tana-mcp-image')
+    uses: ./.github/workflows/tana-mcp-image.yml
+    secrets: inherit
+  activitywatch-image:
+    needs: compute-targets
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'activitywatch-image')
+    uses: ./.github/workflows/activitywatch-image.yml
+    secrets: inherit
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')

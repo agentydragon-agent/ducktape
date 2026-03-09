@@ -3,7 +3,7 @@
 # The props backend image is now pushed via bazel-harbor-images.yml.
 #
 # Triggers:
-#   - workflow_call (from ci.yml)
+#   - workflow_call (from ci.yml, always on push)
 #   - workflow_dispatch: manual push of all images
 name: Props Images
 
@@ -51,6 +51,9 @@ jobs:
           username: ${{ secrets.PROPS_REGISTRY_USERNAME }}
           password: ${{ secrets.PROPS_REGISTRY_PASSWORD }}
 
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
       - name: Build and load agent images
         run: |
           bazel run //props/agents/critic:load
@@ -73,14 +76,19 @@ jobs:
             exit 0
           fi
 
+          # Push SHA-pinned tag, then update floating tag only if digest changed.
           push_image() {
-            local local_tag="$1" remote_repo="$2"
-            shift 2
-            local remote_tags=("$@")
-            for tag in "${remote_tags[@]}"; do
-              docker tag "$local_tag" "$REGISTRY/$remote_repo:$tag"
-              docker push --quiet "$REGISTRY/$remote_repo:$tag"
-            done
+            local local_tag="$1" remote_repo="$2" floating_tag="$3" sha_tag="$4"
+            docker tag "$local_tag" "$REGISTRY/$remote_repo:$sha_tag"
+            docker push --quiet "$REGISTRY/$remote_repo:$sha_tag"
+            SHA_DIGEST=$(crane digest "$REGISTRY/$remote_repo:$sha_tag")
+            FLOATING_DIGEST=$(crane digest "$REGISTRY/$remote_repo:$floating_tag" 2>/dev/null || echo "")
+            if [[ "$SHA_DIGEST" == "$FLOATING_DIGEST" ]]; then
+              echo "$remote_repo:$floating_tag unchanged (same digest), skipping"
+            else
+              echo "$remote_repo: updating :$floating_tag"
+              crane tag "$REGISTRY/$remote_repo:$sha_tag" "$floating_tag"
+            fi
           }
 
           push_image critic:latest critic latest "$SHA"

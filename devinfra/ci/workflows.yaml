@@ -33,14 +33,15 @@ workflows:
     secrets: inherit
 
   # Image builds
+  # All image workflows always trigger on push. Each workflow compares the
+  # locally-built image digest against the registry :latest and skips the tag
+  # update when the content is unchanged. This avoids the stale-image bug
+  # where cancel-in-progress can drop a push when a second commit arrives
+  # that doesn't match the old path filter.
   rbe-image:
-    trigger: { kind: path, pattern: "^devinfra/rbe_image/" }
+    trigger: { kind: always }
+    events: [push]
 
-  # Bazel image workflows always trigger. Bazel builds are hermetic, so same
-  # inputs → same image digest. The workflow compares the local digest against
-  # the registry and skips the push when unchanged. This avoids the stale-image
-  # bug where bazel-diff (HEAD vs HEAD~1) misses changes from earlier commits
-  # whose push step failed.
   props-images:
     trigger: { kind: always }
     events: [push]
@@ -54,15 +55,25 @@ workflows:
     secrets: inherit
 
   openclaw-image:
-    trigger: { kind: path, pattern: "^(docker/openclaw/|airlock/openclaw/)" }
+    trigger: { kind: always }
     events: [push]
     secrets: inherit
     rbe: false
 
-  # TODO: Should also trigger on Python dependency changes (mcp_infra/exec/,
-  # airlock/, etc.) since the base image is built from those sources.
   openclaw-exec-image:
-    trigger: { kind: path, pattern: "^docker/openclaw-exec/" }
+    trigger: { kind: always }
+    events: [push]
+    secrets: inherit
+    rbe: false
+
+  tana-mcp-image:
+    trigger: { kind: always }
+    events: [push]
+    secrets: inherit
+    rbe: false
+
+  activitywatch-image:
+    trigger: { kind: always }
     events: [push]
     secrets: inherit
     rbe: false

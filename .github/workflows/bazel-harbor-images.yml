@@ -39,6 +39,7 @@ jobs:
           registry: registry.allegedly.works
           username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+      - uses: imjasonh/setup-crane@v0.4
       - name: Build and push oauth-broker
         run: |-
           .github/scripts/harbor_push.sh \

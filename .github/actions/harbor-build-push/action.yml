@@ -37,10 +37,8 @@ runs:
         SHA="${{ github.sha }}"
         TS="$(date -u +%Y%m%d%H%M%S)"
         SEMVER_TAG="${TS}-${SHA:0:7}"
+        # Never push :latest directly — crane handles it after digest comparison.
         TAGS="${{ inputs.image }}:$SHA,${{ inputs.image }}:$SEMVER_TAG"
-        if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
-          TAGS="$TAGS,${{ inputs.image }}:latest"
-        fi
         echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
         echo "semver_tag=$SEMVER_TAG" >> "$GITHUB_OUTPUT"
 
@@ -58,3 +56,20 @@ runs:
         file: ${{ inputs.file }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
+
+    - name: Install crane
+      uses: imjasonh/setup-crane@v0.4
+
+    - name: Update :latest if changed
+      shell: bash
+      run: |
+        IMAGE="${{ inputs.image }}"
+        SHA="${{ github.sha }}"
+        SHA_DIGEST=$(crane digest "$IMAGE:$SHA")
+        LATEST_DIGEST=$(crane digest "$IMAGE:latest" 2>/dev/null || echo "")
+        if [[ "$SHA_DIGEST" == "$LATEST_DIGEST" ]]; then
+          echo "$IMAGE: :latest unchanged (same digest), skipping tag update"
+        else
+          echo "$IMAGE: content changed, updating :latest"
+          crane tag "$IMAGE:$SHA" latest
+        fi

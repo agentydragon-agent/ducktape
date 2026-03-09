@@ -1,15 +1,11 @@
 # Build and push the Tana MCP Desktop image to Harbor.
 #
 # Triggers:
-#   - push to devel changing tana/mcp_server/** (tags :latest too)
-#   - workflow_dispatch: manual trigger (tags :latest too)
-#   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
+#   - workflow_call (from ci.yml, always on push): updates :latest only if digest changed
+#   - workflow_dispatch: manual trigger
 name: Tana MCP Image
 
 on:
-  push:
-    branches: [devel]
-    paths: ["tana/mcp_server/**"]
   workflow_dispatch:
   workflow_call:
 
