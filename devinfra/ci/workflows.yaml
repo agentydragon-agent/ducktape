@@ -142,3 +142,7 @@ harbor_images:
   - bazel_target: //tana/token_broker:load
     local_tag: tana-token-broker:latest
     remote_path: ducktape/tana-token-broker
+
+  - bazel_target: //third_party/activitywatch:load
+    local_tag: aw-server:latest
+    remote_path: ducktape/aw-server

@@ -1,4 +1,5 @@
 common --enable_bzlmod
+common --experimental_isolated_extension_usages
 
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
