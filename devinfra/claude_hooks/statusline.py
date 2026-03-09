@@ -8,19 +8,29 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import UTC, datetime, timedelta
 
 from devinfra.claude_hooks.claude_api.statusline import Input
-from devinfra.claude_hooks.claude_api.usage import UsageResponse
-from devinfra.claude_hooks.usage_cache import get_cached_usage
+from devinfra.claude_hooks.usage_cache import CachedUsage, get_cached_usage
 
 # ANSI escapes
 _DIM = "\033[2m"
 _RESET = "\033[0m"
 
+_STALE_THRESHOLD = timedelta(seconds=10)
 
-def _format_quota(usage: UsageResponse | None) -> str:
-    if usage is None:
+
+def _format_age(age: timedelta) -> str:
+    total_seconds = int(age.total_seconds())
+    if total_seconds >= 60:
+        return f"({total_seconds // 60}m ago)"
+    return f"({total_seconds}s ago)"
+
+
+def _format_quota(cached: CachedUsage | None, now: datetime | None = None) -> str:
+    if cached is None:
         return ""
+    usage = cached.usage
     parts: list[str] = []
     if usage.five_hour is not None:
         parts.append(f"5h:{usage.five_hour.utilization:.0f}%")
@@ -28,6 +38,11 @@ def _format_quota(usage: UsageResponse | None) -> str:
         parts.append(f"7d:{usage.seven_day.utilization:.0f}%")
     if not parts:
         return ""
+    if now is None:
+        now = datetime.now(UTC)
+    age = now - cached.fetched_at
+    if age > _STALE_THRESHOLD:
+        parts.append(_format_age(age))
     return " ".join(parts)
 
 

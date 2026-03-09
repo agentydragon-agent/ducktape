@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,7 +13,7 @@ from devinfra.claude_hooks.claude_api.credentials import read_access_token
 from devinfra.claude_hooks.claude_api.statusline import Input
 from devinfra.claude_hooks.claude_api.usage import UsageBucket, UsageResponse
 from devinfra.claude_hooks.statusline import _format_quota
-from devinfra.claude_hooks.usage_cache import CACHE_TTL_SECONDS, _CachedUsage, get_cached_usage
+from devinfra.claude_hooks.usage_cache import CACHE_TTL, CachedUsage, get_cached_usage
 
 # === statusline_models tests ===
 
@@ -146,22 +146,22 @@ def test_read_access_token_malformed(tmp_path: Path):
 def test_get_cached_usage_fresh_cache(tmp_path: Path):
     cache_file = tmp_path / "usage_cache.json"
     usage = UsageResponse(five_hour=UsageBucket(utilization=12.0), seven_day=UsageBucket(utilization=45.0))
-    cached = _CachedUsage(fetched_at=time.time(), usage=usage)
+    cached = CachedUsage(fetched_at=datetime.now(UTC), usage=usage)
     cache_file.write_text(cached.model_dump_json())
 
     with patch("devinfra.claude_hooks.usage_cache.CACHE_PATH", cache_file):
         result = get_cached_usage()
 
     assert result is not None
-    assert result.five_hour is not None
-    assert result.five_hour.utilization == 12.0
+    assert result.usage.five_hour is not None
+    assert result.usage.five_hour.utilization == 12.0
 
 
 def test_get_cached_usage_stale_cache_no_token(tmp_path: Path):
     cache_file = tmp_path / "usage_cache.json"
     usage = UsageResponse(five_hour=UsageBucket(utilization=99.0))
-    stale_time = time.time() - CACHE_TTL_SECONDS - 10
-    cached = _CachedUsage(fetched_at=stale_time, usage=usage)
+    stale_time = datetime.now(UTC) - CACHE_TTL - timedelta(seconds=10)
+    cached = CachedUsage(fetched_at=stale_time, usage=usage)
     cache_file.write_text(cached.model_dump_json())
 
     creds_file = tmp_path / "nonexistent"
@@ -174,8 +174,8 @@ def test_get_cached_usage_stale_cache_no_token(tmp_path: Path):
 
     # Falls back to stale cache
     assert result is not None
-    assert result.five_hour is not None
-    assert result.five_hour.utilization == 99.0
+    assert result.usage.five_hour is not None
+    assert result.usage.five_hour.utilization == 99.0
 
 
 def test_get_cached_usage_no_cache_no_token(tmp_path: Path):
@@ -191,9 +191,15 @@ def test_get_cached_usage_no_cache_no_token(tmp_path: Path):
 # === statusline output tests ===
 
 
+def _make_cached(usage: UsageResponse, age: timedelta = timedelta(seconds=0)) -> CachedUsage:
+    return CachedUsage(fetched_at=datetime.now(UTC) - age, usage=usage)
+
+
 def test_format_quota_with_data():
-    usage = UsageResponse(five_hour=UsageBucket(utilization=6.0), seven_day=UsageBucket(utilization=35.0))
-    assert _format_quota(usage) == "5h:6% 7d:35%"
+    cached = _make_cached(
+        UsageResponse(five_hour=UsageBucket(utilization=6.0), seven_day=UsageBucket(utilization=35.0))
+    )
+    assert _format_quota(cached) == "5h:6% 7d:35%"
 
 
 def test_format_quota_none():
@@ -201,13 +207,37 @@ def test_format_quota_none():
 
 
 def test_format_quota_partial():
-    usage = UsageResponse(five_hour=UsageBucket(utilization=12.5))
-    assert _format_quota(usage) == "5h:12%"
+    cached = _make_cached(UsageResponse(five_hour=UsageBucket(utilization=12.5)))
+    assert _format_quota(cached) == "5h:12%"
 
 
 def test_format_quota_empty_response():
-    usage = UsageResponse()
-    assert _format_quota(usage) == ""
+    cached = _make_cached(UsageResponse())
+    assert _format_quota(cached) == ""
+
+
+def test_format_quota_fresh_no_age_suffix():
+    now = datetime.now(UTC)
+    cached = CachedUsage(
+        fetched_at=now - timedelta(seconds=5), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
+    )
+    assert _format_quota(cached, now=now) == "5h:6%"
+
+
+def test_format_quota_stale_shows_seconds():
+    now = datetime.now(UTC)
+    cached = CachedUsage(
+        fetched_at=now - timedelta(seconds=42), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
+    )
+    assert _format_quota(cached, now=now) == "5h:6% (42s ago)"
+
+
+def test_format_quota_stale_shows_minutes():
+    now = datetime.now(UTC)
+    cached = CachedUsage(
+        fetched_at=now - timedelta(seconds=150), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
+    )
+    assert _format_quota(cached, now=now) == "5h:6% (2m ago)"
 
 
 if __name__ == "__main__":
