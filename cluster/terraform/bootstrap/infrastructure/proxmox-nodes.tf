@@ -199,6 +199,17 @@ resource "proxmox_virtual_environment_vm" "talos" {
     import_from  = proxmox_virtual_environment_download_file.talos_disk.id
   }
 
+  # Dedicated Longhorn storage disk (mounted at /var/mnt/longhorn by Talos)
+  disk {
+    datastore_id = "local-zfs"
+    interface    = "scsi1"
+    iothread     = true
+    ssd          = true
+    discard      = "on"
+    size         = var.longhorn_disk_size_gb
+    file_format  = "raw"
+  }
+
   agent {
     enabled = true
     trim    = true
@@ -263,6 +274,17 @@ resource "proxmox_virtual_environment_vm" "talos_gpu" {
     import_from  = proxmox_virtual_environment_download_file.talos_disk_gpu.id
   }
 
+  # Dedicated Longhorn storage disk (mounted at /var/mnt/longhorn by Talos)
+  disk {
+    datastore_id = "local-zfs"
+    interface    = "scsi1"
+    iothread     = true
+    ssd          = true
+    discard      = "on"
+    size         = var.longhorn_disk_size_gb
+    file_format  = "raw"
+  }
+
   agent {
     enabled = true
     trim    = true
@@ -316,7 +338,22 @@ locals {
     "topology.kubernetes.io/region"                   = "proxmox"
     "topology.kubernetes.io/zone"                     = "atlas"
     "csi.proxmox.sinextra.dev/max-volume-attachments" = "29"
+    "node.longhorn.io/create-default-disk"            = "true"
   }
+
+  # Longhorn dedicated disk mount (scsi1 → /var/mnt/longhorn)
+  longhorn_disk_config = yamlencode({
+    machine = {
+      disks = [
+        {
+          device = "/dev/sdb"
+          partitions = [
+            { mountpoint = "/var/mnt/longhorn" }
+          ]
+        }
+      ]
+    }
+  })
 
   # NVIDIA-specific config patches for GPU nodes
   nvidia_config_patches = [
@@ -379,6 +416,7 @@ data "talos_machine_configuration" "proxmox" {
     # hostname needed (unlike Hetzner where platform metadata isn't re-read
     # during talosctl upgrade kexec)
     each.value.type == "worker" ? [local.worker_link_config] : [],
+    [local.longhorn_disk_config],
   )
 }
 
@@ -410,6 +448,7 @@ data "talos_machine_configuration" "proxmox_gpu" {
     # Proxmox nocloud platform derives hostname from VM name
     local.nvidia_config_patches,
     [local.worker_link_config], # GPU nodes are always workers
+    [local.longhorn_disk_config],
   )
 }
 

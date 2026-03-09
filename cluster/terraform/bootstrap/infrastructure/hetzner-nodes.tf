@@ -128,8 +128,9 @@ data "talos_machine_configuration" "vps" {
     yamlencode({
       machine = merge(local.common_machine_base, {
         nodeLabels = {
-          "topology.kubernetes.io/region" = "hetzner"
-          "topology.kubernetes.io/zone"   = var.hetzner_location
+          "topology.kubernetes.io/region"        = "hetzner"
+          "topology.kubernetes.io/zone"          = var.hetzner_location
+          "node.longhorn.io/create-default-disk" = "true"
         }
         kubelet = {
           # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan

@@ -20,6 +20,7 @@ spec:
     defaultSettings:
       defaultDataPath: /var/lib/longhorn
       defaultReplicaCount: 2
+      createDefaultDiskLabeledNodesOnly: true
     longhornUI:
       nodeSelector:
         topology.kubernetes.io/region: hetzner

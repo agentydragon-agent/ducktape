@@ -60,3 +60,9 @@ variable "proxmox_node_name" {
   type        = string
   default     = "atlas"
 }
+
+variable "longhorn_disk_size_gb" {
+  description = "Size of dedicated Longhorn disk on Proxmox VMs (GB)"
+  type        = number
+  default     = 100
+}

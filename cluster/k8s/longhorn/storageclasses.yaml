@@ -9,5 +9,19 @@ parameters:
   numberOfReplicas: "2"
   staleReplicaTimeout: "30"
   nodeSelector: "topology.kubernetes.io/region=hetzner"
+  diskSelector: "hetzner-ephemeral"
   nfsOptions: "vers=4.1,noresvport"
   accessMode: ReadWriteMany
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: proxmox-longhorn
+provisioner: driver.longhorn.io
+reclaimPolicy: Retain
+allowVolumeExpansion: true
+parameters:
+  numberOfReplicas: "2"
+  staleReplicaTimeout: "30"
+  nodeSelector: "topology.kubernetes.io/region=proxmox"
+  diskSelector: "proxmox-ssd"
