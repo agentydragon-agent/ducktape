@@ -53,5 +53,9 @@
     extraGroups = [ "systemd-journal" ];
   };
 
+  users.users.root.openssh.authorizedKeys.keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@wyrm"
+  ];
+
   boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
 }
