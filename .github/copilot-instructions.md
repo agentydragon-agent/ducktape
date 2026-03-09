@@ -19,8 +19,6 @@ For detailed repository guidance, see: [AGENTS.md](../AGENTS.md) and [STYLE.md](
 **Bazel** is the unified build system. Always use Bazel, never direct `pytest` or `python`:
 
 ```bash
-bazel build //...                    # Build all (lint runs by default)
-bazel test //...                     # Run all tests
 bazel run //tools:gazelle            # Update BUILD files
 ```
 
