@@ -257,4 +257,10 @@ jobs:
             git push origin "HEAD:${BRANCH}"
           fi
 
-      # Flake input update handled by nix-flake-update.yml (triggered on workflow completion)
+  update-flake:
+    name: Update flake inputs
+    needs: release
+    if: needs.release.result == 'success'
+    uses: ./.github/workflows/nix-flake-update.yml
+    permissions:
+      contents: write

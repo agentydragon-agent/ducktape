@@ -1,17 +1,16 @@
 # Update all CI-released Nix flake inputs in a single commit.
-# Runs after release workflows complete, or manually via workflow_dispatch.
+# Called from release workflows after publishing, or manually via workflow_dispatch.
 name: Update Nix flake inputs
 
 on:
-  workflow_run:
-    workflows: ["kubespand CI", "ducktape Release"]
-    types: [completed]
-    branches: [devel, main]
+  workflow_call: {}
   workflow_dispatch: {}
 
+# Serialize across all callers (both release workflows use the same github.ref).
+# cancel-in-progress: false → second call waits, finds no changes, exits cleanly.
 concurrency:
   group: nix-flake-update-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -19,14 +18,13 @@ permissions:
 jobs:
   update:
     name: Update flake inputs
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+          ref: ${{ github.ref_name }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v30
@@ -38,7 +36,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+          BRANCH="${{ github.ref_name }}"
 
           # Update all CI-released inputs at once
           nix flake update kubespand-bin ducktape-wheel headscale-cleanup-wheel --flake ./nix
