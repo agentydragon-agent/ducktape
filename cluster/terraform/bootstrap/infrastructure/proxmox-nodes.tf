@@ -210,7 +210,6 @@ resource "proxmox_virtual_environment_vm" "talos" {
     discard      = "on"
     size         = var.longhorn_disk_size_gb
     file_format  = "raw"
-    serial       = "LONGHORN"
   }
 
   agent {
@@ -288,7 +287,6 @@ resource "proxmox_virtual_environment_vm" "talos_gpu" {
     discard      = "on"
     size         = var.longhorn_disk_size_gb
     file_format  = "raw"
-    serial       = "LONGHORN"
   }
 
   agent {
@@ -347,14 +345,15 @@ locals {
     "node.longhorn.io/create-default-disk"            = "true"
   }
 
-  # Longhorn dedicated disk mount (selected by serial → /var/mnt/longhorn).
-  # QEMU creates /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_<serial> for disks
-  # with a serial set, giving a stable path regardless of SCSI slot ordering.
+  # Longhorn dedicated disk mount (selected by stable by-id path).
+  # Proxmox with virtio-scsi-single uses the drive ID (drive-scsi<N>) as the
+  # SCSI device_id, which udev exposes as /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi<N>.
+  # This is stable regardless of how many CSI PVC disks are attached.
   longhorn_disk_config = yamlencode({
     machine = {
       disks = [
         {
-          device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_LONGHORN"
+          device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi30"
           partitions = [
             { mountpoint = "/var/mnt/longhorn" }
           ]
