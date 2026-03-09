@@ -34,6 +34,8 @@ let
     socat
     conntrack-tools
     util-linux
+    nftables
+    wireguard-tools
   ];
 
   kubeletConfigYaml = pkgs.writeText "kubelet-config.yaml" (
