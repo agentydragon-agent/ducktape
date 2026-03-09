@@ -38,7 +38,7 @@
     "ducktape-wheel": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-ICt2UHv/09LOHjNzJNnO/a7JdV0ems9q97lWZRNaiTs=",
+        "narHash": "sha256-f7u3MN1/iEci198Nix/x6crOp1HL9+nagNL1qqGmW40=",
         "type": "file",
         "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-a8648e0a/ducktape-0.1.0-py3-none-any.whl"
       },
