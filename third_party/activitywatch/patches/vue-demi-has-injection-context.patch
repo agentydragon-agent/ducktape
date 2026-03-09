@@ -1,5 +1,5 @@
---- a/lib/index.mjs
-+++ b/lib/index.mjs
+--- lib/index.mjs
++++ lib/index.mjs
 @@ -31,4 +31,8 @@
    isVue2,
    isVue3,

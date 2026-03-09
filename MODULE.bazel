@@ -271,16 +271,25 @@ use_repo(npm, "npm_ducktape")
 # lock file lives in third_party/activitywatch/, a different workspace root
 # from the main pnpm-lock.yaml.  rules_js forbids mixing workspace roots within
 # a single extension instance ("cannot seed_root twice with different workspaces").
-# The pnpm lockfile is auto-regenerated from upstream's package-lock.json via
-# `pnpm import` when update_pnpm_lock detects a change. If the lockfile is stale,
-# the build fails with "pnpm-lock.yaml file updated. Please run your build again."
+#
+# update_pnpm_lock is disabled because pnpm_lock and npm_package_lock are in
+# different Bazel workspaces (// vs @aw_webui), and rules_js's seed_root check
+# rejects that combination.  To regenerate the pnpm lockfile after bumping the
+# aw_webui http_archive:
+#   1. bazel run @pnpm//:package/bin/pnpm.cjs -- import \
+#        --lockfile-dir third_party/activitywatch \
+#        $(bazel info output_base)/external/aw_webui+/package-lock.json
+#   2. Or: cp upstream package-lock.json to a temp dir, run `pnpm import`, copy back.
 npm_activitywatch = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True, isolate = True)
 npm_activitywatch.npm_translate_lock(
     name = "npm_aw_webui",
     bins = {
         "vite": ["vite=./bin/vite.js"],
     },
-    npm_package_lock = "@aw_webui//:package-lock.json",
+    # link_workspace must point to @aw_webui so generated store-target labels
+    # resolve in the http_archive where npm_link_all_packages() creates them,
+    # not in the main workspace where the lockfile lives.
+    link_workspace = "aw_webui",
     # vue-demi's postinstall switches lib/index.mjs to the correct Vue version
     # variant, but lifecycle hooks are disabled in sandboxed builds.  Patch the
     # default (Vue 3) stub to add the missing hasInjectionContext export that
@@ -288,7 +297,7 @@ npm_activitywatch.npm_translate_lock(
     patches = {
         "vue-demi@0.14.6": ["//third_party/activitywatch/patches:vue-demi-has-injection-context.patch"],
     },
-    pnpm_lock = "//third_party/activitywatch:aw-webui-pnpm-lock.yaml",
+    pnpm_lock = "//:aw-webui-pnpm-lock.yaml",
     # aw-webui imports axios directly (via NewReleaseNotification.vue) but
     # axios is only a dependency of aw-client, not of aw-webui itself.
     # pnpm strict mode hides phantom deps; hoist axios so vite/rollup can resolve it.
@@ -296,7 +305,7 @@ npm_activitywatch.npm_translate_lock(
         "axios": [""],
     },
     run_lifecycle_hooks = False,
-    update_pnpm_lock = True,
+    update_pnpm_lock = False,
     use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
 )
 use_repo(npm_activitywatch, "npm_aw_webui")
