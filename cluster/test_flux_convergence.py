@@ -1,6 +1,6 @@
 import pytest_bazel
 
-from cluster.bootstrap import (
+from cluster.flux_convergence import (
     FluxCondition,
     FluxKustomization,
     KustomizationPhase,
