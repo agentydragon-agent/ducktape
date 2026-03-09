@@ -699,7 +699,7 @@ async def optimize_with_gepa(
         seed=seed if seed is not None else 0,
     )
 
-    optimized_prompt = result.best_candidate["system_prompt"]
+    optimized_prompt = result.candidates[result.best_idx]["system_prompt"]
     best_score = result.val_aggregate_scores[result.best_idx]
     logger.info(f"GEPA optimization complete. Best score: {best_score:.3f}, Metric calls: {result.total_metric_calls}")
 
