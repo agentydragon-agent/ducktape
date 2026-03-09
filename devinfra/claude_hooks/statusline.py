@@ -31,14 +31,14 @@ def _format_delta(delta: timedelta) -> str:
     return f"{total_seconds}s"
 
 
-def _format_quota(cached: CachedUsage | None, now: datetime | None = None) -> str:
+def _format_quota(cached: CachedUsage | None, now: datetime | None = None) -> list[str]:
     if cached is None:
-        return ""
+        return []
     usage = cached.usage
     if now is None:
         now = datetime.now(UTC)
     parts: list[str] = []
-    if usage.five_hour is not None:
+    if usage.five_hour is not None and usage.five_hour.utilization >= 70:
         parts.append(f"5h:{usage.five_hour.utilization:.0f}%")
     if usage.seven_day is not None:
         part = f"7d:{usage.seven_day.utilization:.0f}%"
@@ -47,12 +47,11 @@ def _format_quota(cached: CachedUsage | None, now: datetime | None = None) -> st
             if remaining.total_seconds() > 0:
                 part += f" rst {_format_delta(remaining)}"
         parts.append(part)
-    if not parts:
-        return ""
-    age = now - cached.fetched_at
-    if age > _STALE_THRESHOLD:
-        parts.append(f"({_format_delta(age)} ago)")
-    return " ".join(parts)
+    if parts:
+        age = now - cached.fetched_at
+        if age > _STALE_THRESHOLD:
+            parts.append(f"({_format_delta(age)} ago)")
+    return parts
 
 
 def main() -> None:
@@ -74,13 +73,9 @@ def main() -> None:
 
     # TODO: Wire up Admin API (/v1/organizations/cost_report) with a read-only
     # admin key to show current-month API cost in the statusline.
-    sections = [model_name, cwd, f"${cost:.2f}"]
+    parts = [model_name, cwd, f"${cost:.2f}", *_format_quota(get_cached_usage())]
 
-    quota = _format_quota(get_cached_usage())
-    if quota:
-        sections.append(quota)
-
-    print(" ".join(sections))
+    print(" ".join(parts))
 
 
 if __name__ == "__main__":

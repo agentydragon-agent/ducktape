@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import pytest_bazel
 
 from devinfra.claude_hooks.claude_api.credentials import read_access_token
@@ -195,96 +196,73 @@ def _make_cached(usage: UsageResponse, age: timedelta = timedelta(seconds=0)) ->
     return CachedUsage(fetched_at=datetime.now(UTC) - age, usage=usage)
 
 
-def test_format_quota_with_data():
-    now = datetime.now(UTC)
-    cached = CachedUsage(
-        fetched_at=now,
-        usage=UsageResponse(five_hour=UsageBucket(utilization=6.0), seven_day=UsageBucket(utilization=35.0)),
-    )
-    assert _format_quota(cached, now=now) == "5h:6% 7d:35%"
-
-
 def test_format_quota_none():
-    assert _format_quota(None) == ""
-
-
-def test_format_quota_partial():
-    cached = _make_cached(UsageResponse(five_hour=UsageBucket(utilization=12.5)))
-    assert _format_quota(cached) == "5h:12%"
+    assert _format_quota(None) == []
 
 
 def test_format_quota_empty_response():
     cached = _make_cached(UsageResponse())
-    assert _format_quota(cached) == ""
+    assert _format_quota(cached) == []
 
 
-def test_format_quota_fresh_no_age_suffix():
+@pytest.mark.parametrize(
+    ("usage", "expected"),
+    [
+        pytest.param(
+            UsageResponse(five_hour=UsageBucket(utilization=80.0), seven_day=UsageBucket(utilization=35.0)),
+            ["5h:80%", "7d:35%"],
+            id="both_buckets",
+        ),
+        pytest.param(
+            UsageResponse(five_hour=UsageBucket(utilization=6.0), seven_day=UsageBucket(utilization=35.0)),
+            ["7d:35%"],
+            id="five_hour_below_70_hidden",
+        ),
+        pytest.param(UsageResponse(five_hour=UsageBucket(utilization=85.0)), ["5h:85%"], id="five_hour_only_high"),
+        pytest.param(UsageResponse(five_hour=UsageBucket(utilization=12.5)), [], id="five_hour_only_low_hidden"),
+    ],
+)
+def test_format_quota_buckets(usage: UsageResponse, expected: list[str]):
     now = datetime.now(UTC)
-    cached = CachedUsage(
-        fetched_at=now - timedelta(seconds=5), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
-    )
-    assert _format_quota(cached, now=now) == "5h:6%"
+    cached = CachedUsage(fetched_at=now, usage=usage)
+    assert _format_quota(cached, now=now) == expected
 
 
-def test_format_quota_stale_shows_seconds():
+@pytest.mark.parametrize(
+    ("age", "expected_suffix"),
+    [
+        pytest.param(timedelta(seconds=5), None, id="fresh"),
+        pytest.param(timedelta(seconds=42), "(42s ago)", id="seconds"),
+        pytest.param(timedelta(seconds=150), "(2m ago)", id="minutes"),
+        pytest.param(timedelta(hours=1, minutes=5), "(1h05m ago)", id="hours"),
+    ],
+)
+def test_format_quota_staleness(age: timedelta, expected_suffix: str | None):
     now = datetime.now(UTC)
-    cached = CachedUsage(
-        fetched_at=now - timedelta(seconds=42), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
-    )
-    assert _format_quota(cached, now=now) == "5h:6% (42s ago)"
+    cached = CachedUsage(fetched_at=now - age, usage=UsageResponse(seven_day=UsageBucket(utilization=20.0)))
+    result = _format_quota(cached, now=now)
+    if expected_suffix is None:
+        assert result == ["7d:20%"]
+    else:
+        assert result == ["7d:20%", expected_suffix]
 
 
-def test_format_quota_stale_shows_minutes():
+@pytest.mark.parametrize(
+    ("resets_in", "expected_part"),
+    [
+        pytest.param(timedelta(hours=2, minutes=13), "7d:35% rst 2h13m", id="hours"),
+        pytest.param(timedelta(minutes=45), "7d:35% rst 45m", id="minutes"),
+        pytest.param(timedelta(days=3, hours=5), "7d:35% rst 3d05h", id="days"),
+        pytest.param(timedelta(minutes=-5), "7d:35%", id="past_no_reset"),
+    ],
+)
+def test_format_quota_seven_day_reset(resets_in: timedelta, expected_part: str):
     now = datetime.now(UTC)
-    cached = CachedUsage(
-        fetched_at=now - timedelta(seconds=150), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
-    )
-    assert _format_quota(cached, now=now) == "5h:6% (2m ago)"
-
-
-def test_format_quota_stale_shows_hours():
-    now = datetime.now(UTC)
-    cached = CachedUsage(
-        fetched_at=now - timedelta(hours=1, minutes=5), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
-    )
-    assert _format_quota(cached, now=now) == "5h:6% (1h05m ago)"
-
-
-def test_format_quota_seven_day_reset():
-    now = datetime.now(UTC)
-    resets_at = now + timedelta(hours=2, minutes=13)
+    resets_at = now + resets_in
     cached = CachedUsage(
         fetched_at=now, usage=UsageResponse(seven_day=UsageBucket(utilization=35.0, resets_at=resets_at))
     )
-    assert _format_quota(cached, now=now) == "7d:35% rst 2h13m"
-
-
-def test_format_quota_seven_day_reset_minutes_only():
-    now = datetime.now(UTC)
-    resets_at = now + timedelta(minutes=45)
-    cached = CachedUsage(
-        fetched_at=now, usage=UsageResponse(seven_day=UsageBucket(utilization=80.0, resets_at=resets_at))
-    )
-    assert _format_quota(cached, now=now) == "7d:80% rst 45m"
-
-
-def test_format_quota_seven_day_reset_days():
-    now = datetime.now(UTC)
-    resets_at = now + timedelta(days=3, hours=5)
-    cached = CachedUsage(
-        fetched_at=now, usage=UsageResponse(seven_day=UsageBucket(utilization=10.0, resets_at=resets_at))
-    )
-    assert _format_quota(cached, now=now) == "7d:10% rst 3d05h"
-
-
-def test_format_quota_seven_day_reset_past():
-    now = datetime.now(UTC)
-    resets_at = now - timedelta(minutes=5)
-    cached = CachedUsage(
-        fetched_at=now, usage=UsageResponse(seven_day=UsageBucket(utilization=99.0, resets_at=resets_at))
-    )
-    # Past reset time — don't show reset
-    assert _format_quota(cached, now=now) == "7d:99%"
+    assert _format_quota(cached, now=now) == [expected_part]
 
 
 if __name__ == "__main__":
