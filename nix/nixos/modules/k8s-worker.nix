@@ -186,6 +186,11 @@ in
             runtime_type = "io.containerd.runc.v2";
             options.SystemdCgroup = true;
           };
+          containerd.runtimes.nvidia = lib.mkIf cfg.enableNvidiaRuntime {
+            runtime_type = "io.containerd.runc.v2";
+            options.BinaryName = "${lib.getOutput "tools" pkgs.nvidia-container-toolkit}/bin/nvidia-container-runtime";
+            options.SystemdCgroup = true;
+          };
           # Cilium DaemonSet installs cilium-cni to /opt/cni/bin.
           # We symlink base CNI plugins there too (see systemd.tmpfiles below).
           cni.bin_dir = "/opt/cni/bin";
