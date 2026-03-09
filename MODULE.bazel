@@ -282,7 +282,7 @@ use_repo(npm, "npm_ducktape")
 # The pnpm lockfile is auto-regenerated from upstream's package-lock.json via
 # `pnpm import` when update_pnpm_lock detects a change. If the lockfile is stale,
 # the build fails with "pnpm-lock.yaml file updated. Please run your build again."
-npm_activitywatch = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
+npm_activitywatch = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True, isolate = True)
 npm_activitywatch.npm_translate_lock(
     name = "npm_aw_webui",
     bins = {
