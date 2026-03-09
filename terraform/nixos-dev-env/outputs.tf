@@ -55,9 +55,11 @@ output "instructions" {
     5. Verify node joined:
        kubectl get nodes
 
-    To update VM config:
-    - Rebuild image: nix build ./nix#wyrm2-image
-    - Redeploy: terraform apply
-    - Or from inside VM: sudo nixos-rebuild switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#wyrm2
+    NOTE: tofu apply only provisions the VM and injects cloud-init
+    credentials. It does NOT run nixos-rebuild — the VM boots with
+    whatever NixOS config was baked into the qcow2 image. To apply
+    NixOS config changes to a running VM, SSH in and run:
+
+      sudo nixos-rebuild switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#wyrm2
   EOT
 }

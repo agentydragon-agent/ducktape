@@ -5,13 +5,6 @@
 # REMOTE STATE (k8s cluster credentials)
 # =============================================================================
 
-data "terraform_remote_state" "persistent_auth" {
-  backend = "local"
-  config = {
-    path = "${path.module}/../../cluster/terraform/bootstrap/persistent-auth/terraform.tfstate"
-  }
-}
-
 data "terraform_remote_state" "infrastructure" {
   backend = "local"
   config = {
@@ -325,7 +318,6 @@ module "wyrm2" {
   proxmox_node_name = var.proxmox_node_name
   storage           = var.storage
   network_bridge    = var.network_bridge
-  pool_id           = proxmox_virtual_environment_pool.user_pool.pool_id
   ssh_public_key    = local.ssh_public_key
 
   k8s_cluster_join = {

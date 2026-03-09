@@ -3,6 +3,7 @@
   pkgs,
   lib,
   enableGui,
+  isNixOS,
   solarizedLight,
   solarizedDark,
   terminalFont,
@@ -16,9 +17,11 @@ let
   fontSizeValue = terminalFont.size;
   fontSizeStr = builtins.toString fontSizeValue;
 
-  kittyPkg = config.lib.nixGL.wrap pkgs.kitty;
-  weztermPkg = config.lib.nixGL.wrap pkgs.wezterm;
-  ghosttyPkg = config.lib.nixGL.wrap pkgs.ghostty;
+  # nixGL wrapping is only needed on non-NixOS systems (NixOS manages GPU drivers directly)
+  wrapPkg = pkg: if isNixOS then pkg else config.lib.nixGL.wrap pkg;
+  kittyPkg = wrapPkg pkgs.kitty;
+  weztermPkg = wrapPkg pkgs.wezterm;
+  ghosttyPkg = wrapPkg pkgs.ghostty;
 
   mkKittyTheme =
     scheme: isLight:
@@ -206,7 +209,7 @@ let
 in
 {
   config = lib.mkIf enableGui {
-    targets.genericLinux.nixGL.packages = nixGLPackages;
+    targets.genericLinux.nixGL.packages = lib.mkIf (!isNixOS) nixGLPackages;
 
     programs.wezterm = {
       enable = true;
@@ -273,6 +276,8 @@ in
 
     home.packages = [
       ghosttyPkg
+    ]
+    ++ lib.optionals (!isNixOS) [
       nixGLPackages.nixGLDefault
     ];
   };

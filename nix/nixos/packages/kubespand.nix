@@ -17,7 +17,7 @@ pkgs.stdenv.mkDerivation {
 
   src = pkgs.fetchurl {
     url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-${shortSha}/kubespand";
-    hash = "sha256-EGRGO3Tcbvya+/vAB1GKNpOMTFFVWeg/zwicXJ2I+RM=";
+    hash = "sha256-F7Jzrs941af4kr+OuVAy4Ta/yjVyLKriU97Ks/wWbhY=";
     executable = true;
   };
 
