@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("//cluster/kubespand:upstream.bzl", "TALOS_CONTROLLERS_NETWORK_ADDRESSUTIL", "talos_copy")
+
+talos_copy(
+    name = "broadcast",
+    src = TALOS_CONTROLLERS_NETWORK_ADDRESSUTIL + "broadcast.go",
+    out = "broadcast.go",
+)
+
+go_library(
+    name = "addressutil",
+    srcs = [":broadcast"],
+    importpath = "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/network/internal/addressutil",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+    deps = [
+        "@org_go4_netipx//:netipx",
+    ],
+)

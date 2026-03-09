@@ -20,4 +20,12 @@ exports_files([
     "internal/app/machined/pkg/controllers/kubespan/routing_rules.go",
     # Controllers — network
     "internal/app/machined/pkg/controllers/network/nftables_chain.go",
+    "internal/app/machined/pkg/controllers/network/address_spec.go",
+    "internal/app/machined/pkg/controllers/network/route_spec.go",
+    # Controllers — network/watch
+    "internal/app/machined/pkg/controllers/network/watch/watch.go",
+    "internal/app/machined/pkg/controllers/network/watch/rtnetlink.go",
+    "internal/app/machined/pkg/controllers/network/watch/trigger.go",
+    # Controllers — network/internal/addressutil
+    "internal/app/machined/pkg/controllers/network/internal/addressutil/broadcast.go",
 ])

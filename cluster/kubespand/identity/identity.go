@@ -15,7 +15,7 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"gopkg.in/yaml.v3"
 
-	kubespanadapter "github.com/agentydragon/ducktape/cluster/kubespand/peerstate"
+	kubespanadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/kubespan"
 )
 
 // LoadOrCreate loads an existing identity from disk, or generates a new one.

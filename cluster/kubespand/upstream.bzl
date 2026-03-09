@@ -11,6 +11,8 @@ TALOS_ADAPTERS_KUBESPAN = "@talos_internal//:internal/app/machined/pkg/adapters/
 TALOS_ADAPTERS_NETWORK = "@talos_internal//:internal/app/machined/pkg/adapters/network/"
 TALOS_CONTROLLERS_KUBESPAN = "@talos_internal//:internal/app/machined/pkg/controllers/kubespan/"
 TALOS_CONTROLLERS_NETWORK = "@talos_internal//:internal/app/machined/pkg/controllers/network/"
+TALOS_CONTROLLERS_NETWORK_WATCH = "@talos_internal//:internal/app/machined/pkg/controllers/network/watch/"
+TALOS_CONTROLLERS_NETWORK_ADDRESSUTIL = "@talos_internal//:internal/app/machined/pkg/controllers/network/internal/addressutil/"
 
 def talos_copy(name, src, out):
     """Copy a file from the @talos_internal archive into this package.

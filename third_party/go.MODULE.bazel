@@ -277,9 +277,24 @@ go_deps.module(
     version = "v0.4.0",
 )
 go_deps.module(
+    path = "github.com/mdlayher/arp",
+    sum = "h1:ql8x//rJsHMjS+qqEag8n3i4azw1QneKh5PieH9UEbY=",
+    version = "v0.0.0-20220512170110-6706a2966875",
+)
+go_deps.module(
+    path = "github.com/mdlayher/ethernet",
+    sum = "h1:2oDp6OOhLxQ9JBoUuysVz9UZ9uI6oLUbvAZu0x8o+vE=",
+    version = "v0.0.0-20220221185849-529eae5b6118",
+)
+go_deps.module(
     path = "github.com/mdlayher/genetlink",
     sum = "h1:KdrNKe+CTu+IbZnm/GVUMXSqBBLqcGpRDa0xkQy56gw=",
     version = "v1.3.2",
+)
+go_deps.module(
+    path = "github.com/mdlayher/packet",
+    sum = "h1:3Up1NG6LZrsgDVn6X4L9Ge/iyRyxFEFD9o6Pr3Q1nQY=",
+    version = "v1.1.2",
 )
 go_deps.module(
     path = "github.com/mdlayher/netlink",
@@ -613,10 +628,13 @@ use_repo(
     "com_github_klauspost_compress",
     "com_github_mailru_easyjson",
     "com_github_mark3labs_mcp_go",
+    "com_github_mdlayher_arp",
+    "com_github_mdlayher_ethernet",
     "com_github_mdlayher_ethtool",
     "com_github_mdlayher_genetlink",
     "com_github_mdlayher_netlink",
     "com_github_mdlayher_netx",
+    "com_github_mdlayher_packet",
     "com_github_mdlayher_socket",
     "com_github_microsoft_go_winio",
     "com_github_mitchellh_mapstructure",
