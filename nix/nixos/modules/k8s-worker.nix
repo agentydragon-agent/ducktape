@@ -186,6 +186,13 @@ in
       "net.ipv4.ip_forward" = 1;
     };
 
+    # KubeSpan requires loose reverse path filtering. Packets decrypted by
+    # WireGuard arrive on the kubespan interface with source IPs (e.g., VPS
+    # public IPs) whose reverse path goes through ens18, not kubespan.
+    # Strict rpfilter drops these. Loose mode only checks that a route to
+    # the source exists via *any* interface.
+    networking.firewall.checkReversePath = lib.mkIf isKubespan "loose";
+
     # Containerd
     virtualisation.containerd = {
       enable = true;
