@@ -72,6 +72,7 @@ go_library(
         "@com_github_jsimonetti_rtnetlink_v2//:rtnetlink",
         "@com_github_siderolabs_gen//optional",
         "@com_github_siderolabs_gen//value",
+        "@com_github_siderolabs_gen//xslices",
         "@com_github_siderolabs_go_pointer//:go-pointer",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
