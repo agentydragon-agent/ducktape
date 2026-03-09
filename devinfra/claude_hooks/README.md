@@ -272,36 +272,26 @@ Setup files (in `~/.cache/claude-hooks/auth-proxy/`, created by `proxy_setup.py`
 
 ## Known Limitations
 
-### rules_python lock() doesn't inherit --action_env
+### rules_python lock() --action_env inheritance (patched)
 
-The `lock()` rule from `@rules_python//python/uv:lock.bzl` has a bug/limitation: it doesn't inherit `--action_env` values because it sets an explicit `env` attribute on `ctx.actions.run_shell()`.
+The `lock()` rule from `@rules_python//python/uv:lock.bzl` had a bug where it
+didn't inherit `--action_env` values because `ctx.actions.run_shell()` used
+`env = ctx.attr.env`, which ignores `ctx.configuration.default_shell_env`.
 
-**Impact**: The `uv pip compile` sandbox action doesn't receive proxy environment variables set via `--action_env=HTTPS_PROXY=...`.
+**This is fixed** by `patches/rules_python_lock_inherit_action_env.patch`, applied
+via `single_version_override` in `MODULE.bazel`. The patch changes the rule to
+`env = dicts.add(ctx.configuration.default_shell_env, ctx.attr.env)`, so
+`--action_env` values are inherited while explicit lock rule env still takes precedence.
 
-**Workaround**: Pass proxy env vars directly to the `lock()` rule's `env` attribute:
+**How //:requirements works in Claude Code sessions** (see `config/bazelrc.mako`):
 
-```starlark
-lock(
-    name = "requirements",
-    srcs = [...],
-    out = "requirements_bazel.txt",
-    env = {
-        "HTTPS_PROXY": "http://localhost:18081",
-        "SSL_CERT_FILE": "/path/to/combined_ca.pem",  # For TLS inspection
-    },
-)
-```
+- `--strategy=PyRequirementsLockUv=local` forces the action to run locally (not RBE)
+- `--action_env=https_proxy=http://127.0.0.1:18081` routes uv through the auth proxy
+- `--action_env=SSL_CERT_FILE=...combined_ca.pem` trusts the proxy's CA
+- `UV_NATIVE_TLS=1` (in the lock rule's `env`) makes uv use OpenSSL (respects SSL_CERT_FILE)
 
-**Root cause**: In `python/uv/private/lock.bzl`:
-
-```starlark
-ctx.actions.run_shell(
-    ...
-    env = ctx.attr.env,  # <-- Explicit env overrides --action_env inheritance
-)
-```
-
-This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.attr.env)` to merge `--action_env` with rule-specific env.
+In CI/RBE (no session bazelrc): the lock rule uses `exec_properties dockerNetwork:bridge`
+for direct internet access without needing a proxy.
 
 ### 9p filesystem doesn't support Unix socket hard links
 
