@@ -199,15 +199,18 @@ resource "proxmox_virtual_environment_vm" "talos" {
     import_from  = proxmox_virtual_environment_download_file.talos_disk.id
   }
 
-  # Dedicated Longhorn storage disk (mounted at /var/mnt/longhorn by Talos)
+  # Dedicated Longhorn storage disk (mounted at /var/mnt/longhorn by Talos).
+  # Uses scsi30 (highest slot) to avoid conflicts with Proxmox CSI which
+  # allocates upward from scsi1 for PVC volumes.
   disk {
     datastore_id = "local-zfs"
-    interface    = "scsi1"
+    interface    = "scsi30"
     iothread     = true
     ssd          = true
     discard      = "on"
     size         = var.longhorn_disk_size_gb
     file_format  = "raw"
+    serial       = "LONGHORN"
   }
 
   agent {
@@ -274,15 +277,18 @@ resource "proxmox_virtual_environment_vm" "talos_gpu" {
     import_from  = proxmox_virtual_environment_download_file.talos_disk_gpu.id
   }
 
-  # Dedicated Longhorn storage disk (mounted at /var/mnt/longhorn by Talos)
+  # Dedicated Longhorn storage disk (mounted at /var/mnt/longhorn by Talos).
+  # Uses scsi30 (highest slot) to avoid conflicts with Proxmox CSI which
+  # allocates upward from scsi1 for PVC volumes.
   disk {
     datastore_id = "local-zfs"
-    interface    = "scsi1"
+    interface    = "scsi30"
     iothread     = true
     ssd          = true
     discard      = "on"
     size         = var.longhorn_disk_size_gb
     file_format  = "raw"
+    serial       = "LONGHORN"
   }
 
   agent {
@@ -341,12 +347,14 @@ locals {
     "node.longhorn.io/create-default-disk"            = "true"
   }
 
-  # Longhorn dedicated disk mount (scsi1 → /var/mnt/longhorn)
+  # Longhorn dedicated disk mount (selected by serial → /var/mnt/longhorn).
+  # QEMU creates /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_<serial> for disks
+  # with a serial set, giving a stable path regardless of SCSI slot ordering.
   longhorn_disk_config = yamlencode({
     machine = {
       disks = [
         {
-          device = "/dev/sdb"
+          device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_LONGHORN"
           partitions = [
             { mountpoint = "/var/mnt/longhorn" }
           ]
