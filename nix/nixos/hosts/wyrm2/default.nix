@@ -48,8 +48,7 @@
   users.users.${username} = {
     shell = pkgs.zsh;
     openssh.authorizedKeys.keys = [
-      # Cloud-init injects SSH keys on first boot.
-      # Add permanent keys here after initial provisioning.
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@popvm"
     ];
     extraGroups = [ "systemd-journal" ];
   };
