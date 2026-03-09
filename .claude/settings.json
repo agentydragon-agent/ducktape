@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-8b0266be/ducktape-0.1.0-py3-none-any.whl claude-session-start"
+            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-462c0e41/ducktape-0.1.0-py3-none-any.whl claude-session-start"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-8b0266be/ducktape-0.1.0-py3-none-any.whl claude-pre-tool-use"
+            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-462c0e41/ducktape-0.1.0-py3-none-any.whl claude-pre-tool-use"
           }
         ]
       }
