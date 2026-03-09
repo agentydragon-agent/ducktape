@@ -349,10 +349,6 @@ aw-core==0.5.13 \
     # via
     #   ducktape (pyproject.toml)
     #   aw-client
-backports-tarfile==1.2.0 \
-    --hash=sha256:77e284d754527b01fb1e6fa8a1afe577858ebe4e9dad8919e34c862cb399bc34 \
-    --hash=sha256:d75e02c268746e1b8144c278978b6e98e85de6ad16f8e4b0844a154557eca991
-    # via jaraco-context
 bcrypt==5.0.0 \
     --hash=sha256:046ad6db88edb3c5ece4369af997938fb1c19d6a699b9c1b27b0db432faae4c4 \
     --hash=sha256:0c418ca99fd47e9c59a301744d63328f17798b5947b0f791e9af3c1c499c2d0a \
@@ -1742,7 +1738,6 @@ importlib-metadata==8.7.1 \
     --hash=sha256:49fef1ae6440c182052f407c8d34a68f72efc36db9ca90dc0113398f2fdde8bb \
     --hash=sha256:5a1f80bf1daa489495071efbb095d75a634cf28a8bc299581244063b53176151
     # via
-    #   keyring
     #   litellm
     #   opentelemetry-api
 importlib-resources==6.5.2 \
@@ -2860,10 +2855,6 @@ opentelemetry-semantic-conventions==0.61b0 \
     --hash=sha256:072f65473c5d7c6dc0355b27d6c9d1a679d63b6d4b4b16a9773062cb7e31192a \
     --hash=sha256:fa530a96be229795f8cef353739b618148b0fe2b4b3f005e60e262926c4d38e2
     # via opentelemetry-sdk
-overrides==7.7.0 \
-    --hash=sha256:55158fa3d93b98cc75299b1e67078ad9003ca27945c76162c1c0766d6f91820a \
-    --hash=sha256:c7ed9d062f78b8e4c1a7b70bd8796b35ead4d9f510227ef9c5dc7626c60d7e49
-    # via jupyter-server
 packaging==26.0 \
     --hash=sha256:00243ae351a257117b6a241061796684b084ed1c516a08c48a3f7e147a9d80b4 \
     --hash=sha256:b36f1fef9334a5588b4166f8bcd26a14e521f2b55e6b9de3aaa80d3ff7a37529
@@ -5241,20 +5232,16 @@ typing-extensions==4.15.0 \
     --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
     # via
     #   ducktape (pyproject.toml)
-    #   aiosignal
     #   alembic
     #   anthropic
-    #   anyio
     #   asyncpg-stubs
     #   aw-client
     #   beautifulsoup4
     #   cattrs
-    #   exceptiongroup
     #   fastapi
     #   flexcache
     #   flexparser
     #   huggingface-hub
-    #   ipython
     #   jupyter-kernel-client
     #   jupyter-mimetypes
     #   mcp
@@ -5265,17 +5252,12 @@ typing-extensions==4.15.0 \
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
     #   pint
-    #   psycopg
     #   py-key-value-aio
     #   pydantic
     #   pydantic-core
     #   pyee
     #   pygithub
-    #   pyopenssl
-    #   pytest-asyncio
-    #   referencing
     #   sqlalchemy
-    #   starlette
     #   testcontainers
     #   typing-inspection
 typing-inspection==0.4.2 \

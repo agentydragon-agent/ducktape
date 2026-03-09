@@ -98,6 +98,11 @@ lock(
     srcs = ["pyproject.toml"],
     out = "requirements_bazel.txt",
     exec_properties = {"dockerNetwork": "bridge"},
+    # Generated py_binary has mypy errors (str/Path reassignment) — skip lint on generated code.
+    tags = [
+        "no-lint",
+        "no-mypy",
+    ],
 )
 
 # Test that requirements_bazel.txt is up to date
