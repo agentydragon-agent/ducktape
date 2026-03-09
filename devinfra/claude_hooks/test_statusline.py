@@ -196,10 +196,12 @@ def _make_cached(usage: UsageResponse, age: timedelta = timedelta(seconds=0)) ->
 
 
 def test_format_quota_with_data():
-    cached = _make_cached(
-        UsageResponse(five_hour=UsageBucket(utilization=6.0), seven_day=UsageBucket(utilization=35.0))
+    now = datetime.now(UTC)
+    cached = CachedUsage(
+        fetched_at=now,
+        usage=UsageResponse(five_hour=UsageBucket(utilization=6.0), seven_day=UsageBucket(utilization=35.0)),
     )
-    assert _format_quota(cached) == "5h:6% 7d:35%"
+    assert _format_quota(cached, now=now) == "5h:6% 7d:35%"
 
 
 def test_format_quota_none():
@@ -238,6 +240,51 @@ def test_format_quota_stale_shows_minutes():
         fetched_at=now - timedelta(seconds=150), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
     )
     assert _format_quota(cached, now=now) == "5h:6% (2m ago)"
+
+
+def test_format_quota_stale_shows_hours():
+    now = datetime.now(UTC)
+    cached = CachedUsage(
+        fetched_at=now - timedelta(hours=1, minutes=5), usage=UsageResponse(five_hour=UsageBucket(utilization=6.0))
+    )
+    assert _format_quota(cached, now=now) == "5h:6% (1h05m ago)"
+
+
+def test_format_quota_seven_day_reset():
+    now = datetime.now(UTC)
+    resets_at = now + timedelta(hours=2, minutes=13)
+    cached = CachedUsage(
+        fetched_at=now, usage=UsageResponse(seven_day=UsageBucket(utilization=35.0, resets_at=resets_at))
+    )
+    assert _format_quota(cached, now=now) == "7d:35% rst 2h13m"
+
+
+def test_format_quota_seven_day_reset_minutes_only():
+    now = datetime.now(UTC)
+    resets_at = now + timedelta(minutes=45)
+    cached = CachedUsage(
+        fetched_at=now, usage=UsageResponse(seven_day=UsageBucket(utilization=80.0, resets_at=resets_at))
+    )
+    assert _format_quota(cached, now=now) == "7d:80% rst 45m"
+
+
+def test_format_quota_seven_day_reset_days():
+    now = datetime.now(UTC)
+    resets_at = now + timedelta(days=3, hours=5)
+    cached = CachedUsage(
+        fetched_at=now, usage=UsageResponse(seven_day=UsageBucket(utilization=10.0, resets_at=resets_at))
+    )
+    assert _format_quota(cached, now=now) == "7d:10% rst 3d05h"
+
+
+def test_format_quota_seven_day_reset_past():
+    now = datetime.now(UTC)
+    resets_at = now - timedelta(minutes=5)
+    cached = CachedUsage(
+        fetched_at=now, usage=UsageResponse(seven_day=UsageBucket(utilization=99.0, resets_at=resets_at))
+    )
+    # Past reset time — don't show reset
+    assert _format_quota(cached, now=now) == "7d:99%"
 
 
 if __name__ == "__main__":
