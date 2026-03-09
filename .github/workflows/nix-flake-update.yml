@@ -1,16 +1,10 @@
-# Update all CI-released Nix flake inputs in a single commit.
-# Called from release workflows after publishing, or manually via workflow_dispatch.
+# Manual-only: update non-release Nix flake inputs (nixpkgs, home-manager, etc.).
+# CI-released inputs (kubespand-bin, ducktape-wheel, etc.) are updated
+# automatically by the release.yml update-downstream job.
 name: Update Nix flake inputs
 
 on:
-  workflow_call: {}
   workflow_dispatch: {}
-
-# Serialize across all callers (both release workflows use the same github.ref).
-# cancel-in-progress: false → second call waits, finds no changes, exits cleanly.
-concurrency:
-  group: nix-flake-update-${{ github.ref }}
-  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -29,7 +23,7 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v30
 
-      - name: Update all release flake inputs
+      - name: Update inputs and push
         run: |
           set -x
 
@@ -38,8 +32,7 @@ jobs:
 
           BRANCH="${{ github.ref_name }}"
 
-          # Update all CI-released inputs at once
-          nix flake update kubespand-bin ducktape-wheel headscale-cleanup-wheel --flake ./nix
+          nix flake update --flake ./nix
 
           git add nix/flake.lock
 

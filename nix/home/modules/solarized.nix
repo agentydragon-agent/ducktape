@@ -13,19 +13,19 @@ let
   solarizedLightScheme = solarizedLight;
   solarizedDarkScheme = solarizedDark;
 
-  # Theme switching scripts - wrappers around switch_gnome_terminal_profile.
+  # Theme switching scripts - wrappers around gterm-theme.
   # Installed to PATH via home.packages; called by Night Theme Switcher
   # extension on sunrise/sunset and available for manual use.
   set_light_theme = pkgs.writeShellApplication {
     name = "set_light_theme";
-    runtimeInputs = [ ]; # switch_gnome_terminal_profile expected on PATH via pip/pipx
-    text = "switch_gnome_terminal_profile --profile='Solarized Light'";
+    runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
+    text = "gterm-theme --profile='Solarized Light'";
   };
 
   set_dark_theme = pkgs.writeShellApplication {
     name = "set_dark_theme";
-    runtimeInputs = [ ]; # switch_gnome_terminal_profile expected on PATH via pip/pipx
-    text = "switch_gnome_terminal_profile --profile='Solarized Dark'";
+    runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
+    text = "gterm-theme --profile='Solarized Dark'";
   };
 in
 {
@@ -43,7 +43,6 @@ in
     ]
     ++ lib.optionals enableGui [
       gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher
-      # TODO: Add gterm-theme once wheel is published to GitHub Releases
     ];
 
   # Bat theme environment variables for light/dark mode switching

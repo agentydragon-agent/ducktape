@@ -29,18 +29,22 @@
 
     claude-code-router.url = "github:agentydragon/claude-code-router/2b7c2ca764f74fd80a6c8b85495df7793282758d";
 
-    # CI-released artifacts — hashes managed automatically in flake.lock.
-    # Update with: nix flake lock --update-input <name> ./nix
+    # CI-released artifacts — pinned to tagged releases, updated by release.yml.
+    # URLs are rewritten by the update-downstream job after each release.
     kubespand-bin = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-latest/kubespand";
+      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-84796d14/kubespand";
       flake = false;
     };
     ducktape-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-latest/ducktape-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-a8648e0a/ducktape-0.1.0-py3-none-any.whl";
       flake = false;
     };
     headscale-cleanup-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-latest/headscale_cleanup-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-84796d14/headscale_cleanup-0.1.0-py3-none-any.whl";
+      flake = false;
+    };
+    gterm-theme-wheel = {
+      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-84796d14/gterm_theme-0.1.0-py3-none-any.whl";
       flake = false;
     };
   };
@@ -57,6 +61,7 @@
       kubespand-bin,
       ducktape-wheel,
       headscale-cleanup-wheel,
+      gterm-theme-wheel,
       ...
     }@inputs:
     let
@@ -112,7 +117,7 @@
                   pkgsUnstable
                   ;
                 nixGLPackages = nixGL.packages.${system};
-                inherit ducktape-wheel headscale-cleanup-wheel;
+                inherit ducktape-wheel headscale-cleanup-wheel gterm-theme-wheel;
               };
             }
           ]
@@ -161,7 +166,7 @@
                   family = "JetBrainsMono Nerd Font";
                   size = 11;
                 };
-                inherit ducktape-wheel headscale-cleanup-wheel;
+                inherit ducktape-wheel headscale-cleanup-wheel gterm-theme-wheel;
               }
             else
               { };

@@ -64,17 +64,47 @@ class WorkflowConfig(BaseModel):
     events: frozenset[str] = frozenset({"push", "pull_request", "workflow_dispatch"})
 
 
+class ExtraJobStep(BaseModel):
+    """A step in an extra job, matching GitHub Actions step schema."""
+
+    name: str | None = None
+    id: str | None = None
+    uses: str | None = None
+    run: str | None = None
+    if_cond: str | None = Field(None, alias="if")
+    with_args: dict[str, str] | None = Field(None, alias="with")
+
+    model_config = {"populate_by_name": True}
+
+
+class ExtraJobConfig(BaseModel):
+    """An extra job to splice into the release workflow."""
+
+    needs: list[str] = Field(default_factory=list)
+    runs_on: str = Field("ubuntu-latest", alias="runs-on")
+    timeout_minutes: int = Field(30, alias="timeout-minutes")
+    steps: list[ExtraJobStep] = Field(default_factory=list)
+
+    model_config = {"populate_by_name": True}
+
+
 class ReleaseConfig(BaseModel):
-    """Configuration for a package release workflow.
+    """Configuration for a package release in the consolidated release workflow.
 
     wheel_path is derived from bazel_target's package path.
-    wheel_name and latest_release_tag are computed from the manifest key
-    in generate_release_config.
+    wheel_name and latest_release_tag are computed from the manifest key.
     """
 
     bazel_target: str
     release_body: str
+    artifact_type: Literal["wheel", "binary"] = "wheel"
+    test_targets: str | None = None
+    flake_input: str | None = None
+    update_claude_settings: bool = False
     apt_packages: list[str] = Field(default_factory=list)
+    extra_jobs: dict[str, ExtraJobConfig] = Field(default_factory=dict)
+    release_needs: list[str] = Field(default_factory=list)
+    wheel_name: str | None = None
 
     @property
     def wheel_path(self) -> str:

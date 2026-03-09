@@ -14,6 +14,7 @@
   terminalFont,
   ducktape-wheel,
   headscale-cleanup-wheel,
+  gterm-theme-wheel,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -93,6 +94,11 @@ let
   headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {
     inherit headscale-cleanup-wheel;
   };
+
+  # gterm-theme - GNOME Terminal theme follower
+  gterm-theme = pkgs.callPackage ./packages/gterm-theme.nix {
+    inherit gterm-theme-wheel;
+  };
 in
 {
   imports = [
@@ -113,6 +119,10 @@ in
     ./modules/datetime-format.nix
     ./services/activitywatch.nix
   ];
+  # TODO: Remove this — incompatible with home-manager.useGlobalPkgs.
+  # NixOS hosts set useGlobalPkgs=true, so pkgs comes from the NixOS config
+  # and per-user nixpkgs.config is ignored. Move allowUnfree to the NixOS-level
+  # nixpkgs.config or ensure the global pkgs already has allowUnfree=true.
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -415,6 +425,7 @@ in
       # Custom packages from ducktape repo
       ducktape # CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline)
       headscale-cleanup # Headscale node management
+      gterm-theme # GNOME Terminal theme follower
     ]
     ++ lib.optionals enableKube [
       kubectl

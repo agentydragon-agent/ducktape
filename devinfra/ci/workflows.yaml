@@ -70,18 +70,119 @@ workflows:
   pre-commit:
     trigger: { kind: always }
 
-# Release workflow definitions
+# Release definitions — single source of truth for all package releases.
 #
-# Each entry generates a <name>-release.yml workflow with:
-#   1. A "check" job using check-release-needed action
-#   2. A "release" job calling python-wheel-release.yml
+# Generates a consolidated .github/workflows/release.yml with:
+#   - check-releases job (bazel-diff for all packages)
+#   - per-package test jobs (if test_targets is set)
+#   - extra_jobs spliced in as additional workflow jobs
+#   - per-package release jobs (build + GitHub Release)
+#   - update-downstream job (pin flake URLs + .claude/settings.json)
 #
-# The entry key is used as package_name and package_prefix.
-# wheel_name and wheel_path are derived from bazel_target.
-# ducktape-release.yml is hand-written (has custom test jobs for claude_hooks).
+# Fields:
+#   bazel_target:     Bazel target to build (required)
+#   release_body:     GitHub Release description (required)
+#   artifact_type:    "wheel" (default) or "binary"
+#   test_targets:     Bazel test targets — generates a test job if set
+#   flake_input:      Nix flake input name — update-downstream rewrites its URL if set
+#   update_claude_settings: Also update .claude/settings.json (default: false)
+#   apt_packages:     System packages needed for build
+#   extra_jobs:       Additional jobs spliced into the workflow (name → job config)
+#   release_needs:    Extra job names the release job depends on (beyond standard test)
 releases:
+  kubespand:
+    bazel_target: //cluster/kubespand:kubespand
+    artifact_type: binary
+    test_targets: //cluster/kubespand/...
+    flake_input: kubespand-bin
+    release_body: |
+      kubespand — standalone KubeSpan daemon for non-Talos Linux.
+
+      Static x86_64 binary. See `cluster/kubespand/README.md` for usage.
+
+  ducktape:
+    bazel_target: //:wheel
+    wheel_name: ducktape
+    test_targets: //devinfra/claude_hooks:all
+    flake_input: ducktape-wheel
+    update_claude_settings: true
+    extra_jobs:
+      test-ducktape-e2e:
+        needs: [check-releases]
+        timeout-minutes: 30
+        steps:
+          - uses: actions/checkout@v4
+          - uses: ./.github/actions/setup-bazel
+            id: bazel
+            with:
+              buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          - name: Run e2e tests
+            run: |
+              bazel test \
+                --test_output=all \
+                --nocache_test_results \
+                --test_tag_filters=e2e \
+                --spawn_strategy=local \
+                --test_env=CI=true \
+                --test_env=GITHUB_ACTIONS=true \
+                --test_env=PATH \
+                //devinfra/claude_hooks:all
+          - uses: ./.github/actions/collect-test-logs
+            if: always()
+            with:
+              artifact-name: ducktape-e2e-test-logs
+      test-ducktape-wheel:
+        needs: [check-releases]
+        timeout-minutes: 30
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-java@v4
+            with:
+              distribution: temurin
+              java-version: "21"
+          - uses: astral-sh/setup-uv@v5
+          - uses: ./.github/actions/setup-bazel
+            id: bazel
+            with:
+              buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          - name: Build wheel
+            run: bazel build --remote_download_toplevel //:wheel
+          - name: Install wheel
+            run: uv tool install bazel-bin/ducktape-*.whl
+          - name: Test installed wheel
+            run: |
+              bazel test //devinfra/claude_hooks:test_session_start \
+                --test_output=all \
+                --nocache_test_results \
+                --spawn_strategy=local \
+                --test_env=DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 \
+                --test_env=CI=true \
+                --test_env=JAVA_HOME \
+                --test_env=PATH
+          - uses: ./.github/actions/collect-test-logs
+            if: always()
+            with:
+              artifact-name: wheel-test-logs
+    release_needs: [test-ducktape-e2e, test-ducktape-wheel]
+    release_body: |
+      ducktape wheel containing:
+
+      CLI tools:
+      - `git-commit-ai` - AI-powered commit message generator
+      - `difftree` - Tree-style visualization of diffs
+      - `gmail-archiver` - Gmail email auto-archiving tool
+
+      Claude Code hooks:
+      - `claude-session-start` - Session start hook for Claude Code web
+      - `claude-pre-tool-use` - Pre-tool-use hook
+      - `claude-statusline` - Statusline for Claude Code
+
+      Requires Python 3.13+
+
   headscale-cleanup:
     bazel_target: //headscale_cleanup:wheel
+    wheel_name: headscale_cleanup
+    flake_input: headscale-cleanup-wheel
     release_body: |
       headscale-cleanup wheel.
 
@@ -89,7 +190,9 @@ releases:
 
   gterm-theme:
     bazel_target: //gterm_theme:wheel
+    wheel_name: gterm_theme
     apt_packages: [libcairo2-dev, libgirepository-2.0-dev, libdbus-1-dev, libxcb1-dev, pkg-config]
+    flake_input: gterm-theme-wheel
     release_body: |
       gterm-theme wheel (GNOME Terminal theme follower).
 

@@ -3,9 +3,7 @@ exports_files(
     [
         "bazel-harbor-images.yml",
         "ci.yml",
-        "ducktape-release.yml",
-        "gterm-theme-release.yml",
-        "headscale-cleanup-release.yml",
+        "release.yml",
     ],
     visibility = ["//devinfra/ci:__pkg__"],
 )
