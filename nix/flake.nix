@@ -28,6 +28,21 @@
     };
 
     claude-code-router.url = "github:agentydragon/claude-code-router/2b7c2ca764f74fd80a6c8b85495df7793282758d";
+
+    # CI-released artifacts — hashes managed automatically in flake.lock.
+    # Update with: nix flake lock --update-input <name> ./nix
+    kubespand-bin = {
+      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-latest/kubespand";
+      flake = false;
+    };
+    ducktape-wheel = {
+      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-latest/ducktape-0.1.0-py3-none-any.whl";
+      flake = false;
+    };
+    headscale-cleanup-wheel = {
+      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-latest/headscale_cleanup-0.1.0-py3-none-any.whl";
+      flake = false;
+    };
   };
 
   outputs =
@@ -39,6 +54,9 @@
       nix-colors,
       claude-code-router,
       nixGL,
+      kubespand-bin,
+      ducktape-wheel,
+      headscale-cleanup-wheel,
       ...
     }@inputs:
     let
@@ -94,6 +112,7 @@
                   pkgsUnstable
                   ;
                 nixGLPackages = nixGL.packages.${system};
+                inherit ducktape-wheel headscale-cleanup-wheel;
               };
             }
           ]
@@ -142,6 +161,7 @@
                   family = "JetBrainsMono Nerd Font";
                   size = 11;
                 };
+                inherit ducktape-wheel headscale-cleanup-wheel;
               }
             else
               { };
@@ -154,6 +174,7 @@
               hostname
               username
               homeManagerHost
+              kubespand-bin
               ;
           };
           modules = [

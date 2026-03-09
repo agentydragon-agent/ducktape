@@ -7,6 +7,7 @@
   config,
   pkgs,
   lib,
+  kubespand-bin,
   ...
 }:
 let
@@ -18,7 +19,7 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ../packages/kubespand.nix { };
+      default = pkgs.callPackage ../packages/kubespand.nix { inherit kubespand-bin; };
       description = "The kubespand binary package";
     };
 

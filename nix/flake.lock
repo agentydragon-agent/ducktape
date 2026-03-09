@@ -35,6 +35,18 @@
         "type": "github"
       }
     },
+    "ducktape-wheel": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-Fn2oM9NkSdGlzOcm6iSjVuSV2GvtlFRzemQlahF9REY=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-latest/ducktape-0.1.0-py3-none-any.whl"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-latest/ducktape-0.1.0-py3-none-any.whl"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -51,6 +63,18 @@
         "owner": "numtide",
         "repo": "flake-utils",
         "type": "github"
+      }
+    },
+    "headscale-cleanup-wheel": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-7sz/zTDVjHC6cbB6m4wvp9UtDfNZiXQmpzyOd688VFU=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-latest/headscale_cleanup-0.1.0-py3-none-any.whl"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-latest/headscale_cleanup-0.1.0-py3-none-any.whl"
       }
     },
     "home-manager": {
@@ -72,6 +96,18 @@
         "ref": "release-25.11",
         "repo": "home-manager",
         "type": "github"
+      }
+    },
+    "kubespand-bin": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-fd5N8fb3GnPHsUrc8EpEJJT0TUa1T9GFrZdg3XsyhYg=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-latest/kubespand"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-latest/kubespand"
       }
     },
     "nix-colors": {
@@ -180,7 +216,10 @@
     "root": {
       "inputs": {
         "claude-code-router": "claude-code-router",
+        "ducktape-wheel": "ducktape-wheel",
+        "headscale-cleanup-wheel": "headscale-cleanup-wheel",
         "home-manager": "home-manager",
+        "kubespand-bin": "kubespand-bin",
         "nix-colors": "nix-colors",
         "nixGL": "nixGL",
         "nixpkgs": "nixpkgs_2",

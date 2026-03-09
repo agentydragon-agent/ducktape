@@ -1,30 +1,19 @@
 # kubespand: standalone KubeSpan daemon for non-Talos Linux
-# Installed from CI-built static binary via GitHub Releases
-#
-# To update: change shortSha to new 8-char commit SHA, set hash to lib.fakeHash,
-# run nixos-rebuild to get the new hash, then update hash.
+# Binary fetched as a flake input (kubespand-bin) from GitHub Releases.
+# To update: nix flake lock --update-input kubespand-bin ./nix
 {
   lib,
   pkgs,
+  kubespand-bin,
 }:
-let
-  # 8-char commit SHA from GitHub release tag (CI-managed)
-  shortSha = "84796d14";
-in
 pkgs.stdenv.mkDerivation {
   pname = "kubespand";
-  version = shortSha;
-
-  src = pkgs.fetchurl {
-    url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-${shortSha}/kubespand";
-    hash = "sha256-F7Jzrs941af4kr+OuVAy4Ta/yjVyLKriU97Ks/wWbhY=";
-    executable = true;
-  };
+  version = "latest";
 
   dontUnpack = true;
 
   installPhase = ''
-    install -Dm755 $src $out/bin/kubespand
+    install -Dm755 ${kubespand-bin} $out/bin/kubespand
   '';
 
   meta = {

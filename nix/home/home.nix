@@ -12,6 +12,8 @@
   solarizedLight,
   solarizedDark,
   terminalFont,
+  ducktape-wheel,
+  headscale-cleanup-wheel,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -85,10 +87,12 @@ let
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
   # ducktape - CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline)
-  ducktape = pkgs.callPackage ./packages/ducktape.nix { };
+  ducktape = pkgs.callPackage ./packages/ducktape.nix { inherit ducktape-wheel; };
 
   # headscale-cleanup - Headscale node management tool
-  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix { };
+  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {
+    inherit headscale-cleanup-wheel;
+  };
 in
 {
   imports = [
