@@ -61,7 +61,9 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
         - !KeyOf scope-propose
         - !KeyOf scope-read
-      # No redirect_uris — client_credentials flow doesn't redirect.
+      # redirect_uris is required by the Authentik 2025.12 serializer even for
+      # client_credentials flows that never redirect. Empty list is valid.
+      redirect_uris: []
 
   - model: authentik_core.application
     id: openclaw-agent-app
