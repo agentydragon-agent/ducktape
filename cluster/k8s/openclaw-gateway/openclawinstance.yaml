@@ -293,7 +293,7 @@ spec:
         memory: "2Gi"
   sidecars:
     - name: airlock-auth-proxy
-      image: registry.allegedly.works/ducktape/auth-proxy:devel-20260310061321-28cc786 # {"$imagepolicy": "flux-system:auth-proxy"}
+      image: registry.allegedly.works/ducktape/auth-proxy:devel-20260310075909-c3bdbf1 # {"$imagepolicy": "flux-system:auth-proxy"}
       env:
         - name: UPSTREAM_URL
           value: "http://airlock.airlock.svc.cluster.local:8765"
