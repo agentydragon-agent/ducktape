@@ -173,8 +173,7 @@ releases:
       - `gmail-archiver` - Gmail email auto-archiving tool
 
       Claude Code hooks:
-      - `claude-session-start` - Session start hook for Claude Code web
-      - `claude-pre-tool-use` - Pre-tool-use hook
+      - `claude-hook` - Unified hook dispatcher for Claude Code web
       - `claude-statusline` - Statusline for Claude Code
 
       Requires Python 3.13+

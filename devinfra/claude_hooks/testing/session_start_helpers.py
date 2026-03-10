@@ -177,7 +177,7 @@ async def run_session_start_hook(
     """Run the session start hook as an async subprocess.
 
     By default, runs via `python -m devinfra.claude_hooks.session_start` for Bazel tests.
-    Set DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-session-start` console
+    Set DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-hook` console
     script instead - this tests the actual wheel packaging.
 
     Hook output is written to log files in TEST_UNDECLARED_OUTPUTS_DIR for debugging.
@@ -186,7 +186,7 @@ async def run_session_start_hook(
 
     use_wheel = os.environ.get(settings.ENV_USE_WHEEL) == "1"
 
-    cmd: str | Path = "claude-session-start" if use_wheel else get_required_path(shell_helpers.SESSION_START)
+    cmd: str | Path = "claude-hook" if use_wheel else get_required_path(shell_helpers.SESSION_START)
 
     env = dict(os.environ)
     if use_wheel:
