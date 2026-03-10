@@ -47,6 +47,12 @@
       url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-041831a2/gterm_theme-0.1.0-py3-none-any.whl";
       flake = false;
     };
+
+    # Claude Code plugin marketplaces
+    claude-plugins-official = {
+      url = "github:anthropics/claude-plugins-official";
+      flake = false;
+    };
   };
 
   outputs =
@@ -62,6 +68,7 @@
       ducktape-wheel,
       headscale-cleanup-wheel,
       gterm-theme-wheel,
+      claude-plugins-official,
       ...
     }@inputs:
     let
@@ -117,7 +124,12 @@
                   pkgsUnstable
                   ;
                 nixGLPackages = nixGL.packages.${system};
-                inherit ducktape-wheel headscale-cleanup-wheel gterm-theme-wheel;
+                inherit
+                  ducktape-wheel
+                  headscale-cleanup-wheel
+                  gterm-theme-wheel
+                  claude-plugins-official
+                  ;
               };
             }
           ]
@@ -166,7 +178,12 @@
                   family = "JetBrainsMono Nerd Font";
                   size = 11;
                 };
-                inherit ducktape-wheel headscale-cleanup-wheel gterm-theme-wheel;
+                inherit
+                  ducktape-wheel
+                  headscale-cleanup-wheel
+                  gterm-theme-wheel
+                  claude-plugins-official
+                  ;
               }
             else
               { };

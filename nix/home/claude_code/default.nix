@@ -210,6 +210,7 @@
   pkgs,
   pkgsUnstable,
   lib,
+  claude-plugins-official,
   ...
 }:
 let
@@ -283,6 +284,52 @@ let
   # Shared skills directory (nix/home/skills/) — used by both Claude Code and Gemini CLI
   # Each skill is a subdirectory containing SKILL.md and optional supporting files
   skillsDir = ../skills;
+
+  # Parse "name@marketplace" plugin specs into { name, marketplace } attrsets
+  parsedPlugins = map (
+    spec:
+    let
+      parts = lib.splitString "@" spec;
+    in
+    {
+      name = builtins.elemAt parts 0;
+      marketplace = builtins.elemAt parts 1;
+    }
+  ) cfg.plugins;
+
+  # Generate home.file entries for plugin cache directories
+  pluginCacheFiles = lib.listToAttrs (
+    map (
+      p:
+      lib.nameValuePair ".claude/plugins/cache/${p.marketplace}/${p.name}" {
+        source = "${cfg.pluginSources.${p.marketplace}.src}/plugins/${p.name}";
+        recursive = true;
+      }
+    ) parsedPlugins
+  );
+
+  # Generate installed_plugins.json content
+  installedPluginsJson = builtins.toJSON {
+    version = 2;
+    plugins = lib.listToAttrs (
+      map (
+        p:
+        let
+          source = cfg.pluginSources.${p.marketplace};
+        in
+        lib.nameValuePair "${p.name}@${p.marketplace}" [
+          {
+            scope = "user";
+            installPath = "${config.home.homeDirectory}/.claude/plugins/cache/${p.marketplace}/${p.name}";
+            version = source.rev;
+            installedAt = "1970-01-01T00:00:00.000Z";
+            lastUpdated = "1970-01-01T00:00:00.000Z";
+            gitCommitSha = source.rev;
+          }
+        ]
+      ) parsedPlugins
+    );
+  };
 in
 {
   options.programs.claude-code.extraAllowedReadDirs = lib.mkOption {
@@ -312,11 +359,48 @@ in
     ];
   };
 
+  options.programs.claude-code.pluginSources = lib.mkOption {
+    type = lib.types.attrsOf (
+      lib.types.submodule {
+        options = {
+          src = lib.mkOption {
+            type = lib.types.path;
+            description = "Fetched source containing plugins/ subdirectory";
+          };
+          rev = lib.mkOption {
+            type = lib.types.str;
+            description = "Git commit SHA for version tracking in installed_plugins.json";
+          };
+        };
+      }
+    );
+    default = { };
+    description = "Plugin marketplace sources, keyed by marketplace name";
+  };
+
+  options.programs.claude-code.plugins = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = "Plugins to install, in 'name@marketplace' format";
+    example = [ "frontend-design@claude-plugins-official" ];
+  };
+
   config.programs.claude-code = {
     enable = true;
     package = pkgsUnstable.claude-code; # Use unstable for faster updates
 
     commands = commands;
+
+    pluginSources.claude-plugins-official = {
+      src = claude-plugins-official;
+      rev = claude-plugins-official.rev;
+    };
+
+    plugins = [
+      "frontend-design@claude-plugins-official"
+      "pyright-lsp@claude-plugins-official"
+      "rust-analyzer-lsp@claude-plugins-official"
+    ];
 
     mcpServers = {
       tana-local = {
@@ -353,6 +437,14 @@ in
         excludedCommands = [ "nvidia-smi" ];
       };
 
+      # Auto-generated from cfg.plugins
+      enabledPlugins = lib.listToAttrs (
+        map (spec: {
+          name = spec;
+          value = true;
+        }) cfg.plugins
+      );
+
       permissions = {
         allow = [
           "Read"
@@ -381,12 +473,20 @@ in
   # Add gmail-mcp-server to PATH for auth setup command
   config.home.packages = [ gmail-mcp-server ];
 
-  # Deploy skills to ~/.claude/skills/ from shared nix/home/skills/ directory
-  config.home.file = lib.mapAttrs' (
-    skillName: skillType:
-    lib.nameValuePair ".claude/skills/${skillName}" {
-      source = skillsDir + "/${skillName}";
-      recursive = true;
-    }
-  ) (lib.filterAttrs (name: type: type == "directory") (builtins.readDir skillsDir));
+  # Deploy skills, plugin cache, and installed_plugins.json
+  config.home.file =
+    # Skills from shared nix/home/skills/ directory
+    lib.mapAttrs' (
+      skillName: skillType:
+      lib.nameValuePair ".claude/skills/${skillName}" {
+        source = skillsDir + "/${skillName}";
+        recursive = true;
+      }
+    ) (lib.filterAttrs (name: type: type == "directory") (builtins.readDir skillsDir))
+    # Plugin cache directories
+    // pluginCacheFiles
+    # Plugin registry
+    // lib.optionalAttrs (cfg.plugins != [ ]) {
+      ".claude/plugins/installed_plugins.json".text = installedPluginsJson;
+    };
 }
