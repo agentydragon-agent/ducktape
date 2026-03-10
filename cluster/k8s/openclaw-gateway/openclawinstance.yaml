@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     repository: registry.allegedly.works/ducktape/openclaw-matrix
-    tag: "20260305093303-69771a8" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
+    tag: "20260310055628-b5ffdd2" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
     pullSecrets:
       - name: harbor-pull-robot
@@ -293,7 +293,7 @@ spec:
         memory: "2Gi"
   sidecars:
     - name: airlock-auth-proxy
-      image: registry.allegedly.works/ducktape/auth-proxy:devel-20260308043232-4229f90 # {"$imagepolicy": "flux-system:auth-proxy"}
+      image: registry.allegedly.works/ducktape/auth-proxy:devel-20260310060307-b5ffdd2 # {"$imagepolicy": "flux-system:auth-proxy"}
       env:
         - name: UPSTREAM_URL
           value: "http://airlock.airlock.svc.cluster.local:8765"
