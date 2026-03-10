@@ -105,6 +105,13 @@ Items copied to wyrm2 but not yet deleted from wyrm:
       resolution from wyrm (host reboot broke mDNS). Image rebuild trigger also
       fires due to nix config changes. Non-urgent, VM config already matches.
 
+### SPICE display
+
+- [ ] SPICE auto-resize not working on wyrm2 — screen doesn't resize when the
+      SPICE client window is resized. Suspect Wayland (GDM/GNOME on NixOS defaults
+      to Wayland) — `spice-vdagent` resize relies on X11 `xrandr`. May need to
+      force X11 session or configure Wayland-compatible resize.
+
 ### Decommission wyrm
 
 - [ ] Stop wyrm services (tailscale, docker, syncthing)
