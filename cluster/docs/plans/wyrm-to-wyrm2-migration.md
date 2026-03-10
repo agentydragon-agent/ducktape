@@ -32,6 +32,7 @@ Most config is already Nix home-manager managed. This plan covers what ISN'T.
 - [x] Terraform state + `.terraform/` dirs copied to wyrm2 (deleted from wyrm)
 - [x] talosconfig files copied to wyrm2 (deleted from wyrm)
 - [x] `/code` virtiofs removed from wyrm Proxmox config
+- [x] BuildBuddy bazelrc (`~/.config/bazel/buildbuddy.bazelrc`) copied to wyrm2
 
 ### Infrastructure
 
