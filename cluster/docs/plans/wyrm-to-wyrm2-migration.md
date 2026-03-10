@@ -25,6 +25,10 @@ Most config is already Nix home-manager managed. This plan covers what ISN'T.
 - [x] Secrets copied: GNOME keyring, `~/.gmail-mcp/`, `~/.aws/`, rclone, docker
 - [x] App data copied: Claude Code, atuin, Chrome, Firefox, Syncthing
 - [x] Cleaned from wyrm: `~/.gmail-mcp/`, rclone, firefox
+- [x] `~/downloads` moved to `/mnt/tankshare/wyrm-downloads/`
+- [x] `~/code` transplanted to wyrm2: symlinks recreated, repos moved
+      (`eza`, `rules_mypy`, `rfc3987-syntax`, `anyproto`, `github.com/eza-community`),
+      loose files copied. Only `ducktape/` remains on wyrm.
 
 ### Infrastructure
 
@@ -94,16 +98,16 @@ Items copied to wyrm2 but not yet deleted from wyrm:
 
 ### Volume moves
 
-- [ ] `/code` virtiofs: add to wyrm2 Terraform + NixOS fstab, remove from wyrm
-      **This is the key blocker** — carries the ducktape repo which contains: - `talosconfig.yml` (needed for `talosctl`) - Terraform state files (`terraform.tfstate*`) - The ducktape working copy itself
-- [ ] `/wyrmhdd` (~791G): detach virtio disk from wyrm, attach to wyrm2
+- [x] `/code` virtiofs: added to wyrm2 Terraform + NixOS fstab, `tofu apply`
+      completed, `nixos-rebuild switch` applied, `/code` mounted on wyrm2
+- [x] `/wyrmhdd`: decided not to migrate. Deleted LLM caches (~280G), kept diffusion
+      models (chromafur-alpha, Pony Diffusion). Disk will be purged with wyrm decommission.
 
 ### Terraform apply
 
 - [x] State refreshed (`tofu apply -refresh-only`) — VGA `virtio-gl→qxl` recorded
-- [ ] Full `tofu apply` in `terraform/nixos-dev-env/` — blocked on `atlas` DNS
-      resolution from wyrm (host reboot broke mDNS). Image rebuild trigger also
-      fires due to nix config changes. Non-urgent, VM config already matches.
+- [x] Full `tofu apply` in `terraform/nixos-dev-env/` — completed (used IP override
+      `-var='proxmox_host=10.0.182.102'` to work around atlas DNS)
 
 ### SPICE display
 
