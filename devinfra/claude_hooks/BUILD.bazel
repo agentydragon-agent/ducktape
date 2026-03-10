@@ -257,6 +257,21 @@ py_library(
 )
 
 py_library(
+    name = "post_tool_use_lib",
+    srcs = ["post_tool_use.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["//devinfra/claude_hooks/claude_api:post_tool_use"],
+)
+
+py_library(
+    name = "hook_dispatch_lib",
+    srcs = ["hook_dispatch.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "statusline_lib",
     srcs = ["statusline.py"],
     imports = ["../.."],
@@ -315,6 +330,22 @@ py_binary(
 )
 
 py_binary(
+    name = "post_tool_use",
+    imports = ["../.."],
+    main_module = "devinfra.claude_hooks.post_tool_use",
+    visibility = ["//visibility:public"],
+    deps = [":post_tool_use_lib"],
+)
+
+py_binary(
+    name = "hook_dispatch",
+    imports = ["../.."],
+    main_module = "devinfra.claude_hooks.hook_dispatch",
+    visibility = ["//visibility:public"],
+    deps = [":hook_dispatch_lib"],
+)
+
+py_binary(
     name = "bazel_wrapper",
     imports = ["../.."],
     main_module = "devinfra.claude_hooks.bazel_wrapper",
@@ -350,6 +381,19 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pytest"],
+)
+
+py_test(
+    name = "test_post_tool_use",
+    srcs = ["test_post_tool_use.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":post_tool_use_lib",
+        "//devinfra/claude_hooks/claude_api:post_tool_use",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(

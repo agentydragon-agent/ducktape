@@ -41,6 +41,14 @@ py_library(
 )
 
 py_library(
+    name = "post_tool_use",
+    srcs = ["post_tool_use.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "usage",
     srcs = ["usage.py"],
     imports = ["../../.."],

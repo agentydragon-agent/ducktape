@@ -13,6 +13,18 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 
 @STYLE.md
 
+## Toolchain
+
+This repo uses **Bazel** with **Gazelle** for builds and BUILD file generation, **Flux** for GitOps/Kubernetes, **Nix/NixOS** for system configuration, and **Terraform/OpenTofu** for infrastructure provisioning. YAML files are primarily Kubernetes manifests and Flux kustomizations. When making changes, update BUILD files and run `bazel run //tools:gazelle` if needed.
+
+## Sandbox
+
+Run `bazel`, `terraform`/`tofu`, and `kubectl` commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). These tools require network access for RBE, BES, provider downloads, and cluster connectivity. The sandbox blocks their network calls.
+
+## Refactoring
+
+When renaming, moving, or deleting files/directories/symbols, search for **all references** across the entire codebase before committing: imports, BUILD files, CI configs, documentation, Dockerfiles, Kubernetes manifests, `AGENTS.md`/`README.md` files. Use Grep broadly. Missing a reference is worse than being thorough.
+
 ## Before Hand-off
 
 ```bash

@@ -167,7 +167,9 @@ py_package(
         "util.bazel",
     ],
     deps = [
-        # Claude hooks entry points (transitively pull in all claude_hooks deps)
+        # Unified hook dispatcher (transitively pulls in all hook handler deps)
+        "//devinfra/claude_hooks:hook_dispatch_lib",
+        "//devinfra/claude_hooks:post_tool_use_lib",
         "//devinfra/claude_hooks:pre_tool_use_lib",
         "//devinfra/claude_hooks:session_start_lib",
         "//devinfra/claude_hooks:statusline_lib",
@@ -188,8 +190,7 @@ py_wheel(
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
-            "claude-pre-tool-use = devinfra.claude_hooks.pre_tool_use:main",
-            "claude-session-start = devinfra.claude_hooks.session_start:main",
+            "claude-hook = devinfra.claude_hooks.hook_dispatch:main",
             "claude-statusline = devinfra.claude_hooks.statusline:main",
         ],
     },
