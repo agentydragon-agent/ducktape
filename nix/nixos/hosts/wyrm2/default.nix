@@ -40,7 +40,7 @@
   services.xserver.videoDrivers = [ "nvidia" ];
   hardware.nvidia = {
     modesetting.enable = true;
-    open = true; # Open kernel modules (matches Talos nvidia-open-gpu-kernel-modules)
+    open = false; # Proprietary module — open module rejects Gigabyte RTX 5090 subsystem ID
     nvidiaSettings = false; # No X settings app for headless GPU compute
   };
   hardware.nvidia-container-toolkit.enable = true;
