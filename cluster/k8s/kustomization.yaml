@@ -18,6 +18,7 @@ resources:
   - metrics-server/flux-kustomization.yaml
   - vpa/flux-kustomization.yaml
   - vpa-resources/flux-kustomization.yaml
+  - descheduler/flux-kustomization.yaml
   - monitoring-namespace/flux-kustomization.yaml
   - monitoring-stack/flux-kustomization.yaml
   - monitoring-stack-secrets/flux-kustomization.yaml
