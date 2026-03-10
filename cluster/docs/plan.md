@@ -2,9 +2,11 @@
 
 ## 🔥 Next Steps
 
-**Status**: Running with 4 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker).
+**Status**: Running with 5 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker + 1 roaming laptop).
 Cilium Gateway API serving HTTPS traffic. DNS automation working. Authentik auth verified.
 PowerDNS, Authentik, Headscale migrated to CloudNativePG on `local-path`.
+rugged (Dell Rugged 12) joined as roaming worker via `k8s-worker.nix` + KubeSpan, with
+`node-role.kubernetes.io/roaming=true:NoSchedule` taint.
 
 See <changelog.md> for detailed change history.
 
@@ -14,6 +16,13 @@ See <changelog.md> for detailed change history.
 
 ### Next Actions
 
+- [ ] **Enable low-priority workloads to schedule on rugged (roaming node)** — Add
+      `node-role.kubernetes.io/roaming=true:NoSchedule` toleration to stateless,
+      downtime-tolerant deployments currently pinned to wyrm2: `grocy`, `scanner`,
+      `activitywatch`, `proxmox-proxy`, `props`/`props-registry`. These
+      survive node loss and can offload wyrm2 when rugged is docked. Optionally add
+      `preferredDuringSchedulingIgnoredDuringExecution` affinity for `region: roaming`
+      to actively shift load. Skip: stateful sets, `ollama`, monitoring stack.
 - [ ] **OpenClaw: obfuscation detection forces approval despite `security: full`** —
       Upstream commit `0e28e50b4` (PR #24287, issue #8592) adds unconditional obfuscation
       detection that OR-overrides `requiresExecApproval` even when `ask: off` +
