@@ -80,18 +80,40 @@ py_binary(
     deps = [":matrix_bot"],
 )
 
-py_binary(
-    name = "agent_server_generate_frontend_code",
+py_library(
+    name = "web_api_constants",
+    srcs = ["web_api_constants.py"],
+    imports = ["../.."],
+    visibility = ["//x/agent_server:__subpackages__"],
+    deps = [
+        "//mcp_infra/compositor:resources_server",
+        "//mcp_infra/exec:docker",
+        "//x/agent_server/mcp/approval_policy:engine",
+    ],
+)
+
+py_library(
+    name = "generate_frontend_code_lib",
     srcs = ["scripts/generate_frontend_code.py"],
-    main = "scripts/generate_frontend_code.py",
+    imports = ["../.."],
+    visibility = ["//x/agent_server:__subpackages__"],
     deps = [
         ":approvals",
+        ":web_api_constants",
         "//agent_core:events",
         "//x/agent_server/mcp_bridge:agents",
         "//x/agent_server/persist:types",
         "//x/agent_server/server:protocol",
         "@pypi//pydantic",
     ],
+)
+
+py_binary(
+    name = "agent_server_generate_frontend_code",
+    imports = ["../.."],
+    main_module = "x.agent_server.scripts.generate_frontend_code",
+    visibility = ["//x/agent_server/web:__pkg__"],
+    deps = [":generate_frontend_code_lib"],
 )
 
 # E2E tests moved to agent_server/e2e/BUILD.bazel

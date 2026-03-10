@@ -20,7 +20,6 @@ export default [
       "**/build/**",
       "**/.svelte-kit/**",
       "**/playwright-report/**",
-      "**/generated/**",
       // Build scripts (Node.js tooling, not app code)
       "**/*.config.mjs",
     ],

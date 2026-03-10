@@ -214,6 +214,7 @@ npm.npm_translate_lock(
     # Generate bin entries for dev tools from workspace root
     bins = {
         "eslint": ["eslint=./bin/eslint.js"],
+        "json-schema-to-typescript": ["json2ts=./dist/src/cli.js"],
         "prettier": ["prettier=./bin/prettier.cjs"],
         "svelte-check": ["svelte-check=./bin/svelte-check"],
         "@sveltejs/kit": ["svelte-kit=./svelte-kit.js"],

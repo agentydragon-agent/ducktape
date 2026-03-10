@@ -1,16 +1,17 @@
-#!/usr/bin/env python3
 """Generate TypeScript code from Python sources.
 
-This script performs two code generation tasks:
-1. Extracts MCP resource URI constants from Python and generates TypeScript helpers
-2. Extracts Pydantic models and generates TypeScript type definitions
+Two code generation tasks:
+1. MCP resource URI constants → mcpConstants.ts (--constants-output)
+2. Pydantic model schemas → types.ts (--types-output, requires --jst-binary)
 
-Run with: python scripts/generate_frontend_code.py
-Or via npm: npm run codegen
+Intended to be run as a Bazel genrule tool:
+  generate_frontend_code --constants-output $@ [--types-output $@ --jst-binary <path>]
 """
 
 from __future__ import annotations
 
+import argparse
+import inspect
 import json
 import re
 import subprocess
@@ -20,9 +21,8 @@ from typing import Any
 
 from pydantic import TypeAdapter
 
+import x.agent_server.web_api_constants as _web_constants
 from agent_core.events import ToolCall
-
-# Import models to export
 from x.agent_server.approvals import ApprovalRequest
 from x.agent_server.mcp_bridge.agents import AgentInfo
 from x.agent_server.persist.types import ApprovalOutcome, EventType
@@ -33,79 +33,25 @@ from x.agent_server.server.protocol import AgentStatus
 # ============================================================================
 
 
-def extract_constants_from_file(python_file: Path) -> dict[str, Any]:
-    """Extract Final[str] constants from a Python file using runtime evaluation."""
-    namespace: dict[str, Any] = {}
-
-    try:
-        code = python_file.read_text(encoding="utf-8")
-        exec(code, namespace)
-    except Exception as e:
-        print(f"Error executing constants file: {e}", file=sys.stderr)
-        raise
-
-    constants: dict[str, Any] = {}
-
-    # Extract all string constants that contain 'URI'
-    for name, value in namespace.items():
+def extract_uri_constants() -> dict[str, str]:
+    """Extract Final[str] URI constants from the web_api_constants module."""
+    constants: dict[str, str] = {}
+    for name, value in inspect.getmembers(_web_constants):
         if isinstance(value, str) and "URI" in name and not name.startswith("_"):
             constants[name] = value
-
     return constants
 
 
-def classify_constants(constants: dict[str, Any]) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+def classify_constants(constants: dict[str, str]) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     """Classify constants into simple URIs and format strings."""
     simple_uris: list[tuple[str, str]] = []
     format_uris: list[tuple[str, str]] = []
-
     for name, value in sorted(constants.items()):
-        if isinstance(value, str):
-            if "{" in value and "}" in value:
-                format_uris.append((name, value))
-            else:
-                simple_uris.append((name, value))
-
+        if "{" in value and "}" in value:
+            format_uris.append((name, value))
+        else:
+            simple_uris.append((name, value))
     return simple_uris, format_uris
-
-
-def generate_mcp_constants_typescript(simple_uris: list[tuple[str, str]], format_uris: list[tuple[str, str]]) -> str:
-    """Generate TypeScript constants and helpers."""
-    output: list[str] = []
-
-    output.append("// Auto-generated MCP resource URI constants")
-    output.append("// Do not edit manually - regenerate with: npm run codegen")
-    output.append("")
-
-    # Simple URI constants
-    if simple_uris:
-        output.append("/** Simple resource URI constants */")
-        output.append("export const MCPUris = {")
-        for py_name, uri in simple_uris:
-            ts_name = _to_camel_case(py_name)
-            output.append(f"  {ts_name}: '{uri}',")
-        output.append("} as const")
-        output.append("")
-
-    # Helper functions for format strings
-    if format_uris:
-        output.append("/** Helper functions for resource URI format strings */")
-        for py_name, format_str in format_uris:
-            ts_func_name = _to_camel_case(py_name.replace("_FMT", ""))
-            params = _extract_format_params(format_str)
-
-            if params:
-                param_defs = ", ".join([f"{p}: string" for p in params])
-                output.append(f"export function {ts_func_name}({param_defs}): string {{")
-                output.append(f"  return `{_escape_format_string(format_str)}`")
-                output.append("}")
-            else:
-                ts_name = _to_camel_case(py_name)
-                output.append(f"export const {ts_name} = '{format_str}' as const")
-
-        output.append("")
-
-    return "\n".join(output)
 
 
 def _to_camel_case(snake_str: str) -> str:
@@ -117,54 +63,49 @@ def _to_camel_case(snake_str: str) -> str:
 def _extract_format_params(format_str: str) -> list[str]:
     """Extract parameter names from a format string like 'resource://foo/{bar}'."""
     matches = re.findall(r"\{(\w+)\}", format_str)
-    return list(dict.fromkeys(matches))  # Remove duplicates while preserving order
+    return list(dict.fromkeys(matches))
 
 
 def _escape_format_string(format_str: str) -> str:
-    """Escape a format string for use in template literals."""
+    """Escape a format string for use in TypeScript template literals."""
     return re.sub(r"\{(\w+)\}", r"${\1}", format_str)
 
 
-def generate_mcp_constants() -> None:
-    """Generate TypeScript MCP constants from Python."""
-    # Find the workspace root (containing mcp_infra)
-    # Path: agent_server/src/agent_server/scripts/generate_frontend_code.py
-    # So: script -> scripts -> agent_server -> src -> agent_server -> workspace
-    script_dir = Path(__file__).parent  # scripts/
-    agent_server_pkg = script_dir.parent  # agent_server/
-    src_dir = agent_server_pkg.parent  # src/
-    agent_server_root = src_dir.parent  # agent_server/
-    workspace_root = agent_server_root.parent  # ducktape/
+def generate_mcp_constants_typescript(simple_uris: list[tuple[str, str]], format_uris: list[tuple[str, str]]) -> str:
+    output: list[str] = ["// Auto-generated MCP resource URI constants — do not edit manually", ""]
+    if simple_uris:
+        output.append("/** Simple resource URI constants */")
+        output.append("export const MCPUris = {")
+        for py_name, uri in simple_uris:
+            ts_name = _to_camel_case(py_name)
+            output.append(f"  {ts_name}: '{uri}',")
+        output.append("} as const")
+        output.append("")
+    if format_uris:
+        output.append("/** Helper functions for parameterised resource URIs */")
+        for py_name, format_str in format_uris:
+            ts_func_name = _to_camel_case(py_name.replace("_FMT", ""))
+            params = _extract_format_params(format_str)
+            if params:
+                param_defs = ", ".join(f"{p}: string" for p in params)
+                output.append(f"export function {ts_func_name}({param_defs}): string {{")
+                output.append(f"  return `{_escape_format_string(format_str)}`")
+                output.append("}")
+            else:
+                ts_name = _to_camel_case(py_name)
+                output.append(f"export const {ts_name} = '{format_str}' as const")
+        output.append("")
+    return "\n".join(output)
 
-    constants_file = workspace_root / "mcp_infra" / "src" / "mcp_infra" / "constants.py"
 
-    if not constants_file.exists():
-        print(f"Error: Constants file not found at {constants_file}", file=sys.stderr)
-        sys.exit(1)
-
-    output_dir = agent_server_root / "src" / "agent_server" / "web" / "src" / "generated"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "mcpConstants.ts"
-
-    print(f"[1/2] Generating MCP constants from {constants_file}...")
-
-    constants = extract_constants_from_file(constants_file)
-
+def generate_constants(output_path: Path) -> None:
+    constants = extract_uri_constants()
     if not constants:
-        print("  Warning: No URI constants found in Python file", file=sys.stderr)
-        return
-
-    print(f"  Found {len(constants)} URI constants")
-
+        print("Warning: no URI constants found", file=sys.stderr)
     simple_uris, format_uris = classify_constants(constants)
-
-    print(f"  Simple URIs: {len(simple_uris)}")
-    print(f"  Format strings: {len(format_uris)}")
-
     ts_code = generate_mcp_constants_typescript(simple_uris, format_uris)
-
-    output_file.write_text(ts_code)
-    print(f"  ✓ Generated {output_file}")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(ts_code)
 
 
 # ============================================================================
@@ -172,88 +113,44 @@ def generate_mcp_constants() -> None:
 # ============================================================================
 
 
-def generate_typescript_from_schema(schema: dict[str, Any], type_name: str) -> str:
-    """Generate TypeScript interface from JSON Schema using json-schema-to-typescript."""
-    schema_json = json.dumps(schema, indent=2)
-
-    try:
-        result = subprocess.run(
-            ["npx", "json-schema-to-typescript", "--stdin", "--bannerComment", ""],
-            input=schema_json,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        print(f"  Error generating TypeScript for {type_name}:", file=sys.stderr)
-        print(e.stderr, file=sys.stderr)
-        raise
-
-
-def generate_pydantic_types() -> None:
-    """Generate TypeScript types from Pydantic models."""
-    models_to_export = [
-        # Core types
-        ToolCall,
-        # Enums
-        ApprovalOutcome,
-        AgentStatus,
-        EventType,
-        # Approval types
-        ApprovalRequest,
-        # Agent info
-        AgentInfo,
-    ]
-
-    # Path: agent_server/src/agent_server/scripts/generate_frontend_code.py
-    script_dir = Path(__file__).parent  # scripts/
-    agent_server_pkg = script_dir.parent  # agent_server/
-    src_dir = agent_server_pkg.parent  # src/
-    agent_server_root = src_dir.parent  # agent_server/
-
-    output_dir = agent_server_root / "src" / "agent_server" / "web" / "src" / "generated"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / "types.ts"
-
-    print(f"[2/2] Generating TypeScript types to {output_file}...")
-
+def _build_unified_schema() -> dict[str, Any]:
+    models_to_export = [ToolCall, ApprovalOutcome, AgentStatus, EventType, ApprovalRequest, AgentInfo]
     all_defs: dict[str, Any] = {}
-
     for model_class in models_to_export:
-        type_name = model_class.__name__
-        print(f"  Processing {type_name}...")
         schema = TypeAdapter(model_class).json_schema(mode="serialization")
-
         if "$defs" in schema:
             all_defs.update(schema["$defs"])
-
-        all_defs[type_name] = {k: v for k, v in schema.items() if k != "$defs"}
-
-    # Create unified schema
-    unified_schema = {
+        all_defs[model_class.__name__] = {k: v for k, v in schema.items() if k != "$defs"}
+    return {
         "type": "object",
         "title": "AgentTypes",
         "properties": {
-            name: {"$ref": f"#/$defs/{name}"} for name in all_defs if name in [m.__name__ for m in models_to_export]
+            name: {"$ref": f"#/$defs/{name}"} for name in all_defs if name in {m.__name__ for m in models_to_export}
         },
         "$defs": all_defs,
     }
 
-    try:
-        ts_code = generate_typescript_from_schema(unified_schema, "AgentTypes")
-        ts_output = [
-            "// Auto-generated TypeScript types from Pydantic models",
-            "// Do not edit manually - regenerate with: npm run codegen",
-            "",
-            ts_code.strip(),
-        ]
 
-        output_file.write_text("\n".join(ts_output))
-        print(f"  ✓ Generated TypeScript types for {len(models_to_export)} models")
-    except Exception as e:
-        print(f"  Error generating TypeScript: {e}", file=sys.stderr)
-        raise
+def generate_types(output_path: Path, jst_binary: Path) -> None:
+    unified_schema = _build_unified_schema()
+    schema_json = json.dumps(unified_schema, indent=2)
+    result = subprocess.run(
+        [str(jst_binary), "--stdin", "--bannerComment", ""],
+        input=schema_json,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    ts_output = "\n".join(
+        [
+            "// Auto-generated TypeScript types from Pydantic models — do not edit manually",
+            "",
+            result.stdout.strip(),
+            "",
+        ]
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(ts_output)
 
 
 # ============================================================================
@@ -262,19 +159,22 @@ def generate_pydantic_types() -> None:
 
 
 def main() -> None:
-    """Run all code generation tasks."""
-    print("=== Frontend Code Generation ===")
-    print()
+    parser = argparse.ArgumentParser(description="Generate TypeScript from Python sources")
+    parser.add_argument("--constants-output", type=Path, help="Output path for mcpConstants.ts")
+    parser.add_argument("--types-output", type=Path, help="Output path for types.ts")
+    parser.add_argument("--jst-binary", type=Path, help="Path to json-schema-to-typescript binary (json2ts)")
+    args = parser.parse_args()
 
-    try:
-        generate_mcp_constants()
-        print()
-        generate_pydantic_types()
-        print()
-        print("✓ All code generation completed successfully")
-    except Exception as e:
-        print(f"\n✗ Code generation failed: {e}", file=sys.stderr)
-        sys.exit(1)
+    if not args.constants_output and not args.types_output:
+        parser.error("At least one of --constants-output or --types-output is required")
+
+    if args.constants_output:
+        generate_constants(args.constants_output)
+
+    if args.types_output:
+        if not args.jst_binary:
+            parser.error("--jst-binary is required when --types-output is specified")
+        generate_types(args.types_output, args.jst_binary)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_run_devserver")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
+load("@npm_ducktape//:json-schema-to-typescript/package_json.bzl", jst_bin = "bin")
 load("@npm_ducktape//:svelte-check/package_json.bzl", svelte_check_bin = "bin")
 load("@npm_ducktape//:vitest/package_json.bzl", vitest_bin = "bin")
 
@@ -13,6 +14,36 @@ exports_files([
     "tsconfig.node.json",
 ])
 
+# Generated TypeScript files — produced by Bazel, not checked into source tree
+genrule(
+    name = "gen_mcp_constants",
+    srcs = [],
+    outs = ["src/generated/mcpConstants.ts"],
+    cmd = "$(execpath //x/agent_server:agent_server_generate_frontend_code) --constants-output $@",
+    tools = ["//x/agent_server:agent_server_generate_frontend_code"],
+)
+
+jst_bin.json2ts_binary(
+    name = "json2ts",
+    data = [":node_modules"],
+)
+
+genrule(
+    name = "gen_types",
+    srcs = [],
+    outs = ["src/generated/types.ts"],
+    cmd = "$(execpath //x/agent_server:agent_server_generate_frontend_code) --types-output $@ --jst-binary $(execpath :json2ts)",
+    tools = [
+        ":json2ts",
+        "//x/agent_server:agent_server_generate_frontend_code",
+    ],
+)
+
+_GENERATED_SRCS = [
+    ":gen_mcp_constants",
+    ":gen_types",
+]
+
 # Source files for the agent_server web frontend
 _SRCS = glob([
     "src/**/*.ts",
@@ -25,7 +56,7 @@ _SRCS = glob([
     "tsconfig.json",
     "tsconfig.app.json",
     "tsconfig.node.json",
-]
+] + _GENERATED_SRCS
 
 # Svelte-check (type checking)
 # Run: bazel test //x/agent_server/src/agent_server/web:svelte_check_test
@@ -46,7 +77,7 @@ svelte_check_bin.svelte_check_test(
     ] + glob([
         "src/**/*.ts",
         "src/**/*.svelte",
-    ]),
+    ]) + _GENERATED_SRCS,
     tags = ["lint"],
 )
 
@@ -67,7 +98,7 @@ vitest_bin.vitest_test(
     ] + glob([
         "src/**/*.ts",
         "src/**/*.test.ts",
-    ]),
+    ]) + _GENERATED_SRCS,
 )
 
 # esbuild binary for production bundle
