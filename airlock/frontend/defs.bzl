@@ -3,19 +3,19 @@
 load("@aspect_rules_js//js:defs.bzl", "js_test")
 
 _VISUAL_BASE_DATA = [
-    "//util/frontend_visual_test:visual_test_lib",
+    "//util/testing/frontend_visual:visual_test_lib",
     "//airlock/frontend:harness_bundle",
     "//airlock/frontend:harness_js",
     "//airlock/frontend:visual_test_assets",
-    "//util/frontend_visual_test:fonts",
-    "//util/frontend_visual_test:fonts_conf",
+    "//util/testing/frontend_visual:fonts",
+    "//util/testing/frontend_visual:fonts_conf",
     "@playwright_browsers//:chromium-headless-shell",
 ]
 
 _VISUAL_ENV = {
     "HARNESS_PATH": "$(rootpath //airlock/frontend:harness_js)",
     "PUPPETEER_EXECUTABLE_PATH": "$(rootpath @playwright_browsers//:chromium-headless-shell)",
-    "FONTCONFIG_FILE": "$(rootpath //util/frontend_visual_test:fonts_conf)",
+    "FONTCONFIG_FILE": "$(rootpath //util/testing/frontend_visual:fonts_conf)",
     "FREETYPE_PROPERTIES": "cff:no-stem-darkening=1",
 }
 

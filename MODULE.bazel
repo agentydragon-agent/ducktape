@@ -229,7 +229,7 @@ npm.npm_translate_lock(
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
         "//:third_party/mcporter/package.json",
-        "//:util/frontend_visual_test/package.json",
+        "//:util/testing/frontend_visual/package.json",
         "//:x/agent_server/web/package.json",
         "//:x/rspcache/admin_ui/package.json",
     ],

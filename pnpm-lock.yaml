@@ -312,7 +312,7 @@ importers:
         specifier: 0.7.3
         version: 0.7.3
 
-  util/frontend_visual_test:
+  util/testing/frontend_visual:
     devDependencies:
       pixelmatch:
         specifier: ^6.0.0
