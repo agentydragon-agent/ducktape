@@ -40,7 +40,7 @@
   services.xserver.videoDrivers = [ "nvidia" ];
   hardware.nvidia = {
     modesetting.enable = true;
-    open = false; # Proprietary module — open module rejects Gigabyte RTX 5090 subsystem ID
+    open = true; # Required for Blackwell (RTX 5090) — proprietary module refuses these GPUs
     nvidiaSettings = false; # No X settings app for headless GPU compute
   };
   hardware.nvidia-container-toolkit.enable = true;
