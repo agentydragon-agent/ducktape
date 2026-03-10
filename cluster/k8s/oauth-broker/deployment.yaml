@@ -26,7 +26,7 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: oauth-broker
-          image: registry.allegedly.works/ducktape/oauth-broker:devel-20260310233755-ef05c30 # {"$imagepolicy": "flux-system:oauth-broker"}
+          image: registry.allegedly.works/ducktape/oauth-broker:devel-20260310235359-a163fd4 # {"$imagepolicy": "flux-system:oauth-broker"}
           ports:
             - name: http
               containerPort: 8080
