@@ -19,10 +19,7 @@ export default [
       "**/dist/**",
       "**/build/**",
       "**/.svelte-kit/**",
-      "**/storybook-static/**",
       "**/playwright-report/**",
-      "**/test-results/**",
-      "**/.storybook/**",
       "**/generated/**",
       // Build scripts (Node.js tooling, not app code)
       "**/*.config.mjs",
@@ -94,7 +91,7 @@ export default [
 
   // Agent server web (Svelte+Vite) - with import plugin
   {
-    files: ["x/agent_server/src/agent_server/web/**/*.ts"],
+    files: ["x/agent_server/web/src/**/*.ts"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
@@ -140,9 +137,12 @@ export default [
   },
 
   // Agent server web (Svelte files)
-  ...sveltePlugin.configs["flat/recommended"],
+  ...sveltePlugin.configs["flat/recommended"].map((config) => ({
+    ...config,
+    files: ["x/agent_server/web/src/**/*.svelte"],
+  })),
   {
-    files: ["x/agent_server/src/agent_server/web/**/*.svelte"],
+    files: ["x/agent_server/web/src/**/*.svelte"],
     languageOptions: {
       parser: svelteParser,
       parserOptions: {
