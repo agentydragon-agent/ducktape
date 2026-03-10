@@ -32,19 +32,19 @@
     # CI-released artifacts — pinned to tagged releases, updated by release.yml.
     # URLs are rewritten by the update-downstream job after each release.
     kubespand-bin = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-0ef78ccc/kubespand";
+      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-ef05c308/kubespand";
       flake = false;
     };
     ducktape-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-0ef78ccc/ducktape-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-ef05c308/ducktape-0.1.0-py3-none-any.whl";
       flake = false;
     };
     headscale-cleanup-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-0ef78ccc/headscale_cleanup-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-ef05c308/headscale_cleanup-0.1.0-py3-none-any.whl";
       flake = false;
     };
     gterm-theme-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-0ef78ccc/gterm_theme-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-ef05c308/gterm_theme-0.1.0-py3-none-any.whl";
       flake = false;
     };
 
