@@ -18,7 +18,6 @@ spec:
         namespace: flux-system
       interval: 12h
   values:
-    # Recommendation-only mode: no auto-updates, no admission webhook
     recommender:
       enabled: true
       resources:
@@ -30,7 +29,21 @@ spec:
           memory: 512Mi
 
     updater:
-      enabled: false
+      enabled: true
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
 
     admissionController:
-      enabled: false
+      enabled: true
+      resources:
+        requests:
+          cpu: 25m
+          memory: 128Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi

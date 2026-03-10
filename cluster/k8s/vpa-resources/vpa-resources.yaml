@@ -1,5 +1,6 @@
-# VPA resources for recommendation-only monitoring.
-# updateMode: "Off" means VPA only generates recommendations, never modifies pods.
+# VPA resources.
+# Deployments: "Auto" — VPA evicts pods to apply updated recommendations.
+# StatefulSets: "Initial" — sets requests at pod creation, never evicts.
 #
 # Right-sized services (see docs/operations/2026-02-22-memory-request-rightsizing.md)
 ---
@@ -14,7 +15,7 @@ spec:
     kind: StatefulSet
     name: instance
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Initial"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -27,7 +28,7 @@ spec:
     kind: StatefulSet
     name: openclaw
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Initial"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -40,7 +41,7 @@ spec:
     kind: Deployment
     name: harbor-core
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Auto"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -53,7 +54,7 @@ spec:
     kind: StatefulSet
     name: harbor-database
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Initial"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -66,7 +67,7 @@ spec:
     kind: StatefulSet
     name: harbor-redis
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Initial"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -79,7 +80,7 @@ spec:
     kind: StatefulSet
     name: harbor-trivy
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Initial"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -92,7 +93,7 @@ spec:
     kind: Deployment
     name: harbor-jobservice
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Auto"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -105,7 +106,7 @@ spec:
     kind: Deployment
     name: harbor-portal
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Auto"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -118,8 +119,7 @@ spec:
     kind: StatefulSet
     name: matrix-synapse-postgresql
   updatePolicy:
-    updateMode: "Off"
-# Biggest consumers
+    updateMode: "Initial"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -132,7 +132,7 @@ spec:
     kind: StatefulSet
     name: langfuse-clickhouse-shard0
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Initial"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -145,7 +145,7 @@ spec:
     kind: Deployment
     name: grafana
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Auto"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -158,7 +158,7 @@ spec:
     kind: StatefulSet
     name: prometheus-monitoring
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Initial"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -171,7 +171,7 @@ spec:
     kind: Deployment
     name: authentik-server
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Auto"
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -184,4 +184,180 @@ spec:
     kind: Deployment
     name: authentik-worker
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Auto"
+# --- Inventree ---
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: inventree
+  namespace: inventree
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inventree
+  updatePolicy:
+    updateMode: "Auto"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: inventree-worker
+  namespace: inventree
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inventree-worker
+  updatePolicy:
+    updateMode: "Auto"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: inventree-postgres
+  namespace: inventree
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: inventree-postgres
+  updatePolicy:
+    updateMode: "Initial"
+# --- Langfuse ---
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: langfuse-web
+  namespace: langfuse
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: langfuse-web
+  updatePolicy:
+    updateMode: "Auto"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: langfuse-worker
+  namespace: langfuse
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: langfuse-worker
+  updatePolicy:
+    updateMode: "Auto"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: langfuse-postgresql
+  namespace: langfuse
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: langfuse-postgresql
+  updatePolicy:
+    updateMode: "Initial"
+# --- Ollama / LiteLLM ---
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: litellm
+  namespace: ollama
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: litellm
+  updatePolicy:
+    updateMode: "Auto"
+# --- Reflector ---
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: reflector
+  namespace: reflector-system
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: reflector
+  updatePolicy:
+    updateMode: "Auto"
+# --- Loki ---
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: loki-stack
+  namespace: loki
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: loki-stack
+  updatePolicy:
+    updateMode: "Initial"
+# --- Longhorn ---
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: longhorn-manager
+  namespace: longhorn-system
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: DaemonSet
+    name: longhorn-manager
+  updatePolicy:
+    updateMode: "Initial"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: longhorn-ui
+  namespace: longhorn-system
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: longhorn-ui
+  updatePolicy:
+    updateMode: "Auto"
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: longhorn-driver-deployer
+  namespace: longhorn-system
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: longhorn-driver-deployer
+  updatePolicy:
+    updateMode: "Auto"
+# --- Matrix ---
+---
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: matrix-synapse
+  namespace: matrix
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: matrix-synapse
+  updatePolicy:
+    updateMode: "Auto"

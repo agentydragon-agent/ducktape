@@ -9,4 +9,4 @@ spec:
     kind: Deployment
     name: attic
   updatePolicy:
-    updateMode: "Off"
+    updateMode: "Auto"

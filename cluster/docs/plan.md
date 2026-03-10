@@ -330,14 +330,15 @@ Options:
 Prevent resource contention. Set default CPU/memory requests+limits via LimitRange.
 Set namespace-level quotas via ResourceQuota.
 
-### Vertical Pod Autoscaler (VPA) — Deployed (Recommendation-Only)
+### Vertical Pod Autoscaler (VPA) — Deployed (Initial Mode)
 
-VPA deployed in `Off` (recommendation-only) mode via Fairwinds Helm chart (`k8s/vpa/`).
-Monitors actual resource usage and generates right-sized request/limit recommendations.
-Replaces manual `kubectl top` analysis (see <operations/2026-02-22-memory-request-rightsizing.md>).
+VPA deployed in `Initial` mode via Fairwinds Helm chart (`k8s/vpa/`).
+Sets resource requests at pod creation based on observed usage, but never evicts running
+pods. Updater and admission controller are enabled. Replaces manual `kubectl top` analysis
+(see <operations/2026-02-22-memory-request-rightsizing.md>).
 
-- [ ] **VPA Auto Mode** — Once recommendations are validated, enable `Auto` mode
-      (updater + admission controller). Start with non-critical workloads.
+- [ ] **VPA Auto Mode** — Consider upgrading to `Auto` mode for non-critical workloads
+      to apply updated recommendations to running pods (requires pod restarts).
 
 ### TODO: Alertmanager → ntfy Bridge
 
