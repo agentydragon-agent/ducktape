@@ -76,6 +76,16 @@
     ];
   };
 
+  fileSystems."/code" = {
+    device = "code";
+    fsType = "virtiofs";
+    options = [
+      "defaults"
+      "_netdev"
+      "nofail"
+    ];
+  };
+
   time.timeZone = "America/Los_Angeles";
 
   # Services (tailscale enabled via dev-workstation.nix)

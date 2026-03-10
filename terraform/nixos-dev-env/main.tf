@@ -217,7 +217,7 @@ module "wyrm2" {
   memory_floating_mb = 0 # Disable balloon (VFIO incompatible)
   gpu_mappings       = ["gpu0", "gpu1"]
   vga_type           = "qxl"
-  virtiofs_mappings  = ["tankshare"]
+  virtiofs_mappings  = ["tankshare", "code"]
   additional_disks = [
     { interface = "scsi30", size_gb = 200 },   # containerd (/var/lib/containerd)
     { interface = "virtio0", size_gb = 500 },   # local-path provisioner (/var/local-path-provisioner)
