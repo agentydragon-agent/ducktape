@@ -49,8 +49,7 @@ Attempted (Jan 2026, did not help):
 
 - **BIOS setting**: Dell BIOS may have WWAN disabled. Check under Wireless settings.
 - **Hardware switch**: Physical wireless kill switch on tablet body.
-- **`fwupd`**: Run `fwupdmgr update` — modem firmware may need update.
-  Worth trying now (March 2026) since rugged is fully set up.
+- ~~**`fwupd`**~~: Checked March 2026 — DP25-42843-47 already at latest firmware. Not the cause.
 - **`cctk`** (Dell Command Configure): May need to enable WWAN via `cctk --WirelessLan=Enable` or similar.
 
 ## eSIM Slot Setup
