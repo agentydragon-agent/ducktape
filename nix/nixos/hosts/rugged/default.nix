@@ -28,10 +28,42 @@
     ../../modules/gui.nix
     ../../modules/dev-workstation.nix
     ../../modules/system-inspection-sudo.nix
+    ../../modules/k8s-worker.nix
   ];
 
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
+
+  # K8s worker (KubeSpan fabric)
+  # Credentials placed manually (physical machine, no cloud-init):
+  #   /etc/kubespan/agent.yaml     — kubespand config (cluster.id, cluster.secret)
+  #   /etc/kubernetes/pki/ca.crt  — cluster CA cert
+  #   /etc/kubernetes/bootstrap-kubelet.conf — bootstrap kubeconfig with token
+  ducktape.k8sWorker = {
+    enable = true;
+    nodeLabels = {
+      "topology.kubernetes.io/region" = "roaming";
+      "node.kubernetes.io/role" = "roaming";
+    };
+    nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
+  };
+
+  # Separate btrfs subvolumes for containerd and local-path-provisioner storage.
+  # Create them before first boot with:
+  #   sudo mount -t btrfs /dev/mapper/cryptroot /mnt/btrfs-root
+  #   sudo btrfs subvolume create /mnt/btrfs-root/@containerd
+  #   sudo btrfs subvolume create /mnt/btrfs-root/@local-path-provisioner
+  #   sudo umount /mnt/btrfs-root
+  fileSystems."/var/lib/containerd" = {
+    device = "/dev/mapper/cryptroot";
+    fsType = "btrfs";
+    options = [ "subvol=@containerd" ];
+  };
+  fileSystems."/var/local-path-provisioner" = {
+    device = "/dev/mapper/cryptroot";
+    fsType = "btrfs";
+    options = [ "subvol=@local-path-provisioner" ];
+  };
 
   # Timezone
   time.timeZone = "America/Los_Angeles";
@@ -98,6 +130,9 @@
     shell = pkgs.zsh;
     # Allow reading system logs without sudo (systemd-journal group)
     extraGroups = [ "systemd-journal" ];
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@popvm"
+    ];
   };
 
   # Allow reading kernel logs without sudo

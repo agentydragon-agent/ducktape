@@ -56,6 +56,8 @@ let
       containerRuntimeEndpoint = "unix:///run/containerd/containerd.sock";
       serverTLSBootstrap = true;
       tlsMinVersion = "VersionTLS12";
+      # Some nodes (e.g. laptops) have swap enabled; don't fail on it.
+      failSwapOn = false;
     }
   );
 
