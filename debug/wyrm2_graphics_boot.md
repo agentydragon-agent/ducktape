@@ -38,28 +38,41 @@ services.displayManager.gdm.wayland = true;
 
 Overrides NixOS's NVIDIA auto-disable. GNOME 49 is Wayland-only, no alternative.
 
-## SPICE resize: should work on Wayland
+## SPICE resize: works on Wayland (with workaround)
 
-**Previous assumption was wrong.** spice-vdagent 0.23.0 labels itself "X11" but has
-both codepaths compiled in (`vdagent_mutter_create`, `vdagent_mutter_get_resolutions`,
-`org.gnome.Mutter.DisplayConfig` D-Bus strings all present in binary).
+Display resize works. The nixpkgs `spice-vdagent` is built X11-only (no GTK/Wayland
+build flags), but it connects to XWayland and uses mutter's D-Bus interface
+(`vdagent_mutter_get_resolutions`) for the actual resize.
 
-Modern SPICE resize flow ([Red Hat bug 1290586](https://bugzilla.redhat.com/show_bug.cgi?id=1290586)):
+### NixOS module gap
+
+`services.spice-vdagentd.enable` only starts the system daemon. The per-user
+`spice-vdagent` process relies on an XDG autostart `.desktop` file, but **GNOME 49
+ignores it** (`X-GNOME-Autostart-Phase` is no longer honored).
+
+Fix: added a `systemd.user.services.spice-vdagent` unit in `vm-hardware.nix` that
+starts the user agent after `graphical-session.target`.
+
+Upstream tracking:
+
+- [nixpkgs #481078](https://github.com/NixOS/nixpkgs/issues/481078) — spice-vdagent fails on GNOME
+- [nixpkgs PR #266080](https://github.com/NixOS/nixpkgs/pull/266080) — proposed `services.spice-vdagent.enable` (stale)
+
+### Clipboard sharing
+
+Broken on Wayland — upstream limitation. spice-vdagent can't access the Wayland
+clipboard (no standard protocol; `wlr-data-control` is wlroots-only, not GNOME).
+See [upstream issue #26](https://gitlab.freedesktop.org/spice/linux/vd_agent/-/issues/26).
+
+### Resize flow
 
 1. SPICE client tells QEMU desired resolution
 2. QEMU updates QXL's available DRM modes
-3. spice-vdagent notifies the desktop environment (doesn't call xrandr directly anymore)
-4. **Mutter handles it** via QXL DRM hotplug — works on both X11 and Wayland
+3. spice-vdagent (via XWayland + mutter D-Bus) notifies the desktop environment
+4. Mutter handles it via QXL DRM hotplug
 
-This is GNOME-specific — XFCE/KDE never implemented their side. The bug was closed
-as CANTFIX (requires upstream DE work).
-
-If resize still doesn't work after re-enabling Wayland, check:
-
-- `spice-vdagentd.service` running (confirmed active)
-- `spice-vdagent` user session agent starting after login
-- Using `virt-viewer` / `remote-viewer` SPICE client (not noVNC)
-- Fractional scaling off (known to cause incorrect resolution)
+GNOME-specific — XFCE/KDE never implemented their side
+([Red Hat bug 1290586](https://bugzilla.redhat.com/show_bug.cgi?id=1290586)).
 
 ## SSH access
 

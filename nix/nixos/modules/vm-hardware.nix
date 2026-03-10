@@ -23,6 +23,24 @@
   # spice-autorandr is X11-only and not needed with GNOME/Wayland.
   services.spice-vdagentd.enable = true;
 
+  # The NixOS module only starts spice-vdagentd (system daemon). The per-user
+  # spice-vdagent process is also needed for display resize and clipboard.
+  # It ships an XDG autostart .desktop, but GNOME 49 ignores it
+  # (X-GNOME-Autostart-Phase is no longer honored). Use a systemd user service.
+  # Clipboard sharing is broken on Wayland (upstream limitation, not NixOS).
+  # See: https://github.com/NixOS/nixpkgs/issues/481078
+  # TODO: Remove this once nixpkgs merges PR #266080 or equivalent upstream fix.
+  systemd.user.services.spice-vdagent = {
+    description = "SPICE guest agent (user session)";
+    wantedBy = [ "graphical-session.target" ];
+    after = [ "graphical-session.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.spice-vdagent}/bin/spice-vdagent -x";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+  };
+
   # Boot configuration for UEFI VMs
   boot.initrd.availableKernelModules = [
     "ahci"
