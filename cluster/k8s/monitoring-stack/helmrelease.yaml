@@ -87,6 +87,7 @@ spec:
 
     # Grafana configuration
     grafana:
+      fullnameOverride: grafana
       enabled: true
       # Reloader: auto-restart pods when secrets change
       podAnnotations:
@@ -248,6 +249,8 @@ spec:
           fsGroup: 2000
 
     # Node exporter configuration
+    prometheus-node-exporter:
+      fullnameOverride: prometheus-node-exporter
     nodeExporter:
       enabled: true
       resources:
@@ -260,6 +263,7 @@ spec:
 
     # Kube-state-metrics configuration
     kube-state-metrics:
+      fullnameOverride: kube-state-metrics
       resources:
         requests:
           cpu: 10m

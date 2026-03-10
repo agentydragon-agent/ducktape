@@ -26,7 +26,7 @@ otelcol.exporter.prometheus "default" {
 
 prometheus.remote_write "monitoring" {
   endpoint {
-    url = "http://kube-prometheus-stack-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+    url = "http://monitoring-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
   }
 }
 
