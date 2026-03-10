@@ -94,7 +94,7 @@ class TestFullSessionStartHook:
         try:
             async with asyncio.timeout(60):
                 bazel_result = await shell_helpers.run_with_env_file(
-                    command=f"bazel --output_base={output_base} build //:hello",
+                    command=(f"bazel --output_base={output_base} build --shell_executable=$(which bash) //:hello"),
                     env_file=isolated_dirs.env_file,
                     cwd=workspace,
                 )
