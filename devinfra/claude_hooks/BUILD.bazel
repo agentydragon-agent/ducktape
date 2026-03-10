@@ -269,6 +269,11 @@ py_library(
     srcs = ["hook_dispatch.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
+    deps = [
+        ":post_tool_use_lib",
+        ":pre_tool_use_lib",
+        ":session_start_lib",
+    ],
 )
 
 py_library(
