@@ -39,7 +39,11 @@ pkg_tar(
 
 oci_image(
     name = "image",
-    base = "@distroless_cc_debian12_linux_amd64",
+    # Use Debian 13 (Trixie, glibc 2.40) instead of Debian 12 (glibc 2.36).
+    # The aw-server binary is compiled on rbe-ubuntu24-04 (glibc 2.39) and
+    # fails at runtime with "GLIBC_2.39 not found" on Debian 12.
+    # See MODULE.bazel distroless_cc_debian13 comment for details.
+    base = "@distroless_cc_debian13_linux_amd64",
     entrypoint = [
         "/usr/local/bin/aw-server",
         "--host",

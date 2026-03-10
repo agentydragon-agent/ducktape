@@ -156,11 +156,27 @@ oci.pull(
 )
 
 # Distroless cc: minimal glibc + libstdc++ + ca-certificates, no shell.
-# Used for statically-linked-except-glibc binaries like aw-server-rust.
+# Debian 12 (Bookworm) ships glibc 2.36.
 oci.pull(
     name = "distroless_cc_debian12",
     digest = "sha256:329e54034ce498f9c6b345044e8f530c6691f99e94a92446f68c0adf9baa8464",
     image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+
+# Distroless cc Debian 13 (Trixie): glibc 2.40.
+# aw-server-rust is compiled by the RBE worker (rbe-ubuntu24-04, glibc 2.39) and
+# therefore requires GLIBC_2.39 at runtime. Debian 12 distroless only has 2.36,
+# so aw-server fails with "version 'GLIBC_2.39' not found". Debian 13 (glibc 2.40)
+# satisfies GLIBC_2.39 requirements. If the RBE toolchain ever upgrades past
+# glibc 2.40 you will need to bump this base image again.
+# To update: docker manifest inspect gcr.io/distroless/cc-debian13:latest | \
+#   python3 -c "import sys,json; [print(m['digest']) for m in json.load(sys.stdin)['manifests'] if m['platform']['architecture']=='amd64']"
+oci.pull(
+    name = "distroless_cc_debian13",
+    digest = "sha256:a7597527ac0daeb207427bc2b1d4b83a0fd4b4e00063488a2a89531e0241601d",
+    image = "gcr.io/distroless/cc-debian13",
     platforms = ["linux/amd64"],
     tag = "latest",
 )
@@ -174,7 +190,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "stable",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
