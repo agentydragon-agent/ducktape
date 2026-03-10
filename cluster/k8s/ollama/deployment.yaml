@@ -19,6 +19,7 @@ spec:
       labels:
         app: ollama
     spec:
+      runtimeClassName: nvidia
       nodeSelector:
         feature.node.kubernetes.io/pci-10de.present: "true"
       tolerations:
