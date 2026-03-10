@@ -36,6 +36,9 @@
     # nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
 
+  # Force GNOME on Xorg (SPICE display resizing doesn't work under Wayland)
+  services.displayManager.gdm.wayland = false;
+
   # NVIDIA GPU (2x RTX 5090 via VFIO passthrough)
   # Open nvidia module allowlists GPUs by subsystem-ID; Gigabyte RTX 5090 (1458:416f) isn't listed.
   boot.kernelParams = [ "nvidia.NVreg_OpenRmEnableUnsupportedGpus=1" ];
