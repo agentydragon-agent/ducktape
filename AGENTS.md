@@ -19,7 +19,14 @@ This repo uses **Bazel** with **Gazelle** for builds and BUILD file generation, 
 
 ## Sandbox
 
-Run `bazel`, `terraform`/`tofu`, and `kubectl` commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). These tools require network access for RBE, BES, provider downloads, and cluster connectivity. The sandbox blocks their network calls.
+Run `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other
+network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). These
+tools require network access for RBE, BES, provider downloads, cluster connectivity, and
+local service inspection. The sandbox blocks their network calls (including localhost
+connections like `kubectl` → haproxy on `localhost:7445`).
+
+<!-- TODO: Write a Claude Code hook that reminds the agent to use dangerouslyDisableSandbox
+     when it runs kubectl/systemctl/etc. inside the sandbox. -->
 
 ## Refactoring
 

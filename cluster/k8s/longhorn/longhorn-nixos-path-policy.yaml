@@ -22,6 +22,8 @@ spec:
                 - Pod
               namespaces:
                 - longhorn-system
+              operations:
+                - CREATE
       mutate:
         foreach:
           - list: "request.object.spec.containers"
