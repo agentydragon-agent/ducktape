@@ -66,6 +66,15 @@ resource "proxmox_virtual_environment_vm" "vm" {
     }
   }
 
+  # virtiofs shared filesystems from Proxmox host
+  dynamic "filesystem" {
+    for_each = var.virtiofs_shares
+    content {
+      source = filesystem.value
+      target = filesystem.value
+    }
+  }
+
   efi_disk {
     datastore_id = var.storage
     file_format  = "raw"

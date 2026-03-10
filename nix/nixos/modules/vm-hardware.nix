@@ -17,6 +17,9 @@
   # QEMU guest agent for Proxmox integration
   services.qemuGuest.enable = true;
 
+  # SPICE clipboard sharing (display is NVIDIA-driven, skip spice-autorandr)
+  services.spice-vdagentd.enable = true;
+
   # Boot configuration for UEFI VMs
   boot.initrd.availableKernelModules = [
     "ahci"
