@@ -55,8 +55,8 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 # Docker 28's raw table rules for published ports (-p) fail. The wrapper sets
 # DOCKER_INSECURE_NO_IPTABLES_RAW=1 to skip raw table ops. goinit overwrites
 # daemon.json, so a wrapper is the only injection point.
-# See: tools/rbe_image/docs/firecracker_docker_init_timeout.md
-COPY tools/rbe_image/dockerd_wrapper.sh /usr/bin/dockerd_wrapper.sh
+# See: devinfra/rbe_image/docs/firecracker_docker_init_timeout.md
+COPY devinfra/rbe_image/dockerd_wrapper.sh /usr/bin/dockerd_wrapper.sh
 RUN mv /usr/bin/dockerd /usr/bin/dockerd.real \
     && mv /usr/bin/dockerd_wrapper.sh /usr/bin/dockerd \
     && chmod +x /usr/bin/dockerd
