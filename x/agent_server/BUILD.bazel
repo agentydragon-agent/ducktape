@@ -93,13 +93,12 @@ py_library(
 )
 
 py_library(
-    name = "generate_frontend_code_lib",
-    srcs = ["scripts/generate_frontend_code.py"],
+    name = "generate_frontend_code",
+    srcs = ["generate_frontend_code.py"],
     imports = ["../.."],
     visibility = ["//x/agent_server:__subpackages__"],
     deps = [
         ":approvals",
-        ":web_api_constants",
         "//agent_core:events",
         "//x/agent_server/mcp_bridge:agents",
         "//x/agent_server/persist:types",
@@ -109,11 +108,11 @@ py_library(
 )
 
 py_binary(
-    name = "agent_server_generate_frontend_code",
+    name = "generate_frontend_code_bin",
     imports = ["../.."],
-    main_module = "x.agent_server.scripts.generate_frontend_code",
+    main_module = "x.agent_server.generate_frontend_code",
     visibility = ["//x/agent_server/web:__pkg__"],
-    deps = [":generate_frontend_code_lib"],
+    deps = [":generate_frontend_code"],
 )
 
 # E2E tests moved to agent_server/e2e/BUILD.bazel

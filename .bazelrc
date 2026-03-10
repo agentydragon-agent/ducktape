@@ -1,6 +1,11 @@
 common --enable_bzlmod
 common --experimental_isolated_extension_usages
 
+# Strict action env: actions get a fixed PATH (/bin:/usr/bin:/usr/local/bin)
+# instead of inheriting the client's PATH. Prevents NixOS /nix/store paths
+# from leaking to RBE workers. Default in Bazel 9 but not Bazel 8.
+build --incompatible_strict_action_env
+
 # Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
 # Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
 # with many targets this exhausts the default 20 GB BuildBuddy disk.

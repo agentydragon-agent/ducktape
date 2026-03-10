@@ -9,11 +9,14 @@
   home.file.".bazelrc".text = lib.mkAfter ''
     # Override nixpkgs bazel_8's nix-store shell path for RBE compatibility
     build --shell_executable=/bin/bash
-    # Fixed PATH for exec-config (host) tools only. Target-config actions use
-    # Bazel's default PATH — hermetic toolchains resolve tools via runfiles,
-    # and genrules use basic FHS utilities (tar, cp, echo) or $(location).
-    # Not setting --action_env=PATH avoids leaking NixOS paths to RBE workers.
+    # Fixed PATH for exec-config (host) tools only. These always run locally
+    # and need /run/current-system/sw/bin for NixOS tools.
     build --host_action_env=PATH=/run/current-system/sw/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    # Test PATH: strict action env gives /bin:/usr/bin:/usr/local/bin, but
+    # tests tagged no-remote-exec run locally on NixOS where /bin/bash
+    # doesn't exist. Prepend /run/current-system/sw/bin so test scripts
+    # (#!/usr/bin/env bash) find bash. Harmless on RBE (path just doesn't exist).
+    test --test_env=PATH=/run/current-system/sw/bin:/bin:/usr/bin:/usr/local/bin
     # nix-ld env vars: only for local actions (host_action_env) and repo rules
     # (repo_env). NOT --action_env, because NIX_LD contains a nix-store path
     # (e.g. /nix/store/...-glibc/lib/ld-linux-x86-64.so.2) that doesn't exist

@@ -15,11 +15,24 @@ Bazel builds and tests pass on a real NixOS system with RBE enabled. Tested pack
 | `//util/...`                  | pass  | 2/2 pass      |
 | `//tana/...`                  | pass  | 2/2 pass      |
 
-## Required `~/.bazelrc` for NixOS + RBE
+## Required configuration for NixOS + RBE
+
+### Workspace `.bazelrc` (applies to all users)
+
+```
+build --incompatible_strict_action_env
+```
+
+Actions get a fixed PATH (`/bin:/usr/bin:/usr/local/bin`) instead of inheriting the
+client's PATH. Default in Bazel 9 but not Bazel 8. Without this, the full NixOS PATH
+(dozens of `/nix/store/...` paths) leaks to RBE workers where they don't exist.
+
+### NixOS-specific `~/.bazelrc` (via home-manager)
 
 ```
 build --shell_executable=/bin/bash
 build --host_action_env=PATH=/run/current-system/sw/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+test --test_env=PATH=/run/current-system/sw/bin:/bin:/usr/bin:/usr/local/bin
 build --host_action_env=NIX_LD
 build --host_action_env=NIX_LD_LIBRARY_PATH
 common --repo_env=NIX_LD
@@ -30,14 +43,16 @@ Managed by `nix/home/modules/nixos-bazel.nix` via home-manager.
 
 ### Env var scoping
 
-- **`--host_action_env`**: exec-config (host) tools running locally. Not `--action_env`,
-  which would leak NixOS paths (`NIX_LD` nix-store path, `/run/current-system/sw/bin`)
-  to RBE workers where they don't exist.
+- **`--incompatible_strict_action_env`**: Gives all actions a fixed PATH
+  (`/bin:/usr/bin:/usr/local/bin`). Prevents NixOS path leaking to RBE.
+- **`--host_action_env`**: exec-config (host) tools running locally. These need
+  `/run/current-system/sw/bin` for NixOS tools.
+- **`--test_env=PATH`**: Tests (including `no-remote-exec` tests) need
+  `/run/current-system/sw/bin` prepended so `#!/usr/bin/env bash` in test scripts
+  finds bash on NixOS (where `/bin/bash` doesn't exist). Harmless on RBE — the
+  extra path just doesn't exist.
 - **`--repo_env`**: repository rules (fetching toolchains, Go modules) running locally.
-- **No `--action_env`**: target-config actions use Bazel's hermetic toolchains (Python,
-  Rust, Node resolve tools via runfiles). RBE workers get their own PATH from their
-  container. However, genrules that fall back to local execution get Bazel's default
-  strict PATH (`/bin:/usr/bin`), which lacks many tools on NixOS. See "Known Gap" below.
+- **No `--action_env`**: Would leak to RBE workers.
 
 ## Architecture
 
@@ -73,11 +88,17 @@ Managed by `nix/home/modules/nixos-bazel.nix` via home-manager.
 
 **Fix**: `build --shell_executable=/bin/bash` in user `~/.bazelrc`. On NixOS `/bin/bash` exists via the system profile symlink. On RBE workers it exists natively.
 
-### Issue 2: Empty PATH in sandbox actions (RESOLVED)
+### Issue 2: Client PATH leaking to RBE (RESOLVED)
 
-**Problem**: `--incompatible_strict_action_env` (default in Bazel 8) gives sandbox actions only `TMPDIR=/tmp` — no PATH.
+**Problem**: `--incompatible_strict_action_env` is NOT the default in Bazel 8 (only in
+Bazel 9). Without it, Bazel inherits the full client PATH into all actions, including
+test actions sent to RBE workers. On NixOS, the client PATH contains dozens of
+`/nix/store/...` paths that don't exist on Ubuntu RBE workers, causing
+`#!/usr/bin/env bash` in test scripts to fail with "bash: No such file or directory".
 
-**Fix**: Set PATH via `--host_action_env` for exec-config tools. Target-config actions use hermetic toolchains that resolve tools via runfiles, so they don't need a custom PATH. This avoids leaking NixOS paths to RBE workers.
+**Fix**: Added `build --incompatible_strict_action_env` to workspace `.bazelrc`. This
+gives actions a fixed PATH (`/bin:/usr/bin:/usr/local/bin`). For local-only tests on
+NixOS, `--test_env=PATH` prepends `/run/current-system/sw/bin` so bash is found.
 
 ### Issue 3: `toolchains_buildbuddy` FHS paths (NOT YET HIT)
 
@@ -122,11 +143,9 @@ Neither flag can be scoped per-platform. `--action_env` applies to all actions (
 
 ## Known Gap: Genrules with non-trivial shell commands
 
-The `--action_env=PATH` setting was intentionally omitted to avoid leaking NixOS paths
-(`/run/current-system/sw/bin`) to RBE workers. The STATUS.md claims genrules only use
-"basic FHS utilities (`tar`, `cp`) or `$(location)` references" — this is wrong.
-
-Several genrules use commands beyond `/bin` basics:
+With strict action env, genrules get PATH=`/bin:/usr/bin:/usr/local/bin`. On NixOS,
+some genrules need tools beyond `/bin` basics (e.g., `find`, `sed`, `gzip`). These
+tools live in `/run/current-system/sw/bin` on NixOS.
 
 | Target                                  | Missing commands                  |
 | --------------------------------------- | --------------------------------- |
@@ -134,17 +153,10 @@ Several genrules use commands beyond `/bin` basics:
 | `//cluster/kubespand/qemu:initramfs`    | `mktemp`, `find`, `cpio`, `gzip`  |
 | `//x/gatelet/server:layers_manifests`   | `awk`                             |
 
-When these genrules fall back to local execution (or run locally because `spawn_strategy=remote,local`
-tries local after remote failure), they get Bazel's default strict PATH (`/bin:/usr/bin`) which
-doesn't have these tools on NixOS.
-
 **Options**:
 
-1. **`--action_env=PATH`**: Restores the original fix from README.md. Leaks NixOS paths
-   (e.g., `/run/current-system/sw/bin`) to RBE workers where they don't exist. Would
-   break remote genrules that resolve tools via PATH.
-2. **Tag genrules `no-remote`** + provide local PATH via `.envrc`/flake.
-3. **Rewrite genrules** to use `$(location)` references to Bazel-managed tool targets.
+1. Rewrite genrules to use `$(location)` references to Bazel-managed tool targets
+2. Tag genrules `no-remote` + use `--action_env=PATH` scoped to local-only actions
 
 ## Remaining Work
 

@@ -14,13 +14,13 @@ exports_files([
     "tsconfig.node.json",
 ])
 
-# Generated TypeScript files — produced by Bazel, not checked into source tree
+# Generated TypeScript types from Pydantic models (Python → JSON schema → json2ts → .ts)
 genrule(
-    name = "gen_mcp_constants",
+    name = "gen_schema",
     srcs = [],
-    outs = ["src/generated/mcpConstants.ts"],
-    cmd = "$(execpath //x/agent_server:agent_server_generate_frontend_code) --constants-output $@",
-    tools = ["//x/agent_server:agent_server_generate_frontend_code"],
+    outs = ["src/generated/schema.json"],
+    cmd = "$(execpath //x/agent_server:generate_frontend_code_bin) --output $@",
+    tools = ["//x/agent_server:generate_frontend_code_bin"],
 )
 
 jst_bin.json2ts_binary(
@@ -28,19 +28,22 @@ jst_bin.json2ts_binary(
     data = [":node_modules"],
 )
 
-genrule(
+js_run_binary(
     name = "gen_types",
-    srcs = [],
+    srcs = [":gen_schema"],
     outs = ["src/generated/types.ts"],
-    cmd = "$(execpath //x/agent_server:agent_server_generate_frontend_code) --types-output $@ --jst-binary $(execpath :json2ts)",
-    tools = [
-        ":json2ts",
-        "//x/agent_server:agent_server_generate_frontend_code",
+    args = [
+        "--input",
+        "$(rootpath :gen_schema)",
+        "--output",
+        "$(rootpath src/generated/types.ts)",
+        "--bannerComment",
+        "",
     ],
+    tool = ":json2ts",
 )
 
 _GENERATED_SRCS = [
-    ":gen_mcp_constants",
     ":gen_types",
 ]
 
