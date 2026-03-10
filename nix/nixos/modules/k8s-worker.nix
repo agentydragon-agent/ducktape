@@ -37,6 +37,7 @@ let
     wireguard-tools
     tcpdump
     iproute2
+    openiscsi # Longhorn requires iscsiadm on the host
   ];
 
   kubeletConfigYaml = pkgs.writeText "kubelet-config.yaml" (
@@ -153,6 +154,12 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # iSCSI — required by Longhorn (iscsiadm on host)
+    services.openiscsi = {
+      enable = true;
+      name = "iqn.2020-08.org.nixos:${config.networking.hostName}";
+    };
+
     # Kernel prerequisites for container networking
     boot.kernelModules = [
       "overlay"
