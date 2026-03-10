@@ -66,6 +66,14 @@ resource "proxmox_virtual_environment_vm" "vm" {
     }
   }
 
+  # VGA display (e.g. virtio-gl for SPICE console)
+  dynamic "vga" {
+    for_each = var.vga_type != null ? [var.vga_type] : []
+    content {
+      type = vga.value
+    }
+  }
+
   # virtiofs shared filesystems from Proxmox host
   dynamic "virtiofs" {
     for_each = var.virtiofs_mappings

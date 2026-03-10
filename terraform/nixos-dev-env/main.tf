@@ -216,6 +216,7 @@ module "wyrm2" {
   machine_type       = "q35"
   memory_floating_mb = 0 # Disable balloon (VFIO incompatible)
   gpu_mappings       = ["gpu0", "gpu1"]
+  vga_type           = "virtio-gl"
   virtiofs_mappings  = ["tankshare"]
   additional_disks = [
     { interface = "scsi30", size_gb = 200 },   # containerd (/var/lib/containerd)

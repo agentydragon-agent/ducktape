@@ -14,4 +14,7 @@
   # GNOME settings
   services.gnome.gnome-keyring.enable = true;
   programs.dconf.enable = true;
+
+  # Keyring CLI (secret-tool)
+  environment.systemPackages = [ pkgs.libsecret ];
 }

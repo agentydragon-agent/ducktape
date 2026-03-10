@@ -108,6 +108,12 @@ variable "virtiofs_mappings" {
   default     = []
 }
 
+variable "vga_type" {
+  description = "VGA display type (e.g. 'virtio-gl' for SPICE, null for provider default)"
+  type        = string
+  default     = null
+}
+
 # K8s cluster join credentials (optional)
 variable "k8s_cluster_join" {
   description = "K8s cluster join credentials. When set, cloud-init writes credential files for kubelet and kubespand."
