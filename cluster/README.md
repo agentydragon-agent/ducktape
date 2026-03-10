@@ -24,7 +24,7 @@ See <docs/bootstrap.md> for full setup.
 - Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4)
   - 10.2.0.2: Atlas (Proxmox host) — **only reachable from Proxmox VLAN**
   - 10.2.1.x: Control plane (Proxmox), 10.2.2.x: Workers (Proxmox)
-- Nodes: 2x Hetzner CPX31 (VPS, public IPs) + talos-pve-cp-0 (10.2.1.1) + talos-pve-gpu-worker-0 (10.2.2.1)
+- Nodes: 2x Hetzner CPX31 (VPS, public IPs) + talos-pve-cp-0 (10.2.1.1) + wyrm2 (NixOS GPU worker, 2x RTX 5090)
 - Domain: `*.allegedly.works` (PowerDNS in-cluster, DNS-01 challenges, dual LE issuers)
 - HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
   - Exception: Headscale uses TLSRoute passthrough (Envoy routes by SNI, Headscale terminates TLS)
@@ -61,6 +61,27 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 | `local-path`         | Any node | No      | CNPG: Authentik, PowerDNS; Vault Raft, Headscale |
 
 Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) — needs VLAN access to API.
+
+## GPU (NVIDIA)
+
+wyrm2 is a NixOS machine (not Talos) joined as a K8s worker via `k8s-worker.nix` and
+KubeSpan. It provides 2x RTX 5090 GPUs to the cluster.
+
+**Stack**: NixOS `hardware.nvidia-container-toolkit` generates CDI specs at
+`/var/run/cdi/` → containerd configured with `nvidia-container-runtime.cdi` as a named
+runtime → `RuntimeClass` resource maps `nvidia` handler to that runtime → NVIDIA device
+plugin (Helm chart) discovers GPUs via NVML and advertises `nvidia.com/gpu` resources.
+
+**How it works**: The device plugin uses the default `envvar` strategy — it sets
+`NVIDIA_VISIBLE_DEVICES` on workload containers. Pods requesting GPUs must specify
+`runtimeClassName: nvidia` so containerd routes them through `nvidia-container-runtime.cdi`,
+which reads the env var and injects GPU devices/libraries via host CDI specs.
+
+**Key files**:
+
+- `nix/nixos/modules/k8s-worker.nix` — containerd nvidia runtime config, CDI settings
+- `cluster/k8s/nvidia-device-plugin/helmrelease.yaml` — device plugin + RuntimeClass
+- `cluster/k8s/ollama/deployment.yaml` — example GPU workload (`runtimeClassName: nvidia`)
 
 ## Failure Modes
 

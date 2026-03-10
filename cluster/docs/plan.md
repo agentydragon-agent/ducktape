@@ -354,7 +354,9 @@ multi-burn-rate alerts (Google SRE methodology).
 
 ### GPU Worker Node ✅
 
-`talos-pve-gpu-worker-0`: 2x RTX 5090, 8 cores, 32GB fixed RAM, Ollama at `ollama.allegedly.works`.
+wyrm2 (NixOS, not Talos): 2x RTX 5090, joined via `k8s-worker.nix` + KubeSpan. NVIDIA
+device plugin uses `envvar` strategy with `nvidia-container-runtime.cdi` (CDI-based GPU
+injection from host-generated specs). Ollama at `ollama.allegedly.works` runs on both GPUs.
 TODO: Revisit virtio-mem when Proxmox adds support (Bugzilla #2949).
 
 ### TODO: Dynamic Resource Allocation (DRA) for GPU

@@ -13,18 +13,13 @@ the desktop starves during heavy use, or vice versa.
 A single VM eliminates the split entirely — one VM gets ~28GB (leaving ~4GB for
 Proxmox host + lightweight Talos CP VM).
 
-## Current State
+## Current State ✅ (Completed)
 
-| VM                       | Role           | RAM  | GPUs    | OS     |
-| ------------------------ | -------------- | ---- | ------- | ------ |
-| `talos-pve-gpu-worker-0` | K8s GPU worker | 32GB | 2x 5090 | Talos  |
-| `wyrm`                   | Desktop        | ?    | None    | Pop OS |
+wyrm2 is live as a NixOS GPU desktop + K8s worker with 2x RTX 5090.
 
-## Target State
-
-| VM          | Role                     | RAM   | GPUs    | OS    |
-| ----------- | ------------------------ | ----- | ------- | ----- |
-| (single VM) | K8s GPU worker + desktop | ~28GB | 2x 5090 | NixOS |
+| VM    | Role                     | RAM   | GPUs    | OS    |
+| ----- | ------------------------ | ----- | ------- | ----- |
+| wyrm2 | K8s GPU worker + desktop | ~28GB | 2x 5090 | NixOS |
 
 The Talos control plane VM on Proxmox stays unchanged (lightweight, ~4GB).
 
@@ -98,22 +93,21 @@ kubectl uncordon gpu-node
 
 A desktop script/shortcut can automate either workflow.
 
-## NixOS Configuration
+## NixOS Configuration (Implemented)
 
-Builds on the existing `k8s-worker` NixOS module (`nix/nixos/modules/k8s-worker.nix`),
-already tested with the `k8s-worker-test` VM (see <roaming-laptop-worker.md>).
+Built on the `k8s-worker` NixOS module (`nix/nixos/modules/k8s-worker.nix`) with
+`enableNvidiaRuntime = true`:
 
-Additional requirements beyond the roaming laptop worker:
-
-- **NVIDIA drivers**: `hardware.nvidia` with open kernel modules (matching Talos's
-  `nvidia-open-gpu-kernel-modules` extension)
-- **nvidia-container-toolkit**: containerd runtime hook for GPU pods
-- **Desktop environment**: GNOME or KDE
-- **Steam / gaming**: `programs.steam.enable`
-- **Node labels**: `feature.node.kubernetes.io/pci-10de.present=true` (for Ollama
-  nodeSelector), `topology.kubernetes.io/region=proxmox`
-- **Node taints**: `nvidia.com/gpu=true:PreferNoSchedule` (matches current Talos config)
-- **Kubelet config**: `default_runtime_name = "nvidia"` in containerd config
+- **NVIDIA drivers**: `hardware.nvidia` with open kernel modules (driver 580.119.02)
+- **CDI spec generation**: `hardware.nvidia-container-toolkit` generates CDI specs at
+  `/var/run/cdi/` on boot (maps NixOS nix-store paths to FHS paths inside containers)
+- **Containerd runtime**: `nvidia-container-runtime.cdi` registered as a named runtime
+  (`pkgs.nvidia-container-toolkit.tools`), with CDI enabled and spec dirs configured
+- **RuntimeClass**: `nvidia` RuntimeClass in `helmrelease.yaml` maps to the containerd runtime
+- **Device plugin**: NVIDIA device plugin Helm chart with `runtimeClassName: nvidia` and
+  default `envvar` device list strategy (no internal CDI spec generation — avoids
+  NixOS FHS path incompatibility in `tryResolveLibrary`)
+- **Workload pods**: Must specify `runtimeClassName: nvidia` to get GPU access
 
 ## Migration Steps
 
