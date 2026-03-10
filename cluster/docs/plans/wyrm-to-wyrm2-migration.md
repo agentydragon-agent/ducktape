@@ -29,6 +29,9 @@ Most config is already Nix home-manager managed. This plan covers what ISN'T.
 - [x] `~/code` transplanted to wyrm2: symlinks recreated, repos moved
       (`eza`, `rules_mypy`, `rfc3987-syntax`, `anyproto`, `github.com/eza-community`),
       loose files copied. Only `ducktape/` remains on wyrm.
+- [x] Terraform state + `.terraform/` dirs copied to wyrm2 (deleted from wyrm)
+- [x] talosconfig files copied to wyrm2 (deleted from wyrm)
+- [x] `/code` virtiofs removed from wyrm Proxmox config
 
 ### Infrastructure
 
