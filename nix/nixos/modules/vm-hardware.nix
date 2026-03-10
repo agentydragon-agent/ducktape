@@ -17,7 +17,10 @@
   # QEMU guest agent for Proxmox integration
   services.qemuGuest.enable = true;
 
-  # SPICE clipboard sharing (display is NVIDIA-driven, skip spice-autorandr)
+  # SPICE agent: clipboard sharing + display resize.
+  # Display is QXL-driven (NVIDIA GPUs are headless compute via VFIO).
+  # Resize works via QXL DRM hotplug → mutter (GNOME handles it natively).
+  # spice-autorandr is X11-only and not needed with GNOME/Wayland.
   services.spice-vdagentd.enable = true;
 
   # Boot configuration for UEFI VMs

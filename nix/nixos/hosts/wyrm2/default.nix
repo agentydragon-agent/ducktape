@@ -50,6 +50,10 @@
   };
   hardware.nvidia-container-toolkit.enable = true;
 
+  # GNOME 49 dropped X11 sessions — Wayland is the only option.
+  # NixOS auto-disables Wayland for NVIDIA, but the display is QXL (not NVIDIA).
+  services.displayManager.gdm.wayland = true;
+
   # Separate data disks (Proxmox virtual disks).
   # scsi30 avoids collision with Proxmox CSI PVCs (scsi1-29).
   # virtio0 uses a different controller, no SCSI slot conflict.
