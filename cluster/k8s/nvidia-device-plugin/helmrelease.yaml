@@ -27,9 +27,39 @@ spec:
         name: nvidia
         namespace: nvidia-device-plugin
   values:
-    # NixOS uses CDI for GPU device injection (no NVML inside containers).
-    # The host's nvidia-container-toolkit generates CDI specs at /run/cdi/.
-    # cdi-cri uses the CRI CDIDevices field; cdi-annotations is the legacy path.
+    # NixOS keeps NVIDIA libraries at /run/opengl-driver/lib/ (symlinks into
+    # /nix/store). The chart mounts nvidiaDriverRoot at /driver-root inside the
+    # container. We set LD_LIBRARY_PATH so the dynamic linker finds libnvidia-ml.so
+    # for GPU discovery, and mount /nix/store so symlink targets are accessible.
+    nvidiaDriverRoot: "/run/opengl-driver"
     deviceListStrategy: "cdi-cri,cdi-annotations"
     cdi:
       enabled: true
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: DaemonSet
+              name: nvidia-device-plugin
+            patch: |
+              apiVersion: apps/v1
+              kind: DaemonSet
+              metadata:
+                name: nvidia-device-plugin
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: nvidia-device-plugin-ctr
+                        env:
+                          - name: LD_LIBRARY_PATH
+                            value: "/driver-root/lib"
+                        volumeMounts:
+                          - name: nix-store
+                            mountPath: /nix/store
+                            readOnly: true
+                    volumes:
+                      - name: nix-store
+                        hostPath:
+                          path: /nix/store
+                          type: Directory
