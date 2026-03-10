@@ -38,13 +38,13 @@
     "ducktape-wheel": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-f7u3MN1/iEci198Nix/x6crOp1HL9+nagNL1qqGmW40=",
+        "narHash": "sha256-HfYexNnLgVhG4RvnAu1SXR9OJCJPXzawxEKTkb+iusk=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-a8648e0a/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-041831a2/ducktape-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-a8648e0a/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-041831a2/ducktape-0.1.0-py3-none-any.whl"
       }
     },
     "flake-utils": {
@@ -70,11 +70,11 @@
       "locked": {
         "narHash": "sha256-ZAR+yEeTX8wGcthDdrfQi7wXfjMXUxoMINhDeGlmcpY=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-84796d14/gterm_theme-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-041831a2/gterm_theme-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-84796d14/gterm_theme-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-041831a2/gterm_theme-0.1.0-py3-none-any.whl"
       }
     },
     "headscale-cleanup-wheel": {
@@ -82,11 +82,11 @@
       "locked": {
         "narHash": "sha256-7sz/zTDVjHC6cbB6m4wvp9UtDfNZiXQmpzyOd688VFU=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-84796d14/headscale_cleanup-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-041831a2/headscale_cleanup-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-84796d14/headscale_cleanup-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-041831a2/headscale_cleanup-0.1.0-py3-none-any.whl"
       }
     },
     "home-manager": {
@@ -115,11 +115,11 @@
       "locked": {
         "narHash": "sha256-fd5N8fb3GnPHsUrc8EpEJJT0TUa1T9GFrZdg3XsyhYg=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-84796d14/kubespand"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-041831a2/kubespand"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-84796d14/kubespand"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-041831a2/kubespand"
       }
     },
     "nix-colors": {
