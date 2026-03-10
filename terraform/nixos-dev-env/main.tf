@@ -219,8 +219,8 @@ module "wyrm2" {
   vga_type           = "qxl"
   virtiofs_mappings  = ["tankshare", "code"]
   additional_disks = [
-    { interface = "scsi30", size_gb = 200 },   # containerd (/var/lib/containerd)
-    { interface = "virtio0", size_gb = 500 },   # local-path provisioner (/var/local-path-provisioner)
+    { interface = "scsi30", size_gb = 200 },  # containerd (/var/lib/containerd)
+    { interface = "virtio0", size_gb = 500 }, # local-path provisioner (/var/local-path-provisioner)
   ]
 
   proxmox_node_name = var.proxmox_node_name
