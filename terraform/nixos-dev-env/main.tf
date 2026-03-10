@@ -21,7 +21,6 @@ data "terraform_remote_state" "persistent_auth" {
 
 locals {
   # Proxmox configuration
-  proxmox_host     = "root@${var.proxmox_host}"
   proxmox_endpoint = "https://${var.proxmox_api_host}/"
   proxmox_insecure = true # Accept self-signed certs
 
@@ -208,8 +207,8 @@ module "wyrm2" {
   vm_name            = "wyrm2"
   vm_id              = 110
   username           = "agentydragon"
-  vcpus              = 16
-  memory_mb          = 49152 # 48GB
+  vcpus              = 32
+  memory_mb          = 114688 # 112GB
   disk_size_gb       = 300
   auto_start         = true
   image_import_path  = module.wyrm2_image.import_path
