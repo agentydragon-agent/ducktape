@@ -49,9 +49,6 @@ spec:
       containers:
         - name: google-workspace-mcp
           image: ghcr.io/taylorwilsdon/google_workspace_mcp:1.14.2
-          args:
-            - --transport
-            - streamable-http
           ports:
             - name: http
               containerPort: 8000
