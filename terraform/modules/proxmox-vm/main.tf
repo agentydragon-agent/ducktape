@@ -67,11 +67,10 @@ resource "proxmox_virtual_environment_vm" "vm" {
   }
 
   # virtiofs shared filesystems from Proxmox host
-  dynamic "filesystem" {
-    for_each = var.virtiofs_shares
+  dynamic "virtiofs" {
+    for_each = var.virtiofs_mappings
     content {
-      source = filesystem.value
-      target = filesystem.value
+      mapping = virtiofs.value
     }
   }
 

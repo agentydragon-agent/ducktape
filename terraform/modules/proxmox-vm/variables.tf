@@ -102,8 +102,8 @@ variable "additional_disks" {
   default = []
 }
 
-variable "virtiofs_shares" {
-  description = "virtiofs filesystem share tags to mount from Proxmox host"
+variable "virtiofs_mappings" {
+  description = "Proxmox directory mapping IDs for virtiofs shares"
   type        = list(string)
   default     = []
 }
