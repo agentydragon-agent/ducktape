@@ -20,6 +20,8 @@ spec:
         app: airlock
         component: server
     spec:
+      securityContext:
+        fsGroup: 1000
       imagePullSecrets:
         - name: harbor-pull-robot
       containers:
