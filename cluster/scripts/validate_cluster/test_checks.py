@@ -11,6 +11,7 @@ import yaml
 
 from cluster.scripts.validate_cluster.checks import (
     CRD_TO_OPERATOR,
+    check_blueprint_completeness,
     check_controller_resource_health_checks,
     check_crd_layering,
 )
@@ -250,6 +251,45 @@ class TestControllerResourceHealthChecks:
         """Kustomization with only plain resources (ConfigMap, etc.) needs no healthCheck."""
         cluster = _make_cluster(k8s_dir, resource_kind="ConfigMap", resource_api_version="v1")
         assert check_controller_resource_health_checks(cluster, k8s_dir, repo_root) == []
+
+
+class TestBlueprintCompleteness:
+    """Tests for authentik blueprint completeness check."""
+
+    @pytest.fixture
+    def k8s_dir(self, tmp_path: Path) -> Path:
+        authentik = tmp_path / "authentik"
+        authentik.mkdir()
+        (authentik / "blueprints").mkdir()
+        return tmp_path
+
+    def _write_kustomization(self, k8s_dir: Path, files: list[str]) -> None:
+        kust = {
+            "apiVersion": "kustomize.config.k8s.io/v1beta1",
+            "kind": "Kustomization",
+            "configMapGenerator": [{"name": "authentik-sso-blueprints", "files": [f"blueprints/{f}" for f in files]}],
+        }
+        (k8s_dir / "authentik" / "kustomization.yaml").write_text(yaml.dump(kust))
+
+    def test_all_blueprints_listed(self, k8s_dir: Path) -> None:
+        """No errors when all blueprint files are listed."""
+        (k8s_dir / "authentik" / "blueprints" / "foo-sso.yaml").touch()
+        (k8s_dir / "authentik" / "blueprints" / "bar-sso.yaml").touch()
+        self._write_kustomization(k8s_dir, ["foo-sso.yaml", "bar-sso.yaml"])
+        assert check_blueprint_completeness(k8s_dir) == []
+
+    def test_unlisted_blueprint(self, k8s_dir: Path) -> None:
+        """Reports error for blueprint file not in configMapGenerator."""
+        (k8s_dir / "authentik" / "blueprints" / "foo-sso.yaml").touch()
+        (k8s_dir / "authentik" / "blueprints" / "bar-sso.yaml").touch()
+        self._write_kustomization(k8s_dir, ["foo-sso.yaml"])
+        errors = check_blueprint_completeness(k8s_dir)
+        assert len(errors) == 1
+        assert "bar-sso.yaml" in errors[0]
+
+    def test_no_authentik_dir(self, tmp_path: Path) -> None:
+        """No errors when authentik directory doesn't exist."""
+        assert check_blueprint_completeness(tmp_path) == []
 
 
 if __name__ == "__main__":

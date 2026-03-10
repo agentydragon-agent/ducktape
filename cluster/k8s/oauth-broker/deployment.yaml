@@ -56,16 +56,6 @@ spec:
                 secretKeyRef:
                   name: google-client-credentials
                   key: client_secret
-            - name: PLAID_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-client-credentials
-                  key: client_id
-            - name: PLAID_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: plaid-client-credentials
-                  key: client_secret
           volumeMounts:
             - name: config
               mountPath: /etc/oauth-broker

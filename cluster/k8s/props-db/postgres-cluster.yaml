@@ -26,3 +26,5 @@ spec:
       database: eval_results
       owner: props
       # CNPG auto-generates credentials in secret props-db-app
+      postInitSQL:
+        - ALTER ROLE props CREATEROLE BYPASSRLS

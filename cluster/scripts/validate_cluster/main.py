@@ -12,6 +12,7 @@ Checks:
 7. Controller resource healthChecks: Flux kustomizations deploying HelmReleases or Terraform CRs
    must have healthChecks for them
 8. Helm template rendering: Cilium values files render without errors
+9. Blueprint completeness: All authentik blueprint files must be listed in configMapGenerator
 
 See AGENTS.md section "Flux Kustomization Layering" for CRD layering details.
 
@@ -27,6 +28,7 @@ import sys
 from pathlib import Path
 
 from cluster.scripts.validate_cluster.checks import (
+    check_blueprint_completeness,
     check_controller_resource_health_checks,
     check_crd_layering,
     check_duplicate_external_secrets,
@@ -91,6 +93,9 @@ async def main() -> int:
 
     # Check orphaned files
     global_errors.extend(find_orphaned_files(cluster, root))
+
+    # Check authentik blueprint completeness
+    global_errors.extend(check_blueprint_completeness(root))
 
     # Validate dependencies
     if not args.skip_dependencies:

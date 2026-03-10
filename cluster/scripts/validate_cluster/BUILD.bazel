@@ -78,6 +78,7 @@ py_library(
         ":flux",
         ":k8s",
         ":kustomize",
+        "@pypi//pyyaml",
     ],
 )
 

@@ -343,7 +343,6 @@ resource "talos_machine_bootstrap" "cluster" {
   depends_on = [
     talos_machine_configuration_apply.vps,
     talos_machine_configuration_apply.proxmox,
-    talos_machine_configuration_apply.proxmox_gpu,
   ]
 }
 

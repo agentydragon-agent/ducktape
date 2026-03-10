@@ -55,23 +55,3 @@ providers:
     extra_auth_params:
       access_type: offline
       prompt: consent
-
-  - name: plaid
-    provider_type: plaid
-    display_name: Plaid
-    token_url: https://production.plaid.com/item/public_token/exchange
-    products:
-      - transactions
-      - auth
-      - identity
-      - investments
-    redirect_uri: https://oauth-broker.allegedly.works/callback/plaid
-    refresh_secret:
-      name: plaid-tokens
-    access_secret:
-      name: plaid-access-token
-      annotations:
-        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox,claude-sandbox
-        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox,claude-sandbox

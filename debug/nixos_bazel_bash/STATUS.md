@@ -35,8 +35,9 @@ Managed by `nix/home/modules/nixos-bazel.nix` via home-manager.
   to RBE workers where they don't exist.
 - **`--repo_env`**: repository rules (fetching toolchains, Go modules) running locally.
 - **No `--action_env`**: target-config actions use Bazel's hermetic toolchains (Python,
-  Rust, Node resolve tools via runfiles). Genrules use basic FHS utilities (`tar`, `cp`)
-  or `$(location)` references. RBE workers get their own PATH from their container.
+  Rust, Node resolve tools via runfiles). RBE workers get their own PATH from their
+  container. However, genrules that fall back to local execution get Bazel's default
+  strict PATH (`/bin:/usr/bin`), which lacks many tools on NixOS. See "Known Gap" below.
 
 ## Architecture
 
@@ -119,8 +120,35 @@ Neither flag can be scoped per-platform. `--action_env` applies to all actions (
 | `devinfra/nixos_bazel_test/run.sh`    | Build + run script                        |
 | `debug/nixos_bazel_bash/README.md`    | Original investigation notes              |
 
+## Known Gap: Genrules with non-trivial shell commands
+
+The `--action_env=PATH` setting was intentionally omitted to avoid leaking NixOS paths
+(`/run/current-system/sw/bin`) to RBE workers. The STATUS.md claims genrules only use
+"basic FHS utilities (`tar`, `cp`) or `$(location)` references" — this is wrong.
+
+Several genrules use commands beyond `/bin` basics:
+
+| Target                                  | Missing commands                  |
+| --------------------------------------- | --------------------------------- |
+| `//cluster/kubespand/qemu:modules_tree` | `mktemp`, `find`, `gunzip`, `sed` |
+| `//cluster/kubespand/qemu:initramfs`    | `mktemp`, `find`, `cpio`, `gzip`  |
+| `//x/gatelet/server:layers_manifests`   | `awk`                             |
+
+When these genrules fall back to local execution (or run locally because `spawn_strategy=remote,local`
+tries local after remote failure), they get Bazel's default strict PATH (`/bin:/usr/bin`) which
+doesn't have these tools on NixOS.
+
+**Options**:
+
+1. **`--action_env=PATH`**: Restores the original fix from README.md. Leaks NixOS paths
+   (e.g., `/run/current-system/sw/bin`) to RBE workers where they don't exist. Would
+   break remote genrules that resolve tools via PATH.
+2. **Tag genrules `no-remote`** + provide local PATH via `.envrc`/flake.
+3. **Rewrite genrules** to use `$(location)` references to Bazel-managed tool targets.
+
 ## Remaining Work
 
 1. **Issue 3**: Will need fixing when remote cache is cold or for clean builds.
 2. **Rust**: `finance/worthy` needs `CARGO_BAZEL_REPIN=true` — not NixOS-specific.
 3. **Full `//...` build**: OOM in container when analyzing 2000+ targets. Works in smaller chunks.
+4. **Genrule PATH gap**: See "Known Gap" section above.
