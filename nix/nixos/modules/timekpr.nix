@@ -96,6 +96,10 @@ in
       package = cfg.package;
     };
 
+    # Autostart the client (tray icon + countdown notifications) in GNOME sessions
+    environment.etc."xdg/autostart/timekpr-client.desktop".source =
+      "${cfg.package}/etc/xdg/autostart/timekpr-client.desktop";
+
     # Oneshot to apply per-user config after the daemon starts.
     # timekpra communicates over D-Bus, so the daemon must be running.
     systemd.services.timekpr-configure = lib.mkIf (cfg.users != { }) {
