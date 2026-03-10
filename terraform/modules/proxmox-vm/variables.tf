@@ -95,7 +95,7 @@ variable "gpu_mappings" {
 variable "additional_disks" {
   description = "Additional data disks to attach at explicit SCSI slot numbers"
   type = list(object({
-    interface    = string           # SCSI interface, e.g. "scsi30"
+    interface    = string # SCSI interface, e.g. "scsi30"
     size_gb      = number
     datastore_id = optional(string) # Defaults to var.storage
   }))
