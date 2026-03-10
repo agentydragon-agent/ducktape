@@ -62,7 +62,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
       device  = "hostpci${hostpci.key}"
       mapping = hostpci.value
       pcie    = true
-      rombar  = false
+      rombar  = true
     }
   }
 
