@@ -46,8 +46,9 @@ PCIe traffic that destabilizes the chipset.
 
 ### 3. Blackwell VFIO is bleeding edge
 
-RTX 5090 + open kernel module + VFIO is very new. Proprietary driver may be
-more stable but hasn't been tested. Driver 580.x VFIO support may have bugs.
+RTX 5090 + open kernel module + VFIO is very new. Proprietary driver is **not
+an option** — it refuses to load on Blackwell GPUs entirely. We're stuck with
+`nvidia-open`. Driver 580.x VFIO support may have bugs.
 
 ## What We Don't Know
 
@@ -55,7 +56,7 @@ more stable but hasn't been tested. Driver 580.x VFIO support may have bugs.
 - [ ] Does VFIO with only 1 GPU also crash? (never tested)
 - [ ] Is there a BIOS update? (current is v1512, could be behind)
 - [ ] Does the IOMMU passthrough fix (was missing before) change VFIO stability?
-- [ ] Would proprietary NVIDIA driver help VFIO stability?
+- [x] ~~Would proprietary NVIDIA driver help VFIO stability?~~ — No, proprietary driver won't load on Blackwell
 - [ ] Is it thermal? (chipset heatsink condition unknown)
 - [ ] Would a PCIe HBA card for SATA reduce root-port contention?
 

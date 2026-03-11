@@ -62,8 +62,8 @@ recover from.
 Contributing factors:
 
 - **Blackwell is new** — driver 580.x VFIO support may have bugs
-- **Open kernel module** — `nvidia-open` is less mature for passthrough than
-  the proprietary module
+- **Open kernel module** — `nvidia-open` is the only option for Blackwell
+  (proprietary driver refuses to load), and it's less mature for passthrough
 - **2 GPUs** — doubles the surface area for PCIe link issues
 
 ## Applied Fix
@@ -112,14 +112,10 @@ reliable. Add to `/etc/modprobe.d/vfio.conf`:
 options vfio-pci ids=10de:2b85,10de:22e8
 ```
 
-### 3. Try the Proprietary NVIDIA Kernel Module
+### 3. ~~Try the Proprietary NVIDIA Kernel Module~~ — Not an option
 
-The open kernel module (`nvidia-open`) is less battle-tested for VFIO
-passthrough. In the VM, switch to the proprietary module:
-
-```bash
-sudo apt install nvidia-driver-580  # proprietary, not -open
-```
+RTX 5090 (Blackwell) requires the open kernel module (`nvidia-open`). The
+proprietary driver refuses to load on these GPUs entirely.
 
 ### 4. Disable Resizable BAR in Host BIOS
 
