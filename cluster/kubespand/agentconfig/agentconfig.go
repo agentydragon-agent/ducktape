@@ -14,6 +14,7 @@ package agentconfig
 import (
 	"fmt"
 	"net/netip"
+	"net/url"
 	"os"
 
 	"github.com/siderolabs/talos/pkg/machinery/constants"
@@ -27,6 +28,17 @@ type AgentConfig struct {
 	Kubespan   KubespanConfig   `yaml:"kubespan"`
 	Discovery  DiscoveryConfig  `yaml:"discovery"`
 	Kubernetes KubernetesConfig `yaml:"kubernetes"`
+	KubePrism  KubePrismConfig  `yaml:"kubeprism"`
+}
+
+// KubePrismConfig holds KubePrism local API server load balancer settings.
+type KubePrismConfig struct {
+	// Enabled turns on the KubePrism local load balancer. Default: false.
+	Enabled bool `yaml:"enabled"`
+	// Host is the local address to bind. Default: "127.0.0.1".
+	Host string `yaml:"host"`
+	// Port is the local port to listen on. Default: 7445.
+	Port int `yaml:"port"`
 }
 
 // ClusterConfig holds cluster identity fields (matches Talos .spec.cluster).
@@ -35,6 +47,10 @@ type ClusterConfig struct {
 	ID string `yaml:"id"`
 	// Secret is the 32-byte AES key for discovery encryption and WireGuard PSK (base64). Required.
 	Secret string `yaml:"secret"`
+	// Endpoint is the cluster API server URL (e.g., "https://api.allegedly.works:6443").
+	// Matches Talos .spec.cluster.controlPlane.endpoint. Used by KubePrism as
+	// the primary upstream before CP peers are discovered.
+	Endpoint string `yaml:"endpoint"`
 }
 
 // KubespanConfig holds WireGuard interface and routing settings.
@@ -97,6 +113,10 @@ func Load(path string) (*AgentConfig, error) {
 			MTU:          constants.KubeSpanLinkMTU,
 			IdentityFile: "/var/lib/kubespan/identity.yaml",
 		},
+		KubePrism: KubePrismConfig{
+			Host: "127.0.0.1",
+			Port: constants.DefaultKubePrismPort,
+		},
 	}
 
 	if err := yaml.Unmarshal(data, cfg); err != nil {
@@ -114,6 +134,14 @@ func Load(path string) (*AgentConfig, error) {
 	}
 	if cfg.Kubernetes.AdvertiseNetworks && cfg.Kubernetes.NodeName == "" {
 		return nil, fmt.Errorf("kubernetes.node_name is required when kubernetes.advertise_networks is true")
+	}
+	if cfg.KubePrism.Enabled {
+		if cfg.Cluster.Endpoint == "" {
+			return nil, fmt.Errorf("cluster.endpoint is required when kubeprism.enabled is true")
+		}
+		if _, err := url.Parse(cfg.Cluster.Endpoint); err != nil {
+			return nil, fmt.Errorf("cluster.endpoint is not a valid URL: %w", err)
+		}
 	}
 
 	return cfg, nil

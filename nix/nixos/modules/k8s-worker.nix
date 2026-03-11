@@ -61,35 +61,6 @@ let
     }
   );
 
-  haproxyConfig = ''
-    global
-      maxconn 256
-
-    defaults
-      mode tcp
-      timeout connect 5s
-      timeout client 30s
-      timeout server 30s
-      retries 3
-
-    resolvers dns
-      nameserver cf 1.1.1.1:53
-      nameserver google 8.8.8.8:53
-      resolve_retries 3
-      timeout resolve 1s
-      timeout retry 1s
-      hold valid 30s
-
-    frontend kube-apiserver-local
-      bind 127.0.0.1:7445
-      default_backend kube-apiserver
-
-    backend kube-apiserver
-      option tcp-check
-      balance roundrobin
-      server-template cp 3 ${cfg.apiServerHost}:${toString cfg.apiServerPort} resolvers dns init-addr libc,last check inter 5s fall 3 rise 2
-  '';
-
   # Use the host's real IPv4 (from default route) as kubelet node IP.
   # NOT the KubeSpan IPv6 ULA — using that causes Cilium to detect the
   # kubespan interface (IPv6-only) as the direct routing device, which
@@ -109,18 +80,6 @@ in
 
   options.ducktape.k8sWorker = {
     enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster via KubeSpan)";
-
-    apiServerHost = lib.mkOption {
-      type = lib.types.str;
-      default = "api.allegedly.works";
-      description = "DNS name for the Kubernetes API server (resolved by HAProxy)";
-    };
-
-    apiServerPort = lib.mkOption {
-      type = lib.types.port;
-      default = 6443;
-      description = "Port for the Kubernetes API server";
-    };
 
     clusterDNS = lib.mkOption {
       type = lib.types.str;
@@ -242,7 +201,6 @@ in
       after = [
         "network-online.target"
         "containerd.service"
-        "haproxy.service"
         "kubespand.service"
       ];
       wants = [
@@ -276,15 +234,7 @@ in
       };
     };
 
-    # HAProxy — replaces KubePrism (localhost:7445 → api.allegedly.works)
-    # Cilium agent expects k8sServiceHost=localhost, k8sServicePort=7445.
-    # Uses DNS resolution with server-template to discover CP endpoints.
-    services.haproxy = {
-      enable = true;
-      config = haproxyConfig;
-    };
-
-    # KubeSpan mesh
+    # KubeSpan mesh (includes KubePrism: localhost:7445 → discovered CP endpoints)
     ducktape.kubespand.enable = true;
 
     # Firewall: allow VXLAN (Cilium) and kubelet

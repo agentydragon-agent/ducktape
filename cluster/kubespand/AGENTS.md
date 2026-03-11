@@ -29,6 +29,8 @@ kubespand code:
   wireguard/                 ↔  (kubespand-only: WG via netlink)
   agentconfig/               ↔  (kubespand-only: YAML config)
   k8snet/                    ↔  (kubespand-only: KubernetesNetworks resource)
+  controller_kubeprism_config.go  ↔  controllers/k8s/kubeprism_endpoints.go + kubeprism_config.go  (adapted)
+  @talos_internal controllers_kubeprism  ↔  controllers/k8s/kubeprism.go  (embedded)
 ```
 
 **Rules:**

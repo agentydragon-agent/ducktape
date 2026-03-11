@@ -255,6 +255,13 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 			}
 		}
 
+		// Parse control plane data (API server port for CP nodes).
+		if aff.Affiliate.ControlPlane != nil {
+			spec.ControlPlane = &cluster.ControlPlane{
+				APIServerPort: int(aff.Affiliate.ControlPlane.ApiServerPort),
+			}
+		}
+
 		// Parse node addresses.
 		for _, addrBytes := range aff.Affiliate.Addresses {
 			var ip netip.Addr

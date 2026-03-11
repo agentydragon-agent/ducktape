@@ -41,7 +41,7 @@ def main() -> None:
         sys.exit(1)
 
     # Extract bootstrap kubeconfig (server URL is https://localhost:7445 —
-    # HAProxy on the VM proxies to api.allegedly.works:6443).
+    # kubespand's KubePrism LB proxies to API server).
     bootstrap_kubeconfig = run_talosctl("cat", "/etc/kubernetes/bootstrap-kubeconfig")
 
     # Extract CA certificate.

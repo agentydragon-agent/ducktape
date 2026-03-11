@@ -59,7 +59,7 @@ locals {
   k8s_ca_cert_pem = base64decode(local.infra.k8s_ca_cert)
 
   # Construct bootstrap kubeconfig from infrastructure state.
-  # Server is localhost:7445 — HAProxy on the VM proxies to api.allegedly.works:6443.
+  # Server is localhost:7445 — kubespand's KubePrism LB proxies to API server.
   bootstrap_kubeconfig = yamlencode({
     apiVersion = "v1"
     kind       = "Config"

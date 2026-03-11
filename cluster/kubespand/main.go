@@ -7,17 +7,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	controllerruntime "github.com/cosi-project/runtime/pkg/controller/runtime"
-	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
-	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
+	taloscontrollersk8s "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/k8s"
 	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
 	taloscontrollersnetwork "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/network"
 )
@@ -28,8 +26,6 @@ var agentCfg *agentconfig.AgentConfig
 
 func main() {
 	configPath := flag.String("config", "/etc/kubespan/agent.yaml", "path to config file")
-	discoveryOnly := flag.Bool("discovery-only", false, "run discovery only (no WireGuard/routing), exit when peers found")
-	discoveryTimeout := flag.Duration("timeout", 0, "timeout for discovery-only mode (0 = no timeout)")
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
@@ -46,12 +42,12 @@ func main() {
 	}
 	defer logger.Sync() //nolint:errcheck
 
-	if err := run(*configPath, *discoveryOnly, *discoveryTimeout, logger); err != nil {
+	if err := run(*configPath, logger); err != nil {
 		logger.Fatal("kubespand exited with error", zap.Error(err))
 	}
 }
 
-func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, logger *zap.Logger) error {
+func run(configPath string, logger *zap.Logger) error {
 	// Load agent config from YAML.
 	var err error
 	agentCfg, err = agentconfig.Load(configPath)
@@ -63,7 +59,6 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		zap.String("discovery_endpoint", agentCfg.Discovery.Endpoint),
 		zap.Int("listen_port", agentCfg.Kubespan.ListenPort),
 		zap.Uint32("mtu", agentCfg.Kubespan.MTU),
-		zap.Bool("discovery_only", discoveryOnly),
 	)
 
 	// Convert to upstream ConfigSpec for COSI injection.
@@ -75,11 +70,6 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	// Set up context with signal handling.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	if discoveryOnly && discoveryTimeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, discoveryTimeout)
-		defer cancel()
-	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -115,27 +105,33 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 	if err := rt.RegisterController(&taloscontrollerskubespan.PeerSpecController{}); err != nil {
 		return fmt.Errorf("registering peerspec controller: %w", err)
 	}
-	if agentCfg.Kubernetes.AdvertiseNetworks && !discoveryOnly {
+	if agentCfg.Kubernetes.AdvertiseNetworks {
 		if err := rt.RegisterController(&KubernetesNodeController{}); err != nil {
 			return fmt.Errorf("registering k8s node controller: %w", err)
 		}
 	}
-	if !discoveryOnly {
-		if err := rt.RegisterController(&ManagerController{}); err != nil {
-			return fmt.Errorf("registering manager controller: %w", err)
+	if agentCfg.KubePrism.Enabled {
+		if err := rt.RegisterController(&KubePrismConfigController{}); err != nil {
+			return fmt.Errorf("registering kubeprism config controller: %w", err)
 		}
-		if err := rt.RegisterController(&taloscontrollersnetwork.NfTablesChainController{}); err != nil {
-			return fmt.Errorf("registering nftables chain controller: %w", err)
+		if err := rt.RegisterController(&taloscontrollersk8s.KubePrismController{}); err != nil {
+			return fmt.Errorf("registering kubeprism controller: %w", err)
 		}
-		if err := rt.RegisterController(&taloscontrollersnetwork.AddressSpecController{}); err != nil {
-			return fmt.Errorf("registering address spec controller: %w", err)
-		}
-		if err := rt.RegisterController(&taloscontrollersnetwork.RouteSpecController{}); err != nil {
-			return fmt.Errorf("registering route spec controller: %w", err)
-		}
-		if err := rt.RegisterController(&taloscontrollerskubespan.EndpointController{}); err != nil {
-			return fmt.Errorf("registering endpoint controller: %w", err)
-		}
+	}
+	if err := rt.RegisterController(&ManagerController{}); err != nil {
+		return fmt.Errorf("registering manager controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersnetwork.NfTablesChainController{}); err != nil {
+		return fmt.Errorf("registering nftables chain controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersnetwork.AddressSpecController{}); err != nil {
+		return fmt.Errorf("registering address spec controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersnetwork.RouteSpecController{}); err != nil {
+		return fmt.Errorf("registering route spec controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollerskubespan.EndpointController{}); err != nil {
+		return fmt.Errorf("registering endpoint controller: %w", err)
 	}
 
 	logger.Info("starting COSI runtime")
@@ -152,11 +148,7 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		runtimeErrCh <- err
 	}()
 
-	if discoveryOnly {
-		return waitForPeers(ctx, st, runtimeErrCh, logger)
-	}
-
-	// Full mode: run until context cancelled.
+	// Run until context cancelled.
 	select {
 	case err := <-runtimeErrCh:
 		if err != nil {
@@ -165,50 +157,5 @@ func run(configPath string, discoveryOnly bool, discoveryTimeout time.Duration, 
 		return nil
 	case <-ctx.Done():
 		return nil
-	}
-}
-
-// waitForPeers polls the COSI state for PeerSpec resources and exits when found.
-func waitForPeers(ctx context.Context, st state.State, runtimeErrCh <-chan error, logger *zap.Logger) error {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case err := <-runtimeErrCh:
-			if err != nil {
-				return fmt.Errorf("controller runtime: %w", err)
-			}
-			return fmt.Errorf("controller runtime exited without finding peers")
-
-		case <-ctx.Done():
-			if ctx.Err() == context.DeadlineExceeded {
-				return fmt.Errorf("timeout waiting for peers")
-			}
-			return nil // clean signal shutdown
-
-		case <-ticker.C:
-			list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, st)
-			if err != nil {
-				logger.Debug("listing peers failed", zap.Error(err))
-				continue
-			}
-			logger.Info("polling for peers", zap.Int("count", list.Len()))
-			if list.Len() == 0 {
-				continue
-			}
-
-			for peer := range list.All() {
-				spec := peer.TypedSpec()
-				logger.Info("discovered peer",
-					zap.String("label", spec.Label),
-					zap.String("public_key", peer.Metadata().ID()),
-					zap.Stringer("address", spec.Address),
-					zap.Int("endpoints", len(spec.Endpoints)),
-				)
-			}
-			logger.Info("discovery-only mode: peers found, exiting successfully", zap.Int("count", list.Len()))
-			return nil
-		}
 	}
 }

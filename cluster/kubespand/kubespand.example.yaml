@@ -11,6 +11,11 @@ cluster:
   # 32-byte AES key for discovery encryption and WireGuard PSK (base64). Required.
   secret: "CHANGE_ME"
 
+  # Cluster API server URL. Matches Talos .spec.cluster.controlPlane.endpoint.
+  # Used by KubePrism as the primary upstream before CP peers are discovered.
+  # Required when kubeprism.enabled is true.
+  # endpoint: "https://api.example.com:6443"
+
 # kubespan:
 #   # WireGuard UDP listen port. Must match Talos KubeSpan port. Default: 51820.
 #   listen_port: 51820
@@ -78,3 +83,17 @@ cluster:
 #   # from the K8s API dynamically. Only used when advertise_networks is true.
 #   service_cidrs:
 #     - "10.96.0.0/12"
+
+# kubeprism:
+#   # Enable KubePrism local API server load balancer. Replaces HAProxy as the
+#   # localhost:7445 → kube-apiserver proxy. Discovers control plane endpoints
+#   # from the KubeSpan mesh and load-balances across them.
+#   # Requires cluster.endpoint to be set.
+#   # Default: false.
+#   enabled: false
+#
+#   # Local address to bind. Default: "127.0.0.1".
+#   host: "127.0.0.1"
+#
+#   # Local port to listen on. Default: 7445.
+#   port: 7445

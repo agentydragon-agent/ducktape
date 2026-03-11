@@ -392,6 +392,11 @@ go_deps.module(
     version = "v0.8.6",
 )
 go_deps.module(
+    path = "github.com/siderolabs/go-loadbalancer",
+    sum = "h1:0v7E6GrxoONyqwcmHiA+J0vIDPWbkTmevHGCFb4tjdc=",
+    version = "v0.5.0",
+)
+go_deps.module(
     path = "github.com/siderolabs/go-pointer",
     sum = "h1:f7Yi4IK1jptS8yrT9GEbwhmGcVxvPQgBUG/weH3V3DM=",
     version = "v1.0.1",
@@ -412,6 +417,11 @@ go_deps.module(
     path = "github.com/siderolabs/talos/pkg/machinery",
     sum = "h1:cU2m/BNoxhH51e1Kzkf23/LNvFmbSl8OZcoqc7aKOOA=",
     version = "v1.13.0-alpha.2",
+)
+go_deps.module(
+    path = "github.com/siderolabs/tcpproxy",
+    sum = "h1:IbkS9vRhjMOscc1US3M5P1RnsGKFgB6U5IzUk+4WkKA=",
+    version = "v0.1.0",
 )
 go_deps.module(
     path = "github.com/spf13/pflag",
@@ -667,10 +677,12 @@ use_repo(
     "com_github_siderolabs_discovery_api",
     "com_github_siderolabs_discovery_client",
     "com_github_siderolabs_gen",
+    "com_github_siderolabs_go_loadbalancer",
     "com_github_siderolabs_go_pointer",
     "com_github_siderolabs_net",
     "com_github_siderolabs_protoenc",
     "com_github_siderolabs_talos_pkg_machinery",
+    "com_github_siderolabs_tcpproxy",
     "com_github_sirupsen_logrus",
     "com_github_spf13_cobra",
     "com_github_spf13_pflag",

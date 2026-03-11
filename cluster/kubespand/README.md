@@ -39,6 +39,12 @@ automatically when their inputs change.
    informer → produces `KubernetesNetworks` resource with PodCIDRs + ServiceCIDRs.
    Enabled when `advertise_kubernetes_networks: true`. The DiscoveryController reads
    this resource and includes the prefixes in `AdditionalAddresses` when publishing.
+7. **KubePrismConfigController** (optional): watches `cluster.Affiliate` → produces
+   `k8s.KubePrismConfig` with discovered control plane endpoints + configured fallback.
+   Enabled when `kubeprism.enabled: true`.
+8. **KubePrismController** (optional, embedded from Talos): watches `k8s.KubePrismConfig`
+   → manages a TCP load balancer on `localhost:7445` that proxies to kube-apiserver
+   endpoints. Replaces HAProxy as the local API server proxy.
 
 ## Prerequisites
 
@@ -64,16 +70,6 @@ sudo ./kubespand -config /etc/kubespan/agent.yaml
 
 On first run, it generates a WireGuard keypair at the configured `identity_file` path. The
 keypair is reused on subsequent runs to maintain a stable KubeSpan identity.
-
-### Discovery-Only Mode
-
-Run without WireGuard/routing to test discovery connectivity:
-
-```bash
-./kubespand -discovery-only -timeout 60s -config /etc/kubespan/agent.yaml
-```
-
-Exits 0 when at least one peer is discovered, 1 on timeout. No root required.
 
 ### Signal Handling
 
@@ -101,21 +97,23 @@ talosctl get kubespanpeerstatuses
 
 Maps to the following Talos source files:
 
-| kubespand file               | Talos source                                                                                                       |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `controller_identity.go`     | `internal/.../controllers/kubespan/identity.go` (IdentityController)                                               |
-| `controller_discovery.go`    | `internal/.../controllers/cluster/discovery_service.go` (DiscoveryServiceController)                               |
-| `controller_peerspec.go`     | `internal/.../controllers/kubespan/peer_spec.go` (PeerSpecController)                                              |
-| `controller_manager.go`      | `internal/.../controllers/kubespan/manager.go` (WireGuard + nftables + peer state)                                 |
-| `endpoint/endpoint.go`       | `internal/.../controllers/kubespan/endpoint.go` (EndpointController)                                               |
-| `identity/identity.go`       | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64)        |
-| `discovery/discovery.go`     | `internal/.../controllers/cluster/discovery_service.go` (discovery client adapter)                                 |
-| `wireguard/wireguard.go`     | `internal/.../controllers/kubespan/manager.go` (WireGuard device config)                                           |
-| `routing/routing.go`         | `internal/.../controllers/kubespan/manager.go` (nftables), `.../kubespan/routing_rules.go` (ip rules)              |
-| `peerstate/peerstate.go`     | `pkg/machinery/resources/kubespan/peer_status.go`, `internal/.../adapters/kubespan/peer_status.go` (state machine) |
-| `agentconfig/agentconfig.go` | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                                      |
-| `controller_k8s_node.go`     | `internal/.../controllers/k8s/node_status.go` + `cluster/local_affiliate.go` (K8s → AdditionalAddresses)           |
-| `k8snet/k8snet.go`           | `pkg/machinery/resources/k8s/node_status.go` (PodCIDRs COSI resource)                                              |
+| kubespand file                                     | Talos source                                                                                                       |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `controller_identity.go`                           | `internal/.../controllers/kubespan/identity.go` (IdentityController)                                               |
+| `controller_discovery.go`                          | `internal/.../controllers/cluster/discovery_service.go` (DiscoveryServiceController)                               |
+| `controller_peerspec.go`                           | `internal/.../controllers/kubespan/peer_spec.go` (PeerSpecController)                                              |
+| `controller_manager.go`                            | `internal/.../controllers/kubespan/manager.go` (WireGuard + nftables + peer state)                                 |
+| `endpoint/endpoint.go`                             | `internal/.../controllers/kubespan/endpoint.go` (EndpointController)                                               |
+| `identity/identity.go`                             | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64)        |
+| `discovery/discovery.go`                           | `internal/.../controllers/cluster/discovery_service.go` (discovery client adapter)                                 |
+| `wireguard/wireguard.go`                           | `internal/.../controllers/kubespan/manager.go` (WireGuard device config)                                           |
+| `routing/routing.go`                               | `internal/.../controllers/kubespan/manager.go` (nftables), `.../kubespan/routing_rules.go` (ip rules)              |
+| `peerstate/peerstate.go`                           | `pkg/machinery/resources/kubespan/peer_status.go`, `internal/.../adapters/kubespan/peer_status.go` (state machine) |
+| `agentconfig/agentconfig.go`                       | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                                      |
+| `controller_k8s_node.go`                           | `internal/.../controllers/k8s/node_status.go` + `cluster/local_affiliate.go` (K8s → AdditionalAddresses)           |
+| `controller_kubeprism_config.go`                   | `internal/.../controllers/k8s/kubeprism_endpoints.go` + `kubeprism_config.go` (adapted)                            |
+| (embedded) `@talos_internal controllers_kubeprism` | `internal/.../controllers/k8s/kubeprism.go` (TCP LB manager)                                                       |
+| `k8snet/k8snet.go`                                 | `pkg/machinery/resources/k8s/node_status.go` (PodCIDRs COSI resource)                                              |
 
 ## Known Gaps
 

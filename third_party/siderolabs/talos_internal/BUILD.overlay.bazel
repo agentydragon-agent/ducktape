@@ -92,6 +92,27 @@ go_library(
     ],
 )
 
+# ─ Controllers — k8s (KubePrism) ─────────────────────────────────────────
+
+go_library(
+    name = "controllers_kubeprism",
+    srcs = [_P + "controllers/k8s/kubeprism.go"],
+    importpath = "github.com/siderolabs/talos/" + _P + "controllers/k8s",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_gen//optional",
+        "@com_github_siderolabs_gen//xslices",
+        "@com_github_siderolabs_go_loadbalancer//controlplane",
+        "@com_github_siderolabs_go_loadbalancer//upstream",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/k8s",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
 # ─ Controllers — network ─────────────────────────────────────────────────
 
 go_library(
