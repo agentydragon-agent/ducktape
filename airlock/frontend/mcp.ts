@@ -80,14 +80,29 @@ export class AirlockMcpClient {
     };
   }
 
+  /**
+   * Call a tool and parse the result from structuredContent.
+   *
+   * FastMCP wraps non-object return types (e.g. list[Action]) in
+   * {"result": value} via x-fastmcp-wrap-result.  We unwrap that here.
+   */
   async callTool<T>(name: string, args: Record<string, unknown>): Promise<T | null> {
     const result = await this.client.callTool({ name, arguments: args });
-    const first = result.content[0];
-    if (!first) {
-      // FastMCP returns empty content for empty list returns (vacuous all() on empty iterable).
-      if (result.isError) throw new Error(`Tool ${name} returned an error with no content`);
-      return (result.structuredContent ?? null) as T | null;
+    if (result.isError) {
+      const first = result.content[0];
+      const msg = first && first.type === "text" ? first.text : `Tool ${name} returned an error`;
+      throw new Error(msg as string);
     }
+    // Prefer structuredContent (FastMCP structured outputs).
+    const sc = result.structuredContent as Record<string, unknown> | undefined;
+    if (sc != null) {
+      // FastMCP wraps non-object results in {"result": value}.
+      if ("result" in sc && Object.keys(sc).length === 1) return sc.result as T;
+      return sc as T;
+    }
+    // Fall back to text content (e.g. tools without output_schema).
+    const first = result.content[0];
+    if (!first) return null;
     if (first.type !== "text") throw new Error(`No text content from tool ${name}`);
     return JSON.parse(first.text as string) as T;
   }
@@ -96,16 +111,12 @@ export class AirlockMcpClient {
     return (await this.callTool<Action[]>("list_actions", { status: status ?? null, limit, offset })) ?? [];
   }
 
-  async approve(key: ActionKey): Promise<Action> {
-    const result = await this.callTool<Action>("approve_action", { key });
-    if (!result) throw new Error("approve_action returned no content");
-    return result;
+  async approve(key: ActionKey): Promise<void> {
+    await this.callTool("approve_action", { key });
   }
 
-  async reject(key: ActionKey, reason?: string): Promise<Action> {
-    const result = await this.callTool<Action>("reject_action", { key, reason: reason ?? null });
-    if (!result) throw new Error("reject_action returned no content");
-    return result;
+  async reject(key: ActionKey, reason?: string): Promise<void> {
+    await this.callTool("reject_action", { key, reason: reason ?? null });
   }
 
   async readAction<T>(uri: string): Promise<T> {
