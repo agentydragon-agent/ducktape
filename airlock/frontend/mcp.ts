@@ -80,23 +80,32 @@ export class AirlockMcpClient {
     };
   }
 
-  async callTool<T>(name: string, args: Record<string, unknown>): Promise<T> {
+  async callTool<T>(name: string, args: Record<string, unknown>): Promise<T | null> {
     const result = await this.client.callTool({ name, arguments: args });
     const first = result.content[0];
-    if (!first || first.type !== "text") throw new Error(`No text content from tool ${name}`);
+    if (!first) {
+      // FastMCP returns empty content for empty list returns (vacuous all() on empty iterable).
+      if (result.isError) throw new Error(`Tool ${name} returned an error with no content`);
+      return (result.structuredContent ?? null) as T | null;
+    }
+    if (first.type !== "text") throw new Error(`No text content from tool ${name}`);
     return JSON.parse(first.text as string) as T;
   }
 
   async listActions(status?: ActionStatus, limit = 100, offset = 0): Promise<Action[]> {
-    return this.callTool("list_actions", { status: status ?? null, limit, offset });
+    return (await this.callTool<Action[]>("list_actions", { status: status ?? null, limit, offset })) ?? [];
   }
 
   async approve(key: ActionKey): Promise<Action> {
-    return this.callTool("approve_action", { key });
+    const result = await this.callTool<Action>("approve_action", { key });
+    if (!result) throw new Error("approve_action returned no content");
+    return result;
   }
 
   async reject(key: ActionKey, reason?: string): Promise<Action> {
-    return this.callTool("reject_action", { key, reason: reason ?? null });
+    const result = await this.callTool<Action>("reject_action", { key, reason: reason ?? null });
+    if (!result) throw new Error("reject_action returned no content");
+    return result;
   }
 
   async readAction<T>(uri: string): Promise<T> {
