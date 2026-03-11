@@ -1,7 +1,10 @@
 # CiliumNetworkPolicy for the Airlock namespace pods.
 #
 # airlock server (component: server, port 8765):
-#   Cilium Envoy gateway (kube-system, k8s-app=cilium-envoy) — browser requests via Gateway API
+#   Cilium ingress entity — browser requests proxied by Cilium Gateway API (Envoy).
+#     Envoy runs on host network on VPS nodes; traffic arrives as the node IP classified as
+#     the reserved "ingress" entity, not as the Envoy pod. Using fromEntities: ingress is
+#     the correct pattern (same as authentik-server-ingress, gatus-ingress, etc.).
 #   OpenClaw pods (openclaw-gateway) — auth-proxy sidecar with OAuth2 JWT (client_credentials)
 #   Both present JWTs verified by JWTVerifier against the Authentik JWKS endpoint.
 #
@@ -21,17 +24,10 @@ spec:
       component: server
   ingress:
     # Kubelet health probes (liveness/readiness) originate from the node host.
+    # Cilium Gateway API (Envoy hostNetwork on VPS nodes) uses the reserved "ingress" entity.
     - fromEntities:
         - host
-      toPorts:
-        - ports:
-            - port: "8765"
-              protocol: TCP
-    # Cilium Envoy gateway (kube-system DaemonSet) forwards browser traffic.
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: kube-system
-            k8s-app: cilium-envoy
+        - ingress
       toPorts:
         - ports:
             - port: "8765"
