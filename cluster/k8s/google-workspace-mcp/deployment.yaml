@@ -20,6 +20,8 @@ spec:
       labels:
         app: google-workspace-mcp
     spec:
+      securityContext:
+        fsGroup: 1000
       initContainers:
         # google_workspace_mcp expects a client_secret.json file in addition to env vars.
         # Generate it from the env vars so we avoid storing the JSON as a separate secret.
@@ -69,10 +71,10 @@ spec:
             - name: WORKSPACE_MCP_PORT
               value: "8000"
             - name: GOOGLE_MCP_CREDENTIALS_DIR
-              value: /app/store_creds
+              value: /data/store_creds
           volumeMounts:
             - name: store-creds
-              mountPath: /app/store_creds
+              mountPath: /data/store_creds
             - name: client-secret
               mountPath: /app/client_secret.json
               subPath: client_secret.json
