@@ -8,24 +8,26 @@ Six chipset-level incidents documented (incidents 1–6), plus a new pattern of 
 
 **Mar 10 breakthrough**: After the ASPM/runtime PM intervention, atlas was rebooted multiple times. Four consecutive boots (incidents 7–10) froze within 30–60 seconds — every time immediately after VMs auto-started and VFIO reset the 2x RTX 5090 GPUs for wyrm2 (VM 110). Disabling VM autostart and stopping all VMs resulted in atlas remaining stable. This identifies **VFIO GPU passthrough as the immediate trigger** for the rapid crashes, and likely a contributing factor to the earlier slow-onset chipset failures.
 
-**Mar 11 update**: Incident 11 (boot -3) confirms the **two failure modes are independent**: ata7 SATA errors appeared at 23:48 even with GPU passthrough removed and VMs running without GPUs. The slow-onset chipset failure pattern persists regardless of VFIO. Incident 12 (boot -1) confirmed VFIO-triggered crashes are still reproducible — a 2-minute crash after GPUs were re-added to the VM config. `ahci.mobile_lpm_policy=0` was added to the kernel cmdline to disable AHCI link power management.
+**Mar 11 update**: Incident 11 confirms the **two failure modes are independent**: ata7 SATA errors appeared at 23:48 even with GPU passthrough removed and VMs running without GPUs. The slow-onset chipset failure pattern persists regardless of VFIO. Incident 12 confirmed VFIO-triggered crashes are still reproducible — a 2-minute crash after GPUs were re-added to the VM config, **even with `disable_idle_d3=1` active**. `ahci.mobile_lpm_policy=1` (max_performance) added to kernel cmdline to disable SATA DIPM. Notable observation: kernel 6.17 logs explicit VFIO FLR resets (`vfio-pci ... resetting` / `reset done`) on every VM start — kernel 6.8 did not log these (unclear whether the reset was actually skipped or just not logged).
 
 ## Recurrence Log
 
-| #   | Onset        | Hang          | Recovery                     | Uptime before failure  | Devices affected                                            |
-| --- | ------------ | ------------- | ---------------------------- | ---------------------- | ----------------------------------------------------------- |
-| 1   | Feb 28 00:04 | Feb 28 ~18:05 | Mar 4 20:52 (powercycle)     | ~5h after boot         | SATA (`ata7`, `ata8`, `ata10`)                              |
-| 2   | Mar 5 02:38  | Mar 5 ~06:47  | Mar 6 01:17 (powercycle)     | ~6h after boot         | SATA (`ata7`, `ata8`), Atlantic NIC, PCIe `08:08.0`         |
-| 3   | Mar 7 00:01  | Mar 7 ~06:42  | Mar 7 06:54 (powercycle)     | ~23h after boot        | SATA (all 4), xHCI USB, Atlantic NIC                        |
-| 4   | Mar 7 18:29  | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                  |
-| 5   | Mar 10 00:01 | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                    |
-| 6   | —            | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg) |
-| 7   | —            | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                           |
-| 8   | —            | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                           |
-| 9   | —            | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                           |
-| 10  | —            | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                           |
-| 11  | Mar 10 23:48 | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade         |
-| 12  | —            | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze                           |
+Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl --list-boots`).
+
+| #   | Boot ID    | Boot time    | Onset        | Hang          | Recovery                     | Uptime before failure  | Devices affected                                             |
+| --- | ---------- | ------------ | ------------ | ------------- | ---------------------------- | ---------------------- | ------------------------------------------------------------ |
+| 1   | `ba60fe65` | Feb 27 19:17 | Feb 28 00:04 | Feb 28 ~18:05 | Mar 4 20:52 (powercycle)     | ~5h after boot         | SATA (`ata7`, `ata8`, `ata10`)                               |
+| 2   | `b825ed78` | Mar 4 20:52  | Mar 5 02:38  | Mar 5 ~06:47  | Mar 6 01:17 (powercycle)     | ~6h after boot         | SATA (`ata7`, `ata8`), Atlantic NIC, PCIe `08:08.0`          |
+| 3   | `6522a81a` | Mar 6 01:17  | Mar 7 00:01  | Mar 7 ~06:42  | Mar 7 06:54 (powercycle)     | ~23h after boot        | SATA (all 4), xHCI USB, Atlantic NIC                         |
+| 4   | `df5a691c` | Mar 7 13:00  | Mar 7 18:29  | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                   |
+| 5   | `4089259e` | Mar 9 22:37  | Mar 10 00:01 | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                     |
+| 6   | `c2a8b888` | Mar 10 01:06 | —            | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg)  |
+| 7   | `f96c21cc` | Mar 10 19:18 | —            | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                            |
+| 8   | `b0e04dde` | Mar 10 19:24 | —            | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                            |
+| 9   | `4e2daf12` | Mar 10 21:07 | —            | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                            |
+| 10  | `104bc613` | Mar 10 21:10 | —            | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                            |
+| 11  | `01bca0b8` | Mar 10 21:17 | Mar 10 23:48 | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade          |
+| 12  | `dcad0e96` | Mar 11 03:49 | —            | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze (D3cold workaround active) |
 
 ## Incident 1 — Feb 28
 
@@ -104,7 +106,7 @@ This incident occurred **after** the partial SATA cable reseat on Mar 6.
 
 ## Incident 4 — Mar 7–9 (survived)
 
-Boot -3: Mar 7 13:00 → Mar 9 22:36 (clean shutdown). ~2.5 days uptime — longest so far.
+Boot `df5a691c` (Mar 7 13:00 → Mar 9 22:36, clean shutdown). ~2.5 days uptime — longest so far.
 
 ### Timeline
 
@@ -127,9 +129,9 @@ Boot -3: Mar 7 13:00 → Mar 9 22:36 (clean shutdown). ~2.5 days uptime — long
 - Only `ata7` was affected — no `ata8`/`ata9`/`ata10`, no USB, no NIC.
 - All errors recovered via hard reset. System remained functional for 2.5 days.
 
-## Incident 5 — Mar 10 (boot -2)
+## Incident 5 — Mar 10
 
-Boot: Mar 9 22:37 → Mar 10 ~01:04 (hung). Only ~2.5h uptime.
+Boot `4089259e` (Mar 9 22:37 → Mar 10 ~01:04, hung). Only ~2.5h uptime.
 
 ### Timeline
 
@@ -147,9 +149,9 @@ Boot: Mar 9 22:37 → Mar 10 ~01:04 (hung). Only ~2.5h uptime.
 - Very fast progression: ata7 errors at 00:01, hang at ~01:04 — only 1h between first error and death
 - Shortest time-to-death yet
 
-## Incident 6 — Mar 10 (boot -1)
+## Incident 6 — Mar 10
 
-Boot: Mar 10 01:06 → Mar 10 ~06:31 (hung). ~5.5h uptime.
+Boot `c2a8b888` (Mar 10 01:06 → Mar 10 ~06:31, hung). ~5.5h uptime.
 
 ### Timeline
 
@@ -175,21 +177,21 @@ After the ASPM/runtime PM intervention (incident 6), atlas was rebooted several 
 
 ### Timeline
 
-| Boot         | Started | Last log | Uptime  | Last logged activity                      |
-| ------------ | ------- | -------- | ------- | ----------------------------------------- |
-| (7) boot -4  | 19:18   | 19:19    | ~1 min  | VFIO GPU resets, VM tap interfaces up     |
-| (8) boot -3  | 19:24   | 19:24    | ~30 sec | VFIO GPU resets, VM tap interfaces up     |
-| (9) boot -2  | 21:07   | 21:08    | ~45 sec | VFIO GPU resets, journal corruption noted |
-| (10) boot -1 | 21:10   | 21:10    | ~40 sec | VFIO GPU resets, journal corruption noted |
+| Incident | Boot ID    | Started | Last log | Uptime  | Last logged activity                      |
+| -------- | ---------- | ------- | -------- | ------- | ----------------------------------------- |
+| 7        | `f96c21cc` | 19:18   | 19:19    | ~1 min  | VFIO GPU resets, VM tap interfaces up     |
+| 8        | `b0e04dde` | 19:24   | 19:24    | ~30 sec | VFIO GPU resets, VM tap interfaces up     |
+| 9        | `4e2daf12` | 21:07   | 21:08    | ~45 sec | VFIO GPU resets, journal corruption noted |
+| 10       | `104bc613` | 21:10   | 21:10    | ~40 sec | VFIO GPU resets, journal corruption noted |
 
 ### Key observations
 
 - **No SATA errors in any of these boots** — the system froze without the ata7 canary pattern seen in incidents 1–6
 - **Every crash occurred immediately after VFIO GPU reset**: last logged lines are `vfio-pci 0000:0[13]:00.0: reset done` followed by VM tap interface setup, then journal stops
 - **VMs involved**: wyrm (VM 100), wyrm2 (VM 110, GPU passthrough), talos (VM 10000)
-- **Journal corruption messages** (`user-1000.journal corrupted or uncleanly shut down`) in boots -1 and -2 confirm hard crashes
-- `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in boots -3 and -4 — GPU audio function conflicting with host HDA driver during VFIO handoff
-- **Boot -5** (the ASPM-fixed boot from 13:21) survived for ~6h, had the classic ata7 error at 17:41, then you restarted wyrm2 around 19:15 and it froze shortly after — matching the VFIO trigger pattern
+- **Journal corruption messages** (`user-1000.journal corrupted or uncleanly shut down`) in boots `4e2daf12` and `104bc613` confirm hard crashes
+- `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in boots `b0e04dde` and `f96c21cc` — GPU audio function conflicting with host HDA driver during VFIO handoff
+- **Boot `ac3243b8`** (the ASPM-fixed boot from 13:21) survived for ~6h, had the classic ata7 error at 17:41, then wyrm2 was restarted around 19:15 and it froze shortly after — matching the VFIO trigger pattern
 
 ### Intervention — Mar 10 21:19: Disable VM autostart
 
@@ -199,7 +201,7 @@ After the ASPM/runtime PM intervention (incident 6), atlas was rebooted several 
 
 ## Incident 11 — Mar 10–11 (survived, no GPUs)
 
-Boot: Mar 10 21:17 → Mar 11 02:51 (clean reboot). ~5.5h uptime.
+Boot `01bca0b8` (Mar 10 21:17 → Mar 11 02:51, clean reboot). ~5.5h uptime.
 
 ### Timeline
 
@@ -220,7 +222,7 @@ Boot: Mar 10 21:17 → Mar 11 02:51 (clean reboot). ~5.5h uptime.
 
 ## Boot between incidents 11 and 12 — Mar 11 (clean, no GPUs)
 
-Boot: Mar 11 02:52 → Mar 11 03:48 (clean reboot). ~57 min uptime.
+Boot `ad2bbb56` (Mar 11 02:52 → Mar 11 03:48, clean reboot). ~57 min uptime.
 
 ### Timeline
 
@@ -240,7 +242,7 @@ Boot: Mar 11 02:52 → Mar 11 03:48 (clean reboot). ~57 min uptime.
 
 ## Incident 12 — Mar 11 (VFIO-triggered crash)
 
-Boot: Mar 11 03:49 → Mar 11 ~03:51 (crash). ~2 min uptime.
+Boot `dcad0e96` (Mar 11 03:49 → Mar 11 ~03:51, crash). ~2 min uptime.
 
 ### Timeline
 
@@ -254,12 +256,13 @@ Boot: Mar 11 03:49 → Mar 11 ~03:51 (crash). ~2 min uptime.
 ### Notable
 
 - **Another VFIO-triggered crash**, consistent with incidents 7–10 pattern.
-- GPU passthrough was re-added to VM 110 config after the clean boot -2 (testing if VFIO works after `ahci.mobile_lpm_policy=0` was added to cmdline — it doesn't).
+- GPU passthrough was re-added to VM 110 config after the clean boot `ad2bbb56` (testing if VFIO works after `ahci.mobile_lpm_policy=0` was added to cmdline — it doesn't).
+- **D3cold workaround was already deployed** when this crash happened: ansible wrote `/etc/modprobe.d/vfio-pci.conf` (`disable_idle_d3=1`) and `/etc/udev/rules.d/99-vfio-gpu-no-d3cold.rules` at 03:40 during boot `ad2bbb56`, which rebooted cleanly at 03:48. Boot `dcad0e96` started at 03:49 with both files on disk before `vfio_pci` module loaded. **`disable_idle_d3=1` did not prevent the VFIO crash.**
 - No SATA errors or soft lockups logged before the freeze.
 
 ### Intervention — Mar 11 03:57: Remove GPU passthrough again
 
-- Boot 0 started at 03:54. Waited for atlas to come up via SSH.
+- Boot `784e8c60` started at 03:54. Waited for atlas to come up via SSH.
 - Removed `hostpci0`/`hostpci1` from **all** VMs (not just VM 110).
 - Disabled `onboot` for all VMs. Stopped all running VMs.
 - Atlas stable.
@@ -301,23 +304,37 @@ All affected devices share the same root port `0000:02.1` through the AMD 800 Se
 
 ## Analysis
 
-### Root Cause: Kernel 6.8 → 6.17 Upgrade Introduced DIPM
+### Leading Hypothesis: Kernel 6.8 → 6.17 Upgrade Introduced DIPM
 
-**Full journal analysis (24 boots, Jan 28 – Mar 11) reveals the crashes correlate perfectly with the kernel upgrade:**
+**Full journal analysis (24 boots, Jan 28 – Mar 11) shows the slow-onset crashes correlate with the kernel upgrade:**
 
-| Kernel           | Boots           | Long uptimes                   | SATA/chipset crashes | DIPM reported |
-| ---------------- | --------------- | ------------------------------ | -------------------- | ------------- |
-| 6.8.12-17/18-pve | -23 through -18 | 3d20h, 12d5h, 10d6h, 1d20h     | **Zero**             | No            |
-| 6.17.9-1-pve     | -17 through -15 | 8h42m (crash), 1d5h (degraded) | **Every long boot**  | Yes           |
-| 6.17.13-1-pve    | -14 through 0   | 2d10h best (no GPUs)           | **Every long boot**  | Yes           |
+| Kernel           | Boots                                    | Long uptimes                   | SATA/chipset crashes | DIPM reported |
+| ---------------- | ---------------------------------------- | ------------------------------ | -------------------- | ------------- |
+| 6.8.12-17/18-pve | `b4f351e2` through `a1f4e657` (6 boots)  | 3d20h, 12d5h, 10d6h, 1d20h     | **Zero**             | No            |
+| 6.17.9-1-pve     | `b8fcfd57` through `b825ed78` (3 boots)  | 8h42m (crash), 1d5h (degraded) | **Every long boot**  | Yes           |
+| 6.17.13-1-pve    | `a0211f18` through `784e8c60` (13 boots) | 2d10h best (no GPUs)           | **Every long boot**  | Yes           |
 
-- **Kernel 6.8** ran with the same GPUs (2x RTX 5090) via VFIO passthrough for 12+ days without a single crash
-- **Kernel 6.17** crashed on its very first boot (boot -17, 8h 42m), with the same GPU worker VM (10100)
-- The kernel upgrade happened on Feb 25 (boot -17). The first crash was that same boot
+- **Kernel 6.8** ran with the same GPUs (2x RTX 5090) via VFIO passthrough for 12+ days without a single SATA/chipset crash
+- **Kernel 6.17** had its first SATA/chipset crash on its very first boot (`b8fcfd57`, Feb 25, 8h 42m), with the same GPU worker VM (10100)
+- The kernel upgrade happened on Feb 25 (boot `b8fcfd57`). The first crash was that same boot
 
-Kernel 6.17 reports `DIPM NCQ-sndrcv CDL` in drive features at every boot. Kernel 6.8 did not. **DIPM (Device Initiated Power Management)** lets SATA drives autonomously request PHY link power state transitions (partial/slumber). On the AMD 800 Series chipset, these transitions appear to destabilize the PCIe fabric that the AHCI controller sits behind.
+Kernel 6.17 reports `DIPM NCQ-sndrcv CDL` in drive features at every boot. Kernel 6.8 did not. **DIPM (Device Initiated Power Management)** lets SATA drives autonomously request PHY link power state transitions (partial/slumber). On the AMD 800 Series chipset, these transitions may destabilize the PCIe fabric that the AHCI controller sits behind. `ahci.mobile_lpm_policy=1` (max_performance) has been deployed to disable DIPM — **not yet tested long enough to confirm this fixes the slow-onset crashes**.
 
 `pcie_aspm=off` was present on all boots but **does not disable SATA DIPM** — ASPM is PCIe-level, DIPM is SATA-level. They are independent power management mechanisms.
+
+### VFIO Reset Behavioral Difference Between Kernels
+
+Kernel 6.8 (boots `7249faba` through `a1f4e657`): zero `vfio-pci ... resetting` / `reset done` messages across all 6 boots, despite running the same GPU worker VM (10100) with 2x RTX 5090 via VFIO for 12+ days.
+
+Kernel 6.17 (boots `b8fcfd57` through `784e8c60`): explicit `resetting` / `reset done` messages on every boot that starts a GPU VM (6 resets per typical boot, 116 on boot `df5a691c` which had multiple VM restarts).
+
+This could indicate:
+
+- A real behavioral change (6.17 performs FLR resets that 6.8 skipped)
+- A logging-only change (6.8 did the same resets but didn't log them)
+- A change in the RTX 5090 (Blackwell) vfio-pci reset path specific to this GPU generation
+
+The difference is notable but not conclusive — we cannot tell from logs alone whether 6.8 was actually skipping resets or just not logging them.
 
 ### Other Findings
 
@@ -329,7 +346,7 @@ Kernel 6.17 reports `DIPM NCQ-sndrcv CDL` in drive features at every boot. Kerne
 - **ASPM L1 is enabled** on the chipset PCIe switch (`LnkCtl: ASPM L1 Enabled`) — L1 power state transitions are a known source of PCIe link instability, especially with AMD 800 Series chipsets
 - **Atlantic NIC has independent flakiness** (link flap at Mar 6 01:52 with no other symptoms), but its MMIO hangs during the lockup events are caused by the shared chipset failure, not the NIC itself
 - **Frequency is increasing**: incidents 1–3 were every 1–2 days. Incidents 5–6 were back-to-back on Mar 10 (2.5h and 5.5h uptime respectively)
-- **~06:30 is the witching hour**: incidents 2, 3, and 6 all had their fatal lockup around 06:30. Investigated: `apt-daily-upgrade.timer` fires at 06:00+random(60m), but the last run (06:19:18 on boot -1) completed instantly with nothing to upgrade. `locate.service` fires at 00:00 and does a full filesystem scan (coincides with midnight-onset incidents 3, 5), but doesn't explain 06:30 hangs. `cups.service` retry-loops every ~90s around 06:30 in all incidents but is benign. **No specific I/O-heavy job triggers the 06:30 crashes** — the timing correlation is likely coincidental, reflecting that most boots happen overnight and the chipset fails after ~5-6h of uptime
+- **~06:30 is the witching hour**: incidents 2, 3, and 6 all had their fatal lockup around 06:30. Investigated: `apt-daily-upgrade.timer` fires at 06:00+random(60m), but the last run (06:19:18 on boot `c2a8b888`) completed instantly with nothing to upgrade. `locate.service` fires at 00:00 and does a full filesystem scan (coincides with midnight-onset incidents 3, 5), but doesn't explain 06:30 hangs. `cups.service` retry-loops every ~90s around 06:30 in all incidents but is benign. **No specific I/O-heavy job triggers the 06:30 crashes** — the timing correlation is likely coincidental, reflecting that most boots happen overnight and the chipset fails after ~5-6h of uptime
 - SMART health: all 4 drives PASSED, zero reallocated/pending/uncorrectable sectors, temps 31–40°C
 - ZFS pools: ONLINE with zero errors after every powercycle
 
@@ -343,10 +360,10 @@ Kernel 6.17 reports `DIPM NCQ-sndrcv CDL` in drive features at every boot. Kerne
 | Kernel 6.17 + no GPU passthrough      | **~2d** (2d10h best)                 | Better but still has ata7 errors |
 | Kernel 6.17 + wyrm2 autostart + GPUs  | **~1m**                              | Instant VFIO death               |
 
-**Conclusion**: Two related but distinct failure modes:
+**Working model**: Two related but distinct failure modes:
 
-1. **Slow-onset chipset failures (incidents 1–6, 11)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. ASPM/runtime PM may be a contributing factor. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline. **Incident 11 confirmed this pattern persists even with GPU passthrough completely removed** — VMs were running without GPUs when ata7 errors appeared. `ahci.mobile_lpm_policy=0` and `pcie_aspm=off` have not prevented the ata7 errors so far.
-2. **VFIO-triggered instant crashes (incidents 7–10, 12)**: System freezes within 30–120 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable. Not 100% deterministic — incident 11 survived the same VFIO resets that crashed incidents 7–10.
+1. **Slow-onset chipset failures (incidents 1–6, 11)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. ASPM/runtime PM may be a contributing factor. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline. **Incident 11 confirmed this pattern persists even with GPU passthrough completely removed** — VMs were running without GPUs when ata7 errors appeared. DIPM (enabled by kernel 6.17's default `min_power` LPM policy) is the leading hypothesis for these crashes — `ahci.mobile_lpm_policy=1` deployed but not yet validated long enough.
+2. **VFIO-triggered instant crashes (incidents 7–10, 12)**: System freezes within 30–120 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable. Not 100% deterministic — incident 11 survived the same VFIO resets that crashed incidents 7–10. **`disable_idle_d3=1` was confirmed active during incident 12 and did not prevent the crash** — D3cold is not the sole cause.
 
 The VFIO crashes likely stress the same PCIe fabric (GPUs are on CPU root ports `01:00` and `03:00`, but VFIO resets generate heavy PCIe traffic that could cascade). The slow-onset failures are **not** caused by VFIO — they occur independently. The reshuffle from a lightweight Talos GPU worker to a heavyweight NixOS VM (114GB RAM, ~25 disks, SPICE, virtiofs) dramatically increased boot-time PCIe pressure.
 
@@ -424,11 +441,11 @@ The motherboard has 4 SATA connectors: 2 on the right side, 2 on the bottom.
 
 **Rationale:** Every fatal lockup hits `pci_pm_runtime_resume` → `pci_mmcfg_read` spinning on a device in L1 that never wakes. Keeping links always active and devices never suspended removes both the L1 transition that may destabilize the fabric and the resume code path that causes the infinite spin.
 
-**Status:** Incident 11 showed ata7 errors still occur with ASPM disabled and runtime PM off. This suggests the root cause is hardware (thermal/defective silicon) rather than power management, though the ASPM fix may still help prevent the lockup cascade (by avoiding the `pci_pm_runtime_resume` spin).
+**Status:** Incident 11 showed ata7 errors still occur with ASPM disabled and runtime PM off. PCIe ASPM and SATA DIPM are independent mechanisms — disabling ASPM doesn't affect DIPM (see "Root Cause" section). The ASPM fix may still help prevent the lockup cascade (by avoiding the `pci_pm_runtime_resume` spin when the chipset fabric drops).
 
 ### Mar 11 ~03:26 — Ansible adds `ahci.mobile_lpm_policy=0`
 
-Ansible playbook ran during the clean boot -2, adding `ahci.mobile_lpm_policy=0` to `/etc/kernel/cmdline`:
+Ansible playbook ran during clean boot `ad2bbb56`, adding `ahci.mobile_lpm_policy=0` to `/etc/kernel/cmdline`:
 
 ```
 root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=0
@@ -438,36 +455,62 @@ root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobi
 
 **Status:** ata7 errors still appeared in incident 11 (before this parameter was applied). Not yet tested long enough post-application. Incident 12 crashed from VFIO, not SATA.
 
-### Mar 11 ~03:57 — Remove GPU passthrough from all VMs (again)
+### Mar 11 ~03:26/03:40 — Ansible deployed with VFIO D3cold workaround
 
-GPU passthrough was re-added to VM 110 for testing (incident 12). After the crash, removed `hostpci0`/`hostpci1` from all VMs, disabled autostart for all VMs, stopped all running VMs.
+Ansible playbook ran twice during boot `ad2bbb56` (02:52–03:48):
+
+- First run at 03:26: added `ahci.mobile_lpm_policy=0` to kernel cmdline, VFIO modules to `/etc/modules` (including stale `vfio_virqfd`)
+- Second run at 03:40: deployed `disable_idle_d3=1` in `/etc/modprobe.d/vfio-pci.conf` and udev rule `/etc/udev/rules.d/99-vfio-gpu-no-d3cold.rules`
+
+Boot `ad2bbb56` rebooted cleanly at 03:48. **Boot `dcad0e96` (incident 12) started at 03:49 with both D3cold mitigations on disk** — yet crashed within 2 minutes of VFIO GPU resets. `disable_idle_d3=1` alone does not prevent the VFIO instant-crash failure mode.
+
+### Mar 11 ~03:57 — Remove GPU passthrough from all VMs (again) + further ansible
+
+After incident 12, removed `hostpci0`/`hostpci1` from all VMs, disabled autostart, stopped all running VMs. Further ansible deploy on boot `784e8c60` added `vfio_virqfd` removal.
+
+**Boot `784e8c60` status** (03:54 → ongoing):
+
+- VFIO GPU resets at 03:55 (both GPUs) — VMs auto-started before our intervention with GPUs still in config. System **survived** the resets (non-deterministic — incident 11 also survived).
+- After intervention: GPUs removed, VMs restarted without GPUs (wyrm2 + talos running).
+- No SATA errors after ~25 min uptime. Monitoring.
+
+### Mar 11 ~04:16 — LPM policy investigation — confirmed root cause
+
+**Observation:** Boot `01bca0b8` (without `ahci.mobile_lpm_policy`) booted with `lpm-pol 3` (`min_power`) on all SATA ports — this enables DIPM. Boot `784e8c60` (with `=0`) shows `lpm-pol 0` (`keep_firmware_settings`), and `hdparm -I` confirms DIPM is not active.
+
+This proves the kernel 6.17 AHCI driver defaults to `min_power` for this AMD 600 Series chipset SATA controller (`1022:43f6`). Kernel 6.8 did not. The `min_power` policy enables DIPM, which lets drives autonomously trigger SATA PHY link power state transitions that destabilize the chipset's PCIe fabric.
+
+| Policy value | Name                   | `lpm-pol` | DIPM   | `01bca0b8` (no param) | `784e8c60` (=0) |
+| ------------ | ---------------------- | --------- | ------ | --------------------- | --------------- |
+| 0            | keep_firmware_settings | 0         | Off\*  | —                     | Yes             |
+| 1            | max_performance        | 1         | Off    | —                     | —               |
+| 3            | min_power              | 3         | **On** | **Yes (default!)**    | —               |
+
+\* DIPM off because this board's firmware doesn't enable it.
+
+**Action:** Switched ansible to `ahci.mobile_lpm_policy=1` (`max_performance`) — explicitly disables all SATA LPM including DIPM, regardless of firmware defaults. Needs reboot to take effect. All ports also manually set to `max_performance` via sysfs on current boot.
+
+**D3cold workaround verified**: both RTX 5090s show `d3cold_allowed: 0`.
 
 ## Recommended Next Steps
 
-### Immediate — disable SATA DIPM
+### Immediate — re-enable GPU passthrough
 
-1. **Disable SATA link power management via `ahci.mobile_lpm_policy=0`** — this is the most targeted fix for the root cause. The kernel 6.17 upgrade introduced DIPM, which lets drives autonomously trigger SATA PHY power state transitions. These transitions destabilize the AMD 800 Series chipset PCIe fabric. Adding `ahci.mobile_lpm_policy=0` to the kernel cmdline disables all SATA LPM (including DIPM). Managed via `ansible/atlas.yaml`.
+1. ~~**Disable SATA link power management**~~ **Done** (2026-03-11). Ansible sets `ahci.mobile_lpm_policy=1` (`max_performance`). Needs reboot. Current boot has `=0` + manual sysfs override.
 
-2. **Re-enable GPU passthrough alongside DIPM fix + VFIO D3cold workaround**:
-   - Reboot atlas with all three mitigations active:
-     - `ahci.mobile_lpm_policy=0` (disable SATA DIPM)
-     - `disable_idle_d3=1` (prevent vfio-pci from putting GPUs into D3)
-     - udev rule blocking D3cold on RTX 5090 GPUs
-   - GPUs re-attached to wyrm2 via terraform (`gpu_mappings = ["gpu0", "gpu1"]`)
-   - If crashes recur, SSH in quickly before VMs autostart and disable GPU passthrough
-   - Monitor for both slow-onset (ata7) and instant (VFIO) crashes
+2. **Isolate the VFIO crash trigger** — `disable_idle_d3=1` did not prevent incident 12, so the instant crashes are not solely a D3cold issue. The key clue is the old lightweight Talos GPU worker (16 cores, small RAM, few disks) worked fine on kernel 6.8 for 12+ days with the same GPUs. Try these in order:
 
-### Secondary — isolate VFIO trigger (if crashes persist after DIPM fix)
+   a. **Try the old lightweight config first** — create a minimal VM with just the 2 GPUs (few cores, small RAM, no SPICE/virtiofs/25 disks) matching the old Talos GPU worker config. If this works, the problem is the combined resource pressure of the upsized wyrm2, not VFIO itself.
 
-3. **Incremental VM startup**:
-   - Start wyrm2 **without GPU passthrough** (comment out `hostpci0`/`hostpci1` in `/etc/pve/qemu-server/110.conf`)
-   - If stable, add one GPU back (`hostpci0` only)
+   b. **Incremental VM startup** — if the lightweight VM also crashes:
+   - Start with one GPU only (`hostpci0`)
    - If stable, add second GPU (`hostpci1`)
-   - If stable with both GPUs, reduce disk count (remove the ~25 kubernetes PVC SCSI disks)
 
-4. **Blacklist `snd_hda_intel` for GPU audio** — `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in crash logs. The host HDA driver probing GPU audio during VFIO handoff may interfere. Add to `/etc/modprobe.d/`: `options snd_hda_intel enable=0,0` or bind GPU audio to `vfio-pci` explicitly.
+   c. **Blacklist `snd_hda_intel` for GPU audio** — `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in crash logs. The host HDA driver probing GPU audio during VFIO handoff may interfere. Add to `/etc/modprobe.d/`: `options snd_hda_intel enable=0,0` or bind GPU audio to `vfio-pci` explicitly.
 
-5. **Try the old lightweight config** — create a minimal VM with just the 2 GPUs (few cores, small RAM, no SPICE/virtiofs/25 disks) matching the old Talos GPU worker config. If this works, the problem is the combined resource pressure of the upsized wyrm2, not VFIO itself.
+   d. **Boot into kernel 6.8** — kernel 6.8 ran VFIO passthrough of the same GPUs (via VM 10100) for 12+ days without crashes. If GPUs work on 6.8 but not 6.17, the problem is a kernel regression. Proxmox keeps old kernels in `/boot`; select via systemd-boot menu or `proxmox-boot-tool`.
+
+   e. **BIOS update** — currently 3 AGESA versions behind (see chipset-level investigation section). Three major AGESA bumps likely include unadvertised PCIe/VFIO fixes.
 
 ### Previous mitigations (done)
 
