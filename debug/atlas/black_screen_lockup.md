@@ -301,6 +301,26 @@ All affected devices share the same root port `0000:02.1` through the AMD 800 Se
 
 ## Analysis
 
+### Root Cause: Kernel 6.8 → 6.17 Upgrade Introduced DIPM
+
+**Full journal analysis (24 boots, Jan 28 – Mar 11) reveals the crashes correlate perfectly with the kernel upgrade:**
+
+| Kernel           | Boots           | Long uptimes                   | SATA/chipset crashes | DIPM reported |
+| ---------------- | --------------- | ------------------------------ | -------------------- | ------------- |
+| 6.8.12-17/18-pve | -23 through -18 | 3d20h, 12d5h, 10d6h, 1d20h     | **Zero**             | No            |
+| 6.17.9-1-pve     | -17 through -15 | 8h42m (crash), 1d5h (degraded) | **Every long boot**  | Yes           |
+| 6.17.13-1-pve    | -14 through 0   | 2d10h best (no GPUs)           | **Every long boot**  | Yes           |
+
+- **Kernel 6.8** ran with the same GPUs (2x RTX 5090) via VFIO passthrough for 12+ days without a single crash
+- **Kernel 6.17** crashed on its very first boot (boot -17, 8h 42m), with the same GPU worker VM (10100)
+- The kernel upgrade happened on Feb 25 (boot -17). The first crash was that same boot
+
+Kernel 6.17 reports `DIPM NCQ-sndrcv CDL` in drive features at every boot. Kernel 6.8 did not. **DIPM (Device Initiated Power Management)** lets SATA drives autonomously request PHY link power state transitions (partial/slumber). On the AMD 800 Series chipset, these transitions appear to destabilize the PCIe fabric that the AHCI controller sits behind.
+
+`pcie_aspm=off` was present on all boots but **does not disable SATA DIPM** — ASPM is PCIe-level, DIPM is SATA-level. They are independent power management mechanisms.
+
+### Other Findings
+
 - **Confirmed chipset-level failure**: Three different device types (SATA, USB, NIC) behind the same AMD 800 Series chipset PCIe hierarchy all fail simultaneously. This rules out SATA cables as the root cause.
 - **Same escalation pattern**: `ata7` link errors → hard resets → AHCI controller unavailable → PCIe fabric returns `0xFFFFFFFF` → soft lockups → system hang
 - **`ata7` is usually the canary**: first to show errors in incidents 1–5, hours before the cascade. But incident 6 had no logged SATA errors — the chipset PCIe fabric may have dropped without SATA being the first visible symptom.
@@ -313,7 +333,17 @@ All affected devices share the same root port `0000:02.1` through the AMD 800 Se
 - SMART health: all 4 drives PASSED, zero reallocated/pending/uncorrectable sectors, temps 31–40°C
 - ZFS pools: ONLINE with zero errors after every powercycle
 
-**Conclusion**: Two **independent** failure modes:
+### Uptime Comparison by Configuration
+
+| Configuration                         | Avg uptime                           | Notes                            |
+| ------------------------------------- | ------------------------------------ | -------------------------------- |
+| Kernel 6.8 + GPUs                     | **~7d** (3d20h, 12d5h, 10d6h, 1d20h) | Rock solid                       |
+| Kernel 6.17 + GPUs on old VM (10100)  | **~14h**                             | Crashes with hours of lead time  |
+| Kernel 6.17 + GPUs on new wyrm2 (110) | **~7h**                              | Worse                            |
+| Kernel 6.17 + no GPU passthrough      | **~2d** (2d10h best)                 | Better but still has ata7 errors |
+| Kernel 6.17 + wyrm2 autostart + GPUs  | **~1m**                              | Instant VFIO death               |
+
+**Conclusion**: Two related but distinct failure modes:
 
 1. **Slow-onset chipset failures (incidents 1–6, 11)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. ASPM/runtime PM may be a contributing factor. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline. **Incident 11 confirmed this pattern persists even with GPU passthrough completely removed** — VMs were running without GPUs when ata7 errors appeared. `ahci.mobile_lpm_policy=0` and `pcie_aspm=off` have not prevented the ata7 errors so far.
 2. **VFIO-triggered instant crashes (incidents 7–10, 12)**: System freezes within 30–120 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable. Not 100% deterministic — incident 11 survived the same VFIO resets that crashed incidents 7–10.
@@ -414,18 +444,26 @@ GPU passthrough was re-added to VM 110 for testing (incident 12). After the cras
 
 ## Recommended Next Steps
 
-### Immediate — isolate VFIO trigger
+### Immediate — disable SATA DIPM
 
-1. **Incremental VM startup to isolate the crash trigger**:
+1. **Disable SATA link power management via `ahci.mobile_lpm_policy=0`** — this is the most targeted fix for the root cause. The kernel 6.17 upgrade introduced DIPM, which lets drives autonomously trigger SATA PHY power state transitions. These transitions destabilize the AMD 800 Series chipset PCIe fabric. Adding `ahci.mobile_lpm_policy=0` to the kernel cmdline disables all SATA LPM (including DIPM). Managed via `ansible/atlas.yaml`.
+
+2. **After disabling DIPM, re-enable GPU passthrough incrementally**:
+   - Boot with DIPM disabled, monitor for ata7 errors (expect none)
+   - If stable for 24h+, re-enable GPU passthrough on wyrm2 (one GPU first, then both)
+   - If the slow-onset crashes are gone but VFIO instant crashes remain, the VFIO issue is separate
+
+### Secondary — isolate VFIO trigger (if crashes persist after DIPM fix)
+
+3. **Incremental VM startup**:
    - Start wyrm2 **without GPU passthrough** (comment out `hostpci0`/`hostpci1` in `/etc/pve/qemu-server/110.conf`)
    - If stable, add one GPU back (`hostpci0` only)
    - If stable, add second GPU (`hostpci1`)
    - If stable with both GPUs, reduce disk count (remove the ~25 kubernetes PVC SCSI disks)
-   - This isolates whether it's the GPU reset, the combined resource pressure, or something else
 
-2. **Blacklist `snd_hda_intel` for GPU audio** — `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in crash logs. The host HDA driver probing GPU audio during VFIO handoff may interfere. Add to `/etc/modprobe.d/`: `options snd_hda_intel enable=0,0` or bind GPU audio to `vfio-pci` explicitly.
+4. **Blacklist `snd_hda_intel` for GPU audio** — `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in crash logs. The host HDA driver probing GPU audio during VFIO handoff may interfere. Add to `/etc/modprobe.d/`: `options snd_hda_intel enable=0,0` or bind GPU audio to `vfio-pci` explicitly.
 
-3. **Try the old lightweight config** — create a minimal VM with just the 2 GPUs (few cores, small RAM, no SPICE/virtiofs/25 disks) matching the old Talos GPU worker config. If this works, the problem is the combined resource pressure of the upsized wyrm2, not VFIO itself.
+5. **Try the old lightweight config** — create a minimal VM with just the 2 GPUs (few cores, small RAM, no SPICE/virtiofs/25 disks) matching the old Talos GPU worker config. If this works, the problem is the combined resource pressure of the upsized wyrm2, not VFIO itself.
 
 ### Previous mitigations (done)
 

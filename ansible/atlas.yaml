@@ -194,7 +194,14 @@
     # pcie_aspm=off: Disable PCIe Active State Power Management to prevent
     # passed-through GPUs from entering low-power states that VFIO can't
     # recover from, causing "RC watchdog: GPU is probably locked!" errors.
-    # See debug/wyrm-gpu-lockup.md for details.
+    # See debug/atlas/wyrm_gpu_lockup.md for details.
+    #
+    # ahci.mobile_lpm_policy=0: Disable SATA link power management (DIPM).
+    # Kernel 6.17 introduced DIPM which lets drives autonomously trigger SATA
+    # PHY power state transitions. On the AMD 800 Series chipset, these
+    # transitions destabilize the PCIe fabric (ata7 errors → chipset-wide
+    # lockup). Kernel 6.8 did not enable DIPM and ran 12+ days stable.
+    # See debug/atlas/black_screen_lockup.md for details.
     - name: Configure kernel cmdline for IOMMU and GPU passthrough
       ansible.builtin.copy:
         dest: /etc/kernel/cmdline
