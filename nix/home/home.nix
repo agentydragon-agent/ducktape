@@ -794,7 +794,9 @@ in
     enableBashIntegration = true;
     enableZshIntegration = true;
     flags = [ "--disable-up-arrow" ];
-    # zsh and bash have no fancy history config, Atuin handles it
+    settings = {
+      sync_address = "https://atuin.allegedly.works";
+    };
   };
 
   # Direnv - per-directory environment management
