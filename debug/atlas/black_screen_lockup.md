@@ -15,28 +15,31 @@ Six chipset-level incidents documented (incidents 1–6), plus a new pattern of 
 
 **Mar 11 update**: Incident 11 confirms the **two failure modes are independent**: ata7 SATA errors appeared at 23:48 even with GPU passthrough removed and VMs running without GPUs. The slow-onset chipset failure pattern persists regardless of VFIO. Incident 12 confirmed VFIO-triggered crashes are still reproducible — a 2-minute crash after GPUs were re-added to the VM config, **even with `disable_idle_d3=1` active**. `ahci.mobile_lpm_policy=1` (max_performance) added to kernel cmdline to disable SATA DIPM. Notable observation: kernel 6.17 logs explicit VFIO FLR resets (`vfio-pci ... resetting` / `reset done`) on every VM start — kernel 6.8 did not log these (unclear whether the reset was actually skipped or just not logged).
 
-**Mar 11 afternoon**: Incident 13 (kernel 6.8): wyrm2 with GPU passthrough ran stable for ~17 minutes, then crashed ~22 seconds after Talos CP VM (10000, no GPU) was manually started. Wyrm2 started at 15:24:58, Talos CP started at 15:40:18, last journal entry at 15:40:46 — hard power-off followed. This is notable: wyrm2+GPUs alone didn't crash on 6.8, but adding a second VM triggered it. Possible explanations: memory pressure from second QEMU process, PCIe bus contention, or coincidental delayed FLR failure. Incident 14 (kernel 6.17): crashed within ~1 minute with wyrm2+GPUs autostarting. Both boots ended with abrupt journal silence (no shutdown signals), consistent with hard lockup + power button. `ahci.mobile_lpm_policy=1` confirmed active on current boot (6.17). `nvidia-drm.modeset=0` deployed in wyrm2 NixOS config but not yet applied (`nixos-rebuild switch` not run).
+**Mar 11 afternoon**: Incident 13 (kernel 6.8): wyrm2 with GPU passthrough ran stable for ~17 minutes, then crashed ~22 seconds after Talos CP VM (10000, no GPU) was manually started. Wyrm2 started at 15:24:58, Talos CP started at 15:40:18, last journal entry at 15:40:46 — hard power-off followed. Incident 14 (kernel 6.17): crashed within ~1 minute with wyrm2+GPUs autostarting. Both boots ended with abrupt journal silence (no shutdown signals), consistent with hard lockup + power button. `ahci.mobile_lpm_policy=1` confirmed active on current boot (6.17).
+
+**Incident 15** (kernel 6.17, `nvidia-drm.modeset=0` applied, `mobile_lpm_policy=1` active): wyrm2 with single GPU (Zotac 01:00.0) ran stable for ~33 minutes alone. VFIO resets completed successfully. Froze shortly after Talos CP VM (10000, no GPU) was started — same pattern as incident 13. **Emerging pattern: wyrm2+GPU is stable alone, but crashes when a second VM starts.** `nvidia-drm.modeset=0` did not prevent the crash. The Talos CP VM has no GPU — the trigger may be memory pressure, QEMU process overhead, or PCIe bus contention from the second VM's virtual devices.
 
 ## Recurrence Log
 
 Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl --list-boots`).
 
-| #   | Boot ID    | Boot time    | Onset        | Hang          | Recovery                     | Uptime before failure  | Devices affected                                                                       |
-| --- | ---------- | ------------ | ------------ | ------------- | ---------------------------- | ---------------------- | -------------------------------------------------------------------------------------- |
-| 1   | `ba60fe65` | Feb 27 19:17 | Feb 28 00:04 | Feb 28 ~18:05 | Mar 4 20:52 (powercycle)     | ~5h after boot         | SATA (`ata7`, `ata8`, `ata10`)                                                         |
-| 2   | `b825ed78` | Mar 4 20:52  | Mar 5 02:38  | Mar 5 ~06:47  | Mar 6 01:17 (powercycle)     | ~6h after boot         | SATA (`ata7`, `ata8`), Atlantic NIC, PCIe `08:08.0`                                    |
-| 3   | `6522a81a` | Mar 6 01:17  | Mar 7 00:01  | Mar 7 ~06:42  | Mar 7 06:54 (powercycle)     | ~23h after boot        | SATA (all 4), xHCI USB, Atlantic NIC                                                   |
-| 4   | `df5a691c` | Mar 7 13:00  | Mar 7 18:29  | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                                             |
-| 5   | `4089259e` | Mar 9 22:37  | Mar 10 00:01 | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                                               |
-| 6   | `c2a8b888` | Mar 10 01:06 | —            | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg)                            |
-| 7   | `f96c21cc` | Mar 10 19:18 | —            | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                                                      |
-| 8   | `b0e04dde` | Mar 10 19:24 | —            | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                                                      |
-| 9   | `4e2daf12` | Mar 10 21:07 | —            | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                                                      |
-| 10  | `104bc613` | Mar 10 21:10 | —            | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                                                      |
-| 11  | `01bca0b8` | Mar 10 21:17 | Mar 10 23:48 | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade                                    |
-| 12  | `dcad0e96` | Mar 11 03:49 | —            | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze (D3cold workaround active)                           |
-| 13  | `e6081d6d` | Mar 11 15:23 | —            | Mar 11 ~15:41 | Mar 11 15:48 (powercycle)    | ~17 min                | Kernel 6.8: wyrm2+GPUs ran 17min, froze ~22s after Talos CP VM (10000, no GPU) started |
-| 14  | `c740ecfd` | Mar 11 15:48 | —            | Mar 11 ~15:49 | Mar 11 15:50 (powercycle)    | ~1 min                 | Kernel 6.17: VFIO GPU reset → immediate freeze                                         |
+| #   | Boot ID    | Boot time    | Onset        | Hang          | Recovery                     | Uptime before failure  | Devices affected                                                                                                  |
+| --- | ---------- | ------------ | ------------ | ------------- | ---------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 1   | `ba60fe65` | Feb 27 19:17 | Feb 28 00:04 | Feb 28 ~18:05 | Mar 4 20:52 (powercycle)     | ~5h after boot         | SATA (`ata7`, `ata8`, `ata10`)                                                                                    |
+| 2   | `b825ed78` | Mar 4 20:52  | Mar 5 02:38  | Mar 5 ~06:47  | Mar 6 01:17 (powercycle)     | ~6h after boot         | SATA (`ata7`, `ata8`), Atlantic NIC, PCIe `08:08.0`                                                               |
+| 3   | `6522a81a` | Mar 6 01:17  | Mar 7 00:01  | Mar 7 ~06:42  | Mar 7 06:54 (powercycle)     | ~23h after boot        | SATA (all 4), xHCI USB, Atlantic NIC                                                                              |
+| 4   | `df5a691c` | Mar 7 13:00  | Mar 7 18:29  | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                                                                        |
+| 5   | `4089259e` | Mar 9 22:37  | Mar 10 00:01 | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                                                                          |
+| 6   | `c2a8b888` | Mar 10 01:06 | —            | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg)                                                       |
+| 7   | `f96c21cc` | Mar 10 19:18 | —            | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                                                                                 |
+| 8   | `b0e04dde` | Mar 10 19:24 | —            | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                                                                                 |
+| 9   | `4e2daf12` | Mar 10 21:07 | —            | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                                                                                 |
+| 10  | `104bc613` | Mar 10 21:10 | —            | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                                                                                 |
+| 11  | `01bca0b8` | Mar 10 21:17 | Mar 10 23:48 | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade                                                               |
+| 12  | `dcad0e96` | Mar 11 03:49 | —            | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze (D3cold workaround active)                                                      |
+| 13  | `e6081d6d` | Mar 11 15:23 | —            | Mar 11 ~15:41 | Mar 11 15:48 (powercycle)    | ~17 min                | Kernel 6.8: wyrm2+GPUs ran 17min, froze ~22s after Talos CP VM (10000, no GPU) started                            |
+| 14  | `c740ecfd` | Mar 11 15:48 | —            | Mar 11 ~15:49 | Mar 11 15:50 (powercycle)    | ~1 min                 | Kernel 6.17: VFIO GPU reset → immediate freeze                                                                    |
+| 15  | `5ef3cedb` | Mar 11 15:50 | —            | Mar 11 ~16:54 | TBD (powercycle)             | ~1h 4min               | Kernel 6.17, modeset=0 active: 1 GPU (Zotac 01:00.0) stable ~33min alone, froze after Talos CP VM (10000) started |
 
 ## Incident 1 — Feb 28
 
@@ -532,8 +535,9 @@ This proves the kernel 6.17 AHCI driver defaults to `min_power` for this AMD 600
    - `sudo nixos-rebuild switch --flake ~/code/ducktape/nix#wyrm2`
 
 2. **Incremental GPU passthrough testing** (kernel 6.17, `nvidia-drm.modeset=0` active, `mobile_lpm_policy=1` active):
-   - [x] **Step A**: One GPU only (`hostpci0` 01:00.0, Zotac) + wyrm2 alone — **in progress**. VFIO reset succeeded, atlas stable so far. Let run ~10 min to confirm.
-   - [ ] **Step B**: Start Talos CP VM (10000) alongside wyrm2+1 GPU — this is the combo that crashed incident 13 on kernel 6.8 after 22 seconds.
+   - [x] **Step A**: One GPU only (`hostpci0` 01:00.0, Zotac) + wyrm2 alone — **stable ~33 min**. VFIO resets succeeded.
+   - [x] **Step B**: Start Talos CP VM (10000) alongside wyrm2+1 GPU — **crashed** (incident 15). Same pattern as incident 13 (6.8). `nvidia-drm.modeset=0` did not prevent it.
+   - [ ] **Step B2**: Multiple VMs **without GPUs** — verify the crash requires GPU passthrough + second VM, not just two VMs. (Multiple VMs without GPUs may have been stable previously but needs confirmation.)
    - [ ] **Step C**: Add second GPU (`hostpci1` 03:00.0, Gigabyte) — test with both GPUs, wyrm2 alone.
    - [ ] **Step D**: Both GPUs + Talos CP VM — full production config.
 
