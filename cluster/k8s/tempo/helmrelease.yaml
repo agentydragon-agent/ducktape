@@ -33,7 +33,7 @@ spec:
 
     persistence:
       enabled: true
-      storageClassName: proxmox-csi-retain
+      storageClassName: longhorn
       size: 10Gi
 
     resources:

@@ -65,11 +65,12 @@ spec:
         registry:
           size: 300Gi
         jobservice:
+          storageClass: longhorn
           size: 1Gi
         database:
           size: 1Gi
         redis:
-          storageClass: local-path
+          storageClass: longhorn
           size: 1Gi
         trivy:
           size: 5Gi
