@@ -1,7 +1,7 @@
 # CiliumNetworkPolicy for the Airlock namespace pods.
 #
 # airlock server (component: server, port 8765):
-#   Cilium gateway (gateway-system) — operator SPA with OAuth2 JWT (PKCE)
+#   Cilium Envoy gateway (kube-system, k8s-app=cilium-envoy) — browser requests via Gateway API
 #   OpenClaw pods (openclaw-gateway) — auth-proxy sidecar with OAuth2 JWT (client_credentials)
 #   Both present JWTs verified by JWTVerifier against the Authentik JWKS endpoint.
 #
@@ -27,10 +27,17 @@ spec:
         - ports:
             - port: "8765"
               protocol: TCP
-    # Operator SPA (via gateway) and OpenClaw agent (auth proxy sidecar).
+    # Cilium Envoy gateway (kube-system DaemonSet) forwards browser traffic.
     - fromEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: gateway-system
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: cilium-envoy
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
+    # OpenClaw agent auth-proxy sidecar with OAuth2 JWT (client_credentials).
+    - fromEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: openclaw-gateway
       toPorts:
