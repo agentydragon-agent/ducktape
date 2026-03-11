@@ -23,11 +23,15 @@ spec:
       app: airlock
       component: server
   ingress:
-    # Kubelet health probes (liveness/readiness) originate from the node host.
-    # Cilium Gateway API (Envoy hostNetwork on VPS nodes) uses the reserved "ingress" entity.
+    # Kubelet health probes from the local node + Cilium Gateway API traffic.
+    # When the backend pod is on the same node as Envoy, source appears as "host" (local node).
+    # When the backend is on a different node (e.g. wyrm2), Cilium on the receiving node sees
+    # the VPS node IP, which is classified as "kube-apiserver" (control plane node IPs).
+    # Both entities must be allowed for the gateway to work regardless of pod scheduling.
     - fromEntities:
         - host
         - ingress
+        - kube-apiserver
       toPorts:
         - ports:
             - port: "8765"
