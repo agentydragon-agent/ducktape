@@ -4,7 +4,9 @@
 
 Atlas (Proxmox host, ASUS ProArt X870E-CREATOR WIFI) has recurring system hangs (black screen, requires power-off) caused by the AMD 800 Series chipset PCIe fabric failing. The failure manifests as SATA link errors on the second AHCI controller (`ata7`–`ata10`), then escalates to the entire chipset subtree going offline — SATA, USB (xHCI), and Atlantic NIC all become inaccessible (`0xFFFFFFFF` reads), causing soft lockups and a hard hang.
 
-Six incidents so far. SATA cable reseat on Mar 6 did **not** help — incident 3 occurred afterward with identical pattern plus USB controller death, confirming this is **not** a cable issue. Incidents 4–6 continue the pattern with increasing frequency (two hangs on Mar 10 alone).
+Six chipset-level incidents documented (incidents 1–6), plus a new pattern of rapid VFIO-triggered crashes (incidents 7–10) discovered on Mar 10. SATA cable reseat on Mar 6 did **not** help — incident 3 occurred afterward with identical pattern plus USB controller death, confirming this is **not** a cable issue. Incidents 4–6 continue the pattern with increasing frequency (two hangs on Mar 10 alone).
+
+**Mar 10 breakthrough**: After the ASPM/runtime PM intervention, atlas was rebooted multiple times. Four consecutive boots (incidents 7–10) froze within 30–60 seconds — every time immediately after VMs auto-started and VFIO reset the 2x RTX 5090 GPUs for wyrm2 (VM 110). Disabling VM autostart and stopping all VMs resulted in atlas remaining stable. This identifies **VFIO GPU passthrough as the immediate trigger** for the rapid crashes, and likely a contributing factor to the earlier slow-onset chipset failures.
 
 ## Recurrence Log
 
@@ -159,6 +161,50 @@ Boot: Mar 10 01:06 → Mar 10 ~06:31 (hung). ~5.5h uptime.
 - The hang occurred at the same time of day (~06:30) as incidents 2, 3, and 5's ata7 escalation
 - Possible that ata7 errors occurred but weren't logged before the chipset fabric dropped entirely
 
+## Incidents 7–10 — Mar 10 (VFIO-triggered rapid crashes)
+
+After the ASPM/runtime PM intervention (incident 6), atlas was rebooted several times. VM autostart was still enabled, causing wyrm2 (VM 110, 2x RTX 5090 VFIO passthrough, 32 cores, 114GB RAM, ~25 SCSI disks) to start on every boot.
+
+### Timeline
+
+| Boot         | Started | Last log | Uptime  | Last logged activity                      |
+| ------------ | ------- | -------- | ------- | ----------------------------------------- |
+| (7) boot -4  | 19:18   | 19:19    | ~1 min  | VFIO GPU resets, VM tap interfaces up     |
+| (8) boot -3  | 19:24   | 19:24    | ~30 sec | VFIO GPU resets, VM tap interfaces up     |
+| (9) boot -2  | 21:07   | 21:08    | ~45 sec | VFIO GPU resets, journal corruption noted |
+| (10) boot -1 | 21:10   | 21:10    | ~40 sec | VFIO GPU resets, journal corruption noted |
+
+### Key observations
+
+- **No SATA errors in any of these boots** — the system froze without the ata7 canary pattern seen in incidents 1–6
+- **Every crash occurred immediately after VFIO GPU reset**: last logged lines are `vfio-pci 0000:0[13]:00.0: reset done` followed by VM tap interface setup, then journal stops
+- **VMs involved**: wyrm (VM 100), wyrm2 (VM 110, GPU passthrough), talos (VM 10000)
+- **Journal corruption messages** (`user-1000.journal corrupted or uncleanly shut down`) in boots -1 and -2 confirm hard crashes
+- `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in boots -3 and -4 — GPU audio function conflicting with host HDA driver during VFIO handoff
+- **Boot -5** (the ASPM-fixed boot from 13:21) survived for ~6h, had the classic ata7 error at 17:41, then you restarted wyrm2 around 19:15 and it froze shortly after — matching the VFIO trigger pattern
+
+### Intervention — Mar 10 21:19: Disable VM autostart
+
+- Stopped all VMs: wyrm (100), wyrm2 (110), talos (10000), and others
+- Disabled `onboot` for all VMs
+- **Atlas remained stable** with no VMs running — confirming VFIO GPU passthrough as the trigger
+
+### What changed: wyrm2 VM reshuffle
+
+The rapid freezing correlates with the wyrm2 VM being massively upsized (commit `f2e7606a7`, "refactor(infra): reshuffle VMs — delete GPU worker, upsize wyrm2, downsize PVE CP"):
+
+| Property | Old wyrm2       | New wyrm2                    | Old GPU worker (deleted) |
+| -------- | --------------- | ---------------------------- | ------------------------ |
+| OS       | NixOS           | NixOS                        | Talos (minimal)          |
+| vCPUs    | 8               | 32                           | 16                       |
+| RAM      | 16 GB           | 114 GB (balloon=0)           | —                        |
+| GPUs     | None            | 2x RTX 5090 (VFIO)           | 2x RTX 5090 (VFIO)       |
+| Disks    | 1               | ~25 SCSI + virtio + virtiofs | few                      |
+| Display  | —               | QXL + SPICE                  | none                     |
+| Role     | Dev workstation | Dev workstation + K8s worker | K8s GPU worker           |
+
+The old Talos GPU worker VM had the same GPUs passed through and worked fine. The new wyrm2 simultaneously demands VFIO GPU reset, 114GB RAM allocation (balloon=0), ~25 disk attachments, virtiofs shares, and QXL/SPICE initialization — a massive burst of PCIe and memory operations that appears to destabilize the system.
+
 ## PCIe Topology of Affected Devices
 
 All affected devices share the same root port `0000:02.1` through the AMD 800 Series chipset PCIe switch:
@@ -192,7 +238,12 @@ All affected devices share the same root port `0000:02.1` through the AMD 800 Se
 - SMART health: all 4 drives PASSED, zero reallocated/pending/uncorrectable sectors, temps 31–40°C
 - ZFS pools: ONLINE with zero errors after every powercycle
 
-**Conclusion**: The AMD 800 Series chipset (Promontory successor) on this ASUS ProArt X870E-CREATOR WIFI has a recurring failure where its internal PCIe fabric drops out, taking all downstream devices offline. Possible causes: chipset thermal issue, chipset firmware bug (ASPM-related?), defective chipset, or marginal power delivery to the chipset.
+**Conclusion**: Two related but distinct failure modes:
+
+1. **Slow-onset chipset failures (incidents 1–6)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. ASPM/runtime PM may be a contributing factor. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline.
+2. **VFIO-triggered instant crashes (incidents 7–10)**: System freezes within 30–60 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable.
+
+The VFIO crashes likely stress the same PCIe fabric (GPUs are on CPU root ports `01:00` and `03:00`, but VFIO resets generate heavy PCIe traffic that could cascade). The earlier slow-onset failures may have been a milder version triggered by GPU workloads within the VMs rather than the VFIO reset itself. The reshuffle from a lightweight Talos GPU worker to a heavyweight NixOS VM (114GB RAM, ~25 disks, SPICE, virtiofs) dramatically increased boot-time PCIe pressure.
 
 ## Available Sensors
 
@@ -272,11 +323,42 @@ The motherboard has 4 SATA connectors: 2 on the right side, 2 on the bottom.
 
 ## Recommended Next Steps
 
-### Immediate — software mitigations
+### Immediate — isolate VFIO trigger
 
-1. ~~**Disable PCIe runtime PM for chipset devices**~~ **Done** (2026-03-10). Applied live and persisted via udev rule. See intervention log above.
+1. **Incremental VM startup to isolate the crash trigger**:
+   - Start wyrm2 **without GPU passthrough** (comment out `hostpci0`/`hostpci1` in `/etc/pve/qemu-server/110.conf`)
+   - If stable, add one GPU back (`hostpci0` only)
+   - If stable, add second GPU (`hostpci1`)
+   - If stable with both GPUs, reduce disk count (remove the ~25 kubernetes PVC SCSI disks)
+   - This isolates whether it's the GPU reset, the combined resource pressure, or something else
 
-2. ~~**Disable ASPM on chipset devices**~~ **Done** (2026-03-10). `pcie_aspm=off` was already in cmdline but ineffective (BIOS overrides). Force-cleared via `setpci` and persisted via udev rule. See intervention log above.
+2. **Blacklist `snd_hda_intel` for GPU audio** — `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in crash logs. The host HDA driver probing GPU audio during VFIO handoff may interfere. Add to `/etc/modprobe.d/`: `options snd_hda_intel enable=0,0` or bind GPU audio to `vfio-pci` explicitly.
+
+3. **Try the old lightweight config** — create a minimal VM with just the 2 GPUs (few cores, small RAM, no SPICE/virtiofs/25 disks) matching the old Talos GPU worker config. If this works, the problem is the combined resource pressure of the upsized wyrm2, not VFIO itself.
+
+### Previous mitigations (done)
+
+4. ~~**Disable PCIe runtime PM for chipset devices**~~ **Done** (2026-03-10). Applied live and persisted via udev rule. See intervention log above.
+
+5. ~~**Disable ASPM on chipset devices**~~ **Done** (2026-03-10). `pcie_aspm=off` was already in cmdline but ineffective (BIOS overrides). Force-cleared via `setpci` and persisted via udev rule. See intervention log above.
+
+6. ~~**Disable VM autostart**~~ **Done** (2026-03-10). All VMs set to `onboot: 0`. Atlas stable without VMs.
+
+7. ~~**Remove GPU passthrough from wyrm2, re-enable VMs**~~ **Done** (2026-03-10). Commented out `hostpci0`/`hostpci1` in `/etc/pve/qemu-server/110.conf`. Re-enabled autostart for wyrm2 and talos. Both VMs started successfully, atlas stable. Monitoring to see if slow-onset chipset failures (ata7 pattern) still occur without GPU passthrough.
+
+### If GPU passthrough turns out to be incompatible
+
+The 2x RTX 5090 GPUs are needed for Ollama in the k8s cluster. If VFIO passthrough to a VM can't be stabilized, options:
+
+1. **Run NVIDIA + kubelet directly on Proxmox host** — skip the VM layer entirely. Install NVIDIA drivers and a kubespand/k8s-worker setup on the Proxmox Debian host, joining atlas itself as a k8s worker node (similar to how rugged joins via `k8s-worker.nix`). Avoids VFIO entirely. Downside: mixing k8s worker duties with the hypervisor host.
+
+2. **Slim down wyrm2 to match the old working GPU worker** — the old Talos GPU worker that worked fine was minimal (16 cores, no SPICE, few disks, purpose-built). Try a stripped-down VM with just the GPUs, minimal RAM, and no SPICE/virtiofs/25 PVC disks. The old config worked; the new one is much heavier.
+
+3. **Pass through one GPU instead of two** — halves the VFIO reset pressure. Test if single-GPU passthrough is stable.
+
+4. **BIOS update** — AGESA updates (3 versions behind) may fix GPU VFIO reset handling. Worth trying before giving up on passthrough.
+
+5. **LXC/container passthrough instead of VFIO** — Proxmox supports passing GPU devices to LXC containers without VFIO. Less isolation but avoids the VFIO reset path entirely. Requires NVIDIA drivers on the host.
 
 ### High priority — chipset-level investigation
 

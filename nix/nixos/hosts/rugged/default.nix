@@ -29,6 +29,7 @@
     ../../modules/dev-workstation.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
+    ../../modules/ipu7-camera.nix
   ];
 
   # Passwordless sudo for system inspection commands
@@ -39,6 +40,9 @@
   #   /etc/kubespan/agent.yaml     — kubespand config (cluster.id, cluster.secret)
   #   /etc/kubernetes/pki/ca.crt  — cluster CA cert
   #   /etc/kubernetes/bootstrap-kubelet.conf — bootstrap kubeconfig with token
+  # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
+  ducktape.ipu7Camera.enable = true;
+
   ducktape.k8sWorker = {
     enable = true;
     nodeLabels = {
