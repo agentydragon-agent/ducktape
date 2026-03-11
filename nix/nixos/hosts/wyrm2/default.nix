@@ -39,7 +39,14 @@
 
   # NVIDIA GPU (2x RTX 5090 via VFIO passthrough)
   # Open nvidia module allowlists GPUs by subsystem-ID; Gigabyte RTX 5090 (1458:416f) isn't listed.
-  boot.kernelParams = [ "nvidia.NVreg_OpenRmEnableUnsupportedGpus=1" ];
+  # nvidia-drm modeset=0: Workaround for Blackwell (RTX 5090) VFIO FLR bug — the GPU
+  # fails Function Level Reset after VM shutdown, causing host soft lockups. Disabling
+  # nvidia-drm modesetting prevents the driver from taking a KMS master reference that
+  # complicates FLR teardown. See debug/atlas/black_screen_lockup.md.
+  boot.kernelParams = [
+    "nvidia.NVreg_OpenRmEnableUnsupportedGpus=1"
+    "nvidia-drm.modeset=0"
+  ];
   services.xserver.videoDrivers = [ "nvidia" ];
   hardware.nvidia = {
     modesetting.enable = true;

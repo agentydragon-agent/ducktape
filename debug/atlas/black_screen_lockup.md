@@ -322,19 +322,41 @@ Kernel 6.17 reports `DIPM NCQ-sndrcv CDL` in drive features at every boot. Kerne
 
 `pcie_aspm=off` was present on all boots but **does not disable SATA DIPM** — ASPM is PCIe-level, DIPM is SATA-level. They are independent power management mechanisms.
 
-### VFIO Reset Behavioral Difference Between Kernels
+### VFIO Reset Log Messages: Logging Change, Not Behavioral Change
 
 Kernel 6.8 (boots `7249faba` through `a1f4e657`): zero `vfio-pci ... resetting` / `reset done` messages across all 6 boots, despite running the same GPU worker VM (10100) with 2x RTX 5090 via VFIO for 12+ days.
 
 Kernel 6.17 (boots `b8fcfd57` through `784e8c60`): explicit `resetting` / `reset done` messages on every boot that starts a GPU VM (6 resets per typical boot, 116 on boot `df5a691c` which had multiple VM restarts).
 
-This could indicate:
+**Resolved:** This is a **logging-only change**. Kernel commit [`a3151e6daaec`](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=a3151e6daaec171b7d46ac79170ec420ad874cae) ("PCI: Warn if a running device is unaware of reset", v6.13, author Keith Busch) added `pci_warn()` messages when a PCI device is reset while its driver (e.g., `vfio-pci`) hasn't registered `reset_prepare`/`reset_done` notification callbacks. The FLR reset itself was already happening on kernel 6.8 — it just wasn't logged.
 
-- A real behavioral change (6.17 performs FLR resets that 6.8 skipped)
-- A logging-only change (6.8 did the same resets but didn't log them)
-- A change in the RTX 5090 (Blackwell) vfio-pci reset path specific to this GPU generation
+### Known Blackwell FLR Bug
 
-The difference is notable but not conclusive — we cannot tell from logs alone whether 6.8 was actually skipping resets or just not logging them.
+The RTX 5090 (Blackwell, GB202) has a **known, widely-reported VFIO FLR bug**. When the host issues a Function Level Reset (standard VFIO cleanup), Blackwell GPUs fail to respond — PCI config space reads as all `0xFF`, PCI header type reads as `0x7F` (invalid), followed by CPU soft lockups. Older NVIDIA architectures (Ada Lovelace/RTX 4090, Hopper/H100, Ampere) are not affected.
+
+**Community reports:**
+
+- [Proxmox forum: RTX 6000/5090 D3cold lockup](https://forum.proxmox.com/threads/passthrough-rtx-6000-5090-cpu-soft-bug-lockup-d3cold-to-d0-after-guest-shutdown.168424/)
+- [Level1Techs: RTX 5090 reset bug](https://forum.level1techs.com/t/do-your-rtx-5090-or-general-rtx-50-series-has-reset-bug-in-vm-passthrough/228549)
+- [NVIDIA Developer Forums: GPU passthrough crashes](https://forums.developer.nvidia.com/t/proxmox-gpu-passthrough-crashes-host-rtx-pro-6000-and-rtx-5090/339038)
+- [CloudRift blog: $1000 bounty (paid out)](https://www.cloudrift.ai/blog/bug-bounty-nvidia-reset-bug)
+
+**Community-reported workarounds:**
+
+- **GPU UEFI firmware update** using NVIDIA's GPU UEFI Firmware Update Tool
+- **NVIDIA driver 580+** reportedly contains a fix
+- `nvidia-drm modeset=0` in the guest VM
+- Kernel 6.14.8-2-bpo12-pve (NVIDIA's suggested temporary workaround)
+- `disable_idle_d3=1` (mixed results — did not help in our incident 12)
+
+**Kernel code changes between 6.8 and 6.17 that may interact with this bug:**
+
+- Upstream bridge locking for `pci_reset_function()` added in v6.10 ([`7e89efc6e9e4`](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7e89efc6e9e4))
+- CRS (Configuration Request Retry Status) readiness detection changed in v6.12 ([`d591f6804e7e`](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=d591f6804e7e1310881c9224d72247a2b65039af)) — alters post-reset timing/timeout behavior
+- `vfio_pci_core_disable()` bridge lock fix ([`962ae6892d8b`](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=962ae6892d8bd208b2d1e2b358f07551ddc8d32f)) — if bridge lock can't be acquired, **reset is skipped entirely**
+- Proxmox 6.17 kernel enables `CONFIG_VFIO_DEVICE_CDEV=y` (iommufd backend instead of legacy vfio_iommu_type1)
+
+These changes alter the reset code path timing and locking, which may explain why kernel 6.8 survived the Blackwell FLR bug while 6.17 crashes. The bug is in the GPU firmware/hardware; the kernel changes just change how the host interacts with the broken reset.
 
 ### Other Findings
 
@@ -363,9 +385,9 @@ The difference is notable but not conclusive — we cannot tell from logs alone 
 **Working model**: Two related but distinct failure modes:
 
 1. **Slow-onset chipset failures (incidents 1–6, 11)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. ASPM/runtime PM may be a contributing factor. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline. **Incident 11 confirmed this pattern persists even with GPU passthrough completely removed** — VMs were running without GPUs when ata7 errors appeared. DIPM (enabled by kernel 6.17's default `min_power` LPM policy) is the leading hypothesis for these crashes — `ahci.mobile_lpm_policy=1` deployed but not yet validated long enough.
-2. **VFIO-triggered instant crashes (incidents 7–10, 12)**: System freezes within 30–120 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable. Not 100% deterministic — incident 11 survived the same VFIO resets that crashed incidents 7–10. **`disable_idle_d3=1` was confirmed active during incident 12 and did not prevent the crash** — D3cold is not the sole cause.
+2. **VFIO-triggered instant crashes (incidents 7–10, 12)**: System freezes within 30–120 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable. Not 100% deterministic — incident 11 survived the same VFIO resets that crashed incidents 7–10. **`disable_idle_d3=1` was confirmed active during incident 12 and did not prevent the crash** — D3cold is not the sole cause. These crashes match the pattern of the **known Blackwell FLR bug** (see "Known Blackwell FLR Bug" section above).
 
-The VFIO crashes likely stress the same PCIe fabric (GPUs are on CPU root ports `01:00` and `03:00`, but VFIO resets generate heavy PCIe traffic that could cascade). The slow-onset failures are **not** caused by VFIO — they occur independently. The reshuffle from a lightweight Talos GPU worker to a heavyweight NixOS VM (114GB RAM, ~25 disks, SPICE, virtiofs) dramatically increased boot-time PCIe pressure.
+The slow-onset failures are **not** caused by VFIO — they occur independently (incident 11). The reshuffle from a lightweight Talos GPU worker to a heavyweight NixOS VM (114GB RAM, ~25 disks, SPICE, virtiofs) may increase boot-time PCIe pressure, but the Blackwell FLR bug is a more likely explanation for the VFIO crashes specifically.
 
 ## Available Sensors
 
@@ -498,19 +520,19 @@ This proves the kernel 6.17 AHCI driver defaults to `min_power` for this AMD 600
 
 1. ~~**Disable SATA link power management**~~ **Done** (2026-03-11). Ansible sets `ahci.mobile_lpm_policy=1` (`max_performance`). Needs reboot. Current boot has `=0` + manual sysfs override.
 
-2. **Isolate the VFIO crash trigger** — `disable_idle_d3=1` did not prevent incident 12, so the instant crashes are not solely a D3cold issue. The key clue is the old lightweight Talos GPU worker (16 cores, small RAM, few disks) worked fine on kernel 6.8 for 12+ days with the same GPUs. Try these in order:
+2. **Address the known Blackwell FLR bug** — the VFIO instant crashes match the widely-reported RTX 5090/Blackwell FLR bug (see "Known Blackwell FLR Bug" section). `disable_idle_d3=1` did not prevent incident 12. Try these in order:
 
-   a. **Try the old lightweight config first** — create a minimal VM with just the 2 GPUs (few cores, small RAM, no SPICE/virtiofs/25 disks) matching the old Talos GPU worker config. If this works, the problem is the combined resource pressure of the upsized wyrm2, not VFIO itself.
+   a. **Boot into kernel 6.8** — kernel 6.8 ran VFIO passthrough of the same GPUs (via VM 10100) for 12+ days without crashes. Kernel 6.8.12-18-pve is still installed on atlas. If GPUs work on 6.8 but not 6.17, confirms the kernel reset code path changes interact badly with the Blackwell FLR bug. Select via systemd-boot menu or `proxmox-boot-tool kernel pin 6.8.12-18-pve`.
 
-   b. **Incremental VM startup** — if the lightweight VM also crashes:
-   - Start with one GPU only (`hostpci0`)
-   - If stable, add second GPU (`hostpci1`)
+   b. **Update GPU UEFI firmware** — NVIDIA provides a GPU UEFI Firmware Update Tool. Community reports this fixes the FLR bug for some users.
 
-   c. **Blacklist `snd_hda_intel` for GPU audio** — `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in crash logs. The host HDA driver probing GPU audio during VFIO handoff may interfere. Add to `/etc/modprobe.d/`: `options snd_hda_intel enable=0,0` or bind GPU audio to `vfio-pci` explicitly.
+   c. ~~**Try NVIDIA driver 580+**~~ **Already present** — wyrm2 runs NVIDIA 580.119.02 (`nvidia-x11-580.119.02-6.12.74`). Did not prevent incident 12.
 
-   d. **Boot into kernel 6.8** — kernel 6.8 ran VFIO passthrough of the same GPUs (via VM 10100) for 12+ days without crashes. If GPUs work on 6.8 but not 6.17, the problem is a kernel regression. Proxmox keeps old kernels in `/boot`; select via systemd-boot menu or `proxmox-boot-tool`.
+   d. **Try `nvidia-drm modeset=0`** in the guest VM — reported workaround for the Blackwell FLR bug. **Deployed** (2026-03-11) via `boot.kernelParams` in `nix/nixos/hosts/wyrm2/default.nix`. Needs VM rebuild + reboot to take effect.
 
-   e. **BIOS update** — currently 3 AGESA versions behind (see chipset-level investigation section). Three major AGESA bumps likely include unadvertised PCIe/VFIO fixes.
+   e. **Slim down wyrm2 / try lightweight VM** — the old Talos GPU worker (16 cores, small RAM, few disks) worked on kernel 6.8. If 6.8 also crashes with the heavy wyrm2 config, the VM weight is a contributing factor independent of the kernel.
+
+   f. **Blacklist `snd_hda_intel` for GPU audio** — `snd_hda_intel ... GPU sound probed, but not operational: please add a quirk to driver_denylist` appeared in crash logs. The host HDA driver probing GPU audio during VFIO handoff may interfere. Add to `/etc/modprobe.d/`: `options snd_hda_intel enable=0,0` or bind GPU audio to `vfio-pci` explicitly.
 
 ### Previous mitigations (done)
 
