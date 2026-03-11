@@ -13,6 +13,10 @@
 # TODO: Improved OSK extension - waiting for GNOME 49 support (currently only 43-44)
 # TODO: auto-cpufreq - services.auto-cpufreq for dynamic CPU governor (power saving on battery, performance on AC)
 # TODO: zram - consider zramSwap.enable for memory compression (swap file already exists at /swap/swapfile)
+# TODO: Vulkan crash on Lunar Lake - Snapshot (and likely other GTK4 apps) segfault with VK_ERROR_DEVICE_LOST.
+#   Workaround: GSK_RENDERER=gl. Consider adding to environment.sessionVariables or wrapping affected apps.
+# TODO: IPU7 camera not visible to Zoom and browsers. Likely need PipeWire camera portal / xdg-desktop-portal
+#   integration so non-libcamera apps can access the camera. Snapshot with GSK_RENDERER=gl works.
 # TODO: PipeWire - explicit audio config (services.pipewire with pulse/alsa/jack support)
 # TODO: bluetooth group - add to extraGroups if direct bluetooth access needed beyond blueman
 {
@@ -110,8 +114,10 @@
   # System packages
   environment.systemPackages = with pkgs; [
     acpi # Battery/thermal/AC adapter status
+    snapshot # GNOME camera app (uses libcamera/PipeWire natively)
     libsecret # secret-tool for keyring access (used by ansible vault)
     telegram-desktop
+    vlc
     zoom-us
   ];
 
