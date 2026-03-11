@@ -201,7 +201,7 @@
     - name: Configure kernel cmdline for IOMMU and GPU passthrough
       ansible.builtin.copy:
         dest: /etc/kernel/cmdline
-        content: "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off"
+        content: "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=0"
         mode: "0644"
         backup: true
       notify: Refresh proxmox boot
@@ -217,7 +217,15 @@
         - vfio
         - vfio_iommu_type1
         - vfio_pci
-        - vfio_virqfd
+        # vfio_virqfd was merged into the vfio module in kernel 6.2+
+        # (atlas runs 6.17.x). No longer a separate module.
+      tags: [gpu_passthrough, vfio]
+
+    - name: Remove stale vfio_virqfd from /etc/modules
+      ansible.builtin.lineinfile:
+        path: /etc/modules
+        line: vfio_virqfd
+        state: absent
       tags: [gpu_passthrough, vfio]
 
     - name: Blacklist NVIDIA drivers on host

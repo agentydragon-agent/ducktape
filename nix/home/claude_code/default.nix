@@ -412,8 +412,8 @@ in
         type = "http";
         url = "https://airlock.allegedly.works/mcp";
         oauth = {
-          clientId = "airlock-operator";
-          authServerMetadataUrl = "https://auth.allegedly.works/application/o/airlock/.well-known/openid-configuration";
+          clientId = "claude-code-airlock";
+          authServerMetadataUrl = "https://auth.allegedly.works/application/o/claude-code-airlock/.well-known/openid-configuration";
         };
       };
 

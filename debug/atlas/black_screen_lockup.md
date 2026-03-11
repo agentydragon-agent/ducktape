@@ -4,9 +4,11 @@
 
 Atlas (Proxmox host, ASUS ProArt X870E-CREATOR WIFI) has recurring system hangs (black screen, requires power-off) caused by the AMD 800 Series chipset PCIe fabric failing. The failure manifests as SATA link errors on the second AHCI controller (`ata7`–`ata10`), then escalates to the entire chipset subtree going offline — SATA, USB (xHCI), and Atlantic NIC all become inaccessible (`0xFFFFFFFF` reads), causing soft lockups and a hard hang.
 
-Six chipset-level incidents documented (incidents 1–6), plus a new pattern of rapid VFIO-triggered crashes (incidents 7–10) discovered on Mar 10. SATA cable reseat on Mar 6 did **not** help — incident 3 occurred afterward with identical pattern plus USB controller death, confirming this is **not** a cable issue. Incidents 4–6 continue the pattern with increasing frequency (two hangs on Mar 10 alone).
+Six chipset-level incidents documented (incidents 1–6), plus a new pattern of rapid VFIO-triggered crashes (incidents 7–10, 12) discovered on Mar 10–11. SATA cable reseat on Mar 6 did **not** help — incident 3 occurred afterward with identical pattern plus USB controller death, confirming this is **not** a cable issue. Incidents 4–6 continue the pattern with increasing frequency (two hangs on Mar 10 alone).
 
 **Mar 10 breakthrough**: After the ASPM/runtime PM intervention, atlas was rebooted multiple times. Four consecutive boots (incidents 7–10) froze within 30–60 seconds — every time immediately after VMs auto-started and VFIO reset the 2x RTX 5090 GPUs for wyrm2 (VM 110). Disabling VM autostart and stopping all VMs resulted in atlas remaining stable. This identifies **VFIO GPU passthrough as the immediate trigger** for the rapid crashes, and likely a contributing factor to the earlier slow-onset chipset failures.
+
+**Mar 11 update**: Incident 11 (boot -3) confirms the **two failure modes are independent**: ata7 SATA errors appeared at 23:48 even with GPU passthrough removed and VMs running without GPUs. The slow-onset chipset failure pattern persists regardless of VFIO. Incident 12 (boot -1) confirmed VFIO-triggered crashes are still reproducible — a 2-minute crash after GPUs were re-added to the VM config. `ahci.mobile_lpm_policy=0` was added to the kernel cmdline to disable AHCI link power management.
 
 ## Recurrence Log
 
@@ -18,6 +20,12 @@ Six chipset-level incidents documented (incidents 1–6), plus a new pattern of 
 | 4   | Mar 7 18:29  | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                  |
 | 5   | Mar 10 00:01 | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                    |
 | 6   | —            | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg) |
+| 7   | —            | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                           |
+| 8   | —            | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                           |
+| 9   | —            | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                           |
+| 10  | —            | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                           |
+| 11  | Mar 10 23:48 | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade         |
+| 12  | —            | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze                           |
 
 ## Incident 1 — Feb 28
 
@@ -189,6 +197,73 @@ After the ASPM/runtime PM intervention (incident 6), atlas was rebooted several 
 - Disabled `onboot` for all VMs
 - **Atlas remained stable** with no VMs running — confirming VFIO GPU passthrough as the trigger
 
+## Incident 11 — Mar 10–11 (survived, no GPUs)
+
+Boot: Mar 10 21:17 → Mar 11 02:51 (clean reboot). ~5.5h uptime.
+
+### Timeline
+
+| Time         | Event                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| Mar 10 21:17 | Boot. VMs 100, 110, 10000 auto-start at 21:18 (with GPU passthrough still in VM 110 config)            |
+| Mar 10 21:18 | VFIO GPU resets for both RTX 5090s complete successfully — system **survives** (unlike incidents 7–10) |
+| Mar 10 21:19 | Intervention: all VMs stopped, autostart disabled for all VMs                                          |
+| Mar 10 22:33 | GPU passthrough removed from VM 110 config. Autostart re-enabled for VMs 110 and 10000                 |
+| Mar 10 23:48 | `ata7` errors: `SError: { PHYRdyChg CommWake DevExch }`, 2x WRITE FPDMA QUEUED failures. Hard reset    |
+| Mar 11 02:51 | Clean reboot (systemd-reboot)                                                                          |
+
+### Notable
+
+- **VFIO resets succeeded without crashing** — first time since incident 7. The difference from incidents 7–10 is unclear (identical config). VFIO crashes are not 100% deterministic.
+- **ata7 SATA errors appeared despite no GPU passthrough being active** — GPUs were removed from the VM config hours earlier, VMs were running without them. This confirms the **slow-onset ata7 pattern is independent of VFIO**.
+- Only `ata7` affected, no cascade. System survived (same as incident 4).
+
+## Boot between incidents 11 and 12 — Mar 11 (clean, no GPUs)
+
+Boot: Mar 11 02:52 → Mar 11 03:48 (clean reboot). ~57 min uptime.
+
+### Timeline
+
+| Time         | Event                                                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------------------------- |
+| Mar 11 02:52 | Boot. VM 110 auto-starts **without GPU passthrough** (no VFIO resets)                                      |
+| Mar 11 02:54 | `kubernetes-csi` begins migrating PVC SCSI disks from VM 110 to VM 10000 (deleting scsi slots from VM 110) |
+| Mar 11 03:26 | Ansible playbook runs (re-applies VFIO module config, `vfio_virqfd` "Failed to find module")               |
+| Mar 11 03:40 | Ansible playbook runs again (second pass)                                                                  |
+| Mar 11 03:48 | Clean reboot (likely ansible-triggered for kernel cmdline changes)                                         |
+
+### Notable
+
+- **Completely clean boot** — no SATA errors, no lockups, no PCIe issues.
+- Ansible re-applied configuration, added `ahci.mobile_lpm_policy=0` to kernel cmdline.
+- GPU passthrough was re-added to VM 110 config (manually, between ansible runs — preparing to test).
+
+## Incident 12 — Mar 11 (VFIO-triggered crash)
+
+Boot: Mar 11 03:49 → Mar 11 ~03:51 (crash). ~2 min uptime.
+
+### Timeline
+
+| Time         | Event                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| Mar 11 03:49 | Boot. Atlantic NIC link up at 03:49. VMs 110 and 10000 auto-start                                      |
+| Mar 11 03:49 | VFIO GPU resets: `vfio-pci 0000:01:00.0: reset done`, `vfio-pci 0000:03:00.0: reset done` (first pair) |
+| Mar 11 03:50 | Second round of VFIO GPU resets (both GPUs, multiple resets). VM 110 starts with PID 3714              |
+| Mar 11 03:51 | Journal ends abruptly (postfix/PackageKit activity, no shutdown messages). Hard crash                  |
+
+### Notable
+
+- **Another VFIO-triggered crash**, consistent with incidents 7–10 pattern.
+- GPU passthrough was re-added to VM 110 config after the clean boot -2 (testing if VFIO works after `ahci.mobile_lpm_policy=0` was added to cmdline — it doesn't).
+- No SATA errors or soft lockups logged before the freeze.
+
+### Intervention — Mar 11 03:57: Remove GPU passthrough again
+
+- Boot 0 started at 03:54. Waited for atlas to come up via SSH.
+- Removed `hostpci0`/`hostpci1` from **all** VMs (not just VM 110).
+- Disabled `onboot` for all VMs. Stopped all running VMs.
+- Atlas stable.
+
 ### What changed: wyrm2 VM reshuffle
 
 The rapid freezing correlates with the wyrm2 VM being massively upsized (commit `f2e7606a7`, "refactor(infra): reshuffle VMs — delete GPU worker, upsize wyrm2, downsize PVE CP"):
@@ -238,12 +313,12 @@ All affected devices share the same root port `0000:02.1` through the AMD 800 Se
 - SMART health: all 4 drives PASSED, zero reallocated/pending/uncorrectable sectors, temps 31–40°C
 - ZFS pools: ONLINE with zero errors after every powercycle
 
-**Conclusion**: Two related but distinct failure modes:
+**Conclusion**: Two **independent** failure modes:
 
-1. **Slow-onset chipset failures (incidents 1–6)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. ASPM/runtime PM may be a contributing factor. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline.
-2. **VFIO-triggered instant crashes (incidents 7–10)**: System freezes within 30–60 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable.
+1. **Slow-onset chipset failures (incidents 1–6, 11)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. ASPM/runtime PM may be a contributing factor. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline. **Incident 11 confirmed this pattern persists even with GPU passthrough completely removed** — VMs were running without GPUs when ata7 errors appeared. `ahci.mobile_lpm_policy=0` and `pcie_aspm=off` have not prevented the ata7 errors so far.
+2. **VFIO-triggered instant crashes (incidents 7–10, 12)**: System freezes within 30–120 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable. Not 100% deterministic — incident 11 survived the same VFIO resets that crashed incidents 7–10.
 
-The VFIO crashes likely stress the same PCIe fabric (GPUs are on CPU root ports `01:00` and `03:00`, but VFIO resets generate heavy PCIe traffic that could cascade). The earlier slow-onset failures may have been a milder version triggered by GPU workloads within the VMs rather than the VFIO reset itself. The reshuffle from a lightweight Talos GPU worker to a heavyweight NixOS VM (114GB RAM, ~25 disks, SPICE, virtiofs) dramatically increased boot-time PCIe pressure.
+The VFIO crashes likely stress the same PCIe fabric (GPUs are on CPU root ports `01:00` and `03:00`, but VFIO resets generate heavy PCIe traffic that could cascade). The slow-onset failures are **not** caused by VFIO — they occur independently. The reshuffle from a lightweight Talos GPU worker to a heavyweight NixOS VM (114GB RAM, ~25 disks, SPICE, virtiofs) dramatically increased boot-time PCIe pressure.
 
 ## Available Sensors
 
@@ -319,7 +394,23 @@ The motherboard has 4 SATA connectors: 2 on the right side, 2 on the bottom.
 
 **Rationale:** Every fatal lockup hits `pci_pm_runtime_resume` → `pci_mmcfg_read` spinning on a device in L1 that never wakes. Keeping links always active and devices never suspended removes both the L1 transition that may destabilize the fabric and the resume code path that causes the infinite spin.
 
-**Status:** Monitoring. If the chipset still drops with ASPM and runtime PM disabled, the root cause is hardware (thermal/defective silicon) not power management.
+**Status:** Incident 11 showed ata7 errors still occur with ASPM disabled and runtime PM off. This suggests the root cause is hardware (thermal/defective silicon) rather than power management, though the ASPM fix may still help prevent the lockup cascade (by avoiding the `pci_pm_runtime_resume` spin).
+
+### Mar 11 ~03:26 — Ansible adds `ahci.mobile_lpm_policy=0`
+
+Ansible playbook ran during the clean boot -2, adding `ahci.mobile_lpm_policy=0` to `/etc/kernel/cmdline`:
+
+```
+root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=0
+```
+
+**Rationale:** Disables AHCI Aggressive Link Power Management for all ports, preventing the SATA PHY from entering low-power states (`Partial`/`Slumber`) that may not recover cleanly on the chipset's AHCI controller.
+
+**Status:** ata7 errors still appeared in incident 11 (before this parameter was applied). Not yet tested long enough post-application. Incident 12 crashed from VFIO, not SATA.
+
+### Mar 11 ~03:57 — Remove GPU passthrough from all VMs (again)
+
+GPU passthrough was re-added to VM 110 for testing (incident 12). After the crash, removed `hostpci0`/`hostpci1` from all VMs, disabled autostart for all VMs, stopped all running VMs.
 
 ## Recommended Next Steps
 
@@ -344,7 +435,7 @@ The motherboard has 4 SATA connectors: 2 on the right side, 2 on the bottom.
 
 6. ~~**Disable VM autostart**~~ **Done** (2026-03-10). All VMs set to `onboot: 0`. Atlas stable without VMs.
 
-7. ~~**Remove GPU passthrough from wyrm2, re-enable VMs**~~ **Done** (2026-03-10). Commented out `hostpci0`/`hostpci1` in `/etc/pve/qemu-server/110.conf`. Re-enabled autostart for wyrm2 and talos. Both VMs started successfully, atlas stable. Monitoring to see if slow-onset chipset failures (ata7 pattern) still occur without GPU passthrough.
+7. ~~**Remove GPU passthrough from wyrm2, re-enable VMs**~~ **Done** (2026-03-10, redone 2026-03-11). Removed `hostpci0`/`hostpci1` from all VMs. Re-tested with GPUs in incident 12 — still crashes. Slow-onset ata7 errors confirmed independent of GPU passthrough (incident 11).
 
 ### If GPU passthrough turns out to be incompatible
 
