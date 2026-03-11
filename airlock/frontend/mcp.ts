@@ -85,6 +85,7 @@ export class AirlockMcpClient {
    *
    * FastMCP wraps non-object return types (e.g. list[Action]) in
    * {"result": value} via x-fastmcp-wrap-result.  We unwrap that here.
+   * Tools that return None have no structuredContent — returns null.
    */
   async callTool<T>(name: string, args: Record<string, unknown>): Promise<T | null> {
     const result = await this.client.callTool({ name, arguments: args });
@@ -93,18 +94,11 @@ export class AirlockMcpClient {
       const msg = first && first.type === "text" ? first.text : `Tool ${name} returned an error`;
       throw new Error(msg as string);
     }
-    // Prefer structuredContent (FastMCP structured outputs).
     const sc = result.structuredContent as Record<string, unknown> | undefined;
-    if (sc != null) {
-      // FastMCP wraps non-object results in {"result": value}.
-      if ("result" in sc && Object.keys(sc).length === 1) return sc.result as T;
-      return sc as T;
-    }
-    // Fall back to text content (e.g. tools without output_schema).
-    const first = result.content[0];
-    if (!first) return null;
-    if (first.type !== "text") throw new Error(`No text content from tool ${name}`);
-    return JSON.parse(first.text as string) as T;
+    if (sc == null) return null;
+    // FastMCP wraps non-object results in {"result": value}.
+    if ("result" in sc && Object.keys(sc).length === 1) return sc.result as T;
+    return sc as T;
   }
 
   async listActions(status?: ActionStatus, limit = 100, offset = 0): Promise<Action[]> {
