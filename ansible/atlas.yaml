@@ -8,26 +8,34 @@
     docker_state: absent # Proxmox host doesn't need Docker
     skip_ubuntu_ppas: true # Debian-based Proxmox can't use Ubuntu PPAs
     include_heavy_dev_packages: false
-    # Headscale server for /etc/hosts bootstrap entry (see tailscale task below)
-    headscale_server_hostname: "agentydragon.com"
-    headscale_server_ip: "172.235.48.86"
+    headscale_auto_register: false
   remote_user: root
 
   tasks:
     # Fix Proxmox repository issues
-    - name: Remove Proxmox enterprise repositories
+    - name: Remove Proxmox enterprise and stale repository files
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
+        - /etc/apt/sources.list.d/pve-enterprise.sources
+        - /etc/apt/sources.list.d/ceph.sources
+        # Stale PVE 8 era files
         - /etc/apt/sources.list.d/pve-enterprise.list
         - /etc/apt/sources.list.d/ceph.list
+        - /etc/apt/sources.list.d/pve-no-subscription.list
+        - /etc/apt/sources.list.d/pve-no-subscription.list.save
       tags: [repositories]
 
-    - name: Add Proxmox no-subscription repository
-      ansible.builtin.apt_repository:
-        repo: "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription"
-        state: present
+    - name: Add Proxmox no-subscription repository (PVE 9 / trixie)
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/pve-no-subscription.sources
+        content: |
+          Types: deb
+          URIs: http://download.proxmox.com/debian/pve
+          Suites: trixie
+          Components: pve-no-subscription
+        mode: "0644"
       tags: [repositories]
 
     - name: Configure local datastore content types for Terraform
@@ -51,37 +59,37 @@
         update_cache: true
       tags: [repositories]
 
-    - name: Ensure ducktape directory parent exists
-      ansible.builtin.file:
-        path: "/home/{{ my_user }}/code"
-        state: directory
-        owner: "{{ my_user }}"
-        group: "{{ my_user }}"
-        mode: "0755"
-      tags: [dotfiles]
+    #- name: Ensure ducktape directory parent exists
+    #  ansible.builtin.file:
+    #    path: "/home/{{ my_user }}/code"
+    #    state: directory
+    #    owner: "{{ my_user }}"
+    #    group: "{{ my_user }}"
+    #    mode: "0755"
+    #  tags: [dotfiles]
 
-    - name: Clone ducktape repository if not present # noqa: latest[git]
-      ansible.builtin.git:
-        repo: "git@gitlab.com:agentydragon/ducktape"
-        dest: "{{ cli_ducktape_path }}"
-        accept_hostkey: true
-      become: true
-      become_user: "{{ my_user }}"
-      async: "{{ git_async_timeout }}"
-      poll: 0
-      register: ducktape_git_job
-      tags: [dotfiles]
-      failed_when: false # In case SSH keys aren't set up yet
+    #- name: Clone ducktape repository if not present # noqa: latest[git]
+    #  ansible.builtin.git:
+    #    repo: "git@gitlab.com:agentydragon/ducktape"
+    #    dest: "{{ cli_ducktape_path }}"
+    #    accept_hostkey: true
+    #  become: true
+    #  become_user: "{{ my_user }}"
+    #  async: "{{ git_async_timeout }}"
+    #  poll: 0
+    #  register: ducktape_git_job
+    #  tags: [dotfiles]
+    #  failed_when: false # In case SSH keys aren't set up yet
 
-    - name: Wait for ducktape repository clone
-      ansible.builtin.async_status:
-        jid: "{{ ducktape_git_job.ansible_job_id }}"
-      register: ducktape_git_status
-      until: ducktape_git_status.finished
-      retries: "{{ (git_async_timeout // apt_async_poll_interval) | int }}"
-      delay: "{{ apt_async_poll_interval }}"
-      failed_when: ducktape_git_status.rc is defined and ducktape_git_status.rc != 0
-      tags: [dotfiles]
+    #- name: Wait for ducktape repository clone
+    #  ansible.builtin.async_status:
+    #    jid: "{{ ducktape_git_job.ansible_job_id }}"
+    #  register: ducktape_git_status
+    #  until: ducktape_git_status.finished
+    #  retries: "{{ (git_async_timeout // apt_async_poll_interval) | int }}"
+    #  delay: "{{ apt_async_poll_interval }}"
+    #  failed_when: ducktape_git_status.rc is defined and ducktape_git_status.rc != 0
+    #  tags: [dotfiles]
 
     - name: Install AMD CPU microcode updates
       ansible.builtin.apt:
@@ -99,26 +107,21 @@
       ansible.builtin.apt:
         name:
           - gnome
-          - virt-viewer
-          - libvirt-daemon-system
-          - libvirt-clients
           - gdm3 # GNOME Display Manager
           - zsh
+          # Client-side tools (don't conflict with Proxmox's QEMU)
+          - virt-viewer
           - spice-client-gtk # For SPICE console connections
+          # libvirt-daemon-system and libvirt-clients are NOT installed —
+          # they conflict with Proxmox's pve-qemu-kvm and would remove
+          # the proxmox-ve meta-package. PVE manages VMs natively.
           - ydotool # For input automation on Wayland (SPICE latency measurement)
-          - ydotoold # ydotool daemon (separate package on bookworm)
+          - ydotoold # ydotool daemon
           - gstreamer1.0-pipewire # For GNOME screencast recording
           - gstreamer1.0-plugins-good # For GNOME screencast recording
         state: present
         install_recommends: false
       tags: [packages, desktop, virtualization]
-
-    - name: Ensure libvirt service is started
-      ansible.builtin.systemd:
-        name: libvirtd
-        state: started
-        enabled: true
-      tags: [virtualization]
 
     - name: Create primary user
       ansible.builtin.user:
@@ -155,26 +158,20 @@
         name: system_inspection_nopasswd
       tags: [sudo, system]
 
-    # Install resolvconf before tailscale so MagicDNS works automatically
+    # Install resolvconf before tailscale so MagicDNS works automatically.
     # Proxmox uses isc-dhcp-client without systemd-resolved; resolvconf
-    # provides the integration layer that tailscale needs to manage DNS
+    # provides the integration layer that tailscale needs to manage DNS.
     - name: Install resolvconf for Tailscale MagicDNS integration
       ansible.builtin.apt:
         name: resolvconf
         state: present
       tags: [tailscale, dns]
 
-    # Headscale bootstrap DNS workaround: Tailscale's bootstrap DNS (DERP servers)
-    # only resolves tailscale.com domains. With headscale using agentydragon.com,
-    # clients can't resolve the control server on boot (DNS set to 100.100.100.100
-    # which requires the tunnel to be up first). Static /etc/hosts entry fixes this.
-    # See cluster/docs/plan.md "Headscale Bootstrap DNS Workaround" for details.
-    - name: Add headscale server to /etc/hosts for bootstrap DNS
+    - name: Remove stale headscale bootstrap /etc/hosts entry
       ansible.builtin.lineinfile:
         path: /etc/hosts
-        regexp: '.*\s+{{ headscale_server_hostname }}$'
-        line: "{{ headscale_server_ip }} {{ headscale_server_hostname }}"
-        state: present
+        regexp: '.*\s+agentydragon\.com$'
+        state: absent
       tags: [tailscale, dns]
 
     - name: Apply Tailscale client role
