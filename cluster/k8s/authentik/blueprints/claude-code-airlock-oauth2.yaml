@@ -19,7 +19,7 @@ entries:
     attrs:
       client_id: claude-code-airlock
       client_type: public
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-explicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       issuer_mode: per_provider
       include_claims_in_id_token: true
