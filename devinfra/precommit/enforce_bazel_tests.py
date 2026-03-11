@@ -2,9 +2,10 @@
 """Pre-commit hook: verify affected Bazel tests are cached and passing.
 
 Uses pygit2 for fast staged file discovery, then:
-1. Converts staged files to Bazel source file labels
-2. Finds affected test targets via rdeps query
-3. Checks tests are up-to-date via --check_tests_up_to_date
+1. Converts staged files to candidate Bazel source file labels
+2. Validates labels via kind("source file", ...) query
+3. Finds affected test targets via rdeps query with scoped universe
+4. Checks tests are up-to-date via --check_tests_up_to_date
 
 Requires --remote_download_minimal (or --remote_download_toplevel) in .bazelrc
 for --check_tests_up_to_date to work with RBE. Without this, test results only
@@ -37,6 +38,12 @@ _INFRA_PATTERNS = (
     "WORKSPACE.bzlmod",
 )
 _INFRA_GLOBS = ("devinfra/bazel*",)
+
+# Top-level Bazel packages excluded from the query universe.
+# These have external deps (gymnasium, pygobject/pycairo) that fail at repo
+# fetch time without system native libraries. Both already use tags=["manual"]
+# but //... still loads their packages, triggering the fetch.
+_EXCLUDED_PACKAGES = {"x", "gterm_theme", "bazel-ducktape"}
 
 _PREFIX = "enforce-bazel-tests"
 
@@ -89,7 +96,9 @@ def _file_to_label(filepath: str, repo_root: Path) -> str | None:
     return f"//{pkg_str}:{rel}"
 
 
-def _run_bazel_query(expr: str, *, cwd: Path, timeout: int | None = None) -> list[str]:
+def _run_bazel_query(
+    expr: str, *, cwd: Path, timeout: int | None = None, universe_scope: str | None = None
+) -> list[str]:
     """Run bazel query and return target labels.
 
     Uses --query_file to avoid E2BIG on large queries. Pattern from
@@ -100,15 +109,39 @@ def _run_bazel_query(expr: str, *, cwd: Path, timeout: int | None = None) -> lis
     runs via Bazel (language: system).
     """
     cmd = ["bazel", "query", "--output=label"]
+    if universe_scope is not None:
+        cmd.append(f"--universe_scope={universe_scope}")
     with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery", delete=False) as f:
         f.write(expr)
         f.flush()
         cmd.append(f"--query_file={f.name}")
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, check=False, timeout=timeout)
-    os.unlink(f.name)
+    Path(f.name).unlink()
     if result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, "bazel query", result.stdout, result.stderr)
     return [line for line in result.stdout.splitlines() if line]
+
+
+def _build_universe(repo_root: Path) -> list[str]:
+    """Find top-level Bazel package dirs, excluding broken packages.
+
+    Returns sorted list of top-level directory names that contain
+    BUILD or BUILD.bazel files, minus _EXCLUDED_PACKAGES.
+    """
+    dirs: list[str] = []
+    for entry in sorted(repo_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name.startswith("."):
+            continue
+        if entry.name in _EXCLUDED_PACKAGES:
+            continue
+        if (entry / "BUILD.bazel").exists() or (entry / "BUILD").exists():
+            dirs.append(entry.name)
+    # Also include the root package if it has a BUILD file.
+    if (repo_root / "BUILD.bazel").exists() or (repo_root / "BUILD").exists():
+        dirs.insert(0, "")
+    return dirs
 
 
 def main() -> int:
@@ -123,30 +156,72 @@ def main() -> int:
         print(f"{_PREFIX}: infrastructure file changed, skipping (CI catches these)")
         return 0
 
-    labels: list[str] = []
+    # Convert staged files to candidate Bazel source file labels.
+    candidates: list[str] = []
+    packages: set[str] = set()
     for f in staged:
         label = _file_to_label(f, repo_root)
         if label is not None:
-            labels.append(label)
+            candidates.append(label)
+            # Extract package from label (//pkg:file -> pkg)
+            pkg = label.split(":")[0].removeprefix("//")
+            packages.add(pkg)
 
-    if not labels:
+    if not candidates:
         return 0
-
-    # Use `intersect` to filter out labels that aren't valid Bazel targets.
-    # Not all files in a Bazel package are source targets — e.g.
-    # .pre-commit-config.yaml in the root package isn't in any BUILD srcs.
-    labels_set = " ".join(labels)
-    query_expr = f'kind(".*_test", rdeps(//..., set({labels_set}) ^ //...:*))'
 
     timeout = int(os.environ.get("DUCKTAPE_BAZEL_QUERY_TIMEOUT", "120"))
 
+    # Step 1: Validate labels — query Bazel for source files in affected packages.
+    # Not all files in a Bazel package are source targets (e.g. .pre-commit-config.yaml
+    # in the root package isn't in any BUILD srcs).
+    pkg_union = " + ".join(f"//{pkg}:*" for pkg in sorted(packages))
+    validate_expr = f'kind("source file", {pkg_union})'
+
     try:
-        targets = _run_bazel_query(query_expr, cwd=repo_root, timeout=timeout)
+        known_sources = set(_run_bazel_query(validate_expr, cwd=repo_root, timeout=timeout))
     except subprocess.TimeoutExpired:
-        print(f"{_PREFIX}: bazel query timed out after {timeout}s", file=sys.stderr)
+        print(f"{_PREFIX}: bazel query (validate) timed out after {timeout}s", file=sys.stderr)
         return 1
     except subprocess.CalledProcessError as e:
-        print(f"{_PREFIX}: bazel query failed (exit {e.returncode})", file=sys.stderr)
+        print(f"{_PREFIX}: bazel query (validate) failed (exit {e.returncode})", file=sys.stderr)
+        if e.stderr:
+            print(e.stderr, file=sys.stderr)
+        return 1
+    except FileNotFoundError:
+        print(f"{_PREFIX}: bazel not found on PATH", file=sys.stderr)
+        return 1
+
+    valid_labels = [label for label in candidates if label in known_sources]
+    if not valid_labels:
+        return 0
+
+    # Step 2: Find affected test targets via rdeps with scoped universe.
+    universe_dirs = _build_universe(repo_root)
+    if not universe_dirs:
+        return 0
+
+    # Build union expression for rdeps universe: //dir_a/... + //dir_b/... + ...
+    parts: list[str] = []
+    for d in universe_dirs:
+        if d == "":
+            # Root package — use //:all (not //:* which Bazel rejects as empty target name)
+            parts.append("//:all")
+        else:
+            parts.append(f"//{d}/...")
+    universe_expr = " + ".join(parts)
+    universe_scope = ",".join(parts)
+
+    labels_set = " ".join(valid_labels)
+    rdeps_expr = f'kind(".*_test", rdeps({universe_expr}, set({labels_set})))'
+
+    try:
+        targets = _run_bazel_query(rdeps_expr, cwd=repo_root, timeout=timeout, universe_scope=universe_scope)
+    except subprocess.TimeoutExpired:
+        print(f"{_PREFIX}: bazel query (rdeps) timed out after {timeout}s", file=sys.stderr)
+        return 1
+    except subprocess.CalledProcessError as e:
+        print(f"{_PREFIX}: bazel query (rdeps) failed (exit {e.returncode})", file=sys.stderr)
         if e.stderr:
             print(e.stderr, file=sys.stderr)
         return 1
@@ -159,9 +234,31 @@ def main() -> int:
 
     print(f"{_PREFIX}: checking {len(targets)} affected test(s)...")
 
-    cmd = ["bazel", "test", "--check_tests_up_to_date", "--config=nolint", *targets]
+    run_tests = os.environ.get("DUCKTAPE_PRECOMMIT_RUN_TESTS", "") == "1"
+
+    if not run_tests:
+        # Fast path: just check if tests are cached and passing.
+        # Output flows directly to terminal so the user sees per-target results.
+        cmd = ["bazel", "test", "--check_tests_up_to_date", *targets]
+        try:
+            result = subprocess.run(cmd, check=False, cwd=repo_root, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            print(f"{_PREFIX}: bazel test timed out after {timeout}s", file=sys.stderr)
+            return 1
+
+        if result.returncode == 0:
+            return 0
+
+        print(f"{_PREFIX}: affected tests are not up-to-date or failing.", file=sys.stderr)
+        print(f"Run: bazel test {' '.join(targets)}", file=sys.stderr)
+        print("Or set DUCKTAPE_PRECOMMIT_RUN_TESTS=1 to run tests automatically.", file=sys.stderr)
+        return 1
+
+    # Run tests for real.
+    print(f"{_PREFIX}: running tests (DUCKTAPE_PRECOMMIT_RUN_TESTS=1)...")
+    cmd = ["bazel", "test", *targets]
     try:
-        result = subprocess.run(cmd, check=False, cwd=repo_root, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(cmd, check=False, cwd=repo_root, timeout=timeout)
     except subprocess.TimeoutExpired:
         print(f"{_PREFIX}: bazel test timed out after {timeout}s", file=sys.stderr)
         return 1
@@ -169,12 +266,7 @@ def main() -> int:
     if result.returncode == 0:
         return 0
 
-    print(f"{_PREFIX}: affected tests are not up-to-date or failing.", file=sys.stderr)
-    print(f"Run: bazel test {' '.join(targets)}", file=sys.stderr)
-    if result.stderr:
-        lines = result.stderr.strip().splitlines()
-        for line in lines[-20:]:
-            print(f"  {line}", file=sys.stderr)
+    print(f"{_PREFIX}: tests failed.", file=sys.stderr)
     return 1
 
 
