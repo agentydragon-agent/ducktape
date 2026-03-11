@@ -42,7 +42,26 @@ def _fetch_oidc_discovery(issuer: str) -> dict[str, Any]:
     return result
 
 
-def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
+class _MCPPathNorm:
+    """Normalize POST/DELETE /mcp (no trailing slash) to /mcp/ before routing.
+
+    Starlette's Mount("/mcp") returns PARTIAL for the exact path /mcp (no trailing
+    slash) — the captured path group is empty, which is falsy. When the SPA catch-all
+    Route("/{rest:path}") also partially matches /mcp with a non-GET method, it can
+    win the routing race and return 405. Rewriting /mcp → /mcp/ ensures the Mount
+    sees a FULL match and the MCP sub-app handles the request.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http" and scope.get("path") == "/mcp" and scope.get("method") in {"POST", "DELETE"}:
+            scope = {**scope, "path": "/mcp/"}
+        await self.app(scope, receive, send)
+
+
+def create_app(settings: Settings, *, include_static: bool = True) -> Any:
     """Build the Starlette app serving UI and MCP on a single port."""
     discovery = _fetch_oidc_discovery(settings.oidc_issuer)
     predicate = load_predicate(settings.predicate_path)
@@ -88,7 +107,8 @@ def create_app(settings: Settings, *, include_static: bool = True) -> Starlette:
         ]
 
     # Delegate lifespan to the FastMCP app — it manages the gate's startup/shutdown.
-    return Starlette(routes=routes, lifespan=mcp_app.lifespan)
+    # Wrap with _MCPPathNorm to fix POST/DELETE /mcp routing (see class docstring).
+    return _MCPPathNorm(Starlette(routes=routes, lifespan=mcp_app.lifespan))
 
 
 async def _serve() -> None:

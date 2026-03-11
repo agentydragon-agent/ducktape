@@ -219,7 +219,7 @@ spec:
             config:
               airlock:
                 # Via local auth-proxy sidecar (injects OAuth2 Bearer token upstream)
-                url: "http://127.0.0.1:8767/mcp"
+                url: "http://127.0.0.1:8767/mcp/"
               execServer:
                 url: "http://127.0.0.1:8766/mcp"
       tools:

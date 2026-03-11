@@ -37,7 +37,7 @@ export class AirlockMcpClient {
 
   static async connect(): Promise<AirlockMcpClient> {
     const token = await getAccessToken();
-    const transport = new StreamableHTTPClientTransport(new URL("/mcp", window.location.origin), {
+    const transport = new StreamableHTTPClientTransport(new URL("/mcp/", window.location.origin), {
       requestInit: { headers: { Authorization: `Bearer ${token}` } },
     });
     const client = new Client({ name: "airlock-ui", version: "1.0.0" }, { capabilities: {} });
