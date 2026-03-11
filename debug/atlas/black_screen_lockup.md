@@ -516,19 +516,37 @@ This proves the kernel 6.17 AHCI driver defaults to `min_power` for this AMD 600
 
 ## Recommended Next Steps
 
-### Immediate — re-enable GPU passthrough
+### Next session checklist
+
+1. **Apply wyrm2 NixOS config with `nvidia-drm.modeset=0`**:
+   - `cd /code && git pull` on wyrm2
+   - `sudo nixos-rebuild switch --flake /code/nix#wyrm2`
+   - Verify: `cat /proc/cmdline` should show `nvidia-drm.modeset=0`
+
+2. **Reboot atlas** (to pick up `ahci.mobile_lpm_policy=1` from ansible):
+   - Verify after boot: `cat /sys/module/ahci/parameters/mobile_lpm_policy` → `1`
+
+3. **Re-enable GPU passthrough on wyrm2 and test**:
+   - Re-add `hostpci0` and `hostpci1` to VM 110 config
+   - Start VM 110 and observe — does `nvidia-drm.modeset=0` prevent the VFIO FLR crash?
+
+4. **If still crashing**: try booting atlas into kernel 6.8 (`proxmox-boot-tool kernel pin 6.8.12-18-pve`) and repeat step 3
+
+5. **If 6.8 works but 6.17 doesn't**: investigate GPU UEFI firmware update (NVIDIA GPU UEFI Firmware Update Tool) — community reports this fixes the Blackwell FLR bug at the source
+
+### Completed mitigations
 
 1. ~~**Disable SATA link power management**~~ **Done** (2026-03-11). Ansible sets `ahci.mobile_lpm_policy=1` (`max_performance`). Needs reboot. Current boot has `=0` + manual sysfs override.
 
-2. **Address the known Blackwell FLR bug** — the VFIO instant crashes match the widely-reported RTX 5090/Blackwell FLR bug (see "Known Blackwell FLR Bug" section). `disable_idle_d3=1` did not prevent incident 12. Try these in order:
+2. **Blackwell FLR bug workarounds** — the VFIO instant crashes match the widely-reported RTX 5090/Blackwell FLR bug (see "Known Blackwell FLR Bug" section). `disable_idle_d3=1` did not prevent incident 12. Status of workarounds:
 
-   a. **Boot into kernel 6.8** — kernel 6.8 ran VFIO passthrough of the same GPUs (via VM 10100) for 12+ days without crashes. Kernel 6.8.12-18-pve is still installed on atlas. If GPUs work on 6.8 but not 6.17, confirms the kernel reset code path changes interact badly with the Blackwell FLR bug. Select via systemd-boot menu or `proxmox-boot-tool kernel pin 6.8.12-18-pve`.
+   a. ~~**NVIDIA driver 580+**~~ **Already present** — wyrm2 runs NVIDIA 580.119.02 (`nvidia-x11-580.119.02-6.12.74`). Did not prevent incident 12.
 
-   b. **Update GPU UEFI firmware** — NVIDIA provides a GPU UEFI Firmware Update Tool. Community reports this fixes the FLR bug for some users.
+   b. **`nvidia-drm modeset=0`** — **Deployed** (2026-03-11) via `boot.kernelParams` in `nix/nixos/hosts/wyrm2/default.nix`. Needs `nixos-rebuild switch` + VM reboot to take effect. **Not yet tested.**
 
-   c. ~~**Try NVIDIA driver 580+**~~ **Already present** — wyrm2 runs NVIDIA 580.119.02 (`nvidia-x11-580.119.02-6.12.74`). Did not prevent incident 12.
+   c. **Boot into kernel 6.8** — kernel 6.8.12-18-pve is still installed on atlas. Kernel 6.8 ran VFIO passthrough of the same GPUs (via VM 10100) for 12+ days without crashes. If GPUs work on 6.8 but not 6.17, confirms kernel reset code path changes interact badly with the Blackwell FLR bug.
 
-   d. **Try `nvidia-drm modeset=0`** in the guest VM — reported workaround for the Blackwell FLR bug. **Deployed** (2026-03-11) via `boot.kernelParams` in `nix/nixos/hosts/wyrm2/default.nix`. Needs VM rebuild + reboot to take effect.
+   d. **Update GPU UEFI firmware** — NVIDIA provides a GPU UEFI Firmware Update Tool. Community reports this fixes the FLR bug for some users.
 
    e. **Slim down wyrm2 / try lightweight VM** — the old Talos GPU worker (16 cores, small RAM, few disks) worked on kernel 6.8. If 6.8 also crashes with the heavy wyrm2 config, the VM weight is a contributing factor independent of the kernel.
 
