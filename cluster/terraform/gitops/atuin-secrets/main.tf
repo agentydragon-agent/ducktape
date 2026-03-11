@@ -45,3 +45,27 @@ resource "vault_kv_secret_v2" "atuin_secrets" {
     ignore_changes = [data_json]
   }
 }
+
+resource "random_password" "user_password" {
+  length  = 32
+  special = false
+
+  lifecycle {
+    ignore_changes = [length, special]
+  }
+}
+
+resource "vault_kv_secret_v2" "atuin_user" {
+  mount = "kv"
+  name  = "atuin/user"
+  cas   = 0
+
+  data_json = jsonencode({
+    username      = "agentydragon"
+    user_password = random_password.user_password.result
+  })
+
+  lifecycle {
+    ignore_changes = [data_json]
+  }
+}

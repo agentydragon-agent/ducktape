@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - user-passwords-tf.yaml
   - externalsecret.yaml
+  - atuin-user-externalsecret.yaml
