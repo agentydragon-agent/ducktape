@@ -20,8 +20,8 @@ access works by bind-mounting host `/dev/nvidia*` devices into the container.
 
 ### Container-side changes
 
-- Add `device_passthrough` block in `terraform/modules/proxmox-lxc/main.tf` for
-  `/dev/nvidia0`, `/dev/nvidiactl`, `/dev/nvidia-uvm`
+- Add device passthrough via `pct set 200` for `/dev/nvidia0`, `/dev/nvidiactl`,
+  `/dev/nvidia-uvm` (or via Proxmox web UI)
 - Enable `ducktape.k8sWorker.enableNvidiaRuntime = true` in `default.nix`
 - The NVIDIA userspace libraries inside the container must match the host driver
   version exactly — pin `hardware.nvidia.package` in NixOS config
