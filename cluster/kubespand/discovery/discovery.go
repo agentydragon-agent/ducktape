@@ -84,9 +84,13 @@ func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Lo
 		return &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 
+	// Use passthrough:/// to bypass gRPC's built-in DNS resolver. The dns:///
+	// resolver does SRV lookups (_grpcs._tcp.<host>) which hang on Tailscale
+	// MagicDNS. With passthrough, the custom context dialer handles DNS via
+	// Go's standard net package. See debug/kubespand-grpc-dns-magicdns.md.
 	opts := discoveryclient.Options{
 		Cipher:        cipherBlock,
-		Endpoint:      endpoint,
+		Endpoint:      "passthrough:///" + endpoint,
 		ClusterID:     cfg.Cluster.ID,
 		AffiliateID:   affiliateID,
 		TTL:           discoveryTTL,
