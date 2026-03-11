@@ -228,6 +228,21 @@
         state: absent
       tags: [gpu_passthrough, vfio]
 
+    # Kernel modules required by NixOS LXC containers running k8s workers.
+    # LXC shares the host kernel, so modules must be loaded on the host.
+    - name: Add k8s-LXC kernel modules to /etc/modules
+      ansible.builtin.lineinfile:
+        path: /etc/modules
+        line: "{{ item }}"
+        create: true
+        mode: "0644"
+      loop:
+        - overlay
+        - br_netfilter
+        - wireguard
+        - iscsi_tcp
+      tags: [k8s_lxc]
+
     - name: Blacklist NVIDIA drivers on host
       ansible.builtin.copy:
         dest: /etc/modprobe.d/blacklist-nvidia.conf

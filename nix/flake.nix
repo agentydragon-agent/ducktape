@@ -268,6 +268,10 @@
           wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
           k8s-worker-test-image =
             self.nixosConfigurations.k8s-worker-test.config.system.build.images.qemu-efi;
+          # NixOS LXC tarball for Proxmox.
+          # Build: nix build ./nix#lxc-k8s-test-lxc
+          # Upload: scp result/*.tar.xz root@atlas:/var/lib/vz/template/cache/
+          lxc-k8s-test-lxc = self.nixosConfigurations.lxc-k8s-test.config.system.build.tarball;
         };
 
       homeConfigurations = {
@@ -363,6 +367,14 @@
           username = "user";
           homeManagerHost = "nixos-vm";
           hardwareModule = ./nixos/modules/vm-hardware.nix;
+        };
+
+        # NixOS LXC container on Proxmox — test k8s worker in LXC.
+        # No hardwareModule — proxmox-lxc.nix is imported by the host config.
+        lxc-k8s-test = mkNixos {
+          hostname = "lxc-k8s-test";
+          username = "agentydragon";
+          homeManagerHost = "nixos-vm";
         };
 
         # Minimal NixOS container for testing Bazel compatibility.
