@@ -448,10 +448,14 @@ GPU passthrough was re-added to VM 110 for testing (incident 12). After the cras
 
 1. **Disable SATA link power management via `ahci.mobile_lpm_policy=0`** — this is the most targeted fix for the root cause. The kernel 6.17 upgrade introduced DIPM, which lets drives autonomously trigger SATA PHY power state transitions. These transitions destabilize the AMD 800 Series chipset PCIe fabric. Adding `ahci.mobile_lpm_policy=0` to the kernel cmdline disables all SATA LPM (including DIPM). Managed via `ansible/atlas.yaml`.
 
-2. **After disabling DIPM, re-enable GPU passthrough incrementally**:
-   - Boot with DIPM disabled, monitor for ata7 errors (expect none)
-   - If stable for 24h+, re-enable GPU passthrough on wyrm2 (one GPU first, then both)
-   - If the slow-onset crashes are gone but VFIO instant crashes remain, the VFIO issue is separate
+2. **Re-enable GPU passthrough alongside DIPM fix + VFIO D3cold workaround**:
+   - Reboot atlas with all three mitigations active:
+     - `ahci.mobile_lpm_policy=0` (disable SATA DIPM)
+     - `disable_idle_d3=1` (prevent vfio-pci from putting GPUs into D3)
+     - udev rule blocking D3cold on RTX 5090 GPUs
+   - GPUs re-attached to wyrm2 via terraform (`gpu_mappings = ["gpu0", "gpu1"]`)
+   - If crashes recur, SSH in quickly before VMs autostart and disable GPU passthrough
+   - Monitor for both slow-onset (ata7) and instant (VFIO) crashes
 
 ### Secondary — isolate VFIO trigger (if crashes persist after DIPM fix)
 

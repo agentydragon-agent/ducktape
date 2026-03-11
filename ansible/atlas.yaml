@@ -258,6 +258,26 @@
         mode: "0644"
       tags: [gpu_passthrough, nvidia]
 
+    # RTX 5090 (Blackwell) has a known VFIO bug where the GPU can't wake
+    # from D3cold after VM shutdown, causing FLR timeouts and host soft
+    # lockups. Prevent vfio-pci from putting GPUs into D3 when idle.
+    # See debug/atlas/black_screen_lockup.md for details.
+    - name: Prevent VFIO D3 idle on GPUs (RTX 5090 Blackwell workaround)
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/vfio-pci.conf
+        content: |
+          options vfio-pci disable_idle_d3=1
+        mode: "0644"
+      tags: [gpu_passthrough, vfio]
+
+    - name: Prevent D3cold on RTX 5090 GPUs via udev
+      ansible.builtin.copy:
+        dest: /etc/udev/rules.d/99-vfio-gpu-no-d3cold.rules
+        content: 'ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x2b85", ATTR{power/control}="on", ATTR{d3cold_allowed}="0"'
+        mode: "0644"
+      notify: Reload udev rules
+      tags: [gpu_passthrough, vfio]
+
     - name: Update initramfs after module changes
       ansible.builtin.command:
         cmd: update-initramfs -u
