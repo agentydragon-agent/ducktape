@@ -30,6 +30,7 @@
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/ipu7-camera.nix
+    ../../modules/sops.nix
   ];
 
   # Passwordless sudo for system inspection commands
