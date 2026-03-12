@@ -17,29 +17,29 @@ Six chipset-level incidents documented (incidents 1–6), plus a new pattern of 
 
 **Mar 11 afternoon**: Incident 13 (kernel 6.8): wyrm2 with GPU passthrough ran stable for ~17 minutes, then crashed ~22 seconds after Talos CP VM (10000, no GPU) was manually started. Wyrm2 started at 15:24:58, Talos CP started at 15:40:18, last journal entry at 15:40:46 — hard power-off followed. Incident 14 (kernel 6.17): crashed within ~1 minute with wyrm2+GPUs autostarting. Both boots ended with abrupt journal silence (no shutdown signals), consistent with hard lockup + power button. `ahci.mobile_lpm_policy=1` confirmed active on current boot (6.17).
 
-**Incident 15** (kernel 6.17, `nvidia-drm.modeset=0` applied, `mobile_lpm_policy=1` active): wyrm2 with single GPU (Zotac 01:00.0) ran stable for ~33 minutes alone. VFIO resets completed successfully. Froze shortly after Talos CP VM (10000, no GPU) was started — same pattern as incident 13. **Emerging pattern: wyrm2+GPU is stable alone, but crashes when a second VM starts.** `nvidia-drm.modeset=0` did not prevent the crash. The Talos CP VM has no GPU — the trigger may be memory pressure, QEMU process overhead, or PCIe bus contention from the second VM's virtual devices.
+**Incident 15** (kernel 6.17, `nvidia-drm.modeset=0` applied, `mobile_lpm_policy=1` active): wyrm2 with single GPU (Zotac 01:00.0) ran stable for ~33 minutes alone. After Talos CP VM (10000, no GPU) was started, the system experienced two major stalls but **recovered from both**: (1) ~16:54 (~1h after boot) — ZFS zvol write threads deadlocked 122s, pcieport `18:00.0` failed D3cold→D0, snapd watchdog timed out; (2) ~18:12 (~2h22m after boot) — additional pcieport `18:00.0` D3cold failures at kernel timestamps 8446s and 9532s, screen froze, load average hit 101, SSH unreachable for ~16 minutes. System recovered at ~18:28. PCIe bridge D3cold and runtime PM were disabled live on all bridges (class `0x0604*`) during the recovery window. **Historical scan**: pcieport `18:00.0` was present on all prior boots with D3cold capability (`PME# supported from D3cold`) but no D3cold failure errors were logged in any historical boot — the failures in boot `5ef3cedb` are the first recorded instances.
 
 ## Recurrence Log
 
 Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl --list-boots`).
 
-| #   | Boot ID    | Boot time    | Onset        | Hang          | Recovery                     | Uptime before failure  | Devices affected                                                                                                  |
-| --- | ---------- | ------------ | ------------ | ------------- | ---------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 1   | `ba60fe65` | Feb 27 19:17 | Feb 28 00:04 | Feb 28 ~18:05 | Mar 4 20:52 (powercycle)     | ~5h after boot         | SATA (`ata7`, `ata8`, `ata10`)                                                                                    |
-| 2   | `b825ed78` | Mar 4 20:52  | Mar 5 02:38  | Mar 5 ~06:47  | Mar 6 01:17 (powercycle)     | ~6h after boot         | SATA (`ata7`, `ata8`), Atlantic NIC, PCIe `08:08.0`                                                               |
-| 3   | `6522a81a` | Mar 6 01:17  | Mar 7 00:01  | Mar 7 ~06:42  | Mar 7 06:54 (powercycle)     | ~23h after boot        | SATA (all 4), xHCI USB, Atlantic NIC                                                                              |
-| 4   | `df5a691c` | Mar 7 13:00  | Mar 7 18:29  | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                                                                        |
-| 5   | `4089259e` | Mar 9 22:37  | Mar 10 00:01 | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                                                                          |
-| 6   | `c2a8b888` | Mar 10 01:06 | —            | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg)                                                       |
-| 7   | `f96c21cc` | Mar 10 19:18 | —            | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                                                                                 |
-| 8   | `b0e04dde` | Mar 10 19:24 | —            | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                                                                                 |
-| 9   | `4e2daf12` | Mar 10 21:07 | —            | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                                                                                 |
-| 10  | `104bc613` | Mar 10 21:10 | —            | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                                                                                 |
-| 11  | `01bca0b8` | Mar 10 21:17 | Mar 10 23:48 | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade                                                               |
-| 12  | `dcad0e96` | Mar 11 03:49 | —            | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze (D3cold workaround active)                                                      |
-| 13  | `e6081d6d` | Mar 11 15:23 | —            | Mar 11 ~15:41 | Mar 11 15:48 (powercycle)    | ~17 min                | Kernel 6.8: wyrm2+GPUs ran 17min, froze ~22s after Talos CP VM (10000, no GPU) started                            |
-| 14  | `c740ecfd` | Mar 11 15:48 | —            | Mar 11 ~15:49 | Mar 11 15:50 (powercycle)    | ~1 min                 | Kernel 6.17: VFIO GPU reset → immediate freeze                                                                    |
-| 15  | `5ef3cedb` | Mar 11 15:50 | —            | Mar 11 ~16:54 | TBD (powercycle)             | ~1h 4min               | Kernel 6.17, modeset=0 active: 1 GPU (Zotac 01:00.0) stable ~33min alone, froze after Talos CP VM (10000) started |
+| #   | Boot ID    | Boot time    | Onset         | Hang          | Recovery                     | Uptime before failure  | Devices affected                                                                                                                                                                                                           |
+| --- | ---------- | ------------ | ------------- | ------------- | ---------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `ba60fe65` | Feb 27 19:17 | Feb 28 00:04  | Feb 28 ~18:05 | Mar 4 20:52 (powercycle)     | ~5h after boot         | SATA (`ata7`, `ata8`, `ata10`)                                                                                                                                                                                             |
+| 2   | `b825ed78` | Mar 4 20:52  | Mar 5 02:38   | Mar 5 ~06:47  | Mar 6 01:17 (powercycle)     | ~6h after boot         | SATA (`ata7`, `ata8`), Atlantic NIC, PCIe `08:08.0`                                                                                                                                                                        |
+| 3   | `6522a81a` | Mar 6 01:17  | Mar 7 00:01   | Mar 7 ~06:42  | Mar 7 06:54 (powercycle)     | ~23h after boot        | SATA (all 4), xHCI USB, Atlantic NIC                                                                                                                                                                                       |
+| 4   | `df5a691c` | Mar 7 13:00  | Mar 7 18:29   | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                                                                                                                                                                                 |
+| 5   | `4089259e` | Mar 9 22:37  | Mar 10 00:01  | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                                                                                                                                                                                   |
+| 6   | `c2a8b888` | Mar 10 01:06 | —             | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg)                                                                                                                                                                |
+| 7   | `f96c21cc` | Mar 10 19:18 | —             | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                                                                                                                                                                                          |
+| 8   | `b0e04dde` | Mar 10 19:24 | —             | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                          |
+| 9   | `4e2daf12` | Mar 10 21:07 | —             | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                          |
+| 10  | `104bc613` | Mar 10 21:10 | —             | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                          |
+| 11  | `01bca0b8` | Mar 10 21:17 | Mar 10 23:48  | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade                                                                                                                                                                        |
+| 12  | `dcad0e96` | Mar 11 03:49 | —             | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze (D3cold workaround active)                                                                                                                                                               |
+| 13  | `e6081d6d` | Mar 11 15:23 | —             | Mar 11 ~15:41 | Mar 11 15:48 (powercycle)    | ~17 min                | Kernel 6.8: wyrm2+GPUs ran 17min, froze ~22s after Talos CP VM (10000, no GPU) started                                                                                                                                     |
+| 14  | `c740ecfd` | Mar 11 15:48 | —             | Mar 11 ~15:49 | Mar 11 15:50 (powercycle)    | ~1 min                 | Kernel 6.17: VFIO GPU reset → immediate freeze                                                                                                                                                                             |
+| 15  | `5ef3cedb` | Mar 11 15:50 | Mar 11 ~16:54 | **survived**  | still running                | ~1h onset, 2h+ up      | Kernel 6.17, modeset=0: 1 GPU (Zotac) + Talos CP → ZFS hung tasks (122s), pcieport 18:00.0 D3cold fail. Two stalls (~16:54, ~18:12), both recovered. Load avg hit 101. PCIe bridge D3cold/PM disabled live during recovery |
 
 ## Incident 1 — Feb 28
 
@@ -394,12 +394,15 @@ These changes alter the reset code path timing and locking, which may explain wh
 | Kernel 6.17 + no GPU passthrough      | **~2d** (2d10h best)                 | Better but still has ata7 errors |
 | Kernel 6.17 + wyrm2 autostart + GPUs  | **~1m**                              | Instant VFIO death               |
 
-**Working model**: Two related but distinct failure modes:
+**Working model**: Three distinct failure modes:
 
-1. **Slow-onset chipset failures (incidents 1–6, 11)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. ASPM/runtime PM may be a contributing factor. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline. **Incident 11 confirmed this pattern persists even with GPU passthrough completely removed** — VMs were running without GPUs when ata7 errors appeared. DIPM (enabled by kernel 6.17's default `min_power` LPM policy) is the leading hypothesis for these crashes — `ahci.mobile_lpm_policy=1` deployed but not yet validated long enough.
-2. **VFIO-triggered instant crashes (incidents 7–10, 12)**: System freezes within 30–120 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable. Not 100% deterministic — incident 11 survived the same VFIO resets that crashed incidents 7–10. **`disable_idle_d3=1` was confirmed active during incident 12 and did not prevent the crash** — D3cold is not the sole cause. These crashes match the pattern of the **known Blackwell FLR bug** (see "Known Blackwell FLR Bug" section above).
+1. **Slow-onset chipset failures (incidents 1–6, 11)**: ata7 SATA errors appear hours after boot, escalate over 1–6h to full chipset PCIe fabric dropout. The AMD 800 Series chipset's internal PCIe fabric drops out, taking all downstream devices offline. **Incident 11 confirmed this pattern persists even with GPU passthrough completely removed.** DIPM (enabled by kernel 6.17's default `min_power` LPM policy) is the likely cause — `ahci.mobile_lpm_policy=1` deployed. No SATA errors have been observed since LPM was set to `max_performance`.
+2. **VFIO-triggered instant crashes (incidents 7–10, 12, 14)**: System freezes within 30–120 seconds of boot, immediately after VFIO resets the 2x RTX 5090 GPUs for wyrm2. No SATA errors logged. Disabling VMs makes atlas stable. These crashes match the pattern of the **known Blackwell FLR bug** (see "Known Blackwell FLR Bug" section above). **`disable_idle_d3=1` did not prevent incident 12.** `nvidia-drm.modeset=0` may help — incident 15 (single GPU, modeset=0) survived where incidents 7–10 and 14 (2 GPUs, no modeset=0) crashed instantly.
+3. **Memory pressure / ZFS ARC starvation (incident 15)**: wyrm2's memory was bumped to 112 GiB (balloon=0) ~1-2 days before this boot. With 128 GiB total, wyrm2 + Talos CP (8 GiB) = 120 GiB, leaving only ~8 GiB for the host, ZFS ARC, and kernel. ZFS ARC reports `memory_available_bytes = -1.9 GiB` (negative!), `arc_no_grow = 1`, and ARC size (3.6 GiB) is below `c_min` (3.9 GiB). ZFS zvol write threads blocked 122+ seconds on `dbuf_read → cv_wait` (waiting for ARC-evicted buffers to be re-read from disk). The `txg_quiesce` thread also blocked, preventing transaction group commits. `journald` reported "Under memory pressure, flushing caches" at 3836s and 3862s, immediately before the ZFS stall at ~3934s. Load average hit 101 as processes piled up waiting for ZFS I/O. **This failure mode is new with the recent memory increase** — earlier incidents (7-14) had different wyrm2 memory configs.
 
-The slow-onset failures are **not** caused by VFIO — they occur independently (incident 11). The reshuffle from a lightweight Talos GPU worker to a heavyweight NixOS VM (114GB RAM, ~25 disks, SPICE, virtiofs) may increase boot-time PCIe pressure, but the Blackwell FLR bug is a more likely explanation for the VFIO crashes specifically.
+   **Thunderbolt bridge D3cold is a red herring.** The Thunderbolt 4 bridge (`pcieport 18:00.0`) D3cold failures happen on **every boot** (including stable 2.5-day boot `df5a691c`) and are a pre-existing condition caused by the Thunderbolt subsystem's runtime PM (`auto` control on TB devices `0-0`, `0-1`). Config space reads `0xFF` (device fully offline, `Unknown header type 7f`). The D3cold failures are unrelated to the stalls — they're the kernel periodically trying (and failing) to wake the sleeping Thunderbolt bridge. PCI-level `d3cold_allowed=0` and `power/control=on` have **no effect** because the Thunderbolt/USB4 subsystem controls the power state independently.
+
+The slow-onset failures are **not** caused by VFIO — they occur independently (incident 11). The incident 15 stalls are caused by **memory overcommit**, not PCIe bridge issues.
 
 ## Available Sensors
 
@@ -508,6 +511,24 @@ After incident 12, removed `hostpci0`/`hostpci1` from all VMs, disabled autostar
 - After intervention: GPUs removed, VMs restarted without GPUs (wyrm2 + talos running).
 - No SATA errors after ~25 min uptime. Monitoring.
 
+### Mar 11 ~18:28 — Live PCIe bridge D3cold/runtime PM disable
+
+After incident 15's second stall recovery, disabled D3cold and runtime PM on all PCIe bridges live:
+
+```
+for dev in /sys/bus/pci/devices/*/; do
+  class=$(cat "$dev/class" 2>/dev/null)
+  if [[ "$class" == 0x0604* ]]; then
+    echo on > "$dev/power/control" 2>/dev/null
+    echo 0 > "$dev/d3cold_allowed" 2>/dev/null
+  fi
+done
+```
+
+Also added persistent udev rule to ansible (`99-pcie-bridge-no-d3cold.rules`).
+
+**Historical scan**: `pcieport 18:00.0` (Intel Thunderbolt 4 bridge, JHL8540) was present on every historical boot with `PME# supported from D0 D1 D2 D3hot D3cold`, but **no D3cold failure errors were logged in any prior boot**. The failures in boot `5ef3cedb` are the first recorded instances. This suggests the D3cold failures are triggered by specific workload conditions (GPU passthrough + second VM starting), not a persistent hardware defect.
+
 ### Mar 11 ~04:16 — LPM policy investigation — confirmed root cause
 
 **Observation:** Boot `01bca0b8` (without `ahci.mobile_lpm_policy`) booted with `lpm-pol 3` (`min_power`) on all SATA ports — this enables DIPM. Boot `784e8c60` (with `=0`) shows `lpm-pol 0` (`keep_firmware_settings`), and `hdparm -I` confirms DIPM is not active.
@@ -534,18 +555,23 @@ This proves the kernel 6.17 AHCI driver defaults to `min_power` for this AMD 600
    - `cd ~/code/ducktape && git pull` on wyrm2 (as agentydragon)
    - `sudo nixos-rebuild switch --flake ~/code/ducktape/nix#wyrm2`
 
-2. **Incremental GPU passthrough testing** (kernel 6.17, `nvidia-drm.modeset=0` active, `mobile_lpm_policy=1` active):
+2. **Reduce wyrm2 memory allocation** — wyrm2's `balloon=0` + `memory: 114688` (112 GiB) leaves only ~16 GiB for the host. With Talos CP (8 GiB), only ~8 GiB remains for host + ZFS ARC. ZFS ARC reports `memory_available_bytes = -1.9 GiB` (negative!) and `arc_no_grow = 1`. This causes ZFS write stalls (122+ seconds) when ARC-evicted buffers must be re-read. Options:
+   - Reduce wyrm2 to 96 GiB (`memory: 98304`) — leaves 24 GiB for host+ARC
+   - Enable balloon for wyrm2 (remove `balloon: 0`) — allows dynamic adjustment
+   - Set `zfs_arc_max` to a guaranteed minimum (e.g., 8 GiB) to protect ARC from VM pressure
+
+3. ~~**Deploy PCIe bridge D3cold/runtime PM disable**~~ **Not needed** (2026-03-11). Investigation showed `18:00.0` D3cold failures occur on every boot (including stable 2.5-day boots) and are benign — the Thunderbolt subsystem controls power independently of PCI sysfs settings. The udev rule in ansible (`99-pcie-bridge-no-d3cold.rules`) is harmless but ineffective for the Thunderbolt bridge.
+
+4. **Continue incremental GPU passthrough testing** (kernel 6.17, `nvidia-drm.modeset=0` active, `mobile_lpm_policy=1` active):
    - [x] **Step A**: One GPU only (`hostpci0` 01:00.0, Zotac) + wyrm2 alone — **stable ~33 min**. VFIO resets succeeded.
-   - [x] **Step B**: Start Talos CP VM (10000) alongside wyrm2+1 GPU — **crashed** (incident 15). Same pattern as incident 13 (6.8). `nvidia-drm.modeset=0` did not prevent it.
-   - [ ] **Step B2**: Multiple VMs **without GPUs** — verify the crash requires GPU passthrough + second VM, not just two VMs. (Multiple VMs without GPUs may have been stable previously but needs confirmation.)
+   - [x] **Step B**: Start Talos CP VM (10000) alongside wyrm2+1 GPU — **stalled but recovered twice** (incident 15). Root cause: **memory overcommit**. wyrm2 (112 GiB, balloon=0) + Talos CP (8 GiB) = 120 GiB out of 128 GiB total, leaving ZFS ARC starved (`memory_available_bytes = -1.9 GiB`). Thunderbolt bridge D3cold failures are a red herring (happen on all boots including stable ones).
+   - [ ] **Step B (retry with reduced memory)**: Reduce wyrm2 to ~96 GiB or enable ballooning, then re-test with Talos CP.
    - [ ] **Step C**: Add second GPU (`hostpci1` 03:00.0, Gigabyte) — test with both GPUs, wyrm2 alone.
    - [ ] **Step D**: Both GPUs + Talos CP VM — full production config.
 
-3. **If any step crashes**: investigate **GPU UEFI firmware update** (NVIDIA GPU UEFI Firmware Update Tool) — community reports this fixes the Blackwell FLR bug at the source.
+5. **If still crashing**: investigate **GPU UEFI firmware update** (NVIDIA GPU UEFI Firmware Update Tool) — community reports this fixes the Blackwell FLR bug at the source.
 
-4. **If firmware update unavailable or doesn't help**: try a **minimal test VM** matching the old Talos GPU worker config (16 cores, small RAM, no SPICE/virtiofs) to isolate VM complexity as a factor.
-
-Note: `ahci.mobile_lpm_policy=1` is active on current boot. Kernel 6.8 is **not** a reliable fix — incident 13 crashed on 6.8 too (though it survived longer than 6.17 boots).
+Note: `ahci.mobile_lpm_policy=1` is active on current boot. Kernel 6.8 is **not** a reliable fix — incident 13 crashed on 6.8 too (though it survived longer than 6.17 boots). Some apparent "hard lockups" with short uptimes may have been recoverable stalls killed prematurely by holding the power button.
 
 ### Completed mitigations
 
