@@ -555,27 +555,30 @@ This proves the kernel 6.17 AHCI driver defaults to `min_power` for this AMD 600
    - `cd ~/code/ducktape && git pull` on wyrm2 (as agentydragon)
    - `sudo nixos-rebuild switch --flake ~/code/ducktape/nix#wyrm2`
 
-2. **Reduce wyrm2 memory allocation** — wyrm2's `balloon=0` + `memory: 114688` (112 GiB) leaves only ~16 GiB for the host. With Talos CP (8 GiB), only ~8 GiB remains for host + ZFS ARC. ZFS ARC reports `memory_available_bytes = -1.9 GiB` (negative!) and `arc_no_grow = 1`. This causes ZFS write stalls (122+ seconds) when ARC-evicted buffers must be re-read. Options:
-   - Reduce wyrm2 to 96 GiB (`memory: 98304`) — leaves 24 GiB for host+ARC
-   - Enable balloon for wyrm2 (remove `balloon: 0`) — allows dynamic adjustment
-   - Set `zfs_arc_max` to a guaranteed minimum (e.g., 8 GiB) to protect ARC from VM pressure
+2. ~~**Reduce wyrm2 memory allocation**~~ **Done** (2026-03-11). Reduced from 112 GiB to 96 GiB (`memory: 98304`) in both Proxmox (`qm set`) and Terraform. Ballooning is incompatible with VFIO (passthrough requires pinned memory). Takes effect on next wyrm2 restart. Leaves 24 GiB for host+ARC instead of 8 GiB.
 
 3. ~~**Deploy PCIe bridge D3cold/runtime PM disable**~~ **Not needed** (2026-03-11). Investigation showed `18:00.0` D3cold failures occur on every boot (including stable 2.5-day boots) and are benign — the Thunderbolt subsystem controls power independently of PCI sysfs settings. The udev rule in ansible (`99-pcie-bridge-no-d3cold.rules`) is harmless but ineffective for the Thunderbolt bridge.
 
-4. **Continue incremental GPU passthrough testing** (kernel 6.17, `nvidia-drm.modeset=0` active, `mobile_lpm_policy=1` active):
+4. **Post-BIOS-update verification** (first boot after 2102 flash):
+   - [ ] Verify kernel cmdline: `ahci.mobile_lpm_policy=1`, `pcie_aspm=off` still present
+   - [ ] Verify ASPM actually off on chipset devices (`lspci -vv | grep LnkCtl`)
+   - [ ] Verify wyrm2 starts with 96 GiB (`qm config 110 | grep memory`)
+   - [ ] Check ZFS ARC health: `memory_available_bytes` should be positive
+
+5. **Continue incremental GPU passthrough testing** (kernel 6.17, `nvidia-drm.modeset=0` active, `mobile_lpm_policy=1` active):
    - [x] **Step A**: One GPU only (`hostpci0` 01:00.0, Zotac) + wyrm2 alone — **stable ~33 min**. VFIO resets succeeded.
    - [x] **Step B**: Start Talos CP VM (10000) alongside wyrm2+1 GPU — **stalled but recovered twice** (incident 15). Root cause: **memory overcommit**. wyrm2 (112 GiB, balloon=0) + Talos CP (8 GiB) = 120 GiB out of 128 GiB total, leaving ZFS ARC starved (`memory_available_bytes = -1.9 GiB`). Thunderbolt bridge D3cold failures are a red herring (happen on all boots including stable ones).
    - [ ] **Step B (retry with reduced memory)**: Reduce wyrm2 to ~96 GiB or enable ballooning, then re-test with Talos CP.
    - [ ] **Step C**: Add second GPU (`hostpci1` 03:00.0, Gigabyte) — test with both GPUs, wyrm2 alone.
    - [ ] **Step D**: Both GPUs + Talos CP VM — full production config.
 
-5. **If still crashing**: investigate **GPU UEFI firmware update** (NVIDIA GPU UEFI Firmware Update Tool) — community reports this fixes the Blackwell FLR bug at the source.
+6. **If still crashing**: investigate **GPU UEFI firmware update** (NVIDIA GPU UEFI Firmware Update Tool) — community reports this fixes the Blackwell FLR bug at the source.
 
 Note: `ahci.mobile_lpm_policy=1` is active on current boot. Kernel 6.8 is **not** a reliable fix — incident 13 crashed on 6.8 too (though it survived longer than 6.17 boots). Some apparent "hard lockups" with short uptimes may have been recoverable stalls killed prematurely by holding the power button.
 
 ### Completed mitigations
 
-1. ~~**Disable SATA link power management**~~ **Done** (2026-03-11). Ansible sets `ahci.mobile_lpm_policy=1` (`max_performance`). Needs reboot. Current boot has `=0` + manual sysfs override.
+1. ~~**Disable SATA link power management**~~ **Done** (2026-03-11). Ansible sets `ahci.mobile_lpm_policy=1` (`max_performance`). No SATA errors observed since deployment.
 
 2. **Blackwell FLR bug workarounds** — the VFIO instant crashes match the widely-reported RTX 5090/Blackwell FLR bug (see "Known Blackwell FLR Bug" section). `disable_idle_d3=1` did not prevent incident 12. Status of workarounds:
 
@@ -595,7 +598,7 @@ Note: `ahci.mobile_lpm_policy=1` is active on current boot. Kernel 6.8 is **not*
 
 4. ~~**Disable PCIe runtime PM for chipset devices**~~ **Done** (2026-03-10). Applied live and persisted via udev rule. See intervention log above.
 
-5. ~~**Disable ASPM on chipset devices**~~ **Done** (2026-03-10). `pcie_aspm=off` was already in cmdline but ineffective (BIOS overrides). Force-cleared via `setpci` and persisted via udev rule. See intervention log above.
+5. ~~**Disable ASPM on chipset devices**~~ **Done** (2026-03-10, reinforced 2026-03-11). `pcie_aspm=off` in cmdline + `setpci` udev rule + BIOS Native ASPM set to "Disabled" (BIOS-controlled) during 2102 update. Triple-layered: firmware won't enable ASPM, kernel won't add it, udev clears any remnants.
 
 6. ~~**Disable VM autostart**~~ **Done** (2026-03-10). All VMs set to `onboot: 0`. Atlas stable without VMs.
 
@@ -619,7 +622,7 @@ The 2x RTX 5090 GPUs are needed for Ollama in the k8s cluster. If VFIO passthrou
 
 3. **Check chipset heatsink and airflow** — the AMD 800 Series chipset handles SATA + USB + NIC + PCIe switching. If its heatsink has poor contact or no airflow, thermal runaway could cause the PCIe fabric to drop. Clean dust, verify heatsink is seated, consider adding a fan.
 
-4. **Update BIOS** — currently BIOS 1512 (2025-06-05, AGESA 1.2.0.3e), 3 versions behind. Available: 1804 (AGESA 1.2.7.0, "improves compatibility with various CPUs and devices"), 2004 (AGESA Pre1.3.0.0, "enhanced stability"), 2102 beta (AGESA 1.3.0.0a, DDR5/boot fixes). No changelogs mention PCIe/SATA fixes explicitly (AMD doesn't publish detailed AGESA notes), but three major AGESA bumps likely include unadvertised chipset firmware fixes. Download from [ASUS support page](https://www.asus.com/us/motherboards-components/motherboards/proart/proart-x870e-creator-wifi/helpdesk_bios?model2Name=ProArt-X870E-CREATOR-WIFI). Note: BIOS file must be renamed with BIOSRenamer before USB flashback.
+4. ~~**Update BIOS**~~ **Done** (2026-03-11). Flashed to BIOS 2102 (AGESA 1.3.0.0a) via EZ Flash. BIOS settings applied: Native ASPM set to "Disabled" (BIOS-controlled), AC power loss set to "Last State", RTC wake enabled (every 2h as safety net), HII resources published, SR-IOV left disabled. PSU voltages confirmed healthy in BIOS: 12V=11.808V, 5V=5.040V, 3.3V=3.328V, CPU core=1.279V.
 
 5. **Consider an HBA card** — a dedicated LSI/Broadcom HBA (e.g., 9300-8i in IT mode) would move SATA off the failing chipset entirely. Given the chipset-level PCIe failures, this may be the most practical workaround regardless of root cause.
 
