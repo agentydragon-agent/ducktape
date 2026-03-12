@@ -8,6 +8,8 @@
 /bazel-*
 **/node_modules/
 **/.aspect/
+# Cargo/rust-analyzer target dirs (Bazel is the build system, not cargo)
+**/target/
 
 # Python
 **/__pycache__/

@@ -399,6 +399,8 @@ in
     plugins = [
       "frontend-design@claude-plugins-official"
       "pyright-lsp@claude-plugins-official"
+      # TODO: creates target/ dirs everywhere (unconfigurable — no initializationOptions
+      # or cargo.targetDir passthrough). Mitigated by .gitignore for now.
       "rust-analyzer-lsp@claude-plugins-official"
     ];
 
