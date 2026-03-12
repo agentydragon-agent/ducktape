@@ -208,7 +208,10 @@ module "wyrm2" {
   vm_id              = 110
   username           = "agentydragon"
   vcpus              = 32
-  memory_mb          = 114688 # 112GB
+  # 96GB. Reduced from 112GB — with balloon=0 (VFIO requires pinned memory),
+  # 112GB + Talos CP (8GB) left only 8GB for host+ZFS ARC, causing ZFS write
+  # stalls (memory_available_bytes went negative). 96GB leaves 24GB headroom.
+  memory_mb          = 98304
   disk_size_gb       = 300
   auto_start         = true
   image_import_path  = module.wyrm2_image.import_path
