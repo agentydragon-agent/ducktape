@@ -5,11 +5,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/tls"
-	"encoding/base64"
 	"fmt"
 	"net"
 	"net/netip"
-	"net/url"
 	"os"
 	"runtime"
 	"slices"
@@ -23,8 +21,6 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-
-	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 )
 
 const discoveryTTL = 30 * time.Minute
@@ -42,61 +38,32 @@ type Manager struct {
 // The discovery client encrypts all affiliate data with AES-GCM using the
 // shared secret as the key. The discovery service never sees plaintext node data.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (Run)
-func NewManager(cfg *agentconfig.AgentConfig, affiliateID string, logger *zap.Logger) (*Manager, error) {
-	secretBytes, err := base64.StdEncoding.DecodeString(cfg.Cluster.Secret)
-	if err != nil {
-		return nil, fmt.Errorf("decoding cluster.secret: %w", err)
-	}
-
-	cipherBlock, err := aes.NewCipher(secretBytes)
+func NewManager(cfg *cluster.ConfigSpec, affiliateID string, logger *zap.Logger) (*Manager, error) {
+	cipherBlock, err := aes.NewCipher(cfg.ServiceEncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("AES cipher from cluster.secret: %w", err)
-	}
-
-	// Normalize endpoint URL to host:port for gRPC.
-	// Talos stores the default as "https://discovery.talos.dev/" (a URL), but gRPC
-	// expects "host:port". Talos's ConfigController does this normalization in
-	// internal/app/machined/pkg/controllers/cluster/config.go.
-	endpoint := cfg.Discovery.Endpoint
-	insecure := cfg.Discovery.Insecure
-
-	if u, err := url.ParseRequestURI(endpoint); err == nil && u.Scheme != "" {
-		host := u.Hostname()
-		port := u.Port()
-
-		if port == "" {
-			if u.Scheme == "http" {
-				port = "80"
-			} else {
-				port = "443"
-			}
-		}
-
-		endpoint = net.JoinHostPort(host, port)
-
-		if u.Scheme == "http" {
-			insecure = true
-		}
-	}
-
-	// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
-	tlsConfigFunc := func() *tls.Config {
-		return &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 
 	// Use passthrough:/// to bypass gRPC's built-in DNS resolver. The dns:///
 	// resolver does SRV lookups (_grpcs._tcp.<host>) which hang on Tailscale
 	// MagicDNS. With passthrough, the custom context dialer handles DNS via
 	// Go's standard net package. See debug/kubespand-grpc-dns-magicdns.md.
+	endpoint := cfg.ServiceEndpoint
+
+	// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
+	tlsConfigFunc := func() *tls.Config {
+		return &tls.Config{MinVersion: tls.VersionTLS12}
+	}
+
 	opts := discoveryclient.Options{
 		Cipher:        cipherBlock,
 		Endpoint:      "passthrough:///" + endpoint,
-		ClusterID:     cfg.Cluster.ID,
+		ClusterID:     cfg.ServiceClusterID,
 		AffiliateID:   affiliateID,
 		TTL:           discoveryTTL,
 		ClientVersion: "kubespand/0.1.0",
 	}
-	if insecure {
+	if cfg.ServiceEndpointInsecure {
 		opts.Insecure = true
 	} else {
 		opts.TLSConfig = tlsConfigFunc
@@ -138,14 +105,14 @@ func (dm *Manager) Run(ctx context.Context) error {
 // otherEndpoints are harvested endpoints from EndpointController for re-announcement.
 // additionalAddresses are Kubernetes network prefixes (PodCIDRs + ServiceCIDRs) to advertise.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints, pbOtherEndpoints)
-func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.IdentitySpec, listenPort int, otherEndpoints []discoveryclient.Endpoint, additionalAddresses []netip.Prefix) error {
+func (dm *Manager) PublishLocal(id *kubespan.IdentitySpec, machineType string, extraEndpoints []netip.AddrPort, listenPort int, otherEndpoints []discoveryclient.Endpoint, additionalAddresses []netip.Prefix) error {
 	addrBytes, _ := id.Address.Addr().MarshalBinary()
 
 	hostname, _ := os.Hostname()
 
 	// Build endpoint list from extra_endpoints config.
 	var endpoints []*clientpb.Endpoint
-	for _, addrPort := range cfg.Kubespan.ExtraEndpoints {
+	for _, addrPort := range extraEndpoints {
 		ipBytes, _ := addrPort.Addr().MarshalBinary()
 		endpoints = append(endpoints, &clientpb.Endpoint{
 			Ip:   ipBytes,
@@ -192,7 +159,7 @@ func (dm *Manager) PublishLocal(cfg *agentconfig.AgentConfig, id *kubespan.Ident
 			NodeId:          id.PublicKey,
 			Hostname:        hostname,
 			Nodename:        hostname,
-			MachineType:     cfg.Discovery.MachineType,
+			MachineType:     machineType,
 			OperatingSystem: runtime.GOOS + "/" + runtime.GOARCH + " (kubespand)",
 			Addresses:       addrBytesSlice,
 			Kubespan: &clientpb.KubeSpan{
@@ -288,17 +255,13 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 	return result
 }
 
-// routedNodeAddresses returns the node's routed addresses (IPv4 and IPv6),
-// excluding loopback, link-local, and the kubespan WireGuard interface. These
-// are included in Affiliate.Addresses so other nodes add them to WireGuard
-// AllowedIPs, enabling VXLAN traffic to route through KubeSpan.
-//
-// Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go
-// which sets spec.Addresses from NodeAddressRoutedID.
 // RoutedNodeAddresses returns all routable IP addresses from non-loopback,
 // non-kubespan interfaces. Used by the discovery controller to advertise
 // node addresses, and by the manager controller to add them to the kubespan
 // interface (so the kernel accepts reply packets arriving on kubespan).
+//
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go
+// which sets spec.Addresses from NodeAddressRoutedID.
 func RoutedNodeAddresses() []netip.Addr {
 	ifaces, err := net.Interfaces()
 	if err != nil {

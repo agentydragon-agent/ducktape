@@ -5,17 +5,17 @@
 //
 // # Upstream correspondence
 //
-// The upstream Talos ManagerController uses a fully declarative COSI model:
-// it writes network.LinkSpec (WireGuard config), network.AddressSpec (ULA
-// address), and network.RouteSpec (routing table entries) as COSI resources,
-// which are then applied by Talos's LinkSpecController, AddressSpecController,
-// and RouteSpecController respectively. It only reads WireGuard device state
-// (via WireguardClient.Device) for handshake polling.
+// This controller now follows the upstream declarative COSI model:
+// it writes network.LinkSpec (WireGuard config with embedded WireguardSpec),
+// network.AddressSpec (ULA address), network.RouteSpec (routing table entries),
+// and network.NfTablesChain as COSI resources. The WireguardLinkController
+// applies the LinkSpec to the kernel, while AddressSpecController,
+// RouteSpecController, and NfTablesChainController handle their respective
+// resources.
 //
-// Kubespand cannot adopt that model without also pulling in the entire Talos
-// network operator stack, so this controller is intentionally imperative for
-// the WireGuard/netlink side: it calls wgctrl and netlink directly to create
-// the interface, configure peers, and install routes.
+// The only imperative operations remaining are:
+//   - IP policy rules (fwmark → routing table) via RulesManager
+//   - Read-only WireGuard device queries for handshake polling
 //
 // # What matches upstream
 //
@@ -25,46 +25,42 @@
 //     patterns (mark matching, destination matching, MSS clamping)
 //   - RulesManager for ip-rule fwmark→table routing (same interface, pulled from
 //     upstream routing_rules.go)
+//   - LinkSpec with WireguardSpec: peers as network.WireguardPeer (string keys,
+//     string endpoints, netip.Prefix AllowedIPs) — matches upstream exactly
 //   - Factory interfaces for WireguardClient and RulesManager (testability)
 //   - IPSetBuilder for routed prefix compaction with ULA exclusion
 //   - updateSpecs optimization: skip WireGuard reconfiguration on timer-only ticks
 //
 // # What diverges
 //
-//   - Kubespand calls wgctrl.ConfigureDevice directly instead of writing
-//     network.LinkSpec with WireguardSpec. Upstream WireguardClient is read-only
-//     (Device+Close); kubespand's WireguardManager also writes (EnsureInterface,
-//     ConfigurePeers, Cleanup).
-//   - Kubespand calls netlink directly for routes (routing.InstallRoutes) and
-//     interface creation (wireguard.Manager.EnsureInterface) instead of writing
-//     network.RouteSpec/AddressSpec COSI resources.
 //   - No Enabled toggle: kubespand is always-on when running (no cfg.Enabled check).
 //   - NfTablesChain outputs are OutputExclusive (kubespand is the only producer)
 //     vs OutputShared in upstream (Talos has multiple chain producers).
 //   - Nftables mark rules include explicit Xor:0 field for clarity.
-package main
+package kubespanctrl
 
 import (
 	"context"
 	"fmt"
 	"net/netip"
+	"slices"
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
-	"github.com/siderolabs/go-pointer"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/nethelpers"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"go.uber.org/zap"
 	"go4.org/netipx"
+	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	"github.com/agentydragon/ducktape/cluster/kubespand/discovery"
-	"github.com/agentydragon/ducktape/cluster/kubespand/wireguard"
 	kubespanadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/kubespan"
 	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
 )
@@ -74,22 +70,17 @@ import (
 // Ref: upstream DefaultPeerReconcileInterval
 const DefaultPeerReconcileInterval = 30 * time.Second
 
-// WireguardManager abstracts WireGuard interface management for testability.
-// Upstream Talos uses a read-only WireguardClient (Device+Close) because it
-// writes config via COSI LinkSpec. Kubespand manages the interface imperatively,
-// so this interface includes both read and write operations.
-type WireguardManager interface {
-	EnsureInterface(address netip.Prefix) error
-	PresharedKey() *wgtypes.Key
-	ConfigurePeers(peers []wgtypes.PeerConfig) error
-	GetPeers() ([]wgtypes.Peer, error)
-	Cleanup() error
+// WireguardClient provides read-only access to WireGuard device state for
+// handshake polling. Matches upstream Talos's WireguardClient interface.
+// Ref: upstream WireguardClient (Device + Close)
+type WireguardClient interface {
+	Device(name string) (*wgtypes.Device, error)
 	Close() error
 }
 
-// WireguardManagerFactory creates a WireguardManager.
-// Ref: upstream WireguardClientFactory (but wraps read+write, not read-only)
-type WireguardManagerFactory func(privateKey string, psk string, listenPort, mtu int) (WireguardManager, error)
+// WireguardClientFactory creates a WireguardClient.
+// Ref: upstream WireguardClientFactory
+type WireguardClientFactory func() (WireguardClient, error)
 
 // RulesManagerFactory creates a RulesManager.
 // Ref: upstream RulesManagerFactory (identical signature)
@@ -97,15 +88,16 @@ type RulesManagerFactory func(targetTable uint8, internalMark, markMask uint32) 
 
 // ManagerController manages the KubeSpan WireGuard interface, routing rules,
 // and peer state. It watches Config, Identity, and PeerSpec resources, and
-// produces PeerStatus and NfTablesChain resources.
+// produces PeerStatus, NfTablesChain, LinkSpec, AddressSpec, and RouteSpec
+// resources.
 type ManagerController struct {
-	WireguardManagerFactory WireguardManagerFactory
-	RulesManagerFactory     RulesManagerFactory
-	PeerReconcileInterval   time.Duration
+	WireguardClientFactory WireguardClientFactory
+	RulesManagerFactory    RulesManagerFactory
+	PeerReconcileInterval  time.Duration
 
-	wg     WireguardManager
-	rules  taloscontrollerskubespan.RulesManager
-	ticker *time.Ticker
+	wgClient WireguardClient
+	rules    taloscontrollerskubespan.RulesManager
+	ticker   *time.Ticker
 }
 
 // Name implements controller.Controller.
@@ -119,12 +111,12 @@ func (ctrl *ManagerController) Inputs() []controller.Input {
 		safe.Input[*kubespan.Config](controller.InputWeak),
 		safe.Input[*kubespan.Identity](controller.InputWeak),
 		safe.Input[*kubespan.PeerSpec](controller.InputWeak),
+		safe.Input[*agentconfig.Resource](controller.InputWeak),
 	}
 }
 
 // Outputs implements controller.Controller.
-// Ref: Talos manager.go Outputs() — we add AddressSpec and RouteSpec for COSI
-// address/route management, matching the upstream declarative model.
+// Ref: Talos manager.go Outputs()
 func (ctrl *ManagerController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
@@ -143,14 +135,18 @@ func (ctrl *ManagerController) Outputs() []controller.Output {
 			Type: network.RouteSpecType,
 			Kind: controller.OutputExclusive,
 		},
+		{
+			Type: network.LinkSpecType,
+			Kind: controller.OutputExclusive,
+		},
 	}
 }
 
 // Run implements controller.Controller.
 func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, logger *zap.Logger) error {
-	if ctrl.WireguardManagerFactory == nil {
-		ctrl.WireguardManagerFactory = func(privateKey string, psk string, listenPort, mtu int) (WireguardManager, error) {
-			return wireguard.NewManager(privateKey, psk, listenPort, mtu)
+	if ctrl.WireguardClientFactory == nil {
+		ctrl.WireguardClientFactory = func() (WireguardClient, error) {
+			return wgctrl.New()
 		}
 	}
 	if ctrl.RulesManagerFactory == nil {
@@ -165,9 +161,7 @@ func (ctrl *ManagerController) Run(ctx context.Context, r controller.Runtime, lo
 
 	// Only clean up on permanent shutdown (context cancellation), not on
 	// transient reconcile errors. COSI restarts the controller after errors,
-	// and the existing WireGuard interface + nftables state should be reused.
-	// Cleaning up on every restart triggers nf_tables_commit_release() which
-	// holds the kernel's commit_mutex, causing EBUSY on the next install.
+	// and the existing state should be reused.
 	defer func() {
 		if ctx.Err() != nil {
 			ctrl.cleanup(logger)
@@ -222,31 +216,27 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		return fmt.Errorf("getting identity: %w", err)
 	}
 
+	acfg, err := safe.ReaderGetByID[*agentconfig.Resource](ctx, r, agentconfig.ResourceID)
+	if err != nil {
+		if state.IsNotFoundError(err) {
+			return nil
+		}
+		return fmt.Errorf("getting agent config: %w", err)
+	}
+
 	cfgSpec := cfg.TypedSpec()
 	idSpec := id.TypedSpec()
+	agentSpec := acfg.TypedSpec()
 
-	// Initialize WireGuard and routing rules if needed.
-	if ctrl.wg == nil {
-		wg, wgErr := ctrl.WireguardManagerFactory(idSpec.PrivateKey, cfgSpec.SharedSecret, agentCfg.Kubespan.ListenPort, int(cfgSpec.MTU))
-		if wgErr != nil {
-			return fmt.Errorf("wireguard manager: %w", wgErr)
+	// Initialize read-only WireGuard client and routing rules if needed.
+	if ctrl.wgClient == nil {
+		client, clientErr := ctrl.WireguardClientFactory()
+		if clientErr != nil {
+			return fmt.Errorf("wireguard client: %w", clientErr)
 		}
+		ctrl.wgClient = client
 
-		// Use the Subnet prefix length (/64) instead of Address (/128) so
-		// the kernel creates a connected route covering all peer ULA addresses
-		// in the same cluster. Upstream Talos does the same in its AddressSpec:
-		//   spec.Address = netip.PrefixFrom(localSpec.Address.Addr(), localSpec.Subnet.Bits())
-		ifaceAddr := netip.PrefixFrom(idSpec.Address.Addr(), idSpec.Subnet.Bits())
-		if err := wg.EnsureInterface(ifaceAddr); err != nil {
-			wg.Close()
-			return fmt.Errorf("wireguard interface: %w", err)
-		}
-		logger.Info("WireGuard interface ready", zap.String("interface", constants.KubeSpanLinkName))
-
-		ctrl.wg = wg
-
-		// IP policy rules (fwmark → routing table). Nftables are now
-		// managed by NfTablesChainController via COSI resources.
+		// IP policy rules (fwmark → routing table).
 		ctrl.rules = ctrl.RulesManagerFactory(
 			uint8(constants.KubeSpanDefaultRoutingTable),
 			constants.KubeSpanDefaultForceFirewallMark,
@@ -380,10 +370,13 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		statusMap[ps.Metadata().ID()] = &spec
 	}
 
-	// Poll WireGuard for peer state.
-	wgPeerList, handshakeErr := ctrl.wg.GetPeers()
+	// Poll WireGuard for peer state (read-only).
+	var wgPeerList []wgtypes.Peer
+	dev, handshakeErr := ctrl.wgClient.Device(constants.KubeSpanLinkName)
 	if handshakeErr != nil {
-		logger.Warn("failed to query WireGuard peers", zap.Error(handshakeErr))
+		logger.Warn("failed to query WireGuard device", zap.Error(handshakeErr))
+	} else {
+		wgPeerList = dev.Peers
 	}
 
 	// Index WireGuard peers by public key for lookup.
@@ -392,8 +385,8 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		wgPeerMap[p.PublicKey.String()] = i
 	}
 
-	// Build WireGuard peer configs and update statuses.
-	var wgPeers []wgtypes.PeerConfig
+	// Build WireGuard peer specs (network.WireguardPeer) and update statuses.
+	var wgPeers []network.WireguardPeer
 
 	// Build routed IP set using IPSetBuilder for prefix compaction.
 	// Upstream excludes KubeSpan ULA addresses from the routed set since
@@ -440,27 +433,21 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 			}
 		}
 
-		// Build WireGuard peer config directly.
-		wgKey, keyErr := wgtypes.ParseKey(pubKey)
-		if keyErr != nil {
-			logger.Warn("skipping peer with invalid key", zap.String("key", pubKey), zap.Error(keyErr))
-			continue
-		}
-		peerCfg := wgtypes.PeerConfig{
-			PublicKey:                   wgKey,
-			PresharedKey:                ctrl.wg.PresharedKey(),
-			PersistentKeepaliveInterval: pointer.To(constants.KubeSpanDefaultPeerKeepalive),
-			ReplaceAllowedIPs:           true,
-			AllowedIPs:                  wireguard.PrefixesToIPNets(peerSpec.AllowedIPs),
+		// Build network.WireguardPeer (upstream type with string keys).
+		wgPeer := network.WireguardPeer{
+			PublicKey:                   pubKey,
+			PresharedKey:                cfgSpec.SharedSecret,
+			PersistentKeepaliveInterval: constants.KubeSpanDefaultPeerKeepalive,
+			AllowedIPs:                  slices.Clone(peerSpec.AllowedIPs),
 		}
 		if ps.LastUsedEndpoint.IsValid() {
-			peerCfg.Endpoint = wireguard.AddrPortToUDPAddr(ps.LastUsedEndpoint)
+			wgPeer.Endpoint = ps.LastUsedEndpoint.String()
 		} else if len(peerSpec.Endpoints) > 0 {
-			peerCfg.Endpoint = wireguard.AddrPortToUDPAddr(peerSpec.Endpoints[0])
+			wgPeer.Endpoint = peerSpec.Endpoints[0].String()
 			kubespanadapter.PeerStatusSpec(ps).UpdateEndpoint(peerSpec.Endpoints[0])
 			*updateSpecs = true
 		}
-		wgPeers = append(wgPeers, peerCfg)
+		wgPeers = append(wgPeers, wgPeer)
 
 		// Collect routed prefixes for nftables, excluding KubeSpan ULA addresses.
 		// Ref: upstream routedIPsBuilder with network.IsULA filter
@@ -507,8 +494,29 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		return nil
 	}
 
-	if err := ctrl.wg.ConfigurePeers(wgPeers); err != nil {
-		return fmt.Errorf("configuring WireGuard peers: %w", err)
+	// Write LinkSpec with embedded WireguardSpec.
+	// The WireguardLinkController watches this and applies to the kernel.
+	if err := safe.WriterModify(ctx, r,
+		network.NewLinkSpec(network.NamespaceName, network.LinkID(constants.KubeSpanLinkName)),
+		func(res *network.LinkSpec) error {
+			spec := res.TypedSpec()
+			spec.Name = constants.KubeSpanLinkName
+			spec.Type = nethelpers.LinkNone
+			spec.Kind = network.LinkKindWireguard
+			spec.Up = true
+			spec.Logical = true
+			spec.MTU = cfgSpec.MTU
+			spec.ConfigLayer = network.ConfigOperator
+			spec.Wireguard = network.WireguardSpec{
+				PrivateKey:   idSpec.PrivateKey,
+				ListenPort:   agentSpec.ListenPort,
+				FirewallMark: constants.KubeSpanDefaultFirewallMark,
+				Peers:        wgPeers,
+			}
+			return nil
+		},
+	); err != nil {
+		return fmt.Errorf("writing link spec: %w", err)
 	}
 
 	*updateSpecs = false
@@ -650,12 +658,9 @@ func buildOutputRules(routedPrefixes []netip.Prefix, mtu uint16) []network.NfTab
 	return rules
 }
 
-// cleanup tears down the WireGuard interface and routing rules.
-// Divergence: upstream cleans up by destroying owned COSI resources
-// (LinkSpec/AddressSpec/RouteSpec/NfTablesChain/PeerStatus). Kubespand
-// calls netlink/wgctrl directly since it manages the interface imperatively.
-// Nftables cleanup is handled by NfTablesChainController when its COSI
-// resources are torn down.
+// cleanup tears down routing rules and releases the WireGuard client.
+// WireGuard interface cleanup is handled by WireguardLinkController
+// when the LinkSpec resource is torn down.
 func (ctrl *ManagerController) cleanup(logger *zap.Logger) {
 	if ctrl.rules != nil {
 		if err := ctrl.rules.Cleanup(); err != nil {
@@ -663,11 +668,8 @@ func (ctrl *ManagerController) cleanup(logger *zap.Logger) {
 		}
 		ctrl.rules = nil
 	}
-	if ctrl.wg != nil {
-		if err := ctrl.wg.Cleanup(); err != nil {
-			logger.Error("wireguard cleanup failed", zap.Error(err))
-		}
-		ctrl.wg.Close()
-		ctrl.wg = nil
+	if ctrl.wgClient != nil {
+		ctrl.wgClient.Close()
+		ctrl.wgClient = nil
 	}
 }

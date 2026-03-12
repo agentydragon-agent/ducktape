@@ -1,4 +1,10 @@
-package main
+// KubernetesNodeController watches a K8s Node object via client-go informer
+// and produces a KubernetesNetworks COSI resource with PodCIDRs + ServiceCIDRs.
+//
+// Analogous to Talos's K8sNodeStatusController which feeds into LocalAffiliateController.
+//
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go
+package clusterctrl
 
 import (
 	"context"
@@ -19,13 +25,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	"github.com/agentydragon/ducktape/cluster/kubespand/k8snet"
 )
 
 // KubernetesNodeController watches a K8s Node object via client-go informer
 // and produces a KubernetesNetworks COSI resource with PodCIDRs + ServiceCIDRs.
-//
-// Analogous to Talos's K8sNodeStatusController which feeds into LocalAffiliateController.
 type KubernetesNodeController struct {
 	factory  informers.SharedInformerFactory
 	informer cache.SharedIndexInformer
@@ -40,6 +45,7 @@ func (ctrl *KubernetesNodeController) Name() string {
 func (ctrl *KubernetesNodeController) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*kubespan.Config](controller.InputWeak),
+		safe.Input[*agentconfig.Resource](controller.InputWeak),
 	}
 }
 
@@ -74,9 +80,18 @@ func (ctrl *KubernetesNodeController) Run(ctx context.Context, r controller.Runt
 			continue
 		}
 
+		acfg, err := safe.ReaderGetByID[*agentconfig.Resource](ctx, r, agentconfig.ResourceID)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				continue
+			}
+			return fmt.Errorf("getting agent config: %w", err)
+		}
+		agentSpec := acfg.TypedSpec()
+
 		// Lazy-init the K8s informer on first reconcile when config is available.
 		if ctrl.informer == nil {
-			if initErr := ctrl.initInformer(ctx, r, logger); initErr != nil {
+			if initErr := ctrl.initInformer(ctx, r, logger, agentSpec); initErr != nil {
 				logger.Warn("failed to initialize K8s informer, will retry", zap.Error(initErr))
 				continue
 			}
@@ -86,7 +101,7 @@ func (ctrl *KubernetesNodeController) Run(ctx context.Context, r controller.Runt
 		prefixes := ctrl.getPodCIDRs(logger)
 
 		// Merge static ServiceCIDRs from config.
-		prefixes = append(prefixes, agentCfg.Kubernetes.ServiceCIDRs...)
+		prefixes = append(prefixes, agentSpec.ServiceCIDRs...)
 
 		// Write KubernetesNetworks resource.
 		if err := safe.WriterModify(ctx, r, k8snet.New(), func(res *k8snet.KubernetesNetworks) error {
@@ -102,14 +117,14 @@ func (ctrl *KubernetesNodeController) Run(ctx context.Context, r controller.Runt
 }
 
 // initInformer creates the K8s clientset and starts the node informer.
-func (ctrl *KubernetesNodeController) initInformer(ctx context.Context, r controller.Runtime, logger *zap.Logger) error {
+func (ctrl *KubernetesNodeController) initInformer(ctx context.Context, r controller.Runtime, logger *zap.Logger, agentSpec *agentconfig.Spec) error {
 	var config *rest.Config
 	var err error
 
-	if agentCfg.Kubernetes.KubeconfigPath != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", agentCfg.Kubernetes.KubeconfigPath)
+	if agentSpec.KubeconfigPath != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", agentSpec.KubeconfigPath)
 		if err != nil {
-			return fmt.Errorf("building kubeconfig from %s: %w", agentCfg.Kubernetes.KubeconfigPath, err)
+			return fmt.Errorf("building kubeconfig from %s: %w", agentSpec.KubeconfigPath, err)
 		}
 	} else {
 		config, err = rest.InClusterConfig()
@@ -127,7 +142,7 @@ func (ctrl *KubernetesNodeController) initInformer(ctx context.Context, r contro
 	ctrl.factory = informers.NewSharedInformerFactoryWithOptions(
 		clientset, 0,
 		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
-			opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", agentCfg.Kubernetes.NodeName).String()
+			opts.FieldSelector = fields.OneTermEqualSelector("metadata.name", agentSpec.NodeName).String()
 		}),
 	)
 
@@ -148,7 +163,7 @@ func (ctrl *KubernetesNodeController) initInformer(ctx context.Context, r contro
 		return fmt.Errorf("timed out waiting for K8s node informer to sync")
 	}
 
-	logger.Info("K8s node informer started", zap.String("node", agentCfg.Kubernetes.NodeName))
+	logger.Info("K8s node informer started", zap.String("node", agentSpec.NodeName))
 	return nil
 }
 

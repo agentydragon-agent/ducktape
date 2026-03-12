@@ -1,4 +1,11 @@
-package main
+// IdentityController watches Config and AgentConfig, and produces the node's
+// KubeSpan Identity.
+//
+// It loads or creates a WireGuard keypair and derives the KubeSpan ULA address
+// from the cluster ID and the machine's MAC address.
+//
+// Ref: talos/internal/app/machined/pkg/controllers/kubespan/identity.go
+package kubespanctrl
 
 import (
 	"context"
@@ -10,16 +17,12 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	"github.com/agentydragon/ducktape/cluster/kubespand/identity"
 	kubespanadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/kubespan"
 )
 
-// IdentityController watches Config and produces the node's KubeSpan Identity.
-//
-// It loads or creates a WireGuard keypair and derives the KubeSpan ULA address
-// from the cluster ID and the machine's MAC address.
-//
-// Ref: talos/internal/app/machined/pkg/controllers/kubespan/identity.go
+// IdentityController watches Config and AgentConfig, producing Identity.
 type IdentityController struct {
 	cachedID *kubespan.IdentitySpec
 }
@@ -33,6 +36,7 @@ func (ctrl *IdentityController) Name() string {
 func (ctrl *IdentityController) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*kubespan.Config](controller.InputWeak),
+		safe.Input[*agentconfig.Resource](controller.InputWeak),
 	}
 }
 
@@ -63,7 +67,16 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 			return fmt.Errorf("getting config: %w", err)
 		}
 
+		acfg, err := safe.ReaderGetByID[*agentconfig.Resource](ctx, r, agentconfig.ResourceID)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				continue
+			}
+			return fmt.Errorf("getting agent config: %w", err)
+		}
+
 		cfgSpec := cfg.TypedSpec()
+		agentSpec := acfg.TypedSpec()
 
 		if ctrl.cachedID == nil {
 			mac, err := identity.DetectMAC()
@@ -71,7 +84,7 @@ func (ctrl *IdentityController) Run(ctx context.Context, r controller.Runtime, l
 				return fmt.Errorf("detecting MAC: %w", err)
 			}
 
-			id, err := identity.LoadOrCreate(agentCfg.Kubespan.IdentityFile, cfgSpec.ClusterID)
+			id, err := identity.LoadOrCreate(agentSpec.IdentityFile, cfgSpec.ClusterID)
 			if err != nil {
 				return fmt.Errorf("loading identity: %w", err)
 			}

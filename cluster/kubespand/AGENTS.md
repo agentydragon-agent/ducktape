@@ -18,18 +18,18 @@ Upstream Talos code:
   (go_library targets in BUILD.overlay.bazel, importpath matches Talos)
 
 kubespand code:
+  controllers/kubespan/manager.go      ↔  controllers/kubespan/manager.go           (reimplemented, declarative LinkSpec)
+  controllers/kubespan/identity.go     ↔  controllers/kubespan/identity.go          (reimplemented)
+  controllers/cluster/discovery_service.go  ↔  controllers/cluster/discovery_service.go  (reimplemented)
+  controllers/cluster/local_affiliate.go    ↔  controllers/cluster/local_affiliate.go    (reimplemented)
+  controllers/kubespand/config.go      ↔  (kubespand-only: YAML → COSI config injection)
+  controllers/k8s/kubeprism_config.go  ↔  controllers/k8s/kubeprism_endpoints.go + kubeprism_config.go  (adapted)
+  controllers/network/wireguard_link.go  ↔  controllers/network/link_spec.go  (WG subset only)
   peerspec/                  embeds @talos_internal controllers_kubespan + peer_spec_filters.go
-  controller_manager.go      ↔  controllers/kubespan/manager.go           (reimplemented)
-  controller_identity.go     ↔  controllers/kubespan/identity.go          (reimplemented)
-  controller_discovery.go    ↔  controllers/cluster/discovery_service.go  (reimplemented)
-  controller_config.go       ↔  (kubespand-only)
-  controller_k8s_node.go     ↔  controllers/cluster/local_affiliate.go    (reimplemented)
   identity/                  ↔  (kubespand-only: disk identity)
   discovery/                 ↔  (kubespand-only: discovery client)
-  wireguard/                 ↔  (kubespand-only: WG via netlink)
-  agentconfig/               ↔  (kubespand-only: YAML config)
+  agentconfig/               ↔  (kubespand-only: YAML config + COSI resource)
   k8snet/                    ↔  (kubespand-only: KubernetesNetworks resource)
-  controller_kubeprism_config.go  ↔  controllers/k8s/kubeprism_endpoints.go + kubeprism_config.go  (adapted)
   @talos_internal controllers_kubeprism  ↔  controllers/k8s/kubeprism.go  (embedded)
 ```
 
@@ -44,5 +44,5 @@ kubespand code:
 3. **Reimplemented files** must reference the Talos equivalent at the top:
    `// Ref: internal/.../controllers/kubespan/manager.go`
 4. **kubespand-only files** exist where Talos's approach doesn't apply (disk identity
-   persistence, YAML config, direct netlink for WireGuard since LinkSpecController
-   depends on Talos udev integration).
+   persistence, YAML config, WireguardLinkController instead of the monolithic
+   LinkSpecController which depends on Talos udev integration).

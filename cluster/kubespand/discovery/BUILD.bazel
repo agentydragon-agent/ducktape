@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/discovery",
     visibility = ["//cluster/kubespand:__subpackages__"],
     deps = [
-        "//cluster/kubespand/agentconfig",
         "@com_github_siderolabs_discovery_api//api/v1alpha1/client/pb",
         "@com_github_siderolabs_discovery_client//pkg/client",
         "@com_github_siderolabs_talos_pkg_machinery//client/dialer",

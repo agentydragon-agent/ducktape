@@ -1,4 +1,16 @@
-package main
+// DiscoveryController watches Config + Identity and produces cluster.Affiliate
+// resources by communicating with the Talos discovery service.
+//
+// It manages the lifecycle of the discovery Manager: creating it when Config and
+// Identity become available, forwarding discovery notifications to the COSI
+// event loop, and cleaning up on shutdown.
+//
+// Re-publishing is rate-limited: the controller only calls PublishLocal when
+// otherEndpoints or additionalAddresses actually change, not on every reconcile.
+// TTL refresh is handled automatically by the discovery client's internal ticker.
+//
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
+package clusterctrl
 
 import (
 	"context"
@@ -15,22 +27,13 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	"github.com/agentydragon/ducktape/cluster/kubespand/discovery"
 	"github.com/agentydragon/ducktape/cluster/kubespand/k8snet"
 )
 
 // DiscoveryController watches Config + Identity and produces cluster.Affiliate
 // resources by communicating with the Talos discovery service.
-//
-// It manages the lifecycle of the discovery Manager: creating it when Config and
-// Identity become available, forwarding discovery notifications to the COSI
-// event loop, and cleaning up on shutdown.
-//
-// Re-publishing is rate-limited: the controller only calls PublishLocal when
-// otherEndpoints or additionalAddresses actually change, not on every reconcile.
-// TTL refresh is handled automatically by the discovery client's internal ticker.
-//
-// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
 type DiscoveryController struct {
 	dm       *discovery.Manager
 	cancelDM context.CancelFunc
@@ -54,6 +57,8 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 		safe.Input[*kubespan.Config](controller.InputWeak),
 		safe.Input[*kubespan.Identity](controller.InputWeak),
 		safe.Input[*kubespan.Endpoint](controller.InputWeak),
+		safe.Input[*cluster.Config](controller.InputWeak),
+		safe.Input[*agentconfig.Resource](controller.InputWeak),
 		safe.Input[*k8snet.KubernetesNetworks](controller.InputWeak),
 	}
 }
@@ -79,14 +84,35 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		case <-r.EventCh():
 		}
 
-		_, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
+		kubespanCfg, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				ctrl.stopDiscovery()
 				continue
 			}
-			return fmt.Errorf("getting config: %w", err)
+			return fmt.Errorf("getting kubespan config: %w", err)
 		}
+		kubespanSpec := kubespanCfg.TypedSpec()
+
+		clusterCfg, err := safe.ReaderGetByID[*cluster.Config](ctx, r, cluster.ConfigID)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				ctrl.stopDiscovery()
+				continue
+			}
+			return fmt.Errorf("getting cluster config: %w", err)
+		}
+		clusterSpec := clusterCfg.TypedSpec()
+
+		acfg, err := safe.ReaderGetByID[*agentconfig.Resource](ctx, r, agentconfig.ResourceID)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				ctrl.stopDiscovery()
+				continue
+			}
+			return fmt.Errorf("getting agent config: %w", err)
+		}
+		agentSpec := acfg.TypedSpec()
 
 		id, err := safe.ReaderGetByID[*kubespan.Identity](ctx, r, kubespan.LocalIdentity)
 		if err != nil {
@@ -109,7 +135,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 
 		// Create discovery manager if not yet running.
 		if ctrl.dm == nil {
-			dm, createErr := discovery.NewManager(agentCfg, idSpec.PublicKey, logger)
+			dm, createErr := discovery.NewManager(clusterSpec, idSpec.PublicKey, logger)
 			if createErr != nil {
 				return fmt.Errorf("creating discovery manager: %w", createErr)
 			}
@@ -139,7 +165,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 				}
 			}()
 
-			if pubErr := dm.PublishLocal(agentCfg, idSpec, agentCfg.Kubespan.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
+			if pubErr := dm.PublishLocal(idSpec, agentSpec.MachineType, kubespanSpec.ExtraEndpoints, agentSpec.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
 				logger.Error("publishing local affiliate", zap.Error(pubErr))
 			}
 			ctrl.lastOtherEndpointCount = len(otherEndpoints)
@@ -157,7 +183,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			if len(otherEndpoints) != ctrl.lastOtherEndpointCount ||
 				len(additionalAddresses) != ctrl.lastAdditionalAddrCount ||
 				pubIPLen != ctrl.lastPubIPLen {
-				if pubErr := ctrl.dm.PublishLocal(agentCfg, id.TypedSpec(), agentCfg.Kubespan.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
+				if pubErr := ctrl.dm.PublishLocal(idSpec, agentSpec.MachineType, kubespanSpec.ExtraEndpoints, agentSpec.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
 					logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
 				}
 				ctrl.lastOtherEndpointCount = len(otherEndpoints)

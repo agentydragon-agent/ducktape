@@ -15,14 +15,15 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
+	clusterctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/cluster"
+	k8sctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/k8s"
+	kubespanctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/kubespan"
+	kubespandctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/kubespand"
+	networkctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/network"
 	taloscontrollersk8s "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/k8s"
 	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
 	taloscontrollersnetwork "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/network"
 )
-
-// agentCfg is the parsed agent configuration, accessible to controllers
-// for agent-specific fields not in upstream kubespan.ConfigSpec.
-var agentCfg *agentconfig.AgentConfig
 
 func main() {
 	configPath := flag.String("config", "/etc/kubespan/agent.yaml", "path to config file")
@@ -49,20 +50,24 @@ func main() {
 
 func run(configPath string, logger *zap.Logger) error {
 	// Load agent config from YAML.
-	var err error
-	agentCfg, err = agentconfig.Load(configPath)
+	cfg, err := agentconfig.Load(configPath)
 	if err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
 	logger.Info("loaded config",
-		zap.String("cluster_id", agentCfg.Cluster.ID),
-		zap.String("discovery_endpoint", agentCfg.Discovery.Endpoint),
-		zap.Int("listen_port", agentCfg.Kubespan.ListenPort),
-		zap.Uint32("mtu", agentCfg.Kubespan.MTU),
+		zap.String("cluster_id", cfg.Cluster.ID),
+		zap.String("discovery_endpoint", cfg.Discovery.Endpoint),
+		zap.Int("listen_port", cfg.Kubespan.ListenPort),
+		zap.Uint32("mtu", cfg.Kubespan.MTU),
 	)
 
-	// Convert to upstream ConfigSpec for COSI injection.
-	cfgSpec := agentCfg.ToConfigSpec()
+	// Convert to upstream resource specs for COSI injection.
+	kubespanSpec := cfg.ToConfigSpec()
+	clusterSpec, err := cfg.ToClusterConfigSpec()
+	if err != nil {
+		return fmt.Errorf("cluster config: %w", err)
+	}
+	agentSpec := agentconfig.SpecFromAgentConfig(cfg)
 
 	// Create COSI in-memory state.
 	st := state.WrapCore(namespaced.NewState(inmem.Build))
@@ -89,37 +94,40 @@ func run(configPath string, logger *zap.Logger) error {
 	}
 
 	// Register controllers.
-	// ConfigController injects the parsed YAML config as a COSI resource.
-	// It must go through a controller (not direct state manipulation) so that
-	// the COSI runtime's internal watches detect the creation and trigger
-	// downstream controllers via EventCh.
-	if err := rt.RegisterController(&ConfigController{spec: cfgSpec}); err != nil {
+	if err := rt.RegisterController(&kubespandctrl.ConfigController{
+		KubespanSpec: kubespanSpec,
+		ClusterSpec:  clusterSpec,
+		AgentSpec:    agentSpec,
+	}); err != nil {
 		return fmt.Errorf("registering config controller: %w", err)
 	}
-	if err := rt.RegisterController(&IdentityController{}); err != nil {
+	if err := rt.RegisterController(&kubespanctrl.IdentityController{}); err != nil {
 		return fmt.Errorf("registering identity controller: %w", err)
 	}
-	if err := rt.RegisterController(&DiscoveryController{}); err != nil {
+	if err := rt.RegisterController(&clusterctrl.DiscoveryController{}); err != nil {
 		return fmt.Errorf("registering discovery controller: %w", err)
 	}
 	if err := rt.RegisterController(&taloscontrollerskubespan.PeerSpecController{}); err != nil {
 		return fmt.Errorf("registering peerspec controller: %w", err)
 	}
-	if agentCfg.Kubernetes.AdvertiseNetworks {
-		if err := rt.RegisterController(&KubernetesNodeController{}); err != nil {
+	if cfg.Kubernetes.AdvertiseNetworks {
+		if err := rt.RegisterController(&clusterctrl.KubernetesNodeController{}); err != nil {
 			return fmt.Errorf("registering k8s node controller: %w", err)
 		}
 	}
-	if agentCfg.KubePrism.Enabled {
-		if err := rt.RegisterController(&KubePrismConfigController{}); err != nil {
+	if cfg.KubePrism.Enabled {
+		if err := rt.RegisterController(&k8sctrl.KubePrismConfigController{}); err != nil {
 			return fmt.Errorf("registering kubeprism config controller: %w", err)
 		}
 		if err := rt.RegisterController(&taloscontrollersk8s.KubePrismController{}); err != nil {
 			return fmt.Errorf("registering kubeprism controller: %w", err)
 		}
 	}
-	if err := rt.RegisterController(&ManagerController{}); err != nil {
+	if err := rt.RegisterController(&kubespanctrl.ManagerController{}); err != nil {
 		return fmt.Errorf("registering manager controller: %w", err)
+	}
+	if err := rt.RegisterController(&networkctrl.WireguardLinkController{}); err != nil {
+		return fmt.Errorf("registering wireguard link controller: %w", err)
 	}
 	if err := rt.RegisterController(&taloscontrollersnetwork.NfTablesChainController{}); err != nil {
 		return fmt.Errorf("registering nftables chain controller: %w", err)

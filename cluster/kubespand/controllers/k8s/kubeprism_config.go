@@ -4,7 +4,7 @@
 //
 // Merges Talos's KubePrismEndpointsController + KubePrismConfigController into one,
 // adapted from cluster.Affiliate (kubespand) instead of config.MachineConfig + cluster.Member (Talos).
-package main
+package k8sctrl
 
 import (
 	"context"
@@ -19,6 +19,8 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/k8s"
 	"go.uber.org/zap"
+
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 )
 
 // KubePrismConfigController watches cluster.Affiliate resources, filters for
@@ -35,6 +37,7 @@ func (ctrl *KubePrismConfigController) Name() string {
 func (ctrl *KubePrismConfigController) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*cluster.Affiliate](controller.InputWeak),
+		safe.Input[*agentconfig.Resource](controller.InputWeak),
 	}
 }
 
@@ -57,12 +60,21 @@ func (ctrl *KubePrismConfigController) Run(ctx context.Context, r controller.Run
 		case <-r.EventCh():
 		}
 
+		acfg, err := safe.ReaderGetByID[*agentconfig.Resource](ctx, r, agentconfig.ResourceID)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				continue
+			}
+			return fmt.Errorf("getting agent config: %w", err)
+		}
+		agentSpec := acfg.TypedSpec()
+
 		var endpoints []k8s.KubePrismEndpoint
 
 		// Add configured fallback endpoint from cluster.endpoint URL.
 		// Matches Talos's cluster.controlPlane.endpoint behavior.
-		if agentCfg.Cluster.Endpoint != "" {
-			u, err := url.Parse(agentCfg.Cluster.Endpoint)
+		if agentSpec.ClusterEndpoint != "" {
+			u, err := url.Parse(agentSpec.ClusterEndpoint)
 			if err == nil {
 				host := u.Hostname()
 				port := u.Port()
@@ -105,8 +117,8 @@ func (ctrl *KubePrismConfigController) Run(ctx context.Context, r controller.Run
 		if err := safe.WriterModify(ctx, r,
 			k8s.NewKubePrismConfig(k8s.NamespaceName, k8s.KubePrismConfigID),
 			func(res *k8s.KubePrismConfig) error {
-				res.TypedSpec().Host = agentCfg.KubePrism.Host
-				res.TypedSpec().Port = agentCfg.KubePrism.Port
+				res.TypedSpec().Host = agentSpec.KubePrismHost
+				res.TypedSpec().Port = agentSpec.KubePrismPort
 				res.TypedSpec().Endpoints = endpoints
 				return nil
 			},
@@ -116,8 +128,8 @@ func (ctrl *KubePrismConfigController) Run(ctx context.Context, r controller.Run
 
 		logger.Debug("kubeprism config reconciled",
 			zap.Int("endpoints", len(endpoints)),
-			zap.String("host", agentCfg.KubePrism.Host),
-			zap.Int("port", agentCfg.KubePrism.Port),
+			zap.String("host", agentSpec.KubePrismHost),
+			zap.Int("port", agentSpec.KubePrismPort),
 		)
 		r.ResetRestartBackoff()
 	}

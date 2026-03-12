@@ -12,12 +12,16 @@
 package agentconfig
 
 import (
+	"crypto/aes"
+	"encoding/base64"
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
 	"os"
 
 	"github.com/siderolabs/talos/pkg/machinery/constants"
+	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"gopkg.in/yaml.v3"
 )
@@ -161,4 +165,45 @@ func (ac *AgentConfig) ToConfigSpec() kubespan.ConfigSpec {
 		AdvertiseKubernetesNetworks: ac.Kubernetes.AdvertiseNetworks,
 		ExcludeAdvertisedNetworks:   ac.Kubespan.ExcludeAdvertisedNetworks,
 	}
+}
+
+// ToClusterConfigSpec converts agent config to upstream cluster.ConfigSpec for COSI injection.
+// Normalizes the discovery endpoint URL to host:port for gRPC (matching Talos's ConfigController).
+func (ac *AgentConfig) ToClusterConfigSpec() (cluster.ConfigSpec, error) {
+	secretBytes, err := base64.StdEncoding.DecodeString(ac.Cluster.Secret)
+	if err != nil {
+		return cluster.ConfigSpec{}, fmt.Errorf("decoding cluster.secret: %w", err)
+	}
+	// Validate AES key length.
+	if _, err := aes.NewCipher(secretBytes); err != nil {
+		return cluster.ConfigSpec{}, fmt.Errorf("invalid AES key from cluster.secret: %w", err)
+	}
+
+	// Normalize endpoint URL to host:port for gRPC.
+	endpoint := ac.Discovery.Endpoint
+	insecure := ac.Discovery.Insecure
+	if u, err := url.ParseRequestURI(endpoint); err == nil && u.Scheme != "" {
+		host := u.Hostname()
+		port := u.Port()
+		if port == "" {
+			if u.Scheme == "http" {
+				port = "80"
+			} else {
+				port = "443"
+			}
+		}
+		endpoint = net.JoinHostPort(host, port)
+		if u.Scheme == "http" {
+			insecure = true
+		}
+	}
+
+	return cluster.ConfigSpec{
+		DiscoveryEnabled:        true,
+		RegistryServiceEnabled:  true,
+		ServiceEndpoint:         endpoint,
+		ServiceEndpointInsecure: insecure,
+		ServiceEncryptionKey:    secretBytes,
+		ServiceClusterID:        ac.Cluster.ID,
+	}, nil
 }
