@@ -32,7 +32,7 @@
     # CI-released artifacts — pinned to tagged releases, updated by release.yml.
     # URLs are rewritten by the update-downstream job after each release.
     kubespand-bin = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-64458be3/kubespand";
+      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-15a18ab1/kubespand";
       flake = false;
     };
     ducktape-wheel = {
@@ -40,11 +40,11 @@
       flake = false;
     };
     headscale-cleanup-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-ef05c308/headscale_cleanup-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-15a18ab1/headscale_cleanup-0.1.0-py3-none-any.whl";
       flake = false;
     };
     gterm-theme-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-ef05c308/gterm_theme-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-15a18ab1/gterm_theme-0.1.0-py3-none-any.whl";
       flake = false;
     };
 
