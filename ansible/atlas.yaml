@@ -277,16 +277,23 @@
       notify: Reload udev rules
       tags: [gpu_passthrough, vfio]
 
-    # Disable D3cold and runtime PM on all PCIe bridges. The AMD 800 Series
-    # chipset and Intel Thunderbolt 4 bridge (18:00.0) enter D3cold and fail
-    # to wake up, causing ZFS hung tasks and cascading chipset PCIe fabric
-    # failures. pcie_aspm=off only covers ASPM, not runtime PM D-state
-    # transitions. See debug/atlas/black_screen_lockup.md.
-    - name: Disable D3cold and runtime PM on all PCIe bridges
+    # Disable ASPM on all PCI devices via setpci at device add time.
+    # pcie_aspm=off and BIOS "Disabled" (BIOS-controlled) are both insufficient —
+    # BIOS 2102 still enables L1 on 27+ devices. Belt-and-suspenders with setpci.
+    # Also disable D3cold and runtime PM on all PCIe bridges.
+    # See debug/atlas/black_screen_lockup.md.
+    - name: Disable ASPM on all PCI devices and D3cold on bridges
       ansible.builtin.copy:
-        dest: /etc/udev/rules.d/99-pcie-bridge-no-d3cold.rules
-        content: 'ACTION=="add", SUBSYSTEM=="pci", ATTR{class}=="0x0604*", ATTR{power/control}="on", ATTR{d3cold_allowed}="0"'
+        src: files/99-disable-chipset-aspm.rules
+        dest: /etc/udev/rules.d/99-disable-chipset-aspm.rules
         mode: "0644"
+      notify: Reload udev rules
+      tags: [pcie, power_management]
+
+    - name: Remove obsolete per-bridge D3cold udev rule
+      ansible.builtin.file:
+        path: /etc/udev/rules.d/99-pcie-bridge-no-d3cold.rules
+        state: absent
       notify: Reload udev rules
       tags: [pcie, power_management]
 
