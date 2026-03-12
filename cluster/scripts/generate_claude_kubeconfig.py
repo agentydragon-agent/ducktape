@@ -1,37 +1,32 @@
-"""Generate age-encrypted kubeconfig for Claude Code sessions.
+"""Print env vars for Claude Code web session k8s token setup.
 
-Creates a ServiceAccount token for claude-code-web, builds a kubeconfig,
-and age-encrypts it to .claude_hooks/secrets/kubeconfig.age.
+Reads the long-lived ServiceAccount token from the declarative Secret
+(type kubernetes.io/service-account-token) and prints the env var to
+configure in Claude Code's environment settings.
 
 Run via: bazel run //cluster/scripts:generate_claude_kubeconfig
 """
 
+import base64
 import logging
 import os
 from pathlib import Path
 
-import pyrage
-import pyrage.x25519
 from kubernetes import client, config
 
-from devinfra.claude_hooks.kubeconfig_setup import KubeconfigSecret
+from devinfra.claude_hooks.k8s_secrets_setup import load_repo_config
 from util.bazel.workspace import get_build_workspace_directory
 
 logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S", level=logging.INFO)
 log = logging.getLogger(__name__)
 
-SERVER = "https://api.allegedly.works:16443"
-SERVICE_ACCOUNT = "claude-code-web"
-SA_NAMESPACE = "default"
-TOKEN_EXPIRY_SECONDS = 365 * 24 * 3600  # 1 year
+SA_TOKEN_SECRET_NAME = "claude-code-web-token"
 
 
 def generate(root: Path) -> None:
-    recipients_file = root / ".claude_hooks" / "secrets" / "recipients.txt"
-    output_file = root / ".claude_hooks" / "secrets" / "kubeconfig.age"
-
-    if not recipients_file.exists():
-        raise SystemExit(f"No recipients.txt found at {recipients_file}")
+    hook_config = load_repo_config(root)
+    if not hook_config:
+        raise SystemExit(f"Config file not found under {root}")
 
     kubeconfig_path = os.environ.get("KUBECONFIG")
     if not kubeconfig_path:
@@ -40,26 +35,12 @@ def generate(root: Path) -> None:
     log.info("Loading kubeconfig from %s", kubeconfig_path)
     config.load_kube_config(kubeconfig_path)
 
-    log.info("Creating 1-year token for %s/%s", SA_NAMESPACE, SERVICE_ACCOUNT)
     v1 = client.CoreV1Api()
-    # Empty audiences list lets the API server use its default audience,
-    # which matches what kubectl uses for authentication tokens.
-    token_request = client.AuthenticationV1TokenRequest(
-        spec=client.V1TokenRequestSpec(audiences=[], expiration_seconds=TOKEN_EXPIRY_SECONDS)
-    )
-    resp = v1.create_namespaced_service_account_token(SERVICE_ACCOUNT, SA_NAMESPACE, token_request)
-    token = resp.status.token
+    secret = v1.read_namespaced_secret(SA_TOKEN_SECRET_NAME, hook_config.k8s.sa_namespace)
+    # Secret data values are base64-encoded by the K8s API
+    token = base64.b64decode(secret.data["token"]).decode()
 
-    # No internal CA needed — the proxy uses a publicly-trusted LE certificate.
-    secret = KubeconfigSecret(server=SERVER, token=token)
-
-    recipient_str = recipients_file.read_text().strip()
-    recipient = pyrage.x25519.Recipient.from_str(recipient_str)
-    encrypted = pyrage.encrypt(secret.model_dump_json().encode(), [recipient])
-    output_file.write_bytes(encrypted)
-
-    log.info("Claude kubeconfig written to %s", output_file.relative_to(root))
-    log.info("Commit the updated kubeconfig.age to complete the update")
+    print(f"DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN={token}")
 
 
 def main() -> None:
