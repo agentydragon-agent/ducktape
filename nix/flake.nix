@@ -36,7 +36,7 @@
       flake = false;
     };
     ducktape-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-1858af11/ducktape-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-8f7603e6/ducktape-0.1.0-py3-none-any.whl";
       flake = false;
     };
     headscale-cleanup-wheel = {
