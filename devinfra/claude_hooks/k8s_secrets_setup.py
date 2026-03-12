@@ -138,6 +138,8 @@ def setup_k8s_secrets(
             if data_key not in secret.data:
                 logger.warning("Key %r not found in secret %s/%s", data_key, secrets_cfg.namespace, entry.name)
                 continue
+            if env_var in result.env_vars:
+                raise ValueError(f"Duplicate env var {env_var!r}")
             value = base64.b64decode(secret.data[data_key]).decode()
             result.env_vars[env_var] = value
             logger.info("Mapped %s/%s[%s] -> %s", secrets_cfg.namespace, entry.name, data_key, env_var)
