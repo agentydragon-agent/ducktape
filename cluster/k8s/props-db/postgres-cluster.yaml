@@ -13,12 +13,8 @@ spec:
       isolationCheck:
         enabled: false
 
-  affinity:
-    nodeSelector:
-      topology.kubernetes.io/region: proxmox
-
   storage:
-    storageClass: local-path
+    storageClass: longhorn
     size: 10Gi
 
   bootstrap:
