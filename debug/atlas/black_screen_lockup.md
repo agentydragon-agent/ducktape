@@ -21,7 +21,7 @@ Six chipset-level incidents documented (incidents 1–6), plus a new pattern of 
 
 ## Current Status
 
-**Mar 12 ~04:40 CET** (boot `978abe76`, kernel 6.17, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`): Fresh boot of atlas with wyrm2 running 2 GPUs (Zotac 01:00.0 + Gigabyte 03:00.0). 52 minutes in, stable — no SATA errors, no PCIe failures, no soft lockups. VFIO resets completed cleanly. This is the longest a 2-GPU VFIO boot has survived since the rapid crash series (incidents 7–10, 12, 14 all died within 0–2 min). Monitoring.
+**Mar 12 ~04:40 CET** (boot `978abe76`, kernel 6.17, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`): Fresh boot of atlas with wyrm2 (96 GiB, 2 GPUs: Zotac 01:00.0 + Gigabyte 03:00.0) + Talos CP VM (10000, 8 GiB). **7 hours uptime, zero errors** — no SATA errors, no PCIe failures, no soft lockups. VFIO resets completed cleanly. ZFS ARC healthy (`memory_available_bytes` = 799 MB, `size` = 9.3 GiB, above `c_min` = 3.9 GiB). This is full production config (both GPUs + Talos CP) running stable — the longest 2-GPU VFIO survival by a wide margin (incidents 7–10, 12, 14 all died within 0–2 min).
 
 ## Recurrence Log
 
@@ -43,7 +43,7 @@ Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl
 | 12  | `dcad0e96` | Mar 11 03:49 | —             | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze (D3cold workaround active)                                                                                                                                                               |
 | 13  | `e6081d6d` | Mar 11 15:23 | —             | Mar 11 ~15:41 | Mar 11 15:48 (powercycle)    | ~17 min                | Kernel 6.8: wyrm2+GPUs ran 17min, froze ~22s after Talos CP VM (10000, no GPU) started                                                                                                                                     |
 | 14  | `c740ecfd` | Mar 11 15:48 | —             | Mar 11 ~15:49 | Mar 11 15:50 (powercycle)    | ~1 min                 | Kernel 6.17: VFIO GPU reset → immediate freeze                                                                                                                                                                             |
-| 15  | `5ef3cedb` | Mar 11 15:50 | Mar 11 ~16:54 | **survived**  | still running                | ~1h onset, 2h+ up      | Kernel 6.17, modeset=0: 1 GPU (Zotac) + Talos CP → ZFS hung tasks (122s), pcieport 18:00.0 D3cold fail. Two stalls (~16:54, ~18:12), both recovered. Load avg hit 101. PCIe bridge D3cold/PM disabled live during recovery |
+| 15  | `5ef3cedb` | Mar 11 15:50 | Mar 11 ~16:54 | **survived**  | Mar 11 19:27 (clean reboot)  | ~1h onset, 3.6h up     | Kernel 6.17, modeset=0: 1 GPU (Zotac) + Talos CP → ZFS hung tasks (122s), pcieport 18:00.0 D3cold fail. Two stalls (~16:54, ~18:12), both recovered. Load avg hit 101. PCIe bridge D3cold/PM disabled live during recovery |
 
 ## Incident 1 — Feb 28
 
@@ -551,6 +551,32 @@ This proves the kernel 6.17 AHCI driver defaults to `min_power` for this AMD 600
 
 **D3cold workaround verified**: both RTX 5090s show `d3cold_allowed: 0`.
 
+## EFI Variables
+
+Readable via `/sys/firmware/efi/efivars/` after enabling "Publish HII Resources" in BIOS 2102.
+
+**How to read:** `xxd /sys/firmware/efi/efivars/<name>-<guid>`. First 4 bytes are EFI variable attributes (typically `0x07` = BS+RT+NV), remaining bytes are the payload.
+
+### Key variables (boot `978abe76`, BIOS 2102)
+
+| Variable            | GUID           | Payload                   | Interpretation                                                                |
+| ------------------- | -------------- | ------------------------- | ----------------------------------------------------------------------------- |
+| `EnableDIPM`        | `a44da20b-...` | `00 00 00 00`             | SATA DIPM disabled in firmware (4 bytes, one per AHCI controller port group?) |
+| `EnableHIPM`        | `a44da20b-...` | `00 00 00 00`             | SATA HIPM disabled in firmware                                                |
+| `PcieExpressNative` | `ec87d643-...` | `01`                      | PCIe Express Native control enabled (OS manages ASPM/AER)                     |
+| `PcieSataModVar`    | `5e9a565f-...` | `02 02 02`                | SATA mode per controller (0x02 = AHCI for all 3)                              |
+| `CpuTempMaxLimit`   | `4034591c-...` | `55` (85 decimal)         | CPU thermal throttle limit: 85°C                                              |
+| `AntiSurgeStatus`   | `4034591c-...` | 16 bytes                  | ASUS Anti-Surge (over-voltage protection) status — no trips recorded          |
+| `Usb4FwVersion`     | `4034591c-...` | `24 10 22 20 00 11`       | Thunderbolt 4 firmware version                                                |
+| `AMD_RAID`          | `fe26a894-...` | `00 00 00 00 00 00 00 00` | AMD RAID disabled (all zeros)                                                 |
+
+### Notable observations
+
+- **`EnableDIPM` = 0 and `EnableHIPM` = 0** confirm the firmware does not enable SATA power management. The DIPM issue was purely kernel 6.17's `min_power` default LPM policy overriding the firmware setting. `ahci.mobile_lpm_policy=1` in kernel cmdline prevents this.
+- **`PcieExpressNative` = 1** means the OS (not firmware) controls PCIe native features including ASPM. This is why `pcie_aspm=off` in the kernel cmdline is effective — the firmware delegates ASPM control to Linux.
+- The `Setup` var (365 bytes) and `AMD_PBS_SETUP` (256 bytes) contain the full BIOS configuration but require IFR extraction from the BIOS ROM to decode field offsets. No IFR extraction tools are installed on atlas.
+- `BiosSettingMappingTableV2` (4596 bytes) is the ASUS mapping table linking string IDs to Setup var offsets — binary format, would need the HII string database to decode.
+
 ## Recommended Next Steps
 
 ### Next session checklist
@@ -563,18 +589,19 @@ This proves the kernel 6.17 AHCI driver defaults to `min_power` for this AMD 600
 
 3. ~~**Deploy PCIe bridge D3cold/runtime PM disable**~~ **Not needed** (2026-03-11). Investigation showed `18:00.0` D3cold failures occur on every boot (including stable 2.5-day boots) and are benign — the Thunderbolt subsystem controls power independently of PCI sysfs settings. The udev rule in ansible (`99-pcie-bridge-no-d3cold.rules`) is harmless but ineffective for the Thunderbolt bridge.
 
-4. **Post-BIOS-update verification** (first boot after 2102 flash):
-   - [ ] Verify kernel cmdline: `ahci.mobile_lpm_policy=1`, `pcie_aspm=off` still present
-   - [ ] Verify ASPM actually off on chipset devices (`lspci -vv | grep LnkCtl`)
-   - [ ] Verify wyrm2 starts with 96 GiB (`qm config 110 | grep memory`)
-   - [ ] Check ZFS ARC health: `memory_available_bytes` should be positive
+4. ~~**Post-BIOS-update verification**~~ **Done** (2026-03-12, boot `978abe76`):
+   - [x] Kernel cmdline: `ahci.mobile_lpm_policy=1`, `pcie_aspm=off` confirmed present
+   - [x] ASPM disabled on all chipset devices: `04:00.0`, `11:00.0`, `0e:00.0`, `0c:00.0` all show `LnkCtl: ASPM Disabled`
+   - [x] wyrm2 running with 96 GiB (`memory: 98304`)
+   - [x] ZFS ARC healthy: `memory_available_bytes` = 799 MB (positive), `size` = 9.3 GiB > `c_min` = 3.9 GiB
+   - [x] EFI vars readable (see "EFI Variables" section)
 
 5. **Continue incremental GPU passthrough testing** (kernel 6.17, `nvidia-drm.modeset=0` active, `mobile_lpm_policy=1` active):
    - [x] **Step A**: One GPU only (`hostpci0` 01:00.0, Zotac) + wyrm2 alone — **stable ~33 min**. VFIO resets succeeded.
    - [x] **Step B**: Start Talos CP VM (10000) alongside wyrm2+1 GPU — **stalled but recovered twice** (incident 15). Root cause: **memory overcommit**. wyrm2 (112 GiB, balloon=0) + Talos CP (8 GiB) = 120 GiB out of 128 GiB total, leaving ZFS ARC starved (`memory_available_bytes = -1.9 GiB`). Thunderbolt bridge D3cold failures are a red herring (happen on all boots including stable ones).
-   - [ ] **Step B (retry with reduced memory)**: Reduce wyrm2 to ~96 GiB or enable ballooning, then re-test with Talos CP.
-   - [ ] **Step C**: Add second GPU (`hostpci1` 03:00.0, Gigabyte) — test with both GPUs, wyrm2 alone.
-   - [ ] **Step D**: Both GPUs + Talos CP VM — full production config.
+   - [x] **Step B (retry with reduced memory)**: wyrm2 reduced to 96 GiB. Running with Talos CP — **stable 7h+** (boot `978abe76`).
+   - [x] **Step C**: Both GPUs (Zotac 01:00.0 + Gigabyte 03:00.0) passed through to wyrm2 — **stable 7h+**.
+   - [x] **Step D**: Both GPUs + Talos CP VM — **full production config stable 7h+**. Zero errors.
 
 6. **If still crashing**: investigate **GPU UEFI firmware update** (NVIDIA GPU UEFI Firmware Update Tool) — community reports this fixes the Blackwell FLR bug at the source.
 
