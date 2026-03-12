@@ -19,6 +19,10 @@ Six chipset-level incidents documented (incidents 1–6), plus a new pattern of 
 
 **Incident 15** (kernel 6.17, `nvidia-drm.modeset=0` applied, `mobile_lpm_policy=1` active): wyrm2 with single GPU (Zotac 01:00.0) ran stable for ~33 minutes alone. After Talos CP VM (10000, no GPU) was started, the system experienced two major stalls but **recovered from both**: (1) ~16:54 (~1h after boot) — ZFS zvol write threads deadlocked 122s, pcieport `18:00.0` failed D3cold→D0, snapd watchdog timed out; (2) ~18:12 (~2h22m after boot) — additional pcieport `18:00.0` D3cold failures at kernel timestamps 8446s and 9532s, screen froze, load average hit 101, SSH unreachable for ~16 minutes. System recovered at ~18:28. PCIe bridge D3cold and runtime PM were disabled live on all bridges (class `0x0604*`) during the recovery window. **Historical scan**: pcieport `18:00.0` was present on all prior boots with D3cold capability (`PME# supported from D3cold`) but no D3cold failure errors were logged in any historical boot — the failures in boot `5ef3cedb` are the first recorded instances.
 
+## Current Status
+
+**Mar 12 ~04:40 CET** (boot `978abe76`, kernel 6.17, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`): Fresh boot of atlas with wyrm2 running 2 GPUs (Zotac 01:00.0 + Gigabyte 03:00.0). 52 minutes in, stable — no SATA errors, no PCIe failures, no soft lockups. VFIO resets completed cleanly. This is the longest a 2-GPU VFIO boot has survived since the rapid crash series (incidents 7–10, 12, 14 all died within 0–2 min). Monitoring.
+
 ## Recurrence Log
 
 Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl --list-boots`).
