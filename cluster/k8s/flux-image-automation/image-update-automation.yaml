@@ -18,6 +18,7 @@ spec:
         email: flux@allegedly.works
       messageTemplate: |-
         chore: update images [skip ci]
+
         {{ range $resource, $changes := .Changed.Objects -}}
         {{ range $_, $change := $changes -}}
         {{ $change.OldValue }} -> {{ $change.NewValue }}
