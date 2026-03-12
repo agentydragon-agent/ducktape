@@ -73,7 +73,9 @@ def exports_from_dict(env: Mapping[str, str | Path]) -> list[str]:
     return [f"export {name}={shlex.quote(str(value))}" for name, value in env.items()]
 
 
-def generate_shell_wrapper(module: str, *, baked_env: dict[str, str] | None = None, extra_lines: str = "") -> str:
+def generate_shell_wrapper(
+    module: str, *, baked_env: dict[str, str | Path] | None = None, extra_lines: str = ""
+) -> str:
     """Generate a ``#!/bin/sh`` script that invokes ``sys.executable -m <module>``.
 
     Bakes PYTHONPATH (and any additional ``baked_env`` entries) into the script so
@@ -86,7 +88,7 @@ def generate_shell_wrapper(module: str, *, baked_env: dict[str, str] | None = No
                      (use for dynamic expressions like ``$(...)``).
     """
     pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(sys.path)
-    env = {"PYTHONPATH": pythonpath}
+    env: dict[str, str | Path] = {"PYTHONPATH": pythonpath}
     if baked_env:
         env.update(baked_env)
     parts = ["#!/bin/sh", *exports_from_dict(env)]
@@ -97,7 +99,7 @@ def generate_shell_wrapper(module: str, *, baked_env: dict[str, str] | None = No
 
 
 def write_shell_wrapper(
-    path: Path, module: str, *, baked_env: dict[str, str] | None = None, extra_lines: str = ""
+    path: Path, module: str, *, baked_env: dict[str, str | Path] | None = None, extra_lines: str = ""
 ) -> Path:
     """Write a shell wrapper script and make it executable.
 

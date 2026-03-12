@@ -160,6 +160,14 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.extend(["", "# Decrypted secrets (from *.age component files)"])
         exports.extend(exports_from_dict(vars.secrets_env_vars))
 
+    # Point Ansible's local tmp to a sandbox-writable directory so that
+    # pre-commit ansible-syntax-check works when ~/.ansible/tmp is read-only.
+    # TODO: verify that Claude CLI on agentydragon/gpd can now successfully run
+    # pre-commit (ansible-syntax-check hook) without the read-only tmp error.
+    ansible_tmp = Path(os.environ.get("TMPDIR", "/tmp")) / "ansible-tmp"
+    exports.extend(["", "# Ansible (pre-commit sandbox compatibility)"])
+    exports.extend(exports_from_dict({"ANSIBLE_LOCAL_TEMP": ansible_tmp}))
+
     if vars.with_direnv and shutil.which("direnv"):
         exports.append('eval "$(direnv export bash 2>/dev/null)"')
 

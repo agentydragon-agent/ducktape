@@ -60,6 +60,15 @@ def test_includes_direnv_eval(cli_env: tuple[Path, Path, Path]) -> None:
     assert 'eval "$(direnv export bash 2>/dev/null)"' in content
 
 
+def test_exports_ansible_local_temp(cli_env: tuple[Path, Path, Path]) -> None:
+    """Env file exports ANSIBLE_LOCAL_TEMP so pre-commit works in read-only sandboxes."""
+    env_file, wrapper_dir, bazelrc = cli_env
+    write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc))
+
+    content = env_file.read_text()
+    assert "ANSIBLE_LOCAL_TEMP=" in content
+
+
 def test_no_direnv_when_missing(cli_env: tuple[Path, Path, Path]) -> None:
     """When direnv is not installed, env file omits the eval."""
     env_file, wrapper_dir, bazelrc = cli_env

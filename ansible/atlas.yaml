@@ -46,6 +46,19 @@
       failed_when: datastore_result.rc != 0 and 'already exists' not in datastore_result.stderr
       tags: [proxmox, terraform]
 
+    # Patch the Proxmox web UI to suppress the "no valid subscription" popup.
+    # The check calls Ext.Msg.show(); replacing it with void prevents the dialog.
+    # Patch the Proxmox web UI to suppress the "no valid subscription" popup.
+    # Replaces the subscription-status condition with `if (false)` so the
+    # dialog is never shown. Idempotent — patch(1) no-ops if already applied.
+    - name: Suppress Proxmox no-subscription popup in web UI
+      ansible.builtin.patch:
+        src: files/proxmox-no-subscription.patch
+        dest: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+        strip: 1
+        backup: true
+      tags: [proxmox, ui]
+
     - name: Configure Proxmox SPICE proxy hostname
       ansible.builtin.lineinfile:
         path: /etc/pve/datacenter.cfg
