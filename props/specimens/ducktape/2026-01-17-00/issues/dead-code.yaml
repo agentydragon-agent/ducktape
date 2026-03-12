@@ -250,3 +250,11 @@ occurrences:
       - agent_server/mcp_bridge/auth.py
       - agent_server/runtime/container.py
       - agent_server/policy_eval/runner.py
+
+  - occurrence_id: occ-17
+    files:
+      wt/testing/helpers.py:
+        - [1, 7]
+    note: "Dead module — `TEST_BRANCH_NAME` defined but never imported anywhere."
+    match_file_restriction:
+      - wt/testing/helpers.py

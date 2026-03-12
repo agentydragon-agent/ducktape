@@ -1,0 +1,10 @@
+rationale: |
+  `wt/tests/helpers.py` defines `TEST_BRANCH_NAME` but is never imported anywhere in the snapshot. Remove it.
+should_flag: true
+occurrences:
+  - occurrence_id: occ-0
+    files:
+      wt/tests/helpers.py:
+        - [1, 7]
+    match_file_restriction:
+      - wt/tests/helpers.py
