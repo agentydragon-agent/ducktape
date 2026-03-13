@@ -172,7 +172,7 @@ resource "proxmox_virtual_environment_vm" "talos" {
 
   memory {
     dedicated = 8 * 1024 # 8GB (pure control plane, no workloads)
-    floating  = 4 * 1024 # 4GB minimum
+    floating  = 0        # Disable balloon — OOM kills kube-apiserver when ballooned down
   }
 
   vga {
