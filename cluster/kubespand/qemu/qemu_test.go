@@ -240,6 +240,18 @@ func TestKubeSpanCrossSubnet(t *testing.T) {
 	runTopology(t, "cross_subnet")
 }
 
+// ─ TestKubeSpanDiscoveryOnly ────────────────────────────────────────────────
+
+func TestKubeSpanDiscoveryOnly(t *testing.T) {
+	runTopology(t, "discovery_only")
+}
+
+// ─ TestKubeSpanDoubleNAT ────────────────────────────────────────────────────
+
+func TestKubeSpanDoubleNAT(t *testing.T) {
+	runThreeNodeTopology(t, "double_nat")
+}
+
 func runTopology(t *testing.T, topology string) {
 	vmlinuz := runfilePath(t, vmlinuzPath)
 	initramfs := runfilePath(t, initramfsPath)
@@ -348,6 +360,138 @@ func runTopology(t *testing.T, topology string) {
 	assertProbes(t, vmA.getEvents(), topology)
 }
 
+func runThreeNodeTopology(t *testing.T, topology string) {
+	vmlinuz := runfilePath(t, vmlinuzPath)
+	initramfs := runfilePath(t, initramfsPath)
+	discTarball := runfilePath(t, discTarballPath)
+	out := outputDir(t)
+
+	if _, err := exec.LookPath("docker"); err != nil {
+		t.Skip("docker not found on PATH")
+	}
+
+	// Generate random cluster parameters.
+	clusterID := randomBase64(32)
+	sharedSecret := randomBase64(32)
+	mcastPortA := randomPort()
+	mcastPortB := randomPort()
+	discPort := 3000
+
+	// Start discovery service.
+	t.Log("loading discovery service image...")
+	loadCmd := exec.Command("docker", "load", "-i", discTarball)
+	loadCmd.Stderr = os.Stderr
+	if err := loadCmd.Run(); err != nil {
+		t.Fatalf("docker load: %v", err)
+	}
+
+	containerName := fmt.Sprintf("kubespan-disc-%s-%d", topology, time.Now().UnixMilli()%100000)
+	dockerRun := exec.Command("docker", "run", "-d", "--name", containerName,
+		"--network=host",
+		"ghcr.io/siderolabs/discovery-service:latest",
+		"-debug")
+	dockerRun.Stderr = os.Stderr
+	if out, err := dockerRun.Output(); err != nil {
+		t.Fatalf("docker run: %v\n%s", err, out)
+	}
+	t.Cleanup(func() {
+		exec.Command("docker", "rm", "-f", containerName).Run()
+	})
+
+	// Wait for discovery service to be ready.
+	t.Log("waiting for discovery service...")
+	for i := 0; i < 30; i++ {
+		check := exec.Command("curl", "-sf", "--connect-timeout", "1",
+			fmt.Sprintf("http://localhost:%d/", discPort))
+		if check.Run() == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Log("discovery service ready")
+
+	kernelBase := fmt.Sprintf("mode=kubespan cluster_id=%s shared_secret=%s discovery=10.0.2.2:%d topology=%s",
+		clusterID, sharedSecret, discPort, topology)
+
+	mcastAddrA := fmt.Sprintf("230.0.0.1:%d", mcastPortA)
+	mcastAddrB := fmt.Sprintf("230.0.0.1:%d", mcastPortB)
+
+	// VPS: eth0 (NAT) + eth1 (bridge A) + eth2 (bridge B)
+	netArgsVPS := []string{
+		"-netdev", "user,id=net0",
+		"-device", "virtio-net-pci,netdev=net0,mac=52:54:00:c0:00:01",
+		"-netdev", fmt.Sprintf("socket,id=net1,mcast=%s", mcastAddrA),
+		"-device", "virtio-net-pci,netdev=net1,mac=52:54:00:c1:00:01",
+		"-netdev", fmt.Sprintf("socket,id=net2,mcast=%s", mcastAddrB),
+		"-device", "virtio-net-pci,netdev=net2,mac=52:54:00:c2:00:01",
+	}
+	// Home: eth0 (NAT) + eth1 (bridge A)
+	netArgsHome := []string{
+		"-netdev", "user,id=net0",
+		"-device", "virtio-net-pci,netdev=net0,mac=52:54:00:d0:00:01",
+		"-netdev", fmt.Sprintf("socket,id=net1,mcast=%s", mcastAddrA),
+		"-device", "virtio-net-pci,netdev=net1,mac=52:54:00:d1:00:01",
+	}
+	// Roaming: eth0 (NAT) + eth1 (bridge B)
+	netArgsRoaming := []string{
+		"-netdev", "user,id=net0",
+		"-device", "virtio-net-pci,netdev=net0,mac=52:54:00:e0:00:01",
+		"-netdev", fmt.Sprintf("socket,id=net1,mcast=%s", mcastAddrB),
+		"-device", "virtio-net-pci,netdev=net1,mac=52:54:00:e1:00:01",
+	}
+
+	// Boot VPS first (router between bridges).
+	t.Log("booting VPS...")
+	vmVPS := bootVM(t, "vm-vps", vmlinuz, initramfs, kernelBase+" role=vps", netArgsVPS...)
+	time.Sleep(time.Second)
+
+	// Boot Home.
+	t.Log("booting Home...")
+	vmHome := bootVM(t, "vm-home", vmlinuz, initramfs, kernelBase+" role=home", netArgsHome...)
+	time.Sleep(time.Second)
+
+	// Boot Roaming (runs probes).
+	t.Log("booting Roaming...")
+	vmRoaming := bootVM(t, "vm-roaming", vmlinuz, initramfs, kernelBase+" role=roaming", netArgsRoaming...)
+
+	// Wait for Roaming to complete.
+	waitVMDone(t, vmRoaming, 300*time.Second)
+
+	// Kill VPS and Home.
+	vmVPS.kill()
+	vmHome.kill()
+	<-vmVPS.done
+	<-vmHome.done
+
+	// Save artifacts.
+	saveArtifact(t, out, "vm-vps.log", vmVPS.getRawLog())
+	saveArtifact(t, out, "vm-home.log", vmHome.getRawLog())
+	saveArtifact(t, out, "vm-roaming.log", vmRoaming.getRawLog())
+	saveEventsArtifact(t, out, "vm-vps-events.jsonl", vmVPS.getEvents())
+	saveEventsArtifact(t, out, "vm-home-events.jsonl", vmHome.getEvents())
+	saveEventsArtifact(t, out, "vm-roaming-events.jsonl", vmRoaming.getEvents())
+
+	// Save discovery logs.
+	discLogs, _ := exec.Command("docker", "logs", containerName).CombinedOutput()
+	saveArtifact(t, out, "discovery.log", string(discLogs))
+
+	// Save test summary.
+	summary := map[string]interface{}{
+		"topology":          topology,
+		"cluster_id":        clusterID,
+		"mcast_port_a":      mcastPortA,
+		"mcast_port_b":      mcastPortB,
+		"vm_vps_events":     vmVPS.getEvents(),
+		"vm_home_events":    vmHome.getEvents(),
+		"vm_roaming_events": vmRoaming.getEvents(),
+	}
+	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
+	saveArtifact(t, out, "test-summary.json", string(summaryJSON))
+
+	// Verify probes from roaming VM.
+	assertProbes(t, vmRoaming.getEvents(), topology)
+}
+
 func assertProbes(t *testing.T, events []Event, topology string) {
 	t.Helper()
 
@@ -359,12 +503,24 @@ func assertProbes(t *testing.T, events []Event, topology string) {
 		}
 	}
 
-	// All topologies must pass these probes.
-	requiredProbes := []string{
-		"ipv6 ULA icmp",
-		"ipv4 peer eth1 icmp",
-		"ipv6 ULA tcp",
-		"ipv4 peer eth1 tcp",
+	var requiredProbes []string
+	switch topology {
+	case "double_nat":
+		requiredProbes = []string{
+			"peer 1 ULA icmp",
+			"peer 2 ULA icmp",
+			"home eth1 icmp",
+			"peer 1 ULA tcp",
+			"peer 2 ULA tcp",
+			"home eth1 tcp",
+		}
+	default:
+		requiredProbes = []string{
+			"ipv6 ULA icmp",
+			"ipv4 peer eth1 icmp",
+			"ipv6 ULA tcp",
+			"ipv4 peer eth1 tcp",
+		}
 	}
 	for _, name := range requiredProbes {
 		if s, ok := probes[name]; !ok {
