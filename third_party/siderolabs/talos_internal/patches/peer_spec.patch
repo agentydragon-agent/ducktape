@@ -22,7 +22,7 @@
  		if err != nil && !state.IsNotFoundError(err) {
  			return fmt.Errorf("error getting first MAC address: %w", err)
  		}
-@@ -93,21 +93,17 @@
+@@ -93,20 +93,16 @@
  		touchedIDs := map[resource.ID]struct{}{}
 
  		if cfg != nil && localIdentity != nil && cfg.TypedSpec().Enabled {
