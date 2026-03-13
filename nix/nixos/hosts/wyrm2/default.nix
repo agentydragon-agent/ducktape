@@ -12,6 +12,7 @@
   imports = [
     ../../modules/gui.nix
     ../../modules/dev-workstation.nix
+    ../../modules/bazel-dev.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/sops.nix
@@ -111,9 +112,6 @@
 
   # Zsh as default shell
   programs.zsh.enable = true;
-
-  # nix-ld: Run dynamically linked binaries (Bazel downloads Python, Rust toolchains, etc.)
-  programs.nix-ld.enable = true;
 
   # User configuration
   users.users.${username} = {

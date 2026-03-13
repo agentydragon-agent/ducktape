@@ -1,7 +1,7 @@
 # NixOS module for Bazel development compatibility
 #
 # Addresses three NixOS-specific Bazel issues:
-# 1. /bin/bash missing — nixpkgs bazel_8 is already patched for this
+# 1. /bin/bash missing — envfs provides it (see below)
 # 2. Empty PATH in sandbox actions — handled by home-manager nixos-bazel.nix
 # 3. Dynamically-linked Bazel-downloaded toolchains — nix-ld provides the linker stub
 #
@@ -13,6 +13,12 @@
   ...
 }:
 {
+  # envfs: FUSE mount at /bin and /usr/bin resolving binaries from PATH.
+  # Bazel hardcodes /bin/bash for `bazel run` and run_shell() actions.
+  # --shell_executable can't fix this: setting it to a Nix store path breaks
+  # remote-executed actions on RBE (workers don't have /nix/store paths).
+  services.envfs.enable = true;
+
   # nix-ld: provides /lib64/ld-linux-x86-64.so.2 stub so dynamically-linked
   # binaries Bazel downloads (python-build-standalone, rustc, node) can run.
   programs.nix-ld.enable = true;
