@@ -3,4 +3,5 @@ kind: Namespace
 metadata:
   name: oauth-broker
   labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
     pod-security.kubernetes.io/enforce: restricted

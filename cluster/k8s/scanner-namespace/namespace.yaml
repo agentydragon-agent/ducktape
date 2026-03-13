@@ -3,4 +3,5 @@ kind: Namespace
 metadata:
   name: scanner
   labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
     pod-security.kubernetes.io/enforce: privileged

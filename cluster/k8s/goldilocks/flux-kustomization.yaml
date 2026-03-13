@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: vpa-resources
+  name: goldilocks
   namespace: flux-system
 spec:
   interval: 10m
@@ -9,7 +9,13 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: "./cluster/k8s/vpa-resources"
+  path: "./cluster/k8s/goldilocks"
   prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: goldilocks
+      namespace: goldilocks
   dependsOn:
     - name: vpa

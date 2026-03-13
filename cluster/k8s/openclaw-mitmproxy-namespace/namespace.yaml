@@ -3,4 +3,5 @@ kind: Namespace
 metadata:
   name: openclaw-mitmproxy
   labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
     name: openclaw-mitmproxy

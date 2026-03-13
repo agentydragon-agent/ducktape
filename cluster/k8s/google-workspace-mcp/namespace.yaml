@@ -3,4 +3,5 @@ kind: Namespace
 metadata:
   name: google-workspace-mcp
   labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"
     name: google-workspace-mcp

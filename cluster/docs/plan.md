@@ -339,15 +339,30 @@ Options:
 Prevent resource contention. Set default CPU/memory requests+limits via LimitRange.
 Set namespace-level quotas via ResourceQuota.
 
-### Vertical Pod Autoscaler (VPA) — Deployed (Initial Mode)
+### Vertical Pod Autoscaler (VPA) + Goldilocks
 
-VPA deployed in `Initial` mode via Fairwinds Helm chart (`k8s/vpa/`).
-Sets resource requests at pod creation based on observed usage, but never evicts running
-pods. Updater and admission controller are enabled. Replaces manual `kubectl top` analysis
-(see <operations/2026-02-22-memory-request-rightsizing.md>).
+VPA deployed via Fairwinds Helm chart (`k8s/vpa/`). Updater and admission controller
+enabled. **Goldilocks** (`k8s/goldilocks/`) auto-creates VPA objects for all workloads
+cluster-wide (`on-by-default: "true"`), replacing manual per-workload VPA definitions.
 
-- [ ] **VPA Auto Mode** — Consider upgrading to `Auto` mode for non-critical workloads
-      to apply updated recommendations to running pods (requires pod restarts).
+Default VPA mode is "Off" (recommendation-only). To enable auto-scaling per namespace:
+
+```bash
+kubectl label ns <namespace> goldilocks.fairwinds.com/vpa-update-mode=auto
+```
+
+Per-workload override via annotation: `goldilocks.fairwinds.com/vpa-update-mode=initial`.
+
+Namespace labels applied:
+
+- **`auto`** (21 namespaces): activitywatch, atuin, gatus, gitea, google-workspace-mcp,
+  grocy, harbor, headlamp, homeassistant-proxy, inventree, langfuse, matrix, nix-cache,
+  oauth-broker, ollama, openclaw-gateway, openclaw-mitmproxy, props, proxmox-proxy,
+  scanner, tana-mcp
+- **`initial`** (7 namespaces): authentik, cnpg-system, dns-system, headscale, loki,
+  monitoring, vault
+- **Off/unlabeled**: kube-system, flux-system, cert-manager, csi-proxmox, kyverno, and
+  other system namespaces
 
 ### TODO: Alertmanager → ntfy Bridge
 
