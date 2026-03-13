@@ -12,3 +12,4 @@ resources:
   - openclaw-mitmproxy-httproute.yaml
   - proxmox-httproute.yaml
   - google-workspace-mcp-httproute.yaml
+  - longhorn-httproute.yaml

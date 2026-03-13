@@ -20,6 +20,7 @@ configMapGenerator:
       - blueprints/inventree-sso.yaml
       - blueprints/loki-sso.yaml
       - blueprints/hubble-sso.yaml
+      - blueprints/longhorn-sso.yaml
       - blueprints/openclaw-sso.yaml
       - blueprints/alloy-otlp-sso.yaml
       - blueprints/gatus-sso.yaml

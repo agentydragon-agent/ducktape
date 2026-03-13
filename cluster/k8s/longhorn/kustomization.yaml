@@ -7,3 +7,4 @@ resources:
   - storageclasses.yaml
   - longhorn-disk-config-policy.yaml
   - longhorn-nixos-path-policy.yaml
+  - networkpolicy.yaml
