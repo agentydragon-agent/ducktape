@@ -8,7 +8,6 @@ spec:
   install:
     remediation:
       retries: 3
-    createNamespace: true
   chart:
     spec:
       chart: goldilocks
