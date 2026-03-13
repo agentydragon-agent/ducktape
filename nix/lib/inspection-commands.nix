@@ -472,6 +472,13 @@ let
       args = "id-ns";
     }
 
+    # WireGuard - show tunnel status (prefix to allow interface name)
+    {
+      type = "prefix";
+      cmd = "wg";
+      args = "show";
+    }
+
     # Network information - show/list operations
     {
       type = "exact";
