@@ -165,7 +165,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 				}
 			}()
 
-			if pubErr := dm.PublishLocal(idSpec, agentSpec.MachineType, kubespanSpec.ExtraEndpoints, agentSpec.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
+			if pubErr := dm.PublishLocal(idSpec, agentSpec.MachineType, kubespanSpec.ExtraEndpoints, agentSpec.ListenPort, kubespanSpec.EndpointFilters, otherEndpoints, additionalAddresses); pubErr != nil {
 				logger.Error("publishing local affiliate", zap.Error(pubErr))
 			}
 			ctrl.lastOtherEndpointCount = len(otherEndpoints)
@@ -183,7 +183,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			if len(otherEndpoints) != ctrl.lastOtherEndpointCount ||
 				len(additionalAddresses) != ctrl.lastAdditionalAddrCount ||
 				pubIPLen != ctrl.lastPubIPLen {
-				if pubErr := ctrl.dm.PublishLocal(idSpec, agentSpec.MachineType, kubespanSpec.ExtraEndpoints, agentSpec.ListenPort, otherEndpoints, additionalAddresses); pubErr != nil {
+				if pubErr := ctrl.dm.PublishLocal(idSpec, agentSpec.MachineType, kubespanSpec.ExtraEndpoints, agentSpec.ListenPort, kubespanSpec.EndpointFilters, otherEndpoints, additionalAddresses); pubErr != nil {
 					logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
 				}
 				ctrl.lastOtherEndpointCount = len(otherEndpoints)

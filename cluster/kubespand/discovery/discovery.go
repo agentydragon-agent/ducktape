@@ -10,7 +10,6 @@ import (
 	"net/netip"
 	"os"
 	"runtime"
-	"slices"
 	"time"
 
 	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
@@ -21,6 +20,8 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+
+	"github.com/agentydragon/ducktape/cluster/kubespand/endpointfilter"
 )
 
 const discoveryTTL = 30 * time.Minute
@@ -104,43 +105,72 @@ func (dm *Manager) Run(ctx context.Context) error {
 // PublishLocal announces this node's affiliate data to the discovery service.
 // otherEndpoints are harvested endpoints from EndpointController for re-announcement.
 // additionalAddresses are Kubernetes network prefixes (PodCIDRs + ServiceCIDRs) to advertise.
+// endpointFilters controls which of our own endpoints we advertise (matching upstream
+// LocalAffiliateController semantics — filters are applied to outgoing self-announced
+// endpoints, not incoming peer endpoints).
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints, pbOtherEndpoints)
-func (dm *Manager) PublishLocal(id *kubespan.IdentitySpec, machineType string, extraEndpoints []netip.AddrPort, listenPort int, otherEndpoints []discoveryclient.Endpoint, additionalAddresses []netip.Prefix) error {
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go (endpoint construction)
+func (dm *Manager) PublishLocal(id *kubespan.IdentitySpec, machineType string, extraEndpoints []netip.AddrPort, listenPort int, endpointFilters []string, otherEndpoints []discoveryclient.Endpoint, additionalAddresses []netip.Prefix) error {
 	addrBytes, _ := id.Address.Addr().MarshalBinary()
 
 	hostname, _ := os.Hostname()
 
-	// Build endpoint list from extra_endpoints config.
-	var endpoints []*clientpb.Endpoint
-	for _, addrPort := range extraEndpoints {
-		ipBytes, _ := addrPort.Addr().MarshalBinary()
-		endpoints = append(endpoints, &clientpb.Endpoint{
-			Ip:   ipBytes,
-			Port: uint32(addrPort.Port()),
-		})
+	kubespanAddr := id.Address.Addr()
+
+	// Build endpoint list as netip.AddrPort for deduplication and filtering.
+	// Sources (matching upstream LocalAffiliateController):
+	//   1. extra_endpoints from config
+	//   2. Public IP from discovery service
+	//   3. All routed node addresses (LAN IPs, VPN IPs, etc.)
+	seen := make(map[netip.AddrPort]struct{})
+	var allEndpoints []netip.AddrPort
+
+	addEndpoint := func(ep netip.AddrPort) {
+		if _, ok := seen[ep]; ok {
+			return
+		}
+		seen[ep] = struct{}{}
+		allEndpoints = append(allEndpoints, ep)
 	}
 
-	// Add public IP from discovery service (external endpoint discovery).
+	// 1. Extra endpoints from config.
+	for _, ep := range extraEndpoints {
+		addEndpoint(ep)
+	}
+
+	// 2. Public IP from discovery service.
 	if pubIPBytes := dm.client.GetPublicIP(); len(pubIPBytes) > 0 {
 		if pubIP, ok := netip.AddrFromSlice(pubIPBytes); ok {
-			pubEndpoint := netip.AddrPortFrom(pubIP, uint16(listenPort))
-			pubEPBytes, _ := pubEndpoint.Addr().MarshalBinary()
-			pbEP := &clientpb.Endpoint{Ip: pubEPBytes, Port: uint32(pubEndpoint.Port())}
-			// Avoid duplicates with extra_endpoints.
-			found := false
-			for _, ep := range endpoints {
-				if slices.Equal(ep.Ip, pbEP.Ip) && ep.Port == pbEP.Port {
-					found = true
-					break
-				}
-			}
-			if !found {
-				endpoints = append(endpoints, pbEP)
-			}
+			addEndpoint(netip.AddrPortFrom(pubIP, uint16(listenPort)))
 		}
 	}
 
-	// Detect node's routed IPv4 addresses for inclusion in Affiliate.Addresses.
+	// 3. All routed node addresses (matches upstream LocalAffiliateController which
+	// announces ALL current node IPs as KubeSpan endpoints). This ensures peers
+	// discover all possible paths to this node, enabling NAT traversal via LAN IPs.
+	for _, addr := range RoutedNodeAddresses() {
+		if addr == kubespanAddr {
+			continue // Skip KubeSpan ULA address.
+		}
+		addEndpoint(netip.AddrPortFrom(addr, uint16(listenPort)))
+	}
+
+	// Apply endpoint filters to our own endpoints before publishing (matching upstream
+	// LocalAffiliateController semantics). Filters control which of our addresses we
+	// advertise, e.g., suppress RFC1918 addresses.
+	filtered := endpointfilter.Apply(allEndpoints, endpointfilter.Parse(endpointFilters))
+
+	// Convert to protobuf.
+	var pbEndpoints []*clientpb.Endpoint
+	for _, ep := range filtered {
+		ipBytes, _ := ep.Addr().MarshalBinary()
+		pbEndpoints = append(pbEndpoints, &clientpb.Endpoint{
+			Ip:   ipBytes,
+			Port: uint32(ep.Port()),
+		})
+	}
+
+	// Detect node's routed addresses for inclusion in Affiliate.Addresses.
 	// This matches Talos's LocalAffiliateController which sets spec.Addresses from
 	// routedNodeIPs (NodeAddressRoutedID). Without this, other nodes won't add our
 	// real IPv4 to their WireGuard AllowedIPs, and VXLAN traffic won't route through
@@ -168,7 +198,7 @@ func (dm *Manager) PublishLocal(id *kubespan.IdentitySpec, machineType string, e
 				AdditionalAddresses: prefixesToPBAddresses(additionalAddresses),
 			},
 		},
-		Endpoints: endpoints,
+		Endpoints: pbEndpoints,
 	}
 
 	return dm.client.SetLocalData(affiliate, otherEndpoints)
@@ -181,8 +211,7 @@ func (dm *Manager) DeleteLocalAffiliate() {
 }
 
 // GetAffiliates returns discovered peers as a map from affiliate ID (public key)
-// to cluster.AffiliateSpec. Endpoints are returned unfiltered; filtering is done
-// by the PeerSpecController.
+// to cluster.AffiliateSpec. Endpoints are pre-filtered by the announcing side.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (specAffiliate)
 func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 	rawAffiliates := dm.client.GetAffiliates()
@@ -241,7 +270,7 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 			}
 		}
 
-		// Parse endpoints (no filtering — PeerSpecController handles that).
+		// Parse endpoints (announcing side already applied endpoint filters).
 		for _, ep := range aff.Endpoints {
 			var ip netip.Addr
 			if err := ip.UnmarshalBinary(ep.Ip); err == nil {

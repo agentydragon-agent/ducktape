@@ -113,9 +113,10 @@ func Load(path string) (*AgentConfig, error) {
 			MachineType: "worker",
 		},
 		Kubespan: KubespanConfig{
-			ListenPort:   constants.KubeSpanDefaultPort,
-			MTU:          constants.KubeSpanLinkMTU,
-			IdentityFile: "/var/lib/kubespan/identity.yaml",
+			ListenPort:            constants.KubeSpanDefaultPort,
+			MTU:                   constants.KubeSpanLinkMTU,
+			IdentityFile:          "/var/lib/kubespan/identity.yaml",
+			HarvestExtraEndpoints: true,
 		},
 		KubePrism: KubePrismConfig{
 			Host: "127.0.0.1",
