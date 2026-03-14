@@ -114,6 +114,7 @@ in
     ./claude_code
     ./programs/gemini-cli.nix # Our local module with policies support
     ./gemini_cli.nix # Configuration using the local module
+    ./shell/oh-my-posh.nix
     ./modules/gnome-workspace-shortcuts.nix
     ./modules/gnome-custom-keybindings.nix
     ./modules/flameshot-screenshots.nix
@@ -951,8 +952,7 @@ in
   };
 
   # Prompt configurations (switchable via USE_OHMYPOSH env var)
-  # TODO: oh-my-posh is configured, but not enabled by default (requires USE_OHMYPOSH env var).
-  xdg.configFile."oh-my-posh/config.json".source = ./ohmyposh.json;
+  # oh-my-posh config is in shell/oh-my-posh.nix
   home.file.".p10k.zsh".source = ./p10k.zsh;
 
   # Create Worthy config directory
