@@ -11,6 +11,6 @@ k8s_secrets:
     - name: github-token
       data:
         token: GITHUB_TOKEN
-    - name: buildbuddy-api-key
-      data:
-        api-key: BUILDBUDDY_API_KEY
+  buildbuddy_api_key:
+    secret_name: buildbuddy-api-key
+    data_key: api-key
