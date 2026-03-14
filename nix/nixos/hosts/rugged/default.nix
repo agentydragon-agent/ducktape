@@ -118,6 +118,7 @@
     libsecret # secret-tool for keyring access (used by ansible vault)
     telegram-desktop
     vlc
+    xdg-terminal-exec # Used by custom Ctrl+Alt+T keybinding; configure via xdg-terminals.list
     zoom-us
   ];
 

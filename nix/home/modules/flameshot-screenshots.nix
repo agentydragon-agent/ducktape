@@ -13,25 +13,16 @@
     X-GNOME-Autostart-enabled=true
   '';
 
-  dconf.settings = {
-    # Unbind default GNOME screenshot keys for Flameshot
-    "org/gnome/shell/keybindings" = {
-      show-screenshot-ui = [ ]; # Was PrnSc
-      screenshot = [ ]; # Was Shift+PrnSc
-      screenshot-window = [ ]; # Was Alt+PrnSc
-    };
+  # Unbind default GNOME screenshot keys for Flameshot
+  dconf.settings."org/gnome/shell/keybindings" = {
+    show-screenshot-ui = [ ]; # Was PrnSc
+    screenshot = [ ]; # Was Shift+PrnSc
+    screenshot-window = [ ]; # Was Alt+PrnSc
+  };
 
-    # Flameshot custom keybinding
-    "org/gnome/settings-daemon/plugins/media-keys" = {
-      custom-keybindings = [
-        "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot-gui/"
-      ];
-    };
-
-    "org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/flameshot-gui" = {
-      name = "Flameshot GUI";
-      command = "flameshot gui";
-      binding = "Print";
-    };
+  ducktape.gnomeCustomKeybindings.flameshot-gui = {
+    name = "Flameshot GUI";
+    command = "flameshot gui";
+    binding = "Print";
   };
 }

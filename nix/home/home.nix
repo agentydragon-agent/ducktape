@@ -115,6 +115,7 @@ in
     ./programs/gemini-cli.nix # Our local module with policies support
     ./gemini_cli.nix # Configuration using the local module
     ./modules/gnome-workspace-shortcuts.nix
+    ./modules/gnome-custom-keybindings.nix
     ./modules/flameshot-screenshots.nix
     ./modules/datetime-format.nix
     ./services/activitywatch.nix
@@ -596,6 +597,17 @@ in
     run ${pkgs.xdg-utils}/bin/xdg-mime default remote-viewer.desktop application/x-virt-viewer
   '';
 
+  # Terminal shortcut (Ctrl+Alt+T) — GNOME 49 removed the built-in 'terminal'
+  # media key, so we use a custom keybinding via xdg-terminal-exec.
+  ducktape.gnomeCustomKeybindings.terminal = {
+    name = "Launch Terminal";
+    command = "xdg-terminal-exec";
+    binding = "<Primary><Alt>t";
+  };
+
+  # Default terminal for xdg-terminal-exec (used by Ctrl+Alt+T keybinding above)
+  xdg.configFile."xdg-terminals.list".text = "org.gnome.Terminal.desktop\n";
+
   # XDG autostart desktop entries (migrated from Ansible gui role)
   xdg.configFile."autostart/syncthing-gtk.desktop".text = ''
     [Desktop Entry]
@@ -626,11 +638,6 @@ in
       "org/gnome/desktop/wm/preferences" = {
         focus-mode = "sloppy"; # Focus follows mouse
         button-layout = ":minimize,maximize,close"; # Window buttons
-      };
-
-      # Terminal shortcut (Ctrl+Alt+T)
-      "org/gnome/settings-daemon/plugins/media-keys" = {
-        terminal = [ "<Primary><Alt>t" ];
       };
 
       # GNOME Night Light
