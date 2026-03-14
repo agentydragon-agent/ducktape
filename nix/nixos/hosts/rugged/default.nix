@@ -6,8 +6,6 @@
 #   - VPS agentydragon, root
 # - Transfer over Ansible Vault password into libwallet
 #
-# Some setup steps are in Ansible - see ansible/rugged.yaml
-#
 # TODO: Consider moving some packages from home-manager to system level (zsh, compilers like rustc/go/gcc)
 # TODO: SSH authorized_keys - add keys to users.users.agentydragon.openssh.authorizedKeys.keys
 # TODO: Improved OSK extension - waiting for GNOME 49 support (currently only 43-44)
@@ -114,6 +112,8 @@
   # System packages
   environment.systemPackages = with pkgs; [
     acpi # Battery/thermal/AC adapter status
+    bandwhich # Per-process/connection/host bandwidth monitor
+    nethogs # Per-process network bandwidth monitor
     snapshot # GNOME camera app (uses libcamera/PipeWire natively)
     libsecret # secret-tool for keyring access (used by ansible vault)
     telegram-desktop
@@ -121,7 +121,7 @@
     zoom-us
   ];
 
-  # LocalSend: local file sharing across devices (LAN)
+  # Local file sharing across devices (LAN)
   programs.localsend = {
     enable = true;
     openFirewall = true;
@@ -133,7 +133,7 @@
   # Zsh as default shell
   programs.zsh.enable = true;
 
-  # nix-ld: Run dynamically linked binaries (Bazel downloads Python, Rust toolchains, etc.)
+  # Run dynamically linked binaries (Bazel downloads Python, Rust toolchains, etc.)
   programs.nix-ld.enable = true;
 
   # User configuration
