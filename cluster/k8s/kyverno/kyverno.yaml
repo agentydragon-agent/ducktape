@@ -47,14 +47,21 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/component: admission-controller
-              app.kubernetes.io/instance: kyverno
+      # Hard anti-affinity: one admission controller per control-plane node.
+      # Replaces topologySpreadConstraints whose labelSelector didn't match
+      # (pods have instance=kyverno-kyverno, not instance=kyverno), causing
+      # all 3 replicas to stack on talos-vps-cp-1.
+      antiAffinity:
+        enabled: true
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - admission-controller
+            topologyKey: kubernetes.io/hostname
       resources:
         limits:
           cpu: 500m
