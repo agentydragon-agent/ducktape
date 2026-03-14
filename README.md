@@ -128,48 +128,16 @@ bazel test //finance/worthy/...
 2. Run `CARGO_BAZEL_REPIN=1 bazel build @crates//:all` to update `Cargo.Bazel.lock`
 3. Use `@crates//crate_name` in BUILD.bazel deps
 
-### Remote Cache / BuildBuddy (Optional)
+### Remote Cache + RBE via BuildBuddy
 
-To enable BuildBuddy remote caching and build event streaming, create `~/.config/bazel/buildbuddy.bazelrc`:
+For BuildBuddy setup, see `devinfra/setup_buildbuddy.sh`.
 
-```
-# BuildBuddy configuration
-build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpcs://remote.buildbuddy.io
-common --remote_cache=grpcs://remote.buildbuddy.io
-common --remote_timeout=10m
-common --remote_header=x-buildbuddy-api-key=YOUR_API_KEY_HERE
-```
-
-This file is loaded via `try-import` in `~/.bazelrc` and is silently ignored if missing.
-
-Alternatively, run `devinfra/setup_buildbuddy.sh` to generate the file interactively.
-
-### Remote Execution (RBE)
-
-When BuildBuddy is configured via `setup_buildbuddy.sh`, remote execution is enabled automatically. Build and test actions run on BuildBuddy workers (falling back to local), using the `//:rbe_linux_x64` platform.
-
-The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <devinfra/rbe_image/Dockerfile>, based on BuildBuddy's `rbe-ubuntu24-04` image (which provides Docker CE, iptables-legacy for Firecracker compatibility, build-essential, python3, git, etc.). We layer on Rust toolchain deps, GHC's libtinfo5, and Chromium shared libraries. The image is built and pushed by the `rbe-image.yml` CI workflow.
+RBE worker image `ghcr.io/agentydragon/rbe-worker` is built from <devinfra/rbe_image/Dockerfile>, based on BuildBuddy's `rbe-ubuntu24-04` image with our additions.
+It's built and pushed by the `rbe-image.yml` CI workflow.
 
 ## Dotfiles and Shell Configuration
 
-**Most configuration has migrated to Nix home-manager** (see `nix/home/home.nix`).
-
-### What Nix Manages
-
-- **Shell configs**: `programs.{bash, zsh, atuin, direnv, zoxide, eza}`
-- **Shell init scripts**: `nix/home/shell/` (bash-init.sh, zsh-init.zsh, common-init.sh)
-- **Aliases**: `home.shellAliases`
-- **Environment variables**: `home.sessionVariables`
-- **Powerlevel10k**: `nix/home/p10k.zsh` → `~/.p10k.zsh`
-
-### What Remains in `dotfiles/`
-
-- **`~/.profile`** - Complex conditional PATH management and legacy integrations (CUDA, lesspipe, dotnet, pnpm, machine-specific config)
-- **`~/.secret_env`** - Secret environment variables (not tracked in git)
-- **`~/.config/*`** - Application configs not yet migrated
-- **`~/.local/bin/*`** - Utility scripts (theme switchers, backup utilities)
-- **rcm config** - `rcrc` controls symlink behavior for remaining dotfiles
+Most configuration has migrated to Nix home-manager - see `nix/home/home.nix`.
 
 ### Important Notes
 
