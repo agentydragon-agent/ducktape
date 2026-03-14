@@ -211,6 +211,7 @@
   pkgsUnstable,
   lib,
   claude-plugins-official,
+  siderolabs-docs,
   ...
 }:
 let
@@ -260,6 +261,7 @@ let
     "raw.githubusercontent.com" # GitHub raw file access
     "release-assets.githubusercontent.com" # GitHub release downloads
     "files.pythonhosted.org" # PyPI wheel downloads
+    "docs.siderolabs.com" # Talos/Omni docs and llms.txt
   ]
   ++ cfg.extraAllowedWebFetchDomains;
 
@@ -281,9 +283,11 @@ let
     name: type: lib.nameValuePair (lib.removeSuffix ".md" name) (commandsDir + "/${name}")
   ) (lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".md" name) commandFiles);
 
-  # Shared skills directory (nix/home/skills/) — used by both Claude Code and Gemini CLI
-  # Each skill is a subdirectory containing SKILL.md and optional supporting files
-  skillsDir = ../skills;
+  # Shared skill files — generates home.file entries for ~/.claude/skills/
+  skillFiles = import ../skills/skills.nix {
+    inherit lib siderolabs-docs;
+    prefix = ".claude";
+  };
 
   # Parse "name@marketplace" plugin specs into { name, marketplace } attrsets
   parsedPlugins = map (
@@ -427,6 +431,13 @@ in
         command = "${gmail-mcp-server}/bin/gmail-mcp";
         args = [ ];
       };
+
+      # SideroLabs (Talos/Omni) docs MCP server
+      # Uncomment to enable — provides search over Talos and Omni documentation.
+      # siderolabs = {
+      #   type = "http";
+      #   url = "https://docs.siderolabs.com/mcp";
+      # };
     };
 
     settings = {
@@ -486,14 +497,7 @@ in
 
   # Deploy skills, plugin cache, and installed_plugins.json
   config.home.file =
-    # Skills from shared nix/home/skills/ directory
-    lib.mapAttrs' (
-      skillName: skillType:
-      lib.nameValuePair ".claude/skills/${skillName}" {
-        source = skillsDir + "/${skillName}";
-        recursive = true;
-      }
-    ) (lib.filterAttrs (name: type: type == "directory") (builtins.readDir skillsDir))
+    skillFiles
     # Plugin cache directories
     // pluginCacheFiles
     # Plugin registry

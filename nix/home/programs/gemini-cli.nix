@@ -47,6 +47,7 @@
   config,
   lib,
   pkgs,
+  siderolabs-docs,
   ...
 }:
 let
@@ -117,19 +118,10 @@ in
       }
     ) cfg.policies;
 
-    # Deploy skills to ~/.gemini/skills/ (shared with Claude Code)
-    home.file =
-      let
-        skillsDir = ../../skills; # Shared skills directory
-      in
-      lib.mkIf (builtins.pathExists skillsDir) (
-        lib.mapAttrs' (
-          skillName: skillType:
-          lib.nameValuePair ".gemini/skills/${skillName}" {
-            source = skillsDir + "/${skillName}";
-            recursive = true;
-          }
-        ) (lib.filterAttrs (name: type: type == "directory") (builtins.readDir skillsDir))
-      );
+    # Deploy skills to ~/.gemini/skills/ (local + external, shared with Claude Code)
+    home.file = import ../skills/skills.nix {
+      inherit lib siderolabs-docs;
+      prefix = ".gemini";
+    };
   };
 }

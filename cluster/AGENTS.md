@@ -1,5 +1,12 @@
 @README.md
 
+## Talos Linux Documentation
+
+Use `https://docs.siderolabs.com/llms.txt` as the entrypoint for Talos Linux
+documentation. Fetch it with WebFetch to discover available doc pages before
+answering Talos-related questions. This structured index covers Talos configuration,
+`talosctl` usage, machine config, networking, extensions, upgrades, and troubleshooting.
+
 # Agent Instructions
 
 ## ⚠️ CRITICAL: BOOTSTRAP TERMINOLOGY

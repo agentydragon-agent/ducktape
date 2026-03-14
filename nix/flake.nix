@@ -54,6 +54,13 @@
       flake = false;
     };
 
+    # SideroLabs docs — source of truth for Talos/Omni AI agent skill
+    # Update: nix flake lock --update-input siderolabs-docs
+    siderolabs-docs = {
+      url = "github:siderolabs/docs";
+      flake = false;
+    };
+
     sops-nix = {
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -74,6 +81,7 @@
       headscale-cleanup-wheel,
       gterm-theme-wheel,
       claude-plugins-official,
+      siderolabs-docs,
       ...
     }@inputs:
     let
@@ -134,6 +142,7 @@
                   headscale-cleanup-wheel
                   gterm-theme-wheel
                   claude-plugins-official
+                  siderolabs-docs
                   ;
               };
             }
@@ -188,6 +197,7 @@
                   headscale-cleanup-wheel
                   gterm-theme-wheel
                   claude-plugins-official
+                  siderolabs-docs
                   ;
               }
             else

@@ -254,7 +254,24 @@
         "nixGL": "nixGL",
         "nixpkgs": "nixpkgs_2",
         "nixpkgs-unstable": "nixpkgs-unstable",
+        "siderolabs-docs": "siderolabs-docs",
         "sops-nix": "sops-nix"
+      }
+    },
+    "siderolabs-docs": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1773400816,
+        "narHash": "sha256-zTfpZ6Itv04SM/LMstVl0GuCa+ZxPhO4YWTqcBTsO0Y=",
+        "owner": "siderolabs",
+        "repo": "docs",
+        "rev": "0a7ded3beccf0ede980ed50409c05969d799e04d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "siderolabs",
+        "repo": "docs",
+        "type": "github"
       }
     },
     "sops-nix": {
