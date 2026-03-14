@@ -5,6 +5,9 @@
   enableGui,
   ...
 }:
+let
+  toTOML = (pkgs.formats.toml { }).generate;
+in
 {
   config = lib.mkIf enableGui {
     # Install ActivityWatch from nixpkgs
@@ -13,34 +16,36 @@
     # ActivityWatch configuration files
     # Server runs in the K8s cluster with a Headscale tailscale sidecar.
     # Devices enrolled in Headscale can reach it via MagicDNS.
-    xdg.configFile."activitywatch/aw-client/aw-client.toml".text = ''
-      [server]
-      hostname = "activitywatch.tailnet.allegedly.works"
-      port = "5600"
-    '';
+    xdg.configFile."activitywatch/aw-client/aw-client.toml".source = toTOML "aw-client.toml" {
+      server = {
+        hostname = "activitywatch.tailnet.allegedly.works";
+        port = "5600";
+      };
+    };
 
-    xdg.configFile."activitywatch/aw-qt/aw-qt.toml".text = ''
-      [aw-qt]
+    xdg.configFile."activitywatch/aw-qt/aw-qt.toml".source = toTOML "aw-qt.toml" {
       # No local server — data goes to the cluster via Headscale mesh.
-      autostart_modules = ["aw-watcher-afk", "aw-watcher-window"]
-    '';
+      aw-qt.autostart_modules = [
+        "aw-watcher-afk"
+        "aw-watcher-window"
+      ];
+    };
 
-    xdg.configFile."activitywatch/aw-watcher-afk/aw-watcher-afk.toml".text = ''
-      [aw-watcher-afk]
-      #timeout = 180
-      #poll_time = 5
+    xdg.configFile."activitywatch/aw-watcher-afk/aw-watcher-afk.toml".source =
+      toTOML "aw-watcher-afk.toml"
+        {
+          # Available options: timeout (default 180), poll_time (default 5)
+          aw-watcher-afk = { };
+          # Available options: timeout (default 20), poll_time (default 1)
+          aw-watcher-afk-testing = { };
+        };
 
-      [aw-watcher-afk-testing]
-      #timeout = 20
-      #poll_time = 1
-    '';
-
-    xdg.configFile."activitywatch/aw-watcher-window/aw-watcher-window.toml".text = ''
-      [aw-watcher-window]
-      #exclude_title = false
-      #exclude_titles = []
-      #poll_time = 1.0
-      #strategy_macos = "swift"
-    '';
+    xdg.configFile."activitywatch/aw-watcher-window/aw-watcher-window.toml".source =
+      toTOML "aw-watcher-window.toml"
+        {
+          # Available options: poll_time (default 1.0), exclude_title (default false),
+          # exclude_titles (default [])
+          aw-watcher-window = { };
+        };
   };
 }
