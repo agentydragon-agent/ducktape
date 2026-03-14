@@ -1,16 +1,1 @@
-load("@rules_oci//oci:defs.bzl", "oci_load")
-
 package(default_testonly = True)
-
-oci_load(
-    name = "discovery_service_load",
-    image = "@discovery_service_linux_amd64",
-    repo_tags = ["ghcr.io/siderolabs/discovery-service:latest"],
-)
-
-filegroup(
-    name = "discovery_service_tarball",
-    srcs = [":discovery_service_load"],
-    output_group = "tarball",
-    visibility = ["//visibility:public"],
-)

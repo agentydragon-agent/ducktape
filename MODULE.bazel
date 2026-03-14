@@ -146,15 +146,6 @@ oci.pull(
     tag = "0.8.1",
 )
 
-# KubeSpan E2E: Talos discovery service (gRPC discovery protocol server)
-oci.pull(
-    name = "discovery_service",
-    digest = "sha256:432eaf0d512f5c5fed879cb2400bab58922f172a201dbb4494d749755aa81194",
-    image = "ghcr.io/siderolabs/discovery-service",
-    platforms = ["linux/amd64"],
-    tag = "latest",
-)
-
 # Distroless cc: minimal glibc + libstdc++ + ca-certificates, no shell.
 # Debian 12 (Bookworm) ships glibc 2.36.
 oci.pull(
@@ -190,7 +181,7 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "stable",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "discovery_service", "discovery_service_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
@@ -622,7 +613,44 @@ http_archive(
     urls = ["https://github.com/siderolabs/talos/archive/refs/tags/" + _TALOS_TAG + ".tar.gz"],
 )
 
+# ─ Talos KubeSpan diagnostic test artifacts ───────────────────────────────────
+# Real Talos kernel + initramfs + talosctl for verifying upstream KubeSpan
+# through double NAT. Version matches cluster (variables.tf talos_version).
+_TALOS_VERSION = "v1.12.3"
+
+http_file(
+    name = "talos_vmlinuz_amd64",
+    downloaded_file_path = "vmlinuz-amd64",
+    sha256 = "a48a3252a8b9b12f96e0af5b54d8793187a2becda98e1a57c798f3bed73c9a42",
+    urls = ["https://github.com/siderolabs/talos/releases/download/" + _TALOS_VERSION + "/vmlinuz-amd64"],
+)
+
+http_file(
+    name = "talos_initramfs_amd64",
+    downloaded_file_path = "initramfs-amd64.xz",
+    sha256 = "2e17e104c983b07142397507e4b910f0607c197053f7a59da39f47428c0599bd",
+    urls = ["https://github.com/siderolabs/talos/releases/download/" + _TALOS_VERSION + "/initramfs-amd64.xz"],
+)
+
+http_file(
+    name = "talosctl_amd64",
+    downloaded_file_path = "talosctl",
+    executable = True,
+    sha256 = "1b761b351964dcf764d3ec1a02ccd366428be22895a68dc641b6b4fa301589ed",
+    urls = ["https://github.com/siderolabs/talos/releases/download/" + _TALOS_VERSION + "/talosctl-linux-amd64"],
+)
+
 # ─ QEMU nftables smoke test dependencies ──────────────────────────────────────
+# Talos discovery service binary for double_nat QEMU test (runs inside VPS VM).
+# Statically linked, runs directly on Alpine initramfs without any dependencies.
+http_file(
+    name = "discovery_service_binary",
+    downloaded_file_path = "discovery-service",
+    executable = True,
+    sha256 = "52b6ee1f408af374f80321a2500878917266b566a26b91ca7fe27adcd8f7298a",
+    urls = ["https://github.com/siderolabs/discovery-service/releases/download/v1.0.13/discovery-service-linux-amd64"],
+)
+
 # Alpine linux-virt kernel with nftables modules for QEMU-based testing.
 # Smaller than Ubuntu (~38MB vs ~181MB) and purpose-built for VMs.
 http_file(

@@ -5,6 +5,10 @@ go_library(
     testonly = True,
     srcs = [
         "main.go",
+        "mode_discovery.go",
+        "mode_kubespan.go",
+        "mode_nft_smoke.go",
+        "mode_router.go",
         "nft_exprs.go",
         "nft_smoke.go",
         "ping.go",
