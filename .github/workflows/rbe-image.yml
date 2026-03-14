@@ -4,9 +4,12 @@
 # and Chromium headless shell. See devinfra/rbe_image/Dockerfile.
 #
 # Triggers:
-#   - push to main/devel (when devinfra/rbe_image/** changes): tags :latest + :<sha>
-#   - workflow_dispatch: tags :latest + :<sha>
-#   - workflow_call (from ci.yml): tags :<sha>, outputs image ref
+#   - push to main/devel (when devinfra/rbe_image/** changes): tags :latest + :<sha> + :{branch}-{ts}-{sha7}
+#   - workflow_dispatch: tags :latest + :<sha> + :{branch}-{ts}-{sha7}
+#   - workflow_call (from ci.yml): tags :<sha> + :{branch}-{ts}-{sha7}, outputs image ref
+#
+# On push/dispatch, also pins BUILD.bazel to the new :{branch}-{ts}-{sha7} tag
+# and commits with "chore: update rbe image [skip ci]".
 name: RBE Worker Image
 
 on:
@@ -29,7 +32,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -44,17 +47,23 @@ jobs:
       rbe_image: ${{ steps.meta.outputs.rbe_image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Compute image tags
         id: meta
         run: |
-          TAG="${{ github.sha }}"
-          TAGS="${{ env.IMAGE }}:$TAG"
+          SHA="${{ github.sha }}"
+          TS="$(date -u +%Y%m%d%H%M%S)"
+          BRANCH="${{ github.ref_name }}"
+          PIN_TAG="${BRANCH}-${TS}-${SHA:0:7}"
+          TAGS="${{ env.IMAGE }}:${SHA},${{ env.IMAGE }}:${PIN_TAG}"
           if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
             TAGS="$TAGS,${{ env.IMAGE }}:latest"
           fi
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
-          echo "rbe_image=${{ env.IMAGE }}:$TAG" >> $GITHUB_OUTPUT
+          echo "rbe_image=${{ env.IMAGE }}:$SHA" >> $GITHUB_OUTPUT
+          echo "pin_tag=$PIN_TAG" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -70,3 +79,36 @@ jobs:
           file: devinfra/rbe_image/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+
+      - name: Pin RBE image in BUILD.bazel
+        if: github.event_name != 'workflow_call'
+        run: |
+          PIN_TAG="${{ steps.meta.outputs.pin_tag }}"
+
+          sed -i "s|\"container-image\": \"docker://ghcr.io/agentydragon/rbe-worker:.*\"|\"container-image\": \"docker://ghcr.io/agentydragon/rbe-worker:${PIN_TAG}\"|" BUILD.bazel
+
+          grep -q "rbe-worker:${PIN_TAG}" BUILD.bazel || {
+            echo "::error::Failed to update BUILD.bazel with pin tag $PIN_TAG"
+            exit 1
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add BUILD.bazel
+
+          if git diff --cached --quiet; then
+            echo "BUILD.bazel already pinned to $PIN_TAG"
+            exit 0
+          fi
+
+          git commit -m "chore: update rbe image [skip ci]"
+
+          BRANCH="${{ github.ref_name }}"
+          if ! git pull --rebase origin "$BRANCH"; then
+            echo "::error::Rebase failed"
+            git status
+            exit 1
+          fi
+
+          git push origin "HEAD:${BRANCH}"
