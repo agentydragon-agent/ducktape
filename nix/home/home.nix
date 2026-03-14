@@ -509,6 +509,16 @@ in
       # night-theme-switcher managed by solarized module
       gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (Vertical Workspaces) ✓
       gnomeExtensions.cronomix # ID 6003: Cronomix ✓
+
+      # Tiling window manager extension (on Pop!_OS this is pre-installed as a system extension)
+      # Other GNOME tiling options to consider:
+      #   - gnomeExtensions.forge: tree-based auto-tiling (i3-style), good keybinding customization
+      #   - gnomeExtensions.tiling-assistant: lighter touch, extends GNOME's built-in half/quarter snapping
+      #   - gnomeExtensions.gtile: grid-based manual tiling (pick zones)
+      #   - gnomeExtensions.tiling-shell: newer, customizable drag-and-drop zone layouts
+      # Non-GNOME alternatives: hyprland (best NixOS integration), sway (i3 for Wayland), niri (scrollable tiling)
+      gnomeExtensions.pop-shell
+
       # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
     ]
     ++ lib.optionals enableGui [
@@ -656,12 +666,12 @@ in
             # nightthemeswitcher managed by solarized module
             "vertical-workspaces@G-dH.github.com" # V-Shell (replaces cosmic-workspaces)
             "cronomix@zagortenay333" # Cronomix
+            "pop-shell@system76.com" # Pop Shell (tiling)
           ]
           # Pop!_OS system extensions (only on Pop!_OS hosts)
           ++ lib.optionals isPopOS [
             "ding@rastersoft.com" # Desktop Icons NG (DING)
             "pop-cosmic@system76.com" # Pop COSMIC
-            "pop-shell@system76.com" # Pop Shell (tiling)
             "system76-power@system76.com" # System76 Power
             "ubuntu-appindicators@ubuntu.com" # Ubuntu AppIndicators (system tray)
             "cosmic-dock@system76.com" # COSMIC Dock
