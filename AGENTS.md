@@ -57,6 +57,10 @@ push, which is disruptive and can lose work.
 - Test files: `test_*.py` in same directory as code
 - Framework: pytest with pytest-asyncio
 - Fixtures for shared setup
+- **No `t.Skip` for missing tools**: Tests must not skip when a required tool is missing.
+  Use the tool directly and let the test fail if it's unavailable. Required tools are
+  provided via Bazel runfiles, the RBE worker image (`devinfra/rbe_image/Dockerfile`),
+  or other mechanisms. If a test needs a new tool, add it to the appropriate provider.
 
 **IMPORTANT: Running tests and Python code**
 

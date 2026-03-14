@@ -24,6 +24,10 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         dbus-daemon \
         # cpio: needed to build initramfs for QEMU-based tests
         cpio \
+        # dosfstools + mtools: needed to create FAT CIDATA volumes for Talos
+        # nocloud platform configuration in QEMU-based tests
+        dosfstools \
+        mtools \
         # qemu-system-x86: QEMU emulator + firmware/BIOS for nftables and
         # KubeSpan integration tests (TCG software emulation, no KVM needed)
         qemu-system-x86 \
