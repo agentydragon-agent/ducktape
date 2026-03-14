@@ -383,11 +383,9 @@ async def _setup_web(
             )
 
     # Configure BuildBuddy now that k8s secrets (with API key) are available.
-    buildbuddy_api_key = secrets.env_vars.get("BUILDBUDDY_API_KEY") if secrets else None
+    buildbuddy_api_key = secrets.buildbuddy_api_key if secrets else None
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
-        buildbuddy_result = await run_in_thread(
-            lambda: buildbuddy_setup.setup_buildbuddy(project_dir, api_key=buildbuddy_api_key)
-        )
+        buildbuddy_result = await run_in_thread(lambda: buildbuddy_setup.setup_buildbuddy(api_key=buildbuddy_api_key))
     buildbuddy_configured = (
         isinstance(buildbuddy_result, buildbuddy_setup.BuildbuddySetup) and buildbuddy_result.configured
     )
@@ -515,6 +513,7 @@ async def run_session(hook_input: HookInput, settings: HookSettings, env_file_pa
             local_proxy=setup.local_proxy,
             combined_ca_path=setup.combined_ca_path,
             buildbuddy_configured=setup.buildbuddy_configured,
+            buildbuddy_bazelrc=buildbuddy_setup.BUILDBUDDY_BAZELRC,
             bazel_cache_dir=setup.bazel_cache_dir,
         )
         session_bazelrc = settings.session_dir / "bazelrc"

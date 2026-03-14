@@ -33,11 +33,19 @@ class K8sSecretMapping(BaseModel):
     data: dict[str, str]  # secret data key -> env var name
 
 
+class K8sSecretRef(BaseModel):
+    """Reference to a single key in a k8s Secret."""
+
+    secret_name: str
+    data_key: str
+
+
 class K8sSecretsConfig(BaseModel):
     """Config for reading secrets from k8s."""
 
     namespace: str
     secrets: list[K8sSecretMapping]
+    buildbuddy_api_key: K8sSecretRef | None = None
 
 
 class K8sConfig(BaseModel):
@@ -62,6 +70,7 @@ class K8sSecretsResult:
 
     env_vars: dict[str, str] = field(default_factory=dict)
     kubeconfig_path: Path | None = None
+    buildbuddy_api_key: str | None = None
 
 
 def load_config(config_path: Path) -> HookConfig:
@@ -99,11 +108,7 @@ def _build_kubeconfig(token: str, server: str, service_account: str, namespace: 
 
 
 def setup_k8s_secrets(
-    token: str,
-    session_dir: Path,
-    combined_ca_path: Path | None,
-    config: HookConfig,
-    proxy: str | None = None,
+    token: str, session_dir: Path, combined_ca_path: Path | None, config: HookConfig, proxy: str | None = None
 ) -> K8sSecretsResult:
     """Read secrets from k8s and write kubeconfig.
 
@@ -152,6 +157,19 @@ def setup_k8s_secrets(
             value = base64.b64decode(secret.data[data_key]).decode()
             result.env_vars[env_var] = value
             logger.info("Mapped %s/%s[%s] -> %s", secrets_cfg.namespace, entry.name, data_key, env_var)
+
+    # Fetch BuildBuddy API key (internal use only, not exported as env var)
+    if secrets_cfg.buildbuddy_api_key:
+        ref = secrets_cfg.buildbuddy_api_key
+        try:
+            bb_secret = api.read_namespaced_secret(ref.secret_name, secrets_cfg.namespace)
+            if bb_secret.data and ref.data_key in bb_secret.data:
+                result.buildbuddy_api_key = base64.b64decode(bb_secret.data[ref.data_key]).decode()
+                logger.info(
+                    "BuildBuddy API key read from %s/%s[%s]", secrets_cfg.namespace, ref.secret_name, ref.data_key
+                )
+        except k8s_client.ApiException as e:
+            logger.warning("Failed to read BuildBuddy API key: %s", e.reason)
 
     # Write kubeconfig
     kubeconfig = _build_kubeconfig(token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path)

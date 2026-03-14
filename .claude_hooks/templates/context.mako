@@ -32,8 +32,8 @@ Ollama: OpenAI-compatible LLM inference at `https://ollama.allegedly.works/v1` (
   Available model: `gpt-oss-20b-128k` (OpenAI gpt-oss 20B, 128K context, Apache 2.0).
   API key in k8s secret `ollama-api-key`, key `api-key`, namespace `claude-sandbox`.
   Retrieve: `kubectl get secret ollama-api-key -n claude-sandbox -o jsonpath='{.data.api-key}' | base64 -d`
-% if "BUILDBUDDY_API_KEY" in secrets.env_vars:
-`BUILDBUDDY_API_KEY`: BuildBuddy remote cache/execution key (also configured in ~/.config/bazel/buildbuddy.bazelrc).
+% if secrets.buildbuddy_api_key:
+API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif
 % if "KUBECONFIG" in secrets.env_vars:
 `KUBECONFIG`: Points to decoded kubeconfig for the `cluster/` Talos k8s cluster. ServiceAccount `claude-code-web` with access to the `claude-sandbox` namespace (pods, services, secrets, exec). Resource limits: 4 CPU, 8Gi memory, 10 pods. Use `kubectl` for `cluster/` operations (deploy, inspect, debug).
