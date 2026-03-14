@@ -26,7 +26,7 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: homeassistant-proxy
-          image: registry.allegedly.works/ducktape/homeassistant-proxy:devel-20260312223132-dfcee1c # {"$imagepolicy": "flux-system:homeassistant-proxy"}
+          image: registry.allegedly.works/ducktape/homeassistant-proxy:devel-20260314010338-a6aa2f2 # {"$imagepolicy": "flux-system:homeassistant-proxy"}
           ports:
             - name: http
               containerPort: 8080
