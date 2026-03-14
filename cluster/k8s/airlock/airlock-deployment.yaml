@@ -26,7 +26,7 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: airlock
-          image: registry.allegedly.works/ducktape/airlock:devel-20260314064806-a317527 # {"$imagepolicy": "flux-system:airlock"}
+          image: registry.allegedly.works/ducktape/airlock:devel-20260314065928-c0e55a6 # {"$imagepolicy": "flux-system:airlock"}
           imagePullPolicy: Always
           ports:
             - name: http
