@@ -9,9 +9,11 @@
 package clusterctrl
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/netip"
+	"slices"
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/resource"
@@ -19,6 +21,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
 	discoveryclient "github.com/siderolabs/discovery-client/pkg/client"
+	"github.com/siderolabs/gen/optional"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"github.com/siderolabs/talos/pkg/machinery/resources/network"
@@ -32,10 +35,16 @@ type DiscoveryController struct {
 	dm       *discovery.Manager
 	cancelDM context.CancelFunc
 
+	discoveryConfigVersion resource.Version
+	localAffiliateID       resource.ID
+
 	// Track previous publish data to avoid re-publishing unchanged data.
-	lastLocalVersion  string
-	lastEndpointCount int
-	lastPubIPLen      int
+	// Upstream uses proto.Equal on the full protobuf messages; we compare the
+	// COSI resource version for the affiliate (strictly better — authoritative
+	// from COSI) and actual byte/struct equality for public IP and endpoints.
+	lastLocalVersion   string
+	lastOtherEndpoints []discoveryclient.Endpoint
+	lastPublicIP       []byte
 }
 
 // Name implements controller.Controller.
@@ -44,6 +53,8 @@ func (ctrl *DiscoveryController) Name() string {
 }
 
 // Inputs implements controller.Controller.
+// cluster.Affiliate is NOT listed here — it is added dynamically via
+// UpdateInputs once the local affiliate ID is known.
 func (ctrl *DiscoveryController) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*kubespan.Config](controller.InputWeak),
@@ -51,7 +62,13 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 		safe.Input[*kubespan.Endpoint](controller.InputWeak),
 		safe.Input[*cluster.Config](controller.InputWeak),
 		safe.Input[*cluster.Identity](controller.InputWeak),
-		safe.Input[*cluster.Affiliate](controller.InputWeak),
+		// Talos watches runtime.MachineResetSignal to delete the local
+		// affiliate on machine reset. kubespand has no machine reset concept;
+		// cleanup happens only via stopDiscovery on shutdown.
+		//
+		// Talos checks RegistryServiceEnabled and cleans up when discovery is
+		// disabled. kubespand assumes discovery is always enabled if
+		// cluster.Config exists.
 	}
 }
 
@@ -84,26 +101,56 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				ctrl.stopDiscovery()
+
 				continue
 			}
+
 			return fmt.Errorf("getting cluster config: %w", err)
 		}
 		clusterSpec := clusterCfg.TypedSpec()
+
+		// Force reconnect when discovery config changes.
+		if !clusterCfg.Metadata().Version().Equal(ctrl.discoveryConfigVersion) {
+			ctrl.stopDiscovery()
+		}
 
 		clusterID, err := safe.ReaderGetByID[*cluster.Identity](ctx, r, cluster.LocalIdentity)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				continue
 			}
+
 			return fmt.Errorf("getting cluster identity: %w", err)
 		}
 		localNodeID := clusterID.TypedSpec().NodeID
+
+		// Dynamically register the specific local affiliate as an input so
+		// COSI only triggers reconciles for that ID, not all affiliates.
+		// This avoids a feedback loop where writing remote affiliates
+		// triggers self-reconciliation.
+		if ctrl.localAffiliateID != resource.ID(localNodeID) {
+			ctrl.localAffiliateID = resource.ID(localNodeID)
+
+			if err = r.UpdateInputs(append(ctrl.Inputs(),
+				controller.Input{
+					Namespace: cluster.NamespaceName,
+					Type:      cluster.AffiliateType,
+					ID:        optional.Some(ctrl.localAffiliateID),
+					Kind:      controller.InputWeak,
+				},
+			)); err != nil {
+				return err
+			}
+
+			ctrl.stopDiscovery()
+		}
 
 		ksID, err := safe.ReaderGetByID[*kubespan.Identity](ctx, r, kubespan.LocalIdentity)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				continue
 			}
+
 			return fmt.Errorf("getting kubespan identity: %w", err)
 		}
 
@@ -111,14 +158,11 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		localAffiliate, err := safe.ReaderGetByID[*cluster.Affiliate](ctx, r, localNodeID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
-				// LocalAffiliateController hasn't produced it yet.
 				continue
 			}
+
 			return fmt.Errorf("getting local affiliate: %w", err)
 		}
-
-		// Build otherEndpoints from harvested Endpoint resources for re-announcement.
-		otherEndpoints := ctrl.buildOtherEndpoints(ctx, r)
 
 		// Create discovery manager if not yet running.
 		if ctrl.dm == nil {
@@ -130,6 +174,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 			var dmCtx context.Context
 			dmCtx, ctrl.cancelDM = context.WithCancel(ctx)
 			ctrl.dm = dm
+			ctrl.discoveryConfigVersion = clusterCfg.Metadata().Version()
 
 			go func() {
 				if runErr := dm.Run(dmCtx); runErr != nil {
@@ -156,19 +201,23 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		// LocalAffiliateController for endpoint construction).
 		ctrl.writePublicIPStatus(ctx, r, logger)
 
+		// Build otherEndpoints from harvested Endpoint resources for re-announcement.
+		otherEndpoints := ctrl.buildOtherEndpoints(ctx, r)
+
 		// Publish local affiliate to discovery service when data changes.
 		localVersion := localAffiliate.Metadata().Version().String()
-		pubIPLen := len(ctrl.dm.GetPublicIP())
+		publicIP := ctrl.dm.GetPublicIP()
+
 		if localVersion != ctrl.lastLocalVersion ||
-			len(otherEndpoints) != ctrl.lastEndpointCount ||
-			pubIPLen != ctrl.lastPubIPLen {
+			!equalOtherEndpoints(otherEndpoints, ctrl.lastOtherEndpoints) ||
+			!bytes.Equal(publicIP, ctrl.lastPublicIP) {
 
 			if pubErr := ctrl.dm.PublishAffiliate(localAffiliate.TypedSpec(), otherEndpoints); pubErr != nil {
 				logger.Error("publishing local affiliate", zap.Error(pubErr))
 			} else {
 				ctrl.lastLocalVersion = localVersion
-				ctrl.lastEndpointCount = len(otherEndpoints)
-				ctrl.lastPubIPLen = pubIPLen
+				ctrl.lastOtherEndpoints = otherEndpoints
+				ctrl.lastPublicIP = publicIP
 				logger.Debug("published local affiliate",
 					zap.Int("other_endpoints", len(otherEndpoints)),
 				)
@@ -176,6 +225,10 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		}
 
 		// Reconcile cluster.Affiliate resources from discovered peers.
+		// Talos writes to cluster.RawNamespaceName with "service/" ID prefix,
+		// then AffiliateMergeController merges into cluster.NamespaceName.
+		// kubespand writes directly to cluster.NamespaceName (single discovery
+		// source, no merge needed).
 		affiliates := ctrl.dm.GetAffiliates()
 
 		r.StartTrackingOutputs()
@@ -185,6 +238,7 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 				cluster.NewAffiliate(cluster.NamespaceName, resource.ID(pubKey)),
 				func(res *cluster.Affiliate) error {
 					*res.TypedSpec() = affSpec
+
 					return nil
 				},
 			); err != nil {
@@ -218,6 +272,7 @@ func (ctrl *DiscoveryController) writePublicIPStatus(ctx context.Context, r cont
 		network.NewAddressStatus(cluster.NamespaceName, "discovered-public-ip"),
 		func(res *network.AddressStatus) error {
 			res.TypedSpec().Address = netip.PrefixFrom(pubIP, pubIP.BitLen())
+
 			return nil
 		},
 	); err != nil {
@@ -227,6 +282,7 @@ func (ctrl *DiscoveryController) writePublicIPStatus(ctx context.Context, r cont
 
 // buildOtherEndpoints reads harvested kubespan.Endpoint resources and converts
 // them to discoveryclient.Endpoint for re-announcement via the discovery service.
+// Results are sorted by AffiliateID for stable comparison across reconcile cycles.
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbOtherEndpoints)
 func (ctrl *DiscoveryController) buildOtherEndpoints(ctx context.Context, r controller.Runtime) []discoveryclient.Endpoint {
 	endpoints, err := safe.ReaderListAll[*kubespan.Endpoint](ctx, r)
@@ -260,6 +316,19 @@ func (ctrl *DiscoveryController) buildOtherEndpoints(ctx context.Context, r cont
 		})
 	}
 
+	// Sort for stable comparison across reconcile cycles (map iteration
+	// order is non-deterministic).
+	slices.SortFunc(result, func(a, b discoveryclient.Endpoint) int {
+		if a.AffiliateID < b.AffiliateID {
+			return -1
+		}
+		if a.AffiliateID > b.AffiliateID {
+			return 1
+		}
+
+		return 0
+	})
+
 	return result
 }
 
@@ -273,4 +342,43 @@ func (ctrl *DiscoveryController) stopDiscovery() {
 		ctrl.cancelDM = nil
 	}
 	ctrl.dm = nil
+	ctrl.lastLocalVersion = ""
+	ctrl.lastOtherEndpoints = nil
+	ctrl.lastPublicIP = nil
+}
+
+// equalOtherEndpoints compares two slices of discovery endpoints.
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (equalOtherEndpoints)
+func equalOtherEndpoints(a, b []discoveryclient.Endpoint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if a[i].AffiliateID != b[i].AffiliateID {
+			return false
+		}
+
+		if !equalPBEndpoints(a[i].Endpoints, b[i].Endpoints) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// equalPBEndpoints compares two slices of protobuf Endpoint messages by value.
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (equalEndpoints)
+func equalPBEndpoints(a, b []*clientpb.Endpoint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if !bytes.Equal(a[i].Ip, b[i].Ip) || a[i].Port != b[i].Port {
+			return false
+		}
+	}
+
+	return true
 }

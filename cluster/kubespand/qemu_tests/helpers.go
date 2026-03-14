@@ -26,8 +26,8 @@ const (
 	KubespanInitramfs  = "cluster/kubespand/qemu_tests/vms/kubespan/initramfs.cpio.gz"
 	DoublenatInitramfs = "cluster/kubespand/qemu_tests/vms/doublenat/initramfs.cpio.gz"
 	NftInitramfs       = "cluster/kubespand/qemu_tests/nft/initramfs.cpio.gz"
-	// Talos artifacts are external repos — no _main/ prefix in Rlocation.
-	TalosNocloudQcow2Path = "talos_nocloud_amd64/file/nocloud-amd64.qcow2.xz"
+	// Talos artifacts from external repos — no _main/ prefix in Rlocation.
+	TalosNocloudImagePath = "talos_nocloud_amd64/file/nocloud-amd64.raw.xz"
 	TalosctlPath          = "talosctl_amd64/file/talosctl"
 
 	// Pre-generated Talos configs (committed as testdata).
@@ -231,6 +231,48 @@ func RequireEvent(t *testing.T, v *VM, typ EventType, timeout time.Duration) Eve
 		t.Fatalf("[%s] timed out waiting for %s event (%v)", v.Name, typ, timeout)
 	}
 	return evt
+}
+
+// RequireAllEvents waits for multiple VMs to emit the given event type in
+// parallel, with a single shared deadline. Fails the test if any VM doesn't
+// produce the event within the timeout.
+func RequireAllEvents(t *testing.T, vms []*VM, typ EventType, timeout time.Duration) {
+	t.Helper()
+
+	type result struct {
+		vm  *VM
+		evt Event
+		ok  bool
+	}
+
+	ch := make(chan result, len(vms))
+	for _, vm := range vms {
+		go func(v *VM) {
+			evt, ok := v.WaitForEvent(typ, timeout)
+			ch <- result{vm: v, evt: evt, ok: ok}
+		}(vm)
+	}
+
+	for range vms {
+		res := <-ch
+		if !res.ok {
+			if res.evt.Type == EventError {
+				t.Fatalf("[%s] error while waiting for %s: %s", res.vm.Name, typ, res.evt.Message)
+			}
+			t.Fatalf("[%s] timed out waiting for %s event (%v)", res.vm.Name, typ, timeout)
+		}
+	}
+}
+
+// CleanupVMs registers a t.Cleanup that kills all VMs and saves their logs.
+func CleanupVMs(t *testing.T, vms []*VM, outDir string) {
+	t.Helper()
+	t.Cleanup(func() {
+		KillAndWait(vms...)
+		for _, vm := range vms {
+			vm.SaveLogs(t, outDir)
+		}
+	})
 }
 
 // WaitVMDone waits for a VM to finish with a timeout.

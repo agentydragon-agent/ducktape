@@ -119,9 +119,10 @@ func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, otherEndpoints 
 	if spec.KubeSpan.PublicKey != "" {
 		addrBytes, _ := spec.KubeSpan.Address.MarshalBinary()
 		affiliate.Affiliate.Kubespan = &clientpb.KubeSpan{
-			PublicKey:           spec.KubeSpan.PublicKey,
-			Address:             addrBytes,
-			AdditionalAddresses: prefixesToPB(spec.KubeSpan.AdditionalAddresses),
+			PublicKey:                  spec.KubeSpan.PublicKey,
+			Address:                    addrBytes,
+			AdditionalAddresses:        prefixesToPB(spec.KubeSpan.AdditionalAddresses),
+			ExcludeAdvertisedAddresses: prefixesToPB(spec.KubeSpan.ExcludeAdvertisedNetworks),
 		}
 		affiliate.Endpoints = addrPortsToPB(spec.KubeSpan.Endpoints)
 	}
@@ -184,6 +185,14 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 			var ip netip.Addr
 			if err := ip.UnmarshalBinary(ap.Ip); err == nil {
 				spec.KubeSpan.AdditionalAddresses = append(spec.KubeSpan.AdditionalAddresses, netip.PrefixFrom(ip, int(ap.Bits)))
+			}
+		}
+
+		// Parse excluded advertised addresses.
+		for _, ap := range ks.ExcludeAdvertisedAddresses {
+			var ip netip.Addr
+			if err := ip.UnmarshalBinary(ap.Ip); err == nil {
+				spec.KubeSpan.ExcludeAdvertisedNetworks = append(spec.KubeSpan.ExcludeAdvertisedNetworks, netip.PrefixFrom(ip, int(ap.Bits)))
 			}
 		}
 
