@@ -60,6 +60,32 @@ go_library(
     ],
 )
 
+# ─ Controllers — cluster (LocalAffiliateController) ─────────────────────
+
+go_library(
+    name = "controllers_cluster",
+    srcs = [_P + "controllers/cluster/local_affiliate.go"],
+    importpath = "github.com/siderolabs/talos/" + _P + "controllers/cluster",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_gen//optional",
+        "@com_github_siderolabs_gen//xslices",
+        "@com_github_siderolabs_net//:net",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/config",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/k8s",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
+        "@com_github_siderolabs_talos_pkg_machinery//version",
+        "@org_uber_go_zap//:zap",
+    ],
+)
+
 # ─ Controllers — kubespan ─────────────────────────────────────────────────
 # NOTE: kubespand extends this package with peer_spec_filters.go locally
 # via //cluster/kubespand/peerspec (embeds this target + adds local file).

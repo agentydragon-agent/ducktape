@@ -101,20 +101,21 @@ Maps to the following Talos source files:
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `controllers/kubespan/identity.go`                 | `internal/.../controllers/kubespan/identity.go` (IdentityController)                                               |
 | `controllers/cluster/discovery_service.go`         | `internal/.../controllers/cluster/discovery_service.go` (DiscoveryServiceController)                               |
-| `peerspec/` (embedded)                             | `internal/.../controllers/kubespan/peer_spec.go` (PeerSpecController + endpoint filters)                           |
+| `@talos_internal//:controllers_cluster` (direct)   | `internal/.../controllers/cluster/local_affiliate.go` (LocalAffiliateController)                                   |
+| `@talos_internal//:controllers_kubespan` (direct)  | `internal/.../controllers/kubespan/peer_spec.go` (PeerSpecController + endpoint filters)                           |
 | `controllers/kubespan/manager.go`                  | `internal/.../controllers/kubespan/manager.go` (LinkSpec + nftables + peer state)                                  |
 | `controllers/network/wireguard_link.go`            | `internal/.../controllers/network/link_spec.go` (WireGuard subset)                                                 |
 | `controllers/kubespand/config.go`                  | (kubespand-only: YAML → COSI config injection)                                                                     |
-| `controllers/cluster/local_affiliate.go`           | `internal/.../controllers/k8s/node_status.go` + `cluster/local_affiliate.go` (K8s → AdditionalAddresses)           |
+| `controllers/kubespand/node_metadata.go`           | (kubespand-only: produces shim COSI resources for LocalAffiliateController)                                        |
+| `controllers/cluster/kubernetes_node.go`           | (kubespand-only: K8s informer → `k8s.NodeStatus` for PodCIDRs)                                                     |
 | `controllers/k8s/kubeprism_config.go`              | `internal/.../controllers/k8s/kubeprism_endpoints.go` + `kubeprism_config.go` (adapted)                            |
 | (embedded) `@talos_internal controllers_kubeprism` | `internal/.../controllers/k8s/kubeprism.go` (TCP LB manager)                                                       |
 | `identity/identity.go`                             | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64)        |
-| `discovery/discovery.go`                           | `internal/.../controllers/cluster/discovery_service.go` (discovery client adapter)                                 |
+| `discovery/discovery.go`                           | `internal/.../controllers/cluster/discovery_service.go` (discovery client wrapper)                                 |
 | `routing/routing.go`                               | `internal/.../controllers/kubespan/manager.go` (nftables), `.../kubespan/routing_rules.go` (ip rules)              |
 | `peerstate/peerstate.go`                           | `pkg/machinery/resources/kubespan/peer_status.go`, `internal/.../adapters/kubespan/peer_status.go` (state machine) |
 | `agentconfig/agentconfig.go`                       | `pkg/machinery/constants/constants.go` (KubeSpan\* constants)                                                      |
 | `agentconfig/resource.go`                          | (kubespand-only: COSI resource for agent-specific config)                                                          |
-| `k8snet/k8snet.go`                                 | `pkg/machinery/resources/k8s/node_status.go` (PodCIDRs COSI resource)                                              |
 
 ## Known Gaps
 

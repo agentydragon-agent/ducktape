@@ -12,6 +12,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"github.com/siderolabs/talos/pkg/machinery/version"
 	"go.uber.org/zap"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
@@ -20,10 +21,18 @@ import (
 	kubespanctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/kubespan"
 	kubespandctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/kubespand"
 	networkctrl "github.com/agentydragon/ducktape/cluster/kubespand/controllers/network"
+	taloscontrollerscluster "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/cluster"
 	taloscontrollersk8s "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/k8s"
 	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
 	taloscontrollersnetwork "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/network"
 )
+
+func init() {
+	// Override Talos version vars so LocalAffiliateController produces
+	// a kubespand-specific OperatingSystem string instead of Talos's.
+	version.Name = "kubespand"
+	version.Tag = "0.1.0"
+}
 
 func main() {
 	configPath := flag.String("config", "/etc/kubespan/agent.yaml", "path to config file")
@@ -103,6 +112,12 @@ func run(configPath string, logger *zap.Logger) error {
 	}
 	if err := rt.RegisterController(&kubespanctrl.IdentityController{}); err != nil {
 		return fmt.Errorf("registering identity controller: %w", err)
+	}
+	if err := rt.RegisterController(&kubespandctrl.NodeMetadataController{}); err != nil {
+		return fmt.Errorf("registering node metadata controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollerscluster.LocalAffiliateController{}); err != nil {
+		return fmt.Errorf("registering local affiliate controller: %w", err)
 	}
 	if err := rt.RegisterController(&clusterctrl.DiscoveryController{}); err != nil {
 		return fmt.Errorf("registering discovery controller: %w", err)

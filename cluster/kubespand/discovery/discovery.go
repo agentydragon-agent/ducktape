@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"os"
-	"runtime"
 	"time"
 
 	clientpb "github.com/siderolabs/discovery-api/api/v1alpha1/client/pb"
@@ -17,11 +15,8 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/client/dialer"
 	"github.com/siderolabs/talos/pkg/machinery/config/machine"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
-	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-
-	"github.com/agentydragon/ducktape/cluster/kubespand/endpointfilter"
 )
 
 const discoveryTTL = 30 * time.Minute
@@ -102,103 +97,40 @@ func (dm *Manager) Run(ctx context.Context) error {
 	return dm.client.Run(ctx, dm.logger, dm.notifyCh)
 }
 
-// PublishLocal announces this node's affiliate data to the discovery service.
+// PublishAffiliate announces the local affiliate to the discovery service.
+// The affiliate is serialized from the cluster.AffiliateSpec produced by the
+// upstream LocalAffiliateController.
 // otherEndpoints are harvested endpoints from EndpointController for re-announcement.
-// additionalAddresses are Kubernetes network prefixes (PodCIDRs + ServiceCIDRs) to advertise.
-// endpointFilters controls which of our own endpoints we advertise (matching upstream
-// LocalAffiliateController semantics — filters are applied to outgoing self-announced
-// endpoints, not incoming peer endpoints).
-// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints, pbOtherEndpoints)
-// Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go (endpoint construction)
-func (dm *Manager) PublishLocal(id *kubespan.IdentitySpec, machineType string, extraEndpoints []netip.AddrPort, listenPort int, endpointFilters []string, otherEndpoints []discoveryclient.Endpoint, additionalAddresses []netip.Prefix) error {
-	addrBytes, _ := id.Address.Addr().MarshalBinary()
-
-	hostname, _ := os.Hostname()
-
-	kubespanAddr := id.Address.Addr()
-
-	// Build endpoint list as netip.AddrPort for deduplication and filtering.
-	// Sources (matching upstream LocalAffiliateController):
-	//   1. extra_endpoints from config
-	//   2. Public IP from discovery service
-	//   3. All routed node addresses (LAN IPs, VPN IPs, etc.)
-	seen := make(map[netip.AddrPort]struct{})
-	var allEndpoints []netip.AddrPort
-
-	addEndpoint := func(ep netip.AddrPort) {
-		if _, ok := seen[ep]; ok {
-			return
-		}
-		seen[ep] = struct{}{}
-		allEndpoints = append(allEndpoints, ep)
-	}
-
-	// 1. Extra endpoints from config.
-	for _, ep := range extraEndpoints {
-		addEndpoint(ep)
-	}
-
-	// 2. Public IP from discovery service.
-	if pubIPBytes := dm.client.GetPublicIP(); len(pubIPBytes) > 0 {
-		if pubIP, ok := netip.AddrFromSlice(pubIPBytes); ok {
-			addEndpoint(netip.AddrPortFrom(pubIP, uint16(listenPort)))
-		}
-	}
-
-	// 3. All routed node addresses (matches upstream LocalAffiliateController which
-	// announces ALL current node IPs as KubeSpan endpoints). This ensures peers
-	// discover all possible paths to this node, enabling NAT traversal via LAN IPs.
-	for _, addr := range RoutedNodeAddresses() {
-		if addr == kubespanAddr {
-			continue // Skip KubeSpan ULA address.
-		}
-		addEndpoint(netip.AddrPortFrom(addr, uint16(listenPort)))
-	}
-
-	// Apply endpoint filters to our own endpoints before publishing (matching upstream
-	// LocalAffiliateController semantics). Filters control which of our addresses we
-	// advertise, e.g., suppress RFC1918 addresses.
-	filtered := endpointfilter.Apply(allEndpoints, endpointfilter.Parse(endpointFilters))
-
-	// Convert to protobuf.
-	var pbEndpoints []*clientpb.Endpoint
-	for _, ep := range filtered {
-		ipBytes, _ := ep.Addr().MarshalBinary()
-		pbEndpoints = append(pbEndpoints, &clientpb.Endpoint{
-			Ip:   ipBytes,
-			Port: uint32(ep.Port()),
-		})
-	}
-
-	// Detect node's routed addresses for inclusion in Affiliate.Addresses.
-	// This matches Talos's LocalAffiliateController which sets spec.Addresses from
-	// routedNodeIPs (NodeAddressRoutedID). Without this, other nodes won't add our
-	// real IPv4 to their WireGuard AllowedIPs, and VXLAN traffic won't route through
-	// KubeSpan to us.
-	nodeAddrs := RoutedNodeAddresses()
-	var addrBytesSlice [][]byte
-	for _, addr := range nodeAddrs {
-		b, err := addr.MarshalBinary()
-		if err == nil {
-			addrBytesSlice = append(addrBytesSlice, b)
-		}
-	}
-
+//
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go (pbAffiliate, pbEndpoints)
+func (dm *Manager) PublishAffiliate(spec *cluster.AffiliateSpec, otherEndpoints []discoveryclient.Endpoint) error {
 	affiliate := &discoveryclient.Affiliate{
 		Affiliate: &clientpb.Affiliate{
-			NodeId:          id.PublicKey,
-			Hostname:        hostname,
-			Nodename:        hostname,
-			MachineType:     machineType,
-			OperatingSystem: runtime.GOOS + "/" + runtime.GOARCH + " (kubespand)",
-			Addresses:       addrBytesSlice,
-			Kubespan: &clientpb.KubeSpan{
-				PublicKey:           id.PublicKey,
-				Address:             addrBytes,
-				AdditionalAddresses: prefixesToPBAddresses(additionalAddresses),
-			},
+			NodeId:          spec.NodeID,
+			Hostname:        spec.Hostname,
+			Nodename:        spec.Nodename,
+			MachineType:     spec.MachineType.String(),
+			OperatingSystem: spec.OperatingSystem,
+			Addresses:       marshalAddrs(spec.Addresses),
 		},
-		Endpoints: pbEndpoints,
+	}
+
+	// KubeSpan data.
+	if spec.KubeSpan.PublicKey != "" {
+		addrBytes, _ := spec.KubeSpan.Address.MarshalBinary()
+		affiliate.Affiliate.Kubespan = &clientpb.KubeSpan{
+			PublicKey:           spec.KubeSpan.PublicKey,
+			Address:             addrBytes,
+			AdditionalAddresses: prefixesToPB(spec.KubeSpan.AdditionalAddresses),
+		}
+		affiliate.Endpoints = addrPortsToPB(spec.KubeSpan.Endpoints)
+	}
+
+	// Control plane data.
+	if spec.ControlPlane != nil {
+		affiliate.Affiliate.ControlPlane = &clientpb.ControlPlane{
+			ApiServerPort: uint32(spec.ControlPlane.APIServerPort),
+		}
 	}
 
 	return dm.client.SetLocalData(affiliate, otherEndpoints)
@@ -285,8 +217,8 @@ func (dm *Manager) GetAffiliates() map[string]cluster.AffiliateSpec {
 }
 
 // RoutedNodeAddresses returns all routable IP addresses from non-loopback,
-// non-kubespan interfaces. Used by the discovery controller to advertise
-// node addresses, and by the manager controller to add them to the kubespan
+// non-kubespan interfaces. Used by NodeMetadataController to populate
+// network.NodeAddress, and by ManagerController to add them to the kubespan
 // interface (so the kernel accepts reply packets arriving on kubespan).
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go
@@ -333,9 +265,36 @@ func RoutedNodeAddresses() []netip.Addr {
 	return addrs
 }
 
-// prefixesToPBAddresses converts netip.Prefix slices to protobuf IPPrefix messages
-// for the discovery service. Matches the format parsed in GetAffiliates().
-func prefixesToPBAddresses(prefixes []netip.Prefix) []*clientpb.IPPrefix {
+// marshalAddrs converts IP addresses to binary form for protobuf.
+func marshalAddrs(addrs []netip.Addr) [][]byte {
+	result := make([][]byte, 0, len(addrs))
+	for _, addr := range addrs {
+		b, err := addr.MarshalBinary()
+		if err == nil {
+			result = append(result, b)
+		}
+	}
+	return result
+}
+
+// addrPortsToPB converts AddrPort slice to protobuf Endpoint messages.
+func addrPortsToPB(endpoints []netip.AddrPort) []*clientpb.Endpoint {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	result := make([]*clientpb.Endpoint, 0, len(endpoints))
+	for _, ep := range endpoints {
+		ipBytes, _ := ep.Addr().MarshalBinary()
+		result = append(result, &clientpb.Endpoint{
+			Ip:   ipBytes,
+			Port: uint32(ep.Port()),
+		})
+	}
+	return result
+}
+
+// prefixesToPB converts netip.Prefix slices to protobuf IPPrefix messages.
+func prefixesToPB(prefixes []netip.Prefix) []*clientpb.IPPrefix {
 	if len(prefixes) == 0 {
 		return nil
 	}

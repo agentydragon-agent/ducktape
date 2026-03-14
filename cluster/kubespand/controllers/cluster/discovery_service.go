@@ -1,13 +1,9 @@
-// DiscoveryController watches Config + Identity and produces cluster.Affiliate
-// resources by communicating with the Talos discovery service.
+// DiscoveryController manages the discovery service client lifecycle, publishes
+// the local affiliate (produced by upstream LocalAffiliateController) to the
+// discovery service, and writes discovered remote affiliates as COSI resources.
 //
-// It manages the lifecycle of the discovery Manager: creating it when Config and
-// Identity become available, forwarding discovery notifications to the COSI
-// event loop, and cleaning up on shutdown.
-//
-// Re-publishing is rate-limited: the controller only calls PublishLocal when
-// otherEndpoints or additionalAddresses actually change, not on every reconcile.
-// TTL refresh is handled automatically by the discovery client's internal ticker.
+// It also writes network.AddressStatus for discovered public IPs (consumed by
+// LocalAffiliateController for endpoint construction).
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/discovery_service.go
 package clusterctrl
@@ -25,25 +21,21 @@ import (
 	discoveryclient "github.com/siderolabs/discovery-client/pkg/client"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"go.uber.org/zap"
 
-	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	"github.com/agentydragon/ducktape/cluster/kubespand/discovery"
-	"github.com/agentydragon/ducktape/cluster/kubespand/k8snet"
 )
 
-// DiscoveryController watches Config + Identity and produces cluster.Affiliate
-// resources by communicating with the Talos discovery service.
+// DiscoveryController publishes the local affiliate and writes remote affiliates.
 type DiscoveryController struct {
 	dm       *discovery.Manager
 	cancelDM context.CancelFunc
 
 	// Track previous publish data to avoid re-publishing unchanged data.
-	// This breaks the feedback loop: discovery notification → reconcile →
-	// publish → discovery notification → ...
-	lastOtherEndpointCount  int
-	lastAdditionalAddrCount int
-	lastPubIPLen            int
+	lastLocalVersion  string
+	lastEndpointCount int
+	lastPubIPLen      int
 }
 
 // Name implements controller.Controller.
@@ -58,8 +50,8 @@ func (ctrl *DiscoveryController) Inputs() []controller.Input {
 		safe.Input[*kubespan.Identity](controller.InputWeak),
 		safe.Input[*kubespan.Endpoint](controller.InputWeak),
 		safe.Input[*cluster.Config](controller.InputWeak),
-		safe.Input[*agentconfig.Resource](controller.InputWeak),
-		safe.Input[*k8snet.KubernetesNetworks](controller.InputWeak),
+		safe.Input[*cluster.Identity](controller.InputWeak),
+		safe.Input[*cluster.Affiliate](controller.InputWeak),
 	}
 }
 
@@ -68,7 +60,11 @@ func (ctrl *DiscoveryController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
 			Type: cluster.AffiliateType,
-			Kind: controller.OutputExclusive,
+			Kind: controller.OutputShared,
+		},
+		{
+			Type: network.AddressStatusType,
+			Kind: controller.OutputShared,
 		},
 	}
 }
@@ -84,16 +80,6 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		case <-r.EventCh():
 		}
 
-		kubespanCfg, err := safe.ReaderGetByID[*kubespan.Config](ctx, r, kubespan.ConfigID)
-		if err != nil {
-			if state.IsNotFoundError(err) {
-				ctrl.stopDiscovery()
-				continue
-			}
-			return fmt.Errorf("getting kubespan config: %w", err)
-		}
-		kubespanSpec := kubespanCfg.TypedSpec()
-
 		clusterCfg, err := safe.ReaderGetByID[*cluster.Config](ctx, r, cluster.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
@@ -104,38 +90,39 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 		}
 		clusterSpec := clusterCfg.TypedSpec()
 
-		acfg, err := safe.ReaderGetByID[*agentconfig.Resource](ctx, r, agentconfig.ResourceID)
-		if err != nil {
-			if state.IsNotFoundError(err) {
-				ctrl.stopDiscovery()
-				continue
-			}
-			return fmt.Errorf("getting agent config: %w", err)
-		}
-		agentSpec := acfg.TypedSpec()
-
-		id, err := safe.ReaderGetByID[*kubespan.Identity](ctx, r, kubespan.LocalIdentity)
+		clusterID, err := safe.ReaderGetByID[*cluster.Identity](ctx, r, cluster.LocalIdentity)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				continue
 			}
-			return fmt.Errorf("getting identity: %w", err)
+			return fmt.Errorf("getting cluster identity: %w", err)
+		}
+		localNodeID := clusterID.TypedSpec().NodeID
+
+		ksID, err := safe.ReaderGetByID[*kubespan.Identity](ctx, r, kubespan.LocalIdentity)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				continue
+			}
+			return fmt.Errorf("getting kubespan identity: %w", err)
 		}
 
-		idSpec := id.TypedSpec()
+		// Read the local affiliate produced by upstream LocalAffiliateController.
+		localAffiliate, err := safe.ReaderGetByID[*cluster.Affiliate](ctx, r, localNodeID)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				// LocalAffiliateController hasn't produced it yet.
+				continue
+			}
+			return fmt.Errorf("getting local affiliate: %w", err)
+		}
 
 		// Build otherEndpoints from harvested Endpoint resources for re-announcement.
 		otherEndpoints := ctrl.buildOtherEndpoints(ctx, r)
 
-		// Read KubernetesNetworks resource for local AdditionalAddresses (PodCIDRs + ServiceCIDRs).
-		var additionalAddresses []netip.Prefix
-		if nets, netErr := safe.ReaderGetByID[*k8snet.KubernetesNetworks](ctx, r, k8snet.ID); netErr == nil {
-			additionalAddresses = nets.TypedSpec().Prefixes
-		}
-
 		// Create discovery manager if not yet running.
 		if ctrl.dm == nil {
-			dm, createErr := discovery.NewManager(clusterSpec, idSpec.PublicKey, logger)
+			dm, createErr := discovery.NewManager(clusterSpec, ksID.TypedSpec().PublicKey, logger)
 			if createErr != nil {
 				return fmt.Errorf("creating discovery manager: %w", createErr)
 			}
@@ -157,42 +144,33 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 					case <-dmCtx.Done():
 						return
 					case <-dm.NotifyCh():
-						affs := dm.GetAffiliates()
-						logger.Info("discovery notification received, queuing reconcile",
-							zap.Int("affiliates_at_notification", len(affs)))
 						r.QueueReconcile()
 					}
 				}
 			}()
 
-			if pubErr := dm.PublishLocal(idSpec, agentSpec.MachineType, kubespanSpec.ExtraEndpoints, agentSpec.ListenPort, kubespanSpec.EndpointFilters, otherEndpoints, additionalAddresses); pubErr != nil {
-				logger.Error("publishing local affiliate", zap.Error(pubErr))
-			}
-			ctrl.lastOtherEndpointCount = len(otherEndpoints)
-			ctrl.lastAdditionalAddrCount = len(additionalAddresses)
-			ctrl.lastPubIPLen = len(dm.GetPublicIP())
-
 			logger.Info("discovery client started")
-		} else {
-			// Re-publish when data actually changes: new endpoints, additional
-			// addresses, or public IP becoming available (the initial PublishLocal
-			// may race with the Hello completing). This avoids a feedback loop
-			// where each publish triggers a Watch notification → reconcile → publish.
-			// TTL refresh is handled by the discovery client's internal TTL/2 ticker.
-			pubIPLen := len(ctrl.dm.GetPublicIP())
-			if len(otherEndpoints) != ctrl.lastOtherEndpointCount ||
-				len(additionalAddresses) != ctrl.lastAdditionalAddrCount ||
-				pubIPLen != ctrl.lastPubIPLen {
-				if pubErr := ctrl.dm.PublishLocal(idSpec, agentSpec.MachineType, kubespanSpec.ExtraEndpoints, agentSpec.ListenPort, kubespanSpec.EndpointFilters, otherEndpoints, additionalAddresses); pubErr != nil {
-					logger.Warn("re-publishing local affiliate", zap.Error(pubErr))
-				}
-				ctrl.lastOtherEndpointCount = len(otherEndpoints)
-				ctrl.lastAdditionalAddrCount = len(additionalAddresses)
+		}
+
+		// Write network.AddressStatus for discovered public IP (consumed by
+		// LocalAffiliateController for endpoint construction).
+		ctrl.writePublicIPStatus(ctx, r, logger)
+
+		// Publish local affiliate to discovery service when data changes.
+		localVersion := localAffiliate.Metadata().Version().String()
+		pubIPLen := len(ctrl.dm.GetPublicIP())
+		if localVersion != ctrl.lastLocalVersion ||
+			len(otherEndpoints) != ctrl.lastEndpointCount ||
+			pubIPLen != ctrl.lastPubIPLen {
+
+			if pubErr := ctrl.dm.PublishAffiliate(localAffiliate.TypedSpec(), otherEndpoints); pubErr != nil {
+				logger.Error("publishing local affiliate", zap.Error(pubErr))
+			} else {
+				ctrl.lastLocalVersion = localVersion
+				ctrl.lastEndpointCount = len(otherEndpoints)
 				ctrl.lastPubIPLen = pubIPLen
-				logger.Info("re-published local affiliate (data changed)",
+				logger.Debug("published local affiliate",
 					zap.Int("other_endpoints", len(otherEndpoints)),
-					zap.Int("additional_addresses", len(additionalAddresses)),
-					zap.Int("pub_ip_len", pubIPLen),
 				)
 			}
 		}
@@ -220,6 +198,30 @@ func (ctrl *DiscoveryController) Run(ctx context.Context, r controller.Runtime, 
 
 		logger.Info("discovery reconciled", zap.Int("affiliates", len(affiliates)))
 		r.ResetRestartBackoff()
+	}
+}
+
+// writePublicIPStatus writes a network.AddressStatus resource in the cluster
+// namespace with the public IP discovered from the discovery service Hello.
+func (ctrl *DiscoveryController) writePublicIPStatus(ctx context.Context, r controller.Runtime, logger *zap.Logger) {
+	pubIPBytes := ctrl.dm.GetPublicIP()
+	if len(pubIPBytes) == 0 {
+		return
+	}
+
+	pubIP, ok := netip.AddrFromSlice(pubIPBytes)
+	if !ok {
+		return
+	}
+
+	if err := safe.WriterModify(ctx, r,
+		network.NewAddressStatus(cluster.NamespaceName, "discovered-public-ip"),
+		func(res *network.AddressStatus) error {
+			res.TypedSpec().Address = netip.PrefixFrom(pubIP, pubIP.BitLen())
+			return nil
+		},
+	); err != nil {
+		logger.Warn("writing public IP status", zap.Error(err))
 	}
 }
 

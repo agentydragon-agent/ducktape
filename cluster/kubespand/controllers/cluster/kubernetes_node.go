@@ -1,9 +1,10 @@
 // KubernetesNodeController watches a K8s Node object via client-go informer
-// and produces a KubernetesNetworks COSI resource with PodCIDRs + ServiceCIDRs.
+// and produces a k8s.NodeStatus COSI resource with PodCIDRs (+ ServiceCIDRs from config).
 //
-// Analogous to Talos's K8sNodeStatusController which feeds into LocalAffiliateController.
+// The upstream LocalAffiliateController reads k8s.NodeStatus.PodCIDRs to populate
+// AdditionalAddresses in the local affiliate announcement.
 //
-// Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go
+// Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go (consumer)
 package clusterctrl
 
 import (
@@ -14,6 +15,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/siderolabs/talos/pkg/machinery/resources/k8s"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -26,11 +28,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
-	"github.com/agentydragon/ducktape/cluster/kubespand/k8snet"
 )
 
 // KubernetesNodeController watches a K8s Node object via client-go informer
-// and produces a KubernetesNetworks COSI resource with PodCIDRs + ServiceCIDRs.
+// and produces a k8s.NodeStatus COSI resource with PodCIDRs + ServiceCIDRs.
 type KubernetesNodeController struct {
 	factory  informers.SharedInformerFactory
 	informer cache.SharedIndexInformer
@@ -46,6 +47,7 @@ func (ctrl *KubernetesNodeController) Inputs() []controller.Input {
 	return []controller.Input{
 		safe.Input[*kubespan.Config](controller.InputWeak),
 		safe.Input[*agentconfig.Resource](controller.InputWeak),
+		safe.Input[*k8s.Nodename](controller.InputWeak),
 	}
 }
 
@@ -53,7 +55,7 @@ func (ctrl *KubernetesNodeController) Inputs() []controller.Input {
 func (ctrl *KubernetesNodeController) Outputs() []controller.Output {
 	return []controller.Output{
 		{
-			Type: k8snet.Type,
+			Type: k8s.NodeStatusType,
 			Kind: controller.OutputExclusive,
 		},
 	}
@@ -89,6 +91,16 @@ func (ctrl *KubernetesNodeController) Run(ctx context.Context, r controller.Runt
 		}
 		agentSpec := acfg.TypedSpec()
 
+		// Read k8s.Nodename to use as the NodeStatus resource ID (matches upstream pattern).
+		nodename, err := safe.ReaderGetByID[*k8s.Nodename](ctx, r, k8s.NodenameID)
+		if err != nil {
+			if state.IsNotFoundError(err) {
+				continue
+			}
+			return fmt.Errorf("getting nodename: %w", err)
+		}
+		nodeID := nodename.TypedSpec().Nodename
+
 		// Lazy-init the K8s informer on first reconcile when config is available.
 		if ctrl.informer == nil {
 			if initErr := ctrl.initInformer(ctx, r, logger, agentSpec); initErr != nil {
@@ -100,18 +112,25 @@ func (ctrl *KubernetesNodeController) Run(ctx context.Context, r controller.Runt
 		// Read node from informer cache and extract PodCIDRs.
 		prefixes := ctrl.getPodCIDRs(logger)
 
-		// Merge static ServiceCIDRs from config.
+		// Merge static ServiceCIDRs from config into PodCIDRs. The upstream
+		// LocalAffiliateController reads NodeStatus.PodCIDRs for AdditionalAddresses.
 		prefixes = append(prefixes, agentSpec.ServiceCIDRs...)
 
-		// Write KubernetesNetworks resource.
-		if err := safe.WriterModify(ctx, r, k8snet.New(), func(res *k8snet.KubernetesNetworks) error {
-			res.TypedSpec().Prefixes = prefixes
-			return nil
-		}); err != nil {
-			return fmt.Errorf("writing kubernetes networks: %w", err)
+		// Write k8s.NodeStatus resource keyed by nodename (matches upstream pattern
+		// where LocalAffiliateController reads NodeStatus by nodename.TypedSpec().Nodename).
+		if err := safe.WriterModify(ctx, r,
+			k8s.NewNodeStatus(k8s.NamespaceName, nodeID),
+			func(res *k8s.NodeStatus) error {
+				res.TypedSpec().Nodename = nodeID
+				res.TypedSpec().NodeReady = true
+				res.TypedSpec().PodCIDRs = prefixes
+				return nil
+			},
+		); err != nil {
+			return fmt.Errorf("writing node status: %w", err)
 		}
 
-		logger.Debug("kubernetes networks reconciled", zap.Int("prefixes", len(prefixes)))
+		logger.Debug("node status reconciled", zap.Int("prefixes", len(prefixes)))
 		r.ResetRestartBackoff()
 	}
 }
@@ -148,8 +167,7 @@ func (ctrl *KubernetesNodeController) initInformer(ctx context.Context, r contro
 
 	ctrl.informer = ctrl.factory.Core().V1().Nodes().Informer()
 
-	// Bridge K8s informer events to COSI reconcile loop (same pattern as
-	// DiscoveryController's dm.NotifyCh() → r.QueueReconcile()).
+	// Bridge K8s informer events to COSI reconcile loop.
 	ctrl.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{ //nolint:errcheck
 		AddFunc:    func(_ interface{}) { r.QueueReconcile() },
 		UpdateFunc: func(_, _ interface{}) { r.QueueReconcile() },
