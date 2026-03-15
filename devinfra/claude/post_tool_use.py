@@ -93,7 +93,7 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
         logger.warning("Lint check failed on %s: %s", file_path, e)
         return PostToolUseOutput()
 
-    if run_result is None:
+    if run_result.all_passed:
         return PostToolUseOutput()
 
     return PostToolUseOutput(

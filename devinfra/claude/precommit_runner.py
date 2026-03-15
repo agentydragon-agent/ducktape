@@ -58,20 +58,29 @@ class HookResult:
 
 @dataclass
 class RunResult:
-    failed_hooks: list[HookResult] = field(default_factory=list)
+    hooks: list[HookResult] = field(default_factory=list)
     modified_content: bytes = b""
     original_content: bytes = b""
 
+    @property
+    def failed_hooks(self) -> list[HookResult]:
+        return [h for h in self.hooks if not h.passed]
 
-def run_on_file(file_path: Path, project_dir: Path) -> RunResult | None:
+    @property
+    def all_passed(self) -> bool:
+        return all(h.passed for h in self.hooks)
+
+
+def run_on_file(file_path: Path, project_dir: Path) -> RunResult:
     """Run pre-commit hooks on a single file using the Python API.
 
-    Returns None if no config exists, no hooks apply, or all hooks pass.
     Always restores the original file content after running.
+    Returns a RunResult with an empty hooks list if no config exists
+    or no hooks apply to the file.
     """
     config_path = project_dir / CONFIG_FILE
     if not config_path.exists():
-        return None
+        return RunResult()
 
     original_content = file_path.read_bytes()
 
@@ -83,7 +92,7 @@ def run_on_file(file_path: Path, project_dir: Path) -> RunResult | None:
         config = load_config(str(config_path))
         hooks = [h for h in all_hooks(config, store) if not h.stages or "pre-commit" in h.stages]
         if not hooks:
-            return None
+            return RunResult()
 
         install_hook_envs(hooks, store)
 
@@ -121,8 +130,4 @@ def run_on_file(file_path: Path, project_dir: Path) -> RunResult | None:
 
         modified_content = file_path.read_bytes()
 
-    failed = [r for r in hook_results if not r.passed]
-    if not failed:
-        return None
-
-    return RunResult(failed_hooks=failed, modified_content=modified_content, original_content=original_content)
+    return RunResult(hooks=hook_results, modified_content=modified_content, original_content=original_content)

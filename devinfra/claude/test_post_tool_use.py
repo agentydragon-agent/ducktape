@@ -112,7 +112,7 @@ def test_make_short_diff_truncates() -> None:
 
 def test_format_check_result_basic() -> None:
     result = RunResult(
-        failed_hooks=[
+        hooks=[
             HookResult(hook_id="ruff", hook_name="ruff-format", passed=False, output="bad indent", files_modified=True)
         ],
         original_content=b"x=1\n",
@@ -127,7 +127,7 @@ def test_format_check_result_basic() -> None:
 
 def test_format_check_result_with_diff() -> None:
     result = RunResult(
-        failed_hooks=[
+        hooks=[
             HookResult(hook_id="ruff", hook_name="ruff-format", passed=False, output="err1", files_modified=True),
             HookResult(hook_id="mypy", hook_name="mypy", passed=False, output="err2", files_modified=False),
         ],
@@ -142,9 +142,7 @@ def test_format_check_result_with_diff() -> None:
 
 def test_format_check_result_non_zero_exit() -> None:
     result = RunResult(
-        failed_hooks=[
-            HookResult(hook_id="mypy", hook_name="mypy", passed=False, output="type error", files_modified=False)
-        ],
+        hooks=[HookResult(hook_id="mypy", hook_name="mypy", passed=False, output="type error", files_modified=False)],
         original_content=b"x = 1\n",
         modified_content=b"x = 1\n",
     )
@@ -163,7 +161,7 @@ def test_precommit_with_diff(tmp_path: Path) -> None:
     test_file.write_bytes(b"x=1\n")
 
     fake_result = RunResult(
-        failed_hooks=[
+        hooks=[
             HookResult(
                 hook_id="ruff-format",
                 hook_name="ruff-format",
@@ -194,7 +192,7 @@ def test_precommit_no_file_change(tmp_path: Path) -> None:
     test_file.write_bytes(b"key: value\n")
 
     fake_result = RunResult(
-        failed_hooks=[
+        hooks=[
             HookResult(
                 hook_id="check-yaml", hook_name="check-yaml", passed=False, output="invalid yaml", files_modified=False
             )
@@ -214,12 +212,20 @@ def test_precommit_no_file_change(tmp_path: Path) -> None:
 
 
 def test_precommit_passes(tmp_path: Path) -> None:
-    """When pre-commit passes (run_on_file returns None), no output is returned."""
+    """When all hooks pass, no output is returned."""
     (tmp_path / ".git").mkdir()
     test_file = tmp_path / "clean.py"
     test_file.write_bytes(b"x = 1\n")
 
-    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=None):
+    fake_result = RunResult(
+        hooks=[
+            HookResult(hook_id="ruff-format", hook_name="ruff-format", passed=True, output="", files_modified=False)
+        ],
+        original_content=b"x = 1\n",
+        modified_content=b"x = 1\n",
+    )
+
+    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=fake_result):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
         result = evaluate(inp)
 
@@ -240,12 +246,12 @@ def test_precommit_error_returns_default(tmp_path: Path) -> None:
 
 
 def test_no_config_file(tmp_path: Path) -> None:
-    """When run_on_file returns None (no config), no output is returned."""
+    """When no config exists (empty RunResult), no output is returned."""
     (tmp_path / ".git").mkdir()
     test_file = tmp_path / "file.py"
     test_file.write_bytes(b"x = 1\n")
 
-    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=None):
+    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=RunResult()):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
         result = evaluate(inp)
 
@@ -259,7 +265,7 @@ def test_precommit_multiple_hooks_fail(tmp_path: Path) -> None:
     test_file.write_bytes(b"x=1\n")
 
     fake_result = RunResult(
-        failed_hooks=[
+        hooks=[
             HookResult(
                 hook_id="ruff-format",
                 hook_name="ruff-format",
