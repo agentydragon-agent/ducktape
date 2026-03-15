@@ -1,0 +1,79 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "hook_input",
+    srcs = ["hook_input.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "pre_tool_use",
+    srcs = ["pre_tool_use.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":hook_input",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "statusline",
+    srcs = ["statusline.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "profile",
+    srcs = ["profile.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "post_tool_use",
+    srcs = ["post_tool_use.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":hook_input",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "hook_dispatch_input",
+    srcs = ["hook_dispatch_input.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":hook_input",
+        ":post_tool_use",
+        ":pre_tool_use",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "usage",
+    srcs = ["usage.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)

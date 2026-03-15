@@ -42,7 +42,7 @@ class Exclusions(BaseModel):
     # Volatile tool installations: any difference is expected (content, presence,
     # permissions). Covers non-deterministic builds like uv tools, rbenv, nvm.
     volatile_paths: list[str] = []
-    # Session start hook artifacts: created by tools/claude_hooks at runtime,
+    # Session start hook artifacts: created by devinfra/claude at runtime,
     # not part of the base container image. Treated as expected_only_in_live.
     session_hook_artifacts: list[str] = []
     # Skip owner/group comparison entirely (gVisor user namespaces make

@@ -70,7 +70,7 @@ jobs:
         run: |
           # Props E2E test environment variables
           # These mirror the setup used by Claude code hooks
-          # (devinfra/claude_hooks/bazelisk_setup.py)
+          # (devinfra/claude/bazelisk_setup.py)
           # but simplified for GitHub Actions (no HTTP proxy needed, using
           # docker networking)
 

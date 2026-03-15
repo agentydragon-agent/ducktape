@@ -82,7 +82,7 @@ def generate_shell_wrapper(
     subprocesses can find packages without leaking state via a shared env file.
 
     Args:
-        module: Python module path (e.g. ``"devinfra.claude_hooks.bazel_wrapper"``).
+        module: Python module path (e.g. ``"devinfra.claude.bazel_wrapper"``).
         baked_env: Extra env vars to export before the exec (merged after PYTHONPATH).
         extra_lines: Raw shell lines inserted after exports and before the ``exec``
                      (use for dynamic expressions like ``$(...)``).

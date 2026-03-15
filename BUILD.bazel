@@ -153,10 +153,10 @@ py_package(
     packages = [
         "agent_core",
         "devinfra",
-        "devinfra.claude_hooks",
-        "devinfra.claude_hooks.auth_proxy",
-        "devinfra.claude_hooks.claude_api",
-        "devinfra.claude_hooks.supervisor",
+        "devinfra.claude",
+        "devinfra.claude.auth_proxy",
+        "devinfra.claude.claude_api",
+        "devinfra.claude.supervisor",
         "difftree",
         "git_commit_ai",
         "gmail_archiver",
@@ -170,14 +170,11 @@ py_package(
     ],
     deps = [
         # Unified hook dispatcher (transitively pulls in all hook handler deps)
-        "//devinfra/claude_hooks:hook_dispatch_lib",
-        "//devinfra/claude_hooks:post_tool_use_lib",
-        "//devinfra/claude_hooks:pre_tool_use_lib",
-        "//devinfra/claude_hooks:session_start_lib",
-        "//devinfra/claude_hooks:statusline_lib",
+        "//devinfra/claude:hook_dispatch_lib",
+        "//devinfra/claude:statusline_lib",
         # Auth proxy main module — invoked as subprocess by supervisor
-        # (not transitively reachable from session_start_lib)
-        "//devinfra/claude_hooks/auth_proxy:main",
+        # (not transitively reachable from hook_dispatch_lib)
+        "//devinfra/claude/auth_proxy:main",
         # CLI tool entry points
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
@@ -192,8 +189,8 @@ py_wheel(
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
-            "claude-hook = devinfra.claude_hooks.hook_dispatch:main",
-            "claude-statusline = devinfra.claude_hooks.statusline:main",
+            "claude-hook = devinfra.claude.hook_dispatch:main",
+            "claude-statusline = devinfra.claude.statusline:main",
         ],
     },
     python_requires = ">=3.13",
@@ -227,7 +224,7 @@ py_wheel(
         "pydantic-settings",
         "python-dateutil",
         "pyyaml",
-        # claude_hooks deps
+        # claude deps
         "cryptography",
         "kubernetes",
         "opentelemetry-api",

@@ -15,7 +15,7 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 
 ## Toolchain
 
-This repo uses **Bazel** with **Gazelle** for builds and BUILD file generation, **Flux** for GitOps/Kubernetes, **Nix/NixOS** for system configuration, and **Terraform/OpenTofu** for infrastructure provisioning. YAML files are primarily Kubernetes manifests and Flux kustomizations. When making changes, update BUILD files and run `bazel run //tools:gazelle` if needed.
+This repo uses **Bazel** with **Gazelle** for builds and BUILD file generation, **Flux** for GitOps/Kubernetes, **Nix/NixOS** for system configuration, and **Terraform/OpenTofu** for infrastructure provisioning. YAML files are primarily Kubernetes manifests and Flux kustomizations. When making changes, update BUILD files and run `bazel run //devinfra:gazelle` if needed.
 
 ## Sandbox
 

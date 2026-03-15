@@ -1,0 +1,84 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "mock_egress_proxy",
+    testonly = True,
+    srcs = ["mock_egress_proxy.py"],
+    imports = ["../../.."],
+    visibility = ["//devinfra/claude:__subpackages__"],
+    deps = [
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/auth_proxy:vars",
+        "@pypi//cryptography",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../../.."],
+    visibility = ["//devinfra/claude:__subpackages__"],
+    deps = ["@pypi//pytest"],
+)
+
+py_test(
+    name = "test_mock_egress_proxy",
+    srcs = ["test_mock_egress_proxy.py"],
+    args = ["--asyncio-mode=auto"],
+    imports = ["../../.."],
+    deps = [
+        ":conftest",
+        ":fixtures",
+        ":mock_egress_proxy",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "shell_helpers",
+    testonly = True,
+    srcs = ["shell_helpers.py"],
+    imports = ["../../.."],
+    visibility = ["//devinfra/claude:__subpackages__"],
+)
+
+py_library(
+    name = "fixtures",
+    testonly = True,
+    srcs = ["fixtures.py"],
+    imports = ["../../.."],
+    visibility = ["//devinfra/claude:__subpackages__"],
+    deps = [
+        ":mock_egress_proxy",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/supervisor:client",
+        "//util:net",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "session_start_helpers",
+    testonly = True,
+    srcs = ["session_start_helpers.py"],
+    imports = ["../../.."],
+    visibility = ["//devinfra/claude:__subpackages__"],
+    deps = [
+        ":mock_egress_proxy",
+        ":shell_helpers",
+        "//devinfra/claude:settings",
+        "//devinfra/claude:tmpfs_setup",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/auth_proxy:vars",
+        "//devinfra/claude/claude_api:hook_input",
+        "//util:net",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)

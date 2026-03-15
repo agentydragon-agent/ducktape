@@ -259,7 +259,7 @@ repos:
   # because proxy.golang.org redirects zip downloads to storage.googleapis.com.
   # If NO_PROXY bypasses the egress proxy for that domain, DNS fails (no direct
   # internet in gVisor sandbox). The session-start hook should strip *.googleapis.com
-  # from NO_PROXY — see devinfra/claude_hooks/ proxy documentation.
+  # from NO_PROXY — see devinfra/claude/ proxy documentation.
   - repo: local
     hooks:
       - id: tflint

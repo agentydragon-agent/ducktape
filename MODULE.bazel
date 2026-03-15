@@ -695,7 +695,7 @@ http_archive(
     urls = ["https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz"],
 )
 
-# Adoptium Temurin JDK 21 — provides keytool and cacerts for claude_hooks tests.
+# Adoptium Temurin JDK 21 — provides keytool and cacerts for claude tests.
 # Build target: //third_party/jdk
 http_archive(
     name = "adoptium_jdk21",

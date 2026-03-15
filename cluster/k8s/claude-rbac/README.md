@@ -66,7 +66,7 @@ To store the kubeconfig securely in the repository:
 ```bash
 # Encrypt with age
 age -e -r <your-public-key> /tmp/claude-kubeconfig.yaml \
-  > devinfra/claude_hooks/secrets/kubeconfig.age
+  > devinfra/claude/secrets/kubeconfig.age
 ```
 
 ## Testing Permissions

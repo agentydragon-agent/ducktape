@@ -103,7 +103,7 @@ releases:
   ducktape:
     bazel_target: //:wheel
     wheel_name: ducktape
-    test_targets: //devinfra/claude_hooks:all
+    test_targets: //devinfra/claude:all
     flake_input: ducktape-wheel
     update_claude_settings: true
     extra_jobs:
@@ -126,7 +126,7 @@ releases:
                 --test_env=CI=true \
                 --test_env=GITHUB_ACTIONS=true \
                 --test_env=PATH \
-                //devinfra/claude_hooks:all
+                //devinfra/claude:all
           - uses: ./.github/actions/collect-test-logs
             if: always()
             with:
@@ -151,7 +151,7 @@ releases:
             run: uv tool install bazel-bin/ducktape-*.whl
           - name: Test installed wheel
             run: |
-              bazel test //devinfra/claude_hooks:test_session_start \
+              bazel test //devinfra/claude:test_session_start \
                 --test_output=all \
                 --nocache_test_results \
                 --spawn_strategy=local \

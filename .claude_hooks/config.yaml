@@ -1,4 +1,11 @@
 # TODO: Integrate with settings.py (consolidate env-based and file-based config).
+#
+# TODO: Add OTEL tracing config. Requires wiring bearer token from k8s via
+# Vault + ESO + Authentik (alloy-otlp blueprint). See
+# cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml for the token blueprint.
+# otel:
+#   endpoint: https://alloy.allegedly.works:4318/v1/traces
+#   # auth_token: wired from k8s secret via ESO
 k8s:
   server: https://api.allegedly.works:16443
   service_account: claude-code-web

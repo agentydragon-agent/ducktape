@@ -121,7 +121,7 @@ jobs:
             --test_tag_filters=-e2e \
             --test_env=CI=true \
             --test_env=GITHUB_ACTIONS=true \
-            //devinfra/claude_hooks:all
+            //devinfra/claude:all
       - uses: ./.github/actions/collect-test-logs
         if: always()
         with:
@@ -151,7 +151,7 @@ jobs:
             --test_env=CI=true \
             --test_env=GITHUB_ACTIONS=true \
             --test_env=PATH \
-            //devinfra/claude_hooks:all
+            //devinfra/claude:all
       - uses: ./.github/actions/collect-test-logs
         if: always()
         with:
@@ -182,7 +182,7 @@ jobs:
         run: uv tool install bazel-bin/ducktape-*.whl
       - name: Test installed wheel
         run: |
-          bazel test //devinfra/claude_hooks:test_session_start \
+          bazel test //devinfra/claude:test_session_start \
             --test_output=all \
             --nocache_test_results \
             --spawn_strategy=local \

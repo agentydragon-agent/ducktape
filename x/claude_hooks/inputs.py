@@ -1,4 +1,9 @@
-"""Hook input models for Claude Code events."""
+"""Hook input models for Claude Code events.
+
+TODO: The canonical location for Claude Code hook models is devinfra/claude/claude_api/.
+Consider importing shared types (enums, base input fields) from there and keeping
+only x/-specific extensions (typed tool inputs via TOOL_INPUT_MAP, HookContext) here.
+"""
 
 from datetime import datetime
 from enum import Enum
