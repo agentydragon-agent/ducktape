@@ -516,29 +516,32 @@ go_deps.gazelle_override(
         # Exclude the proto-only api/ directory since talos main module only ships .proto
         # sources (not compiled .pb.go). Gazelle will then use talos_pkg_machinery for
         # pkg/machinery/api/* imports which ships pre-compiled pb.go files.
+        # Exclude the proto-only api/ directory and all test files — we use talos
+        # as a library only, and tests pull in dependencies we don't want to build.
         "gazelle:exclude api/**",
+        "gazelle:exclude **/*_test.go",
+        # Files that require dependencies not available without go.mod replace directives:
+        # - dns_resolve_cache.go / dns_upstream.go: require internal etcd (io_etcd_go_etcd_api_v3)
+        # - etcfile.go: same etcd chain
+        # - kubelet_service.go: requires cgroup/systemd deps
+        # - extension_service.go: requires systemd deps
+        # - manifest_apply.go: requires etcd
+        # - secrets/etcd.go: requires etcd
+        # - network/operator/vip.go: requires etcd via ARP VIP operator
+        # - ethernet_spec/status.go: use siderolabs/ethtool fork (go.mod replace directive)
+        # - operator_spec.go / operator_vip_config.go: reference excluded vip/ethernet types
         "gazelle:exclude internal/app/machined/pkg/controllers/network/dns_resolve_cache.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/network/dns_upstream.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/network/etcfile.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/network/etcfile_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/k8s/kubelet_service.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/k8s/kubelet_service_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/runtime/extension_service.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/runtime/extension_service_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/k8s/manifest_apply.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/k8s/manifest_apply_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/secrets/etcd.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/secrets/etcd_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/network/operator/vip.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/network/operator/vip_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/network/ethernet_spec.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/network/ethernet_spec_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/network/ethernet_status.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/network/ethernet_status_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/network/operator_spec.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/network/operator_spec_test.go",
         "gazelle:exclude internal/app/machined/pkg/controllers/network/operator_vip_config.go",
-        "gazelle:exclude internal/app/machined/pkg/controllers/network/operator_vip_config_test.go",
     ],
     path = "github.com/siderolabs/talos",
 )
