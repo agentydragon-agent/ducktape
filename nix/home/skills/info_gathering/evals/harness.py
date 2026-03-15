@@ -15,7 +15,6 @@ import argparse
 import contextlib
 import json
 import logging
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -24,12 +23,12 @@ import litellm
 from litellm.types.utils import Usage
 from pydantic import BaseModel
 
+from agent_core.direct_provider import DirectToolProvider
+from agent_core.tool_provider import TextContent, ToolProvider, ToolResult
 from openai_utils.json_schema import openai_json_schema
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
-
-ToolHandler = Callable[[str, dict[str, Any]], dict[str, Any]]
 
 # Suppress litellm's verbose logging by default
 litellm.suppress_debug_info = True
@@ -122,7 +121,24 @@ def tool_def(name: str, description: str, input_model: type[BaseModel]) -> ToolP
     }
 
 
-END_GAME_TOOL = tool_def("end_game", "End the game. Call when the agent states a final answer.", EndGameInput)
+# TODO: This LiteLLM <-> ToolProvider wiring is a candidate for agent_core integration.
+# Once agent_core gains a LiteLLM-backed model provider, evals could use Agent.create()
+# directly instead of maintaining this custom ToolSchema -> ToolParam conversion.
+async def tool_params_from_provider(provider: ToolProvider) -> list[ToolParam]:
+    """Convert ToolProvider schemas to LiteLLM ToolParam list."""
+    return [
+        {"type": "function", "function": {"name": s.name, "description": s.description, "parameters": s.input_schema}}
+        for s in await provider.list_tools()
+    ]
+
+
+def _tool_result_content(result: ToolResult) -> str:
+    """Extract string content from a ToolResult for use in LiteLLM tool messages."""
+    # TODO: Part of the LiteLLM <-> ToolProvider wiring (see above).
+    if result.structured_content is not None:
+        return json.dumps(result.structured_content)
+    texts = [c.text for c in result.content if isinstance(c, TextContent)]
+    return " ".join(texts) if texts else ("error" if result.is_error else "OK")
 
 
 # === LLM client ===============================================================
@@ -151,7 +167,7 @@ class LLMClient:
         self.base_url = base_url
         self.api_key = api_key
 
-    def call(
+    async def call(
         self,
         *,
         messages: list[dict[str, Any]],
@@ -174,7 +190,7 @@ class LLMClient:
         if self.thinking_budget and self.model.startswith("anthropic/"):
             thinking = {"type": "enabled", "budget_tokens": self.thinking_budget}
 
-        return litellm.completion(
+        return await litellm.acompletion(
             model=self.model,
             messages=full_messages,
             tools=tools,
@@ -185,17 +201,18 @@ class LLMClient:
             **token_kwarg,
         )
 
-    def resolve_tool_calls(
+    async def resolve_tool_calls(
         self,
         *,
         response: Any,
         messages: list[dict[str, Any]],
         system: str,
-        tools: list[ToolParam],
-        handler: ToolHandler,
+        provider: ToolProvider,
         max_tokens: int = 4096,
     ) -> tuple[Any, list[dict[str, Any]], list[Usage]]:
         """Keep calling API until no more tool_use stops. Returns final response."""
+        # TODO: Part of the LiteLLM <-> ToolProvider wiring. See tool_params_from_provider.
+        tools = await tool_params_from_provider(provider)
         usages: list[Usage] = []
         messages = list(messages)
 
@@ -212,16 +229,10 @@ class LLMClient:
             # Build tool result messages
             for tc in tcs:
                 args = json.loads(tc.function.arguments)
-                result = handler(tc.function.name, args)
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": json.dumps(result) if isinstance(result, dict) else str(result),
-                    }
-                )
+                result = await provider.call_tool(tc.function.name, args)
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": _tool_result_content(result)})
 
-            response = self.call(messages=messages, system=system, tools=tools, max_tokens=max_tokens)
+            response = await self.call(messages=messages, system=system, tools=tools, max_tokens=max_tokens)
             usages.append(response.usage)
 
         return response, messages, usages
@@ -351,21 +362,19 @@ def client_from_args(args: argparse.Namespace) -> LLMClient:
 # === Conversation eval runner =================================================
 
 
-def run_conversation_eval(
+async def run_conversation_eval(
     *,
     name: str,
     client: LLMClient,
     agent_system: str,
     first_user_message: str,
     sim_system: str,
-    sim_tools: list[ToolParam],
     turn_limit: int = 20,
     output_dir: Path,
 ) -> RunSummary:
     """Run a conversation eval: agent and simulator exchange text.
 
-    Simulator may call tools (end_game to finish, others passed through).
-    Agent has no tools in this pattern.
+    Simulator may call end_game to finish. Agent has no tools in this pattern.
     """
     tracker = TokenTracker(model=client.model)
     log_entries: list[LogEntry] = []
@@ -374,19 +383,22 @@ def run_conversation_eval(
     agent_messages: list[dict[str, Any]] = [{"role": "user", "content": first_user_message}]
     sim_messages: list[dict[str, Any]] = []
 
-    def handle_sim_tool(tool_name: str, inp: dict[str, Any]) -> dict[str, Any]:
+    sim_provider = DirectToolProvider()
+
+    @sim_provider.tool
+    def end_game(args: EndGameInput) -> dict[str, Any]:
+        """End the game. Call when the agent states a final answer."""
         nonlocal result
-        if tool_name == "end_game":
-            parsed = EndGameInput.model_validate(inp)
-            result = Judged(outcome=parsed.outcome, score=parsed.score, summary=parsed.summary)
-            return {"status": "game_ended"}
-        return inp
+        result = Judged(outcome=args.outcome, score=args.score, summary=args.summary)
+        return {"status": "game_ended"}
+
+    sim_tool_params = await tool_params_from_provider(sim_provider)
 
     for turn in range(1, turn_limit + 1):
         logger.info("Turn %d...", turn)
 
         # Agent turn (no tools)
-        agent_resp = client.call(messages=agent_messages, system=agent_system)
+        agent_resp = await client.call(messages=agent_messages, system=agent_system)
         tracker.add(agent_resp.usage)
         log_response(log_entries, name=name, player="agent", turn=turn, model=client.model, response=agent_resp)
 
@@ -399,13 +411,13 @@ def run_conversation_eval(
 
         # Simulator turn (with tools)
         sim_messages.append({"role": "user", "content": agent_text})
-        sim_resp = client.call(messages=sim_messages, system=sim_system, tools=sim_tools)
+        sim_resp = await client.call(messages=sim_messages, system=sim_system, tools=sim_tool_params)
         tracker.add(sim_resp.usage)
         log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
 
         if extract_tool_calls(sim_resp):
-            sim_resp, sim_messages, usages = client.resolve_tool_calls(
-                response=sim_resp, messages=sim_messages, system=sim_system, tools=sim_tools, handler=handle_sim_tool
+            sim_resp, sim_messages, usages = await client.resolve_tool_calls(
+                response=sim_resp, messages=sim_messages, system=sim_system, provider=sim_provider
             )
             for u in usages:
                 tracker.add(u)

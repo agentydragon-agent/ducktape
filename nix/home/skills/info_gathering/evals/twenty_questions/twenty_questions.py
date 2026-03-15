@@ -6,6 +6,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -14,18 +15,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from nix.home.skills.info_gathering.evals.docker_scratch import (
-    SCRATCH_EXEC_TOOL,
-    DockerScratchpad,
-    load_scratch_image,
-    make_scratch_handler,
-)
+from agent_core.tool_provider import ToolProvider
+from nix.home.skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
 from nix.home.skills.info_gathering.evals.harness import (
     LLMClient,
     LogEntry,
     RunSummary,
     TokenTracker,
-    ToolHandler,
     ToolParam,
     _serialize_message,
     add_common_args,
@@ -37,6 +33,7 @@ from nix.home.skills.info_gathering.evals.harness import (
     output_dir_from_args,
     save_results,
     tool_def,
+    tool_params_from_provider,
 )
 from util.bazel.runfiles import get_required_path
 
@@ -45,7 +42,7 @@ logger = logging.getLogger(__name__)
 _SIM_RLOCATION = "_main/nix/home/skills/info_gathering/evals/twenty_questions/sim.txt"
 
 _SCRATCH_SYSTEM_NOTE = """\
-You have access to a `scratch_exec` tool — a private Docker container for scratch computation. \
+You have access to an `exec` tool — a private Docker container for scratch computation. \
 Use it freely: run code, track hypothesis spaces, write notes, organize your reasoning. \
 Calling this tool does NOT use up one of your question turns."""
 
@@ -117,26 +114,24 @@ class _TwentyQuestionsRunner:
         client: LLMClient,
         agent_system: str,
         sim_system: str,
-        agent_tools: list[ToolParam] | None = None,
-        agent_tool_handler: ToolHandler | None = None,
+        agent_tool_provider: ToolProvider | None = None,
     ) -> None:
         self.name = name
         self.client = client
         self.agent_system = agent_system
         self.sim_system = sim_system
-        self.agent_tools: list[ToolParam] = agent_tools or []
-        self.agent_tool_handler = agent_tool_handler
+        self.agent_tool_provider = agent_tool_provider
         self.tracker = TokenTracker(model=client.model)
         self.log_entries: list[LogEntry] = []
         self.agent_messages: list[dict[str, Any]] = []
         self.sim_messages: list[dict[str, Any]] = []
         self._last_tc_id: str | None = None
 
-    def _run_turn(self, turn: int) -> Correct | None:
+    async def _run_turn(self, turn: int, agent_tool_params: list[ToolParam]) -> Correct | None:
         """Run one agent+sim exchange. Returns Correct if guessed, None to continue."""
         # Agent turn — with optional scratch tools
-        agent_resp = self.client.call(
-            messages=self.agent_messages, system=self.agent_system, tools=self.agent_tools or None
+        agent_resp = await self.client.call(
+            messages=self.agent_messages, system=self.agent_system, tools=agent_tool_params or None
         )
         self.tracker.add(agent_resp.usage)
         log_response(
@@ -144,13 +139,12 @@ class _TwentyQuestionsRunner:
         )
 
         # Resolve any scratch tool calls — does not count as a new turn
-        if self.agent_tools and self.agent_tool_handler and extract_tool_calls(agent_resp):
-            agent_resp, self.agent_messages, usages = self.client.resolve_tool_calls(
+        if self.agent_tool_provider and extract_tool_calls(agent_resp):
+            agent_resp, self.agent_messages, usages = await self.client.resolve_tool_calls(
                 response=agent_resp,
                 messages=self.agent_messages,
                 system=self.agent_system,
-                tools=self.agent_tools,
-                handler=self.agent_tool_handler,
+                provider=self.agent_tool_provider,
             )
             for u in usages:
                 self.tracker.add(u)
@@ -177,7 +171,7 @@ class _TwentyQuestionsRunner:
 
         self.sim_messages.append({"role": "user", "content": agent_text})
 
-        sim_resp = self.client.call(
+        sim_resp = await self.client.call(
             messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="auto"
         )
         self.tracker.add(sim_resp.usage)
@@ -207,15 +201,20 @@ class _TwentyQuestionsRunner:
         self.agent_messages.append({"role": "user", "content": answer})
         return None
 
-    def run(self, *, first_user_message: str, turn_limit: int, output_dir: Path) -> RunSummary:
+    async def run(self, *, first_user_message: str, turn_limit: int, output_dir: Path) -> RunSummary:
         """Run the full game loop and return summary."""
         self.agent_messages.append({"role": "user", "content": first_user_message})
+
+        # Compute agent tool params once (avoids repeated list_tools() calls per turn)
+        agent_tool_params: list[ToolParam] = (
+            await tool_params_from_provider(self.agent_tool_provider) if self.agent_tool_provider else []
+        )
 
         result: Correct | Timeout | None = None
         turn = 0
         for turn in range(1, turn_limit + 1):
             logger.info("Turn %d...", turn)
-            result = self._run_turn(turn)
+            result = await self._run_turn(turn, agent_tool_params)
             if result:
                 break
         else:
@@ -239,7 +238,7 @@ class _TwentyQuestionsRunner:
         return summary
 
 
-def run_twenty_questions(
+async def run_twenty_questions(
     *,
     name: str,
     client: LLMClient,
@@ -248,8 +247,7 @@ def run_twenty_questions(
     sim_system: str,
     turn_limit: int = 20,
     output_dir: Path,
-    agent_tools: list[ToolParam] | None = None,
-    agent_tool_handler: ToolHandler | None = None,
+    agent_tool_provider: ToolProvider | None = None,
 ) -> RunSummary:
     """Run a 20 Questions eval.
 
@@ -261,21 +259,12 @@ def run_twenty_questions(
         client=client,
         agent_system=agent_system,
         sim_system=sim_system,
-        agent_tools=agent_tools,
-        agent_tool_handler=agent_tool_handler,
+        agent_tool_provider=agent_tool_provider,
     )
-    return runner.run(first_user_message=first_user_message, turn_limit=turn_limit, output_dir=output_dir)
+    return await runner.run(first_user_message=first_user_message, turn_limit=turn_limit, output_dir=output_dir)
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-
-    p = argparse.ArgumentParser(description="Twenty Questions eval")
-    add_common_args(p)
-    p.add_argument("--variant", choices=list(VARIANTS), required=True)
-    p.add_argument("--scratch", action="store_true", help="Give agent an ephemeral Docker scratch container")
-    args = p.parse_args()
-
+async def _async_main(args: argparse.Namespace) -> None:
     v = VARIANTS[args.variant]
     name = f"20q_{args.variant}"
 
@@ -302,8 +291,8 @@ def main() -> None:
 
     if args.scratch:
         image = load_scratch_image()
-        with DockerScratchpad(image) as scratchpad:
-            summary = run_twenty_questions(
+        async with scratch_container(image) as provider:
+            summary = await run_twenty_questions(
                 name=name,
                 client=client,
                 agent_system=agent_system,
@@ -311,11 +300,10 @@ def main() -> None:
                 sim_system=sim_system,
                 turn_limit=v.turn_limit,
                 output_dir=output_dir,
-                agent_tools=[SCRATCH_EXEC_TOOL],
-                agent_tool_handler=make_scratch_handler(scratchpad),
+                agent_tool_provider=provider,
             )
     else:
-        summary = run_twenty_questions(
+        summary = await run_twenty_questions(
             name=name,
             client=client,
             agent_system=agent_system,
@@ -325,6 +313,18 @@ def main() -> None:
             output_dir=output_dir,
         )
     logger.info("%s", summary)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+    p = argparse.ArgumentParser(description="Twenty Questions eval")
+    add_common_args(p)
+    p.add_argument("--variant", choices=list(VARIANTS), required=True)
+    p.add_argument("--scratch", action="store_true", help="Give agent an ephemeral Docker scratch container")
+    args = p.parse_args()
+
+    asyncio.run(_async_main(args))
 
 
 if __name__ == "__main__":
