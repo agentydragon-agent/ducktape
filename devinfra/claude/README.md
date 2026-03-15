@@ -405,9 +405,65 @@ rm /tmp/component.json
 
 Add their age public key (one per line) to `.claude_hooks/secrets/recipients.txt`, then re-encrypt all component files.
 
+## OTEL Tracing
+
+Hooks emit OpenTelemetry traces to Grafana Alloy via the Authentik proxy at
+`alloy-otlp.allegedly.works`. The auth token is an Authentik service account
+token, provisioned once and synced via Vault + ESO.
+
+### Architecture
+
+```
+Hook (OTLPSpanExporter)
+    │ Authorization: Bearer <token>
+    └──► alloy-otlp.allegedly.works (HTTPS, egress proxy)
+           │
+           └──► Authentik proxy outpost (validates Bearer token)
+                  │
+                  └──► alloy.monitoring:4318 (OTLP/HTTP)
+                         │
+                         └──► Tempo (traces)
+```
+
+### One-Time Vault Provisioning
+
+The Authentik blueprint (`cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml`)
+creates a service account token. Extract it and store in Vault:
+
+```bash
+# 1. Extract token from Authentik
+TOKEN=$(kubectl exec -n authentik deploy/authentik-worker -- \
+  ak shell -c "from authentik.core.models import Token; \
+    print(Token.objects.get(identifier='alloy-otlp-api-key').key)")
+
+# 2. Store in Vault
+ROOT_TOKEN=$(kubectl get secret -n vault instance-unseal-keys \
+  -o jsonpath='{.data.vault-root}' | base64 -d)
+kubectl exec -n vault instance-0 -c vault -- sh -c \
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$ROOT_TOKEN \
+   vault kv put kv/alloy-otlp/bearer-token token=$TOKEN"
+```
+
+ESO syncs the token from Vault to `claude-sandbox` namespace
+(`cluster/k8s/claude-sandbox-secrets/alloy-otlp-bearer-token-externalsecret.yaml`).
+The session start hook reads the secret and sets
+`DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN`.
+
+### Configuration
+
+OTEL endpoint is configured in `.claude_hooks/config.yaml`:
+
+```yaml
+otel:
+  endpoint: https://alloy-otlp.allegedly.works/v1/traces
+```
+
+Auth token flows: Vault → ESO → K8s Secret → session start hook → env var →
+`otel.py` → `Authorization: Bearer <token>` header.
+
 ## Development
 
 ```bash
 # Run tests
-bazel test //claude_hooks:test_proxy
+bazel test //devinfra/claude:test_proxy
 ```

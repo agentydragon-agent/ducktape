@@ -1,11 +1,11 @@
 # TODO: Integrate with settings.py (consolidate env-based and file-based config).
-#
-# TODO: Add OTEL tracing config. Requires wiring bearer token from k8s via
-# Vault + ESO + Authentik (alloy-otlp blueprint). See
-# cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml for the token blueprint.
-# otel:
-#   endpoint: https://alloy.allegedly.works:4318/v1/traces
-#   # auth_token: wired from k8s secret via ESO
+otel:
+  endpoint: https://alloy-otlp.allegedly.works/v1/traces
+  # auth_token comes from DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN env var,
+  # populated by k8s_secrets below (alloy-otlp-bearer-token secret).
+  # Token is an Authentik service account token — see
+  # cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml for the blueprint.
+  # One-time Vault provisioning: see devinfra/claude/README.md.
 k8s:
   server: https://api.allegedly.works:16443
   service_account: claude-code-web
@@ -18,6 +18,9 @@ k8s_secrets:
     - name: github-token
       data:
         token: GITHUB_TOKEN
+    - name: alloy-otlp-bearer-token
+      data:
+        token: DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN
   buildbuddy_api_key:
     secret_name: buildbuddy-api-key
     data_key: api-key

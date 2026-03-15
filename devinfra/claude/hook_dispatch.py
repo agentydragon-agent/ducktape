@@ -9,6 +9,7 @@ for lightweight hooks like PreToolUse and PostToolUse.
 
 from __future__ import annotations
 
+import os
 import sys
 import traceback
 from pathlib import Path
@@ -19,19 +20,31 @@ from devinfra.claude.claude_api.hook_dispatch_input import AnyHookInput
 from devinfra.claude.claude_api.hook_input import HookInput as SessionStartInput
 from devinfra.claude.claude_api.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.pre_tool_use import PreToolUseInput
-from devinfra.claude.hook_config import load_repo_config
+from devinfra.claude.hook_config import OtelConfig, load_repo_config
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
 
 
 def _init_otel(cwd: str) -> None:
-    """Initialize OTEL from config.yaml if available. No-op on failure."""
+    """Initialize OTEL from config.yaml + env vars. No-op on failure.
+
+    Reads endpoint from config.yaml, auth_token from
+    DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN env var (set by session start
+    from k8s secrets). Env vars override config.yaml values.
+    """
     try:
         config = load_repo_config(Path(cwd))
-        if config and config.otel:
+        endpoint = config.otel.endpoint if config and config.otel else None
+        auth_token = config.otel.auth_token if config and config.otel else None
+
+        # Env vars override config.yaml (set by session start from k8s secrets)
+        endpoint = os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_ENDPOINT", endpoint)
+        auth_token = os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN", auth_token)
+
+        if endpoint:
             from devinfra.claude import otel
 
-            otel.init_from_config(config.otel)
+            otel.init_from_config(OtelConfig(endpoint=endpoint, auth_token=auth_token))
     except Exception:
         pass  # OTEL init is best-effort, don't break hooks
 

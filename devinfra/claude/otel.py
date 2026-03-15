@@ -22,7 +22,10 @@ def _setup_provider(endpoint: str, auth_token: str | None = None) -> None:
     """Set up the OTLP tracer provider."""
     headers: dict[str, str] = {}
     if auth_token:
-        headers["Authorization"] = auth_token
+        # Authentik proxy expects "Bearer <token>". The auth_token value is
+        # the raw Authentik service account key from the k8s secret.
+        value = auth_token if " " in auth_token else f"Bearer {auth_token}"
+        headers["Authorization"] = value
 
     exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers)
     resource = Resource.create({"service.name": "claude-hooks"})
