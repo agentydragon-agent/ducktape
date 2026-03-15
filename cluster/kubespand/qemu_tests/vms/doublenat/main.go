@@ -80,6 +80,9 @@ func main() {
 		peerAddrs := kubespanlib.WaitForPeers(kubespandCmd, 2)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("discovered %d peers", len(peerAddrs))})
 
+		// In double-NAT, only the VPS peer is expected to reach "up" — NAT1
+		// is behind a separate NAT with endpoint-dependent filtering.
+		kubespanlib.WaitForPeersUp(kubespandCmd, 1)
 		kubespanlib.DumpDiagnostics()
 
 		kubespanlib.RunDoubleNATProbes(peerAddrs, probePort)

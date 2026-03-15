@@ -233,6 +233,76 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 	return nil
 }
 
+// WaitForPeersUp polls kubespand's COSI API for PeerStatus resources until n
+// peers report state "up" (WireGuard handshake completed). Call after WaitForPeers
+// to gate on the control plane before running data-plane probes.
+func WaitForPeersUp(kubespandCmd *exec.Cmd, n int) {
+	const timeout = 120 * time.Second
+	deadline := time.Now().Add(timeout)
+	socketPath := constants.MachineSocketPath
+
+	cosiState, conn, err := NewCOSIClient(socketPath)
+	if err != nil {
+		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "WaitForPeersUp: COSI connect failed", Error: err.Error()})
+		initlib.Poweroff()
+	}
+	defer conn.Close()
+
+	lastProgressLog := time.Now()
+
+	for time.Now().Before(deadline) {
+		if kubespandCmd.ProcessState != nil {
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "kubespand exited during WaitForPeersUp", Error: "kubespand crashed"})
+			initlib.DumpLog("/tmp/kubespand.log")
+			initlib.Poweroff()
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, cosiState)
+		cancel()
+
+		if err != nil {
+			if time.Since(lastProgressLog) > 15*time.Second {
+				lastProgressLog = time.Now()
+				fmt.Fprintf(os.Stderr, "[WaitForPeersUp] COSI list error: %v\n", err)
+			}
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		upCount := 0
+		total := 0
+		for it := list.Iterator(); it.Next(); {
+			total++
+			ps := it.Value()
+			if ps.TypedSpec().State == kubespan.PeerStateUp {
+				upCount++
+			}
+		}
+
+		if time.Since(lastProgressLog) > 15*time.Second {
+			lastProgressLog = time.Now()
+			remaining := time.Until(deadline).Round(time.Second)
+			fmt.Fprintf(os.Stderr, "[WaitForPeersUp] %d/%d peers up (%d total), %s remaining\n",
+				upCount, n, total, remaining)
+		}
+
+		if upCount >= n {
+			fmt.Fprintf(os.Stderr, "[WaitForPeersUp] SUCCESS: %d peers up\n", upCount)
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventPeerUp, Message: fmt.Sprintf("%d peers up (WireGuard handshake complete)", upCount)})
+			return
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	DumpDiagnostics()
+	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("timed out waiting for %d peers up (%s)", n, timeout), Error: "peer handshake timeout"})
+	initlib.DumpLog("/tmp/kubespand.log")
+	kubespandCmd.Process.Kill()
+	initlib.Poweroff()
+}
+
 // dumpLogTail prints the last n lines of a log file to stderr.
 func dumpLogTail(path string, n int) {
 	data, err := os.ReadFile(path)
