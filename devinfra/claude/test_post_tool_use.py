@@ -23,19 +23,22 @@ _COMMON = {
 }
 
 
-def test_non_file_tool_returns_none() -> None:
+def test_non_file_tool_returns_default(hook_settings) -> None:
     inp = PostToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": "echo hi"})
-    assert evaluate(inp) is None
+    result = evaluate(inp, hook_settings)
+    assert result.hook_specific_output is None
 
 
-def test_missing_file_path_returns_none() -> None:
+def test_missing_file_path_returns_default(hook_settings) -> None:
     inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={})
-    assert evaluate(inp) is None
+    result = evaluate(inp, hook_settings)
+    assert result.hook_specific_output is None
 
 
-def test_nonexistent_file_returns_none() -> None:
+def test_nonexistent_file_returns_default(hook_settings) -> None:
     inp = PostToolUseInput(**_COMMON, tool_name="Edit", tool_input={"file_path": "/nonexistent/file.py"})
-    assert evaluate(inp) is None
+    result = evaluate(inp, hook_settings)
+    assert result.hook_specific_output is None
 
 
 def test_find_git_root(tmp_path: Path) -> None:

@@ -5,10 +5,18 @@ from unittest.mock import patch
 
 import pytest
 
+from devinfra.claude.settings import HookSettings
+
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest-asyncio auto mode."""
     config.option.asyncio_mode = "auto"
+
+
+@pytest.fixture
+def hook_settings(tmp_path: Path) -> HookSettings:
+    """Minimal HookSettings for tests that don't need supervisor/proxy infrastructure."""
+    return HookSettings(session_dir=tmp_path / "session")
 
 
 @pytest.fixture

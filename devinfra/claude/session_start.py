@@ -584,10 +584,8 @@ async def run_session(
     return output
 
 
-async def _async_handle(hook_input: SessionStartHookInput) -> SessionStartOutput:
+async def _async_handle(hook_input: SessionStartHookInput, settings: HookSettings) -> SessionStartOutput:
     """Async entry point called from hook_dispatch. Dispatches to web or CLI mode."""
     env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
-    settings = HookSettings(session_dir=env_file_path.parent)
-
     web_mode = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
     return await run_session(hook_input, settings, env_file_path, web_mode=web_mode)

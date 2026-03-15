@@ -16,10 +16,13 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
+from devinfra.claude.settings import HookSettings
 
 logger = logging.getLogger(__name__)
 
 FILE_MODIFYING_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit"})
+
+_DEFAULT = PostToolUseOutput()
 
 
 def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
@@ -55,26 +58,26 @@ def _run_precommit(file_path: Path, project_dir: Path) -> bool:
     return file_path.read_bytes() != original_content
 
 
-def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput | None:
+def evaluate(hook_input: PostToolUseInput, settings: HookSettings) -> PostToolUseOutput:
     if hook_input.tool_name not in FILE_MODIFYING_TOOLS:
-        return None
+        return _DEFAULT
 
     file_path = _get_file_path(hook_input.tool_input)
     if file_path is None or not file_path.exists():
-        return None
+        return _DEFAULT
 
     project_dir = _find_git_root(file_path)
     if project_dir is None:
-        return None
+        return _DEFAULT
 
     try:
         changed = _run_precommit(file_path, project_dir)
     except (subprocess.TimeoutExpired, OSError) as e:
         logger.warning("pre-commit failed on %s: %s", file_path, e)
-        return None
+        return _DEFAULT
 
     if not changed:
-        return None
+        return _DEFAULT
 
     return PostToolUseOutput(
         hook_specific_output=PostToolUseHookSpecificOutput(

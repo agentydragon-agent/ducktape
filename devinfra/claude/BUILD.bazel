@@ -254,7 +254,10 @@ py_library(
     srcs = ["pre_tool_use.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["//devinfra/claude/claude_api/hooks:pre_tool_use"],
+    deps = [
+        ":settings",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+    ],
 )
 
 py_library(
@@ -262,7 +265,10 @@ py_library(
     srcs = ["post_tool_use.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["//devinfra/claude/claude_api/hooks:post_tool_use"],
+    deps = [
+        ":settings",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+    ],
 )
 
 py_library(
@@ -276,10 +282,12 @@ py_library(
         ":post_tool_use_lib",
         ":pre_tool_use_lib",
         ":session_start_lib",
+        ":settings",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:session_start",
+        "//util:env",
         "@pypi//pydantic",
     ],
 )
@@ -367,7 +375,10 @@ py_library(
     srcs = ["conftest.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pytest"],
+    deps = [
+        ":settings",
+        "@pypi//pytest",
+    ],
 )
 
 py_test(
