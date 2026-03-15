@@ -97,6 +97,20 @@ func LoadNftablesModules() {
 	EmitEvent(qemu.Event{Type: qemu.EventModules, Message: fmt.Sprintf("nftables modules loaded, kver=%s", kver)})
 }
 
+// HasInterface checks if a network interface appears within the given timeout.
+// Returns true if found, false on timeout (does not power off).
+func HasInterface(name string, timeout time.Duration) bool {
+	path := "/sys/class/net/" + name
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return false
+}
+
 func WaitForInterface(name string) {
 	path := "/sys/class/net/" + name
 	for i := 0; i < 50; i++ {

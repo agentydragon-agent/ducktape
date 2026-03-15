@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,10 +32,12 @@ const (
 	TalosNocloudImagePath = "cluster/kubespand/qemu_tests/talos/nocloud-amd64.qcow2"
 
 	// Pre-generated Talos configs (committed as testdata).
-	TalosVPSConfig  = "cluster/kubespand/qemu_tests/talos/testdata/vps-controlplane.yaml"
-	TalosNAT1Config = "cluster/kubespand/qemu_tests/talos/testdata/nat1-worker.yaml"
-	TalosNAT2Config = "cluster/kubespand/qemu_tests/talos/testdata/nat2-worker.yaml"
-	TalosConfig     = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
+	KubespanCPConfig      = "cluster/kubespand/qemu_tests/talos/testdata/cp-kubespan.yaml"
+	KubespanCPCrossConfig = "cluster/kubespand/qemu_tests/talos/testdata/cp-kubespan-cross.yaml"
+	TalosVPSConfig        = "cluster/kubespand/qemu_tests/talos/testdata/vps-controlplane.yaml"
+	TalosNAT1Config       = "cluster/kubespand/qemu_tests/talos/testdata/nat1-worker.yaml"
+	TalosNAT2Config       = "cluster/kubespand/qemu_tests/talos/testdata/nat2-worker.yaml"
+	TalosConfig           = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
 )
 
 // VM represents a running QEMU VM.
@@ -411,6 +414,33 @@ func (s *Stopwatch) Summary(outDir string) {
 		sj.TotalMs = total.Milliseconds()
 		data, _ := json.MarshalIndent(sj, "", "  ")
 		SaveArtifact(s.t, outDir, "timing.json", string(data))
+	}
+}
+
+// WaitForDiscoveryHTTP polls the discovery service's HTTP endpoint on the
+// forwarded mgmt port until it responds (or times out).
+func WaitForDiscoveryHTTP(t *testing.T, port int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			t.Logf("discovery HTTP ready on port %d", port)
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("discovery HTTP not ready after %v on port %d", timeout, port)
+}
+
+// MgmtNIC returns QEMU args for a user-mode NIC with a port forwarded to the host.
+func MgmtNIC(hostPort, guestPort int, mac string) []string {
+	return []string{
+		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:%d", hostPort, guestPort),
+		"-device", fmt.Sprintf("virtio-net-pci,netdev=mgmt,mac=%s", mac),
 	}
 }
 

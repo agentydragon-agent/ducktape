@@ -127,12 +127,35 @@ func runTopology(t *testing.T, topology string) {
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfs := h.RunfilePath(t, h.KubespanInitramfs)
 	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
+	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
 	out := h.OutputDir(t)
 	sw.Lap("resolve runfiles")
 
-	clusterID := h.RandomBase64(32)
-	sharedSecret := h.RandomBase64(32)
 	mcastPort := h.RandomPort()
+	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
+
+	// Choose CP config and IP based on topology.
+	// flat/discovery_only: CP at 192.168.50.253 on the shared flat segment.
+	// cross_subnet: CP at 10.0.0.253/8 ("public internet" reachable from both subnets).
+	var cpConfigPath, cpIP string
+	switch topology {
+	case "flat", "discovery_only":
+		cpConfigPath = h.KubespanCPConfig
+		cpIP = "192.168.50.253"
+	case "cross_subnet":
+		cpConfigPath = h.KubespanCPCrossConfig
+		cpIP = "10.0.0.253"
+	}
+
+	// Use CP config credentials so all participants share the same
+	// cluster ID/secret and discover each other.
+	var cpCfg talosConfig
+	cpConfigData := h.ReadRunfile(t, cpConfigPath)
+	if err := yaml.Unmarshal(cpConfigData, &cpCfg); err != nil {
+		t.Fatalf("parse cp config: %v", err)
+	}
+	clusterID := cpCfg.Cluster.ID
+	sharedSecret := cpCfg.Cluster.Secret
 
 	var discIP string
 	switch topology {
@@ -143,32 +166,60 @@ func runTopology(t *testing.T, topology string) {
 	}
 	discAddr := fmt.Sprintf("%s:3000", discIP)
 
-	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
+	// Discovery VM with mgmt NIC for HTTP health check from the test host.
+	discHTTPPort := h.RandomPort()
+	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
+		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24 topology=%s", discIP, topology),
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01"),
+			h.MgmtNIC(discHTTPPort, 3000, "52:54:00:ff:00:02")...)...)
+	sw.Lap("boot discovery VM")
 
 	kernelBase := fmt.Sprintf("mode=kubespan cluster_id=%s shared_secret=%s discovery=%s topology=%s",
 		clusterID, sharedSecret, discAddr, topology)
-
-	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
-		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24 topology=%s", discIP, topology),
-		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01")...)
-	sw.Lap("boot discovery VM")
 
 	vmB := h.BootVM(t, "vm-b", vmlinuz, initramfs, kernelBase+" role=b",
 		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01")...)
 	sw.Lap("boot VM-B")
 
+	// Talos CP VM — participates in KubeSpan mesh for API-based peer observation.
+	tmpDir := t.TempDir()
+	cpCI := h.CreateCIDATA(t, tmpDir, "cp", cpConfigData)
+	talosAPIPort := h.RandomPort()
+	vmCP := h.BootTalosVM(t, "vm-cp", talosBaseImage, cpCI,
+		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:c0:00:01"))
+	sw.Lap("boot Talos CP VM")
+
 	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs, kernelBase+" role=a",
 		h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01")...)
 	sw.Lap("boot VM-A")
 
-	allVMs := []*h.VM{vmA, vmB, vmDisc}
+	allVMs := []*h.VM{vmA, vmB, vmDisc, vmCP}
 	h.CleanupVMs(t, allVMs, out)
 
-	h.RequireEvent(t, vmDisc, h.EventDone, 30*time.Second)
-	sw.Lap("discovery VM ready")
+	// Discovery health check via HTTP from the test host.
+	h.WaitForDiscoveryHTTP(t, discHTTPPort, 30*time.Second)
+	sw.Lap("discovery HTTP ready")
 
+	// VM-A runs probes and exits (still validated via events).
 	h.WaitVMDone(t, vmA, 300*time.Second)
 	sw.Lap("VM-A done (peer discovery + probes)")
+
+	// Observe KubeSpan peer status from the Talos CP's API.
+	// CP participates in the same mesh and sees kubespand VMs as peers.
+	// VM-B stays alive for 180s; VM-A's peer state remains "up" for ~275s
+	// after shutdown (WireGuard PeerDownInterval).
+	talosClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+	defer talosClient.Close()
+	h.WaitForTalosAPI(t, talosClient, cpIP, 180*time.Second)
+	sw.Lap("Talos CP API ready")
+
+	peers, err := h.PollKubeSpanStatus(t, talosClient, cpIP, 120*time.Second)
+	if err != nil {
+		t.Errorf("peer discovery via Talos API: %v", err)
+	} else {
+		t.Logf("KubeSpan peers observed from Talos CP: %v", peers)
+	}
+	sw.Lap("peer discovery via Talos API")
 
 	summary := map[string]interface{}{
 		"topology":       topology,
