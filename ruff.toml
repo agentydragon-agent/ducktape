@@ -153,7 +153,7 @@ split-on-trailing-comma = false
 # sys.path manipulation must happen before imports in uv run scripts and pytest
 "devinfra/ci/check_release.py" = ["E402"]
 "devinfra/ci/ci_decide.py" = ["E402"]
-# Lazy imports for performance: avoid loading heavy deps (mako, otel) for lightweight hooks
+# Lazy imports for performance: avoid loading mako for lightweight hooks
 "devinfra/claude/hook_dispatch.py" = ["PLC0415"]
 # conftest.py re-exports fixtures for pytest discovery — imports are "unused" by design
 # and fixture parameters naturally shadow the imported fixture names (F811)

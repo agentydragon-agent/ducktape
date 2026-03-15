@@ -12,6 +12,14 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture
+def patch_credentials_path(tmp_path: Path):
+    """Patch CREDENTIALS_PATH to a custom path for testing."""
+    path = tmp_path / "credentials.json"
+    with patch("devinfra.claude.claude_api.credentials.CREDENTIALS_PATH", path):
+        yield path
+
+
+@pytest.fixture
 def no_credentials(tmp_path: Path):
     """Patch CREDENTIALS_PATH to a nonexistent file (no cached credentials)."""
     with patch("devinfra.claude.claude_api.credentials.CREDENTIALS_PATH", tmp_path / "nonexistent"):

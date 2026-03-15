@@ -22,10 +22,10 @@ def init_from_config(config: OtelConfig) -> None:
         return
 
     headers: dict[str, str] = {}
-    if config.auth_token:
+    if config.bearer_token:
         # Authentik proxy expects "Bearer <token>". The auth_token value is
         # the raw Authentik service account key from the k8s secret.
-        value = config.auth_token if " " in config.auth_token else f"Bearer {config.auth_token}"
+        value = config.bearer_token if " " in config.bearer_token else f"Bearer {config.bearer_token}"
         headers["Authorization"] = value
 
     exporter = OTLPSpanExporter(endpoint=config.endpoint, headers=headers)

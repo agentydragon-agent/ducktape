@@ -7,6 +7,7 @@ OTEL tracing, and other shared settings. Environment variables
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import yaml
@@ -17,7 +18,14 @@ HOOKS_DOTDIR = ".claude_hooks"
 
 class OtelConfig(BaseModel):
     endpoint: str | None = Field(default=None, description="OTLP/HTTP traces endpoint URL")
-    auth_token: str | None = Field(default=None, description="Bearer token for the OTLP endpoint")
+    bearer_token: str | None = Field(default=None, description="Bearer token for the OTLP endpoint")
+
+    def with_env_overrides(self) -> OtelConfig:
+        """Apply DUCKTAPE_CLAUDE_HOOKS_OTEL_* env var overrides."""
+        return OtelConfig(
+            endpoint=os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_ENDPOINT", self.endpoint),
+            bearer_token=os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN", self.bearer_token),
+        )
 
 
 class K8sSecretMapping(BaseModel):
@@ -40,7 +48,7 @@ class K8sSecretsConfig(BaseModel):
     namespace: str
     secrets: list[K8sSecretMapping]
     buildbuddy_api_key: K8sSecretRef | None = None
-    otel_auth_token: K8sSecretRef | None = None
+    otel_bearer_token: K8sSecretRef | None = None
 
 
 class K8sConfig(BaseModel):
@@ -67,15 +75,11 @@ class HookConfig(BaseModel):
 
     @classmethod
     def load_from_repo(cls, root: Path) -> HookConfig | None:
-        """Load hook config from repo root, or None if not found."""
+        """Load hook config from repo root (with env var overrides), or None if not found."""
         config_path = root / HOOKS_DOTDIR / "config.yaml"
-        return cls.load(config_path) if config_path.exists() else None
-
-
-# Backwards compatibility
-def load_config(config_path: Path) -> HookConfig:
-    return HookConfig.load(config_path)
-
-
-def load_repo_config(root: Path) -> HookConfig | None:
-    return HookConfig.load_from_repo(root)
+        if not config_path.exists():
+            return None
+        config = cls.load(config_path)
+        if config.otel:
+            config = config.model_copy(update={"otel": config.otel.with_env_overrides()})
+        return config

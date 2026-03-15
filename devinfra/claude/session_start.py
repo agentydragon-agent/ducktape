@@ -31,7 +31,6 @@ from devinfra.claude import (
     k8s_secrets_setup,
     mkcert_setup,
     nix_setup,
-    otel,
     precommit_setup,
     tmpfs_setup,
 )
@@ -39,7 +38,7 @@ from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.claude_api.session_start_input import SessionStartHookInput
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
-from devinfra.claude.hook_config import OtelConfig
+from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
@@ -105,7 +104,7 @@ def _render_extra_context(
     fork_result: fork_remote_setup.ForkRemoteSetup | None = None,
 ) -> str:
     """Render repo-specific context from .claude_hooks/templates/context.mako if it exists."""
-    extra_template_path = project_dir / k8s_secrets_setup.HOOKS_DOTDIR / "templates" / "context.mako"
+    extra_template_path = project_dir / HOOKS_DOTDIR / "templates" / "context.mako"
     if not extra_template_path.exists():
         return ""
     template = Template(extra_template_path.read_text())
@@ -479,7 +478,7 @@ async def run_session(
     logger.info("Session directory: %s", settings.session_dir)
 
     # Load hook config (general config file, not gated on k8s_token).
-    hook_config = k8s_secrets_setup.load_repo_config(project_dir)
+    hook_config = HookConfig.load_from_repo(project_dir)
 
     # K8s secrets are read after platform setup (proxy must be up for web mode TLS).
     secrets: k8s_secrets_setup.K8sSecretsResult | None = None
@@ -583,8 +582,6 @@ async def _async_handle(hook_input: SessionStartHookInput) -> None:
     """Async entry point called from hook_dispatch. Dispatches to web or CLI mode."""
     env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
     settings = HookSettings(session_dir=env_file_path.parent)
-
-    otel.init_from_config(OtelConfig(endpoint=settings.otel_endpoint, auth_token=settings.otel_auth_token))
 
     web_mode = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
     await run_session(hook_input, settings, env_file_path, web_mode=web_mode)

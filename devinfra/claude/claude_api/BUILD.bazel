@@ -1,11 +1,21 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "permission_mode",
+    srcs = ["permission_mode.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "session_start_input",
     srcs = ["session_start_input.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":permission_mode",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -14,7 +24,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":session_start_input",
+        ":permission_mode",
         "@pypi//pydantic",
     ],
 )
@@ -49,7 +59,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":session_start_input",
+        ":permission_mode",
         "@pypi//pydantic",
     ],
 )

@@ -1,12 +1,13 @@
 load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 
+package(default_visibility = ["//devinfra/claude:__subpackages__"])
+
 py_library(
     name = "mock_egress_proxy",
     testonly = True,
     srcs = ["mock_egress_proxy.py"],
     imports = ["../../.."],
-    visibility = ["//devinfra/claude:__subpackages__"],
     deps = [
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
@@ -19,7 +20,6 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     imports = ["../../.."],
-    visibility = ["//devinfra/claude:__subpackages__"],
     deps = ["@pypi//pytest"],
 )
 
@@ -43,7 +43,6 @@ py_library(
     testonly = True,
     srcs = ["shell_helpers.py"],
     imports = ["../../.."],
-    visibility = ["//devinfra/claude:__subpackages__"],
 )
 
 py_library(
@@ -51,7 +50,6 @@ py_library(
     testonly = True,
     srcs = ["fixtures.py"],
     imports = ["../../.."],
-    visibility = ["//devinfra/claude:__subpackages__"],
     deps = [
         ":mock_egress_proxy",
         "//devinfra/claude:settings",
@@ -67,7 +65,6 @@ py_library(
     testonly = True,
     srcs = ["session_start_helpers.py"],
     imports = ["../../.."],
-    visibility = ["//devinfra/claude:__subpackages__"],
     deps = [
         ":mock_egress_proxy",
         ":shell_helpers",

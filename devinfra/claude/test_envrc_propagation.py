@@ -19,18 +19,24 @@ def _cli_env_vars(wrapper_dir: Path, bazelrc: Path, *, with_direnv: bool = False
 
 
 @pytest.fixture
-def cli_env(tmp_path: Path) -> tuple[Path, Path, Path]:
-    """Create env file, wrapper dir, and bazelrc paths for CLI env tests."""
-    env_file = tmp_path / "env.sh"
-    wrapper_dir = tmp_path / "bin"
-    bazelrc = tmp_path / "bazelrc"
-    bazelrc.write_text("# test")
-    return env_file, wrapper_dir, bazelrc
+def env_file(tmp_path: Path) -> Path:
+    return tmp_path / "env.sh"
 
 
-def test_contains_wrapper_path(cli_env: tuple[Path, Path, Path]) -> None:
+@pytest.fixture
+def wrapper_dir(tmp_path: Path) -> Path:
+    return tmp_path / "bin"
+
+
+@pytest.fixture
+def bazelrc(tmp_path: Path) -> Path:
+    path = tmp_path / "bazelrc"
+    path.write_text("# test")
+    return path
+
+
+def test_contains_wrapper_path(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
     """Env file puts the wrapper directory on PATH."""
-    env_file, wrapper_dir, bazelrc = cli_env
     write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc))
 
     content = env_file.read_text()
@@ -38,9 +44,8 @@ def test_contains_wrapper_path(cli_env: tuple[Path, Path, Path]) -> None:
     assert "PATH=" in content
 
 
-def test_exports_session_bazelrc(cli_env: tuple[Path, Path, Path]) -> None:
+def test_exports_session_bazelrc(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
     """Env file exports SESSION_BAZELRC pointing to the rendered bazelrc."""
-    env_file, wrapper_dir, bazelrc = cli_env
     write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc))
 
     content = env_file.read_text()
@@ -48,9 +53,8 @@ def test_exports_session_bazelrc(cli_env: tuple[Path, Path, Path]) -> None:
     assert str(bazelrc) in content
 
 
-def test_includes_direnv_eval(cli_env: tuple[Path, Path, Path]) -> None:
+def test_includes_direnv_eval(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
     """When direnv is available, env file includes dynamic eval."""
-    env_file, wrapper_dir, bazelrc = cli_env
     with patch("devinfra.claude.env_file.shutil.which", return_value="/usr/bin/direnv"):
         write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc, with_direnv=True))
 
@@ -58,18 +62,16 @@ def test_includes_direnv_eval(cli_env: tuple[Path, Path, Path]) -> None:
     assert 'eval "$(direnv export bash 2>/dev/null)"' in content
 
 
-def test_exports_ansible_local_temp(cli_env: tuple[Path, Path, Path]) -> None:
+def test_exports_ansible_local_temp(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
     """Env file exports ANSIBLE_LOCAL_TEMP so pre-commit works in read-only sandboxes."""
-    env_file, wrapper_dir, bazelrc = cli_env
     write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc))
 
     content = env_file.read_text()
     assert "ANSIBLE_LOCAL_TEMP=" in content
 
 
-def test_no_direnv_when_missing(cli_env: tuple[Path, Path, Path]) -> None:
+def test_no_direnv_when_missing(env_file: Path, wrapper_dir: Path, bazelrc: Path) -> None:
     """When direnv is not installed, env file omits the eval."""
-    env_file, wrapper_dir, bazelrc = cli_env
     with patch("devinfra.claude.env_file.shutil.which", return_value=None):
         write_env_file(env_file, _cli_env_vars(wrapper_dir, bazelrc, with_direnv=True))
 

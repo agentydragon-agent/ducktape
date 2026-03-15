@@ -313,6 +313,7 @@ py_library(
         ":env_file",
         ":errors",
         ":fork_remote_setup",
+        ":hook_config",
         ":k8s_secrets_setup",
         ":mkcert_setup",
         ":nix_setup",
@@ -572,6 +573,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":conftest",
+        ":hook_config",
         ":k8s_secrets_setup",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

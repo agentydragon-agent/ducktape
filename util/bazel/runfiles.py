@@ -27,10 +27,8 @@ def _get_runfiles() -> runfiles.Runfiles:
 
 def get_required_path(rlocation: str) -> Path:
     """Resolve a runfiles path to an absolute Path, raising if missing."""
-    resolved = _get_runfiles().Rlocation(rlocation)
-    if not resolved:
+    if not (resolved := _get_runfiles().Rlocation(rlocation)):
         raise RuntimeError(f"Could not resolve runfiles path: {rlocation}")
-    path = Path(resolved)
-    if not path.exists():
+    if not (path := Path(resolved)).exists():
         raise RuntimeError(f"Resolved path does not exist: {path}")
     return path

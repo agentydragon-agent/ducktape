@@ -8,13 +8,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from devinfra.claude.k8s_secrets_setup import (
-    HookConfig,
-    K8sConfig,
-    K8sSecretMapping,
-    K8sSecretsConfig,
-    setup_k8s_secrets,
-)
+from devinfra.claude.hook_config import HookConfig, K8sConfig, K8sSecretMapping, K8sSecretsConfig
+from devinfra.claude.k8s_secrets_setup import setup_k8s_secrets
 
 
 def _make_config(secrets: list[K8sSecretMapping]) -> HookConfig:

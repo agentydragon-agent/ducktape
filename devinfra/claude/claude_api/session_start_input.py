@@ -10,15 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
-class PermissionMode(StrEnum):
-    """Claude Code permission mode values."""
-
-    DEFAULT = "default"
-    PLAN = "plan"
-    ACCEPT_EDITS = "acceptEdits"
-    DONT_ASK = "dontAsk"
-    BYPASS_PERMISSIONS = "bypassPermissions"
+from devinfra.claude.claude_api.permission_mode import PermissionMode
 
 
 class HookSource(StrEnum):
@@ -42,7 +34,3 @@ class SessionStartHookInput(BaseModel):
     )
     hook_event_name: Literal["SessionStart"] = "SessionStart"
     source: HookSource
-
-
-# Backwards compatibility alias
-HookInput = SessionStartHookInput
