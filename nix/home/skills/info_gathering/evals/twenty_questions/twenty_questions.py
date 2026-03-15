@@ -2,22 +2,23 @@
 
 Usage:
   bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states
+  bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states --model openai/gpt-oss-20b-128k --base-url https://ollama.allegedly.works/v1 --thinking-budget 0
 """
 
 import argparse
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-import anthropic
-import anthropic.types
 from pydantic import BaseModel
 
 from nix.home.skills.info_gathering.evals.harness import (
     LogEntry,
     RunSummary,
     TokenTracker,
+    ToolParam,
     add_common_args,
     build_agent_system,
     call_api,
@@ -25,7 +26,6 @@ from nix.home.skills.info_gathering.evals.harness import (
     extract_tool_calls,
     load_skill,
     log_response,
-    make_client,
     output_dir_from_args,
     save_results,
     thinking_from_args,
@@ -57,10 +57,7 @@ class CorrectAnswerInput(BaseModel):
 ANSWER_TOOL = tool_def("answer", "Answer the player's yes/no question.", AnswerInput)
 CORRECT_ANSWER_TOOL = tool_def("correct_answer", "The player correctly guessed the secret.", CorrectAnswerInput)
 
-SIM_TOOLS: list[anthropic.types.ToolParam] = [ANSWER_TOOL, CORRECT_ANSWER_TOOL]
-SIM_TOOL_CHOICE: anthropic.types.ToolChoiceParam = anthropic.types.ToolChoiceAnyParam(
-    type="any", disable_parallel_tool_use=True
-)
+SIM_TOOLS: list[ToolParam] = [ANSWER_TOOL, CORRECT_ANSWER_TOOL]
 
 
 @dataclass
@@ -83,7 +80,6 @@ VARIANTS: dict[str, Variant] = {
 def run_twenty_questions(
     *,
     name: str,
-    client: anthropic.Anthropic,
     model: str,
     agent_system: str,
     first_user_message: str,
@@ -91,17 +87,19 @@ def run_twenty_questions(
     turn_limit: int = 20,
     thinking_budget: int | None = None,
     output_dir: Path,
+    base_url: str | None = None,
+    api_key: str | None = None,
 ) -> RunSummary:
     """Run a 20 Questions eval.
 
     Agent asks questions (text only). Simulator answers via tools (forced by
-    tool_choice=any). Game ends when sim calls correct_answer or turns run out.
+    tool_choice=required). Game ends when sim calls correct_answer or turns run out.
     """
     tracker = TokenTracker(model=model)
     log_entries: list[LogEntry] = []
 
-    agent_messages: list[anthropic.types.MessageParam] = [{"role": "user", "content": first_user_message}]
-    sim_messages: list[anthropic.types.MessageParam] = []
+    agent_messages: list[dict[str, Any]] = [{"role": "user", "content": first_user_message}]
+    sim_messages: list[dict[str, Any]] = []
     last_tc_id: str | None = None
     result: Correct | Timeout
 
@@ -110,11 +108,16 @@ def run_twenty_questions(
 
         # Agent turn (no tools)
         agent_resp = call_api(
-            client=client, messages=agent_messages, system=agent_system, model=model, thinking_budget=thinking_budget
+            messages=agent_messages,
+            system=agent_system,
+            model=model,
+            thinking_budget=thinking_budget,
+            base_url=base_url,
+            api_key=api_key,
         )
         tracker.add(agent_resp.usage)
         log_response(log_entries, name=name, player="agent", turn=turn, model=model, response=agent_resp)
-        agent_messages.append({"role": "assistant", "content": agent_resp.content})
+        agent_messages.append({"role": "assistant", "content": extract_text(agent_resp)})
 
         agent_text = extract_text(agent_resp).strip()
         if not agent_text:
@@ -122,37 +125,51 @@ def run_twenty_questions(
 
         # Sim turn: tool result from previous turn (if any) + agent's question
         if last_tc_id:
-            content: str | list = [
-                {"type": "tool_result", "tool_use_id": last_tc_id, "content": "ok"},
-                {"type": "text", "text": agent_text},
-            ]
-        else:
-            content = agent_text
+            sim_messages.append({"role": "tool", "tool_call_id": last_tc_id, "content": "ok"})
         last_tc_id = None
 
-        sim_messages.append({"role": "user", "content": content})
+        sim_messages.append({"role": "user", "content": agent_text})
         sim_resp = call_api(
-            client=client,
             messages=sim_messages,
             system=sim_system,
             model=model,
             tools=SIM_TOOLS,
-            tool_choice=SIM_TOOL_CHOICE,
+            tool_choice="required",
             thinking_budget=thinking_budget,
+            base_url=base_url,
+            api_key=api_key,
         )
         tracker.add(sim_resp.usage)
         log_response(log_entries, name=name, player="simulator", turn=turn, model=model, response=sim_resp)
-        sim_messages.append({"role": "assistant", "content": sim_resp.content})
+        sim_messages.append(
+            {
+                "role": "assistant",
+                "content": extract_text(sim_resp) or None,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in extract_tool_calls(sim_resp)
+                ],
+            }
+        )
 
-        (tc,) = extract_tool_calls(sim_resp)
-        assert isinstance(tc.input, dict)
+        tcs = extract_tool_calls(sim_resp)
+        if len(tcs) != 1:
+            logger.warning("Expected exactly 1 tool call from sim, got %d", len(tcs))
+            continue
 
-        if tc.name == "correct_answer":
+        tc = tcs[0]
+        tc_args = json.loads(tc.function.arguments)
+
+        if tc.function.name == "correct_answer":
             result = Correct(turns=turn)
             break
 
         # answer tool
-        answer = AnswerInput.model_validate(tc.input)
+        answer = AnswerInput.model_validate(tc_args)
         last_tc_id = tc.id
         agent_messages.append({"role": "user", "content": answer.response})
     else:
@@ -185,7 +202,6 @@ def main() -> None:
 
     skill_text = load_skill()
     agent_system = build_agent_system(skill_text)
-    client = make_client()
     thinking = thinking_from_args(args)
     output_dir = output_dir_from_args(args)
 
@@ -204,7 +220,6 @@ def main() -> None:
 
     summary = run_twenty_questions(
         name=name,
-        client=client,
         model=args.model,
         agent_system=agent_system,
         first_user_message=first_user_message,
@@ -212,6 +227,8 @@ def main() -> None:
         turn_limit=v.turn_limit,
         thinking_budget=thinking,
         output_dir=output_dir,
+        base_url=args.base_url,
+        api_key=args.api_key,
     )
     logger.info("%s", summary)
 

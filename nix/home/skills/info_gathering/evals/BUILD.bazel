@@ -7,7 +7,7 @@ py_library(
     visibility = ["//nix/home/skills/info_gathering/evals:__subpackages__"],
     deps = [
         "//util/bazel:runfiles",
-        "@pypi//anthropic",
+        "@pypi//litellm",
         "@pypi//pydantic",
     ],
 )
