@@ -1,3 +1,10 @@
+Remove SELinux socket labeling from apid.
+
+kubespand runs on NixOS which does not use SELinux. The upstream
+selinux.SetLabel call sets a security context on the API socket file,
+which is a no-op on non-SELinux systems. Patching it out avoids pulling
+in the Talos SELinux dependency tree for no benefit.
+
 --- internal/app/apid/main.go.orig	2026-03-15 00:00:00.000000000 +0000
 +++ internal/app/apid/main.go	2026-03-15 00:00:00.000000000 +0000
 @@ -31,7 +31,6 @@
