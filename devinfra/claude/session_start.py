@@ -35,6 +35,7 @@ from devinfra.claude import (
     tmpfs_setup,
 )
 from devinfra.claude.auth_proxy import setup as proxy_setup
+from devinfra.claude.claude_api.hook_output import SessionStartHookSpecificOutput, SessionStartOutput
 from devinfra.claude.claude_api.session_start_input import SessionStartHookInput
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
@@ -453,7 +454,7 @@ async def _setup_web(
 
 async def run_session(
     hook_input: SessionStartHookInput, settings: HookSettings, env_file_path: Path, *, web_mode: bool
-) -> None:
+) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
     Dispatches platform-specific setup, then runs shared steps:
@@ -550,7 +551,7 @@ async def run_session(
         env_file.write_env_file(env_file_path, env_vars)
     logger.info("Wrote environment to %s", env_file_path)
 
-    # Emit session context to Claude Code transcript
+    # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
         status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
         extra_context = _render_extra_context(project_dir, setup.secrets, setup.fork_result)
@@ -570,18 +571,20 @@ async def run_session(
             log_file=log_file,
             buildbuddy_configured=setup.buildbuddy_configured,
         )
-        print(context_output.rstrip("\n"))
-        sys.stdout.flush()
+        output = SessionStartOutput(
+            hook_specific_output=SessionStartHookSpecificOutput(additional_context=context_output.rstrip("\n"))
+        )
 
     root_span.end()
     shutdown_tracing()
     logger.info("Trace file: %s", trace_file)
+    return output
 
 
-async def _async_handle(hook_input: SessionStartHookInput) -> None:
+async def _async_handle(hook_input: SessionStartHookInput) -> SessionStartOutput:
     """Async entry point called from hook_dispatch. Dispatches to web or CLI mode."""
     env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
     settings = HookSettings(session_dir=env_file_path.parent)
 
     web_mode = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
-    await run_session(hook_input, settings, env_file_path, web_mode=web_mode)
+    return await run_session(hook_input, settings, env_file_path, web_mode=web_mode)

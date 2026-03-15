@@ -44,7 +44,7 @@ def main() -> None:
             case SessionStartHookInput():
                 from devinfra.claude.session_start import _async_handle
 
-                asyncio.run(_async_handle(parsed))
+                output = asyncio.run(_async_handle(parsed))
 
             case PreToolUseInput():
                 from devinfra.claude.pre_tool_use import evaluate as evaluate_pre

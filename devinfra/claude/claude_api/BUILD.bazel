@@ -65,11 +65,31 @@ py_library(
 )
 
 py_library(
+    name = "hook_output",
+    srcs = ["hook_output.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "hooks",
+    srcs = ["hooks.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":permission_mode",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "hook_dispatch_input",
     srcs = ["hook_dispatch_input.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":hooks",
         ":post_tool_use",
         ":pre_tool_use",
         ":session_start_input",
