@@ -27,7 +27,7 @@ from devinfra.claude.settings import HookSettings
 logger = logging.getLogger(__name__)
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
-_tracer = trace.get_tracer("claude-hooks")
+_tracer = trace.get_tracer(__name__)
 
 # Claude Code stores per-session data at ~/.claude/session-env/<session_id>/
 _SESSION_ENV_BASE = Path.home() / ".claude" / "session-env"

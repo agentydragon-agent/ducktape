@@ -35,7 +35,7 @@ def init_tracing(session_id: str, session_dir: Path) -> tuple[trace.Tracer, Path
     trace.set_tracer_provider(provider)
 
     logger.info("Tracing initialized: %s", trace_file)
-    return trace.get_tracer("claude-hooks"), trace_file
+    return trace.get_tracer(__name__), trace_file
 
 
 def shutdown_tracing() -> None:
