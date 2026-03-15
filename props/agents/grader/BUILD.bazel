@@ -14,9 +14,9 @@ The container runs a persistent agent loop that:
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 exports_files(
     ["prompt.md.mako"],
@@ -65,6 +65,7 @@ py_library(
         "//agent_core:loop_control",
         "//mcp_infra/exec:models",
         "//mcp_infra/exec:subprocess",
+        "//openai_utils:errors",
         "//openai_utils:model",
         "//props/agents:runtime",
         "//props/core:ids",
@@ -150,6 +151,7 @@ py_test(
     name = "test_notification_handler",
     srcs = ["test_notification_handler.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":notification_handler",
         "//openai_utils:text_extraction",
@@ -159,10 +161,12 @@ py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_grading_edges_constraints",
+    size = "medium",
     srcs = ["test_grading_edges_constraints.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//props:conftest",
@@ -176,10 +180,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_matchable_occurrences",
     srcs = ["test_matchable_occurrences.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//props:conftest",
@@ -191,16 +196,15 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e",
+    size = "medium",
     srcs = ["test_e2e.py"],
     data = [
         ":image",
     ],
     imports = ["../../.."],
-    tags = [
-        "e2e",
-    ],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":drift_handler",
@@ -220,16 +224,15 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e_sleep_wake",
+    size = "medium",
     srcs = ["test_e2e_sleep_wake.py"],
     data = [
         ":image",
     ],
     imports = ["../../.."],
-    tags = [
-        "e2e",
-    ],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":drift_handler",
@@ -249,16 +252,15 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e_clustering",
+    size = "medium",
     srcs = ["test_e2e_clustering.py"],
     data = [
         ":image",
     ],
     imports = ["../../.."],
-    tags = [
-        "e2e",
-    ],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":drift_handler",
@@ -270,6 +272,31 @@ docker_py_test(
         "//props/db:models",
         "//props/db:snapshots",
         "//props/testing:assertions",
+        "//props/testing:constants",
+        "//props/testing/fixtures:runs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",  # keep
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_e2e_report_failure",
+    size = "medium",
+    srcs = ["test_e2e_report_failure.py"],
+    data = [
+        ":image",
+    ],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//agent_core/testing:responses",
+        "//props:conftest",
+        "//props/agents/grader/testing:mocks",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/db:snapshots",
         "//props/testing:constants",
         "//props/testing/fixtures:runs",
         "@pypi//pytest",
@@ -287,6 +314,7 @@ oci_image(
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("grader_bin"),
     env = py_image_env(binary_name = "grader_bin"),
+    labels = {"org.opencontainers.image.title": "grader"},
     tars = [
         ":layers",
         ":python3_symlink",

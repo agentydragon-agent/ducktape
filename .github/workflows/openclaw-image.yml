@@ -1,0 +1,42 @@
+# Build and push the custom OpenClaw+matrix container image to Harbor.
+#
+# Derives from upstream ghcr.io/openclaw/openclaw with the matrix channel
+# plugin and its native crypto binary pre-installed.
+#
+# Triggers:
+#   - workflow_dispatch: manual trigger (tags :latest too)
+#   - workflow_call (from ci.yml): tags :<sha> + :<timestamp>-<sha7>
+name: OpenClaw Image
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: openclaw-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build airlock plugin tar
+        run: bazel build //airlock/openclaw:plugin_tar
+
+      - name: Stage plugin tar for Docker
+        run: cp bazel-bin/airlock/openclaw/plugin_tar.tar openclaw/airlock-plugin.tar
+
+      - uses: ./.github/actions/harbor-build-push
+        with:
+          image: registry.allegedly.works/ducktape/openclaw-matrix
+          context: .
+          file: openclaw/Dockerfile
+          harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
+          harbor_robot_token: ${{ secrets.HARBOR_ROBOT_TOKEN }}

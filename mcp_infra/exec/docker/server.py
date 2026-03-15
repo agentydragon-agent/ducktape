@@ -9,11 +9,9 @@ FastMCP server: per-session Docker container exec.
 from __future__ import annotations
 
 from pathlib import PurePosixPath
-from typing import Any, cast
 
 import aiodocker
 import mcp.types as mcp_types
-from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server.context import Context
 
 from mcp_infra.enhanced.flat_mixin import FlatTool
@@ -25,9 +23,9 @@ from mcp_infra.exec.docker.container_session import (
     run_session_container,
     session_state_from_ctx,
 )
+from mcp_infra.exec.docker.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
 from mcp_infra.exec.models import BaseExecResult, ExecInput, async_timer
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
-from mcp_infra.mcp_types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
 from mcp_infra.prefix import MCPMountPrefix
 
 # URI template for file:// resource (file:///absolute/path format)
@@ -50,9 +48,8 @@ class ContainerExecServer(EnhancedFastMCP):
     DOCKER_MOUNT_PREFIX: MCPMountPrefix = MCPMountPrefix("docker")
     RUNTIME_MOUNT_PREFIX: MCPMountPrefix = MCPMountPrefix("runtime")
 
-    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
-    container_info_resource: FunctionResource
-    file_resource: ResourceTemplate
+    # Resource URI constants
+    CONTAINER_INFO_URI = "resource://container.info"
 
     # Tool reference (assigned in __init__ after tool registration)
     exec_tool: FlatTool
@@ -88,8 +85,8 @@ class ContainerExecServer(EnhancedFastMCP):
             lifespan=make_container_lifespan(opts, docker_client),
         )
 
-        # Register container.info resource and stash the result
-        async def container_info_json(ctx: Context) -> dict[str, Any]:
+        # Register container.info resource
+        async def container_info_json(ctx: Context) -> str:
             s = session_state_from_ctx(ctx)
             img_info = await s.docker_client.images.inspect(s.image)
             img_history_raw = await s.docker_client.images.history(s.image)
@@ -109,21 +106,18 @@ class ContainerExecServer(EnhancedFastMCP):
                 network_mode=s.network_mode,
                 image_history=img_history,
             )
-            return ci.model_dump(mode="json")
+            return ci.model_dump_json()
 
         # Ensure the context annotation is preserved after future-annotations rewriting so
         # FastMCP treats this as a static resource rather than a template.
         container_info_json.__annotations__["ctx"] = Context
-        self.container_info_resource = cast(
-            FunctionResource,
-            self.resource(
-                container_info_uri,
-                mime_type="application/json",
-                name="container.info",
-                title="Container session metadata",
-                description="Docker container details for this session",
-            )(container_info_json),
-        )
+        self.resource(
+            container_info_uri,
+            mime_type="application/json",
+            name="container.info",
+            title="Container session metadata",
+            description="Docker container details for this session",
+        )(container_info_json)
 
         # Register exec tool - name derived from function name
         async def exec(input: ExecInput, context: Context) -> BaseExecResult:
@@ -175,15 +169,12 @@ class ContainerExecServer(EnhancedFastMCP):
             return f.read().decode("utf-8")
 
         read_container_file.__annotations__["ctx"] = Context
-        self.file_resource = cast(
-            ResourceTemplate,
-            self.resource(
-                FILE_RESOURCE_URI_TEMPLATE,
-                name="container.file",
-                mime_type="text/plain",
-                description="Read a file from the container filesystem",
-            )(read_container_file),
-        )
+        self.resource(
+            FILE_RESOURCE_URI_TEMPLATE,
+            name="container.file",
+            mime_type="text/plain",
+            description="Read a file from the container filesystem",
+        )(read_container_file)
 
         # Register read_image tool for reading images from container
         async def read_image(input: ReadImageInput, ctx: Context) -> list[mcp_types.ImageContent]:

@@ -1,0 +1,143 @@
+# Files expected to not be in any Bazel target.
+# Uses gitignore-style patterns (pathspec library).
+
+# Build system files
+BUILD.bazel
+MODULE.bazel
+*.bzl
+.bazelignore
+.bazelrc
+.bazelversion
+
+# Config files
+*.toml
+*.lock
+*.ini
+.editorconfig
+.gitattributes
+.gitignore
+.envrc
+.dockerignore
+.npmrc
+.prettierignore
+.markdownlint*
+.puppeteerrc*
+
+# Root-level CI and tool config files (yaml — not blanket *.yaml)
+.pre-commit-config.yaml
+.gitlab-ci.yml
+buildbuddy.yaml
+.ansible-lint.yaml
+.yamllint.yaml
+pnpm-workspace.yaml
+pnpm-lock.yaml
+
+# Documentation
+*.md
+LICENSE*
+
+# Web assets
+*.html
+*.css
+
+# Python version files
+.python-version
+
+# Shell scripts (many are standalone utilities)
+*.sh
+
+# Age-encrypted secrets (only in .claude_hooks/secrets/)
+.claude_hooks/secrets/*.age
+
+# Nginx configs
+*.conf
+
+# Non-Bazelized directories
+found/**
+ansible/**
+nix/**
+k8s_old/**
+
+# k8s cluster manifests (declarative YAML, never Bazelized; scripts/charts/terraform are Bazelized)
+cluster/k8s/**
+cluster/scripts/get-passwords
+cluster/docs/iam-policy-route53.json
+
+# Website (Hakyll, not Bazelized)
+website/**
+
+# Home automation YAML configs (Python source is Bazelized; BUILD/gitignore/sh/md covered by type patterns)
+homeassistant/**/*.yaml
+
+# Claude workspace metadata
+.claude/**
+
+# Static assets
+*.png
+
+# GitHub workflows
+.github/**
+
+# Markdown posts
+*.markdown
+
+# JavaScript / TypeScript
+eslint.config.js
+finance/worthy/worthy/graph.js
+
+# Text files (notes, todos, etc.)
+*.txt
+
+# SQL files
+*.sql
+
+# gnuplot files
+*.gnuplot
+
+# Nix files
+*.nix
+
+# Helm charts (files auto-discovered by helm_chart rule, but .helmignore
+# is not part of the chart content — whitelist it)
+*.helmignore
+
+# npm manifests (never Bazel targets)
+**/package.json
+
+# JSON config/example files
+agent_cli/example.mcp.json
+claude_web_env/diff-report.json
+devinfra/multitool/lockfile.json
+
+# Props docker compose (infra config, not Bazelized)
+props/compose.yaml
+
+# claude_web_env: re/ is mostly Bazelized reverse-engineered source; one orphaned Go file
+# and go module files are orphaned (BUILD.bazel/md/toml covered by type patterns)
+# claude_web_env/docs/** omitted — all files there are *.md, covered by the *.md pattern above
+claude_web_env/re/**/go.mod
+claude_web_env/re/**/go.sum
+claude_web_env/reference/**
+claude_web_env/rootfs/**
+
+# Compressed data files
+*.zst
+
+# Data/archive files
+*.edn
+# Tana paste export reference files
+tana/export/references/**
+
+# Git hooks and server-side hooks
+**/hooks/pre-receive*
+**/hooks/pre-commit
+
+# TODO/notes files
+*-TODO
+**/TODO
+**/pytest-todo
+
+# Extensionless scripts and misc non-code files
+*.service
+*.hcl
+**/README

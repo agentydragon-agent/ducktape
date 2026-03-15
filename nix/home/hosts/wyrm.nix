@@ -22,7 +22,10 @@ in
   # Wyrm-specific configuration (VM/desktop with full GUI)
   home.stateVersion = "24.05";
 
-  home.packages = [ tana ];
+  home.packages = [
+    tana
+    pkgs.gemini-cli
+  ];
   # TODO: Re-enable once k3s cluster is back up
   # services.google-drive.enable = true;
 
@@ -73,5 +76,8 @@ in
   # Allow Claude Code to read Bazel repository cache on HDD
   programs.claude-code.extraAllowedReadDirs = [ "/wyrmhdd/bazel" ];
   # Allow Claude Code to write to Bazel output base on SSD
-  programs.claude-code.additionalDirectories = [ "~/.cache/bazel" ];
+  programs.claude-code.additionalDirectories = [
+    "~/.cache/bazel"
+    "/wyrmhdd/bazel"
+  ];
 }

@@ -21,7 +21,7 @@ spec:
   chart:
     spec:
       chart: node-feature-discovery
-      version: "0.17.0"
+      version: "0.18.3"
       sourceRef:
         kind: HelmRepository
         name: nfd
@@ -31,3 +31,11 @@ spec:
       tolerations:
         - effect: NoSchedule
           operator: Exists
+      config:
+        sources:
+          pci:
+            deviceClassWhitelist:
+              - "02"
+              - "03"
+            deviceLabelFields:
+              - vendor

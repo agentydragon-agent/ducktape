@@ -9,3 +9,5 @@ occurrences:
       ducktape_llm_common/claude_hook.py:
         - [61, 61]
         - [64, 65]
+    match_file_restriction:
+      - ducktape_llm_common/claude_hook.py

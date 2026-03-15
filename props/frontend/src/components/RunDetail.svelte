@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { toast } from "svelte-sonner";
-  import SvelteMarkdown from "@humanspeak/svelte-markdown";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import BackButton from "./BackButton.svelte";
   import Breadcrumb from "./Breadcrumb.svelte";
@@ -34,21 +33,26 @@
   // Props
   interface Props {
     runId: string;
+    initialRun?: AgentRunDetail;
+    initialSnapshotDetail?: SnapshotDetailResponse;
+    initialFileContents?: Map<string, FileContentResponse>;
+    initialLLMRequests?: LLMRequestInfo[];
   }
-  let { runId }: Props = $props();
+  let { runId, initialRun, initialSnapshotDetail, initialFileContents, initialLLMRequests }: Props = $props();
 
   // State
-  let run: AgentRunDetail | null = $state(null);
-  let loading = $state(true);
-  let pollInterval: ReturnType<typeof setInterval> | null = null;
+  let run: AgentRunDetail | null = $state(initialRun ?? null);
+  let loading = $state(!initialRun);
 
   // Critique viewer state
-  let snapshotDetail: SnapshotDetailResponse | null = $state(null);
-  let fileContents = $state(new SvelteMap<string, FileContentResponse>());
+  let snapshotDetail: SnapshotDetailResponse | null = $state(initialSnapshotDetail ?? null);
+  let fileContents = $state(
+    initialFileContents ? new SvelteMap(initialFileContents) : new SvelteMap<string, FileContentResponse>()
+  );
   let loadingSnapshot = $state(false);
 
   // LLM requests state
-  let llmRequests: LLMRequestInfo[] = $state([]);
+  let llmRequests: LLMRequestInfo[] = $state(initialLLMRequests ?? []);
   let loadingLLMRequests = $state(false);
 
   // Tab state for logs/LLM view
@@ -102,23 +106,24 @@
     const edges = getAggregatedEdges(run);
     if (edges.length === 0) return null;
 
-    const tp_count = edges.filter((e) => e.target.kind === "tp").length;
-    const fp_count = edges.filter((e) => e.target.kind === "fp").length;
+    const tp_count = edges.filter((e) => e.target.kind === "tp" && e.target.credit > 0).length;
+    const fp_count = edges.filter((e) => e.target.kind === "fp" && e.target.credit > 0).length;
     const total_credit = edges.filter((e) => e.target.kind === "tp").reduce((sum, e) => sum + e.target.credit, 0);
 
-    // Recall denominator needs to come from example - we'll pass it separately
     return { tp_count, fp_count, total_credit };
   }
 
-  // Load run data
-  async function loadData() {
+  // Load run data. snapshotLoaded=true skips re-fetching snapshot+files during polling.
+  async function loadData(snapshotLoaded = false) {
     try {
       run = await fetchRun(runId);
 
-      // Load snapshot data for critic runs with reported issues
-      const reportedIssues = getReportedIssues(run);
-      if (getAgentType(run) === "critic" && reportedIssues.length > 0) {
-        await loadSnapshotData(run);
+      // Load snapshot data for critic runs with reported issues (only on initial load)
+      if (!snapshotLoaded) {
+        const reportedIssues = getReportedIssues(run);
+        if (getAgentType(run) === "critic" && reportedIssues.length > 0) {
+          await loadSnapshotData(run);
+        }
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load run";
@@ -128,13 +133,16 @@
     }
   }
 
+  let llmRequestsFetched = false;
+
   // Load LLM requests
   async function loadLLMRequests() {
-    if (loadingLLMRequests || llmRequests.length > 0) return;
+    if (loadingLLMRequests) return;
     loadingLLMRequests = true;
     try {
       const response = await fetchLLMRequests(runId);
       llmRequests = response.requests;
+      llmRequestsFetched = true;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Failed to load LLM requests";
       toast.error(message);
@@ -150,17 +158,14 @@
     const config = criticRun.type_config as CriticTypeConfig;
     let snapshotSlug: string;
 
-    // Extract snapshot slug from example
-    if (config.example.kind === "whole_snapshot") {
-      snapshotSlug = config.example.snapshot_slug;
-    } else {
-      snapshotSlug = config.example.snapshot_slug;
-    }
+    snapshotSlug = config.example.snapshot_slug;
 
     loadingSnapshot = true;
     try {
-      // Fetch snapshot detail to get ground truth
-      snapshotDetail = await fetchSnapshotDetail(snapshotSlug);
+      // Fetch snapshot detail filtered to this example's recall scope
+      const exampleKind = config.example.kind;
+      const filesHash = exampleKind === "file_set" ? config.example.files_hash : undefined;
+      snapshotDetail = await fetchSnapshotDetail(snapshotSlug, exampleKind, filesHash);
 
       // Collect all files mentioned in critique issues or ground truth
       const allFilePaths = new SvelteSet<string>();
@@ -211,34 +216,29 @@
   }
 
   onMount(() => {
+    // Skip fetching when initial data is provided (visual tests)
+    if (initialRun) return;
+
     loadData().then(() => {
       // Load LLM requests after run data is loaded (LLM tab is default)
       if (run) {
         loadLLMRequests();
       }
     });
-    // Poll while in progress
-    pollInterval = setInterval(() => {
-      if (run?.status === "in_progress") {
-        loadData();
-      }
-    }, 1000);
-  });
-
-  onDestroy(() => {
-    if (pollInterval) clearInterval(pollInterval);
   });
 </script>
 
-<div class="bg-white rounded-lg shadow">
+<div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30">
   <!-- Header -->
-  <div class="p-4 border-b">
+  <div class="p-4 border-b border-gray-200 dark:border-gray-700">
     <div class="flex items-center justify-between mb-3">
       <div class="flex items-center gap-4">
-        <BackButton class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50" />
+        <BackButton
+          class="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+        />
         <h2 class="text-lg font-semibold">Run Details</h2>
         {#if run}
-          <span class="font-mono text-sm text-gray-500"><RunIdLink id={run.agent_run_id} /></span>
+          <span class="font-mono text-sm text-gray-500 dark:text-gray-400"><RunIdLink id={run.agent_run_id} /></span>
         {/if}
       </div>
       {#if run}
@@ -252,35 +252,35 @@
 
   {#if loading}
     <div class="p-4">
-      <p class="text-gray-500">Loading...</p>
+      <p class="text-gray-500 dark:text-gray-400">Loading...</p>
     </div>
   {:else if run}
     <!-- Run info -->
-    <div class="p-4 border-b bg-gray-50 flex-shrink-0">
+    <div class="p-4 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-shrink-0">
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
         <div>
-          <span class="text-gray-500">Type:</span>
+          <span class="text-gray-500 dark:text-gray-400">Type:</span>
           <span class="ml-1 capitalize">{getAgentType(run)}</span>
         </div>
         <div>
-          <span class="text-gray-500">Definition:</span>
+          <span class="text-gray-500 dark:text-gray-400">Definition:</span>
           <span class="ml-1"><DefinitionIdLink id={run.image_digest} /></span>
         </div>
         <div>
-          <span class="text-gray-500">Model:</span>
+          <span class="text-gray-500 dark:text-gray-400">Model:</span>
           <span class="ml-1">{run.model}</span>
         </div>
         <div>
-          <span class="text-gray-500">LLM Calls:</span>
+          <span class="text-gray-500 dark:text-gray-400">LLM Calls:</span>
           <span class="ml-1">{run.llm_call_count}</span>
         </div>
         <div>
-          <span class="text-gray-500">Budget:</span>
+          <span class="text-gray-500 dark:text-gray-400">Budget:</span>
           <span class="ml-1">${run.budget_usd.toFixed(2)}</span>
         </div>
         {#if run.parent_agent_run_id}
           <div>
-            <span class="text-gray-500">Parent:</span>
+            <span class="text-gray-500 dark:text-gray-400">Parent:</span>
             <span class="ml-1"><RunIdLink id={run.parent_agent_run_id} /></span>
           </div>
         {/if}
@@ -288,63 +288,68 @@
     </div>
 
     <!-- Type-specific inputs -->
-    <div class="px-4 py-2 border-b bg-gray-50 flex-shrink-0 text-sm">
-      {#if getAgentType(run) === "critic"}}
+    <div
+      class="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-shrink-0 text-sm"
+    >
+      {#if getAgentType(run) === "critic"}
         {@const config = run.type_config as CriticTypeConfig}
         {@const resolvedFiles = getResolvedFiles(run)}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span>
-            <span class="text-gray-500">Example:</span>
+            <span class="text-gray-500 dark:text-gray-400">Example:</span>
             <ExampleLink example={config.example} />
           </span>
           {#if config.example.kind === "file_set" && resolvedFiles}
-            <span><span class="text-gray-500">Files:</span> {resolvedFiles.join(", ")}</span>
+            <span><span class="text-gray-500 dark:text-gray-400">Files:</span> {resolvedFiles.join(", ")}</span>
           {/if}
         </div>
       {:else if getAgentType(run) === "grader"}
         {@const config = run.type_config as GraderTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
-          <span class="text-gray-500">Snapshot:</span>
+          <span class="text-gray-500 dark:text-gray-400">Snapshot:</span>
           {config.snapshot_slug}
         </div>
       {:else if getAgentType(run) === "critic_dev_improve"}
         {@const config = run.type_config as CriticDevImproveTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span
-            ><span class="text-gray-500">Baselines:</span>
+            ><span class="text-gray-500 dark:text-gray-400">Baselines:</span>
             {#each config.baseline_image_digests as defId, i (defId)}
               {#if i > 0},
               {/if}<DefinitionIdLink id={defId} />
             {/each}
           </span>
-          <span><span class="text-gray-500">Examples:</span> {config.allowed_examples.length}</span>
+          <span><span class="text-gray-500 dark:text-gray-400">Examples:</span> {config.allowed_examples.length}</span>
           <span
-            ><span class="text-gray-500">Models:</span> improvement={config.improvement_model}, critic={config.critic_model}</span
+            ><span class="text-gray-500 dark:text-gray-400">Models:</span> improvement={config.improvement_model},
+            critic={config.critic_model}</span
           >
         </div>
       {:else if getAgentType(run) === "critic_dev_optimize"}
         {@const config = run.type_config as CriticDevOptimizeTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
-          <span><span class="text-gray-500">Target:</span> {config.target_metric}</span>
-          <span><span class="text-gray-500">Budget:</span> ${run.budget_usd}</span>
+          <span><span class="text-gray-500 dark:text-gray-400">Target:</span> {config.target_metric}</span>
+          <span><span class="text-gray-500 dark:text-gray-400">Budget:</span> ${run.budget_usd}</span>
           <span
-            ><span class="text-gray-500">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model}</span
+            ><span class="text-gray-500 dark:text-gray-400">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model}</span
           >
         </div>
       {:else}
-        <span class="text-gray-400 italic">No type-specific inputs</span>
+        <span class="text-gray-400 dark:text-gray-500 italic">No type-specific inputs</span>
       {/if}
     </div>
 
     <!-- Child runs (for critic runs: show linked grader runs) -->
     {#if run.child_runs && run.child_runs.length > 0}
-      <div class="px-4 py-2 border-b bg-gray-50 flex-shrink-0 text-sm">
-        <span class="text-gray-500">Child runs:</span>
+      <div
+        class="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 flex-shrink-0 text-sm"
+      >
+        <span class="text-gray-500 dark:text-gray-400">Child runs:</span>
         <span class="ml-2 flex flex-wrap gap-2">
           {#each run.child_runs as child (child.agent_run_id)}
             <span class="inline-flex items-center gap-1">
               <RunIdLink id={child.agent_run_id} />
-              <span class="text-xs text-gray-400">({child.agent_type})</span>
+              <span class="text-xs text-gray-400 dark:text-gray-500">({child.agent_type})</span>
             </span>
           {/each}
         </span>
@@ -355,30 +360,18 @@
     {#if getAgentType(run) === "critic"}
       {@const gs = computeGradingSummary(run)}
       {#if gs}
-        {@const recall_denominator = 0}
-        {@const recall = recall_denominator > 0 ? gs.total_credit / recall_denominator : null}
-        {@const recallColor =
-          recall == null
-            ? "text-gray-400"
-            : recall >= 0.7
-              ? "text-green-600"
-              : recall >= 0.4
-                ? "text-yellow-600"
-                : "text-red-600"}
-        <div class="px-4 py-2 border-b bg-blue-50 flex-shrink-0 text-sm">
+        <div
+          class="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-950 flex-shrink-0 text-sm"
+        >
           <div class="flex flex-wrap gap-x-6 gap-y-1">
             <span>
-              <span class="text-gray-500">Credit:</span>
-              <span class="ml-1 font-medium {recallColor}">
-                {gs.total_credit.toFixed(1)}{#if recall_denominator > 0}
-                  / {recall_denominator} expected{/if}
-              </span>
-              {#if recall != null}
-                <span class="text-gray-400 text-xs">({(recall * 100).toFixed(0)}%)</span>
-              {/if}
+              <span class="text-gray-500 dark:text-gray-400">Credit:</span>
+              <span class="ml-1 font-medium">{gs.total_credit.toFixed(1)}</span>
             </span>
-            <span class="text-green-600" title="True Positives matched">Matched: {gs.tp_count} TPs</span>
-            <span class="text-red-600" title="False Positives hit">{gs.fp_count} FPs</span>
+            <span class="text-green-600 dark:text-green-400" title="True Positives matched"
+              >Matched: {gs.tp_count} TPs</span
+            >
+            <span class="text-red-600 dark:text-red-400" title="False Positives hit">{gs.fp_count} FPs</span>
           </div>
         </div>
       {/if}
@@ -390,7 +383,7 @@
       {#if edges.length > 0}
         {@const visibleEdges = edges.filter((e) => e.target.credit > 0)}
         {@const gs = computeGradingSummary(run)}
-        <div class="px-4 py-2 border-b flex-shrink-0">
+        <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <GradingEdges
             {edges}
             missedOccurrences={[]}
@@ -406,7 +399,7 @@
       {@const gradingEdges = getGradingEdges(run)}
       {#if gradingEdges.length > 0}
         {@const visibleEdges = gradingEdges.filter((e) => e.target.credit > 0)}
-        <div class="px-4 py-2 border-b flex-shrink-0">
+        <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <GradingEdges
             edges={gradingEdges}
             missedOccurrences={[]}
@@ -422,14 +415,16 @@
     {@const reportedIssues = getReportedIssues(run)}
     {#if getAgentType(run) === "critic" && reportedIssues.length > 0 && snapshotDetail}
       {@const edges = getAggregatedEdges(run)}
-      <div class="border-b">
-        <div class="px-4 py-3 bg-gray-100 border-b">
+      <div class="border-b border-gray-200 dark:border-gray-700">
+        <div class="px-4 py-3 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-700">
           <h3 class="text-md font-medium">Critique vs Ground Truth</h3>
-          <p class="text-sm text-gray-600 mt-1">Showing files with critique issues or ground truth annotations</p>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Showing files with critique issues or ground truth annotations
+          </p>
         </div>
         {#if loadingSnapshot}
           <div class="p-4">
-            <p class="text-gray-500 text-sm">Loading snapshot data...</p>
+            <p class="text-gray-500 dark:text-gray-400 text-sm">Loading snapshot data...</p>
           </div>
         {:else}
           <div class="p-4 space-y-6">
@@ -441,6 +436,7 @@
                 critiqueIssues={reportedIssues}
                 gradingEdges={edges}
                 snapshotSlug={getSnapshotSlug(run)}
+                defaultCollapsed={true}
               />
             {/each}
           </div>
@@ -449,14 +445,16 @@
     {/if}
 
     <!-- Logs and LLM Requests Section -->
-    <div class="border-t">
-      <div class="px-4 py-3 bg-gray-100 border-b flex items-center gap-4">
+    <div class="border-t border-gray-200 dark:border-gray-700">
+      <div
+        class="px-4 py-3 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-700 flex items-center gap-4"
+      >
         <h3 class="text-md font-medium">Logs & LLM Requests</h3>
         <div class="flex gap-1">
           <button
             class="px-3 py-1 text-sm rounded {activeLogTab === 'llm'
-              ? 'bg-blue-100 text-blue-700'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'}"
             onclick={() => {
               activeLogTab = "llm";
               loadLLMRequests();
@@ -466,16 +464,16 @@
           </button>
           <button
             class="px-3 py-1 text-sm rounded {activeLogTab === 'stdout'
-              ? 'bg-blue-100 text-blue-700'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'}"
             onclick={() => (activeLogTab = "stdout")}
           >
             stdout
           </button>
           <button
             class="px-3 py-1 text-sm rounded {activeLogTab === 'stderr'
-              ? 'bg-blue-100 text-blue-700'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}"
+              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500'}"
             onclick={() => (activeLogTab = "stderr")}
           >
             stderr
@@ -489,7 +487,7 @@
             <pre
               class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stdout}</pre>
           {:else}
-            <p class="text-gray-500 italic">No stdout captured</p>
+            <p class="text-gray-500 dark:text-gray-400 italic">No stdout captured</p>
           {/if}
         </div>
       {:else if activeLogTab === "stderr"}
@@ -498,37 +496,41 @@
             <pre
               class="bg-gray-900 text-gray-100 p-4 rounded text-sm overflow-auto max-h-96 whitespace-pre-wrap">{run.container_stderr}</pre>
           {:else}
-            <p class="text-gray-500 italic">No stderr captured</p>
+            <p class="text-gray-500 dark:text-gray-400 italic">No stderr captured</p>
           {/if}
         </div>
       {:else if activeLogTab === "llm"}
         <div class="p-4">
           {#if run.llm_costs}
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4 pb-4 border-b">
+            <div
+              class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm mb-4 pb-4 border-b border-gray-200 dark:border-gray-700"
+            >
               <div>
-                <span class="text-gray-500">Requests:</span>
+                <span class="text-gray-500 dark:text-gray-400">Requests:</span>
                 <span class="ml-1 font-medium">{run.llm_costs.totals.requests.toLocaleString()}</span>
               </div>
               <div>
-                <span class="text-gray-500">Input:</span>
+                <span class="text-gray-500 dark:text-gray-400">Input:</span>
                 <span class="ml-1 font-medium">{run.llm_costs.totals.input_tokens.toLocaleString()}</span>
               </div>
               <div>
-                <span class="text-gray-500">Cached:</span>
+                <span class="text-gray-500 dark:text-gray-400">Cached:</span>
                 <span class="ml-1 font-medium">{run.llm_costs.totals.cached_tokens.toLocaleString()}</span>
               </div>
               <div>
-                <span class="text-gray-500">Output:</span>
+                <span class="text-gray-500 dark:text-gray-400">Output:</span>
                 <span class="ml-1 font-medium">{run.llm_costs.totals.output_tokens.toLocaleString()}</span>
               </div>
               <div>
-                <span class="text-gray-500">Cost:</span>
-                <span class="ml-1 font-medium text-green-600">${run.llm_costs.totals.cost_usd.toFixed(4)}</span>
+                <span class="text-gray-500 dark:text-gray-400">Cost:</span>
+                <span class="ml-1 font-medium text-green-600 dark:text-green-400"
+                  >${run.llm_costs.totals.cost_usd.toFixed(4)}</span
+                >
               </div>
             </div>
           {/if}
           {#if loadingLLMRequests}
-            <p class="text-gray-500">Loading LLM requests...</p>
+            <p class="text-gray-500 dark:text-gray-400">Loading LLM requests...</p>
           {:else}
             <LLMRequestViewer requests={llmRequests} />
           {/if}
@@ -537,7 +539,7 @@
     </div>
   {:else}
     <div class="p-4">
-      <p class="text-red-500">Failed to load run</p>
+      <p class="text-red-500 dark:text-red-400">Failed to load run</p>
     </div>
   {/if}
 </div>

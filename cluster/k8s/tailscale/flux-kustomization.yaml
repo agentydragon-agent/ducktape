@@ -1,0 +1,18 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tailscale
+  namespace: flux-system
+spec:
+  suspend: true # Tailscale DaemonSet conflicts with Cilium Gateway (hostNetwork routing)
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: "./cluster/k8s/tailscale"
+  prune: true
+  wait: true
+  dependsOn:
+    - name: tailscale-namespace
+    - name: tailscale-authkey-bootstrap

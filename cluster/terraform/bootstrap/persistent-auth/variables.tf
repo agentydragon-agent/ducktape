@@ -3,9 +3,3 @@ variable "proxmox_api_host" {
   type        = string
   default     = "10.2.0.2"
 }
-
-variable "proxmox_ssh_host" {
-  description = "Proxmox SSH hostname (Tailscale name, NOT the FQDN which routes to VPS)"
-  type        = string
-  default     = "atlas"
-}

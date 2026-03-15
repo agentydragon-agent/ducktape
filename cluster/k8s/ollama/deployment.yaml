@@ -19,15 +19,16 @@ spec:
       labels:
         app: ollama
     spec:
+      runtimeClassName: nvidia
       nodeSelector:
-        nvidia.com/gpu: "true"
+        feature.node.kubernetes.io/pci-10de.present: "true"
       tolerations:
         - key: nvidia.com/gpu
           operator: Exists
           effect: PreferNoSchedule
       containers:
         - name: ollama
-          image: ollama/ollama:latest
+          image: ollama/ollama:0.18.0
           ports:
             - name: ollama
               containerPort: 11434
@@ -43,10 +44,12 @@ spec:
               value: q8_0
             - name: OLLAMA_FLASH_ATTENTION
               value: "1"
+            - name: OLLAMA_NUM_CTX
+              value: "131072"
           resources:
             requests:
               nvidia.com/gpu: 2
-              memory: 16Gi
+              memory: 24Gi
               cpu: "2"
             limits:
               nvidia.com/gpu: 2
@@ -66,40 +69,7 @@ spec:
               port: ollama
             initialDelaySeconds: 10
             periodSeconds: 10
-        - name: auth-proxy
-          image: openresty/openresty:alpine
-          ports:
-            - name: http
-              containerPort: 8080
-              protocol: TCP
-          volumeMounts:
-            - name: auth-config
-              mountPath: /usr/local/openresty/nginx/conf/nginx.conf
-              subPath: nginx.conf
-              readOnly: true
-            - name: api-key
-              mountPath: /etc/ollama-secrets
-              readOnly: true
-          resources:
-            requests:
-              cpu: 10m
-              memory: 16Mi
-            limits:
-              cpu: 100m
-              memory: 64Mi
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
       volumes:
         - name: models
           persistentVolumeClaim:
             claimName: llm-models
-        - name: auth-config
-          configMap:
-            name: ollama-auth-proxy-config
-        - name: api-key
-          secret:
-            secretName: ollama-api-key

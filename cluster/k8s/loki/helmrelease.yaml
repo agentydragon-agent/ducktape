@@ -28,7 +28,7 @@ spec:
       # Persistence configuration - use Proxmox CSI
       persistence:
         enabled: true
-        storageClassName: proxmox-csi-retain
+        storageClassName: longhorn
         accessModes:
           - ReadWriteOnce
         size: 20Gi

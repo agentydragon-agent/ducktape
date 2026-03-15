@@ -19,9 +19,11 @@ from testcontainers.postgres import PostgresContainer
 from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.setup import ensure_database_exists
-from props.db.sync.sync import sync_all
-from test_util.image_loader import load_image
-from third_party.containers.rlocations import POSTGRES_16_TARBALL, RYUK_TARBALL
+from props.db.sync.model_metadata import sync_model_metadata_with_session
+from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
+from third_party.containers.rlocations import POSTGRES_18_TARBALL, RYUK_TARBALL
+from util.bazel.runfiles import get_required_path
+from util.oci import load_image
 
 tracer = trace.get_tracer(__name__)
 
@@ -54,11 +56,11 @@ def postgres_container() -> Generator[PostgresContainer]:
     """
     with tracer.start_as_current_span("postgres_container fixture"):
         load_image(RYUK_TARBALL)
-        load_image(POSTGRES_16_TARBALL)
+        load_image(POSTGRES_18_TARBALL)
 
         with tracer.start_as_current_span("PostgresContainer startup"):
             container = PostgresContainer(
-                image="postgres:16", username="postgres", password="postgres", dbname="postgres"
+                image="postgres:18", username="postgres", password="postgres", dbname="postgres"
             )
             container.start()
 
@@ -101,6 +103,17 @@ def _terminate_and_drop_db(postgres_engine, db_name: str) -> None:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
 
 
+def _setup_test_database(postgres_base_config: DatabaseConfig, db_name: str) -> tuple[Database, Engine]:
+    """Drop (if exists), create, and migrate a test database. Returns (database, postgres_engine)."""
+    postgres_config = postgres_base_config.with_database("postgres")
+    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
+    _terminate_and_drop_db(postgres_engine, db_name)
+    ensure_database_exists(postgres_base_config, db_name)
+    database = Database(postgres_base_config.with_database(db_name))
+    database.recreate()
+    return database, postgres_engine
+
+
 def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
     """Sanitize pytest node ID for use in PostgreSQL database name."""
     # Keep only alphanumeric and underscore; replace other chars with underscore
@@ -131,15 +144,7 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
     sanitized_id = _sanitize_test_id(test_node_id)
     db_name = f"props_test_{sanitized_id}"
 
-    ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
-
-    test_config = postgres_base_config.with_database(db_name)
-
-    postgres_config = postgres_base_config.with_database("postgres")
-    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
-
-    database = Database(test_config)
-    database.recreate()
+    database, postgres_engine = _setup_test_database(postgres_base_config, db_name)
 
     try:
         yield database
@@ -147,6 +152,7 @@ def db(request: pytest.FixtureRequest, postgres_base_config: DatabaseConfig) -> 
         database.dispose()
         keep_db = request.config.getoption("--keep-db") or os.environ.get("KEEP_TEST_DB") == "1"
         if keep_db:
+            test_config = postgres_base_config.with_database(db_name)
             print(f"\n\n=== KEEPING TEST DATABASE: {db_name} ===")
             print(f"Database config: {test_config}")
             print(f"Connect with: psql {test_config.url}")
@@ -162,10 +168,19 @@ def engine(db: Database) -> Engine:
 
 
 def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Sync test fixtures to the current database."""
-    monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(TEST_FIXTURES_PATH))
+    """Sync test fixtures to the current database using bundle workflow."""
+    fixture_slugs = ["test-fixtures/test1", "test-fixtures/train1", "test-fixtures/valid1", "test-fixtures/valid2"]
+
     with db.session() as session:
-        sync_all(session, use_staged=True)
+        sync_model_metadata_with_session(session)
+        for slug in fixture_slugs:
+            base_path = f"props/testing/fixtures/testdata/specimens/{slug}"
+            code_tar = get_required_path(f"_main/{base_path}/specimen_code.tar")
+            data_yaml = get_required_path(f"_main/{base_path}/specimen_data.yaml")
+            bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
+            sync_specimen(session, bundle)
+        session.commit()
+        refresh_examples_matview(session)
 
 
 @pytest.fixture(scope="session")
@@ -186,14 +201,8 @@ async def _session_synced_db(
     Uses the session-scoped postgres container.
     """
     db_name = "props_test_session_shared"
-    ensure_database_exists(postgres_base_config, db_name, drop_existing=True)
-    test_config = postgres_base_config.with_database(db_name)
 
-    postgres_config = postgres_base_config.with_database("postgres")
-    postgres_engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
-
-    database = Database(test_config)
-    database.recreate()
+    database, postgres_engine = _setup_test_database(postgres_base_config, db_name)
     _sync_test_fixtures(database, session_monkeypatch)
 
     try:

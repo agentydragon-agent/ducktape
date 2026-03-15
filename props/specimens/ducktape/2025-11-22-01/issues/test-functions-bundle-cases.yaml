@@ -34,3 +34,5 @@ occurrences:
           - 351
     critic_scopes_expected_to_recall:
       - - adgn/tests/agent/persist/test_integration.py
+    match_file_restriction:
+      - adgn/tests/agent/persist/test_integration.py

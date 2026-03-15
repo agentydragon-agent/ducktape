@@ -1,0 +1,10 @@
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageRepository
+metadata:
+  name: tana-mcp
+  namespace: flux-system
+spec:
+  image: registry.allegedly.works/ducktape/tana-desktop
+  interval: 5m
+  secretRef:
+    name: harbor-pull-robot

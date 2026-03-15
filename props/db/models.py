@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, ClassVar, Literal, TypeVar
+from typing import Annotated, Any, ClassVar, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
@@ -45,12 +45,8 @@ from props.core.agent_types import (
 )
 from props.core.ids import SnapshotSlug, _SnapshotSlugBase
 from props.core.models.examples import ExampleKind
-from props.core.models.snapshot import BundleFilter, Source
 from props.core.splits import Split
 from props.db.snapshots import LocationAnchor
-
-T = TypeVar("T", bound=BaseModel)
-
 
 # Reusable SQLAlchemy Enum type for ExampleKind
 # Use this instead of mapped_column(String) for proper Python enum conversion
@@ -98,7 +94,7 @@ class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
 
     Note: We use Text as the impl type because PostgreSQL composite types
     don't have a direct SQLAlchemy type. The actual type coercion is handled
-    by register_composite() in session.py.
+    by register_composite() in database.py.
     """
 
     # Use Text as a placeholder - the actual type is stats_with_ci in PostgreSQL
@@ -138,7 +134,7 @@ class AgentRunStatus(StrEnum):
     TIMED_OUT = "timed_out"
 
 
-class PydanticColumn(TypeDecorator[T]):
+class PydanticColumn[T: BaseModel](TypeDecorator[T]):
     """SQLAlchemy column type that automatically serializes/deserializes any Pydantic model.
 
     Usage:
@@ -223,10 +219,7 @@ class PathColumn(TypeDecorator[Path]):
         return Path(value)
 
 
-E = TypeVar("E", bound=StrEnum)
-
-
-class StrEnumColumn(TypeDecorator[E]):
+class StrEnumColumn[E: StrEnum](TypeDecorator[E]):
     """Generic SQLAlchemy column type for StrEnum types.
 
     Uses PostgreSQL ENUM type with values derived from the Python enum.
@@ -285,8 +278,6 @@ class Snapshot(Base):
     slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(nullable=False)
     content: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, comment="tar archive of source code")
-    source: Mapped[Source | None] = mapped_column(PydanticColumn(Source), nullable=True, comment="provenance")
-    bundle: Mapped[BundleFilter | None] = mapped_column(PydanticColumn(BundleFilter), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -339,6 +330,9 @@ class TruePositive(Base):
     """
 
     __tablename__ = "true_positives"
+    __table_args__ = (
+        CheckConstraint("tp_id ~ '^[a-z0-9_-]+$' AND length(tp_id) >= 5 AND length(tp_id) <= 40", name="tp_id_format"),
+    )
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
@@ -382,7 +376,10 @@ class FalsePositive(Base):
     """
 
     __tablename__ = "false_positives"
-    __table_args__ = ({"comment": "Patterns the labeler considers acceptable - teaches agents what NOT to flag."},)
+    __table_args__ = (
+        CheckConstraint("fp_id ~ '^[a-z0-9_-]+$' AND length(fp_id) >= 5 AND length(fp_id) <= 40", name="fp_id_format"),
+        {"comment": "Patterns the labeler considers acceptable - teaches agents what NOT to flag."},
+    )
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
@@ -565,6 +562,8 @@ class OccurrenceRangeORM(Base):
             "snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id", name="uq_occurrence_ranges"
         ),
         CheckConstraint("(tp_id IS NULL) <> (fp_id IS NULL)", name="occurrence_range_exclusive_arc"),
+        CheckConstraint("start_line >= 1", name="occurrence_range_start_line_positive"),
+        CheckConstraint("end_line >= start_line", name="occurrence_range_end_gte_start"),
     )
 
     # Relationships - use foreign() to specify which columns to join on
@@ -647,7 +646,7 @@ class FileSet(Base):
 
     # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship()
-    members: Mapped[list[FileSetMember]] = relationship(back_populates="file_set", cascade="all, delete-orphan")
+    members: Mapped[list[FileSetMember]] = relationship(back_populates="file_set", cascade="all")
 
 
 class FileSetMember(Base):
@@ -732,6 +731,11 @@ class ReportedIssue(Base):
     """
 
     __tablename__ = "reported_issues"
+    __table_args__ = (
+        CheckConstraint(
+            "issue_id ~ '^[a-z0-9_-]+$' AND length(issue_id) >= 5 AND length(issue_id) <= 40", name="issue_id_format"
+        ),
+    )
 
     agent_run_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -790,6 +794,7 @@ class ReportedIssueOccurrence(Base):
             ["reported_issues.agent_run_id", "reported_issues.issue_id"],
             ondelete="CASCADE",
         ),
+        CheckConstraint("jsonb_array_length(locations) > 0", name="locations_not_empty"),
     )
 
     # Relationships
@@ -857,7 +862,15 @@ class GradingEdge(Base):
     """
 
     __tablename__ = "grading_edges"
-    __table_args__ = ({"comment": "Bipartite graph edges from critique issues to GT occurrences."},)
+    __table_args__ = (
+        CheckConstraint(
+            "(tp_id IS NOT NULL AND tp_occurrence_id IS NOT NULL AND fp_id IS NULL AND fp_occurrence_id IS NULL) "
+            "OR (fp_id IS NOT NULL AND fp_occurrence_id IS NOT NULL AND tp_id IS NULL AND tp_occurrence_id IS NULL)",
+            name="exactly_one_target_edge",
+        ),
+        CheckConstraint("credit >= 0.0 AND credit <= 1.0", name="credit_range_edge"),
+        {"comment": "Bipartite graph edges from critique issues to GT occurrences."},
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
@@ -1384,6 +1397,9 @@ class AgentDefinition(Base):
     )
     base_digest: Mapped[str | None] = mapped_column(
         String, nullable=True, comment="Parent image digest if this is a layered image"
+    )
+    display_name: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="Human-readable name from OCI label org.opencontainers.image.title"
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

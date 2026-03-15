@@ -15,21 +15,6 @@ spec:
   # Use in-cluster service account
   serviceAccountName: tf-runner
 
-  # Configure runner to trust cluster CA
-  runnerPodTemplate:
-    spec:
-      volumes:
-        - name: cluster-ca
-          configMap:
-            name: cluster-internal-ca-bundle
-      volumeMounts:
-        - name: cluster-ca
-          mountPath: /etc/ssl/certs/cluster-ca
-          readOnly: true
-      env:
-        - name: VAULT_CACERT
-          value: /etc/ssl/certs/cluster-ca/ca-certificates.crt
-
   # Store Terraform state in Kubernetes secret
   backendConfig:
     customConfiguration: |
@@ -41,7 +26,7 @@ spec:
   # Variables for Terraform
   vars:
     - name: vault_address
-      value: "https://instance.vault.svc.cluster.local:8200"
+      value: "http://instance.vault.svc.cluster.local:8200"
   varsFrom:
     - kind: Secret
       name: vault-token

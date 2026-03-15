@@ -9,8 +9,7 @@ rationale: |
   Verified: `MCPConfig().model_dump()` produces `{'mcpServers': {}}`, but
   `MCPConfig(servers={}).model_dump()` produces `{'mcpServers': {}, 'servers': {}}`.
 
-  **Fix:** Use `MCPConfig()` (since default is empty dict) or `MCPConfig(mcpServers={})`
-  for explicitness. Removes extra field and matches the actual schema.
+  **Fix:** Use `MCPConfig()` (since default is already empty dict).
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
@@ -19,3 +18,5 @@ occurrences:
         - [189, 189]
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/server/app.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/app.py

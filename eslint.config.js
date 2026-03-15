@@ -19,14 +19,9 @@ export default [
       "**/dist/**",
       "**/build/**",
       "**/.svelte-kit/**",
-      "**/storybook-static/**",
       "**/playwright-report/**",
-      "**/test-results/**",
-      "**/.storybook/**",
-      "**/generated/**",
       // Build scripts (Node.js tooling, not app code)
       "**/*.config.mjs",
-      "**/generate-schema.mjs",
     ],
   },
 
@@ -95,7 +90,7 @@ export default [
 
   // Agent server web (Svelte+Vite) - with import plugin
   {
-    files: ["agent_server/src/agent_server/web/**/*.ts"],
+    files: ["x/agent_server/web/src/**/*.ts"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
@@ -141,9 +136,12 @@ export default [
   },
 
   // Agent server web (Svelte files)
-  ...sveltePlugin.configs["flat/recommended"],
+  ...sveltePlugin.configs["flat/recommended"].map((config) => ({
+    ...config,
+    files: ["x/agent_server/web/src/**/*.svelte"],
+  })),
   {
-    files: ["agent_server/src/agent_server/web/**/*.svelte"],
+    files: ["x/agent_server/web/src/**/*.svelte"],
     languageOptions: {
       parser: svelteParser,
       parserOptions: {
@@ -190,12 +188,7 @@ export default [
 
   // RSPCache admin UI (React)
   {
-    files: ["experimental/rspcache/admin_ui/**/*.{ts,tsx}"],
-    ignores: [
-      "experimental/rspcache/admin_ui/node_modules/**",
-      "experimental/rspcache/admin_ui/dist/**",
-      "experimental/rspcache/admin_ui/src/generated/**", // Generated types
-    ],
+    files: ["x/rspcache/admin_ui/**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsparser,
       parserOptions: {

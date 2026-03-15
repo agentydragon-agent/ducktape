@@ -1,20 +1,17 @@
 # Editor and OS
-*.swp
+*.sw?
 .DS_Store
+.idea
+.vscode
 
-# Build tools and dependencies
+# Build system
 /bazel-*
-MODULE.bazel.lock
 **/node_modules/
 **/.aspect/
+# Cargo/rust-analyzer target dirs (Bazel is the build system, not cargo)
+**/target/
 
-# Packaging artifacts
-**/*.egg-info
-
-# Temporary Helm chart downloads
-**/tmpcharts-*
-
-# Python caches and virtualenvs
+# Python
 **/__pycache__/
 **/*.pyc
 **/*.pyo
@@ -22,6 +19,7 @@ MODULE.bazel.lock
 **/.Python
 **/*.so
 **/*.egg
+**/*.egg-info
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
@@ -31,6 +29,8 @@ MODULE.bazel.lock
 **/.coverage
 **/.coverage.*
 **/htmlcov/
+**/dist/
+uv.lock
 
 # Development environments
 **/.devenv*
@@ -48,12 +48,8 @@ ansible/collections/
 
 # Kubernetes and Helm
 **/Chart.lock
-**/tmpcharts-*
-**/.helm-cache/
-**/.helm-config/
 # Helm subchart dependencies (downloaded by helm dep update)
 cluster/charts/*/charts/
-k8s_old/helm/*/charts/
 
 # Terraform
 **/.terraform/
@@ -61,11 +57,10 @@ k8s_old/helm/*/charts/
 **/.terraform.tfstate.lock.info
 **/terraform.tfstate*
 *.tfvars
-!*.tfvars.example
 !example.tfvars
 
 # NixOS build artifacts
-terraform/nixos-dev-env/nixos-cloud-image
+**/nixos-cloud-image
 nix/**/result
 
 # Web and build artifacts
@@ -74,27 +69,54 @@ nix/**/result
 
 # Project-specific
 **/.claude/settings.local.json
-**/.claude/session-start.log
 worktrees
+cluster/.git
+cluster/.claude/
 
 # Claude Code sandbox phantom dotfiles
 # Bug: https://github.com/anthropics/claude-code/issues/17258
 .bashrc
+!claude_web_env/rootfs/root/.bashrc
 .bash_profile
 .gitconfig
+!claude_web_env/rootfs/root/.gitconfig
 .gitmodules
+.mcp.json
 .profile
+!claude_web_env/rootfs/root/.profile
 .ripgreprc
 .zprofile
 .zshrc
-.mcp.json
-.idea
-.vscode
+!claude_web_env/rootfs/root/.zshrc
 .claude/agents
-cluster/.git
-cluster/.claude/
 
-# Python build artifacts
-**/dist/
-uv.lock
-.cache
+**/config
+!**/nix/home/config
+!**/nix/home/config/nvim/lua/config
+!cluster/k8s/**/config
+!props/specimens/**/claude_linter_v2/config
+!x/claude_linter_v2/config
+!**/claude_hooks/config
+!**/dotfiles/config
+!claude_web_env/re/environment_manager/*/src/internal/config
+
+**/refs
+**/objects
+**/HEAD
+
+**/hooks
+!/props/specimens/hooks
+!/props/specimens/**/gitea_pr_gate/hooks
+!/props/specimens/**/claude_linter_v2/hooks
+!x/claude_linter_v2/hooks
+!x/gitea/pr_gate/hooks
+!/devinfra/claude/claude_api/hooks
+
+**/.claude/settings.json
+**/.claude/skills
+!/.claude/settings.json
+!/.claude/skills
+!/claude_web_env/rootfs/home/claude/.claude/settings.json
+!/claude_web_env/rootfs/home/claude/.claude/skills
+!/claude_web_env/rootfs/root/.claude/settings.json
+!/claude_web_env/rootfs/root/.claude/skills

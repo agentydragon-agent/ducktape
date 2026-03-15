@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-from tana.domain.constants import MEDIA_KEY_ID, MIN_TUPLE_CHILDREN
+from tana.domain.constants import MEDIA_KEY_ID, MIME_TYPE_KEY_ID, MIN_TUPLE_CHILDREN
 from tana.domain.nodes import BaseNode, TupleNode
 from tana.domain.types import NodeId
 
@@ -114,6 +114,21 @@ def get_image_url(node: BaseNode, store: TanaGraph) -> str | None:
         return None
 
     val_node = get_tuple_value(metanode, MEDIA_KEY_ID, store)
+    if isinstance(val_node, BaseNode):
+        return val_node.name
+    return None
+
+
+def get_mime_type(node: BaseNode, store: TanaGraph) -> str | None:
+    """Extract MIME type from a node's metadata (e.g. "image/png")."""
+    if not node.props.meta_node_id:
+        return None
+
+    metanode = store.get(node.props.meta_node_id)
+    if not metanode:
+        return None
+
+    val_node = get_tuple_value(metanode, MIME_TYPE_KEY_ID, store)
     if isinstance(val_node, BaseNode):
         return val_node.name
     return None

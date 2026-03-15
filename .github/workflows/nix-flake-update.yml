@@ -1,0 +1,52 @@
+# Manual-only: update non-release Nix flake inputs (nixpkgs, home-manager, etc.).
+# CI-released inputs (kubespand-bin, ducktape-wheel, etc.) are updated
+# automatically by the release.yml update-downstream job.
+name: Update Nix flake inputs
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    name: Update flake inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v30
+
+      - name: Update inputs and push
+        run: |
+          set -x
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="${{ github.ref_name }}"
+
+          nix flake update --flake ./nix
+
+          git add nix/flake.lock
+
+          if git diff --cached --quiet; then
+            echo "No flake input changes"
+            exit 0
+          fi
+
+          git commit -m "chore: update nix flake inputs [skip ci]"
+
+          if ! git pull --rebase origin "$BRANCH"; then
+            echo "::error::Rebase failed"
+            git status
+            exit 1
+          fi
+
+          git push origin "HEAD:${BRANCH}"

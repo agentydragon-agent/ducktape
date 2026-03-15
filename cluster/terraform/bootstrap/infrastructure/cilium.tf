@@ -10,6 +10,11 @@
 # Gateway API CRDs must be installed before Cilium so that Cilium can register
 # as a GatewayClass provider. CRDs are not bundled in the Cilium Helm chart.
 # See: https://github.com/cilium/cilium/issues/39843
+#
+# TODO: Consider replacing null_resource with alekc/kubectl provider
+# (kubectl_manifest + wait_for condition). Currently using raw kubectl because
+# kubernetes_manifest requires API server during plan (breaks bootstrap-from-nothing)
+# and yamldecode can't reliably split multi-document YAML.
 resource "null_resource" "gateway_api_crds" {
   depends_on = [
     null_resource.wait_for_k8s_api,
@@ -20,7 +25,21 @@ resource "null_resource" "gateway_api_crds" {
     environment = {
       KUBECONFIG = local_file.kubeconfig.filename
     }
-    command = "kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.3.0/standard-install.yaml"
+    # Experimental channel CRDs (superset of standard: adds TLSRoute, etc.).
+    # TLSRoute needed for Headscale passthrough (Tailscale noise protocol).
+    # Server-side apply required: HTTPRoute CRD exceeds 256KB annotation limit.
+    command = <<-EOT
+      set -e
+      kubectl apply --server-side --force-conflicts \
+        -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.4.1/experimental-install.yaml
+      kubectl wait --for=condition=Established \
+        crd/gatewayclasses.gateway.networking.k8s.io \
+        crd/gateways.gateway.networking.k8s.io \
+        crd/httproutes.gateway.networking.k8s.io \
+        crd/referencegrants.gateway.networking.k8s.io \
+        crd/tlsroutes.gateway.networking.k8s.io \
+        --timeout=60s
+    EOT
   }
 }
 
@@ -38,7 +57,7 @@ resource "null_resource" "cilium_bootstrap" {
       set -e
       helm repo add cilium https://helm.cilium.io/ && helm repo update cilium
       helm upgrade --install cilium cilium/cilium \
-        --version 1.16.5 \
+        --version 1.18.7 \
         --namespace kube-system \
         --create-namespace \
         -f ${path.module}/cilium-values.yaml \

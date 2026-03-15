@@ -1,0 +1,119 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scanner
+  namespace: scanner
+  labels:
+    app: scanner
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scanner
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: scanner
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: init-dirs
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - mkdir -p /data/scans /data/.filebrowser && chown -R 1000:1000 /data/scans /data/.filebrowser
+          volumeMounts:
+            - name: data
+              mountPath: /data
+        - name: configure-auth
+          image: filebrowser/filebrowser:latest
+          command:
+            - sh
+            - -c
+            - |
+              filebrowser config init --database=/data/.filebrowser/filebrowser.db 2>/dev/null || true
+              filebrowser config set \
+                --auth.method=proxy \
+                --auth.header=X-authentik-username \
+                --database=/data/.filebrowser/filebrowser.db
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      containers:
+        - name: samba
+          image: ghcr.io/servercontainers/samba:latest
+          ports:
+            - containerPort: 445
+              hostPort: 445
+              protocol: TCP
+              name: smb
+          env:
+            - name: ACCOUNT_Howleroi
+              valueFrom:
+                secretKeyRef:
+                  name: samba-credentials
+                  key: password
+            - name: UID_Howleroi
+              value: "1000"
+            - name: SAMBA_VOLUME_CONFIG_scans
+              value: "[scans]; path=/data/scans; writable=yes; guest ok=no; valid users=Howleroi; create mask=0644; directory mask=0755"
+            - name: SAMBA_GLOBAL_STANZA
+              value: "server min protocol = SMB2; log level = 1"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+        - name: filebrowser
+          image: filebrowser/filebrowser:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          args:
+            - --config
+            - /etc/filebrowser/.filebrowser.json
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: filebrowser-config
+              mountPath: /etc/filebrowser/.filebrowser.json
+              subPath: .filebrowser.json
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: scanner-data
+        - name: filebrowser-config
+          configMap:
+            name: filebrowser-config

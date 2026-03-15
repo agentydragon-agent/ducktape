@@ -1,7 +1,7 @@
 """Editor agent host package."""
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 py_library(
     name = "cli",
@@ -13,10 +13,10 @@ py_library(
         ":agent_runner",
         ":runner",
         ":submit_server",
-        "//bazel_util:runfiles",
-        "//cli_util:decorators",
-        "//cli_util:logging",
         "//openai_utils:client_factory",
+        "//util:logging",
+        "//util:typer",
+        "//util/bazel:runfiles",
         "@pypi//aiodocker",
         "@pypi//typer",
     ],
@@ -30,11 +30,12 @@ py_binary(
     deps = [":cli"],
 )
 
-docker_py_test(
+py_test(
     name = "test_runner_session",
     srcs = ["test_runner_session.py"],
     data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":runner",
@@ -45,11 +46,12 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_editor_e2e_steps",
     srcs = ["test_editor_e2e_steps.py"],
     data = ["//editor_agent/runtime:load"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":agent_runner",
         ":conftest",
@@ -71,6 +73,7 @@ py_test(
     name = "test_submit_server",
     srcs = ["test_submit_server.py"],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":submit_server",
@@ -115,8 +118,8 @@ py_library(
         "//mcp_infra/compositor",
         "//mcp_infra/compositor:resources_server",
         "//mcp_infra/exec:docker",
-        "//net_util:docker",
-        "//net_util:net",
+        "//util:docker",
+        "//util:net",
         "@pypi//aiodocker",
         "@pypi//fastmcp",
     ],
@@ -142,7 +145,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra/testing:fixtures",
-        "//test_util",
+        "//util:oci",
         "@pypi//pytest",
     ],
 )

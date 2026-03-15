@@ -1,6 +1,5 @@
 # Props has complex inter-package dependencies that are manually configured
 
-# gazelle:python_library_naming_convention $package_name$_lib
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 # =============================================================================
@@ -17,6 +16,7 @@ py_library(
         "//props/db:database",
         "//props/db:setup",
         "//props/db/sync",
+        "//props/db/sync:model_metadata",
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
@@ -28,11 +28,10 @@ py_library(
     imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        "//cli_util:decorators",
         "//openai_utils:client_factory",
-        "//props/core:agent_workspace",
         "//props/core/gepa:gepa_adapter",
         "//props/db:database",
+        "//util:typer",
         "@pypi//rich",
         "@pypi//typer_slim",
     ],
@@ -50,8 +49,8 @@ py_library(
     deps = [
         ":cmd_db",
         ":cmd_gepa",
-        "//cli_util:logging",
         "//props/db:database",
+        "//util:logging",
         "@pypi//rich",
         "@pypi//typer",
         "@pypi//typer_di",

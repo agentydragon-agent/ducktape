@@ -7,8 +7,8 @@ Build targets:
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("//devinfra/testing:defs.bzl", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(
@@ -29,15 +29,16 @@ py_python3_symlink(
     binary_name = "improve",
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e",
+    size = "medium",
     srcs = ["test_e2e.py"],
     data = [
         ":image",
         "//props/agents/critic:image",
     ],
     imports = ["../../../.."],
-    tags = ["e2e"],
+    requires_docker = True,
     deps = [
         "//agent_core/testing:responses",
         "//mcp_infra/exec:matchers",
@@ -59,6 +60,7 @@ oci_image(
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("improve"),
     env = py_image_env(binary_name = "improve"),
+    labels = {"org.opencontainers.image.title": "critic-dev-improve"},
     tars = [
         ":layers",
         ":python3_symlink",

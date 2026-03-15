@@ -17,11 +17,12 @@ spec:
       retries: 3
   chart:
     spec:
-      chart: ./charts/firecrawl
+      chart: ./cluster/charts/firecrawl
       sourceRef:
         kind: GitRepository
         name: flux-system
         namespace: flux-system
+      reconcileStrategy: Revision
   values:
     # Replicas
     replicaCount: 1

@@ -10,3 +10,5 @@ occurrences:
     files:
       props/critic_dev/improve/improve_agent.py:
         - [1, 17]
+    match_file_restriction:
+      - props/critic_dev/improve/improve_agent.py

@@ -1,5 +1,14 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
+
+py_library(
+    name = "pydantic_utils",
+    srcs = ["pydantic_utils.py"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
 
 py_library(
     name = "tool_provider",
@@ -138,6 +147,7 @@ py_library(
     imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
+        ":pydantic_utils",
         ":tool_provider",
         "//openai_utils:json_schema",
         "@pypi//pydantic",
@@ -239,6 +249,7 @@ py_test(
         "//openai_utils:pydantic_strict_mode",
         "//openai_utils/testing:openai_mock",
         "@pypi//fastmcp",
+        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
@@ -336,10 +347,7 @@ py_test(
 live_openai_py_test(
     name = "test_ollama_reasoning",
     srcs = ["test_ollama_reasoning.py"],
-    tags = [
-        "manual",
-        "ollama",
-    ],
+    tags = ["ollama"],
     deps = [
         ":agent",
         ":conftest",

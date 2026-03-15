@@ -28,17 +28,17 @@ When working with specimens, read these documents in order:
 
 ### 1. Format Specification
 
-@docs/format-spec.md
+@docs/format_spec.md
 
 Technical reference for:
 
-- `manifest.yaml` schema (per-snapshot metadata)
+- Snapshot metadata (`BUILD.bazel` via `specimen_targets()`)
 - YAML issue file format
 - Data models and validation rules
 
 ### 2. Authoring Guide
 
-@docs/authoring-guide.md
+@docs/authoring_guide.md
 
 How to write good specimens:
 
@@ -50,7 +50,11 @@ How to write good specimens:
 
 ### 3. Quality Checklist
 
-@docs/quality-checklist.md
+@docs/quality_checklist.md
+
+### 4. Build and Sync
+
+@docs/build_and_sync.md
 
 Pre-commit verification checklist:
 
@@ -65,21 +69,24 @@ Pre-commit verification checklist:
 
 1. **Freeze code state**: Choose a commit and determine scope (which files to include)
 2. **Create snapshot directory**: `mkdir -p project/YYYY-MM-DD-NN/code`
-3. **Add manifest.yaml** in `project/YYYY-MM-DD-NN/manifest.yaml`:
-   ```yaml
-   source:
-     vcs: local
-     root: code
-   split: train # or valid/test
-   bundle: # optional historical metadata
-     source_commit: <40-char SHA>
-     include:
-       - path/to/code/
+3. **Create BUILD.bazel** in `project/YYYY-MM-DD-NN/BUILD.bazel`:
+
+   ```python
+   load("//props/specimens:defs.bzl", "specimen_targets")
+
+   # Snapshot of {repo} at {commit_sha}.
+   specimen_targets(
+       name = "specimen",
+       code_srcs = glob(["code/**/*"]),
+       slug = "project/YYYY-MM-DD-NN",
+       split = "train",  # or valid/test
+   )
    ```
+
 4. **Copy source code** to `project/YYYY-MM-DD-NN/code/`
 5. **Create issues directory**: `mkdir -p project/YYYY-MM-DD-NN/issues/`
 6. **Author issue files**: One `.yaml` file per logical issue type in `issues/` subdirectory
-7. **Verify with quality checklist**: @docs/quality-checklist.md
+7. **Verify with quality checklist**: @docs/quality_checklist.md
 8. **Test loading**: Use adgn.props package to verify it loads correctly
 
 ### Updating Existing Specimens
@@ -91,66 +98,9 @@ If code has been fixed:
 - Create a NEW snapshot at the fixed commit
 - Keep the old snapshot unchanged (it's training data)
 
-### Understanding Detection Standard
+### Detection Standard and Field Semantics
 
-The key question for `critic_scopes_expected_to_recall`: **"If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"**
-
-What "reviewing files" includes:
-
-- Reading files thoroughly
-- Following imports to check APIs
-- Searching codebase for existing helpers/patterns
-- Looking for duplication
-- All normal code review activities
-
-What it does NOT mean:
-
-- "Reading files in complete isolation without any searches"
-
-See @docs/authoring-guide.md section "Detection Standard for `critic_scopes_expected_to_recall`" for detailed examples.
-
-### Field Semantics: `critic_scopes_expected_to_recall` vs `graders_match_only_if_reported_on`
-
-**`critic_scopes_expected_to_recall`**: TRAINING SIGNAL. Some known files such that IF a critic is shown these files, THEN we want it to catch this issue. NOT exhaustive - does not enumerate all possible detection sources.
-
-**`graders_match_only_if_reported_on`**: GRADING OPTIMIZATION. Restricts which critique outputs can match this occurrence. If set, a critique reporting issues only in files OUTSIDE this set will be skipped during matching (assumed non-match without semantic comparison).
-
-- **NULL** = allow matching from any file. Conservative default when we haven't determined the closed set, OR for genuinely cross-cutting issues.
-- **Non-empty set (≥1 file)** = we know the closed set; skip matching if critique's files don't overlap.
-- **Empty set** = INVALID. Not allowed.
-
-These are independent concepts:
-
-- An issue might be detectable from file A (`critic_scopes_expected_to_recall: [[A]]`)
-- But once detected, it could be validly reported in files A, B, or C (`graders_match_only_if_reported_on: [A, B, C]`)
-
-Example: "agents.py calls agent.abort() which doesn't exist on MiniCodex"
-
-- `critic_scopes_expected_to_recall: [[agents.py]]` - detectable from the call site
-- `graders_match_only_if_reported_on: [agents.py, agent.py]` - valid to tag either:
-  - agents.py: "This calls .abort() which doesn't exist"
-  - agent.py: "MiniCodex is missing abort() that callers expect"
-
-**Validation test for `graders_match_only_if_reported_on`**: Can you produce a valid critique phrasing that accurately describes this issue but tags a file outside the set? If yes, the set is too narrow.
-
-See @docs/only-matchable-labels.md for labeled examples.
-
-## File Organization
-
-```
-props/specimens/
-├── CLAUDE.md / AGENTS.md           # Agent instructions
-├── README.md                       # Dataset overview
-├── docs/                           # Format specs, authoring guide, quality checklist
-├── hooks/                          # Pre-commit hooks for specimens validation
-├── critic_scopes.yaml              # Training example specifications
-└── {project}/                      # Project snapshots
-    └── {YYYY-MM-DD-NN}/           # Snapshot slug
-        ├── manifest.yaml          # Snapshot metadata (source, split, bundle)
-        ├── code/                  # Source code (for vcs: local)
-        └── issues/                # Issue files directory
-            └── *.yaml             # Issue files (one per logical issue)
-```
+Detection standard for `critic_scopes_expected_to_recall` and `match_file_restriction` semantics are covered in the authoring guide and format spec (transcluded above). For labeled examples of `match_file_restriction`, see @docs/only_matchable_labels.md.
 
 ## Integration with Props
 
@@ -167,7 +117,7 @@ bazel test //props/core:test_production_specimens
 The system expects:
 
 - `ADGN_PROPS_SPECIMENS_ROOT` environment variable pointing here (set by `props/.envrc`)
-- Valid `manifest.yaml` in each snapshot directory
+- Valid `BUILD.bazel` calling `specimen_targets()` in each snapshot directory
 - Issue files in YAML format under `{snapshot}/issues/`
 
 ## Conventions
@@ -201,7 +151,7 @@ The system expects:
 
 ## Questions?
 
-- **Format questions**: See @docs/format-spec.md
-- **Authoring questions**: See @docs/authoring-guide.md
+- **Format questions**: See @docs/format_spec.md
+- **Authoring questions**: See @docs/authoring_guide.md
 - **Props system**: See <../README.md>
 - **Training strategy**: See <../docs/training_strategy.md>

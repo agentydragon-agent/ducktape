@@ -9,6 +9,7 @@ from __future__ import annotations
 from enum import StrEnum
 
 from pydantic import BaseModel
+from sqlalchemy import CheckConstraint
 from sqlalchemy.dialects import postgresql
 
 from props.db.models import Base
@@ -28,11 +29,17 @@ class ColumnDescription(BaseModel):
     required: bool = False
 
 
+class CheckConstraintDescription(BaseModel):
+    name: str
+    expression: str
+
+
 class RelationDefinition(BaseModel):
     name: str
     kind: RelationKind
     description: str | None = None
     columns: dict[str, ColumnDescription]
+    check_constraints: list[CheckConstraintDescription] = []
 
 
 def describe_table(table_name: str) -> RelationDefinition | None:
@@ -52,11 +59,21 @@ def describe_table(table_name: str) -> RelationDefinition | None:
         for col in table.columns
     }
 
+    check_constraints = [
+        CheckConstraintDescription(
+            name=c.name or "",
+            expression=str(c.sqltext.compile(dialect=_PG_DIALECT, compile_kwargs={"literal_binds": True})),
+        )
+        for c in table.constraints
+        if isinstance(c, CheckConstraint) and c.name
+    ]
+
     return RelationDefinition(
         name=table_name,
         kind=RelationKind.VIEW if is_view else RelationKind.TABLE,
         description=table.comment,
         columns=columns,
+        check_constraints=check_constraints,
     )
 
 

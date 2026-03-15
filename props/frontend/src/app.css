@@ -20,6 +20,13 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root {
+    color: #e5e7eb;
+    background-color: #111827;
+  }
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -60,41 +67,17 @@ tr:hover {
   background: #f9f9f9;
 }
 
-/* Numeric columns */
-.num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
+@media (prefers-color-scheme: dark) {
+  th,
+  td {
+    border-bottom-color: #374151;
+  }
 
-/* Status colors */
-.recall-high {
-  color: #22863a;
-}
-.recall-mid {
-  color: #b08800;
-}
-.recall-low {
-  color: #cb2431;
-}
+  th {
+    background: #1f2937;
+  }
 
-/* Column group headers */
-.col-group {
-  font-size: 0.75rem;
-  text-align: center;
-  border-bottom: 2px solid #ddd;
-}
-
-.col-group-valid {
-  background: #e6f7ff;
-}
-.col-group-train-w {
-  background: #fffbe6;
-}
-.col-group-train-p {
-  background: #fff0f6;
-}
-
-/* Dim for missing data */
-.dim {
-  color: #999;
+  tr:hover {
+    background: #1f2937;
+  }
 }

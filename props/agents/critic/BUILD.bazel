@@ -16,8 +16,8 @@ The container runs an agent loop that:
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
-load("//tools/testing:docker.bzl", "docker_py_test")
 
 exports_files(
     ["prompt.md.mako"],
@@ -105,10 +105,12 @@ py_python3_symlink(
 # Tests
 # =============================================================================
 
-docker_py_test(
+py_test(
     name = "test_critic_sql_integration",
+    size = "medium",
     srcs = ["test_critic_sql_integration.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//props:conftest",
@@ -125,10 +127,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_reported_issues_constraints",
     srcs = ["test_reported_issues_constraints.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":conftest",
         "//props:conftest",
@@ -146,17 +149,16 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_e2e",
+    size = "medium",
     srcs = ["test_e2e.py"],
     data = [
         ":image",
         "//props/agents/grader:image",
     ],
     imports = ["../../.."],
-    tags = [
-        "e2e",
-    ],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":main",
@@ -183,6 +185,7 @@ oci_image(
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("critic_bin"),
     env = py_image_env(binary_name = "critic_bin"),
+    labels = {"org.opencontainers.image.title": "critic"},
     tars = [
         ":layers",
         ":python3_symlink",

@@ -29,6 +29,18 @@ occurrences:
       agent façade or DI.
     critic_scopes_expected_to_recall:
       - - internal/tui/page/chat/chat.go
+    match_file_restriction:
+      - internal/app/app.go
+      - internal/app/lsp.go
+      - internal/cmd/root.go
+      - internal/tui/tui.go
+      - internal/tui/page/chat/chat.go
+      - internal/tui/components/chat/chat.go
+      - internal/tui/components/chat/editor/editor.go
+      - e2e/scenario.go
+      - e2e/scenario_bash_streaming_fake_test.go
+      - e2e/scenario_parallel_tools_test.go
+      - e2e/ui_helpers.go
   - occurrence_id: occ-1
     files:
       internal/tui/tui.go:
@@ -47,6 +59,18 @@ occurrences:
       centralize agent/permission interactions behind App or DI.
     critic_scopes_expected_to_recall:
       - - internal/tui/tui.go
+    match_file_restriction:
+      - internal/app/app.go
+      - internal/app/lsp.go
+      - internal/cmd/root.go
+      - internal/tui/tui.go
+      - internal/tui/page/chat/chat.go
+      - internal/tui/components/chat/chat.go
+      - internal/tui/components/chat/editor/editor.go
+      - e2e/scenario.go
+      - e2e/scenario_bash_streaming_fake_test.go
+      - e2e/scenario_parallel_tools_test.go
+      - e2e/ui_helpers.go
   - occurrence_id: occ-2
     files:
       internal/tui/components/chat/editor/editor.go:
@@ -63,3 +87,15 @@ occurrences:
       App façade methods or inject services explicitly.
     critic_scopes_expected_to_recall:
       - - internal/tui/components/chat/editor/editor.go
+    match_file_restriction:
+      - internal/app/app.go
+      - internal/app/lsp.go
+      - internal/cmd/root.go
+      - internal/tui/tui.go
+      - internal/tui/page/chat/chat.go
+      - internal/tui/components/chat/chat.go
+      - internal/tui/components/chat/editor/editor.go
+      - e2e/scenario.go
+      - e2e/scenario_bash_streaming_fake_test.go
+      - e2e/scenario_parallel_tools_test.go
+      - e2e/ui_helpers.go

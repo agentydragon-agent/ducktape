@@ -18,3 +18,5 @@ occurrences:
         - [37, 41]
     critic_scopes_expected_to_recall:
       - [wt/client/view_formatter.py]
+    match_file_restriction:
+      - wt/client/view_formatter.py

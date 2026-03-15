@@ -1,92 +1,30 @@
 # gazelle:ignore
-# Cluster validation scripts
-#
-# These scripts validate cluster configuration via pre-commit hooks.
-# Binaries (kustomize, flux, kubeseal, helm, tofu) are managed via rules_multitool.
-#
-# Usage:
-#   bazel run //cluster/scripts:validate_kustomizations
-#   bazel run //cluster/scripts:validate_sealed_secrets
-#   bazel run //cluster/scripts:validate_helm_templates
+# Cluster utility scripts (non-validation).
+# Validators are in //cluster/scripts/validate_cluster/.
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
-package(default_visibility = [
-    "//cluster:__subpackages__",
-    "//tools/precommit:__pkg__",
-])
-
-exports_files([
-    "validate_kustomizations.py",
-    "validate_sealed_secrets.py",
-    "validate_helm_templates.py",
-])
-
-# Validate all kustomization directories can build, check CRD layering,
-# dependency graph, and flux build
-py_binary(
-    name = "validate_kustomizations",
-    srcs = ["validate_kustomizations.py"],
-    data = [
-        "@multitool//tools/flux",
-        "@multitool//tools/kustomize",
-    ],
-    deps = [
-        "//bazel_util:runfiles",
-        "//bazel_util:workspace",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-# Validate SealedSecrets can be decrypted with terraform keypair
-py_binary(
-    name = "validate_sealed_secrets",
-    srcs = ["validate_sealed_secrets.py"],
-    data = [
-        "@multitool//tools/kubeseal",
-        "@multitool//tools/tofu",
-    ],
-    deps = ["//bazel_util:runfiles"],
-)
-
-# Validate Helm templates can render
-py_binary(
-    name = "validate_helm_templates",
-    srcs = ["validate_helm_templates.py"],
-    data = [
-        "//cluster/terraform/bootstrap/infrastructure:cilium-values.yaml",
-        "@multitool//tools/helm",
-    ],
-    deps = ["//bazel_util:runfiles"],
-)
-
-# Library for validate_kustomizations (for testing)
 py_library(
-    name = "validate_kustomizations_lib",
-    srcs = ["validate_kustomizations.py"],
-    data = [
-        "@multitool//tools/flux",
-        "@multitool//tools/kustomize",
-    ],
+    name = "generate_claude_kubeconfig_lib",
+    srcs = ["generate_claude_kubeconfig.py"],
+    imports = ["../.."],
+    visibility = ["//cluster:__pkg__"],
     deps = [
-        "//bazel_util:runfiles",
-        "//bazel_util:workspace",
-        "@pypi//pydantic",
-        "@pypi//pyyaml",
+        "//devinfra/claude:k8s_secrets_setup",
+        "//util/bazel:workspace",
+        "@pypi//kubernetes",
     ],
 )
 
-# Tests for validate_kustomizations
-py_test(
-    name = "test_validate_kustomizations",
-    srcs = ["test_validate_kustomizations.py"],
-    data = glob(["testdata/**"]),
-    deps = [
-        ":validate_kustomizations_lib",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//types_pyyaml",
-    ],
+py_binary(
+    name = "generate_claude_kubeconfig",
+    main_module = "cluster.scripts.generate_claude_kubeconfig",
+    deps = [":generate_claude_kubeconfig_lib"],
+)
+
+# Verify Authentik authentication works end-to-end
+py_binary(
+    name = "check_authentik_login",
+    srcs = ["check_authentik_login.py"],
+    imports = ["../.."],
 )

@@ -23,6 +23,8 @@ actions:
     # BuildBuddy Workflows only supports predefined Ubuntu images, not custom images
     # like ghcr.io/agentydragon/rbe-worker. RBE workers still use the custom image.
     container_image: "ubuntu-24.04"
+    resource_requests:
+      disk: "50GB"
 
     bazel_commands:
       # 1. Run all tests (excluding live OpenAI API tests)
@@ -38,13 +40,12 @@ actions:
         //...
 
       # 2. Build + lint + typecheck + rust-check (all quality checks in one pass)
-      # Use local strategy for mypy to avoid sandbox copying overhead
-      # --config=check runs: ruff, ESLint, mypy, clippy, rustfmt
+      # Lint runs by default: ruff, ESLint, mypy, clippy, rustfmt.
+      # Use local strategy for mypy to avoid sandbox copying overhead.
       - >
         build
         --keep_going
         --config=rbe
-        --config=check
         --strategy=mypy=local
         --build_metadata=ROLE=ci
         --build_metadata=TAGS=check
@@ -61,16 +62,17 @@ actions:
 
     # Same as CI action - BuildBuddy Workflows doesn't support custom images
     container_image: "ubuntu-24.04"
+    resource_requests:
+      disk: "50GB"
 
     bazel_commands:
       # Build all wheel targets for potential release
       # These are built but not published (GitHub Actions handles publishing)
-      # Note: gnome_terminal_profile_switcher:wheel excluded (requires system deps: libdbus-1-dev, libgirepository1.0-dev)
+      # Note: gterm_theme:wheel excluded (requires system deps: libdbus-1-dev, libgirepository1.0-dev)
       - >
         build --config=rbe
         //:wheel
         //headscale_cleanup:wheel
-        //tools/claude_hooks:wheel
 
   # Build container images (OCI images built with Bazel)
   - name: "Build Container Images"
@@ -83,6 +85,8 @@ actions:
 
     # Same as CI action - BuildBuddy Workflows doesn't support custom images
     container_image: "ubuntu-24.04"
+    resource_requests:
+      disk: "50GB"
 
     bazel_commands:
       # Build OCI images for potential release
@@ -90,4 +94,4 @@ actions:
       - >
         build --config=rbe
         //props/backend:image
-        //agent_server:image
+        //x/agent_server:image

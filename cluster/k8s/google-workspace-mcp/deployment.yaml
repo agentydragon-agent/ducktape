@@ -1,0 +1,106 @@
+# google_workspace_mcp — Google Workspace MCP server (Gmail, Calendar, Drive, Docs, etc.)
+# Tokens stored in PVC; Google OAuth credentials shared from oauth-broker via Reflector.
+# Access: Authentik proxy outpost (browser OAuth setup) + Airlock (agent MCP calls).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: google-workspace-mcp
+  namespace: google-workspace-mcp
+  labels:
+    app: google-workspace-mcp
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: google-workspace-mcp
+  template:
+    metadata:
+      labels:
+        app: google-workspace-mcp
+    spec:
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        # google_workspace_mcp expects a client_secret.json file in addition to env vars.
+        # Generate it from the env vars so we avoid storing the JSON as a separate secret.
+        - name: gen-client-secret
+          image: busybox:1.37
+          command:
+            - sh
+            - -c
+            - |
+              printf '{"web":{"client_id":"%s","client_secret":"%s","auth_uri":"https://accounts.google.com/o/oauth2/auth","token_uri":"https://oauth2.googleapis.com/token","auth_provider_x509_cert_url":"https://www.googleapis.com/oauth2/v1/certs","redirect_uris":["https://google-workspace-mcp.allegedly.works/oauth2callback"]}}\n' \
+                "$GOOGLE_OAUTH_CLIENT_ID" "$GOOGLE_OAUTH_CLIENT_SECRET" \
+                > /client-secret/client_secret.json
+          env:
+            - name: GOOGLE_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_id
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_secret
+          volumeMounts:
+            - name: client-secret
+              mountPath: /client-secret
+      containers:
+        - name: google-workspace-mcp
+          image: ghcr.io/taylorwilsdon/google_workspace_mcp:1.14.2
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          env:
+            - name: GOOGLE_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_id
+            - name: GOOGLE_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: google-client-credentials
+                  key: client_secret
+            - name: WORKSPACE_MCP_BASE_URI
+              value: "https://google-workspace-mcp.allegedly.works"
+            - name: WORKSPACE_MCP_PORT
+              value: "8000"
+            - name: GOOGLE_MCP_CREDENTIALS_DIR
+              value: /data/store_creds
+          volumeMounts:
+            - name: store-creds
+              mountPath: /data/store_creds
+            - name: client-secret
+              mountPath: /app/client_secret.json
+              subPath: client_secret.json
+              readOnly: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: store-creds
+          persistentVolumeClaim:
+            claimName: google-workspace-mcp-creds
+        - name: client-secret
+          emptyDir: {}

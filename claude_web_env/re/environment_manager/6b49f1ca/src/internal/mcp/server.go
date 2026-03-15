@@ -39,16 +39,17 @@ type ServerConfig struct {
 // management (Start, Stop) and override GetTools/ShouldRegisterWithClaude.
 //
 // Struct layout (from field access patterns in Start/Stop):
-//   offset 0x00: logger *slog.Logger        (accessed at 0xacfeb5, 0xad23b6)
-//   offset 0x08: name string                (ptr at 0x08, len at 0x10)
-//   offset 0x18: version string             (ptr at 0x18, len at 0x20)
-//   offset 0x28: httpServer *http.Server    (checked at 0xad2351, shutdown at 0xad23a0)
-//   offset 0x30: streamableServer *mcpserver.StreamableHTTPServer
-//   offset 0x38: listener net.Listener      (set at 0xad0376)
-//   offset 0x40: listenerAddr net.Addr      (set at 0xad03a0)
-//   offset 0x48: bearerToken string         (ptr at 0x48, len at 0x50)
-//   offset 0x58: port int                   (set at 0xad03c9)
-//   offset 0x60: stopCh chan struct{}        (closed at 0xad24c9)
+//
+//	offset 0x00: logger *slog.Logger        (accessed at 0xacfeb5, 0xad23b6)
+//	offset 0x08: name string                (ptr at 0x08, len at 0x10)
+//	offset 0x18: version string             (ptr at 0x18, len at 0x20)
+//	offset 0x28: httpServer *http.Server    (checked at 0xad2351, shutdown at 0xad23a0)
+//	offset 0x30: streamableServer *mcpserver.StreamableHTTPServer
+//	offset 0x38: listener net.Listener      (set at 0xad0376)
+//	offset 0x40: listenerAddr net.Addr      (set at 0xad03a0)
+//	offset 0x48: bearerToken string         (ptr at 0x48, len at 0x50)
+//	offset 0x58: port int                   (set at 0xad03c9)
+//	offset 0x60: stopCh chan struct{}        (closed at 0xad24c9)
 //
 // type:.eq at 0xad27a0 confirms comparability.
 type BaseServer struct {
@@ -70,10 +71,11 @@ type BaseServer struct {
 // Source file: server.go
 //
 // Assembly (trivial):
-//   MOVQ 0x8(AX), CX   ; name.ptr
-//   MOVQ 0x10(AX), BX   ; name.len
-//   MOVQ CX, AX
-//   RET
+//
+//	MOVQ 0x8(AX), CX   ; name.ptr
+//	MOVQ 0x10(AX), BX   ; name.len
+//	MOVQ CX, AX
+//	RET
 func (s *BaseServer) GetName() string {
 	return s.name
 }
@@ -84,10 +86,11 @@ func (s *BaseServer) GetName() string {
 // Source file: server.go
 //
 // Assembly (returns empty slice):
-//   LEA <static empty slice>, AX
-//   XOR BX, BX
-//   MOV BX, CX
-//   RET
+//
+//	LEA <static empty slice>, AX
+//	XOR BX, BX
+//	MOV BX, CX
+//	RET
 func (s *BaseServer) GetTools() []ToolConfig {
 	return nil
 }
@@ -99,21 +102,22 @@ func (s *BaseServer) GetTools() []ToolConfig {
 // Source file: server.go
 //
 // Assembly (trivial):
-//   MOVL $0x1, AX
-//   RET
+//
+//	MOVL $0x1, AX
+//	RET
 func (s *BaseServer) ShouldRegisterWithClaude() bool {
 	return true
 }
 
 // Start initializes and starts the MCP HTTP server. It:
-//   1. Creates an mcp-go MCPServer with the configured name/version
-//   2. Adds tools from the provided tool definitions
-//   3. Creates a StreamableHTTPServer with endpoint path and stateless options
-//   4. Generates a bearer token (random or debug hardcoded)
-//   5. Binds to a TCP listener on localhost
-//   6. Logs server details (name, port, address)
-//   7. Starts serving in a goroutine
-//   8. Launches a heartbeat goroutine
+//  1. Creates an mcp-go MCPServer with the configured name/version
+//  2. Adds tools from the provided tool definitions
+//  3. Creates a StreamableHTTPServer with endpoint path and stateless options
+//  4. Generates a bearer token (random or debug hardcoded)
+//  5. Binds to a TCP listener on localhost
+//  6. Logs server details (name, port, address)
+//  7. Starts serving in a goroutine
+//  8. Launches a heartbeat goroutine
 //
 // Binary address: 0xacfe80
 // Source file: server.go
@@ -234,10 +238,10 @@ func (s *BaseServer) Start(logger *slog.Logger, name string) (int, error) {
 }
 
 // Stop gracefully shuts down the MCP HTTP server. It:
-//   1. If httpServer is non-nil, calls Shutdown with a 5-second timeout
-//   2. On shutdown error, logs a warning
-//   3. Calls the streamable server's cleanup if present
-//   4. Closes the stop channel
+//  1. If httpServer is non-nil, calls Shutdown with a 5-second timeout
+//  2. On shutdown error, logs a warning
+//  3. Calls the streamable server's cleanup if present
+//  4. Closes the stop channel
 //
 // Binary address: 0xad2320
 // Source file: server.go
@@ -284,9 +288,10 @@ func (s *BaseServer) Stop() bool {
 // itab: *mcp.responseWriter → net/http.ResponseWriter (0xf63bc0)
 //
 // Struct layout (from type:.eq at 0xad25e0):
-//   offset 0x00: header http.Header
-//   offset 0x08: body []byte
-//   offset 0x20: statusCode int
+//
+//	offset 0x00: header http.Header
+//	offset 0x08: body []byte
+//	offset 0x20: statusCode int
 type responseWriter struct {
 	header     http.Header
 	body       []byte

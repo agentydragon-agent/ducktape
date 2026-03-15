@@ -25,7 +25,7 @@ func getLockPath(sessionID string) string {
 func AcquireLock(ctx interface{ Value(any) any }, sessionName string, sessionID string) (func(), error) {
 	lockPath := getLockPath(sessionID)
 
-	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open lockfile: %w", err)
 	}
@@ -92,7 +92,7 @@ const containerLockPath = "/tmp/environment-manager-container.lock"
 // orchestrator/session instances from running concurrently on the same container.
 // It returns a cleanup function that releases the lock, or an error.
 func AcquireContainerLock(ctx interface{ Value(any) any }, sessionName string, sessionID string) (func(), error) {
-	file, err := os.OpenFile(containerLockPath, os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(containerLockPath, os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open container lockfile: %w", err)
 	}

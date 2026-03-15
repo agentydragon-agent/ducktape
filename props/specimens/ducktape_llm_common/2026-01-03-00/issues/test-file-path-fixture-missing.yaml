@@ -28,6 +28,8 @@ occurrences:
     note: "analyze_code(code) should use analyze_code(code, TEST_FILE)"
     critic_scopes_expected_to_recall:
       - [tests/claude_linter_v2/test_python_ast.py]
+    match_file_restriction:
+      - tests/claude_linter_v2/test_python_ast.py
   - occurrence_id: occ-1
     files:
       tests/claude_linter_v2/test_python_formatter.py:

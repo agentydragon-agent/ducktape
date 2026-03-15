@@ -1,0 +1,20 @@
+# gazelle:python_generation_mode off
+
+load("@rules_python//python:defs.bzl", "py_binary")
+
+# Export generic test file and conftest for specimen_targets to reference
+exports_files([
+    "test_specimen.py",
+    "conftest.py",
+])
+
+py_binary(
+    name = "compile",
+    srcs = ["compile.py"],
+    main = "compile.py",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/db/sync",
+        "@pypi//pyyaml",
+    ],
+)

@@ -4,7 +4,8 @@
 # gazelle:exclude script.py.mako
 # gazelle:exclude versions
 
-load("@rules_python//python:defs.bzl", "py_test")
+# Removed py_test load - using defs.bzl version
+load("//devinfra/testing:defs.bzl", "py_test")
 
 filegroup(
     name = "migrations",
@@ -24,5 +25,22 @@ py_test(
     deps = [
         "@pypi//alembic",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_materialize_examples",
+    size = "medium",
+    srcs = ["test_materialize_examples.py"],
+    data = [":migrations"],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        "//props:conftest",
+        "//props/db:config",
+        "//props/db:conftest",
+        "@pypi//alembic",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

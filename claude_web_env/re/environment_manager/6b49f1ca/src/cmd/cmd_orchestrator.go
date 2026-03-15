@@ -49,7 +49,7 @@ func AddOrchestratorCommand(rootCmd *cobra.Command) {
 	orchCmd := &cobra.Command{
 		Use:   "orchestrator",
 		Short: "Run the session orchestrator polling loop",
-		Long: `Run the session orchestrator that polls for available sessions and dispatches them to hook commands. The orchestrator runs as a long-lived process, continuously polling the API for work and executing the configured hook command when sessions are received. It supports configurable poll intervals, timeouts, retry policies, and sandbox wrapping.`,
+		Long:  `Run the session orchestrator that polls for available sessions and dispatches them to hook commands. The orchestrator runs as a long-lived process, continuously polling the API for work and executing the configured hook command when sessions are received. It supports configurable poll intervals, timeouts, retry policies, and sandbox wrapping.`,
 		Example: `  # Basic usage (identity discovered via whoami, worker-id defaults to hostname)
   environment-runner orchestrator --api-url=https://api.example.com --secret-path=/path/to/key --session-id=abc
 

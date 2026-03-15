@@ -1,11 +1,14 @@
 <script lang="ts">
+  import { getContext } from "svelte";
   import { type DefinitionDetailResponse } from "../lib/api/client";
   import { formatStatsWithCI, formatAge } from "../lib/formatters";
   import { recallColorClass } from "../lib/colors";
   import RunsBrowser from "./RunsBrowser.svelte";
   import BackButton from "./BackButton.svelte";
   import Breadcrumb from "./Breadcrumb.svelte";
-  import type { Split, ExampleKind } from "../lib/types";
+  import type { RunModalPrefill, Split, ExampleKind } from "../lib/types";
+
+  const runModal = getContext<{ open: (_?: RunModalPrefill) => void }>("runModal");
 
   interface Props {
     data: DefinitionDetailResponse;
@@ -27,34 +30,51 @@
 
 <div class="space-y-4">
   <!-- Header -->
-  <div class="bg-white rounded-lg shadow p-4">
+  <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30 p-4">
     <div class="flex items-center gap-3 mb-3">
       <BackButton />
       <h2 class="text-lg font-semibold">Definition Detail</h2>
+      <div class="ml-auto">
+        <button
+          type="button"
+          class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+          onclick={() => runModal?.open({ definitionId: data.image_digest })}
+        >
+          + New Run
+        </button>
+      </div>
     </div>
     <Breadcrumb
-      items={[{ label: "Home", href: "/" }, { label: "Definitions", href: "/" }, { label: data.image_digest }]}
+      items={[
+        { label: "Home", href: "/" },
+        { label: "Definitions", href: "/" },
+        { label: data.display_name ?? data.image_digest },
+      ]}
     />
 
     <div class="space-y-3 mt-3">
       <!-- Definition ID and metadata -->
       <div class="flex items-center gap-4 text-sm">
-        <span class="font-mono text-blue-600">{data.image_digest}</span>
-        <span class="text-gray-400">|</span>
-        <span class="text-gray-600">{data.agent_type}</span>
-        <span class="text-gray-400">|</span>
-        <span class="text-gray-600">{formatAge(data.created_at)}</span>
+        {#if data.display_name}
+          <span class="font-semibold text-gray-800 dark:text-gray-200">{data.display_name}</span>
+          <span class="text-gray-400 dark:text-gray-500">|</span>
+        {/if}
+        <span class="font-mono text-blue-600 dark:text-blue-400">{data.image_digest}</span>
+        <span class="text-gray-400 dark:text-gray-500">|</span>
+        <span class="text-gray-600 dark:text-gray-400">{data.agent_type}</span>
+        <span class="text-gray-400 dark:text-gray-500">|</span>
+        <span class="text-gray-600 dark:text-gray-400">{formatAge(data.created_at)}</span>
       </div>
     </div>
   </div>
 
   <!-- Stats table -->
-  <div class="bg-white rounded-lg shadow p-4">
-    <h3 class="text-sm font-medium text-gray-700 mb-3">Recall by Split/Kind</h3>
+  <div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30 p-4">
+    <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Recall by Split/Kind</h3>
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm">
         <thead>
-          <tr class="border-b border-gray-300">
+          <tr class="border-b border-gray-300 dark:border-gray-600">
             <th class="px-3 py-2 text-left">Split/Kind</th>
             <th class="px-3 py-2 text-right">Recall</th>
             <th class="px-3 py-2 text-right">N</th>
@@ -66,7 +86,7 @@
         <tbody>
           {#each colGroups as { split, kind, label } (`${split}-${kind}`)}
             {@const stats = getStats(split, kind)}
-            <tr class="border-b border-gray-100">
+            <tr class="border-b border-gray-100 dark:border-gray-800">
               <td class="px-3 py-2 font-medium">{label}</td>
               {#if stats}
                 <td class="px-3 py-2 text-right {recallColorClass(stats.recall_stats?.mean)}">
@@ -75,15 +95,17 @@
                 <td class="px-3 py-2 text-right">
                   {stats.n_examples}/{stats.total_available}
                 </td>
-                <td class="px-3 py-2 text-right text-gray-400">{stats.zero_count}</td>
+                <td class="px-3 py-2 text-right text-gray-400 dark:text-gray-500">{stats.zero_count}</td>
                 <td class="px-3 py-2 text-right">{stats.status_counts?.completed ?? 0}</td>
-                <td class="px-3 py-2 text-right text-gray-400">{stats.status_counts?.timed_out ?? 0}</td>
+                <td class="px-3 py-2 text-right text-gray-400 dark:text-gray-500"
+                  >{stats.status_counts?.timed_out ?? 0}</td
+                >
               {:else}
-                <td class="px-3 py-2 text-right text-gray-300">—</td>
-                <td class="px-3 py-2 text-right text-gray-300">—</td>
-                <td class="px-3 py-2 text-right text-gray-300">—</td>
-                <td class="px-3 py-2 text-right text-gray-300">—</td>
-                <td class="px-3 py-2 text-right text-gray-300">—</td>
+                <td class="px-3 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
+                <td class="px-3 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
+                <td class="px-3 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
+                <td class="px-3 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
+                <td class="px-3 py-2 text-right text-gray-300 dark:text-gray-600">—</td>
               {/if}
             </tr>
           {/each}

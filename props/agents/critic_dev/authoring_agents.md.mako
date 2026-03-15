@@ -106,8 +106,12 @@ cp /workspace/my_custom_main.py /tmp/layer/$MAIN_PY
 tar -cf /tmp/layer.tar -C /tmp/layer .
 
 # Append layer to the base image (no entrypoint change needed)
+# Set org.opencontainers.image.title to a short, human-readable name for your variant.
+# This becomes the display name shown in the UI — use something descriptive like
+# "chain-of-thought-critic" or "ast-analysis-v2" (keep it under 40 chars).
 crane mutate $REGISTRY/critic:latest \
   --append /tmp/layer.tar \
+  --label org.opencontainers.image.title="my-variant-name" \
   -o /tmp/image.tar \
   --insecure
 
@@ -126,7 +130,7 @@ ${include_doc("props/agents/critic_dev/built_in_critic.md.mako")}
 After pushing a custom image, run and evaluate it:
 
 ```
-1. Build image:  crane mutate ... --append ... -o /tmp/image.tar --insecure
+1. Build image:  crane mutate ... --append ... --label org.opencontainers.image.title="my-name" -o /tmp/image.tar --insecure
 2. Get digest:   DIGEST=$(crane digest --tarball /tmp/image.tar)
 3. Push:         crane push /tmp/image.tar $REGISTRY/critic@$DIGEST --insecure
 4. Run:          run_critic(definition_id=$DIGEST, example=..., timeout_seconds=120, budget_usd=0.5)

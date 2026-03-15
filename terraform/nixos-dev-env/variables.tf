@@ -12,9 +12,9 @@ variable "proxmox_host" {
 }
 
 variable "proxmox_api_host" {
-  description = "Proxmox API host FQDN"
+  description = "Proxmox API host:port"
   type        = string
-  default     = "atlas.agentydragon.com"
+  default     = "atlas:8006"
 }
 
 variable "proxmox_node_name" {
@@ -36,65 +36,11 @@ variable "network_bridge" {
 }
 
 # =============================================================================
-# USER/POOL CONFIGURATION
-# =============================================================================
-
-variable "username" {
-  description = "Username for VM user accounts"
-  type        = string
-  default     = "user"
-  validation {
-    condition     = can(regex("^[a-z][a-z0-9-]*$", var.username))
-    error_message = "Username must start with a letter and contain only lowercase letters, numbers, and hyphens."
-  }
-}
-
-variable "proxmox_username" {
-  description = "Username for Proxmox pool user (without @pve, defaults to username)"
-  type        = string
-  default     = ""
-  validation {
-    condition     = var.proxmox_username == "" || can(regex("^[a-z][a-z0-9-]*$", var.proxmox_username))
-    error_message = "Proxmox username must start with a letter and contain only lowercase letters, numbers, and hyphens."
-  }
-}
-
-variable "pool_name" {
-  description = "Resource pool name (defaults to pool-{proxmox_username})"
-  type        = string
-  default     = ""
-}
-
-variable "user_comment" {
-  description = "Comment for Proxmox user"
-  type        = string
-  default     = "Managed by Terraform"
-}
-
-# =============================================================================
-# NIXOS/HOME-MANAGER FLAKE CONFIGURATION
+# SSH CONFIGURATION
 # =============================================================================
 
 variable "ssh_public_key" {
   description = "SSH public key (auto-detected from ~/.ssh if not specified)"
   type        = string
   default     = ""
-}
-
-variable "nixos_flake_url" {
-  description = "Flake URL for NixOS system configuration"
-  type        = string
-  default     = "github:agentydragon/ducktape?dir=nix/nixos&ref=devel"
-}
-
-variable "home_manager_flake_url" {
-  description = "Flake URL for home-manager configuration"
-  type        = string
-  default     = "github:agentydragon/ducktape?dir=nix/home&ref=devel"
-}
-
-variable "home_manager_host" {
-  description = "Home-manager host config name from ducktape flake"
-  type        = string
-  default     = "nixos-vm"
 }

@@ -72,3 +72,5 @@ occurrences:
           - 204
     critic_scopes_expected_to_recall:
       - - adgn/tests/mcp/approval_policy/test_proposals_resources.py
+    match_file_restriction:
+      - adgn/tests/mcp/approval_policy/test_proposals_resources.py

@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from openai_utils.model import ResponseUsage
-from props.backend.auth import Auth
+from props.backend.auth import AgentRole, Auth, AuthenticatedIdentity
 from props.backend.deps import AdminDb, Config
 from props.config import PropsConfig, UpstreamConfig
 from props.db.models import AgentRun, AgentRunBudgetStatus, AgentRunStatus, LLMRequest, ModelMetadata
@@ -117,21 +117,18 @@ def require_llm_access(auth: Auth, admin_db: AdminDb) -> tuple[UUID, str, float]
 
     Returns (agent_run_id, allowed_model, budget_usd) or raises HTTPException.
     """
-    if not auth.is_authenticated:
+    if not (isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AgentRole)):
         raise HTTPException(status_code=401, detail="Authorization required")
 
-    if auth.agent_run_id is None:
-        raise HTTPException(status_code=401, detail="Invalid agent token format")
-
     with admin_db.session() as session:
-        agent_run = session.get(AgentRun, auth.agent_run_id)
+        agent_run = session.get(AgentRun, auth.role.agent_run_id)
         if agent_run is None:
             raise HTTPException(status_code=401, detail="Agent run not found")
 
         if agent_run.status != AgentRunStatus.IN_PROGRESS:
             raise HTTPException(status_code=403, detail=f"Agent run is not in progress (status={agent_run.status})")
 
-        return auth.agent_run_id, agent_run.model, agent_run.budget_usd
+        return auth.role.agent_run_id, agent_run.model, agent_run.budget_usd
 
 
 def _log_request(
@@ -150,7 +147,7 @@ def _log_request(
     if response_body is not None and error is None:
         usage = ResponseUsage.model_validate(response_body["usage"])
         input_tokens = usage.input_tokens
-        cached_input_tokens = usage.input_tokens_details.cached_tokens
+        cached_input_tokens = usage.input_tokens_details.cached_tokens if usage.input_tokens_details else None
         output_tokens = usage.output_tokens
     llm_request = LLMRequest(
         agent_run_id=agent_run_id,

@@ -42,6 +42,8 @@ occurrences:
       props/core/ids.py:
         - [88, 111]
     note: "`get_snapshot_manifest_path` defined but never imported or called"
+    match_file_restriction:
+      - props/core/ids.py
 
   - occurrence_id: occ-5
     files:
@@ -55,6 +57,8 @@ occurrences:
         - [34, 140]
         - [143, 156]
     note: "`PropertiesDockerCompositor` and `build_critic_binds` — never instantiated or called"
+    match_file_restriction:
+      - props/core/docker_env.py
 
   - occurrence_id: occ-7
     files:
@@ -68,6 +72,8 @@ occurrences:
       props/cli/shared.py:
         - [17, 26]
     note: "`save_prompt_to_tmp` never called"
+    match_file_restriction:
+      - props/cli/shared.py
 
   - occurrence_id: occ-9
     files:
@@ -86,6 +92,8 @@ occurrences:
       props/cli/cmd_stats.py:
         - [274, 279]
     note: "`PromptStats` dataclass never instantiated"
+    match_file_restriction:
+      - props/cli/cmd_stats.py
 
   - occurrence_id: occ-12
     files:
@@ -98,6 +106,8 @@ occurrences:
       props/cli/__main__.py:
         - [136, 145]
     note: "`read_embedded_paths` never called"
+    match_file_restriction:
+      - props/cli/__main__.py
 
   - occurrence_id: occ-14
     files:
@@ -146,3 +156,11 @@ occurrences:
     critic_scopes_expected_to_recall:
       - [props/critic/exceptions.py]
       - [props/backend/routes/eval.py]
+
+  - occurrence_id: occ-21
+    files:
+      wt/testing/helpers.py:
+        - [1, 7]
+    note: "Dead module — `TEST_BRANCH_NAME` defined but never imported anywhere."
+    match_file_restriction:
+      - wt/testing/helpers.py

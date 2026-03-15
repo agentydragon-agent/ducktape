@@ -15,13 +15,13 @@ Think of this as "ImageNet for code review" - immutable labeled datasets for sup
 
 ```
 props/specimens/
-├── critic_scopes.yaml          # Training example specifications (per-file review scopes)
+├── defs.bzl                    # specimen_targets() macro
 ├── docs/                       # Format specs, authoring guide, quality checklist
 ├── hooks/                      # Pre-commit hooks for specimens validation
 ├── ducktape/                   # Snapshot directory (one per project)
 │   └── 2025-11-26-00/          # Snapshot slug (YYYY-MM-DD-NN)
-│       ├── manifest.yaml       # Snapshot metadata (source, split)
-│       ├── code/               # Source code (for vcs: local)
+│       ├── BUILD.bazel         # Metadata: slug, split, code source
+│       ├── code/               # Source code (for local specimens)
 │       └── issues/             # Issue files directory
 │           ├── dead-code.yaml
 │           ├── missing-types.yaml
@@ -34,9 +34,9 @@ props/specimens/
 
 Each snapshot directory contains:
 
-- **`manifest.yaml`**: Metadata (VCS source, dataset split, optional bundle info)
+- **`BUILD.bazel`**: Metadata via `specimen_targets()` — slug, split, code source. Provenance (commit SHA, include/exclude) as comments.
 - **Issue files** (`.yaml` in `issues/` directory): One file per logical issue type
-- **`code/`** (optional): Source code for `vcs: local` snapshots
+- **`code/`** (optional): Source code for local specimens
 
 ## Issue File Format
 
@@ -62,7 +62,7 @@ Key fields:
 - `occurrences`: List of occurrence locations with file paths and line ranges
 - `critic_scopes_expected_to_recall`: Minimal file sets needed to detect this issue (used for per-file training examples)
 
-See <docs/format-spec.md> for detailed schema documentation.
+See <docs/format_spec.md> for detailed schema documentation.
 
 ## Training Strategy
 
@@ -70,7 +70,7 @@ This dataset supports **per-file training examples** for tighter feedback loops 
 
 - **Training split**: Full access to code, ground truth, and execution traces
 - **Validation split**: Can run evaluations, but cannot read labels directly (held-out generalization test)
-- **Per-file examples**: Generated from `critic_scopes.yaml`, which specifies which file combinations to use as focused training examples
+- **Per-file examples**: Auto-generated from `critic_scopes_expected_to_recall` in issue files
 
 Example: Instead of just "review this entire 50-file snapshot", we generate:
 
@@ -129,7 +129,7 @@ Current split distribution:
 
 ## Related Documentation
 
-- [Format Specification](docs/format-spec.md): YAML schema and data models
-- [Authoring Guide](docs/authoring-guide.md): How to write issue files
-- [Quality Checklist](docs/quality-checklist.md): Pre-commit verification
+- [Format Specification](docs/format_spec.md): YAML schema and data models
+- [Authoring Guide](docs/authoring_guide.md): How to write issue files
+- [Quality Checklist](docs/quality_checklist.md): Pre-commit verification
 - [Training Strategy](../docs/training_strategy.md): Per-file examples, optimization approaches

@@ -14,3 +14,5 @@ occurrences:
     note: "HookResponse fields have trailing docstrings instead of Field descriptions"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter/models.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_linter/models.py

@@ -1,0 +1,52 @@
+// Receive OTLP/HTTP from OpenClaw (port 4318).
+otelcol.receiver.otlp "openclaw" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+    logs    = [otelcol.processor.batch.default.input]
+    traces  = [otelcol.processor.batch.default.input]
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.prometheus.default.input]
+    logs    = [otelcol.exporter.loki.default.input]
+    traces  = [otelcol.exporter.otlp.tempo.input]
+  }
+}
+
+// Push OTel metrics to Prometheus remote write receiver.
+otelcol.exporter.prometheus "default" {
+  forward_to          = [prometheus.remote_write.monitoring.receiver]
+  add_metric_suffixes = false
+}
+
+prometheus.remote_write "monitoring" {
+  endpoint {
+    url = "http://monitoring-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+  }
+}
+
+// Forward OTel logs to Loki.
+otelcol.exporter.loki "default" {
+  forward_to = [loki.write.monitoring.receiver]
+}
+
+loki.write "monitoring" {
+  endpoint {
+    url = "http://loki-stack.loki.svc.cluster.local:3100/loki/api/v1/push"
+  }
+}
+
+// Forward traces to Tempo via OTLP/gRPC.
+otelcol.exporter.otlp "tempo" {
+  client {
+    endpoint = "tempo.monitoring.svc.cluster.local:4317"
+    tls {
+      insecure = true
+    }
+  }
+}

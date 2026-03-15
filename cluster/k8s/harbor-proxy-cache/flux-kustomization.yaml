@@ -13,6 +13,11 @@ spec:
     name: flux-system
   timeout: 10m0s
   wait: true
+  healthChecks:
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: harbor-proxy-cache
+      namespace: flux-system
   dependsOn:
     - name: tofu-controller
     - name: harbor # Wait for Harbor to be deployed

@@ -16,14 +16,15 @@ import (
 // Source: tunnel_register.go
 //
 // The factory function receives parameters via the opts slice:
-//   0: logger (*slog.Logger)
-//   1: ctx (context.Context)
-//   2: sessionID (string)
-//   3: apiURL (string)
-//   4: tunnelEndpoint (string)
-//   5: sessionConfig (interface{})
-//   6: authToken (string)
-//   7: actionRegistry (*actions.Registry) - optional
+//
+//	0: logger (*slog.Logger)
+//	1: ctx (context.Context)
+//	2: sessionID (string)
+//	3: apiURL (string)
+//	4: tunnelEndpoint (string)
+//	5: sessionConfig (interface{})
+//	6: authToken (string)
+//	7: actionRegistry (*actions.Registry) - optional
 //
 // The actual implementation is in internal/tunnel/factory.go, which avoids
 // importing tunnel from manager (would create a circular dependency).

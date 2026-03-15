@@ -17,7 +17,8 @@ spec:
       namespace: flux-system
     - name: vault # Wait for Vault instance to be ready
     - name: external-secrets-config # Required for ExternalSecret resources
-    - name: authentik # Wait for Authentik to be ready (OIDC discovery URL must be accessible)
+    - name: authentik # Wait for Authentik to be ready
+    - name: external-dns # OIDC discovery uses external URL (auth.allegedly.works)
   # Verify terraform resource is ready
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2

@@ -53,7 +53,7 @@ def test_progress_bar_right_aligned():
     rendered = render_bar(bar, 10)
     plain = rendered
     # Should be right-aligned (ends with filled blocks, padding on left)
-    assert plain.endswith(RIGHT_BLOCK_CHARS) or plain.strip() == ""
+    assert plain.endswith(RIGHT_BLOCK_CHARS)
     assert len(plain) == 10
 
 
@@ -64,7 +64,7 @@ def test_progress_bar_left_aligned():
     plain = rendered
     # Should be left-aligned (starts with filled blocks, padding on right)
     assert len(plain) == 10
-    assert plain.startswith(LEFT_BLOCK_CHARS) or plain.strip() == ""
+    assert plain.startswith(LEFT_BLOCK_CHARS)
 
 
 @pytest.mark.parametrize(

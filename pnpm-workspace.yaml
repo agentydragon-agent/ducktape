@@ -1,4 +1,8 @@
 packages:
+  - "x/agent_server/web"
+  - "airlock/frontend"
+  - "airlock/openclaw"
+  - "third_party/mcporter"
+  - "x/rspcache/admin_ui"
   - "props/frontend"
-  - "agent_server/web"
-  - "experimental/rspcache/admin_ui"
+  - "util/testing/frontend_visual"

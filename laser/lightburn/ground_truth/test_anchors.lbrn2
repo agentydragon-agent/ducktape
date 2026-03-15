@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightBurnProject AppVersion="1.6.00" FormatVersion="1" MaterialHeight="0" MirrorX="False" MirrorY="False">
+    <VariableText>
+        <Start Value="0" />
+        <End Value="999" />
+        <Current Value="0" />
+        <Increment Value="1" />
+        <AutoAdvance Value="0" />
+    </VariableText>
+    <UIPrefs>
+        <Optimize_ByLayer Value="0" />
+        <Optimize_ByGroup Value="-1" />
+        <Optimize_ByPriority Value="1" />
+        <Optimize_WhichDirection Value="0" />
+        <Optimize_InnerToOuter Value="1" />
+        <Optimize_ByDirection Value="0" />
+        <Optimize_ReduceTravel Value="1" />
+        <Optimize_HideBacklash Value="0" />
+        <Optimize_ReduceDirChanges Value="0" />
+        <Optimize_ChooseCorners Value="0" />
+        <Optimize_AllowReverse Value="1" />
+        <Optimize_RemoveOverlaps Value="0" />
+        <Optimize_OptimalEntryPoint Value="1" />
+    </UIPrefs>
+    <CutSetting type="Cut">
+        <index Value="0" />
+        <name Value="Text" />
+        <minPower Value="10" />
+        <maxPower Value="10" />
+        <minPower2 Value="0" />
+        <maxPower2 Value="0" />
+        <speed Value="200" />
+        <kerf Value="0.0" />
+        <zOffset Value="0.0" />
+        <enableLaser1 Value="1" />
+        <enableLaser2 Value="0" />
+        <startDelay Value="0" />
+        <endDelay Value="0" />
+        <throughPower Value="0" />
+        <throughPower2 Value="0" />
+        <enableCutThroughStart Value="0" />
+        <enableCutThroughEnd Value="0" />
+        <priority Value="0" />
+        <frequency Value="20000" />
+        <overrideFrequency Value="0" />
+        <PPI Value="200" />
+        <enablePPI Value="0" />
+        <doOutput Value="1" />
+        <hide Value="0" />
+        <runBlower Value="1" />
+        <autoBlower Value="0" />
+        <blowerSpeedOverride Value="0" />
+        <blowerSpeedPercent Value="100" />
+        <overcut Value="0" />
+        <rampLength Value="0" />
+        <rampOuter Value="0" />
+        <numPasses Value="1" />
+        <zPerPass Value="0.0" />
+        <perforate Value="0" />
+        <perfLen Value="0.1" />
+        <perfSkip Value="0.1" />
+        <dotMode Value="0" />
+        <dotTime Value="1" />
+        <dotSpacing Value="0.1" />
+        <manualTabs Value="1" />
+        <tabSize Value="0.5" />
+        <tabCount Value="1" />
+        <tabSpacing Value="50" />
+        <skipInnerTabs Value="0" />
+        <tabsUseSpacing Value="1" />
+        <scanOpt Value="mergeAll" />
+        <bidir Value="1" />
+        <crossHatch Value="0" />
+        <overscan Value="0" />
+        <overscanPercent Value="2.5" />
+        <floodFill Value="0" />
+        <interval Value="0.1" />
+        <angle Value="0" />
+        <cellsPerInch Value="50" />
+        <halftoneAngle Value="22.5" />
+    </CutSetting>
+    <CutSetting type="Cut">
+        <index Value="1" />
+        <name Value="Marker" />
+        <minPower Value="10" />
+        <maxPower Value="10" />
+        <minPower2 Value="0" />
+        <maxPower2 Value="0" />
+        <speed Value="200" />
+        <kerf Value="0.0" />
+        <zOffset Value="0.0" />
+        <enableLaser1 Value="1" />
+        <enableLaser2 Value="0" />
+        <startDelay Value="0" />
+        <endDelay Value="0" />
+        <throughPower Value="0" />
+        <throughPower2 Value="0" />
+        <enableCutThroughStart Value="0" />
+        <enableCutThroughEnd Value="0" />
+        <priority Value="1" />
+        <frequency Value="20000" />
+        <overrideFrequency Value="0" />
+        <PPI Value="200" />
+        <enablePPI Value="0" />
+        <doOutput Value="1" />
+        <hide Value="0" />
+        <runBlower Value="1" />
+        <autoBlower Value="0" />
+        <blowerSpeedOverride Value="0" />
+        <blowerSpeedPercent Value="100" />
+        <overcut Value="0" />
+        <rampLength Value="0" />
+        <rampOuter Value="0" />
+        <numPasses Value="1" />
+        <zPerPass Value="0.0" />
+        <perforate Value="0" />
+        <perfLen Value="0.1" />
+        <perfSkip Value="0.1" />
+        <dotMode Value="0" />
+        <dotTime Value="1" />
+        <dotSpacing Value="0.1" />
+        <manualTabs Value="1" />
+        <tabSize Value="0.5" />
+        <tabCount Value="1" />
+        <tabSpacing Value="50" />
+        <skipInnerTabs Value="0" />
+        <tabsUseSpacing Value="1" />
+        <scanOpt Value="mergeAll" />
+        <bidir Value="1" />
+        <crossHatch Value="0" />
+        <overscan Value="0" />
+        <overscanPercent Value="2.5" />
+        <floodFill Value="0" />
+        <interval Value="0.1" />
+        <angle Value="0" />
+        <cellsPerInch Value="50" />
+        <halftoneAngle Value="22.5" />
+    </CutSetting>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,75,0,0,0,0,0" Str="Non-rotated" H="7" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
+        <XForm>1 0 0 1 30 130</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 30 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 30 115</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,T" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
+        <XForm>1 0 0 1 30 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 30 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 30 75</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,C" H="5" LS="0" LnS="0" Ah="0" Av="1" Weld="1">
+        <XForm>1 0 0 1 30 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 30 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 30 35</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,B" H="5" LS="0" LnS="0" Ah="0" Av="2" Weld="1">
+        <XForm>1 0 0 1 30 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 70 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 70 115</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,T" H="5" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+        <XForm>1 0 0 1 70 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 70 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 70 75</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,C" H="5" LS="0" LnS="0" Ah="1" Av="1" Weld="1">
+        <XForm>1 0 0 1 70 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 70 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 70 35</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,B" H="5" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+        <XForm>1 0 0 1 70 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 110 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 110 115</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,T" H="5" LS="0" LnS="0" Ah="2" Av="0" Weld="1">
+        <XForm>1 0 0 1 110 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 110 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 110 75</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,C" H="5" LS="0" LnS="0" Ah="2" Av="1" Weld="1">
+        <XForm>1 0 0 1 110 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 110 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 110 35</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,B" H="5" LS="0" LnS="0" Ah="2" Av="2" Weld="1">
+        <XForm>1 0 0 1 110 35</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,75,0,0,0,0,0" Str="Rotated 90 CCW" H="7" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
+        <XForm>1 0 0 1 180 130</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 180 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 180 115</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,T" H="5" LS="0" LnS="0" Ah="0" Av="0" Weld="1">
+        <XForm>0 1 -1 0 180 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 180 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 180 75</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,C" H="5" LS="0" LnS="0" Ah="0" Av="1" Weld="1">
+        <XForm>0 1 -1 0 180 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 180 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 180 35</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="L,B" H="5" LS="0" LnS="0" Ah="0" Av="2" Weld="1">
+        <XForm>0 1 -1 0 180 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 220 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 220 115</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,T" H="5" LS="0" LnS="0" Ah="1" Av="0" Weld="1">
+        <XForm>0 1 -1 0 220 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 220 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 220 75</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,C" H="5" LS="0" LnS="0" Ah="1" Av="1" Weld="1">
+        <XForm>0 1 -1 0 220 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 220 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 220 35</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="C,B" H="5" LS="0" LnS="0" Ah="1" Av="2" Weld="1">
+        <XForm>0 1 -1 0 220 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 260 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 260 115</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,T" H="5" LS="0" LnS="0" Ah="2" Av="0" Weld="1">
+        <XForm>0 1 -1 0 260 115</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 260 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 260 75</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,C" H="5" LS="0" LnS="0" Ah="2" Av="1" Weld="1">
+        <XForm>0 1 -1 0 260 75</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="8" H="0.2" Cr="0">
+        <XForm>1 0 0 1 260 35</XForm>
+    </Shape>
+    <Shape Type="Rect" CutIndex="1" W="0.2" H="8" Cr="0">
+        <XForm>1 0 0 1 260 35</XForm>
+    </Shape>
+    <Shape Type="Text" CutIndex="0" Font="Arial,-1,100,5,50,0,0,0,0,0" Str="R,B" H="5" LS="0" LnS="0" Ah="2" Av="2" Weld="1">
+        <XForm>0 1 -1 0 260 35</XForm>
+    </Shape>
+    <Notes ShowOnLoad="0" Notes="Text anchor test: non-rotated (left) and rotated 90 CCW (right). Each HAlign x VAlign combo at its own crosshair." />
+</LightBurnProject>

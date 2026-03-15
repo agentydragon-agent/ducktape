@@ -1,0 +1,42 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: longhorn-nixos-path
+  annotations:
+    policies.kyverno.io/description: >-
+      Longhorn uses nsenter to enter the host mount namespace and call binaries
+      (iscsiadm, mount, blkid, etc.) using the container's inherited PATH.
+      On NixOS hosts, these live under /run/current-system/sw/bin, not FHS paths.
+      This policy adds NixOS paths to PATH on all Longhorn pods. The extra paths
+      are harmless no-ops on non-NixOS nodes.
+      TODO: Scope to NixOS nodes only via Kyverno context apiCall checking
+      feature.node.kubernetes.io/system-os_release.ID=nixos on the target node.
+      Initial attempt with apiCall + preconditions silently failed to mutate.
+spec:
+  rules:
+    - name: inject-nixos-path
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - longhorn-system
+              operations:
+                - CREATE
+      mutate:
+        foreach:
+          - list: "request.object.spec.containers"
+            patchesJson6902: |-
+              - path: /spec/containers/{{elementIndex}}/env/-
+                op: add
+                value:
+                  name: PATH
+                  value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/run/wrappers/bin:/run/current-system/sw/bin"
+          - list: "request.object.spec.initContainers || `[]`"
+            patchesJson6902: |-
+              - path: /spec/initContainers/{{elementIndex}}/env/-
+                op: add
+                value:
+                  name: PATH
+                  value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/run/wrappers/bin:/run/current-system/sw/bin"

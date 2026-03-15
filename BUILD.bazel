@@ -3,13 +3,13 @@
 # or don't need exclusion (cache dirs with no .py files like __pycache__)
 # gazelle:exclude ansible
 # gazelle:exclude homeassistant  # TODO: merge @pypi_homeassistant into @pypi to enable Gazelle here
-# gazelle:exclude claude/claude_hooks  # complex internal imports
+# gazelle:exclude x/claude_hooks  # complex internal imports
 # gazelle:exclude k8s_old  # legacy k8s configs, deps not in main requirements
 
 # gazelle:python_root
 # gazelle:python_generation_mode file
 # gazelle:python_default_visibility NONE
-# gazelle:python_manifest_file_name tools/gazelle_python.yaml
+# gazelle:python_manifest_file_name devinfra/gazelle_python.yaml
 #
 # Bazel-provided libraries (not from PyPI)
 # gazelle:resolve py rules_python.python.runfiles @rules_python//python/runfiles
@@ -17,9 +17,6 @@
 #
 # Non-standard import paths (import name doesn't match directory structure)
 # gazelle:resolve py samplebooks_parts_data //inventree_utils:samplebooks_parts_data
-#
-# Root-level targets with non-standard import paths
-# gazelle:resolve py fmt_util.fmt_util //fmt_util:fmt_util
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
@@ -62,7 +59,7 @@ js_library(
     name = "eslintrc",
     srcs = ["eslint.config.js"],
     tags = ["no-lint"],
-    visibility = ["//tools:__subpackages__"],
+    visibility = ["//devinfra:__subpackages__"],
     deps = [
         ":node_modules/@eslint/js",
         ":node_modules/@typescript-eslint/eslint-plugin",
@@ -71,20 +68,20 @@ js_library(
         ":node_modules/eslint-plugin-react",
         ":node_modules/eslint-plugin-svelte",
         ":node_modules/globals",
+        ":node_modules/svelte",  # peer dep of svelte-eslint-parser & eslint-plugin-svelte
         ":node_modules/svelte-eslint-parser",
+        ":node_modules/typescript",  # peer dep of @typescript-eslint/parser & plugin
     ],
 )
 
 # Prettier configuration as js_library
-# This makes the config and prettier-plugin-svelte available in runfiles.
-# Without this, prettier finds config in source tree but can't resolve plugins
-# because node_modules doesn't exist in CI. See aspect-build/rules_lint#176.
-# no-lint: This is a config file, not a target to lint (avoids aspect self-application)
+# Makes the config and its plugins available to the prettier binary in devinfra/ci
+# no-lint: This is a config file, not a target to lint
 js_library(
     name = "prettierrc",
     srcs = [".prettierrc.cjs"],
     tags = ["no-lint"],
-    visibility = ["//tools:__subpackages__"],
+    visibility = ["//devinfra:__subpackages__"],
     deps = [
         ":node_modules/prettier-plugin-svelte",
         ":node_modules/svelte",
@@ -101,6 +98,11 @@ lock(
     srcs = ["pyproject.toml"],
     out = "requirements_bazel.txt",
     exec_properties = {"dockerNetwork": "bridge"},
+    # Generated py_binary has mypy errors (str/Path reassignment) — skip lint on generated code.
+    tags = [
+        "no-lint",
+        "no-mypy",
+    ],
 )
 
 # Test that requirements_bazel.txt is up to date
@@ -108,6 +110,7 @@ lock(
 native_test(
     name = "requirements_test",
     src = ":requirements.update",
+    exec_properties = {"dockerNetwork": "bridge"},
     tags = [
         "no-cache",
         "requires-network",
@@ -127,20 +130,39 @@ platform(
     exec_properties = {
         # Custom image layered on BuildBuddy's rbe-ubuntu24-04 with git,
         # ca-certificates, and podman for e2e tests.
-        # Built by .github/workflows/rbe-image.yml
-        "container-image": "docker://ghcr.io/agentydragon/rbe-worker:latest",
+        # Built and auto-pinned by .github/workflows/rbe-image.yml
+        # TODO: Consider moving pinned tag to a JSON file (e.g., devinfra/rbe_image/pin.json)
+        # so the workflow can use structured read/write (jq) instead of sed on Starlark.
+        "container-image": "docker://ghcr.io/agentydragon/rbe-worker:devel-20260314075100-64f4467",
+        # BuildBuddy Firecracker isolation for all RBE actions (better isolation + runner recycling)
+        "workload-isolation-type": "firecracker",
+        "recycle-runner": "true",
+        # Start Docker daemon for all RBE actions (lightweight with Firecracker).
+        # Needed for tests (QEMU, integration) and genrules (Talos imager).
+        # With recycle-runner, Docker starts once per VM and persists.
+        # Defined here (not via --remote_default_exec_properties in .bazelrc)
+        # to avoid duplicate-key crash when --config=rbe is expanded twice
+        # (e.g., both buildbuddy.bazelrc and auth-proxy/bazelrc enable it).
+        "init-dockerd": "true",
+        "EstimatedComputeUnits": "3",
+        # Extra disk for Docker-heavy genrules (Talos imager: ~500 MB image + 2.2 GB output).
+        # Default workspace slack is 2 GB which is insufficient.
+        "EstimatedFreeDiskBytes": "10GB",
     },
     parents = ["@buildbuddy_toolchain//:platform_linux_x86_64"],
 )
 
-# Ducktape wheel - bundles CLI tools for distribution
+# Ducktape wheel - bundles CLI tools and Claude Code hooks for distribution
 py_package(
     name = "ducktape_pkg",
     packages = [
         "agent_core",
-        "cli_util",
+        "devinfra",
+        "devinfra.claude",
+        "devinfra.claude.auth_proxy",
+        "devinfra.claude.claude_api",
+        "devinfra.claude.supervisor",
         "difftree",
-        "fmt_util",
         "git_commit_ai",
         "gmail_archiver",
         "gmail_archiver.cli",
@@ -148,8 +170,17 @@ py_package(
         "mcp_infra",
         "mcp_utils",
         "openai_utils",
+        "util",
+        "util.bazel",
     ],
     deps = [
+        # Unified hook dispatcher (transitively pulls in all hook handler deps)
+        "//devinfra/claude:hook_dispatch_lib",
+        "//devinfra/claude:statusline_lib",
+        # Auth proxy main module — invoked as subprocess by supervisor
+        # (not transitively reachable from hook_dispatch_lib)
+        "//devinfra/claude/auth_proxy:main",
+        # CLI tool entry points
         "//difftree:cli",
         "//git_commit_ai:git_commit_ai_lib",
     ],
@@ -163,6 +194,8 @@ py_wheel(
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
+            "claude-hook = devinfra.claude.hook_dispatch:main",
+            "claude-statusline = devinfra.claude.statusline:main",
         ],
     },
     python_requires = ">=3.13",
@@ -171,7 +204,7 @@ py_wheel(
         "aiodocker",
         "anyio",
         "compact-json",
-        "fastmcp>=2.0",
+        "fastmcp>=3.0.0",
         "httpx",
         "jinja2",
         "mako>=1.3",
@@ -196,6 +229,16 @@ py_wheel(
         "pydantic-settings",
         "python-dateutil",
         "pyyaml",
+        # claude deps
+        "cryptography",
+        "kubernetes",
+        "opentelemetry-api",
+        "opentelemetry-exporter-otlp-proto-http",
+        "opentelemetry-sdk",
+        "platformdirs",
+        "psutil",
+        "pyjwt",
+        "supervisor",
     ],
     version = "0.1.0",
     deps = [":ducktape_pkg"],

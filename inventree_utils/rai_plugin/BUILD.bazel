@@ -1,0 +1,63 @@
+# gazelle:ignore
+# InvenTree plugin - requires Django from InvenTree environment (not in @pypi)
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:packaging.bzl", "py_wheel")
+
+py_library(
+    name = "plugin",
+    srcs = ["plugin.py"],
+    tags = ["manual"],
+)
+
+py_wheel(
+    name = "rai_plugin_wheel",
+    distribution = "inventree_rai_plugin",
+    entry_points = {
+        "inventree_plugins": ["rai_plugin = rai_plugin.plugin:RaiPlugin"],
+    },
+    # Strip inventree_utils/ so wheel contains rai_plugin/plugin.py etc.
+    strip_path_prefixes = ["inventree_utils/"],
+    tags = ["manual"],
+    version = "1.0.0",
+    deps = [
+        ":plugin",
+        "//inventree_utils/rai_plugin/templatetags:custom_tags",
+    ],
+)
+
+# A .whl is a zip whose contents map directly to site-packages.
+# InvenTree stable uses Python 3.11 with a virtualenv at /home/inventree/venv/.
+# To verify/update the path: docker run --rm inventree/inventree:stable python3 -c "import site; print(site.getsitepackages())"
+genrule(
+    name = "rai_plugin_layer",
+    srcs = [":rai_plugin_wheel"],
+    outs = ["rai_plugin_layer.tar"],
+    cmd = """
+        DEST=$$(mktemp -d)
+        SITE="$$DEST/home/inventree/venv/lib/python3.11/site-packages"
+        mkdir -p "$$SITE"
+        python3 -c "
+import zipfile, sys
+with zipfile.ZipFile(sys.argv[1]) as zf:
+    zf.extractall(sys.argv[2])
+" $(location :rai_plugin_wheel) "$$SITE"
+        tar -C "$$DEST" -cf "$@" .
+        rm -rf "$$DEST"
+    """,
+)
+
+oci_image(
+    name = "image",
+    base = "@inventree_stable_linux_amd64",
+    tars = [":rai_plugin_layer"],
+    visibility = ["//visibility:public"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["inventree-custom:latest"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,15 @@
+{
+  "groups": {
+    "group:admin": ["agentydragon@"]
+  },
+  "tagOwners": {
+    "tag:service": ["group:admin", "activitywatch@"]
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["*"],
+      "dst": ["*:*"]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 rationale: |
-  These test files live in agent_server/ but exclusively test code in mcp_infra/
+  These test files live in agent_server/ but primarily test code in mcp_infra/
   (exec servers, compositor rendering, resources server). Tests for package X
   should not live in package Y just because Y depends on X. They belong under
   mcp_infra/ alongside the code they exercise.
@@ -12,14 +12,18 @@ occurrences:
     note: "Tests mcp_infra/exec/docker.py ContainerExecServer"
     critic_scopes_expected_to_recall:
       - [agent_server/test_exec_roundtrip.py]
+    match_file_restriction:
+      - agent_server/test_exec_roundtrip.py
 
   - occurrence_id: occ-1
     files:
       agent_server/test_mcp_integration.py:
         - [1, 55]
-    note: "Tests mcp_infra/exec/{direct,docker,subprocess}.py"
+    note: "Integration tests mounting mcp_infra exec servers via agent_server compositor — tests both packages, not exclusively mcp_infra"
     critic_scopes_expected_to_recall:
       - [agent_server/test_mcp_integration.py]
+    match_file_restriction:
+      - agent_server/test_mcp_integration.py
 
   - occurrence_id: occ-2
     files:

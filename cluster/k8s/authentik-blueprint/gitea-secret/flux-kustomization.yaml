@@ -19,7 +19,5 @@ spec:
       name: gitea-oauth-client-secret
       namespace: gitea
   dependsOn:
-    - name: authentik-blueprint-gitea-provider # Wait for provider to be created
-      namespace: flux-system
+    - name: authentik-blueprint-sso-secrets # Vault data exists
     - name: external-secrets-config # Ensure ClusterSecretStore exists
-      namespace: flux-system

@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: activitywatch
+  namespace: activitywatch
+  labels:
+    app: activitywatch
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: activitywatch
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: activitywatch
+    spec:
+      serviceAccountName: activitywatch
+      securityContext:
+        fsGroup: 999
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      imagePullSecrets:
+        - name: harbor-pull-robot
+      containers:
+        - name: aw-server
+          image: registry.allegedly.works/ducktape/aw-server:devel-20260314070426-c0e55a6 # {"$imagepolicy": "flux-system:activitywatch"}
+          ports:
+            - containerPort: 5600
+              name: http
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/0/info
+              port: 5600
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/0/info
+              port: 5600
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        - name: readonly-proxy
+          image: nginx:alpine
+          ports:
+            - containerPort: 5601
+              name: readonly
+          volumeMounts:
+            - name: readonly-proxy-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 5601
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 5601
+            initialDelaySeconds: 2
+            periodSeconds: 10
+        - name: tailscale
+          image: ghcr.io/tailscale/tailscale:latest
+          env:
+            - name: TS_AUTHKEY
+              valueFrom:
+                secretKeyRef:
+                  name: activitywatch-authkey
+                  key: TS_AUTHKEY
+            - name: TS_EXTRA_ARGS
+              value: "--login-server=https://headscale.allegedly.works"
+            - name: TS_USERSPACE
+              value: "false"
+            - name: TS_KUBE_SECRET
+              value: "tailscale-state"
+            - name: TS_HOSTNAME
+              value: "activitywatch"
+            # Talos nodes lack ip_tables kernel module; use nftables backend.
+            - name: TS_DEBUG_FIREWALL_MODE
+              value: "nftables"
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - NET_RAW
+          volumeMounts:
+            - name: dev-tun
+              mountPath: /dev/net/tun
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: activitywatch-data
+        - name: readonly-proxy-config
+          configMap:
+            name: activitywatch-readonly-proxy
+        - name: dev-tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice

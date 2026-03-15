@@ -3,10 +3,10 @@ finance/worthy/worthy/index_head.html
 finance/worthy/worthy/index_tail.html
 
 # Claude Code testdata - description.md are extracted content from Claude Code
-claude/claude_hooks/testdata/claude_tools/**/*.md
+x/claude_hooks/testdata/claude_tools/**/*.md
 
 # OrcaSlicer config - machine-generated, should not be formatted
-nonrcm_dotfiles/config/OrcaSlicer/**
+x/orcaslicer_config/**
 
 # Jinja2 templates - prettier mangles block/variable tag formatting
 **/*.j2
@@ -27,7 +27,7 @@ llm/instruct-logseq/**
 
 # Archived directories - complex formatting that doesn't survive prettier
 claude_commands_old/**
-k8s_old/**
+x/k8s_old/**
 
 # Flux-generated GitOps manifests
 cluster/k8s/flux-system/**

@@ -10,5 +10,5 @@
 {#if runId}
   <RunDetail {runId} />
 {:else}
-  <p class="text-gray-500">Invalid run ID</p>
+  <p class="text-gray-500 dark:text-gray-400">Invalid run ID</p>
 {/if}

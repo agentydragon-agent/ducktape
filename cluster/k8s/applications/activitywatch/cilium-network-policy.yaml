@@ -1,0 +1,69 @@
+# ActivityWatch with Tailscale sidecar.
+# Ingress: kube-apiserver only (kubectl port-forward, health probes).
+# Egress: DNS, kube-apiserver:6443 (TS_KUBE_SECRET), headscale/DERP:443,
+#         WireGuard:41641/UDP.
+#
+# toCIDR 0.0.0.0/0 doesn't cover cluster-node IPs in Cilium — headscale
+# runs on VPS nodes whose IPs are part of the cluster identity. Use
+# toEntities: world + cluster for full coverage.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: activitywatch
+  namespace: activitywatch
+spec:
+  endpointSelector:
+    matchLabels:
+      app: activitywatch
+  ingress:
+    - fromEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "5600"
+              protocol: TCP
+    # Read-only proxy for sandbox namespaces (nginx on 5601).
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: openclaw-sandbox
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: claude-sandbox
+      toPorts:
+        - ports:
+            - port: "5601"
+              protocol: TCP
+  egress:
+    # DNS
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    # kube-apiserver for TS_KUBE_SECRET persistence
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+    # Headscale control + DERP relays (HTTPS)
+    - toEntities:
+        - world
+        - cluster
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # WireGuard direct connections
+    - toEntities:
+        - world
+        - cluster
+      toPorts:
+        - ports:
+            - port: "41641"
+              protocol: UDP

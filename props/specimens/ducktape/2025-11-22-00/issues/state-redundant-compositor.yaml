@@ -26,11 +26,12 @@ occurrences:
   - occurrence_id: occ-0
     files:
       adgn/src/adgn/agent/server/status_shared.py:
-        - - 66
-          - 68
-        - - 76
-          - 78
-        - - 91
-          - 91
+        - [68, 70] # PolicyState class
+        - [78, 80] # McpState class
+        - [96, 96] # policy: PolicyState field
+        - [98, 98] # mcp: McpState field
+        - [100, 100] # pending_approvals: int field
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/server/status_shared.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/status_shared.py

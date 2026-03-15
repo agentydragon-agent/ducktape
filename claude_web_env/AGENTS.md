@@ -11,7 +11,7 @@
 
 The goal is **zero exclusions** that aren't:
 
-1. **Session start hook artifacts** — files created by `tools/claude_hooks` at runtime
+1. **Session start hook artifacts** — files created by `devinfra/claude` at runtime
 2. **Unavoidable runtime differences** — `/proc`, `/sys`, `/dev`, caches, runtime state
 
 If a difference can be fixed by updating the Dockerfile (pinning a version, adding a file), **fix it in the Dockerfile** rather than adding an exclusion. Exclusions should be a last resort for truly unavoidable runtime differences.
@@ -25,31 +25,52 @@ After making changes to the Dockerfile or `rootfs/` content, **always run a buil
 
 ```bash
 cd claude_web_env
-./tools/build_and_diff.sh
+bazel run //claude_web_env/tools:build_and_diff
 ```
 
 This script:
 
-1. Sets up tmpfs storage (if needed)
-2. Builds the Dockerfile with VFS storage (~20 min)
-3. Captures manifests from live and built images
-4. Generates `diff_report.md`
+1. Builds the Dockerfile with Docker (`docker build --network=host`)
+2. Captures manifests from live and built images (exports built image via `docker export | tar -x`)
+3. Generates `diff_report.md`
 
 If you only need to regenerate the diff (image already built):
 
 ```bash
-./tools/build_and_diff.sh --diff-only
+bazel run //claude_web_env/tools:build_and_diff -- --diff-only
 ```
 
 **Commit `diff_report.md`** along with your Dockerfile/rootfs changes. The diff report documents the current delta between built and live containers.
 
-> **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build_and_diff.sh`.
+> **Keep this procedure up to date**: If the build process changes (new storage options, different flags, etc.), update both this file and `tools/build_and_diff.py`.
 
 ### Tool Availability
 
-- **podman 4.9.3 + buildah 1.33.7**: Available and working
-- **docker / buildx / BuildKit**: NOT available in the sandbox
+- **docker 29.2.1 + BuildKit**: Available and working (default runtime)
+- **podman 4.9.3 + buildah 1.33.7**: Available but superseded by Docker
 - **fuse-overlayfs**: Installed but broken (gVisor lacks `FUSE_CAP_READDIRPLUS`)
+
+Docker is simpler in gVisor: no crun-gvisor-wrapper, no setgroups annotation, no
+freezer mock, no keyring injection needed. Docker data-root is on tmpfs at
+`/mnt/bazel-tmpfs/docker` (configured by session hooks).
+
+**Proxy requirement**: The gVisor sandbox has no direct internet access. All
+outbound traffic goes through the egress proxy in `$https_proxy`. Docker build
+containers do not inherit env vars from the build host, so the proxy must be
+passed explicitly as `--build-arg https_proxy=... --build-arg http_proxy=...`.
+`build_and_diff` handles this automatically. Docker excludes predefined proxy
+ARG names from the cache key, so session-specific JWT proxy URLs don't break
+layer caching.
+
+**Layer limit**: Docker's overlay snapshotter in gVisor is limited to ~35 lowerdir
+entries (empirical gVisor limit; NOT a string-length issue — lowerdir uses relative
+paths like `51/fs`). Ubuntu 24.04 base = 4 layers; Dockerfile may have at most ~31
+layer-creating instructions (SHELL, RUN, COPY, WORKDIR each count; ENV/LABEL/CMD
+are metadata-only and do NOT count). Key technique: put ALL ENV variables in a
+single ENV instruction (saves ~9 layer slots vs scattered ENVs). The Dockerfile
+currently uses 27 BuildKit steps (well within the limit). If a build fails with
+`mount source: overlay... invalid argument`, consolidate COPY/RUN/ENV to reduce
+step count. See PLAN.md for details.
 
 ### Container Update Procedure
 
@@ -60,7 +81,7 @@ environment variables), follow this procedure to bring the reconstruction in syn
 
 ```bash
 cd claude_web_env
-uv run --script tools/capture_versions.py > reference/versions-$(date +%Y-%m-%d).yaml
+bazel run //claude_web_env/tools:capture_versions -- > reference/versions-$(date +%Y-%m-%d).yaml
 ```
 
 This creates a structured YAML snapshot of all runtime versions, npm packages,
@@ -69,7 +90,7 @@ binary hashes, environment variables, and environment-manager metadata.
 #### 2. Compare against previous capture
 
 ```bash
-uv run --script tools/capture_versions.py --diff reference/versions-YYYY-MM-DD.yaml
+bazel run //claude_web_env/tools:capture_versions -- --diff reference/versions-YYYY-MM-DD.yaml
 ```
 
 This shows a unified diff of what changed. Use this to identify which Dockerfile
@@ -109,7 +130,7 @@ For `environment_discovery.md` specifically, check:
 #### 5. Rebuild and diff
 
 ```bash
-./tools/build_and_diff.sh
+bazel run //claude_web_env/tools:build_and_diff
 ```
 
 Review `diff_report.md` and update `PLAN.md` with the new diff summary.

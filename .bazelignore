@@ -20,12 +20,8 @@ cluster/.direnv
 wt/.direnv
 props/.direnv
 
-# Specimens - frozen code snapshots contain BUILD.bazel files that
-# would create spurious Bazel packages. Test reads from source tree.
-props/specimens
-
-# Investigations - no BUILD files
-investigations
+# Debug investigations - no BUILD files
+debug
 
 # Legacy k8s cluster configs - deps not in main requirements
 k8s_old

@@ -1,0 +1,246 @@
+# Workflow trigger definitions - single source of truth
+#
+# This file defines all CI workflows and their triggers. The generator script
+# (generate_ci.py) reads this to produce .github/workflows/ci.yml.
+#
+# Trigger types (discriminated by trigger.kind):
+#   always: Always run this workflow
+#   bazel_query: Bazel query expression over affected targets ($targets placeholder)
+#   path: Regex pattern for changed files
+#
+# Job options:
+#   targets: Pass affected targets to the workflow (default: false)
+#   secrets: inherit - pass all caller secrets to the workflow (also implies RBE wiring)
+#   inputs: Additional inputs to pass to the workflow
+#
+# Workflow file changes automatically trigger their workflow.
+
+workflows:
+  # Core Bazel workflows
+  # Build + all quality checks (ruff, ESLint, mypy, clippy, rustfmt; run by default)
+  bazel-check:
+    trigger: { kind: bazel_query, query: "$targets" }
+    targets: true
+    secrets: inherit
+
+  bazel-test:
+    # Java (keytool) is provided hermetically via //third_party/jdk.
+    # E2E tests (local=True) run locally even when RBE is enabled.
+    # Exclude manual-tagged tests: target lists are passed by file, bypassing
+    # Bazel's default wildcard exclusion of manual targets.
+    trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets) except attr(tags, "manual", $targets)' }
+    targets: true
+    secrets: inherit
+
+  # Image builds
+  rbe-image:
+    trigger: { kind: path, pattern: "^devinfra/rbe_image/" }
+
+  # Bazel image workflows always trigger. Bazel builds are hermetic, so same
+  # inputs → same image digest. The workflow compares the local digest against
+  # the registry and skips the push when unchanged. This avoids the stale-image
+  # bug where bazel-diff (HEAD vs HEAD~1) misses changes from earlier commits
+  # whose push step failed.
+  props-images:
+    trigger: { kind: always }
+    events: [push]
+    secrets: inherit
+
+  # Single workflow that builds and pushes all Bazel-built Harbor images.
+  # The list of images is defined in harbor_images below.
+  bazel-harbor-images:
+    trigger: { kind: always }
+    events: [push]
+    secrets: inherit
+
+  openclaw-image:
+    trigger: { kind: path, pattern: "^(openclaw/|airlock/openclaw/)" }
+    events: [push]
+    secrets: inherit
+    rbe: false
+
+  # Path-based workflows (non-Bazel)
+  nix-flake-check:
+    trigger: { kind: path, pattern: "^nix/" }
+
+  ansible-lint:
+    trigger: { kind: path, pattern: "^ansible/" }
+
+  # Always-run workflows
+  pre-commit:
+    trigger: { kind: always }
+
+# Release definitions — single source of truth for all package releases.
+#
+# Generates a consolidated .github/workflows/release.yml with:
+#   - check-releases job (bazel-diff for all packages)
+#   - per-package test jobs (if test_targets is set)
+#   - extra_jobs spliced in as additional workflow jobs
+#   - per-package release jobs (build + GitHub Release)
+#   - update-downstream job (pin flake URLs + .claude/settings.json)
+#
+# Fields:
+#   bazel_target:     Bazel target to build (required)
+#   release_body:     GitHub Release description (required)
+#   artifact_type:    "wheel" (default) or "binary"
+#   test_targets:     Bazel test targets — generates a test job if set
+#   flake_input:      Nix flake input name — update-downstream rewrites its URL if set
+#   update_claude_settings: Also update .claude/settings.json (default: false)
+#   apt_packages:     System packages needed for build
+#   extra_jobs:       Additional jobs spliced into the workflow (name → job config)
+#   release_needs:    Extra job names the release job depends on (beyond standard test)
+releases:
+  kubespand:
+    bazel_target: //cluster/kubespand:kubespand
+    artifact_type: binary
+    test_targets: //cluster/kubespand/...
+    flake_input: kubespand-bin
+    release_body: |
+      kubespand — standalone KubeSpan daemon for non-Talos Linux.
+
+      Static x86_64 binary. See `cluster/kubespand/README.md` for usage.
+
+  ducktape:
+    bazel_target: //:wheel
+    wheel_name: ducktape
+    test_targets: //devinfra/claude/...
+    flake_input: ducktape-wheel
+    update_claude_settings: true
+    extra_jobs:
+      test-ducktape-e2e:
+        needs: [check-releases]
+        timeout-minutes: 30
+        steps:
+          - uses: actions/checkout@v4
+          - uses: ./.github/actions/setup-bazel
+            id: bazel
+            with:
+              buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          - name: Run e2e tests
+            run: |
+              bazel test \
+                --test_output=all \
+                --nocache_test_results \
+                --test_tag_filters=e2e \
+                --spawn_strategy=local \
+                --test_env=CI=true \
+                --test_env=GITHUB_ACTIONS=true \
+                --test_env=PATH \
+                //devinfra/claude/...
+          - uses: ./.github/actions/collect-test-logs
+            if: always()
+            with:
+              artifact-name: ducktape-e2e-test-logs
+      test-ducktape-wheel:
+        needs: [check-releases]
+        timeout-minutes: 30
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-java@v4
+            with:
+              distribution: temurin
+              java-version: "21"
+          - uses: astral-sh/setup-uv@v5
+          - uses: ./.github/actions/setup-bazel
+            id: bazel
+            with:
+              buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          - name: Build wheel
+            run: bazel build --remote_download_toplevel //:wheel
+          - name: Install wheel
+            run: uv tool install bazel-bin/ducktape-*.whl
+          - name: Test installed wheel
+            run: |
+              bazel test //devinfra/claude:test_session_start \
+                --test_output=all \
+                --nocache_test_results \
+                --spawn_strategy=local \
+                --test_env=DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 \
+                --test_env=CI=true \
+                --test_env=JAVA_HOME \
+                --test_env=PATH
+          - uses: ./.github/actions/collect-test-logs
+            if: always()
+            with:
+              artifact-name: wheel-test-logs
+    release_needs: [test-ducktape-e2e, test-ducktape-wheel]
+    release_body: |
+      ducktape wheel containing:
+
+      CLI tools:
+      - `git-commit-ai` - AI-powered commit message generator
+      - `difftree` - Tree-style visualization of diffs
+      - `gmail-archiver` - Gmail email auto-archiving tool
+
+      Claude Code hooks:
+      - `claude-hook` - Unified hook dispatcher for Claude Code web
+      - `claude-statusline` - Statusline for Claude Code
+
+      Requires Python 3.13+
+
+  headscale-cleanup:
+    bazel_target: //headscale_cleanup:wheel
+    wheel_name: headscale_cleanup
+    flake_input: headscale-cleanup-wheel
+    release_body: |
+      headscale-cleanup wheel.
+
+      CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
+
+  gterm-theme:
+    bazel_target: //gterm_theme:wheel
+    wheel_name: gterm_theme
+    apt_packages: [libcairo2-dev, libgirepository-2.0-dev, libdbus-1-dev, libxcb1-dev, pkg-config]
+    flake_input: gterm-theme-wheel
+    release_body: |
+      gterm-theme wheel (GNOME Terminal theme follower).
+
+      **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
+
+# List of Bazel-built images pushed to Harbor (registry.allegedly.works).
+# The bazel-harbor-images workflow (generated from this config) builds and
+# pushes all images in a single job, sharing Bazel setup and registry login.
+harbor_images:
+  - bazel_target: //oauth_broker:load
+    local_tag: oauth-broker:latest
+    remote_path: ducktape/oauth-broker
+
+  - bazel_target: //cluster/k8s/applications/inventree-token-provisioner:load
+    local_tag: inventree-token-provisioner:latest
+    remote_path: ducktape/token-provisioner
+
+  - bazel_target: //props/backend:load
+    local_tag: props-backend:latest
+    remote_path: ducktape/props-backend
+
+  - bazel_target: //airlock:load
+    local_tag: airlock:latest
+    remote_path: ducktape/airlock
+
+  - bazel_target: //airlock/auth_proxy:load
+    local_tag: airlock-auth-proxy:latest
+    remote_path: ducktape/auth-proxy
+
+  - bazel_target: //mcp_infra/exec:direct_load
+    local_tag: exec-backend:latest
+    remote_path: ducktape/exec-backend
+
+  - bazel_target: //openclaw/exec:load
+    local_tag: openclaw-exec:latest
+    remote_path: ducktape/openclaw-exec
+
+  - bazel_target: //homeassistant/proxy:load
+    local_tag: homeassistant-proxy:latest
+    remote_path: ducktape/homeassistant-proxy
+
+  - bazel_target: //inventree_utils/rai_plugin:load
+    local_tag: inventree-custom:latest
+    remote_path: ducktape/inventree
+
+  - bazel_target: //tana/token_broker:load
+    local_tag: tana-token-broker:latest
+    remote_path: ducktape/tana-token-broker
+
+  - bazel_target: //third_party/activitywatch:load
+    local_tag: aw-server:latest
+    remote_path: ducktape/aw-server

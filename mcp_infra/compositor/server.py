@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import sys
 import warnings
@@ -10,7 +9,7 @@ from datetime import UTC, datetime
 from enum import Enum, auto
 
 # Import will be circular at module load, so use TYPE_CHECKING
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
@@ -45,8 +44,6 @@ if TYPE_CHECKING:
     from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T", bound=FastMCP)
 
 
 class ChildNotificationHandler(MessageHandler):
@@ -93,7 +90,7 @@ class BaseCompositor(FastMCP):
 
     MUST be used as async context manager:
         async with BaseCompositor() as comp:
-            await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, runtime_server)
+            await comp.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, runtime_server)
             ...
 
     Features:
@@ -304,7 +301,7 @@ class BaseCompositor(FastMCP):
 
         Example:
             async with Compositor() as comp:
-                await comp.mount_inproc(RUNTIME_MOUNT_PREFIX, runtime_server)
+                await comp.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, runtime_server)
                 async with Client(comp) as mcp_client:
                     agent = await Agent.create(
                         mcp_client=mcp_client,
@@ -330,7 +327,7 @@ class BaseCompositor(FastMCP):
 
         # Mount proxy on FastMCP surface
         if mount.is_active:
-            self.mount(mount.proxy, prefix=prefix)
+            self.mount(mount.proxy, namespace=prefix)
             await self._notify_mount_listeners(prefix, MountEvent.STATE)
             await self._notify_mount_listeners(prefix, MountEvent.MOUNTED)
         else:
@@ -375,7 +372,7 @@ class BaseCompositor(FastMCP):
         # Register and notify
         await self._mount_common(validated_prefix, mount)
 
-    async def mount_inproc(self, prefix: MCPMountPrefix, server: T, *, pinned: bool = False) -> Mounted[T]:
+    async def mount_inproc[T: FastMCP](self, prefix: MCPMountPrefix, server: T, *, pinned: bool = False) -> Mounted[T]:
         """Mount in-process FastMCP server and return Mounted wrapper.
 
         Exception-safe: if mount fails, no server is registered and no resources leak.
@@ -393,7 +390,7 @@ class BaseCompositor(FastMCP):
             ValueError: If prefix is already mounted
 
         Example:
-            self.runtime = await self.mount_inproc(RUNTIME_MOUNT_PREFIX, ContainerExecServer(...), pinned=True)
+            self.runtime = await self.mount_inproc(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer(...), pinned=True)
         """
         # Check state
         async with self._state_lock:
@@ -706,19 +703,7 @@ class BaseCompositor(FastMCP):
     async def read_resource_contents(
         self, uri: mcp_types.AnyUrl
     ) -> list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]:
-        """Read resource contents, converting from FastMCP's internal types to MCP protocol types.
-
-        Used by resources server to avoid client dependency. FastMCP's internal _read_resource_mcp
-        returns mcp.server.lowlevel.helper_types.ReadResourceContents which must be converted to
-        proper MCP protocol types (TextResourceContents | BlobResourceContents).
-        """
-        raw_contents = await self._read_resource_mcp(uri)
-        # Convert FastMCP's internal ReadResourceContents to MCP protocol types
-        return [
-            mcp_types.BlobResourceContents(
-                uri=uri, mimeType=c.mime_type, blob=base64.b64encode(c.content).decode("ascii")
-            )
-            if isinstance(c.content, bytes)
-            else mcp_types.TextResourceContents(uri=uri, mimeType=c.mime_type, text=c.content)
-            for c in raw_contents
-        ]
+        """Read resource contents, converting from FastMCP's ResourceResult to MCP protocol types."""
+        result = await self.read_resource(str(uri))
+        mcp_result = result.to_mcp_result(uri)
+        return list(mcp_result.contents)

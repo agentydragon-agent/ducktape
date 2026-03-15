@@ -35,3 +35,5 @@ occurrences:
         - [149, 150]
     critic_scopes_expected_to_recall:
       - - adgn/tests/agent/server/test_mcp_routing.py
+    match_file_restriction:
+      - adgn/tests/agent/server/test_mcp_routing.py

@@ -1,7 +1,7 @@
 """Integration tests for stats API routes.
 
-Tests the occurrence stats, distributions, and coverage endpoints with
-real Postgres and test fixture data (critic runs + grading edges).
+Tests the occurrence stats and coverage endpoints with real Postgres
+and test fixture data (critic runs + grading edges).
 """
 
 from __future__ import annotations
@@ -11,13 +11,12 @@ import pytest_bazel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from props.backend.auth import get_agent_db
+from props.backend.auth import get_caller_db
 from props.backend.routes import stats
 from props.core.models.examples import ExampleSpec
 from props.db.database import Database
 from props.db.models import AgentRun
-
-pytestmark = [pytest.mark.integration]
+from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
 
 @pytest.fixture
@@ -28,8 +27,46 @@ def stats_client(synced_db: Database) -> TestClient:
     app.state.admin_db = synced_db
     # Override agent DB dependency to use admin connection (no RLS restriction).
     # RLS scoping is tested separately in test_split_based_rls.
-    app.dependency_overrides[get_agent_db] = lambda: synced_db
+    app.dependency_overrides[get_caller_db] = lambda: synced_db
     return TestClient(app, raise_server_exceptions=False)
+
+
+# --- /definitions/{image_digest} ---
+
+
+def test_definition_detail_not_found(stats_client: TestClient) -> None:
+    """Returns 404 for nonexistent digest."""
+    resp = stats_client.get("/api/stats/definitions/sha256:" + "f" * 64)
+    assert resp.status_code == 404
+
+
+def test_definition_detail_returns_definition(stats_client: TestClient, synced_db: Database) -> None:
+    """Returns definition metadata for a known digest."""
+    with synced_db.session() as session:
+        ensure_fake_agent_definitions(session)
+        session.commit()
+
+    resp = stats_client.get(f"/api/stats/definitions/{FAKE_CRITIC_DIGEST}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["image_digest"] == FAKE_CRITIC_DIGEST
+    assert body["agent_type"] == "critic"
+    assert "created_at" in body
+    assert "stats" in body
+    assert "examples" in body
+
+
+def test_definition_detail_with_runs(
+    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
+) -> None:
+    """Returns stats and examples when runs exist for the definition."""
+    resp = stats_client.get(f"/api/stats/definitions/{FAKE_CRITIC_DIGEST}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["image_digest"] == FAKE_CRITIC_DIGEST
+    # With runs, we should have stats populated
+    assert isinstance(body["stats"], dict)
+    assert isinstance(body["examples"], list)
 
 
 # --- /occurrences ---
@@ -91,37 +128,6 @@ def test_occurrences_sort_desc(
     assert credits == sorted(credits, reverse=True)
 
 
-# --- /distributions ---
-
-
-def test_distributions_empty(stats_client: TestClient) -> None:
-    """Returns empty lists when no runs exist for split."""
-    resp = stats_client.get("/api/stats/distributions", params={"split": "valid"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["max_recall_values"] == []
-    assert body["tp_count_values"] == []
-
-
-def test_distributions_with_runs(
-    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
-) -> None:
-    """Returns recall and TP count distributions for train split."""
-    resp = stats_client.get("/api/stats/distributions", params={"split": "train"})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert len(body["max_recall_values"]) > 0
-    assert all(0.0 <= v <= 1.0 for v in body["max_recall_values"])
-    assert len(body["tp_count_values"]) > 0
-    assert all(v > 0 for v in body["tp_count_values"])
-
-
-def test_distributions_requires_split(stats_client: TestClient) -> None:
-    """Split parameter is required."""
-    resp = stats_client.get("/api/stats/distributions")
-    assert resp.status_code == 422
-
-
 # --- /coverage ---
 
 
@@ -133,6 +139,27 @@ def test_coverage_empty(stats_client: TestClient) -> None:
     assert body["examples"] == []
     assert body["definitions"] == []
     assert body["cells"] == []
+    assert body["max_recall_values"] == []
+    assert body["tp_count_values"] == []
+
+
+def test_coverage_distributions_with_runs(
+    stats_client: TestClient, test_train_example_with_runs: tuple[ExampleSpec, AgentRun, AgentRun]
+) -> None:
+    """Coverage response includes distribution histograms."""
+    resp = stats_client.get("/api/stats/coverage", params={"split": "train"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["max_recall_values"]) > 0
+    assert all(0.0 <= v <= 1.0 for v in body["max_recall_values"])
+    assert len(body["tp_count_values"]) > 0
+    assert all(v > 0 for v in body["tp_count_values"])
+
+
+def test_coverage_requires_split(stats_client: TestClient) -> None:
+    """Split parameter is required."""
+    resp = stats_client.get("/api/stats/coverage")
+    assert resp.status_code == 422
 
 
 def test_coverage_with_runs(
@@ -158,12 +185,6 @@ def test_coverage_with_runs(
     cell = body["cells"][0]
     assert 0.0 <= cell["recall"] <= 1.0
     assert isinstance(cell["is_best"], bool)
-
-
-def test_coverage_requires_split(stats_client: TestClient) -> None:
-    """Split parameter is required."""
-    resp = stats_client.get("/api/stats/coverage")
-    assert resp.status_code == 422
 
 
 def test_coverage_limit_definitions(

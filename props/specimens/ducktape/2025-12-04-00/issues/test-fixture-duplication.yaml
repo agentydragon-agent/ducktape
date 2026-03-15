@@ -15,3 +15,5 @@ occurrences:
         - [56, 228]
     critic_scopes_expected_to_recall:
       - - adgn/tests/props/test_paths.py
+    match_file_restriction:
+      - adgn/tests/props/test_paths.py

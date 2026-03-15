@@ -16,6 +16,8 @@ occurrences:
       asMsg.GetMessage().ID == messageID) and guard for tc.Spinning with a single condition.
     critic_scopes_expected_to_recall:
       - - internal/tui/components/chat/chat.go
+    match_file_restriction:
+      - internal/tui/components/chat/chat.go
   - occurrence_id: occ-1
     files:
       internal/message/content.go:
@@ -25,6 +27,8 @@ occurrences:
       nesting.
     critic_scopes_expected_to_recall:
       - - internal/message/content.go
+    match_file_restriction:
+      - internal/message/content.go
   - occurrence_id: occ-2
     files:
       internal/app/app.go:
@@ -34,6 +38,8 @@ occurrences:
       hot loop.
     critic_scopes_expected_to_recall:
       - - internal/app/app.go
+    match_file_restriction:
+      - internal/app/app.go
   - occurrence_id: occ-3
     files:
       internal/lsp/client.go:
@@ -41,6 +47,8 @@ occurrences:
     note: "WaitForServerReady: remove unnecessary else after an early return and use guard clauses."
     critic_scopes_expected_to_recall:
       - - internal/lsp/client.go
+    match_file_restriction:
+      - internal/lsp/client.go
   - occurrence_id: occ-4
     files:
       e2e/scenario.go:
@@ -50,6 +58,8 @@ occurrences:
       nested conditionals.
     critic_scopes_expected_to_recall:
       - - e2e/scenario.go
+    match_file_restriction:
+      - e2e/scenario.go
   - occurrence_id: occ-5
     files:
       internal/pubsub/broker.go:
@@ -57,6 +67,8 @@ occurrences:
     note: 'Use short if with initializer: if s := f.String(); s != "" { ... } instead of separate lines.'
     critic_scopes_expected_to_recall:
       - - internal/pubsub/broker.go
+    match_file_restriction:
+      - internal/pubsub/broker.go
   - occurrence_id: occ-6
     files:
       internal/history/file.go:
@@ -66,3 +78,5 @@ occurrences:
       deep nesting.
     critic_scopes_expected_to_recall:
       - - internal/history/file.go
+    match_file_restriction:
+      - internal/history/file.go

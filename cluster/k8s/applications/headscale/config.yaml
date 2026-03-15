@@ -1,0 +1,82 @@
+# Headscale configuration — non-sensitive values only.
+# Sensitive values (oidc.client_secret, database.postgres.pass) are overridden
+# at runtime via Viper env vars (HEADSCALE_ prefix, . → _).
+server_url: https://headscale.allegedly.works
+listen_addr: 0.0.0.0:8080
+metrics_listen_addr: 0.0.0.0:9090
+grpc_listen_addr: 0.0.0.0:50443
+grpc_allow_insecure: false
+
+# TLS terminated by Headscale itself (TLSRoute passthrough from Cilium Gateway)
+tls_cert_path: /etc/headscale/tls/tls.crt
+tls_key_path: /etc/headscale/tls/tls.key
+
+# Noise keys for Tailscale protocol
+noise:
+  private_key_path: /etc/headscale/keys/noise.key
+
+# ACL policy from file (mounted ConfigMap)
+policy:
+  mode: file
+  path: /etc/headscale/policy.json
+
+prefixes:
+  v4: 100.64.0.0/10
+  v6: fd7a:115c:a1e0::/48
+
+database:
+  type: postgres
+  postgres:
+    host: headscale-db-rw
+    port: 5432
+    name: headscale
+    user: headscale
+    # pass overridden by env var HEADSCALE_DATABASE_POSTGRES_PASS
+    pass: ""
+    ssl: false
+
+dns:
+  magic_dns: true
+  base_domain: tailnet.allegedly.works
+  nameservers:
+    global:
+      - 1.1.1.1
+      - 8.8.8.8
+    # Route cluster DNS queries to CoreDNS via the subnet router
+    split:
+      svc.cluster.local:
+        - 10.96.0.10
+  search_domains:
+    - svc.cluster.local
+
+oidc:
+  # Start even when Authentik is unreachable (OIDC login will fail until
+  # available, but the server won't crash-loop during bootstrap or gateway issues).
+  only_start_if_oidc_is_available: false
+  issuer: "https://auth.allegedly.works/application/o/headscale/"
+  client_id: "headscale"
+  # client_secret overridden by env var HEADSCALE_OIDC_CLIENT_SECRET
+  client_secret: ""
+  scope:
+    - openid
+    - profile
+    - email
+  expiry: "180d"
+  use_expiry_from_token: false
+  pkce:
+    enabled: true
+    method: S256
+
+derp:
+  server:
+    enabled: false
+    region_id: 999
+    stun_listen_addr: "0.0.0.0:3478"
+  urls:
+    - https://controlplane.tailscale.com/derpmap/default
+  auto_update_enabled: true
+  update_frequency: 3h
+
+log:
+  format: text
+  level: info

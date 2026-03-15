@@ -12,11 +12,12 @@ spec:
       retries: 3
   chart:
     spec:
-      chart: ./charts/attic
+      chart: ./cluster/charts/attic
       sourceRef:
         kind: GitRepository
-        name: attic-chart
-        namespace: nix-cache
+        name: flux-system
+        namespace: flux-system
+      reconcileStrategy: Revision
       interval: 15m
   # Inject JWT token from SealedSecret
   valuesFrom:
@@ -101,10 +102,10 @@ spec:
       garbage-collection:
         interval: "12 hours"
 
-    # Resources
+    # Resources — right-sized from observed usage, see docs/operations/2026-02-22-memory-request-rightsizing.md
     resources:
       requests:
-        memory: 256Mi
+        memory: 32Mi
         cpu: 100m
       limits:
         memory: 1Gi

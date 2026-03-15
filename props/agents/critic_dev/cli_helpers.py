@@ -12,8 +12,8 @@ from uuid import UUID
 from rich.console import Console
 from sqlalchemy import func, text
 
+from props.agents.critic_dev.display import ColumnDef, build_table_from_schema, short_sha
 from props.core.agent_types import AgentType, CriticTypeConfig
-from props.core.display import ColumnDef, build_table_from_schema, short_sha
 from props.core.ids import SnapshotSlug
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, LLMRequest

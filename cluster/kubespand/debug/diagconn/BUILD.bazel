@@ -1,0 +1,18 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "diagconn_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/debug/diagconn",
+    deps = [
+        "@com_github_siderolabs_talos_pkg_machinery//client/dialer",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//keepalive",
+    ],
+)
+
+go_binary(
+    name = "diagconn",
+    embed = [":diagconn_lib"],
+)

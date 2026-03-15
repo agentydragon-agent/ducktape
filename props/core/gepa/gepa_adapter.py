@@ -55,7 +55,6 @@ from sqlalchemy import func
 from agent_core.events import EventType
 from openai_utils.model import OpenAIModelProto
 from props.core.agent_types import AgentType
-from props.core.agent_workspace import WorkspaceManager
 from props.core.gepa.warm_start import build_historical_gepa_state
 from props.core.splits import Split
 from props.db.database import Database
@@ -172,7 +171,6 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
         db: Database,
-        workspace_manager: WorkspaceManager,
         run_dir: Path,
         reflection_model: str | None = None,
         verbose: bool = False,
@@ -182,7 +180,6 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         self.critic_client = critic_client
         self.grader_client = grader_client
         self.db = db
-        self.workspace_manager = workspace_manager
         self.reflection_model = reflection_model
         self.verbose = verbose
         self.max_parallelism = max_parallelism
@@ -587,7 +584,6 @@ async def optimize_with_gepa(
     critic_client: OpenAIModelProto,
     grader_client: OpenAIModelProto,
     db: Database,
-    workspace_manager: WorkspaceManager,
     *,
     reflection_model: str,
     max_metric_calls: int = 100,
@@ -679,7 +675,6 @@ async def optimize_with_gepa(
         critic_client,
         grader_client,
         db,
-        workspace_manager,
         Path(run_dir),
         reflection_model=reflection_model,
         verbose=verbose,
@@ -704,7 +699,7 @@ async def optimize_with_gepa(
         seed=seed if seed is not None else 0,
     )
 
-    optimized_prompt = result.best_candidate["system_prompt"]
+    optimized_prompt = result.candidates[result.best_idx]["system_prompt"]
     best_score = result.val_aggregate_scores[result.best_idx]
     logger.info(f"GEPA optimization complete. Best score: {best_score:.3f}, Metric calls: {result.total_metric_calls}")
 

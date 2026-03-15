@@ -6,15 +6,15 @@
 # Excludes are defined in .yamllint.yaml: host_vars (machine-specific), k8s (Helm templating)
 # sh_test(
 #     name = "yamllint_test",
-#     srcs = ["//tools/yamllint:run_yamllint.sh"],  # DELETED
+#     srcs = ["//devinfra/yamllint:run_yamllint.sh"],  # DELETED
 #     args = [
-#         "$(rootpath //tools/yamllint:yamllint)",
+#         "$(rootpath //devinfra/yamllint:yamllint)",
 #         "ansible",  # Package directory
 #         "../.yamllint.yaml",  # Config file (relative to ansible/)
 #         ".",  # Lint current directory
 #     ],
 #     data = [
-#         "//tools/yamllint:yamllint",
+#         "//devinfra/yamllint:yamllint",
 #         "//:.yamllint.yaml",
 #     ] + glob(
 #         ["**/*.yml", "**/*.yaml"],

@@ -1,0 +1,482 @@
+# AUTO-GENERATED from devinfra/ci/workflows.yaml - DO NOT EDIT DIRECTLY
+# Regenerate with: bazel run //devinfra/ci:generate_ci_bin
+name: Release
+"on":
+  push:
+    branches:
+      - devel
+      - main
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to release
+        type: choice
+        options:
+          - all
+          - kubespand
+          - ducktape
+          - headscale-cleanup
+          - gterm-theme
+        default: all
+      force:
+        description: Force release even if no changes detected
+        type: boolean
+        default: false
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: write
+jobs:
+  check-releases:
+    name: Check releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      kubespand_needed: ${{ steps.check-kubespand.outputs.release_needed }}
+      ducktape_needed: ${{ steps.check-ducktape.outputs.release_needed }}
+      headscale_cleanup_needed: ${{ steps.check-headscale_cleanup.outputs.release_needed }}
+      gterm_theme_needed: ${{ steps.check-gterm_theme.outputs.release_needed }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Check kubespand
+        id: check-kubespand
+        uses: ./.github/actions/check-release-needed
+        with:
+          package_prefix: kubespand
+          bazel_target: //cluster/kubespand:kubespand
+          latest_release_tag: kubespand-latest
+      - name: Check ducktape
+        id: check-ducktape
+        uses: ./.github/actions/check-release-needed
+        with:
+          package_prefix: ducktape
+          bazel_target: //:wheel
+          latest_release_tag: ducktape-latest
+      - name: Check headscale-cleanup
+        id: check-headscale_cleanup
+        uses: ./.github/actions/check-release-needed
+        with:
+          package_prefix: headscale-cleanup
+          bazel_target: //headscale_cleanup:wheel
+          latest_release_tag: headscale-cleanup-latest
+      - name: Check gterm-theme
+        id: check-gterm_theme
+        uses: ./.github/actions/check-release-needed
+        with:
+          package_prefix: gterm-theme
+          bazel_target: //gterm_theme:wheel
+          latest_release_tag: gterm-theme-latest
+  test-kubespand:
+    name: Test kubespand
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: check-releases
+    if:
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.kubespand_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'kubespand')))
+    steps:
+      - uses: actions/checkout@v4
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Run tests
+        run: |-
+          bazel test --keep_going \
+            --test_output=all \
+            --nocache_test_results \
+            --test_env=CI=true \
+            //cluster/kubespand/...
+      - uses: ./.github/actions/collect-test-logs
+        if: always()
+        with:
+          artifact-name: kubespand-test-logs
+  test-ducktape:
+    name: Test ducktape
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: check-releases
+    if:
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'ducktape')))
+    steps:
+      - uses: actions/checkout@v4
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Run tests
+        run: |-
+          bazel test --keep_going \
+            --test_output=all \
+            --nocache_test_results \
+            --test_tag_filters=-e2e \
+            --test_env=CI=true \
+            --test_env=GITHUB_ACTIONS=true \
+            //devinfra/claude/...
+      - uses: ./.github/actions/collect-test-logs
+        if: always()
+        with:
+          artifact-name: ducktape-test-logs
+  test-ducktape-e2e:
+    name: test-ducktape-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - check-releases
+    if:
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'ducktape')))
+    steps:
+      - uses: actions/checkout@v4
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Run e2e tests
+        run: |
+          bazel test \
+            --test_output=all \
+            --nocache_test_results \
+            --test_tag_filters=e2e \
+            --spawn_strategy=local \
+            --test_env=CI=true \
+            --test_env=GITHUB_ACTIONS=true \
+            --test_env=PATH \
+            //devinfra/claude/...
+      - uses: ./.github/actions/collect-test-logs
+        if: always()
+        with:
+          artifact-name: ducktape-e2e-test-logs
+  test-ducktape-wheel:
+    name: test-ducktape-wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs:
+      - check-releases
+    if:
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && (inputs.package == 'all' || inputs.package == 'ducktape')))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: astral-sh/setup-uv@v5
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Build wheel
+        run: bazel build --remote_download_toplevel //:wheel
+      - name: Install wheel
+        run: uv tool install bazel-bin/ducktape-*.whl
+      - name: Test installed wheel
+        run: |
+          bazel test //devinfra/claude:test_session_start \
+            --test_output=all \
+            --nocache_test_results \
+            --spawn_strategy=local \
+            --test_env=DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 \
+            --test_env=CI=true \
+            --test_env=JAVA_HOME \
+            --test_env=PATH
+      - uses: ./.github/actions/collect-test-logs
+        if: always()
+        with:
+          artifact-name: wheel-test-logs
+  release-kubespand:
+    name: Release kubespand
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - check-releases
+      - test-kubespand
+    if:
+      always() && !cancelled() && needs.test-kubespand.result == 'success' && (needs.check-releases.outputs.kubespand_needed
+      == 'true' || (github.event_name == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package
+      == 'kubespand')))
+    outputs:
+      released: "true"
+      tag: kubespand-${{ env.SHORT_SHA }}
+      short_sha: ${{ env.SHORT_SHA }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+      - name: Build binary
+        run: bazel build --remote_download_toplevel //cluster/kubespand:kubespand
+      - name: Prepare binary
+        run: |-
+          mkdir -p dist
+          cp bazel-bin/cluster/kubespand/kubespand_/kubespand dist/
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: kubespand-${{ env.SHORT_SHA }}
+          name: kubespand (${{ env.SHORT_SHA }})
+          body: |-
+            kubespand — standalone KubeSpan daemon for non-Talos Linux.
+
+            Static x86_64 binary. See `cluster/kubespand/README.md` for usage.
+
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+          files: dist/kubespand
+      - uses: ./.github/actions/update-latest-release
+        with:
+          package_prefix: kubespand
+          latest_tag: kubespand-latest
+          title: kubespand (latest)
+          body: |
+            kubespand — standalone KubeSpan daemon for non-Talos Linux.
+
+            Static x86_64 binary. See `cluster/kubespand/README.md` for usage.
+          files: dist/kubespand
+  release-ducktape:
+    name: Release ducktape
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - check-releases
+      - test-ducktape
+      - test-ducktape-e2e
+      - test-ducktape-wheel
+    if:
+      always() && !cancelled() && needs.test-ducktape.result == 'success' && needs.test-ducktape-e2e.result == 'success'
+      && needs.test-ducktape-wheel.result == 'success' && (needs.check-releases.outputs.ducktape_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'ducktape')))
+    outputs:
+      released: "true"
+      tag: ducktape-${{ env.SHORT_SHA }}
+      short_sha: ${{ env.SHORT_SHA }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+      - name: Build wheel
+        run: bazel build --remote_download_toplevel //:wheel
+      - name: Prepare wheel
+        run: |-
+          mkdir -p dist
+          cp bazel-bin/ducktape-*.whl dist/
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ducktape-${{ env.SHORT_SHA }}
+          name: ducktape (${{ env.SHORT_SHA }})
+          body: |-
+            ducktape wheel containing:
+
+            CLI tools:
+            - `git-commit-ai` - AI-powered commit message generator
+            - `difftree` - Tree-style visualization of diffs
+            - `gmail-archiver` - Gmail email auto-archiving tool
+
+            Claude Code hooks:
+            - `claude-hook` - Unified hook dispatcher for Claude Code web
+            - `claude-statusline` - Statusline for Claude Code
+
+            Requires Python 3.13+
+
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+          files: dist/*.whl
+      - uses: ./.github/actions/update-latest-release
+        with:
+          package_prefix: ducktape
+          latest_tag: ducktape-latest
+          title: ducktape (latest)
+          body: |
+            ducktape wheel containing:
+
+            CLI tools:
+            - `git-commit-ai` - AI-powered commit message generator
+            - `difftree` - Tree-style visualization of diffs
+            - `gmail-archiver` - Gmail email auto-archiving tool
+
+            Claude Code hooks:
+            - `claude-hook` - Unified hook dispatcher for Claude Code web
+            - `claude-statusline` - Statusline for Claude Code
+
+            Requires Python 3.13+
+          files: dist/*.whl
+  release-headscale_cleanup:
+    name: Release headscale-cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - check-releases
+    if:
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.headscale_cleanup_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'headscale-cleanup')))
+    outputs:
+      released: "true"
+      tag: headscale-cleanup-${{ env.SHORT_SHA }}
+      short_sha: ${{ env.SHORT_SHA }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+      - name: Build wheel
+        run: bazel build --remote_download_toplevel //headscale_cleanup:wheel
+      - name: Prepare wheel
+        run: |-
+          mkdir -p dist
+          cp bazel-bin/headscale_cleanup/headscale_cleanup-*.whl dist/
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: headscale-cleanup-${{ env.SHORT_SHA }}
+          name: headscale-cleanup (${{ env.SHORT_SHA }})
+          body: |-
+            headscale-cleanup wheel.
+
+            CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
+
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+          files: dist/*.whl
+      - uses: ./.github/actions/update-latest-release
+        with:
+          package_prefix: headscale-cleanup
+          latest_tag: headscale-cleanup-latest
+          title: headscale-cleanup (latest)
+          body: |
+            headscale-cleanup wheel.
+
+            CLI tool for cleaning up stale Headscale nodes (controlplane* and worker* nodes).
+          files: dist/*.whl
+  release-gterm_theme:
+    name: Release gterm-theme
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - check-releases
+    if:
+      always() && !cancelled() && !failure() && (needs.check-releases.outputs.gterm_theme_needed == 'true' || (github.event_name
+      == 'workflow_dispatch' && inputs.force == true && (inputs.package == 'all' || inputs.package == 'gterm-theme')))
+    outputs:
+      released: "true"
+      tag: gterm-theme-${{ env.SHORT_SHA }}
+      short_sha: ${{ env.SHORT_SHA }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run:
+          sudo apt-get update && sudo apt-get install -y libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev
+          pkg-config
+      - id: bazel
+        uses: ./.github/actions/setup-bazel
+        with:
+          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
+      - name: Build wheel
+        run: bazel build --remote_download_toplevel //gterm_theme:wheel
+      - name: Prepare wheel
+        run: |-
+          mkdir -p dist
+          cp bazel-bin/gterm_theme/gterm_theme-*.whl dist/
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gterm-theme-${{ env.SHORT_SHA }}
+          name: gterm-theme (${{ env.SHORT_SHA }})
+          body: |-
+            gterm-theme wheel (GNOME Terminal theme follower).
+
+            **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
+
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+          files: dist/*.whl
+      - uses: ./.github/actions/update-latest-release
+        with:
+          package_prefix: gterm-theme
+          latest_tag: gterm-theme-latest
+          title: gterm-theme (latest)
+          body: |
+            gterm-theme wheel (GNOME Terminal theme follower).
+
+            **Note**: Requires system libraries (libgirepository-2.0-dev, libdbus-1-dev).
+          files: dist/*.whl
+  update-downstream:
+    name: Update downstream references
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs:
+      - release-kubespand
+      - release-ducktape
+      - release-headscale_cleanup
+      - release-gterm_theme
+    if: |-
+      always() && !cancelled() &&
+           (needs.release-kubespand.outputs.released == 'true' ||
+           needs.release-ducktape.outputs.released == 'true' ||
+           needs.release-headscale_cleanup.outputs.released == 'true' ||
+           needs.release-gterm_theme.outputs.released == 'true')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+      - uses: cachix/install-nix-action@v30
+      - name: Update references and push
+        run: |-
+          if [ "${{ needs.release-kubespand.outputs.released }}" = "true" ]; then
+            sed -i 's|releases/download/kubespand-[^/]*/kubespand|releases/download/${{ needs.release-kubespand.outputs.tag }}/kubespand|' nix/flake.nix
+            nix flake lock --update-input kubespand-bin ./nix
+          fi
+          if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
+            sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' nix/flake.nix
+            nix flake lock --update-input ducktape-wheel ./nix
+          fi
+          if [ "${{ needs.release-headscale_cleanup.outputs.released }}" = "true" ]; then
+            sed -i 's|releases/download/headscale-cleanup-[^/]*/headscale_cleanup|releases/download/${{ needs.release-headscale_cleanup.outputs.tag }}/headscale_cleanup|' nix/flake.nix
+            nix flake lock --update-input headscale-cleanup-wheel ./nix
+          fi
+          if [ "${{ needs.release-gterm_theme.outputs.released }}" = "true" ]; then
+            sed -i 's|releases/download/gterm-theme-[^/]*/gterm_theme|releases/download/${{ needs.release-gterm_theme.outputs.tag }}/gterm_theme|' nix/flake.nix
+            nix flake lock --update-input gterm-theme-wheel ./nix
+          fi
+
+          if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
+            sed -i "s|releases/download/ducktape-[a-f0-9]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|g" .claude/settings.json
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add nix/flake.nix nix/flake.lock .claude/settings.json
+
+          if git diff --cached --quiet; then
+            echo "No downstream changes"
+            exit 0
+          fi
+
+          git commit -m "chore: bump release artifacts [skip ci]"
+
+          BRANCH="${{ github.ref_name }}"
+          git pull --rebase origin "$BRANCH"
+          git push origin "HEAD:${BRANCH}"

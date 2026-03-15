@@ -28,48 +28,50 @@ type Executor interface {
 // ClaudeCodeExecutor manages the lifecycle of a Claude Code process.
 //
 // Struct layout (from NewClaudeCodeExecutor at 0xad8800, size from runtime.newobject):
-//   Offset 0x00: Logger       *slog.Logger      (field 0, stored from AX param -> 0(result))
-//   Offset 0x08: LoggerName   string            (field 1, stored at 0x8)
-//   Offset 0x10: unknown      interface          (field 2, at 0x10)
-//   Offset 0x18: unknown      interface          (field 3, at 0x18)
-//   Offset 0x20: ClaudePath   string data        (field 4, at 0x20 — set by SetClaudePath)
-//   Offset 0x28: ClaudePath   string len          (field 5, at 0x28)
-//   Offset 0x30: Config       *config.ClaudeConfig (field 6, at 0x30)
-//   Offset 0x38: unknown      interface          (field 7, at 0x38)
-//   Offset 0x40: WorkingDir   string data        (field 8, at 0x40)
-//   Offset 0x48: WorkingDir   string len          (field 9, at 0x48)
-//   Offset 0x50: GatewayConfig *GatewayConfig    (field 10, at 0x50)
-//   Offset 0x58: unknown      interface          (field 11, at 0x58)
-//   Offset 0x60: SessionToken string data        (field 12, at 0x60)
-//   Offset 0x68: SessionToken string len          (field 13, at 0x68)
-//   Offset 0x70: Outcomes     *Outcomes          (field 14, at 0x70)
-//   Offset 0x78: unknown      interface          (field 15, at 0x78)
-//   Offset 0x80: unknown      interface          (field 16, at 0x80)
-//   Offset 0x88: ClaudePath2  string data        (field 17, at 0x88 — used by GetClaudePath)
-//   Offset 0x90: ClaudePath2  string len          (field 18, at 0x90)
+//
+//	Offset 0x00: Logger       *slog.Logger      (field 0, stored from AX param -> 0(result))
+//	Offset 0x08: LoggerName   string            (field 1, stored at 0x8)
+//	Offset 0x10: unknown      interface          (field 2, at 0x10)
+//	Offset 0x18: unknown      interface          (field 3, at 0x18)
+//	Offset 0x20: ClaudePath   string data        (field 4, at 0x20 — set by SetClaudePath)
+//	Offset 0x28: ClaudePath   string len          (field 5, at 0x28)
+//	Offset 0x30: Config       *config.ClaudeConfig (field 6, at 0x30)
+//	Offset 0x38: unknown      interface          (field 7, at 0x38)
+//	Offset 0x40: WorkingDir   string data        (field 8, at 0x40)
+//	Offset 0x48: WorkingDir   string len          (field 9, at 0x48)
+//	Offset 0x50: GatewayConfig *GatewayConfig    (field 10, at 0x50)
+//	Offset 0x58: unknown      interface          (field 11, at 0x58)
+//	Offset 0x60: SessionToken string data        (field 12, at 0x60)
+//	Offset 0x68: SessionToken string len          (field 13, at 0x68)
+//	Offset 0x70: Outcomes     *Outcomes          (field 14, at 0x70)
+//	Offset 0x78: unknown      interface          (field 15, at 0x78)
+//	Offset 0x80: unknown      interface          (field 16, at 0x80)
+//	Offset 0x88: ClaudePath2  string data        (field 17, at 0x88 — used by GetClaudePath)
+//	Offset 0x90: ClaudePath2  string len          (field 18, at 0x90)
 //
 // Total struct size: ~0x98 (152 bytes, from runtime.newobject type descriptor)
 // TODO(re): many fields typed as interface{} — concrete types not yet recovered from binary.
 // Known candidates from constructor (NewClaudeCodeExecutor) parameter analysis:
-//   Ctx → context.Context, Config → *config.ClaudeConfig, GatewayConfig → *GatewayConfig,
-//   SessionIngress → *api.HttpSessionIngressClient, ConfigExtra/OutcomesExtra/ExtraField → unknown
+//
+//	Ctx → context.Context, Config → *config.ClaudeConfig, GatewayConfig → *GatewayConfig,
+//	SessionIngress → *api.HttpSessionIngressClient, ConfigExtra/OutcomesExtra/ExtraField → unknown
 type ClaudeCodeExecutor struct {
-	Logger          *slog.Logger // offset 0x00
-	LoggerName      string       // offset 0x08 (string, len at 0x10)
-	Ctx             interface{}  // offset 0x10 — context or similar
-	CtxValue        interface{}  // offset 0x18
-	ClaudePathCmd   string       // offset 0x20 — claude binary command path (set by SetClaudePath)
-	Config          interface{}  // offset 0x30 — *config.ClaudeConfig
-	ConfigExtra     interface{}  // offset 0x38
-	WorkingDir      string       // offset 0x40
-	WorkingDirLen   string       // offset 0x48
-	GatewayConfig   interface{}  // offset 0x50
-	SessionIngress  interface{}  // offset 0x58
-	SessionToken    string       // offset 0x60
-	Outcomes        *Outcomes    // offset 0x70
-	OutcomesExtra   interface{}  // offset 0x78
-	ExtraField      interface{}  // offset 0x80
-	ClaudePath      string       // offset 0x88 — resolved claude path (from GetClaudePath)
+	Logger         *slog.Logger // offset 0x00
+	LoggerName     string       // offset 0x08 (string, len at 0x10)
+	Ctx            interface{}  // offset 0x10 — context or similar
+	CtxValue       interface{}  // offset 0x18
+	ClaudePathCmd  string       // offset 0x20 — claude binary command path (set by SetClaudePath)
+	Config         interface{}  // offset 0x30 — *config.ClaudeConfig
+	ConfigExtra    interface{}  // offset 0x38
+	WorkingDir     string       // offset 0x40
+	WorkingDirLen  string       // offset 0x48
+	GatewayConfig  interface{}  // offset 0x50
+	SessionIngress interface{}  // offset 0x58
+	SessionToken   string       // offset 0x60
+	Outcomes       *Outcomes    // offset 0x70
+	OutcomesExtra  interface{}  // offset 0x78
+	ExtraField     interface{}  // offset 0x80
+	ClaudePath     string       // offset 0x88 — resolved claude path (from GetClaudePath)
 }
 
 // NewClaudeCodeExecutor creates a new ClaudeCodeExecutor from the provided
@@ -150,15 +152,17 @@ func NewClaudeCodeExecutor(
 // file descriptor rather than a command-line argument or environment variable.
 //
 // Parameters are passed via registers:
-//   AX: executor (*ClaudeCodeExecutor)
-//   BX, CX: logger (interface)
-//   DI, SI: token (string)
-//   R8, R9: key name (string, e.g. "session_ingress_token")
-//   R10, R11: cmd ExtraFiles and Args slices
+//
+//	AX: executor (*ClaudeCodeExecutor)
+//	BX, CX: logger (interface)
+//	DI, SI: token (string)
+//	R8, R9: key name (string, e.g. "session_ingress_token")
+//	R10, R11: cmd ExtraFiles and Args slices
 //
 // Returns:
-//   AX: next fd number (int), or 0 on error
-//   BX, CX: error (interface)
+//
+//	AX: next fd number (int), or 0 on error
+//	BX, CX: error (interface)
 //
 // Binary address: 0xad8d00 - 0xad9460
 func addTokenViaFileDescriptor(
@@ -252,21 +256,25 @@ func addTokenViaFileDescriptor(
 // The function spawns several goroutines via closures:
 //
 // Execute.func1 (0xadf400): Grace period signal sender. Reads the grace period
-//   from a LeaseManager, converts duration to float64 seconds, sends SIGTERM to
-//   the Claude Code process. If signal fails, logs a WARN. Called when the
-//   pod monitor indicates the lease is expiring.
+//
+//	from a LeaseManager, converts duration to float64 seconds, sends SIGTERM to
+//	the Claude Code process. If signal fails, logs a WARN. Called when the
+//	pod monitor indicates the lease is expiring.
 //
 // Execute.func2 (0xadf2a0): File descriptor cleanup closure. Iterates over all
-//   ExtraFiles on the exec.Cmd and closes each one. If close fails, logs a
-//   DEBUG message "failed to close extra file" (len 0x1e = 30).
+//
+//	ExtraFiles on the exec.Cmd and closes each one. If close fails, logs a
+//	DEBUG message "failed to close extra file" (len 0x1e = 30).
 //
 // Execute.func3 (0xadf1c0): Write-end pipe cleanup. Closes a single *os.File
-//   (the write end of a pipe from addTokenViaFileDescriptor). If close fails,
-//   logs WARN "failed to close pipe" (len 0x18 = 24).
+//
+//	(the write end of a pipe from addTokenViaFileDescriptor). If close fails,
+//	logs WARN "failed to close pipe" (len 0x18 = 24).
 //
 // Execute.func4 (0xadf0a0): Output writer closure. Writes buffered output data
-//   to a file. If the write fails, logs WARN "failed to write output to file"
-//   (len 0x22 = 34).
+//
+//	to a file. If the write fails, logs WARN "failed to write output to file"
+//	(len 0x22 = 34).
 //
 // Binary address: 0xad9480 - 0xadf6a0
 func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
@@ -374,11 +382,11 @@ func (e *ClaudeCodeExecutor) Execute(ctx context.Context) error {
 // argument list.
 //
 // The function:
-//   1. Checks gateway config McpConfig field (offset 0xc8 in config)
-//   2. Reads ClaudeCodeArgs map (offset 0xc0 in config)
-//   3. Logs the number of gateway args and whether MCP config is present
-//   4. If McpConfig is present, calls writeMCPConfigFileFromGateway
-//   5. Iterates ClaudeCodeArgs map and builds "--key=value" style arguments
+//  1. Checks gateway config McpConfig field (offset 0xc8 in config)
+//  2. Reads ClaudeCodeArgs map (offset 0xc0 in config)
+//  3. Logs the number of gateway args and whether MCP config is present
+//  4. If McpConfig is present, calls writeMCPConfigFileFromGateway
+//  5. Iterates ClaudeCodeArgs map and builds "--key=value" style arguments
 //
 // Binary address: 0xadf6c0 - 0xadfe96
 func (e *ClaudeCodeExecutor) buildArgsFromGatewayConfig(ctx context.Context) ([]string, error) {
@@ -434,12 +442,12 @@ func (e *ClaudeCodeExecutor) buildArgsFromGatewayConfig(ctx context.Context) ([]
 // is then used as a CLI argument for Claude Code.
 //
 // The function:
-//   1. Reads McpConfig from gateway config (offset 0xc8)
-//   2. Base64-decodes the config content (offset 0x10/0x18 in McpConfig)
-//   3. Determines file path from McpConfig (default "/tmp/mcp_config.json", len 0x14)
-//   4. Determines file permissions (default 0x180 = 384 = 0600, capped at 0x1fe = 510)
-//   5. Writes decoded content to file via os.WriteFile
-//   6. Logs the result
+//  1. Reads McpConfig from gateway config (offset 0xc8)
+//  2. Base64-decodes the config content (offset 0x10/0x18 in McpConfig)
+//  3. Determines file path from McpConfig (default "/tmp/mcp_config.json", len 0x14)
+//  4. Determines file permissions (default 0x180 = 384 = 0600, capped at 0x1fe = 510)
+//  5. Writes decoded content to file via os.WriteFile
+//  6. Logs the result
 //
 // Binary address: 0xadfee0 - 0xae01c1
 func (e *ClaudeCodeExecutor) writeMCPConfigFileFromGateway(ctx context.Context) error {
@@ -475,7 +483,7 @@ func (e *ClaudeCodeExecutor) writeMCPConfigFileFromGateway(ctx context.Context) 
 
 	filePerms := os.FileMode(mcpConfigFile.Mode)
 	if filePerms == 0 {
-		filePerms = 0600
+		filePerms = 0o600
 	}
 
 	// 0xae0002: os.WriteFile
@@ -500,10 +508,10 @@ func (e *ClaudeCodeExecutor) writeMCPConfigFileFromGateway(ctx context.Context) 
 // removing the temporary MCP config file if it was created.
 //
 // The function:
-//   1. Logs "Destroying Claude code executor" with the working directory
-//   2. Calls os.Remove on the MCP config file path ("/tmp/mcp_config.json", len 0x32 = 50 chars)
-//   3. If removal fails and the error is NOT os.ErrNotExist, logs a warning
-//   4. If removal fails with a real error, logs the file path and error
+//  1. Logs "Destroying Claude code executor" with the working directory
+//  2. Calls os.Remove on the MCP config file path ("/tmp/mcp_config.json", len 0x32 = 50 chars)
+//  3. If removal fails and the error is NOT os.ErrNotExist, logs a warning
+//  4. If removal fails with a real error, logs the file path and error
 //
 // Binary address: 0xae0200 - 0xae0466
 func (e *ClaudeCodeExecutor) Destroy(ctx context.Context) error {
@@ -518,7 +526,6 @@ func (e *ClaudeCodeExecutor) Destroy(ctx context.Context) error {
 	// 0xae02cb-0xae02d7: os.Remove with path length 0x32 = 50
 	// The path is "/tmp/claude_code_mcp_config.json" or similar
 	err := os.Remove("/tmp/claude_code_mcp_config.json")
-
 	if err != nil {
 		// 0xae02f3-0xae0306: check if os.ErrNotExist
 		if !os.IsNotExist(err) {
@@ -550,19 +557,18 @@ func (e *ClaudeCodeExecutor) SetClaudePath(path string) {
 // empty, it logs accordingly and returns.
 //
 // The function:
-//   1. Reads "/tmp/claude_code_logs" (len 0x14 = 20) via os.ReadFile
-//   2. If read error: logs a WARN with the error details and returns
-//   3. If file is empty: logs an INFO message and returns
-//   4. Creates separator line: strings.Repeat("=", 80) (0x50 = 80 repetitions)
-//   5. Prints: "\n" + separator, then Claude Code Logs header,
-//      then file content (with trailing newline if missing),
-//      then separator + "\n"
+//  1. Reads "/tmp/claude_code_logs" (len 0x14 = 20) via os.ReadFile
+//  2. If read error: logs a WARN with the error details and returns
+//  3. If file is empty: logs an INFO message and returns
+//  4. Creates separator line: strings.Repeat("=", 80) (0x50 = 80 repetitions)
+//  5. Prints: "\n" + separator, then Claude Code Logs header,
+//     then file content (with trailing newline if missing),
+//     then separator + "\n"
 //
 // Binary address: 0xae0500 - 0xae08ee
 func (e *ClaudeCodeExecutor) printCodeLogs(ctx context.Context) {
 	// 0xae0535: os.ReadFile("/tmp/claude_code_logs") — length 0x14 = 20
 	content, err := os.ReadFile("/tmp/claude_code_logs")
-
 	if err != nil {
 		// 0xae054f-0xae0613: slog.Warn (level 4)
 		// Message length 0x1f = 31: "Failed to read claude code logs"

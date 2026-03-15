@@ -19,6 +19,19 @@ occurrences:
     note: "date field is raw RFC 2822 string, parsed 5 different ways downstream"
     critic_scopes_expected_to_recall:
       - [gmail_archiver/models.py]
+      - [gmail_archiver/planners/anthem_eob.py]
+      - [gmail_archiver/planners/anthem_reimbursement.py]
+      - [gmail_archiver/planners/square.py]
+      - [gmail_archiver/planners/aliexpress.py]
+      - [gmail_archiver/planners/dbsa.py]
+    match_file_restriction:
+      - gmail_archiver/models.py
+      - gmail_archiver/gmail_client.py
+      - gmail_archiver/planners/anthem_eob.py
+      - gmail_archiver/planners/anthem_reimbursement.py
+      - gmail_archiver/planners/square.py
+      - gmail_archiver/planners/aliexpress.py
+      - gmail_archiver/planners/dbsa.py
   - occurrence_id: occ-1
     files:
       gmail_archiver/models.py:
@@ -26,3 +39,10 @@ occurrences:
     note: "internal_date is raw epoch milliseconds, should be datetime"
     critic_scopes_expected_to_recall:
       - [gmail_archiver/models.py]
+      - [gmail_archiver/planners/one_medical.py]
+      - [gmail_archiver/planners/aliexpress.py]
+    match_file_restriction:
+      - gmail_archiver/models.py
+      - gmail_archiver/gmail_client.py
+      - gmail_archiver/planners/one_medical.py
+      - gmail_archiver/planners/aliexpress.py

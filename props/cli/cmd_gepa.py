@@ -9,11 +9,10 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
-from cli_util.decorators import async_run
 from openai_utils.client_factory import build_client
-from props.core.agent_workspace import WorkspaceManager
 from props.core.gepa.gepa_adapter import optimize_with_gepa
 from props.db.database import Database
+from util.typer import async_run
 
 OPT_OPTIMIZER_MODEL = typer.Option("gpt-5.1", help="Model for critic developer agent")
 OPT_CRITIC_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for critic execution")
@@ -77,13 +76,11 @@ async def cmd_gepa(
     # Run optimization
     console.print("\n[bold green]Starting GEPA optimization...[/bold green]\n")
     db: Database = ctx.obj
-    workspace_manager = WorkspaceManager.from_env()
     optimized_prompt, result = await optimize_with_gepa(
         initial_prompt=initial_prompt,
         critic_client=build_client(critic_model),
         grader_client=build_client(grader_model),
         db=db,
-        workspace_manager=workspace_manager,
         reflection_model=reflection_model,
         max_metric_calls=max_metric_calls,
         max_parallelism=max_parallelism,

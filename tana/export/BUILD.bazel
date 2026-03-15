@@ -51,6 +51,18 @@ py_binary(
     ],
 )
 
+py_binary(
+    name = "download_images",
+    srcs = ["download_images.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//tana/domain:nodes",
+        "//tana/graph",
+        "//tana/graph:loader",
+        "//tana/query:nodes",
+    ],
+)
+
 py_library(
     name = "sample",
     srcs = ["sample.py"],

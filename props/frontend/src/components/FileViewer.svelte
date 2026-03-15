@@ -2,7 +2,7 @@
   import "highlight.js/styles/github.css";
   import { resolve } from "$lib/router";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
-  import { CheckCircle, XCircle, MessageSquare } from "lucide-svelte";
+  import { CheckCircle, XCircle, MessageSquare, ChevronRight, ChevronDown } from "lucide-svelte";
   import type {
     FileContentResponse,
     TpInfo,
@@ -29,6 +29,7 @@
     gradingEdges?: GradingEdgeInfo[];
     snapshotSlug?: string;
     targetOccurrenceId?: string | null;
+    defaultCollapsed?: boolean;
   }
 
   let {
@@ -39,7 +40,10 @@
     gradingEdges = [],
     snapshotSlug,
     targetOccurrenceId = null,
+    defaultCollapsed = false,
   }: Props = $props();
+
+  let collapsed = $state(defaultCollapsed);
 
   const lines = $derived.by(() => {
     const raw = file.content.split("\n");
@@ -152,13 +156,11 @@
   let expandedIssues = $state(new SvelteSet<string>());
 
   function toggleIssue(id: string) {
-    const newSet = new SvelteSet(expandedIssues);
-    if (newSet.has(id)) {
-      newSet.delete(id);
+    if (expandedIssues.has(id)) {
+      expandedIssues.delete(id);
     } else {
-      newSet.add(id);
+      expandedIssues.add(id);
     }
-    expandedIssues = newSet;
   }
 
   function getIssueKey(issue: IssueMarker): string {
@@ -170,7 +172,7 @@
   function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
     if (!snapshotSlug) return undefined;
     const routePath = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}?file=${encodeURIComponent(file.path)}`;
-    return `${window.location.origin}/${resolve(routePath)}`;
+    return `${window.location.origin}${resolve(routePath)}`;
   }
 
   const tpCount = $derived(allIssues.filter((i) => i.kind === "tp").length);
@@ -179,113 +181,135 @@
   const hasCritiques = $derived(critiqueIssues.length > 0);
 </script>
 
-<div class="border rounded bg-white font-mono text-sm">
-  <!-- Header -->
-  <div class="px-4 py-2 border-b bg-gray-50 flex items-center gap-2">
+<div class="border dark:border-gray-700 rounded bg-white dark:bg-gray-900 font-mono text-sm">
+  <!-- Header (clickable to toggle collapse) -->
+  <button
+    class="px-4 py-2 bg-gray-50 dark:bg-gray-800 flex items-center gap-2 w-full text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 {collapsed
+      ? ''
+      : 'border-b dark:border-gray-700'}"
+    onclick={() => (collapsed = !collapsed)}
+  >
+    {#if collapsed}
+      <ChevronRight size={16} class="text-gray-500 dark:text-gray-400 flex-shrink-0" />
+    {:else}
+      <ChevronDown size={16} class="text-gray-500 dark:text-gray-400 flex-shrink-0" />
+    {/if}
     <span class="font-semibold">{file.path}</span>
-    <span class="text-gray-500 text-xs">({file.line_count} lines)</span>
-    <span class="text-gray-500 text-xs ml-auto">
+    <span class="text-gray-500 dark:text-gray-400 text-xs">({file.line_count} lines)</span>
+    <span class="text-gray-500 dark:text-gray-400 text-xs ml-auto">
       {#if hasCritiques}
         {critiqueCount} critique,
       {/if}
       {tpCount} TPs,
       {fpCount} FPs
     </span>
-  </div>
+  </button>
 
   <!-- Content -->
-  <div class="overflow-auto max-h-[70vh]">
-    <table class="w-full">
-      <tbody>
-        {#each lines as line, idx (idx)}
-          {@const lineIssues = lineToIssues.get(idx) || []}
-          {@const hasTP = lineIssues.some((i) => i.kind === "tp")}
-          {@const hasFP = lineIssues.some((i) => i.kind === "fp")}
-          {@const hasCritique = lineIssues.some((i) => i.kind === "critique")}
-          {@const bgClass = hasTP ? "bg-green-50" : hasFP ? "bg-red-50" : hasCritique ? "bg-blue-50" : ""}
-          {@const borderClass = hasTP
-            ? "border-l-4 border-green-500"
-            : hasFP
-              ? "border-l-4 border-red-500"
-              : hasCritique
-                ? "border-l-4 border-blue-500"
-                : ""}
+  {#if !collapsed}
+    <div class="overflow-auto max-h-[70vh]">
+      <table class="w-full">
+        <tbody>
+          {#each lines as line, idx (idx)}
+            {@const lineIssues = lineToIssues.get(idx) || []}
+            {@const hasTP = lineIssues.some((i) => i.kind === "tp")}
+            {@const hasFP = lineIssues.some((i) => i.kind === "fp")}
+            {@const hasCritique = lineIssues.some((i) => i.kind === "critique")}
+            {@const bgClass = hasTP
+              ? "bg-green-50 dark:bg-green-950"
+              : hasFP
+                ? "bg-red-50 dark:bg-red-950"
+                : hasCritique
+                  ? "bg-blue-50 dark:bg-blue-950"
+                  : ""}
+            {@const borderClass = hasTP
+              ? "border-l-4 border-green-500"
+              : hasFP
+                ? "border-l-4 border-red-500"
+                : hasCritique
+                  ? "border-l-4 border-blue-500"
+                  : ""}
 
-          <tr class="hover:bg-gray-100 {bgClass} {borderClass}">
-            <!-- Line number (1-based display) -->
-            <td class="px-2 py-0.5 text-right text-gray-400 select-none w-12 border-r align-top">
-              <div class="flex items-center justify-end gap-1">
-                {#if lineIssues.length > 0}
-                  <div class="flex gap-0.5">
-                    {#each lineIssues as issue (getIssueKey(issue))}
-                      {#if issue.kind === "tp"}
-                        <CheckCircle size={12} class="text-green-600" />
-                      {:else if issue.kind === "fp"}
-                        <XCircle size={12} class="text-red-600" />
-                      {:else if issue.kind === "critique"}
-                        <MessageSquare size={12} class="text-blue-600" />
-                      {/if}
-                    {/each}
-                  </div>
-                {/if}
-                <span>{idx + 1}</span>
-              </div>
-            </td>
-            <td class="px-4 py-0.5 whitespace-pre align-top">
-              <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlight.js output is pre-sanitized (escapes user content, adds only styling spans) -->
-              {@html highlightedLines[idx] || line}
-            </td>
-          </tr>
+            <tr class="hover:bg-gray-100 dark:hover:bg-gray-800 {bgClass} {borderClass}">
+              <!-- Line number (1-based display) -->
+              <td
+                class="px-2 py-0.5 text-right text-gray-400 dark:text-gray-500 select-none w-12 border-r dark:border-gray-700 align-top"
+              >
+                <div class="flex items-center justify-end gap-1">
+                  {#if lineIssues.length > 0}
+                    <div class="flex gap-0.5">
+                      {#each lineIssues as issue (getIssueKey(issue))}
+                        {#if issue.kind === "tp"}
+                          <CheckCircle size={12} class="text-green-600 dark:text-green-400" />
+                        {:else if issue.kind === "fp"}
+                          <XCircle size={12} class="text-red-600 dark:text-red-400" />
+                        {:else if issue.kind === "critique"}
+                          <MessageSquare size={12} class="text-blue-600 dark:text-blue-400" />
+                        {/if}
+                      {/each}
+                    </div>
+                  {/if}
+                  <span>{idx + 1}</span>
+                </div>
+              </td>
+              <td class="px-4 py-0.5 whitespace-pre align-top">
+                <!-- eslint-disable-next-line svelte/no-at-html-tags -- highlight.js output is pre-sanitized (escapes user content, adds only styling spans) -->
+                {@html highlightedLines[idx] || line}
+              </td>
+            </tr>
 
-          <!-- Issue comment cards (show after the first line of each issue's range) -->
-          {#each lineIssues as issue (getIssueKey(issue))}
-            {@const fileLocs = getLocationsForFile(issue, file.path)}
-            {@const isFirstLine =
-              fileLocs.length === 0 || fileLocs.every((l) => l.start_line == null)
-                ? idx === 0
-                : fileLocs.some((l) => l.start_line === idx + 1)}
-            {#if isFirstLine}
-              {@const issueKey = getIssueKey(issue)}
-              {@const isExpanded = expandedIssues.has(issueKey)}
-              {@const isTargeted = targetOccurrenceId === issue.occurrenceId}
-              {@const copyUrl = issue.occurrenceId ? getOccurrenceUrl(issue.issueId, issue.occurrenceId) : undefined}
+            <!-- Issue comment cards (show after the first line of each issue's range) -->
+            {#each lineIssues as issue (getIssueKey(issue))}
+              {@const fileLocs = getLocationsForFile(issue, file.path)}
+              {@const isFirstLine =
+                fileLocs.length === 0 || fileLocs.every((l) => l.start_line == null)
+                  ? idx === 0
+                  : fileLocs.some((l) => l.start_line === idx + 1)}
+              {#if isFirstLine}
+                {@const issueKey = getIssueKey(issue)}
+                {@const isExpanded = expandedIssues.has(issueKey)}
+                {@const isTargeted = targetOccurrenceId === issue.occurrenceId}
+                {@const copyUrl = issue.occurrenceId ? getOccurrenceUrl(issue.issueId, issue.occurrenceId) : undefined}
+                <tr>
+                  <td colspan="2" class="px-4 py-1">
+                    <div
+                      id={issue.occurrenceId ? `${issue.issueId}-${issue.occurrenceId}` : undefined}
+                      class={isTargeted ? "ring-2 ring-blue-500 rounded" : ""}
+                    >
+                      <IssueComment
+                        kind={issue.kind}
+                        issueId={issue.occurrenceId ? `${issue.issueId}/${issue.occurrenceId}` : issue.issueId}
+                        rationale={issue.rationale}
+                        note={issue.note}
+                        allLocations={issue.allLocations}
+                        expanded={isExpanded}
+                        onToggle={() => toggleIssue(issueKey)}
+                        gradingEdges={issue.gradingEdges}
+                        {copyUrl}
+                        {snapshotSlug}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              {/if}
+            {/each}
+
+            <!-- Location notes (show after the last line of each location with a note) -->
+            {@const locationNotes = lineToLocationNotes.get(idx) || []}
+            {#each locationNotes as { loc, issue }, i (`${getIssueKey(issue)}-${loc.start_line}-${i}`)}
               <tr>
-                <td colspan="2" class="px-4 py-1">
+                <td colspan="2" class="px-4 py-0.5">
                   <div
-                    id={issue.occurrenceId ? `${issue.issueId}-${issue.occurrenceId}` : undefined}
-                    class={isTargeted ? "ring-2 ring-blue-500 rounded" : ""}
+                    class="text-xs italic text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border-l-2 border-gray-300 dark:border-gray-600 px-2 py-1 rounded-r"
                   >
-                    <IssueComment
-                      kind={issue.kind}
-                      issueId={issue.occurrenceId ? `${issue.issueId}/${issue.occurrenceId}` : issue.issueId}
-                      rationale={issue.rationale}
-                      note={issue.note}
-                      allLocations={issue.allLocations}
-                      expanded={isExpanded}
-                      onToggle={() => toggleIssue(issueKey)}
-                      gradingEdges={issue.gradingEdges}
-                      {copyUrl}
-                      {snapshotSlug}
-                    />
+                    {loc.note}
                   </div>
                 </td>
               </tr>
-            {/if}
+            {/each}
           {/each}
-
-          <!-- Location notes (show after the last line of each location with a note) -->
-          {@const locationNotes = lineToLocationNotes.get(idx) || []}
-          {#each locationNotes as { loc, issue } (`${getIssueKey(issue)}-${loc.start_line}`)}
-            <tr>
-              <td colspan="2" class="px-4 py-0.5">
-                <div class="text-xs italic text-gray-600 bg-gray-50 border-l-2 border-gray-300 px-2 py-1 rounded-r">
-                  {loc.note}
-                </div>
-              </td>
-            </tr>
-          {/each}
-        {/each}
-      </tbody>
-    </table>
-  </div>
+        </tbody>
+      </table>
+    </div>
+  {/if}
 </div>

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from props.backend.auth import AgentDb
+from props.backend.auth import CallerDb
 from props.backend.routes.ground_truth import get_snapshot_or_404
 from props.core.agent_types import AgentType
 from props.core.ids import SnapshotSlug
@@ -49,6 +49,7 @@ SplitStats = dict[Split, dict[ExampleKind, SplitScopeStats]]
 
 class DefinitionRow(BaseModel):
     image_digest: str
+    display_name: str | None
     created_at: datetime
     stats: SplitStats
 
@@ -69,8 +70,8 @@ def to_split_scope_stats(row: RecallByDefinitionSplitKind, total_available: int)
 
 
 @router.get("/overview")
-def get_overview(agent_db: AgentDb) -> OverviewResponse:
-    with agent_db.session() as session:
+def get_overview(caller_db: CallerDb) -> OverviewResponse:
+    with caller_db.session() as session:
         example_counts = count_available_examples_by_scope_all(session, [Split.TRAIN, Split.VALID])
 
         # Get ALL critic definitions, not just those with stats
@@ -100,7 +101,9 @@ def get_overview(agent_db: AgentDb) -> OverviewResponse:
             return dict(result)
 
         rows = [
-            DefinitionRow(image_digest=d.digest, created_at=d.created_at, stats=build_stats(d.digest))
+            DefinitionRow(
+                image_digest=d.digest, display_name=d.display_name, created_at=d.created_at, stats=build_stats(d.digest)
+            )
             for d in all_definitions
         ]
 
@@ -126,6 +129,7 @@ class ExampleStats(BaseModel):
 
 class DefinitionDetailResponse(BaseModel):
     image_digest: str
+    display_name: str | None
     agent_type: AgentType
     created_at: datetime
     stats: SplitStats
@@ -133,9 +137,9 @@ class DefinitionDetailResponse(BaseModel):
 
 
 @router.get("/definitions/{image_digest}")
-def get_definition_detail(image_digest: str, agent_db: AgentDb) -> DefinitionDetailResponse:
-    with agent_db.session() as session:
-        definition = session.query(AgentDefinition).filter_by(id=image_digest).first()
+def get_definition_detail(image_digest: str, caller_db: CallerDb) -> DefinitionDetailResponse:
+    with caller_db.session() as session:
+        definition = session.query(AgentDefinition).filter_by(digest=image_digest).first()
         if not definition:
             raise HTTPException(status_code=404, detail=f"Definition not found: {image_digest}")
 
@@ -184,6 +188,7 @@ def get_definition_detail(image_digest: str, agent_db: AgentDb) -> DefinitionDet
 
         return DefinitionDetailResponse(
             image_digest=definition.digest,
+            display_name=definition.display_name,
             agent_type=AgentType(definition.agent_type),
             created_at=definition.created_at,
             stats=dict(stats),
@@ -212,9 +217,9 @@ class ExampleDetailResponse(BaseModel):
 
 @router.get("/examples")
 def get_example_detail(
-    snapshot_slug: SnapshotSlug, example_kind: ExampleKind, agent_db: AgentDb, files_hash: str | None = None
+    snapshot_slug: SnapshotSlug, example_kind: ExampleKind, caller_db: CallerDb, files_hash: str | None = None
 ) -> ExampleDetailResponse:
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         # Validate and fetch the example
         query = session.query(Example).filter_by(snapshot_slug=snapshot_slug, example_kind=example_kind)
 
@@ -324,14 +329,14 @@ class OccurrenceStatsResponse(BaseModel):
 
 @router.get("/occurrences")
 def get_occurrences(
-    agent_db: AgentDb,
+    caller_db: CallerDb,
     snapshot_slug: SnapshotSlug | None = None,
     split: Split | None = None,
     limit: int = 100,
     sort_by: str = "mean_credit",
     sort_dir: str = "asc",
 ) -> OccurrenceStatsResponse:
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         query = session.query(
             TpOccurrenceCredit.snapshot_slug,
             TpOccurrenceCredit.split,
@@ -380,42 +385,6 @@ def get_occurrences(
         return OccurrenceStatsResponse(occurrences=occurrences, total=total)
 
 
-# --- Distributions ---
-
-
-class DistributionsResponse(BaseModel):
-    max_recall_values: list[float]
-    tp_count_values: list[int]
-
-
-@router.get("/distributions")
-def get_distributions(split: Split, agent_db: AgentDb) -> DistributionsResponse:
-    with agent_db.session() as session:
-        results = query_recall_by_example(session, split=split)
-
-        # Group by example, find max recall across definitions
-        by_example: dict[ExampleSpec, float] = {}
-        for row in results:
-            by_example[row.example] = max(by_example.get(row.example, 0.0), row.recall)
-        max_recall_values = list(by_example.values())
-
-        # TP counts per example
-        tp_count_results = (
-            session.query(
-                TpOccurrenceCredit.snapshot_slug,
-                TpOccurrenceCredit.example_kind,
-                TpOccurrenceCredit.files_hash,
-                func.count(TpOccurrenceCredit.occurrence_id.distinct()).label("n_occurrences"),
-            )
-            .filter(TpOccurrenceCredit.split == split)
-            .group_by(TpOccurrenceCredit.snapshot_slug, TpOccurrenceCredit.example_kind, TpOccurrenceCredit.files_hash)
-            .all()
-        )
-        tp_count_values = [r.n_occurrences for r in tp_count_results]
-
-        return DistributionsResponse(max_recall_values=max_recall_values, tp_count_values=tp_count_values)
-
-
 # --- Coverage heatmap ---
 
 
@@ -444,13 +413,8 @@ class CoverageResponse(BaseModel):
     examples: list[CoverageExample]
     definitions: list[CoverageDefinition]
     cells: list[CoverageCell]
-
-
-def _row_to_example_spec(snapshot_slug: SnapshotSlug, example_kind: ExampleKind, files_hash: str | None) -> ExampleSpec:
-    if example_kind == ExampleKind.WHOLE_SNAPSHOT:
-        return WholeSnapshotExample(snapshot_slug=snapshot_slug)
-    assert files_hash is not None, f"FILE_SET row has None files_hash: {snapshot_slug}"
-    return SingleFileSetExample(snapshot_slug=snapshot_slug, files_hash=files_hash)
+    max_recall_values: list[float]
+    tp_count_values: list[int]
 
 
 def _build_tp_counts_by_example(session: Session, split: Split) -> dict[ExampleSpec, int]:
@@ -466,13 +430,18 @@ def _build_tp_counts_by_example(session: Session, split: Split) -> dict[ExampleS
         .all()
     )
     return {
-        _row_to_example_spec(r.snapshot_slug, r.example_kind, r.files_hash): r.n_occurrences for r in tp_count_results
+        (
+            WholeSnapshotExample(snapshot_slug=r.snapshot_slug)
+            if r.example_kind == ExampleKind.WHOLE_SNAPSHOT
+            else SingleFileSetExample(snapshot_slug=r.snapshot_slug, files_hash=r.files_hash)
+        ): r.n_occurrences
+        for r in tp_count_results
     }
 
 
 @router.get("/coverage")
-def get_coverage(split: Split, agent_db: AgentDb, limit_definitions: int = 15) -> CoverageResponse:
-    with agent_db.session() as session:
+def get_coverage(split: Split, caller_db: CallerDb, limit_definitions: int = 15) -> CoverageResponse:
+    with caller_db.session() as session:
         results = query_recall_by_example(session, split=split)
 
         # Group: example -> {definition_digest -> recall}
@@ -502,8 +471,12 @@ def get_coverage(split: Split, agent_db: AgentDb, limit_definitions: int = 15) -
         # Only include examples that have nonzero max recall
         nonzero_examples = [ex for ex, recalls in by_example.items() if recalls and max(recalls.values()) > 0]
 
-        # Get TP counts per example
+        # Get TP counts per example (used for heatmap and distribution histogram)
         tp_counts_by_example = _build_tp_counts_by_example(session, split)
+
+        # Distribution histograms (over ALL examples, not just nonzero)
+        max_recall_values = [max(recalls.values()) if recalls else 0.0 for recalls in by_example.values()]
+        tp_count_values = list(tp_counts_by_example.values())
 
         # Build index maps
         def_to_idx = {d: i for i, d in enumerate(top_definitions)}
@@ -547,4 +520,10 @@ def get_coverage(split: Split, agent_db: AgentDb, limit_definitions: int = 15) -
                     )
                 )
 
-        return CoverageResponse(examples=response_examples, definitions=response_definitions, cells=cells)
+        return CoverageResponse(
+            examples=response_examples,
+            definitions=response_definitions,
+            cells=cells,
+            max_recall_values=max_recall_values,
+            tp_count_values=tp_count_values,
+        )

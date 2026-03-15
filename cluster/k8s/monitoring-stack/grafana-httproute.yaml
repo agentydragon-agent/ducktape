@@ -13,5 +13,5 @@ spec:
     - "grafana.allegedly.works"
   rules:
     - backendRefs:
-        - name: kube-prometheus-stack-grafana
+        - name: grafana
           port: 80

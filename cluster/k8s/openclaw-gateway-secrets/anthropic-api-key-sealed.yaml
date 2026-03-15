@@ -1,0 +1,13 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: openclaw-anthropic-api-key
+  namespace: openclaw-gateway
+spec:
+  encryptedData:
+    api-key: AgBcFU0l1rU2KzQ6MZXpCrN8MIzs3B78cGTX54kvfD6G5AaRHq9A4YKy8eLkmQVoq0dzK8EdmjqDWxMXjmqOhhReNHSOFe5xT2vJxWCgbgdFd3UVFnmh0Pec/HUj3fVsGcvLskOXGCRVWniymkUyyNmpodtRQpbyW0rH18h1VI6RfSJh5TgkfPDJYTRaAcIO75j0IYSmei4JDl3JSBvmfpvYxhNRzWcDhjBF3RSvPHGGekGZ8SvoJZnL8u7ElkyqVEuf2vceiaOvQdnqiQz0uuuF06UGEYAyrBf0BI1IVm7X3xZM3sDlWPnTXes13SXhL4kZClmmFDuIF9Rns68JDauy902OsAE67CzPd/OatTB69aug3ZYCQYVsc6iVl5moHKGGWteb4UMaMN2YBRZWIxHf57k0z2pn1WNRWGt+/5YRPjwlppB9z+6rkaCMMSANjivhAOfTRjFWogUln/JJs75SSNKsJ5DdMc9PLNs/S2PEufEp5pDNBlVvkQxAp3x8/10OPu47yw1qE4NRRNuxQrqGHU2M7TqN3gUzWJDVT+o5gxSM3Gmr7rcjXVgQB7NK2HLwJpiKPYNe8+m6ROyPwpIpyYivUxm7XxF+Qw4SHPx8b9f/w2zHyrppaO/hGXZlkjTXvF1vrKnHJ9VwZ3tO/d2xQLrR0Y9/bqiXpzwE4DKQyWYNrwiBbCb+AzTi7BKhv7UIUAnhitUARRunUWuXR+6ELa9kthUskgBRCEQKSWf5ztTStgC/wPkroI/krZySRd38MBxNyZh63Ehm3InkbrrLvk44yTLC+63FjUxauV271kim7rebVomU3FjK/cji9AYqYZNSMmMpxf0Rd+M=
+  template:
+    metadata:
+      name: openclaw-anthropic-api-key
+      namespace: openclaw-gateway

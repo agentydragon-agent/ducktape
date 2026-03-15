@@ -1,0 +1,43 @@
+# CiliumNetworkPolicy for google-workspace-mcp.
+#
+# google-workspace-mcp (port 8000) accepts traffic from two sources:
+#   - Authentik embedded outpost (browser-based OAuth setup UI, SSO protected)
+#   - Airlock server (agent MCP calls, JWT-gated with human approval)
+# Kubelet health probes from the node host are also allowed.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: google-workspace-mcp-ingress
+  namespace: google-workspace-mcp
+spec:
+  endpointSelector:
+    matchLabels:
+      app: google-workspace-mcp
+  ingress:
+    # Kubelet liveness/readiness probes.
+    - fromEntities:
+        - host
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # Authentik embedded outpost — SSO-protected browser access for OAuth setup.
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/component: server
+            app.kubernetes.io/name: authentik
+            k8s:io.kubernetes.pod.namespace: authentik
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP
+    # Airlock server — proxies agent MCP calls after JWT validation + approval.
+    - fromEndpoints:
+        - matchLabels:
+            app: airlock
+            component: server
+            k8s:io.kubernetes.pod.namespace: airlock
+      toPorts:
+        - ports:
+            - port: "8000"
+              protocol: TCP

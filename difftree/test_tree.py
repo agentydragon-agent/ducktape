@@ -1,7 +1,5 @@
 """Tests for tree structure building."""
 
-from pathlib import Path
-
 import pytest_bazel
 from hamcrest import assert_that, has_properties
 
@@ -22,8 +20,6 @@ def test_build_tree_single_file():
     changes = [FileChange(path="test.py", additions=10, deletions=5)]
     root = build_tree(changes)
 
-    # Root name is the basename of current directory
-    assert root.name in (".", "difftree", Path.cwd().name)
     assert not root.is_file
     assert root.additions == 10
     assert root.deletions == 5

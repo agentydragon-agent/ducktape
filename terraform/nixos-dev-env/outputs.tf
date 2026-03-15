@@ -1,21 +1,5 @@
 # Outputs for NixOS Dev Environment
 
-output "pool_id" {
-  description = "Resource pool ID"
-  value       = proxmox_virtual_environment_pool.user_pool.pool_id
-}
-
-output "username" {
-  description = "Proxmox username"
-  value       = local.proxmox_username
-}
-
-output "user_api_token" {
-  description = "User API token (sensitive)"
-  value       = data.external.user_token.result.token
-  sensitive   = true
-}
-
 # Wyrm2 outputs
 output "wyrm2" {
   description = "Wyrm2 VM info"
@@ -32,40 +16,31 @@ output "instructions" {
 
     ✅ Environment created successfully!
 
-    Pool: ${proxmox_virtual_environment_pool.user_pool.pool_id}
-    User: ${local.proxmox_username}
-
     VMs:
-    - wyrm2 (ID: ${module.wyrm2.vm_id})
+    - wyrm2 (ID: ${module.wyrm2.vm_id}) — dev workstation + k8s worker
 
-    📋 Next steps:
+    Next steps:
 
-    1. Wait for VMs to boot and cloud-init to complete (~2-3 minutes)
+    1. Wait for VM to boot (~30 seconds)
 
-    2. Get VM IP addresses:
+    2. Get VM IP address:
        terraform output wyrm2
 
-    3. SSH into a VM (passwordless):
-       ssh ${var.username}@<vm-ip>
+    3. SSH into the VM:
+       ssh agentydragon@<vm-ip>
 
-    4. Check home-manager status:
-       ssh ${var.username}@<vm-ip> 'home-manager generations'
+    4. Approve the kubelet CSR to join the cluster:
+       kubectl get csr
+       kubectl certificate approve <csr-name>
 
-    5. Access Proxmox web UI as the user:
-       URL: https://${var.proxmox_api_host}:8006
-       User: ${local.proxmox_username}
-       Password: (set with: ssh root@${var.proxmox_host} "pveum user password ${local.proxmox_username}")
+    5. Verify node joined:
+       kubectl get nodes
 
-    Configuration:
-    - NixOS flake: ${var.nixos_flake_url}
-    - Home-manager flake: ${var.home_manager_flake_url}#${var.home_manager_host}
+    NOTE: tofu apply only provisions the VM and injects cloud-init
+    credentials. It does NOT run nixos-rebuild — the VM boots with
+    whatever NixOS config was baked into the qcow2 image. To apply
+    NixOS config changes to a running VM, SSH in and run:
 
-    To update VM config after changes:
-    - Push to devel branch, then: terraform apply
-    - Or manually: ssh user@<ip> 'sudo nixos-rebuild switch --flake ${var.nixos_flake_url}#wyrm2'
-
-    🔐 Environment variables baked into VMs:
-    - Proxmox: PROXMOX_VE_ENDPOINT, PROXMOX_VE_USERNAME, PROXMOX_VE_API_TOKEN, PROXMOX_POOL_ID
-    - LLM API keys: OPENAI_API_KEY, ANTHROPIC_API_KEY (if provided via ./apply.sh)
+      sudo nixos-rebuild switch --flake github:agentydragon/ducktape?dir=nix&ref=devel#wyrm2
   EOT
 }

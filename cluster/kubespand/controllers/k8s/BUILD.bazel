@@ -1,0 +1,19 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "k8sctrl",
+    srcs = ["kubeprism_config.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/controllers/k8s",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+    deps = [
+        "//cluster/kubespand/agentconfig",
+        "@com_github_cosi_project_runtime//pkg/controller",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_talos_pkg_machinery//config/machine",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/k8s",
+        "@org_uber_go_zap//:zap",
+    ],
+)

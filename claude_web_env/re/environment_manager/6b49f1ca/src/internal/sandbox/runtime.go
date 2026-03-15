@@ -144,12 +144,12 @@ func buildDefaultConfig(extraDenyReadPaths []string) *SandboxConfig {
 	// Default deny-read paths (6 entries).
 	// Binary: newobject at 0x7dc2bb allocates [6]struct{string,string,string} for deny paths.
 	denyRead := []string{
-		"~/.ssh",            // offset 0x00, len 6
-		"~/.aws",            // offset 0x10, len 6
-		"~/.config/gcloud",  // offset 0x20, len 16 (0x10)
-		"/etc/shadow",       // offset 0x30, len 11 (0xb)
-		"/etc/passwd-",      // offset 0x40, len 12 (0xc)
-		"/secrets",          // offset 0x50, len 8
+		"~/.ssh",           // offset 0x00, len 6
+		"~/.aws",           // offset 0x10, len 6
+		"~/.config/gcloud", // offset 0x20, len 16 (0x10)
+		"/etc/shadow",      // offset 0x30, len 11 (0xb)
+		"/etc/passwd-",     // offset 0x40, len 12 (0xc)
+		"/secrets",         // offset 0x50, len 8
 	}
 
 	// Assemble the config. The SandboxConfig struct (136 bytes) is allocated
@@ -192,10 +192,10 @@ func (s *SandboxRuntime) WrapCommand(command string, args []string) (string, []s
 	if s.Logger != nil {
 		s.Logger.Log(context.Background(), slog.LevelDebug,
 			"wrapped command for sandbox",
-			"original_command", command,   // slog attr at 0xd0(SP)
+			"original_command", command, // slog attr at 0xd0(SP)
 			"sandbox_binary", s.RuntimePath, // slog attr at 0x80(SP)
-			"original_args", args,          // slog attr at 0xa8(SP)
-			"wrapped_args", wrappedArgs,    // slog attr at 0x58(SP)
+			"original_args", args, // slog attr at 0xa8(SP)
+			"wrapped_args", wrappedArgs, // slog attr at 0x58(SP)
 		)
 	}
 

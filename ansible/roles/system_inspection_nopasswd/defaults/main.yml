@@ -159,6 +159,8 @@ system_inspection_nopasswd_sudo_wildcard_subcommands:
   - /usr/sbin/smartctl -H
   - /usr/sbin/smartctl -i
   - /usr/sbin/smartctl -l
+  # WireGuard - show tunnel status (needs optional interface name)
+  - /usr/bin/wg show
   # NVMe info - needs device path
   - /usr/bin/nvme smart-log
   - /usr/bin/nvme id-ctrl

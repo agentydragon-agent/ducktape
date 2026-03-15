@@ -25,16 +25,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from cli_util.logging import LogLevel, configure_logging
-from props.backend.routes import agent_definitions, ground_truth, llm, registry, runs, stats
+from props.backend.build_info import BuildInfo, get_build_info
+from props.backend.routes import agent_definitions, ground_truth, llm, model_metadata, registry, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
 from props.db.database import Database
+from props.db.setup import ensure_evaluator_role, upgrade_database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
+from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
 from props.orchestration.agent_registry import AgentRegistry
 from props.orchestration.executor_factory import create_executor
 from props.orchestration.grader_supervisor import GraderSupervisor
+from util.logging import LogLevel, configure_logging
 
 # Configure logging on module import
 configure_logging(
@@ -59,6 +62,34 @@ class BackendDeps:
     port: int = 8000
 
 
+SPECIMENS_DIR = Path("/specimens")
+
+
+def _sync_all_specimens(db: Database) -> None:
+    """Scan /specimens/ directory and sync each specimen to the database."""
+    if not SPECIMENS_DIR.exists():
+        logger.warning(f"Specimens directory {SPECIMENS_DIR} not found, skipping sync")
+        return
+
+    synced = 0
+    for data_yaml in sorted(SPECIMENS_DIR.rglob("specimen_data.yaml")):
+        code_tar = data_yaml.parent / "specimen_code.tar"
+        if not code_tar.exists():
+            logger.warning(f"Missing code tar for {data_yaml}, skipping")
+            continue
+        bundle = SpecimenBundle.from_paths(code_tar, data_yaml)
+        with db.session() as session:
+            sync_specimen(session, bundle)
+            session.commit()
+        synced += 1
+
+    logger.info(f"Synced {synced} specimens from {SPECIMENS_DIR}")
+
+    # Refresh the materialized view (reads committed specimen data)
+    with db.session() as session:
+        refresh_examples_matview(session)
+
+
 def _make_lifespan(deps: BackendDeps):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -69,14 +100,24 @@ def _make_lifespan(deps: BackendDeps):
         app.state.admin_db = db
         app.state.config = deps.config
 
+        if deps.config.auto_migrate:
+            upgrade_database(db.engine)
+        ensure_evaluator_role(db_config)
+
         # Sync model metadata on boot (ensures custom models from config are in DB)
         with db.session() as session:
             stats = sync_model_metadata_with_session(session, deps.config)
             if stats.added or stats.deleted:
                 logger.info(f"Model metadata synced: +{stats.added} added, -{stats.deleted} deleted")
 
-        executor = await create_executor(deps.config.executor, db_config)
+        if deps.config.auto_sync_specimens:
+            _sync_all_specimens(db)
+
+        executor = await create_executor(deps.config.executor, db_config, deps.registry_proxy_config)
         logger.info("Using %s executor", deps.config.executor.type)
+        model_parallelism_limits = {
+            m.name: m.max_parallel_agents for m in deps.config.models if m.max_parallel_agents is not None
+        }
         app.state.registry = AgentRegistry(
             executor=executor,
             db=db,
@@ -84,6 +125,7 @@ def _make_lifespan(deps: BackendDeps):
             backend_url=deps.backend_url,
             agent_base_env=deps.config.agent_env,
             registry_config=deps.registry_proxy_config,
+            model_parallelism_limits=model_parallelism_limits,
         )
 
         if deps.grader_model:
@@ -135,12 +177,17 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
     app.include_router(ground_truth.router, prefix="/api/gt", tags=["ground_truth"])
     app.include_router(agent_definitions.router, prefix="/api/definitions", tags=["definitions"])
+    app.include_router(model_metadata.router, prefix="/api/model_metadata", tags=["model_metadata"])
     app.include_router(llm.router, tags=["llm_proxy"])
     app.include_router(registry.router, tags=["registry_proxy"])
 
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/build-info")
+    def build_info() -> BuildInfo:
+        return get_build_info()
 
     @app.exception_handler(Exception)
     async def debug_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:

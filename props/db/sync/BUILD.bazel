@@ -1,6 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/deps:check.bzl", "assert_no_deps")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/deps:check.bzl", "assert_no_deps")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 # =============================================================================
 # Library targets
@@ -10,25 +10,16 @@ py_library(
     name = "yaml_loader",
     srcs = ["yaml_loader.py"],
     imports = ["../../.."],
-    visibility = ["//props/db:__subpackages__"],
+    visibility = [
+        "//props/db:__subpackages__",
+        "//props/specimens/scripts:__pkg__",
+    ],
     deps = [
         "//props/core:ids",
         "//props/core/models:true_positive",
         "//props/core/models:types",
         "@pypi//more_itertools",
         "@pypi//pydantic",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "loader",
-    srcs = ["loader.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core/models:snapshot",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -72,18 +63,14 @@ py_library(
     imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
-        ":loader",
-        ":model_metadata",
         ":stats",
         ":yaml_loader",
-        "//props:config",
         "//props/core:ids",
-        "//props/core:runs_context",
-        "//props/core/models:snapshot",
+        "//props/core:splits",
         "//props/core/models:true_positive",
         "//props/db:models",
-        "@pypi//opentelemetry_api",
-        "@pypi//pygit2",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
         "@pypi//sqlalchemy",
     ],
 )
@@ -92,7 +79,7 @@ py_library(
 # Boundary enforcement
 # =============================================================================
 
-# yaml_loader and loader are pure parsing layers — they must not depend on
+# yaml_loader is a pure parsing layer — it must not depend on
 # the DB/ORM layer (sqlalchemy, props/db:models).
 assert_no_deps(
     name = "test_yaml_loader_no_db_deps",
@@ -103,23 +90,15 @@ assert_no_deps(
     targets = ["//props/db/sync:yaml_loader"],
 )
 
-assert_no_deps(
-    name = "test_loader_no_db_deps",
-    forbidden = [
-        "@pypi//sqlalchemy",
-        "//props/db:models",
-    ],
-    targets = ["//props/db/sync:loader"],
-)
-
 # =============================================================================
 # Tests
 # =============================================================================
 
-docker_py_test(
+py_test(
     name = "test_example_generation",
     srcs = ["test_example_generation.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         "//props:conftest",
         "//props/core:ids",
@@ -134,30 +113,34 @@ docker_py_test(
 )
 
 py_test(
-    name = "test_collect_errors",
-    srcs = ["test_collect_errors.py"],
-    imports = ["../../.."],
-    deps = [
-        ":yaml_loader",
-        "//props:conftest",
-        "//props/core:ids",
-        "@pypi//pydantic",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
-
-docker_py_test(
     name = "test_sync_occurrence_update",
+    size = "medium",
     srcs = ["test_sync_occurrence_update.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":sync",
         ":yaml_loader",
         "//props:conftest",
         "//props/core:ids",
         "//props/core/models:true_positive",
+        "//props/db:conftest",
+        "//props/db:models",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_model_metadata_sync",
+    srcs = ["test_model_metadata_sync.py"],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":model_metadata",
+        "//props:config",
+        "//props:conftest",
         "//props/db:conftest",
         "//props/db:database",
         "//props/db:models",
@@ -166,18 +149,20 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
-    name = "test_manifest_loading",
-    srcs = ["test_manifest_loading.py"],
+py_test(
+    name = "test_sync_snapshot_files",
+    srcs = ["test_sync_snapshot_files.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
-        ":loader",
+        ":sync",
         "//props:conftest",
         "//props/core:ids",
+        "//props/core:splits",
         "//props/db:conftest",
-        "@pypi//pydantic",
-        "@pypi//pytest",
+        "//props/db:database",
+        "//props/db:models",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
+        "@pypi//sqlalchemy",
     ],
 )

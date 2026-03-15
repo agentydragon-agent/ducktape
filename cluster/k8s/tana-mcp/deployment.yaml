@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tana-mcp
+  namespace: tana-mcp
+  labels:
+    app: tana-mcp
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tana-mcp
+  template:
+    metadata:
+      labels:
+        app: tana-mcp
+    spec:
+      serviceAccountName: tana-token-broker
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      imagePullSecrets:
+        - name: harbor-pull-robot
+      containers:
+        # Tana Desktop running under Xvfb with noVNC for graphical admin access
+        - name: tana-desktop
+          image: registry.allegedly.works/ducktape/tana-desktop:20260310055517-b5ffdd2 # {"$imagepolicy": "flux-system:tana-mcp"}
+          ports:
+            - name: mcp
+              containerPort: 8262
+              protocol: TCP
+            - name: novnc
+              containerPort: 6080
+              protocol: TCP
+          env:
+            - name: RESOLUTION
+              value: "1280x800x24"
+          volumeMounts:
+            - name: tana-config
+              mountPath: /home/tana/.config/Tana
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 2Gi
+          # Generous startup probe: /health won't respond until Tana is logged in
+          # and MCP server is enabled (done manually via noVNC).
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8262
+            failureThreshold: 120
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8262
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8262
+            periodSeconds: 15
+        # nginx sidecar: rewrites Host/Origin to localhost so Tana's MCP server
+        # accepts requests from cluster clients
+        - name: proxy
+          image: nginx:alpine
+          ports:
+            - name: mcp-proxy
+              containerPort: 8263
+              protocol: TCP
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          livenessProbe:
+            tcpSocket:
+              port: 8263
+            periodSeconds: 30
+          readinessProbe:
+            tcpSocket:
+              port: 8263
+            periodSeconds: 10
+        # OAuth token broker: performs OAuth 2.1 + PKCE flow against Tana's
+        # MCP server and writes tokens to a K8s secret
+        - name: token-broker
+          image: registry.allegedly.works/ducktape/tana-token-broker:latest # {"$imagepolicy": "flux-system:tana-token-broker"}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: tana-config
+          persistentVolumeClaim:
+            claimName: tana-mcp-config
+        - name: nginx-config
+          configMap:
+            name: tana-mcp-nginx-config

@@ -1,2 +1,0 @@
-# Bazel macros for testing infrastructure.
-# NOTE: No aggregator target - use specific .bzl files like :docker.bzl

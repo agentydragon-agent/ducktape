@@ -21,3 +21,5 @@ occurrences:
           - 52
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/transcript_handler.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/transcript_handler.py

@@ -95,7 +95,7 @@ func (a *DeployAction) Execute(
 	client := &VercelClient{
 		Token:   a.Token,
 		TeamID:  a.TeamID,
-		Timeout: 60 * time.Second, // 0xdf8475800 ns
+		Timeout: 60 * time.Second,         // 0xdf8475800 ns
 		BaseURL: "https://api.vercel.com", // 0x16 = 22 chars
 	}
 

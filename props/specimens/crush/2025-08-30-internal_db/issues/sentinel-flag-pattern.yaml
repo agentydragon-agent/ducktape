@@ -9,3 +9,5 @@ occurrences:
         - [183, 201]
     critic_scopes_expected_to_recall:
       - - internal/shell/shell.go
+    match_file_restriction:
+      - internal/shell/shell.go

@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inventree
+  labels:
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"

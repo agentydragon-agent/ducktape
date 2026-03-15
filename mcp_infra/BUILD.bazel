@@ -1,4 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 # Shared test utilities (non-Docker)
 py_library(
@@ -45,8 +46,6 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//fastmcp",
-        "@pypi//mcp",
-        "@pypi//pydantic_core",
     ],
 )
 
@@ -69,6 +68,7 @@ py_library(
     srcs = ["flat_tool.py"],
     visibility = ["//:__subpackages__"],
     deps = [
+        "//agent_core:pydantic_utils",
         "@pypi//fastmcp",
         "@pypi//mcp",
         "@pypi//pydantic",

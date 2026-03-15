@@ -8,6 +8,7 @@ Extracted from database.py to separate concerns:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,76 +27,72 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
-def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, drop_existing: bool = False) -> None:
-    """Ensure a PostgreSQL database exists.
+@tracer.start_as_current_span("ensure_database_exists")
+def ensure_database_exists(base_config: DatabaseConfig, database_name: str) -> None:
+    """Ensure a PostgreSQL database exists, creating it if absent."""
+    postgres_config = base_config.with_database("postgres")
+    engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
 
-    Args:
-        base_config: Config with connection params (database name will be replaced)
-        database_name: Name of database to create
-        drop_existing: If True, drop and recreate (for test setup).
-                      If False, create only if missing (for production).
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
 
-    Note: Does not terminate connections. Tests use unique database names so no
-          conflicts in setup. Connection termination remains in test teardown only.
+        if not result.fetchone():
+            raw_conn = conn.connection
+            cursor = raw_conn.cursor()
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
+            cursor.close()
+
+    engine.dispose()
+
+
+@tracer.start_as_current_span("upgrade_database")
+def upgrade_database(engine: Engine) -> None:
+    """Run Alembic migrations to HEAD (idempotent, non-destructive).
+
+    Safe to call on every startup — Alembic checks the alembic_version table
+    and only applies pending migrations.
     """
-    with tracer.start_as_current_span("ensure_database_exists"):
-        postgres_config = base_config.with_database("postgres")
-        engine = create_engine(postgres_config.url, isolation_level="AUTOCOMMIT")
+    logger.info("Running Alembic migrations...")
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
 
-        with engine.connect() as conn:
-            if drop_existing:
-                # Fail fast if other sessions are connected to the target DB to surface
-                # cross-test interference instead of a vague DROP failure.
-                active_sessions = conn.execute(
-                    text(
-                        """
-                        select pid, usename, application_name, client_addr
-                        from pg_stat_activity
-                        where datname = :dbname and pid <> pg_backend_pid()
-                        """
-                    ),
-                    {"dbname": database_name},
-                ).fetchall()
+    with engine.begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
 
-                if active_sessions:
-                    details = ", ".join(
-                        f"pid={pid} user={user} app={app or '-'} addr={addr or '-'}"
-                        for pid, user, app, addr in active_sessions
-                    )
-                    raise RuntimeError(
-                        "Test database in use by other sessions; aborting drop. "
-                        f"database={database_name}; sessions=[{details}]"
-                    )
-
-                # Idempotent drop (for test setup)
-                conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
-
-            # Check if database exists
-            result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
-
-            if not result.fetchone():
-                # Create using safe identifier quoting
-                raw_conn = conn.connection
-                cursor = raw_conn.cursor()
-                cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
-                cursor.close()
-
-        engine.dispose()
+    logger.info("Alembic migrations complete")
 
 
+@tracer.start_as_current_span("recreate_database")
 def recreate_database(engine: Engine) -> None:
-    """Recreate database from scratch (drop all + schema + RLS).
+    """Recreate database from scratch (drop all + migrate).
 
-    This is destructive: drops all existing tables, views, and policies.
-
-    Args:
-        engine: SQLAlchemy engine (must be connected as postgres superuser)
+    This is destructive: drops all existing tables, views, and policies,
+    then runs all migrations from scratch. For tests only.
     """
-    with tracer.start_as_current_span("recreate_database"):
-        logger.info("Recreating database from scratch...")
-        _drop_all(engine)
-        _create_schema(engine)
-        logger.info("Database recreation complete")
+    logger.info("Recreating database from scratch...")
+    _drop_all(engine)
+    upgrade_database(engine)
+    logger.info("Database recreation complete")
+
+
+def ensure_evaluator_role(db_config: DatabaseConfig) -> None:
+    """Sync evaluator Postgres role password with PROPS_EVALUATOR_PASSWORD env var.
+
+    The evaluator_base role and evaluator login user are created by the migration.
+    This handles password updates on re-deploy (migrations run only once).
+    No-op if PROPS_EVALUATOR_PASSWORD is not set.
+    """
+    password = os.environ.get("PROPS_EVALUATOR_PASSWORD")
+    if not password:
+        return
+    engine = create_engine(db_config.url, isolation_level="AUTOCOMMIT")
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER ROLE evaluator PASSWORD :pw"), {"pw": password})
+        logger.info("Evaluator role password synced")
+    finally:
+        engine.dispose()
 
 
 def _drop_all(engine: Engine) -> None:
@@ -117,20 +114,3 @@ def _drop_all(engine: Engine) -> None:
         logger.info("Public schema dropped and recreated")
     else:
         logger.debug("No tables to drop")
-
-
-def _create_schema(engine: Engine) -> None:
-    """Create tables + RLS policies + views via Alembic migrations (single source of truth).
-
-    The squashed migration 20251214000000_initial_schema_squashed.py contains ALL schema:
-    tables, enums, RLS function, RLS policies, grants, and views. No ORM create_all needed.
-    """
-    logger.info("Running Alembic migrations...")
-    config = Config()
-    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
-
-    with engine.begin() as conn:
-        config.attributes["connection"] = conn
-        command.upgrade(config, "head")
-
-    logger.info("Schema creation complete")

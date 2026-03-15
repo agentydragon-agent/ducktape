@@ -33,10 +33,11 @@ type RetryConfig struct {
 // Binary type eq: 0x832e60
 //
 // Struct layout (verified via type:.eq at 0x832e60):
-//   0x00-0x0f: BaseURL  string   (ptr + len, compared via memequal)
-//   0x10:      Client   *http.Client
-//   0x18:      Logger   *slog.Logger
-//   0x20:      Retry    *RetryConfig
+//
+//	0x00-0x0f: BaseURL  string   (ptr + len, compared via memequal)
+//	0x10:      Client   *http.Client
+//	0x18:      Logger   *slog.Logger
+//	0x20:      Retry    *RetryConfig
 type HttpClient struct {
 	BaseURL string       // offset 0x00 (string: ptr at 0x00, len at 0x08)
 	Client  *http.Client // offset 0x10
@@ -83,10 +84,11 @@ func NewHttpClient(baseURL string, args ...interface{}) *HttpClient {
 //
 // Default timeout: 5 minutes (0x45d964b800 = 300,000,000,000 ns)
 // Default RetryConfig (when nil):
-//   MaxRetries:    3
-//   InitialDelay:  1s  (0x3b9aca00 = 1,000,000,000 ns)
-//   MaxDelay:      10s (0x2540be400 = 10,000,000,000 ns)
-//   BackoffFactor: 2.0 (0x4000000000000000 IEEE754)
+//
+//	MaxRetries:    3
+//	InitialDelay:  1s  (0x3b9aca00 = 1,000,000,000 ns)
+//	MaxDelay:      10s (0x2540be400 = 10,000,000,000 ns)
+//	BackoffFactor: 2.0 (0x4000000000000000 IEEE754)
 //
 // The baseURL is right-trimmed of "/" characters.
 // An http.Transport is created with the given timeout, wrapped in an http.Client.
@@ -131,8 +133,9 @@ func NewHttpClientWithOptions(baseURL string, apiKey string, logger interface{},
 //
 // Binary address: 0x82e160
 // String references:
-//   "Bearer %s" (9 bytes, fmt.Sprintf format)
-//   "Authorization" (13 bytes, header key)
+//
+//	"Bearer %s" (9 bytes, fmt.Sprintf format)
+//	"Authorization" (13 bytes, header key)
 func (c *HttpClient) setAuthHeader(req *http.Request, apiKey string) {
 	authValue := fmt.Sprintf("Bearer %s", apiKey)
 	req.Header.Set("Authorization", authValue)

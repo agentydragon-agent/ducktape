@@ -66,27 +66,11 @@ jobs:
           which tofu && echo "OpenTofu version: $(tofu --version | head -1)" || echo "OpenTofu: not installed"
           which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
 
-          # Verify BuildBuddy remote cache configuration
-          if [[ -f ~/.config/bazel/buildbuddy.bazelrc ]]; then
-            echo "BuildBuddy: configured (remote cache + RBE enabled)"
-            grep -q "remote_executor" ~/.config/bazel/buildbuddy.bazelrc && echo "  - Remote execution: enabled"
-            grep -q "remote_cache" ~/.config/bazel/buildbuddy.bazelrc && echo "  - Remote cache: enabled"
-          else
-            echo "BuildBuddy: not configured (BUILDBUDDY_API_KEY not available)"
-          fi
-
-          # Verify Bazel toolchain auto-detection
-          if grep -q "BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0" ~/.bazelrc 2>/dev/null; then
-            echo "Bazel toolchain: auto-detection enabled"
-          else
-            echo "Bazel toolchain: using default configuration"
-          fi
-
       - name: Set up Props environment variables
         run: |
           # Props E2E test environment variables
           # These mirror the setup used by Claude code hooks
-          # (tools/claude_hooks/bazelisk_setup.py)
+          # (devinfra/claude/bazelisk_setup.py)
           # but simplified for GitHub Actions (no HTTP proxy needed, using
           # docker networking)
 

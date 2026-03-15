@@ -18,17 +18,11 @@ Location: ${workspace_dir}
 2. **Report issues** — `insert_issue` and `insert_occurrence`
 3. **Complete review** — call `submit` when done
 
-## Issue IDs
-
-Use descriptive kebab-case slugs:
-- Good: `dead-code-utils-cleanup`, `duplicated-enum-status`
-- Bad: `issue1`, `problem`
-
 ## Important Constraints
 
 - **Line ranges must be valid** (start_line > 0, end_line >= start_line)
 
-${source_inspection("critic", [
+${source_inspection([
     ("props.agents.critic.main", "Your entry point and tools"),
     ("props.agents.runtime", "Runtime helpers"),
     ("props.db.models", "SQLAlchemy models"),

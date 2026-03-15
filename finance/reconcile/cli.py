@@ -19,11 +19,6 @@ from absl import app, flags, logging
 from finance import gnucash_util
 from finance.reconcile import splitwise_lib
 
-# variables = globals().copy()
-# variables.update(locals())
-# shell = code.InteractiveConsole(variables)
-# shell.interact()
-
 _ADD_TO_GNUCASH = flags.DEFINE_list("add_to_gnucash", None, "External IDs to add to GnuCash")
 
 

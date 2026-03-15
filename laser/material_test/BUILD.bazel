@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "material_test_lib",
+    srcs = ["material_test.py"],
+    imports = ["../.."],
+    deps = [
+        "//laser/lightburn:lbrn2_writer",
+        "//laser/ruida:rd_writer",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "material_test",
+    imports = ["../.."],
+    main_module = "laser.material_test.material_test",
+    deps = [":material_test_lib"],
+)
+
+py_test(
+    name = "test_material_test",
+    srcs = ["test_material_test.py"],
+    data = [
+        "example_config.toml",
+        "example_config_3d.toml",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":material_test_lib",
+        "//laser/lightburn:lbrn2_writer",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -39,7 +39,7 @@ coverage.xml
 # Large data directories
 adgn_logs/
 adgn_db_backups/
-investigations/
+debug/
 rspcache/
 worktrees/
 logs/

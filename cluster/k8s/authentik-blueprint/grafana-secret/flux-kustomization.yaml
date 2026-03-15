@@ -19,8 +19,5 @@ spec:
       namespace: monitoring
   dependsOn:
     - name: monitoring-namespace
-      namespace: flux-system
     - name: external-secrets-config
-      namespace: flux-system
-    - name: authentik-blueprint-grafana-provider
-      namespace: flux-system
+    - name: authentik-blueprint-sso-secrets # Vault data exists

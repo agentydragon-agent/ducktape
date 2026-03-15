@@ -24,7 +24,7 @@ spec:
   chart:
     spec:
       chart: reloader
-      version: "1.*"
+      version: "2.*"
       sourceRef:
         kind: HelmRepository
         name: stakater

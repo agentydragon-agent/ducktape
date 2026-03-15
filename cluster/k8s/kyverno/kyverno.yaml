@@ -29,7 +29,7 @@ spec:
   chart:
     spec:
       chart: kyverno
-      version: "3.7.0"
+      version: "3.7.1"
       sourceRef:
         kind: HelmRepository
         name: kyverno
@@ -47,14 +47,13 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/component: admission-controller
-              app.kubernetes.io/instance: kyverno
+      # Soft anti-affinity: prefer spreading replicas across control-plane nodes.
+      # Replaces topologySpreadConstraints whose labelSelector didn't match
+      # (pods have instance=kyverno-kyverno, not instance=kyverno), causing
+      # all 3 replicas to stack on talos-vps-cp-1.
+      # The chart default uses preferredDuringScheduling with the correct labels.
+      antiAffinity:
+        enabled: true
       resources:
         limits:
           cpu: 500m

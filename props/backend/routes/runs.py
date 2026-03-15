@@ -13,25 +13,26 @@ import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field, model_validator
+from sqlalchemy import case, func
 
+from openai_utils.model import ResponsesRequest, ResponsesResult
 from props.backend.auth import (
-    AgentDb,
-    CallerType,
-    parse_credentials,
-    require_admin_access,
+    AgentRole,
+    AuthenticatedIdentity,
+    CallerDb,
+    RequestIdentity,
     require_critic_run_access,
-    validate_postgres_credentials,
+    require_evaluator_or_admin_access,
 )
 from props.backend.deps import AdminDb
 from props.backend.routes.ground_truth import get_snapshot_or_404
-from props.core.agent_types import AgentType, CriticTypeConfig, TargetMetric, TypeConfig
-from props.core.eval_api_models import RunCriticRequest, RunCriticResponse
+from props.core.agent_types import AgentType, TargetMetric, TypeConfig
+from props.core.eval_api_models import RunCriticRequest, StartCriticResponse
 from props.core.models.examples import ExampleKind, ExampleSpec
 from props.core.oci_utils import BUILTIN_TAG
 from props.core.splits import Split
@@ -46,6 +47,8 @@ from props.db.models import (
     LLMRequest,
     LLMRunCost,
     RecallByDefinitionSplitKind,
+    RecallByRun,
+    ReportedIssue,
     Snapshot,
 )
 from props.db.query_builders import query_recall_by_example
@@ -249,6 +252,20 @@ class AgentRunDetail(BaseModel):
     details: RunSpecifics
 
 
+class RunGradingSummary(BaseModel):
+    """Grading summary for a critic run.
+
+    Present for all critic runs that are in the recall_by_run view.
+    Non-null even when no grading edges exist yet (drift_edges > 0, present_edges == 0).
+    """
+
+    present_edges: int = Field(description="Total grading edges created so far")
+    drift_edges: int = Field(description="Pending grading edges not yet filled (from grading_pending)")
+    tp_count: int = Field(description="Number of matched true positive edges (credit > 0)")
+    fp_count: int = Field(description="Number of matched false positive edges (credit > 0)")
+    total_credit: float = Field(description="Sum of credit across all grading edges")
+
+
 class RunInfo(BaseModel):
     """Run information for list view."""
 
@@ -257,9 +274,13 @@ class RunInfo(BaseModel):
     type_config: TypeConfig
     model: str
     status: AgentRunStatus
+    container_exit_code: int | None = None
     created_at: datetime
     updated_at: datetime
     split: Split | None = None
+    reported_issues_count: int | None = None
+    grading: RunGradingSummary | None = None
+    llm_requests_count: int | None = None
 
 
 class RunsListResponse(BaseModel):
@@ -277,18 +298,47 @@ class RunsListResponse(BaseModel):
 class LLMRequestInfo(BaseModel):
     """LLM request information for API response.
 
-    Directly mirrors LLMRequest ORM model fields.
+    Directly mirrors LLMRequest ORM model fields. When the upstream returned
+    an error (4xx/5xx), the raw error JSON is in response_error_body instead
+    of response_body so it doesn't fail ResponsesResult validation.
     """
 
     model_config = {"from_attributes": True}
 
     id: int
     model: str
-    request_body: dict
-    response_body: dict | None
+    request_body: ResponsesRequest
+    response_body: ResponsesResult | None
+    response_error_body: dict[str, Any] | None = None
     error: str | None
     latency_ms: int | None
     created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_error_response_body(cls, data: Any) -> Any:
+        """Move error response bodies to response_error_body to avoid ResponsesResult validation failure."""
+        if hasattr(data, "response_body"):
+            # ORM object path (from_attributes)
+            response_body = getattr(data, "response_body", None)
+            if isinstance(response_body, dict) and "id" not in response_body:
+                return {
+                    "id": data.id,
+                    "model": data.model,
+                    "request_body": data.request_body,
+                    "response_body": None,
+                    "response_error_body": response_body,
+                    "error": data.error,
+                    "latency_ms": data.latency_ms,
+                    "created_at": data.created_at,
+                }
+        elif isinstance(data, dict):
+            response_body = data.get("response_body")
+            if isinstance(response_body, dict) and "id" not in response_body:
+                data = dict(data)
+                data["response_error_body"] = data["response_body"]
+                data["response_body"] = None
+        return data
 
 
 class LLMRequestsResponse(BaseModel):
@@ -344,13 +394,13 @@ def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
 
 
 @router.get("/active")
-def list_active_runs(request: Request, agent_db: AgentDb) -> ActiveRunsResponse:
+def list_active_runs(request: Request, caller_db: CallerDb) -> ActiveRunsResponse:
     """List all active agent runs.
 
     Queries database for runs with IN_PROGRESS status.
     RLS policies filter visible runs based on caller's database role.
     """
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         db_runs = (
             session.query(AgentRun)
             .filter(AgentRun.status == AgentRunStatus.IN_PROGRESS)
@@ -363,7 +413,7 @@ def list_active_runs(request: Request, agent_db: AgentDb) -> ActiveRunsResponse:
     return ActiveRunsResponse(runs=result)
 
 
-@router.get("/jobs", dependencies=[Depends(require_admin_access)])
+@router.get("/jobs", dependencies=[Depends(require_evaluator_or_admin_access)])
 def list_jobs() -> JobsResponse:
     """List all validation jobs."""
     return JobsResponse(jobs=_get_active_jobs())
@@ -371,7 +421,7 @@ def list_jobs() -> JobsResponse:
 
 @router.get("")
 def list_runs(
-    agent_db: AgentDb,
+    caller_db: CallerDb,
     status: AgentRunStatus | None = None,
     image_digest: str | None = None,
     agent_type: AgentType | None = None,
@@ -386,7 +436,7 @@ def list_runs(
     """
     limit = min(limit, 500)  # Cap at 500
 
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         query = session.query(AgentRun)
 
         if status:
@@ -413,19 +463,76 @@ def list_runs(
 
         total_count = query.count()
 
-        runs_with_split = (
-            query.add_columns(Snapshot.split).order_by(AgentRun.created_at.desc()).offset(offset).limit(limit).all()
+        # Subquery: count reported issues per critic run
+        issues_subq = (
+            session.query(ReportedIssue.agent_run_id, func.count().label("issues_count"))
+            .group_by(ReportedIssue.agent_run_id)
+            .subquery()
+        )
+
+        # Subquery: grading summary per critic run (aggregated from grading edges)
+        grading_subq = (
+            session.query(
+                GradingEdge.critique_run_id,
+                func.count().label("total_edges"),
+                func.count(case((GradingEdge.tp_id.isnot(None) & (GradingEdge.credit > 0), 1))).label("tp_count"),
+                func.count(case((GradingEdge.fp_id.isnot(None) & (GradingEdge.credit > 0), 1))).label("fp_count"),
+                func.coalesce(func.sum(GradingEdge.credit), 0.0).label("total_credit"),
+            )
+            .group_by(GradingEdge.critique_run_id)
+            .subquery()
+        )
+
+        # Subquery: count LLM requests per run
+        llm_requests_subq = (
+            session.query(LLMRequest.agent_run_id, func.count().label("llm_requests_count"))
+            .group_by(LLMRequest.agent_run_id)
+            .subquery()
+        )
+
+        runs_with_extras = (
+            query.add_columns(
+                Snapshot.split,
+                issues_subq.c.issues_count,
+                grading_subq.c.total_edges,
+                grading_subq.c.tp_count,
+                grading_subq.c.fp_count,
+                grading_subq.c.total_credit,
+                llm_requests_subq.c.llm_requests_count,
+                RecallByRun.missing_grading_edges,
+            )
+            .outerjoin(issues_subq, AgentRun.agent_run_id == issues_subq.c.agent_run_id)
+            .outerjoin(grading_subq, AgentRun.agent_run_id == grading_subq.c.critique_run_id)
+            .outerjoin(llm_requests_subq, AgentRun.agent_run_id == llm_requests_subq.c.agent_run_id)
+            .outerjoin(RecallByRun, AgentRun.agent_run_id == RecallByRun.critic_run_id)
+            .order_by(AgentRun.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
         )
 
         return RunsListResponse(
-            runs=[_build_run_info(r, split) for r, split in runs_with_split],
+            runs=[
+                _build_run_info(
+                    r,
+                    split,
+                    issues_count,
+                    total_edges,
+                    tp_count,
+                    fp_count,
+                    total_credit,
+                    llm_requests_count,
+                    missing_grading_edges,
+                )
+                for r, split, issues_count, total_edges, tp_count, fp_count, total_credit, llm_requests_count, missing_grading_edges in runs_with_extras
+            ],
             total_count=total_count,
             offset=offset,
             limit=limit,
         )
 
 
-@router.post("/validation", dependencies=[Depends(require_admin_access)])
+@router.post("/validation", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_validation_runs(
     request: Request, body: ValidationRunRequest, admin_db: AdminDb
 ) -> ValidationRunResponse:
@@ -555,7 +662,7 @@ class OptimizeRunResponse(BaseModel):
     agent_run_id: UUID
 
 
-@router.post("/optimize", dependencies=[Depends(require_admin_access)])
+@router.post("/optimize", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_optimize_run(request: Request, body: OptimizeRunRequest) -> OptimizeRunResponse:
     """Launch a critic developer optimize agent."""
     registry = get_registry(request)
@@ -591,7 +698,7 @@ class ImproveRunResponse(BaseModel):
     n_examples_selected: int
 
 
-@router.post("/improve", dependencies=[Depends(require_admin_access)])
+@router.post("/improve", dependencies=[Depends(require_evaluator_or_admin_access)])
 async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_db: AdminDb) -> ImproveRunResponse:
     """Launch a critic developer improve agent.
 
@@ -667,6 +774,11 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
             best = max(with_runs, key=get_lcb)
             definition_id = best.critic_image_digest
 
+            # TODO: Definition and example selection is currently automatic (best LCB95
+            # definition, top-N examples by recall). Eventually expose this via a frontend
+            # affordance so the user can choose which definition to improve and which
+            # examples to focus on.
+
             # Select Pareto-optimal training examples
             recall_rows = query_recall_by_example(session, split=Split.TRAIN, critic_image_digest=definition_id)
             if not recall_rows:
@@ -697,13 +809,13 @@ async def trigger_improve_run(request: Request, body: ImproveRunRequest, admin_d
 
 
 @router.post("/critic")
-async def run_critic(
+async def start_critic(
     request: Request,
     body: RunCriticRequest,
     admin_db: AdminDb,
-    auth: Annotated[tuple[CallerType, UUID | None], Depends(require_critic_run_access)],
-) -> RunCriticResponse:
-    """Run critic agent using an agent package.
+    auth: Annotated[RequestIdentity, Depends(require_critic_run_access)],
+) -> StartCriticResponse:
+    """Start a critic agent using an agent package. Returns immediately with critic_run_id.
 
     Uses admin_db: this is a privileged API that starts container workloads.
 
@@ -712,9 +824,12 @@ async def run_critic(
     - VALID split: restrictions depend on target_metric mode
     - TEST split: completely off-limits
 
-    Returns critic_run_id. Use wait_until_graded() to poll DB for grading completion.
+    The critic runs asynchronously. Poll GET /api/runs/{critic_run_id} or use the
+    WebSocket feed for status, then use wait_until_graded() once the run exits.
     """
-    _, parent_run_id = auth
+    parent_run_id = (
+        auth.role.agent_run_id if isinstance(auth, AuthenticatedIdentity) and isinstance(auth.role, AgentRole) else None
+    )
     registry = get_registry(request)
 
     # Validate snapshot and example
@@ -732,14 +847,15 @@ async def run_critic(
         if not example:
             raise HTTPException(status_code=404, detail=f"Example not found: {body.example.model_dump()}")
 
-    # Resolve image ref and execute critic run
+    # Resolve image ref
     try:
         image = await registry.resolve_image(AgentType.CRITIC, body.definition_id)
     except ImageResolutionError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # Start critic in the background — returns immediately
     try:
-        critic_run_id = await registry.run_critic(
+        critic_run_id = await registry.start_critic(
             image=image,
             example=body.example,
             model=body.critic_model,
@@ -750,22 +866,16 @@ async def run_critic(
     except BudgetExceededError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Get final status — read attributes inside session to avoid DetachedInstanceError
-    with admin_db.session() as session:
-        critic_run = session.get(AgentRun, critic_run_id)
-        assert critic_run is not None
-        return RunCriticResponse(
-            critic_run_id=critic_run_id, status=critic_run.status, container_exit_code=critic_run.container_exit_code
-        )
+    return StartCriticResponse(critic_run_id=critic_run_id)
 
 
 # --- Run Detail Endpoints ---
 
 
 @router.get("/{run_id}")
-def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
+def get_run(run_id: UUID, caller_db: CallerDb) -> AgentRunDetail:
     """Get details of a specific agent run. RLS enforces access."""
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -906,9 +1016,9 @@ def get_run(run_id: UUID, agent_db: AgentDb) -> AgentRunDetail:
 
 
 @router.get("/{run_id}/llm_requests")
-def get_run_llm_requests(run_id: UUID, agent_db: AgentDb) -> LLMRequestsResponse:
+def get_run_llm_requests(run_id: UUID, caller_db: CallerDb) -> LLMRequestsResponse:
     """Get LLM requests for a specific agent run. RLS filters visible requests."""
-    with agent_db.session() as session:
+    with caller_db.session() as session:
         run = session.get(AgentRun, run_id)
         if run is None:
             raise HTTPException(status_code=404, detail=f"Agent run {run_id} not found")
@@ -923,128 +1033,43 @@ def get_run_llm_requests(run_id: UUID, agent_db: AgentDb) -> LLMRequestsResponse
         return LLMRequestsResponse(requests=[LLMRequestInfo.model_validate(req) for req in requests])
 
 
-# --- WebSocket for Runs Feed (list updates) ---
-
-
-class WsFeedRunsMessage(BaseModel):
-    """WebSocket message containing recent runs."""
-
-    type: Literal["runs"] = "runs"
-    runs: list[RunInfo]
-
-
-class WsFeedJobsMessage(BaseModel):
-    """WebSocket message containing active jobs."""
-
-    type: Literal["jobs"] = "jobs"
-    jobs: list[JobInfo]
-
-
-# Track active feed connections
-_feed_connections: set[WebSocket] = set()
-
-
-def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
+def _build_run_info(
+    run: AgentRun,
+    split: Split | None,
+    issues_count: int | None = None,
+    total_edges: int | None = None,
+    tp_count: int | None = None,
+    fp_count: int | None = None,
+    total_credit: float | None = None,
+    llm_requests_count: int | None = None,
+    missing_grading_edges: int | None = None,
+) -> RunInfo:
     """Convert AgentRun ORM to RunInfo."""
+    grading: RunGradingSummary | None = None
+    if missing_grading_edges is not None:
+        grading = RunGradingSummary(
+            present_edges=total_edges or 0,
+            drift_edges=missing_grading_edges,
+            tp_count=tp_count or 0,
+            fp_count=fp_count or 0,
+            total_credit=total_credit or 0.0,
+        )
     return RunInfo(
         agent_run_id=run.agent_run_id,
         image_digest=run.image_digest,
         type_config=run.type_config,
         model=run.model,
         status=run.status,
+        container_exit_code=run.container_exit_code,
         created_at=run.created_at,
         updated_at=run.updated_at,
         split=split,
+        reported_issues_count=issues_count,
+        grading=grading,
+        llm_requests_count=llm_requests_count,
     )
-
-
-def _get_recent_runs(session, limit: int = 20) -> list[RunInfo]:
-    """Get recent runs with split info."""
-    runs = session.query(AgentRun).order_by(AgentRun.updated_at.desc()).limit(limit).all()
-
-    # Pre-fetch all snapshots to avoid N+1 queries
-    snapshot_slugs = {
-        run.type_config.example.snapshot_slug for run in runs if isinstance(run.type_config, CriticTypeConfig)
-    }
-    snapshots = session.query(Snapshot).filter(Snapshot.slug.in_(snapshot_slugs)).all() if snapshot_slugs else []
-    snapshot_by_slug = {s.slug: s for s in snapshots}
-
-    # Build result with looked-up splits
-    result = []
-    for run in runs:
-        split = None
-        if isinstance(run.type_config, CriticTypeConfig):
-            snapshot_slug = run.type_config.example.snapshot_slug
-            if snapshot_slug in snapshot_by_slug:
-                split = snapshot_by_slug[snapshot_slug].split
-        result.append(_build_run_info(run, split))
-    return result
 
 
 def _get_active_jobs() -> list[JobInfo]:
     """Get active validation jobs from in-memory store."""
     return [JobInfo.model_validate(job, from_attributes=True) for job in _jobs.values()]
-
-
-@router.websocket("/feed")
-async def runs_feed(websocket: WebSocket) -> None:
-    """WebSocket endpoint for live runs/jobs feed.
-
-    Sends initial state then streams updates when runs or jobs change.
-    Requires admin token as ?token= query parameter.
-    """
-    db: Database = websocket.app.state.admin_db
-
-    # Validate token from query parameter
-    token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=4001, reason="Missing token")
-        return
-    parsed = parse_credentials(f"Bearer {token}")
-    if not parsed:
-        await websocket.close(code=4001, reason="Invalid token")
-        return
-    username, password = parsed
-    result = validate_postgres_credentials(username, password, db.config)
-    if not result.is_valid:
-        await websocket.close(code=4001, reason="Invalid credentials")
-        return
-
-    await websocket.accept()
-    _feed_connections.add(websocket)
-
-    try:
-        # Send initial state
-        with db.session() as session:
-            runs = _get_recent_runs(session)
-            jobs = _get_active_jobs()
-            await websocket.send_json(WsFeedRunsMessage(runs=runs).model_dump(mode="json"))
-            await websocket.send_json(WsFeedJobsMessage(jobs=jobs).model_dump(mode="json"))
-            last_updated = max((r.updated_at for r in runs), default=datetime.min)
-            last_job_state = [(j.job_id, j.completed, j.failed) for j in jobs]
-
-        # Poll for changes
-        while True:
-            await asyncio.sleep(1.0)
-
-            with db.session() as session:
-                # Check for new/updated runs
-                current_runs = _get_recent_runs(session)
-                current_updated = max((r.updated_at for r in current_runs), default=datetime.min)
-
-                if current_updated > last_updated:
-                    await websocket.send_json(WsFeedRunsMessage(runs=current_runs).model_dump(mode="json"))
-                    last_updated = current_updated
-
-                # Check for job changes
-                current_jobs = _get_active_jobs()
-                current_job_state = [(j.job_id, j.completed, j.failed) for j in current_jobs]
-
-                if current_job_state != last_job_state:
-                    await websocket.send_json(WsFeedJobsMessage(jobs=current_jobs).model_dump(mode="json"))
-                    last_job_state = current_job_state
-
-    except WebSocketDisconnect:
-        logger.debug("Feed WebSocket disconnected")
-    finally:
-        _feed_connections.discard(websocket)

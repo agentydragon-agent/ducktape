@@ -98,13 +98,11 @@ def mcp(
     else:
         server_log_level = "INFO"
 
-    # Create server with API key and port configuration
-    server = create_habitify(
-        debug=debug,
-        log_level=server_log_level,
-        api_key=habitify_api_key,
-        port=port,  # Pass the port parameter here
-    )
+    # Configure logging
+    logging.basicConfig(level=server_log_level)
+
+    # Create server with API key
+    server = create_habitify(api_key=habitify_api_key)
 
     # Claude Desktop detection
     is_claude_desktop = not sys.stdin.isatty()
@@ -119,7 +117,7 @@ def mcp(
             server.run(transport="stdio")
         else:
             err_console.print(f"[bold green]Starting[/] Habitify MCP server with SSE transport on port {port}")
-            server.run(transport="sse")  # Port is already configured in the server settings
+            server.run(transport="sse", port=port)
     except KeyboardInterrupt:
         err_console.print("\n[yellow]Keyboard interrupt received.[/] Shutting down...")
     except Exception as e:

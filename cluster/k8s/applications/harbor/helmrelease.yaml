@@ -63,12 +63,14 @@ spec:
       resourcePolicy: "keep"
       persistentVolumeClaim:
         registry:
-          size: 5Gi
+          size: 300Gi
         jobservice:
+          storageClass: longhorn
           size: 1Gi
         database:
           size: 1Gi
         redis:
+          storageClass: longhorn
           size: 1Gi
         trivy:
           size: 5Gi
@@ -79,20 +81,37 @@ spec:
     existingSecretAdminPassword: "harbor-admin-initial"
     existingSecretAdminPasswordKey: "HARBOR_ADMIN_PASSWORD"
 
-    # Core services
+    # Pin all components to Proxmox — PVCs use proxmox-csi-retain and
+    # cross-site latency (VPS↔Proxmox via KubeSpan) causes liveness probe
+    # timeouts when core/nginx are on VPS but database/redis are on Proxmox.
+    # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
     core:
       replicas: 1
+      podAnnotations:
+        reloader.stakater.com/auto: "true"
+      # Co-locate with Redis to avoid cross-node Cilium eBPF startup failures
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: redis
+                  app.kubernetes.io/instance: harbor
+              topologyKey: kubernetes.io/hostname
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
-          memory: 256Mi
-          cpu: 100m
+          memory: 128Mi
+          cpu: 20m
         limits:
           memory: 512Mi
           cpu: 500m
 
-    # Registry configuration
     registry:
       replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           memory: 256Mi
@@ -101,38 +120,41 @@ spec:
           memory: 512Mi
           cpu: 200m
 
-    # PostgreSQL database
     database:
       type: internal
       internal:
+        nodeSelector:
+          topology.kubernetes.io/region: proxmox
         password: "changeit"
         resources:
           requests:
-            memory: 256Mi
-            cpu: 100m
+            memory: 128Mi
+            cpu: 35m
           limits:
             memory: 512Mi
             cpu: 200m
 
-    # Redis cache
     redis:
       type: internal
       internal:
+        nodeSelector:
+          topology.kubernetes.io/region: proxmox
         resources:
           requests:
-            memory: 256Mi
-            cpu: 100m
+            memory: 64Mi
+            cpu: 20m
           limits:
             memory: 512Mi
             cpu: 200m
 
-    # Trivy vulnerability scanner
     trivy:
       enabled: true
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
-          cpu: 200m
-          memory: 512Mi
+          cpu: 20m
+          memory: 64Mi
         limits:
           cpu: 1000m
           memory: 1Gi
@@ -141,24 +163,26 @@ spec:
     notary:
       enabled: false
 
-    # Job service
     jobservice:
       replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
-          memory: 256Mi
-          cpu: 100m
+          memory: 64Mi
+          cpu: 20m
         limits:
           memory: 512Mi
           cpu: 200m
 
-    # Portal (web UI)
     portal:
       replicas: 1
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
-          memory: 256Mi
-          cpu: 100m
+          memory: 32Mi
+          cpu: 20m
         limits:
           memory: 512Mi
           cpu: 200m
@@ -185,9 +209,23 @@ spec:
           prometheus: kube-prometheus-stack
         interval: 30s
 
-    # Harbor exporter for Prometheus metrics
+    nginx:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+
     exporter:
       replicas: 1
+      # Co-locate with Redis (same reason as core)
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: redis
+                  app.kubernetes.io/instance: harbor
+              topologyKey: kubernetes.io/hostname
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       resources:
         requests:
           memory: 128Mi

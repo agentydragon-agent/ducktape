@@ -30,11 +30,12 @@ type Manager interface {
 // manager is the concrete implementation of Manager.
 //
 // Struct layout (from type equality at 0xaea3a0 and field accesses):
-//   offset 0x00: server Server (interface: itab + data)
-//   offset 0x10: config *ServerConfig
-//   offset 0x18: logger *slog.Logger
-//   offset 0x20: mu sync.RWMutex (embedded, size 0x14 for the fields + alignment)
-//   offset 0x38: running bool
+//
+//	offset 0x00: server Server (interface: itab + data)
+//	offset 0x10: config *ServerConfig
+//	offset 0x18: logger *slog.Logger
+//	offset 0x20: mu sync.RWMutex (embedded, size 0x14 for the fields + alignment)
+//	offset 0x38: running bool
 //
 // Implements: Manager (itab at 0xf65980)
 type manager struct {
@@ -75,7 +76,8 @@ func NewManager(config *ServerConfig) (Manager, error) {
 // Source file: manager.go
 //
 // Closure:
-//   deferwrap1 at 0xae8560 - deferred RWMutex unlock
+//
+//	deferwrap1 at 0xae8560 - deferred RWMutex unlock
 func (m *manager) Start(ctx context.Context, logger *slog.Logger) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -110,7 +112,8 @@ func (m *manager) Start(ctx context.Context, logger *slog.Logger) error {
 // Source file: manager.go
 //
 // Closure:
-//   deferwrap1 at 0xae8800 - deferred RWMutex unlock
+//
+//	deferwrap1 at 0xae8800 - deferred RWMutex unlock
 func (m *manager) Stop(ctx context.Context, logger *slog.Logger) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -142,7 +145,8 @@ func (m *manager) Stop(ctx context.Context, logger *slog.Logger) error {
 // Source file: manager.go
 //
 // Closure:
-//   deferwrap1 at 0xae8a00 - deferred RWMutex read-unlock
+//
+//	deferwrap1 at 0xae8a00 - deferred RWMutex read-unlock
 func (m *manager) GetProxyURL(ctx context.Context, logger *slog.Logger) (string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -166,7 +170,8 @@ func (m *manager) GetProxyURL(ctx context.Context, logger *slog.Logger) (string,
 // Source file: manager.go
 //
 // Closure:
-//   deferwrap1 at 0xae8b20 - deferred RWMutex read-unlock
+//
+//	deferwrap1 at 0xae8b20 - deferred RWMutex read-unlock
 func (m *manager) IsRunning() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import DefinitionDetail from "$components/DefinitionDetail.svelte";
   import { fetchDefinitionDetail, type DefinitionDetailResponse } from "$lib/api/client";
 
@@ -24,11 +23,7 @@
     }
   }
 
-  onMount(() => {
-    loadData();
-  });
-
-  // Reload when definitionId changes
+  // $effect runs immediately on mount and re-runs when definitionId changes
   $effect(() => {
     if (definitionId) {
       loadData();
@@ -38,10 +33,12 @@
 
 {#if loading}
   <div class="flex items-center justify-center py-12">
-    <div class="text-gray-500">Loading...</div>
+    <div class="text-gray-500 dark:text-gray-400">Loading...</div>
   </div>
 {:else if error}
-  <div class="bg-red-50 border border-red-200 rounded p-4 text-red-700">
+  <div
+    class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded p-4 text-red-700 dark:text-red-300"
+  >
     {error}
   </div>
 {:else if definition}

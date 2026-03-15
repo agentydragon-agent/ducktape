@@ -16,9 +16,16 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cert-manager-issuer-config
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: headscale
+      namespace: headscale
   dependsOn:
     - name: cert-manager-issuer-config
     - name: headscale-namespace
+    - name: headscale-secrets
     - name: gateway
     - name: cert-manager-environment
-    - name: local-path-provisioner
+    - name: authentik
+    - name: authentik-blueprint-headscale-secret

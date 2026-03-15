@@ -24,7 +24,7 @@ spec:
       spec:
         accessModes:
           - ReadWriteOnce
-        storageClassName: local-path
+        storageClassName: longhorn
         resources:
           requests:
             storage: 10Gi
@@ -91,11 +91,12 @@ spec:
   serviceType: "NodePort"
 
   # Resource limits (correct Bank-Vaults schema)
+  # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
   resources:
     vault:
       requests:
-        memory: "256Mi"
-        cpu: "250m"
+        memory: "128Mi"
+        cpu: "60m"
       limits:
         memory: "512Mi"
         cpu: "500m"

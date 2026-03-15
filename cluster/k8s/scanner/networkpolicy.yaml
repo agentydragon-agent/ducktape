@@ -1,0 +1,41 @@
+# Restrict FileBrowser ingress to the Authentik shared proxy outpost only.
+# FileBrowser is configured with --auth.method=proxy --auth.header=X-authentik-username,
+# so any pod reaching port 8080 can impersonate any user.
+#
+# Note: The service is type NodePort (30080). Cilium enforces NetworkPolicy at
+# the pod level even for NodePort traffic. Converting to ClusterIP would also
+# remove the node-level exposure.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: scanner-filebrowser-ingress
+  namespace: scanner
+spec:
+  podSelector:
+    matchLabels:
+      app: scanner
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/name: authentik
+      ports:
+        - port: 8080
+          protocol: TCP
+    # Gatus: health check probes
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gatus
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gatus
+      ports:
+        - port: 8080
+          protocol: TCP

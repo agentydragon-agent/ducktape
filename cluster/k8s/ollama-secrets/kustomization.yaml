@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - ollama-api-key-tf.yaml
   - externalsecret.yaml
+  - langfuse-api-keys.yaml

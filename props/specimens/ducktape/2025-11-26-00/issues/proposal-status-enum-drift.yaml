@@ -18,6 +18,12 @@ occurrences:
   - occurrence_id: occ-0
     files:
       adgn/src/adgn/agent/server/app.py:
-        - [293, 293]
+        - [293, 293] # converts rec.status to ProposalStatus
+      adgn/src/adgn/agent/persist/__init__.py:
+        - [69, 69] # PolicyProposal.status: str (should be ProposalStatus)
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/server/app.py
+      - - adgn/src/adgn/agent/persist/__init__.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/app.py
+      - adgn/src/adgn/agent/persist/__init__.py

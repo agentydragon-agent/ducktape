@@ -1,10 +1,9 @@
 # Generated CI workflow files — exported for test_generate_ci_check
 exports_files(
     [
+        "bazel-harbor-images.yml",
         "ci.yml",
-        "ducktape-release.yml",
-        "gnome-terminal-profile-switcher-release.yml",
-        "headscale-cleanup-release.yml",
+        "release.yml",
     ],
-    visibility = ["//tools/ci:__pkg__"],
+    visibility = ["//devinfra/ci:__pkg__"],
 )

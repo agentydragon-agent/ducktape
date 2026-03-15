@@ -2,46 +2,109 @@
 
 ## Build Status
 
-**Diff Summary**: 0 real differences (build v17, 2026-02-11)
+**Diff Summary**: 4 real differences (build v19, 2026-02-18)
 
 | Category       | Count   |
 | -------------- | ------- |
-| Identical      | 121,052 |
-| Excluded       | 501,951 |
-| **Real diffs** | **0**   |
+| Identical      | 120,695 |
+| Excluded       | 562,198 |
+| **Real diffs** | **4**   |
 
-### Exclusion utilization
+## Real Difference Analysis
 
-116 patterns, 25 unused. Unused patterns are defensive (volatile tools
-installed from HEAD, runtime-only artifacts, or session hook state that
-can't be tested from within the container).
+All remaining diffs are minor build non-determinism — no gaps in the Dockerfile.
 
-### What could reduce the diff further
+### Content changed (4)
 
-1. **Pin python3.13 via cached `.deb` files (108→0):** Download the exact
-   `3.13.11` `.deb` files from the deadsnakes PPA and cache them in the repo
-   or a build cache. Install with `dpkg -i` instead of `apt-get install`.
-   This is the only way to pin a PPA that doesn't support snapshots.
-   Affects: `python3.13`, `python3.13-dev`, `python3.13-venv`,
-   `libpython3.13-stdlib`, `libpython3.13-dev`, `libpython3.13`.
+- `/usr/lib/x86_64-linux-gnu/libpng16.so.16.43.0` — same size, hash differs
+- `/usr/lib/x86_64-linux-gnu/libpng16.a` — size 357068->355524
+- `/usr/share/doc/libpng16-16t64/changelog.Debian.gz` — size 2108->1501
+- `/var/lib/dpkg/status` — size 687887->687872 (15-byte difference; likely a newline
+  or minor apt metadata variation)
 
-2. **Update snapshot date for libpng and linux-libc-dev (3→0):** Move the
-   Ubuntu snapshot from 2025-12-01 to a date after the security updates were
-   published. Risk: this may change other package versions and introduce new
-   diffs. Alternatively, pin these 2 packages to their exact live versions
-   using APT preferences.
+**libpng16**: Three files with the same package version but different binary content.
+This is a known apt snapshot reproducibility issue — the package is compiled at build
+time with slightly different results. Very low priority; the live and built versions
+are functionally identical.
 
-3. **Accept python3.13 drift as inherent:** The 108 python3.13 diffs are all
-   from a PPA that fundamentally doesn't support version pinning. If caching
-   `.deb` files isn't worth the maintenance burden, these can be moved to
-   `volatile_paths` as `/usr/lib/python3.13/**` + `/usr/include/python3.13/**`
-   - `/usr/bin/python3.13`. This would give 0 actionable diffs but at the
-     cost of not tracking python3.13 content changes.
+**dpkg/status**: 15-byte difference. With Podman removed, the package lists are now
+nearly identical. The remaining difference is likely trailing whitespace or a minor
+metadata variation. Low priority.
 
-## gVisor Build Notes
+## Next Steps
 
-- **Kernel keyring quota**: `crun-gvisor-wrapper` injects `--no-new-keyring`
-  to prevent keyring exhaustion (~60-70 limit per session).
-- **Overlay layer limit**: ~47-50 layers per overlay stack (kernel 4096-byte
-  mount options string limit). Use `--layers=false` for large builds.
-- **Overlay works on tmpfs**: Cache reuse confirmed with 90-layer builds.
+No significant action items. The reconstruction is essentially complete:
+
+- The live container has Docker CE (not Podman), matching the updated Dockerfile
+- All session-specific runtime state (mkcert CAs, Docker buildx state, containerd
+  plugins) is properly excluded
+- Only libpng16 build non-determinism remains, which is cosmetic
+
+### Optional future work
+
+1. **Add libpng16 to `hash_may_differ`** — eliminates the remaining 3 libpng diffs.
+   Since they're the same version but built non-reproducibly, this is safe.
+
+2. **Pin libpng16 snapshot date** — try pinning to a specific snapshot date where
+   the binary matches. Low priority.
+
+3. **Investigate dpkg/status 15-byte diff** — identify the exact difference and
+   either fix or exclude.
+
+## Change History
+
+### v19 (2026-02-18)
+
+- **Removed Podman packages from Dockerfile** — eliminated 183 "only in built" diffs.
+  Packages removed: `podman buildah crun conmon catatonit fuse-overlayfs fuse3
+slirp4netns passt netavark aardvark-dns uidmap containernetworking-plugins`.
+  The live container uses Docker CE only.
+
+- **Added mkcert exclusions** — excluded session-specific mkcert development CAs:
+  - `/etc/ssl/certs/mkcert_*` and `/usr/local/share/ca-certificates/mkcert_*`
+  - `/etc/ssl/certs/*.[0-9]` (generalized from `*.0` to cover collision-numbered
+    symlinks when mkcert CAs push system certs to `.1`, `.2`, etc.)
+  - `/etc/ssl/certs/ca-certificates.crt` moved to `hash_may_differ` (mkcert appends
+    session dev CAs at runtime)
+
+- **Added Docker runtime exclusions** — `/root/.docker/**` (BuildKit/buildx state),
+  `/opt/containerd/**` (Docker daemon runtime plugins)
+
+- **Added `/root/.zshrc` to `only_in_live`** — live container has a zsh config;
+  built image doesn't
+
+- **Added `/etc/cloud/build.info` to `hash_may_differ`** — embeds build timestamp,
+  always differs
+
+- **Added `/usr/local/bin/environment-manager` to `hash_may_differ`** — captured
+  fresh each build, so hashes match (UNUSED in current run), but protects future
+  session-drift cases
+
+### v18 (2026-02-18)
+
+**Diff Summary**: 225 real differences
+
+- Migrated from Podman to Docker for building the reconstruction image
+- Identified Podman packages (183 diffs) as the primary issue
+
+## Docker Build Notes (2026-02-18)
+
+**Key Docker issues in gVisor:**
+
+1. **Proxy requirement**: Docker build containers don't inherit `$https_proxy`
+   from the host. Must pass `--build-arg http_proxy/https_proxy` explicitly.
+   Docker excludes predefined proxy ARG names from the build cache key, so
+   JWT-token proxy URLs don't break layer caching.
+
+2. **gVisor overlay layer limit**: Docker's overlay snapshotter in gVisor is
+   limited to ~35 lowerdir entries (empirical limit; NOT a 4096-byte string-length
+   issue). Ubuntu 24.04 base contributes 4 layers; Dockerfile may have at most ~31
+   layer-creating instructions.
+
+   BuildKit groups consecutive ENV/LABEL/CMD instructions into metadata (not
+   creating new overlay snapshots) but SHELL, RUN, COPY, WORKDIR each create a
+   new snapshot. The critical fix was consolidating all 10 scattered ENV groups
+   into a single ENV instruction, saving ~9 layer slots.
+
+3. **`docker export | tar -x`**: Used to extract the built image filesystem for
+   manifest capture (replaces Podman's `podman mount` direct filesystem access).

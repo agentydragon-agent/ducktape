@@ -52,26 +52,23 @@
     critique: Link,
   } as const;
 
-  // Target kind to color mapping
-  const TARGET_COLORS = {
-    tp: "green",
-    fp: "red",
+  // Static color classes for grading edge targets — Tailwind scanner needs literal strings
+  const TARGET_STYLES = {
+    tp: {
+      bg: "bg-green-50 dark:bg-green-950",
+      border: "border-green-200 dark:border-green-800",
+      iconColor: "text-green-600 dark:text-green-400",
+      textColor: "text-green-700 dark:text-green-300",
+      creditColor: "text-green-600 dark:text-green-400",
+    },
+    fp: {
+      bg: "bg-red-50 dark:bg-red-950",
+      border: "border-red-200 dark:border-red-800",
+      iconColor: "text-red-600 dark:text-red-400",
+      textColor: "text-red-700 dark:text-red-300",
+      creditColor: "text-red-600 dark:text-red-400",
+    },
   } as const;
-
-  // Helper to create color classes for a given base color
-  const colorClasses = (color: string, creditColor?: string) => ({
-    bg: `bg-${color}-50`,
-    border: `border-${color}-200`,
-    iconColor: `text-${color}-600`,
-    textColor: `text-${color}-700`,
-    creditColor: creditColor ?? `text-${color}-600`,
-  });
-
-  // Helper to create grading edge styling from base color and label
-  const createTargetStyling = (baseColor: string, label: string, creditColor?: string) => ({
-    ...colorClasses(baseColor, creditColor),
-    label,
-  });
 
   // Get label for grading edge target
   const getTargetLabel = (target: { kind: "tp" | "fp"; tp_id?: string; fp_id?: string; occurrence_id?: string }) => {
@@ -117,9 +114,9 @@
     <span class="font-mono text-sm font-medium">{issueId}</span>
     <span class="text-xs {styling.labelColor} font-medium">{styling.label}</span>
     {#if credit !== undefined}
-      <span class="text-xs text-gray-500">(+{credit.toFixed(2)})</span>
+      <span class="text-xs text-gray-500 dark:text-gray-400">(+{credit.toFixed(2)})</span>
     {/if}
-    <span class="ml-auto text-gray-400 text-xs">{expanded ? "▼" : "▶"}</span>
+    <span class="ml-auto text-gray-400 dark:text-gray-500 text-xs">{expanded ? "▼" : "▶"}</span>
   </button>
 
   <!-- Content (expanded) -->
@@ -131,25 +128,25 @@
         </div>
       {/if}
       <div>
-        <div class="text-xs font-medium text-gray-600 mb-1">Rationale:</div>
-        <div class="text-gray-800 whitespace-pre-wrap">{rationale}</div>
+        <div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Rationale:</div>
+        <div class="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{rationale}</div>
       </div>
 
       {#if note}
         <div>
-          <div class="text-xs font-medium text-gray-600 mb-1">Note:</div>
-          <div class="text-gray-700 italic">{note}</div>
+          <div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Note:</div>
+          <div class="text-gray-700 dark:text-gray-300 italic">{note}</div>
         </div>
       {/if}
 
       {#if allLocations.length > 1}
         <div>
-          <div class="text-xs font-medium text-gray-600 mb-1">All locations:</div>
-          {#each allLocations as loc (`${loc.file}-${loc.start_line}`)}
-            <div class="font-mono text-xs text-gray-700">
+          <div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">All locations:</div>
+          {#each allLocations as loc, i (`${loc.file}-${loc.start_line}-${i}`)}
+            <div class="font-mono text-xs text-gray-700 dark:text-gray-300">
               {formatLocationAnchor(loc)}
               {#if loc.note}
-                <span class="italic text-gray-500 ml-1">({loc.note})</span>
+                <span class="italic text-gray-500 dark:text-gray-400 ml-1">({loc.note})</span>
               {/if}
             </div>
           {/each}
@@ -158,29 +155,29 @@
 
       {#if kind === "critique" && gradingEdges.length > 0}
         <div>
-          <div class="text-xs font-medium text-gray-600 mb-1">Grading:</div>
+          <div class="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Grading:</div>
           <div class="space-y-1">
             {#each gradingEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === "tp" ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
               {@const target = edge.target}
               {#if target.credit > 0}
                 {@const TargetIcon = ICONS[target.kind]}
-                {@const targetStyling = createTargetStyling(TARGET_COLORS[target.kind], getTargetLabel(target))}
-                <div class="text-xs p-1.5 rounded border {targetStyling.bg} {targetStyling.border}">
+                {@const ts = TARGET_STYLES[target.kind]}
+                <div class="text-xs p-1.5 rounded border {ts.bg} {ts.border}">
                   <div class="flex items-center gap-2">
-                    <TargetIcon size={12} class={targetStyling.iconColor} />
+                    <TargetIcon size={12} class={ts.iconColor} />
                     <span class="font-mono">
                       {#if snapshotSlug && target.kind === "tp" && target.tp_id && target.occurrence_id}
                         <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
                       {:else if snapshotSlug && target.kind === "fp" && target.fp_id && target.occurrence_id}
                         <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />
                       {:else}
-                        <span class={targetStyling.textColor}>{targetStyling.label}</span>
+                        <span class={ts.textColor}>{getTargetLabel(target)}</span>
                       {/if}
                     </span>
-                    <span class="{targetStyling.creditColor} font-medium">(+{target.credit.toFixed(2)})</span>
+                    <span class="{ts.creditColor} font-medium">(+{target.credit.toFixed(2)})</span>
                   </div>
                   {#if edge.rationale}
-                    <div class="text-gray-600 mt-1">{edge.rationale}</div>
+                    <div class="text-gray-600 dark:text-gray-400 mt-1">{edge.rationale}</div>
                   {/if}
                 </div>
               {/if}

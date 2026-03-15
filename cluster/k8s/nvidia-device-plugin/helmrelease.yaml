@@ -8,6 +8,14 @@ spec:
   interval: 24h
   url: https://nvidia.github.io/k8s-device-plugin
 ---
+# RuntimeClass so pods can request the nvidia containerd runtime.
+# The runtime is configured in k8s-worker.nix (nvidia-container-runtime.cdi).
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: nvidia
+handler: nvidia
+---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -21,26 +29,15 @@ spec:
   chart:
     spec:
       chart: nvidia-device-plugin
-      version: "0.17.0"
+      version: "0.18.2"
       sourceRef:
         kind: HelmRepository
         name: nvidia
         namespace: nvidia-device-plugin
   values:
-    # Override default affinity — chart expects NFD label pci-10de.present but
-    # NFD v0.17 sets pci-0300_10de.present (with PCI class prefix). Use the
-    # Talos machine config label instead (set in proxmox-nodes.tf).
-    affinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-            - matchExpressions:
-                - key: nvidia.com/gpu
-                  operator: In
-                  values:
-                    - "true"
-    # Tolerate GPU node taints if any
-    tolerations:
-      - key: nvidia.com/gpu
-        operator: Exists
-        effect: NoSchedule
+    # nvidia-container-runtime.cdi (in containerd, via RuntimeClass) injects
+    # /dev/nvidia*, driver libs, and glibc via host CDI specs. The device plugin
+    # only needs NVML access (provided by the runtime) to enumerate GPUs.
+    # Default envvar strategy: plugin sets NVIDIA_VISIBLE_DEVICES on workload
+    # containers; the CDI runtime translates that to CDI device injection.
+    runtimeClassName: nvidia

@@ -17,3 +17,5 @@ occurrences:
         - [177, 177]
     critic_scopes_expected_to_recall:
       - [wt/server/handlers/worktree_handler.py]
+    match_file_restriction:
+      - wt/server/handlers/worktree_handler.py

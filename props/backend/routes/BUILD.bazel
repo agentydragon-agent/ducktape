@@ -1,5 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 py_library(
     name = "agent_definitions",
@@ -22,10 +22,8 @@ py_library(
     visibility = ["//props/backend:__subpackages__"],
     deps = [
         "//props/backend:auth",
-        "//props/backend:deps",
         "//props/core:ids",
         "//props/core:splits",
-        "//props/db:database",
         "//props/db:models",
         "//props/db:snapshots",
         "@pypi//fastapi",
@@ -76,6 +74,7 @@ py_library(
     visibility = ["//props/backend:__subpackages__"],
     deps = [
         ":ground_truth",
+        "//openai_utils:model",
         "//props/backend:auth",
         "//props/backend:deps",
         "//props/core:agent_types",
@@ -95,16 +94,16 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_llm_budget",
     srcs = ["test_llm_budget.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":llm",
         "//props:conftest",
         "//props/backend:conftest",
         "//props/core:agent_types",
-        "//props/core/models:examples",
         "//props/db:database",
         "//props/db:models",
         "//props/testing:constants",
@@ -115,10 +114,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_llm_routing",
     srcs = ["test_llm_routing.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":llm",
         "//props:config",
@@ -132,10 +132,11 @@ docker_py_test(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_runs",
     srcs = ["test_runs.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":runs",
         "//props:conftest",
@@ -143,7 +144,6 @@ docker_py_test(
         "//props/backend:conftest",
         "//props/backend:deps",
         "//props/core:agent_types",
-        "//props/core/models:examples",
         "//props/db:database",
         "//props/db:models",
         "//props/orchestration:agent_registry",
@@ -160,6 +160,7 @@ py_test(
     name = "test_registry_proxy",
     srcs = ["test_registry_proxy.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":registry",
         "//props:conftest",
@@ -170,6 +171,43 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//starlette",
         "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_ground_truth",
+    srcs = ["test_ground_truth.py"],
+    imports = ["../../.."],
+    requires_docker = True,
+    deps = [
+        ":ground_truth",
+        "//props:conftest",
+        "//props/backend:auth",
+        "//props/backend:conftest",
+        "//props/core:agent_types",
+        "//props/core:ids",
+        "//props/core/models:examples",
+        "//props/db:database",
+        "//props/db:models",
+        "//props/testing/fixtures:credentials",
+        "//props/testing/fixtures:runs",
+        "//props/testing/fixtures:scopes",
+        "@pypi//fastapi",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "model_metadata",
+    srcs = ["model_metadata.py"],
+    imports = ["../../.."],
+    visibility = ["//props/backend:__subpackages__"],
+    deps = [
+        "//props/backend:deps",
+        "//props/db:models",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
     ],
 )
 
@@ -195,10 +233,12 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_stats",
+    size = "medium",
     srcs = ["test_stats.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":stats",
         "//props:conftest",

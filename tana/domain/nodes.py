@@ -13,12 +13,14 @@ class Props(BaseModel):
 
     created: int | None = None
     name: str | None = None
+    content: str | None = None
+    description: str | None = None
     doc_type: str | None = Field(alias="_docType", default=None)
     owner_id: NodeId | None = Field(alias="_ownerId", default=None)
     meta_node_id: NodeId | None = Field(alias="_metaNodeId", default=None)
     source_id: NodeId | None = Field(alias="_sourceId", default=None)
     done: int | None = Field(alias="_done", default=None)
-    description: str | None = None
+    is_done: bool | None = Field(alias="done", default=None)
     flags: int | None = Field(alias="_flags", default=None)
     image_width: int | None = Field(alias="_imageWidth", default=None)
     image_height: int | None = Field(alias="_imageHeight", default=None)
@@ -26,6 +28,13 @@ class Props(BaseModel):
     view: str | None = Field(alias="_view", default=None)
     edit_mode: bool | None = Field(alias="_editMode", default=None)
     search_context_node: str | None = Field(alias="searchContextNode", default=None)
+    url: str | None = Field(alias="_url", default=None)
+    code_language: str | None = Field(alias="_codeLanguage", default=None)
+    streaming: str | None = Field(alias="_streaming", default=None)
+    refs: list[str] | None = None
+    banner_id: NodeId | None = Field(alias="_bannerId", default=None)
+    is_banner: bool | None = Field(alias="_isBanner", default=None)
+    banner_for: NodeId | None = Field(alias="_bannerFor", default=None)
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

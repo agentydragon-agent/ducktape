@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "qemu_tests",
+    testonly = True,
+    srcs = [
+        "events.go",
+        "helpers.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+    deps = [
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+# ─ Extract vmlinuz from Alpine linux-virt .apk ──────────────────────────────
+genrule(
+    name = "vmlinuz",
+    srcs = ["@alpine_linux_virt//file"],
+    outs = ["vmlinuz-virt"],
+    cmd = "tar --warning=no-unknown-keyword -xzf $< -O boot/vmlinuz-virt > $@",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
+
+# ─ Extract full kernel modules tree for modprobe ─────────────────────────────
+genrule(
+    name = "modules_tree",
+    srcs = [
+        "@alpine_linux_virt//file",
+        "extract_modules.sh",
+    ],
+    outs = ["modules_tree.tar"],
+    cmd = "$(location extract_modules.sh) $(location @alpine_linux_virt//file) $@",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)

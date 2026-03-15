@@ -1,0 +1,38 @@
+---
+# Fetches the InvenTree admin API token and writes it to the inventree namespace.
+# Reflector mirrors the Secret to openclaw-sandbox and claude-sandbox automatically
+# via the annotation-based reflection policy.
+# Script is baked into registry.allegedly.works/inventree/token-provisioner via Bazel.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: inventree-token-provisioner
+  namespace: inventree
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        app: inventree-token-provisioner
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: inventree-token-provisioner
+      imagePullSecrets:
+        - name: harbor-pull-robot
+      containers:
+        - name: provisioner
+          image: registry.allegedly.works/ducktape/token-provisioner:latest
+          imagePullPolicy: Always
+          env:
+            - name: INVENTREE_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: inventree-admin-password
+                  key: INVENTREE_ADMIN_USER
+            - name: INVENTREE_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: inventree-admin-password
+                  key: INVENTREE_ADMIN_PASSWORD

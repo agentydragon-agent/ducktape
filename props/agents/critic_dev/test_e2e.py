@@ -21,8 +21,6 @@ Uses the in-container architecture with:
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
 import logging
 import textwrap
 
@@ -30,10 +28,9 @@ import pytest
 import pytest_bazel
 from hamcrest import assert_that
 
-from agent_core.testing.responses import PlayGen, tool_roundtrip
+from agent_core.testing.responses import PlayGen
 from mcp_infra.exec.matchers import exited_successfully
 from props.agents.critic.testing.mocks import CriticMock
-from props.agents.critic_dev.loop import RunCriticToolArgs, WaitUntilGradedToolArgs
 from props.agents.critic_dev.testing.mocks import CriticDevMock
 from props.agents.critic_dev.testing.orchestration_fixtures import (
     ORCHESTRATION_CRITIC_MODEL,
@@ -43,8 +40,8 @@ from props.agents.critic_dev.testing.orchestration_fixtures import (
 from props.agents.grader.testing.mocks import GraderMock
 from props.agents.grader.tools import ClusterMemberSpec
 from props.core.agent_types import TargetMetric
-from props.core.eval_api_models import GradingStatusResponse, RunCriticResponse
-from props.core.ids import SnapshotSlug
+from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
+from props.core.ids import DefinitionId, SnapshotSlug
 from props.core.models.examples import ExampleKind, WholeSnapshotExample
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
@@ -53,14 +50,12 @@ from props.testing.mocks import get_system_message_text
 
 logger = logging.getLogger(__name__)
 
-pytestmark = [pytest.mark.integration, pytest.mark.requires_docker]
 
 # Test timeout (seconds)
 TEST_TIMEOUT_SECONDS = 120
 
 
 @pytest.mark.timeout(300)
-@pytest.mark.slow
 async def test_po_orchestrates_critic_with_system_prompt_check(
     synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
@@ -84,22 +79,28 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
     def optimizer_mock(m: CriticDevMock) -> PlayGen:
         yield None  # First request
 
-        # Call run_critic tool (DirectToolProvider)
+        # Start critic (non-blocking, returns immediately with critic_run_id)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        run_critic_args = RunCriticToolArgs(
-            definition_id=digests["critic"], example=example, timeout_seconds=120, budget_usd=1.0
+        start_output: StartCriticResponse = yield from m.start_critic_roundtrip(
+            RunCriticRequest(
+                definition_id=DefinitionId(digests["critic"]),
+                example=example,
+                timeout_seconds=120,
+                budget_usd=1.0,
+                critic_model=ORCHESTRATION_CRITIC_MODEL,
+            )
         )
-
-        call = m.tool_call("run_critic", run_critic_args)
-        run_critic_output: RunCriticResponse = yield from tool_roundtrip(call, RunCriticResponse)
-
-        critic_run_id = run_critic_output.critic_run_id
+        critic_run_id = start_output.critic_run_id
         logger.info(f"PO got critic_run_id: {critic_run_id}")
 
+        # Wait for critic container to finish
+        completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
+            critic_run_id, timeout_seconds=120
+        )
+        logger.info(f"Critic completed: status={completed.status}")
+
         # Wait for grading (polls database directly inside container)
-        wait_args = WaitUntilGradedToolArgs(critic_run_id=str(critic_run_id), timeout_seconds=60)
-        wait_call = m.tool_call("wait_until_graded_tool", wait_args)
-        wait_output: GradingStatusResponse = yield from tool_roundtrip(wait_call, GradingStatusResponse)
+        wait_output: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(critic_run_id, timeout_seconds=60)
         logger.info(f"PO got grading: total_credit={wait_output.total_credit}")
 
         # Report success
@@ -140,13 +141,11 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
         opt_image = stack.resolved_images["critic_dev_optimize"]
 
         # Start snapshot grader in background
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(
-                image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-            )
+        grader_handle = await stack.registry.start_snapshot_grader(
+            image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
         )
 
-        try:
+        async with grader_handle:
             # Run critic-dev optimizer
             run_id = await stack.registry.run_critic_dev_optimize(
                 image=opt_image,
@@ -162,11 +161,6 @@ async def test_po_orchestrates_critic_with_system_prompt_check(
                 optimizer_run = session.get(AgentRun, run_id)
                 assert optimizer_run is not None
                 assert optimizer_run.status == AgentRunStatus.EXITED, f"Expected COMPLETED, got {optimizer_run.status}"
-
-        finally:
-            grader_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await grader_task
 
 
 # Custom Python script that replaces the critic's main.py in the image.
@@ -223,7 +217,6 @@ _CUSTOM_CRITIC_SCRIPT = textwrap.dedent("""\
 
 
 @pytest.mark.timeout(300)
-@pytest.mark.slow
 async def test_po_creates_custom_critic_image(
     synced_db, e2e_stack, test_snapshot, critic_dev_optimize_image, critic_image, grader_image
 ):
@@ -277,20 +270,28 @@ async def test_po_creates_custom_critic_image(
         new_digest = stdout.strip().split("\n")[-1]  # Last line is the digest
         logger.info(f"Custom image digest: {new_digest}")
 
-        # Run the custom critic image
+        # Start the custom critic image (non-blocking)
         example = WholeSnapshotExample(kind=ExampleKind.WHOLE_SNAPSHOT, snapshot_slug=snapshot_slug)
-        run_critic_args = RunCriticToolArgs(
-            definition_id=new_digest, example=example, timeout_seconds=120, budget_usd=1.0
+        start_output: StartCriticResponse = yield from m.start_critic_roundtrip(
+            RunCriticRequest(
+                definition_id=DefinitionId(new_digest),
+                example=example,
+                timeout_seconds=120,
+                budget_usd=1.0,
+                critic_model=ORCHESTRATION_CRITIC_MODEL,
+            )
         )
-        call = m.tool_call("run_critic", run_critic_args)
-        run_critic_output: RunCriticResponse = yield from tool_roundtrip(call, RunCriticResponse)
-        critic_run_id = run_critic_output.critic_run_id
+        critic_run_id = start_output.critic_run_id
         logger.info(f"Custom critic run: {critic_run_id}")
 
+        # Wait for critic container to finish
+        completed: CriticRunStatus = yield from m.wait_until_critic_completed_roundtrip(
+            critic_run_id, timeout_seconds=120
+        )
+        logger.info(f"Critic completed: status={completed.status}")
+
         # Wait for grading to complete
-        wait_args = WaitUntilGradedToolArgs(critic_run_id=str(critic_run_id), timeout_seconds=60)
-        wait_call = m.tool_call("wait_until_graded_tool", wait_args)
-        wait_output: GradingStatusResponse = yield from tool_roundtrip(wait_call, GradingStatusResponse)
+        wait_output: GradingStatusResponse = yield from m.wait_until_graded_roundtrip(critic_run_id, timeout_seconds=60)
         logger.info(f"Grading complete: total_credit={wait_output.total_credit}")
 
         yield m.report_success()
@@ -327,13 +328,11 @@ async def test_po_creates_custom_critic_image(
         grader_image_resolved = stack.resolved_images["grader"]
         opt_image = stack.resolved_images["critic_dev_optimize"]
 
-        grader_task = asyncio.create_task(
-            stack.registry.run_snapshot_grader(
-                image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
-            )
+        grader_handle = await stack.registry.start_snapshot_grader(
+            image=grader_image_resolved, snapshot_slug=snapshot_slug, model=ORCHESTRATION_GRADER_MODEL
         )
 
-        try:
+        async with grader_handle:
             run_id = await stack.registry.run_critic_dev_optimize(
                 image=opt_image,
                 budget=1.0,
@@ -357,14 +356,8 @@ async def test_po_creates_custom_critic_image(
                 edges = session.query(GradingEdge).filter_by(critique_run_id=critic_run_id).all()
                 assert len(edges) > 0, "Expected grading edges for the custom critic run"
 
-        finally:
-            grader_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await grader_task
-
 
 @pytest.mark.timeout(180)
-@pytest.mark.slow
 async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_files_scope, critic_image):
     """Test that critic agents cannot push images to registry.
 

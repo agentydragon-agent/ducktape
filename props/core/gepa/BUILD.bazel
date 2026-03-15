@@ -1,5 +1,5 @@
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 # =============================================================================
 # Library targets
@@ -25,8 +25,6 @@ py_library(
         "//agent_core:events",
         "//openai_utils:model",
         "//props/core:agent_types",
-        "//props/core:agent_workspace",
-        "//props/core:display",
         "//props/core:splits",
         "//props/db:database",
         "//props/db:examples",
@@ -44,10 +42,11 @@ py_library(
 # Tests
 # =============================================================================
 
-docker_py_test(
+py_test(
     name = "test_warm_start",
     srcs = ["test_warm_start.py"],
     imports = ["../../.."],
+    requires_docker = True,
     deps = [
         ":warm_start",
         "//props/db:database",

@@ -59,8 +59,7 @@ resource "harbor_project" "ghcr_proxy" {
 }
 
 # Quay.io registry endpoint
-# Harbor v2.14 doesn't support "quay" as a proxy cache adapter type.
-# Quay.io implements the standard Docker V2 registry API.
+# Uses docker-registry adapter: quay adapter doesn't support proxy cache
 resource "harbor_registry" "quay" {
   provider_name = "docker-registry"
   name          = "quay"
@@ -99,6 +98,8 @@ resource "harbor_project" "k8s_registry_proxy" {
 }
 
 # Google Container Registry (GCR) endpoint
+# Uses docker-registry adapter: google-gcr adapter's health check fails
+# (GCR deprecated in favor of Artifact Registry)
 resource "harbor_registry" "gcr" {
   provider_name = "docker-registry"
   name          = "gcr"

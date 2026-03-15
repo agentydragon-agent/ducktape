@@ -11,6 +11,9 @@ import LLMRequestViewer from "../../src/components/LLMRequestViewer.svelte";
 import DistributionChart from "../../src/components/stats/DistributionChart.svelte";
 import CoverageHeatmap from "../../src/components/stats/CoverageHeatmap.svelte";
 import OccurrenceStats from "../../src/components/stats/OccurrenceStats.svelte";
+import RunsBrowser from "../../src/components/RunsBrowser.svelte";
+import RunDetail from "../../src/components/RunDetail.svelte";
+import SnapshotDetailPage from "../../src/pages/SnapshotDetailPage.svelte";
 
 // --- Mock Data for Pages ---
 
@@ -189,60 +192,170 @@ const mockGradingEdges = [
   },
 ];
 
-// Mock LLM requests
+// Mock LLM requests using the OpenAI Responses API format (/v1/responses)
 const mockLLMRequests = [
   {
+    // Multi-turn conversation: instructions + user message; text response with cached tokens
     id: 1,
-    model: "claude-sonnet-4-20250514",
+    model: "gpt-4o",
     request_body: {
-      model: "claude-sonnet-4-20250514",
-      messages: [
-        { role: "system", content: "You are a security code reviewer." },
-        { role: "user", content: "Review this code for security issues:\n\n```python\nimport hashlib\n...\n```" },
-      ],
-      max_tokens: 4096,
-    },
-    response_body: {
-      id: "msg_abc123",
-      content: [
+      model: "gpt-4o",
+      instructions:
+        "You are a security code reviewer. Analyze code carefully and report any security vulnerabilities you find.",
+      input: [
         {
-          type: "text",
-          text: "I found several security issues:\n\n1. **Weak hash algorithm**: MD5 is cryptographically broken...",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "Review this Python code for security issues:\n\n```python\nimport hashlib\nimport os\n\ndef hash_password(password: str) -> str:\n    return hashlib.md5(password.encode()).hexdigest()\n\ndef verify_user(username: str, password: str) -> bool:\n    stored_hash = get_stored_hash(username)\n    return stored_hash == hash_password(password)\n```",
+            },
+          ],
         },
       ],
-      usage: { input_tokens: 250, output_tokens: 180 },
+      max_output_tokens: 4096,
+    },
+    response_body: {
+      id: "resp_abc123",
+      object: "response",
+      model: "gpt-4o-2024-08-06",
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          id: "msg_abc123",
+          role: "assistant",
+          status: "completed",
+          content: [
+            {
+              type: "output_text",
+              text: "I found several security issues:\n\n1. **Weak hash algorithm**: MD5 is cryptographically broken and should not be used for password hashing. Use bcrypt, scrypt, or Argon2 instead.\n\n2. **No salt**: The hash is computed without a salt, making it vulnerable to rainbow table attacks.\n\n3. **Timing attack**: The string comparison `==` is not constant-time, enabling timing-based attacks to infer password hashes.",
+            },
+          ],
+        },
+      ],
+      usage: {
+        input_tokens: 250,
+        output_tokens: 180,
+        total_tokens: 430,
+        input_tokens_details: { cached_tokens: 50 },
+        output_tokens_details: { reasoning_tokens: 0 },
+      },
     },
     error: null,
     latency_ms: 2341,
     created_at: "2025-01-20T10:00:00Z",
   },
   {
+    // Multi-turn with tool calls: input includes previous assistant turn + function call + result
     id: 2,
-    model: "claude-sonnet-4-20250514",
+    model: "gpt-4o",
     request_body: {
-      model: "claude-sonnet-4-20250514",
-      messages: [{ role: "user", content: "Can you elaborate on the rate limiting issue?" }],
-    },
-    response_body: {
-      id: "msg_def456",
-      content: [
+      model: "gpt-4o",
+      instructions: "You are a security code reviewer. Use the report_issue tool to record each finding.",
+      input: [
         {
-          type: "text",
-          text: "The verify_user function should implement rate limiting to prevent brute force attacks...",
+          role: "user",
+          content: [{ type: "input_text", text: "Review this code for security issues." }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          id: "msg_prev",
+          content: [{ type: "output_text", text: "I'll analyze the code and report any security issues I find." }],
+        },
+        {
+          type: "function_call",
+          id: "fc_001",
+          call_id: "call_001",
+          name: "report_issue",
+          arguments: JSON.stringify({
+            severity: "high",
+            title: "MD5 password hashing",
+            description: "MD5 is cryptographically broken.",
+          }),
+          status: "completed",
+        },
+        {
+          type: "function_call_output",
+          call_id: "call_001",
+          output: JSON.stringify({ recorded: true, issue_id: "issue-001" }),
         },
       ],
-      usage: { input_tokens: 100, output_tokens: 150 },
+      tools: [
+        {
+          type: "function",
+          name: "report_issue",
+          description: "Record a security issue found in the code under review.",
+          parameters: {
+            type: "object",
+            properties: {
+              severity: { type: "string", enum: ["low", "medium", "high", "critical"] },
+              title: { type: "string" },
+              description: { type: "string" },
+            },
+            required: ["severity", "title", "description"],
+          },
+        },
+      ],
+      tool_choice: "auto",
+      max_output_tokens: 4096,
+    },
+    response_body: {
+      id: "resp_def456",
+      object: "response",
+      model: "gpt-4o-2024-08-06",
+      status: "completed",
+      output: [
+        {
+          type: "function_call",
+          id: "fc_002",
+          call_id: "call_002",
+          name: "report_issue",
+          arguments: JSON.stringify({
+            severity: "medium",
+            title: "No rate limiting",
+            description: "verify_user lacks rate limiting, enabling brute-force attacks.",
+          }),
+          status: "completed",
+        },
+        {
+          type: "message",
+          id: "msg_def456",
+          role: "assistant",
+          status: "completed",
+          content: [
+            {
+              type: "output_text",
+              text: "I've reported the missing rate limiting issue. The lack of request throttling on login attempts allows attackers to try unlimited passwords.",
+            },
+          ],
+        },
+      ],
+      usage: {
+        input_tokens: 350,
+        output_tokens: 120,
+        total_tokens: 470,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 0 },
+      },
     },
     error: null,
     latency_ms: 1567,
     created_at: "2025-01-20T10:01:00Z",
   },
   {
+    // Failed request: no response body, error from upstream
     id: 3,
     model: "gpt-4o-mini",
     request_body: {
       model: "gpt-4o-mini",
-      messages: [{ role: "user", content: "Summarize findings" }],
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_text", text: "Summarize all findings so far." }],
+        },
+      ],
     },
     response_body: null,
     error: "Rate limit exceeded - retry after 30 seconds",
@@ -345,6 +458,204 @@ const mockOccurrenceStatsData = [
   },
 ];
 
+// Mock runs data for RunsBrowser
+const mockRuns = [
+  {
+    agent_run_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
+    type_config: {
+      agent_type: "critic" as const,
+      example: { kind: "whole_snapshot" as const, snapshot_slug: "vuln-app-v1", files_hash: null },
+    },
+    model: "gpt-5.1-codex-mini",
+    status: "exited" as const,
+    created_at: "2025-01-20T10:00:00Z",
+    updated_at: "2025-01-20T10:05:00Z",
+    split: "valid" as const,
+    reported_issues_count: 3,
+    grading: { tp_count: 2, fp_count: 1, total_credit: 1.5 },
+  },
+  {
+    agent_run_id: "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
+    type_config: {
+      agent_type: "critic" as const,
+      example: { kind: "file_set" as const, snapshot_slug: "auth-service", files_hash: "abc123" },
+    },
+    model: "gpt-5.1",
+    status: "in_progress" as const,
+    created_at: "2025-01-20T11:00:00Z",
+    updated_at: "2025-01-20T11:00:30Z",
+    split: "train" as const,
+    reported_issues_count: null,
+    grading: null,
+  },
+  {
+    agent_run_id: "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    image_digest: "sha256:bbb222ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee555f",
+    type_config: { agent_type: "grader" as const, snapshot_slug: "vuln-app-v1" },
+    model: "gpt-5.1-codex-mini",
+    status: "exited" as const,
+    created_at: "2025-01-20T10:10:00Z",
+    updated_at: "2025-01-20T10:12:00Z",
+    split: "valid" as const,
+    reported_issues_count: null,
+    grading: null,
+  },
+  {
+    agent_run_id: "d4e5f6a7-b8c9-0123-defa-234567890123",
+    image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
+    type_config: {
+      agent_type: "critic" as const,
+      example: { kind: "whole_snapshot" as const, snapshot_slug: "auth-service", files_hash: null },
+    },
+    model: "gpt-5.1-codex-mini",
+    status: "timed_out" as const,
+    created_at: "2025-01-19T08:00:00Z",
+    updated_at: "2025-01-19T09:00:00Z",
+    split: "valid" as const,
+    reported_issues_count: 5,
+    grading: { tp_count: 3, fp_count: 0, total_credit: 2.75 },
+  },
+  {
+    agent_run_id: "e5f6a7b8-c9d0-1234-efab-345678901234",
+    image_digest: "sha256:ccc333ddd444eee555fff666aaa111bbb222ccc333ddd444eee555fff666a",
+    type_config: { agent_type: "critic_dev_optimize" as const },
+    model: "gpt-5.1",
+    status: "exited" as const,
+    created_at: "2025-01-18T14:00:00Z",
+    updated_at: "2025-01-18T15:30:00Z",
+    split: null,
+    reported_issues_count: null,
+    grading: null,
+  },
+];
+
+// Mock snapshot detail data for SnapshotDetailPage
+const mockSnapshotDetail = {
+  slug: "vuln-app-v1",
+  split: "valid" as const,
+  created_at: "2025-01-15T10:30:00Z",
+  true_positives: [
+    {
+      tp_id: "weak-hash-algorithm",
+      rationale: "MD5 is cryptographically broken and should not be used for password hashing.",
+      occurrences: [
+        {
+          occurrence_id: "occ-md5-usage",
+          note: "Direct MD5 usage for password hashing",
+          locations: [{ file: "src/auth/login.py", start_line: 5, end_line: 7 }],
+          critic_scopes_expected_to_recall: [["security", "cryptography"]],
+        },
+      ],
+    },
+    {
+      tp_id: "sql-injection",
+      rationale: "User input directly interpolated into SQL query without parameterization.",
+      occurrences: [
+        {
+          occurrence_id: "occ-login-query",
+          note: "String formatting in SQL query",
+          locations: [{ file: "src/db/queries.py", start_line: 12, end_line: 15 }],
+          critic_scopes_expected_to_recall: [["security", "injection"]],
+        },
+      ],
+    },
+  ],
+  false_positives: [
+    {
+      fp_id: "hardcoded-expiry",
+      rationale: "Session expiry of 86400 seconds is a reasonable default.",
+      occurrences: [
+        {
+          occurrence_id: "occ-expiry-value",
+          note: "Reasonable default, not a magic number",
+          locations: [{ file: "src/auth/login.py", start_line: 19, end_line: 20 }],
+          relevant_files: ["src/config/settings.py"],
+        },
+      ],
+    },
+  ],
+};
+
+const mockFileTree = {
+  tree: [
+    {
+      path: "src",
+      name: "src",
+      is_dir: true,
+      tp_count: 2,
+      fp_count: 1,
+      children: [
+        {
+          path: "src/auth",
+          name: "auth",
+          is_dir: true,
+          tp_count: 1,
+          fp_count: 1,
+          children: [
+            { path: "src/auth/login.py", name: "login.py", is_dir: false, tp_count: 1, fp_count: 1, children: null },
+            {
+              path: "src/auth/session.py",
+              name: "session.py",
+              is_dir: false,
+              tp_count: 0,
+              fp_count: 0,
+              children: null,
+            },
+          ],
+        },
+        {
+          path: "src/db",
+          name: "db",
+          is_dir: true,
+          tp_count: 1,
+          fp_count: 0,
+          children: [
+            { path: "src/db/queries.py", name: "queries.py", is_dir: false, tp_count: 1, fp_count: 0, children: null },
+          ],
+        },
+      ],
+    },
+    { path: "README.md", name: "README.md", is_dir: false, tp_count: 0, fp_count: 0, children: null },
+  ],
+};
+
+// Mock critic run detail for RunDetail page test
+const mockCriticRunDetail = {
+  agent_run_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  image_digest: "sha256:abc123def456789012345678901234567890123456789012345678901234",
+  model: "gpt-5.1-codex-mini",
+  status: "exited" as const,
+  created_at: "2025-01-20T10:00:00Z",
+  updated_at: "2025-01-20T10:05:00Z",
+  llm_call_count: 5,
+  budget_usd: 0.5,
+  parent_agent_run_id: null,
+  container_stdout: "Agent completed successfully.",
+  container_stderr: null,
+  llm_costs: {
+    totals: { requests: 5, input_tokens: 2000, cached_tokens: 500, output_tokens: 800, cost_usd: 0.0342 },
+  },
+  type_config: {
+    agent_type: "critic" as const,
+    example: { kind: "whole_snapshot" as const, snapshot_slug: "vuln-app-v1", files_hash: null },
+  },
+  details: {
+    agent_type: "critic" as const,
+    reported_issues: mockCritiqueIssues,
+    resolved_files: ["src/auth/login.py"],
+    grader_runs: [
+      {
+        agent_run_id: "f6a7b8c9-d0e1-2345-abcd-678901234567",
+        agent_type: "grader" as const,
+        grading_edges: mockGradingEdges,
+      },
+    ],
+  },
+  child_runs: [{ agent_run_id: "f6a7b8c9-d0e1-2345-abcd-678901234567", agent_type: "grader" as const }],
+};
+
 // --- Page Scenarios ---
 
 const pages: Record<string, { component: any; props: Record<string, unknown> }> = {
@@ -389,6 +700,15 @@ const pages: Record<string, { component: any; props: Record<string, unknown> }> 
     },
   },
 
+  // LLM request viewer showing a tool-call turn expanded (input has function_call + result, output has function_call)
+  LLMRequestsToolCall: {
+    component: LLMRequestViewer,
+    props: {
+      requests: mockLLMRequests,
+      initialExpanded: [2],
+    },
+  },
+
   // Distribution chart - recall histogram
   DistributionChartRecall: {
     component: DistributionChart,
@@ -428,6 +748,37 @@ const pages: Record<string, { component: any; props: Record<string, unknown> }> 
     component: OccurrenceStats,
     props: {
       occurrences: mockOccurrenceStatsData,
+    },
+  },
+
+  // Runs browser with mock data (no API calls)
+  RunsBrowser: {
+    component: RunsBrowser,
+    props: {
+      initialRuns: mockRuns,
+      initialTotalCount: mockRuns.length,
+    },
+  },
+
+  // Run detail: critic run with critique-vs-ground-truth file viewer
+  RunDetailCritic: {
+    component: RunDetail,
+    props: {
+      runId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      initialRun: mockCriticRunDetail,
+      initialSnapshotDetail: mockSnapshotDetail,
+      initialFileContents: new Map([["src/auth/login.py", mockFileContent]]),
+      initialLLMRequests: mockLLMRequests,
+    },
+  },
+
+  // Snapshot detail page with ground truth (files tab, TPs, FPs)
+  SnapshotDetail: {
+    component: SnapshotDetailPage,
+    props: {
+      slug: "vuln-app-v1",
+      initialSnapshot: mockSnapshotDetail,
+      initialTree: mockFileTree,
     },
   },
 };

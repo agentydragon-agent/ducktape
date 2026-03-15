@@ -12,3 +12,5 @@ occurrences:
         - [74, 95]
     critic_scopes_expected_to_recall:
       - - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py
+    match_file_restriction:
+      - llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py

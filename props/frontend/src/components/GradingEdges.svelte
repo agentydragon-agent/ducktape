@@ -47,10 +47,12 @@
 
 {#if edges.length > 0 || missedOccurrences.length > 0}
   <details open={defaultOpen}>
-    <summary class="cursor-pointer text-gray-500 hover:text-gray-700 text-xs">
+    <summary
+      class="cursor-pointer text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 text-xs"
+    >
       Grading ({nonZeroEdges.length} matches, {zeroEdges.length} non-matches)
       {#if creditSummary}
-        <span class="text-gray-400">— {creditSummary}</span>
+        <span class="text-gray-400 dark:text-gray-500">— {creditSummary}</span>
       {/if}
     </summary>
     <div class="mt-2 space-y-2">
@@ -61,9 +63,9 @@
           {@const target = edge.target}
           {@const credit = getCredit(edge)}
           {@const isTP = target.kind === "tp"}
-          {@const bgColor = isTP ? "bg-green-50" : "bg-red-50"}
-          {@const borderColor = isTP ? "border-green-200" : "border-red-200"}
-          {@const textColor = isTP ? "text-green-600" : "text-red-600"}
+          {@const bgColor = isTP ? "bg-green-50 dark:bg-green-950" : "bg-red-50 dark:bg-red-950"}
+          {@const borderColor = isTP ? "border-green-200 dark:border-green-800" : "border-red-200 dark:border-red-800"}
+          {@const textColor = isTP ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}
           <div class="p-2 rounded border text-xs {bgColor} {borderColor}">
             <div class="flex items-center gap-2 mb-1">
               {#if runId}
@@ -71,7 +73,7 @@
               {:else}
                 <span class="font-mono font-medium">{edge.critique_issue_id}</span>
               {/if}
-              <span class="text-gray-400">→</span>
+              <span class="text-gray-400 dark:text-gray-500">→</span>
               {#if target.kind === "tp"}
                 {#if snapshotSlug}
                   <span class={textColor}>
@@ -92,18 +94,18 @@
                 <span class="{textColor} font-medium">(+{credit.toFixed(2)} FP)</span>
               {/if}
             </div>
-            <div class="text-gray-600">{edge.rationale}</div>
+            <div class="text-gray-600 dark:text-gray-400">{edge.rationale}</div>
           </div>
         {/each}
       {/if}
 
       <!-- Zero-credit edges (collapsed by default) -->
       {#if zeroEdges.length > 0}
-        <div class="mt-3 pt-2 border-t border-gray-200">
+        <div class="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
           <button
             type="button"
             onclick={() => (showZeroEdges = !showZeroEdges)}
-            class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+            class="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 flex items-center gap-1"
           >
             <span>{showZeroEdges ? "▼" : "▶"}</span>
             <span>Non-matches ({zeroEdges.length})</span>
@@ -112,35 +114,39 @@
             <div class="mt-2 space-y-1">
               {#each zeroEdges as edge (`${edge.critique_issue_id}-${edge.target.kind === "tp" ? edge.target.tp_id : edge.target.fp_id}-${edge.target.occurrence_id}`)}
                 {@const target = edge.target}
-                <div class="p-2 rounded border text-xs bg-gray-50 border-gray-200">
+                <div
+                  class="p-2 rounded border text-xs bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+                >
                   <div class="flex items-center gap-2 mb-1">
                     {#if runId}
-                      <span class="text-gray-500"><CritiqueIssueLink {runId} issueId={edge.critique_issue_id} /></span>
+                      <span class="text-gray-500 dark:text-gray-400"
+                        ><CritiqueIssueLink {runId} issueId={edge.critique_issue_id} /></span
+                      >
                     {:else}
-                      <span class="font-mono text-gray-500">{edge.critique_issue_id}</span>
+                      <span class="font-mono text-gray-500 dark:text-gray-400">{edge.critique_issue_id}</span>
                     {/if}
-                    <span class="text-gray-400">→</span>
+                    <span class="text-gray-400 dark:text-gray-500">→</span>
                     {#if target.kind === "tp"}
                       {#if snapshotSlug}
-                        <span class="text-gray-500">
+                        <span class="text-gray-500 dark:text-gray-400">
                           <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
                         </span>
                       {:else}
-                        <span class="text-gray-500">{target.tp_id}/{target.occurrence_id}</span>
+                        <span class="text-gray-500 dark:text-gray-400">{target.tp_id}/{target.occurrence_id}</span>
                       {/if}
                     {:else if target.kind === "fp"}
                       {#if snapshotSlug}
-                        <span class="text-gray-500">
+                        <span class="text-gray-500 dark:text-gray-400">
                           <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />
                           <span> FP</span>
                         </span>
                       {:else}
-                        <span class="text-gray-500">{target.fp_id}/{target.occurrence_id} FP</span>
+                        <span class="text-gray-500 dark:text-gray-400">{target.fp_id}/{target.occurrence_id} FP</span>
                       {/if}
                     {/if}
-                    <span class="text-gray-400">(0.00)</span>
+                    <span class="text-gray-400 dark:text-gray-500">(0.00)</span>
                   </div>
-                  <div class="text-gray-500 text-[11px]">{edge.rationale}</div>
+                  <div class="text-gray-500 dark:text-gray-400 text-[11px]">{edge.rationale}</div>
                 </div>
               {/each}
             </div>
@@ -150,22 +156,26 @@
 
       <!-- Missed occurrences -->
       {#if missedOccurrences.length > 0}
-        <div class="mt-3 pt-2 border-t border-gray-200">
-          <div class="text-xs font-medium text-red-600 mb-1">Missed ({missedOccurrences.length}):</div>
+        <div class="mt-3 pt-2 border-t border-gray-200 dark:border-gray-700">
+          <div class="text-xs font-medium text-red-600 dark:text-red-400 mb-1">
+            Missed ({missedOccurrences.length}):
+          </div>
           {#each missedOccurrences as missed (`${missed.tp_id}-${missed.occurrence_id}`)}
-            <div class="p-2 rounded border text-xs bg-red-50 border-red-200">
+            <div class="p-2 rounded border text-xs bg-red-50 dark:bg-red-950 border-red-200 dark:border-red-800">
               <div class="flex items-center gap-2">
                 {#if snapshotSlug}
-                  <span class="font-mono font-medium text-red-700">
+                  <span class="font-mono font-medium text-red-700 dark:text-red-300">
                     <OccurrenceLink {snapshotSlug} issueId={missed.tp_id} occurrenceId={missed.occurrence_id} />
                   </span>
                 {:else}
-                  <span class="font-mono font-medium text-red-700">{missed.tp_id}/{missed.occurrence_id}</span>
+                  <span class="font-mono font-medium text-red-700 dark:text-red-300"
+                    >{missed.tp_id}/{missed.occurrence_id}</span
+                  >
                 {/if}
               </div>
-              <div class="text-gray-600 mt-1">{missed.tp_rationale}</div>
+              <div class="text-gray-600 dark:text-gray-400 mt-1">{missed.tp_rationale}</div>
               {#if missed.occ_note}
-                <div class="text-gray-500 italic mt-1">{missed.occ_note}</div>
+                <div class="text-gray-500 dark:text-gray-400 italic mt-1">{missed.occ_note}</div>
               {/if}
             </div>
           {/each}

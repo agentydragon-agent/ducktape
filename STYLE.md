@@ -20,6 +20,7 @@ Style and convention rules for this repository. Package-specific elaborations be
   - First line: `@README.md` (if README exists)
   - Then: Agent-specific instructions (idioms, "always do X", "never do Y", conventions)
   - Package-specific elaborations of STYLE.md rules go here
+  - **Nesting/inheritance**: Agents read AGENTS.md files from the repo root down to the current package. A sub-folder AGENTS.md must not repeat instructions already covered by a parent AGENTS.md. If `foo/AGENTS.md` says X, `foo/bar/AGENTS.md` should not repeat X. Only document what is new or different at this level.
 - **CLAUDE.md**: Always exactly one line: `@AGENTS.md`
 - **STYLE.md**: Repository-wide rules. If a rule applies across packages, it belongs here, not in a package's AGENTS.md.
 
@@ -31,8 +32,9 @@ Style and convention rules for this repository. Package-specific elaborations be
 
 ## General
 
+- **No large code blobs embedded in YAML/JSON**: Do not inline Python scripts, shell scripts, or large configuration blocks as string values in Kubernetes manifests, Helm values, or other YAML/JSON files. Embedded code cannot be linted, formatted, or type-checked by standard tools (ruff, shellcheck, mypy). Instead, keep code in its native file format (`.py`, `.sh`) and mount it into containers via `configMapGenerator` (kustomize) or `ConfigMap` with file references. This applies to any embedded block longer than ~5 lines.
 - **Imports at module top**: Place all imports at the top of files. Only use in-function imports to break a proven circular dependency, and add a one-line comment at that import explaining the cycle it avoids.
-- **No suspicious nullability**: If a field is optional, it must be for a clear transitional reason or represent an intentional, valid state with defined behavior. Otherwise, model as non-nullable and remove guards.
+- **No suspicious nullability**: If a field is optional, it must be for a clear transitional reason or represent an intentional, valid state with defined behavior. Otherwise, model as non-nullable and remove guards. For external inputs (API payloads, hook inputs): if a field may be absent, use `None` as the default — never use empty string `""`, empty list `[]`, or other "zero values" to represent absence. A field is either guaranteed present (no default) or optional (`| None = None`).
 - **No dead code**: Remove unused code, unused imports, and historical comments that no longer reflect the behavior.
 - **No redundant derived fields**: API responses should not include both a collection and a trivially computable function of it (e.g., returning both a list and its `len()`). The consumer can compute `len(items)` themselves. Exception: pagination, where `total_count` represents the full count before offset/limit slicing — this is not derivable from the returned page.
 - **No unnecessary aliasing**: Avoid renaming imports (`import foo as bar`), assigning fixtures to local variables, trivial parameter aliasing (`slug = snapshot_slug`), or any other form of aliasing unless it adds real semantic value or is required to avoid a collision. Prefer using variables under their actual names. Include a comment when an alias is genuinely needed. Do not create "convenience" re-export aliases like `AgentEvent = EventType` — import from the module that actually defines the symbol. Aliases are only justified at public API boundaries (e.g., `__init__.py` re-exports for external consumers) or when adapting between internal/external naming conventions.
@@ -93,6 +95,44 @@ Style and convention rules for this repository. Package-specific elaborations be
 - **Construct Pydantic models, not dicts**: When creating test data or structured values, construct typed Pydantic models directly (`BaseExecResult(exit=Exited(exit_code=0), ...)`) rather than building dicts that match the schema. This ensures mypy catches field renames and type changes at every construction site, instead of silently producing invalid dicts.
 - **Never mock Pydantic models**: Do not use `Mock()` or `MagicMock()` to fake Pydantic models in tests—construct real instances with test data. Mocking bypasses validation and hides type errors.
 - **No unnecessary model_dump()**: Use typed attributes on Pydantic objects directly. Dump only at I/O boundaries (logging/serialization), not to re-parse fields for logic.
+- **Pydantic Field descriptions for per-field docs**: When documenting individual fields on a Pydantic model, use `Field(description=...)` instead of a class-level docstring that lists fields. The description goes where the field is defined, not in a separate "Fields:" section.
+
+  ```python
+  # ✓ Per-field descriptions via Field()
+  class PostToolUseOutput(BaseModel):
+      decision: Literal["block"] | None = Field(default=None, description="Set to 'block' to re-prompt Claude")
+      reason: str | None = Field(default=None, description="Feedback shown to Claude when decision='block'")
+
+  # ❌ Class docstring restating field names
+  class PostToolUseOutput(BaseModel):
+      """Fields:
+          decision: Set to "block" to re-prompt Claude.
+          reason: Feedback shown to Claude when decision="block".
+      """
+      decision: Literal["block"] | None = None
+      reason: str | None = None
+  ```
+
+- **Shorten obvious docstrings**: If a function name and signature tell the whole story, collapse the docstring to a single line. Remove Args/Returns sections that just echo the signature.
+
+  ```python
+  # ✓ Single-line when function name + types are sufficient
+  def get_required_path(rlocation: str) -> Path:
+      """Resolve a runfiles path to an absolute Path, raising if missing."""
+
+  # ❌ Multi-line restating what's obvious
+  def get_required_path(rlocation: str) -> Path:
+      """Get path to a file or directory from runfiles, checking it exists.
+
+      Args:
+          rlocation: Runfiles path (e.g., "_main/devinfra/claude/session_start")
+      Returns:
+          Absolute Path to the file or directory.
+      Raises:
+          RuntimeError: If the path cannot be located or doesn't exist.
+      """
+  ```
+
 - **Explicit keyword arguments**: Instantiate Pydantic models and call functions with explicit keyword arguments (`Model(field=value)`) rather than `**kwargs` unpacking when the arguments are known. Prefer `Model.model_validate(data)` over `TypeAdapter(...).validate_python(...)` unless you explicitly need adapter semantics.
 - **Use enum values directly**: Reference enum values as `EnumClass.VALUE`, not as string literals. For StrEnum, use the value directly without `.value` (StrEnum instances are already strings): `f"{AgentType.CRITIC}_suffix"` not `f"{AgentType.CRITIC.value}_suffix"` or `f"critic_suffix"`.
 - **Compact CLI output**: CLI output should preserve vertical space. Merge related information onto single lines instead of spreading across multiple lines without good reason. Vertical space is at a premium.
@@ -143,7 +183,7 @@ Style and convention rules for this repository. Package-specific elaborations be
   # CORRECT - main_module, no srcs
   py_binary(
       name = "session_start",
-      main_module = "tools.claude_hooks.session_start",
+      main_module = "devinfra.claude.session_start",
       imports = ["../.."],
       deps = [":session_start_lib"],
   )

@@ -6,6 +6,7 @@ URL_KEY_ID = NodeId("SYS_A78")  # "URL"
 CHECKBOX_KEY_ID = NodeId("SYS_A55")  # Checkbox attribute
 LANGUAGE_KEY_ID = NodeId("SYS_A70")  # Code language attribute
 MEDIA_KEY_ID = NodeId("SYS_T15")  # Media/image URL
+MIME_TYPE_KEY_ID = NodeId("SYS_T157")  # MIME type of media
 
 # Common numeric thresholds
 MIN_TUPLE_CHILDREN = 2

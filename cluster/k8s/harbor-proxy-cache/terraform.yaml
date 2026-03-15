@@ -27,7 +27,7 @@ spec:
   # Variables for Terraform
   vars:
     - name: harbor_url
-      value: "https://registry.allegedly.works"
+      value: "http://harbor-core.harbor:80"
 
   # No Terraform dependencies - Harbor is deployed via Helm
   # Flux Kustomization dependency ensures Harbor is ready before this runs

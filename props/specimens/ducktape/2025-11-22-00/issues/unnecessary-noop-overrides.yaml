@@ -1,17 +1,8 @@
 rationale: |
-  Lines 244-265 in reducer.py define `NotificationsHandler(BaseHandler)` that overrides 7 event
-  methods (`on_response`, `on_error`, `on_user_text`, `on_assistant_text`, `on_tool_call`,
-  `on_tool_result`, `on_reasoning`) that all just `return None`. Base class already provides these
-  no-op defaults.
-
-  This creates unnecessary code (7 methods × 3 lines = 21 lines of no-ops), maintenance burden
-  (must sync with base class changes), false signal (suggests methods do something different from
-  base), and misleading comment ("Event forwarding (typed, observer-only)" but they just return None).
-
-  Delete the 7 no-op method overrides (lines 244-265). Keep only `__init__` and `on_before_sample`
-  which have actual implementation. Subclasses should override only what they specialize, not what
-  returns base defaults. Saves 21 lines, clear intent (only overrides what matters), standard pattern,
-  self-documenting (missing overrides signal "uses base behavior").
+  `NotificationsHandler(BaseHandler)` (lines 244-265) overrides 7 event methods
+  that all just `return None`. Base class already provides these no-op defaults.
+  Delete the redundant overrides; keep only `__init__` and `on_before_sample`
+  which have actual implementation.
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
@@ -20,3 +11,5 @@ occurrences:
         - [244, 265]
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/reducer.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/reducer.py

@@ -7,10 +7,52 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool run --from 'claude_hooks @ https://github.com/agentydragon/ducktape/releases/download/claude-hooks-eb9833cb/claude_hooks-0.1.0-py3-none-any.whl' claude-session-start"
+            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-e652ecd8/ducktape-0.1.0-py3-none-any.whl claude-hook"
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-e652ecd8/ducktape-0.1.0-py3-none-any.whl claude-hook"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uvx --from https://github.com/agentydragon/ducktape/releases/download/ducktape-e652ecd8/ducktape-0.1.0-py3-none-any.whl claude-hook"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bazel build:*)",
+      "Bash(bazel test:*)",
+      "Bash(bazel info:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh search:*)",
+      "Bash(gsettings get:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(kubectl get pod:*)",
+      "Bash(kubectl get terraform:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(kubectl rollout restart:*)",
+      "Bash(kubectl top:*)",
+      "Bash(modinfo:*)",
+      "Bash(nix search:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

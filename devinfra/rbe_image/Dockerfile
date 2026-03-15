@@ -1,0 +1,66 @@
+# BuildBuddy RBE worker image with extra tooling for this repo.
+#
+# Based on BuildBuddy's rbe-ubuntu24-04 image which provides: build-essential,
+# python3, git, curl, file, zip, Docker CE, iptables-legacy (required for
+# Firecracker init-dockerd — the guest kernel lacks nftables support), and a
+# non-root "buildbuddy" user with passwordless sudo.
+#
+# We layer on: libssl-dev + pkg-config (Rust toolchain), libtinfo5 (GHC
+# toolchain), and Chromium shared libraries (headless_shell from
+# rules_playwright for visual regression tests).
+FROM gcr.io/flame-public/rbe-ubuntu24-04:latest
+
+# Enable universe repo and install additional dependencies.
+RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libssl-dev \
+        pkg-config \
+        # clang: needed by pip to build Python packages with C extensions
+        # (e.g., lru-dict) during rules_python whl_library fetch
+        clang \
+        # dbus-daemon: needed by tests that spawn a private D-Bus session
+        # (e.g. experimental/dbus_fast_example)
+        dbus-daemon \
+        # cpio: needed to build initramfs for QEMU-based tests
+        cpio \
+        # dosfstools + mtools: needed to create FAT CIDATA volumes for Talos
+        # nocloud platform configuration in QEMU-based tests
+        dosfstools \
+        mtools \
+        # qemu-system-x86: QEMU emulator + firmware/BIOS for nftables and
+        # KubeSpan integration tests (TCG software emulation, no KVM needed)
+        qemu-system-x86 \
+        # Chromium headless shell shared library dependencies
+        libasound2t64 \
+        libatk-bridge2.0-0t64 \
+        libatk1.0-0t64 \
+        libcups2t64 \
+        libdrm2 \
+        libgbm1 \
+        libnspr4 \
+        libnss3 \
+        libpango-1.0-0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxkbcommon0 \
+        libxrandr2 \
+        libxfixes3 \
+        libxshmfence1 \
+    && rm -rf /var/lib/apt/lists/* \
+    # libtinfo5: dropped from noble (24.04), fetch from jammy (22.04) archive.
+    # GHC 9.0.2 bindist requires libtinfo.so.5 for ghc-pkg during toolchain setup.
+    && curl -fsSL -o /tmp/libtinfo5.deb \
+        http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb \
+    && dpkg -i /tmp/libtinfo5.deb \
+    && rm /tmp/libtinfo5.deb
+
+# dockerd wrapper: Firecracker's guest kernel lacks CONFIG_IP_NF_RAW, so
+# Docker 28's raw table rules for published ports (-p) fail. The wrapper sets
+# DOCKER_INSECURE_NO_IPTABLES_RAW=1 to skip raw table ops. goinit overwrites
+# daemon.json, so a wrapper is the only injection point.
+# See: devinfra/rbe_image/docs/firecracker_docker_init_timeout.md
+COPY devinfra/rbe_image/dockerd_wrapper.sh /usr/bin/dockerd_wrapper.sh
+RUN mv /usr/bin/dockerd /usr/bin/dockerd.real \
+    && mv /usr/bin/dockerd_wrapper.sh /usr/bin/dockerd \
+    && chmod +x /usr/bin/dockerd

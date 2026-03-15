@@ -14,7 +14,7 @@
 [project]
 name = "ducktape"
 version = "0.0.0"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     # Core
     "pydantic>=2.0.0",
@@ -30,6 +30,8 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "httpx>=0.27.0",
+    "websockets>=15.0",
+    "hass-client>=1.2.0",
     "aiohttp>=3.9.0",
     "requests>=2.32.5",
 
@@ -48,7 +50,7 @@ dependencies = [
 
     # MCP
     "mcp[cli]>=1.13.1",
-    "fastmcp>=2.13",
+    "fastmcp>=3.0.0,<4",
 
     # Docker
     "docker>=7.0.0",
@@ -95,7 +97,7 @@ dependencies = [
     "tabulate>=0.9",
     "watchdog>=4.0",
 
-    # experimental/gatelet
+    # x/gatelet
     "cryptography>=41.0.0",
     "python-multipart>=0.0.9",
     "passlib",
@@ -124,9 +126,9 @@ dependencies = [
     "pytimeparse>=1.1.8",
     "ruff>=0.5",
     "pre-commit>=3.5",
-    "checkov>=3.2",
 
     # finance
+    "absl-py",
     "splitwise",
 
     # unidiff
@@ -154,20 +156,21 @@ dependencies = [
     "typing-extensions",
 
     # claude_hooks
+    "opentelemetry-api>=1.20",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-http>=1.20",
     "pproxy>=2.7",
     "pyopenssl>=24.0",
-    "pyjks>=20.0",
     "pyjwt>=2.8",
     "pyrage>=1.0",
     "supervisor>=4.2",
 
-    # claude_optimizer
     "numpy",
 
     # git_commit_ai
     "mako>=1.3",
 
-    # gnome-terminal-profile-switcher
+    # gterm-theme
     "dbus-python>=1.3.0",
     "PyGObject>=3.40.0",
 
@@ -175,6 +178,7 @@ dependencies = [
     "dbus-fast>=4.0.0",
 
     # inventree_utils
+    "django>=4.0",
     "inventree>=0.15",
     "pint>=0.24",
     "tqdm>=4.66",
@@ -194,6 +198,7 @@ dependencies = [
     "pytest-playwright",
     "pytest-bazel>=0.1.6",
     "testcontainers[postgres]>=4.14.1",
+    "respx>=0.22",
     "asgi-lifespan>=2.1",
     "syrupy>=4.0",
     "PyHamcrest>=2.1",
@@ -206,21 +211,23 @@ dependencies = [
     "types-docker",
     "types-colorama",
     "types-Pygments",
-    "types-psycopg2",
     "types-python-dateutil",
     "types-Markdown",
     "types-tabulate",
     "types-filelock",
-    "types-toml",
     "types-aiofiles",
     "types-psutil",
     "types-jsonschema",
     "types-unidiff",
-    "types-Jinja2",
-    "types-sqlalchemy>=1.4.53",
     "asyncpg-stubs",
     "pandas-stubs",
     "sqlalchemy[mypy]>=2.0.32",
+    # Runtime packages needed only so their transitive type stubs (types-paramiko
+    # via types-docker, types-pytz via pandas-stubs) can resolve in the Bazel mypy
+    # types hub. Without these, rules_mypy's requirement("paramiko")/requirement("pytz")
+    # fails because the runtime packages aren't otherwise in the pip lockfile.
+    "paramiko",
+    "pytz",
 
     # GEPA integration for props
     "gepa>=0.0.22",

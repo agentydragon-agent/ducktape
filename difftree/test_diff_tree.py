@@ -167,7 +167,7 @@ def test_console_width_handling(width):
     # At very narrow widths (40), tree column takes all space and stats may not be visible
     # At standard widths (80+), stats should be visible
     if width >= 80:
-        assert "+100" in result or "+10" in result
+        assert "+100" in result
 
     # Filename visibility depends on width
     if width >= 200:
@@ -290,10 +290,9 @@ def test_tree_styling_preserved():
     # Bold blue: \x1b[1;34m (used for directories)
     # Reset: \x1b[0m
 
-    # Tree decorations should be dim
-    assert "\x1b[2m├── \x1b[0m" in result or "\x1b[2m└── \x1b[0m" in result, (
-        "Tree decorations (├── or └──) should have dim style"
-    )
+    # Tree decorations should be dim (both connectors present with 3 files across 2 dirs)
+    assert "\x1b[2m├── \x1b[0m" in result, "Tree branch connector (├──) should have dim style"
+    assert "\x1b[2m└── \x1b[0m" in result, "Tree terminal connector (└──) should have dim style"
 
     # Vertical guides should also be dim
     assert "\x1b[2m│" in result, "Tree vertical guides (│) should have dim style"

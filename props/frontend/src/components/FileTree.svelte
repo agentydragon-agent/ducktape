@@ -15,13 +15,11 @@
   let expanded = $state(new SvelteSet<string>());
 
   function toggleExpand(path: string) {
-    const newSet = new SvelteSet(expanded);
-    if (newSet.has(path)) {
-      newSet.delete(path);
+    if (expanded.has(path)) {
+      expanded.delete(path);
     } else {
-      newSet.add(path);
+      expanded.add(path);
     }
-    expanded = newSet;
   }
 </script>
 
@@ -32,7 +30,9 @@
   {@const FileIcon = getFileIcon(node.name)}
 
   <div
-    class="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 cursor-pointer text-sm {isSelected ? 'bg-blue-100' : ''}"
+    class="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer text-sm {isSelected
+      ? 'bg-blue-100 dark:bg-blue-900'
+      : ''}"
     style="padding-left: {indent + 8}px"
     role="button"
     tabindex="0"
@@ -55,14 +55,14 @@
     }}
   >
     {#if node.is_dir}
-      <span class="text-gray-400">
+      <span class="text-gray-400 dark:text-gray-500">
         {#if isExpanded}
           <ChevronDown size={16} />
         {:else}
           <ChevronRight size={16} />
         {/if}
       </span>
-      <span class="text-blue-500">
+      <span class="text-blue-500 dark:text-blue-400">
         {#if isExpanded}
           <FolderOpen size={16} />
         {:else}
@@ -70,7 +70,7 @@
         {/if}
       </span>
     {:else}
-      <span class="text-gray-400">
+      <span class="text-gray-400 dark:text-gray-500">
         <FileIcon size={16} />
       </span>
     {/if}
@@ -78,12 +78,14 @@
     {#if node.tp_count > 0 || node.fp_count > 0}
       <div class="flex items-center gap-1 text-xs">
         {#if node.tp_count > 0}
-          <span class="px-1.5 py-0.5 bg-green-100 text-green-700 rounded font-medium">
+          <span
+            class="px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded font-medium"
+          >
             {node.tp_count} TP
           </span>
         {/if}
         {#if node.fp_count > 0}
-          <span class="px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-medium">
+          <span class="px-1.5 py-0.5 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded font-medium">
             {node.fp_count} FP
           </span>
         {/if}
@@ -98,7 +100,7 @@
   {/if}
 {/snippet}
 
-<div class="border rounded bg-white">
+<div class="border dark:border-gray-700 rounded bg-white dark:bg-gray-900">
   {#each nodes as node (node.path)}
     {@render treeNode(node, 0)}
   {/each}

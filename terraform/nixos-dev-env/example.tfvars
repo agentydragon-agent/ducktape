@@ -32,5 +32,5 @@ username = "testuser"
 
 # Optional: Proxmox settings (defaults match main setup)
 # proxmox_host     = "atlas"
-# proxmox_api_host = "atlas.agentydragon.com"
+# proxmox_api_host = "atlas:8006"
 # proxmox_node_name = "atlas"

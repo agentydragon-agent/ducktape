@@ -38,9 +38,11 @@ locals {
     pve_cp0 = { name = "talos-pve-cp-0", type = "controlplane", vm_id = 10000, ip = "10.2.1.1" }
   }
 
-  # GPU worker nodes (separate: different image, VFIO passthrough, NVIDIA config)
+  # GPU worker nodes — emptied: wyrm2 (NixOS) now handles GPU duties.
+  # Kept as empty map so for_each references remain valid (no-op).
+  # TODO: Delete all proxmox_gpu_nodes references once wyrm2 is confirmed stable.
   proxmox_gpu_nodes = {
-    pve_gpu_worker0 = { name = "talos-pve-gpu-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
+    # pve_gpu_worker0 = { name = "talos-pve-gpu-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
   }
 
   # Proxmox network configuration
@@ -61,36 +63,95 @@ locals {
   # Containerd registry mirrors — pull through Harbor proxy cache.
   # Harbor runs in-cluster, so mirrors are unavailable during early bootstrap.
   # Containerd falls back to upstream endpoints when mirror is unreachable.
+  #
+  # overridePath: Harbor proxy cache serves images at /v2/<project>/<repo>/...,
+  # so the endpoint path must replace containerd's default /v2/ prefix, not be
+  # prepended to it. Without overridePath, containerd requests
+  # /v2/<project>/v2/<repo>/... (double /v2/) which fails upstream.
   registry_mirrors = {
     "docker.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/docker-hub-proxy",
         "https://registry-1.docker.io",
       ]
+      overridePath = true
     }
     "ghcr.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/ghcr-proxy",
         "https://ghcr.io",
       ]
+      overridePath = true
     }
     "gcr.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/gcr-proxy",
         "https://gcr.io",
       ]
+      overridePath = true
     }
     "quay.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/quay-proxy",
         "https://quay.io",
       ]
+      overridePath = true
     }
     "registry.k8s.io" = {
       endpoints = [
         "https://registry.allegedly.works/v2/registry-k8s-io-proxy",
         "https://registry.k8s.io",
       ]
+      overridePath = true
+    }
+  }
+
+  # Shared kube-apiserver config for all control plane nodes (VPS + Proxmox).
+  # Centralised here to avoid duplicating between hetzner-nodes.tf and proxmox-nodes.tf.
+  api_server_config = {
+    certSANs = ["api.${var.cluster_domain}"]
+    extraArgs = {
+      "oidc-issuer-url"      = "https://auth.${var.cluster_domain}/application/o/headlamp/"
+      "oidc-client-id"       = "headlamp"
+      "oidc-username-claim"  = "preferred_username"
+      "oidc-username-prefix" = "oidc:"
+    }
+  }
+
+  # Shared cluster config — identical on every node regardless of provider.
+  common_cluster_config = {
+    allowSchedulingOnControlPlanes = true
+    apiServer                      = local.api_server_config
+    discovery                      = { enabled = true }
+    network                        = { cni = { name = "none" } }
+    proxy                          = { disabled = true }
+  }
+
+  # Shared machine base — networking and feature flags common to all nodes.
+  # Does not include nodeLabels or kubelet (those differ per provider/node).
+  common_machine_base = {
+    network = {
+      kubespan = {
+        enabled             = true
+        allowDownPeerBypass = true
+      }
+    }
+    features = {
+      kubePrism = {
+        enabled = true
+        port    = 7445
+      }
+    }
+    registries = {
+      mirrors = local.registry_mirrors
+    }
+    kubelet = {
+      nodeIP = {
+        # Exclude Tailscale CGNAT range — prevents kubelet from registering
+        # with a 100.64.x.x IP when the Tailscale DaemonSet creates a
+        # tailscale0 interface on the host.
+        validSubnets = ["!100.64.0.0/10"]
+      }
     }
   }
 }
@@ -153,6 +214,14 @@ resource "hcloud_firewall" "talos" {
     direction  = "in"
     protocol   = "tcp"
     port       = "6443"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
+  # Kubernetes API proxy (publicly-trusted TLS)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "16443"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
@@ -244,6 +313,14 @@ resource "hcloud_firewall" "talos" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
+  # Tailscale WireGuard (direct peer connections for DaemonSet)
+  rule {
+    direction  = "in"
+    protocol   = "udp"
+    port       = "41641"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
   # ICMP (ping)
   rule {
     direction  = "in"
@@ -266,7 +343,6 @@ resource "talos_machine_bootstrap" "cluster" {
   depends_on = [
     talos_machine_configuration_apply.vps,
     talos_machine_configuration_apply.proxmox,
-    talos_machine_configuration_apply.proxmox_gpu,
   ]
 }
 

@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/fsouza/go-dockerclient"
 	"io/ioutil"
 	"log"
 	"time"
+
+	"github.com/fsouza/go-dockerclient"
 )
 
 type Dock struct {
@@ -17,8 +18,10 @@ type Dock struct {
 	logger    *log.Logger
 }
 
-const image = "agentydragon/ibcontroller"
-const deadline = 5 * 60 * time.Second
+const (
+	image    = "agentydragon/ibcontroller"
+	deadline = 5 * 60 * time.Second
+)
 
 var readSnapshotCmdline = []string{"python3", "/root/read_snapshot.py", "--port=7496"}
 

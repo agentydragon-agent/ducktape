@@ -1,0 +1,71 @@
+"""Bazel OCI image for ActivityWatch (aw-server-rust + aw-webui).
+
+The Rust binary (aw-server) embeds the web UI at compile time via rust-embed's
+interpolate-folder-path feature: build.rs reads AW_WEBUI_DIR and emits
+cargo:rustc-env=AW_WEBUI_DIR=<path> so the proc macro can embed all files.
+
+Build and push:
+  bazel run //third_party/activitywatch:push
+
+Load for local testing:
+  bazel run //third_party/activitywatch:load
+  docker run --rm -p 5600:5600 -v /tmp/aw-data:/data aw-server:latest
+"""
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+# The aw-webui frontend bundle is built by @aw_webui//:dist (a js_run_binary
+# declared in aw-webui.BUILD.bazel).  It is wired into the Rust build via
+# crate.annotation in MODULE.bazel so aw-server embeds all assets at compile
+# time.  No additional targets are needed here for the JS side.
+
+# --- OCI image ---------------------------------------------------------------
+
+pkg_files(
+    name = "aw_server_bin_files",
+    srcs = ["@aw_server_rust//:aw_server_bin"],
+    attributes = pkg_attributes(mode = "0755"),
+    prefix = "/usr/local/bin",
+    renames = {"@aw_server_rust//:aw_server_bin": "aw-server"},
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "aw_server_layer",
+    srcs = [":aw_server_bin_files"],
+)
+
+oci_image(
+    name = "image",
+    # Use Debian 13 (Trixie, glibc 2.40) instead of Debian 12 (glibc 2.36).
+    # The aw-server binary is compiled on rbe-ubuntu24-04 (glibc 2.39) and
+    # fails at runtime with "GLIBC_2.39 not found" on Debian 12.
+    # See MODULE.bazel distroless_cc_debian13 comment for details.
+    base = "@distroless_cc_debian13_linux_amd64",
+    entrypoint = [
+        "/usr/local/bin/aw-server",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "5600",
+        "--dbpath",
+        "/data/db.sqlite3",
+    ],
+    exposed_ports = ["5600/tcp"],
+    tars = [":aw_server_layer"],
+)
+
+oci_load(
+    name = "load",
+    image = ":image",
+    repo_tags = ["aw-server:latest"],
+)
+
+oci_push(
+    name = "push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "registry.allegedly.works/ducktape/aw-server",
+)

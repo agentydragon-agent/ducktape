@@ -166,8 +166,8 @@ func makeOTLPExporter(cfg *O11yConfig) (sdkmetric.Exporter, error) {
 	endpoint := makeOTLPEndpoint(cfg.Endpoint, cfg.APIKey, "metrics")
 
 	headers := map[string]string{
-		"dd-api-key":   cfg.Environment + cfg.APIKey,
-		"dd-protocol":  cfg.Environment,
+		"dd-api-key":  cfg.Environment + cfg.APIKey,
+		"dd-protocol": cfg.Environment,
 	}
 
 	opts := []otlpmetrichttp.Option{

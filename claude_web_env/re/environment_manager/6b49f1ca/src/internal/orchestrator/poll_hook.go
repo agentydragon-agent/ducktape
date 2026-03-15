@@ -28,7 +28,7 @@ type PollHook struct {
 	HookCommand  string
 	HookArgs     []string
 	PollTimeout  time.Duration
-	StdinContext  interface{} // Marshaled as JSON and piped to hook's stdin
+	StdinContext interface{} // Marshaled as JSON and piped to hook's stdin
 	Logger       *slog.Logger
 }
 
@@ -40,18 +40,20 @@ type PollHook struct {
 // Source: orchestrator/poll_hook.go
 //
 // Parameters (register ABI):
-//   AX = poller (interface or concrete reference)
-//   BX = hookCommand string ptr
-//   CX = hookCommand string len (used for timeout default)
-//   DI = hookArgs string ptr
-//   SI = hookArgs string len
-//   R8 = additional args / sandbox config
-//   R9 = workerID or session info
-//   R10 = timeout time.Duration
-//   R11 = logger *slog.Logger
+//
+//	AX = poller (interface or concrete reference)
+//	BX = hookCommand string ptr
+//	CX = hookCommand string len (used for timeout default)
+//	DI = hookArgs string ptr
+//	SI = hookArgs string len
+//	R8 = additional args / sandbox config
+//	R9 = workerID or session info
+//	R10 = timeout time.Duration
+//	R11 = logger *slog.Logger
 //
 // Returns:
-//   AX = *PollHook
+//
+//	AX = *PollHook
 func NewPollHook(
 	poller interface{},
 	hookCommand string,
@@ -117,23 +119,24 @@ func NewPollHook(
 //  9. If cmd.Run error (0xa8e4e7):
 //     - Read stderr buffer as string
 //     - slog.Warn "poll hook execution failed" with 3 attrs:
-//       "duration", "stderr", "error"
+//     "duration", "stderr", "error"
 //     - Read stdout buffer as string
 //     - return nil, fmt.Errorf("poll hook failed after %s: %w (stderr: %s)",
-//         elapsed, err, stderrStr)
+//     elapsed, err, stderrStr)
+//
 // 10. If cmd.Run success (0xa8e88d):
-//     - Read stdout buffer, strings.TrimSpace
-//     - If output == "" || output == "null" (0xa8e900-0xa8e910):
-//       slog.Debug "poll hook returned empty queue" with 1 attr: "duration"
-//       return nil, nil
-//     - Else: json.Unmarshal(output, &SessionResponse{}) (0xa8ea80)
-//       If unmarshal error:
-//         slog.Warn "poll hook returned invalid JSON" with 3 attrs:
-//           "duration", "output", "error"
-//         return nil, fmt.Errorf("poll hook returned invalid JSON: %w", err)
-//       If success:
-//         slog.Info "poll hook returned work" with 1 attr: "duration"
-//         return &response, nil
+//   - Read stdout buffer, strings.TrimSpace
+//   - If output == "" || output == "null" (0xa8e900-0xa8e910):
+//     slog.Debug "poll hook returned empty queue" with 1 attr: "duration"
+//     return nil, nil
+//   - Else: json.Unmarshal(output, &SessionResponse{}) (0xa8ea80)
+//     If unmarshal error:
+//     slog.Warn "poll hook returned invalid JSON" with 3 attrs:
+//     "duration", "output", "error"
+//     return nil, fmt.Errorf("poll hook returned invalid JSON: %w", err)
+//     If success:
+//     slog.Info "poll hook returned work" with 1 attr: "duration"
+//     return &response, nil
 func (ph *PollHook) Poll(ctx context.Context) (*SessionResponse, error) {
 	// Check if hook command is configured
 	// Binary: 0xa8e1fa-0xa8e200
@@ -269,8 +272,8 @@ func (ph *PollHook) Poll(ctx context.Context) (*SessionResponse, error) {
 //  3. Create time.NewTimer(duration)
 //  4. Call ctx.Done() to get the done channel
 //  5. select {
-//       case <-ctx.Done(): return fmt.Errorf("jitter sleep interrupted: %w", ctx.Err())
-//       case <-timer.C:    return nil
+//     case <-ctx.Done(): return fmt.Errorf("jitter sleep interrupted: %w", ctx.Err())
+//     case <-timer.C:    return nil
 //     }
 func (ph *PollHook) SleepWithJitter(ctx context.Context) error {
 	// Compute random jitter: 1-3 seconds

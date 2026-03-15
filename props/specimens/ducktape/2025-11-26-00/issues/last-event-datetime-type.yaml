@@ -30,3 +30,5 @@ occurrences:
           - 81
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/server/agents_ws.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/server/agents_ws.py

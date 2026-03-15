@@ -15,7 +15,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from mako_utils.preprocessor import markdown_heading_preprocessor
-from openai_utils.model import BoundOpenAIModel
+from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
+from openai_utils.retry import RetryingOpenAIModel
 from props.agents.schema import describe_table
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
@@ -92,12 +93,10 @@ def _make_template_context(db: Database, helpers: dict[str, Any] | None = None) 
 
     ctx["describe_relation"] = _describe_relation
 
-    def _source_inspection(image_name: str, modules: list[tuple[str, str]]) -> str:
+    def _source_inspection(modules: list[tuple[str, str]]) -> str:
         """Render Source Code Inspection section from Mako template."""
         content = (importlib.resources.files("props") / "agents/docs/source_inspection.md.mako").read_text()
-        rendered: str = Template(content, preprocessor=markdown_heading_preprocessor).render(
-            image_name=image_name, modules=modules
-        )
+        rendered: str = Template(content, preprocessor=markdown_heading_preprocessor).render(modules=modules)
         return rendered
 
     ctx["source_inspection"] = _source_inspection
@@ -137,14 +136,16 @@ def render_template_string(content: str, db: Database, helpers: dict[str, Any] |
     return result
 
 
-def create_bound_model_from_env(db: Database) -> BoundOpenAIModel:
-    """Create a BoundOpenAIModel using environment variables.
+def create_bound_model_from_env(db: Database) -> OpenAIModelProto:
+    """Create a retrying OpenAI model using environment variables.
 
     Gets model from current agent run. Uses OPENAI_BASE_URL and OPENAI_API_KEY.
+    Wraps in RetryingOpenAIModel for automatic retries on transient errors (500,
+    rate limits, connection errors).
     """
     with db.session() as session:
         agent_run = get_current_agent_run(session)
         model = agent_run.model
 
     client = AsyncOpenAI(base_url=os.environ["OPENAI_BASE_URL"], api_key=os.environ["OPENAI_API_KEY"])
-    return BoundOpenAIModel(client=client, model=model)
+    return RetryingOpenAIModel(base=BoundOpenAIModel(client=client, model=model))

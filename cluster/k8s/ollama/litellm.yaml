@@ -1,0 +1,100 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: litellm
+  namespace: ollama
+spec:
+  type: oci
+  url: oci://ghcr.io/berriai
+  interval: 24h
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: litellm
+  namespace: ollama
+spec:
+  interval: 15m
+  install:
+    remediation:
+      retries: 3
+  chart:
+    spec:
+      chart: litellm-helm
+      version: "1.82.0-stable.patch5"
+      sourceRef:
+        kind: HelmRepository
+        name: litellm
+        namespace: ollama
+  values:
+    # Upstream issue BerriAI/litellm#15288: chart-derived image tags may not
+    # exist on ghcr.io. Pin to main-stable (rolling stable tag).
+    image:
+      tag: "main-stable"
+    proxy_config:
+      model_list:
+        - model_name: gpt-oss-20b-128k
+          litellm_params:
+            model: ollama/gpt-oss:20b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        - model_name: gpt-oss-20b-1m
+          litellm_params:
+            model: ollama/gpt-oss:20b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+            extra_body:
+              options:
+                num_ctx: 1048576
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        # Extended context variants: num_ctx override per request.
+        # YaRN scaling (baked into GGUF metadata) handles RoPE interpolation.
+        - model_name: gpt-oss-20b-256k
+          litellm_params:
+            model: ollama/gpt-oss:20b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+            extra_body:
+              options:
+                num_ctx: 262144
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        - model_name: gpt-oss-20b-512k
+          litellm_params:
+            model: ollama/gpt-oss:20b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+            extra_body:
+              options:
+                num_ctx: 524288
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        - model_name: gpt-oss-120b-128k
+          litellm_params:
+            model: ollama/gpt-oss:120b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+          model_info:
+            mode: chat
+            supports_function_calling: true
+      general_settings:
+        master_key: os.environ/LITELLM_MASTER_KEY
+      litellm_settings:
+        drop_params: true
+        success_callback: ["langfuse"]
+      environment_variables:
+        LANGFUSE_HOST: "http://langfuse-web.langfuse.svc.cluster.local:3000"
+    masterkeySecretName: ollama-api-key
+    masterkeySecretKey: api-key
+    # Inject LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY from ESO-synced secret.
+    # The secret won't exist until Langfuse API keys are seeded in Vault —
+    # see cluster/k8s/props/plan.md for the required manual step.
+    environmentSecrets:
+      - langfuse-api-keys
+    # No standalone database needed for simple proxying
+    db:
+      deployStandalone: false
+    migrationJob:
+      enabled: false

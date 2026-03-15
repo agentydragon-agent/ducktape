@@ -37,3 +37,5 @@ occurrences:
           - 347
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/mcp/policy_gateway/middleware.py
+    match_file_restriction:
+      - adgn/src/adgn/mcp/policy_gateway/middleware.py

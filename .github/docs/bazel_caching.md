@@ -2,10 +2,10 @@
 
 ## Overview
 
-Bazel CI uses two complementary caching layers:
+Bazel CI uses two caching layers:
 
-1. **BuildBuddy remote cache** — caches action results (build outputs, test results) across all runs. Configured via `setup-buildbuddy` action.
-2. **GHA repository cache** — caches Bazel's `repository_cache` (compressed downloads of external deps) to avoid re-fetching on every run.
+1. **BuildBuddy remote cache** — caches action results (build outputs, test results) across all runs. 98%+ hit rate in practice. Configured via `setup-buildbuddy` action.
+2. **GHA repository cache** — caches Bazel's `repository_cache` (compressed downloads of external deps). Uses the unified `actions/cache@v4` action for restore+save.
 
 ## Why repository_cache only?
 
@@ -18,11 +18,9 @@ Bazel's local state under `~/.cache/bazel` breaks down as:
 | `_bazel_*/install/`        | ~192MB | Extracted Bazel installation      |
 | `~/.cache/bazelisk`        | ~62MB  | Bazelisk binary                   |
 
-`output_base/external/` is dominated by the LLVM toolchain (~8.2GB extracted). This alone exceeds the 10GB GHA per-repo cache limit.
+`output_base/external/` is dominated by the LLVM toolchain (~8.2GB extracted), which alone exceeds the 10GB GHA per-repo cache limit.
 
-The `repository_cache` stores compressed downloads (~2GB). Restoring it lets Bazel skip network fetches during analysis. Extraction is local I/O — fast for everything except LLVM (which takes ~1-2 minutes).
-
-BuildBuddy handles action-level caching (build outputs, test results), so the GHA cache only needs to cover the analysis-phase download cost.
+The `repository_cache` stores compressed downloads (~2GB). It is content-addressable: each archive is stored by its content hash, so restoring it lets Bazel skip network fetches during analysis even when only some dependencies changed. BuildBuddy handles action-level caching (build outputs, test results), so the GHA cache only needs to cover the analysis-phase download cost.
 
 ## Cache key strategy
 
@@ -30,30 +28,32 @@ BuildBuddy handles action-level caching (build outputs, test results), so the GH
 bazel-repo-cache-<hash of MODULE.bazel + MODULE.bazel.lock>
 ```
 
-- **Shared across all CI jobs** — repository_cache contents are identical regardless of which job (build, test, lint, typecheck) populated them. No per-job slug.
-- **`restore-keys: bazel-repo-cache-`** — on dependency changes, the previous cache is partially restored (most downloads unchanged).
-- **Single cache entry** (~2GB) fits comfortably within the 10GB limit, leaving room for other caches (nix, pre-commit, ansible roles).
+- **Shared across all CI jobs** — repository_cache contents are identical regardless of which job populated them.
+- **`restore-keys: bazel-repo-cache-`** — on dependency changes, the previous cache is partially restored (content-addressable, so unchanged downloads are reused).
+- **Single cache entry** (~2GB) fits within the 10GB limit.
 
 ## Cache flow
 
 ```
 compute-targets job
   ├── restore repository_cache (bazel-repo-cache action)
-  ├── bazel-diff queries (partial repo fetching)
-  ├── bazel fetch //... (prewarm — downloads all remaining repos)
-  └── save repository_cache (bazel-repo-cache-save action)
-      │
-      ▼  (downstream jobs restore the same cache key)
-  ┌───────────────────────────────────────────┐
-  │ bazel-build / bazel-test / bazel-lint /   │
-  │ bazel-typecheck / pre-commit / ...        │
-  │   └── restore repository_cache            │
-  │       (repos already downloaded, only     │
-  │        extraction needed)                 │
-  └───────────────────────────────────────────┘
+  ├── bazel-diff queries (fetches external repos into repository_cache)
+  └── post step: save repository_cache (automatic, only on exact-key miss)
+
+  downstream jobs (bazel-check, bazel-test, ...)
+    └── restore repository_cache (setup-bazel → bazel-repo-cache)
+        post step: save skipped (exact-key hit from compute-targets)
 ```
 
-The `compute-targets` job runs first and seeds the cache. Downstream jobs restore it and skip downloads entirely.
+The `bazel-repo-cache` action uses the unified `actions/cache@v4`, which saves the cache as a post step on job success. The unified action only saves when the exact key was NOT found during restore, avoiding duplicate entries.
+
+There is **no prewarm step**. The `compute-targets` job runs `bazel query` via `bazel-diff`, which fetches all external repos during analysis. Downstream jobs benefit from the cache saved by `compute-targets`.
+
+## Duplicate-key problem (historical)
+
+The former `bazel-repo-cache-save` action used `actions/cache/save@v4`, which creates a new cache entry even when the same key already exists. Multiple CI runs created conflicting entries per key. The GHA cache service responded with HTTP 400 on all restore attempts, making the cache useless across all jobs.
+
+The fix was to switch to the unified `actions/cache@v4` action, which only saves when the exact key was not found during restore. This prevents duplicate entries by design.
 
 ## Cached paths
 
@@ -62,18 +62,13 @@ The `compute-targets` job runs first and seeds the cache. Downstream jobs restor
 
 The `_bazel_runner` segment assumes the GHA runner username is `runner` (standard on `ubuntu-latest`).
 
-## Per-entry caching (not implemented)
-
-`bazel-contrib/setup-bazel` supports per-external-repo caching of `output_base/external/` via its `external-cache` option. This would give finer-grained cache invalidation but doesn't help with the LLVM size problem (8.2GB extracted for one repo).
-
-Per-entry caching of `repository_cache` (separate GHA cache key per SHA256 download) is theoretically possible but has no established precedent. The 2GB single-blob approach with `restore-keys` fallback provides good incremental behavior for the current repo size.
-
 ## Alternatives considered
 
-| Approach                                   | Size   | Pros                 | Cons                    |
-| ------------------------------------------ | ------ | -------------------- | ----------------------- |
-| Cache full `~/.cache/bazel`                | ~12GB  | Fastest cold start   | Exceeds 10GB GHA limit  |
-| Cache `output_base/external/` minus LLVM   | ~1.3GB | No extraction cost   | Fragile exclusion       |
-| Cache `repository_cache` only              | ~2GB   | Simple, within limit | Extraction cost on miss |
-| `bazel-contrib/setup-bazel` external-cache | Varies | Per-repo granularity | LLVM still 8.2GB        |
-| No GHA cache, BuildBuddy only              | 0      | Simplest             | Slow analysis phase     |
+| Approach                                   | Size   | Pros                 | Cons                         |
+| ------------------------------------------ | ------ | -------------------- | ---------------------------- |
+| Cache full `~/.cache/bazel`                | ~12GB  | Fastest cold start   | Exceeds 10GB GHA limit       |
+| Cache `output_base/external/` minus LLVM   | ~1.3GB | No extraction cost   | Fragile exclusion            |
+| Cache `repository_cache` only (current)    | ~2GB   | Simple, within limit | Extraction cost on miss      |
+| `bazel-contrib/setup-bazel` external-cache | Varies | Per-repo granularity | LLVM still 8.2GB             |
+| No GHA cache, BuildBuddy only              | 0      | Simplest             | ~5 min repo fetching per-job |
+| Prewarm in compute-targets + save          | ~2GB   | Seeds cache once     | +4.5 min critical path       |

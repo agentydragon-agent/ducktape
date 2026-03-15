@@ -453,16 +453,16 @@ func (e *byocEnvironmentType) CreateLeaseManager(ctx context.Context, sessionID 
 
 	// 0xb07f95: Create and return the lease manager
 	lm := podmonitor.NewLeaseManager(
-		sessionID,                // environmentID (reused from sessionID per register mapping)
-		e.logger,                 // logger
-		30*time.Second,           // heartbeatInterval (0x6fc23ac00)
-		30*time.Second,           // leaseDuration (0x6fc23ac00)
-		workID,                   // workID
-		sessionID,                // sessionID
-		apiBaseURL,               // apiBaseURL
-		"",                       // sessionIngressToken (from auth context, traced from caller spills)
-		healthFilePath,           // healthFilePath
-		httpClient,               // httpClient
+		sessionID,      // environmentID (reused from sessionID per register mapping)
+		e.logger,       // logger
+		30*time.Second, // heartbeatInterval (0x6fc23ac00)
+		30*time.Second, // leaseDuration (0x6fc23ac00)
+		workID,         // workID
+		sessionID,      // sessionID
+		apiBaseURL,     // apiBaseURL
+		"",             // sessionIngressToken (from auth context, traced from caller spills)
+		healthFilePath, // healthFilePath
+		httpClient,     // httpClient
 	)
 
 	return lm, nil
@@ -603,12 +603,12 @@ func (e *byocEnvironmentType) handleBranchCheckout(ctx context.Context) error {
 	mgr, err := sources.NewSourceHandlerManager(
 		e.logger,
 		e.config.CWD,
-		"",     // sessionID
-		nil,    // gitProxyManager
-		nil,    // outcomes
-		nil,    // activityRecorder
+		"",       // sessionID
+		nil,      // gitProxyManager
+		nil,      // outcomes
+		nil,      // activityRecorder
 		"resume", // processMode
-		true,   // isResume (0xb055e1: MOVB $1)
+		true,     // isResume (0xb055e1: MOVB $1)
 	)
 	if err != nil {
 		// 0xb05630: Wrap error
@@ -766,7 +766,7 @@ type gitConfigPair struct {
 //  8. 0xb07305: MkdirAll(sshDir, 0o700 = 0x1c0); error: "Failed to create .ssh directory" (len=0x1f)
 //  9. 0xb0736c: filepath.Join(sshDir, "commit_signing_key.pub") (len=0x16=22)
 //  10. 0xb07459: os.OpenFile(signingKeyPath, O_WRONLY|O_CREATE|O_TRUNC, 0666);
-//      error: "Failed to create signing key file" (len=0x21)
+//     error: "Failed to create signing key file" (len=0x21)
 //  11. 0xb0751f: success: "Created empty signing key file" (len=0x1e)
 //  12. 0xb075b2: git config --global user.signingkey <signingKeyPath> (key len=0xf=15)
 //  13. 0xb07739: error: "Failed to set git signing key config" (len=0x24)
@@ -888,7 +888,7 @@ func (e *byocEnvironmentType) setupGitConfig(ctx context.Context) error {
 //     error: "failed to write settings file: %w" (len=0x21)
 //  9. 0xb06a21: success: "Successfully created Claude settings file" (len=0x29)
 //  10. 0xb06aab: WriteFile(stopHookPath, stopHookScript, 0x1ed=0755);
-//      error: "failed to write stop hook script: %w" (len=0x24)
+//     error: "failed to write stop hook script: %w" (len=0x24)
 //  11. 0xb06b56: success: "Successfully created stop hook script" (len=0x25)
 func (e *byocEnvironmentType) bootstrapClaudeSettings(ctx context.Context) error {
 	// 0xb065be: Get home directory

@@ -13,6 +13,11 @@ occurrences:
     note: "check_code takes file_path: str | None instead of Path"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter_v2/linters/python_ruff.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_linter_v2/linters/python_ruff.py
+      - ducktape_llm_common/claude_linter_v2/check_python.py
+      - ducktape_llm_common/claude_linter_v2/checker.py
+      - tests/claude_linter_v2/test_python_ruff.py
   - occurrence_id: occ-1
     files:
       ducktape_llm_common/claude_linter_v2/check_python.py:
@@ -20,6 +25,9 @@ occurrences:
     note: "check_python_file takes file_path: str instead of Path"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter_v2/check_python.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_linter_v2/check_python.py
+      - ducktape_llm_common/claude_linter_v2/hooks/handler.py
   - occurrence_id: occ-2
     files:
       ducktape_llm_common/claude_linter/precommit_runner.py:
@@ -27,6 +35,10 @@ occurrences:
     note: "run() takes paths: list[str] instead of list[Path]"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter/precommit_runner.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_linter/precommit_runner.py
+      - ducktape_llm_common/claude_linter/cli.py
+      - tests/claude_linter/test_claude_pre_hook.py
   - occurrence_id: occ-3
     files:
       ducktape_llm_common/claude_linter/config.py:
@@ -34,3 +46,6 @@ occurrences:
     note: "get_merged_config takes paths: list[str] instead of list[Path]"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter/config.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_linter/config.py
+      - ducktape_llm_common/claude_linter/cli.py

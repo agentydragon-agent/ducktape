@@ -32,51 +32,24 @@ tofu-controller (in-cluster)
 
 ### IAM Policy: `Route53-allegedly-works-glue-records`
 
-Minimal scope policy for Route 53 record and domain nameserver management:
+Minimal scope policy for Route 53 record and domain nameserver management.
+See <iam-policy-route53.json> for the full policy document.
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "ManageGlueRecords",
-      "Effect": "Allow",
-      "Action": [
-        "route53:ChangeResourceRecordSets",
-        "route53:GetHostedZone",
-        "route53:ListResourceRecordSets",
-        "route53:GetChange"
-      ],
-      "Resource": ["arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I", "arn:aws:route53:::change/*"]
-    },
-    {
-      "Sid": "ListZones",
-      "Effect": "Allow",
-      "Action": "route53:ListHostedZones",
-      "Resource": "*"
-    },
-    {
-      "Sid": "ManageDomainNameservers",
-      "Effect": "Allow",
-      "Action": [
-        "route53domains:GetDomainDetail",
-        "route53domains:UpdateDomainNameservers",
-        "route53domains:EnableDomainAutoRenew",
-        "route53domains:DisableDomainAutoRenew",
-        "route53domains:ListTagsForDomain"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
+The `route53domains` actions are scoped to nameserver management only. Other domain
+attributes (transfer lock, auto-renew, contacts, privacy) are managed via AWS console
+and ignored in OpenTofu via `lifecycle { ignore_changes }`. AWS Route 53 Domains
+doesn't support resource-level ARNs, so `Resource: "*"` is unavoidable.
+
+**To apply the policy:**
+
+```bash
+aws iam create-policy-version \
+  --policy-arn arn:aws:iam::327403706765:policy/Route53-allegedly-works-glue-records \
+  --policy-document file://docs/iam-policy-route53.json \
+  --set-as-default
 ```
 
 **Note**: Root/admin AWS credentials are only needed once to create the IAM user, policy, and access key. After that, the `cluster-dns-manager` credentials are self-sufficient.
-
-<!-- TODO: Consider reducing route53domains permissions. The aws_route53domains_registered_domain
-     resource requires GetDomainDetail, EnableDomainAutoRenew, DisableDomainAutoRenew, and
-     ListTagsForDomain even though we only need UpdateDomainNameservers. Could potentially
-     use a null_resource with local-exec to call AWS CLI directly for minimal permissions. -->
 
 ### IAM User: `cluster-dns-manager`
 
@@ -101,14 +74,14 @@ aws route53 list-hosted-zones --query "HostedZones[?Name=='allegedly.works.'].Id
 
 ## Files
 
-| File                                                 | Purpose                                   |
-| ---------------------------------------------------- | ----------------------------------------- |
-| `terraform/bootstrap/infrastructure/cluster-info.tf` | Creates ConfigMap with VPS IPs            |
-| `terraform/gitops/dns-records/main.tf`               | Terraform for Route 53 + PowerDNS records |
-| `terraform/gitops/dns-records/variables.tf`          | Variables for dns-records module          |
-| `k8s/dns-automation/aws-credentials-sealed.yaml`     | SealedSecret with AWS credentials         |
-| `k8s/dns-automation/dns-records-tf.yaml`             | Terraform CRD for tofu-controller         |
-| `k8s/dns-automation/flux-kustomization.yaml`         | Flux Kustomization                        |
+| File                                                 | Purpose                                  |
+| ---------------------------------------------------- | ---------------------------------------- |
+| `terraform/bootstrap/infrastructure/cluster-info.tf` | Creates ConfigMap with VPS IPs           |
+| `terraform/gitops/dns-records/main.tf`               | OpenTofu for Route 53 + PowerDNS records |
+| `terraform/gitops/dns-records/variables.tf`          | Variables for dns-records module         |
+| `k8s/dns-automation/aws-credentials-sealed.yaml`     | SealedSecret with AWS credentials        |
+| `k8s/dns-automation/dns-records-tf.yaml`             | Terraform CRD for tofu-controller        |
+| `k8s/dns-automation/flux-kustomization.yaml`         | Flux Kustomization                       |
 
 ## Secrets
 
@@ -130,7 +103,7 @@ kubectl create secret generic aws-route53-credentials \
   --from-literal=AWS_SECRET_ACCESS_KEY=<new-secret> \
   --from-literal=AWS_REGION=us-east-1 \
   --dry-run=client -o yaml | \
-kubeseal --cert <(terraform output -raw sealed_secrets_cert_pem) \
+kubeseal --cert <(tofu output -raw sealed_secrets_cert_pem) \
   --format=yaml > ../../k8s/dns-automation/aws-credentials-sealed.yaml
 ```
 

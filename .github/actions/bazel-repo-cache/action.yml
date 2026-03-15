@@ -1,7 +1,13 @@
-# Restore Bazel repository cache (compressed downloads + Bazelisk binary).
-# See .github/docs/bazel-caching.md for design rationale.
+# Restore and save Bazel repository cache (compressed downloads + Bazelisk binary).
+# See .github/docs/bazel_caching.md for design rationale.
+#
+# Uses the unified actions/cache@v4 which restores at step time and saves as a
+# post step (on job success). The save only fires when the exact key was NOT
+# found during restore, avoiding the duplicate-key problem that broke the
+# previous actions/cache/save@v4 approach (see bazel_caching.md §
+# Duplicate-key problem).
 name: Bazel Repo Cache
-description: Setup Bazelisk and restore Bazel repository cache
+description: Setup Bazelisk and restore/save Bazel repository cache
 
 inputs:
   extra_hash:
@@ -14,7 +20,7 @@ outputs:
     description: "Whether the cache was restored"
     value: ${{ steps.cache-restore.outputs.cache-hit }}
   cache-key:
-    description: "The cache key (use this for bazel-repo-cache-save)"
+    description: "The cache key"
     value: ${{ steps.cache-key.outputs.key }}
 
 runs:
@@ -22,16 +28,6 @@ runs:
   steps:
     - name: Setup Bazelisk
       uses: bazelbuild/setup-bazelisk@v3
-
-    - name: Enable host CC toolchain detection
-      shell: bash
-      run: |
-        # The workspace .bazelrc sets BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 to
-        # prevent Nix store paths leaking into builds. GHA runners use standard
-        # Ubuntu with system GCC (13/14), so we override to allow detection.
-        echo "" >> ~/.bazelrc
-        echo "# CI: allow Bazel to detect system GCC on GHA runners" >> ~/.bazelrc
-        echo "build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=0" >> ~/.bazelrc
 
     - name: Derive cache key
       id: cache-key
@@ -49,9 +45,9 @@ runs:
         KEY="bazel-repo-cache-${HASH}"
         echo "key=$KEY" >> $GITHUB_OUTPUT
 
-    - name: Restore Bazel repository cache
+    - name: Restore/save Bazel repository cache
       id: cache-restore
-      uses: actions/cache/restore@v4
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/bazelisk

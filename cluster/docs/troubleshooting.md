@@ -4,6 +4,103 @@ Quick diagnostic commands for common cluster issues.
 
 ## Known Issues
 
+### talosctl upgrade: Hostname Loss
+
+**Symptoms**:
+
+- After `talosctl upgrade`, nodes register with random hostnames (e.g., `talos-6we-boc`)
+- Old node entries remain as `NotReady,SchedulingDisabled`
+- `kubectl get nodes` shows duplicate entries (old name + new random name)
+
+**Root Cause**:
+
+Talos derives hostnames from platform metadata (cloud-init, Hetzner metadata API). During
+`talosctl upgrade`, the node kexecs into the new image but **does not re-read platform
+metadata**. Without explicit `machine.network.hostname`, Talos generates a random hostname.
+
+**Fix**: Always set `machine.network.hostname` explicitly in Terraform config patches:
+
+```hcl
+yamlencode({
+  machine = {
+    network = {
+      hostname = each.value.name
+    }
+  }
+})
+```
+
+**Lessons Learned**: See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>
+
+### Hetzner VPS Accidental Replacement via tofu apply
+
+**Symptoms**:
+
+- `hcloud server list` shows different server IDs / IPs than expected
+- Kubernetes API unreachable, etcd quorum lost
+- `tofu plan` shows `must be replaced` due to `image` change
+
+**Root Cause**:
+
+Changing the Talos schematic rebuilds the Packer snapshot, changing the `image` ID on
+`hcloud_server`. Without `image` in `lifecycle.ignore_changes`, Terraform plans a
+destroy+recreate. Even targeted applies (`-target=...machine_configuration_apply...`)
+resolve dependencies and pull in the server replacement.
+
+**Fix**: `lifecycle { ignore_changes = [user_data, image] }` on `hcloud_server`.
+Schematic changes are applied via `talosctl upgrade`, not server replacement.
+
+**Prevention**: Never run `tofu apply -auto-approve` with `-target` flags without
+reviewing the full plan first.
+
+**Lessons Learned**: See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>
+
+### Cilium Gateway Controller Dies After Talos Machine Config Apply
+
+**Symptoms**:
+
+- Newly created HTTPRoutes have empty `status` (no `Accepted`/`ResolvedRefs` conditions)
+- Existing routes continue serving traffic normally
+- New apps return `{"Message": "no app for hostname"}` or connection refused
+- Cilium operator logs show: `"failed to wait for secret caches to sync: timed out waiting for cache to be synced for Kind *v1.Gateway"`
+
+**Root Cause**:
+
+The Cilium operator's gateway controller is a one-shot job. If it fails to sync the `*v1.Gateway`
+cache during startup (e.g., kube-apiserver was restarting during `talos_machine_configuration_apply`),
+it dies permanently for that pod's lifetime. Existing Envoy routes continue serving from last known
+state, but new HTTPRoutes are never programmed.
+
+This happens when `tofu apply` changes kube-apiserver or kubelet config (causing a rolling Talos
+service restart), and the Cilium operator pod(s) happen to initialize during that window.
+
+**Fix**:
+
+```bash
+kubectl rollout restart deployment/cilium-operator -n kube-system
+kubectl rollout status deployment/cilium-operator -n kube-system --timeout=60s
+```
+
+**Prevention**: `bootstrap.py` now restarts the Cilium operator after `tofu apply` as part of
+`deploy_infrastructure()`. For manual `tofu apply` runs that touch Talos machine config, run the
+fix above.
+
+**Diagnosis**:
+
+```bash
+# Check for HTTPRoutes with empty status (unaccepted by gateway controller)
+kubectl get httproute -A -o json | python3 -c "
+import sys, json
+items = json.load(sys.stdin)['items']
+for r in items:
+    if not r.get('status', {}).get('parents'):
+        print(f'{r[\"metadata\"][\"namespace\"]}/{r[\"metadata\"][\"name\"]}: no status (gateway controller dead?)')
+"
+
+# Check operator logs for the failure
+kubectl logs -n kube-system -l name=cilium-operator --tail=50 | grep "gateway\|cache sync"
+```
+
 ### Cilium MTU Case Sensitivity (Cross-Node Packet Loss)
 
 **Symptoms**:
@@ -171,7 +268,7 @@ Workers were missing explicit network interface configuration:
 
 **Resolution**:
 
-Fixed in terraform by adding explicit interface config for workers:
+Fixed in OpenTofu by adding explicit interface config for workers:
 
 ```yaml
 machine:
@@ -183,7 +280,7 @@ machine:
 
 For existing clusters, either:
 
-1. Re-run `terraform apply` (requires cluster recreate)
+1. Re-run `tofu apply` (requires cluster recreate)
 2. Manually patch via talosctl:
 
    ```bash
@@ -477,6 +574,130 @@ silent overwrites when TF state is lost.
 
 **Lessons Learned**: See <lessons_learned/2026-02-13-authentik-token-vault-overwrite.md>
 
+### Authentik Teardown: Terraform State Desync (Mostly Historical)
+
+**Status**: Most SSO config migrated to native Authentik blueprints (no TF state). Only
+`sso-secrets` (Vault secret generation) and `vault-oidc-auth` (Vault OIDC backend) remain
+as Terraform. The cascading multi-module desync described below should no longer occur.
+
+**Symptoms** (historical, pre-blueprint migration):
+
+- Terraform resources stuck with `"already exists"` errors after Authentik DB wipe
+- Providers assigned to wrong applications (cross-contamination between SSO modules)
+- `authentik-blueprint-users` fails with `"slug already exists"` or `"username must be unique"`
+- Cascading failures: all `authentik-blueprint-*` kustomizations stuck False
+
+**Root Cause**:
+
+tofu-controller stores Terraform state in K8s secrets (`tfstate-default-*`). These secrets
+reference Authentik resource PKs/UUIDs. When Authentik's database is wiped (HelmRelease +
+PVC deleted), the PKs become invalid but the state secrets persist. Multiple modules
+applying simultaneously against the fresh DB causes partial applies (resources created but
+state not saved), leading to irrecoverable `"already exists"` errors.
+
+**This is an inherent limitation** — tofu-controller has no lifecycle coupling between
+state secrets and the managed backend. See
+<lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> for full analysis.
+
+**Diagnosis**:
+
+```bash
+# Check for stale TF state secrets
+kubectl get secrets -n flux-system | grep tfstate | grep authentik
+
+# Check for cross-assigned providers in Authentik
+TOKEN=$(kubectl get secret authentik-api-token -n flux-system \
+  -o jsonpath='{.data.authentik_token}' | base64 -d)
+kubectl exec -n authentik deployment/authentik-server -- \
+  curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:9000/api/v3/providers/all/' | \
+  python3 -c "import sys,json; [print(f'{p[\"name\"]:25s} -> {p[\"assigned_application_slug\"]}') for p in json.load(sys.stdin)['results']]"
+# If provider names don't match their assigned application slugs → cross-contamination
+```
+
+**Resolution**:
+
+```bash
+# 1. Suspend all Authentik-targeting Terraform resources
+for name in authentik-blueprint-users authentik-blueprint-gitea \
+  authentik-blueprint-harbor authentik-blueprint-hubble authentik-blueprint-loki \
+  authentik-blueprint-matrix authentik-blueprint-vault authentik-blueprint-openclaw \
+  grafana-sso vault-oidc-auth; do
+  kubectl patch terraform "$name" -n flux-system \
+    -p '{"spec":{"suspend":true}}' --type=merge 2>/dev/null
+done
+
+# 2. Kill runner pods and delete stale state
+kubectl delete pods -n flux-system -l app.kubernetes.io/name=tf-runner
+kubectl delete secret -n flux-system \
+  tfstate-default-authentik-blueprint-users \
+  tfstate-default-authentik-blueprint-gitea \
+  tfstate-default-authentik-blueprint-harbor \
+  tfstate-default-authentik-blueprint-hubble \
+  tfstate-default-authentik-blueprint-loki \
+  tfstate-default-authentik-blueprint-matrix \
+  tfstate-default-authentik-blueprint-vault \
+  tfstate-default-authentik-blueprint-openclaw \
+  tfstate-default-grafana-sso \
+  tfstate-default-vault-oidc-auth \
+  --ignore-not-found
+
+# 3. Clean up ALL applications, providers, outposts from Authentik API
+# (they were created by partial applies with wrong assignments)
+TOKEN=$(kubectl get secret authentik-api-token -n flux-system \
+  -o jsonpath='{.data.authentik_token}' | base64 -d)
+
+# Delete applications by slug
+for slug in gitea grafana harbor hubble loki matrix vault; do
+  kubectl exec -n authentik deployment/authentik-server -- \
+    curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
+    "http://localhost:9000/api/v3/core/applications/$slug/" 2>/dev/null
+done
+
+# Delete non-embedded outposts
+kubectl exec -n authentik deployment/authentik-server -- \
+  curl -s -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:9000/api/v3/outposts/instances/' | \
+  python3 -c "
+import sys, json, subprocess
+for o in json.load(sys.stdin)['results']:
+    if 'Embedded' not in o['name']:
+        print(f'Deleting outpost: {o[\"name\"]}')
+" 2>/dev/null
+
+# Delete user, flow, brand (from users blueprint partial apply)
+# Flow: DELETE by slug, not UUID
+kubectl exec -n authentik deployment/authentik-server -- \
+  curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
+  'http://localhost:9000/api/v3/flows/instances/custom-authentication-flow/'
+# Brand: query then delete by brand_uuid
+# User: query then delete by pk
+
+# 4. If Vault was NOT wiped, also disable its stale OIDC auth backend
+ROOT_TOKEN=$(kubectl get secret -n vault instance-unseal-keys \
+  -o jsonpath='{.data.vault-root}' | base64 -d)
+kubectl exec -n vault instance-0 -c vault -- sh -c \
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$ROOT_TOKEN \
+   vault auth disable oidc/" 2>/dev/null || true
+
+# 5. Unsuspend Terraform resources
+for name in authentik-blueprint-users authentik-blueprint-gitea \
+  authentik-blueprint-harbor authentik-blueprint-hubble authentik-blueprint-loki \
+  authentik-blueprint-matrix authentik-blueprint-vault authentik-blueprint-openclaw \
+  grafana-sso vault-oidc-auth; do
+  kubectl patch terraform "$name" -n flux-system \
+    -p '{"spec":{"suspend":false}}' --type=merge 2>/dev/null
+done
+```
+
+**Prevention**:
+
+- **Always wipe TF state secrets when wiping Authentik DB** — run the suspend/delete/resume
+  procedure above BEFORE Flux re-reconciles
+- During full cluster rebuild (`tofu destroy` → bootstrap), all K8s secrets are destroyed
+  with the cluster — no manual cleanup needed
+- See <lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> for full details
+
 ## 🚨 Fast Path Health Checks
 
 ### KubeSpan (WireGuard Mesh) - VPS Hybrid Cluster
@@ -527,7 +748,7 @@ kubectl get secret proxmox-csi-plugin -n csi-proxmox -o jsonpath='{.data.config\
 
 # If SealedSecret shows decryption error, regenerate with stable keypair:
 cd terraform/bootstrap/persistent-auth
-CSI_TOKEN_SECRET=$(terraform output -raw csi_token_secret)
+CSI_TOKEN_SECRET=$(tofu output -raw csi_token_secret)
 cat > /tmp/csi-config.yaml << EOF
 clusters:
 - insecure: false
@@ -542,15 +763,17 @@ kubectl create secret generic proxmox-csi-plugin \
   --namespace=csi-proxmox \
   --from-file=config.yaml=/tmp/csi-config.yaml \
   --dry-run=client -o yaml | \
-kubeseal --cert <(terraform output -raw sealed_secrets_cert_pem) \
+kubeseal --cert <(tofu output -raw sealed_secrets_cert_pem) \
   --format=yaml | kubectl apply -f -
 
 rm /tmp/csi-config.yaml
 cd -
 
-# 7. Check if CSI token exists in Proxmox (via SSH)
-ssh root@atlas "pveum token list kubernetes-csi@pve"
-# Should show the csi token, if missing need to recreate via infrastructure terraform
+# 7. Check if CSI token exists in tofu state (managed by bpg/proxmox provider)
+cd terraform/bootstrap/persistent-auth
+tofu state show 'proxmox_virtual_environment_user_token.persistent["csi"]'
+# Should show token details; if missing, run tofu apply in persistent-auth
+cd -
 ```
 
 ## 🔧 Stable SealedSecret Keypair Issues
@@ -560,16 +783,16 @@ ssh root@atlas "pveum token list kubernetes-csi@pve"
 **Validate all SealedSecrets offline before deployment:**
 
 ```bash
-bazel run //cluster/scripts:validate_sealed_secrets
+bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
 ```
 
 This uses `kubeseal --recovery-unseal` to verify each SealedSecret in the repo can be decrypted
-with the terraform keypair. No cluster access needed.
+with the tofu keypair. No cluster access needed.
 
 **When to run:**
 
 - Automatically by pre-commit hook and bootstrap.py
-- Manually after `terraform apply` in `bootstrap/persistent-auth`
+- Manually after `tofu apply` in `bootstrap/persistent-auth`
 - When debugging SealedSecret decryption failures
 
 ### Keypair Mismatch (Common Failure Mode)
@@ -581,12 +804,12 @@ with the terraform keypair. No cluster access needed.
 - Pods pending due to missing secrets
 
 **Cause:** SealedSecrets in git were sealed with a different keypair than what's currently
-in terraform state (e.g., after terraform state was recreated).
+in tofu state (e.g., after tofu state was recreated).
 
 **Quick Fix:**
 
 ```bash
-cd terraform/bootstrap/persistent-auth && terraform apply
+cd terraform/bootstrap/persistent-auth && tofu apply
 # This re-seals all SealedSecrets with current keypair
 git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 ```
@@ -594,14 +817,14 @@ git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 ### Keypair Verification
 
 ```bash
-# Check if stable keypair exists in terraform state
+# Check if stable keypair exists in tofu state
 cd terraform/bootstrap/persistent-auth
-terraform output sealed_secrets_cert_pem >/dev/null && echo "✅ Keypair exists in terraform state"
+tofu output sealed_secrets_cert_pem >/dev/null && echo "✅ Keypair exists in tofu state"
 
 # Check if cluster is using stable keypair (serial numbers should match)
 kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.crt}' | \
   base64 -d | openssl x509 -text -noout | grep -A2 "Serial Number"
-terraform output -raw sealed_secrets_cert_pem | openssl x509 -text -noout | grep -A2 "Serial Number"
+tofu output -raw sealed_secrets_cert_pem | openssl x509 -text -noout | grep -A2 "Serial Number"
 cd -
 ```
 
@@ -611,7 +834,7 @@ cd -
 # Test if a SealedSecret can be decrypted with stable keypair
 cd terraform/bootstrap/persistent-auth
 kubectl get sealedsecret <name> -n <namespace> -o yaml | \
-kubeseal --recovery-unseal --recovery-private-key <(terraform output -raw sealed_secrets_private_key_pem)
+kubeseal --recovery-unseal --recovery-private-key <(tofu output -raw sealed_secrets_private_key_pem)
 # Should output the original secret YAML if working
 cd -
 ```
@@ -631,14 +854,23 @@ git add k8s/path/my-sealed.yaml && git commit
 ### Proxmox CSI Storage
 
 - **Issue**: SealedSecret decryption failures
-- **Cause**: terraform/storage generating secrets with wrong keypair
-- **Fix**: Always use stable keypair from terraform state (bootstrap/persistent-auth) when sealing
+- **Cause**: OpenTofu generating secrets with wrong keypair
+- **Fix**: Always use stable keypair from tofu state (bootstrap/persistent-auth) when sealing
 
 ### Flux CRD Caching
 
 - **Issue**: "no matches for kind" errors after CRD deployment
 - **Cause**: Controller cache doesn't auto-refresh for new CRDs
 - **Fix**: Restart kustomize-controller (usually resolves automatically)
+
+### Headscale OIDC Split-Brain (Multi-Replica)
+
+- **Issue**: OIDC authentication fails intermittently when running >1 replica
+- **Cause**: OIDC state (nonces, PKCE verifiers) stored in per-process memory, not DB.
+  Callback hitting a different replica than the initial redirect loses the state.
+  Multi-replica also breaks node map updates, IP allocation, and route primary election.
+- **Fix**: Run exactly 1 replica. This is a permanent architectural constraint, not a bug.
+- **Lessons Learned**: <lessons_learned/2026-03-07-headscale-single-replica-only.md>
 
 ### Worker Node Kubelet Issues
 
@@ -680,14 +912,14 @@ See <lessons_learned/2025-11-20-axfr-zone-transfer-failures.md> for historical c
    - **Fix**: Wait for DNS cache expiry (typically 1 hour from NS change)
 
 2. **"webhook call failed"**
-   - **Check**: PowerDNS webhook pod running: `kubectl get pods -n cert-manager -l app.kubernetes.io/name=cert-manager-webhook-powerdns`
+   - **Check**: PowerDNS webhook pod running: `kubectl get pods -n cert-manager -l app.kubernetes.io/instance=pdns-webhook`
    - **Check**: PowerDNS API accessible:
-     `kubectl exec -n cert-manager deployment/cert-manager-webhook-powerdns -- wget -O-
+     `kubectl exec -n cert-manager deployment/pdns-webhook -- wget -O-
 http://powerdns-api.dns-system:8081/api/v1/servers`
 
 3. **Challenge TXT record not created**
    - **Check**: PowerDNS logs: `kubectl logs -n dns-system deployment/powerdns`
-   - **Check**: Webhook logs: `kubectl logs -n cert-manager -l app.kubernetes.io/name=cert-manager-webhook-powerdns`
+   - **Check**: Webhook logs: `kubectl logs -n cert-manager -l app.kubernetes.io/instance=pdns-webhook`
    - **Verify**: API key secret exists: `kubectl get secret powerdns-api-key -n cert-manager`
 
 **Force certificate retry**:
@@ -705,14 +937,14 @@ kubectl delete certificaterequest -n <namespace> --all
 #### Signing Key Issues
 
 ```bash
-# Verify key in terraform state
+# Verify key in tofu state
 cd terraform/bootstrap/persistent-auth
-terraform output nix_signing_public_key
+tofu output nix_signing_public_key
 # Output: cache.allegedly.works-1:BASE64KEY
 cd -
 ```
 
-**If signing key missing**: Re-run `terraform apply` in `terraform/bootstrap/persistent-auth`
+**If signing key missing**: Re-run `tofu apply` in `terraform/bootstrap/persistent-auth`
 
 #### In-Cluster Connectivity Test
 

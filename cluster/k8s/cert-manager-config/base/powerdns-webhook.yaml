@@ -2,7 +2,7 @@
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
-  name: cert-manager-webhook-powerdns
+  name: pdns-webhook
   namespace: cert-manager
 spec:
   interval: 24h
@@ -11,7 +11,7 @@ spec:
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: cert-manager-webhook-powerdns
+  name: pdns-webhook
   namespace: cert-manager
 spec:
   interval: 30m
@@ -21,7 +21,7 @@ spec:
       version: "3.2.3"
       sourceRef:
         kind: HelmRepository
-        name: cert-manager-webhook-powerdns
+        name: pdns-webhook
         namespace: cert-manager
   maxHistory: 2
   install:
@@ -36,6 +36,8 @@ spec:
   dependsOn:
     - name: cert-manager
   values:
+    fullnameOverride: pdns-webhook
+
     # Webhook configuration (required for DNS-01 solver)
     groupName: acme.zacharyseguin.ca
 

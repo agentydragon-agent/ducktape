@@ -9,7 +9,7 @@ bazel_dep(name = "rules_python", version = "1.8.3")
 bazel_dep(name = "rules_python_gazelle_plugin", version = "1.8.3")
 bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
-bazel_dep(name = "protobuf", version = "29.3")
+bazel_dep(name = "protobuf", version = "34.0.bcr.1")
 bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.2")
 bazel_dep(name = "aspect_rules_lint", version = "2.0.0")
@@ -33,6 +33,30 @@ git_override(
 # Terraform/OpenTofu validation (cluster/)
 bazel_dep(name = "rules_tf", version = "0.0.10")
 
+# Patch: check exit code of `tofu/terraform providers mirror` in the repo rule.
+# Upstream silently ignores failures (stdout >/dev/null, return code unchecked),
+# so a transient registry outage produces an incomplete mirror that Bazel caches,
+# causing validate tests to fail with "provider not found in mirror".
+# TODO: remove patches once https://github.com/yanndegat/rules_tf/pull/28 is merged
+single_version_override(
+    module_name = "rules_tf",
+    patch_strip = 1,
+    patches = [
+        "//patches:rules_tf_check_tofu_mirror.patch",
+        "//patches:rules_tf_check_terraform_mirror.patch",
+    ],
+)
+
+# Workaround: gitlab.arm.com (hosting rules_diff, ape, toolchain_utils,
+# download_utils) returns 503 errors, blocking all Bazel builds. rules_diff is
+# a transitive dep of aspect_rules_lint that provides a hermetic diff binary via
+# cosmopolitan libc. This local override replaces it with a shim that uses the
+# system diff binary instead.
+local_path_override(
+    module_name = "rules_diff",
+    path = "third_party/rules_diff",
+)
+
 tf = use_extension("@rules_tf//tf:extensions.bzl", "tf_repositories")
 tf.download(
     # Pre-fetch provider plugins at Bazel fetch time so that tf_module validate
@@ -46,8 +70,10 @@ tf.download(
         "flux": "fluxcd/flux:1.7.6",
         "harbor": "goharbor/harbor:3.11.3",
         "hcloud": "hetznercloud/hcloud:1.60.0",
+        "headscale": "awlsring/headscale:0.5.0",
         "helm": "hashicorp/helm:3.1.1",
         "kubernetes": "hashicorp/kubernetes:2.38.0",
+        "libvirt": "dmacvicar/libvirt:0.9.3",
         "local": "hashicorp/local:2.5.3",
         "null": "hashicorp/null:3.2.4",
         "powerdns": "pan-net/powerdns:1.5.0",
@@ -85,9 +111,9 @@ use_repo(helm, "helm_toolchains")
 
 register_toolchains("@helm_toolchains//:all")
 
-# External Helm subchart dependencies (bitnami postgresql, mariadb)
+# External Helm subchart dependencies (bitnami postgresql)
 helm_charts = use_extension("//cluster/charts:helm_extensions.bzl", "helm_charts")
-use_repo(helm_charts, "helm_charts__mariadb", "helm_charts__postgresql")
+use_repo(helm_charts, "helm_charts__postgresql")
 
 oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 
@@ -103,13 +129,13 @@ oci.pull(
     tag = "bookworm-slim",
 )
 
-# Test infrastructure: PostgreSQL for Testcontainers
+# Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
-    name = "postgres_16",
-    digest = "sha256:6e9bbed548cc1ca776dd4685cfea9efe60d58df91186ec6bad7328fd03b388a5",
+    name = "postgres_18",
+    digest = "sha256:9b5bd946f3a507db72c55959700e517463e8d5dbb6f7eb30d920d5bcf6951431",
     image = "docker.io/library/postgres",
     platforms = ["linux/amd64"],
-    tag = "16",
+    tag = "18",
 )
 
 # Test infrastructure: Docker registry for e2e tests
@@ -129,9 +155,58 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "0.8.1",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "postgres_16", "postgres_16_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
+
+# Distroless cc: minimal glibc + libstdc++ + ca-certificates, no shell.
+# Debian 12 (Bookworm) ships glibc 2.36.
+oci.pull(
+    name = "distroless_cc_debian12",
+    digest = "sha256:329e54034ce498f9c6b345044e8f530c6691f99e94a92446f68c0adf9baa8464",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+
+# Distroless cc Debian 13 (Trixie): glibc 2.40.
+# aw-server-rust is compiled by the RBE worker (rbe-ubuntu24-04, glibc 2.39) and
+# therefore requires GLIBC_2.39 at runtime. Debian 12 distroless only has 2.36,
+# so aw-server fails with "version 'GLIBC_2.39' not found". Debian 13 (glibc 2.40)
+# satisfies GLIBC_2.39 requirements. If the RBE toolchain ever upgrades past
+# glibc 2.40 you will need to bump this base image again.
+# To update: docker manifest inspect gcr.io/distroless/cc-debian13:latest | \
+#   python3 -c "import sys,json; [print(m['digest']) for m in json.load(sys.stdin)['manifests'] if m['platform']['architecture']=='amd64']"
+oci.pull(
+    name = "distroless_cc_debian13",
+    digest = "sha256:a7597527ac0daeb207427bc2b1d4b83a0fd4b4e00063488a2a89531e0241601d",
+    image = "gcr.io/distroless/cc-debian13",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+
+# InvenTree application base image — for layering in the rai_plugin wheel.
+# To update: docker manifest inspect inventree/inventree:stable | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
+oci.pull(
+    name = "inventree_stable",
+    digest = "sha256:874bfdc56d524c545c38667b98873749bc5daf68130d47fc372fd32322288699",
+    image = "docker.io/inventree/inventree",
+    platforms = ["linux/amd64"],
+    tag = "stable",
+)
+
+# Talos imager: builds reproducible Talos disk images from pinned boot assets.
+# Uses v1.13.0-alpha.2+ which supports unprivileged builds (no loop devices) and
+# deterministic output (SOURCE_DATE_EPOCH + DETERMINISTIC_SEED).
+# v1.12.x requires --privileged and produces non-reproducible images.
+oci.pull(
+    name = "talos_imager",
+    digest = "sha256:bc8bce35a1debae740a887be7a8a3e2907c243c29edca1d57b66720e96a73e24",
+    image = "ghcr.io/siderolabs/imager",
+    platforms = ["linux/amd64"],
+    tag = "v1.13.0-alpha.2",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
+bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
 bazel_dep(name = "aspect_rules_ts", version = "3.8.3")
 bazel_dep(name = "rules_nodejs", version = "6.7.3")
@@ -151,6 +226,15 @@ use_repo(playwright, "playwright_browsers")
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 node.toolchain(node_version = "22.11.0")  # LTS 'Jod'
 
+# Pin pnpm v9 to match the lockfile format (rules_js 2.9.2 defaults to pnpm v8
+# which cannot read lockfileVersion 9 and triggers a non-hermetic regeneration).
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm", dev_dependency = True)
+pnpm.pnpm(
+    pnpm_version = "9.15.9",
+    pnpm_version_integrity = "sha512-aARhQYk8ZvrQHAeSMRKOmvuJ74fiaR1p5NQO7iKJiClf1GghgbrlW1hBjDolO95lpQXsfF+UA+zlzDzTfc8lMQ==",
+)
+use_repo(pnpm, "pnpm")
+
 # Workspace-level npm packages (pnpm workspace)
 # All JS/TS projects share a single lockfile and node_modules
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
@@ -159,6 +243,7 @@ npm.npm_translate_lock(
     # Generate bin entries for dev tools from workspace root
     bins = {
         "eslint": ["eslint=./bin/eslint.js"],
+        "json-schema-to-typescript": ["json2ts=./dist/src/cli.js"],
         "prettier": ["prettier=./bin/prettier.cjs"],
         "svelte-check": ["svelte-check=./bin/svelte-check"],
         "@sveltejs/kit": ["svelte-kit=./svelte-kit.js"],
@@ -168,11 +253,15 @@ npm.npm_translate_lock(
     },
     # Track package.json and workspace files for auto-update
     data = [
-        "//:agent_server/web/package.json",
-        "//:experimental/rspcache/admin_ui/package.json",
+        "//:airlock/frontend/package.json",
+        "//:airlock/openclaw/package.json",
         "//:package.json",
         "//:pnpm-workspace.yaml",
         "//:props/frontend/package.json",
+        "//:third_party/mcporter/package.json",
+        "//:util/testing/frontend_visual/package.json",
+        "//:x/agent_server/web/package.json",
+        "//:x/rspcache/admin_ui/package.json",
     ],
     # Disable postinstall for packages that download binaries during lifecycle hooks.
     # These fail in Bazel's sandboxed builds (network blocked, gVisor, RBE).
@@ -204,12 +293,57 @@ npm.npm_translate_lock(
     },
     # Auto-regenerate pnpm-lock.yaml when package.json changes
     update_pnpm_lock = True,
+    use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
 )
 use_repo(npm, "npm_ducktape")
 
+# aw-webui standalone npm universe — separate extension instance because its
+# lock file lives in third_party/activitywatch/, a different workspace root
+# from the main pnpm-lock.yaml.  rules_js forbids mixing workspace roots within
+# a single extension instance ("cannot seed_root twice with different workspaces").
+#
+# update_pnpm_lock is disabled because pnpm_lock and npm_package_lock are in
+# different Bazel workspaces (// vs @aw_webui), and rules_js's seed_root check
+# rejects that combination.  To regenerate the pnpm lockfile after bumping the
+# aw_webui http_archive:
+#   1. bazel run @pnpm//:package/bin/pnpm.cjs -- import \
+#        --lockfile-dir third_party/activitywatch \
+#        $(bazel info output_base)/external/aw_webui+/package-lock.json
+#   2. Or: cp upstream package-lock.json to a temp dir, run `pnpm import`, copy back.
+npm_activitywatch = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True, isolate = True)
+npm_activitywatch.npm_translate_lock(
+    name = "npm_aw_webui",
+    bins = {
+        "vite": ["vite=./bin/vite.js"],
+    },
+    # link_workspace must point to @aw_webui so generated store-target labels
+    # resolve in the http_archive where npm_link_all_packages() creates them,
+    # not in the main workspace where the lockfile lives.
+    link_workspace = "aw_webui",
+    npmrc = "@@//:.npmrc",
+    # vue-demi's postinstall switches lib/index.mjs to the correct Vue version
+    # variant, but lifecycle hooks are disabled in sandboxed builds.  Patch the
+    # default (Vue 3) stub to add the missing hasInjectionContext export that
+    # pinia@2.1.7 imports.
+    patches = {
+        "vue-demi@0.14.6": ["//third_party/activitywatch/patches:vue-demi-has-injection-context.patch"],
+    },
+    pnpm_lock = "//:aw-webui-pnpm-lock.yaml",
+    # aw-webui imports axios directly (via NewReleaseNotification.vue) but
+    # axios is only a dependency of aw-client, not of aw-webui itself.
+    # pnpm strict mode hides phantom deps; hoist axios so vite/rollup can resolve it.
+    public_hoist_packages = {
+        "axios": [""],
+    },
+    run_lifecycle_hooks = False,
+    update_pnpm_lock = False,
+    use_pnpm = "@pnpm//:package/bin/pnpm.cjs",
+)
+use_repo(npm_activitywatch, "npm_aw_webui")
+
 # Custom multitool lockfile with newer ruff (0.14.0 vs 0.8.3 in aspect_rules_lint)
 multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
-multitool.hub(lockfile = "//tools/multitool:lockfile.json")
+multitool.hub(lockfile = "//devinfra/multitool:lockfile.json")
 use_repo(multitool, "multitool")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
@@ -243,20 +377,27 @@ use_repo(pip, "pypi", "pypi_homeassistant")
 types = use_extension("@rules_mypy//mypy:types.bzl", "types")
 types.requirements(
     name = "pip_types",
-    # Exclusions:
-    # - sqlalchemy-stubs, types-sqlalchemy: SQLAlchemy 2.0+ has inline types via
-    #   the [mypy] extra, so external stubs conflict and cause duplicate keys.
-    # - types-paramiko: transitive dep but paramiko isn't in pypi hub
-    # - types-psycopg2: we use psycopg2-binary, not psycopg2
-    # - types-toml: we use tomli, not toml
-    # - types-jinja2: jinja2 has py.typed; stubs have broken markupsafe dep
+    # Exclusions prevent rules_mypy from generating requirement("X") mappings
+    # for type stubs whose runtime package isn't in the pip hub (or has a
+    # different name). Without exclusion, Bazel fails at analysis time with
+    # "no such package '@@rules_python++pip+pypi//X'".
+    #
+    # Cleaned-up stubs (no longer need exclusion):
+    # - sqlalchemy-stubs, types-sqlalchemy: removed from pyproject.toml
+    #   (SQLAlchemy 2.0+ provides types via sqlalchemy[mypy])
+    # - types-jinja2: removed from pyproject.toml (jinja2 ships py.typed)
+    # - types-toml: removed from pyproject.toml (we use tomllib, not toml)
+    # - types-paramiko, types-pytz: runtime deps added to pyproject.toml
+    #   so their stubs resolve correctly
+    #
+    # TODO: Upstream fix in rules_mypy to gracefully skip stubs whose
+    # runtime package isn't in the pip hub, instead of failing at load time.
+    # That would eliminate the need for this exclusion list entirely.
     exclude_requirements = [
-        "sqlalchemy-stubs",
-        "types-jinja2",
-        "types-paramiko",
+        # types-psycopg2 maps to requirement("psycopg2") but we use
+        # psycopg2-binary (different pip package name). Can't be fixed
+        # by adding a dep — psycopg2 and psycopg2-binary conflict.
         "types-psycopg2",
-        "types-sqlalchemy",
-        "types-toml",
     ],
     pip_requirements = "@pypi//:requirements.bzl",
     requirements_txt = "//:requirements_bazel.txt",
@@ -276,12 +417,9 @@ buildbuddy.platform(buildbuddy_container_image = "UBUNTU24_04_IMAGE")
 buildbuddy.gcc_toolchain(gcc_major_version = "13")
 use_repo(buildbuddy, "buildbuddy_toolchain")
 
-# BuildBuddy CC toolchain — uses GCC pre-installed in the RBE container, avoiding the
-# ~500 MB LLVM toolchain download. The toolchain's exec_compatible_with includes
-# @bazel_tools//tools/cpp:gcc, which only //:rbe_linux_x64 satisfies (via parent
-# inheritance), so CC actions targeting RBE use this toolchain.
-# .bazelrc sets BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 to block host auto-detection on
-# Nix; CI overrides this to 0 in bazel-repo-cache to use the GHA runner's system GCC.
+# BuildBuddy CC toolchain — uses GCC pre-installed in the RBE container.
+# exec_compatible_with @bazel_tools//tools/cpp:gcc constrains it to //:rbe_linux_x64.
+# Local actions use the auto-detected system GCC.
 register_toolchains("@buildbuddy_toolchain//:ubuntu_cc_toolchain")
 
 # Rust rules
@@ -290,7 +428,7 @@ bazel_dep(name = "rules_rust", version = "0.68.1")  # upgraded from 0.61.0 to fi
 # — rust toolchains —
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
-    edition = "2021",
+    edition = "2024",
     versions = ["1.87.0"],  # trying 1.87.0 to fix proc-macro loading issue
 )
 use_repo(rust, "rust_toolchains")
@@ -310,6 +448,40 @@ crate.from_cargo(
 
 # expose the generated repo (↑ name="crates")
 use_repo(crate, "crates")
+
+# ─ ActivityWatch crate universe ──────────────────────────────────────────────
+# Separate from the main "crates" universe to avoid Cargo.lock conflicts.
+# aw-server-rust source is pulled via http_archive below (see @aw_server_rust).
+crate.from_cargo(
+    name = "aw_server_crates",
+    cargo_lockfile = "@aw_server_rust//:Cargo.lock",
+    lockfile = "//third_party/activitywatch:Cargo.Bazel.lock",
+    manifests = [
+        "@aw_server_rust//:Cargo.toml",
+        "@aw_server_rust//:aw-client-rust/Cargo.toml",
+        "@aw_server_rust//:aw-datastore/Cargo.toml",
+        "@aw_server_rust//:aw-models/Cargo.toml",
+        "@aw_server_rust//:aw-query/Cargo.toml",
+        "@aw_server_rust//:aw-server/Cargo.toml",
+        "@aw_server_rust//:aw-sync/Cargo.toml",
+        "@aw_server_rust//:aw-transform/Cargo.toml",
+    ],
+)
+
+# Wire the Bazel-built aw-webui dist into the build.rs environment.
+# build.rs reads AW_WEBUI_DIR and emits cargo:rustc-env=AW_WEBUI_DIR=<path>
+# so that rust-embed's interpolate-folder-path proc macro can embed all
+# files from that directory into the binary at compile time.
+crate.annotation(
+    build_script_data = ["@aw_webui//:dist"],
+    build_script_env = {
+        "AW_WEBUI_DIR": "$(execpath @aw_webui//:dist)",
+    },
+    compile_data = ["@aw_webui//:dist"],
+    crate = "aw-server",
+    repositories = ["aw_server_crates"],
+)
+use_repo(crate, "aw_server_crates")
 
 # ─ Haskell ───────────────────────────────────────────────────────────────────
 bazel_dep(name = "rules_haskell", version = "1.0")
@@ -416,6 +588,88 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
 
+# ─ ActivityWatch ─────────────────────────────────────────────────────────────
+# aw-webui: frontend for aw-server-rust (pinned to the submodule commit used by
+# aw-server-rust @ 9a8802a). BUILD file is overlaid.
+_AW_WEBUI_COMMIT = "cd5aafe2fdc27e621035621d83d9bcae4b587837"
+
+http_archive(
+    name = "aw_webui",
+    build_file = "//third_party/activitywatch:aw-webui.BUILD.bazel",
+    # aw-webui references /logo.png (Header.vue template, vite-plugin-pwa manifest)
+    # but doesn't ship the file.  A 1x1 transparent PNG keeps vite happy.
+    patch_cmds = ["mkdir -p static && echo iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVQI12NgAAIABQAABjE+ibYAAAAASUVORK5CYII= | base64 -d > static/logo.png"],
+    sha256 = "d1b45b5bf81f532e303507176d9e9d04170e0179c21ab794ad09409fbac5223a",
+    strip_prefix = "aw-webui-" + _AW_WEBUI_COMMIT,
+    urls = ["https://github.com/ActivityWatch/aw-webui/archive/" + _AW_WEBUI_COMMIT + ".tar.gz"],
+)
+
+# aw-server-rust: Rust backend that embeds aw-webui at compile time via rust-embed.
+# The crate universe (@aw_server_crates) builds all Rust targets from this source.
+_AW_SERVER_RUST_COMMIT = "9a8802a374d8e9f587b343dfedf3859ec1a9bba2"
+
+http_archive(
+    name = "aw_server_rust",
+    build_file = "//third_party/activitywatch:aw-server-rust.BUILD.bazel",
+    sha256 = "7e4e0d61f3eecd272f4f7a2985f9204327e554d126d721f4db70e8e20a106474",
+    strip_prefix = "aw-server-rust-" + _AW_SERVER_RUST_COMMIT,
+    urls = ["https://github.com/ActivityWatch/aw-server-rust/archive/" + _AW_SERVER_RUST_COMMIT + ".tar.gz"],
+)
+
+# ─ Talos internal sources (cannot import, pulled from upstream at pinned tag) ──
+# Internal adapter/controller code from Talos internal/.
+# Used by kubespand for nftables chain management and peer state machine.
+# MPL-2.0 licensed (compatible with AGPL-3.0).
+# IMPORTANT: keep in sync with talos_pkg_machinery version in third_party/go.MODULE.bazel.
+_TALOS_TAG = "v1.13.0-alpha.2"
+
+http_archive(
+    name = "talos_internal",
+    build_file = "//third_party/siderolabs/talos_internal:BUILD.overlay.bazel",
+    patch_args = ["-p0"],
+    patches = [
+        "//third_party/siderolabs/talos_internal/patches:peer_spec.patch",
+    ],
+    sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",
+    strip_prefix = "talos-1.13.0-alpha.2",
+    urls = ["https://github.com/siderolabs/talos/archive/refs/tags/" + _TALOS_TAG + ".tar.gz"],
+)
+
+# ─ Talos KubeSpan diagnostic test artifacts ───────────────────────────────────
+# Real Talos artifacts for verifying upstream KubeSpan through double NAT.
+# Nocloud disk image is built locally via the talos_imager container (see
+# cluster/kubespand/qemu_tests/talos/BUILD.bazel). No Image Factory download needed.
+# The test uses the Talos Go client library directly instead of the talosctl binary.
+
+# ─ QEMU nftables smoke test dependencies ──────────────────────────────────────
+# Talos discovery service binary for double_nat QEMU test (runs inside VPS VM).
+# Statically linked, runs directly on Alpine initramfs without any dependencies.
+http_file(
+    name = "discovery_service_binary",
+    downloaded_file_path = "discovery-service",
+    executable = True,
+    sha256 = "52b6ee1f408af374f80321a2500878917266b566a26b91ca7fe27adcd8f7298a",
+    urls = ["https://github.com/siderolabs/discovery-service/releases/download/v1.0.13/discovery-service-linux-amd64"],
+)
+
+# Alpine linux-virt kernel with nftables modules for QEMU-based testing.
+# Smaller than Ubuntu (~38MB vs ~181MB) and purpose-built for VMs.
+http_file(
+    name = "alpine_linux_virt",
+    downloaded_file_path = "linux-virt.apk",
+    sha256 = "af9a379fa2a4e26a365fbc050da0a54b873cc96074a4c1d2a4541f5b57b39b2b",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/linux-virt-6.12.76-r0.apk"],
+)
+
+# Alpine minirootfs tarball for QEMU initramfs base filesystem.
+# Provides proper filesystem layout (/bin, /sbin, /etc, busybox symlinks, musl libc).
+http_file(
+    name = "alpine_minirootfs_x86_64",
+    downloaded_file_path = "alpine-minirootfs.tar.gz",
+    sha256 = "460e7ea6d359b7ea6913326639cb88e5eef65292a09b63c89b4aecf048a90959",
+    urls = ["https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-minirootfs-3.21.6-x86_64.tar.gz"],
+)
+
 # tiktoken o200k_base encoding (used by gpt-4o) — bundled for offline/RBE testing.
 # Cache key = sha1("https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken")
 http_file(
@@ -434,7 +688,7 @@ http_archive(
     urls = ["https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz"],
 )
 
-# Adoptium Temurin JDK 21 — provides keytool and cacerts for claude_hooks tests.
+# Adoptium Temurin JDK 21 — provides keytool and cacerts for claude tests.
 # Build target: //third_party/jdk
 http_archive(
     name = "adoptium_jdk21",
@@ -449,6 +703,25 @@ exports_files([
     urls = ["https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7/OpenJDK21U-jdk_x64_linux_hotspot_21.0.6_7.tar.gz"],
 )
 
+# kubectl v1.32.3 — for openclaw-exec sidecar (sandbox namespace access).
+http_file(
+    name = "kubectl_linux_amd64",
+    downloaded_file_path = "kubectl",
+    executable = True,
+    sha256 = "ab209d0c5134b61486a0486585604a616a5bb2fc07df46d304b3c95817b2d79f",
+    urls = ["https://dl.k8s.io/release/v1.32.3/bin/linux/amd64/kubectl"],
+)
+
+# Node.js v22.11.0 LTS linux-x64 — provides the 'node' binary for the
+# openclaw-exec sidecar (mcporter CLI is bundled using this runtime).
+http_archive(
+    name = "nodejs_linux_amd64",
+    build_file_content = 'exports_files(["bin/node"], visibility = ["//visibility:public"])\n',
+    sha256 = "4f862bab52039835efbe613b532238b6e4dde98d139a34e6923193e073438b13",
+    strip_prefix = "node-v22.11.0-linux-x64",
+    urls = ["https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-x64.tar.gz"],
+)
+
 # Crane binary for OCI image push/pull in agent containers and tests.
 # Downloaded directly instead of re-exporting from rules_oci's internal
 # oci_crane_linux_amd64 repo, which isn't visible to the main module in bzlmod.
@@ -459,28 +732,24 @@ http_archive(
     urls = ["https://github.com/google/go-containerregistry/releases/download/v0.18.0/go-containerregistry_Linux_x86_64.tar.gz"],
 )
 
-# ─ Go toolchain (environment-manager RE) ──────────────────────────────────
-go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.download(version = "1.25.6")
-
-go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
-go_deps.from_file(go_mod = "//claude_web_env/re/environment_manager/6b49f1ca/src:go.mod")
-use_repo(
-    go_deps,
-    "com_github_google_uuid",
-    "com_github_gorilla_websocket",
-    "com_github_mark3labs_mcp_go",
-    "com_github_mitchellh_mapstructure",
-    "com_github_spf13_cobra",
-    "io_opentelemetry_go_contrib_bridges_otelslog",
-    "io_opentelemetry_go_otel",
-    "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploghttp",
-    "io_opentelemetry_go_otel_exporters_otlp_otlpmetric_otlpmetrichttp",
-    "io_opentelemetry_go_otel_exporters_stdout_stdoutmetric",
-    "io_opentelemetry_go_otel_metric",
-    "io_opentelemetry_go_otel_sdk",
-    "io_opentelemetry_go_otel_sdk_log",
-    "io_opentelemetry_go_otel_sdk_metric",
-    "org_golang_google_protobuf",
-    "org_golang_x_sync",
+# ─ Specimen code archives (remote-VCS specimens) ─────────────────────────────
+# These specimens reference external Git repos rather than bundled code/ dirs.
+# Code is fetched at build time and exposed as filegroups for create_code_tar.
+http_archive(
+    name = "specimen_crush_code",
+    build_file_content = 'filegroup(name = "all_files", srcs = glob(["**"]), visibility = ["//visibility:public"])\n',
+    sha256 = "06f94a6f0c121b365bb84eb0b845df3c9f50261562d224d478582d25e21c0acb",
+    strip_prefix = "crush-a2a1ffa00943aa373f688ac05b667083ac3230b1",
+    urls = ["https://github.com/agentydragon/crush/archive/a2a1ffa00943aa373f688ac05b667083ac3230b1.tar.gz"],
 )
+
+http_archive(
+    name = "specimen_ducktape_2025_09_03_code",
+    build_file_content = 'filegroup(name = "all_files", srcs = glob(["**"]), visibility = ["//visibility:public"])\n',
+    sha256 = "b12ba5b8f553f3c90860e926af8527a531e49590395da23ec42a9e8fc01aa900",
+    strip_prefix = "ducktape-4ad33013af27e159863bed92ffcfdb55b388e46c",
+    urls = ["https://github.com/agentydragon/ducktape/archive/4ad33013af27e159863bed92ffcfdb55b388e46c.tar.gz"],
+)
+
+# ─ Go toolchain and dependencies ─────────────────────────────────────────────
+include("//third_party:go.MODULE.bazel")

@@ -8,3 +8,5 @@ occurrences:
     files:
       gatelet/server/pytest_runner.py:
         - [1, 16]
+    match_file_restriction:
+      - gatelet/server/pytest_runner.py

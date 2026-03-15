@@ -11,7 +11,7 @@ spec:
   chart:
     spec:
       chart: cert-manager
-      version: "v1.19.3"
+      version: "v1.19.4"
       sourceRef:
         kind: HelmRepository
         name: jetstack
@@ -30,11 +30,18 @@ spec:
 
     # Use external DNS servers for ACME challenge verification
     # This avoids hairpin NAT issues where pods can't reach their own node's public IP
+    # Gateway API support — enables gateway-shim controller that watches Gateway
+    # resources for cert-manager.io/cluster-issuer annotations.
+    # Since v1.15 the old --feature-gates=ExperimentalGatewayAPISupport flag is
+    # ignored; must use config-based enablement instead.
+    config:
+      apiVersion: controller.config.cert-manager.io/v1alpha1
+      kind: ControllerConfiguration
+      enableGatewayAPI: true
+
     extraArgs:
       - --dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53
       - --dns01-recursive-nameservers-only
-      # Gateway API support (beta since v1.15, enabled by default — explicit for clarity)
-      - --feature-gates=ExperimentalGatewayAPISupport=true
 
     # Enable metrics
     prometheus:

@@ -1,0 +1,12 @@
+--- a/proxmoxlib.js
++++ b/proxmoxlib.js
+@@ -609,8 +609,3 @@
+                     let res = response.result;
+-                    if (
+-                        res === null ||
+-                        res === undefined ||
+-                        !res ||
+-                        res.data.status.toLowerCase() !== 'active'
+-                    ) {
++                    if (false) {
+                         Ext.Msg.show({

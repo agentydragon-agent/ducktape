@@ -11,10 +11,10 @@ import (
 
 // GetClaudePath returns the filesystem path to the Claude Code binary.
 // It checks the following sources in order:
-//   1. If executor is provided and has a non-empty ClaudePath field (offset 0x88
-//      in the ClaudeCodeExecutor struct), return that path.
-//   2. If the CLAUDE_CODE_ENTRYPOINT environment variable is set, return its value.
-//   3. Fall back to the default "claude" command name (relies on PATH).
+//  1. If executor is provided and has a non-empty ClaudePath field (offset 0x88
+//     in the ClaudeCodeExecutor struct), return that path.
+//  2. If the CLAUDE_CODE_ENTRYPOINT environment variable is set, return its value.
+//  3. Fall back to the default "claude" command name (relies on PATH).
 //
 // Binary address: 0xae0900 - 0xae0aeb
 func GetClaudePath(logger *slog.Logger, ctx interface{}, executor *ClaudeCodeExecutor) (string, int) {

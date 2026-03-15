@@ -10,4 +10,4 @@ resources:
   - authentik-proxy-service.yaml
   # TODO: When un-suspending, switch to proxy mode outpost and add HTTPRoute
   # (forward_single mode is not supported with Gateway API).
-  # See authentik-blueprint/hubble/ for the proxy mode pattern.
+  # See k8s/authentik/sso-blueprints.yaml and k8s/authentik-proxy-routes/ for the proxy mode pattern.

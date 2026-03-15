@@ -1,18 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
-    name = "snapshot",
-    srcs = ["snapshot.py"],
-    imports = ["../../.."],
-    visibility = ["//props:__subpackages__"],
-    deps = [
-        "//props/core:ids",
-        "//props/core:splits",
-        "@pypi//pydantic",
-    ],
-)
-
-py_library(
     name = "examples",
     srcs = ["examples.py"],
     imports = ["../../.."],

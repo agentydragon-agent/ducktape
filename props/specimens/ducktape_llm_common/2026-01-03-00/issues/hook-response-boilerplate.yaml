@@ -12,6 +12,10 @@ occurrences:
     note: "ClaudeCodeHookBase.run() has 3 instances of print(response.model_dump_json(...)); sys.exit(0)"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_hook.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_hook.py
+      - ducktape_llm_common/claude_linter/cli.py
+      - ducktape_llm_common/claude_linter_v2/cli.py
 
   - occurrence_id: occ-1
     files:
@@ -20,6 +24,10 @@ occurrences:
     note: "main() serializes and exits"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter/cli.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_hook.py
+      - ducktape_llm_common/claude_linter/cli.py
+      - ducktape_llm_common/claude_linter_v2/cli.py
 
   - occurrence_id: occ-2
     files:
@@ -29,3 +37,7 @@ occurrences:
     note: "run_hook() serializes and exits separately"
     critic_scopes_expected_to_recall:
       - [ducktape_llm_common/claude_linter_v2/cli.py]
+    match_file_restriction:
+      - ducktape_llm_common/claude_hook.py
+      - ducktape_llm_common/claude_linter/cli.py
+      - ducktape_llm_common/claude_linter_v2/cli.py

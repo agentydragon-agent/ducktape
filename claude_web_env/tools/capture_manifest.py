@@ -1,8 +1,3 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["pydantic", "pyyaml"]
-# ///
 """Capture a full filesystem manifest as NDJSON.
 
 Captures EVERYTHING — no skip directories. Exclusions are applied only at diff
@@ -12,20 +7,24 @@ Uses a thread pool to parallelize SHA256 hashing for ~3-5x speedup on
 I/O-heavy filesystems.
 
 Usage:
-    ./capture_manifest.py > manifest.ndjson
-    ./capture_manifest.py /some/root > manifest.ndjson
+    bazel run //claude_web_env/tools:capture_manifest -- > manifest.ndjson
+    bazel run //claude_web_env/tools:capture_manifest -- /some/root > manifest.ndjson
 """
 
 import grp
 import hashlib
+import logging
 import os
 import pwd
 import stat
 import sys
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
+from typing import IO
 
-from manifest import Entry, write_entry
+from claude_web_env.tools.manifest import Entry, write_entry
+
+logger = logging.getLogger(__name__)
 
 MAX_HASH_SIZE = 50 * 1024 * 1024  # 50 MB
 HASH_WORKERS = 8  # parallel hash threads
@@ -81,37 +80,32 @@ def file_type_char(mode: int) -> str:
     return TYPE_CHARS.get(stat.S_IFMT(mode), "?")
 
 
-def main() -> None:
-    root = sys.argv[1] if len(sys.argv) > 1 else "/"
-    strip_prefix = root.rstrip("/") if root != "/" else ""
-    out = sys.stdout
-    count = 0
+def capture(root: Path = Path("/")) -> dict[str, Entry]:
+    """Capture filesystem manifest starting at root, returning entries keyed by path."""
+    root_str = str(root)
+    strip_prefix = root_str.rstrip("/") if root_str != "/" else ""
+    result: dict[str, Entry] = {}
     errors = 0
 
-    # Batch entries then flush — submit hash futures for files, write
-    # results in order to keep output deterministic.
     batch_size = 500
 
     with ThreadPoolExecutor(max_workers=HASH_WORKERS) as pool:
-        # Each batch item: (entry_without_hash, hash_future_or_None)
         batch: list[tuple[Entry, Future[str | None] | None]] = []
 
         def flush_batch() -> None:
-            nonlocal count
             for entry, future in batch:
                 if future is not None:
                     entry.sha256 = future.result()
-                write_entry(entry, out)
-                count += 1
-                if count % 10000 == 0:
-                    print(f"  {count:,} entries processed...", file=sys.stderr)
+                result[entry.path] = entry
+            if len(result) % 10000 < batch_size:
+                logger.info("%s entries processed...", f"{len(result):,}")
             batch.clear()
 
-        for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        for dirpath, dirnames, filenames in os.walk(root_str, topdown=True, followlinks=False):
             dirnames.sort()
 
-            entries = [dirpath] + [str(Path(dirpath) / n) for n in sorted(filenames)]
-            for path in entries:
+            fs_entries = [dirpath] + [str(Path(dirpath) / n) for n in sorted(filenames)]
+            for path in fs_entries:
                 try:
                     lst = os.lstat(path)
                 except OSError:
@@ -153,7 +147,21 @@ def main() -> None:
 
         flush_batch()
 
-    print(f"Done: {count:,} entries, {errors} errors", file=sys.stderr)
+    logger.info("Done: %s entries, %d errors", f"{len(result):,}", errors)
+    return result
+
+
+def write_manifest(entries: dict[str, Entry], out: IO[str] = sys.stdout) -> None:
+    """Write manifest entries as NDJSON to an output stream."""
+    for entry in entries.values():
+        write_entry(entry, out)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("/")
+    entries = capture(root)
+    write_manifest(entries)
 
 
 if __name__ == "__main__":

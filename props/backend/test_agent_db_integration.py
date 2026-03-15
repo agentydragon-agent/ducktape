@@ -1,6 +1,6 @@
-"""Integration tests for get_agent_db with real Postgres and RLS.
+"""Integration tests for get_caller_db with real Postgres and RLS.
 
-Verifies that get_agent_db returns a Database instance whose sessions
+Verifies that get_caller_db returns a Database instance whose sessions
 are subject to RLS policies. Uses the same two-user pattern as
 test_split_based_rls: admin writes test data, agent queries with RLS.
 """
@@ -11,11 +11,10 @@ import contextlib
 from collections.abc import AsyncGenerator
 from uuid import UUID, uuid4
 
-import pytest
 import pytest_asyncio
 import pytest_bazel
 
-from props.backend.auth import AuthContext, get_agent_db
+from props.backend.auth import AdminRole, AgentRole, AuthenticatedIdentity, get_caller_db
 from props.core.agent_types import CriticTypeConfig
 from props.db.database import Database
 from props.db.examples import Example
@@ -25,22 +24,24 @@ from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.credentials import make_agent_credentials
 from props.testing.fixtures.runs import FAKE_CRITIC_DIGEST, ensure_fake_agent_definitions
 
-pytestmark = [pytest.mark.integration]
-
 
 @pytest_asyncio.fixture
-async def critic_agent_creds(synced_db: Database) -> AsyncGenerator[AgentCredentials]:
+async def critic_agent_creds(synced_db: Database) -> AsyncGenerator[tuple[AgentCredentials, CriticTypeConfig]]:
     """Create critic agent credentials with a real Postgres role."""
     type_config = CriticTypeConfig(example={"snapshot_slug": "test-fixtures/train1", "kind": "whole_snapshot"})
-    yield await make_agent_credentials(synced_db, type_config, FAKE_CRITIC_DIGEST)
+    creds = await make_agent_credentials(synced_db, type_config, FAKE_CRITIC_DIGEST)
+    yield creds, type_config
 
 
-async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_agent_creds: AgentCredentials) -> None:
-    """get_agent_db with agent auth returns a Database that enforces RLS.
+async def test_agent_db_returns_rls_scoped_database(
+    synced_db: Database, critic_agent_creds: tuple[AgentCredentials, CriticTypeConfig]
+) -> None:
+    """get_caller_db with agent auth returns a Database that enforces RLS.
 
     Writes a critic run for a VALID split snapshot as admin, then verifies
     the agent Database cannot see it (critics can only see their own runs).
     """
+    creds, type_config = critic_agent_creds
     # Setup: create a critic run for VALID split as admin
     valid_run_id = uuid4()
     with synced_db.session() as session:
@@ -60,13 +61,13 @@ async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_
         session.add(admin_run)
         session.commit()
 
-    # Exercise: get_agent_db with agent auth
-    auth = AuthContext.agent(
-        username=critic_agent_creds.username,
-        password=critic_agent_creds.password,
-        agent_run_id=uuid4(),  # The auth context run_id (doesn't need to match creds run)
+    # Exercise: get_caller_db with agent auth
+    auth = AuthenticatedIdentity(
+        username=creds.username,
+        password=creds.password,
+        role=AgentRole(agent_type=type_config.agent_type, agent_run_id=uuid4()),
     )
-    gen = get_agent_db(admin_db=synced_db, auth=auth)
+    gen = get_caller_db(admin_db=synced_db, auth=auth)
     agent_db = next(gen)
 
     try:
@@ -81,17 +82,22 @@ async def test_agent_db_returns_rls_scoped_database(synced_db: Database, critic_
             next(gen)
 
 
-async def test_agent_db_can_see_own_run(synced_db: Database, critic_agent_creds: AgentCredentials) -> None:
+async def test_agent_db_can_see_own_run(
+    synced_db: Database, critic_agent_creds: tuple[AgentCredentials, CriticTypeConfig]
+) -> None:
     """Agent Database can see the agent's own run record."""
+    creds, type_config = critic_agent_creds
     # The fixture already created a run for this agent's role.
     # Find the run_id from the username (agent_{uuid}).
-    agent_run_id_str = critic_agent_creds.username.removeprefix("agent_")
+    agent_run_id_str = creds.username.removeprefix("agent_")
     agent_run_id = UUID(agent_run_id_str)
 
-    auth = AuthContext.agent(
-        username=critic_agent_creds.username, password=critic_agent_creds.password, agent_run_id=agent_run_id
+    auth = AuthenticatedIdentity(
+        username=creds.username,
+        password=creds.password,
+        role=AgentRole(agent_type=type_config.agent_type, agent_run_id=agent_run_id),
     )
-    gen = get_agent_db(admin_db=synced_db, auth=auth)
+    gen = get_caller_db(admin_db=synced_db, auth=auth)
     agent_db = next(gen)
 
     try:
@@ -105,10 +111,10 @@ async def test_agent_db_can_see_own_run(synced_db: Database, critic_agent_creds:
 
 
 async def test_admin_auth_returns_admin_db(synced_db: Database, exhaust_generator) -> None:
-    """get_agent_db with admin auth returns the admin Database directly."""
-    auth = AuthContext.admin(username=synced_db.config.user, password=synced_db.config.password)
+    """get_caller_db with admin auth returns the admin Database directly."""
+    auth = AuthenticatedIdentity(username=synced_db.config.user, password=synced_db.config.password, role=AdminRole())
 
-    gen = get_agent_db(admin_db=synced_db, auth=auth)
+    gen = get_caller_db(admin_db=synced_db, auth=auth)
     db = exhaust_generator(gen)
 
     assert db is synced_db, "Admin should get the same admin Database instance"

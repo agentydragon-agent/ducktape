@@ -1,7 +1,7 @@
 """Agent runtime libraries shared across all in-container agents."""
 
 load("@rules_python//python:defs.bzl", "py_library")
-load("//tools/testing:docker.bzl", "docker_py_test")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 py_library(
     name = "schema",
@@ -24,6 +24,7 @@ py_library(
         ":schema",
         "//mako_utils:preprocessor",
         "//openai_utils:model",
+        "//openai_utils:retry",
         "//props/db:database",
         "//props/db:models",
         "//props/db:queries",
@@ -34,7 +35,7 @@ py_library(
     ],
 )
 
-docker_py_test(
+py_test(
     name = "test_system_prompts",
     srcs = ["test_system_prompts.py"],
     data = [
@@ -58,11 +59,13 @@ docker_py_test(
         "//props/agents/grader:prompt.md.mako",
     ],
     imports = ["../.."],
+    requires_docker = True,
     deps = [
         ":runtime",
         "//props:conftest",
+        "//props/core:agent_types",
         "//props/db:database",
-        "//test_util:undeclared_outputs",
+        "//util/testing:undeclared_outputs",
         "@pypi//mako",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep

@@ -28,7 +28,7 @@ def test_shorten():
 
 
 def test_input_voltage_range():
-    parameters = {}
+    parameters: dict[str, str] = {}
     pp = ParametersProcessor(part=None, parameters=parameters)
     assert pp.input_voltage_range is None
 

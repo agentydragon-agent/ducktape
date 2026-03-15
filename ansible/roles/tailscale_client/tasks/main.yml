@@ -2,22 +2,52 @@
 # Install and configure tailscale client
 
 # Debian/Ubuntu installation tasks - skipped on NixOS (uses services.tailscale.enable)
-- name: Add tailscale apt key
-  ansible.builtin.apt_key:
-    url: https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg
-    keyring: /usr/share/keyrings/tailscale-archive-keyring.gpg
-    state: present
+
+# Determine distro-specific Tailscale repo details.
+# Proxmox runs Debian (not Ubuntu), so we must use the correct repo.
+- name: Set tailscale repo facts for Ubuntu
+  ansible.builtin.set_fact:
+    tailscale_gpg_url: "https://pkgs.tailscale.com/stable/ubuntu/{{ ansible_distribution_release }}.noarmor.gpg"
+    tailscale_repo_url: "https://pkgs.tailscale.com/stable/ubuntu"
+    tailscale_repo_suite: "{{ ansible_distribution_release }}"
+  when: ansible_os_family == "Debian" and ansible_distribution == "Ubuntu"
+  tags: [tailscale, install]
+
+- name: Set tailscale repo facts for Debian
+  ansible.builtin.set_fact:
+    tailscale_gpg_url: "https://pkgs.tailscale.com/stable/debian/{{ ansible_distribution_release }}.noarmor.gpg"
+    tailscale_repo_url: "https://pkgs.tailscale.com/stable/debian"
+    tailscale_repo_suite: "{{ ansible_distribution_release }}"
+  when: ansible_os_family == "Debian" and ansible_distribution == "Debian"
+  tags: [tailscale, install]
+
+- name: Download tailscale GPG key
+  ansible.builtin.get_url:
+    url: "{{ tailscale_gpg_url }}"
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
   become: true
   when: ansible_os_family == "Debian"
   tags: [tailscale, install]
 
-- name: Add tailscale repository
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg]
-      https://pkgs.tailscale.com/stable/ubuntu jammy main
-    state: present
-    filename: tailscale
+- name: Add tailscale repository (DEB822 format)
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/tailscale.sources
+    content: |
+      Types: deb
+      URIs: {{ tailscale_repo_url }}
+      Suites: {{ tailscale_repo_suite }}
+      Components: main
+      Signed-By: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+  become: true
+  when: ansible_os_family == "Debian"
+  tags: [tailscale, install]
+
+- name: Remove old tailscale.list repo file
+  ansible.builtin.file:
+    path: /etc/apt/sources.list.d/tailscale.list
+    state: absent
   become: true
   when: ansible_os_family == "Debian"
   tags: [tailscale, install]
@@ -133,10 +163,10 @@
       Machine key: {{ tailscale_client_machine_key | default('Not found') }}
 
       If registration is needed, run on headscale server:
-      ssh root@{{ headscale_server_host | default('agentydragon.com') }} \
+      ssh root@{{ headscale_server_host | default('headscale.allegedly.works') }} \
         "headscale nodes register --user agentydragon --key {{ tailscale_client_machine_key | default('MACHINE_KEY') }}"
 
-      Registration URL (if shown): Look for https://agentydragon.com:8080/register/mkey:...
+      Registration URL (if shown): Look for https://headscale.allegedly.works/register/mkey:...
       ====================================================================
   when: tailscale_client_machine_key is defined
   tags: [tailscale, info]
@@ -278,7 +308,7 @@
 
       To register this machine, run on the headscale server:
 
-      ssh root@{{ headscale_server_host | default('agentydragon.com') }} \
+      ssh root@{{ headscale_server_host | default('headscale.allegedly.works') }} \
         "headscale nodes register --user agentydragon --key {{ tailscale_client_machine_key | default('MACHINE_KEY') }}"
 
       Full registration output:

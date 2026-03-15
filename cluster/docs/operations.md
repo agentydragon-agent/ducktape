@@ -24,7 +24,7 @@ cd /home/agentydragon/code/ducktape/cluster/terraform/bootstrap/infrastructure
 
 # Add new node to the `proxmox_nodes` or `hetzner_nodes` locals map
 # Apply changes
-terraform apply
+tofu apply
 
 # New nodes will automatically join the cluster
 # Verify with talosctl get members
@@ -47,7 +47,7 @@ ssh root@atlas 'qm reboot 10000'
 
 ### Remove Node
 
-Remove the node from `proxmox_nodes` or `hetzner_nodes` locals in terraform, then `terraform apply`.
+Remove the node from `proxmox_nodes` or `hetzner_nodes` locals in OpenTofu, then `tofu apply`.
 Kubernetes node object will be cleaned up automatically.
 
 ## System Diagnostics
@@ -68,50 +68,14 @@ qm terminal 10000  # talos-pve-cp-0
 
 ## Switching Let's Encrypt Environment (Staging ↔ Production)
 
-A single ConfigMap controls which Let's Encrypt issuer is active cluster-wide:
-
-```yaml
-# k8s/cert-manager-issuer-config/configmap.yaml
-data:
-  LETSENCRYPT_ISSUER: letsencrypt-prod # or letsencrypt-staging
-```
-
-Both ClusterIssuers (`letsencrypt-prod`, `letsencrypt-staging`) are always deployed.
-The ConfigMap selects which one is used via Flux `postBuild.substituteFrom`.
-
-**How switching works:**
-
-Every Ingress has `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation,
-substituted by Flux from the ConfigMap. When the toggle flips:
-
-1. Flux re-renders all Ingresses with the new annotation value
-2. cert-manager detects annotation change, updates each Certificate's `issuerRef`
-3. cert-manager re-issues all certificates from the new issuer
-4. Trust bundle switches automatically (`${LETSENCRYPT_ISSUER}-root-ca`)
-
-**To switch:**
+See <bootstrap.md> for the issuer toggle mechanism. To switch:
 
 1. Edit `LETSENCRYPT_ISSUER` in `k8s/cert-manager-issuer-config/configmap.yaml`
 2. Commit and push
-3. Wait for Flux to reconcile (or force: `flux reconcile source git flux-system`)
+3. Flux re-renders all Ingresses and cert-manager re-issues certificates automatically
 
-No manual certificate deletion needed — cert-manager handles re-issuance automatically.
-
-**Rate limit warning:** Each switch re-issues all certificates — cert-manager does not cache
-previous certs. A prod→staging→prod round-trip costs 2 production certificate requests per
-domain. Let's Encrypt allows 5 duplicate certs per domain per week, so avoid rapid toggling.
-
-**Environment differences**:
-
-| Environment    | ACME Server                          | Rate Limits       | Certificate Trust     |
-| -------------- | ------------------------------------ | ----------------- | --------------------- |
-| **Staging**    | acme-staging-v02.api.letsencrypt.org | 30,000 certs/week | Untrusted (test only) |
-| **Production** | acme-v02.api.letsencrypt.org         | 50 certs/week     | Browser-trusted       |
-
-**When to use each**:
-
-- **Staging**: Development, testing certificate issuance, debugging DNS-01 challenges
-- **Production**: When ready for real browser-trusted certificates
+**Rate limit warning:** Each switch re-issues all certificates. Avoid rapid toggling
+(5 duplicate certs/domain/week on production LE).
 
 ## Troubleshooting
 

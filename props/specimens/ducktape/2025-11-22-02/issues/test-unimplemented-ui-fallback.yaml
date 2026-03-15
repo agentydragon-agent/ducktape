@@ -24,3 +24,5 @@ occurrences:
     note: Two instances with unimplemented UI element checks and contradictory fallback logic
     critic_scopes_expected_to_recall:
       - - adgn/tests/agent/e2e/test_mcp_errors.py
+    match_file_restriction:
+      - adgn/tests/agent/e2e/test_mcp_errors.py

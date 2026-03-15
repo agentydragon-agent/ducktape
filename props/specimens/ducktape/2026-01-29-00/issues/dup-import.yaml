@@ -14,3 +14,5 @@ occurrences:
         - [17, 18]
     critic_scopes_expected_to_recall:
       - [gmail_archiver/gmail_client.py]
+    match_file_restriction:
+      - gmail_archiver/gmail_client.py

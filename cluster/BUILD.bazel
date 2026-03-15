@@ -1,17 +1,39 @@
 # gazelle:ignore
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "flux_convergence",
+    srcs = ["flux_convergence.py"],
+    imports = [".."],
+    deps = [
+        "@pypi//kubernetes",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "network_readiness",
+    srcs = ["network_readiness.py"],
+    imports = [".."],
+    deps = [
+        "@pypi//kubernetes",
+        "@pypi//tenacity",
+    ],
+)
 
 py_library(
     name = "bootstrap_lib",
     srcs = ["bootstrap.py"],
     deps = [
-        "//bazel_util:runfiles",
-        "//bazel_util:workspace",
+        ":flux_convergence",
+        ":network_readiness",
+        "//cluster/scripts:generate_claude_kubeconfig_lib",
+        "//util/bazel:runfiles",
+        "//util/bazel:workspace",
         "@pypi//kubernetes",
-        "@pypi//pydantic",
         "@pypi//pygit2",
-        "@pypi//tenacity",
     ],
 )
 
@@ -23,12 +45,11 @@ py_binary(
 )
 
 py_test(
-    name = "test_bootstrap",
-    srcs = ["test_bootstrap.py"],
-    data = ["@multitool//tools/tofu"],
+    name = "test_flux_convergence",
+    srcs = ["test_flux_convergence.py"],
     imports = [".."],
     deps = [
-        ":bootstrap_lib",
+        ":flux_convergence",
         "@pypi//pytest_bazel",
     ],
 )

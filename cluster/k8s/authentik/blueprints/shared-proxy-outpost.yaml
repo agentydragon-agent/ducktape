@@ -1,0 +1,75 @@
+version: 1
+metadata:
+  name: SSO - Shared Proxy Outpost
+  labels:
+    blueprints.goauthentik.io/description: "Embedded proxy outpost for all proxy-mode SSO providers"
+
+entries:
+  # Assign all proxy providers to the embedded outpost.
+  # The embedded outpost runs inside authentik-server pods and stores sessions
+  # in PostgreSQL, enabling HA across the 2-replica authentik-server deployment.
+  #
+  # The embedded outpost does NOT support authentik_host_browser (only standalone
+  # proxy outposts do). It uses authentik_host for both internal communication
+  # and browser-facing redirects. Internal connectivity uses localhost implicitly
+  # since the outpost runs in the server process.
+  - model: authentik_outposts.outpost
+    state: present
+    identifiers:
+      managed: goauthentik.io/outposts/embedded
+    attrs:
+      config:
+        authentik_host: "https://auth.allegedly.works"
+      providers:
+        - !Find [authentik_providers_proxy.proxyprovider, [name, alloy-otlp]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, longhorn]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, grocy]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, loki]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, oauth-broker]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, openclaw]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, openclaw-mitmproxy]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, scanner-filebrowser]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, goldilocks]]
+        - !Find [authentik_providers_proxy.proxyprovider, [name, google-workspace-mcp]]
+
+  # Remove the standalone k8s outpost deployment (superseded by embedded outpost).
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: shared-proxy-outpost
+
+  # Clean up old per-service outposts (replaced by shared-proxy-outpost)
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: gatus-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: grocy-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: headlamp-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: hubble-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: loki-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: openclaw-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: scanner-filebrowser-outpost
+  - model: authentik_outposts.outpost
+    state: absent
+    identifiers:
+      name: alloy-otlp-outpost

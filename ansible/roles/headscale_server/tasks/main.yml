@@ -85,6 +85,20 @@
     - Restart Headscale
   tags: [headscale, service]
 
+- name: Deploy certbot post-renewal hook for headscale
+  ansible.builtin.copy:
+    dest: /etc/letsencrypt/renewal-hooks/post/restart-headscale.sh
+    content: |
+      #!/bin/sh
+      # Restart headscale after certbot renews TLS certificates.
+      # Headscale reads certs from /etc/letsencrypt/live/ at startup and
+      # does not watch for filesystem changes.
+      systemctl restart headscale
+    owner: root
+    group: root
+    mode: "0755"
+  tags: [headscale, service]
+
 - name: Enable and start headscale service
   ansible.builtin.systemd:
     name: headscale

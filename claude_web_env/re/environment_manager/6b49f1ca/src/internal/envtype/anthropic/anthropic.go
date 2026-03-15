@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/auth"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/anthropic/install_scripts"
@@ -69,12 +70,13 @@ func init() {
 // Claude skills, dev server, and Baku project initialization.
 //
 // Struct layout (from field access patterns and SetSessionMode/GetCWD):
-//   offset 0x00: config *anthropicConfig        (decoded config)
-//   offset 0x08: logger *slog.Logger             (structured logger)
-//   offset 0x10: startupContext *config.StartupContext
-//   offset 0x18: authContext interface{}          (auth context, 16 bytes: itab + data)
-//   offset 0x28: sessionMode config.SessionMode  (string, 16 bytes: ptr + len)
-//   offset 0x38: cwd string                      (16 bytes: ptr + len)
+//
+//	offset 0x00: config *anthropicConfig        (decoded config)
+//	offset 0x08: logger *slog.Logger             (structured logger)
+//	offset 0x10: startupContext *config.StartupContext
+//	offset 0x18: authContext interface{}          (auth context, 16 bytes: itab + data)
+//	offset 0x28: sessionMode config.SessionMode  (string, 16 bytes: ptr + len)
+//	offset 0x38: cwd string                      (16 bytes: ptr + len)
 type anthropicEnvironmentType struct {
 	config         *anthropicConfig
 	logger         *slog.Logger
@@ -104,10 +106,10 @@ type anthropicConfig struct {
 	StopHookPath         string              `json:"stop_hook_path,omitempty"`
 	CWD                  string              `json:"cwd"`
 	SkillsDirectory      string              `json:"skills_directory,omitempty"`
-	EnvironmentVariables map[string]string    `json:"environment_variables,omitempty"`
-	Languages            []anthropicLanguage  `json:"languages,omitempty"`
-	BakuProjectConfig    *bakuProjectConfig   `json:"baku_project,omitempty"`
-	DevServerConfig      *devServerConfig     `json:"dev_server,omitempty"`
+	EnvironmentVariables map[string]string   `json:"environment_variables,omitempty"`
+	Languages            []anthropicLanguage `json:"languages,omitempty"`
+	BakuProjectConfig    *bakuProjectConfig  `json:"baku_project,omitempty"`
+	DevServerConfig      *devServerConfig    `json:"dev_server,omitempty"`
 }
 
 // anthropicLanguage represents a language runtime to install.
@@ -173,11 +175,11 @@ func DecodeConfig(rawConfig interface{}) (*anthropicConfig, error) {
 // Source file: anthropic.go
 //
 // Assembly flow:
-//   1. Calls DecodeConfig(rawConfig) at 0xaf8560
-//   2. If error, returns (nil, error) at 0xaf85c9
-//   3. Allocates anthropicEnvironmentType via runtime.newobject at 0xaf8576
-//   4. Sets config and logger fields, zeroes startupContext
-//   5. Returns interface via itab at 0xaf85bc
+//  1. Calls DecodeConfig(rawConfig) at 0xaf8560
+//  2. If error, returns (nil, error) at 0xaf85c9
+//  3. Allocates anthropicEnvironmentType via runtime.newobject at 0xaf8576
+//  4. Sets config and logger fields, zeroes startupContext
+//  5. Returns interface via itab at 0xaf85bc
 func New(logger *slog.Logger, rawConfig interface{}) (envtype.EnvironmentType, error) {
 	cfg, err := DecodeConfig(rawConfig)
 	if err != nil {
@@ -262,13 +264,13 @@ func (e *anthropicEnvironmentType) CreateLeaseManager(ctx context.Context, sessi
 
 // Initialize performs the full initialization sequence for the Anthropic environment.
 // This is a complex multi-step process that includes:
-//   1. Installing languages (Go, Node, Python, etc.)
-//   2. Cloning git repositories from sources
-//   3. Running init scripts
-//   4. Bootstrapping Claude skills and hooks
-//   5. Setting up Baku projects
-//   6. Starting dev servers
-//   7. Checking if supervisord is running
+//  1. Installing languages (Go, Node, Python, etc.)
+//  2. Cloning git repositories from sources
+//  3. Running init scripts
+//  4. Bootstrapping Claude skills and hooks
+//  5. Setting up Baku projects
+//  6. Starting dev servers
+//  7. Checking if supervisord is running
 //
 // Binary address: 0xaf8740
 // Source file: anthropic.go
@@ -430,6 +432,7 @@ func (e *anthropicEnvironmentType) installLanguages(ctx context.Context) error {
 //  7. On result.Error != nil: returns fmt.Errorf("init script failed: %w", result.Error)
 //  8. On success: logs "Installation script completed" and checks version output
 //  9. Iterates over stdout lines, checks if installed version matches expected
+//
 // 10. If no version match found: logs error "failed to install %s %s: %s (exit code: %d)"
 func (e *anthropicEnvironmentType) installLanguage(ctx context.Context, name, version string) error {
 	// 0xafffcd: slog.Info "Installing language"
@@ -656,13 +659,13 @@ func (e *anthropicEnvironmentType) bootstrapClaudeSkillsUnderDir(ctx context.Con
 	}
 
 	// 0xb01fc0: os.MkdirAll(skillDir, 0755)
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		// 0xb02056: fmt.Errorf("failed to create skills directory: %w", err)
 		return fmt.Errorf("failed to create skills directory: %w", err)
 	}
 
 	// 0xb02078: os.WriteFile(skillPath, sessionStartHookSkill, 0600)
-	if err := os.WriteFile(skillPath, []byte(sessionStartHookSkill), 0600); err != nil {
+	if err := os.WriteFile(skillPath, []byte(sessionStartHookSkill), 0o600); err != nil {
 		// 0xb020e9: fmt.Errorf("failed to write skill file: %w", err)
 		return fmt.Errorf("failed to write skill file: %w", err)
 	}
@@ -735,12 +738,14 @@ func (e *anthropicEnvironmentType) bootstrapHooksInAllDirs(ctx context.Context) 
 //  8. If stat success (exists):
 //     - slog.Info "Claude settings already exist, skipping" at 0xb01ab0
 //  9. os.Stat(stopHookPath) at 0xb01ad6
+//
 // 10. If stat error (doesn't exist):
-//     - os.WriteFile(stopHookPath, stopHookScript, 0755) at 0xb01b11 (perm 0x1ed)
-//     - If error: fmt.Errorf("failed to write stop hook script: %w", err) at 0xb01b41
-//     - slog.Info "Wrote stop hook script" at 0xb01be9
+//   - os.WriteFile(stopHookPath, stopHookScript, 0755) at 0xb01b11 (perm 0x1ed)
+//   - If error: fmt.Errorf("failed to write stop hook script: %w", err) at 0xb01b41
+//   - slog.Info "Wrote stop hook script" at 0xb01be9
+//
 // 11. If stat success (exists):
-//     - slog.Info "Stop hook script already exists, skipping" at 0xb01c95
+//   - slog.Info "Stop hook script already exists, skipping" at 0xb01c95
 func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, dir string) error {
 	// 0xb01770: claudeDir = filepath.Join(dir, ".claude")
 	claudeDir := filepath.Join(dir, ".claude")
@@ -752,7 +757,7 @@ func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, d
 	stopHookPath := filepath.Join(claudeDir, e.config.StopHookPath)
 
 	// 0xb0188f: os.MkdirAll(claudeDir, 0755)
-	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
 		// 0xb018bf: fmt.Errorf("failed to create .claude directory: %w", err)
 		return fmt.Errorf("failed to create .claude directory: %w", err)
 	}
@@ -761,7 +766,7 @@ func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, d
 	if _, err := os.Stat(settingsPath); err != nil {
 		// File doesn't exist, write it
 		// 0xb01922: os.WriteFile(settingsPath, defaultSettingsJSON, 0600)
-		if err := os.WriteFile(settingsPath, defaultSettingsJSON, 0600); err != nil {
+		if err := os.WriteFile(settingsPath, defaultSettingsJSON, 0o600); err != nil {
 			// 0xb01952: fmt.Errorf("failed to write settings.json: %w", err)
 			return fmt.Errorf("failed to write settings.json: %w", err)
 		}
@@ -780,7 +785,7 @@ func (e *anthropicEnvironmentType) bootstrapHooksUnderDir(ctx context.Context, d
 	if _, err := os.Stat(stopHookPath); err != nil {
 		// File doesn't exist, write it
 		// 0xb01b11: os.WriteFile(stopHookPath, stopHookScript, 0755)
-		if err := os.WriteFile(stopHookPath, stopHookScript, 0755); err != nil {
+		if err := os.WriteFile(stopHookPath, stopHookScript, 0o755); err != nil {
 			// 0xb01b41: fmt.Errorf("failed to write stop hook script: %w", err)
 			return fmt.Errorf("failed to write stop hook script: %w", err)
 		}
@@ -969,7 +974,7 @@ func copyDir(src, dst string) error {
 		targetPath := filepath.Join(dst, relPath)
 
 		if d.IsDir() {
-			return os.MkdirAll(targetPath, 0755)
+			return os.MkdirAll(targetPath, 0o755)
 		}
 
 		// Copy file contents.
@@ -985,11 +990,61 @@ func copyDir(src, dst string) error {
 
 		return os.WriteFile(targetPath, data, info.Mode())
 	})
-
 	if err != nil {
 		return fmt.Errorf("failed to copy directory %s to %s: %w", src, dst, err)
 	}
 
+	return nil
+}
+
+// writeSupabaseEnvFiles writes Supabase credentials as environment variable
+// files into the project work directory.
+//
+// Binary: new method in b71486df, anthropicEnvironmentType.
+// Writes two files in workDir:
+//   - .env:       VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+//   - .env.local: DATABASE_URL (postgresql connection string)
+//
+// Logs "supabase_env_files_written" with project_ref on success.
+func (e *anthropicEnvironmentType) writeSupabaseEnvFiles(
+	ctx context.Context,
+	logger *slog.Logger,
+	workDir string,
+) error {
+	authCtx, ok := e.authContext.(*auth.AuthContext)
+	if !ok || authCtx == nil {
+		return fmt.Errorf("auth context is not an *auth.AuthContext")
+	}
+
+	projectRef := authCtx.GetSupabaseProjectRef()
+	anonKey := authCtx.GetSupabaseAnonKey()
+
+	// Write .env with Vite/frontend Supabase variables.
+	// Format string: "VITE_SUPABASE_URL=https://%s.supabase.co\nVITE_SUPABASE_ANON_KEY=%s\n" (67 chars)
+	envContent := fmt.Sprintf(
+		"VITE_SUPABASE_URL=https://%s.supabase.co\nVITE_SUPABASE_ANON_KEY=%s\n",
+		projectRef, anonKey,
+	)
+	envPath := filepath.Join(workDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o600); err != nil {
+		return fmt.Errorf("write .env: %w", err)
+	}
+
+	dbPass := authCtx.GetSupabaseDBPass()
+
+	// Write .env.local with DATABASE_URL for server-side / migration use.
+	// Format: "DATABASE_URL=postgresql://postgres:%s@db.%s.supabase.co:5432/postgres\n" (70 chars)
+	dbContent := fmt.Sprintf(
+		"DATABASE_URL=postgresql://postgres:%s@db.%s.supabase.co:5432/postgres\n",
+		dbPass, projectRef,
+	)
+	envLocalPath := filepath.Join(workDir, ".env.local")
+	if err := os.WriteFile(envLocalPath, []byte(dbContent), 0o600); err != nil {
+		return fmt.Errorf("write .env.local: %w", err)
+	}
+
+	logger.Info("supabase_env_files_written", "project_ref", projectRef)
+	_ = ctx
 	return nil
 }
 

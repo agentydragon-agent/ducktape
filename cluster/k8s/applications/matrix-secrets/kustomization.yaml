@@ -3,3 +3,9 @@ kind: Kustomization
 resources:
   - matrix-secrets-tf.yaml
   - secrets.yaml
+  - provision-matrix-users-job.yaml
+configMapGenerator:
+  - name: provision-matrix-users-script
+    namespace: matrix
+    files:
+      - provision_matrix_users.py

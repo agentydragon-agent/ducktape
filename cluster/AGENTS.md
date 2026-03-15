@@ -1,759 +1,225 @@
 @README.md
 
+## Talos Linux Documentation
+
+Use `https://docs.siderolabs.com/llms.txt` as the entrypoint for Talos Linux
+documentation. Fetch it with WebFetch to discover available doc pages before
+answering Talos-related questions. This structured index covers Talos configuration,
+`talosctl` usage, machine config, networking, extensions, upgrades, and troubleshooting.
+
 # Agent Instructions
-
-## ⚠️ CRITICAL: REPOSITORY SCOPE
-
-**Your work is confined to this cluster repository (`/home/agentydragon/code/cluster`) ONLY.**
-
-**FORBIDDEN OPERATIONS:**
-
-- Editing or pushing files outside this repository (e.g., ~/code/ducktape, other repos)
-- Making commits in other repositories without explicit instruction
-- Pushing changes to other git repositories (user controls those separately)
-
-**PERMITTED OPERATIONS:**
-
-- Reading reference code from `/code/*` for documentation and implementation patterns
-- Suggesting changes for other repositories (user will implement them)
-- Working with files exclusively in `/home/agentydragon/code/cluster`
-
-**EXCEPTION:** Only edit/commit/push to other repositories when user explicitly instructs you to do so.
 
 ## ⚠️ CRITICAL: BOOTSTRAP TERMINOLOGY
 
-**When the user says "bootstrap the cluster", "tear down the cluster", "recreate the cluster", or similar phrases:**
+"Bootstrap/tear down/recreate the cluster" means:
 
-### DEFAULT SCOPE: Infrastructure and above
-
-- `terraform destroy` in `terraform/bootstrap/infrastructure/` (VMs)
-- `bazel run //cluster:bootstrap` (recreates VMs, installs Talos, deploys services)
-- Layers affected: `bootstrap/infrastructure`, `bootstrap/flux`, `gitops/`
-
-### EXCLUDED BY DEFAULT: Persistent Auth
-
-- `terraform/bootstrap/persistent-auth/` is NOT destroyed unless explicitly stated
-- Includes: Sealed secrets keypair, CSI tokens, Nix signing keys, JWT tokens, Flux deploy key
-- NOTE: Talos machine secrets are NOT in persistent-auth — they live in `bootstrap/infrastructure` (fresh per lifecycle)
-- These persist in terraform state across cluster lifecycles
-- Only destroy when user explicitly says "including persistent auth" or "from scratch"
-
-### WHY: The persistent auth layer is designed to survive VM destroy/recreate cycles to avoid
-
-- Sealed secrets re-encryption (entire repo would need commits)
-- Proxmox token regeneration causing desynchronization
-- Nix cache signing key regeneration breaking cache trust
-- (Machine secrets are intentionally ephemeral to get fresh KubeSpan discovery namespace)
-
-**EXAMPLES:**
-
-- "bootstrap the cluster" → Start from infrastructure (VMs)
-- "tear down and recreate" → Destroy VMs, keep persistent-auth
-- "full teardown including persistent auth" → Destroy everything including persistent-auth
-- "bootstrap from scratch" → Destroy everything, regenerate all secrets
-
-## TASK DELEGATION AND PARALLELIZATION
-
-**Use the Task tool proactively to delegate complex subtasks to specialized agents.**
-
-### When to Delegate to Agents
-
-**ALWAYS delegate these to agents:**
-
-- Complex diagnostics: "diagnose why X is broken"
-- Multi-step investigations: "check status of Y and diagnose if broken"
-- Research tasks: "find and analyze all occurrences of Z"
-- Independent workstreams that can run in parallel
-- Tasks requiring deep exploration of unfamiliar codebases
-
-**Examples:**
-
-- ❌ DON'T: Manually grep/search for nginx config issues
-- ✅ DO: `Task: "diagnose VPS nginx SNI routing - wildcard pattern not matching"`
-
-- ❌ DON'T: Manually check multiple Terraform resources sequentially
-- ✅ DO: `Task: "investigate why SSO Terraform resources stuck in reconciliation"`
-
-### Parallelization Strategy
-
-**When you have multiple independent workstreams, spawn agents in PARALLEL using a single message with multiple Task calls.**
-
-Example:
-
-```text
-User: "we have 3 issues: SNI routing broken, Terraform stuck, and need Matrix SSO"
-Assistant: *spawns 3 Task agents in parallel in ONE message*
-```
-
-**Benefits:**
-
-- Maximize throughput and efficiency
-- Work on multiple problems simultaneously
-- Reduce context window usage by offloading to specialized agents
-- Each agent has full context and autonomy for its specific task
-
-### Agent Task Specifications
-
-When spawning agents, provide:
-
-1. **Clear objective**: What needs to be accomplished
-2. **Current state**: What we know so far
-3. **Expected deliverable**: What information to report back
-4. **Constraints**: Any restrictions or requirements
-5. **Reference code location**: Inform agents about `/code`
-6. **CLAUDE.md compliance**: Instruct agents to read and follow CLAUDE.md, especially PRIMARY DIRECTIVE
-
-**IMPORTANT**: Always inform subagents about the reference code convention (see "Reference Code Location"
-section below for details).
-
-**Agent Context Template:**
-
-When spawning agents, include this context in your prompt:
-
-```text
-IMPORTANT CONTEXT:
-- Reference code available at /code using domain.tld/org/repo structure
-- Read and follow /home/agentydragon/code/cluster/CLAUDE.md
-- PRIMARY DIRECTIVE: All fixes must be declarative, committed configuration changes
-- No manual kubectl patches as solutions - only for debugging to understand issues
-- All work confined to /home/agentydragon/code/cluster repository only
-```
-
-## PRIMARY DIRECTIVE: DECLARATIVE TURNKEY BOOTSTRAP
-
-**The primary goal is to achieve a committed repo state where the bootstrap script → everything works.**
-
-## ⚠️ CRITICAL: DEBUGGING BROKEN BOOTSTRAP STATE
-
-**When bootstrap results in broken state, DO NOT restart pods or apply manual patches.**
-
-### Mandatory Investigation Process
-
-When a component fails after bootstrap:
-
-1. **Examine the failure** - What exactly failed? What error message?
-2. **Determine the timeline** - When did it fail? What was supposed to happen before it?
-3. **Identify the missing dependency** - Why did this component try to start before its prerequisites were ready?
-4. **Find the declarative fix** - What dependency declaration, kustomization order, or configuration change prevents this?
-5. **Update the configuration** - Commit the fix so future bootstraps don't have this problem
-6. **Test via full destroy→bootstrap cycle** - Verify the fix works
-
-### NEVER DO THIS
-
-```bash
-# ❌ WRONG: Blindly restart failing pods
-kubectl delete pod failing-pod -n some-namespace
-kubectl rollout restart deployment/broken-thing
-
-# ❌ WRONG: Manual patches to "fix" state
-kubectl patch configmap foo --patch '...'
-kubectl edit deployment bar
-```
-
-### DO THIS INSTEAD
-
-```bash
-# ✓ Check pod events to understand failure timeline
-kubectl get events -n namespace --field-selector involvedObject.name=pod-name --sort-by='.lastTimestamp'
-
-# ✓ Check what the pod was waiting for
-kubectl describe pod failing-pod -n namespace
-
-# ✓ Check dependency chain in Flux
-flux get kustomizations | grep -E "failed|not ready"
-
-# ✓ Check if there's a missing dependsOn
-cat k8s/component/flux-kustomization.yaml | grep -A5 dependsOn
-```
-
-### Root Cause Categories
-
-| Symptom                     | Likely Cause                            | Fix Location                          |
-| --------------------------- | --------------------------------------- | ------------------------------------- |
-| Pod fails before CRD exists | Missing kustomization dependency        | `flux-kustomization.yaml` `dependsOn` |
-| Image pull fails (DNS)      | Node-level DNS not ready                | Infrastructure timing/config          |
-| Secret not found            | Secret kustomization not deployed first | `flux-kustomization.yaml` `dependsOn` |
-| Connection refused          | Target service not ready                | `flux-kustomization.yaml` `dependsOn` |
-
-### The Goal
-
-After investigating and fixing:
-
-- `terraform destroy && bazel run //cluster:bootstrap` should succeed without intervention
-- The same failure should never happen again on fresh bootstrap
-- All fixes are committed configuration changes, not manual patches
+- **Default scope**: `tofu destroy` in `terraform/bootstrap/infrastructure/` → `bazel run //cluster:bootstrap`
+- **Excluded by default**: `terraform/bootstrap/persistent-auth/` (keypairs, CSI tokens, signing keys)
+- Only destroy persistent-auth when user explicitly says "including persistent auth" or "from scratch"
 
 ## ⚠️ CRITICAL: PERSISTENT AUTH PROTECTION
 
-**AI agents and automated processes MUST NEVER destroy the persistent auth layer (`bootstrap/persistent-auth`) without
-explicit user authorization.**
-
-**FORBIDDEN OPERATIONS:**
-
-- `cd terraform/bootstrap/persistent-auth && terraform destroy`
-- Any command that would destroy CSI tokens or sealed secrets keypair
-- "Clean slate" operations that include persistent auth
-
-**PERMITTED OPERATIONS:**
-
-- VM lifecycle: `cd terraform/bootstrap/infrastructure && terraform destroy && terraform apply`
-- Services reset: `bootstrap/flux`, `gitops/`
-- Selective bootstrap: `bazel run //cluster:bootstrap -- --start-from=infrastructure`
-
-**RATIONALE:** The persistent auth layer contains:
-
-- Proxmox CSI tokens (required for storage)
-- Sealed secrets keypair (required for secret decryption)
-- These survive VM teardown by design to prevent git commit churn and maintain storage continuity
+**NEVER destroy `bootstrap/persistent-auth` without explicit user authorization.**
+Contains sealed secrets keypair and CSI tokens that survive VM teardown by design.
 
 ## ⚠️ CRITICAL: COMMIT BEFORE RECONCILE
 
-**NEVER attempt to reconcile Flux resources (HelmRelease, Kustomization, etc.) until changes are committed AND
-pushed to origin.**
+**NEVER reconcile Flux resources until changes are committed AND pushed.** Flux reads from
+the git remote, not your local filesystem.
 
-**MANDATORY WORKFLOW:**
+## ⚠️ CRITICAL: AUTHENTIK TEARDOWN — REMAINING TF STATE
 
-1. Make changes to chart/manifest files
-2. `git add -A && git commit -m "..." && git push`
-3. ONLY THEN: `flux reconcile source git ...` followed by `flux reconcile helmrelease ...`
+Most Authentik SSO config uses native blueprints (no TF state). Two Terraform modules
+still target Authentik-adjacent systems:
 
-**WHY THIS MATTERS:**
+- `tfstate-default-sso-secrets` — generates OAuth2 client secrets in Vault
+- `tfstate-default-vault-oidc-auth` — configures Vault OIDC auth backend
 
-- Flux fetches configuration from the git repository, not your local filesystem
-- Reconciling before push = Flux uses OLD configuration = changes don't apply
-- This wastes time trying to debug "why isn't my change working" when it simply hasn't been pushed yet
+After an Authentik DB wipe, these may need state cleanup:
+`vault-oidc-auth` requires `vault auth disable oidc/` in Vault before re-apply.
 
-**SYMPTOMS OF FORGETTING TO PUSH:**
+See <docs/lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> for history.
 
-- Pods still show old errors after "fixing" them
-- Environment variables not updated in deployment
-- Template changes not reflected in rendered manifests
-- Repeated reconciliation attempts with no effect
+## ⚠️ CRITICAL: VPS-ONLY RESILIENCE
 
-**CORRECT SEQUENCE:**
+**DNS and website MUST work/recover with VPS only (without Proxmox).** These services must
+NOT depend on `proxmox-csi-retain` storage or Proxmox-pinned nodes. When adding or modifying
+critical-path services (DNS, ingress, website, SSO), verify they use `hcloud-volumes` or
+`local-path` storage and can schedule on VPS nodes. See <docs/plan.md> "VPS-Only Resilience
+Invariants" for the full list and compliance tracking.
 
-```bash
-# 1. Edit files
-vim charts/powerdns/templates/deployment.yaml
+## PRIMARY DIRECTIVE: DECLARATIVE TURNKEY BOOTSTRAP
 
-# 2. Commit and push FIRST
-git add -A
-git commit -m "fix: add missing environment variable"
-git push
+**Goal**: Committed repo state where `bazel run //cluster:bootstrap` → everything works.
 
-# 3. ONLY NOW reconcile Flux
-flux reconcile source git powerdns-chart -n dns-system
-flux reconcile helmrelease powerdns -n dns-system
-```
-
-**NEVER DO THIS:**
-
-```bash
-# ❌ WRONG: Reconciling before push
-vim charts/powerdns/templates/deployment.yaml
-flux reconcile helmrelease powerdns -n dns-system  # This uses OLD code!
-git add -A && git commit && git push  # Too late, already tried to deploy
-```
-
-### Objective
-
-Achieve a committed repository state such that:
-
-1. `bazel run //cluster:bootstrap` (the ONLY supported bootstrap method)
-2. **Everything works**
-
-Where "everything" means everything currently in plan.md scope as specified by user.
-
-### Scope Evolution Strategy
-
-**Spiral development approach:**
-
-- **v0**: Turnkey basic cluster
-- **v1**: Add service X, iterate until reliable and turnkey, commit when working
-- **v2**: Add service Y, iterate until reliable and turnkey, commit when working
-- **v∞**: Eventually migrate services from other infrastructure
+1. **NO imperative patches** — all fixes must be committed configuration changes
+2. **Development loop**: `tofu destroy` → `bazel run //cluster:bootstrap` → verify
+3. **Debugging**: You CAN tinker with broken state to understand failures, but solutions MUST be declarative
+4. **Done = destroy→bootstrap→verify passes** — working via manual patches is NOT done
+5. **SSO required** for all in-scope applications (Authentik OIDC)
 
 @docs/plan.md
 
-**Principle**: Whatever subset of plan.md is "currently in scope" must be turnkey deployable before expanding scope.
+### Debugging Broken Bootstrap
 
-### Definition of "Done"
+Investigate root cause (events, describe, flux kustomization status) and fix declarative config.
+Common patterns: missing `dependsOn`, CRD not installed before instance, secret not deployed
+before consumer.
 
-**You are NOT done unless:**
+## Bootstrap Script
 
-1. You have turnkey `bazel run //cluster:bootstrap` (the ONLY supported method)
-2. That **reliably** results in everything in-scope functioning
-3. **Without needing ANY further manual tweaks**
-4. **All in-scope applications have working SSO authentication**
+**Only supported method**: `bazel run //cluster:bootstrap` — never run `tofu apply` directly.
 
-**Completion criteria:**
+Handles preflight validation (git clean, pre-commit, `tofu validate`), layered deployment
+(Talos → Cilium → Flux), and sealed secrets across destroy/apply cycles.
 
-- `terraform destroy` → `bazel run //cluster:bootstrap` → run all health checks
-- **If ANY component is unhealthy, it does NOT work by definition**
-- **If ANY in-scope application lacks functional SSO login, it does NOT work**
-- No declaring "good enough" or aborting work on broken turnkey flow
+**Sandbox**: Requires `dangerouslyDisableSandbox: true` and `timeout: 600000` (10 min).
 
-**SSO Verification Requirements:**
+**Timing**: ~15-20 min. Slowest: Proxmox disk import (7-9 min), K8s API wait (5-10 min).
 
-Applications with SSO in scope must have:
+## Testing
 
-- OIDC provider application created in Authentik
-- Application-specific OIDC secrets synced to application namespace
-- SSO login flow working end-to-end (user can log in via Authentik)
-- Automated provisioning working (no manual user creation required)
-
-**Only hand over as "it works" after full destroy→bootstrap→verify cycle passes.**
-
-### Core Principles
-
-1. **NO imperative patches** - All fixes must be encoded in configuration and committed properly
-2. **Main development loop**: `destroy -> recreate -> check if valid`
-   - See `docs/bootstrap.md` for dependency chain and bootstrap order
-3. **Debugging vs. Implementation**:
-   - **Debugging**: You CAN tinker with invalid/failed state (kubectl patches, manual commands) to understand what
-     broke and learn how to fix declarative config
-   - **Implementation**: All solutions MUST be declarative configuration changes, never manual fixes
-   - **"The cluster works" ≠ DONE** - Getting broken state functioning via manual patches is NOT completion
-4. **End-to-end declarative working config** - The outer true goal is always complete declarative automation
-
-### Development Workflow
+Always run the full cluster test suite after changes:
 
 ```bash
-# Primary loop for all changes:
-terraform destroy --auto-approve
-bazel run //cluster:bootstrap
-# Verify: does it work end-to-end declaratively?
+bazel test //cluster/...
 ```
 
-### SSO Integration Architecture
+This includes cluster validation scripts, Helm lint tests, and Terraform format/lint/validate
+for all `tofu` modules under `cluster/`. When adding new Terraform modules, always create
+`BUILD.bazel` targets for format, lint, and validate checks.
 
-**Split Blueprint Pattern**: Authentik SSO integration uses a two-blueprint approach to handle namespace dependencies.
+## Task Delegation
 
-**Pattern Structure:**
+Delegate complex diagnostics, multi-step investigations, and independent workstreams to
+subagents via the Task tool. Spawn agents in parallel when possible.
 
-1. **Provider Blueprint** (`authentik-blueprint-{app}-provider`)
-   - Lives in `terraform/gitops/sso/`
-   - Creates OIDC application in Authentik (authentik namespace)
-   - Generates client ID and client secret
-   - No dependency on target application namespace existing
+## SSO Integration
 
-2. **Secret Blueprint** (`authentik-blueprint-{app}-secret`)
-   - Lives in `k8s/{app}/` with application manifests
-   - Creates ExternalSecret in application namespace
-   - Pulls OIDC credentials from Vault
-   - Depends on: provider blueprint → app namespace created → secret blueprint
+**Native Blueprint Pattern**: Authentik SSO providers, applications, outposts, and user config
+are defined as native Authentik blueprints in `k8s/authentik/sso-blueprints.yaml` (ConfigMap
+mounted into the worker). Blueprints re-apply every 60 min with `state: present` — idempotent,
+no external state.
 
-**Why This Pattern:**
+**Secret flow**: `terraform/gitops/sso-secrets/` generates all OAuth2 client secrets →
+stores in Vault → ESO creates `authentik-sso-client-secrets` K8s Secret in authentik namespace
+→ worker reads via `envFrom` → blueprints reference via `!Env` tags.
 
-- **Circular dependency prevention**: Application namespace doesn't exist until Flux creates it
-- **Provider-first creation**: OIDC application must exist before secrets can be generated
-- **Clean separation**: Infrastructure (Terraform) vs. Application (Flux GitOps)
+**App-side secrets**: Each app has an ESO in `k8s/authentik-blueprint/{app}-secret/` that
+reads from the same Vault path, providing credentials to the application.
 
-## Example: Gitea SSO Integration
+**Remaining Terraform**: `harbor-oidc-config/` (Harbor API), `vault-oidc-auth/` (Vault OIDC
+auth backend) — these configure non-Authentik systems and still use TF state.
 
-```text
-terraform/gitops/sso/gitea/
-  ↓ (creates OIDC app in Authentik, stores credentials in Vault)
-k8s/gitea/ namespace creation by Flux
-  ↓
-k8s/gitea/authentik-blueprint-gitea-secret.yaml
-  ↓ (ExternalSecret pulls from Vault)
-k8s/gitea/helmrelease.yaml
-  ↓ (consumes oidc-credentials secret for SSO config)
-Gitea pod with working SSO
+**Proxy-mode NetworkPolicy (required)**: When a service is behind the shared proxy outpost,
+it trusts `X-authentik-username` / `X-authentik-groups` headers injected by the outpost. Any
+pod that can reach the backend directly can forge those headers and impersonate any user. Add a
+`networkpolicy.yaml` next to the service's kustomization, restricting ingress to the outpost pod:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: <service>-ingress
+  namespace: <namespace>
+spec:
+  podSelector:
+    matchLabels:
+      <pod-label>: <value>
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              goauthentik.io/outpost-name: shared-proxy-outpost
+      ports:
+        - port: <backend-port>
+          protocol: TCP
 ```
 
-**Verification Commands:**
+`namespaceSelector` + `podSelector` in the same `from` item are ANDed: only the outpost pod
+in the `authentik` namespace passes, not the server/worker/db pods. Pod label verified against
+the running cluster. Add `- networkpolicy.yaml` to the service's `kustomization.yaml`.
+
+## Loki (Log Aggregation)
+
+Loki collects logs from all pods via Promtail. Use it for postmortems when pod logs have
+been lost (completed/deleted Jobs, crashed pods, evicted pods).
 
 ```bash
-# Check provider blueprint applied
-kubectl get terraform -n flux-system authentik-blueprint-gitea-provider
-
-# Check secret exists in app namespace
-kubectl get secret oidc-credentials -n gitea
-
-# Check ExternalSecret synced
-kubectl get externalsecret -n gitea
-
-# Test SSO login flow (requires browser/agent access)
-# Navigate to https://gitea.allegedly.works
-# Click "Sign in with OpenID Connect"
+# Query logs by namespace and container (URL-encode the LogQL query)
+START=$(date -d '1 hour ago' +%s)000000000
+END=$(date +%s)000000000
+kubectl exec -n loki loki-stack-0 -- wget -qO- \
+  "http://localhost:3100/loki/api/v1/query_range?query=%7Bnamespace%3D%22NAMESPACE%22%2Ccontainer%3D%22CONTAINER%22%7D&limit=50&direction=backward&start=$START&end=$END"
 ```
 
-## Bootstrap Script - ONLY Supported Method
+Loki runs as `loki-stack-0` StatefulSet in the `loki` namespace. Promtail DaemonSet ships
+logs from all nodes. Grafana has Loki as a datasource for interactive log exploration.
 
-**CRITICAL**: The cluster MUST only be bootstrapped using `bazel run //cluster:bootstrap`
+## Operational Context
 
-### Why Bootstrap Script (Not Direct Terraform)
-
-**Never run `terraform apply` directly.** The bootstrap script is required because:
-
-1. **Preflight Validation**: Comprehensive checks before any infrastructure changes
-   - Git working tree must be clean (Flux requirement)
-   - Pre-commit validation (security, linting, format)
-   - Terraform configuration validation
-2. **Proper Error Handling**: Clear error messages and early failure detection
-3. **Battle-tested Flow**: Proven sequence that prevents partial failure states
-4. **Documentation**: Self-documenting deployment process
-
-### Bootstrap Script Features
-
-- Preflight validation: Git clean + pre-commit + terraform validate
-- Native provider deployment: Talos → Cilium → Flux → Applications
-- Sealed secrets work across destroy/apply
-- Stops immediately on any validation failure
-
-### Usage
-
-```bash
-bazel run //cluster:bootstrap
-```
-
-**That's it.** The script handles everything from validation to complete cluster deployment.
-
-**IMPORTANT: Sandbox mode**: `bazel run //cluster:bootstrap` requires full network access (Bazel module
-resolution, terraform providers, Hetzner API, Proxmox API, etc.). When using the Bash tool, always run
-with `dangerouslyDisableSandbox: true`. Similarly, `terraform destroy` in infrastructure layers requires
-sandbox disabled.
-
-## Primary Development Loop
-
-Main cycle: **destroy → recreate → check if valid**
-
-If the result is broken/invalid, you may inspect and debug the live state to understand the failure. But the fix MUST be
-committed configuration changes that make the next destroy→recreate cycle work properly.
-
-### Cluster Disposability
-
-**The cluster is completely disposable.** If it gets corrupted/broken, just `terraform destroy` it. Don't bother repairing
-running state.
-
-### Debugging vs. Completion Distinction
-
-**Debugging a broken cluster:**
-
-- You CAN tinker, patch, run manual kubectl commands
-- Purpose: Learn WHY the declarative config failed
-- Goal: Understand what needs to be fixed in committed configuration
-
-**Completion criteria:**
-
-- **"The cluster works" ≠ DONE**
-- Getting current broken instance functioning via patches is NOT completion
-- **DONE = teardown & bootstrap results in working cluster**
-- Must pass: `terraform destroy && bazel run //cluster:bootstrap` → all components healthy
-
-## SSH Access
-
-**Proxmox Host:** `ssh root@atlas` - No password required (SSH keys configured)
-
-**Note:** The legacy VPS at `agentydragon.com` is separate infrastructure not involved in this cluster.
-It will eventually be replaced once this cluster handles all production services (see `docs/plan.md`).
-
-## Talos CLI Access
-
-- Run `talosctl` commands from cluster directory (direnv auto-loaded)
-- Use `direnv exec /home/agentydragon/code/cluster talosctl` if running from other directories
-- The direnv config automatically sets `TALOSCONFIG` path and provides talosctl via nix
-
-## Working Directory
-
-- Terraform bootstrap layers (manual, local state, sequential):
-  - `terraform/bootstrap/persistent-auth/` - Proxmox credentials, CSI tokens, sealed secrets keypair
-  - `terraform/bootstrap/infrastructure/` - VMs, Talos, Cilium CNI
-  - `terraform/bootstrap/flux/` - Flux, core services, applications
-- GitOps terraform (tofu-controller, k8s state):
-  - `terraform/gitops/` - DNS records, SSO, Vault OIDC, secrets, service configs
-- VM IDs: 10000 (talos-pve-cp-0), 10001 (talos-pve-gpu-worker-0)
-- Node IPs: 10.2.1.x (Proxmox controllers), 10.2.2.x (Proxmox workers)
-- **Proxmox API (10.2.0.2:8006) is only reachable from Proxmox VLAN nodes**, not from VPS.
-  Any workload needing Proxmox API access must use `nodeSelector: topology.kubernetes.io/region: proxmox`.
-
-## Reference Code Location
-
-**Base**: `/code` using `domain.tld/org/repo` pattern
-
-**Key references:**
-
-- `github.com/rgl/terraform-proxmox-talos` - Reference config, `./do init` builds custom images
-- `github.com/longhorn/longhorn-charts` - Longhorn schemas at `charts/longhorn/values.yaml`
-- `github.com/bank-vaults/bank-vaults` - Bank-Vaults operator source
-- `github.com/fluxcd/flux2` - Flux CD examples
-- `github.com/bpg/terraform-provider-proxmox` - Proxmox provider
-- `github.com/siderolabs/terraform-provider-talos` - Talos provider
-
-Use cloned repos as implementation ground truth.
+- **SSH**: `root@atlas` (Proxmox host, key auth)
+- **Talos CLI**: Run from cluster directory (direnv provides tools + config)
+- **Proxmox API**: Only reachable from VLAN. Use `nodeSelector: topology.kubernetes.io/region: proxmox`.
+- **Reference code**: `/code` using `domain.tld/org/repo` pattern
 
 ## Key Files
 
-- `hetzner-nodes.tf` - Hetzner VPS node definitions
-- `proxmox-nodes.tf` - Proxmox VM definitions
-- `talos-machine-secrets.tf` - Talos machine secrets (ephemeral per lifecycle)
-- `cilium.tf` - Cilium CNI configuration
-- `variables.tf` - Configuration variables
-- `main.tf` - Providers, firewall rules, Talos bootstrap
+| File                       | Purpose                              |
+| -------------------------- | ------------------------------------ |
+| `hetzner-nodes.tf`         | VPS definitions                      |
+| `proxmox-nodes.tf`         | Proxmox VM definitions               |
+| `talos-machine-secrets.tf` | Machine secrets (ephemeral)          |
+| `cilium.tf`                | CNI configuration                    |
+| `main.tf`                  | Providers, firewall, Talos bootstrap |
 
-## Project Documentation Strategy
+## Secrets
 
-### docs/bootstrap.md
+@docs/secrets.md
 
-**Purpose**: ONLY straight-line sequence to recreate a functioning cluster from unpopulated Proxmox.
-
-**Content**:
-
-- Step-by-step instructions for cold-starting the Talos cluster from nothing
-- Complete deployment procedures (terraform, CNI, applications, external connectivity)
-- Basic verification steps only (see docs/troubleshooting.md for health checks)
-- **NO troubleshooting** (would be too verbose - half a megabyte)
-
-**Maintenance**: Continuously update to reflect current state. Changes require bootstrap.md updates.
-
-### docs/operations.md
-
-**Purpose**: Day-to-day cluster management procedures including scaling, maintenance, and troubleshooting.
-
-**Content**:
-
-- Node operations (adding, removing, restarting)
-- System diagnostics and VM console management
-- Comprehensive troubleshooting guide with symptoms and solutions
-- Reference information (IP assignments, file locations)
-
-**Maintenance**: Updated when operational procedures change or new troubleshooting scenarios are discovered.
-
-### docs/troubleshooting.md
-
-**Purpose**: Fast-path diagnostic checklist for common cluster issues.
-
-**Content**:
-
-- Quick health checks for core components
-- **Storage troubleshooting** (Proxmox CSI is known tricky - SealedSecret decryption issues)
-- GitOps debugging commands
-- Stable SealedSecret keypair verification
-- Common recovery actions and known issues
-
-**Maintenance**: Updated as new issues are discovered and resolved.
-
-### docs/plan.md
-
-**Purpose**: Describes high-level goals we want to implement, lists what we finished, and what remains to be done as items.
-
-**Content**:
-
-- Project overview and architecture decisions
-- Completed features with status markers ([x])
-- Remaining tasks as checkbox items ([ ])
-- Partially complete tasks as ([ ] PARTIAL)
-- Design documents for planned features
-- Strategic technical decisions and rationale
-
-**Maintenance**: Tracks project roadmap. Move completed items to "Achieved" sections, add new goals.
-
-## Key Principles
-
-1. **DECLARATIVE FIRST** - All configuration must work via destroy->recreate cycle without manual intervention
-2. **docs/bootstrap.md is always actionable** - anyone should be able to follow it and get a working cluster
-3. **docs/plan.md is strategic** - focuses on what we're building and why
-4. **Keep both in sync** - when implementation is complete, move details from docs/plan.md to docs/bootstrap.md
-5. **Document current state accurately** - especially important for infrastructure that changes over time
-6. **Debug broken state to understand, but fix via committed config** - Never leave manual patches as the solution
-
-## Command Execution Context
-
-**All kubectl, talosctl, kubeseal, flux, and helm commands** assume cluster directory execution or `direnv exec .`.
-
-This provides consistent tool versions (nix-managed) and automatic KUBECONFIG/TALOSCONFIG environment variables.
-
-## Terraform Timeout Configuration
-
-**IMPORTANT**: When running `terraform apply`, `terraform destroy`, or `bazel run //cluster:bootstrap`, always:
-
-1. Set `dangerouslyDisableSandbox: true` (these commands require full network access)
-2. Set `timeout: 600000` (10 minutes) to prevent premature timeout during long provisioning operations
-
-Example:
-
-```json
-{
-  "command": "bazel run //cluster:bootstrap",
-  "timeout": 600000,
-  "dangerouslyDisableSandbox": true,
-  "description": "Bootstrap cluster"
-}
-```
-
-Never use the `timeout` command prefix - use the tool's built-in timeout parameter instead.
-
-## Bootstrap Timing Reference
-
-**Observed timings for terraform apply phases (2026-01-03 hybrid VPS+Proxmox cluster):**
-
-| Phase                      | Typical Duration | Notes                                    |
-| -------------------------- | ---------------- | ---------------------------------------- |
-| Proxmox VM creation        | 30-35s           | Per VM, parallel                         |
-| Hetzner VPS creation       | 55s-1m15s        | Per VPS, parallel                        |
-| VPS Talos config apply     | 20-30s           | Per VPS                                  |
-| Proxmox Talos config apply | 7-9 min          | Per node, slower due to disk import      |
-| talos_machine_bootstrap    | <1s              | Triggers etcd bootstrap                  |
-| K8s API wait               | 5-10 min         | wait-for-k8s-api.sh, 60 attempts × 10s   |
-| Cilium installation        | 30-40s           | helm_release.cilium_bootstrap            |
-| Nodes Ready wait           | ~1s              | After Cilium, nodes become Ready quickly |
-| hcloud-csi installation    | 15-20s           | Hetzner CSI driver                       |
-
-**Total estimated bootstrap time**: 15-20 minutes from terraform apply start to all nodes Ready.
-
-**Key slowest phases**:
-
-1. **Proxmox Talos config apply** (7-9 min per node) - Limited by disk import from downloaded qcow2
-2. **K8s API wait** (5-10 min) - Waiting for all control plane nodes to be ready
-
-**When monitoring bootstrap**: If you're past 10 minutes without Cilium installed, check terraform state for what's
-blocking (usually Proxmox config apply or K8s API wait).
-
-## Checklist
-
-- **Before making changes**: Read docs/bootstrap.md to understand current working state
-- **After completing work**: Update docs/bootstrap.md with new procedures if they change the bootstrap sequence
-- **When planning**: Use docs/plan.md to understand goals and add new tasks
-- **When finishing features**: Mark items complete in docs/plan.md and ensure docs/bootstrap.md reflects the new capabilities
-- **When diagnosing issues**: Use docs/troubleshooting.md fast-path commands first before deep debugging
-
-This ensures the documentation serves both as operational procedures (docs/bootstrap.md) and project management (docs/plan.md).
-
-## Common Issues and Resolutions
+## Troubleshooting
 
 @docs/troubleshooting.md
 
 @docs/lessons_learned/2025-11-28-eso-password-generator-desync.md
 
-## Troubleshooting Priority
+## Harbor CI (Container Registry)
 
-**Always use docs/troubleshooting.md first** when cluster components aren't working:
+**Single `ducktape` project**: All CI-built images are pushed to `registry.allegedly.works/ducktape/<image>`.
+Managed by `terraform/gitops/harbor-ci/main.tf` (tofu-controller).
 
-1. **Fast-path health checks** - Quick status commands for all core components
-2. **Known tricky components** - Proxmox CSI storage issues, SealedSecret decryption problems
-3. **Common recovery actions** - Controller restarts, forced reconciliation
-4. **Only then** proceed to deeper investigation if fast-path doesn't resolve the issue
+**Gotcha — removing Harbor projects via Terraform**: Harbor projects containing repositories
+cannot be destroyed without `force_destroy = true`. When consolidating or removing projects,
+use OpenTofu `removed` blocks with `lifecycle { destroy = false }` to orphan them from state
+instead of destroying them. This lets you stop managing them in Terraform while keeping the
+images accessible until they've been migrated.
 
-## Secrets Management
+**Gotcha — Flux image automation race condition**: If you rename image paths in deployments
+(e.g., `old-project/image` → `ducktape/image`) but the new path doesn't have images yet,
+Flux `ImageUpdateAutomation` will revert your deployment files to the old paths (because the
+old `ImageRepository` still finds tags and the new one doesn't). To avoid this:
 
-@docs/secrets.md
+1. Create the new Harbor project first (let terraform reconcile)
+2. Push at least one image to the new path (trigger CI or manually retag)
+3. Only then update `ImageRepository` resources and deployment image references
 
-## ⚠️ CRITICAL: Flux Kustomization Layering (CRD Dependencies)
+## Flux Kustomization Layering (CRD Dependencies)
 
-**Never mix HelmReleases with CRD instances from external operators in the same Kustomization.**
+**Never mix HelmReleases with CRD instances in the same Kustomization.** helm-controller
+has a separate API cache that doesn't see CRDs from other controllers.
 
-### The Problem
-
-Flux has two controllers with separate API caches:
-
-- **kustomize-controller**: Applies YAML manifests, respects `dependsOn`
-- **helm-controller**: Templates and installs Helm charts, has its own REST mapper cache
-
-When a Kustomization contains both a HelmRelease AND resources using CRDs from another operator
-(e.g., `ExternalSecret`, `Password`, `Certificate`), helm-controller may fail because its API
-cache doesn't know about CRDs installed by other operators.
-
-**Root cause**: helm-controller only invalidates its cache when IT installs CRDs from a chart's
-`crds/` directory. CRDs installed by kustomize-controller or other HelmReleases are invisible
-to helm-controller's cache until it restarts.
-
-### The Rule
-
-**Separate resources into layers based on CRD dependencies:**
-
-```text
-Layer 1: CRD Operators (install CRDs)
-├── external-secrets-operator
-├── cert-manager
-└── kyverno
-
-Layer 2: CRD Instances (use CRDs from Layer 1)
-├── {app}-secrets (ExternalSecret, Password resources)
-├── cluster-certificates (Certificate resources)
-└── cluster-policies (ClusterPolicy resources)
-
-Layer 3: Applications (consume secrets/certs created in Layer 2)
-├── powerdns (HelmRelease only)
-├── authentik (HelmRelease only)
-└── gitea (HelmRelease only)
-```
-
-### Correct Pattern
-
-**WRONG** - Mixed resources in one Kustomization:
-
-```yaml
-# k8s/powerdns/kustomization.yaml
-resources:
-  - namespace.yaml
-  - helmrelease.yaml # Processed by helm-controller
-  - password-generator.yaml # Uses external-secrets CRD
-  - externalsecret.yaml # Uses external-secrets CRD
-```
-
-**CORRECT** - Separated into layers:
-
-```yaml
-# k8s/powerdns-secrets/kustomization.yaml (Layer 2)
-resources:
-  - namespace.yaml
-  - password-generator.yaml
-  - externalsecret.yaml
-
-# k8s/powerdns-secrets/flux-kustomization.yaml
-dependsOn:
-  - name: external-secrets-operator  # CRDs exist before we apply
-
-# k8s/powerdns/kustomization.yaml (Layer 3)
-resources:
-  - helmrelease.yaml
-
-# k8s/powerdns/flux-kustomization.yaml
-dependsOn:
-  - name: powerdns-secrets  # Secrets exist before HelmRelease
-```
-
-### CRD to Operator Mapping
-
-| CRD Kind             | API Group                        | Required Operator Kustomization |
-| -------------------- | -------------------------------- | ------------------------------- |
-| `ExternalSecret`     | `external-secrets.io`            | `external-secrets-operator`     |
-| `Password`           | `generators.external-secrets.io` | `external-secrets-operator`     |
-| `ClusterSecretStore` | `external-secrets.io`            | `external-secrets-operator`     |
-| `SecretStore`        | `external-secrets.io`            | `external-secrets-operator`     |
-| `Certificate`        | `cert-manager.io`                | `cert-manager`                  |
-| `ClusterIssuer`      | `cert-manager.io`                | `cert-manager`                  |
-| `Issuer`             | `cert-manager.io`                | `cert-manager`                  |
-| `ClusterPolicy`      | `kyverno.io`                     | `kyverno`                       |
-| `Vault`              | `vault.banzaicloud.com`          | `vault-operator`                |
-| `Terraform`          | `infra.contrib.fluxcd.io`        | `tofu-controller`               |
-
-### Validation
-
-CRD layering violations are detected automatically by pre-commit via `validate_kustomizations.py`.
-
-The check detects:
-
-1. Kustomizations mixing HelmReleases with external CRD instances
-2. Potential helm-controller cache issues from incorrect layering
+**Rule**: Layer 1 (CRD operators) → Layer 2 (`{app}-secrets/` with ESO resources) → Layer 3
+(`{app}/` with HelmRelease). Each layer's `flux-kustomization.yaml` has `dependsOn` on the
+previous. Violations detected by pre-commit (`validate_kustomizations.py`).
 
 ### When Adding New Applications
 
-1. **Create `{app}-secrets/` directory** for ESO resources if the app needs secrets
-2. **Create flux-kustomization.yaml** with `dependsOn: external-secrets-operator`
-3. **Create main `{app}/` directory** for HelmRelease only
-4. **Add `dependsOn: {app}-secrets`** to the main flux-kustomization.yaml
-5. **Add cert-manager issuer toggle** if the app has an Ingress with TLS:
-   - Add `cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"` annotation to the Ingress
-   - Add `postBuild.substituteFrom` referencing `cert-manager-issuer-config` ConfigMap
-   - Add `dependsOn: cert-manager-issuer-config` to the flux-kustomization.yaml
-   - This ensures the app's certificate switches when the global LE toggle is flipped
-
-### Symptoms of Violation
-
-- `no matches for kind "ExternalSecret"` errors
-- HelmRelease stuck in "Reconciliation in progress"
-- helm-controller logs: `failed to get API group resources`
-- Intermittent failures that resolve after controller restart
+1. Create `{app}-secrets/` for ESO resources (`dependsOn: external-secrets-operator`)
+2. Create `{app}/` for HelmRelease only (`dependsOn: {app}-secrets`)
+3. Add cert-manager issuer toggle if app has TLS: `postBuild.substituteFrom` from
+   `cert-manager-issuer-config` ConfigMap + `dependsOn: cert-manager-issuer-config`

@@ -16,6 +16,10 @@ spec:
     - name: proxmox-csi # Operator will create Vault instances that need storage
   # Verify operator deployment is ready
   healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: operator
+      namespace: vault
     - apiVersion: apps/v1
       kind: Deployment
       name: operator-vault-operator

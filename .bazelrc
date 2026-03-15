@@ -1,9 +1,25 @@
 common --enable_bzlmod
+common --experimental_isolated_extension_usages
 
-# Disable host CC auto-detection to prevent Nix store paths leaking into builds.
-# CI overrides this to 0 (in .github/actions/bazel-repo-cache) to use the GHA
-# runner's system GCC. The BuildBuddy GCC toolchain handles RBE independently.
-build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+# Strict action env: actions get a fixed PATH (/bin:/usr/bin:/usr/local/bin)
+# instead of inheriting the client's PATH. Prevents NixOS /nix/store paths
+# from leaking to RBE workers. Default in Bazel 9 but not Bazel 8.
+build --incompatible_strict_action_env
+
+# Test PATH: strict action env gives /bin:/usr/bin:/usr/local/bin, but
+# local-only tests on NixOS need /run/current-system/sw/bin for bash.
+# Harmless on non-NixOS and RBE (the extra path just doesn't exist).
+test --test_env=PATH=/run/current-system/sw/bin:/bin:/usr/bin:/usr/local/bin
+
+# Reduce runfiles disk usage (prevents "No space left on device" on CI runners).
+# Each py_test creates a runfiles tree with ~2,458 symlinks for the Python toolchain;
+# with many targets this exhausts the default 20 GB BuildBuddy disk.
+# --nobuild_runfile_links: don't eagerly create runfiles trees during build phase
+#   (created on-demand for test/run). Safe for CI where we only `bazel test` or `bazel run`.
+# --nolegacy_external_runfiles: skip duplicate legacy external/<repo> runfiles path,
+#   keeping only the modern ../<repo> path. Halves external dep symlink count.
+build --nobuild_runfile_links
+build --nolegacy_external_runfiles
 
 # Disable MODULE.bazel.lock to avoid churn between environments.
 # The `ape` module (Actually Portable Executable, transitive dep via aspect_rules_lint)
@@ -12,66 +28,42 @@ build --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 # MODULE.bazel and don't use version ranges, the lockfile provides minimal benefit.
 common --lockfile_mode=off
 
-# Lint configuration (Python ruff + JS/TS eslint)
-# Run with: bazel build --config=lint //...
-build:lint --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%eslint
-build:lint --output_groups=+rules_lint_report
+# Lint + typecheck enabled by default on all builds.
+# Combines lint (ruff, ESLint), typecheck (mypy), and Rust checks (clippy, rustfmt).
+# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant).
+# To skip lint (e.g. for fast iterative builds): bazel build --config=nolint //...
+build --@rules_python//python/config_settings:python_version=3.13
+build --aspects=//devinfra/lint:linters.bzl%ruff,//devinfra/lint:linters.bzl%mypy_aspect,//devinfra/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
+build --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
 
-# Type checking configuration
-# Run with: bazel build --config=typecheck //...
-# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant)
-build:typecheck --@rules_python//python/config_settings:python_version=3.13
-build:typecheck --aspects=//tools/lint:linters.bzl%mypy_aspect
-build:typecheck --output_groups=+mypy
-
-# Combined lint + typecheck
-# Run with: bazel build --config=check //...
-# Combines lint (ruff, ESLint), typecheck (mypy), and Rust checks (clippy, rustfmt)
-# Use Python 3.13 for mypy to parse Python 3.13 syntax (e.g., homeassistant)
-build:check --@rules_python//python/config_settings:python_version=3.13
-build:check --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%mypy_aspect,//tools/lint:linters.bzl%eslint,@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
-build:check --output_groups=+rules_lint_report,+mypy,+clippy_checks,+rustfmt_checks
-
-# Rust linting (clippy)
-# Run with: bazel build --config=clippy //finance/worthy:all
-build:clippy --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect
-build:clippy --output_groups=+clippy_checks
-
-# Rust formatting check
-# Run with: bazel build --config=rustfmt //finance/worthy:all
-build:rustfmt --aspects=@rules_rust//rust:defs.bzl%rustfmt_aspect
-build:rustfmt --output_groups=+rustfmt_checks
-
-# Combined Rust lint + format
-# Run with: bazel build --config=rust-check //finance/worthy:all
-build:rust-check --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
-build:rust-check --output_groups=+clippy_checks,+rustfmt_checks
-
-# ESLint only (for JS/TS without Python)
-# Run with: bazel build --config=eslint //props/frontend:all
-build:eslint --aspects=//tools/lint:linters.bzl%eslint
-build:eslint --output_groups=+rules_lint_report
+# Skip lint/typecheck. Bazel evaluates aspects lazily, so removing their
+# output groups prevents the aspect actions from running.
+build:nolint --output_groups=-rules_lint_report,-mypy,-clippy_checks,-rustfmt_checks
 
 # Remote Build Execution (BuildBuddy)
-# Activated by: setup-buildbuddy.sh, buildbuddy.yaml, bazelrc.mako (Claude Code web)
-# Requires authentication via ~/.config/bazel/buildbuddy.bazelrc (API key + BES).
+# Auth: ~/.config/bazel/buildbuddy.bazelrc (setup_buildbuddy.sh or bazelrc.mako)
+# Host platform auto-detected; //:rbe_linux_x64 is the execution platform.
 build:rbe --remote_executor=grpcs://remote.buildbuddy.io
 build:rbe --extra_execution_platforms=//:rbe_linux_x64
-# Point host platform at the RBE platform so toolchain resolution for exec-config
-# tools (e.g. Rust linking needs CC) succeeds even though
-# BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1 disables local auto-detection.
-build:rbe --host_platform=//:rbe_linux_x64
 build:rbe --spawn_strategy=remote,local
 test:rbe --spawn_strategy=remote,local
 build:rbe --jobs=50
 build:rbe --remote_download_minimal
+build:rbe --bes_results_url=https://app.buildbuddy.io/invocation/
+build:rbe --bes_backend=grpcs://remote.buildbuddy.io
+common:rbe --remote_cache=grpcs://remote.buildbuddy.io
+common:rbe --remote_timeout=10m
+common:rbe --remote_cache_compression
+build:rbe --noslim_profile
+build:rbe --experimental_profile_include_target_label
+build:rbe --experimental_profile_include_primary_output
 
-# Formatting: use bazel run //tools/format (fix) or //tools/format.check (check)
+# Formatting: use bazel run //devinfra/format (fix) or //devinfra/format.check (check)
 # Supports: prettier (JS/TS/CSS/HTML/MD), ruff (Python), shfmt (Shell), buildifier (Bazel), rustfmt (Rust)
 
 # Stamping - embeds build metadata (commit hash, etc.) into build artifacts
 # Only targets that depend on ctx.info_file (like build_info_gen) are invalidated on commit change
-build --stamp --workspace_status_command=tools/stamp.sh
+build --stamp --workspace_status_command=devinfra/stamp.sh
 
 # Use shell-based bootstrap instead of system_python.  The default
 # (system_python) starts with `#!/usr/bin/env python3` which picks up whatever
@@ -83,20 +75,13 @@ build --stamp --workspace_status_command=tools/stamp.sh
 # Subprocess-spawning code uses bazel_subprocess.py to propagate PYTHONPATH.
 common --@rules_python//python/config_settings:bootstrap_impl=script
 
-# Props e2e test environment passthrough
-# These only pass through when the vars are set in the environment
-# For props e2e tests: set up infrastructure, export vars, then run bazel test
-test --test_env=PGHOST
-test --test_env=PGPORT
-test --test_env=PGUSER
-test --test_env=PGPASSWORD
-test --test_env=PGDATABASE
-test --test_env=AGENT_PGHOST
-test --test_env=PROPS_REGISTRY_PROXY_HOST
-test --test_env=PROPS_REGISTRY_PROXY_PORT
-test --test_env=PROPS_DOCKER_NETWORK
-test --test_env=PROPS_E2E_HOST_HOSTNAME
-# Note: DOCKER_HOST is intentionally NOT passed through. RBE Firecracker
-# workers always use the default Docker socket (unix:///var/run/docker.sock).
-# Passing through DOCKER_HOST from the host causes failures in Claude Code
-# (where it's a podman socket) and other environments with non-standard Docker.
+# Quiet output mode — reduces progress spam for non-interactive contexts.
+# --curses=no: disable curses UI
+# --show_progress_rate_limit=30: at most one progress update every 30 seconds
+common:quiet --curses=no
+common:quiet --show_progress_rate_limit=30
+
+# CI and AI agent modes both use quiet output.
+common:ci --config=quiet
+common:ci --announce_rc
+common:ai_agent --config=quiet

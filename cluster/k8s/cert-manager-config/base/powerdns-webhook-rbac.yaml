@@ -5,10 +5,10 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: cert-manager-webhook-powerdns-additional
+  name: pdns-webhook-additional
   labels:
     app.kubernetes.io/name: cert-manager-webhook-pdns
-    app.kubernetes.io/instance: cert-manager-webhook-powerdns
+    app.kubernetes.io/instance: pdns-webhook
 rules:
   # The webhook needs to list/watch ConfigMaps for authorization checks
   # This fixes the "failed to list *v1.ConfigMap: Unauthorized" error
@@ -30,15 +30,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: cert-manager-webhook-powerdns-additional
+  name: pdns-webhook-additional
   labels:
     app.kubernetes.io/name: cert-manager-webhook-pdns
-    app.kubernetes.io/instance: cert-manager-webhook-powerdns
+    app.kubernetes.io/instance: pdns-webhook
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: cert-manager-webhook-powerdns-additional
+  name: pdns-webhook-additional
 subjects:
   - kind: ServiceAccount
-    name: cert-manager-webhook-powerdns-cert-manager-webhook-pdns
+    name: pdns-webhook
     namespace: cert-manager

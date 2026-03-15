@@ -26,7 +26,7 @@ backend/
 ├── __init__.py          # Package root
 ├── app.py               # FastAPI app, lifespan
 ├── routes/
-│   ├── runs.py          # Runs API + WebSocket
+│   ├── runs.py          # Runs API
 │   └── stats.py         # Stats API
 ├── TODO.md              # Implementation tasks
 ├── SPEC.md              # Feature specification

@@ -1,17 +1,6 @@
 rationale: |
-  Lines 162-168 define AgentApprovalsHistory with a redundant `count` field that's
-  trivially computable from the `timeline` and `pending` lists already in the response
-  (count = len(timeline) + len(pending)). Lines 446-450 compute and construct this
-  redundant field.
-
-  Problems: Trivially computable by clients in one line, redundant information wastes
-  bandwidth, inconsistency risk if lists are modified or computation has bugs, violates
-  single source of truth (data in lists, count is derived), makes tests more brittle
-  (must verify count matches lengths).
-
-  Remove count field from model and construction. Clients compute it when needed.
-  Benefits: eliminates redundant data, smaller payloads, no sync risk, simpler model,
-  encourages lazy evaluation, one less field to maintain and test.
+  `AgentApprovalsHistory.count` is trivially computable from `timeline` and
+  `pending` already in the response. Remove it.
 should_flag: true
 occurrences:
   - occurrence_id: occ-0
@@ -25,3 +14,5 @@ occurrences:
           - 447
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/mcp_bridge/servers/agents.py

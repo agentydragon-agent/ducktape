@@ -8,26 +8,34 @@
     docker_state: absent # Proxmox host doesn't need Docker
     skip_ubuntu_ppas: true # Debian-based Proxmox can't use Ubuntu PPAs
     include_heavy_dev_packages: false
-    # Headscale server for /etc/hosts bootstrap entry (see tailscale task below)
-    headscale_server_hostname: "agentydragon.com"
-    headscale_server_ip: "172.235.48.86"
+    headscale_auto_register: false
   remote_user: root
 
   tasks:
     # Fix Proxmox repository issues
-    - name: Remove Proxmox enterprise repositories
+    - name: Remove Proxmox enterprise and stale repository files
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
+        - /etc/apt/sources.list.d/pve-enterprise.sources
+        - /etc/apt/sources.list.d/ceph.sources
+        # Stale PVE 8 era files
         - /etc/apt/sources.list.d/pve-enterprise.list
         - /etc/apt/sources.list.d/ceph.list
+        - /etc/apt/sources.list.d/pve-no-subscription.list
+        - /etc/apt/sources.list.d/pve-no-subscription.list.save
       tags: [repositories]
 
-    - name: Add Proxmox no-subscription repository
-      ansible.builtin.apt_repository:
-        repo: "deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription"
-        state: present
+    - name: Add Proxmox no-subscription repository (PVE 9 / trixie)
+      ansible.builtin.copy:
+        dest: /etc/apt/sources.list.d/pve-no-subscription.sources
+        content: |
+          Types: deb
+          URIs: http://download.proxmox.com/debian/pve
+          Suites: trixie
+          Components: pve-no-subscription
+        mode: "0644"
       tags: [repositories]
 
     - name: Configure local datastore content types for Terraform
@@ -37,6 +45,19 @@
       changed_when: datastore_result.rc == 0
       failed_when: datastore_result.rc != 0 and 'already exists' not in datastore_result.stderr
       tags: [proxmox, terraform]
+
+    # Patch the Proxmox web UI to suppress the "no valid subscription" popup.
+    # The check calls Ext.Msg.show(); replacing it with void prevents the dialog.
+    # Patch the Proxmox web UI to suppress the "no valid subscription" popup.
+    # Replaces the subscription-status condition with `if (false)` so the
+    # dialog is never shown. Idempotent — patch(1) no-ops if already applied.
+    - name: Suppress Proxmox no-subscription popup in web UI
+      ansible.builtin.patch:
+        src: files/proxmox-no-subscription.patch
+        dest: /usr/share/javascript/proxmox-widget-toolkit/proxmoxlib.js
+        strip: 1
+        backup: true
+      tags: [proxmox, ui]
 
     - name: Configure Proxmox SPICE proxy hostname
       ansible.builtin.lineinfile:
@@ -51,37 +72,41 @@
         update_cache: true
       tags: [repositories]
 
-    - name: Ensure ducktape directory parent exists
-      ansible.builtin.file:
-        path: "/home/{{ my_user }}/code"
-        state: directory
-        owner: "{{ my_user }}"
-        group: "{{ my_user }}"
-        mode: "0755"
-      tags: [dotfiles]
+    #- name: Ensure ducktape directory parent exists
+    #  ansible.builtin.file:
+    #    path: "/home/{{ my_user }}/code"
+    #    state: directory
+    #    owner: "{{ my_user }}"
+    #    group: "{{ my_user }}"
+    #    mode: "0755"
+    #  tags: [dotfiles]
 
-    - name: Clone ducktape repository if not present # noqa: latest[git]
-      ansible.builtin.git:
-        repo: "git@gitlab.com:agentydragon/ducktape"
-        dest: "{{ cli_ducktape_path }}"
-        accept_hostkey: true
-      become: true
-      become_user: "{{ my_user }}"
-      async: "{{ git_async_timeout }}"
-      poll: 0
-      register: ducktape_git_job
-      tags: [dotfiles]
-      failed_when: false # In case SSH keys aren't set up yet
+    #- name: Clone ducktape repository if not present # noqa: latest[git]
+    #  ansible.builtin.git:
+    #    repo: "git@gitlab.com:agentydragon/ducktape"
+    #    dest: "{{ cli_ducktape_path }}"
+    #    accept_hostkey: true
+    #  become: true
+    #  become_user: "{{ my_user }}"
+    #  async: "{{ git_async_timeout }}"
+    #  poll: 0
+    #  register: ducktape_git_job
 
-    - name: Wait for ducktape repository clone
-      ansible.builtin.async_status:
-        jid: "{{ ducktape_git_job.ansible_job_id }}"
-      register: ducktape_git_status
-      until: ducktape_git_status.finished
-      retries: "{{ (git_async_timeout // apt_async_poll_interval) | int }}"
-      delay: "{{ apt_async_poll_interval }}"
-      failed_when: ducktape_git_status.rc is defined and ducktape_git_status.rc != 0
-      tags: [dotfiles]
+    #- name: Wait for ducktape repository clone
+    #  ansible.builtin.async_status:
+    #    jid: "{{ ducktape_git_job.ansible_job_id }}"
+    #  register: ducktape_git_status
+    #  until: ducktape_git_status.finished
+    #  retries: "{{ (git_async_timeout // apt_async_poll_interval) | int }}"
+    #  delay: "{{ apt_async_poll_interval }}"
+    #  failed_when: ducktape_git_status.rc is defined and ducktape_git_status.rc != 0
+    #  tags: [dotfiles]
+
+    - name: Install AMD CPU microcode updates
+      ansible.builtin.apt:
+        name: amd64-microcode
+        state: present
+      tags: [packages, system]
 
     - name: Install Firefox
       ansible.builtin.package:
@@ -93,26 +118,21 @@
       ansible.builtin.apt:
         name:
           - gnome
-          - virt-viewer
-          - libvirt-daemon-system
-          - libvirt-clients
           - gdm3 # GNOME Display Manager
           - zsh
+          # Client-side tools (don't conflict with Proxmox's QEMU)
+          - virt-viewer
           - spice-client-gtk # For SPICE console connections
+          # libvirt-daemon-system and libvirt-clients are NOT installed —
+          # they conflict with Proxmox's pve-qemu-kvm and would remove
+          # the proxmox-ve meta-package. PVE manages VMs natively.
           - ydotool # For input automation on Wayland (SPICE latency measurement)
-          - ydotoold # ydotool daemon (separate package on bookworm)
+          - ydotoold # ydotool daemon
           - gstreamer1.0-pipewire # For GNOME screencast recording
           - gstreamer1.0-plugins-good # For GNOME screencast recording
         state: present
         install_recommends: false
       tags: [packages, desktop, virtualization]
-
-    - name: Ensure libvirt service is started
-      ansible.builtin.systemd:
-        name: libvirtd
-        state: started
-        enabled: true
-      tags: [virtualization]
 
     - name: Create primary user
       ansible.builtin.user:
@@ -149,26 +169,20 @@
         name: system_inspection_nopasswd
       tags: [sudo, system]
 
-    # Install resolvconf before tailscale so MagicDNS works automatically
+    # Install resolvconf before tailscale so MagicDNS works automatically.
     # Proxmox uses isc-dhcp-client without systemd-resolved; resolvconf
-    # provides the integration layer that tailscale needs to manage DNS
+    # provides the integration layer that tailscale needs to manage DNS.
     - name: Install resolvconf for Tailscale MagicDNS integration
       ansible.builtin.apt:
         name: resolvconf
         state: present
       tags: [tailscale, dns]
 
-    # Headscale bootstrap DNS workaround: Tailscale's bootstrap DNS (DERP servers)
-    # only resolves tailscale.com domains. With headscale using agentydragon.com,
-    # clients can't resolve the control server on boot (DNS set to 100.100.100.100
-    # which requires the tunnel to be up first). Static /etc/hosts entry fixes this.
-    # See cluster/docs/plan.md "Headscale Bootstrap DNS Workaround" for details.
-    - name: Add headscale server to /etc/hosts for bootstrap DNS
+    - name: Remove stale headscale bootstrap /etc/hosts entry
       ansible.builtin.lineinfile:
         path: /etc/hosts
-        regexp: '.*\s+{{ headscale_server_hostname }}$'
-        line: "{{ headscale_server_ip }} {{ headscale_server_hostname }}"
-        state: present
+        regexp: '.*\s+agentydragon\.com$'
+        state: absent
       tags: [tailscale, dns]
 
     - name: Apply Tailscale client role
@@ -191,11 +205,19 @@
     # pcie_aspm=off: Disable PCIe Active State Power Management to prevent
     # passed-through GPUs from entering low-power states that VFIO can't
     # recover from, causing "RC watchdog: GPU is probably locked!" errors.
-    # See investigations/wyrm-gpu-lockup.md for details.
+    # See debug/atlas/wyrm_gpu_lockup.md for details.
+    #
+    # ahci.mobile_lpm_policy=1: Force max_performance SATA link power management.
+    # Kernel 6.17 defaults to min_power (lpm-pol 3) which enables DIPM — drives
+    # autonomously trigger SATA PHY power state transitions that destabilize the
+    # AMD 800 Series chipset PCIe fabric (ata7 errors → chipset-wide lockup).
+    # Kernel 6.8 did not default to min_power and ran 12+ days stable.
+    # =0 (keep_firmware_settings) also disables DIPM on this board's firmware,
+    # but =1 (max_performance) is explicit. See debug/atlas/black_screen_lockup.md.
     - name: Configure kernel cmdline for IOMMU and GPU passthrough
       ansible.builtin.copy:
         dest: /etc/kernel/cmdline
-        content: "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off"
+        content: "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off ahci.mobile_lpm_policy=1"
         mode: "0644"
         backup: true
       notify: Refresh proxmox boot
@@ -211,8 +233,31 @@
         - vfio
         - vfio_iommu_type1
         - vfio_pci
-        - vfio_virqfd
+        # vfio_virqfd was merged into the vfio module in kernel 6.2+
+        # (atlas runs 6.17.x). No longer a separate module.
       tags: [gpu_passthrough, vfio]
+
+    - name: Remove stale vfio_virqfd from /etc/modules
+      ansible.builtin.lineinfile:
+        path: /etc/modules
+        line: vfio_virqfd
+        state: absent
+      tags: [gpu_passthrough, vfio]
+
+    # Kernel modules required by NixOS LXC containers running k8s workers.
+    # LXC shares the host kernel, so modules must be loaded on the host.
+    - name: Add k8s-LXC kernel modules to /etc/modules
+      ansible.builtin.lineinfile:
+        path: /etc/modules
+        line: "{{ item }}"
+        create: true
+        mode: "0644"
+      loop:
+        - overlay
+        - br_netfilter
+        - wireguard
+        - iscsi_tcp
+      tags: [k8s_lxc]
 
     - name: Blacklist NVIDIA drivers on host
       ansible.builtin.copy:
@@ -225,6 +270,46 @@
         mode: "0644"
       tags: [gpu_passthrough, nvidia]
 
+    # RTX 5090 (Blackwell) has a known VFIO bug where the GPU can't wake
+    # from D3cold after VM shutdown, causing FLR timeouts and host soft
+    # lockups. Prevent vfio-pci from putting GPUs into D3 when idle.
+    # See debug/atlas/black_screen_lockup.md for details.
+    - name: Prevent VFIO D3 idle on GPUs (RTX 5090 Blackwell workaround)
+      ansible.builtin.copy:
+        dest: /etc/modprobe.d/vfio-pci.conf
+        content: |
+          options vfio-pci disable_idle_d3=1
+        mode: "0644"
+      tags: [gpu_passthrough, vfio]
+
+    - name: Prevent D3cold on RTX 5090 GPUs via udev
+      ansible.builtin.copy:
+        dest: /etc/udev/rules.d/99-vfio-gpu-no-d3cold.rules
+        content: 'ACTION=="add", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{device}=="0x2b85", ATTR{power/control}="on", ATTR{d3cold_allowed}="0"'
+        mode: "0644"
+      notify: Reload udev rules
+      tags: [gpu_passthrough, vfio]
+
+    # Disable ASPM on all PCI devices via setpci at device add time.
+    # pcie_aspm=off and BIOS "Disabled" (BIOS-controlled) are both insufficient —
+    # BIOS 2102 still enables L1 on 27+ devices. Belt-and-suspenders with setpci.
+    # Also disable D3cold and runtime PM on all PCIe bridges.
+    # See debug/atlas/black_screen_lockup.md.
+    - name: Disable ASPM on all PCI devices and D3cold on bridges
+      ansible.builtin.copy:
+        src: files/99-disable-chipset-aspm.rules
+        dest: /etc/udev/rules.d/99-disable-chipset-aspm.rules
+        mode: "0644"
+      notify: Reload udev rules
+      tags: [pcie, power_management]
+
+    - name: Remove obsolete per-bridge D3cold udev rule
+      ansible.builtin.file:
+        path: /etc/udev/rules.d/99-pcie-bridge-no-d3cold.rules
+        state: absent
+      notify: Reload udev rules
+      tags: [pcie, power_management]
+
     - name: Update initramfs after module changes
       ansible.builtin.command:
         cmd: update-initramfs -u
@@ -233,14 +318,9 @@
       tags: [gpu_passthrough]
 
     # TODO: WiFi Configuration - MediaTek MT7927 (14c3:7927)
-    # The atlas host has a MediaTek MT7927 WiFi 7 card, but it's not supported
-    # by the mt7921e driver in kernel 6.8.12. The driver only supports MT7961/MT7922.
-    # Solutions:
-    # 1. Wait for Proxmox kernel update to 6.10+ which should include MT7927 support
-    # 2. Try force-binding: echo "14c3 7927" > /sys/bus/pci/drivers/mt7921e/new_id
-    # 3. Install newer mainline kernel with MT7927 support
-    # Required packages when driver support is available:
-    # - wireless-tools, wpasupplicant, iw (pve-firmware already has MediaTek firmware)
+    # The atlas host has a MediaTek MT7927 WiFi 7 card. MT7927 support was added
+    # to the mt76 driver in Linux 6.12. Upgrade to Proxmox VE 9 (kernel 6.12+)
+    # will enable this. After upgrade, install: wireless-tools, wpasupplicant, iw
 
     # TODO: Manage Proxmox VM configurations in Ansible
     # Currently VM configs live only in /etc/pve/qemu-server/*.conf

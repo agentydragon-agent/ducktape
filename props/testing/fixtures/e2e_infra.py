@@ -9,11 +9,11 @@ but manifests are deleted at the start of each test to ensure crane push always
 triggers agent_definition recording via the backend proxy.
 
 Usage in tests:
-    @pytest.mark.requires_docker
     async def test_something(e2e_registry, grader_image, e2e_stack):
         async with e2e_stack({DEFAULT_TEST_MODEL: mock}, images=[grader_image]) as stack:
             image = await stack.registry.resolve_image(AgentType.GRADER, BUILTIN_TAG)
-            run_id = await stack.registry.run_snapshot_grader(image=image, ...)
+            handle = await stack.registry.start_snapshot_grader(image=image, ...)
+            await handle  # blocks until grader exits, or: await handle.kill_and_delete() to stop early
 """
 
 from __future__ import annotations
@@ -28,9 +28,8 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
 from props.db.models import AgentType
-from test_util.image_loader import load_image
-from test_util.oci import BazelImage
 from third_party.containers.rlocations import REGISTRY_2_TARBALL, RYUK_TARBALL
+from util.oci import BazelImage, load_image
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -71,41 +70,35 @@ def _e2e_registry_container() -> Generator[DockerContainer]:
         registry.stop()
 
 
+@tracer.start_as_current_span("delete registry manifests")
 def _delete_all_manifests(registry_url: str) -> None:
     """Delete all agent manifests from registry to ensure clean state for next test."""
-    with tracer.start_as_current_span("delete registry manifests"):
-        for agent_type in AgentType:
-            repo = agent_type.value
-            # List tags for this repo
-            try:
-                resp = httpx.get(f"{registry_url}/v2/{repo}/tags/list", timeout=5.0)
-                if resp.status_code == 404:
-                    continue  # Repo doesn't exist yet
-                resp.raise_for_status()
-                tags = resp.json().get("tags") or []
-            except httpx.HTTPError:
+    for agent_type in AgentType:
+        repo = agent_type.value
+        # List tags for this repo
+        resp = httpx.get(f"{registry_url}/v2/{repo}/tags/list", timeout=5.0)
+        if resp.status_code == 404:
+            continue  # Repo doesn't exist yet
+        resp.raise_for_status()
+        tags = resp.json().get("tags") or []
+
+        # Delete each tag's manifest
+        for tag in tags:
+            # Get manifest digest
+            head_resp = httpx.head(
+                f"{registry_url}/v2/{repo}/manifests/{tag}",
+                headers={"Accept": "application/vnd.oci.image.manifest.v1+json"},
+                timeout=5.0,
+            )
+            if head_resp.status_code != 200:
+                continue
+            digest = head_resp.headers.get("Docker-Content-Digest")
+            if not digest:
                 continue
 
-            # Delete each tag's manifest
-            for tag in tags:
-                try:
-                    # Get manifest digest
-                    head_resp = httpx.head(
-                        f"{registry_url}/v2/{repo}/manifests/{tag}",
-                        headers={"Accept": "application/vnd.oci.image.manifest.v1+json"},
-                        timeout=5.0,
-                    )
-                    if head_resp.status_code != 200:
-                        continue
-                    digest = head_resp.headers.get("Docker-Content-Digest")
-                    if not digest:
-                        continue
-
-                    # Delete by digest
-                    httpx.delete(f"{registry_url}/v2/{repo}/manifests/{digest}", timeout=5.0)
-                    logger.debug(f"Deleted {repo}:{tag} ({digest})")
-                except httpx.HTTPError as e:
-                    logger.warning(f"Failed to delete {repo}:{tag}: {e}")
+            # Delete by digest
+            httpx.delete(f"{registry_url}/v2/{repo}/manifests/{digest}", timeout=5.0).raise_for_status()
+            logger.debug(f"Deleted {repo}:{tag} ({digest})")
 
 
 @pytest.fixture

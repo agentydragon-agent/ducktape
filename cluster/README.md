@@ -2,250 +2,167 @@
 
 Small Talos k8s cluster with GitOps and HTTPS.
 
-- Deploy: Single command `bazel run //cluster:bootstrap` (automated layered deployment)
-- VMs:
-  - Run Talos, configured and bootstrapped with Terraform.
-  - Proxmox VMs use cloud-init snippets for static IP configuration + QEMU guest agent
-- VPS nodes (Hetzner) serve public traffic directly via hostNetwork (Cilium Gateway API, PowerDNS).
-- CNI: Cilium with Talos-specific security configuration
-- Sealed-secrets: Automatic keypair persistence via terraform state for turnkey GitOps
+- Deploy: `bazel run //cluster:bootstrap` (single command, automated layered deployment)
+- VMs: Talos on Proxmox + Hetzner VPS, configured with OpenTofu
+- Ingress: Cilium Gateway API (Envoy hostNetwork on VPS)
+- CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
+- Secrets: SealedSecrets (stable keypair) + Vault/ESO (runtime)
 
 ## Prerequisites
 
-- **Proxmox credentials**: Create Proxmox terraform + CSI users (tokens managed in terraform state)
-- **SSH access**: `root@atlas` (Proxmox host) for credential generation
-- See [setup instructions](docs/bootstrap.md#credential-setup) for details
+- Proxmox host `atlas` with SSH access (`root@atlas`)
+- Hetzner Cloud API token (`HCLOUD_TOKEN`)
+- GitHub CLI (`gh auth login`) for Flux
+- direnv configured in cluster directory
 
-## direnv
+`.envrc` auto-exports `KUBECONFIG`/`TALOSCONFIG` and provides CLI tools (kubeseal, talosctl, etc.).
 
-`.envrc` auto-exports `KUBECONFIG` and `TALOSCONFIG` and provides CLI tools (kubeseal, talosctl, etc.).
-Execute tools like these with the direnv loaded, or use `direnv exec .`.
+See <docs/bootstrap.md> for full setup.
 
 ## Infrastructure
 
-- Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4 bridge)
-  - 10.2.0.1: Home router (gateway)
-  - 10.2.0.2: Atlas (Proxmox host) - **only reachable from Proxmox VLAN** (not from VPS nodes)
-  - 10.2.1.x: Control plane nodes (Proxmox)
-  - 10.2.2.x: Worker nodes (Proxmox)
-- Talos nodes:
-  - Proxmox: talos-pve-cp-0 (10.2.1.1)
-  - VPS: 2x Hetzner CPX31 (public IPs, hostNetwork for ingress/DNS)
-- Domain: `*.allegedly.works`
-  - PowerDNS in k8s has authority on this domain and handles Let's Encrypt DNS-01 challenges
-  - cert-manager provisions Let's Encrypt certs via dual ClusterIssuers (`letsencrypt-prod`,
-    `letsencrypt-staging`), selected by a single ConfigMap toggle
-- HTTPS chain: Internet → VPS public IP:443 → Cilium Envoy (hostNetwork, Gateway API) → backend pods
+- Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4)
+  - 10.2.0.2: Atlas (Proxmox host) — **only reachable from Proxmox VLAN**
+  - 10.2.1.x: Control plane (Proxmox), 10.2.2.x: Workers (Proxmox)
+- Nodes: 2x Hetzner CPX31 (VPS, public IPs) + talos-pve-cp-0 (10.2.1.1) + wyrm2 (NixOS GPU worker, 2x RTX 5090)
+- Domain: `*.allegedly.works` (PowerDNS in-cluster, DNS-01 challenges, dual LE issuers)
+- HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
+  - Exception: Headscale uses TLSRoute passthrough (Envoy routes by SNI, Headscale terminates TLS)
+- KubeSpan: WireGuard mesh between VPS and Proxmox (UDP 51820)
+- Cilium MTU: `MTU: 1370` (uppercase key required — VXLAN 50 + WireGuard 80 = 130 overhead)
+- KubePrism: `localhost:7445` as cluster endpoint (no VIP possible across VPS+home; kubeconfig patched post-bootstrap to real VPS IP)
 
 ## Services
 
-Deployed services accessible via `*.allegedly.works`:
+| Service        | URL                                          | Purpose                       |
+| -------------- | -------------------------------------------- | ----------------------------- |
+| Authentik      | <https://auth.allegedly.works>               | SSO provider                  |
+| Gitea          | <https://git.allegedly.works>                | Git hosting                   |
+| Harbor         | <https://registry.allegedly.works>           | Container registry            |
+| Vault          | <https://vault.allegedly.works>              | Secrets management            |
+| Matrix/Element | <https://chat.allegedly.works>               | Chat                          |
+| Grafana        | <https://grafana.allegedly.works>            | Monitoring                    |
+| Nix Cache      | <https://cache.allegedly.works>              | Binary cache                  |
+| Headscale      | <https://headscale.allegedly.works>          | Tailscale control             |
+| Gatus          | <https://status.allegedly.works>             | Health monitoring             |
+| OpenClaw       | <https://openclaw.allegedly.works>           | AI coding agent               |
+| ActivityWatch  | `activitywatch.tailnet.allegedly.works:5600` | Activity tracking (mesh-only) |
 
-- **Authentik (SSO)**: <https://auth.allegedly.works>
-- **Gitea (Git)**: <https://git.allegedly.works>
-- **Harbor (Registry)**: <https://registry.allegedly.works>
-- **Vault (Secrets)**: <https://vault.allegedly.works>
-- **Matrix (Chat)**: <https://chat.allegedly.works>
-- **Grafana (Monitoring)**: <https://grafana.allegedly.works> (if exposed)
-- **Nix Cache**: <https://cache.allegedly.works> (Harmonia binary cache)
-- **Headscale**: <https://headscale.allegedly.works> (Tailscale coordination)
-- **Website**: <https://www.allegedly.works> (placeholder)
+Credentials: `get-passwords` (requires direnv in cluster directory).
+OpenClaw requires a one-time gateway token entry in the UI — the token is included in
+`get-passwords` output.
 
-All traffic routes: Internet → VPS public IP:443 → Cilium Envoy (Gateway API) → Services
+## Storage
 
-### User Management
+| Provisioner          | Location | Default | Notes                                            |
+| -------------------- | -------- | ------- | ------------------------------------------------ |
+| `proxmox-csi-retain` | Proxmox  | Yes     | Storage-heavy: Harbor, Gitea, Loki, Nix          |
+| `hcloud-volumes`     | Hetzner  | No      | (none active)                                    |
+| `local-path`         | Any node | No      | CNPG: Authentik, PowerDNS; Vault Raft, Headscale |
 
-Users are declaratively provisioned via tofu-controller with ESO-generated passwords.
+Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) — needs VLAN access to API.
 
-**Retrieve user password:**
+## GPU (NVIDIA)
 
-```bash
-kubectl get secret agentydragon-user-password -n flux-system -o jsonpath='{.data.user_password}' | base64 -d
-```
+wyrm2 is a NixOS machine (not Talos) joined as a K8s worker via `k8s-worker.nix` and
+KubeSpan. It provides 2x RTX 5090 GPUs to the cluster.
 
-**User Details:**
+**Stack**: NixOS `hardware.nvidia-container-toolkit` generates CDI specs at
+`/var/run/cdi/` → containerd configured with `nvidia-container-runtime.cdi` as a named
+runtime → `RuntimeClass` resource maps `nvidia` handler to that runtime → NVIDIA device
+plugin (Helm chart) discovers GPUs via NVML and advertises `nvidia.com/gpu` resources.
 
-- Username: `agentydragon`
-- Email: <agentydragon@gmail.com>
-- Group: authentik Admins (admin permissions)
-- Password: ESO-generated (32 chars, see command above)
+**How it works**: The device plugin uses the default `envvar` strategy — it sets
+`NVIDIA_VISIBLE_DEVICES` on workload containers. Pods requesting GPUs must specify
+`runtimeClassName: nvidia` so containerd routes them through `nvidia-container-runtime.cdi`,
+which reads the env var and injects GPU devices/libraries via host CDI specs.
 
-## Secret Management Strategy
+**Key files**:
 
-**Stable SealedSecret Keypair**: Keypair is generated and stored in terraform state (`terraform/bootstrap/persistent-auth/`)
-to ensure SealedSecrets always decrypt correctly across cluster recreations.
+- `nix/nixos/modules/k8s-worker.nix` — containerd nvidia runtime config, CDI settings
+- `cluster/k8s/nvidia-device-plugin/helmrelease.yaml` — device plugin + RuntimeClass
+- `cluster/k8s/ollama/deployment.yaml` — example GPU workload (`runtimeClassName: nvidia`)
 
-**Setup**: Run `terraform apply` in `terraform/bootstrap/persistent-auth/` once per environment. The keypair
-persists in terraform state and survives cluster destroy/recreate cycles.
+## Failure Modes
 
-**Sealing new secrets**:
+| Scenario        | Cluster    | Ingress | DNS   | Authentik | Notes                                         |
+| --------------- | ---------- | ------- | ----- | --------- | --------------------------------------------- |
+| Single VPS down | 2/3 quorum | Works   | Works | Works     | 1 server+worker replica on surviving VPS      |
+| Both VPS down   | 1/3 only   | Down    | Down  | Down      | Home pods continue but cluster frozen         |
+| Home down       | 2/3 quorum | Works   | Works | Works     | All VPS-critical services on `hcloud-volumes` |
 
-```bash
-# Get public cert from terraform state
-cd terraform/bootstrap/persistent-auth
-terraform output -raw sealed_secrets_cert_pem > /tmp/sealed-secrets.crt
-kubeseal --cert /tmp/sealed-secrets.crt < secret.yaml > sealed-secret.yaml
-```
+### VPS-Only Resilience Invariants
 
-**Bootstrap fail-fast**: Script requires persistent auth layer to exist, prevents keypair mismatches that break GitOps.
+The following services **MUST** work/recover with VPS only (without Proxmox):
 
-## CNI Architecture Decision
+- **DNS** (PowerDNS) — all external name resolution depends on this
+- **Website** (`allegedly.works`) — public-facing
 
-**Infrastructure vs GitOps Separation**: Based on circular dependency analysis and industry best practices
-(AWS EKS Blueprints, etc.), CNI is managed at the infrastructure layer, not via GitOps.
+These services must not depend on `proxmox-csi-retain` storage or Proxmox-pinned nodes.
+Both PowerDNS and Authentik now use CloudNativePG on `hcloud-volumes`.
+See <docs/plan.md> for the full invariant definition, compliance tracking, and fix plan.
 
-**Architecture Layers:**
+## SSO (Authentik)
 
-- **Talos**: CoreDNS
-- **Terraform**: CNI (Cilium)
-- **Flux**: Applications only
+All applications use Authentik for SSO via native blueprints — idempotent YAML in
+`k8s/authentik/sso-blueprints.yaml` (ConfigMap mounted into the worker, re-applied every
+60 min). No Terraform state for Authentik resources.
 
-**Why CNI Cannot Be GitOps-Managed:**
+- **Secret flow**: `terraform/gitops/sso-secrets/` generates OAuth2 client secrets →
+  Vault → ESO `authentik-sso-client-secrets` in authentik namespace → worker `envFrom` →
+  blueprint `!Env` tags
+- **App-side secrets**: ESO in `k8s/authentik-blueprint/{app}-secret/` reads from
+  the same Vault path
+- **Remaining Terraform**: `harbor-oidc-config/` (Harbor API), `vault-oidc-auth/`
+  (Vault OIDC auth backend) — configure non-Authentik systems
 
-- Circular dependency: GitOps tools need networking to function, but would be managing their own networking
-- Network disruption during handoffs: When Flux tries to update Terraform-installed CNI, worker nodes become
-  permanently NotReady due to container image pull failures during networking gaps
-- Industry pattern: Major platforms (AWS EKS, GKE Autopilot) manage CNI at infrastructure layer
+See <AGENTS.md> for the proxy-mode NetworkPolicy template when adding new SSO apps.
+
+## ActivityWatch
+
+Personal activity tracking via [aw-server-rust](https://github.com/ActivityWatch/aw-server-rust).
+Cluster-internal only — accessible at `activitywatch.tailnet.allegedly.works:5600` via
+Headscale mesh (MagicDNS). No built-in auth; Headscale membership is the trust boundary.
+
+- **Server**: `aw-server-rust` on Proxmox, SQLite on `proxmox-csi-retain` (1Gi PVC)
+- **Sidecar**: Tailscale container joins Headscale mesh (`TS_HOSTNAME=activitywatch`)
+- **Image**: `registry.allegedly.works/activitywatch/aw-server`, CI at `.github/workflows/activitywatch-image.yml`
+- **Pre-auth key**: Bootstrap Job (`k8s/activitywatch-authkey-bootstrap/`), not Terraform
+  (upstream provider bug — [PR #28](https://github.com/awlsring/terraform-provider-headscale/pull/28))
+- **Read-only proxy**: nginx sidecar on port 5601 (Service `activitywatch-readonly`),
+  allows GET + POST `/api/0/query` only. `openclaw-sandbox` and `claude-sandbox` namespaces
+  have CiliumNetworkPolicy access to this port.
+
+### Desktop Client Setup
+
+Watchers run locally, heartbeat to cluster via Headscale mesh. Config managed by
+Nix home-manager (`nix/home/services/activitywatch.nix`).
+
+1. Enroll device: `sudo tailscale up --login-server=https://headscale.allegedly.works`
+2. Apply config: `home-manager switch --flake ~/code/ducktape/nix#<hostname>`
+3. Start: `aw-qt` (runs `aw-watcher-afk`, `aw-watcher-window`)
+4. Verify: `curl http://activitywatch.tailnet.allegedly.works:5600/api/0/info`
 
 ## Repository Structure
 
 ```text
 cluster/
-├── shell.nix, .envrc      # direnv (KUBECONFIG, TALOSCONFIG, kubeseal CLI, ...)
-├── docs/
-│   ├── BOOTSTRAP.md       # Bootstrap procedure from empty Proxmox
-│   ├── OPERATIONS.md      # Management, troubleshooting commands
-│   └── PLAN.md            # Future roadmap, strategic decisions
-├── CLAUDE.md, AGENTS.md   # Instructions for AI agents
+├── shell.nix, .envrc      # direnv (KUBECONFIG, TALOSCONFIG, CLI tools)
+├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
-│   ├── bootstrap/             # Manual, local state, sequential
-│   │   ├── persistent-auth/   # Proxmox credentials, CSI tokens, sealed secrets keypair
-│   │   ├── infrastructure/    # Provisioning; boots Talos, Kube, Cilium; hands off to Flux
-│   │   │   ├── cilium/        # CNI configuration (Terraform-managed, not GitOps)
-│   │   │   ├── talosconfig    # Creds for node Talos APIs (generated, gitignored)
-│   │   │   ├── kubeconfig     # Kube config (generated, gitignored)
-│   │   │   └── talos-machine-secrets.tf  # Machine secrets (ephemeral per lifecycle)
+│   ├── bootstrap/
+│   │   ├── persistent-auth/   # Keypairs, tokens (survives cluster rebuild)
+│   │   ├── infrastructure/    # VMs, Talos, Cilium CNI
 │   │   └── flux/              # Flux bootstrap, core services, applications
-│   └── gitops/                # tofu-controller managed Terraform (k8s state)
-│       ├── authentik-token/   # Authentik API token
-│       ├── dns-records/       # DNS automation
-│       ├── harbor-admin/      # Harbor admin password
-│       ├── harbor-proxy-cache/ # Harbor proxy cache config
-│       ├── powerdns-api-key/  # PowerDNS API key
-│       ├── vault-oidc-auth/   # Vault OIDC authentication
-│       └── sso/               # SSO provider configuration
-│           ├── gitea/, grafana/, harbor/, kagent/
-│           ├── matrix/, users/, vault/
-│           └── ...            # Per-application SSO modules
-├── k8s/                   # Kubernetes manifests (Flux-managed applications only)
-│   ├── sealed-secrets/    # SealedSecrets controller
-│   ├── tofu-controller/   # Terraform CRD controller
-│   ├── reloader/          # Stakater Reloader (auto-restart on secret change)
-│   ├── coredns-custom/    # CoreDNS zone forwarding to PowerDNS
-│   ├── cert-manager/
-│   ├── gateway/           # Cilium Gateway API (HTTPS ingress)
-│   ├── powerdns/          # DNS server (external)
-│   ├── vault/, external-secrets/  # Secret synchronization
-│   ├── authentik/         # Identity and SSO provider
-│   ├── sso/               # SSO integrations and user management
-│   │   └── users/         # User provisioning manifests
-│   ├── services-config/   # Authentik SSO config for services, via Terraform
-│   └── applications/
-│       ├── harbor/        # Container registry
-│       └── gitea/, matrix/, headscale/, website/
-└── flux-system/           # Flux controllers (auto-generated)
+│   └── gitops/                # tofu-controller managed (DNS, SSO, secrets)
+├── k8s/                       # Flux-managed manifests (apps, services, config)
+└── flux-system/               # Flux controllers (auto-generated)
 ```
-
-## How Things Are Wired Together
-
-### Network Architecture
-
-Internet → VPS public IP:443 → Cilium Envoy (hostNetwork, Gateway API) → backend pods
-Internet → VPS public IP:53 → PowerDNS (hostNetwork) → DNS responses
-
-- DNS:
-  - PowerDNS runs on VPS nodes with hostPort binding (public IPs)
-  - Handles Let's Encrypt DNS-01 challenges to obtain SSL certs
-  - CoreDNS forwards allegedly.works zone to PowerDNS ClusterIP for internal resolution
-- Cilium: `kubeProxyReplacement: true` with privileged port protection enabled
-- Cilium MTU: `MTU: 1370` (uppercase key required — Helm is case-sensitive).
-  Accounts for double encapsulation: VXLAN (50 bytes) + WireGuard/KubeSpan (80 bytes).
-  Without this, cross-node packets fragment and drop intermittently.
-- KubeSpan: Talos-native WireGuard mesh connects VPS and Proxmox nodes
-  - Enabled via `machine.network.kubespan.enabled: true` in Talos machine config
-  - Peer discovery via `discovery.talos.dev`
-  - Machine secrets regenerated per lifecycle (fresh `cluster.id` prevents stale peers)
-  - Requires UDP 51820 open on all nodes
-
-- **Proxmox API reachability**: Atlas (10.2.0.2:8006) is only reachable from the Proxmox VLAN.
-  VPS nodes cannot reach it. Any workload that needs the Proxmox API (e.g., CSI controller)
-  must use `nodeSelector: topology.kubernetes.io/region: proxmox`.
-- Terraform → Image Factory API + cloud-init snippets → VMs with static IPs (no DHCP)
-- GitOps flow: Git commit → Flux detects change → applies k8s manifests
-- Deployment path: `k8s/` directory → Flux Kustomizations → HelmReleases → Running pods
-- Secret management: local `kubeseal` → sealed-secrets controller → K8s Secret → Application pods
-
-## Storage
-
-| Provisioner          | Location | Default | Management                         |
-| -------------------- | -------- | ------- | ---------------------------------- |
-| `proxmox-csi-retain` | Proxmox  | Yes     | Flux (k8s/proxmox-csi/)            |
-| `hcloud-volumes`     | Hetzner  | No      | Flux (k8s/hcloud-csi/)             |
-| `local-path`         | Any node | No      | Flux (k8s/local-path-provisioner/) |
-
-**Strategy**: Proxmox for storage-heavy workloads (Harbor, Gitea, Loki, media, Nix cache).
-VPS for always-on critical-path services. `local-path` for simple storage (Vault Raft, Headscale).
-
-**Constraint**: Proxmox CSI controller and node plugin are pinned to Proxmox nodes
-(`topology.kubernetes.io/region: proxmox`) because they need to reach the Proxmox API
-at 10.2.0.2:8006, which is only accessible from the VLAN.
-
-## Failure Modes
-
-| Scenario        | Cluster    | Ingress | Notes                                 |
-| --------------- | ---------- | ------- | ------------------------------------- |
-| Single VPS down | 2/3 quorum | Works   | DNS failover to other VPS             |
-| Both VPS down   | 1/3 only   | Down    | Home pods continue but cluster frozen |
-| Home down       | 2/3 quorum | Works   | Proxmox storage workloads unavailable |
-
-## Architecture Decisions
-
-1. **2x Hetzner CPX31** — 4 vCPU, 8GB RAM, 160GB NVMe, ~EUR 30/month total
-2. **Controller placement: 2 VPS + 1 home** — survives home outage, etcd majority on VPS
-3. **KubeSpan over Tailscale** — native to Talos, no external dependencies
-4. **Cilium VXLAN** — required for cross-VPS networking (nodes not on same L2)
-5. **Hetzner CSI via Flux** — API token secret created by infrastructure terraform, chart managed by Flux
 
 ## Let's Encrypt Rate Limits
 
-**IMPORTANT**: Let's Encrypt has strict rate limits that affect repeated testing:
+5 duplicate certs/week per domain (rolling 7-day window). Each destroy→bootstrap cycle
+requests fresh certificates. Controlled by `k8s/cert-manager-issuer-config/configmap.yaml`.
 
-**Duplicate Certificate Limit**: 5 certificates per week for the same exact domain name
-
-- Applies per domain (e.g., `registry.allegedly.works`)
-- Rolling 7-day window, refills at ~1 cert per 34 hours
-- No overrides available
-- **Problem**: Each `terraform destroy && bazel run //cluster:bootstrap` cycle requests fresh certificates
-
-**Current**: Production Let's Encrypt (controlled by `k8s/cert-manager-issuer-config/configmap.yaml`).
-Rate limits apply (5 duplicate certs/week per domain).
-
-**If rate limited**: cert-manager will auto-retry on exponential backoff after the limit expires.
-To force immediate retry after reset:
-
-```bash
-kubectl delete certificaterequest -A -l cert-manager.io/certificate-name
-```
-
-See: <https://letsencrypt.org/docs/rate-limits/>
-
-## Prerequisites / external dependencies
-
-- direnv configured in cluster directory
-- VM hosting: Proxmox host `atlas` with SSH access
-- VPS hosting: Hetzner Cloud account with API token (for VPS control-plane nodes)
-- GitHub for Flux
-
-**Note:** The legacy VPS at `agentydragon.com` (ansible-managed) is separate infrastructure not
-involved in this cluster. It will eventually be replaced once the cluster handles all production
-services (see <docs/plan.md> Phase 3: Production Cutover).
+**Note:** The legacy VPS at `agentydragon.com` is separate infrastructure not involved in
+this cluster (see <docs/plan.md>).

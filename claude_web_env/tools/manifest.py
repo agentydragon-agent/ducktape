@@ -8,9 +8,12 @@ from __future__ import annotations
 import fnmatch
 import sys
 from pathlib import Path
+from typing import IO
 
 import yaml
 from pydantic import BaseModel
+
+from util.bazel.runfiles import get_required_path
 
 
 class Entry(BaseModel):
@@ -39,7 +42,7 @@ class Exclusions(BaseModel):
     # Volatile tool installations: any difference is expected (content, presence,
     # permissions). Covers non-deterministic builds like uv tools, rbenv, nvm.
     volatile_paths: list[str] = []
-    # Session start hook artifacts: created by tools/claude_hooks at runtime,
+    # Session start hook artifacts: created by devinfra/claude at runtime,
     # not part of the base container image. Treated as expected_only_in_live.
     session_hook_artifacts: list[str] = []
     # Skip owner/group comparison entirely (gVisor user namespaces make
@@ -125,7 +128,14 @@ def load_exclusions(path: str | None) -> Exclusions:
     return Exclusions.model_validate_json(text)
 
 
-def parse_ndjson(path: str) -> dict[str, Entry]:
+def load_default_exclusions() -> Exclusions:
+    """Load the bundled exclusions.yaml from runfiles."""
+    path = get_required_path("_main/claude_web_env/exclusions.yaml")
+    data = yaml.safe_load(path.read_text())
+    return Exclusions.model_validate(data)
+
+
+def parse_ndjson(path: str | Path) -> dict[str, Entry]:
     """Parse an NDJSON manifest file into a dict keyed by path."""
     entries: dict[str, Entry] = {}
     with Path(path).open() as fh:
@@ -138,6 +148,6 @@ def parse_ndjson(path: str) -> dict[str, Entry]:
     return entries
 
 
-def write_entry(entry: Entry, out: object = sys.stdout) -> None:
+def write_entry(entry: Entry, out: IO[str] = sys.stdout) -> None:
     """Write a single Entry as an NDJSON line."""
-    out.write(entry.to_ndjson_line() + "\n")  # type: ignore[union-attr]
+    out.write(entry.to_ndjson_line() + "\n")

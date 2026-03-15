@@ -1,5 +1,5 @@
-# AUTO-GENERATED from tools/ci/workflows.yaml - DO NOT EDIT DIRECTLY
-# Regenerate with: bazel run //tools/ci:generate_ci_bin
+# AUTO-GENERATED from devinfra/ci/workflows.yaml - DO NOT EDIT DIRECTLY
+# Regenerate with: bazel run //devinfra/ci:generate_ci_bin
 name: CI
 "on":
   push:
@@ -29,8 +29,7 @@ jobs:
         with:
           fetch-depth: 0
       - uses: astral-sh/setup-uv@v4
-      - id: bazel-cache
-        uses: ./.github/actions/bazel-repo-cache
+      - uses: ./.github/actions/bazel-repo-cache
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -40,11 +39,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: bazel-diff.jar
-          key: bazel-diff-12.1.1
+          key: bazel-diff-16.0.0
       - name: Download bazel-diff
         run: |-
           curl -fsSL -o bazel-diff.jar \
-            "https://github.com/Tinder/bazel-diff/releases/download/12.1.1/bazel-diff_deploy.jar"
+            "https://github.com/Tinder/bazel-diff/releases/download/16.0.0/bazel-diff_deploy.jar"
         if: steps.cache-bazel-diff.outputs.cache-hit != 'true'
       - name: Cache bazel-diff hashes
         uses: actions/cache@v4
@@ -57,19 +56,16 @@ jobs:
           echo "BAZEL_DIFF_JAR=$PWD/bazel-diff.jar" >> $GITHUB_ENV
           echo "BAZEL_DIFF_CACHE_DIR=$PWD/.bazel-diff-cache" >> $GITHUB_ENV
           echo "BAZEL_QUERY_LOG_DIR=$PWD/bazel-query-logs" >> $GITHUB_ENV
-          echo "CI_WORKFLOWS_MANIFEST=$PWD/tools/ci/workflows.yaml" >> $GITHUB_ENV
-          # Full build on main/devel pushes; incremental on PRs and feature branches
-          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master|devel)$ ]]; then
+          echo "CI_WORKFLOWS_MANIFEST=$PWD/devinfra/ci/workflows.yaml" >> $GITHUB_ENV
+          # Full build on main/master pushes; incremental everywhere else (PRs, devel, feature branches)
+          if [[ "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_NAME" =~ ^(main|master)$ ]]; then
             echo "CI_PUSH_STRATEGY=full" >> $GITHUB_ENV
           else
             echo "CI_PUSH_STRATEGY=incremental" >> $GITHUB_ENV
           fi
       - name: Compute CI decision
         id: decide
-        run: uv run tools/ci/ci_decide.py
-      - name: Prewarm repository cache
-        run: bazelisk fetch //...
-        if: always()
+        run: uv run devinfra/ci/ci_decide.py
       - name: Upload targets files
         uses: actions/upload-artifact@v4
         if: always()
@@ -84,17 +80,12 @@ jobs:
           name: bazel-query-logs-${{ github.run_id }}
           path: bazel-query-logs
           if-no-files-found: ignore
-      - uses: ./.github/actions/bazel-repo-cache-save
-        if: always()
-        with:
-          cache-hit: ${{ steps.bazel-cache.outputs.cache-hit }}
-          cache-key: ${{ steps.bazel-cache.outputs.cache-key }}
-  bazel-build:
+  bazel-check:
     needs:
       - compute-targets
       - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-build')
-    uses: ./.github/workflows/bazel-build.yml
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-check')
+    uses: ./.github/workflows/bazel-check.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
@@ -109,43 +100,33 @@ jobs:
       targets: ${{ needs.compute-targets.outputs.targets }}
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
-  bazel-lint:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-lint')
-    uses: ./.github/workflows/bazel-lint.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
-  bazel-typecheck:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-typecheck')
-    uses: ./.github/workflows/bazel-typecheck.yml
-    with:
-      targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
-  bazel-rust-lint:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-rust-lint')
-    uses: ./.github/workflows/bazel-rust-lint.yml
-    with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
   rbe-image:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')
     uses: ./.github/workflows/rbe-image.yml
-  props-backend-image:
+  props-images:
+    needs:
+      - compute-targets
+      - rbe-image
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-images')
+    uses: ./.github/workflows/props-images.yml
+    with:
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+    secrets: inherit
+  bazel-harbor-images:
+    needs:
+      - compute-targets
+      - rbe-image
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-harbor-images')
+    uses: ./.github/workflows/bazel-harbor-images.yml
+    with:
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+    secrets: inherit
+  openclaw-image:
     needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-backend-image')
-    uses: ./.github/workflows/props-backend-image.yml
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-image')
+    uses: ./.github/workflows/openclaw-image.yml
+    secrets: inherit
   nix-flake-check:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')

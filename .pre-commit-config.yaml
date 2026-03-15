@@ -4,14 +4,14 @@
 exclude: |
   (?x)^(
     # Legacy/archived directories
-    k8s_old/.*|
+    x/k8s_old/.*|
 
     # Artifacts captured from live Claude Code containers — not our source code
     claude_web_env/(rootfs|reference)/.*|
     claude_web_env/live-dpkg-versions\.txt|
 
     # Test data
-    claude/claude_hooks/testdata/.*\.md|
+    x/claude_hooks/testdata/.*\.md|
     tana/testdata/.*|
 
     # Generated content
@@ -51,24 +51,18 @@ repos:
       # --pytest-test-first
       # - check-shebang-scripts-are-executable
 
-  # Ansible syntax check: Fast validation for pre-commit
-  #
-  # Pre-commit: Just runs ansible-playbook --syntax-check (fast, catches essential errors)
-  # CI: Runs full ansible-lint with all rules (thorough, slower)
-  #
-  # This gives fast local feedback (1-3 seconds) while ensuring thorough validation in CI.
-  # Syntax check catches: YAML errors, undefined variables, invalid module usage, etc.
-  # Full ansible-lint in CI catches: Style issues, best practices, deprecated modules, etc.
-
-  # Ruff linter (formatting handled by bazel-format below)
+  # Ruff linter and formatter
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.14.6
     hooks:
       - id: ruff-check
         args: [--fix, --config, ruff.toml]
         files: "\\.py$"
+      - id: ruff-format
+        args: [--config, ruff.toml]
+        files: "\\.py$"
 
-  # TODO: Check if Bazel mypy (bazelisk build --config=check //...) can replace
+  # TODO: Check if Bazel mypy (runs by default via bazel build //...) can replace
   # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
   # correctly and uses a single mypy.ini config.
 
@@ -77,7 +71,7 @@ repos:
     hooks:
       - id: nixfmt
         name: nixfmt
-        entry: tools/precommit/run-nixfmt.sh
+        entry: devinfra/precommit/run_nixfmt.sh
         language: system
         files: "\\.nix$"
 
@@ -90,15 +84,50 @@ repos:
         files: ^(cluster|website)/.*\.md$
 
   # NOTE: ESLint and svelte-check are handled by Bazel:
-  # - ESLint: bazel build --config=lint //...
+  # - ESLint: bazel build //... (lint aspects run by default)
   # - svelte-check: bazel test //props/frontend:svelte_check_test
-  #                 bazel test //agent_server/src/agent_server/web:svelte_check_test
+  #                 bazel test //x/agent_server/web:svelte_check_test
+
+  # Buildifier - Bazel/Starlark formatting and linting
+  # TODO: Sync buildifier version with Bazel (currently keith=8.2.1.1, Bazel=8.2.1.2 in MODULE.bazel)
+  # Consider: extract version from MODULE.bazel, or pin both to same source
+  - repo: https://github.com/keith/pre-commit-buildifier
+    rev: 8.2.1.1
+    hooks:
+      - id: buildifier
+      - id: buildifier-lint
+
+  # shfmt - Shell script formatting
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.12.0-2
+    hooks:
+      - id: shfmt
+
+  # rustfmt - Rust code formatting
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+
+  # gofumpt - Go code formatting (strict superset of gofmt, isolated via language: golang)
+  - repo: local
+    hooks:
+      - id: gofumpt
+        name: gofumpt
+        entry: gofumpt -w
+        language: golang
+        additional_dependencies:
+          - mvdan.cc/gofumpt@v0.9.2
+        types: [go]
 
   # ============================================================================
   # LOCAL HOOKS
   # ============================================================================
   - repo: local
     hooks:
+      # Ansible syntax check: Fast validation for pre-commit
+      # Pre-commit: Just runs ansible-playbook --syntax-check (fast, catches essential errors)
+      # CI: Runs full ansible-lint with all rules (thorough, slower)
       - id: ansible-syntax-check
         name: ansible-playbook --syntax-check
         entry: ansible/scripts/run-syntax-check.sh
@@ -117,7 +146,7 @@ repos:
       # NODE_PATH set by pre-commit's language:node environment
       - id: prettier
         name: prettier
-        entry: prettier --write --ignore-unknown
+        entry: prettier --write --ignore-unknown --list-different
         language: node
         additional_dependencies:
           - prettier@3.7.4
@@ -126,16 +155,34 @@ repos:
         files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html)$"
         exclude: "\\.pnpm/"
 
-      # Unified pre-commit: format + validate
+      # Block non-root pyproject.toml files — all Python packaging config must live in the root pyproject.toml
+      - id: no-subdir-pyproject-toml
+        name: No sub-directory pyproject.toml files
+        entry: bash -c 'echo "Non-root pyproject.toml files are forbidden (use root pyproject.toml):" >&2; printf "  %s\n" "$@" >&2; exit 1' --
+        language: system
+        files: "pyproject\\.toml$"
+        exclude: "^pyproject\\.toml$"
+
+      # Unified pre-commit: custom validations only (formatting handled by dedicated hooks)
       # Uses --script_path runner to avoid Bazel lock (allows parallel batch execution)
       # Runners stored in .git/precommit-runners/, one per pre-commit invocation
+      # NOTE: formatting moved to standard hooks (buildifier, ruff, shfmt - see above)
       - id: bazel-precommit
-        name: bazel precommit (format + validate)
-        entry: tools/precommit/run-precommit.sh
+        name: bazel precommit (validate)
+        entry: devinfra/precommit/run_precommit.sh
         language: system
         pass_filenames: true
-        # Triggers on: formattable files, Bazel files, test files, cluster files
-        files: "\\.(js|jsx|ts|tsx|svelte|css|md|yaml|yml|json|html|py|sh|bash|tf)$|BUILD(\\.bazel)?$|WORKSPACE(\\.bazel)?$|\\.bzl$|MODULE\\.bazel$|^cluster/"
+        # Triggers on: test files (pytest-main), cluster files (validations), terraform (centralization)
+        files: |
+          (?x)^(
+            .*\\.(py|tf)$|
+            cluster/
+          )$
+        exclude: |
+          (?x)^(
+            # Authentik blueprints are not K8s manifests, skip validation
+            cluster/k8s/authentik/blueprints/.*
+          )$
 
       # Specimens: block changes to committed snapshot code/ directories
       - id: block-specimen-code-changes
@@ -173,7 +220,18 @@ repos:
           -ignore-missing-schemas
           -skip CustomResourceDefinition,Kustomization
         files: ^cluster/k8s/.*\.(yaml|yml)$
-        exclude: ^cluster/k8s/flux-system/gotk-components\.yaml$
+        exclude: |
+          (?x)^(
+            cluster/k8s/flux-system/gotk-components\.yaml|
+            # Authentik blueprints are not K8s manifests, skip validation
+            cluster/k8s/authentik/blueprints/.*|
+            # Application config files, not K8s manifests
+            cluster/k8s/gatus/config\.yaml|
+            cluster/k8s/oauth-broker/config\.yaml|
+            cluster/k8s/applications/headscale/config\.yaml|
+            cluster/k8s/airlock/config\.yaml|
+            cluster/k8s/homeassistant-proxy/config\.yaml
+          )$
         types: [yaml]
 
   # ============================================================================
@@ -201,7 +259,7 @@ repos:
   # because proxy.golang.org redirects zip downloads to storage.googleapis.com.
   # If NO_PROXY bypasses the egress proxy for that domain, DNS fails (no direct
   # internet in gVisor sandbox). The session-start hook should strip *.googleapis.com
-  # from NO_PROXY — see tools/claude_hooks/ proxy documentation.
+  # from NO_PROXY — see devinfra/claude/ proxy documentation.
   - repo: local
     hooks:
       - id: tflint
@@ -209,15 +267,21 @@ repos:
         language: golang
         additional_dependencies:
           - github.com/terraform-linters/tflint@v0.56.0
-        entry: tools/precommit/run_tflint.sh
+        entry: devinfra/precommit/run_tflint.sh
         files: "^cluster/terraform/.*\\.tf$"
 
   # NOTE: terraform_validate hook removed — Bazel rules_tf now covers all
   # terraform modules via :validate and :lint targets with hermetic providers.
   # See MODULE.bazel tf.download(mirror={...}) for provider configuration.
 
-  # NOTE: The following hooks are combined into bazel-precommit:
-  # - bazel-format (ruff, shfmt, buildifier)
-  # - bazel-validate (buildifier-lint, pytest-main check, cluster validations)
-  # - terraform checks (terraform-version-centralization)
+  # NOTE: The following custom validations are in bazel-precommit:
+  # - pytest-main check (ensures test files have pytest_bazel.main() entry points)
+  # - terraform-version-centralization (checks terraform modules don't define provider versions)
+  # - filename-conventions (enforces underscores not dashes in new .py/.md files)
+  # - cluster validations (kustomize, helm, sealed-secrets)
   # This avoids Bazel client lock contention and runs validations in parallel.
+  #
+  # Standard formatting hooks (no longer in bazel-precommit):
+  # - buildifier (format + lint) → keith/pre-commit-buildifier
+  # - ruff (format + lint) → astral-sh/ruff-pre-commit
+  # - shfmt (format) → scop/pre-commit-shfmt

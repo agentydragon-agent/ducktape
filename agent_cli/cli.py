@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -16,19 +15,13 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.mcp_provider import MCPToolProvider
 from agent_core.transcript_handler import TranscriptHandler
-from cli_util.decorators import async_run
-from cli_util.logging import make_logging_callback
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.config_loader import build_mcp_config
 from mcp_infra.display.rich_display import CompactDisplayHandler
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
-
-# Defaults via environment with sensible fallbacks
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
-SYSTEM_INSTRUCTIONS = os.getenv(
-    "SYSTEM_INSTRUCTIONS", "You are a code agent. Use tools to execute commands. Respond with helpful, concise text."
-)
+from util.logging import make_logging_callback
+from util.typer import async_run
 
 app = typer.Typer(help="Mini Codex CLI — run an agent REPL.", no_args_is_help=True)
 
@@ -37,8 +30,13 @@ app.callback()(make_logging_callback())
 
 
 # Typer Option defaults must not be created in function signatures (ruff B008)
-MODEL_OPT = typer.Option(DEFAULT_MODEL, "--model", help="Model name (OPENAI_MODEL)")
-SYSTEM_OPT = typer.Option(SYSTEM_INSTRUCTIONS, "--system", help="System instructions (SYSTEM_INSTRUCTIONS)")
+MODEL_OPT = typer.Option("gpt-5.1-codex-mini", "--model", help="Model name", envvar="OPENAI_MODEL")
+SYSTEM_OPT = typer.Option(
+    "You are a code agent. Use tools to execute commands. Respond with helpful, concise text.",
+    "--system",
+    help="System instructions",
+    envvar="SYSTEM_INSTRUCTIONS",
+)
 MCP_CONFIGS_OPT = typer.Option(
     [],
     "--mcp-config",
@@ -52,17 +50,6 @@ MCP_CONFIGS_OPT = typer.Option(
 TRANSCRIPT_OPT = typer.Option(
     None, "--transcript", help="Write full transcript (API requests/responses) to this JSONL file"
 )
-
-
-def _print_enabled(servers: list[str]) -> None:
-    print("MCP servers enabled:", ", ".join(servers) if servers else "<none>")
-    print("Tip: prefer HTTP specs; inproc factory specs are embedded over HTTP")
-
-
-def _build_cfg_and_print(mcp_configs: list[Path]):
-    cfg = build_mcp_config(mcp_configs)
-    _print_enabled(list(cfg.mcpServers.keys()))
-    return cfg
 
 
 @app.command("run")
@@ -80,7 +67,10 @@ async def run(
     console = Console()
     console.print("[bold green]Agent ready.[/] Ctrl-D to exit.", highlight=False)
 
-    cfg = _build_cfg_and_print(mcp_configs)
+    cfg = build_mcp_config(mcp_configs)
+    servers = list(cfg.mcpServers.keys())
+    print("MCP servers enabled:", ", ".join(servers) if servers else "<none>")
+    print("Tip: prefer HTTP specs; inproc factory specs are embedded over HTTP")
 
     # Build model client
     client = build_client(model)

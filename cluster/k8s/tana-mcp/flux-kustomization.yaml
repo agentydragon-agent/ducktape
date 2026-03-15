@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tana-mcp
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/tana-mcp
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: tana-mcp
+      namespace: tana-mcp
+  dependsOn:
+    - name: tana-mcp-namespace
+    - name: harbor-pull-secret
+    - name: harbor # Image hosted on registry.allegedly.works

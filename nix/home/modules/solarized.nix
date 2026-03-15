@@ -13,19 +13,19 @@ let
   solarizedLightScheme = solarizedLight;
   solarizedDarkScheme = solarizedDark;
 
-  # Theme switching scripts - wrappers around switch_gnome_terminal_profile.
+  # Theme switching scripts - wrappers around gterm-theme.
   # Installed to PATH via home.packages; called by Night Theme Switcher
   # extension on sunrise/sunset and available for manual use.
   set_light_theme = pkgs.writeShellApplication {
     name = "set_light_theme";
-    runtimeInputs = [ ]; # switch_gnome_terminal_profile expected on PATH via pip/pipx
-    text = "switch_gnome_terminal_profile --profile='Solarized Light'";
+    runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
+    text = "gterm-theme --profile='Solarized Light'";
   };
 
   set_dark_theme = pkgs.writeShellApplication {
     name = "set_dark_theme";
-    runtimeInputs = [ ]; # switch_gnome_terminal_profile expected on PATH via pip/pipx
-    text = "switch_gnome_terminal_profile --profile='Solarized Dark'";
+    runtimeInputs = [ ]; # gterm-theme expected on PATH via home.packages
+    text = "gterm-theme --profile='Solarized Dark'";
   };
 in
 {
@@ -43,7 +43,6 @@ in
     ]
     ++ lib.optionals enableGui [
       gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher
-      # TODO: Add gnome-terminal-profile-switcher once wheel is published to GitHub Releases
     ];
 
   # Bat theme environment variables for light/dark mode switching
@@ -57,9 +56,99 @@ in
     MC_SKIN = "$HOME/.config/mc/solarized.ini";
   };
 
-  # Midnight Commander Solarized configuration
-  xdg.configFile."mc/solarized.ini" = {
-    source = ../mc-solarized.ini;
+  # Midnight Commander Solarized skin
+  xdg.configFile."mc/solarized.ini".source = (pkgs.formats.ini { }).generate "mc-solarized.ini" {
+    skin.description = "Solarized";
+    Lines = {
+      lefttop = "┌";
+      righttop = "┐";
+      centertop = "─";
+      centerbottom = "─";
+      leftbottom = "└";
+      rightbottom = "┘";
+      leftmiddle = "├";
+      rightmiddle = "┤";
+      centermiddle = "┼";
+      horiz = "─";
+      vert = "│";
+      thinhoriz = "─";
+      thinvert = "│";
+    };
+    core = {
+      _default_ = "lightgray;black";
+      selected = "white;blue";
+      marked = "white";
+      markselect = "brightred;blue";
+      gauge = ";yellow";
+      input = "black;brown";
+      reverse = "blue;green";
+    };
+    dialog = {
+      _default_ = "black;lightgray";
+      dfocus = "black;green";
+      dhotnormal = "blue;lightgray";
+      dhotfocus = "blue;green";
+    };
+    error = {
+      _default_ = "white;red";
+      errdhotnormal = "brightgreen;";
+      errdhotfocus = "blue;green";
+    };
+    filehighlight = {
+      directory = "cyan;";
+      executable = "brightred;";
+      symlink = "magenta;";
+      stalelink = "lightgray;red";
+      device = "brown;blue";
+      special = "black;blue";
+      core = "brightcyan;";
+      temp = "brightgreen;";
+      archive = "brightmagenta;";
+      doc = "red;";
+      source = "green;";
+      media = "brown;";
+      graph = "blue;";
+      database = ";";
+    };
+    menu = {
+      _default_ = "black;lightgray";
+      menuhot = "brightred;";
+      menusel = "blue;green";
+      menuhotsel = "brightmagenta;green";
+      menuinactive = "lightgray;black";
+    };
+    help = {
+      _default_ = "lightgray;blue";
+      helpitalic = "gray;";
+      helpbold = "white;";
+      helplink = "brown;";
+      helpslink = "brightmagenta;green";
+    };
+    editor = {
+      _default_ = "lightgray;black";
+      editbold = "green;blue";
+      editmarked = "lightgray;green";
+      editwhitespace = "brightblue;blue";
+      editlinestate = "brightmagenta";
+      bookmark = "white;red";
+      bookmarkfound = "black;green";
+    };
+    viewer.viewunderline = "brighmagenta;black";
+    buttonbar = {
+      hotkey = "lightgray;black";
+      button = "white;blue";
+    };
+    widget-common = {
+      sort-sign-up = "↓";
+      sort-sign-down = "↑";
+    };
+    widget-panel = {
+      hiddenfiles-sign-show = "⋅";
+      hiddenfiles-sign-hide = "•";
+      history-prev-item-sign = "«";
+      history-next-item-sign = "»";
+      history-show-list-sign = "^";
+    };
   };
 
   # GNOME Terminal Solarized profiles using nix-colors schemes (GUI only)

@@ -28,13 +28,19 @@
     initialSplit?: Split;
     initialKind?: ExampleKind;
     onTriggerRun?: (_: RunTrigger) => void;
+    initialRuns?: RunInfo[];
+    initialTotalCount?: number;
   }
-  let { initialDefinitionId, initialSplit, initialKind, onTriggerRun }: Props = $props();
+  let { initialDefinitionId, initialSplit, initialKind, onTriggerRun, initialRuns, initialTotalCount }: Props =
+    $props();
 
   // State
-  let runs: RunInfo[] = $state([]);
-  let totalCount = $state(0);
-  let loading = $state(true);
+  // svelte-ignore state_referenced_locally
+  let runs: RunInfo[] = $state(initialRuns ?? []);
+  // svelte-ignore state_referenced_locally
+  let totalCount = $state(initialTotalCount ?? 0);
+  // svelte-ignore state_referenced_locally
+  let loading = $state(!initialRuns);
   let offset = $state(0);
   const limit = 50;
 
@@ -91,7 +97,10 @@
     }
   }
 
-  // DataTable for sorting
+  // Sort state tracked outside DataTable so it survives data changes
+  let sortColumn = $state("created_at");
+  let sortDirection: "asc" | "desc" = $state("desc");
+
   const table = $derived(
     new DataTable({
       data: runs,
@@ -103,22 +112,29 @@
         { id: "status", key: "status", name: "Status", sortable: true },
         { id: "created_at", key: "created_at", name: "Created", sortable: true },
       ],
-      initialSort: "created_at",
-      initialSortDirection: "desc",
+      initialSort: sortColumn,
+      initialSortDirection: sortDirection,
     })
   );
 
+  function handleSort(columnId: string) {
+    if (sortColumn === columnId) {
+      sortDirection = sortDirection === "asc" ? "desc" : "asc";
+    } else {
+      sortColumn = columnId;
+      sortDirection = "asc";
+    }
+  }
+
   function getSortIndicator(columnId: string): string {
-    const state = table.getSortState(columnId);
-    if (state === "asc") return " ↑";
-    if (state === "desc") return " ↓";
-    return "";
+    if (sortColumn !== columnId) return "";
+    return sortDirection === "asc" ? " ↑" : " ↓";
   }
 
   // Rows are clickable via RunIdLink inside each row
 
   onMount(() => {
-    loadRuns();
+    if (!initialRuns) loadRuns();
   });
 
   // Pagination info
@@ -126,14 +142,14 @@
   const pageEnd = $derived(Math.min(offset + limit, totalCount));
 </script>
 
-<div class="bg-white rounded-lg shadow p-4">
+<div class="bg-white dark:bg-gray-900 rounded-lg shadow dark:shadow-gray-950/30 p-4">
   <div class="flex items-center gap-3 mb-3">
     <BackButton />
     <h2 class="text-lg font-semibold">
       {#if initialDefinitionId}
-        Runs for <span class="font-mono text-blue-600">{initialDefinitionId}</span>
-        {#if initialSplit}<span class="text-gray-500">/ {initialSplit}</span>{/if}
-        {#if initialKind}<span class="text-gray-500">/ {initialKind}</span>{/if}
+        Runs for <span class="font-mono text-blue-600 dark:text-blue-400">{initialDefinitionId}</span>
+        {#if initialSplit}<span class="text-gray-500 dark:text-gray-400">/ {initialSplit}</span>{/if}
+        {#if initialKind}<span class="text-gray-500 dark:text-gray-400">/ {initialKind}</span>{/if}
       {:else}
         All Runs
       {/if}
@@ -153,10 +169,10 @@
   <!-- Filters -->
   <div class="flex gap-4 mb-4">
     <div>
-      <label for="runs-status-filter" class="block text-xs text-gray-500 mb-1">Status</label>
+      <label for="runs-status-filter" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Status</label>
       <select
         id="runs-status-filter"
-        class="border rounded px-2 py-1 text-sm"
+        class="border rounded px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700"
         bind:value={statusFilter}
         onchange={handleFilterChange}
       >
@@ -167,10 +183,10 @@
       </select>
     </div>
     <div>
-      <label for="runs-agent-type-filter" class="block text-xs text-gray-500 mb-1">Agent Type</label>
+      <label for="runs-agent-type-filter" class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Agent Type</label>
       <select
         id="runs-agent-type-filter"
-        class="border rounded px-2 py-1 text-sm"
+        class="border rounded px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-700"
         bind:value={agentTypeFilter}
         onchange={handleFilterChange}
       >
@@ -181,45 +197,63 @@
       </select>
     </div>
     <div class="flex-1"></div>
-    <div class="self-end text-sm text-gray-600">
+    <div class="self-end text-sm text-gray-600 dark:text-gray-400">
       {pageStart}–{pageEnd} of {totalCount}
     </div>
   </div>
 
   {#if loading}
-    <p class="text-gray-500 text-sm">Loading...</p>
+    <p class="text-gray-500 dark:text-gray-400 text-sm">Loading...</p>
   {:else if runs.length === 0}
-    <p class="text-gray-500 text-sm">No runs found</p>
+    <p class="text-gray-500 dark:text-gray-400 text-sm">No runs found</p>
   {:else}
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm">
         <thead>
-          <tr class="border-b border-gray-300">
+          <tr class="border-b border-gray-300 dark:border-gray-600">
             <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort("agent_run_id")}
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("agent_run_id")}
             >
               ID{getSortIndicator("agent_run_id")}
             </th>
             <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort("image_digest")}
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("image_digest")}
             >
               Definition{getSortIndicator("image_digest")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("split")}>
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("split")}
+            >
               Split{getSortIndicator("split")}
             </th>
             <th class="px-3 py-2 text-left"> Example </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("model")}>
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("model")}
+            >
               Model{getSortIndicator("model")}
             </th>
-            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort("status")}>
+            <th
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("status")}
+            >
               Status{getSortIndicator("status")}
             </th>
+            <th class="px-3 py-2 text-right"> Issues </th>
+            <th class="px-3 py-2 text-right"> LLM Reqs </th>
+            <th class="px-3 py-2 text-left"> Grading </th>
+            <th class="px-3 py-2 text-right" title="Present grading edges / Drift (pending) grading edges">
+              Present/Drift
+            </th>
+            <th class="px-3 py-2 text-right"> TPs </th>
+            <th class="px-3 py-2 text-right"> FPs </th>
+            <th class="px-3 py-2 text-right"> Credit </th>
             <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort("created_at")}
+              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700"
+              onclick={() => handleSort("created_at")}
             >
               Created{getSortIndicator("created_at")}
             </th>
@@ -227,33 +261,74 @@
         </thead>
         <tbody>
           {#each table.rows as run (run.agent_run_id)}
-            <tr class="border-b border-gray-100 hover:bg-gray-50">
+            <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
               <td class="px-3 py-2 text-xs">
                 <RunIdLink id={run.agent_run_id} />
               </td>
               <td class="px-3 py-2 text-xs">
                 <DefinitionIdLink id={run.image_digest} />
               </td>
-              <td class="px-3 py-2 text-xs text-gray-500">
+              <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                 {run.split ?? "—"}
               </td>
-              <td class="px-3 py-2 text-xs text-gray-500">
+              <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                 {#if run.type_config.agent_type === "critic"}
                   {@const config = run.type_config as CriticTypeConfig}
                   <ExampleLink example={config.example} />
                 {:else}
-                  <span class="text-gray-400">—</span>
+                  <span class="text-gray-400 dark:text-gray-500">—</span>
                 {/if}
               </td>
-              <td class="px-3 py-2 text-xs text-gray-500">
+              <td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
                 {run.model}
               </td>
               <td class="px-3 py-2">
                 <span class="px-2 py-0.5 rounded text-xs font-medium capitalize {getStatusColor(run.status)}">
-                  {formatStatus(run.status)}
+                  {formatStatus(run.status)}{run.status === "exited" && run.container_exit_code != null
+                    ? ` (${run.container_exit_code})`
+                    : ""}
                 </span>
               </td>
-              <td class="px-3 py-2 text-gray-600 text-xs">
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.reported_issues_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.llm_requests_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs">
+                {#if run.grading}
+                  {@const fullyGraded = run.grading.drift_edges === 0}
+                  {@const partiallyGraded = run.grading.present_edges > 0}
+                  <span
+                    class="px-2 py-0.5 rounded text-xs font-medium {fullyGraded
+                      ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                      : partiallyGraded
+                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'}"
+                  >
+                    {fullyGraded ? "Graded" : partiallyGraded ? "Partial" : "None"}
+                  </span>
+                {:else}
+                  <span class="text-gray-400 dark:text-gray-500">—</span>
+                {/if}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {#if run.grading}
+                  <span>{run.grading.present_edges}</span><span class="text-gray-400 dark:text-gray-500"
+                    >/{run.grading.drift_edges}</span
+                  >
+                {:else}—{/if}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.grading?.tp_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.grading?.fp_count ?? "—"}
+              </td>
+              <td class="px-3 py-2 text-xs text-right text-gray-500 dark:text-gray-400">
+                {run.grading ? run.grading.total_credit.toFixed(2) : "—"}
+              </td>
+              <td class="px-3 py-2 text-gray-600 dark:text-gray-400 text-xs">
                 {formatAge(run.created_at)}
               </td>
             </tr>
@@ -266,7 +341,7 @@
     <div class="flex justify-between items-center mt-4">
       <button
         type="button"
-        class="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-3 py-1 text-sm border rounded dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={prevPage}
         disabled={offset === 0}
       >
@@ -274,7 +349,7 @@
       </button>
       <button
         type="button"
-        class="px-3 py-1 text-sm border rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-3 py-1 text-sm border rounded dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
         onclick={nextPage}
         disabled={offset + limit >= totalCount}
       >

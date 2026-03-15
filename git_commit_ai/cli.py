@@ -23,11 +23,11 @@ from pathlib import Path
 import pygit2
 import typer
 
-from bazel_util.workspace import get_build_workspace_directory
-from cli_util.decorators import async_run
 from git_commit_ai.agent_backend import generate_commit_message_agent
 from git_commit_ai.config import load_settings
 from git_commit_ai.editor import render_editor_content, run_editor
+from util.bazel.workspace import get_build_workspace_directory
+from util.typer import async_run
 
 app = typer.Typer(help="AI-powered git commit message generator")
 
@@ -96,25 +96,6 @@ def stage_tracked_changes(repo: pygit2.Repository) -> None:
         elif flags & pygit2.GIT_STATUS_WT_DELETED:
             repo.index.remove(path)
     repo.index.write()
-
-
-async def _run_editor_flow(
-    repo: pygit2.Repository,
-    msg: str,
-    previous: str | None,
-    context: str | None,
-    *,
-    verbose: bool,
-    cached: bool,
-    elapsed: float,
-):
-    content = render_editor_content(
-        repo, msg, cached=cached, elapsed_s=elapsed, verbose=verbose, user_context=context, previous_message=previous
-    )
-    new_msg = await run_editor(repo, content)
-    if new_msg is None:
-        raise SystemExit(1)
-    return new_msg
 
 
 @app.command("commit")
@@ -194,9 +175,19 @@ async def commit(
 
     elapsed = time.monotonic()
     if not accept_ai:
-        ai_msg = await _run_editor_flow(
-            repo, ai_msg, prev_msg, message, verbose=verbose, cached=was_cached, elapsed=elapsed
+        content = render_editor_content(
+            repo,
+            ai_msg,
+            cached=was_cached,
+            elapsed_s=elapsed,
+            verbose=verbose,
+            user_context=message,
+            previous_message=prev_msg,
         )
+        edited = await run_editor(repo, content)
+        if edited is None:
+            raise SystemExit(1)
+        ai_msg = edited
 
     cmd = ["git", "commit", "-m", ai_msg, "--no-verify"]
     if amend:

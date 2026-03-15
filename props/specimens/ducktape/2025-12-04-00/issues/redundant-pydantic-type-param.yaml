@@ -1,13 +1,13 @@
 rationale: |
-  Line 133 in agent.py explicitly sets `type="text"` when constructing a TextContent object:
-  `mcp_types.TextContent(type="text", text=message)`. This parameter is redundant if "text" is the
-  default value for the type discriminator field. The construction should omit the type parameter
-  unless it's required by the Pydantic model definition (i.e., has no default).
-should_flag: true
+  A critic might flag `mcp_types.TextContent(type="text", text=message)` at line 133
+  as redundantly passing the discriminator field. However, `mcp.types.TextContent`
+  defines `type: Literal["text"]` with no default value — the field is required.
+  Omitting it would raise a ValidationError.
+should_flag: false
 occurrences:
   - occurrence_id: occ-0
     files:
       adgn/src/adgn/agent/agent.py:
         - [133, 133]
-    critic_scopes_expected_to_recall:
-      - - adgn/src/adgn/agent/agent.py
+    relevant_files:
+      - adgn/src/adgn/agent/agent.py

@@ -50,13 +50,13 @@ func isSpecificVersion(version string) bool {
 // Returns the extracted version string, or empty string if not found.
 //
 // The function:
-//   1. Creates a context.WithTimeout of 10 seconds (0x2540be400 ns)
-//   2. Runs exec.CommandContext(ctx, claudePath, "--version")
-//   3. Sets cmd.Stdin to an empty strings.Reader
-//   4. Calls cmd.Output()
-//   5. Converts output to string
-//   6. Extracts version via versionRegex.FindString
-//   7. Defers cancel of the timeout context
+//  1. Creates a context.WithTimeout of 10 seconds (0x2540be400 ns)
+//  2. Runs exec.CommandContext(ctx, claudePath, "--version")
+//  3. Sets cmd.Stdin to an empty strings.Reader
+//  4. Calls cmd.Output()
+//  5. Converts output to string
+//  6. Extracts version via versionRegex.FindString
+//  7. Defers cancel of the timeout context
 //
 // Binary address: 0xae15a0 - 0xae1719
 func getInstalledVersion(claudePath string, ctx context.Context) string {
@@ -116,7 +116,6 @@ func installViaNpm(
 
 	// 0xae1925: cmd.CombinedOutput()
 	output, err := cmd.CombinedOutput()
-
 	if err != nil {
 		// 0xae192f-0xae19a0: fmt.Errorf with format length 0x22 = 34
 		// "npm install failed: %s, output: %s"
@@ -156,7 +155,6 @@ func upgradeViaCLI(
 
 	// 0xae1bf6: cmd.CombinedOutput()
 	output, err := cmd.CombinedOutput()
-
 	if err != nil {
 		// 0xae1c05-0xae1c72: fmt.Errorf with format length 0x25 = 37
 		// "claude upgrade failed: %s, output: %s"
@@ -186,25 +184,25 @@ func upgradeViaCLI(
 //   - diagReporter: diagnostic reporter for telemetry
 //
 // Flow:
-//   1. If version is empty, default to "latest" (len 6)
-//   2. If version is "skip", log and call outcomes with "skip" status, return nil
-//   3. Get installed version via getInstalledVersion
-//   4. If version is "current" (len 7):
-//      a. If installed version exists, log and report success with installed version
-//      b. If no installed version, log error and report error
-//   5. Otherwise (specific version or channel):
-//      a. Log the install attempt with version and installed version
-//      b. Call outcomes reporter with "info" status
-//      c. If installed version exists and isSpecificVersion(version):
-//         - Compare installed vs target; if equal, log "already installed" and return
-//      d. If installed version exists: try upgradeViaCLI first
-//         - On upgrade error, call handleInstallError (which may still succeed)
-//      e. If upgrade succeeded (or no installed version), verify with getInstalledVersion
-//         - If target was specific and new version != target:
-//           return version mismatch error via handleInstallError
-//      f. If no installed version at all: try installViaNpm
-//         - On install error, call handleInstallError
-//      g. After install, re-check version and report
+//  1. If version is empty, default to "latest" (len 6)
+//  2. If version is "skip", log and call outcomes with "skip" status, return nil
+//  3. Get installed version via getInstalledVersion
+//  4. If version is "current" (len 7):
+//     a. If installed version exists, log and report success with installed version
+//     b. If no installed version, log error and report error
+//  5. Otherwise (specific version or channel):
+//     a. Log the install attempt with version and installed version
+//     b. Call outcomes reporter with "info" status
+//     c. If installed version exists and isSpecificVersion(version):
+//     - Compare installed vs target; if equal, log "already installed" and return
+//     d. If installed version exists: try upgradeViaCLI first
+//     - On upgrade error, call handleInstallError (which may still succeed)
+//     e. If upgrade succeeded (or no installed version), verify with getInstalledVersion
+//     - If target was specific and new version != target:
+//     return version mismatch error via handleInstallError
+//     f. If no installed version at all: try installViaNpm
+//     - On install error, call handleInstallError
+//     g. After install, re-check version and report
 //
 // Binary address: 0xae1d80 - 0xae2902
 func InstallOrUpdateClaudeCode(

@@ -3,14 +3,12 @@
 ## Linting
 
 - [ ] Add a pre-commit linter to enforce the link style convention from STYLE.md: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
-- [ ] Create unified linter script (`//tools/lint`) like `//tools/format` to run ruff/buildifier via Bazel, eliminating version drift between pre-commit hooks and Bazel aspects
 - [ ] Add ESLint to pre-commit for local JS/TS linting (currently only runs in CI via Bazel)
 - [ ] Consider adding mypy to pre-commit for local type checking (currently only runs in CI via Bazel)
 
 ## Dotfiles
 
 - [ ] Merge agentydragon & gpd dotfiles (rcrc)
-- [ ] Use rcm's `symlink_dirs` feature
 
 ## System Configuration
 

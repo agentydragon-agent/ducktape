@@ -14,7 +14,8 @@ resource "talos_image_factory_schematic" "hcloud" {
     customization = {
       systemExtensions = {
         officialExtensions = [
-          "siderolabs/qemu-guest-agent"
+          "siderolabs/qemu-guest-agent",
+          "siderolabs/iscsi-tools",
         ]
       }
     }
@@ -97,6 +98,14 @@ resource "hcloud_server" "vps" {
     ipv4_enabled = true
     ipv6_enabled = true
   }
+
+  # Hetzner treats user_data and image as immutable — any change forces server
+  # replacement. Talos only reads user_data on first boot; ongoing config is
+  # managed via the Talos API (talos_machine_configuration_apply). Image changes
+  # (new schematic) are applied via talosctl upgrade, not server replacement.
+  lifecycle {
+    ignore_changes = [user_data, image]
+  }
 }
 
 # ============================================================================
@@ -117,26 +126,11 @@ data "talos_machine_configuration" "vps" {
 
   config_patches = [
     yamlencode({
-      machine = {
-        network = {
-          # KubeSpan config stays in machine.network (not deprecated in v1.12)
-          kubespan = {
-            enabled             = true
-            allowDownPeerBypass = true
-          }
-        }
+      machine = merge(local.common_machine_base, {
         nodeLabels = {
-          "topology.kubernetes.io/region" = "hetzner"
-          "topology.kubernetes.io/zone"   = var.hetzner_location
-        }
-        features = {
-          kubePrism = {
-            enabled = true
-            port    = 7445
-          }
-        }
-        registries = {
-          mirrors = local.registry_mirrors
+          "topology.kubernetes.io/region"        = "hetzner"
+          "topology.kubernetes.io/zone"          = var.hetzner_location
+          "node.longhorn.io/create-default-disk" = "true"
         }
         kubelet = {
           # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
@@ -145,22 +139,13 @@ data "talos_machine_configuration" "vps" {
             allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
           }
         }
-      }
-      cluster = {
-        # Each VPS controlplane node consumes a whole VPS instance, so we need
-        # to allow scheduling workloads on them to utilize the VPS resources
-        allowSchedulingOnControlPlanes = true
-        discovery = {
-          enabled = true
-        }
-        network = {
-          cni = { name = "none" }
-        }
-        proxy = { disabled = true }
-      }
+      })
+      cluster = local.common_cluster_config
     }),
-    # Hostname: hcloud platform auto-detects from server name (hcloud_server.vps.name)
-    # Do NOT add explicit HostnameConfig — conflicts with platform's auto hostname
+    # Hostname: hcloud platform derives from server name on first boot.
+    # TODO: explicit hostname needed for talosctl upgrade (platform metadata
+    # not re-read during kexec), but conflicts with platform on first boot.
+    # Need separate user_data vs machine_configuration_apply configs to fix.
   ]
 }
 

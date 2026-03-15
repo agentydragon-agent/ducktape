@@ -53,7 +53,8 @@ type Deployment struct {
 // then checks if it starts with "/home/project/" (13 chars = 0x0d).
 //
 // Returns nil on success, or an error like:
-//   "invalid project directory %q: must be under %s"
+//
+//	"invalid project directory %q: must be under %s"
 //
 // Binary address: 0xb41b80
 func ValidateProjectDir(dir string) error {
@@ -68,12 +69,12 @@ func ValidateProjectDir(dir string) error {
 }
 
 // ProjectName derives a project name from a path. It:
-// 1. Strips known prefixes: "/home/project/" (len 16) and another (len 8)
-// 2. Truncates to 20 characters
-// 3. Lowercases the string
-// 4. Iterates runes: keeps [a-z] (0x61-0x7a, check SI<=0x19), [0-9] (0x30-0x39, check SI<=0x9),
-//    and '-' (0x2d), replacing all other characters with '-'
-// 5. Prepends "duck-" (5 chars)
+//  1. Strips known prefixes: "/home/project/" (len 16) and another (len 8)
+//  2. Truncates to 20 characters
+//  3. Lowercases the string
+//  4. Iterates runes: keeps [a-z] (0x61-0x7a, check SI<=0x19), [0-9] (0x30-0x39, check SI<=0x9),
+//     and '-' (0x2d), replacing all other characters with '-'
+//  5. Prepends "duck-" (5 chars)
 //
 // Binary address: 0xb41c60
 func ProjectName(path string) string {
@@ -83,7 +84,7 @@ func ProjectName(path string) string {
 		len int
 	}{
 		{"/home/project/", 16}, // 0x10 = 16
-		{"project/", 8},       // 0x08 = 8
+		{"project/", 8},        // 0x08 = 8
 	}
 
 	for _, p := range prefixes {
@@ -178,7 +179,6 @@ func CollectFiles(dir string) ([]FileEntry, error) {
 
 		return nil
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect files: %w", err)
 	}
@@ -193,10 +193,10 @@ func CollectFiles(dir string) ([]FileEntry, error) {
 //   - "target" (bool true) - deployment target
 //   - "files" (array) - file entries
 //   - "gitSource" (object) with keys:
-//     - "repoSlug" (null)
-//     - "buildCommand" (string)
-//     - "outputDirectory" (string)
-//     - "installCommand" (string)
+//   - "repoSlug" (null)
+//   - "buildCommand" (string)
+//   - "outputDirectory" (string)
+//   - "installCommand" (string)
 //
 // Sends POST request with Authorization: Bearer <token>.
 // On marshal error: "failed to marshal deployment request: %w"
@@ -210,15 +210,15 @@ func (c *VercelClient) CreateDeployment(
 ) (*Deployment, error) {
 	// Build request body
 	reqBody := map[string]interface{}{
-		"name":    name,    // len=4
-		"project": name,    // len=7
-		"target":  true,    // len=6
-		"files":   files,   // len=5
+		"name":    name,  // len=4
+		"project": name,  // len=7
+		"target":  true,  // len=6
+		"files":   files, // len=5
 		"gitSource": map[string]interface{}{
-			"repoSlug":        nil,       // len=9
-			"buildCommand":    "",        // len=12
-			"outputDirectory": "",        // len=15
-			"installCommand":  "",        // len=14
+			"repoSlug":        nil, // len=9
+			"buildCommand":    "",  // len=12
+			"outputDirectory": "",  // len=15
+			"installCommand":  "",  // len=14
 		},
 	}
 
@@ -286,9 +286,9 @@ func (c *VercelClient) UploadFile(ctx context.Context, file FileEntry) error {
 		return fmt.Errorf("failed to create upload request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+c.Token)                // len=13
-	req.Header.Set("Content-Type", "application/octet-stream")         // len=12, value len=24
-	req.Header.Set("x-vercel-digest", file.SHA)                        // len=15
+	req.Header.Set("Authorization", "Bearer "+c.Token)         // len=13
+	req.Header.Set("Content-Type", "application/octet-stream") // len=12, value len=24
+	req.Header.Set("x-vercel-digest", file.SHA)                // len=15
 
 	client := &http.Client{Timeout: c.Timeout}
 	resp, err := client.Do(req)
@@ -309,16 +309,16 @@ func (c *VercelClient) UploadFile(ctx context.Context, file FileEntry) error {
 // Uses time.Now() + deadline for timeout loop.
 //
 // In loop:
-//   1. Checks context cancellation via selectnbrecv
-//   2. Constructs URL with deployment ID and name params via fmt.Sprintf,
-//      appends "?teamId=" if present
-//   3. Makes GET request with Authorization header
-//   4. Reads response body with io.ReadAll, closes body
-//   5. Checks status code:
-//      - 200 (0xc8) = parse response for state (checks for READY/ERROR/CANCELED)
-//      - 429 (0x1ad) or >=500 (0x1f4) = retry after 2s timer (0x77359400 ns)
-//      - other = error
-//   6. Uses selectgo with 2 cases (context done vs timer) for retry wait
+//  1. Checks context cancellation via selectnbrecv
+//  2. Constructs URL with deployment ID and name params via fmt.Sprintf,
+//     appends "?teamId=" if present
+//  3. Makes GET request with Authorization header
+//  4. Reads response body with io.ReadAll, closes body
+//  5. Checks status code:
+//     - 200 (0xc8) = parse response for state (checks for READY/ERROR/CANCELED)
+//     - 429 (0x1ad) or >=500 (0x1f4) = retry after 2s timer (0x77359400 ns)
+//     - other = error
+//  6. Uses selectgo with 2 cases (context done vs timer) for retry wait
 //
 // Binary address: 0xb411c0
 func (c *VercelClient) WaitForReady(ctx context.Context, deployment *Deployment) (string, error) {

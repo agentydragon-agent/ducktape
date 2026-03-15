@@ -21,3 +21,5 @@ occurrences:
         - [358, 365] # gateway executes tool on ContinueDecision
     critic_scopes_expected_to_recall:
       - [agent_server/mcp/approval_policy/engine.py]
+    match_file_restriction:
+      - agent_server/mcp/approval_policy/engine.py

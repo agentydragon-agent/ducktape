@@ -1,0 +1,60 @@
+name: Harbor Build and Push
+description: Compute image tags, login to Harbor, and build+push a Docker image.
+
+inputs:
+  image:
+    description: Full image name (e.g. registry.allegedly.works/foo/bar)
+    required: true
+  context:
+    description: Docker build context path
+    required: true
+  file:
+    description: Path to Dockerfile (optional; defaults to {context}/Dockerfile)
+    required: false
+    default: ""
+  harbor_robot_username:
+    description: Harbor robot account username
+    required: true
+  harbor_robot_token:
+    description: Harbor robot account token
+    required: true
+
+outputs:
+  tags:
+    description: Comma-separated list of pushed image tags
+    value: ${{ steps.meta.outputs.tags }}
+  semver_tag:
+    description: The timestamp-sha7 tag (useful for Flux ImagePolicy)
+    value: ${{ steps.meta.outputs.semver_tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Compute image tags
+      id: meta
+      shell: bash
+      run: |
+        SHA="${{ github.sha }}"
+        TS="$(date -u +%Y%m%d%H%M%S)"
+        SEMVER_TAG="${TS}-${SHA:0:7}"
+        TAGS="${{ inputs.image }}:$SHA,${{ inputs.image }}:$SEMVER_TAG"
+        if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
+          TAGS="$TAGS,${{ inputs.image }}:latest"
+        fi
+        echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+        echo "semver_tag=$SEMVER_TAG" >> "$GITHUB_OUTPUT"
+
+    - name: Login to Harbor
+      uses: docker/login-action@v3
+      with:
+        registry: registry.allegedly.works
+        username: ${{ inputs.harbor_robot_username }}
+        password: ${{ inputs.harbor_robot_token }}
+
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        context: ${{ inputs.context }}
+        file: ${{ inputs.file }}
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}

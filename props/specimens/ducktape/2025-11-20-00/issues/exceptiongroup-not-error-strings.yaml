@@ -49,3 +49,5 @@ occurrences:
         - [72, 91]
     critic_scopes_expected_to_recall:
       - - adgn/src/adgn/agent/runtime/running.py
+    match_file_restriction:
+      - adgn/src/adgn/agent/runtime/running.py

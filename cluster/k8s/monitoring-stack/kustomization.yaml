@@ -5,3 +5,4 @@ resources:
   - helmrelease.yaml
   - dashboards/harbor-dashboard.yaml
   - grafana-httproute.yaml
+  - networkpolicy.yaml

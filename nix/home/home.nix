@@ -12,6 +12,9 @@
   solarizedLight,
   solarizedDark,
   terminalFont,
+  ducktape-wheel,
+  headscale-cleanup-wheel,
+  gterm-theme-wheel,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -31,13 +34,15 @@
 #
 # Tools where Nix takes precedence (moved to cli_nix_migrated in Ansible):
 #   - neovim (Nix: unstable version)
-#   - Node.js (Nix: nodejs_22)
+#   - Node.js (Nix: nodejs_24)
 #   - Rust (Nix: rustc/cargo packages)
 # Note for NixOS systems with enableHeavyPackages:
 # Heavy packages (gimp, krita, freecad, inkscape, etc.) should be installed
 # via NixOS system configuration using the module at nix/nixos/heavy-packages-module.nix
 # See heavy-packages.nix for the complete list.
 let
+  toTOML = (pkgs.formats.toml { }).generate;
+
   # Import the single source of truth for heavy packages
   heavyPkgs = import ./heavy-packages.nix;
 
@@ -68,30 +73,27 @@ let
     };
   };
 
-  # Helm/Helmfile wrapped with plugins (helm-diff)
-  myKubernetesHelm = pkgs.wrapHelm pkgs.kubernetes-helm {
-    plugins = with pkgs.kubernetes-helmPlugins; [
-      helm-diff
-    ];
-  };
-
-  myHelmfile = pkgs.helmfile-wrapped.override {
-    inherit (myKubernetesHelm.passthru) pluginsDir;
-  };
-
   # Shell initialization scripts (loaded from external files to avoid escaping hell)
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
-  # ducktape - CLI tools collection (git-commit-ai, difftree)
-  ducktape = pkgs.callPackage ./packages/ducktape.nix { };
+  # git-commit-ai, difftree, Claude Code hooks/statusline
+  ducktape = pkgs.callPackage ./packages/ducktape.nix { inherit ducktape-wheel; };
 
   # headscale-cleanup - Headscale node management tool
-  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix { };
+  headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {
+    inherit headscale-cleanup-wheel;
+  };
+
+  # gterm-theme - GNOME Terminal theme follower
+  gterm-theme = pkgs.callPackage ./packages/gterm-theme.nix {
+    inherit gterm-theme-wheel;
+  };
 in
 {
   imports = [
+
     # TODO: Re-enable google-drive-service once the git repo is accessible
     # Disabled during 25.11 migration due to 504 error from https://git.k3s.agentydragon.com/agentydragon/google-drive
     # ./packages/google-drive-service.nix
@@ -101,11 +103,19 @@ in
     ./scripts
     ./terminals
     ./claude_code
+    ./programs/gemini-cli.nix # Our local module with policies support
+    ./gemini_cli.nix # Configuration using the local module
+    ./shell/oh-my-posh.nix
     ./modules/gnome-workspace-shortcuts.nix
+    ./modules/gnome-custom-keybindings.nix
     ./modules/flameshot-screenshots.nix
     ./modules/datetime-format.nix
     ./services/activitywatch.nix
   ];
+  # TODO: Remove this — incompatible with home-manager.useGlobalPkgs.
+  # NixOS hosts set useGlobalPkgs=true, so pkgs comes from the NixOS config
+  # and per-user nixpkgs.config is ignored. Move allowUnfree to the NixOS-level
+  # nixpkgs.config or ensure the global pkgs already has allowUnfree=true.
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -135,7 +145,13 @@ in
   # TODO: Re-enable when google-drive-service module is re-enabled (see imports above)
   # services.google-drive.enable = lib.mkDefault false;
 
-  nix.package = pkgs.nix;
+  nix.package = lib.mkDefault pkgs.nix;
+
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 14d";
+  };
 
   nix.settings = {
     experimental-features = [
@@ -315,7 +331,7 @@ in
     try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
   '';
 
-  # Packages to install (Phase 1: only actual user-level packages from Ansible)
+  # Packages to install
   home.packages =
     with pkgs;
     [
@@ -338,6 +354,14 @@ in
       ast-grep
       awscli2
       bazelisk
+      # bazelisk is the real binary; this wrapper makes it available as "bazel" too.
+      # IMPORTANT: This must be a real binary, not a shell alias. Shell aliases only
+      # work in interactive shells — they are invisible to subprocesses
+      # (e.g., subprocess.run(["bazel", ...]) in Python, Makefiles, pre-commit hooks).
+      # The Claude Code session hook installs a bazel wrapper shim that delegates to
+      # the real "bazel" binary on PATH; if only an alias exists, the shim cannot find
+      # it and fails with FileNotFoundError.
+      (pkgs.writeShellScriptBin "bazel" ''exec ${pkgs.bazelisk}/bin/bazelisk "$@"'')
       gnuplot
       jq
       mc
@@ -364,15 +388,15 @@ in
       bun
 
       # Rust toolchain - all from Nix to ensure consistent glibc
-      # This allows removing CC=/usr/bin/gcc from .envrc since Nix gcc matches Nix glibc
+      # Allows removing CC=/usr/bin/gcc from .envrc since Nix gcc matches Nix glibc
       rustc
       cargo
       clippy
       rustfmt
       rust-analyzer
       sccache
-      gcc # C compiler from Nix - matches Nix glibc for native extension builds
-      # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
+      gcc # Matches Nix glibc for native extension builds
+      # jscpd, madge not in nixpkgs - install with: pnpm add -g jscpd madge
 
       # Development languages/compilers
       go
@@ -392,40 +416,27 @@ in
       stylua # Lua formatter
 
       # Custom packages from ducktape repo
-      ducktape # CLI tools: git-commit-ai, difftree
+      ducktape # git-commit-ai, difftree, Claude Code hooks etc.
       headscale-cleanup # Headscale node management
+      gterm-theme # GNOME Terminal theme follower
     ]
     ++ lib.optionals enableKube [
       kubectl
-      myKubernetesHelm
+      kubernetes-helm
       kubeseal
-      myHelmfile
     ]
     ++ [
-      # Dotfile management (keeping rcm approach)
-      rcm
-
-      # Modern ls replacement with colors and icons
-      eza
-
-      # Smarter cd command that learns your habits
-      zoxide
-
-      # Command-line fuzzy finder
+      eza # Modern ls
+      zoxide # Smarter cd
       fzf
-      # Find alternative with sensible defaults
       fd
-      # Fast recursive search to pair with fd and fzf
       ripgrep
-      # Rich TUI resource monitors for system overview
+      # TUI resource monitors
       btop
       bottom
-      # Modern process viewer with structured output
-      procs
-      # Disk usage visualizer with intuitive tree view
-      dust
-      # Source lines of code analyzer grouped by language
-      tokei
+      procs # Modern process viewer with structured output
+      dust # Disk usage visualizer
+      tokei # SLOC analyzer grouped by language
       # Network diagnostics (per-process usage and path tracing)
       bandwhich
       mtr
@@ -477,6 +488,16 @@ in
       # night-theme-switcher managed by solarized module
       gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (Vertical Workspaces) ✓
       gnomeExtensions.cronomix # ID 6003: Cronomix ✓
+
+      # Tiling window manager extension (on Pop!_OS this is pre-installed as a system extension)
+      # Other GNOME tiling options to consider:
+      #   - gnomeExtensions.forge: tree-based auto-tiling (i3-style), good keybinding customization
+      #   - gnomeExtensions.tiling-assistant: lighter touch, extends GNOME's built-in half/quarter snapping
+      #   - gnomeExtensions.gtile: grid-based manual tiling (pick zones)
+      #   - gnomeExtensions.tiling-shell: newer, customizable drag-and-drop zone layouts
+      # Non-GNOME alternatives: hyprland (best NixOS integration), sway (i3 for Wayland), niri (scrollable tiling)
+      gnomeExtensions.pop-shell
+
       # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
     ]
     ++ lib.optionals enableGui [
@@ -518,10 +539,9 @@ in
       # pkgs.comby
     ];
 
-  # Enable fontconfig for proper font management (only when GUI is enabled)
+  # Enable fontconfig when GUI is enabled
   fonts.fontconfig.enable = enableGui;
 
-  # Session variables (migrated from dotfiles/profile)
   home.sessionVariables = {
     # Editor
     EDITOR = "nvim";
@@ -538,7 +558,6 @@ in
 
     # Interactive shell settings
     LESS = "-F -X -R"; # -F: exit if one screen, -X: no clear screen, -R: raw ANSI colors
-    # PYTHONSTARTUP: not used
 
     # Go workspace
     GOPATH = "$HOME/.go";
@@ -553,6 +572,17 @@ in
     run ${pkgs.xdg-utils}/bin/xdg-mime default google-chrome.desktop text/html
     run ${pkgs.xdg-utils}/bin/xdg-mime default remote-viewer.desktop application/x-virt-viewer
   '';
+
+  # Terminal shortcut (Ctrl+Alt+T) — GNOME 49 removed the built-in 'terminal'
+  # media key, so we use a custom keybinding via xdg-terminal-exec.
+  ducktape.gnomeCustomKeybindings.terminal = {
+    name = "Launch Terminal";
+    command = "xdg-terminal-exec";
+    binding = "<Primary><Alt>t";
+  };
+
+  # Default terminal for xdg-terminal-exec (used by Ctrl+Alt+T keybinding above)
+  xdg.configFile."xdg-terminals.list".text = "org.gnome.Terminal.desktop\n";
 
   # XDG autostart desktop entries (migrated from Ansible gui role)
   xdg.configFile."autostart/syncthing-gtk.desktop".text = ''
@@ -586,11 +616,6 @@ in
         button-layout = ":minimize,maximize,close"; # Window buttons
       };
 
-      # Terminal shortcut (Ctrl+Alt+T)
-      "org/gnome/settings-daemon/plugins/media-keys" = {
-        terminal = [ "<Primary><Alt>t" ];
-      };
-
       # GNOME Night Light
       "org/gnome/settings-daemon/plugins/color" = {
         night-light-enabled = true;
@@ -600,13 +625,6 @@ in
       # ISO 8601 datetime format in panel, e.g.: "Wed 2023-11-15 22:49"
       "org/gnome/shell/extensions/panel-date-format" = {
         format = "%a %Y-%m-%d %H:%M";
-      };
-
-      # Legacy datetime indicator (for older WMs/Unity?)
-      "com/canonical/indicator/datetime" = {
-        time-format = "custom";
-        custom-time-format = "%Y-%m-%d %H:%M:%S";
-        show-week-numbers = true;
       };
 
       "org/gnome/terminal/legacy" = {
@@ -624,12 +642,12 @@ in
             # nightthemeswitcher managed by solarized module
             "vertical-workspaces@G-dH.github.com" # V-Shell (replaces cosmic-workspaces)
             "cronomix@zagortenay333" # Cronomix
+            "pop-shell@system76.com" # Pop Shell (tiling)
           ]
           # Pop!_OS system extensions (only on Pop!_OS hosts)
           ++ lib.optionals isPopOS [
             "ding@rastersoft.com" # Desktop Icons NG (DING)
             "pop-cosmic@system76.com" # Pop COSMIC
-            "pop-shell@system76.com" # Pop Shell (tiling)
             "system76-power@system76.com" # System76 Power
             "ubuntu-appindicators@ubuntu.com" # Ubuntu AppIndicators (system tray)
             "cosmic-dock@system76.com" # COSMIC Dock
@@ -649,7 +667,6 @@ in
     ".." = "cd ..";
     suspend = "systemctl suspend";
     npm = "pnpm";
-    bazel = "bazelisk"; # Use bazelisk to auto-download correct Bazel version per .bazelversion
     npx = "echo '❌ No you idiot, use pnpm dlx' && false";
     gmrc = "glab mr create --fill --remove-source-branch --yes";
     gs = "git status --short --branch --show-stash";
@@ -763,7 +780,9 @@ in
     enableBashIntegration = true;
     enableZshIntegration = true;
     flags = [ "--disable-up-arrow" ];
-    # zsh and bash have no fancy history config, Atuin handles it
+    settings = {
+      sync_address = "https://atuin.allegedly.works";
+    };
   };
 
   # Direnv - per-directory environment management
@@ -901,24 +920,18 @@ in
   };
 
   # Prompt configurations (switchable via USE_OHMYPOSH env var)
-  # TODO: oh-my-posh being tested, not working currently
-  xdg.configFile."oh-my-posh/config.json".source = ./ohmyposh.json;
+  # oh-my-posh config is in shell/oh-my-posh.nix
   home.file.".p10k.zsh".source = ./p10k.zsh;
 
-  # Create Worthy config directory
-  home.file.".config/worthy/.keep".text = "";
-
   # Cargo configuration - use sccache for compilation caching
-  home.file.".cargo/config.toml".text = ''
-    [build]
-    rustc-wrapper = "sccache"
-  '';
+  home.file.".cargo/config.toml".source = toTOML "cargo-config.toml" {
+    build.rustc-wrapper = "sccache";
+  };
 
   # Ansible configuration
-  home.file.".ansible.cfg".text = ''
-    [defaults]
-    collections_path = ~/.ansible/collections
-  '';
+  home.file.".ansible.cfg".source = (pkgs.formats.ini { }).generate "ansible.cfg" {
+    defaults.collections_path = "~/.ansible/collections";
+  };
 
   # Warn if legacy .npm-global directory exists (should be removed in favor of pnpm)
   home.activation.warnLegacyNpmGlobal = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

@@ -15,14 +15,14 @@ import (
 
 // ParsedContext holds all the parsed results from parsing input data.
 type ParsedContext struct {
-	StartupContext      *config.StartupContext
-	EnvironmentConfig   json.RawMessage
-	AuthContext         *auth.AuthContext
-	Outcomes            *claude.Outcomes
-	SessionID           string
-	WorkID              string
-	McpConfigFile       *config.McpConfigFile
-	HasMcpConfig        bool
+	StartupContext    *config.StartupContext
+	EnvironmentConfig json.RawMessage
+	AuthContext       *auth.AuthContext
+	Outcomes          *claude.Outcomes
+	SessionID         string
+	WorkID            string
+	McpConfigFile     *config.McpConfigFile
+	HasMcpConfig      bool
 }
 
 // V0Parser parses V0-format input from stdin.
@@ -34,12 +34,12 @@ type V0Parser struct {
 
 // v0Input represents the raw V0 input JSON structure.
 type v0Input struct {
-	StartupContext  json.RawMessage `json:"startup_context"`
-	Environment     json.RawMessage `json:"environment"`
-	Auth            json.RawMessage `json:"auth"`
-	Outcomes        []v0Outcome     `json:"outcomes"`
-	McpConfig       *v0McpConfig    `json:"mcp_config"`
-	McpConfigData   json.RawMessage `json:"mcp_config_data"`
+	StartupContext json.RawMessage `json:"startup_context"`
+	Environment    json.RawMessage `json:"environment"`
+	Auth           json.RawMessage `json:"auth"`
+	Outcomes       []v0Outcome     `json:"outcomes"`
+	McpConfig      *v0McpConfig    `json:"mcp_config"`
+	McpConfigData  json.RawMessage `json:"mcp_config_data"`
 }
 
 type v0McpConfig struct {
@@ -47,12 +47,12 @@ type v0McpConfig struct {
 }
 
 type v0Outcome struct {
-	Type       string          `json:"type"`
-	Name       string          `json:"name"`
-	RemoteURL  string          `json:"remote_url"`
-	Branch     string          `json:"branch"`
-	Branches   []string        `json:"branches"`
-	CommitHash string          `json:"commit_hash"`
+	Type       string   `json:"type"`
+	Name       string   `json:"name"`
+	RemoteURL  string   `json:"remote_url"`
+	Branch     string   `json:"branch"`
+	Branches   []string `json:"branches"`
+	CommitHash string   `json:"commit_hash"`
 }
 
 // Parse parses V0-format stdin input and returns a ParsedContext.

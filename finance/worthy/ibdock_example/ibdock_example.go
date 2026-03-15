@@ -3,29 +3,31 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/agentydragon/worthy/ibdock"
+	"log"
 	"time"
+
+	"github.com/agentydragon/worthy/ibdock"
 )
 
-var login = flag.String("login", "", "IB login to test")
-var password = flag.String("password", "", "IB password to test")
+var (
+	login    = flag.String("login", "", "IB login to test")
+	password = flag.String("password", "", "IB password to test")
+)
 
 func main() {
 	flag.Parse()
 	if *login == "" || *password == "" {
 		panic("login and password are required")
 	}
-	//ibdock.Run(*login, *password)
 
-	dock, err := ibdock.StartNew(*login, *password)
+	dock, err := ibdock.StartNew(*login, *password, log.Default())
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println("Will RunExec in 10 s.")
 	time.Sleep(10 * time.Second)
 	fmt.Println("RunExec")
-	err = dock.RunExec()
-	if err != nil {
+	if _, err = dock.RunExec(); err != nil {
 		panic(err)
 	}
 	time.Sleep(30 * time.Second)

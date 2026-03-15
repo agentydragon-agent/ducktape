@@ -210,6 +210,8 @@
   pkgs,
   pkgsUnstable,
   lib,
+  claude-plugins-official,
+  siderolabs-docs,
   ...
 }:
 let
@@ -252,6 +254,14 @@ let
     "json.schemastore.org"
     "www.schemastore.org"
     "code.claude.com" # Claude Code documentation
+    "app.buildbuddy.io" # BuildBuddy remote build UI
+    "remote.buildbuddy.io" # BuildBuddy remote execution/cache
+    "bcr.bazel.build" # Bazel Central Registry
+    "github.com" # GitHub repos and downloads
+    "raw.githubusercontent.com" # GitHub raw file access
+    "release-assets.githubusercontent.com" # GitHub release downloads
+    "files.pythonhosted.org" # PyPI wheel downloads
+    "docs.siderolabs.com" # Talos/Omni docs and llms.txt
   ]
   ++ cfg.extraAllowedWebFetchDomains;
 
@@ -273,10 +283,57 @@ let
     name: type: lib.nameValuePair (lib.removeSuffix ".md" name) (commandsDir + "/${name}")
   ) (lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".md" name) commandFiles);
 
-  # Skills directory for Claude Code
-  # Skills are model-invoked capabilities that Claude automatically uses based on context
-  # Each skill is a subdirectory containing SKILL.md and optional supporting files
-  skillsDir = ./skills;
+  # Shared skill files — generates home.file entries for ~/.claude/skills/
+  skillFiles = import ../skills/skills.nix {
+    inherit lib siderolabs-docs;
+    prefix = ".claude";
+  };
+
+  # Parse "name@marketplace" plugin specs into { name, marketplace } attrsets
+  parsedPlugins = map (
+    spec:
+    let
+      parts = lib.splitString "@" spec;
+    in
+    {
+      name = builtins.elemAt parts 0;
+      marketplace = builtins.elemAt parts 1;
+    }
+  ) cfg.plugins;
+
+  # Generate home.file entries for plugin cache directories
+  pluginCacheFiles = lib.listToAttrs (
+    map (
+      p:
+      lib.nameValuePair ".claude/plugins/cache/${p.marketplace}/${p.name}" {
+        source = "${cfg.pluginSources.${p.marketplace}.src}/plugins/${p.name}";
+        recursive = true;
+      }
+    ) parsedPlugins
+  );
+
+  # Generate installed_plugins.json content
+  installedPluginsJson = builtins.toJSON {
+    version = 2;
+    plugins = lib.listToAttrs (
+      map (
+        p:
+        let
+          source = cfg.pluginSources.${p.marketplace};
+        in
+        lib.nameValuePair "${p.name}@${p.marketplace}" [
+          {
+            scope = "user";
+            installPath = "${config.home.homeDirectory}/.claude/plugins/cache/${p.marketplace}/${p.name}";
+            version = source.rev;
+            installedAt = "1970-01-01T00:00:00.000Z";
+            lastUpdated = "1970-01-01T00:00:00.000Z";
+            gitCommitSha = source.rev;
+          }
+        ]
+      ) parsedPlugins
+    );
+  };
 in
 {
   options.programs.claude-code.extraAllowedReadDirs = lib.mkOption {
@@ -306,16 +363,64 @@ in
     ];
   };
 
+  options.programs.claude-code.pluginSources = lib.mkOption {
+    type = lib.types.attrsOf (
+      lib.types.submodule {
+        options = {
+          src = lib.mkOption {
+            type = lib.types.path;
+            description = "Fetched source containing plugins/ subdirectory";
+          };
+          rev = lib.mkOption {
+            type = lib.types.str;
+            description = "Git commit SHA for version tracking in installed_plugins.json";
+          };
+        };
+      }
+    );
+    default = { };
+    description = "Plugin marketplace sources, keyed by marketplace name";
+  };
+
+  options.programs.claude-code.plugins = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [ ];
+    description = "Plugins to install, in 'name@marketplace' format";
+    example = [ "frontend-design@claude-plugins-official" ];
+  };
+
   config.programs.claude-code = {
     enable = true;
     package = pkgsUnstable.claude-code; # Use unstable for faster updates
 
     commands = commands;
 
+    pluginSources.claude-plugins-official = {
+      src = claude-plugins-official;
+      rev = claude-plugins-official.rev;
+    };
+
+    plugins = [
+      "frontend-design@claude-plugins-official"
+      "pyright-lsp@claude-plugins-official"
+      # TODO: creates target/ dirs everywhere (unconfigurable — no initializationOptions
+      # or cargo.targetDir passthrough). Mitigated by .gitignore for now.
+      "rust-analyzer-lsp@claude-plugins-official"
+    ];
+
     mcpServers = {
       tana-local = {
         type = "http";
         url = "http://localhost:8262/mcp";
+      };
+
+      airlock = {
+        type = "http";
+        url = "https://airlock.allegedly.works/mcp";
+        oauth = {
+          clientId = "claude-code-airlock";
+          authServerMetadataUrl = "https://auth.allegedly.works/application/o/claude-code-airlock/.well-known/openid-configuration";
+        };
       };
 
       # Gmail integration via MCP
@@ -326,6 +431,13 @@ in
         command = "${gmail-mcp-server}/bin/gmail-mcp";
         args = [ ];
       };
+
+      # SideroLabs (Talos/Omni) docs MCP server
+      # Uncomment to enable — provides search over Talos and Omni documentation.
+      # siderolabs = {
+      #   type = "http";
+      #   url = "https://docs.siderolabs.com/mcp";
+      # };
     };
 
     settings = {
@@ -337,7 +449,7 @@ in
       promptSuggestions = true;
       statusLine = {
         type = "command";
-        command = "/home/agentydragon/.claude/statusline.py";
+        command = "claude-statusline";
       };
 
       sandbox = {
@@ -346,6 +458,14 @@ in
         allowUnsandboxedCommands = true;
         excludedCommands = [ "nvidia-smi" ];
       };
+
+      # Auto-generated from cfg.plugins
+      enabledPlugins = lib.listToAttrs (
+        map (spec: {
+          name = spec;
+          value = true;
+        }) cfg.plugins
+      );
 
       permissions = {
         allow = [
@@ -375,19 +495,13 @@ in
   # Add gmail-mcp-server to PATH for auth setup command
   config.home.packages = [ gmail-mcp-server ];
 
-  # Deploy skills to ~/.claude/skills/
-  # Skills are stored in nix/home/claude_code/skills/ and symlinked for declarative management
-  config.home.file = {
-    ".claude/statusline.py" = {
-      source = ./statusline.py;
-      executable = true;
+  # Deploy skills, plugin cache, and installed_plugins.json
+  config.home.file =
+    skillFiles
+    # Plugin cache directories
+    // pluginCacheFiles
+    # Plugin registry
+    // lib.optionalAttrs (cfg.plugins != [ ]) {
+      ".claude/plugins/installed_plugins.json".text = installedPluginsJson;
     };
-  }
-  // lib.mapAttrs' (
-    skillName: skillType:
-    lib.nameValuePair ".claude/skills/${skillName}" {
-      source = skillsDir + "/${skillName}";
-      recursive = true;
-    }
-  ) (lib.filterAttrs (name: type: type == "directory") (builtins.readDir skillsDir));
 }

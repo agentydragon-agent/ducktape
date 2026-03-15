@@ -5,7 +5,8 @@
 ## Component Documentation
 
 - **Backend API:** @backend/AGENTS.md
-- **Tests:** @core/testing/AGENTS.md
+- **Frontend:** @frontend/AGENTS.md
+- **Tests:** @testing/AGENTS.md
 
 ## Agent-Facing Documentation
 
@@ -120,6 +121,10 @@ Forbidden commands:
 - `uvicorn` directly
 - Starting the postgres container manually
 - Killing service PIDs without checking if they're process-compose managed
+
+## Debugging
+
+To enable SQLAlchemy SQL echo for debugging, change `echo=False` to `echo=True` in `Database.__init__` (`db/database.py`). Remember to revert before committing.
 
 ## Database Safety
 

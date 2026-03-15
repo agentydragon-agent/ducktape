@@ -1,0 +1,63 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "exceptions",
+    srcs = ["exceptions.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)
+
+py_library(
+    name = "formatting",
+    srcs = ["formatting.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm:claude_code_api",
+        "//x/claude_linter_v2/config:models",
+    ],
+)
+
+py_library(
+    name = "handler",
+    srcs = ["handler.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm:claude_code_api",
+        "//llm:claude_outcomes",
+        "//x/claude_linter_v2:check_python",
+        "//x/claude_linter_v2:checkers_v2",
+        "//x/claude_linter_v2:llm_analyzer",
+        "//x/claude_linter_v2:notifications",
+        "//x/claude_linter_v2:pattern_matcher",
+        "//x/claude_linter_v2:types",
+        "//x/claude_linter_v2/access:context",
+        "//x/claude_linter_v2/access:rule_engine",
+        "//x/claude_linter_v2/config:clean_models",
+        "//x/claude_linter_v2/config:loader",
+        "//x/claude_linter_v2/config:models",
+        "//x/claude_linter_v2/diff:categorizer",
+        "//x/claude_linter_v2/diff:intelligence",
+        "//x/claude_linter_v2/hooks:exceptions",
+        "//x/claude_linter_v2/hooks:formatting",
+        "//x/claude_linter_v2/hooks:validation",
+        "//x/claude_linter_v2/linters:python_formatter",
+        "//x/claude_linter_v2/session:manager",
+        "//x/claude_linter_v2/session:violations",
+        "//x/claude_linter_v2/utils:gitignore",
+        "@pypi//platformdirs",
+    ],
+)
+
+py_library(
+    name = "validation",
+    srcs = ["validation.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//llm:claude_code_api",
+        "//llm:claude_outcomes",
+        "//x/claude_linter_v2/hooks:exceptions",
+    ],
+)

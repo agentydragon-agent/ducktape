@@ -20,6 +20,4 @@ spec:
       namespace: matrix
   dependsOn:
     - name: matrix # Wait for Matrix namespace to be created
-      namespace: flux-system
-    - name: authentik-blueprint-matrix-provider # Wait for provider to be created
-      namespace: flux-system
+    - name: authentik-blueprint-sso-secrets # Vault data exists

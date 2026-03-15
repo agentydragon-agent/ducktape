@@ -1,253 +1,62 @@
 @README.md
 
-This file provides guidance to LLM agents for working with this repository.
+## Target Platform
+
+Unless stated otherwise, we target Linux. When writing code, scripts, or configuration, default to Linux assumptions (paths, syscalls, packaging, etc.).
+
+Some components are macOS-specific and only relevant on macOS:
+
+- **Seatbelt** (`sandbox-exec`) — macOS kernel sandbox
+- **Sandboxer** — macOS-specific sandboxing tooling
+
+If a component is macOS-only, document it explicitly. Do not silently assume macOS conventions.
 
 @STYLE.md
+
+## Sandbox
+
+Run `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other
+network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). These
+tools require network access for RBE, BES, provider downloads, cluster connectivity, and
+local service inspection. The sandbox blocks their network calls (including localhost
+connections like `kubectl` → haproxy on `localhost:7445`).
+
+<!-- TODO: Write a Claude Code hook that reminds the agent to use dangerouslyDisableSandbox
+     when it runs kubectl/systemctl/etc. inside the sandbox. -->
+
+## Refactoring
+
+When renaming, moving, or deleting files/directories/symbols, search for **all references** across the entire codebase before committing: imports, BUILD files, CI configs, documentation, Dockerfiles, Kubernetes manifests, `AGENTS.md`/`README.md` files. Use Grep broadly. Missing a reference is worse than being thorough.
 
 ## Before Hand-off
 
 ```bash
-bazel build --config=check //...
+bazel build //...
 bazel test //...
 ```
 
-This runs ruff + mypy lint checks and all tests. For Rust code, also run `bazel build --config=rust-check //finance/...`.
+This runs ruff + mypy lint checks and all tests (lint runs by default).
+Use `--config=nolint` to skip lint for faster iterative builds.
 
 If you touched `ansible/`, also follow the checklist in `ansible/AGENTS.md`.
 
-## Repository Overview
+## Git
 
-"Ducktape" is a personal infrastructure repository — "duct tape" for personal infrastructure needs.
+**NEVER amend a commit that has already been pushed.** Once a commit exists on the remote,
+create a new commit instead. Amending a pushed commit rewrites history and requires a force
+push, which is disruptive and can lose work.
 
-Manages configuration for: **agentydragon** (ThinkPad), **gpd** (GPD Win Max 2), **vps**, **atlas** (Proxmox/k3s).
+## Debug Notes
 
-## Directory Index
+Subprojects with complex debugging investigations use a `debug/` directory for
+persistent investigation notes (root cause analyses, hypothesis tracking,
+network/routing debug logs). These are markdown files committed to git, not
+ephemeral — they capture hard-won knowledge about subtle bugs.
 
-### Active Development
+Convention: `<subproject>/debug/<topic>.md`. Examples:
 
-| Directory       | Purpose                          |
-| --------------- | -------------------------------- |
-| `agent_cli/`    | Agent REPL CLI                   |
-| `agent_server/` | FastAPI backend, runtime, policy |
-| `cluster/`      | k8s cluster                      |
-| `mcp_infra/`    | MCP compositor and utilities     |
-| `agent_pkg/`    | Agent package infrastructure     |
-| `tana/`         | Tana export toolkit              |
-| `wt/`           | Worktree management              |
-| `ansible/`      | System configuration             |
-| `docker/`       | Container images                 |
-| `dotfiles/`     | Shell configs, scripts           |
-| `props/`        | Properties/specimens             |
-
-### Less Active
-
-| Directory          | Purpose                   |
-| ------------------ | ------------------------- |
-| `finance/`         | Portfolio tracking (Rust) |
-| `trilium/`         | Trilium Notes extensions  |
-| `inventree_utils/` | InventTree plugins        |
-| `website/`         | Personal website (Hakyll) |
-| `k8s_old/`         | legacy k3s cluster        |
-
-## Dotfiles and Shell Configuration
-
-**Most configuration has migrated to Nix home-manager** (see `nix/home/home.nix`).
-
-### What Nix Manages
-
-- **Shell configs**: `programs.bash`, `programs.zsh`, `programs.atuin`, `programs.direnv`, `programs.zoxide`, `programs.eza`
-- **Shell init scripts**: `nix/home/shell/` (bash-init.sh, zsh-init.zsh, common-init.sh)
-- **Aliases**: `home.shellAliases`
-- **Environment variables**: `home.sessionVariables`
-- **Powerlevel10k**: `nix/home/p10k.zsh` → `~/.p10k.zsh`
-
-### What Remains in `dotfiles/`
-
-- **`~/.profile`** - Complex conditional PATH management and legacy integrations (CUDA, lesspipe, dotnet, pnpm, machine-specific config)
-- **`~/.secret_env`** - Secret environment variables (not tracked in git)
-- **`~/.config/*`** - Application configs not yet migrated
-- **`~/.local/bin/*`** - Utility scripts (theme switchers, backup utilities)
-- **rcm config** - `rcrc` controls symlink behavior for remaining dotfiles
-
-### Important Notes
-
-- **DO NOT modify dotfiles directly in `~/`** - edit source files in `dotfiles/` or `nix/home/`
-- **Shell configs are Nix-managed** - do not edit `~/.bashrc`, `~/.zshrc`, `~/.shellrc` directly
-
-### Deployment
-
-- **Nix config**: `home-manager switch --flake ~/code/ducktape/nix/home#<hostname>`
-- **Remaining dotfiles**: Via rcm (managed by Ansible role `cli/tasks/dotfiles.yml`)
-
-See `dotfiles/docs/shell_configuration.md` for detailed loading order and migration status.
-
-## Infrastructure Components
-
-### Ansible Automation
-
-The `ansible/` directory contains system configuration.
-See: @ansible/README.md
-
-#### Playbooks
-
-- `agentydragon.yaml` - Main laptop configuration
-- `vps.yaml` - VPS server deployment
-- `gpd.yaml` - GPD laptop setup
-- `wyrm.yaml` - Wyrm desktop provisioning
-
-#### Key Roles
-
-- **System Base**: `cli/`, `gui/`, `common/`
-- **Development**: `golang/`, `dev_env/`, `dev_clojure/`
-- **Services**: `trilium_server/`, `headscale_server/`, `syncthing_server/`
-- **Networking**: `tailscale_client/`
-
-### Network Infrastructure
-
-- **Headscale**: Self-hosted Tailscale controller (100.64.0.0/10)
-- **Syncthing**: Cross-device file synchronization
-
-## Less Active Components
-
-These components exist but see minimal recent changes:
-
-### Finance Tools (`finance/`)
-
-- Worthy: Rust-based portfolio tracker (uses Cargo/Bazel)
-- Reconciliation utilities for various financial systems
-
-### Knowledge Management
-
-- **Trilium Notes** (`trilium/`): Extensions and widgets
-- **Tana Export** (`tana/`): Export utilities
-
-### Other Tools
-
-- **InventTree** (`inventree_utils/`): Inventory management plugins
-- **Website** (`website/`): Personal website (Hakyll/Haskell)
-
-## Build System
-
-This repository uses **Bazel** as the unified build system for all Python packages and most other components.
-
-### Python (Bazel with rules_python)
-
-```
-ducktape/
-├── MODULE.bazel             # Bazel module definition
-├── requirements_bazel.txt   # Single source of truth for Python deps
-├── agent_cli/BUILD.bazel    # Agent REPL CLI
-├── agent_core/BUILD.bazel   # Core agent loop machinery
-├── mcp_infra/BUILD.bazel    # MCP infrastructure
-└── ...                      # Other packages with BUILD.bazel files
-```
-
-**Key points:**
-
-- `requirements_bazel.txt` is the single source of truth for Python dependencies
-- All Python packages have `BUILD.bazel` files defining targets
-- Linting via Bazel aspects (`--config=check` runs ruff + mypy + eslint)
-- Python 3.12+ is the target runtime version
-
-**Development workflow:**
-
-```bash
-# Build all targets
-bazel build //...
-
-# Run all tests
-bazel test //...
-
-# Format code (ruff, prettier, shfmt, buildifier)
-bazel run //tools/format
-
-# Build specific target
-bazel build //adgn:adgn
-```
-
-**Adding dependencies:**
-
-1. Add the constraint to `pyproject.toml` (the single source of truth for Python dependency constraints)
-2. Run `bazel run //:requirements.update` to regenerate the lockfile (`requirements_bazel.txt` — never edit manually)
-3. Use `@pypi//package_name` in BUILD.bazel deps
-
-### Python BUILD.bazel Patterns (Gazelle-compatible)
-
-This repository uses **Gazelle-compatible patterns** for Python BUILD files. This enables automatic BUILD file generation and maintenance via `bazel run //tools:gazelle`.
-
-**Key pattern: One `py_library` per `.py` file (no aggregators)**
-
-```python
-# CORRECT - per-file targets
-py_library(
-    name = "client",
-    srcs = ["client.py"],
-    deps = ["//other_pkg:specific_target"],
-)
-
-py_library(
-    name = "server",
-    srcs = ["server.py"],
-    deps = [":client"],
-)
-
-# WRONG - aggregator bundling multiple files
-py_library(
-    name = "my_package",  # Don't do this
-    srcs = ["client.py", "server.py"],
-    deps = [...],
-)
-```
-
-**Rules:**
-
-1. **No aggregator targets** - Each `.py` file gets its own `py_library` with `name` matching the file stem
-2. **Reference specific targets** - Use `//pkg:module` not `//pkg` (e.g., `//openai_utils:model` not `//openai_utils`)
-3. **Use `imports = [".."]`** - Bazel auto-generates `__init__.py` stubs; don't create real `__init__.py` files
-
-**Running Gazelle:**
-
-```bash
-bazel run //tools:gazelle              # Update BUILD files
-bazel run //tools:gazelle -- --mode=diff  # Preview changes
-```
-
-### Rust (Finance tools)
-
-```bash
-bazel build //finance/worthy:rust_main
-bazel test //finance/worthy/...
-bazel build --config=rust-check //finance/...  # Rust linting
-```
-
-**Adding dependencies:**
-
-1. Add to root `Cargo.toml`
-2. Run `CARGO_BAZEL_REPIN=1 bazel build @crates//:all` to update `Cargo.Bazel.lock`
-3. Use `@crates//crate_name` in BUILD.bazel deps
-
-### Remote Cache / BuildBuddy (Optional)
-
-To enable BuildBuddy remote caching and build event streaming, create `~/.config/bazel/buildbuddy.bazelrc`:
-
-```
-# BuildBuddy configuration
-build --bes_results_url=https://app.buildbuddy.io/invocation/
-build --bes_backend=grpcs://remote.buildbuddy.io
-common --remote_cache=grpcs://remote.buildbuddy.io
-common --remote_timeout=10m
-common --remote_header=x-buildbuddy-api-key=YOUR_API_KEY_HERE
-```
-
-This file is loaded via `try-import` in `~/.bazelrc` and is silently ignored if missing.
-
-Alternatively, run `tools/setup-buildbuddy.sh` to generate the file interactively.
-
-### Remote Execution (RBE)
-
-When BuildBuddy is configured via `setup-buildbuddy.sh`, remote execution is enabled automatically. Build and test actions run on BuildBuddy workers (falling back to local), using the `//:rbe_linux_x64` platform.
-
-The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <tools/rbe_image/Dockerfile>, based on BuildBuddy's `rbe-ubuntu24-04` image (which provides Docker CE, iptables-legacy for Firecracker compatibility, build-essential, python3, git, etc.). We layer on Rust toolchain deps, GHC's libtinfo5, and Chromium shared libraries. The image is built and pushed by the `rbe-image.yml` CI workflow.
+- `cluster/kubespand/debug/kubespan-nixos-routing.md` — rp_filter routing analysis
+- `cluster/kubespand/debug/qemu-test-architecture.md` — QEMU test structure reference
 
 ## Development Practices
 
@@ -256,6 +65,10 @@ The RBE worker image (`ghcr.io/agentydragon/rbe-worker`) is built from <tools/rb
 - Test files: `test_*.py` in same directory as code
 - Framework: pytest with pytest-asyncio
 - Fixtures for shared setup
+- **No `t.Skip` for missing tools**: Tests must not skip when a required tool is missing.
+  Use the tool directly and let the test fail if it's unavailable. Required tools are
+  provided via Bazel runfiles, the RBE worker image (`devinfra/rbe_image/Dockerfile`),
+  or other mechanisms. If a test needs a new tool, add it to the appropriate provider.
 
 **IMPORTANT: Running tests and Python code**
 
@@ -342,9 +155,38 @@ live_openai_py_test(
 
 **Gating:** `.live` targets get `OPENAI_API_KEY` via `env_inherit` and the `live_openai_api` tag. CI excludes them with `--test_tag_filters=-live_openai_api`. The root `conftest.py` also skips live-marked tests at runtime when the key is absent.
 
-### Deployment
+### Shared Utility Libraries
 
-```bash
-cd ansible
-ansible-playbook <hostname>.yaml --ask-become-pass
-```
+**`util`** (`//util`): Shared utility libraries.
+
+- `util.workspace.get_build_workspace_directory()` — repo root (`BUILD_WORKSPACE_DIRECTORY` under `bazel run`, cwd otherwise). Use this in `py_binary` targets that need to find source files on the real filesystem.
+- `util.workspace.get_build_working_directory()` — cwd where `bazel run` was invoked.
+- `util.runfiles` — runfiles resolution utilities (`//util:runfiles`).
+- `util.bazel_subprocess` — subprocess execution helpers for Bazel (`//util:bazel_subprocess`).
+- `util.bazel_query` — Bazel query utilities and `BazelLabel` type (`//util:bazel_query`).
+- `util.env.get_required_env(name)` — get env var or raise `KeyError` (`//util:env`).
+- `util.env.get_required_env_path(name)` — get env var as `Path`.
+- `util.env.get_required_existing_path(name)` — get env var as `Path`, verify it exists.
+- `util.env.get_optional_env(name, default=None)` — get optional env var.
+- `util.env.get_optional_env_path(name)` — get optional env var as `Path`.
+- `util.net` — TCP port utilities (`//util:net`).
+- `util.docker` — async Docker network utilities (`//util:docker`).
+- `util.decorators` — CLI decorators like `async_run` (`//util:decorators`).
+- `util.logging` — structured logging configuration for CLI apps (`//util:logging`).
+- `util.fmt` — formatting utilities for lists and truncation (`//util:fmt`).
+- `util.oci` — OCI image loading and pushing utilities (`//util:oci`, testonly).
+
+### JavaScript / TypeScript (Bazel with rules_js)
+
+Frontend sub-projects use `@aspect_rules_js` with `js_library` targets. ESLint linting is handled by the workspace lint aspect (runs by default). Declare precise deps — each `js_library` lists only the files it directly imports; transitive deps propagate automatically via `JsInfo`.
+
+**Adding JS dependencies:**
+
+1. Add the dependency to the relevant `package.json` (workspace member under `pnpm-workspace.yaml`)
+2. Run any Bazel build touching JS — the first build will fail with "pnpm-lock.yaml file updated. Please run your build again." This is expected: Bazel's `update_pnpm_lock = True` auto-regenerates the lockfile using the pinned pnpm (v9)
+3. Run the build again — it succeeds with the updated lockfile
+4. Commit the updated `pnpm-lock.yaml`
+
+**Do NOT run raw `pnpm install`** — Bazel manages the pnpm version (pinned in `MODULE.bazel`) and lockfile format. Using a system pnpm may produce an incompatible lockfile.
+
+See <props/frontend/AGENTS.md> for frontend-specific conventions.

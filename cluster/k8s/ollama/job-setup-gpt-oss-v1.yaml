@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-gpt-oss-v1
+  namespace: ollama
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: OnFailure
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      volumes:
+        - name: scripts
+          configMap:
+            name: gpt-oss-scripts
+            defaultMode: 0755
+      containers:
+        - name: setup
+          image: ollama/ollama:latest
+          command:
+            - /scripts/setup-gpt-oss-v1.sh
+          env:
+            - name: OLLAMA_HOST
+              value: "http://ollama.ollama.svc.cluster.local:11434"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
