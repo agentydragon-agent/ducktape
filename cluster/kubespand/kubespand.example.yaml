@@ -99,8 +99,9 @@ cluster:
 #   port: 7445
 
 # api:
-#   # Unix socket path for the read-only COSI state gRPC server.
+#   # Unix socket path for the COSI state + MachineService gRPC server.
 #   # Exposes all kubespand resources (peer status, affiliates, identity, etc.)
-#   # for querying via COSI gRPC clients.
-#   # Default: /var/run/kubespand/kubespand.sock
-#   socket_path: "/var/run/kubespand/kubespand.sock"
+#   # for querying via COSI gRPC clients, plus Version RPC for talosctl.
+#   # Uses the same path as Talos machined so apid can proxy it.
+#   # Default: /system/run/machined/machine.sock
+#   socket_path: "/system/run/machined/machine.sock"

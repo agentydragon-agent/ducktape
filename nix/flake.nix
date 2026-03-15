@@ -35,6 +35,10 @@
       url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/kubespand";
       flake = false;
     };
+    apid-bin = {
+      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/apid";
+      flake = false;
+    };
     ducktape-wheel = {
       url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-cff88fc7/ducktape-0.1.0-py3-none-any.whl";
       flake = false;
@@ -77,6 +81,7 @@
       claude-code-router,
       nixGL,
       kubespand-bin,
+      apid-bin,
       ducktape-wheel,
       headscale-cleanup-wheel,
       gterm-theme-wheel,
@@ -212,6 +217,7 @@
               username
               homeManagerHost
               kubespand-bin
+              apid-bin
               ;
           };
           modules = [

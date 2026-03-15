@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "apid_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/kubespand/cmd/apid",
+    deps = ["@talos_internal//:apid_lib"],
+)
+
+go_binary(
+    name = "apid",
+    embed = [":apid_lib"],
+    goarch = "amd64",
+    goos = "linux",
+    static = "on",
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)

@@ -39,7 +39,7 @@ type AgentConfig struct {
 // ApiConfig holds COSI state API server settings.
 type ApiConfig struct {
 	// SocketPath is the Unix socket path for the COSI state gRPC server.
-	// Default: /var/run/kubespand/kubespand.sock
+	// Default: /system/run/machined/machine.sock (same as Talos machined)
 	SocketPath string `yaml:"socket_path"`
 }
 
@@ -137,7 +137,7 @@ func Load(path string) (*AgentConfig, error) {
 			Port: constants.DefaultKubePrismPort,
 		},
 		Api: ApiConfig{
-			SocketPath: "/var/run/kubespand/kubespand.sock",
+			SocketPath: constants.MachineSocketPath,
 		},
 	}
 

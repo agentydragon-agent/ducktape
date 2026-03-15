@@ -629,6 +629,7 @@ http_archive(
     patch_args = ["-p0"],
     patches = [
         "//third_party/siderolabs/talos_internal/patches:peer_spec.patch",
+        "//third_party/siderolabs/talos_internal/patches:apid_no_selinux.patch",
     ],
     sha256 = "164157bfab341cd568833baa7a3db5e43c83b27b27d57ad6591438ded233a952",
     strip_prefix = "talos-1.13.0-alpha.2",

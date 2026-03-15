@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "api",
     srcs = [
+        "machine.go",
         "readonly.go",
         "server.go",
     ],
@@ -12,9 +13,12 @@ go_library(
         "@com_github_cosi_project_runtime//api/v1alpha1",
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_cosi_project_runtime//pkg/state/protobuf/server",
+        "@com_github_siderolabs_talos_pkg_machinery//api/machine",
+        "@com_github_siderolabs_talos_pkg_machinery//version",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/emptypb",
         "@org_uber_go_zap//:zap",
     ],
 )
@@ -30,10 +34,12 @@ go_test(
         "@com_github_cosi_project_runtime//pkg/state/impl/inmem",
         "@com_github_cosi_project_runtime//pkg/state/impl/namespaced",
         "@com_github_cosi_project_runtime//pkg/state/protobuf/client",
+        "@com_github_siderolabs_talos_pkg_machinery//api/machine",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//status",
         "@org_golang_google_grpc//test/bufconn",
+        "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )

@@ -20,10 +20,12 @@ type Server struct {
 	logger     *zap.Logger
 }
 
-// NewServer creates a gRPC server that exposes COSI state as read-only.
+// NewServer creates a gRPC server that exposes COSI state as read-only
+// and implements the Talos MachineService Version RPC.
 func NewServer(st state.CoreState, socketPath string, logger *zap.Logger) *Server {
 	srv := grpc.NewServer()
 	v1alpha1.RegisterStateServer(srv, NewReadOnlyState(st))
+	RegisterMachineService(srv)
 
 	return &Server{
 		grpcServer: srv,

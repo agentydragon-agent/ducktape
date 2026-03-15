@@ -197,3 +197,197 @@ go_library(
         "@org_uber_go_zap//:zap",
     ],
 )
+
+# ═════════════════════════════════════════════════════════════════════════
+# Apid — Talos gRPC reverse proxy (mTLS on port 50000 → machined socket)
+# ═════════════════════════════════════════════════════════════════════════
+
+# ─ pkg/startup ──────────────────────────────────────────────────────────
+
+go_library(
+    name = "pkg_startup",
+    srcs = [
+        "pkg/startup/maxprocs.go",
+        "pkg/startup/startup.go",
+    ],
+    importpath = "github.com/siderolabs/talos/pkg/startup",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+    ],
+)
+
+# ─ pkg/grpc/middleware/log ──────────────────────────────────────────────
+
+go_library(
+    name = "pkg_grpc_middleware_log",
+    srcs = ["pkg/grpc/middleware/log/log.go"],
+    importpath = "github.com/siderolabs/talos/pkg/grpc/middleware/log",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_siderolabs_gen//maps",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+# ─ pkg/grpc/middleware/authz ────────────────────────────────────────────
+
+go_library(
+    name = "pkg_grpc_middleware_authz",
+    srcs = [
+        "pkg/grpc/middleware/authz/authorizer.go",
+        "pkg/grpc/middleware/authz/context.go",
+        "pkg/grpc/middleware/authz/injector.go",
+        "pkg/grpc/middleware/authz/metadata.go",
+    ],
+    importpath = "github.com/siderolabs/talos/pkg/grpc/middleware/authz",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_grpc_ecosystem_go_grpc_middleware_v2//:go-grpc-middleware",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
+        "@com_github_siderolabs_talos_pkg_machinery//role",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//peer",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+# ─ pkg/grpc/factory ─────────────────────────────────────────────────────
+
+go_library(
+    name = "pkg_grpc_factory",
+    srcs = ["pkg/grpc/factory/factory.go"],
+    importpath = "github.com/siderolabs/talos/pkg/grpc/factory",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pkg_grpc_middleware_log",
+        "@com_github_grpc_ecosystem_go_grpc_middleware_v2//interceptors/recovery",
+        "@com_github_siderolabs_proto_codec//codec",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//reflection",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+# ─ pkg/grpc/proxy/backend ──────────────────────────────────────────────
+
+go_library(
+    name = "pkg_grpc_proxy_backend",
+    srcs = [
+        "pkg/grpc/proxy/backend/backend.go",
+        "pkg/grpc/proxy/backend/local.go",
+    ],
+    importpath = "github.com/siderolabs/talos/pkg/grpc/proxy/backend",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pkg_grpc_middleware_authz",
+        "@com_github_siderolabs_grpc_proxy//proxy",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
+    ],
+)
+
+# ─ internal/app/apid/pkg/backend ───────────────────────────────────────
+
+go_library(
+    name = "apid_backend",
+    srcs = [
+        "internal/app/apid/pkg/backend/apid.go",
+        "internal/app/apid/pkg/backend/apid_factory.go",
+        "internal/app/apid/pkg/backend/backend.go",
+    ],
+    importpath = "github.com/siderolabs/talos/internal/app/apid/pkg/backend",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pkg_grpc_middleware_authz",
+        "@com_github_siderolabs_gen//concurrent",
+        "@com_github_siderolabs_grpc_proxy//proxy",
+        "@com_github_siderolabs_net//:net",
+        "@com_github_siderolabs_talos_pkg_machinery//api/common",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@com_github_siderolabs_talos_pkg_machinery//proto",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//backoff",
+        "@org_golang_google_grpc//connectivity",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//encoding/protowire",
+    ],
+)
+
+# ─ internal/app/apid/pkg/director ──────────────────────────────────────
+
+go_library(
+    name = "apid_director",
+    srcs = [
+        "internal/app/apid/pkg/director/director.go",
+        "internal/app/apid/pkg/director/local_address.go",
+    ],
+    importpath = "github.com/siderolabs/talos/internal/app/apid/pkg/director",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_grpc_proxy//proxy",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/network",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+# ─ internal/app/apid/pkg/provider ──────────────────────────────────────
+
+go_library(
+    name = "apid_provider",
+    srcs = ["internal/app/apid/pkg/provider/provider.go"],
+    importpath = "github.com/siderolabs/talos/internal/app/apid/pkg/provider",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_crypto//tls",
+        "@com_github_siderolabs_crypto//x509",
+        "@com_github_siderolabs_gen//xslices",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/secrets",
+    ],
+)
+
+# ─ internal/app/apid (main) ────────────────────────────────────────────
+
+go_library(
+    name = "apid_lib",
+    srcs = ["internal/app/apid/main.go"],
+    importpath = "github.com/siderolabs/talos/internal/app/apid",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":apid_backend",
+        ":apid_director",
+        ":apid_provider",
+        ":pkg_grpc_factory",
+        ":pkg_grpc_middleware_authz",
+        ":pkg_grpc_proxy_backend",
+        ":pkg_startup",
+        "@com_github_cosi_project_runtime//api/v1alpha1",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/protobuf/client",
+        "@com_github_siderolabs_go_debug//:go-debug",
+        "@com_github_siderolabs_grpc_proxy//proxy",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_x_sync//errgroup",
+    ],
+)

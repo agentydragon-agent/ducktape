@@ -1,13 +1,19 @@
 # kubespand — NixOS module for the standalone KubeSpan daemon
 #
-# Manages the kubespand systemd service, WireGuard kernel module, firewall,
-# and IPv6 forwarding. Config file (/etc/kubespan/agent.yaml) contains secrets
-# and is placed by cloud-init (not in the Nix store).
+# Manages the kubespand systemd service, optional apid (Talos API proxy),
+# WireGuard kernel module, firewall, and IPv6 forwarding. Config file
+# (/etc/kubespan/agent.yaml) contains secrets and is placed by cloud-init
+# (not in the Nix store).
+#
+# apid is the Talos gRPC reverse proxy: it connects to kubespand's machined
+# Unix socket and exposes the Talos API on port 50000 with mTLS. This lets
+# standard `talosctl` commands work against kubespand nodes.
 {
   config,
   pkgs,
   lib,
   kubespand-bin,
+  apid-bin,
   ...
 }:
 let
@@ -40,6 +46,28 @@ in
       default = false;
       description = "Enable debug logging";
     };
+
+    apid = {
+      enable = lib.mkEnableOption "apid (Talos API proxy on port 50000 with mTLS)";
+
+      package = lib.mkOption {
+        type = lib.types.package;
+        default = pkgs.stdenv.mkDerivation {
+          pname = "apid";
+          version = "latest";
+          dontUnpack = true;
+          installPhase = "install -Dm755 ${apid-bin} $out/bin/apid";
+        };
+        defaultText = lib.literalExpression "apid-bin derivation";
+        description = "Package containing the apid binary";
+      };
+
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 50000;
+        description = "TCP port for the mTLS gRPC listener (Talos API port)";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -54,6 +82,9 @@ in
 
     # State directory for identity keypair
     systemd.tmpfiles.rules = [ "d /var/lib/kubespan 0700 root root -" ];
+
+    # Firewall: allow apid mTLS port
+    networking.firewall.allowedTCPPorts = lib.mkIf cfg.apid.enable [ cfg.apid.port ];
 
     systemd.services.kubespand = {
       description = "kubespand — standalone KubeSpan daemon";
@@ -94,6 +125,31 @@ in
 
         # State directory
         StateDirectory = "kubespan";
+      };
+    };
+
+    # apid — Talos API reverse proxy (mTLS on port 50000 → machined Unix socket)
+    systemd.services.apid = lib.mkIf cfg.apid.enable {
+      description = "apid — Talos API proxy daemon";
+      after = [
+        "network-online.target"
+        "kubespand.service"
+      ];
+      wants = [ "network-online.target" ];
+      # apid proxies to kubespand's Unix socket — it must be running
+      requires = [ "kubespand.service" ];
+      wantedBy = [ "multi-user.target" ];
+
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${cfg.apid.package}/bin/apid";
+
+        Restart = "on-failure";
+        RestartSec = "5";
+
+        # Graceful shutdown
+        KillMode = "mixed";
+        TimeoutStopSec = 10;
       };
     };
   };
