@@ -50,6 +50,18 @@ If you touched `ansible/`, also follow the checklist in `ansible/AGENTS.md`.
 create a new commit instead. Amending a pushed commit rewrites history and requires a force
 push, which is disruptive and can lose work.
 
+## Debug Notes
+
+Subprojects with complex debugging investigations use a `debug/` directory for
+persistent investigation notes (root cause analyses, hypothesis tracking,
+network/routing debug logs). These are markdown files committed to git, not
+ephemeral — they capture hard-won knowledge about subtle bugs.
+
+Convention: `<subproject>/debug/<topic>.md`. Examples:
+
+- `cluster/kubespand/debug/kubespan-nixos-routing.md` — rp_filter routing analysis
+- `cluster/kubespand/debug/qemu-test-architecture.md` — QEMU test structure reference
+
 ## Development Practices
 
 ### Testing

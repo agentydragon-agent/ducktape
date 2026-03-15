@@ -107,25 +107,28 @@ The QEMU VMs have no iptables, no Cilium, no conntrack complexity.
 
 ## Root cause found (NixOS worker)
 
-**kubespand does not add the node's own IP to the kubespan interface.**
+**kubespand did not add the node's own IP to the kubespan interface.**
 
-When a reply packet arrives on `kubespan` with `dst=10.0.243.53`, the kernel
-needs to find this as a "local" address reachable via the receiving interface.
-Without it, the kernel returns "Invalid cross-device link" and drops the packet.
+When a reply packet arrived on `kubespan` with `dst=10.0.243.53`, the kernel
+needed to find this as a "local" address reachable via the receiving interface.
+Without it, the kernel returned "Invalid cross-device link" and dropped the packet.
 
 ICMP worked because ICMP echo reply is handled by `icmp_rcv()` which has different
 routing validation than TCP's socket lookup path.
 
-**Fix:** `sudo ip addr add 10.0.243.53/32 dev kubespan` — after this, ALL traffic
-works (ICMP, TCP, all peers, API server accessible).
+**Manual fix:** `sudo ip addr add 10.0.243.53/32 dev kubespan` — after this, ALL traffic
+worked (ICMP, TCP, all peers, API server accessible).
 
-## Fix implemented (commit 731dd1c)
+## Initial fix (commit 731dd1c) — later reverted
 
-In `controllers/kubespan/manager.go:277-306`, after writing the ULA address,
-kubespand now adds the node's non-ULA routed addresses (from
-`discovery.RoutedNodeAddresses()` at `discovery/discovery.go:235`) to the
-kubespan interface as secondary `/32` or `/128` addresses. This ensures the
-kernel accepts reply packets arriving on kubespan.
+In `controllers/kubespan/manager.go`, after writing the ULA address,
+kubespand added the node's non-ULA routed addresses (from
+`discovery.RoutedNodeAddresses()`) to the kubespan interface as secondary
+`/32` or `/128` addresses. This ensured the kernel accepted reply packets
+arriving on kubespan.
+
+**This fix was later removed** because it broke QEMU tests (see below).
+The actual root cause was `rp_filter`, not missing addresses.
 
 The QEMU test enables `ip_forward=1` and `rp_filter=2` (matching real NixOS
 environment) in `qemu_tests/vms/kubespanlib/kubespanlib.go:45-47`.
@@ -204,21 +207,21 @@ physical interface), `rp_filter >= 1` drops the packet. Adding the node's IP as
 `/32` on kubespan makes the kernel see the address as local on that interface,
 bypassing the cross-device check.
 
-### The /32 fix breaks QEMU tests
+### The /32 fix broke QEMU tests
 
-Adding the node's eth0 IP to the kubespan interface causes a routing problem in
-QEMU test environments where the discovery service is on the same L2 subnet as
+Adding the node's eth0 IP to the kubespan interface caused a routing problem in
+QEMU test environments where the discovery service was on the same L2 subnet as
 the VMs. The failure sequence (from `kubespan_test` RBE run, BuildBuddy invocation
 `3ff54921-a16e-45b9-a421-d2f1225fbea7`):
 
-1. VM eth0 gets `192.168.50.1/24` (`kubespanlib.go:43`)
-2. kubespand starts, installs ip rules + nftables chains
-3. kubespand assigns `192.168.50.1/32` to kubespan
+1. VM eth0 got `192.168.50.1/24` (`kubespanlib.go:43`)
+2. kubespand started, installed ip rules + nftables chains
+3. kubespand assigned `192.168.50.1/32` to kubespan
    (`manager.go:282-283`, via `RoutedNodeAddresses()`)
-4. kubespand assigns ULA IPv6 to kubespan, creates default routes in table 180
-5. All discovery service connections to `192.168.50.254:3000` fail with
+4. kubespand assigned ULA IPv6 to kubespan, created default routes in table 180
+5. All discovery service connections to `192.168.50.254:3000` failed with
    `EHOSTUNREACH` ("no route to host")
-6. After 180s, the test times out
+6. After 180s, the test timed out
 
 The error from `vm-a.log`:
 
@@ -228,44 +231,76 @@ hello failed: "rpc error: code = Unavailable desc = connection error:
   connect: no route to host\""
 ```
 
-The `doublenat_test` shows a related symptom — `RouteSpecController` fails with
-"network is down" when adding routes to the kubespan interface before it's fully
+The `doublenat_test` showed a related symptom — `RouteSpecController` failed with
+"network is down" when adding routes to the kubespan interface before it was fully
 initialized.
 
-### Correct fix approach
+### Fix applied (Option 1)
 
-The `/32` on kubespan is only needed on non-Talos hosts (NixOS, etc.) where
-`rp_filter >= 1`. Options:
+The `/32` on kubespan was only needed on non-Talos hosts (NixOS, etc.) where
+`rp_filter >= 1`. The following fix was implemented:
 
-1. **Remove the `RoutedNodeAddresses()` loop** and instead set `rp_filter=0`
-   on the kubespan interface specifically:
-   `echo 0 > /proc/sys/net/ipv4/conf/kubespan/rp_filter`
-   This matches what Talos effectively has (kernel default `rp_filter=0`) and
-   avoids the routing side effects of adding extra IPs to kubespan.
+**Option 1 was chosen** — the `RoutedNodeAddresses()` loop was removed from
+`manager.go`, and `rp_filter=0` is now set on the kubespan interface (and
+`conf/all`) in `controllers/network/wireguard_link.go:132-154`. This matches
+what Talos effectively has (kernel default `rp_filter=0`) and avoids the routing
+side effects of adding extra IPs to kubespan.
+
+Other options considered but not used:
 
 2. **Add an ip rule exemption** for locally-sourced traffic:
    `ip rule add from <eth0-ip> lookup main priority 32000`
-   This ensures traffic sourced from the node's physical IP always consults the
-   main routing table first (before the fwmark rule at priority 32500).
 
-3. **Set `accept_local=1`** on the kubespan interface to allow the kernel to
-   accept packets with a local source address arriving on a different interface.
-
-Option 1 is the closest to upstream Talos behavior and the least invasive.
+3. **Set `accept_local=1`** on the kubespan interface.
 
 ### Code references
 
-| Location                                          | Description                                                         |
-| ------------------------------------------------- | ------------------------------------------------------------------- |
-| `controllers/kubespan/manager.go:256-275`         | ULA address on kubespan (matches upstream)                          |
-| `controllers/kubespan/manager.go:277-306`         | Node IPs on kubespan (kubespand-only, causes QEMU test failure)     |
-| `discovery/discovery.go:235-270`                  | `RoutedNodeAddresses()` — enumerates non-loopback, non-kubespan IPs |
-| `qemu_tests/vms/kubespanlib/kubespanlib.go:45-47` | QEMU VMs set `rp_filter=2`                                          |
-| `qemu_tests/vms/kubespanlib/kubespanlib.go:67`    | `ForceRouting: true` in test config                                 |
-| Upstream `kubespan/manager.go:461-480`            | Only writes ULA address, no node IPs                                |
-| Upstream `kubespan/peer_spec.go:116-118`          | Adds peer physical IPs to WireGuard AllowedIPs                      |
-| Upstream `kubespan/routing_rules.go:50-78`        | ip rules: fwmark → table 180, priority ~32500                       |
-| Upstream `runtime/kernel_param_defaults.go:77-91` | Talos sysctls: no `rp_filter` set                                   |
-| Commit `731dd1c`                                  | Initial kubespand code (includes the `/32` fix from the start)      |
-| Commit `cdb6b76`                                  | "announce local IPs and filter endpoints for NAT traversal"         |
-| Commit `6a9bf4f`                                  | DiscoveryController reconcile loop fix                              |
+| Location                                          | Description                                                       | Status          |
+| ------------------------------------------------- | ----------------------------------------------------------------- | --------------- |
+| `controllers/kubespan/manager.go`                 | ULA address on kubespan (matches upstream)                        | Current         |
+| `controllers/kubespan/manager.go` (removed)       | Node IPs on kubespan (kubespand-only, caused QEMU test failure)   | **Removed**     |
+| `controllers/network/wireguard_link.go:132-154`   | Sets `rp_filter=0` on kubespan + all, `src_valid_mark=1`          | **Applied**     |
+| `qemu_tests/vms/kubespanlib/kubespanlib.go:45-47` | QEMU VMs set `rp_filter=2` on all/default before kubespand starts | Current         |
+| `qemu_tests/vms/kubespanlib/kubespanlib.go:67`    | `ForceRouting: true` in test config                               | Current         |
+| Upstream `kubespan/manager.go:461-480`            | Only writes ULA address, no node IPs                              | Reference       |
+| Upstream `kubespan/peer_spec.go:116-118`          | Adds peer physical IPs to WireGuard AllowedIPs                    | Reference       |
+| Upstream `kubespan/routing_rules.go:50-78`        | ip rules: fwmark → table 180, priority ~32500                     | Reference       |
+| Upstream `runtime/kernel_param_defaults.go:77-91` | Talos sysctls: no `rp_filter` set                                 | Reference       |
+| Commit `731dd1c`                                  | Initial kubespand code (included the `/32` fix)                   | Historical      |
+| Commit `cdb6b76`                                  | "announce local IPs and filter endpoints for NAT traversal"       | Historical      |
+| Commit `6a9bf4f`                                  | DiscoveryController reconcile loop fix                            | Historical      |
+| Commit `1f944d1`                                  | "Fix kubespan rp_filter issue by disabling per-interface"         | **Applied fix** |
+
+## Current status (2026-03-14)
+
+Both fixes from the analysis above have been applied:
+
+1. **`RoutedNodeAddresses()` /32 loop removed** from `manager.go`
+2. **`rp_filter=0` set on kubespan + all** in `wireguard_link.go`
+
+## QEMU test failure root cause (2026-03-14)
+
+The QEMU test failures (`kubespan_test`, `doublenat_test`) were **not caused by
+rp_filter** — they were caused by a `bufio.Scanner` EOF caching bug in the test
+harness (`kubespanlib.WaitForPeers`).
+
+**The bug:** `WaitForPeers` used a single `bufio.Scanner` to tail the kubespand log
+file. When the scanner caught up to the end of the file (before kubespand had written
+the `"configuring peer"` line), Go's `bufio.Scanner` stored `io.EOF` internally and
+returned `false` for all subsequent `Scan()` calls — even after kubespand appended new
+data to the file. The retry loop with `time.Sleep` was completely ineffective.
+
+**Evidence:** The diagnostic `dumpLogTail` (which uses `os.ReadFile`, opening the file
+fresh each time) showed the `"configuring peer"` line was present in the log, but the
+scanner never read it.
+
+**Fix:** Replaced the single-Scanner approach with `os.ReadFile` + `strings.Split` on
+each iteration. This re-reads the entire file each poll cycle, correctly seeing new data
+appended by kubespand.
+
+**Result:** All 4 QEMU tests pass:
+
+- `kubespan_test` — 24.7s (was timing out at 192s)
+- `doublenat_test` — 42.4s (was timing out)
+- `nft_test` — 8.5s (always passed)
+- `talos_test` — 118.9s (always passed)

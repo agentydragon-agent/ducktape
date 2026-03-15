@@ -2,11 +2,11 @@
 package kubespanlib
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/siderolabs/talos/pkg/machinery/constants"
@@ -110,22 +110,16 @@ type zapLogEntry struct {
 	Address string `json:"address"`
 }
 
-// WaitForPeers waits for n peers to be discovered in kubespand's JSONL log
-// by tailing the log file reactively.
+// WaitForPeers waits for n peers to be discovered in kubespand's JSONL log.
+// Re-reads the log file each iteration because bufio.Scanner caches io.EOF
+// and never retries reading new data appended by kubespand.
 func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
-	const timeout = 60 * time.Second
+	const timeout = 180 * time.Second
 	deadline := time.Now().Add(timeout)
-
-	f, err := os.Open("/tmp/kubespand.log")
-	if err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "cannot open kubespand log", Error: err.Error()})
-		initlib.Poweroff()
-	}
-	defer f.Close()
 
 	seen := map[string]struct{}{}
 	var addrs []string
-	scanner := bufio.NewScanner(f)
+	lastProgressLog := time.Now()
 
 	for time.Now().Before(deadline) {
 		if kubespandCmd.ProcessState != nil {
@@ -134,9 +128,17 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 			initlib.Poweroff()
 		}
 
-		for scanner.Scan() {
+		data, err := os.ReadFile("/tmp/kubespand.log")
+		if err != nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if line == "" {
+				continue
+			}
 			var entry zapLogEntry
-			if json.Unmarshal(scanner.Bytes(), &entry) != nil {
+			if json.Unmarshal([]byte(line), &entry) != nil {
 				continue
 			}
 			if entry.Msg != "configuring peer" || entry.Address == "" {
@@ -151,10 +153,19 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 			}
 		}
 
-		// No new data yet — brief sleep before retrying read.
-		time.Sleep(100 * time.Millisecond)
+		// Periodic progress logging every 15 seconds.
+		if time.Since(lastProgressLog) > 15*time.Second {
+			lastProgressLog = time.Now()
+			remaining := time.Until(deadline).Round(time.Second)
+			fmt.Fprintf(os.Stderr, "[WaitForPeers] still waiting for %d/%d peers, %s remaining\n", n-len(addrs), n, remaining)
+			dumpLogTail("/tmp/kubespand.log", 20)
+		}
+
+		time.Sleep(500 * time.Millisecond)
 	}
 
+	// On timeout, dump full diagnostics.
+	DumpDiagnostics()
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("timed out waiting for %d peers (%s)", n, timeout), Error: "peer discovery timeout"})
 	initlib.DumpLog("/tmp/kubespand.log")
 	kubespandCmd.Process.Kill()
@@ -162,10 +173,31 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 	return nil
 }
 
+// dumpLogTail prints the last n lines of a log file to stderr.
+func dumpLogTail(path string, n int) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	lines := strings.Split(string(data), "\n")
+	start := len(lines) - n
+	if start < 0 {
+		start = 0
+	}
+	fmt.Fprintf(os.Stderr, "--- last %d lines of %s ---\n", n, path)
+	for _, line := range lines[start:] {
+		if line != "" {
+			fmt.Fprintln(os.Stderr, line)
+		}
+	}
+	fmt.Fprintf(os.Stderr, "--- end %s ---\n", path)
+}
+
 // DumpDiagnostics logs routing, WireGuard, nftables, and rp_filter state
 // for debugging connectivity issues. For each peerIP, it also dumps route
 // lookups with and without the KubeSpan fwmark.
 func DumpDiagnostics(peerIPs ...string) {
+	fmt.Fprintln(os.Stderr, "=== DIAGNOSTICS START ===")
 	initlib.Run("ip", "addr", "show")
 	initlib.Run("ip", "rule", "show")
 	initlib.Run("ip", "route", "show", "table", "main")
@@ -176,6 +208,15 @@ func DumpDiagnostics(peerIPs ...string) {
 	}
 	initlib.Run("wg", "show", "kubespan")
 	initlib.Run("nft", "list", "ruleset")
+	// Dump rp_filter for all interfaces.
+	fmt.Fprintln(os.Stderr, "--- rp_filter state ---")
 	initlib.Run("cat", "/proc/sys/net/ipv4/conf/all/rp_filter")
-	initlib.Run("cat", "/proc/sys/net/ipv4/conf/kubespan/rp_filter")
+	initlib.Run("cat", "/proc/sys/net/ipv4/conf/default/rp_filter")
+	initlib.Run("cat", "/proc/sys/net/ipv4/conf/eth0/rp_filter")
+	initlib.RunSilent("cat", "/proc/sys/net/ipv4/conf/kubespan/rp_filter")
+	// Dump src_valid_mark
+	initlib.Run("cat", "/proc/sys/net/ipv4/conf/all/src_valid_mark")
+	// Dump ip_forward
+	initlib.Run("cat", "/proc/sys/net/ipv4/ip_forward")
+	fmt.Fprintln(os.Stderr, "=== DIAGNOSTICS END ===")
 }
