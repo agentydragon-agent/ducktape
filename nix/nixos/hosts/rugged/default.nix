@@ -113,6 +113,12 @@
   environment.systemPackages = with pkgs; [
     acpi
     unzip
+    zip
+    powertop # Power consumption analysis (useful for tablet battery)
+    pciutils # lspci
+    usbutils # lsusb
+    strace # Syscall tracing for debugging
+    # TODO: Remove bandwhich, nethogs (already in home-manager), libsecret (already in gui.nix)
     bandwhich # Per-process/connection/host bandwidth monitor
     nethogs
     snapshot # GNOME camera app (uses libcamera/PipeWire natively)
