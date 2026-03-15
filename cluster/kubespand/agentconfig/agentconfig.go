@@ -172,6 +172,9 @@ func Load(path string) (*AgentConfig, error) {
 			return nil, fmt.Errorf("cluster.endpoint is not a valid URL: %w", err)
 		}
 	}
+	if cfg.Discovery.MachineType != "worker" {
+		return nil, fmt.Errorf("discovery.machine_type must be \"worker\" (kubespand only supports worker mode, got %q)", cfg.Discovery.MachineType)
+	}
 	if (cfg.Api.CACrt != "") != (cfg.Api.Token != "") {
 		return nil, fmt.Errorf("api.ca_crt and api.token must both be set or both be empty")
 	}

@@ -9,6 +9,7 @@
 //   - config.MachineType     (from agentconfig.MachineType)
 //   - network.NodeAddress    x3 (routed + current + accumulative, from local interfaces)
 //   - k8s.APIServerConfig    (LocalPort from cluster endpoint)
+//   - k8s.Endpoint           (CP endpoints for APIController's trustd CSR flow)
 //   - network.Status         (readiness gate, always ready for kubespand)
 //
 // Ref: talos/internal/app/machined/pkg/controllers/cluster/local_affiliate.go (consumer)
@@ -66,6 +67,7 @@ func (ctrl *NodeMetadataController) Outputs() []controller.Output {
 		{Type: talosconfig.MachineTypeType, Kind: controller.OutputExclusive},
 		{Type: network.NodeAddressType, Kind: controller.OutputExclusive},
 		{Type: k8s.APIServerConfigType, Kind: controller.OutputExclusive},
+		{Type: k8s.EndpointType, Kind: controller.OutputExclusive},
 		{Type: network.StatusType, Kind: controller.OutputExclusive},
 	}
 }
@@ -187,7 +189,27 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 			return fmt.Errorf("writing api server config: %w", err)
 		}
 
-		// 7. network.Status — readiness gate for APIController.
+		// 7. k8s.Endpoint — CP endpoints for APIController's trustd CSR flow.
+		// The APIController (worker mode) reads k8s.Endpoint resources to find
+		// trustd endpoints for CSR submission. Derive from cluster.endpoint URL.
+		if spec.ClusterEndpoint != "" {
+			if u, parseErr := url.Parse(spec.ClusterEndpoint); parseErr == nil {
+				host := u.Hostname()
+				if addr, addrErr := netip.ParseAddr(host); addrErr == nil {
+					if err := safe.WriterModify(ctx, r,
+						k8s.NewEndpoint(k8s.ControlPlaneNamespaceName, "controlplane"),
+						func(res *k8s.Endpoint) error {
+							res.TypedSpec().Addresses = []netip.Addr{addr}
+							return nil
+						},
+					); err != nil {
+						return fmt.Errorf("writing CP endpoint: %w", err)
+					}
+				}
+			}
+		}
+
+		// 8. network.Status — readiness gate for APIController.
 		// kubespand addresses and hostname are available immediately (no DHCP phase),
 		// so this is always ready.
 		if err := safe.WriterModify(ctx, r,

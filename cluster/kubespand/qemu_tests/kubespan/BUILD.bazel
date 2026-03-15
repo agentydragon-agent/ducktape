@@ -8,10 +8,15 @@ go_test(
         "//cluster/kubespand/qemu_tests:vmlinuz",
         "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
         "//cluster/kubespand/qemu_tests/vms/kubespan:initramfs",
+        # Talos nocloud image + testdata for TestTrustdCSRFlow.
+        "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
+        "//cluster/kubespand/qemu_tests/talos:testdata/vps-controlplane.yaml",
+        "//cluster/kubespand/qemu_tests/talos:testdata/talosconfig.yaml",
     ],
     tags = ["requires_qemu"],
     deps = [
         "//cluster/kubespand/qemu_tests",
+        "@in_gopkg_yaml_v3//:yaml_v3",
         "@io_bazel_rules_go//go/runfiles",
     ],
 )

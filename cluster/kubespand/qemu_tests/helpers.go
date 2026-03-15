@@ -318,6 +318,17 @@ func OutputDir(t *testing.T) string {
 }
 
 // RunCmd runs a command, logging output and failing on error.
+// ReadRunfile resolves a Bazel runfile path and reads the file contents.
+func ReadRunfile(t *testing.T, path string) []byte {
+	t.Helper()
+	p := RunfilePath(t, path)
+	data, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return data
+}
+
 func RunCmd(t *testing.T, name string, args ...string) {
 	t.Helper()
 	cmd := exec.Command(name, args...)

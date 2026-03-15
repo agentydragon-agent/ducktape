@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -22,6 +24,109 @@ func TestCrossSubnet(t *testing.T) {
 func TestDiscoveryOnly(t *testing.T) {
 	t.Parallel()
 	runTopology(t, "discovery_only")
+}
+
+// TestTrustdCSRFlow verifies that kubespand can obtain TLS certificates from
+// a Talos controlplane node's trustd service via the standard CSR flow.
+// Topology: discovery VM + Talos CP VM + kubespand VM on 192.168.50.0/24.
+func TestTrustdCSRFlow(t *testing.T) {
+	t.Parallel()
+	sw := h.NewStopwatch(t)
+
+	// Resolve runfiles.
+	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
+	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
+	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
+	initramfs := h.RunfilePath(t, h.KubespanInitramfs)
+	sw.Lap("resolve runfiles")
+
+	out := h.OutputDir(t)
+	tmpDir := t.TempDir()
+
+	// Parse Talos CP config to extract credentials for kubespand.
+	vpsConfigData := h.ReadRunfile(t, h.TalosVPSConfig)
+	var cfg talosConfig
+	if err := yaml.Unmarshal(vpsConfigData, &cfg); err != nil {
+		t.Fatalf("parse talos config: %v", err)
+	}
+	sw.Lap("parse talos config")
+
+	// Create CIDATA for the Talos CP VM.
+	vpsCI := h.CreateCIDATA(t, tmpDir, "vps", vpsConfigData)
+	sw.Lap("create CIDATA")
+
+	// All VMs on the same flat L2 segment.
+	mcastPort := h.RandomPort()
+	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
+
+	vmDisc := h.BootVM(t, "trustd-disc", vmlinuz, initramfsDisc,
+		"mode=discovery role=discovery discovery_ip=192.168.50.254/24",
+		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01")...)
+	sw.Lap("boot discovery VM")
+
+	// Talos CP VM — provides trustd on port 50001.
+	talosAPIPort := h.RandomPort()
+	vmCP := h.BootTalosVM(t, "trustd-cp", talosBaseImage, vpsCI,
+		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"))
+	sw.Lap("boot Talos CP VM")
+
+	// kubespand VM with CA cert + token for the trustd CSR flow.
+	kernelArgs := fmt.Sprintf(
+		"role=trustd cluster_id=%s shared_secret=%s discovery=192.168.50.254:3000 topology=trustd ca_crt=%s token=%s cluster_endpoint=https://192.168.50.2:6443",
+		cfg.Cluster.ID, cfg.Cluster.Secret, cfg.Machine.CA.Crt, cfg.Machine.Token,
+	)
+	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfs, kernelArgs,
+		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01")...)
+	sw.Lap("boot kubespand VM")
+
+	allVMs := []*h.VM{vmCP, vmKubespand, vmDisc}
+	h.CleanupVMs(t, allVMs, out)
+
+	// Wait for discovery service.
+	h.RequireEvent(t, vmDisc, h.EventDone, 30*time.Second)
+	sw.Lap("discovery VM ready")
+
+	// Wait for Talos API (CP boot takes ~60-120s on TCG).
+	talosClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+	defer talosClient.Close()
+	h.WaitForTalosAPI(t, talosClient, "192.168.50.2", 180*time.Second)
+	sw.Lap("Talos API ready")
+
+	// Wait for kubespand VM to finish: peer discovery + secrets.API production.
+	h.WaitVMDone(t, vmKubespand, 300*time.Second)
+	sw.Lap("kubespand VM done")
+
+	// Assert no errors and done event present.
+	foundDone := false
+	for _, e := range vmKubespand.GetEvents() {
+		if e.Type == h.EventError {
+			t.Errorf("kubespand VM error: %s (%s)", e.Message, e.Error)
+		}
+		if e.Type == h.EventDone {
+			foundDone = true
+			t.Logf("kubespand done: %s", e.Message)
+		}
+	}
+	if !foundDone {
+		t.Error("kubespand VM exited without emitting done event (secrets.API not produced)")
+	}
+	sw.Lap("assertions")
+
+	sw.Summary(out)
+}
+
+// talosConfig holds the subset of Talos machine config needed by TestTrustdCSRFlow.
+type talosConfig struct {
+	Machine struct {
+		Token string `yaml:"token"`
+		CA    struct {
+			Crt string `yaml:"crt"`
+		} `yaml:"ca"`
+	} `yaml:"machine"`
+	Cluster struct {
+		ID     string `yaml:"id"`
+		Secret string `yaml:"secret"`
+	} `yaml:"cluster"`
 }
 
 func runTopology(t *testing.T, topology string) {
