@@ -44,7 +44,8 @@ automatically when their inputs change.
    Enabled when `kubeprism.enabled: true`.
 8. **KubePrismController** (optional, embedded from Talos): watches `k8s.KubePrismConfig`
    → manages a TCP load balancer on `localhost:7445` that proxies to kube-apiserver
-   endpoints. Replaces HAProxy as the local API server proxy.
+   endpoints. Provides the same local API server proxy that Talos nodes get natively
+   via KubePrism built into `machined`.
 
 ## Prerequisites
 

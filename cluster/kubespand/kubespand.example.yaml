@@ -85,7 +85,7 @@ cluster:
 #     - "10.96.0.0/12"
 
 # kubeprism:
-#   # Enable KubePrism local API server load balancer. Replaces HAProxy as the
+#   # Enable KubePrism local API server load balancer. Binds
 #   # localhost:7445 → kube-apiserver proxy. Discovers control plane endpoints
 #   # from the KubeSpan mesh and load-balances across them.
 #   # Requires cluster.endpoint to be set.
