@@ -69,3 +69,7 @@ def main() -> None:
         print(f"Hook failed ({parsed.hook_event_name}): {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
