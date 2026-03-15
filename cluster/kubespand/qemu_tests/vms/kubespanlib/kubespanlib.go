@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"gopkg.in/yaml.v3"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
@@ -53,6 +54,11 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 	os.MkdirAll("/var/lib/kubespan", 0o755)
 	os.MkdirAll("/etc/kubespan", 0o755)
 
+	listenPort := cfg.ListenPort
+	if listenPort == 0 {
+		listenPort = constants.KubeSpanDefaultPort
+	}
+
 	agentCfg := agentconfig.AgentConfig{
 		Cluster: agentconfig.ClusterConfig{
 			ID:     cfg.ClusterID,
@@ -65,7 +71,7 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 		},
 		Kubespan: agentconfig.KubespanConfig{
 			ForceRouting:          true,
-			ListenPort:            cfg.ListenPort,
+			ListenPort:            listenPort,
 			MTU:                   1420,
 			IdentityFile:          "/var/lib/kubespan/identity.yaml",
 			EndpointFilters:       cfg.EndpointFilters,
@@ -118,6 +124,24 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 	kubespandCmd.Process.Kill()
 	initlib.Poweroff()
 	return nil
+}
+
+// DumpDiagnostics logs routing, WireGuard, nftables, and rp_filter state
+// for debugging connectivity issues. For each peerIP, it also dumps route
+// lookups with and without the KubeSpan fwmark.
+func DumpDiagnostics(peerIPs ...string) {
+	initlib.Run("ip", "addr", "show")
+	initlib.Run("ip", "rule", "show")
+	initlib.Run("ip", "route", "show", "table", "main")
+	initlib.Run("ip", "route", "show", "table", "180")
+	for _, ip := range peerIPs {
+		initlib.Run("ip", "route", "get", ip)
+		initlib.Run("ip", "route", "get", ip, "mark", "0x40")
+	}
+	initlib.Run("wg", "show", "kubespan")
+	initlib.Run("nft", "list", "ruleset")
+	initlib.Run("cat", "/proc/sys/net/ipv4/conf/all/rp_filter")
+	initlib.Run("cat", "/proc/sys/net/ipv4/conf/kubespan/rp_filter")
 }
 
 // ExtractPeerAddrs parses kubespand log for discovered peer ULA addresses.

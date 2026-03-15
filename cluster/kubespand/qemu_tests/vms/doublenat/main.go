@@ -33,20 +33,16 @@ func main() {
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: fmt.Sprintf("doublenat mode, role=%s", initlib.Role)})
 
 	var linkIP, defaultGW string
-	var listenPort int
 
 	switch initlib.Role {
 	case "vps":
 		linkIP = "192.168.50.2"
-		listenPort = 51820
 	case "nat1":
 		linkIP = "192.168.60.2"
 		defaultGW = "192.168.60.1"
-		listenPort = 51821
 	case "nat2":
 		linkIP = "192.168.70.2"
 		defaultGW = "192.168.70.1"
-		listenPort = 51822
 	default:
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("unknown role=%s", initlib.Role)})
 		initlib.Poweroff()
@@ -61,12 +57,15 @@ func main() {
 
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("link=%s/24, gw=%s", linkIP, defaultGW)})
 
+	// Basic connectivity test: can we reach the discovery service?
+	initlib.Run("ping", "-c", "1", "-W", "3", "192.168.50.254")
+	// Can we reach VPS?
+	initlib.Run("ping", "-c", "1", "-W", "3", "192.168.50.2")
+
 	kubespandCmd := kubespanlib.StartKubespand(kubespanlib.KubespandConfig{
 		ClusterID:     clusterID,
 		SharedSecret:  sharedSecret,
 		DiscoveryAddr: discovery,
-		ListenPort:    listenPort,
-		// No endpoint filters — announce all addresses (auto-discovery).
 	})
 
 	const probePort = 9999
@@ -80,6 +79,9 @@ func main() {
 	case "nat2":
 		peerAddrs := kubespanlib.WaitForPeers(kubespandCmd, 2)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("discovered %d peers", len(peerAddrs))})
+
+		kubespanlib.DumpDiagnostics()
+
 		kubespanlib.RunDoubleNATProbes(peerAddrs, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
 	}
