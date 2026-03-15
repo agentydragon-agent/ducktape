@@ -10,12 +10,6 @@ _TOPOLOGY_DATA = [
     "//cluster/kubespand/qemu_tests/vms/kubespan:initramfs",
 ]
 
-_TOPOLOGY_DEPS = [
-    "//cluster/kubespand/qemu_tests",
-    "@in_gopkg_yaml_v3//:yaml_v3",
-    "@io_bazel_rules_go//go/runfiles",
-]
-
 _TOPOLOGY_TAGS = [
     "cpu:4",
     "requires_qemu",
@@ -31,7 +25,11 @@ go_test(
     ],
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
-    deps = _TOPOLOGY_DEPS,
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
 )
 
 go_test(
@@ -43,7 +41,11 @@ go_test(
     ],
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
-    deps = _TOPOLOGY_DEPS,
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
 )
 
 go_test(
@@ -55,7 +57,11 @@ go_test(
     ],
     data = _TOPOLOGY_DATA,
     tags = _TOPOLOGY_TAGS,
-    deps = _TOPOLOGY_DEPS,
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
 )
 
 # Trustd CSR flow test: boots 3 VMs (discovery + Talos CP + kubespand).
