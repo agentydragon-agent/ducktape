@@ -210,8 +210,10 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 		}
 
 		// 8. network.Status — readiness gate for APIController.
-		// kubespand addresses and hostname are available immediately (no DHCP phase),
-		// so this is always ready.
+		// Set always-ready because NodeMetadataController doesn't dynamically track
+		// host network state (it only re-runs when kubespan.Identity or agentconfig
+		// change). On a laptop that loses connectivity, addresses go stale anyway —
+		// proper support would require a network watcher triggering re-reconciliation.
 		if err := safe.WriterModify(ctx, r,
 			network.NewStatus(network.NamespaceName, network.StatusID),
 			func(res *network.Status) error {

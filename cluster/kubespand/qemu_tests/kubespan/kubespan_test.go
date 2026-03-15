@@ -29,6 +29,8 @@ func TestDiscoveryOnly(t *testing.T) {
 // TestTrustdCSRFlow verifies that kubespand can obtain TLS certificates from
 // a Talos controlplane node's trustd service via the standard CSR flow.
 // Topology: discovery VM + Talos CP VM + kubespand VM on 192.168.50.0/24.
+// The kubespand VM runs apid on port 50000 — if we can connect via Talos API,
+// that proves the trustd CSR flow produced secrets.API successfully.
 func TestTrustdCSRFlow(t *testing.T) {
 	t.Parallel()
 	sw := h.NewStopwatch(t)
@@ -37,7 +39,7 @@ func TestTrustdCSRFlow(t *testing.T) {
 	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
-	initramfs := h.RunfilePath(t, h.KubespanInitramfs)
+	initramfsTrustd := h.RunfilePath(t, h.TrustdInitramfs)
 	sw.Lap("resolve runfiles")
 
 	out := h.OutputDir(t)
@@ -71,12 +73,18 @@ func TestTrustdCSRFlow(t *testing.T) {
 	sw.Lap("boot Talos CP VM")
 
 	// kubespand VM with CA cert + token for the trustd CSR flow.
+	// mgmt NIC forwards apid port 50000 so the test can observe from outside.
+	kubespandAPIPort := h.RandomPort()
 	kernelArgs := fmt.Sprintf(
-		"role=trustd cluster_id=%s shared_secret=%s discovery=192.168.50.254:3000 topology=trustd ca_crt=%s token=%s cluster_endpoint=https://192.168.50.2:6443",
+		"cluster_id=%s shared_secret=%s discovery=192.168.50.254:3000 ca_crt=%s token=%s cluster_endpoint=https://192.168.50.2:6443",
 		cfg.Cluster.ID, cfg.Cluster.Secret, cfg.Machine.CA.Crt, cfg.Machine.Token,
 	)
-	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfs, kernelArgs,
-		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01")...)
+	mgmtNIC := []string{
+		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", kubespandAPIPort),
+		"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
+	}
+	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfsTrustd, kernelArgs,
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), mgmtNIC...)...)
 	sw.Lap("boot kubespand VM")
 
 	allVMs := []*h.VM{vmCP, vmKubespand, vmDisc}
@@ -86,31 +94,19 @@ func TestTrustdCSRFlow(t *testing.T) {
 	h.RequireEvent(t, vmDisc, h.EventDone, 30*time.Second)
 	sw.Lap("discovery VM ready")
 
-	// Wait for Talos API (CP boot takes ~60-120s on TCG).
+	// Wait for Talos CP API (boot takes ~60-120s on TCG).
 	talosClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
 	defer talosClient.Close()
 	h.WaitForTalosAPI(t, talosClient, "192.168.50.2", 180*time.Second)
-	sw.Lap("Talos API ready")
+	sw.Lap("Talos CP API ready")
 
-	// Wait for kubespand VM to finish: peer discovery + secrets.API production.
-	h.WaitVMDone(t, vmKubespand, 300*time.Second)
-	sw.Lap("kubespand VM done")
-
-	// Assert no errors and done event present.
-	foundDone := false
-	for _, e := range vmKubespand.GetEvents() {
-		if e.Type == h.EventError {
-			t.Errorf("kubespand VM error: %s (%s)", e.Message, e.Error)
-		}
-		if e.Type == h.EventDone {
-			foundDone = true
-			t.Logf("kubespand done: %s", e.Message)
-		}
-	}
-	if !foundDone {
-		t.Error("kubespand VM exited without emitting done event (secrets.API not produced)")
-	}
-	sw.Lap("assertions")
+	// Connect to kubespand's apid — success proves the full chain:
+	// kubespand → OSRootController → APICertSANsController → APIController
+	// → trustd CSR → secrets.API → apid serves mTLS on :50000.
+	kubespandClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", kubespandAPIPort))
+	defer kubespandClient.Close()
+	h.WaitForTalosAPI(t, kubespandClient, "192.168.50.1", 300*time.Second)
+	sw.Lap("kubespand apid ready (trustd CSR flow succeeded)")
 
 	sw.Summary(out)
 }

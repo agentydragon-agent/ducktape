@@ -26,6 +26,7 @@ const (
 	KubespanInitramfs  = "cluster/kubespand/qemu_tests/vms/kubespan/initramfs.cpio.gz"
 	DoublenatInitramfs = "cluster/kubespand/qemu_tests/vms/doublenat/initramfs.cpio.gz"
 	NftInitramfs       = "cluster/kubespand/qemu_tests/nft/initramfs.cpio.gz"
+	TrustdInitramfs    = "cluster/kubespand/qemu_tests/vms/trustd/initramfs.cpio.gz"
 	// Talos nocloud image built by genrule — under _main/ prefix.
 	TalosNocloudImagePath = "cluster/kubespand/qemu_tests/talos/nocloud-amd64.qcow2"
 

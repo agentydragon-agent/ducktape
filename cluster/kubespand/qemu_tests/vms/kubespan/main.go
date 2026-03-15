@@ -1,9 +1,8 @@
 // Binary kubespan is the PID-1 init for KubeSpan test VMs.
-// Handles flat, cross_subnet, discovery_only, and trustd topologies.
+// Handles flat, cross_subnet, and discovery_only topologies.
 package main
 
 import (
-	"encoding/base64"
 	"fmt"
 	"os"
 	"time"
@@ -76,12 +75,6 @@ func main() {
 			initlib.Poweroff()
 		}
 		endpointFilters = []string{"10.0.0.0/8"}
-	case "trustd":
-		// Trustd topology: single kubespand VM peers with a Talos CP node.
-		// Tests the trustd CSR flow for obtaining TLS certificates.
-		linkIP = "192.168.50.1"
-		listenPort = 51820
-		endpointFilters = []string{"192.168.50.0/24"}
 	default:
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("unknown topology=%s", topology)})
 		initlib.Poweroff()
@@ -99,7 +92,6 @@ func main() {
 
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("link=%s/24, topology=%s", linkIP, topology)})
 
-	// Build kubespand config. For trustd topology, include API credentials.
 	cfg := kubespanlib.KubespandConfig{
 		ClusterID:       clusterID,
 		SharedSecret:    sharedSecret,
@@ -108,43 +100,7 @@ func main() {
 		EndpointFilters: endpointFilters,
 	}
 
-	if topology == "trustd" {
-		caCrtB64 := params["ca_crt"]
-		token := params["token"]
-		clusterEndpoint := params["cluster_endpoint"]
-		if caCrtB64 == "" || token == "" || clusterEndpoint == "" {
-			initlib.EmitEvent(qemu_tests.Event{
-				Type:    qemu_tests.EventError,
-				Message: "trustd topology requires ca_crt, token, cluster_endpoint",
-				Error:   fmt.Sprintf("ca_crt_len=%d token=%s endpoint=%s", len(caCrtB64), token, clusterEndpoint),
-			})
-			initlib.Poweroff()
-		}
-		caCrtPEM, err := base64.StdEncoding.DecodeString(caCrtB64)
-		if err != nil {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "ca_crt base64 decode failed", Error: err.Error()})
-			initlib.Poweroff()
-		}
-		cfg.ClusterEndpoint = clusterEndpoint
-		cfg.CACrt = string(caCrtPEM)
-		cfg.Token = token
-	}
-
 	kubespandCmd := kubespanlib.StartKubespand(cfg)
-
-	if topology == "trustd" {
-		// Wait for peer (Talos CP node), then wait for secrets.API.
-		peerAddr := kubespanlib.WaitForPeer(kubespandCmd)
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: "peer discovered", PeerAddr: peerAddr})
-
-		kubespanlib.WaitForSecretsAPI(kubespandCmd)
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "secrets.API produced — trustd CSR flow succeeded"})
-		kubespandCmd.Process.Kill()
-		initlib.Poweroff()
-		return
-	}
-
-	// Standard topology: peer discovery + connectivity probes.
 	const probePort = 9999
 
 	peerAddr := kubespanlib.WaitForPeer(kubespandCmd)

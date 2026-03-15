@@ -16,7 +16,6 @@ import (
 	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
-	"github.com/siderolabs/talos/pkg/machinery/resources/secrets"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"gopkg.in/yaml.v3"
@@ -239,78 +238,6 @@ func dumpLogTail(path string, n int) {
 		}
 	}
 	fmt.Fprintf(os.Stderr, "--- end %s ---\n", path)
-}
-
-// WaitForSecretsAPI polls kubespand's COSI API for the secrets.API resource.
-// This confirms the trustd CSR flow completed: kubespand generated a CSR,
-// sent it to the CP's trustd service, and got a signed certificate back.
-func WaitForSecretsAPI(kubespandCmd *exec.Cmd) {
-	const timeout = 180 * time.Second
-	deadline := time.Now().Add(timeout)
-	socketPath := constants.MachineSocketPath
-
-	var cosiState state.State
-	lastLog := time.Now()
-
-	for time.Now().Before(deadline) {
-		if kubespandCmd.ProcessState != nil {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "kubespand exited prematurely", Error: "crashed"})
-			initlib.DumpLog("/tmp/kubespand.log")
-			initlib.Poweroff()
-		}
-
-		if cosiState == nil {
-			var err error
-			cosiState, _, err = NewCOSIClient(socketPath)
-			if err != nil {
-				if time.Since(lastLog) > 15*time.Second {
-					fmt.Fprintf(os.Stderr, "[WaitForSecretsAPI] waiting for API socket: %v\n", err)
-					lastLog = time.Now()
-				}
-				time.Sleep(500 * time.Millisecond)
-				continue
-			}
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		list, err := safe.StateListAll[*secrets.API](ctx, cosiState)
-		cancel()
-
-		if err != nil {
-			if time.Since(lastLog) > 15*time.Second {
-				lastLog = time.Now()
-				remaining := time.Until(deadline).Round(time.Second)
-				fmt.Fprintf(os.Stderr, "[WaitForSecretsAPI] COSI error: %v, %s remaining\n", err, remaining)
-			}
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		it := list.Iterator()
-		if it.Next() {
-			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: "secrets.API found in COSI state"})
-			return
-		}
-
-		if time.Since(lastLog) > 15*time.Second {
-			lastLog = time.Now()
-			remaining := time.Until(deadline).Round(time.Second)
-			fmt.Fprintf(os.Stderr, "[WaitForSecretsAPI] no secrets.API yet, %s remaining\n", remaining)
-			dumpLogTail("/tmp/kubespand.log", 20)
-		}
-
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	DumpDiagnostics()
-	initlib.EmitEvent(qemu_tests.Event{
-		Type:    qemu_tests.EventError,
-		Message: fmt.Sprintf("timed out waiting for secrets.API (%s)", timeout),
-		Error:   "trustd CSR flow timeout",
-	})
-	initlib.DumpLog("/tmp/kubespand.log")
-	kubespandCmd.Process.Kill()
-	initlib.Poweroff()
 }
 
 // DumpDiagnostics logs routing, WireGuard, nftables, and rp_filter state

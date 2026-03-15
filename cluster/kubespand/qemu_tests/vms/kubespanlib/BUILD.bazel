@@ -19,7 +19,6 @@ go_library(
         "@com_github_cosi_project_runtime//pkg/state/protobuf/client",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
-        "@com_github_siderolabs_talos_pkg_machinery//resources/secrets",
         "@in_gopkg_yaml_v3//:yaml_v3",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
