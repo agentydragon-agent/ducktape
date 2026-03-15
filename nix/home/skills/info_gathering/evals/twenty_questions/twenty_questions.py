@@ -15,20 +15,20 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from nix.home.skills.info_gathering.evals.harness import (
+    LLMClient,
     LogEntry,
     RunSummary,
     TokenTracker,
     ToolParam,
+    _serialize_message,
     add_common_args,
     build_agent_system,
-    call_api,
-    extract_text,
+    client_from_args,
     extract_tool_calls,
     load_skill,
     log_response,
     output_dir_from_args,
     save_results,
-    thinking_from_args,
     tool_def,
 )
 from util.bazel.runfiles import get_required_path
@@ -98,22 +98,19 @@ def _parse_sim_action(response: Any) -> tuple[str, str | None] | None:
 def run_twenty_questions(
     *,
     name: str,
-    model: str,
+    client: LLMClient,
     agent_system: str,
     first_user_message: str,
     sim_system: str,
     turn_limit: int = 20,
-    thinking_budget: int | None = None,
     output_dir: Path,
-    base_url: str | None = None,
-    api_key: str | None = None,
 ) -> RunSummary:
     """Run a 20 Questions eval.
 
     Agent asks questions (text only). Simulator answers via tool calls.
     Game ends when sim calls correct_answer or turns run out.
     """
-    tracker = TokenTracker(model=model)
+    tracker = TokenTracker(model=client.model)
     log_entries: list[LogEntry] = []
 
     agent_messages: list[dict[str, Any]] = [{"role": "user", "content": first_user_message}]
@@ -125,19 +122,14 @@ def run_twenty_questions(
         logger.info("Turn %d...", turn)
 
         # Agent turn (no tools)
-        agent_resp = call_api(
-            messages=agent_messages,
-            system=agent_system,
-            model=model,
-            thinking_budget=thinking_budget,
-            base_url=base_url,
-            api_key=api_key,
-        )
+        agent_resp = client.call(messages=agent_messages, system=agent_system)
         tracker.add(agent_resp.usage)
-        log_response(log_entries, name=name, player="agent", turn=turn, model=model, response=agent_resp)
-        agent_messages.append({"role": "assistant", "content": extract_text(agent_resp)})
+        log_response(log_entries, name=name, player="agent", turn=turn, model=client.model, response=agent_resp)
 
-        agent_text = extract_text(agent_resp).strip()
+        agent_msg = _serialize_message(agent_resp.choices[0].message)
+        agent_messages.append(agent_msg)
+
+        agent_text = (agent_msg["content"] or "").strip()
         if not agent_text:
             continue
 
@@ -148,35 +140,13 @@ def run_twenty_questions(
 
         sim_messages.append({"role": "user", "content": agent_text})
 
-        sim_resp = call_api(
-            messages=sim_messages,
-            system=sim_system,
-            model=model,
-            tools=SIM_TOOLS,
-            tool_choice="auto",
-            thinking_budget=thinking_budget,
-            base_url=base_url,
-            api_key=api_key,
-        )
+        sim_resp = client.call(messages=sim_messages, system=sim_system, tools=SIM_TOOLS, tool_choice="auto")
         tracker.add(sim_resp.usage)
-        log_response(log_entries, name=name, player="simulator", turn=turn, model=model, response=sim_resp)
+        log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
 
         # Append assistant message with tool calls for conversation history
-        tcs = extract_tool_calls(sim_resp)
-        sim_messages.append(
-            {
-                "role": "assistant",
-                "content": extract_text(sim_resp) or None,
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    }
-                    for tc in tcs
-                ],
-            }
-        )
+        sim_msg = _serialize_message(sim_resp.choices[0].message)
+        sim_messages.append(sim_msg)
 
         action = _parse_sim_action(sim_resp)
         if action is None:
@@ -192,6 +162,7 @@ def run_twenty_questions(
 
         # answer action
         assert answer is not None
+        tcs = extract_tool_calls(sim_resp)
         if tcs:
             last_tc_id = tcs[0].id
         agent_messages.append({"role": "user", "content": answer})
@@ -200,7 +171,7 @@ def run_twenty_questions(
 
     summary = RunSummary(
         eval_name=name,
-        model=model,
+        model=client.model,
         turns=turn,
         result=result,
         api_calls=tracker.api_calls,
@@ -225,7 +196,7 @@ def main() -> None:
 
     skill_text = load_skill()
     agent_system = build_agent_system(skill_text)
-    thinking = thinking_from_args(args)
+    client = client_from_args(args)
     output_dir = output_dir_from_args(args)
 
     sim_template = get_required_path(_SIM_RLOCATION).read_text()
@@ -238,20 +209,17 @@ def main() -> None:
     )
 
     logger.info("=" * 60)
-    logger.info("  %s  |  %s  |  thinking=%s", name, args.model, thinking or "off")
+    logger.info("  %s  |  %s  |  thinking=%s", name, client.model, client.thinking_budget or "off")
     logger.info("=" * 60)
 
     summary = run_twenty_questions(
         name=name,
-        model=args.model,
+        client=client,
         agent_system=agent_system,
         first_user_message=first_user_message,
         sim_system=sim_system,
         turn_limit=v.turn_limit,
-        thinking_budget=thinking,
         output_dir=output_dir,
-        base_url=args.base_url,
-        api_key=args.api_key,
     )
     logger.info("%s", summary)
 

@@ -6,6 +6,7 @@ from unittest.mock import patch
 import litellm
 import pytest_bazel
 
+from nix.home.skills.info_gathering.evals.harness import LLMClient
 from nix.home.skills.info_gathering.evals.twenty_questions.twenty_questions import (
     Correct,
     Timeout,
@@ -49,6 +50,9 @@ def _tool_response(tool_name: str, tool_input: dict, tool_id: str) -> litellm.Mo
     )
 
 
+TEST_CLIENT = LLMClient(model="test-model")
+
+
 @patch("nix.home.skills.info_gathering.evals.harness.litellm.completion")
 def test_timeout(mock_completion, tmp_path):
     """3-turn game with no correct guess -> Timeout, score=0."""
@@ -63,7 +67,7 @@ def test_timeout(mock_completion, tmp_path):
 
     summary = run_twenty_questions(
         name="test_timeout",
-        model="test-model",
+        client=TEST_CLIENT,
         agent_system="You are a helpful assistant.",
         first_user_message="Play 20 Questions. I'm thinking of a thing.",
         sim_system="The secret is: wrench",
@@ -89,7 +93,7 @@ def test_success_on_turn_2(mock_completion, tmp_path):
 
     summary = run_twenty_questions(
         name="test_success",
-        model="test-model",
+        client=TEST_CLIENT,
         agent_system="You are a helpful assistant.",
         first_user_message="Play 20 Questions. I'm thinking of a US state.",
         sim_system="The secret is: New Mexico",
@@ -113,7 +117,7 @@ def test_success_on_turn_1(mock_completion, tmp_path):
 
     summary = run_twenty_questions(
         name="test_lucky",
-        model="test-model",
+        client=TEST_CLIENT,
         agent_system="test",
         first_user_message="Play 20 Questions.",
         sim_system="The secret is: sourdough starter",

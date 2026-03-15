@@ -1,14 +1,14 @@
 """Shared eval harness for info-gathering skill.
 
 Agent (uses skill) vs Simulator (holds ground truth). Provides:
-- API helpers via LiteLLM (call_api, resolve_tool_calls)
+- LLMClient wrapping LiteLLM (call, resolve_tool_calls)
 - Conversation eval runner (run_conversation_eval)
 - CLI utilities (add_common_args, load_skill, etc.)
 - Pydantic models for results and logging
 
 Supports any LiteLLM-compatible model string, e.g.:
   anthropic/claude-haiku-4-5-20251001
-  openai/gpt-oss-20b-128k  (with --base-url for custom endpoints)
+  openai/gpt-oss:20b  (with --base-url for custom endpoints)
 """
 
 import argparse
@@ -21,8 +21,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 import litellm
+from litellm.types.utils import Usage
 from pydantic import BaseModel
 
+from openai_utils.json_schema import openai_json_schema
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -79,11 +81,11 @@ class TokenTracker(BaseModel):
 
     PRICING: dict[str, dict[str, float]] = {
         "anthropic/claude-haiku-4-5-20251001": {"input": 1.0, "output": 5.0},
-        "anthropic/claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0},
-        "anthropic/claude-opus-4-20250514": {"input": 15.0, "output": 75.0},
+        "anthropic/claude-sonnet-4-6-20250514": {"input": 3.0, "output": 15.0},
+        "anthropic/claude-opus-4-6-20250514": {"input": 15.0, "output": 75.0},
     }
 
-    def add(self, usage: Any) -> None:
+    def add(self, usage: Usage) -> None:
         self.input_tokens += usage.prompt_tokens or 0
         self.output_tokens += usage.completion_tokens or 0
         self.api_calls += 1
@@ -114,17 +116,16 @@ ToolParam = dict[str, Any]
 
 def tool_def(name: str, description: str, input_model: type[BaseModel]) -> ToolParam:
     """Build an OpenAI-format tool definition from a Pydantic model."""
-    schema = input_model.model_json_schema()
-    # Remove $defs and other non-standard keys for OpenAI compatibility
-    schema.pop("$defs", None)
-    schema.pop("title", None)
-    return {"type": "function", "function": {"name": name, "description": description, "parameters": schema}}
+    return {
+        "type": "function",
+        "function": {"name": name, "description": description, "parameters": openai_json_schema(input_model)},
+    }
 
 
 END_GAME_TOOL = tool_def("end_game", "End the game. Call when the agent states a final answer.", EndGameInput)
 
 
-# === API helpers ==============================================================
+# === LLM client ===============================================================
 
 
 def extract_text(response: Any) -> str:
@@ -139,114 +140,118 @@ def extract_tool_calls(response: Any) -> list[Any]:
     return msg.tool_calls or []
 
 
-def call_api(
-    *,
-    messages: list[dict[str, Any]],
-    system: str,
-    model: str,
-    tools: list[ToolParam] | None = None,
-    tool_choice: str | dict[str, Any] | None = None,
-    max_tokens: int = 4096,
-    thinking_budget: int | None = None,
-    base_url: str | None = None,
-    api_key: str | None = None,
-) -> Any:
-    """Call the LLM via LiteLLM.
+class LLMClient:
+    """Wraps LiteLLM completion with shared config (model, base_url, api_key, thinking)."""
 
-    Works with any LiteLLM-supported model string (anthropic/..., openai/..., etc.).
-    """
-    # Prepend system message
-    full_messages = [{"role": "system", "content": system}, *messages]
+    def __init__(
+        self, *, model: str, thinking_budget: int | None = None, base_url: str | None = None, api_key: str | None = None
+    ) -> None:
+        self.model = model
+        self.thinking_budget = thinking_budget
+        self.base_url = base_url
+        self.api_key = api_key
 
-    kwargs: dict[str, Any] = {"model": model, "messages": full_messages}
+    def call(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        system: str,
+        tools: list[ToolParam] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        max_tokens: int = 4096,
+    ) -> Any:
+        """Call the LLM via LiteLLM."""
+        full_messages = [{"role": "system", "content": system}, *messages]
 
-    # Reasoning models (e.g. gpt-oss) need max_completion_tokens instead of max_tokens,
-    # otherwise reasoning consumes the entire token budget leaving empty content.
-    if model.startswith("anthropic/"):
-        kwargs["max_tokens"] = max_tokens
-    else:
-        kwargs["max_completion_tokens"] = max_tokens
+        # Reasoning models (e.g. gpt-oss) need max_completion_tokens instead of max_tokens,
+        # otherwise reasoning consumes the entire token budget leaving empty content.
+        if self.model.startswith("anthropic/"):
+            token_kwarg = {"max_tokens": max_tokens}
+        else:
+            token_kwarg = {"max_completion_tokens": max_tokens}
 
-    if tools is not None:
-        kwargs["tools"] = tools
-    if tool_choice is not None:
-        kwargs["tool_choice"] = tool_choice
-    if base_url is not None:
-        kwargs["api_base"] = base_url
-    if api_key is not None:
-        kwargs["api_key"] = api_key
+        thinking = None
+        if self.thinking_budget and self.model.startswith("anthropic/"):
+            thinking = {"type": "enabled", "budget_tokens": self.thinking_budget}
 
-    # Anthropic extended thinking
-    if thinking_budget and model.startswith("anthropic/"):
-        kwargs["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+        return litellm.completion(
+            model=self.model,
+            messages=full_messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            api_base=self.base_url,
+            api_key=self.api_key,
+            thinking=thinking,
+            **token_kwarg,
+        )
 
-    return litellm.completion(**kwargs)
+    def resolve_tool_calls(
+        self,
+        *,
+        response: Any,
+        messages: list[dict[str, Any]],
+        system: str,
+        tools: list[ToolParam],
+        handler: ToolHandler,
+        max_tokens: int = 4096,
+    ) -> tuple[Any, list[dict[str, Any]], list[Usage]]:
+        """Keep calling API until no more tool_use stops. Returns final response."""
+        usages: list[Usage] = []
+        messages = list(messages)
+
+        while response.choices[0].finish_reason == "tool_use" or (
+            response.choices[0].finish_reason == "stop" and extract_tool_calls(response)
+        ):
+            tcs = extract_tool_calls(response)
+            if not tcs:
+                break
+
+            # Append assistant message with tool calls
+            assistant_msg: dict[str, Any] = {"role": "assistant", "content": extract_text(response) or None}
+            assistant_msg["tool_calls"] = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                }
+                for tc in tcs
+            ]
+            messages.append(assistant_msg)
+
+            # Build tool result messages
+            for tc in tcs:
+                args = json.loads(tc.function.arguments)
+                result = handler(tc.function.name, args)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(result) if isinstance(result, dict) else str(result),
+                    }
+                )
+
+            response = self.call(messages=messages, system=system, tools=tools, max_tokens=max_tokens)
+            usages.append(response.usage)
+
+        return response, messages, usages
 
 
-def resolve_tool_calls(
-    *,
-    response: Any,
-    messages: list[dict[str, Any]],
-    system: str,
-    model: str,
-    tools: list[ToolParam],
-    handler: ToolHandler,
-    max_tokens: int = 4096,
-    thinking_budget: int | None = None,
-    base_url: str | None = None,
-    api_key: str | None = None,
-) -> tuple[Any, list[dict[str, Any]], list[Any]]:
-    """Keep calling API until no more tool_use stops. Returns final response."""
-    usages: list[Any] = []
-    messages = list(messages)
+# === Logging/saving helpers ===================================================
 
-    while response.choices[0].finish_reason == "tool_use" or (
-        response.choices[0].finish_reason == "stop" and extract_tool_calls(response)
-    ):
-        tcs = extract_tool_calls(response)
-        if not tcs:
-            break
 
-        # Append assistant message with tool calls
-        assistant_msg: dict[str, Any] = {"role": "assistant", "content": extract_text(response) or None}
-        assistant_msg["tool_calls"] = [
+def _serialize_message(msg: Any) -> dict[str, Any]:
+    """Serialize a LiteLLM message to a dict for conversation history."""
+    result: dict[str, Any] = {"role": "assistant", "content": msg.content}
+    if msg.tool_calls:
+        result["tool_calls"] = [
             {
                 "id": tc.id,
                 "type": "function",
                 "function": {"name": tc.function.name, "arguments": tc.function.arguments},
             }
-            for tc in tcs
+            for tc in msg.tool_calls
         ]
-        messages.append(assistant_msg)
-
-        # Build tool result messages
-        for tc in tcs:
-            args = json.loads(tc.function.arguments)
-            result = handler(tc.function.name, args)
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps(result) if isinstance(result, dict) else str(result),
-                }
-            )
-
-        response = call_api(
-            messages=messages,
-            system=system,
-            model=model,
-            tools=tools,
-            max_tokens=max_tokens,
-            thinking_budget=thinking_budget,
-            base_url=base_url,
-            api_key=api_key,
-        )
-        usages.append(response.usage)
-
-    return response, messages, usages
-
-
-# === Logging/saving helpers ===================================================
+    return result
 
 
 def log_response(
@@ -282,7 +287,7 @@ def log_response(
             reasoning_content=reasoning,
             tool_calls=tool_calls_data,
             stop_reason=response.choices[0].finish_reason or "",
-            usage=response.usage.model_dump() if hasattr(response.usage, "model_dump") else dict(response.usage),
+            usage=response.usage.model_dump(),
         )
     )
 
@@ -324,13 +329,15 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
-        help="LiteLLM model string, e.g. anthropic/claude-haiku-4-5-20251001 or openai/gpt-oss-20b-128k",
+        help="LiteLLM model string, e.g. anthropic/claude-haiku-4-5-20251001 or openai/gpt-oss:20b",
     )
     parser.add_argument(
         "--thinking-budget", type=int, default=DEFAULT_THINKING, help="0 to disable (only for anthropic/ models)"
     )
     parser.add_argument("--output-dir", default=None)
-    parser.add_argument("--base-url", default=None, help="Custom API base URL (e.g. https://ollama.allegedly.works/v1)")
+    parser.add_argument(
+        "--base-url", default=None, help="Custom API base URL (e.g. https://ollama-api.allegedly.works)"
+    )
     parser.add_argument("--api-key", default=None, help="API key (reads from provider env var by default)")
 
 
@@ -344,29 +351,32 @@ def output_dir_from_args(args: argparse.Namespace) -> Path:
     return d
 
 
+def client_from_args(args: argparse.Namespace) -> LLMClient:
+    return LLMClient(
+        model=args.model, thinking_budget=thinking_from_args(args), base_url=args.base_url, api_key=args.api_key
+    )
+
+
 # === Conversation eval runner =================================================
 
 
 def run_conversation_eval(
     *,
     name: str,
-    model: str,
+    client: LLMClient,
     agent_system: str,
     first_user_message: str,
     sim_system: str,
     sim_tools: list[ToolParam],
     turn_limit: int = 20,
-    thinking_budget: int | None = None,
     output_dir: Path,
-    base_url: str | None = None,
-    api_key: str | None = None,
 ) -> RunSummary:
     """Run a conversation eval: agent and simulator exchange text.
 
     Simulator may call tools (end_game to finish, others passed through).
     Agent has no tools in this pattern.
     """
-    tracker = TokenTracker(model=model)
+    tracker = TokenTracker(model=client.model)
     log_entries: list[LogEntry] = []
     result: Judged | None = None
 
@@ -385,55 +395,34 @@ def run_conversation_eval(
         logger.info("Turn %d...", turn)
 
         # Agent turn (no tools)
-        agent_resp = call_api(
-            messages=agent_messages,
-            system=agent_system,
-            model=model,
-            thinking_budget=thinking_budget,
-            base_url=base_url,
-            api_key=api_key,
-        )
+        agent_resp = client.call(messages=agent_messages, system=agent_system)
         tracker.add(agent_resp.usage)
-        log_response(log_entries, name=name, player="agent", turn=turn, model=model, response=agent_resp)
-        agent_messages.append({"role": "assistant", "content": extract_text(agent_resp)})
+        log_response(log_entries, name=name, player="agent", turn=turn, model=client.model, response=agent_resp)
 
-        agent_text = extract_text(agent_resp).strip()
+        agent_msg = _serialize_message(agent_resp.choices[0].message)
+        agent_messages.append(agent_msg)
+
+        agent_text = (agent_msg["content"] or "").strip()
         if not agent_text:
             continue
 
         # Simulator turn (with tools)
         sim_messages.append({"role": "user", "content": agent_text})
-        sim_resp = call_api(
-            messages=sim_messages,
-            system=sim_system,
-            model=model,
-            tools=sim_tools,
-            thinking_budget=thinking_budget,
-            base_url=base_url,
-            api_key=api_key,
-        )
+        sim_resp = client.call(messages=sim_messages, system=sim_system, tools=sim_tools)
         tracker.add(sim_resp.usage)
-        log_response(log_entries, name=name, player="simulator", turn=turn, model=model, response=sim_resp)
+        log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
 
         if extract_tool_calls(sim_resp):
-            sim_resp, sim_messages, usages = resolve_tool_calls(
-                response=sim_resp,
-                messages=sim_messages,
-                system=sim_system,
-                model=model,
-                tools=sim_tools,
-                handler=handle_sim_tool,
-                thinking_budget=thinking_budget,
-                base_url=base_url,
-                api_key=api_key,
+            sim_resp, sim_messages, usages = client.resolve_tool_calls(
+                response=sim_resp, messages=sim_messages, system=sim_system, tools=sim_tools, handler=handle_sim_tool
             )
             for u in usages:
                 tracker.add(u)
-            log_response(log_entries, name=name, player="simulator", turn=turn, model=model, response=sim_resp)
+            log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
 
-        sim_messages.append({"role": "assistant", "content": extract_text(sim_resp)})
-        sim_text = extract_text(sim_resp).strip()
-        agent_messages.append({"role": "user", "content": sim_text})
+        sim_msg = _serialize_message(sim_resp.choices[0].message)
+        sim_messages.append(sim_msg)
+        agent_messages.append({"role": "user", "content": (sim_msg["content"] or "").strip()})
 
         if result:
             break
@@ -442,7 +431,7 @@ def run_conversation_eval(
 
     summary = RunSummary(
         eval_name=name,
-        model=model,
+        model=client.model,
         turns=turn,
         result=result,
         api_calls=tracker.api_calls,
