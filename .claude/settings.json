@@ -34,5 +34,25 @@
         ]
       }
     ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bazel build:*)",
+      "Bash(bazel test:*)",
+      "Bash(bazel info:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh search:*)",
+      "Bash(gsettings get:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(kubectl get pod:*)",
+      "Bash(kubectl get terraform:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(kubectl rollout restart:*)",
+      "Bash(kubectl top:*)",
+      "Bash(modinfo:*)",
+      "Bash(nix search:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ]
   }
 }
