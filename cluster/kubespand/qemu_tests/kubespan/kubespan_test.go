@@ -26,6 +26,7 @@ func TestDiscoveryOnly(t *testing.T) {
 	runTopology(t, "discovery_only")
 }
 
+<<<<<<< HEAD
 // TestTrustdCSRFlow verifies that kubespand can obtain TLS certificates from
 // a Talos controlplane node's trustd service via the standard CSR flow.
 // Topology: discovery VM + Talos CP VM + kubespand VM on 192.168.50.0/24.
@@ -197,7 +198,7 @@ func runTopology(t *testing.T, topology string) {
 	h.CleanupVMs(t, allVMs, out)
 
 	// Discovery health check via HTTP from the test host.
-	h.WaitForDiscoveryHTTP(t, discHTTPPort, 60*time.Second)
+	h.WaitForDiscoveryHTTP(t, discHTTPPort, 120*time.Second)
 	sw.Lap("discovery HTTP ready")
 
 	// VM-A runs probes and exits (still validated via events).

@@ -1,23 +1,48 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+# Topology tests: TestFlat, TestCrossSubnet, TestDiscoveryOnly.
+# Each boots 4 VMs (discovery + CP + VM-A + VM-B) in parallel.
 go_test(
     name = "kubespan_test",
     timeout = "long",
     srcs = ["kubespan_test.go"],
     data = [
         "//cluster/kubespand/qemu_tests:vmlinuz",
-        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
-        "//cluster/kubespand/qemu_tests/vms/kubespan:initramfs",
-        # Trustd initramfs + Talos nocloud image + testdata for TestTrustdCSRFlow
-        # and Talos CP observation in runTopology (flat/discovery_only).
-        "//cluster/kubespand/qemu_tests/vms/trustd:initramfs",
         "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
         "//cluster/kubespand/qemu_tests/talos:testdata/cp-kubespan.yaml",
         "//cluster/kubespand/qemu_tests/talos:testdata/cp-kubespan-cross.yaml",
-        "//cluster/kubespand/qemu_tests/talos:testdata/vps-controlplane.yaml",
         "//cluster/kubespand/qemu_tests/talos:testdata/talosconfig.yaml",
+        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
+        "//cluster/kubespand/qemu_tests/vms/kubespan:initramfs",
     ],
-    tags = ["requires_qemu"],
+    tags = [
+        "cpu:4",
+        "requires_qemu",
+    ],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+# Trustd CSR flow test: boots 3 VMs (discovery + Talos CP + kubespand).
+go_test(
+    name = "trustd_test",
+    timeout = "long",
+    srcs = ["trustd_test.go"],
+    data = [
+        "//cluster/kubespand/qemu_tests:vmlinuz",
+        "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
+        "//cluster/kubespand/qemu_tests/talos:testdata/talosconfig.yaml",
+        "//cluster/kubespand/qemu_tests/talos:testdata/vps-controlplane.yaml",
+        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
+        "//cluster/kubespand/qemu_tests/vms/trustd:initramfs",
+    ],
+    tags = [
+        "cpu:4",
+        "requires_qemu",
+    ],
     deps = [
         "//cluster/kubespand/qemu_tests",
         "@in_gopkg_yaml_v3//:yaml_v3",
