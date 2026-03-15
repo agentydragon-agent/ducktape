@@ -132,7 +132,7 @@ def install_wrapper(settings: HookSettings, *, wrapper_dir: Path | None = None) 
     write_shell_wrapper(
         wrapper_path,
         "devinfra.claude.bazel_wrapper",
-        baked_env={ENV_SESSION_DIR: str(settings.session_dir)},
+        baked_env={ENV_SESSION_DIR: settings.session_dir},
         extra_lines=_WRAPPER_RUNTIME_LINES,
     )
     logger.info("Installed bazel wrapper at %s", wrapper_path)

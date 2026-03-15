@@ -80,7 +80,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":hook_config",
-        ":settings",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_exporter_otlp_proto_http",
         "@pypi//opentelemetry_sdk",

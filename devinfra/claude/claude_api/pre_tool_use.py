@@ -1,11 +1,13 @@
 """Pydantic models for Claude Code PreToolUse hook input/output.
 
 See https://docs.anthropic.com/en/docs/claude-code/hooks for the full API spec.
+Schema: https://json.schemastore.org/claude-code-settings.json
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -28,10 +30,10 @@ class _CamelModel(BaseModel):
 
 class PreToolUseInput(BaseModel):
     session_id: str
-    transcript_path: str
-    cwd: str
+    transcript_path: Path
+    cwd: Path
     permission_mode: PermissionMode
-    hook_event_name: Literal["PreToolUse"]
+    hook_event_name: Literal["PreToolUse"] = "PreToolUse"
     tool_name: str
     tool_input: dict[str, Any]
     tool_use_id: str

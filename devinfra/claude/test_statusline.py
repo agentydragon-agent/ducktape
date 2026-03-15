@@ -158,19 +158,14 @@ def test_get_cached_usage_fresh_cache(tmp_path: Path):
     assert result.usage.five_hour.utilization == 12.0
 
 
-def test_get_cached_usage_stale_cache_no_token(tmp_path: Path):
+def test_get_cached_usage_stale_cache_no_token(tmp_path: Path, no_credentials):
     cache_file = tmp_path / "usage_cache.json"
     usage = UsageResponse(five_hour=UsageBucket(utilization=99.0))
     stale_time = datetime.now(UTC) - CACHE_TTL - timedelta(seconds=10)
     cached = CachedUsage(fetched_at=stale_time, usage=usage)
     cache_file.write_text(cached.model_dump_json())
 
-    creds_file = tmp_path / "nonexistent"
-
-    with (
-        patch("devinfra.claude.usage_cache.CACHE_PATH", cache_file),
-        patch("devinfra.claude.claude_api.credentials.CREDENTIALS_PATH", creds_file),
-    ):
+    with patch("devinfra.claude.usage_cache.CACHE_PATH", cache_file):
         result = get_cached_usage()
 
     # Falls back to stale cache
@@ -179,14 +174,8 @@ def test_get_cached_usage_stale_cache_no_token(tmp_path: Path):
     assert result.usage.five_hour.utilization == 99.0
 
 
-def test_get_cached_usage_no_cache_no_token(tmp_path: Path):
-    with (
-        patch("devinfra.claude.usage_cache.CACHE_PATH", tmp_path / "nonexistent"),
-        patch("devinfra.claude.claude_api.credentials.CREDENTIALS_PATH", tmp_path / "also_nonexistent"),
-    ):
-        result = get_cached_usage()
-
-    assert result is None
+def test_get_cached_usage_no_cache_no_token(no_usage_cache, no_credentials):
+    assert get_cached_usage() is None
 
 
 # === statusline output tests ===

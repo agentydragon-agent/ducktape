@@ -59,15 +59,11 @@ EOF
 chmod 600 /tmp/claude-kubeconfig.yaml
 ```
 
-## Encrypting the Kubeconfig (Optional)
+## Kubeconfig Provisioning
 
-To store the kubeconfig securely in the repository:
-
-```bash
-# Encrypt with age
-age -e -r <your-public-key> /tmp/claude-kubeconfig.yaml \
-  > devinfra/claude/secrets/kubeconfig.age
-```
+Kubeconfig is generated automatically by the session start hook via
+`k8s_secrets_setup.py`. The SA token is stored as a k8s Secret in the
+`claude-sandbox` namespace and read at session start. No manual encryption needed.
 
 ## Testing Permissions
 

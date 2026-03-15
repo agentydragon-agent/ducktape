@@ -38,9 +38,10 @@ from devinfra.claude import (
     tmpfs_setup,
 )
 from devinfra.claude.auth_proxy import setup as proxy_setup
-from devinfra.claude.claude_api.hook_input import HookInput
+from devinfra.claude.claude_api.hook_input import SessionStartHookInput
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
+from devinfra.claude.hook_config import OtelConfig
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
@@ -453,7 +454,9 @@ async def _setup_web(
 # ============================================================================
 
 
-async def run_session(hook_input: HookInput, settings: HookSettings, env_file_path: Path, *, web_mode: bool) -> None:
+async def run_session(
+    hook_input: SessionStartHookInput, settings: HookSettings, env_file_path: Path, *, web_mode: bool
+) -> None:
     """Unified session setup for both web and CLI modes.
 
     Dispatches platform-specific setup, then runs shared steps:
@@ -578,16 +581,12 @@ async def run_session(hook_input: HookInput, settings: HookSettings, env_file_pa
     logger.info("Trace file: %s", trace_file)
 
 
-async def _async_handle(hook_input: HookInput) -> None:
-    """Async entry point: dispatch to web or CLI mode based on environment."""
+async def _async_handle(hook_input: SessionStartHookInput) -> None:
+    """Async entry point called from hook_dispatch. Dispatches to web or CLI mode."""
     env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
     settings = HookSettings(session_dir=env_file_path.parent)
-    otel.init(settings)
+
+    otel.init_from_config(OtelConfig(endpoint=settings.otel_endpoint, auth_token=settings.otel_auth_token))
 
     web_mode = os.environ.get("CLAUDE_CODE_REMOTE") == "true"
     await run_session(hook_input, settings, env_file_path, web_mode=web_mode)
-
-
-def handle_session_start(hook_input: HookInput) -> None:
-    """Handle SessionStart hook with pre-parsed input. Called from hook_dispatch."""
-    asyncio.run(_async_handle(hook_input))

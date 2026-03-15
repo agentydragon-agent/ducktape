@@ -1,8 +1,8 @@
 """Shared configuration loaded from .claude_hooks/config.yaml.
 
-This is the repo-level config file that all hooks read. It configures
-k8s secrets, OTEL tracing, and other shared settings. Environment
-variables (DUCKTAPE_CLAUDE_HOOKS_*) override values from this file.
+Repo-level config file that all hooks read. Configures k8s secrets,
+OTEL tracing, and other shared settings. Environment variables
+(DUCKTAPE_CLAUDE_HOOKS_*) override values from this file.
 """
 
 from __future__ import annotations
@@ -10,23 +10,21 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 HOOKS_DOTDIR = ".claude_hooks"
 
 
 class OtelConfig(BaseModel):
-    """OpenTelemetry configuration."""
-
-    endpoint: str | None = None
-    auth_token: str | None = None
+    endpoint: str | None = Field(default=None, description="OTLP/HTTP traces endpoint URL")
+    auth_token: str | None = Field(default=None, description="Bearer token for the OTLP endpoint")
 
 
 class K8sSecretMapping(BaseModel):
     """Maps a single k8s Secret's data keys to env var names."""
 
     name: str
-    data: dict[str, str]  # secret data key -> env var name
+    data: dict[str, str] = Field(description="Secret data key → env var name")
 
 
 class K8sSecretRef(BaseModel):
@@ -60,14 +58,23 @@ class HookConfig(BaseModel):
     k8s_secrets: K8sSecretsConfig | None = None
     otel: OtelConfig | None = None
 
+    @classmethod
+    def load(cls, config_path: Path) -> HookConfig:
+        """Load hook config from YAML file."""
+        raw = yaml.safe_load(config_path.read_text())
+        return cls.model_validate(raw)
 
+    @classmethod
+    def load_from_repo(cls, root: Path) -> HookConfig | None:
+        """Load hook config from repo root, or None if not found."""
+        config_path = root / HOOKS_DOTDIR / "config.yaml"
+        return cls.load(config_path) if config_path.exists() else None
+
+
+# Backwards compatibility
 def load_config(config_path: Path) -> HookConfig:
-    """Load hook config from YAML file."""
-    raw = yaml.safe_load(config_path.read_text())
-    return HookConfig.model_validate(raw)
+    return HookConfig.load(config_path)
 
 
 def load_repo_config(root: Path) -> HookConfig | None:
-    """Load hook config from repo root, or None if not found."""
-    config_path = root / HOOKS_DOTDIR / "config.yaml"
-    return load_config(config_path) if config_path.exists() else None
+    return HookConfig.load_from_repo(root)

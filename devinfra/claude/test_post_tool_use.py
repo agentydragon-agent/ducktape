@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
-from devinfra.claude.claude_api.hook_input import PermissionMode
 from devinfra.claude.claude_api.post_tool_use import PostToolUseInput, PostToolUseOutput
 from devinfra.claude.post_tool_use import _find_git_root, evaluate
 
@@ -14,7 +14,7 @@ _COMMON = {
     "session_id": "test-session",
     "transcript_path": "/tmp/transcript.jsonl",
     "cwd": "/tmp",
-    "permission_mode": PermissionMode.DEFAULT,
+    "permission_mode": "default",
     "hook_event_name": "PostToolUse",
     "tool_use_id": "toolu_test123",
 }
@@ -51,6 +51,17 @@ def test_output_serializes_camel_case() -> None:
     j = out.model_dump_json(by_alias=True)
     assert '"additionalContext"' in j
     assert "formatted" in j
+
+
+def test_stop_reason_requires_continue_false() -> None:
+    with pytest.raises(ValueError, match="stop_reason requires continue=false"):
+        PostToolUseOutput(stop_reason="done", continue_=True)
+
+
+def test_stop_reason_with_continue_false() -> None:
+    out = PostToolUseOutput(stop_reason="done", continue_=False)
+    assert out.stop_reason == "done"
+    assert out.continue_ is False
 
 
 if __name__ == "__main__":

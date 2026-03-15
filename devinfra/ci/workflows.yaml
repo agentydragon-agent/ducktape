@@ -103,7 +103,7 @@ releases:
   ducktape:
     bazel_target: //:wheel
     wheel_name: ducktape
-    test_targets: //devinfra/claude:all
+    test_targets: //devinfra/claude/...
     flake_input: ducktape-wheel
     update_claude_settings: true
     extra_jobs:
@@ -126,7 +126,7 @@ releases:
                 --test_env=CI=true \
                 --test_env=GITHUB_ACTIONS=true \
                 --test_env=PATH \
-                //devinfra/claude:all
+                //devinfra/claude/...
           - uses: ./.github/actions/collect-test-logs
             if: always()
             with:

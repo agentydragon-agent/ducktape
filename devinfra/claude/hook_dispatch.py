@@ -9,6 +9,7 @@ for lightweight hooks like PreToolUse and PostToolUse.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import traceback
@@ -17,70 +18,73 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hook_dispatch_input import AnyHookInput
-from devinfra.claude.claude_api.hook_input import HookInput as SessionStartInput
+from devinfra.claude.claude_api.hook_input import SessionStartHookInput
 from devinfra.claude.claude_api.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.pre_tool_use import PreToolUseInput
-from devinfra.claude.hook_config import OtelConfig, load_repo_config
+from devinfra.claude.hook_config import HookConfig, OtelConfig
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
 
 
-def _init_otel(cwd: str) -> None:
-    """Initialize OTEL from config.yaml + env vars. No-op on failure.
+def _load_otel_config(cwd: Path) -> OtelConfig | None:
+    """Build OtelConfig from config.yaml + env var overrides. Returns None if no endpoint."""
+    config = HookConfig.load_from_repo(cwd)
+    endpoint = config.otel.endpoint if config and config.otel else None
+    auth_token = config.otel.auth_token if config and config.otel else None
 
-    Reads endpoint from config.yaml, auth_token from
-    DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN env var (set by session start
-    from k8s secrets). Env vars override config.yaml values.
-    """
+    # Env vars override config.yaml (set by session start from k8s secrets)
+    endpoint = os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_ENDPOINT", endpoint)
+    auth_token = os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN", auth_token)
+
+    if not endpoint:
+        return None
+    return OtelConfig(endpoint=endpoint, auth_token=auth_token)
+
+
+def _init_otel(cwd: Path) -> None:
+    """Initialize OTEL from config.yaml + env vars. No-op on failure."""
     try:
-        config = load_repo_config(Path(cwd))
-        endpoint = config.otel.endpoint if config and config.otel else None
-        auth_token = config.otel.auth_token if config and config.otel else None
-
-        # Env vars override config.yaml (set by session start from k8s secrets)
-        endpoint = os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_ENDPOINT", endpoint)
-        auth_token = os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN", auth_token)
-
-        if endpoint:
+        otel_config = _load_otel_config(cwd)
+        if otel_config:
             from devinfra.claude import otel
 
-            otel.init_from_config(OtelConfig(endpoint=endpoint, auth_token=auth_token))
+            otel.init_from_config(otel_config)
     except Exception:
         pass  # OTEL init is best-effort, don't break hooks
 
 
+def _emit_output(output: object | None) -> None:
+    """Write hook output JSON to stdout if non-None."""
+    if output is not None:
+        from pydantic import BaseModel
+
+        if isinstance(output, BaseModel):
+            sys.stdout.write(output.model_dump_json(by_alias=True))
+
+
 def main() -> None:
     raw = sys.stdin.read()
+    parsed = _adapter.validate_json(raw)
 
-    try:
-        parsed = _adapter.validate_json(raw)
-    except Exception:
-        # Unknown or malformed hook event — silently exit
-        return
-
-    _init_otel(str(parsed.cwd))
+    _init_otel(parsed.cwd if isinstance(parsed.cwd, Path) else Path(parsed.cwd))
 
     try:
         match parsed:
-            case SessionStartInput():
+            case SessionStartHookInput():
                 # Lazy import: heavyweight (async, mako, otel)
-                from devinfra.claude.session_start import handle_session_start
+                from devinfra.claude.session_start import _async_handle
 
-                handle_session_start(parsed)
+                asyncio.run(_async_handle(parsed))
 
             case PreToolUseInput():
                 from devinfra.claude.pre_tool_use import evaluate as evaluate_pre
 
-                pre_result = evaluate_pre(parsed)
-                if pre_result is not None:
-                    sys.stdout.write(pre_result.model_dump_json(by_alias=True))
+                _emit_output(evaluate_pre(parsed))
 
             case PostToolUseInput():
                 from devinfra.claude.post_tool_use import evaluate as evaluate_post
 
-                post_result = evaluate_post(parsed)
-                if post_result is not None:
-                    sys.stdout.write(post_result.model_dump_json(by_alias=True))
+                _emit_output(evaluate_post(parsed))
     except Exception as e:
         print(f"Hook failed ({parsed.hook_event_name}): {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)

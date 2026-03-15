@@ -74,10 +74,10 @@ def setup_k8s_secrets(
     auth proxy, which adds Proxy-Authorization for the upstream egress proxy.
     """
     result = K8sSecretsResult()
+    if not config.k8s or not config.k8s_secrets:
+        raise ValueError(f"k8s and k8s_secrets config sections are required, got {config.k8s=}, {config.k8s_secrets=}")
     k8s_cfg = config.k8s
     secrets_cfg = config.k8s_secrets
-    if not k8s_cfg or not secrets_cfg:
-        raise ValueError("k8s and k8s_secrets config sections are required")
 
     # Configure k8s client
     client_config = Configuration()

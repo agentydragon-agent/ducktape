@@ -1,6 +1,7 @@
 """Pydantic models for Claude Code SessionStart hook input.
 
 See https://docs.anthropic.com/en/docs/claude-code/hooks for the full API spec.
+Schema: https://json.schemastore.org/claude-code-settings.json
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PermissionMode(StrEnum):
@@ -31,17 +32,19 @@ class HookSource(StrEnum):
     COMPACT = "compact"
 
 
-class HookInput(BaseModel):
-    """Input passed to Claude Code SessionStart hooks via stdin.
-
-    Note: permission_mode defaults to "default" because Claude Code Web was
-    observed (2025-01-18) not sending it for SessionStart:resume events.
-    """
+class SessionStartHookInput(BaseModel):
+    """Input for Claude Code SessionStart hooks (parsed from stdin JSON)."""
 
     session_id: str
     cwd: Path
-    transcript_path: str
+    transcript_path: Path
     model: str = ""
-    permission_mode: PermissionMode = PermissionMode.DEFAULT
-    hook_event_name: Literal["SessionStart"]
+    permission_mode: PermissionMode | None = Field(
+        default=None, description="Not sent by Claude Code Web for SessionStart:resume events (observed 2025-01-18)."
+    )
+    hook_event_name: Literal["SessionStart"] = "SessionStart"
     source: HookSource
+
+
+# Backwards compatibility alias
+HookInput = SessionStartHookInput

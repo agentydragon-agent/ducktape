@@ -1,13 +1,15 @@
 """Pydantic models for Claude Code PostToolUse hook input/output.
 
 See https://docs.anthropic.com/en/docs/claude-code/hooks for the full API spec.
+Schema: https://json.schemastore.org/claude-code-settings.json
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from devinfra.claude.claude_api.hook_input import PermissionMode
@@ -19,10 +21,10 @@ class _CamelModel(BaseModel):
 
 class PostToolUseInput(BaseModel):
     session_id: str
-    transcript_path: str
-    cwd: str
+    transcript_path: Path
+    cwd: Path
     permission_mode: PermissionMode
-    hook_event_name: Literal["PostToolUse"]
+    hook_event_name: Literal["PostToolUse"] = "PostToolUse"
     tool_name: str
     tool_input: dict[str, Any]
     tool_use_id: str
@@ -30,20 +32,21 @@ class PostToolUseInput(BaseModel):
 
 
 class PostToolUseOutput(_CamelModel):
-    """PostToolUse hook output per Claude Code API.
+    """PostToolUse hook output per Claude Code API."""
 
-    Fields:
-        decision: Set to "block" to re-prompt Claude with reason feedback.
-        reason: Feedback shown to Claude when decision="block".
-        additional_context: Non-blocking extra context for Claude.
-        continue_: False to stop Claude entirely (overrides decision).
-        stop_reason: User-visible message when continue=false.
-        suppress_output: Hide from transcript mode output.
-    """
+    decision: Literal["block"] | None = Field(
+        default=None, description="Set to 'block' to re-prompt Claude with reason feedback"
+    )
+    reason: str | None = Field(default=None, description="Feedback shown to Claude when decision='block'")
+    additional_context: str | None = Field(default=None, description="Non-blocking extra context for Claude")
+    continue_: bool = Field(
+        default=True, alias="continue", description="False to stop Claude entirely (overrides decision)"
+    )
+    stop_reason: str | None = Field(default=None, description="User-visible message when continue=false")
+    suppress_output: bool = Field(default=False, description="Hide from transcript mode output")
 
-    decision: Literal["block"] | None = None
-    reason: str | None = None
-    additional_context: str | None = None
-    continue_: bool = Field(default=True, alias="continue")
-    stop_reason: str | None = None
-    suppress_output: bool = False
+    @model_validator(mode="after")
+    def _validate_stop_reason(self) -> PostToolUseOutput:
+        if self.stop_reason is not None and self.continue_:
+            raise ValueError("stop_reason requires continue=false")
+        return self
