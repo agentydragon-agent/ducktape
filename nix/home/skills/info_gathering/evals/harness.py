@@ -15,6 +15,7 @@ import argparse
 import contextlib
 import json
 import logging
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -69,6 +70,7 @@ class LogEntry(BaseModel):
     tool_calls: list[dict[str, Any]] = []
     stop_reason: str
     usage: dict[str, Any]
+    duration_s: float = 0.0
 
 
 class TokenTracker(BaseModel):
@@ -238,6 +240,7 @@ def log_response(
     turn: int,
     model: str,
     response: Any,
+    duration_s: float = 0.0,
 ) -> None:
     msg = response.choices[0].message
     tool_calls_data = []
@@ -264,6 +267,7 @@ def log_response(
             tool_calls=tool_calls_data,
             stop_reason=response.choices[0].finish_reason or "",
             usage=response.usage.model_dump(),
+            duration_s=duration_s,
         )
     )
 
@@ -371,9 +375,18 @@ async def run_conversation_eval(
         logger.info("Turn %d...", turn)
 
         # Agent turn (no tools)
+        _t0 = time.monotonic()
         agent_resp = await client.call(messages=agent_messages, system=agent_system)
         tracker.add(agent_resp.usage)
-        log_response(log_entries, name=name, player="agent", turn=turn, model=client.model, response=agent_resp)
+        log_response(
+            log_entries,
+            name=name,
+            player="agent",
+            turn=turn,
+            model=client.model,
+            response=agent_resp,
+            duration_s=time.monotonic() - _t0,
+        )
 
         agent_msg = _serialize_message(agent_resp.choices[0].message)
         agent_messages.append(agent_msg)
@@ -384,17 +397,35 @@ async def run_conversation_eval(
 
         # Simulator turn (with tools)
         sim_messages.append({"role": "user", "content": agent_text})
+        _t1 = time.monotonic()
         sim_resp = await client.call(messages=sim_messages, system=sim_system, tools=sim_tool_params)
         tracker.add(sim_resp.usage)
-        log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
+        log_response(
+            log_entries,
+            name=name,
+            player="simulator",
+            turn=turn,
+            model=client.model,
+            response=sim_resp,
+            duration_s=time.monotonic() - _t1,
+        )
 
         if extract_tool_calls(sim_resp):
+            _t2 = time.monotonic()
             sim_resp, sim_messages, usages = await client.resolve_tool_calls(
                 response=sim_resp, messages=sim_messages, system=sim_system, provider=sim_provider
             )
             for u in usages:
                 tracker.add(u)
-            log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
+            log_response(
+                log_entries,
+                name=name,
+                player="simulator",
+                turn=turn,
+                model=client.model,
+                response=sim_resp,
+                duration_s=time.monotonic() - _t2,
+            )
 
         sim_msg = _serialize_message(sim_resp.choices[0].message)
         sim_messages.append(sim_msg)
