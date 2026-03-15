@@ -60,7 +60,6 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
-	"github.com/agentydragon/ducktape/cluster/kubespand/discovery"
 	kubespanadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/kubespan"
 	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
 )
@@ -274,37 +273,6 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 		return fmt.Errorf("error writing ULA address spec: %w", err)
 	}
 
-	// Write COSI AddressSpec for each node routed address on kubespan.
-	// When a reply arrives on kubespan destined to the node's own address
-	// (on another interface like eth0), the kernel rejects it with
-	// "Invalid cross-device link" if ip_forward=1 and the address isn't
-	// on kubespan. Adding it as a secondary address resolves this.
-	for _, nodeAddr := range discovery.RoutedNodeAddresses() {
-		prefix := netip.PrefixFrom(nodeAddr, nodeAddr.BitLen())
-		if err := safe.WriterModify(ctx, r,
-			network.NewAddressSpec(
-				network.NamespaceName,
-				network.AddressID(constants.KubeSpanLinkName, prefix),
-			),
-			func(res *network.AddressSpec) error {
-				spec := res.TypedSpec()
-				spec.Address = prefix
-				spec.ConfigLayer = network.ConfigOperator
-				if nodeAddr.Is4() {
-					spec.Family = nethelpers.FamilyInet4
-				} else {
-					spec.Family = nethelpers.FamilyInet6
-				}
-				spec.Flags = nethelpers.AddressFlags(nethelpers.AddressPermanent)
-				spec.LinkName = constants.KubeSpanLinkName
-				spec.Scope = nethelpers.ScopeGlobal
-				return nil
-			},
-		); err != nil {
-			logger.Warn("failed to write node address spec", zap.String("address", prefix.String()), zap.Error(err))
-		}
-	}
-
 	// Write COSI RouteSpec for default routes in table 180.
 	// Ref: Talos manager.go RouteSpec writes
 	mtu := cfgSpec.MTU
@@ -409,6 +377,7 @@ func (ctrl *ManagerController) reconcile(ctx context.Context, r controller.Runti
 				zap.String("public_key", pubKey),
 				zap.Stringer("address", peerSpec.Address),
 				zap.Int("allowed_ips", len(peerSpec.AllowedIPs)),
+				zap.Int("endpoints", len(peerSpec.Endpoints)),
 			)
 		}
 
