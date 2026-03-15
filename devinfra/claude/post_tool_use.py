@@ -22,8 +22,6 @@ logger = logging.getLogger(__name__)
 
 FILE_MODIFYING_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit"})
 
-_DEFAULT = PostToolUseOutput()
-
 
 def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
     file_path = tool_input.get("file_path")
@@ -60,24 +58,24 @@ def _run_precommit(file_path: Path, project_dir: Path) -> bool:
 
 def evaluate(hook_input: PostToolUseInput, settings: HookSettings) -> PostToolUseOutput:
     if hook_input.tool_name not in FILE_MODIFYING_TOOLS:
-        return _DEFAULT
+        return PostToolUseOutput()
 
     file_path = _get_file_path(hook_input.tool_input)
     if file_path is None or not file_path.exists():
-        return _DEFAULT
+        return PostToolUseOutput()
 
     project_dir = _find_git_root(file_path)
     if project_dir is None:
-        return _DEFAULT
+        return PostToolUseOutput()
 
     try:
         changed = _run_precommit(file_path, project_dir)
     except (subprocess.TimeoutExpired, OSError) as e:
         logger.warning("pre-commit failed on %s: %s", file_path, e)
-        return _DEFAULT
+        return PostToolUseOutput()
 
     if not changed:
-        return _DEFAULT
+        return PostToolUseOutput()
 
     return PostToolUseOutput(
         hook_specific_output=PostToolUseHookSpecificOutput(

@@ -16,13 +16,6 @@ from devinfra.claude.settings import HookSettings
 
 ALWAYS_ALLOW_COMMANDS: set[str] = {"echo hello world"}
 
-# Default output: no opinion, fall through to normal permission flow.
-_DEFAULT = PreToolUseOutput(
-    hook_specific_output=PreToolUseDecision(
-        permission_decision=PermissionDecision.ALLOW, permission_decision_reason="No policy matched"
-    )
-)
-
 
 def evaluate(hook_input: PreToolUseInput, settings: HookSettings) -> PreToolUseOutput:
     """Evaluate a tool call against permission policies."""
@@ -35,4 +28,8 @@ def evaluate(hook_input: PreToolUseInput, settings: HookSettings) -> PreToolUseO
                     permission_decision_reason="Command in always-allow list",
                 )
             )
-    return _DEFAULT
+    return PreToolUseOutput(
+        hook_specific_output=PreToolUseDecision(
+            permission_decision=PermissionDecision.ALLOW, permission_decision_reason="No policy matched"
+        )
+    )
