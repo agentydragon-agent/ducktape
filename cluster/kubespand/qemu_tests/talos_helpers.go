@@ -137,9 +137,7 @@ func WaitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time
 }
 
 // PollKubeSpanStatus polls the Talos COSI API for KubeSpan peer status.
-// Returns when at least minPeers are found. On TCG-emulated VMs, WireGuard
-// handshakes may not complete within the timeout, so this checks peer
-// discovery (via COSI) rather than requiring "up" state.
+// Returns when at least minPeers peers are found and all are in "up" state.
 func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) ([]KubespanPeerResult, error) {
 	t.Helper()
 
@@ -165,7 +163,6 @@ func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 				Endpoint: ps.TypedSpec().Endpoint.String(),
 			})
 		}
-		t.Logf("COSI poll: %d peers found", len(peers))
 
 		allUp := len(peers) >= 2
 		for _, p := range peers {

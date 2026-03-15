@@ -54,5 +54,6 @@ go_test(
     ],
     deps = [
         "//cluster/kubespand/qemu_tests",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
     ],
 )

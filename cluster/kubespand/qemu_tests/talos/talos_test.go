@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -77,7 +79,7 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 
 	// Observed: KubeSpan nftables rules applied ~35s after VM start.
 	// Peer discovery depends on discovery service + WireGuard handshake.
-	peers, err := h.PollKubeSpanStatus(t, talosClient, nodeIP, 120*time.Second)
+	peers, err := h.PollKubeSpanStatus(t, talosClient, nodeIP, 300*time.Second)
 	sw.Lap("KubeSpan status poll")
 
 	statusJSON, _ := json.MarshalIndent(peers, "", "  ")
@@ -87,9 +89,9 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		t.Errorf("KubeSpan peer discovery failed: %v", err)
 	}
 	for _, peer := range peers {
-		// On TCG-emulated VMs, WireGuard handshakes may not complete within the
-		// test timeout (state stays "unknown"). Log for diagnostics but don't fail.
-		t.Logf("peer %s state=%s, endpoint=%s", peer.Label, peer.State, peer.Endpoint)
+		if peer.State != kubespan.PeerStateUp {
+			t.Errorf("peer %s state=%s (want up), endpoint=%s", peer.Label, peer.State, peer.Endpoint)
+		}
 	}
 	if len(peers) < 2 {
 		t.Errorf("expected 2 KubeSpan peers, got %d", len(peers))
