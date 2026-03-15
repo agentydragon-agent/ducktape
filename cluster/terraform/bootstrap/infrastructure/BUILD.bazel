@@ -39,7 +39,7 @@ py_test(
         "requires-network",
     ],
     deps = [
-        "//cluster/scripts/validate_cluster:helm_templates",
+        "//cluster/validation:helm_templates",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

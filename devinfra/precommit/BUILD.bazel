@@ -52,7 +52,7 @@ py_binary(
     name = "precommit",
     srcs = ["precommit.py"],
     data = [
-        "//cluster/scripts/validate_cluster:validate_sealed_secrets",
+        "//cluster/validation:validate_sealed_secrets",
     ],
     visibility = ["//visibility:public"],
     deps = [

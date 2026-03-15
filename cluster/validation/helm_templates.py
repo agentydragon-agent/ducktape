@@ -45,12 +45,12 @@ def ensure_cilium_repo() -> bool:
         [_helm_bin(), "repo", "add", "cilium", "https://helm.cilium.io/"], check=False, capture_output=True, text=True
     )
     if result.returncode != 0:
-        print(f"❌ Failed to add Cilium Helm repo: {result.stderr}")
+        print(f"Failed to add Cilium Helm repo: {result.stderr}")
         return False
 
     result = subprocess.run([_helm_bin(), "repo", "update"], check=False, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"⚠️  Failed to update Helm repos: {result.stderr}")
+        print(f"Failed to update Helm repos: {result.stderr}")
 
     return True
 

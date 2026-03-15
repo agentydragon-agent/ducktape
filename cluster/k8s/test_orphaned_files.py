@@ -6,9 +6,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from cluster.scripts.validate_cluster.cluster import ParsedCluster
-
-pytest_plugins = ["cluster.scripts.validate_cluster.conftest"]
+from cluster.validation.cluster import ParsedCluster
 
 
 def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:

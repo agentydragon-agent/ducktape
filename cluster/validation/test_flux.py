@@ -9,8 +9,8 @@ from textwrap import dedent
 import pytest
 import pytest_bazel
 
-from cluster.scripts.validate_cluster.dependencies import build_dependency_graph, find_cycles
-from cluster.scripts.validate_cluster.flux import parse_flux_kustomization
+from cluster.validation.dependencies import build_dependency_graph, find_cycles
+from cluster.validation.flux import parse_flux_kustomization
 
 
 class TestParseFluxKustomization:
@@ -41,9 +41,7 @@ class TestParseFluxKustomization:
 
     def test_loads_cycle_testdata(self) -> None:
         """Loads cycle testdata and detects the cycle."""
-        testdata_dir = (
-            Path(os.environ.get("TEST_SRCDIR", ".")) / "ducktape/cluster/scripts/validate_cluster/testdata/cycle"
-        )
+        testdata_dir = Path(os.environ.get("TEST_SRCDIR", ".")) / "ducktape/cluster/validation/testdata/cycle"
         if not testdata_dir.exists():
             pytest.skip("Testdata not available in this context")
 

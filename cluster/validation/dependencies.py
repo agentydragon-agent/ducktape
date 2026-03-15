@@ -6,8 +6,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
-from cluster.scripts.validate_cluster.cluster import ParsedCluster
-from cluster.scripts.validate_cluster.flux import FluxKustomization
+from cluster.validation.cluster import ParsedCluster
+from cluster.validation.flux import FluxKustomization
 
 
 @dataclass

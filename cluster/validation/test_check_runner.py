@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest_bazel
 
-from cluster.scripts.validate_cluster.k8s import K8sResource
-from cluster.scripts.validate_cluster.kustomize import KustomizeBuildResult
+from cluster.validation.k8s import K8sResource
+from cluster.validation.kustomize import KustomizeBuildResult
 
 
 class TestKustomizeResultsSerialization:

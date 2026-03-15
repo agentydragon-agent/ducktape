@@ -1,4 +1,4 @@
-"""Shared fixtures for cluster validation tests.
+"""Shared fixtures for cluster validation integration tests.
 
 Pure-analysis tests resolve cluster/k8s/ from runfiles (data deps).
 Kustomize-dependent tests load pre-built results from a JSON file (genrule output).
@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 from pydantic import TypeAdapter
 
-from cluster.scripts.validate_cluster.cluster import ParsedCluster, parse_cluster
-from cluster.scripts.validate_cluster.kustomize import KustomizeBuildResult
+from cluster.validation.cluster import ParsedCluster, parse_cluster
+from cluster.validation.kustomize import KustomizeBuildResult
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
-_KUSTOMIZE_RESULTS_RLOCATION = "_main/cluster/scripts/validate_cluster/kustomize_build_results.json"
+_KUSTOMIZE_RESULTS_RLOCATION = "_main/cluster/validation/kustomize_build_results.json"
 
 
 @pytest.fixture(scope="session")

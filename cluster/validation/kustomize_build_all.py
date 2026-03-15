@@ -5,7 +5,7 @@ cluster k8s directory, and writes the results as a JSON array to a file.
 This allows downstream checks to consume the output without re-running kustomize.
 
 Usage:
-  bazel run //cluster/scripts/validate_cluster:kustomize_build_all -- <k8s-dir> <output-json>
+  bazel run //cluster/validation:kustomize_build_all -- <k8s-dir> <output-json>
 """
 
 from __future__ import annotations
@@ -17,9 +17,9 @@ from pathlib import Path
 import yaml
 from pydantic import TypeAdapter
 
-from cluster.scripts.validate_cluster.cluster import parse_cluster
-from cluster.scripts.validate_cluster.k8s import parse_k8s_resources
-from cluster.scripts.validate_cluster.kustomize import KustomizeBuildResult
+from cluster.validation.cluster import parse_cluster
+from cluster.validation.k8s import parse_k8s_resources
+from cluster.validation.kustomize import KustomizeBuildResult
 from util.bazel.runfiles import get_required_path
 
 

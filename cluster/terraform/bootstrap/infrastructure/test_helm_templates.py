@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from cluster.scripts.validate_cluster.helm_templates import ensure_cilium_repo, validate_helm_template
+from cluster.validation.helm_templates import ensure_cilium_repo, validate_helm_template
 from util.bazel.runfiles import get_required_path
 
 _CILIUM_VALUES_RLOCATION = "_main/cluster/terraform/bootstrap/infrastructure/cilium-values.yaml"

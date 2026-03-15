@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
-from cluster.scripts.validate_cluster.k8s import K8sResource
+from cluster.validation.k8s import K8sResource
 
 
 class KustomizeFile(BaseModel):

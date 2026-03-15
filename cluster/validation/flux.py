@@ -9,7 +9,7 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from cluster.scripts.validate_cluster.k8s import parse_k8s_resources
+from cluster.validation.k8s import parse_k8s_resources
 from util.bazel.runfiles import get_required_path
 
 

@@ -170,11 +170,7 @@ async def run_validate(
             run_terraform_centralization_check(files, repo_root),
             run_filename_convention_check(repo),
             run_subprocess_validation(
-                "sealed-secrets",
-                "_main/cluster/scripts/validate_cluster/validate_sealed_secrets",
-                files,
-                is_sealed_secret,
-                repo_root,
+                "sealed-secrets", "_main/cluster/validation/validate_sealed_secrets", files, is_sealed_secret, repo_root
             ),
         )
     )
