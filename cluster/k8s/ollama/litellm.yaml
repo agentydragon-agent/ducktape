@@ -21,14 +21,14 @@ spec:
   chart:
     spec:
       chart: litellm-helm
-      version: "1.81.13"
+      version: "1.82.0-stable.patch5"
       sourceRef:
         kind: HelmRepository
         name: litellm
         namespace: ollama
   values:
-    # Chart 1.81.13 defaults to image tag main-v1.81.13 which doesn't exist
-    # on ghcr.io (upstream issue BerriAI/litellm#15288). Pin to main-stable.
+    # Upstream issue BerriAI/litellm#15288: chart-derived image tags may not
+    # exist on ghcr.io. Pin to main-stable (rolling stable tag).
     image:
       tag: "main-stable"
     proxy_config:

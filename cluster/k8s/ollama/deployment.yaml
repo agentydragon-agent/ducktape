@@ -28,7 +28,7 @@ spec:
           effect: PreferNoSchedule
       containers:
         - name: ollama
-          image: ollama/ollama:latest
+          image: ollama/ollama:0.18.0
           ports:
             - name: ollama
               containerPort: 11434
