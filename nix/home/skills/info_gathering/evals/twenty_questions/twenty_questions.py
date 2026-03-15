@@ -22,7 +22,6 @@ from nix.home.skills.info_gathering.evals.harness import (
     LogEntry,
     RunSummary,
     TokenTracker,
-    ToolParam,
     _serialize_message,
     add_common_args,
     build_agent_system,
@@ -33,8 +32,8 @@ from nix.home.skills.info_gathering.evals.harness import (
     output_dir_from_args,
     save_results,
     tool_def,
-    tool_params_from_provider,
 )
+from nix.home.skills.info_gathering.evals.litellm_tool_provider import ToolParam, tool_params_from_provider
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
@@ -108,13 +107,7 @@ class _TwentyQuestionsRunner:
     """Runs a single 20Q eval game, tracking conversation state."""
 
     def __init__(
-        self,
-        *,
-        name: str,
-        client: LLMClient,
-        agent_system: str,
-        sim_system: str,
-        agent_tool_provider: ToolProvider | None = None,
+        self, *, name: str, client: LLMClient, agent_system: str, sim_system: str, agent_tool_provider: ToolProvider
     ) -> None:
         self.name = name
         self.client = client
@@ -139,7 +132,7 @@ class _TwentyQuestionsRunner:
         )
 
         # Resolve any scratch tool calls — does not count as a new turn
-        if self.agent_tool_provider and extract_tool_calls(agent_resp):
+        if extract_tool_calls(agent_resp):
             agent_resp, self.agent_messages, usages = await self.client.resolve_tool_calls(
                 response=agent_resp,
                 messages=self.agent_messages,
@@ -206,9 +199,7 @@ class _TwentyQuestionsRunner:
         self.agent_messages.append({"role": "user", "content": first_user_message})
 
         # Compute agent tool params once (avoids repeated list_tools() calls per turn)
-        agent_tool_params: list[ToolParam] = (
-            await tool_params_from_provider(self.agent_tool_provider) if self.agent_tool_provider else []
-        )
+        agent_tool_params: list[ToolParam] = await tool_params_from_provider(self.agent_tool_provider)
 
         result: Correct | Timeout | None = None
         turn = 0
@@ -247,7 +238,7 @@ async def run_twenty_questions(
     sim_system: str,
     turn_limit: int = 20,
     output_dir: Path,
-    agent_tool_provider: ToolProvider | None = None,
+    agent_tool_provider: ToolProvider,
 ) -> RunSummary:
     """Run a 20 Questions eval.
 
@@ -269,8 +260,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     name = f"20q_{args.variant}"
 
     skill_text = load_skill()
-    extra_system = _SCRATCH_SYSTEM_NOTE if args.scratch else ""
-    agent_system = build_agent_system(skill_text, extra_system=extra_system)
+    agent_system = build_agent_system(skill_text, extra_system=_SCRATCH_SYSTEM_NOTE)
     client = client_from_args(args)
     output_dir = output_dir_from_args(args)
 
@@ -284,25 +274,11 @@ async def _async_main(args: argparse.Namespace) -> None:
     )
 
     logger.info("=" * 60)
-    logger.info(
-        "  %s  |  %s  |  thinking=%s  |  scratch=%s", name, client.model, client.thinking_budget or "off", args.scratch
-    )
+    logger.info("  %s  |  %s  |  thinking=%s", name, client.model, client.thinking_budget or "off")
     logger.info("=" * 60)
 
-    if args.scratch:
-        image = load_scratch_image()
-        async with scratch_container(image) as provider:
-            summary = await run_twenty_questions(
-                name=name,
-                client=client,
-                agent_system=agent_system,
-                first_user_message=first_user_message,
-                sim_system=sim_system,
-                turn_limit=v.turn_limit,
-                output_dir=output_dir,
-                agent_tool_provider=provider,
-            )
-    else:
+    image = load_scratch_image()
+    async with scratch_container(image) as provider:
         summary = await run_twenty_questions(
             name=name,
             client=client,
@@ -311,6 +287,7 @@ async def _async_main(args: argparse.Namespace) -> None:
             sim_system=sim_system,
             turn_limit=v.turn_limit,
             output_dir=output_dir,
+            agent_tool_provider=provider,
         )
     logger.info("%s", summary)
 
@@ -321,7 +298,6 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Twenty Questions eval")
     add_common_args(p)
     p.add_argument("--variant", choices=list(VARIANTS), required=True)
-    p.add_argument("--scratch", action="store_true", help="Give agent an ephemeral Docker scratch container")
     args = p.parse_args()
 
     asyncio.run(_async_main(args))

@@ -1,11 +1,23 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "litellm_tool_provider",
+    srcs = ["litellm_tool_provider.py"],
+    imports = ["../../../../.."],
+    visibility = ["//nix/home/skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        "//agent_core:tool_provider",
+        "@pypi//litellm",
+    ],
+)
+
+py_library(
     name = "harness",
     srcs = ["harness.py"],
     imports = ["../../../../.."],
     visibility = ["//nix/home/skills/info_gathering/evals:__subpackages__"],
     deps = [
+        ":litellm_tool_provider",
         "//agent_core:direct_provider",
         "//agent_core:tool_provider",
         "//openai_utils:json_schema",
@@ -17,7 +29,6 @@ py_library(
 
 py_library(
     name = "docker_scratch",
-    testonly = True,
     srcs = ["docker_scratch.py"],
     imports = ["../../../../.."],
     visibility = ["//nix/home/skills/info_gathering/evals:__subpackages__"],

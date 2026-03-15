@@ -6,6 +6,7 @@ from unittest.mock import patch
 import litellm
 import pytest_bazel
 
+from agent_core.direct_provider import DirectToolProvider
 from nix.home.skills.info_gathering.evals.harness import LLMClient
 from nix.home.skills.info_gathering.evals.twenty_questions.twenty_questions import (
     Correct,
@@ -73,6 +74,7 @@ async def test_timeout(mock_acompletion, tmp_path):
         sim_system="The secret is: wrench",
         turn_limit=3,
         output_dir=tmp_path,
+        agent_tool_provider=DirectToolProvider(),
     )
 
     assert isinstance(summary.result, Timeout)
@@ -99,6 +101,7 @@ async def test_success_on_turn_2(mock_acompletion, tmp_path):
         sim_system="The secret is: New Mexico",
         turn_limit=10,
         output_dir=tmp_path,
+        agent_tool_provider=DirectToolProvider(),
     )
 
     assert isinstance(summary.result, Correct)
@@ -123,6 +126,7 @@ async def test_success_on_turn_1(mock_acompletion, tmp_path):
         sim_system="The secret is: sourdough starter",
         turn_limit=10,
         output_dir=tmp_path,
+        agent_tool_provider=DirectToolProvider(),
     )
 
     assert isinstance(summary.result, Correct)

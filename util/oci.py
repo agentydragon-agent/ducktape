@@ -1,4 +1,4 @@
-"""Container image utilities: load, push, and manage OCI images in tests.
+"""Container image utilities: load, push, and manage OCI images.
 
 Combines Docker image loading (via load.sh scripts and tarballs) and OCI push
 utilities (via crane) previously spread across test_util.docker, test_util.oci,

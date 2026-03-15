@@ -24,7 +24,12 @@ from litellm.types.utils import Usage
 from pydantic import BaseModel
 
 from agent_core.direct_provider import DirectToolProvider
-from agent_core.tool_provider import TextContent, ToolProvider, ToolResult
+from agent_core.tool_provider import ToolProvider
+from nix.home.skills.info_gathering.evals.litellm_tool_provider import (
+    ToolParam,
+    tool_params_from_provider,
+    tool_result_content,
+)
 from openai_utils.json_schema import openai_json_schema
 from util.bazel.runfiles import get_required_path
 
@@ -51,12 +56,6 @@ class EndGameInput(BaseModel):
     outcome: Literal["correct", "incorrect", "partial"]
     score: float
     summary: str
-
-
-class Recommendation(BaseModel):
-    title: str
-    stars: int
-    turn: int
 
 
 class LogEntry(BaseModel):
@@ -100,7 +99,6 @@ class RunSummary(BaseModel):
     model: str
     turns: int
     result: BaseModel
-    recommendations: list[Recommendation] = []
     api_calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -110,35 +108,12 @@ class RunSummary(BaseModel):
 # === Tool helpers ==============================================================
 
 
-ToolParam = dict[str, Any]
-
-
 def tool_def(name: str, description: str, input_model: type[BaseModel]) -> ToolParam:
     """Build an OpenAI-format tool definition from a Pydantic model."""
     return {
         "type": "function",
         "function": {"name": name, "description": description, "parameters": openai_json_schema(input_model)},
     }
-
-
-# TODO: This LiteLLM <-> ToolProvider wiring is a candidate for agent_core integration.
-# Once agent_core gains a LiteLLM-backed model provider, evals could use Agent.create()
-# directly instead of maintaining this custom ToolSchema -> ToolParam conversion.
-async def tool_params_from_provider(provider: ToolProvider) -> list[ToolParam]:
-    """Convert ToolProvider schemas to LiteLLM ToolParam list."""
-    return [
-        {"type": "function", "function": {"name": s.name, "description": s.description, "parameters": s.input_schema}}
-        for s in await provider.list_tools()
-    ]
-
-
-def _tool_result_content(result: ToolResult) -> str:
-    """Extract string content from a ToolResult for use in LiteLLM tool messages."""
-    # TODO: Part of the LiteLLM <-> ToolProvider wiring (see above).
-    if result.structured_content is not None:
-        return json.dumps(result.structured_content)
-    texts = [c.text for c in result.content if isinstance(c, TextContent)]
-    return " ".join(texts) if texts else ("error" if result.is_error else "OK")
 
 
 # === LLM client ===============================================================
@@ -211,7 +186,6 @@ class LLMClient:
         max_tokens: int = 4096,
     ) -> tuple[Any, list[dict[str, Any]], list[Usage]]:
         """Keep calling API until no more tool_use stops. Returns final response."""
-        # TODO: Part of the LiteLLM <-> ToolProvider wiring. See tool_params_from_provider.
         tools = await tool_params_from_provider(provider)
         usages: list[Usage] = []
         messages = list(messages)
@@ -230,7 +204,7 @@ class LLMClient:
             for tc in tcs:
                 args = json.loads(tc.function.arguments)
                 result = await provider.call_tool(tc.function.name, args)
-                messages.append({"role": "tool", "tool_call_id": tc.id, "content": _tool_result_content(result)})
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_result_content(result)})
 
             response = await self.call(messages=messages, system=system, tools=tools, max_tokens=max_tokens)
             usages.append(response.usage)
@@ -386,11 +360,10 @@ async def run_conversation_eval(
     sim_provider = DirectToolProvider()
 
     @sim_provider.tool
-    def end_game(args: EndGameInput) -> dict[str, Any]:
+    def end_game(args: EndGameInput) -> None:
         """End the game. Call when the agent states a final answer."""
         nonlocal result
         result = Judged(outcome=args.outcome, score=args.score, summary=args.summary)
-        return {"status": "game_ended"}
 
     sim_tool_params = await tool_params_from_provider(sim_provider)
 
