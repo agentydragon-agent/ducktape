@@ -4,7 +4,7 @@ go_library(
     name = "apid_lib",
     srcs = ["main.go"],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/cmd/apid",
-    deps = ["@talos_internal//:apid_lib"],
+    deps = ["@com_github_siderolabs_talos//internal/app/apid"],
 )
 
 go_binary(
