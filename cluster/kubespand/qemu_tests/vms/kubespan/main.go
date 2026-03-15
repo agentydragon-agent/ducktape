@@ -140,7 +140,7 @@ func main() {
 	const probePort = 9999
 
 	peerAddr := kubespanlib.WaitForPeer(kubespandCmd)
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: "peer discovered", PeerAddr: peerAddr, PeerIPv4: peerBridgeIP})
+	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("peer discovered addr=%s ipv4=%s", peerAddr, peerBridgeIP)})
 
 	if initlib.Role == "b" {
 		cancel := kubespanlib.ServeTCP(probePort)

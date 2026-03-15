@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,28 +16,8 @@ import (
 var Role = "unknown"
 
 func EmitEvent(evt qemu.Event) {
-	evt.Timestamp = float64(Uptime())
-	evt.Role = Role
 	b, _ := json.Marshal(evt)
 	fmt.Println(string(b))
-}
-
-func Uptime() int64 {
-	data, err := os.ReadFile("/proc/uptime")
-	if err != nil {
-		return 0
-	}
-	parts := strings.Fields(string(data))
-	if len(parts) == 0 {
-		return 0
-	}
-	dotIdx := strings.Index(parts[0], ".")
-	if dotIdx < 0 {
-		v, _ := strconv.ParseInt(parts[0], 10, 64)
-		return v
-	}
-	v, _ := strconv.ParseInt(parts[0][:dotIdx], 10, 64)
-	return v
 }
 
 func Run(name string, args ...string) error {
