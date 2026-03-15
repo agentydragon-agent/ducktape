@@ -8,7 +8,7 @@ Validations:
 - pytest-main check (ensures test files have pytest_bazel.main() entry points)
 - terraform-version-centralization (checks terraform modules don't define provider versions)
 - filename-conventions (enforces underscores not dashes in new .py/.md files)
-- cluster validations (kustomize, helm, sealed-secrets)
+- sealed-secrets (validates SealedSecrets can be decrypted with tofu keypair)
 
 Note: formatting moved to standard hooks (buildifier, ruff, shfmt)
 
@@ -65,12 +65,6 @@ ValidationOutcome = Skipped | Failed | Passed
 class ValidationResult:
     name: str
     outcome: ValidationOutcome
-
-
-def is_cluster_validated(p: Path) -> bool:
-    if p.is_relative_to("cluster/k8s") and p.suffix in (".yaml", ".yml"):
-        return True
-    return p.is_relative_to("cluster/terraform") and "cilium" in p.parts
 
 
 def is_sealed_secret(p: Path) -> bool:
@@ -175,17 +169,6 @@ async def run_validate(
             run_pytest_main_check(files, repo_root, repo, bazel_index),
             run_terraform_centralization_check(files, repo_root),
             run_filename_convention_check(repo),
-            # Unified cluster validation: kustomize + helm + CRD layering + deps
-            # TODO: validate_cluster is now a runfiles binary — check whether --skip-flux-build
-            # is still needed or if flux build is now stable enough to run in pre-commit.
-            run_subprocess_validation(
-                "cluster-validate",
-                "_main/cluster/scripts/validate_cluster/validate_cluster",
-                files,
-                is_cluster_validated,
-                repo_root,
-                extra_args=["--skip-flux-build"],
-            ),
             run_subprocess_validation(
                 "sealed-secrets",
                 "_main/cluster/scripts/validate_cluster/validate_sealed_secrets",

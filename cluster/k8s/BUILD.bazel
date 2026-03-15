@@ -1,0 +1,6 @@
+# gazelle:ignore
+filegroup(
+    name = "all_yaml",
+    srcs = glob(["**/*.yaml"]),
+    visibility = ["//cluster:__subpackages__"],
+)

@@ -52,8 +52,6 @@ py_binary(
     name = "precommit",
     srcs = ["precommit.py"],
     data = [
-        # Validators (validate_cluster is unified: kustomize + helm + CRD layering + deps + flux)
-        "//cluster/scripts/validate_cluster",
         "//cluster/scripts/validate_cluster:validate_sealed_secrets",
     ],
     visibility = ["//visibility:public"],

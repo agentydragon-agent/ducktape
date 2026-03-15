@@ -59,9 +59,10 @@ def parse_kustomize_file(kust_file: Path) -> KustomizeFile | None:
         return KustomizeFile(path=kust_file, resources=resources, patches=patches)
 
 
-async def run_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult:
+async def run_kustomize_build(kustomization_path: Path, *, kustomize_bin: Path | None = None) -> KustomizeBuildResult:
     """Run kustomize build and parse the output."""
-    kustomize_bin = get_required_path("multitool/tools/kustomize/kustomize")
+    if kustomize_bin is None:
+        kustomize_bin = get_required_path("multitool/tools/kustomize/kustomize")
     proc = await asyncio.create_subprocess_exec(
         kustomize_bin,
         "build",

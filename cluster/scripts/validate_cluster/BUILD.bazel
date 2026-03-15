@@ -1,15 +1,20 @@
 # gazelle:ignore
 # Cluster validation scripts
 #
-# Two binaries:
-#   validate_cluster — kustomizations + helm templates (unified, fast local checks)
+# Binaries:
 #   validate_sealed_secrets — sealed secret decryption (separate, needs terraform state)
+#   kustomize_build_all — serialize kustomize build output to JSON
+#
+# Live tests (test_live_*):
+#   Individual cluster validation checks as Bazel test targets.
+#   Pure-analysis checks use //cluster/k8s:all_yaml as data deps.
+#   Kustomize-dependent checks consume a genrule that builds all kustomizations.
 #
 # Binaries (kustomize, flux, kubeseal, helm, tofu) are managed via rules_multitool.
 #
 # Usage:
-#   bazel run //cluster/scripts/validate_cluster
-#   bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
+#   bazel test //cluster/scripts/validate_cluster:test_live_orphaned_files
+#   bazel test //cluster/scripts/validate_cluster/...
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
@@ -78,7 +83,6 @@ py_library(
         ":flux",
         ":k8s",
         ":kustomize",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -90,34 +94,6 @@ py_library(
         ":cluster",
         ":flux",
     ],
-)
-
-py_library(
-    name = "main",
-    srcs = ["main.py"],
-    imports = ["../../.."],
-    deps = [
-        ":checks",
-        ":cluster",
-        ":dependencies",
-        ":flux",
-        ":helm_templates",
-        ":kustomize",
-        "//util/bazel:workspace",
-    ],
-)
-
-py_binary(
-    name = "validate_cluster",
-    data = [
-        "//cluster/terraform/bootstrap/infrastructure:cilium-values.yaml",
-        "@multitool//tools/flux",
-        "@multitool//tools/helm",
-        "@multitool//tools/kustomize",
-    ],
-    imports = ["../../.."],
-    main_module = "cluster.scripts.validate_cluster.main",
-    deps = [":main"],
 )
 
 # ============================================================================
@@ -154,7 +130,42 @@ py_library(
 )
 
 # ============================================================================
-# Tests
+# Kustomize build serialization (for external consumers / CI scripts)
+# ============================================================================
+
+py_library(
+    name = "kustomize_build_all_lib",
+    srcs = ["kustomize_build_all.py"],
+    imports = ["../../.."],
+    deps = [
+        ":cluster",
+        ":kustomize",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "kustomize_build_all",
+    data = ["@multitool//tools/kustomize"],
+    imports = ["../../.."],
+    main_module = "cluster.scripts.validate_cluster.kustomize_build_all",
+    deps = [":kustomize_build_all_lib"],
+)
+
+# ============================================================================
+# Kustomize build genrule — builds all kustomizations, outputs JSON
+# ============================================================================
+
+genrule(
+    name = "kustomize_build_results",
+    srcs = ["//cluster/k8s:all_yaml"],
+    outs = ["kustomize_build_results.json"],
+    cmd = "$(location :kustomize_build_all) cluster/k8s $@",
+    tools = [":kustomize_build_all"],
+)
+
+# ============================================================================
+# Unit tests (synthetic data, hermetic)
 # ============================================================================
 
 py_test(
@@ -205,6 +216,151 @@ py_test(
     deps = [
         ":dependencies",
         ":flux",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_check_runner",
+    srcs = ["test_check_runner.py"],
+    imports = ["../../.."],
+    deps = [
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+# ============================================================================
+# Live tests — validate real cluster/k8s/ config
+#
+# Pure-analysis tests use //cluster/k8s:all_yaml as data deps (sandboxed).
+# Kustomize-dependent tests consume :kustomize_build_results genrule output.
+# ============================================================================
+
+# Shared fixtures for live tests
+py_library(
+    name = "live_conftest",
+    srcs = ["live_conftest.py"],
+    imports = ["../../.."],
+    deps = [
+        ":cluster",
+        ":kustomize",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_live_orphaned_files",
+    srcs = ["test_live_orphaned_files.py"],
+    data = ["//cluster/k8s:all_yaml"],
+    imports = ["../../.."],
+
+    deps = [
+        ":cluster",
+        ":live_conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_live_blueprint_completeness",
+    srcs = ["test_live_blueprint_completeness.py"],
+    data = ["//cluster/k8s:all_yaml"],
+    imports = ["../../.."],
+
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_live_dependencies",
+    srcs = ["test_live_dependencies.py"],
+    data = ["//cluster/k8s:all_yaml"],
+    imports = ["../../.."],
+
+    deps = [
+        ":dependencies",
+        ":live_conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_live_controller_health_checks",
+    srcs = ["test_live_controller_health_checks.py"],
+    data = ["//cluster/k8s:all_yaml"],
+    imports = ["../../.."],
+
+    deps = [
+        ":cluster",
+        ":k8s",
+        ":kustomize",
+        ":live_conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_live_kustomize",
+    srcs = ["test_live_kustomize.py"],
+    data = [
+        ":kustomize_build_results",
+        "//cluster/k8s:all_yaml",
+    ],
+    imports = ["../../.."],
+
+    deps = [
+        ":checks",
+        ":kustomize",
+        ":live_conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_live_flux_build",
+    srcs = ["test_live_flux_build.py"],
+    data = [
+        "//cluster/k8s:all_yaml",
+        "@multitool//tools/flux",
+    ],
+    imports = ["../../.."],
+
+    deps = [
+        ":flux",
+        ":k8s",
+        ":live_conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_live_helm_templates",
+    srcs = ["test_live_helm_templates.py"],
+    data = [
+        "//cluster/terraform/bootstrap/infrastructure:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    imports = ["../../.."],
+    tags = ["requires-network"],
+    deps = [
+        ":helm_templates",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
