@@ -25,7 +25,7 @@ def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:
         for yaml_file in cluster.all_yaml_files
         if yaml_file.name != "kustomization.yaml" and yaml_file not in referenced
     )
-    assert not orphaned, "\n".join(f"Orphaned file not referenced by any kustomization: {f}" for f in orphaned)
+    assert not orphaned, "Orphaned files not referenced by any kustomization:\n" + "\n".join(f"  {f}" for f in orphaned)
 
 
 if __name__ == "__main__":

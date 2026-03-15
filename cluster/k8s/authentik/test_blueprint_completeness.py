@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest_bazel
 import yaml
 
-from util.bazel.runfiles import get_required_path
+pytest_plugins = ["cluster.scripts.validate_cluster.conftest"]
 
 
-def test_authentik_blueprint_completeness() -> None:
-    k8s_dir = get_required_path("_main/cluster/k8s/kustomization.yaml").parent
+def test_authentik_blueprint_completeness(k8s_dir: Path) -> None:
     authentik_kust = k8s_dir / "authentik" / "kustomization.yaml"
     blueprints_dir = k8s_dir / "authentik" / "blueprints"
 
@@ -25,11 +26,8 @@ def test_authentik_blueprint_completeness() -> None:
     on_disk = {p.name for p in blueprints_dir.glob("*.yaml")}
     unlisted = sorted(on_disk - listed_files)
 
-    assert not unlisted, "\n".join(
-        f"Authentik blueprint not listed in configMapGenerator: {name}. "
-        f"Add 'blueprints/{name}' to the authentik-sso-blueprints files list "
-        f"in k8s/authentik/kustomization.yaml."
-        for name in unlisted
+    assert not unlisted, "Authentik blueprints not listed in configMapGenerator:\n" + "\n".join(
+        f"  {name} — add 'blueprints/{name}' to authentik-sso-blueprints files list" for name in unlisted
     )
 
 
