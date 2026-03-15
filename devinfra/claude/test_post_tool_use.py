@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput, PostToolUseOutput
+from devinfra.claude.claude_api.hooks.post_tool_use import (
+    PostToolUseHookSpecificOutput,
+    PostToolUseInput,
+    PostToolUseOutput,
+)
 from devinfra.claude.post_tool_use import _find_git_root, evaluate
 
 _COMMON = {
@@ -46,8 +50,9 @@ def test_find_git_root_no_git(tmp_path: Path) -> None:
 
 
 def test_output_serializes_camel_case() -> None:
-    out = PostToolUseOutput(additional_context="formatted")
+    out = PostToolUseOutput(hook_specific_output=PostToolUseHookSpecificOutput(additional_context="formatted"))
     j = out.model_dump_json(by_alias=True)
+    assert '"hookSpecificOutput"' in j
     assert '"additionalContext"' in j
     assert "formatted" in j
 

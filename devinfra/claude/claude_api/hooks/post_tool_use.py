@@ -20,6 +20,14 @@ class PostToolUseInput(HookInputBase):
     tool_response: Any
 
 
+class PostToolUseHookSpecificOutput(CamelModel):
+    """Nested hookSpecificOutput for PostToolUse."""
+
+    hook_event_name: Literal["PostToolUse"] = "PostToolUse"
+    additional_context: str | None = Field(default=None, description="Non-blocking extra context for Claude")
+    updated_mcp_tool_output: Any | None = Field(default=None, description="MCP tools only — replaces the tool's output")
+
+
 class PostToolUseOutput(CamelModel):
     """PostToolUse hook output per Claude Code API."""
 
@@ -27,12 +35,12 @@ class PostToolUseOutput(CamelModel):
         default=None, description="Set to 'block' to re-prompt Claude with reason feedback"
     )
     reason: str | None = Field(default=None, description="Feedback shown to Claude when decision='block'")
-    additional_context: str | None = Field(default=None, description="Non-blocking extra context for Claude")
     continue_: bool = Field(
         default=True, alias="continue", description="False to stop Claude entirely (overrides decision)"
     )
     stop_reason: str | None = Field(default=None, description="User-visible message when continue=false")
     suppress_output: bool = Field(default=False, description="Hide from transcript mode output")
+    hook_specific_output: PostToolUseHookSpecificOutput | None = None
 
     @model_validator(mode="after")
     def _validate_stop_reason(self) -> PostToolUseOutput:

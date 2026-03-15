@@ -28,6 +28,8 @@ class PreToolUseDecision(CamelModel):
     hook_event_name: Literal["PreToolUse"] = "PreToolUse"
     permission_decision: PermissionDecision
     permission_decision_reason: str
+    updated_input: dict[str, Any] | None = None
+    additional_context: str | None = None
 
 
 class PreToolUseOutput(CamelModel):

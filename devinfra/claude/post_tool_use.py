@@ -11,7 +11,11 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput, PostToolUseOutput
+from devinfra.claude.claude_api.hooks.post_tool_use import (
+    PostToolUseHookSpecificOutput,
+    PostToolUseInput,
+    PostToolUseOutput,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -73,5 +77,7 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput | None:
         return None
 
     return PostToolUseOutput(
-        additional_context=f"Auto-formatted {file_path.name} via pre-commit. File updated in-place."
+        hook_specific_output=PostToolUseHookSpecificOutput(
+            additional_context=f"Auto-formatted {file_path.name} via pre-commit. File updated in-place."
+        )
     )
