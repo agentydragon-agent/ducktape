@@ -15,6 +15,10 @@ spec:
       kind: Terraform
       name: ollama-api-key
       namespace: flux-system
+    - apiVersion: infra.contrib.fluxcd.io/v1alpha2
+      kind: Terraform
+      name: ollama-direct-token
+      namespace: flux-system
   timeout: 10m
   dependsOn:
     - name: ollama-namespace

@@ -3,4 +3,5 @@ kind: Kustomization
 resources:
   - alloy-otlp-bearer-token-externalsecret.yaml
   - externalsecret.yaml
+  - ollama-direct-token-externalsecret.yaml
   - github-token-sealed.yaml
