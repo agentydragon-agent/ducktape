@@ -69,7 +69,36 @@ spec:
               port: ollama
             initialDelaySeconds: 10
             periodSeconds: 10
+        - name: auth-proxy
+          image: nginx:1.27-alpine
+          ports:
+            - name: auth-proxy
+              containerPort: 11435
+              protocol: TCP
+          env:
+            - name: OLLAMA_DIRECT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ollama-direct-token
+                  key: token
+          volumeMounts:
+            - name: nginx-templates
+              mountPath: /etc/nginx/templates
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi
+          livenessProbe:
+            tcpSocket:
+              port: auth-proxy
+            initialDelaySeconds: 5
+            periodSeconds: 30
       volumes:
         - name: models
           persistentVolumeClaim:
             claimName: llm-models
+        - name: nginx-templates
+          configMap:
+            name: ollama-auth-proxy

@@ -14,3 +14,7 @@ spec:
       port: 11434
       targetPort: ollama
       protocol: TCP
+    - name: auth-proxy
+      port: 11435
+      targetPort: auth-proxy
+      protocol: TCP

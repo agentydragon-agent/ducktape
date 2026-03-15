@@ -6,6 +6,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - httproute.yaml
+  - httproute-direct.yaml
   - clusterrole-ollama-consumer.yaml
   - job-setup-gpt-oss-v1.yaml
   - litellm.yaml
@@ -17,3 +18,8 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - setup-gpt-oss-v1.sh
+  - name: ollama-auth-proxy
+    options:
+      disableNameSuffixHash: true
+    files:
+      - default.conf.template=nginx-auth-proxy.conf.template
