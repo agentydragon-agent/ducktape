@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
-from devinfra.claude.claude_api.hook_input import PermissionMode
+from devinfra.claude.claude_api.session_start_input import PermissionMode
 
 
 class PermissionDecision(StrEnum):

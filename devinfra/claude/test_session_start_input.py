@@ -3,7 +3,7 @@
 import pytest
 import pytest_bazel
 
-from devinfra.claude.claude_api.hook_input import PermissionMode, SessionStartHookInput
+from devinfra.claude.claude_api.session_start_input import PermissionMode, SessionStartHookInput
 
 _SESSION_START_JSON = {
     "session_id": "test-session",

@@ -16,9 +16,9 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hook_dispatch_input import AnyHookInput
-from devinfra.claude.claude_api.hook_input import SessionStartHookInput
 from devinfra.claude.claude_api.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.pre_tool_use import PreToolUseInput
+from devinfra.claude.claude_api.session_start_input import SessionStartHookInput
 from devinfra.claude.hook_config import HookConfig, OtelConfig
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)

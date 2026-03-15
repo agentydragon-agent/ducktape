@@ -75,7 +75,7 @@ py_library(
         "//devinfra/claude:tmpfs_setup",
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
-        "//devinfra/claude/claude_api:hook_input",
+        "//devinfra/claude/claude_api:session_start_input",
         "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

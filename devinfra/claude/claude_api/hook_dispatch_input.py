@@ -8,8 +8,8 @@ from typing import Annotated
 
 from pydantic import Discriminator
 
-from devinfra.claude.claude_api.hook_input import SessionStartHookInput
 from devinfra.claude.claude_api.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.pre_tool_use import PreToolUseInput
+from devinfra.claude.claude_api.session_start_input import SessionStartHookInput
 
 AnyHookInput = Annotated[SessionStartHookInput | PreToolUseInput | PostToolUseInput, Discriminator("hook_event_name")]

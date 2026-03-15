@@ -20,7 +20,7 @@ import pytest
 from devinfra.claude import settings
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.claude_api.hook_input import HookSource, PermissionMode
+from devinfra.claude.claude_api.session_start_input import HookSource, PermissionMode
 from devinfra.claude.testing import shell_helpers
 from devinfra.claude.testing.mock_egress_proxy import MockEgressProxy
 from devinfra.claude.tmpfs_setup import unmount_tmpfs_under

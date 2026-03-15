@@ -1,8 +1,8 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
-    name = "hook_input",
-    srcs = ["hook_input.py"],
+    name = "session_start_input",
+    srcs = ["session_start_input.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
@@ -14,7 +14,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":hook_input",
+        ":session_start_input",
         "@pypi//pydantic",
     ],
 )
@@ -49,7 +49,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":hook_input",
+        ":session_start_input",
         "@pypi//pydantic",
     ],
 )
@@ -60,9 +60,9 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":hook_input",
         ":post_tool_use",
         ":pre_tool_use",
+        ":session_start_input",
         "@pypi//pydantic",
     ],
 )
