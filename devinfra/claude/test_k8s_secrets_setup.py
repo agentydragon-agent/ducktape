@@ -40,30 +40,21 @@ def mock_k8s_api() -> Generator[MagicMock]:
         yield mock_api
 
 
-def test_duplicate_env_var_across_secrets_raises(tmp_path: Path, mock_k8s_api: MagicMock) -> None:
-    """Two secrets mapping different keys to the same env var name should raise ValueError."""
-    config = _make_config(
-        [
-            K8sSecretMapping(name="secret-a", data={"key1": "MY_VAR"}),
-            K8sSecretMapping(name="secret-b", data={"key2": "MY_VAR"}),
-        ]
-    )
-    mock_k8s_api.read_namespaced_secret.side_effect = [
-        _make_mock_k8s_secret({"key1": "value1"}),
-        _make_mock_k8s_secret({"key2": "value2"}),
-    ]
-
+def test_duplicate_env_var_across_secrets_raises() -> None:
+    """Two secrets mapping different keys to the same env var name should raise at config construction."""
     with pytest.raises(ValueError, match="Duplicate env var 'MY_VAR'"):
-        setup_k8s_secrets(token="tok", session_dir=tmp_path, combined_ca_path=None, config=config)
+        _make_config(
+            [
+                K8sSecretMapping(name="secret-a", data={"key1": "MY_VAR"}),
+                K8sSecretMapping(name="secret-b", data={"key2": "MY_VAR"}),
+            ]
+        )
 
 
-def test_duplicate_env_var_within_same_secret_raises(tmp_path: Path, mock_k8s_api: MagicMock) -> None:
-    """Two different keys within the same secret mapping to the same env var name should raise ValueError."""
-    config = _make_config([K8sSecretMapping(name="secret-a", data={"key1": "MY_VAR", "key2": "MY_VAR"})])
-    mock_k8s_api.read_namespaced_secret.return_value = _make_mock_k8s_secret({"key1": "value1", "key2": "value2"})
-
+def test_duplicate_env_var_within_same_secret_raises() -> None:
+    """Two different keys within the same secret mapping to the same env var name should raise."""
     with pytest.raises(ValueError, match="Duplicate env var 'MY_VAR'"):
-        setup_k8s_secrets(token="tok", session_dir=tmp_path, combined_ca_path=None, config=config)
+        _make_config([K8sSecretMapping(name="secret-a", data={"key1": "MY_VAR", "key2": "MY_VAR"})])
 
 
 def test_unique_env_vars_succeeds(tmp_path: Path, mock_k8s_api: MagicMock) -> None:

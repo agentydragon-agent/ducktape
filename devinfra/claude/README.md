@@ -407,54 +407,16 @@ Add their age public key (one per line) to `.claude_hooks/secrets/recipients.txt
 
 ## OTEL Tracing
 
-Hooks emit OpenTelemetry traces to Grafana Alloy via the Authentik proxy at
-`alloy-otlp.allegedly.works`. Fully declarative — no manual steps.
+Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
+`alloy-otlp.allegedly.works`. Fully declarative — token flows through
+Terraform → Vault → ESO → k8s secrets → `otel.py`.
 
-### Architecture
+Configured in `.claude_hooks/config.yaml` (`otel.endpoint`). Bearer token
+loaded from k8s secret (`k8s_secrets.otel_bearer_token`).
 
-```
-Hook (OTLPSpanExporter)
-    │ Authorization: Bearer <token>
-    └──► alloy-otlp.allegedly.works (HTTPS, egress proxy)
-           │
-           └──► Authentik proxy outpost (validates Bearer token)
-                  │
-                  └──► alloy.monitoring:4318 (OTLP/HTTP)
-                         │
-                         └──► Tempo (traces)
-```
-
-### Token Flow
-
-```
-Terraform (random_password, 48 chars)
-  → Vault KV (kv/alloy-otlp/bearer-token)
-    → ESO (authentik-sso-client-secrets) → Authentik pods envFrom
-      → Blueprint !Env → Token.key in Authentik DB
-    → ESO (claude-sandbox) → session start hook
-      → DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN → otel.py
-```
-
-Key files:
-
-- TF module: `cluster/terraform/gitops/alloy-otlp-bearer-token/`
-- tofu-controller CRD: `cluster/k8s/alloy-otlp-bearer-token-tf/`
-- Authentik blueprint: `cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml`
-- Claude-sandbox ESO: `cluster/k8s/claude-sandbox-secrets/alloy-otlp-bearer-token-externalsecret.yaml`
-
+Key files: TF module in `cluster/terraform/gitops/alloy-otlp-bearer-token/`,
+Authentik blueprint in `cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml`.
 Rotation: bump `rotation_version` in the TF module.
-
-### Configuration
-
-OTEL endpoint is configured in `.claude_hooks/config.yaml`:
-
-```yaml
-otel:
-  endpoint: https://alloy-otlp.allegedly.works/v1/traces
-```
-
-Auth token flows through k8s secrets → `DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN`
-env var → `otel.py` → `Authorization: Bearer <token>` header.
 
 ## Development
 

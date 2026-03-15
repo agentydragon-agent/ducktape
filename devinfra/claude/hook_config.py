@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 HOOKS_DOTDIR = ".claude_hooks"
 
@@ -49,6 +49,16 @@ class K8sSecretsConfig(BaseModel):
     secrets: list[K8sSecretMapping]
     buildbuddy_api_key: K8sSecretRef | None = None
     otel_bearer_token: K8sSecretRef | None = None
+
+    @model_validator(mode="after")
+    def _validate_no_duplicate_env_vars(self) -> K8sSecretsConfig:
+        seen: dict[str, str] = {}
+        for entry in self.secrets:
+            for _data_key, env_var in entry.data.items():
+                if env_var in seen:
+                    raise ValueError(f"Duplicate env var {env_var!r} in secrets {seen[env_var]!r} and {entry.name!r}")
+                seen[env_var] = entry.name
+        return self
 
 
 class K8sConfig(BaseModel):

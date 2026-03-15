@@ -28,7 +28,7 @@ class PostToolUseInput(BaseModel):
     tool_name: str
     tool_input: dict[str, Any]
     tool_use_id: str
-    tool_response: str = ""
+    tool_response: str | None = None
 
 
 class PostToolUseOutput(_CamelModel):

@@ -1,9 +1,10 @@
 """Tests for pre_tool_use hook."""
 
+import pytest
 import pytest_bazel
 
 from devinfra.claude.claude_api.pre_tool_use import PermissionDecision, PreToolUseInput
-from devinfra.claude.pre_tool_use import evaluate
+from devinfra.claude.pre_tool_use import ALWAYS_ALLOW_COMMANDS, evaluate
 
 _COMMON = {
     "session_id": "test-session",
@@ -16,8 +17,9 @@ _COMMON = {
 
 
 class TestEvaluate:
-    def test_allowed_bash_command_returns_allow(self) -> None:
-        hook_input = PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": "echo hello world"})
+    @pytest.mark.parametrize("command", sorted(ALWAYS_ALLOW_COMMANDS))
+    def test_allowed_bash_command_returns_allow(self, command: str) -> None:
+        hook_input = PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": command})
         result = evaluate(hook_input)
         assert result is not None
         assert result.hook_specific_output.permission_decision == PermissionDecision.ALLOW
@@ -31,16 +33,13 @@ class TestEvaluate:
         assert "permissionDecision" in json_output
         assert "hook_specific_output" not in json_output
 
-    def test_unknown_bash_command_returns_none(self) -> None:
-        hook_input = PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": "rm -rf /"})
-        assert evaluate(hook_input) is None
-
-    def test_non_bash_tool_returns_none(self) -> None:
-        hook_input = PreToolUseInput(**_COMMON, tool_name="Read", tool_input={"file_path": "/etc/passwd"})
-        assert evaluate(hook_input) is None
-
-    def test_bash_without_command_key_returns_none(self) -> None:
-        hook_input = PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={})
+    @pytest.mark.parametrize(
+        ("tool_name", "tool_input"),
+        [("Bash", {"command": "rm -rf /"}), ("Read", {"file_path": "/etc/passwd"}), ("Bash", {})],
+        ids=["unknown-bash-command", "non-bash-tool", "bash-without-command"],
+    )
+    def test_returns_none_for_unmatched(self, tool_name: str, tool_input: dict) -> None:
+        hook_input = PreToolUseInput(**_COMMON, tool_name=tool_name, tool_input=tool_input)
         assert evaluate(hook_input) is None
 
 
