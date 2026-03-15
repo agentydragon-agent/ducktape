@@ -285,6 +285,7 @@ py_library(
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:session_start",
+        "@pypi//opentelemetry_api",
         "@pypi//pydantic",
     ],
 )
