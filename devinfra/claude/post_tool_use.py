@@ -87,11 +87,7 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
     if project_dir is None:
         return PostToolUseOutput()
 
-    try:
-        run_result = run_on_file(file_path, project_dir)
-    except Exception as e:
-        logger.warning("Lint check failed on %s: %s", file_path, e)
-        return PostToolUseOutput()
+    run_result = run_on_file(file_path, project_dir)
 
     if run_result.all_passed:
         return PostToolUseOutput()

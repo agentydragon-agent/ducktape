@@ -25,6 +25,15 @@ _COMMON = {
 }
 
 
+@pytest.fixture
+def git_project(tmp_path: Path) -> tuple[Path, Path]:
+    """Create a tmp git project with a test file, return (project_dir, test_file)."""
+    (tmp_path / ".git").mkdir()
+    test_file = tmp_path / "test.py"
+    test_file.write_bytes(b"x=1\n")
+    return tmp_path, test_file
+
+
 # === Guard tests ===
 
 
@@ -154,11 +163,9 @@ def test_format_check_result_non_zero_exit() -> None:
 # === Pre-commit integration tests ===
 
 
-def test_precommit_with_diff(tmp_path: Path) -> None:
+def test_precommit_with_diff(git_project: tuple[Path, Path]) -> None:
     """When pre-commit modifies a file, the diff is included."""
-    (tmp_path / ".git").mkdir()
-    test_file = tmp_path / "test.py"
-    test_file.write_bytes(b"x=1\n")
+    _, test_file = git_project
 
     fake_result = RunResult(
         hooks=[
@@ -185,11 +192,9 @@ def test_precommit_with_diff(tmp_path: Path) -> None:
     assert "+x = 1" in ctx
 
 
-def test_precommit_no_file_change(tmp_path: Path) -> None:
+def test_precommit_no_file_change(git_project: tuple[Path, Path]) -> None:
     """When pre-commit fails but doesn't modify the file, no diff is shown."""
-    (tmp_path / ".git").mkdir()
-    test_file = tmp_path / "test.yaml"
-    test_file.write_bytes(b"key: value\n")
+    _, test_file = git_project
 
     fake_result = RunResult(
         hooks=[
@@ -197,8 +202,8 @@ def test_precommit_no_file_change(tmp_path: Path) -> None:
                 hook_id="check-yaml", hook_name="check-yaml", passed=False, output="invalid yaml", files_modified=False
             )
         ],
-        original_content=b"key: value\n",
-        modified_content=b"key: value\n",
+        original_content=b"x=1\n",
+        modified_content=b"x=1\n",
     )
 
     with patch("devinfra.claude.post_tool_use.run_on_file", return_value=fake_result):
@@ -211,18 +216,16 @@ def test_precommit_no_file_change(tmp_path: Path) -> None:
     assert "Changes pre-commit would make:" not in ctx
 
 
-def test_precommit_passes(tmp_path: Path) -> None:
+def test_precommit_passes(git_project: tuple[Path, Path]) -> None:
     """When all hooks pass, no output is returned."""
-    (tmp_path / ".git").mkdir()
-    test_file = tmp_path / "clean.py"
-    test_file.write_bytes(b"x = 1\n")
+    _, test_file = git_project
 
     fake_result = RunResult(
         hooks=[
             HookResult(hook_id="ruff-format", hook_name="ruff-format", passed=True, output="", files_modified=False)
         ],
-        original_content=b"x = 1\n",
-        modified_content=b"x = 1\n",
+        original_content=b"x=1\n",
+        modified_content=b"x=1\n",
     )
 
     with patch("devinfra.claude.post_tool_use.run_on_file", return_value=fake_result):
@@ -232,24 +235,9 @@ def test_precommit_passes(tmp_path: Path) -> None:
     assert result.hook_specific_output is None
 
 
-def test_precommit_error_returns_default(tmp_path: Path) -> None:
-    """When run_on_file raises an exception, no output is returned."""
-    (tmp_path / ".git").mkdir()
-    test_file = tmp_path / "slow.py"
-    test_file.write_bytes(b"x = 1\n")
-
-    with patch("devinfra.claude.post_tool_use.run_on_file", side_effect=OSError("something broke")):
-        inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
-        result = evaluate(inp)
-
-    assert result.hook_specific_output is None
-
-
-def test_no_config_file(tmp_path: Path) -> None:
-    """When no config exists (empty RunResult), no output is returned."""
-    (tmp_path / ".git").mkdir()
-    test_file = tmp_path / "file.py"
-    test_file.write_bytes(b"x = 1\n")
+def test_no_hooks_applied(git_project: tuple[Path, Path]) -> None:
+    """When no hooks apply (empty RunResult), no output is returned."""
+    _, test_file = git_project
 
     with patch("devinfra.claude.post_tool_use.run_on_file", return_value=RunResult()):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
@@ -258,11 +246,9 @@ def test_no_config_file(tmp_path: Path) -> None:
     assert result.hook_specific_output is None
 
 
-def test_precommit_multiple_hooks_fail(tmp_path: Path) -> None:
+def test_precommit_multiple_hooks_fail(git_project: tuple[Path, Path]) -> None:
     """Multiple hooks failing reports correct count."""
-    (tmp_path / ".git").mkdir()
-    test_file = tmp_path / "test.py"
-    test_file.write_bytes(b"x=1\n")
+    _, test_file = git_project
 
     fake_result = RunResult(
         hooks=[
