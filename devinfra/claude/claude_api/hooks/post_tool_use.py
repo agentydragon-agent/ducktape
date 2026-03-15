@@ -17,7 +17,7 @@ class PostToolUseInput(HookInputBase):
     tool_name: str
     tool_input: dict[str, Any]
     tool_use_id: str
-    tool_response: str | None = None
+    tool_response: Any
 
 
 class PostToolUseOutput(CamelModel):

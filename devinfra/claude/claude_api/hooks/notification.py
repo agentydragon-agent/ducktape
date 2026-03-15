@@ -16,5 +16,5 @@ class NotificationType(StrEnum):
 class NotificationInput(HookInputBase):
     hook_event_name: Literal["Notification"] = "Notification"
     message: str
-    title: str = ""
-    notification_type: NotificationType | None = None
+    title: str | None = None
+    notification_type: NotificationType

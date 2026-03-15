@@ -15,6 +15,7 @@ _COMMON = {
     "permission_mode": "default",
     "hook_event_name": "PostToolUse",
     "tool_use_id": "toolu_test123",
+    "tool_response": "",
 }
 
 

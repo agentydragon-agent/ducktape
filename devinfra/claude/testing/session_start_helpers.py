@@ -133,6 +133,7 @@ def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) 
             "permission_mode": PermissionMode.DEFAULT,
             "hook_event_name": "SessionStart",
             "source": source,
+            "model": "claude-sonnet-4-6",
         }
     )
 

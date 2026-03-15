@@ -16,4 +16,4 @@ class SessionEndReason(StrEnum):
 
 class SessionEndInput(HookInputBase):
     hook_event_name: Literal["SessionEnd"] = "SessionEnd"
-    reason: SessionEndReason | None = None
+    reason: SessionEndReason

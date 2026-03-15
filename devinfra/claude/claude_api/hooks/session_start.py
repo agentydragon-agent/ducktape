@@ -27,7 +27,7 @@ class SessionStartHookInput(BaseModel):
     session_id: str
     cwd: Path
     transcript_path: Path
-    model: str | None = None
+    model: str
     permission_mode: PermissionMode | None = Field(
         default=None, description="Not sent by Claude Code Web for SessionStart:resume events (observed 2025-01-18)."
     )

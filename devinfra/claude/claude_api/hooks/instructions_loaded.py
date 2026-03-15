@@ -26,8 +26,15 @@ class InstructionsLoadReason(StrEnum):
 class InstructionsLoadedInput(HookInputBase):
     hook_event_name: Literal["InstructionsLoaded"] = "InstructionsLoaded"
     file_path: Path
-    memory_type: InstructionsMemoryType | None = None
-    load_reason: InstructionsLoadReason | None = None
-    globs: list[str] = Field(default_factory=list)
-    trigger_file_path: Path | None = None
-    parent_file_path: Path | None = None
+    memory_type: InstructionsMemoryType
+    load_reason: InstructionsLoadReason
+    globs: list[str] = Field(
+        default_factory=list,
+        description="Path glob patterns from paths: frontmatter; present for path_glob_match loads",
+    )
+    trigger_file_path: Path | None = Field(
+        default=None, description="File whose access triggered this load (lazy/glob loads)"
+    )
+    parent_file_path: Path | None = Field(
+        default=None, description="Parent instruction file that included this one (include loads)"
+    )

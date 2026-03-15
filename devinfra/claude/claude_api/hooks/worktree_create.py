@@ -13,4 +13,4 @@ class WorktreeCreateInput(BaseModel):
     transcript_path: Path
     cwd: Path
     hook_event_name: Literal["WorktreeCreate"] = "WorktreeCreate"
-    name: str = ""
+    name: str

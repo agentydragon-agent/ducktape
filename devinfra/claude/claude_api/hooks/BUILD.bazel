@@ -84,7 +84,10 @@ py_library(
     srcs = ["post_tool_use_failure.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -125,7 +128,10 @@ py_library(
     srcs = ["pre_compact.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
-    deps = [":common"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(

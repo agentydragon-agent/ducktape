@@ -20,7 +20,7 @@ class ConfigChangeSource(StrEnum):
 class ConfigChangeInput(HookInputBase):
     hook_event_name: Literal["ConfigChange"] = "ConfigChange"
     source: ConfigChangeSource
-    file_path: Path
+    file_path: Path | None = Field(default=None, description="Path to changed file; absent for some source types")
 
 
 class ConfigChangeOutput(CamelModel):
