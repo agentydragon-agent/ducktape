@@ -84,6 +84,10 @@ func TestTrustdCSRFlow(t *testing.T) {
 	h.WaitForTalosAPI(t, talosClient, "192.168.50.2", 180*time.Second)
 	sw.Lap("Talos CP API ready")
 
+	// Dump Talos CP's KubeSpan state before waiting for kubespand apid.
+	h.DumpKubeSpanDiagnostics(t, talosClient, "192.168.50.2")
+	sw.Lap("initial diagnostics")
+
 	// Connect to kubespand's apid — success proves the full chain:
 	// kubespand → OSRootController → APICertSANsController → APIController
 	// → trustd CSR → secrets.API → apid serves mTLS on :50000.

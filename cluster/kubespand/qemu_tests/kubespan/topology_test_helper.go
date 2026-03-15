@@ -117,8 +117,15 @@ func runTopology(t *testing.T, topology string) {
 	h.WaitForTalosAPI(t, talosClient, cpIP, 180*time.Second)
 	sw.Lap("Talos CP API ready")
 
+	// Dump initial KubeSpan state — shows what the Talos CP discovered
+	// before we start polling for peer "up" state.
+	h.DumpKubeSpanDiagnostics(t, talosClient, cpIP)
+	sw.Lap("initial diagnostics")
+
 	peers, err := h.PollKubeSpanStatus(t, talosClient, cpIP, 120*time.Second)
 	if err != nil {
+		// Dump final state on failure to capture endpoint cycling, handshake attempts.
+		h.DumpKubeSpanDiagnostics(t, talosClient, cpIP)
 		t.Errorf("peer discovery via Talos API: %v", err)
 	} else {
 		t.Logf("KubeSpan peers observed from Talos CP: %v", peers)

@@ -187,8 +187,10 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 		}
 
 		var addrs []string
+		totalPeers := 0
 		for it := list.Iterator(); it.Next(); {
 			ps := it.Value()
+			totalPeers++
 			addr := ps.TypedSpec().Address.String()
 			if addr != "" && addr != "invalid IP" {
 				addrs = append(addrs, addr)
@@ -198,11 +200,24 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 		if time.Since(lastProgressLog) > 15*time.Second {
 			lastProgressLog = time.Now()
 			remaining := time.Until(deadline).Round(time.Second)
-			fmt.Fprintf(os.Stderr, "[WaitForPeers] found %d/%d peers via COSI API, %s remaining\n", len(addrs), n, remaining)
+			fmt.Fprintf(os.Stderr, "[WaitForPeers] found %d/%d peers (%d total PeerSpecs) via COSI API, %s remaining\n",
+				len(addrs), n, totalPeers, remaining)
+			// Log per-peer details for debugging kubespand↔Talos handshake issues.
+			list2, err2 := safe.StateListAll[*kubespan.PeerSpec](context.Background(), cosiState)
+			if err2 == nil {
+				for it2 := list2.Iterator(); it2.Next(); {
+					ps2 := it2.Value()
+					spec := ps2.TypedSpec()
+					fmt.Fprintf(os.Stderr, "[WaitForPeers]   peer label=%q addr=%s endpoints=%v\n",
+						spec.Label, spec.Address, spec.Endpoints)
+				}
+			}
 			dumpLogTail("/tmp/kubespand.log", 20)
 		}
 
 		if len(addrs) >= n {
+			// Log final peer set including any additional peers (e.g., Talos CP).
+			fmt.Fprintf(os.Stderr, "[WaitForPeers] SUCCESS: %d peers found (%d total PeerSpecs)\n", len(addrs), totalPeers)
 			return addrs
 		}
 

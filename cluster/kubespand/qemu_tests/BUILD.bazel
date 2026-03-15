@@ -14,6 +14,7 @@ go_library(
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_siderolabs_talos_pkg_machinery//client",
         "@com_github_siderolabs_talos_pkg_machinery//client/config",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
         "@io_bazel_rules_go//go/runfiles",
     ],
