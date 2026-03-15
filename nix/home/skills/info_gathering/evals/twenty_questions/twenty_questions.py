@@ -14,11 +14,18 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from nix.home.skills.info_gathering.evals.docker_scratch import (
+    SCRATCH_EXEC_TOOL,
+    DockerScratchpad,
+    load_scratch_image,
+    make_scratch_handler,
+)
 from nix.home.skills.info_gathering.evals.harness import (
     LLMClient,
     LogEntry,
     RunSummary,
     TokenTracker,
+    ToolHandler,
     ToolParam,
     _serialize_message,
     add_common_args,
@@ -36,6 +43,11 @@ from util.bazel.runfiles import get_required_path
 logger = logging.getLogger(__name__)
 
 _SIM_RLOCATION = "_main/nix/home/skills/info_gathering/evals/twenty_questions/sim.txt"
+
+_SCRATCH_SYSTEM_NOTE = """\
+You have access to a `scratch_exec` tool — a private Docker container for scratch computation. \
+Use it freely: run code, track hypothesis spaces, write notes, organize your reasoning. \
+Calling this tool does NOT use up one of your question turns."""
 
 
 class Correct(BaseModel):
@@ -98,11 +110,22 @@ def _parse_sim_action(response: Any) -> tuple[str, str | None] | None:
 class _TwentyQuestionsRunner:
     """Runs a single 20Q eval game, tracking conversation state."""
 
-    def __init__(self, *, name: str, client: LLMClient, agent_system: str, sim_system: str) -> None:
+    def __init__(
+        self,
+        *,
+        name: str,
+        client: LLMClient,
+        agent_system: str,
+        sim_system: str,
+        agent_tools: list[ToolParam] | None = None,
+        agent_tool_handler: ToolHandler | None = None,
+    ) -> None:
         self.name = name
         self.client = client
         self.agent_system = agent_system
         self.sim_system = sim_system
+        self.agent_tools: list[ToolParam] = agent_tools or []
+        self.agent_tool_handler = agent_tool_handler
         self.tracker = TokenTracker(model=client.model)
         self.log_entries: list[LogEntry] = []
         self.agent_messages: list[dict[str, Any]] = []
@@ -111,12 +134,34 @@ class _TwentyQuestionsRunner:
 
     def _run_turn(self, turn: int) -> Correct | None:
         """Run one agent+sim exchange. Returns Correct if guessed, None to continue."""
-        # Agent turn (no tools)
-        agent_resp = self.client.call(messages=self.agent_messages, system=self.agent_system)
+        # Agent turn — with optional scratch tools
+        agent_resp = self.client.call(
+            messages=self.agent_messages, system=self.agent_system, tools=self.agent_tools or None
+        )
         self.tracker.add(agent_resp.usage)
         log_response(
             self.log_entries, name=self.name, player="agent", turn=turn, model=self.client.model, response=agent_resp
         )
+
+        # Resolve any scratch tool calls — does not count as a new turn
+        if self.agent_tools and self.agent_tool_handler and extract_tool_calls(agent_resp):
+            agent_resp, self.agent_messages, usages = self.client.resolve_tool_calls(
+                response=agent_resp,
+                messages=self.agent_messages,
+                system=self.agent_system,
+                tools=self.agent_tools,
+                handler=self.agent_tool_handler,
+            )
+            for u in usages:
+                self.tracker.add(u)
+            log_response(
+                self.log_entries,
+                name=self.name,
+                player="agent",
+                turn=turn,
+                model=self.client.model,
+                response=agent_resp,
+            )
 
         agent_msg = _serialize_message(agent_resp.choices[0].message)
         self.agent_messages.append(agent_msg)
@@ -203,13 +248,22 @@ def run_twenty_questions(
     sim_system: str,
     turn_limit: int = 20,
     output_dir: Path,
+    agent_tools: list[ToolParam] | None = None,
+    agent_tool_handler: ToolHandler | None = None,
 ) -> RunSummary:
     """Run a 20 Questions eval.
 
-    Agent asks questions (text only). Simulator answers via tool calls.
+    Agent asks questions (optionally with scratch tools). Simulator answers via tool calls.
     Game ends when sim calls correct_answer or turns run out.
     """
-    runner = _TwentyQuestionsRunner(name=name, client=client, agent_system=agent_system, sim_system=sim_system)
+    runner = _TwentyQuestionsRunner(
+        name=name,
+        client=client,
+        agent_system=agent_system,
+        sim_system=sim_system,
+        agent_tools=agent_tools,
+        agent_tool_handler=agent_tool_handler,
+    )
     return runner.run(first_user_message=first_user_message, turn_limit=turn_limit, output_dir=output_dir)
 
 
@@ -219,13 +273,15 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Twenty Questions eval")
     add_common_args(p)
     p.add_argument("--variant", choices=list(VARIANTS), required=True)
+    p.add_argument("--scratch", action="store_true", help="Give agent an ephemeral Docker scratch container")
     args = p.parse_args()
 
     v = VARIANTS[args.variant]
     name = f"20q_{args.variant}"
 
     skill_text = load_skill()
-    agent_system = build_agent_system(skill_text)
+    extra_system = _SCRATCH_SYSTEM_NOTE if args.scratch else ""
+    agent_system = build_agent_system(skill_text, extra_system=extra_system)
     client = client_from_args(args)
     output_dir = output_dir_from_args(args)
 
@@ -239,18 +295,35 @@ def main() -> None:
     )
 
     logger.info("=" * 60)
-    logger.info("  %s  |  %s  |  thinking=%s", name, client.model, client.thinking_budget or "off")
+    logger.info(
+        "  %s  |  %s  |  thinking=%s  |  scratch=%s", name, client.model, client.thinking_budget or "off", args.scratch
+    )
     logger.info("=" * 60)
 
-    summary = run_twenty_questions(
-        name=name,
-        client=client,
-        agent_system=agent_system,
-        first_user_message=first_user_message,
-        sim_system=sim_system,
-        turn_limit=v.turn_limit,
-        output_dir=output_dir,
-    )
+    if args.scratch:
+        image = load_scratch_image()
+        with DockerScratchpad(image) as scratchpad:
+            summary = run_twenty_questions(
+                name=name,
+                client=client,
+                agent_system=agent_system,
+                first_user_message=first_user_message,
+                sim_system=sim_system,
+                turn_limit=v.turn_limit,
+                output_dir=output_dir,
+                agent_tools=[SCRATCH_EXEC_TOOL],
+                agent_tool_handler=make_scratch_handler(scratchpad),
+            )
+    else:
+        summary = run_twenty_questions(
+            name=name,
+            client=client,
+            agent_system=agent_system,
+            first_user_message=first_user_message,
+            sim_system=sim_system,
+            turn_limit=v.turn_limit,
+            output_dir=output_dir,
+        )
     logger.info("%s", summary)
 
 

@@ -5,6 +5,7 @@ py_library(
     srcs = ["twenty_questions.py"],
     imports = ["../../../../../.."],
     deps = [
+        "//nix/home/skills/info_gathering/evals:docker_scratch",
         "//nix/home/skills/info_gathering/evals:harness",
         "//util/bazel:runfiles",
         "@pypi//litellm",
@@ -17,6 +18,7 @@ py_binary(
     data = [
         "sim.txt",
         "//nix/home/skills/info_gathering:SKILL.md",
+        "//third_party/debian_slim:load",
     ],
     imports = ["../../../../../.."],
     main_module = "nix.home.skills.info_gathering.evals.twenty_questions.twenty_questions",

@@ -12,3 +12,16 @@ py_library(
         "@pypi//pydantic",
     ],
 )
+
+py_library(
+    name = "docker_scratch",
+    srcs = ["docker_scratch.py"],
+    imports = ["../../../../.."],
+    visibility = ["//nix/home/skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        ":harness",
+        "//third_party/debian_slim:rlocations",
+        "//util/bazel:runfiles",
+        "@pypi//pydantic",
+    ],
+)
