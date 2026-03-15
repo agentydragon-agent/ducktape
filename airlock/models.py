@@ -13,8 +13,6 @@ from typing import Annotated, Literal
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
-# ── The underlying MCP tool call ──────────────────────────────────────────────
-
 
 class ToolCall(BaseModel):
     """The underlying MCP tool call to forward on approval.
@@ -29,9 +27,6 @@ class ToolCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-# ── Compound action key ─────────────────────────────────────────────────────
-
-
 class ActionKey(BaseModel):
     """Compound action identifier: (session_key, action_seq).
 
@@ -42,9 +37,6 @@ class ActionKey(BaseModel):
     action_seq: int
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-# ── Action lifecycle states ───────────────────────────────────────────────────
 
 
 class ActionStatus(StrEnum):
@@ -100,9 +92,6 @@ class WithdrawnState(BaseModel):
 ActionState = Annotated[
     PendingState | ExecutingState | DoneState | RejectedState | WithdrawnState, Field(discriminator="status")
 ]
-
-
-# ── Top-level action record ───────────────────────────────────────────────────
 
 
 class Action(BaseModel):
