@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "statusline",
+    srcs = ["statusline.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "credentials",
+    srcs = ["credentials.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "profile",
+    srcs = ["profile.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "usage",
+    srcs = ["usage.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)

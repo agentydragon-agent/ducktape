@@ -13,10 +13,6 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 
 @STYLE.md
 
-## Toolchain
-
-This repo uses **Bazel** with **Gazelle** for builds and BUILD file generation, **Flux** for GitOps/Kubernetes, **Nix/NixOS** for system configuration, and **Terraform/OpenTofu** for infrastructure provisioning. YAML files are primarily Kubernetes manifests and Flux kustomizations. When making changes, update BUILD files and run `bazel run //tools:gazelle` if needed.
-
 ## Sandbox
 
 Run `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other
@@ -194,10 +190,3 @@ Frontend sub-projects use `@aspect_rules_js` with `js_library` targets. ESLint l
 **Do NOT run raw `pnpm install`** — Bazel manages the pnpm version (pinned in `MODULE.bazel`) and lockfile format. Using a system pnpm may produce an incompatible lockfile.
 
 See <props/frontend/AGENTS.md> for frontend-specific conventions.
-
-### Deployment
-
-```bash
-cd ansible
-ansible-playbook <hostname>.yaml --ask-become-pass
-```

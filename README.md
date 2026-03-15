@@ -76,7 +76,7 @@ This repository uses **Bazel** as the unified build system for all Python packag
 
 ### Python BUILD.bazel Patterns (Gazelle-compatible)
 
-This repository uses **Gazelle-compatible patterns** for Python BUILD files. This enables automatic BUILD file generation and maintenance via `bazel run //tools:gazelle`.
+This repository uses **Gazelle-compatible patterns** for Python BUILD files. This enables automatic BUILD file generation and maintenance via `bazel run //devinfra:gazelle`.
 
 **Key pattern: One `py_library` per `.py` file (no aggregators)**
 
@@ -111,8 +111,8 @@ py_library(
 **Running Gazelle:**
 
 ```bash
-bazel run //tools:gazelle              # Update BUILD files
-bazel run //tools:gazelle -- --mode=diff  # Preview changes
+bazel run //devinfra:gazelle              # Update BUILD files
+bazel run //devinfra:gazelle -- --mode=diff  # Preview changes
 ```
 
 ### Rust (Finance tools)

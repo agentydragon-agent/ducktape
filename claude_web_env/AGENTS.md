@@ -11,7 +11,7 @@
 
 The goal is **zero exclusions** that aren't:
 
-1. **Session start hook artifacts** — files created by `devinfra/claude_hooks` at runtime
+1. **Session start hook artifacts** — files created by `devinfra/claude` at runtime
 2. **Unavoidable runtime differences** — `/proc`, `/sys`, `/dev`, caches, runtime state
 
 If a difference can be fixed by updating the Dockerfile (pinning a version, adding a file), **fix it in the Dockerfile** rather than adding an exclusion. Exclusions should be a last resort for truly unavoidable runtime differences.

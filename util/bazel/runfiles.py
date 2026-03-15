@@ -26,21 +26,9 @@ def _get_runfiles() -> runfiles.Runfiles:
 
 
 def get_required_path(rlocation: str) -> Path:
-    """Get path to a file or directory from runfiles, checking it exists.
-
-    Args:
-        rlocation: Runfiles path (e.g., "_main/devinfra/claude_hooks/session_start")
-
-    Returns:
-        Absolute Path to the file or directory.
-
-    Raises:
-        RuntimeError: If the path cannot be located or doesn't exist.
-    """
-    resolved = _get_runfiles().Rlocation(rlocation)
-    if not resolved:
+    """Resolve a runfiles path to an absolute Path, raising if missing."""
+    if not (resolved := _get_runfiles().Rlocation(rlocation)):
         raise RuntimeError(f"Could not resolve runfiles path: {rlocation}")
-    path = Path(resolved)
-    if not path.exists():
+    if not (path := Path(resolved)).exists():
         raise RuntimeError(f"Resolved path does not exist: {path}")
     return path

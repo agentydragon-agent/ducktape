@@ -1,4 +1,11 @@
-"""Pydantic models for Claude Code hook API requests and responses per Anthropic spec."""
+"""Pydantic models for Claude Code hook API requests and responses per Anthropic spec.
+
+TODO: The canonical location for Claude Code hook input/output models is
+devinfra/claude/claude_api/. This file has comprehensive models for the full
+Anthropic spec (including typed tool calls) used by the linter and outcome
+system. Consider consolidating shared types (enums, base response) into
+devinfra/claude/claude_api/ and importing from there.
+"""
 
 from __future__ import annotations
 

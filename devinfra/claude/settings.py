@@ -1,0 +1,206 @@
+"""Centralized configuration for claude using Pydantic Settings.
+
+Single source of truth for all hook-related configuration. Uses pydantic-settings
+for type-safe environment variable parsing with the DUCKTAPE_CLAUDE_HOOKS_ prefix.
+
+Environment Variables (in priority order):
+1. DUCKTAPE_CLAUDE_HOOKS_* - Direct override for specific setting
+2. XDG_CACHE_HOME / XDG_CONFIG_HOME - XDG standard directories (via platformdirs)
+3. Platform defaults (Linux: ~/.cache, ~/.config; macOS: ~/Library/Caches, etc.)
+"""
+
+import importlib.resources
+from importlib.resources.abc import Traversable
+from pathlib import Path
+from typing import Literal
+
+from platformdirs import user_cache_dir, user_config_dir
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Config files bundled with the package (infrastructure config: bazelrc, env, podman)
+CONFIG_FILES: Traversable = importlib.resources.files("devinfra.claude.config")
+
+# TODO: Rename prefix to DUCKTAPE_CLAUDE_ to match new dir name.
+# Environment variable prefix (matches model_config.env_prefix)
+ENV_PREFIX = "DUCKTAPE_CLAUDE_HOOKS_"
+
+
+def _env_name(field: str) -> str:
+    """Compute env var name from field name. Pattern: ENV_PREFIX + field.upper()"""
+    return f"{ENV_PREFIX}{field.upper()}"
+
+
+# Environment variable names (used by tests and env_file.py)
+# These are computed from field names to stay in sync with pydantic-settings
+ENV_SUPERVISOR_DIR = _env_name("supervisor_dir")
+ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
+ENV_AUTH_PROXY_DIR = _env_name("auth_proxy_dir")
+ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
+ENV_PODMAN_DIR = _env_name("podman_dir")
+ENV_PODMAN_SOCKET = _env_name("podman_socket")
+ENV_DOCKER_DIR = _env_name("docker_dir")
+ENV_INSTALL_BAZELISK = _env_name("install_bazelisk")
+ENV_INSTALL_NIX = _env_name("install_nix")
+ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
+ENV_SYSTEM_BAZEL = _env_name("system_bazel")
+ENV_USE_WHEEL = _env_name("use_wheel")
+ENV_SESSION_DIR = _env_name("session_dir")
+
+
+class HookSettings(BaseSettings):
+    """Configuration for claude via environment variables.
+
+    All settings can be overridden with DUCKTAPE_CLAUDE_HOOKS_* environment variables.
+    For example, DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT=9001 overrides supervisor_port.
+
+    Usage:
+        settings = HookSettings()
+        supervisor_dir = settings.get_supervisor_dir()
+    """
+
+    model_config = SettingsConfigDict(env_prefix="DUCKTAPE_CLAUDE_HOOKS_", env_file_encoding="utf-8")
+
+    # Directory overrides (test isolation)
+    supervisor_dir: Path | None = Field(default=None, description="Override supervisor config directory")
+    auth_proxy_dir: Path | None = Field(default=None, description="Override auth proxy cache directory")
+    podman_dir: Path | None = Field(default=None, description="Override podman config directory")
+    podman_socket: Path | None = Field(default=None, description="Override podman socket path")
+    docker_dir: Path | None = Field(default=None, description="Override docker config directory")
+
+    # Port overrides
+    supervisor_port: int | None = Field(default=None, description="Override supervisor TCP port")
+    auth_proxy_port: int | None = Field(default=None, description="Override auth proxy port")
+
+    # Feature flags (enable/disable installations)
+    install_bazelisk: bool = Field(default=True, description="Download and install bazelisk")
+    install_nix: bool = Field(default=False, description="Install nix package manager")
+    install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
+    container_runtime: Literal["podman", "docker", "none"] = Field(
+        default="docker", description="Container runtime to set up (podman, docker, or none)"
+    )
+    system_bazel: Path | None = Field(
+        default=None, description="Path to system bazel (used when install_bazelisk=False)"
+    )
+
+    k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
+
+    # OpenTelemetry
+    otel_endpoint: str | None = Field(
+        default=None, description="Full OTLP/HTTP traces endpoint URL (e.g. https://host/v1/traces)"
+    )
+    otel_auth_token: str | None = Field(default=None, description="Bearer token for the OTLP endpoint")
+
+    # Test configuration
+    use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
+
+    # Per-session output directory. Exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR so
+    # subprocesses (e.g. bazel_wrapper) pick it up automatically via pydantic-settings.
+    # Baked into the bazel/bazelisk shell wrapper at install time so it survives
+    # into pre-commit and other subprocess invocations that don't source the env file.
+    # All session-scoped outputs (auth-proxy CAs, supervisor, bin wrappers, etc.) go here.
+    session_dir: Path = Field(description="Per-session output directory")
+
+    def get_cache_dir(self) -> Path:
+        """Get base cache directory for claude-hooks (auto-created)."""
+        return Path(user_cache_dir(appname="claude-hooks", ensure_exists=True))
+
+    def get_config_dir(self) -> Path:
+        """Get base config directory for claude-hooks (auto-created)."""
+        return Path(user_config_dir(appname="claude-hooks", ensure_exists=True))
+
+    def get_supervisor_dir(self) -> Path:
+        """Get supervisor configuration directory."""
+        if self.supervisor_dir is not None:
+            return self.supervisor_dir
+        return self.session_dir / "supervisor"
+
+    def get_supervisor_pidfile(self) -> Path:
+        """Get supervisor pidfile path."""
+        return self.get_supervisor_dir() / "supervisord.pid"
+
+    def get_supervisor_port(self) -> int:
+        """Get supervisor port with default."""
+        return self.supervisor_port if self.supervisor_port is not None else 19001
+
+    def get_auth_proxy_dir(self) -> Path:
+        """Get auth proxy cache directory."""
+        if self.auth_proxy_dir is not None:
+            return self.auth_proxy_dir
+        return self.session_dir / "auth-proxy"
+
+    def get_auth_proxy_port(self) -> int:
+        """Get auth proxy port with default."""
+        return self.auth_proxy_port if self.auth_proxy_port is not None else 18081
+
+    def get_podman_dir(self) -> Path:
+        """Get podman configuration and storage directory."""
+        if self.podman_dir is not None:
+            return self.podman_dir
+        return self.session_dir / "podman"
+
+    # Auth proxy file paths (centralized to avoid duplication)
+    def get_auth_proxy_combined_ca(self) -> Path:
+        """Get path to combined CA bundle (system CAs + proxy CA)."""
+        return self.get_auth_proxy_dir() / "combined_ca.pem"
+
+    def get_auth_proxy_creds_file(self) -> Path:
+        """Get path to upstream proxy credentials file."""
+        return self.get_auth_proxy_dir() / "upstream_proxy"
+
+    def get_auth_proxy_ca_file(self) -> Path:
+        """Get path to extracted Anthropic CA file."""
+        return self.get_auth_proxy_dir() / "anthropic_ca.pem"
+
+    def get_auth_proxy_truststore(self) -> Path:
+        """Get path to Java truststore with proxy CA."""
+        return self.get_auth_proxy_dir() / "cacerts.jks"
+
+    def get_bazelisk_path(self) -> Path:
+        """Get the bazelisk binary path (global cache, not session-scoped)."""
+        return self.get_cache_dir() / "bazelisk"
+
+    def get_wrapper_dir(self) -> Path:
+        """Get the wrapper directory (added to PATH)."""
+        return self.session_dir / "bin"
+
+    def get_wrapper_path(self) -> Path:
+        """Get the wrapper script path."""
+        return self.get_wrapper_dir() / "bazel"
+
+    def get_mkcert_dir(self) -> Path:
+        """Get mkcert directory for certs and CA (session-scoped)."""
+        return self.session_dir / "mkcert"
+
+    def get_mkcert_binary(self) -> Path:
+        """Get mkcert binary path (global cache, not session-scoped)."""
+        return self.get_cache_dir() / "mkcert"
+
+    def get_log_file(self) -> Path:
+        """Get path to session-start log file."""
+        return self.session_dir / "session-start.log"
+
+    def get_docker_dir(self) -> Path:
+        """Get Docker configuration directory."""
+        if self.docker_dir is not None:
+            return self.docker_dir
+        return self.session_dir / "docker"
+
+    def get_container_storage_dir(self) -> Path:
+        """Tmpfs-backed storage root for the active container runtime (Docker or Podman).
+
+        Only one runtime is ever active per session, so no subdirectory split is needed.
+        """
+        return self.session_dir / "container-storage"
+
+    def get_sandbox_writable_dir(self) -> Path:
+        """Get a directory writable from within Claude Code's sandbox.
+
+        Claude Code's Bash tool sandbox makes ~/.claude/session-env/ read-only,
+        so runtime writes (e.g. bazel-wrapper log) must go to /tmp/claude/.
+        """
+        return Path("/tmp/claude") / self.session_dir.name
+
+    def get_bazel_cache_dir(self) -> Path:
+        """Get Bazel cache directory (tmpfs-backed, pointed to via startup --output_user_root in session bazelrc)."""
+        return self.session_dir / "bazel-cache"

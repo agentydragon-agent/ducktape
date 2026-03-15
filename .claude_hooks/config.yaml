@@ -1,8 +1,12 @@
 # TODO: Integrate with settings.py (consolidate env-based and file-based config).
+otel:
+  endpoint: https://alloy-otlp.allegedly.works/v1/traces
+  # bearer_token: populated from k8s_secrets.otel_bearer_token below.
+  # Authentik service account token — see cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml.
 k8s:
   server: https://api.allegedly.works:16443
   service_account: claude-code-web
-  sa_namespace: default
+  service_account_namespace: default
   namespace: claude-sandbox
 
 k8s_secrets:
@@ -14,3 +18,6 @@ k8s_secrets:
   buildbuddy_api_key:
     secret_name: buildbuddy-api-key
     data_key: api-key
+  otel_bearer_token:
+    secret_name: alloy-otlp-bearer-token
+    data_key: token

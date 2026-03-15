@@ -1,0 +1,59 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "service_utils",
+    srcs = ["service_utils.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        "//devinfra/claude:settings",
+    ],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:errors",
+        "//devinfra/claude:managed_files",
+        "//devinfra/claude:settings",
+        "//util:net",
+        "@pypi//httpx",
+        "@pypi//pydantic",
+        "@pypi//supervisor",
+    ],
+)
+
+py_library(
+    name = "setup",
+    srcs = ["setup.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        "//devinfra/claude:errors",
+        "//devinfra/claude:managed_files",
+        "//devinfra/claude:settings",
+        "//util:net",
+        "//util/bazel:subprocess",
+    ],
+)
+
+py_test(
+    name = "test_supervisor",
+    srcs = ["test_supervisor.py"],
+    imports = ["../../.."],
+    tags = ["integration"],
+    deps = [
+        ":setup",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/testing:fixtures",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
