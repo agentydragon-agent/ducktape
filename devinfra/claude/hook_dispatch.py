@@ -34,14 +34,9 @@ def main() -> None:
     parsed = _adapter.validate_json(raw)
     cwd = Path(parsed.cwd)
 
-    # Load config and init OTEL (best-effort, don't break hooks)
-    config = None
-    try:
-        config = HookConfig.load_from_repo(cwd)
-        if config and config.otel and config.otel.endpoint:
-            otel.init_from_config(config.otel)
-    except Exception:
-        logger.debug("Failed to load config or init OTEL", exc_info=True)
+    config = HookConfig.load_from_repo(cwd)
+    if config and config.otel and config.otel.endpoint:
+        otel.init_from_config(config.otel)
 
     env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
     settings = HookSettings(session_dir=env_file_path.parent)
