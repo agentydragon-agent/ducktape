@@ -1,7 +1,7 @@
-# NixOS GPU Desktop + K8s Worker (Unified VM)
+# wyrm2 — NixOS GPU Desktop + K8s Worker
 
-Replace the separate Talos GPU worker VM and wyrm desktop VM with a single NixOS VM
-that serves both roles: a K8s worker with GPU access and a daily-driver Linux desktop.
+wyrm2 is a single NixOS VM on Proxmox that serves as both a K8s worker with GPU access
+and a daily-driver Linux desktop.
 
 ## Motivation
 
@@ -12,10 +12,6 @@ the desktop starves during heavy use, or vice versa.
 
 A single VM eliminates the split entirely — one VM gets ~28GB (leaving ~4GB for
 Proxmox host + lightweight Talos CP VM).
-
-## Current State ✅ (Completed)
-
-wyrm2 is live as a NixOS GPU desktop + K8s worker with 2x RTX 5090.
 
 | VM    | Role                     | RAM   | GPUs    | OS    |
 | ----- | ------------------------ | ----- | ------- | ----- |
@@ -41,8 +37,8 @@ The Talos control plane VM on Proxmox stays unchanged (lightweight, ~4GB).
 │  └──────────────────────────────────────────┘   │
 │                                                 │
 │  ┌─── Networking ───────────────────────────┐   │
-│  │  Tailscale → Headscale (mesh)            │   │
-│  │  HAProxy localhost:7445 → control plane  │   │
+│  │  KubeSpan mesh (kubespand)               │   │
+│  │  KubePrism localhost:7445 → CP endpoints │   │
 │  └──────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────┘
 ```
@@ -93,7 +89,7 @@ kubectl uncordon gpu-node
 
 A desktop script/shortcut can automate either workflow.
 
-## NixOS Configuration (Implemented)
+## NixOS Configuration
 
 Built on the `k8s-worker` NixOS module (`nix/nixos/modules/k8s-worker.nix`) with
 `enableNvidiaRuntime = true`:
@@ -109,44 +105,11 @@ Built on the `k8s-worker` NixOS module (`nix/nixos/modules/k8s-worker.nix`) with
   NixOS FHS path incompatibility in `tryResolveLibrary`)
 - **Workload pods**: Must specify `runtimeClassName: nvidia` to get GPU access
 
-## Migration Steps
-
-1. **Prepare NixOS config**: Extend `k8s-worker-test` host config with GPU + desktop
-2. **Create new VM**: Proxmox VM with both GPUs passed through, q35 machine type,
-   PCIe passthrough (same hardware config as current `talos-pve-gpu-worker-0`)
-3. **Join cluster**: Bootstrap kubeconfig + Headscale registration + CSR approval
-   (same procedure as roaming laptop worker)
-4. **Verify GPU workloads**: Ollama schedules on the NixOS node, `nvidia-smi` works
-   inside pods
-5. **Migrate wyrm data**: Copy home directory, dev environments, etc.
-6. **Decommission old VMs**: Remove `talos-pve-gpu-worker-0` and `wyrm` from Proxmox
-
-## Differences from Talos GPU Worker
-
-| Aspect             | Talos GPU Worker (current)  | NixOS GPU Desktop (target)     |
-| ------------------ | --------------------------- | ------------------------------ |
-| OS management      | Talos API (`talosctl`)      | NixOS (`nixos-rebuild`, SSH)   |
-| Immutability       | Fully immutable filesystem  | Declarative but mutable        |
-| Desktop            | None                        | Full desktop environment       |
-| GPU mode switching | Not possible (Talos only)   | Taint toggle or drain+stop     |
-| Container runtime  | Talos-managed containerd    | NixOS-managed containerd       |
-| NVIDIA drivers     | Talos extension             | `hardware.nvidia` NixOS module |
-| Debugging          | `talosctl` only             | SSH + standard Linux tools     |
-| Node join          | Automatic (Talos bootstrap) | Manual (bootstrap kubeconfig)  |
-
 ## Open Questions
 
 - **Partial GPU detach**: Could expose only 1 GPU to k8s (via device plugin config
   file `NVIDIA_VISIBLE_DEVICES` filter) and keep 1 for desktop. Adds complexity;
   probably not worth it vs the clean taint-toggle approach.
-- **NVIDIA driver version alignment**: NixOS and Talos extension may ship different
-  driver versions. Shouldn't matter (each node runs its own drivers), but container
-  images built for one driver version might behave differently on another.
-- **NFD on NixOS**: Node Feature Discovery CrashLoopBackOff was observed on the
-  `k8s-worker-test` VM (non-critical, but labels like `pci-10de.present` may need
-  to be set manually until resolved).
-- **Proxmox CSI**: Current GPU worker uses `proxmox-csi-retain` for some PVCs.
-  NixOS node would need the same CSI driver or those PVCs migrate to `local-path`.
 
 ## Related
 

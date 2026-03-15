@@ -9,8 +9,7 @@ Join a regular Linux desktop/laptop to the Talos cluster as a worker without VMs
 │  Linux Desktop (NixOS)       │
 │  ├── desktop environment     │
 │  ├── containerd + kubelet    │
-│  ├── kubespand (KubeSpan)    │
-│  ├── HAProxy (localhost:7445)│
+│  ├── kubespand (KubeSpan+KubePrism) │
 │  └── Cilium agent (DaemonSet)│
 └──────────────────────────────┘
          │ KubeSpan mesh (UDP 51820)
@@ -111,7 +110,7 @@ Components (both fabrics):
 
 - **containerd** with systemd cgroup driver
 - **kubelet** as a custom systemd service (TLS bootstrap, not auto-started)
-- **HAProxy** at `localhost:7445` → `api.allegedly.works` (replaces Talos KubePrism)
+- **KubePrism** (via kubespand) at `localhost:7445` → discovered control plane endpoints
 - **Kernel prereqs**: `overlay`, `br_netfilter`, IP forwarding
 - **Firewall**: VXLAN (UDP 8472), kubelet (TCP 10250)
 
@@ -191,7 +190,7 @@ Verify:
 # Extract bootstrap kubeconfig + CA
 talosctl -n <cp-ip> cat /etc/kubernetes/bootstrap-kubeconfig > bootstrap-kubelet.conf
 talosctl -n <cp-ip> cat /etc/kubernetes/pki/ca.crt > ca.crt
-# Keep server as https://127.0.0.1:7445 — HAProxy handles routing to control plane
+# Keep server as https://127.0.0.1:7445 — KubePrism (via kubespand) routes to control plane
 
 # Copy to VM
 scp bootstrap-kubelet.conf ca.crt user@<vm-ip>:/tmp/
@@ -290,7 +289,7 @@ Mitigations:
 ## Known Gotchas
 
 - **KubePrism**: Cilium is configured with `k8sServiceHost: localhost`,
-  `k8sServicePort: 7445`. Non-Talos nodes don't have KubePrism — HAProxy fills this role.
+  `k8sServicePort: 7445`. Non-Talos nodes get KubePrism via kubespand (`kubeprism.enabled: true`).
 - **Cilium `SYS_MODULE`**: Talos drops this capability from Cilium pods. On a regular
   Linux box, Cilium may need to load kernel modules. Pre-load `sch_ingress` etc. or
   adjust via `CiliumNodeConfig`.
@@ -315,20 +314,12 @@ Mitigations:
 - **CSR auto-approval**: Consider deploying a CSR approver controller to avoid manual
   `kubectl certificate approve` on every node join.
 
-### HAProxy Control Plane Endpoint Management
+### Control Plane Endpoint (KubePrism)
 
-**Resolved**: HAProxy now resolves `api.allegedly.works` via DNS at runtime using
-`server-template` with a `resolvers` section. The DNS record (managed by Terraform in
-`cluster/terraform/gitops/dns-records/main.tf`) round-robins across VPS public IPs.
-
-**Why HAProxy exists**: Cilium is configured cluster-wide with `k8sServiceHost: localhost`,
+Cilium is configured cluster-wide with `k8sServiceHost: localhost`,
 `k8sServicePort: 7445`. On Talos nodes, KubePrism (built into `machined`) provides this.
-On non-Talos nodes, nothing listens there without a local proxy. KubePrism is not a
-standalone binary.
-
-The Proxmox CP (`10.2.1.1`) is excluded — it has no public IP, and if both VPS nodes are
-down, the NixOS worker would be effectively offline regardless. 2/3 CPs is sufficient for
-API access.
+On non-Talos nodes, kubespand provides KubePrism (`kubeprism.enabled: true`) — it discovers
+control plane endpoints from the KubeSpan mesh and load-balances across them.
 
 ## Appendix: KubeSpan Internals
 
