@@ -19,25 +19,18 @@ genrule(
     name = "vmlinuz",
     srcs = ["@alpine_linux_virt//file"],
     outs = ["vmlinuz-virt"],
-    cmd = "tar -xzf $< -O boot/vmlinuz-virt > $@",
+    cmd = "tar --warning=no-unknown-keyword -xzf $< -O boot/vmlinuz-virt > $@",
     visibility = ["//cluster/kubespand:__subpackages__"],
 )
 
 # ─ Extract full kernel modules tree for modprobe ─────────────────────────────
 genrule(
     name = "modules_tree",
-    srcs = ["@alpine_linux_virt//file"],
+    srcs = [
+        "@alpine_linux_virt//file",
+        "extract_modules.sh",
+    ],
     outs = ["modules_tree.tar"],
-    cmd = """
-        set -e
-        TMPDIR=$$(mktemp -d)
-        tar -xzf $< -C $$TMPDIR lib/modules/
-        find $$TMPDIR/lib/modules/ -name '*.ko.gz' -exec gunzip {} \\;
-        find $$TMPDIR/lib/modules/ -name 'modules.dep' -exec sed -i 's/\\.ko\\.gz/.ko/g' {} \\;
-        find $$TMPDIR/lib/modules/ -name 'modules.alias' -exec sed -i 's/\\.ko\\.gz/.ko/g' {} \\;
-        find $$TMPDIR/lib/modules/ -name '*.bin' -delete
-        tar -cf $@ -C $$TMPDIR lib/modules/
-        rm -rf $$TMPDIR
-    """,
+    cmd = "$(location extract_modules.sh) $(location @alpine_linux_virt//file) $@",
     visibility = ["//cluster/kubespand:__subpackages__"],
 )

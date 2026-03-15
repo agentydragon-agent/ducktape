@@ -22,29 +22,13 @@ genrule(
     name = "talos_nocloud_image",
     srcs = [
         ":talos_imager_tarball",
+        "build_talos_image.sh",
         "imager-profile.yaml",
     ],
     outs = ["nocloud-amd64.qcow2"],
-    cmd = " && ".join([
-        # Load the pinned imager image into Docker.
-        "docker load -i $(location :talos_imager_tarball) >&2",
-        # Build a reproducible Talos nocloud disk image in qcow2 format.
-        # SOURCE_DATE_EPOCH + DETERMINISTIC_SEED ensure byte-identical output.
-        # qcow2 stores only non-zero blocks: ~200 MB vs 4.2 GB raw, eliminating
-        # the ~47s zstd decompression step the test previously needed.
-        "TALOS_OUT=$$(mktemp -d)",
-        " ".join([
-            "docker run --rm",
-            "-e SOURCE_DATE_EPOCH=1700000000",
-            "-e DETERMINISTIC_SEED=1",
-            "-v $$TALOS_OUT:/out",
-            "-i siderolabs/imager:build",
-            "- < $(location imager-profile.yaml)",
-            ">&2",
-        ]),
-        "mv $$TALOS_OUT/nocloud-amd64.qcow2 $@",
-        "rm -rf $$TALOS_OUT",
-    ]),
+    # qcow2 stores only non-zero blocks: ~200 MB vs 4.2 GB raw, eliminating
+    # the ~47s zstd decompression step the test previously needed.
+    cmd = "$(location build_talos_image.sh) $(location :talos_imager_tarball) $(location imager-profile.yaml) $@",
     tags = ["requires-docker"],
 )
 
