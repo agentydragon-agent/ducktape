@@ -631,10 +631,12 @@ _TALOS_VERSION = "v1.12.3"
 # Default schematic ID (no extensions) for Image Factory.
 _TALOS_SCHEMATIC = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
 
+# TODO: Pin sha256 by mirroring to Harbor (registry.allegedly.works). Image Factory
+# regenerates images server-side (e.g. security patches), so the same URL can return
+# different bytes over time, breaking pinned checksums.
 http_file(
     name = "talos_nocloud_amd64",
     downloaded_file_path = "nocloud-amd64.raw.xz",
-    sha256 = "deca4fdd54adcc44dc37e5e84d82e024216e8ac7f071769ec087aa629f6a7854",
     urls = ["https://factory.talos.dev/image/" + _TALOS_SCHEMATIC + "/" + _TALOS_VERSION + "/nocloud-amd64.raw.xz"],
 )
 
