@@ -1,18 +1,23 @@
 package talos_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
-	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/klauspost/compress/zstd"
+	"github.com/siderolabs/talos/pkg/machinery/client"
+	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+
+	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
 func TestTalosKubeSpanDoubleNAT(t *testing.T) {
@@ -76,18 +81,17 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	allVMs := []*h.VM{vmVPS, vmNAT1, vmNAT2, vmRouter1, vmRouter2, vmDiscovery}
 	h.CleanupVMs(t, allVMs, out)
 
-	// 7. Wait for Talos API, then poll KubeSpan status.
-	tc := &talosctl{
-		bin:        h.RunfilePath(t, h.TalosctlPath),
-		configPath: h.RunfilePath(t, h.TalosConfig),
-		endpoint:   fmt.Sprintf("127.0.0.1:%d", talosAPIPort),
-		nodeIP:     "192.168.50.2",
-	}
+	// Create Talos API client from talosconfig credentials.
+	endpoint := fmt.Sprintf("127.0.0.1:%d", talosAPIPort)
+	nodeIP := "192.168.50.2"
+	talosClient := newTalosClient(t, h.RunfilePath(t, h.TalosConfig), endpoint)
+	defer talosClient.Close()
+
 	// Observed on RBE (Firecracker, TCG): apid healthy ~64s after VM start.
-	waitForTalosAPI(t, tc, 120*time.Second)
+	waitForTalosAPI(t, talosClient, nodeIP, 120*time.Second)
 	// Observed: KubeSpan nftables rules applied ~35s after VM start.
 	// Peer discovery depends on discovery service + WireGuard handshake.
-	result := pollKubeSpanStatus(t, tc, 120*time.Second)
+	result := pollKubeSpanStatus(t, talosClient, nodeIP, 120*time.Second)
 
 	statusJSON, _ := json.MarshalIndent(result, "", "  ")
 	h.SaveArtifact(t, out, "kubespan-status.json", string(statusJSON))
@@ -96,7 +100,7 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 		t.Errorf("KubeSpan peer discovery failed: %s", result.failReason)
 	}
 	for _, peer := range result.peers {
-		if peer.State != "up" {
+		if peer.State != kubespan.PeerStateUp {
 			t.Errorf("peer %s state=%s (want up), endpoint=%s", peer.Label, peer.State, peer.Endpoint)
 		}
 	}
@@ -169,51 +173,36 @@ func bootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int,
 	return h.StartVM(t, name, exec.Command("qemu-system-x86_64", args...), false)
 }
 
-// talosctl wraps talosctl invocations with pre-configured connection params.
-type talosctl struct {
-	bin        string
-	configPath string
-	endpoint   string // host:port for transport (port-forwarded)
-	nodeIP     string // VM's actual IP (no port, used as node identity)
-}
+// newTalosClient creates a Talos API client from a talosconfig file.
+func newTalosClient(t *testing.T, configPath, endpoint string) *client.Client {
+	t.Helper()
 
-func (tc *talosctl) run(args ...string) *exec.Cmd {
-	// Per-subcommand flags must come AFTER the subcommand name.
-	// --endpoints: transport address (host:port for our port forward)
-	// --nodes: target node identity (just IP, no port — apid uses this
-	//   to route requests in multi-node setups)
-	// machine.certSANs includes 127.0.0.1 so the apid cert is valid
-	// for our localhost port-forwarded connection.
-	full := append(args,
-		"--talosconfig", tc.configPath,
-		"--nodes", tc.nodeIP,
-		"--endpoints", tc.endpoint,
+	cfg, err := clientconfig.Open(configPath)
+	if err != nil {
+		t.Fatalf("open talosconfig: %v", err)
+	}
+
+	c, err := client.New(context.Background(),
+		client.WithConfig(cfg),
+		client.WithEndpoints(endpoint),
 	)
-	return exec.Command(tc.bin, full...)
+	if err != nil {
+		t.Fatalf("create talos client: %v", err)
+	}
+
+	return c
 }
 
 type kubespanPeerResult struct {
-	Label    string `json:"label"`
-	State    string `json:"state"`
-	Endpoint string `json:"endpoint"`
-}
-
-type talosResource struct {
-	Metadata struct {
-		ID string `json:"id"`
-	} `json:"metadata"`
-	Spec struct {
-		State    string `json:"state"`
-		Endpoint string `json:"endpoint"`
-		Label    string `json:"label"`
-	} `json:"spec"`
+	Label    string             `json:"label"`
+	State    kubespan.PeerState `json:"state"`
+	Endpoint string             `json:"endpoint"`
 }
 
 type kubespanResult struct {
 	success    bool
 	failReason string
 	peers      []kubespanPeerResult
-	rawOutput  string
 }
 
 func (r kubespanResult) MarshalJSON() ([]byte, error) {
@@ -221,58 +210,72 @@ func (r kubespanResult) MarshalJSON() ([]byte, error) {
 		Success    bool                 `json:"success"`
 		FailReason string               `json:"fail_reason,omitempty"`
 		Peers      []kubespanPeerResult `json:"peers"`
-		RawOutput  string               `json:"raw_output"`
-	}{r.success, r.failReason, r.peers, r.rawOutput})
+	}{r.success, r.failReason, r.peers})
 }
 
-// waitForTalosAPI polls talosctl version until the Talos API responds.
-func waitForTalosAPI(t *testing.T, tc *talosctl, timeout time.Duration) {
+// waitForTalosAPI polls client.Version() until the Talos API responds.
+func waitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		out, err := tc.run("version", "--short").CombinedOutput()
+		ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 5*time.Second)
+		resp, err := c.Version(ctx)
+		cancel()
 		if err == nil {
-			t.Logf("talos API ready: %s", strings.TrimSpace(string(out)))
+			tag := ""
+			for _, msg := range resp.Messages {
+				if msg.Version != nil {
+					tag = msg.Version.Tag
+				}
+			}
+			t.Logf("talos API ready: %s", tag)
 			return
 		}
-		t.Logf("waiting for talos API: %s", strings.TrimSpace(string(out)))
+		t.Logf("waiting for talos API: %v", err)
 		time.Sleep(10 * time.Second)
 	}
 	t.Fatalf("talos API not reachable after %v", timeout)
 }
 
-func pollKubeSpanStatus(t *testing.T, tc *talosctl, timeout time.Duration) kubespanResult {
+func pollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) kubespanResult {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
-	var lastOutput string
 	var lastErr string
 
 	for time.Now().Before(deadline) {
-		out, err := tc.run("get", "kubespanpeerstatuses", "-o", "json").CombinedOutput()
-		lastOutput = string(out)
+		ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 10*time.Second)
+		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, c.COSI)
+		cancel()
 		if err != nil {
 			lastErr = err.Error()
-			t.Logf("talosctl poll (waiting): %s: %s", lastErr, strings.TrimSpace(lastOutput))
+			t.Logf("COSI poll (waiting): %s", lastErr)
 			time.Sleep(10 * time.Second)
 			continue
 		}
 
-		peers := parsePeerStatuses(lastOutput)
-		t.Logf("talosctl poll: %d peers found", len(peers))
+		var peers []kubespanPeerResult
+		for it := list.Iterator(); it.Next(); {
+			ps := it.Value()
+			peers = append(peers, kubespanPeerResult{
+				Label:    ps.TypedSpec().Label,
+				State:    ps.TypedSpec().State,
+				Endpoint: ps.TypedSpec().Endpoint.String(),
+			})
+		}
+		t.Logf("COSI poll: %d peers found", len(peers))
 
 		allUp := len(peers) >= 2
 		for _, p := range peers {
-			if p.State != "up" {
+			if p.State != kubespan.PeerStateUp {
 				allUp = false
 			}
 		}
 
 		if allUp {
 			return kubespanResult{
-				success:   true,
-				peers:     peers,
-				rawOutput: lastOutput,
+				success: true,
+				peers:   peers,
 			}
 		}
 
@@ -282,25 +285,7 @@ func pollKubeSpanStatus(t *testing.T, tc *talosctl, timeout time.Duration) kubes
 	return kubespanResult{
 		success:    false,
 		failReason: fmt.Sprintf("timeout after %v, last error: %s", timeout, lastErr),
-		rawOutput:  lastOutput,
 	}
-}
-
-func parsePeerStatuses(output string) []kubespanPeerResult {
-	var peers []kubespanPeerResult
-	dec := json.NewDecoder(strings.NewReader(output))
-	for dec.More() {
-		var res talosResource
-		if err := dec.Decode(&res); err != nil {
-			break
-		}
-		peers = append(peers, kubespanPeerResult{
-			Label:    res.Metadata.ID,
-			State:    res.Spec.State,
-			Endpoint: res.Spec.Endpoint,
-		})
-	}
-	return peers
 }
 
 func decompressZstd(t *testing.T, src, dst string) {

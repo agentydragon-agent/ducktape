@@ -54,12 +54,14 @@ go_test(
         "//cluster/kubespand/qemu_tests:vmlinuz",
         "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
         "//cluster/kubespand/qemu_tests/vms/router:initramfs",
-        "@talosctl_amd64//file",
     ] + glob(["testdata/**"]),
     tags = ["requires_qemu"],
     deps = [
         "//cluster/kubespand/qemu_tests",
+        "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_klauspost_compress//zstd",
-        "@io_bazel_rules_go//go/runfiles",
+        "@com_github_siderolabs_talos_pkg_machinery//client",
+        "@com_github_siderolabs_talos_pkg_machinery//client/config",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
     ],
 )

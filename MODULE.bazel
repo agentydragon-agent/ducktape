@@ -637,21 +637,9 @@ http_archive(
 
 # ─ Talos KubeSpan diagnostic test artifacts ───────────────────────────────────
 # Real Talos artifacts for verifying upstream KubeSpan through double NAT.
-# Uses v1.13.0-alpha.2 (same as talos_imager above) for unprivileged, reproducible
-# disk image generation. The test version need not match the cluster version — only
-# KubeSpan protocol compatibility matters.
-_TALOS_VERSION = "v1.13.0-alpha.2"
-
 # Nocloud disk image is built locally via the talos_imager container (see
 # cluster/kubespand/qemu_tests/talos/BUILD.bazel). No Image Factory download needed.
-
-http_file(
-    name = "talosctl_amd64",
-    downloaded_file_path = "talosctl",
-    executable = True,
-    sha256 = "9299b3cb02befdf33f98a13f314ea08cafa1a1a21ac12f02858b22bb8fb832c5",
-    urls = ["https://github.com/siderolabs/talos/releases/download/" + _TALOS_VERSION + "/talosctl-linux-amd64"],
-)
+# The test uses the Talos Go client library directly instead of the talosctl binary.
 
 # ─ QEMU nftables smoke test dependencies ──────────────────────────────────────
 # Talos discovery service binary for double_nat QEMU test (runs inside VPS VM).

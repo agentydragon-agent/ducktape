@@ -20,6 +20,31 @@ go_deps.module(
     version = "v0.6.2",
 )
 go_deps.module(
+    path = "github.com/ProtonMail/go-crypto",
+    sum = "h1:O1cSHAcGcbGEO66Qi2AIJeYmXO8iP4L/PNrbdN+RjJA=",
+    version = "v1.1.0-alpha.5.0.20240827111422-b5837fa4476e",
+)
+go_deps.module(
+    path = "github.com/ProtonMail/go-mime",
+    sum = "h1:tCbYj7/299ekTTXpdwKYF8eBlsYsDVoggDAuAjoK66k=",
+    version = "v0.0.0-20230322103455-7d82a3887f2f",
+)
+go_deps.module(
+    path = "github.com/ProtonMail/gopenpgp/v2",
+    sum = "h1:STOY3vgES59gNgoOt2w0nyHBjKViB/qSg7NjbQWPJkA=",
+    version = "v2.7.5",
+)
+go_deps.module(
+    path = "github.com/adrg/xdg",
+    sum = "h1:dDaZvhMXatArP1NPHhnfaQUqWBLBsmx1h1HXQdMoFCY=",
+    version = "v0.5.0",
+)
+go_deps.module(
+    path = "github.com/cloudflare/circl",
+    sum = "h1:zqIqSPIndyBh1bjLVVDHMPpVKqp8Su/V+6MeDzzQBQ0=",
+    version = "v1.6.1",
+)
+go_deps.module(
     path = "github.com/containerd/log",
     sum = "h1:TCJt7ioM2cr/tfR8GPbGf9/VRAX8D2B4PjzCpfX540I=",
     version = "v0.1.0",
@@ -357,6 +382,11 @@ go_deps.module(
     version = "v0.6.1-0.20241121165744-79df5c4772f2",
 )
 go_deps.module(
+    path = "github.com/pkg/browser",
+    sum = "h1:+mdjkGKdHQG3305AYmdv1U2eRNDiU2ErMBj1gwrq8eQ=",
+    version = "v0.0.0-20240102092130-5ac0b6a4141c",
+)
+go_deps.module(
     path = "github.com/pkg/errors",
     sum = "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",
     version = "v0.9.1",
@@ -390,6 +420,17 @@ go_deps.module(
     path = "github.com/siderolabs/gen",
     sum = "h1:pE6shuqov3L+5rEcAUJ/kY6iJofimljQw5G95P8a5c4=",
     version = "v0.8.6",
+)
+go_deps.module(
+    path = "github.com/siderolabs/go-api-signature",
+    sum = "h1:i1X+kPh9fzo+lEjtEplZSbtq1p21vKv4FCWJcB/ozvk=",
+    version = "v0.3.12",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable_global",
+    ],
+    path = "github.com/siderolabs/go-api-signature",
 )
 go_deps.module(
     path = "github.com/siderolabs/go-loadbalancer",
@@ -600,10 +641,12 @@ go_deps.module(
 )
 use_repo(
     go_deps,
+    "com_github_adrg_xdg",
     "com_github_antlr4_go_antlr_v4",
     "com_github_azure_go_ansiterm",
     "com_github_blang_semver_v4",
     "com_github_cenkalti_backoff_v4",
+    "com_github_cloudflare_circl",
     "com_github_containerd_go_cni",
     "com_github_containerd_log",
     "com_github_containernetworking_cni",
@@ -669,14 +712,19 @@ use_repo(
     "com_github_opencontainers_runtime_spec",
     "com_github_peterbourgon_diskv",
     "com_github_petermattis_goid",
+    "com_github_pkg_browser",
     "com_github_pkg_errors",
     "com_github_planetscale_vtprotobuf",
+    "com_github_protonmail_go_crypto",
+    "com_github_protonmail_go_mime",
+    "com_github_protonmail_gopenpgp_v2",
     "com_github_ryanuber_go_glob",
     "com_github_sasha_s_go_deadlock",
     "com_github_siderolabs_crypto",
     "com_github_siderolabs_discovery_api",
     "com_github_siderolabs_discovery_client",
     "com_github_siderolabs_gen",
+    "com_github_siderolabs_go_api_signature",
     "com_github_siderolabs_go_loadbalancer",
     "com_github_siderolabs_go_pointer",
     "com_github_siderolabs_net",
