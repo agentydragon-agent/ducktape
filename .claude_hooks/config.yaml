@@ -1,11 +1,8 @@
 # TODO: Integrate with settings.py (consolidate env-based and file-based config).
 otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
-  # auth_token comes from DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN env var,
-  # populated by k8s_secrets below (alloy-otlp-bearer-token secret).
-  # Token is an Authentik service account token — see
-  # cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml for the blueprint.
-  # One-time Vault provisioning: see devinfra/claude/README.md.
+  # auth_token: populated from k8s_secrets.otel_auth_token below.
+  # Authentik service account token — see cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml.
 k8s:
   server: https://api.allegedly.works:16443
   service_account: claude-code-web
@@ -18,9 +15,9 @@ k8s_secrets:
     - name: github-token
       data:
         token: GITHUB_TOKEN
-    - name: alloy-otlp-bearer-token
-      data:
-        token: DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN
   buildbuddy_api_key:
     secret_name: buildbuddy-api-key
     data_key: api-key
+  otel_auth_token:
+    secret_name: alloy-otlp-bearer-token
+    data_key: token

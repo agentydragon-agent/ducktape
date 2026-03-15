@@ -40,6 +40,7 @@ class K8sSecretsConfig(BaseModel):
     namespace: str
     secrets: list[K8sSecretMapping]
     buildbuddy_api_key: K8sSecretRef | None = None
+    otel_auth_token: K8sSecretRef | None = None
 
 
 class K8sConfig(BaseModel):

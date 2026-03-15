@@ -35,6 +35,7 @@ class K8sSecretsResult:
     env_vars: dict[str, str] = field(default_factory=dict)
     kubeconfig_path: Path | None = None
     buildbuddy_api_key: str | None = None
+    otel_auth_token: str | None = None
 
 
 def _build_kubeconfig(token: str, server: str, service_account: str, namespace: str, ca_path: Path | None) -> dict:
@@ -124,6 +125,19 @@ def setup_k8s_secrets(
                 )
         except k8s_client.ApiException as e:
             logger.warning("Failed to read BuildBuddy API key: %s", e.reason)
+
+    # Fetch OTEL auth token (exported as env var for hook_dispatch OTLP tracing)
+    if secrets_cfg.otel_auth_token:
+        ref = secrets_cfg.otel_auth_token
+        try:
+            otel_secret = api.read_namespaced_secret(ref.secret_name, secrets_cfg.namespace)
+            if otel_secret.data and ref.data_key in otel_secret.data:
+                token_value = base64.b64decode(otel_secret.data[ref.data_key]).decode()
+                result.otel_auth_token = token_value
+                result.env_vars["DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN"] = token_value
+                logger.info("OTEL auth token read from %s/%s[%s]", secrets_cfg.namespace, ref.secret_name, ref.data_key)
+        except k8s_client.ApiException as e:
+            logger.warning("Failed to read OTEL auth token: %s", e.reason)
 
     # Write kubeconfig
     kubeconfig = _build_kubeconfig(token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path)
