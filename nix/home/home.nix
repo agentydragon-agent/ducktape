@@ -78,7 +78,7 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
-  # ducktape - CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline)
+  # git-commit-ai, difftree, Claude Code hooks/statusline
   ducktape = pkgs.callPackage ./packages/ducktape.nix { inherit ducktape-wheel; };
 
   # headscale-cleanup - Headscale node management tool
@@ -331,7 +331,7 @@ in
     try-import ${config.home.homeDirectory}/.config/bazel/buildbuddy.bazelrc
   '';
 
-  # Packages to install (Phase 1: only actual user-level packages from Ansible)
+  # Packages to install
   home.packages =
     with pkgs;
     [
@@ -388,15 +388,15 @@ in
       bun
 
       # Rust toolchain - all from Nix to ensure consistent glibc
-      # This allows removing CC=/usr/bin/gcc from .envrc since Nix gcc matches Nix glibc
+      # Allows removing CC=/usr/bin/gcc from .envrc since Nix gcc matches Nix glibc
       rustc
       cargo
       clippy
       rustfmt
       rust-analyzer
       sccache
-      gcc # C compiler from Nix - matches Nix glibc for native extension builds
-      # jscpd and madge are not in nixpkgs - install manually with: pnpm add -g jscpd madge
+      gcc # Matches Nix glibc for native extension builds
+      # jscpd, madge not in nixpkgs - install with: pnpm add -g jscpd madge
 
       # Development languages/compilers
       go
@@ -416,7 +416,7 @@ in
       stylua # Lua formatter
 
       # Custom packages from ducktape repo
-      ducktape # CLI tools (git-commit-ai, difftree) and Claude Code hooks (statusline)
+      ducktape # git-commit-ai, difftree, Claude Code hooks etc.
       headscale-cleanup # Headscale node management
       gterm-theme # GNOME Terminal theme follower
     ]
@@ -426,30 +426,17 @@ in
       kubeseal
     ]
     ++ [
-      # Dotfile management (keeping rcm approach)
-      rcm
-
-      # Modern ls replacement with colors and icons
-      eza
-
-      # Smarter cd command that learns your habits
-      zoxide
-
-      # Command-line fuzzy finder
+      eza # Modern ls
+      zoxide # Smarter cd
       fzf
-      # Find alternative with sensible defaults
       fd
-      # Fast recursive search to pair with fd and fzf
       ripgrep
-      # Rich TUI resource monitors for system overview
+      # TUI resource monitors
       btop
       bottom
-      # Modern process viewer with structured output
-      procs
-      # Disk usage visualizer with intuitive tree view
-      dust
-      # Source lines of code analyzer grouped by language
-      tokei
+      procs # Modern process viewer with structured output
+      dust # Disk usage visualizer
+      tokei # SLOC analyzer grouped by language
       # Network diagnostics (per-process usage and path tracing)
       bandwhich
       mtr
@@ -552,10 +539,9 @@ in
       # pkgs.comby
     ];
 
-  # Enable fontconfig for proper font management (only when GUI is enabled)
+  # Enable fontconfig when GUI is enabled
   fonts.fontconfig.enable = enableGui;
 
-  # Session variables (migrated from dotfiles/profile)
   home.sessionVariables = {
     # Editor
     EDITOR = "nvim";
@@ -572,7 +558,6 @@ in
 
     # Interactive shell settings
     LESS = "-F -X -R"; # -F: exit if one screen, -X: no clear screen, -R: raw ANSI colors
-    # PYTHONSTARTUP: not used
 
     # Go workspace
     GOPATH = "$HOME/.go";
@@ -640,13 +625,6 @@ in
       # ISO 8601 datetime format in panel, e.g.: "Wed 2023-11-15 22:49"
       "org/gnome/shell/extensions/panel-date-format" = {
         format = "%a %Y-%m-%d %H:%M";
-      };
-
-      # Legacy datetime indicator (for older WMs/Unity?)
-      "com/canonical/indicator/datetime" = {
-        time-format = "custom";
-        custom-time-format = "%Y-%m-%d %H:%M:%S";
-        show-week-numbers = true;
       };
 
       "org/gnome/terminal/legacy" = {
