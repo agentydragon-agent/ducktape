@@ -95,6 +95,105 @@ def _parse_sim_action(response: Any) -> tuple[str, str | None] | None:
     return None
 
 
+class _TwentyQuestionsRunner:
+    """Runs a single 20Q eval game, tracking conversation state."""
+
+    def __init__(self, *, name: str, client: LLMClient, agent_system: str, sim_system: str) -> None:
+        self.name = name
+        self.client = client
+        self.agent_system = agent_system
+        self.sim_system = sim_system
+        self.tracker = TokenTracker(model=client.model)
+        self.log_entries: list[LogEntry] = []
+        self.agent_messages: list[dict[str, Any]] = []
+        self.sim_messages: list[dict[str, Any]] = []
+        self._last_tc_id: str | None = None
+
+    def _run_turn(self, turn: int) -> Correct | None:
+        """Run one agent+sim exchange. Returns Correct if guessed, None to continue."""
+        # Agent turn (no tools)
+        agent_resp = self.client.call(messages=self.agent_messages, system=self.agent_system)
+        self.tracker.add(agent_resp.usage)
+        log_response(
+            self.log_entries, name=self.name, player="agent", turn=turn, model=self.client.model, response=agent_resp
+        )
+
+        agent_msg = _serialize_message(agent_resp.choices[0].message)
+        self.agent_messages.append(agent_msg)
+
+        agent_text = (agent_msg["content"] or "").strip()
+        if not agent_text:
+            return None
+
+        # Sim turn — provide tool result from previous call if needed
+        if self._last_tc_id:
+            self.sim_messages.append({"role": "tool", "tool_call_id": self._last_tc_id, "content": "ok"})
+        self._last_tc_id = None
+
+        self.sim_messages.append({"role": "user", "content": agent_text})
+
+        sim_resp = self.client.call(
+            messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="auto"
+        )
+        self.tracker.add(sim_resp.usage)
+        log_response(
+            self.log_entries, name=self.name, player="simulator", turn=turn, model=self.client.model, response=sim_resp
+        )
+
+        sim_msg = _serialize_message(sim_resp.choices[0].message)
+        self.sim_messages.append(sim_msg)
+
+        action = _parse_sim_action(sim_resp)
+        if action is None:
+            logger.warning("Turn %d: could not parse simulator action", turn)
+            self.agent_messages.append({"role": "user", "content": "(no response)"})
+            return None
+
+        tool_name, answer = action
+
+        if tool_name == "correct_answer":
+            return Correct(turns=turn)
+
+        # answer action
+        assert answer is not None
+        tcs = extract_tool_calls(sim_resp)
+        if tcs:
+            self._last_tc_id = tcs[0].id
+        self.agent_messages.append({"role": "user", "content": answer})
+        return None
+
+    def run(self, *, first_user_message: str, turn_limit: int, output_dir: Path) -> RunSummary:
+        """Run the full game loop and return summary."""
+        self.agent_messages.append({"role": "user", "content": first_user_message})
+
+        result: Correct | Timeout | None = None
+        turn = 0
+        for turn in range(1, turn_limit + 1):
+            logger.info("Turn %d...", turn)
+            result = self._run_turn(turn)
+            if result:
+                break
+        else:
+            result = Timeout(limit=turn_limit)
+
+        if turn == 0:
+            result = Timeout(limit=turn_limit)
+            turn = 0
+
+        summary = RunSummary(
+            eval_name=self.name,
+            model=self.client.model,
+            turns=turn,
+            result=result,
+            api_calls=self.tracker.api_calls,
+            input_tokens=self.tracker.input_tokens,
+            output_tokens=self.tracker.output_tokens,
+            api_cost_usd=round(self.tracker.cost_usd, 4),
+        )
+        save_results(name=self.name, log_entries=self.log_entries, summary=summary, output_dir=output_dir)
+        return summary
+
+
 def run_twenty_questions(
     *,
     name: str,
@@ -110,77 +209,8 @@ def run_twenty_questions(
     Agent asks questions (text only). Simulator answers via tool calls.
     Game ends when sim calls correct_answer or turns run out.
     """
-    tracker = TokenTracker(model=client.model)
-    log_entries: list[LogEntry] = []
-
-    agent_messages: list[dict[str, Any]] = [{"role": "user", "content": first_user_message}]
-    sim_messages: list[dict[str, Any]] = []
-    last_tc_id: str | None = None
-    result: Correct | Timeout
-
-    for turn in range(1, turn_limit + 1):
-        logger.info("Turn %d...", turn)
-
-        # Agent turn (no tools)
-        agent_resp = client.call(messages=agent_messages, system=agent_system)
-        tracker.add(agent_resp.usage)
-        log_response(log_entries, name=name, player="agent", turn=turn, model=client.model, response=agent_resp)
-
-        agent_msg = _serialize_message(agent_resp.choices[0].message)
-        agent_messages.append(agent_msg)
-
-        agent_text = (agent_msg["content"] or "").strip()
-        if not agent_text:
-            continue
-
-        # Sim turn — provide tool result from previous call if needed
-        if last_tc_id:
-            sim_messages.append({"role": "tool", "tool_call_id": last_tc_id, "content": "ok"})
-        last_tc_id = None
-
-        sim_messages.append({"role": "user", "content": agent_text})
-
-        sim_resp = client.call(messages=sim_messages, system=sim_system, tools=SIM_TOOLS, tool_choice="auto")
-        tracker.add(sim_resp.usage)
-        log_response(log_entries, name=name, player="simulator", turn=turn, model=client.model, response=sim_resp)
-
-        # Append assistant message with tool calls for conversation history
-        sim_msg = _serialize_message(sim_resp.choices[0].message)
-        sim_messages.append(sim_msg)
-
-        action = _parse_sim_action(sim_resp)
-        if action is None:
-            logger.warning("Turn %d: could not parse simulator action", turn)
-            agent_messages.append({"role": "user", "content": "(no response)"})
-            continue
-
-        tool_name, answer = action
-
-        if tool_name == "correct_answer":
-            result = Correct(turns=turn)
-            break
-
-        # answer action
-        assert answer is not None
-        tcs = extract_tool_calls(sim_resp)
-        if tcs:
-            last_tc_id = tcs[0].id
-        agent_messages.append({"role": "user", "content": answer})
-    else:
-        result = Timeout(limit=turn_limit)
-
-    summary = RunSummary(
-        eval_name=name,
-        model=client.model,
-        turns=turn,
-        result=result,
-        api_calls=tracker.api_calls,
-        input_tokens=tracker.input_tokens,
-        output_tokens=tracker.output_tokens,
-        api_cost_usd=round(tracker.cost_usd, 4),
-    )
-    save_results(name=name, log_entries=log_entries, summary=summary, output_dir=output_dir)
-    return summary
+    runner = _TwentyQuestionsRunner(name=name, client=client, agent_system=agent_system, sim_system=sim_system)
+    return runner.run(first_user_message=first_user_message, turn_limit=turn_limit, output_dir=output_dir)
 
 
 def main() -> None:

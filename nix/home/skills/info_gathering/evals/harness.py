@@ -161,7 +161,7 @@ class LLMClient:
         max_tokens: int = 4096,
     ) -> Any:
         """Call the LLM via LiteLLM."""
-        full_messages = [{"role": "system", "content": system}, *messages]
+        full_messages: list[dict[str, Any]] = [{"role": "system", "content": system}, *messages]
 
         # Reasoning models (e.g. gpt-oss) need max_completion_tokens instead of max_tokens,
         # otherwise reasoning consumes the entire token budget leaving empty content.
@@ -207,16 +207,7 @@ class LLMClient:
                 break
 
             # Append assistant message with tool calls
-            assistant_msg: dict[str, Any] = {"role": "assistant", "content": extract_text(response) or None}
-            assistant_msg["tool_calls"] = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                }
-                for tc in tcs
-            ]
-            messages.append(assistant_msg)
+            messages.append(_serialize_message(response.choices[0].message))
 
             # Build tool result messages
             for tc in tcs:
@@ -240,7 +231,7 @@ class LLMClient:
 
 
 def _serialize_message(msg: Any) -> dict[str, Any]:
-    """Serialize a LiteLLM message to a dict for conversation history."""
+    """Serialize a LiteLLM message to a typed dict for conversation history."""
     result: dict[str, Any] = {"role": "assistant", "content": msg.content}
     if msg.tool_calls:
         result["tool_calls"] = [
