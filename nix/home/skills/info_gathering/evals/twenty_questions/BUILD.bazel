@@ -20,7 +20,7 @@ py_binary(
     data = [
         "sim.txt",
         "//nix/home/skills/info_gathering:SKILL.md",
-        "//third_party/debian_slim:load",
+        "//third_party/debian_slim:tarball",
     ],
     imports = ["../../../../../.."],
     main_module = "nix.home.skills.info_gathering.evals.twenty_questions.twenty_questions",

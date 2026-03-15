@@ -1,0 +1,10 @@
+{
+  "eval_name": "20q_states",
+  "model": "openai/gpt-oss-20b-128k",
+  "turns": 20,
+  "result": {},
+  "api_calls": 20,
+  "input_tokens": 154496,
+  "output_tokens": 1162,
+  "api_cost_usd": 0.1603
+}

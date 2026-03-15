@@ -14,8 +14,8 @@ from fastmcp.client import Client
 from agent_core.mcp_provider import MCPToolProvider
 from mcp_infra.exec.docker.container_session import ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
-from third_party.debian_slim.rlocations import IMAGE_TAG, LOAD_SCRIPT
-from util.oci import load_bazel_image
+from third_party.debian_slim.rlocations import IMAGE_TAG, TARBALL
+from util.oci import load_image
 
 logger = logging.getLogger(__name__)
 
@@ -38,4 +38,5 @@ async def scratch_container(image: str) -> AsyncGenerator[MCPToolProvider]:
 
 def load_scratch_image() -> str:
     """Load the debian-slim image into the local Docker daemon and return its tag."""
-    return load_bazel_image(LOAD_SCRIPT, IMAGE_TAG)
+    load_image(TARBALL)
+    return IMAGE_TAG
