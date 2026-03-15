@@ -11,7 +11,6 @@ const (
 	EventNetwork   EventType = "network"
 	EventKubespand EventType = "kubespand"
 	EventDiscovery EventType = "discovery"
-	EventPeerUp    EventType = "peer_up"
 	EventProbe     EventType = "probe"
 	EventError     EventType = "error"
 	EventDone      EventType = "done"

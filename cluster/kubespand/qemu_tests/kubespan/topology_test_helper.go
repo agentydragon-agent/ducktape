@@ -93,8 +93,11 @@ func runTopology(t *testing.T, topology string) {
 		talosAPIPort, h.McastNIC("net0", mcastAddr, "52:54:00:c0:00:01"))
 	sw.Lap("boot Talos CP VM")
 
-	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs, kernelBase+" role=a",
-		h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01")...)
+	// VM-A gets a mgmt NIC so the test host can poll its COSI API for PeerStatus.
+	vmACOSIPort := h.RandomPort()
+	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs, kernelBase+" role=a listen_tcp=:50100",
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01"),
+			h.MgmtNIC(vmACOSIPort, 50100, "52:54:00:a0:00:02")...)...)
 	sw.Lap("boot VM-A")
 
 	allVMs := []*h.VM{vmA, vmB, vmDisc, vmCP}
@@ -104,9 +107,19 @@ func runTopology(t *testing.T, topology string) {
 	h.WaitForDiscoveryHTTP(t, discHTTPPort, 120*time.Second)
 	sw.Lap("discovery HTTP ready")
 
+	// Poll VM-A's PeerStatus via its TCP COSI API — verify WireGuard
+	// handshake completes before waiting for probes to finish.
+	vmAPeers, err := h.PollKubespandPeerStatus(t, fmt.Sprintf("127.0.0.1:%d", vmACOSIPort), 1, 180*time.Second)
+	if err != nil {
+		t.Errorf("VM-A peer status poll: %v", err)
+	} else {
+		t.Logf("VM-A peers up: %v", vmAPeers)
+	}
+	sw.Lap("VM-A peers up (host-side PeerStatus)")
+
 	// VM-A runs probes and exits (still validated via events).
 	h.WaitVMDone(t, vmA, 300*time.Second)
-	sw.Lap("VM-A done (peer discovery + probes)")
+	sw.Lap("VM-A done (probes)")
 
 	// Observe KubeSpan peer status from the Talos CP's API.
 	// CP participates in the same mesh and sees kubespand VMs as peers.

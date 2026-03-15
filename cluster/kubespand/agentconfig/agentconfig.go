@@ -45,6 +45,9 @@ type ApiConfig struct {
 	CACrt string `yaml:"ca_crt"`
 	// Token is the Talos machine token for trustd authentication.
 	Token string `yaml:"token"`
+	// ListenTCP is an optional TCP address (e.g., ":50100") to expose the
+	// read-only COSI API without mTLS. Useful for test harnesses and diagnostics.
+	ListenTCP string `yaml:"listen_tcp"`
 }
 
 // KubePrismConfig holds KubePrism local API server load balancer settings.

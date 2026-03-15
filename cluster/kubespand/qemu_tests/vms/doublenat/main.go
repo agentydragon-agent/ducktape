@@ -51,6 +51,12 @@ func main() {
 	kubespanlib.LoadModules()
 	kubespanlib.ConfigureNetwork(linkIP, "24")
 
+	// eth1: mgmt NIC (QEMU user-mode) for port forwarding COSI API to the test host.
+	if initlib.HasInterface("eth1", 2*time.Second) {
+		initlib.MustRun("ip", "link", "set", "eth1", "up")
+		initlib.MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
+	}
+
 	if defaultGW != "" {
 		initlib.MustRun("ip", "route", "add", "default", "via", defaultGW)
 	}
@@ -66,6 +72,7 @@ func main() {
 		ClusterID:     clusterID,
 		SharedSecret:  sharedSecret,
 		DiscoveryAddr: discovery,
+		ListenTCP:     params["listen_tcp"],
 	})
 
 	const probePort = 9999
@@ -80,9 +87,6 @@ func main() {
 		peerAddrs := kubespanlib.WaitForPeers(kubespandCmd, 2)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("discovered %d peers", len(peerAddrs))})
 
-		// In double-NAT, only the VPS peer is expected to reach "up" — NAT1
-		// is behind a separate NAT with endpoint-dependent filtering.
-		kubespanlib.WaitForPeersUp(kubespandCmd, 1)
 		kubespanlib.DumpDiagnostics()
 
 		kubespanlib.RunDoubleNATProbes(peerAddrs, probePort)

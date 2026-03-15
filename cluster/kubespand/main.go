@@ -171,8 +171,8 @@ func run(configPath string, logger *zap.Logger) error {
 
 	logger.Info("starting COSI runtime")
 
-	// Start the API server (COSI state on Unix socket).
-	apiServer := api.NewServer(st, constants.MachineSocketPath, logger)
+	// Start the API server (COSI state on Unix socket, optionally TCP).
+	apiServer := api.NewServer(st, constants.MachineSocketPath, cfg.Api.ListenTCP, logger)
 	apiErrCh := make(chan error, 1)
 	go func() {
 		apiErrCh <- apiServer.Run(ctx)

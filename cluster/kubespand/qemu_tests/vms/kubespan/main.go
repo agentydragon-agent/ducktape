@@ -108,6 +108,7 @@ func main() {
 		DiscoveryAddr:   discovery,
 		ListenPort:      listenPort,
 		EndpointFilters: endpointFilters,
+		ListenTCP:       params["listen_tcp"],
 	}
 
 	// If ca_crt + token are provided, enable the trustd CSR flow for apid.
@@ -141,8 +142,6 @@ func main() {
 
 	peerAddr := kubespanlib.WaitForPeer(kubespandCmd)
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("peer discovered addr=%s ipv4=%s", peerAddr, peerBridgeIP)})
-
-	kubespanlib.WaitForPeersUp(kubespandCmd, 1)
 
 	if initlib.Role == "b" {
 		cancel := kubespanlib.ServeTCP(probePort)

@@ -64,15 +64,28 @@ func TestDoubleNAT(t *testing.T) {
 		h.McastNIC("net0", mcastLanA, "52:54:00:d0:00:01")...)
 	sw.Lap("boot NAT1 VM")
 
-	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs, kubespanBase+" role=nat2",
-		h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01")...)
+	// NAT2 gets a mgmt NIC so the test host can poll its COSI API for PeerStatus.
+	nat2COSIPort := h.RandomPort()
+	vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, initramfs, kubespanBase+" role=nat2 listen_tcp=:50100",
+		append(h.McastNIC("net0", mcastLanB, "52:54:00:e0:00:01"),
+			h.MgmtNIC(nat2COSIPort, 50100, "52:54:00:e0:00:02")...)...)
 	sw.Lap("boot NAT2 VM")
 
 	allVMs = append(allVMs, vmNAT1, vmNAT2)
 	h.CleanupVMs(t, allVMs, out)
 
+	// Poll NAT2's PeerStatus — in double-NAT, only the VPS peer is expected
+	// to reach "up" (NAT1 is behind endpoint-dependent filtering).
+	nat2Peers, err := h.PollKubespandPeerStatus(t, fmt.Sprintf("127.0.0.1:%d", nat2COSIPort), 1, 180*time.Second)
+	if err != nil {
+		t.Errorf("NAT2 peer status poll: %v", err)
+	} else {
+		t.Logf("NAT2 peers up: %v", nat2Peers)
+	}
+	sw.Lap("NAT2 peers up (host-side PeerStatus)")
+
 	h.WaitVMDone(t, vmNAT2, 300*time.Second)
-	sw.Lap("NAT2 done (peer discovery + probes)")
+	sw.Lap("NAT2 done (probes)")
 
 	summary := map[string]interface{}{
 		"topology":            "double_nat",

@@ -2,6 +2,7 @@ package qemu_tests
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -16,7 +17,15 @@ import (
 	"testing"
 	"time"
 
+	v1alpha1 "github.com/cosi-project/runtime/api/v1alpha1"
+	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
+	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Runfile paths for shared test artifacts.
@@ -495,4 +504,73 @@ func AssertProbes(t *testing.T, events []Event, topology string) {
 			t.Errorf("VM error: %s (%s)", e.Message, e.Error)
 		}
 	}
+}
+
+// PollKubespandPeerStatus connects to kubespand's TCP COSI API and polls
+// PeerStatus resources until minPeers peers report state "up".
+func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	var lastErr string
+
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		conn, err := grpc.NewClient(addr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			cancel()
+			lastErr = err.Error()
+			t.Logf("kubespand COSI connect (waiting): %s", lastErr)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		st := state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn)))
+		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, st)
+		cancel()
+		conn.Close()
+
+		if err != nil {
+			lastErr = err.Error()
+			t.Logf("kubespand COSI poll (waiting): %s", lastErr)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		var peers []KubespanPeerResult
+		for it := list.Iterator(); it.Next(); {
+			ps := it.Value()
+			peers = append(peers, KubespanPeerResult{
+				Label:    ps.TypedSpec().Label,
+				State:    ps.TypedSpec().State,
+				Endpoint: ps.TypedSpec().Endpoint.String(),
+			})
+		}
+
+		allUp := len(peers) >= minPeers
+		for _, p := range peers {
+			if p.State != kubespan.PeerStateUp {
+				allUp = false
+			}
+		}
+
+		var peerSummary strings.Builder
+		for i, p := range peers {
+			if i > 0 {
+				peerSummary.WriteString("; ")
+			}
+			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
+		}
+		t.Logf("kubespand COSI poll: %d peers, allUp=%v [%s]", len(peers), allUp, peerSummary.String())
+
+		if allUp {
+			return peers, nil
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
+	return nil, fmt.Errorf("timeout after %v waiting for %d peers up, last error: %s", timeout, minPeers, lastErr)
 }
