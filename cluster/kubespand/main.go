@@ -39,13 +39,11 @@ func main() {
 	debug := flag.Bool("debug", false, "enable debug logging")
 	flag.Parse()
 
-	var logger *zap.Logger
-	var err error
+	cfg := zap.NewProductionConfig()
 	if *debug {
-		logger, err = zap.NewDevelopment()
-	} else {
-		logger, err = zap.NewProduction()
+		cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 	}
+	logger, err := cfg.Build()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "logger: %v\n", err)
 		os.Exit(1)

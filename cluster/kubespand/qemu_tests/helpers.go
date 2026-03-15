@@ -352,8 +352,8 @@ func AssertProbes(t *testing.T, events []Event, topology string) {
 		// Router-B masquerade) but NOT NAT1 (behind Router-A's separate
 		// NAT — endpoint-dependent filtering blocks cross-NAT traffic).
 		// Require at least one peer's ICMP and TCP probes to pass.
-		icmpOK := probeOK(probes, "peer 1 ULA icmp") || probeOK(probes, "peer 2 ULA icmp")
-		tcpOK := probeOK(probes, "peer 1 ULA tcp") || probeOK(probes, "peer 2 ULA tcp")
+		icmpOK := probeOK(probes, fmt.Sprintf(ProbePeerULAICMPFmt, 1)) || probeOK(probes, fmt.Sprintf(ProbePeerULAICMPFmt, 2))
+		tcpOK := probeOK(probes, fmt.Sprintf(ProbePeerULATCPFmt, 1)) || probeOK(probes, fmt.Sprintf(ProbePeerULATCPFmt, 2))
 		if !icmpOK {
 			t.Errorf("no peer ULA ICMP probe succeeded (need at least VPS)")
 		}
@@ -362,10 +362,10 @@ func AssertProbes(t *testing.T, events []Event, topology string) {
 		}
 	default:
 		for _, name := range []string{
-			"ipv6 ULA icmp",
-			"ipv4 peer eth0 icmp",
-			"ipv6 ULA tcp",
-			"ipv4 peer eth0 tcp",
+			ProbeIPv6ULAICMP,
+			ProbeIPv4Eth0ICMP,
+			ProbeIPv6ULATCP,
+			ProbeIPv4Eth0TCP,
 		} {
 			if s, ok := probes[name]; !ok {
 				t.Errorf("missing probe event: %s", name)

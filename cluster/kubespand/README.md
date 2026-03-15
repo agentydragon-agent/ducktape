@@ -93,6 +93,24 @@ ip route show table 180
 talosctl get kubespanpeerstatuses
 ```
 
+## Testing
+
+```bash
+bazel test //cluster/kubespand/qemu_tests/...
+```
+
+Integration tests boot lightweight Alpine Linux VMs under QEMU (TCG, no KVM required).
+Full VMs are necessary because kubespand creates WireGuard interfaces, writes nftables
+rules, and manipulates ip policy routing — operations that require a real kernel network
+stack and root in an isolated environment. Docker containers don't work: nftables mark
+expressions (`meta mark set`/`Bitwise`) return `EBUSY` deterministically on GHA runners
+and in containers generally, even with `--network=none`. This is consistent with upstream
+(Talos CI also uses QEMU VMs for KubeSpan tests, never containers).
+
+Test topologies: flat (2 nodes, same subnet), cross-subnet (2 nodes, routed), and
+double-NAT (3 nodes behind 2 separate NAT routers). Each VM runs a custom PID-1 init
+that starts kubespand, waits for peer discovery, and runs ICMP + TCP connectivity probes.
+
 ## Architecture Reference
 
 Maps to the following Talos source files:

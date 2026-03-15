@@ -3,10 +3,10 @@ package kubespanlib
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"github.com/siderolabs/talos/pkg/machinery/constants"
@@ -104,21 +104,57 @@ func WaitForPeer(kubespandCmd *exec.Cmd) string {
 	return addrs[0]
 }
 
-// WaitForPeers waits for n peers to be discovered in kubespand logs.
+// zapLogEntry represents a zap production JSON log line.
+type zapLogEntry struct {
+	Msg     string `json:"msg"`
+	Address string `json:"address"`
+}
+
+// WaitForPeers waits for n peers to be discovered in kubespand's JSONL log
+// by tailing the log file reactively.
 func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
-	deadline := time.Now().Add(180 * time.Second)
+	const timeout = 180 * time.Second
+	deadline := time.Now().Add(timeout)
+
+	f, err := os.Open("/tmp/kubespand.log")
+	if err != nil {
+		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "cannot open kubespand log", Error: err.Error()})
+		initlib.Poweroff()
+	}
+	defer f.Close()
+
+	seen := map[string]struct{}{}
+	var addrs []string
+	scanner := bufio.NewScanner(f)
+
 	for time.Now().Before(deadline) {
 		if kubespandCmd.ProcessState != nil {
 			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "kubespand exited prematurely", Error: "kubespand crashed"})
 			initlib.DumpLog("/tmp/kubespand.log")
 			initlib.Poweroff()
 		}
-		addrs := ExtractPeerAddrs("/tmp/kubespand.log")
-		if len(addrs) >= n {
-			return addrs
+
+		for scanner.Scan() {
+			var entry zapLogEntry
+			if json.Unmarshal(scanner.Bytes(), &entry) != nil {
+				continue
+			}
+			if entry.Msg != "configuring peer" || entry.Address == "" {
+				continue
+			}
+			if _, ok := seen[entry.Address]; !ok {
+				seen[entry.Address] = struct{}{}
+				addrs = append(addrs, entry.Address)
+				if len(addrs) >= n {
+					return addrs
+				}
+			}
 		}
-		time.Sleep(2 * time.Second)
+
+		// No new data yet — brief sleep before retrying read.
+		time.Sleep(100 * time.Millisecond)
 	}
+
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: fmt.Sprintf("timed out waiting for %d peers (180s)", n), Error: "peer discovery timeout"})
 	initlib.DumpLog("/tmp/kubespand.log")
 	kubespandCmd.Process.Kill()
@@ -142,33 +178,4 @@ func DumpDiagnostics(peerIPs ...string) {
 	initlib.Run("nft", "list", "ruleset")
 	initlib.Run("cat", "/proc/sys/net/ipv4/conf/all/rp_filter")
 	initlib.Run("cat", "/proc/sys/net/ipv4/conf/kubespan/rp_filter")
-}
-
-// ExtractPeerAddrs parses kubespand log for discovered peer ULA addresses.
-func ExtractPeerAddrs(logPath string) []string {
-	f, err := os.Open(logPath)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-	seen := map[string]struct{}{}
-	var addrs []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.Contains(line, "configuring peer") {
-			continue
-		}
-		if idx := strings.Index(line, `"address": "`); idx >= 0 {
-			rest := line[idx+len(`"address": "`):]
-			if end := strings.IndexByte(rest, '"'); end >= 0 {
-				addr := rest[:end]
-				if _, ok := seen[addr]; !ok {
-					seen[addr] = struct{}{}
-					addrs = append(addrs, addr)
-				}
-			}
-		}
-	}
-	return addrs
 }

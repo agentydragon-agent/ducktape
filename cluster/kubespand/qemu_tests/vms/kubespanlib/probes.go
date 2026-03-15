@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/net/icmp"
@@ -14,8 +15,42 @@ import (
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
-// TCPProbe attempts a TCP connection to target:port with retry until timeout.
-func TCPProbe(target string, port int, timeout time.Duration) bool {
+// probeResult holds the outcome of a single probe for deferred event emission.
+type probeResult struct {
+	name   string
+	target string
+	ok     bool
+}
+
+// icmpProbe sends ICMP echo requests to the target with retry until timeout.
+func icmpProbe(name, target string, timeout time.Duration) probeResult {
+	deadline := time.Now().Add(timeout)
+	seq := 0
+
+	ip := net.ParseIP(target)
+	isV4 := ip != nil && ip.To4() != nil
+
+	for time.Now().Before(deadline) {
+		seq++
+		var ok bool
+		if isV4 {
+			ok = ping4(target, seq)
+		} else {
+			ok = ping6(target, seq)
+		}
+		if ok {
+			fmt.Printf("ping %s succeeded (seq %d)\n", target, seq)
+			return probeResult{name, target, true}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	fmt.Fprintf(os.Stderr, "timeout after %s: no ICMP echo reply from %s\n", timeout, target)
+	return probeResult{name, target, false}
+}
+
+// tcpProbe attempts a TCP connection to target:port with retry until timeout.
+func tcpProbe(name, target string, port int, timeout time.Duration) probeResult {
 	addr := net.JoinHostPort(target, fmt.Sprintf("%d", port))
 	deadline := time.Now().Add(timeout)
 
@@ -24,13 +59,13 @@ func TCPProbe(target string, port int, timeout time.Duration) bool {
 		if err == nil {
 			conn.Close()
 			fmt.Printf("tcp connect %s succeeded\n", addr)
-			return true
+			return probeResult{name, addr, true}
 		}
-		time.Sleep(time.Second)
+		time.Sleep(200 * time.Millisecond)
 	}
 
 	fmt.Fprintf(os.Stderr, "timeout after %s: no TCP connection to %s\n", timeout, addr)
-	return false
+	return probeResult{name, addr, false}
 }
 
 // ServeTCP starts TCP listeners on the given port on both IPv4 and IPv6.
@@ -59,33 +94,6 @@ func ServeTCP(port int) (cancel func()) {
 			ln.Close()
 		}
 	}
-}
-
-// Probe sends ICMP echo requests to the target with retry until timeout.
-func Probe(target string, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	seq := 0
-
-	ip := net.ParseIP(target)
-	isV4 := ip != nil && ip.To4() != nil
-
-	for time.Now().Before(deadline) {
-		seq++
-		var ok bool
-		if isV4 {
-			ok = ping4(target, seq)
-		} else {
-			ok = ping6(target, seq)
-		}
-		if ok {
-			fmt.Printf("ping %s succeeded (seq %d)\n", target, seq)
-			return true
-		}
-		time.Sleep(time.Second)
-	}
-
-	fmt.Fprintf(os.Stderr, "timeout after %s: no ICMP echo reply from %s\n", timeout, target)
-	return false
 }
 
 func ping4(target string, seq int) bool {
@@ -170,32 +178,54 @@ func ping6(target string, seq int) bool {
 	return rm.Type == ipv6.ICMPTypeEchoReply
 }
 
-// EmitProbe emits a probe event and dumps kubespand log on failure.
-func EmitProbe(msg, target string, ok bool) {
-	evt := qemu_tests.Event{Type: qemu_tests.EventProbe, Message: msg, Target: target, Success: &ok}
-	if !ok {
+// emitProbeResult emits a probe event and dumps kubespand log on failure.
+func emitProbeResult(r probeResult) {
+	evt := qemu_tests.Event{Type: qemu_tests.EventProbe, Message: r.name, Target: r.target, Success: &r.ok}
+	if !r.ok {
 		evt.Error = "probe failed"
 		initlib.DumpLog("/tmp/kubespand.log")
 	}
 	initlib.EmitEvent(evt)
 }
 
+// runProbesParallel runs all probes concurrently and emits events after all complete.
+func runProbesParallel(probes []func() probeResult) {
+	results := make([]probeResult, len(probes))
+	var wg sync.WaitGroup
+	wg.Add(len(probes))
+	for i, fn := range probes {
+		go func(idx int, f func() probeResult) {
+			defer wg.Done()
+			results[idx] = f()
+		}(i, fn)
+	}
+	wg.Wait()
+	for _, r := range results {
+		emitProbeResult(r)
+	}
+}
+
 // RunProbes runs the standard 2-node probe suite (IPv6 ULA + IPv4 bridge, ICMP + TCP).
 func RunProbes(peerAddr, peerBridgeIP string, tcpPort int) {
-	EmitProbe("ipv6 ULA icmp", peerAddr, Probe(peerAddr, 60*time.Second))
-	EmitProbe("ipv4 peer eth0 icmp", peerBridgeIP, Probe(peerBridgeIP, 60*time.Second))
-	EmitProbe("ipv6 ULA tcp", fmt.Sprintf("[%s]:%d", peerAddr, tcpPort),
-		TCPProbe(peerAddr, tcpPort, 30*time.Second))
-	EmitProbe("ipv4 peer eth0 tcp", fmt.Sprintf("%s:%d", peerBridgeIP, tcpPort),
-		TCPProbe(peerBridgeIP, tcpPort, 30*time.Second))
+	runProbesParallel([]func() probeResult{
+		func() probeResult { return icmpProbe(qemu_tests.ProbeIPv6ULAICMP, peerAddr, 60*time.Second) },
+		func() probeResult { return icmpProbe(qemu_tests.ProbeIPv4Eth0ICMP, peerBridgeIP, 60*time.Second) },
+		func() probeResult { return tcpProbe(qemu_tests.ProbeIPv6ULATCP, peerAddr, tcpPort, 30*time.Second) },
+		func() probeResult {
+			return tcpProbe(qemu_tests.ProbeIPv4Eth0TCP, peerBridgeIP, tcpPort, 30*time.Second)
+		},
+	})
 }
 
 // RunDoubleNATProbes probes each peer's ULA via ICMP and TCP.
 func RunDoubleNATProbes(peerAddrs []string, tcpPort int) {
+	var probes []func() probeResult
 	for i, addr := range peerAddrs {
-		label := fmt.Sprintf("peer %d", i+1)
-		EmitProbe(label+" ULA icmp", addr, Probe(addr, 60*time.Second))
-		EmitProbe(label+" ULA tcp", fmt.Sprintf("[%s]:%d", addr, tcpPort),
-			TCPProbe(addr, tcpPort, 30*time.Second))
+		addr := addr
+		icmpName := fmt.Sprintf(qemu_tests.ProbePeerULAICMPFmt, i+1)
+		tcpName := fmt.Sprintf(qemu_tests.ProbePeerULATCPFmt, i+1)
+		probes = append(probes, func() probeResult { return icmpProbe(icmpName, addr, 60*time.Second) })
+		probes = append(probes, func() probeResult { return tcpProbe(tcpName, addr, tcpPort, 30*time.Second) })
 	}
+	runProbesParallel(probes)
 }
