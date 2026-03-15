@@ -7,8 +7,10 @@ confined to this module.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+from collections.abc import Generator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,6 +24,27 @@ from pre_commit.store import Store
 logger = logging.getLogger(__name__)
 
 _MAX_OUTPUT_CHARS = 500
+
+
+@contextlib.contextmanager
+def _chdir(path: Path) -> Generator[None]:
+    """Temporarily change working directory, restoring on exit."""
+    saved = Path.cwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(saved)
+
+
+@contextlib.contextmanager
+def _restore_file(path: Path) -> Generator[None]:
+    """Restore file content on exit, even if hooks modified it."""
+    original = path.read_bytes()
+    try:
+        yield
+    finally:
+        path.write_bytes(original)
 
 
 @dataclass
@@ -51,12 +74,11 @@ def run_on_file(file_path: Path, project_dir: Path) -> RunResult | None:
         return None
 
     original_content = file_path.read_bytes()
-    saved_cwd = Path.cwd()
-    try:
-        # pre-commit's internals assume cwd is the project root:
-        # Classifier uses relative paths and hooks inherit process cwd
-        # via subprocess.Popen (no cwd= parameter).
-        os.chdir(project_dir)
+
+    # pre-commit's internals assume cwd is the project root:
+    # Classifier uses relative paths and hooks inherit process cwd
+    # via subprocess.Popen (no cwd= parameter).
+    with _chdir(project_dir), _restore_file(file_path):
         store = Store()
         config = load_config(str(config_path))
         hooks = [h for h in all_hooks(config, store) if not h.stages or "pre-commit" in h.stages]
@@ -98,9 +120,6 @@ def run_on_file(file_path: Path, project_dir: Path) -> RunResult | None:
             )
 
         modified_content = file_path.read_bytes()
-    finally:
-        os.chdir(saved_cwd)
-        file_path.write_bytes(original_content)
 
     failed = [r for r in hook_results if not r.passed]
     if not failed:
