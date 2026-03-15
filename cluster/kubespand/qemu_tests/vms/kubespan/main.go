@@ -1,4 +1,4 @@
-// Binary kubespan is the PID-1 init for 2-node KubeSpan test VMs.
+// Binary kubespan is the PID-1 init for KubeSpan test VMs.
 // Handles flat, cross_subnet, and discovery_only topologies.
 package main
 
@@ -92,14 +92,15 @@ func main() {
 
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("link=%s/24, topology=%s", linkIP, topology)})
 
-	kubespandCmd := kubespanlib.StartKubespand(kubespanlib.KubespandConfig{
+	cfg := kubespanlib.KubespandConfig{
 		ClusterID:       clusterID,
 		SharedSecret:    sharedSecret,
 		DiscoveryAddr:   discovery,
 		ListenPort:      listenPort,
 		EndpointFilters: endpointFilters,
-	})
+	}
 
+	kubespandCmd := kubespanlib.StartKubespand(cfg)
 	const probePort = 9999
 
 	peerAddr := kubespanlib.WaitForPeer(kubespandCmd)

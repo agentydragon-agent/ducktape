@@ -1,8 +1,9 @@
-// Package api exposes kubespand's COSI state on a Unix socket.
+// Package api exposes kubespand's COSI state and MachineService on a Unix socket.
 //
-// Mirrors Talos machined's state socket at /system/run/machined/machine.sock.
-// The state is read-only — write operations (Create, Update, Destroy) return
-// PermissionDenied. A future apid integration will add mTLS on port 50000.
+// Serves at the same path as Talos machined (/system/run/machined/machine.sock).
+// COSI state is read-only — write operations (Create, Update, Destroy) return
+// PermissionDenied. MachineService implements only Version; other RPCs return
+// Unimplemented. Talos apid can proxy this socket to add mTLS on port 50000.
 package api
 
 import (

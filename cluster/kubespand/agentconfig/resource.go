@@ -65,6 +65,12 @@ type Spec struct {
 
 	// KubePrismPort is the local port to listen on for KubePrism.
 	KubePrismPort int
+
+	// CACrt is the PEM-encoded Talos CA certificate for the trustd CSR flow.
+	CACrt string
+
+	// Token is the Talos machine token for trustd authentication.
+	Token string
 }
 
 // DeepCopy implements typed.DeepCopyable.
@@ -113,5 +119,7 @@ func SpecFromAgentConfig(ac *AgentConfig) Spec {
 		KubePrismEnabled: ac.KubePrism.Enabled,
 		KubePrismHost:    ac.KubePrism.Host,
 		KubePrismPort:    ac.KubePrism.Port,
+		CACrt:            ac.Api.CACrt,
+		Token:            ac.Api.Token,
 	}
 }

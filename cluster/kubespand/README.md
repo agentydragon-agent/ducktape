@@ -46,6 +46,16 @@ automatically when their inputs change.
    → manages a TCP load balancer on `localhost:7445` that proxies to kube-apiserver
    endpoints. Provides the same local API server proxy that Talos nodes get natively
    via KubePrism built into `machined`.
+9. **OSRootController** (optional): watches agent config → produces `secrets.OSRoot`
+   with the Talos CA certificate and machine token. Enabled when `api.ca_crt` and
+   `api.token` are configured.
+10. **APICertSANsController** (optional, embedded from Talos): watches `secrets.OSRoot`
+    - network addresses + hostname → produces `secrets.CertSAN` with certificate SANs.
+11. **APIController** (optional, embedded from Talos): watches `secrets.OSRoot` +
+    `secrets.CertSAN` + control plane endpoints → generates a CSR, sends it to a
+    control plane node's trustd service (port 50001) for signing, and produces
+    `secrets.API` with the signed certificate. This enables apid to serve mTLS
+    on port 50000.
 
 ## Prerequisites
 
@@ -129,6 +139,8 @@ Maps to the following Talos source files:
 | `controllers/cluster/kubernetes_node.go`           | (kubespand-only: K8s informer → `k8s.NodeStatus` for PodCIDRs)                                                     |
 | `controllers/k8s/kubeprism_config.go`              | `internal/.../controllers/k8s/kubeprism_endpoints.go` + `kubeprism_config.go` (adapted)                            |
 | (embedded) `@talos_internal controllers_kubeprism` | `internal/.../controllers/k8s/kubeprism.go` (TCP LB manager)                                                       |
+| `controllers/kubespand/os_root.go`                 | `internal/.../controllers/secrets/root.go` (RootOSController — adapted for YAML config)                            |
+| (embedded) `@talos_internal controllers_secrets`   | `internal/.../controllers/secrets/api.go` + `api_cert_sans.go` (APIController + APICertSANsController)             |
 | `identity/identity.go`                             | `pkg/machinery/resources/network/ula.go` (ULAPrefix), `internal/.../adapters/kubespan/identity.go` (EUI-64)        |
 | `discovery/discovery.go`                           | `internal/.../controllers/cluster/discovery_service.go` (discovery client wrapper)                                 |
 | `routing/routing.go`                               | `internal/.../controllers/kubespan/manager.go` (nftables), `.../kubespan/routing_rules.go` (ip rules)              |

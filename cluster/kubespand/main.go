@@ -26,6 +26,7 @@ import (
 	taloscontrollersk8s "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/k8s"
 	taloscontrollerskubespan "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubespan"
 	taloscontrollersnetwork "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/network"
+	taloscontrollerssecrets "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/secrets"
 )
 
 func init() {
@@ -135,6 +136,17 @@ func run(configPath string, logger *zap.Logger) error {
 		}
 		if err := rt.RegisterController(&taloscontrollersk8s.KubePrismController{}); err != nil {
 			return fmt.Errorf("registering kubeprism controller: %w", err)
+		}
+	}
+	if cfg.Api.CACrt != "" {
+		if err := rt.RegisterController(&kubespandctrl.OSRootController{}); err != nil {
+			return fmt.Errorf("registering OS root controller: %w", err)
+		}
+		if err := rt.RegisterController(&taloscontrollerssecrets.APICertSANsController{}); err != nil {
+			return fmt.Errorf("registering API cert SANs controller: %w", err)
+		}
+		if err := rt.RegisterController(&taloscontrollerssecrets.APIController{}); err != nil {
+			return fmt.Errorf("registering API controller: %w", err)
 		}
 	}
 	if err := rt.RegisterController(&kubespanctrl.ManagerController{}); err != nil {

@@ -18,6 +18,11 @@ filegroup(
     output_group = "tarball",
 )
 
+exports_files(
+    glob(["testdata/**"]),
+    visibility = ["//cluster/kubespand:__subpackages__"],
+)
+
 genrule(
     name = "talos_nocloud_image",
     srcs = [
@@ -30,6 +35,7 @@ genrule(
     # the ~47s zstd decompression step the test previously needed.
     cmd = "$(location build_talos_image.sh) $(location :talos_imager_tarball) $(location imager-profile.yaml) $@",
     tags = ["requires-docker"],
+    visibility = ["//cluster/kubespand:__subpackages__"],
 )
 
 go_test(
@@ -45,9 +51,6 @@ go_test(
     tags = ["requires_qemu"],
     deps = [
         "//cluster/kubespand/qemu_tests",
-        "@com_github_cosi_project_runtime//pkg/safe",
-        "@com_github_siderolabs_talos_pkg_machinery//client",
-        "@com_github_siderolabs_talos_pkg_machinery//client/config",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
     ],
 )

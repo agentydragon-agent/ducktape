@@ -2,14 +2,22 @@
 package kubespanlib
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	v1alpha1 "github.com/cosi-project/runtime/api/v1alpha1"
+	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
+	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"gopkg.in/yaml.v3"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
@@ -24,6 +32,12 @@ type KubespandConfig struct {
 	DiscoveryAddr   string
 	ListenPort      int
 	EndpointFilters []string
+	// ClusterEndpoint is the cluster API server URL (for trustd endpoint discovery).
+	ClusterEndpoint string
+	// CACrt is the PEM-encoded Talos CA certificate (for trustd CSR flow).
+	CACrt string
+	// Token is the Talos machine token (for trustd authentication).
+	Token string
 }
 
 // LoadModules loads wireguard, virtio_net, and nftables kernel modules.
@@ -53,6 +67,8 @@ func ConfigureNetwork(linkIP, linkMask string) {
 func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 	os.MkdirAll("/var/lib/kubespan", 0o755)
 	os.MkdirAll("/etc/kubespan", 0o755)
+	// Create socket directory for kubespand's COSI API server.
+	os.MkdirAll("/system/run/machined", 0o700)
 
 	listenPort := cfg.ListenPort
 	if listenPort == 0 {
@@ -61,8 +77,9 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 
 	agentCfg := agentconfig.AgentConfig{
 		Cluster: agentconfig.ClusterConfig{
-			ID:     cfg.ClusterID,
-			Secret: cfg.SharedSecret,
+			ID:       cfg.ClusterID,
+			Secret:   cfg.SharedSecret,
+			Endpoint: cfg.ClusterEndpoint,
 		},
 		Discovery: agentconfig.DiscoveryConfig{
 			Endpoint:    cfg.DiscoveryAddr,
@@ -76,6 +93,10 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 			IdentityFile:          "/var/lib/kubespan/identity.yaml",
 			EndpointFilters:       cfg.EndpointFilters,
 			HarvestExtraEndpoints: true,
+		},
+		Api: agentconfig.ApiConfig{
+			CACrt: cfg.CACrt,
+			Token: cfg.Token,
 		},
 	}
 	configData, err := yaml.Marshal(agentCfg)
@@ -98,28 +119,37 @@ func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 	return cmd
 }
 
-// WaitForPeer waits for a single peer to be discovered in kubespand logs.
+// WaitForPeer waits for a single peer to appear via kubespand's COSI API.
 func WaitForPeer(kubespandCmd *exec.Cmd) string {
 	addrs := WaitForPeers(kubespandCmd, 1)
 	return addrs[0]
 }
 
-// zapLogEntry represents a zap production JSON log line.
-type zapLogEntry struct {
-	Msg     string `json:"msg"`
-	Address string `json:"address"`
+// NewCOSIClient connects to kubespand's Unix socket and returns a COSI state client.
+func NewCOSIClient(socketPath string) (state.State, *grpc.ClientConn, error) {
+	conn, err := grpc.NewClient("passthrough:///unix",
+		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
+			return net.Dial("unix", socketPath)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("dialing %s: %w", socketPath, err)
+	}
+	adapter := stateclient.NewAdapter(v1alpha1.NewStateClient(conn))
+	return state.WrapCore(adapter), conn, nil
 }
 
-// WaitForPeers waits for n peers to be discovered in kubespand's JSONL log.
-// Re-reads the log file each iteration because bufio.Scanner caches io.EOF
-// and never retries reading new data appended by kubespand.
+// WaitForPeers polls kubespand's COSI API for PeerSpec resources until n peers are found.
+// Returns the KubeSpan IPv6 ULA address of each peer.
 func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 	const timeout = 180 * time.Second
 	deadline := time.Now().Add(timeout)
+	socketPath := constants.MachineSocketPath
 
-	seen := map[string]struct{}{}
-	var addrs []string
 	lastProgressLog := time.Now()
+	var cosiState state.State
+	var conn *grpc.ClientConn
 
 	for time.Now().Before(deadline) {
 		if kubespandCmd.ProcessState != nil {
@@ -128,37 +158,54 @@ func WaitForPeers(kubespandCmd *exec.Cmd, n int) []string {
 			initlib.Poweroff()
 		}
 
-		data, err := os.ReadFile("/tmp/kubespand.log")
+		// Lazily connect to the COSI API socket.
+		if cosiState == nil {
+			var err error
+			cosiState, conn, err = NewCOSIClient(socketPath)
+			if err != nil {
+				// Socket might not exist yet while kubespand starts up.
+				if time.Since(lastProgressLog) > 15*time.Second {
+					fmt.Fprintf(os.Stderr, "[WaitForPeers] waiting for API socket %s: %v\n", socketPath, err)
+					lastProgressLog = time.Now()
+				}
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			defer conn.Close()
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, cosiState)
+		cancel()
+
 		if err != nil {
-			time.Sleep(100 * time.Millisecond)
+			if time.Since(lastProgressLog) > 15*time.Second {
+				lastProgressLog = time.Now()
+				remaining := time.Until(deadline).Round(time.Second)
+				fmt.Fprintf(os.Stderr, "[WaitForPeers] COSI list error: %v, %s remaining\n", err, remaining)
+			}
+			time.Sleep(500 * time.Millisecond)
 			continue
 		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if line == "" {
-				continue
-			}
-			var entry zapLogEntry
-			if json.Unmarshal([]byte(line), &entry) != nil {
-				continue
-			}
-			if entry.Msg != "configuring peer" || entry.Address == "" {
-				continue
-			}
-			if _, ok := seen[entry.Address]; !ok {
-				seen[entry.Address] = struct{}{}
-				addrs = append(addrs, entry.Address)
-				if len(addrs) >= n {
-					return addrs
-				}
+
+		var addrs []string
+		for it := list.Iterator(); it.Next(); {
+			ps := it.Value()
+			addr := ps.TypedSpec().Address.String()
+			if addr != "" && addr != "invalid IP" {
+				addrs = append(addrs, addr)
 			}
 		}
 
-		// Periodic progress logging every 15 seconds.
 		if time.Since(lastProgressLog) > 15*time.Second {
 			lastProgressLog = time.Now()
 			remaining := time.Until(deadline).Round(time.Second)
-			fmt.Fprintf(os.Stderr, "[WaitForPeers] still waiting for %d/%d peers, %s remaining\n", n-len(addrs), n, remaining)
+			fmt.Fprintf(os.Stderr, "[WaitForPeers] found %d/%d peers via COSI API, %s remaining\n", len(addrs), n, remaining)
 			dumpLogTail("/tmp/kubespand.log", 20)
+		}
+
+		if len(addrs) >= n {
+			return addrs
 		}
 
 		time.Sleep(500 * time.Millisecond)
