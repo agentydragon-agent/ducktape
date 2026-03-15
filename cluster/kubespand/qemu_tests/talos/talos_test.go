@@ -137,22 +137,13 @@ func createCIDATA(t *testing.T, tmpDir, name string, machineConfig []byte) strin
 }
 
 // bootTalosVM starts a Talos QEMU VM from a raw disk image with CIDATA config.
-// Creates a copy so each VM has its own writable disk.
+// Uses snapshot=on so QEMU creates a temporary overlay per VM, avoiding full
+// copies of the ~4.5 GB base image.
 func bootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int, netArgs []string) *h.VM {
 	t.Helper()
 
-	// Copy base image — each VM needs its own writable copy.
-	disk := filepath.Join(filepath.Dir(cidataPath), name+".raw")
-	src, err := os.ReadFile(baseImage)
-	if err != nil {
-		t.Fatalf("read base image: %v", err)
-	}
-	if err := os.WriteFile(disk, src, 0o644); err != nil {
-		t.Fatalf("write vm disk: %v", err)
-	}
-
 	args := []string{
-		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw", disk),
+		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw,snapshot=on", baseImage),
 		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw,readonly=on", cidataPath),
 		"-nographic",
 		"-m", "1536",
@@ -297,18 +288,12 @@ func pollKubeSpanStatus(t *testing.T, tc *talosctl, timeout time.Duration) kubes
 
 func parsePeerStatuses(output string) []kubespanPeerResult {
 	var peers []kubespanPeerResult
-
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
+	dec := json.NewDecoder(strings.NewReader(output))
+	for dec.More() {
 		var res talosResource
-		if err := json.Unmarshal([]byte(line), &res); err != nil {
-			continue
+		if err := dec.Decode(&res); err != nil {
+			break
 		}
-
 		peers = append(peers, kubespanPeerResult{
 			Label:    res.Metadata.ID,
 			State:    res.Spec.State,

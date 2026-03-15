@@ -32,10 +32,10 @@ const (
 	TalosctlPath = "talosctl_amd64/file/talosctl"
 
 	// Pre-generated Talos configs (committed as testdata).
-	TalosVPSConfig  = "cluster/kubespand/qemu_tests/talos/testdata/vps/controlplane.yaml"
-	TalosNAT1Config = "cluster/kubespand/qemu_tests/talos/testdata/nat1/worker.yaml"
-	TalosNAT2Config = "cluster/kubespand/qemu_tests/talos/testdata/nat2/worker.yaml"
-	TalosConfig     = "cluster/kubespand/qemu_tests/talos/testdata/vps/talosconfig"
+	TalosVPSConfig  = "cluster/kubespand/qemu_tests/talos/testdata/vps-controlplane.yaml"
+	TalosNAT1Config = "cluster/kubespand/qemu_tests/talos/testdata/nat1-worker.yaml"
+	TalosNAT2Config = "cluster/kubespand/qemu_tests/talos/testdata/nat2-worker.yaml"
+	TalosConfig     = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
 )
 
 // VM represents a running QEMU VM.

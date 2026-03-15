@@ -27,18 +27,20 @@ genrule(
         "docker load -i $(location :talos_imager_tarball) >&2",
         # Build a reproducible nocloud disk image.
         # SOURCE_DATE_EPOCH + DETERMINISTIC_SEED ensure byte-identical output.
-        "mkdir -p $(@D)/_talos_out",
+        # Output goes to /tmp (scratch disk) to avoid filling the workspace disk
+        # — the imager creates a 4.5 GB intermediate raw image before compressing.
+        "mkdir -p /tmp/talos_out",
         " ".join([
             "docker run --rm",
             "-e SOURCE_DATE_EPOCH=1700000000",
             "-e DETERMINISTIC_SEED=1",
-            "-v $$PWD/$(@D)/_talos_out:/out",
+            "-v /tmp/talos_out:/out",
             "siderolabs/imager:build",
             "nocloud --arch amd64",
             ">&2",
         ]),
-        "mv $(@D)/_talos_out/nocloud-amd64.raw.zst $@",
-        "rm -rf $(@D)/_talos_out",
+        "mv /tmp/talos_out/nocloud-amd64.raw.zst $@",
+        "rm -rf /tmp/talos_out",
     ]),
     tags = ["requires-docker"],
 )
