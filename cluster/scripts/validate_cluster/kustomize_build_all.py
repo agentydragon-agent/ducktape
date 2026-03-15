@@ -14,10 +14,33 @@ import asyncio
 import sys
 from pathlib import Path
 
+import yaml
 from pydantic import TypeAdapter
 
 from cluster.scripts.validate_cluster.cluster import parse_cluster
-from cluster.scripts.validate_cluster.kustomize import KustomizeBuildResult, run_kustomize_build
+from cluster.scripts.validate_cluster.k8s import parse_k8s_resources
+from cluster.scripts.validate_cluster.kustomize import KustomizeBuildResult
+from util.bazel.runfiles import get_required_path
+
+
+async def _run_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult:
+    """Run kustomize build and parse the output."""
+    kustomize_bin = get_required_path("multitool/tools/kustomize/kustomize")
+    proc = await asyncio.create_subprocess_exec(
+        kustomize_bin,
+        "build",
+        kustomization_path.parent,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        return KustomizeBuildResult(kustomization_path=kustomization_path, success=False, error=stderr.decode())
+
+    output = stdout.decode()
+    resources = parse_k8s_resources(yaml.safe_load_all(output))
+    return KustomizeBuildResult(kustomization_path=kustomization_path, success=True, resources=resources)
 
 
 async def main() -> int:
@@ -35,7 +58,7 @@ async def main() -> int:
         output_path.write_text("[]")
         return 0
 
-    tasks = [run_kustomize_build(k) for k in kustomization_files]
+    tasks = [_run_kustomize_build(k) for k in kustomization_files]
     results = await asyncio.gather(*tasks)
 
     # Relativize kustomization_path to k8s_dir for portability

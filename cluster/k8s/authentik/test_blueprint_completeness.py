@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest_bazel
 import yaml
 
-pytest_plugins = ["cluster.scripts.validate_cluster.conftest"]
+from util.bazel.runfiles import get_required_path
+
+_AUTHENTIK_KUSTOMIZATION = "_main/cluster/k8s/authentik/kustomization.yaml"
 
 
-def test_authentik_blueprint_completeness(k8s_dir: Path) -> None:
-    authentik_kust = k8s_dir / "authentik" / "kustomization.yaml"
-    blueprints_dir = k8s_dir / "authentik" / "blueprints"
+def test_authentik_blueprint_completeness() -> None:
+    authentik_kust = get_required_path(_AUTHENTIK_KUSTOMIZATION)
+    blueprints_dir = authentik_kust.parent / "blueprints"
 
     with authentik_kust.open() as f:
         doc = yaml.safe_load(f)

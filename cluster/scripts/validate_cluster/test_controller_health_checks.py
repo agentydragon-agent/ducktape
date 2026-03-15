@@ -32,7 +32,7 @@ def _check_controller_health_checks(cluster: ParsedCluster, k8s_dir: Path, works
         f"Add healthChecks with kind: {kind} to {flux_kust.file_path.relative_to(k8s_dir)}."
         for name, flux_kust in cluster.flux_kustomizations.items()
         if flux_kust.spec_path
-        if (kust_dir := (workspace / flux_kust.spec_path.removeprefix("./")).resolve())
+        if (kust_dir := (workspace / flux_kust.spec_path.removeprefix("./")))
         if (kust := cluster.kustomize_files.get(kust_dir / "kustomization.yaml"))
         for kind in _HEALTH_CHECK_REQUIRED_KINDS
         if _kust_deploys_kind(kind, kust, cluster.source_resources)

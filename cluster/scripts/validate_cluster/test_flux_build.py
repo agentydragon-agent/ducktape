@@ -18,8 +18,7 @@ def test_flux_build_succeeds(k8s_dir: Path) -> None:
     assert result.returncode == 0, f"flux build failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     assert result.stdout.strip(), f"flux build returned empty output:\nstderr: {result.stderr.strip() or 'none'}"
 
-    resources = list(parse_k8s_resources(yaml.safe_load_all(result.stdout)))
-    kinds = {r.kind for r in resources}
+    kinds = {r.kind for r in parse_k8s_resources(yaml.safe_load_all(result.stdout))}
     assert "Kustomization" in kinds, "No Flux Kustomization resources in flux build output"
     assert "GitRepository" in kinds, "No GitRepository resource in flux build output"
 

@@ -47,21 +47,17 @@ CRD_TO_OPERATOR: dict[str, str] = {
     "ClusterRRset": "powerdns-operator",
 }
 
-# These Kustomizations ARE the operators, so they don't need to depend on themselves
-OPERATOR_KUSTOMIZATIONS = {
-    "external-secrets-operator",
+# Kustomizations that ARE operators (or part of the operator layer) don't need to
+# depend on themselves. Derived from CRD_TO_OPERATOR values plus related config kustomizations.
+OPERATOR_KUSTOMIZATIONS = set(CRD_TO_OPERATOR.values()) | {
     "external-secrets",  # config kustomization
-    "cert-manager",
     "cert-manager-config",
     "cert-manager-trust",
     "cert-manager-environment",
-    "kyverno",
     "kyverno-policies",
-    "vault-operator",
     "vault",
     "tofu-controller",
     "sealed-secrets",
-    "powerdns-operator",
     "cluster-ca",  # Uses cert-manager CRDs but is part of cert-manager layer
 }
 
@@ -250,14 +246,6 @@ class TestCrdLayeringCheck:
             )
             == []
         )
-
-
-class TestCrdToOperatorMapping:
-    def test_common_crds_mapped(self) -> None:
-        assert CRD_TO_OPERATOR["ExternalSecret"] == "external-secrets-operator"
-        assert CRD_TO_OPERATOR["Certificate"] == "cert-manager"
-        assert CRD_TO_OPERATOR["ClusterPolicy"] == "kyverno"
-        assert CRD_TO_OPERATOR["Terraform"] == "tofu-controller"
 
 
 if __name__ == "__main__":

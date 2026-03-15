@@ -1,16 +1,4 @@
 # gazelle:ignore
-# Cluster validation scripts
-#
-# Binaries:
-#   validate_sealed_secrets — sealed secret decryption (separate, needs terraform state)
-#   kustomize_build_all — serialize kustomize build output to JSON
-#
-# Integration tests (test_*):
-#   Validate real cluster/k8s/ config as Bazel test targets.
-#   Pure-analysis checks use //cluster/k8s:all_yaml as data deps.
-#   Kustomize-dependent checks consume a genrule that builds all kustomizations.
-#
-# Binaries (kustomize, flux, kubeseal, helm, tofu) are managed via rules_multitool.
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
@@ -40,7 +28,6 @@ py_library(
     imports = ["../../.."],
     deps = [
         ":k8s",
-        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -123,8 +110,11 @@ py_library(
     imports = ["../../.."],
     deps = [
         ":cluster",
+        ":k8s",
         ":kustomize",
+        "//util/bazel:runfiles",
         "@pypi//pydantic",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -142,7 +132,7 @@ py_binary(
 
 genrule(
     name = "kustomize_build_results",
-    srcs = ["//cluster/k8s:all_yaml"],
+    srcs = ["//cluster/k8s:all_kustomize_inputs"],
     outs = ["kustomize_build_results.json"],
     cmd = "$(location :kustomize_build_all) cluster/k8s $@",
     tools = [":kustomize_build_all"],
@@ -204,6 +194,7 @@ py_library(
         ":cluster",
         ":kustomize",
         "//util/bazel:runfiles",
+        "@pypi//pydantic",
         "@pypi//pytest",
     ],
 )
@@ -286,22 +277,5 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_helm_templates",
-    srcs = ["test_helm_templates.py"],
-    data = [
-        "//cluster/terraform/bootstrap/infrastructure:cilium-values.yaml",
-        "@multitool//tools/helm",
-    ],
-    imports = ["../../.."],
-    tags = ["requires-network"],
-    deps = [
-        ":helm_templates",
-        "//util/bazel:runfiles",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

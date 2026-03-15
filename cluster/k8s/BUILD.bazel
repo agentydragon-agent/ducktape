@@ -4,3 +4,16 @@ filegroup(
     srcs = glob(["**/*.yaml"]),
     visibility = ["//cluster:__subpackages__"],
 )
+
+filegroup(
+    name = "all_kustomize_inputs",
+    srcs = glob(
+        ["**"],
+        exclude = [
+            "**/BUILD.bazel",
+            "**/__pycache__/**",
+            "**/*.pyc",
+        ],
+    ),
+    visibility = ["//cluster:__subpackages__"],
+)
