@@ -41,6 +41,8 @@
 # via NixOS system configuration using the module at nix/nixos/heavy-packages-module.nix
 # See heavy-packages.nix for the complete list.
 let
+  toTOML = (pkgs.formats.toml { }).generate;
+
   # Import the single source of truth for heavy packages
   heavyPkgs = import ./heavy-packages.nix;
 
@@ -69,17 +71,6 @@ let
       rev = "97157aac9f0d24c144a3defdfe5057ee61e18dcb";
       sha256 = "1a32szs5hz9l1b1s1cfzbjvrn9wzqjkhffq9kaabvbpvlzd2hms9";
     };
-  };
-
-  # Helm/Helmfile wrapped with plugins (helm-diff)
-  myKubernetesHelm = pkgs.wrapHelm pkgs.kubernetes-helm {
-    plugins = with pkgs.kubernetes-helmPlugins; [
-      helm-diff
-    ];
-  };
-
-  myHelmfile = pkgs.helmfile-wrapped.override {
-    inherit (myKubernetesHelm.passthru) pluginsDir;
   };
 
   # Shell initialization scripts (loaded from external files to avoid escaping hell)
@@ -431,9 +422,8 @@ in
     ]
     ++ lib.optionals enableKube [
       kubectl
-      myKubernetesHelm
+      kubernetes-helm
       kubeseal
-      myHelmfile
     ]
     ++ [
       # Dotfile management (keeping rcm approach)
@@ -955,20 +945,15 @@ in
   # oh-my-posh config is in shell/oh-my-posh.nix
   home.file.".p10k.zsh".source = ./p10k.zsh;
 
-  # Create Worthy config directory
-  home.file.".config/worthy/.keep".text = "";
-
   # Cargo configuration - use sccache for compilation caching
-  home.file.".cargo/config.toml".text = ''
-    [build]
-    rustc-wrapper = "sccache"
-  '';
+  home.file.".cargo/config.toml".source = toTOML "cargo-config.toml" {
+    build.rustc-wrapper = "sccache";
+  };
 
   # Ansible configuration
-  home.file.".ansible.cfg".text = ''
-    [defaults]
-    collections_path = ~/.ansible/collections
-  '';
+  home.file.".ansible.cfg".source = (pkgs.formats.ini { }).generate "ansible.cfg" {
+    defaults.collections_path = "~/.ansible/collections";
+  };
 
   # Warn if legacy .npm-global directory exists (should be removed in favor of pnpm)
   home.activation.warnLegacyNpmGlobal = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
