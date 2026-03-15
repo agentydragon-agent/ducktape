@@ -408,8 +408,7 @@ Add their age public key (one per line) to `.claude_hooks/secrets/recipients.txt
 ## OTEL Tracing
 
 Hooks emit OpenTelemetry traces to Grafana Alloy via the Authentik proxy at
-`alloy-otlp.allegedly.works`. The auth token is an Authentik service account
-token, provisioned once and synced via Vault + ESO.
+`alloy-otlp.allegedly.works`. Fully declarative — no manual steps.
 
 ### Architecture
 
@@ -425,29 +424,25 @@ Hook (OTLPSpanExporter)
                          └──► Tempo (traces)
 ```
 
-### One-Time Vault Provisioning
+### Token Flow
 
-The Authentik blueprint (`cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml`)
-creates a service account token. Extract it and store in Vault:
-
-```bash
-# 1. Extract token from Authentik
-TOKEN=$(kubectl exec -n authentik deploy/authentik-worker -- \
-  ak shell -c "from authentik.core.models import Token; \
-    print(Token.objects.get(identifier='alloy-otlp-api-key').key)")
-
-# 2. Store in Vault
-ROOT_TOKEN=$(kubectl get secret -n vault instance-unseal-keys \
-  -o jsonpath='{.data.vault-root}' | base64 -d)
-kubectl exec -n vault instance-0 -c vault -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=$ROOT_TOKEN \
-   vault kv put kv/alloy-otlp/bearer-token token=$TOKEN"
+```
+Terraform (random_password, 48 chars)
+  → Vault KV (kv/alloy-otlp/bearer-token)
+    → ESO (authentik-sso-client-secrets) → Authentik pods envFrom
+      → Blueprint !Env → Token.key in Authentik DB
+    → ESO (claude-sandbox) → session start hook
+      → DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN → otel.py
 ```
 
-ESO syncs the token from Vault to `claude-sandbox` namespace
-(`cluster/k8s/claude-sandbox-secrets/alloy-otlp-bearer-token-externalsecret.yaml`).
-The session start hook reads the secret and sets
-`DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN`.
+Key files:
+
+- TF module: `cluster/terraform/gitops/alloy-otlp-bearer-token/`
+- tofu-controller CRD: `cluster/k8s/alloy-otlp-bearer-token-tf/`
+- Authentik blueprint: `cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml`
+- Claude-sandbox ESO: `cluster/k8s/claude-sandbox-secrets/alloy-otlp-bearer-token-externalsecret.yaml`
+
+Rotation: bump `rotation_version` in the TF module.
 
 ### Configuration
 
@@ -458,8 +453,8 @@ otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
 ```
 
-Auth token flows: Vault → ESO → K8s Secret → session start hook → env var →
-`otel.py` → `Authorization: Bearer <token>` header.
+Auth token flows through k8s secrets → `DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN`
+env var → `otel.py` → `Authorization: Bearer <token>` header.
 
 ## Development
 

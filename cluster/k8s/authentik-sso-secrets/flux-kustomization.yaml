@@ -18,6 +18,7 @@ spec:
       name: authentik-sso-client-secrets
       namespace: authentik
   dependsOn:
+    - name: alloy-otlp-bearer-token-tf
     - name: authentik-namespace
     - name: external-secrets-config
     - name: authentik-blueprint-sso-secrets
