@@ -1,7 +1,5 @@
 """Shared utilities for running shell commands and locating runfiles in tests."""
 
-from __future__ import annotations
-
 import asyncio
 import subprocess
 from pathlib import Path

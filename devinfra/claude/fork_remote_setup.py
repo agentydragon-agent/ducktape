@@ -6,8 +6,6 @@ checks whether their fork of the current repo exists, and if so ensures the
 the URL.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import urllib.error

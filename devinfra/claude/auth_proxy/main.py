@@ -3,8 +3,6 @@
 This script is invoked by supervisor to run the proxy as a long-running service.
 """
 
-from __future__ import annotations
-
 import argparse
 import logging
 import signal

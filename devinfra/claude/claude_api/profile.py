@@ -1,7 +1,5 @@
 """Pydantic models for the Claude OAuth profile API response."""
 
-from __future__ import annotations
-
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict

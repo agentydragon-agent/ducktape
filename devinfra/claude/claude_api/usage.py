@@ -1,7 +1,5 @@
 """Client and models for the Claude subscription usage API."""
 
-from __future__ import annotations
-
 from datetime import datetime
 
 import httpx

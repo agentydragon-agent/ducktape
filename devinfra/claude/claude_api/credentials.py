@@ -1,7 +1,5 @@
 """Pydantic models for Claude Code's local credentials file (~/.claude/.credentials.json)."""
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 

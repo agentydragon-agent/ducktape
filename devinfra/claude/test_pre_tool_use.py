@@ -1,7 +1,5 @@
 """Tests for pre_tool_use hook."""
 
-from __future__ import annotations
-
 import pytest_bazel
 
 from devinfra.claude.claude_api.pre_tool_use import PermissionDecision, PreToolUseInput

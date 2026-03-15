@@ -4,8 +4,6 @@ These constants define the standard proxy environment variables that various
 tools and runtimes recognize. Use these instead of hardcoding the strings.
 """
 
-from __future__ import annotations
-
 import os
 
 # All proxy variables recognized by various tools (curl, yarn, global-agent, etc.)

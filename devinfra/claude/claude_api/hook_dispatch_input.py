@@ -4,8 +4,6 @@ Parsed once in hook_dispatch.py, then isinstance/match dispatches to the
 appropriate handler. Uses hook_event_name as the Pydantic discriminator.
 """
 
-from __future__ import annotations
-
 from typing import Annotated
 
 from pydantic import Discriminator

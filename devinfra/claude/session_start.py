@@ -7,8 +7,6 @@ Both modes render a per-session bazelrc from the unified bazelrc.mako template
 and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import logging.handlers

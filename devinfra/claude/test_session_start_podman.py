@@ -4,8 +4,6 @@ Split from test_session_start.py because podman needs mount/networking capabilit
 blocked by Bazel's linux-sandbox and RBE (requires local=True).
 """
 
-from __future__ import annotations
-
 import asyncio
 import re
 from pathlib import Path

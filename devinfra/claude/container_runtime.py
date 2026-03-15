@@ -19,8 +19,6 @@ Key findings from Docker evaluation (2026-02-17):
 - Disable iptables, use tmpfs data-root, disable bridge networking
 """
 
-from __future__ import annotations
-
 import asyncio
 import hashlib
 import importlib.resources

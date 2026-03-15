@@ -4,8 +4,6 @@ Unit tests are in test_hook_input.py.
 Podman integration tests are in test_session_start_podman.py (requires local=True).
 """
 
-from __future__ import annotations
-
 import asyncio
 import shutil
 import subprocess

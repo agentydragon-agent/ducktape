@@ -7,8 +7,6 @@ Uses lazy imports to avoid loading heavy dependencies (mako, asyncio)
 for lightweight hooks like PreToolUse and PostToolUse.
 """
 
-from __future__ import annotations
-
 import asyncio
 import os
 import sys

@@ -5,8 +5,6 @@ gVisor's 9p root filesystem is slow, so each component that needs fast I/O
 `/dev/shm` because gVisor mounts it `noexec`, which breaks Bazel's JDK.
 """
 
-from __future__ import annotations
-
 import logging
 import subprocess
 from dataclasses import dataclass

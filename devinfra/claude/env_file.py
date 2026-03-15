@@ -3,8 +3,6 @@
 Centralizes all environment variable exports into a single file write.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 from dataclasses import dataclass, field

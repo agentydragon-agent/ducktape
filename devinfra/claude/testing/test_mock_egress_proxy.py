@@ -7,8 +7,6 @@ Tests cover:
   concurrent connections, and graceful server-initiated close.
 """
 
-from __future__ import annotations
-
 import asyncio
 import base64
 import contextlib

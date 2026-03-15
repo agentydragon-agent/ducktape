@@ -12,8 +12,6 @@ already on PATH, so tools will appear as downloads finish. Needs a background
 daemon or subprocess approach (not just asyncio.gather in-process).
 """
 
-from __future__ import annotations
-
 import logging
 import shutil
 import stat

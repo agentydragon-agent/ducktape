@@ -7,8 +7,6 @@ Config mapping (secret name, data keys, env vars) is defined in
 .claude_hooks/config.yaml under the k8s_secrets section.
 """
 
-from __future__ import annotations
-
 import base64
 import logging
 from dataclasses import dataclass, field

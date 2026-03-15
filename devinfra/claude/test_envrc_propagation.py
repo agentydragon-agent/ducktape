@@ -5,8 +5,6 @@ SESSION_BAZELRC, and direnv eval for .envrc propagation into subsequent Bash
 tool calls.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from unittest.mock import patch
 

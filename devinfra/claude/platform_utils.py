@@ -1,7 +1,5 @@
 """Platform detection utilities for tool downloads."""
 
-from __future__ import annotations
-
 import platform
 from dataclasses import dataclass
 

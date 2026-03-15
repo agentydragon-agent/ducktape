@@ -5,8 +5,6 @@ assistant message. See https://code.claude.com/docs/en/statusline for the
 full schema.
 """
 
-from __future__ import annotations
-
 from pydantic import BaseModel, ConfigDict
 
 

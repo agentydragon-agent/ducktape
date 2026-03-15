@@ -1,7 +1,5 @@
 """Streaming command execution with heartbeat output."""
 
-from __future__ import annotations
-
 import logging
 import os
 import select

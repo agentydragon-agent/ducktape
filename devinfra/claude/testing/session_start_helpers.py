@@ -4,8 +4,6 @@ Provides isolated directory setup, environment configuration, and hook execution
 utilities used by both the main session_start tests and the podman integration tests.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import json

@@ -1,7 +1,5 @@
 """Nix installation and tool setup for Claude Code web sessions."""
 
-from __future__ import annotations
-
 import logging
 import os
 import shutil

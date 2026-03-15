@@ -1,7 +1,5 @@
 """Tests for post_tool_use hook."""
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

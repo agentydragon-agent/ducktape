@@ -5,8 +5,6 @@ signed by that CA. This gives localhost a valid TLS certificate trusted
 by curl, Python, Node, etc. via the combined CA bundle (SSL_CERT_FILE).
 """
 
-from __future__ import annotations
-
 import asyncio
 import logging
 import os

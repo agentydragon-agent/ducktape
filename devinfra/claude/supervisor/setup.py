@@ -6,8 +6,6 @@ Uses TCP socket (inet_http_server) instead of Unix socket to avoid 9p filesystem
 limitations in gVisor sandbox where hard linking Unix sockets fails with EOPNOTSUPP.
 """
 
-from __future__ import annotations
-
 import asyncio
 import configparser
 import logging

@@ -1,7 +1,5 @@
 """Tests for claude.proxy_credentials module."""
 
-from __future__ import annotations
-
 import time
 from datetime import UTC, datetime
 

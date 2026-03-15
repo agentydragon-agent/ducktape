@@ -1,7 +1,5 @@
 """Unit tests for SessionStartHookInput parsing."""
 
-from __future__ import annotations
-
 import pytest
 import pytest_bazel
 

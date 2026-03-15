@@ -4,8 +4,6 @@ Tests supervisor client functionality (lifecycle, add/update/check services)
 without requiring the full proxy infrastructure.
 """
 
-from __future__ import annotations
-
 import pytest_bazel
 
 from devinfra.claude.settings import HookSettings

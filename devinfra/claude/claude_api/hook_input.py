@@ -4,8 +4,6 @@ See https://docs.anthropic.com/en/docs/claude-code/hooks for the full API spec.
 Schema: https://json.schemastore.org/claude-code-settings.json
 """
 
-from __future__ import annotations
-
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal

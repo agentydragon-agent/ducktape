@@ -1,7 +1,5 @@
 """Tests for statusline models, usage API client, and output formatting."""
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

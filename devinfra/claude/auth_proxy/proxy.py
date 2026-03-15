@@ -11,8 +11,6 @@ Reads upstream proxy URL from a file on each connection, enabling credential
 hot-reload without restarting the proxy.
 """
 
-from __future__ import annotations
-
 import base64
 import contextlib
 import logging

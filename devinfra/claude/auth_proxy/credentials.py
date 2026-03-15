@@ -4,8 +4,6 @@ Pure functions for parsing proxy URLs and checking credential expiry.
 Used by proxy_setup and bazel_wrapper.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from urllib.parse import ParseResult, urlparse

@@ -4,8 +4,6 @@ Fetches 5-hour and 7-day utilization percentages from the usage endpoint.
 Results are cached to disk so the statusline stays fast on repeated invocations.
 """
 
-from __future__ import annotations
-
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

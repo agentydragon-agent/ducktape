@@ -1,7 +1,5 @@
 """Tests for k8s_secrets_setup."""
 
-from __future__ import annotations
-
 import base64
 from collections.abc import Generator
 from pathlib import Path

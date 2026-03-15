@@ -5,8 +5,6 @@ formatter dispatch to pre-commit's own configuration (.pre-commit-config.yaml),
 maintaining a single source of truth for file-to-formatter mapping.
 """
 
-from __future__ import annotations
-
 import logging
 import shutil
 import subprocess

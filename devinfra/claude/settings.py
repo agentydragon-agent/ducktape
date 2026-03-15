@@ -9,8 +9,6 @@ Environment Variables (in priority order):
 3. Platform defaults (Linux: ~/.cache, ~/.config; macOS: ~/Library/Caches, etc.)
 """
 
-from __future__ import annotations
-
 import importlib.resources
 from importlib.resources.abc import Traversable
 from pathlib import Path

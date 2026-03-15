@@ -4,8 +4,6 @@ Writes spans to a per-session JSON Lines file for post-hoc analysis.
 Uses ConsoleSpanExporter with a file handle and compact JSON formatting.
 """
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 

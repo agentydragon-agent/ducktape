@@ -3,8 +3,6 @@
 Import and use in test files - Bazel doesn't do conftest.py auto-discovery.
 """
 
-from __future__ import annotations
-
 import contextlib
 import logging
 import os

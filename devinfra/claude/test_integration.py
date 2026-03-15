@@ -4,8 +4,6 @@ These tests use REAL processes (supervisor, auth proxy) and a TLS-inspecting pro
 to verify end-to-end behavior.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

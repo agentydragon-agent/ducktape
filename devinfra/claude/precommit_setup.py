@@ -1,7 +1,5 @@
 """Pre-commit hook installation and background environment setup."""
 
-from __future__ import annotations
-
 import logging
 import shutil
 import subprocess

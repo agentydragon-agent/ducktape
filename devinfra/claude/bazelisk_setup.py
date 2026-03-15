@@ -7,8 +7,6 @@ TODO: Eventually unify tool installation via direnv/devenv instead of
       manual downloads in session hooks.
 """
 
-from __future__ import annotations
-
 import logging
 import shutil
 import stat
