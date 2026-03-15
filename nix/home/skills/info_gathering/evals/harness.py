@@ -12,6 +12,7 @@ Supports any LiteLLM-compatible model string, e.g.:
 """
 
 import argparse
+import contextlib
 import json
 import logging
 from collections.abc import Callable
@@ -83,8 +84,8 @@ class TokenTracker(BaseModel):
     }
 
     def add(self, usage: Any) -> None:
-        self.input_tokens += getattr(usage, "prompt_tokens", 0) or 0
-        self.output_tokens += getattr(usage, "completion_tokens", 0) or 0
+        self.input_tokens += usage.prompt_tokens or 0
+        self.output_tokens += usage.completion_tokens or 0
         self.api_calls += 1
 
     @property
@@ -264,8 +265,11 @@ def log_response(
             {"id": tc.id, "name": tc.function.name, "arguments": tc.function.arguments} for tc in msg.tool_calls
         ]
 
-    # Capture reasoning content if available (some models expose this)
-    reasoning = getattr(msg, "reasoning_content", None)
+    # LiteLLM's Message type declares reasoning_content as Optional[str],
+    # but deletes the attribute when None for OpenAI spec compatibility.
+    reasoning: str | None = None
+    with contextlib.suppress(AttributeError):
+        reasoning = msg.reasoning_content
 
     log_entries.append(
         LogEntry(

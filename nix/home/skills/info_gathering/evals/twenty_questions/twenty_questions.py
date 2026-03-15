@@ -2,7 +2,7 @@
 
 Usage:
   bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states
-  bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states --model openai/gpt-oss-20b-128k --base-url https://ollama.allegedly.works/v1 --thinking-budget 0
+  bazel run //nix/home/skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- --variant states --model openai/gpt-oss:20b --base-url https://ollama-api.allegedly.works --thinking-budget 0
 """
 
 import argparse
@@ -77,6 +77,24 @@ VARIANTS: dict[str, Variant] = {
 }
 
 
+def _parse_sim_action(response: Any) -> tuple[str, str | None] | None:
+    """Parse the simulator's tool call into (tool_name, answer_value).
+
+    Returns None if no valid tool call found.
+    """
+    tcs = extract_tool_calls(response)
+    if len(tcs) != 1:
+        return None
+    tc = tcs[0]
+    if tc.function.name == "correct_answer":
+        return ("correct_answer", None)
+    if tc.function.name == "answer":
+        args = json.loads(tc.function.arguments)
+        validated = AnswerInput.model_validate(args)
+        return ("answer", validated.response)
+    return None
+
+
 def run_twenty_questions(
     *,
     name: str,
@@ -92,8 +110,8 @@ def run_twenty_questions(
 ) -> RunSummary:
     """Run a 20 Questions eval.
 
-    Agent asks questions (text only). Simulator answers via tools (forced by
-    tool_choice=required). Game ends when sim calls correct_answer or turns run out.
+    Agent asks questions (text only). Simulator answers via tool calls.
+    Game ends when sim calls correct_answer or turns run out.
     """
     tracker = TokenTracker(model=model)
     log_entries: list[LogEntry] = []
@@ -123,24 +141,28 @@ def run_twenty_questions(
         if not agent_text:
             continue
 
-        # Sim turn: tool result from previous turn (if any) + agent's question
+        # Sim turn — provide tool result from previous call if needed
         if last_tc_id:
             sim_messages.append({"role": "tool", "tool_call_id": last_tc_id, "content": "ok"})
         last_tc_id = None
 
         sim_messages.append({"role": "user", "content": agent_text})
+
         sim_resp = call_api(
             messages=sim_messages,
             system=sim_system,
             model=model,
             tools=SIM_TOOLS,
-            tool_choice="required",
+            tool_choice="auto",
             thinking_budget=thinking_budget,
             base_url=base_url,
             api_key=api_key,
         )
         tracker.add(sim_resp.usage)
         log_response(log_entries, name=name, player="simulator", turn=turn, model=model, response=sim_resp)
+
+        # Append assistant message with tool calls for conversation history
+        tcs = extract_tool_calls(sim_resp)
         sim_messages.append(
             {
                 "role": "assistant",
@@ -151,27 +173,28 @@ def run_twenty_questions(
                         "type": "function",
                         "function": {"name": tc.function.name, "arguments": tc.function.arguments},
                     }
-                    for tc in extract_tool_calls(sim_resp)
+                    for tc in tcs
                 ],
             }
         )
 
-        tcs = extract_tool_calls(sim_resp)
-        if len(tcs) != 1:
-            logger.warning("Expected exactly 1 tool call from sim, got %d", len(tcs))
+        action = _parse_sim_action(sim_resp)
+        if action is None:
+            logger.warning("Turn %d: could not parse simulator action", turn)
+            agent_messages.append({"role": "user", "content": "(no response)"})
             continue
 
-        tc = tcs[0]
-        tc_args = json.loads(tc.function.arguments)
+        tool_name, answer = action
 
-        if tc.function.name == "correct_answer":
+        if tool_name == "correct_answer":
             result = Correct(turns=turn)
             break
 
-        # answer tool
-        answer = AnswerInput.model_validate(tc_args)
-        last_tc_id = tc.id
-        agent_messages.append({"role": "user", "content": answer.response})
+        # answer action
+        assert answer is not None
+        if tcs:
+            last_tc_id = tcs[0].id
+        agent_messages.append({"role": "user", "content": answer})
     else:
         result = Timeout(limit=turn_limit)
 
