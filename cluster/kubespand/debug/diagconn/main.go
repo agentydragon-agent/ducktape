@@ -1,5 +1,5 @@
 // diagconn tests gRPC connectivity to discovery.talos.dev.
-// Run with: bazel run //cluster/kubespand/cmd/diagconn
+// Run with: bazel run //cluster/kubespand/debug/diagconn
 package main
 
 import (
