@@ -105,3 +105,16 @@ cluster:
 #   # Uses the same path as Talos machined so apid can proxy it.
 #   # Default: /system/run/machined/machine.sock
 #   socket_path: "/system/run/machined/machine.sock"
+#
+#   # Talos API TLS certificates (optional). When both ca_crt and token are set,
+#   # kubespand produces secrets.API via the standard Talos trustd CSR flow,
+#   # enabling apid to serve mTLS on port 50000.
+#   #
+#   # Extract from a Talos node:
+#   #   talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.machine.ca.crt'
+#   #   talosctl -n <node> get machineconfiguration -o yaml | yq '.spec.machine.token'
+#   ca_crt: |
+#     -----BEGIN CERTIFICATE-----
+#     ...
+#     -----END CERTIFICATE-----
+#   token: "CHANGE_ME"

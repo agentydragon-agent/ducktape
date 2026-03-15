@@ -14,6 +14,7 @@ package agentconfig
 import (
 	"crypto/aes"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"net"
 	"net/netip"
@@ -36,11 +37,17 @@ type AgentConfig struct {
 	Api        ApiConfig        `yaml:"api"`
 }
 
-// ApiConfig holds COSI state API server settings.
+// ApiConfig holds COSI state API server and TLS certificate settings.
 type ApiConfig struct {
 	// SocketPath is the Unix socket path for the COSI state gRPC server.
 	// Default: /system/run/machined/machine.sock (same as Talos machined)
 	SocketPath string `yaml:"socket_path"`
+	// CACrt is the PEM-encoded Talos CA certificate (from machine.ca.crt).
+	// When set with Token, enables the Talos trustd CSR flow to obtain
+	// API certificates for apid mTLS on port 50000.
+	CACrt string `yaml:"ca_crt"`
+	// Token is the Talos machine token for trustd authentication.
+	Token string `yaml:"token"`
 }
 
 // KubePrismConfig holds KubePrism local API server load balancer settings.
@@ -163,6 +170,15 @@ func Load(path string) (*AgentConfig, error) {
 		}
 		if _, err := url.Parse(cfg.Cluster.Endpoint); err != nil {
 			return nil, fmt.Errorf("cluster.endpoint is not a valid URL: %w", err)
+		}
+	}
+	if (cfg.Api.CACrt != "") != (cfg.Api.Token != "") {
+		return nil, fmt.Errorf("api.ca_crt and api.token must both be set or both be empty")
+	}
+	if cfg.Api.CACrt != "" {
+		block, _ := pem.Decode([]byte(cfg.Api.CACrt))
+		if block == nil {
+			return nil, fmt.Errorf("api.ca_crt is not valid PEM")
 		}
 	}
 

@@ -23,6 +23,7 @@ go_library(
         "@talos_internal//:controllers_kubeprism",
         "@talos_internal//:controllers_kubespan",
         "@talos_internal//:controllers_network",
+        "@talos_internal//:controllers_secrets",
     ],
 )
 

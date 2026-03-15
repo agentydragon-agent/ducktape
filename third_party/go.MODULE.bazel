@@ -438,6 +438,11 @@ go_deps.module(
     version = "v0.5.0",
 )
 go_deps.module(
+    path = "github.com/siderolabs/go-retry",
+    sum = "h1:zKV+S1vumtO72E6sYsLlmIdV/G/GcYSBLiEx/c9oCEg=",
+    version = "v0.3.3",
+)
+go_deps.module(
     path = "github.com/siderolabs/go-pointer",
     sum = "h1:f7Yi4IK1jptS8yrT9GEbwhmGcVxvPQgBUG/weH3V3DM=",
     version = "v1.0.1",
@@ -751,6 +756,7 @@ use_repo(
     "com_github_siderolabs_go_debug",
     "com_github_siderolabs_go_loadbalancer",
     "com_github_siderolabs_go_pointer",
+    "com_github_siderolabs_go_retry",
     "com_github_siderolabs_grpc_proxy",
     "com_github_siderolabs_net",
     "com_github_siderolabs_proto_codec",
