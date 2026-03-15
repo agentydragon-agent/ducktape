@@ -79,12 +79,8 @@ func TestTrustdCSRFlow(t *testing.T) {
 		"cluster_id=%s shared_secret=%s discovery=192.168.50.254:3000 ca_crt=%s token=%s cluster_endpoint=https://192.168.50.2:6443",
 		cfg.Cluster.ID, cfg.Cluster.Secret, cfg.Machine.CA.Crt, cfg.Machine.Token,
 	)
-	mgmtNIC := []string{
-		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", kubespandAPIPort),
-		"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
-	}
 	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfsTrustd, kernelArgs,
-		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), mgmtNIC...)...)
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.MgmtNIC(kubespandAPIPort)...)...)
 	sw.Lap("boot kubespand VM")
 
 	allVMs := []*h.VM{vmCP, vmKubespand, vmDisc}

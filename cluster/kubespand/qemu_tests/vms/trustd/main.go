@@ -16,6 +16,15 @@ import (
 
 func main() {
 	initlib.InitBasic()
+	if err := run(); err != nil {
+		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: err.Error()})
+		initlib.Poweroff()
+	}
+	// Idle forever — test observes via Talos API from outside.
+	select {}
+}
+
+func run() error {
 	params := initlib.ParseCmdline()
 
 	clusterID := params["cluster_id"]
@@ -26,18 +35,13 @@ func main() {
 	clusterEndpoint := params["cluster_endpoint"]
 
 	if clusterID == "" || sharedSecret == "" || discoveryAddr == "" || caCrtB64 == "" || token == "" || clusterEndpoint == "" {
-		initlib.EmitEvent(qemu_tests.Event{
-			Type:    qemu_tests.EventError,
-			Message: "missing required kernel cmdline params",
-			Error:   fmt.Sprintf("cluster_id=%s discovery=%s ca_crt_len=%d token=%s endpoint=%s", clusterID, discoveryAddr, len(caCrtB64), token, clusterEndpoint),
-		})
-		initlib.Poweroff()
+		return fmt.Errorf("missing required kernel cmdline params: cluster_id=%s discovery=%s ca_crt_len=%d token=%s endpoint=%s",
+			clusterID, discoveryAddr, len(caCrtB64), token, clusterEndpoint)
 	}
 
 	caCrtPEM, err := base64.StdEncoding.DecodeString(caCrtB64)
 	if err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "ca_crt base64 decode failed", Error: err.Error()})
-		initlib.Poweroff()
+		return fmt.Errorf("ca_crt base64 decode failed: %w", err)
 	}
 
 	kubespanlib.LoadModules()
@@ -68,11 +72,9 @@ func main() {
 	apidCmd.Stdout = logFile
 	apidCmd.Stderr = logFile
 	if err := apidCmd.Start(); err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "apid failed to start", Error: err.Error()})
-		initlib.Poweroff()
+		return fmt.Errorf("apid failed to start: %w", err)
 	}
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("apid started pid=%d", apidCmd.Process.Pid)})
 
-	// Idle forever — test observes via Talos API from outside.
-	select {}
+	return nil
 }

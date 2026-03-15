@@ -24,6 +24,26 @@ type KubespanPeerResult struct {
 	Endpoint string             `json:"endpoint"`
 }
 
+// MgmtNIC returns QEMU args for a user-mode management NIC with TCP port forwarding to port 50000.
+func MgmtNIC(hostPort int) []string {
+	return []string{
+		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", hostPort),
+		"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
+	}
+}
+
+// pollUntil calls fn every second until it returns true or the deadline passes.
+// Returns true if fn returned true, false on timeout.
+func pollUntil(deadline time.Time, fn func() bool) bool {
+	for time.Now().Before(deadline) {
+		if fn() {
+			return true
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return false
+}
+
 // BootTalosVM starts a Talos QEMU VM from a qcow2 disk image with CIDATA config.
 // Uses snapshot=on so QEMU creates a temporary overlay per VM, keeping the
 // base image read-only and allowing multiple VMs to share it.
@@ -44,10 +64,7 @@ func BootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int,
 	args = append(args, netArgs...)
 
 	if mgmtPort > 0 {
-		args = append(args,
-			"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", mgmtPort),
-			"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
-		)
+		args = append(args, MgmtNIC(mgmtPort)...)
 	}
 
 	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...), false)
@@ -98,43 +115,42 @@ func NewTalosClient(t *testing.T, configPath, endpoint string) *client.Client {
 // WaitForTalosAPI polls client.Version() until the Talos API responds.
 func WaitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	if !pollUntil(time.Now().Add(timeout), func() bool {
 		ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 5*time.Second)
 		resp, err := c.Version(ctx)
 		cancel()
-		if err == nil {
-			tag := ""
-			for _, msg := range resp.Messages {
-				if msg.Version != nil {
-					tag = msg.Version.Tag
-				}
-			}
-			t.Logf("talos API ready: %s", tag)
-			return
+		if err != nil {
+			t.Logf("waiting for talos API: %v", err)
+			return false
 		}
-		t.Logf("waiting for talos API: %v", err)
-		time.Sleep(1 * time.Second)
+		tag := ""
+		for _, msg := range resp.Messages {
+			if msg.Version != nil {
+				tag = msg.Version.Tag
+			}
+		}
+		t.Logf("talos API ready: %s", tag)
+		return true
+	}) {
+		t.Fatalf("talos API not reachable after %v", timeout)
 	}
-	t.Fatalf("talos API not reachable after %v", timeout)
 }
 
 // PollKubeSpanStatus polls the Talos COSI API for KubeSpan peer status.
 func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) ([]KubespanPeerResult, error) {
 	t.Helper()
 
-	deadline := time.Now().Add(timeout)
 	var lastErr string
+	var finalPeers []KubespanPeerResult
 
-	for time.Now().Before(deadline) {
+	pollUntil(time.Now().Add(timeout), func() bool {
 		ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 10*time.Second)
 		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, c.COSI)
 		cancel()
 		if err != nil {
 			lastErr = err.Error()
 			t.Logf("COSI poll (waiting): %s", lastErr)
-			time.Sleep(1 * time.Second)
-			continue
+			return false
 		}
 
 		var peers []KubespanPeerResult
@@ -154,13 +170,18 @@ func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 				allUp = false
 			}
 		}
+		finalPeers = peers
+		return allUp
+	})
 
-		if allUp {
-			return peers, nil
+	allUp := len(finalPeers) >= 2
+	for _, p := range finalPeers {
+		if p.State != kubespan.PeerStateUp {
+			allUp = false
 		}
-
-		time.Sleep(1 * time.Second)
 	}
-
+	if allUp {
+		return finalPeers, nil
+	}
 	return nil, fmt.Errorf("timeout after %v, last error: %s", timeout, lastErr)
 }
