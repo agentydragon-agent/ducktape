@@ -110,6 +110,7 @@ cluster/.claude/
 !/props/specimens/**/claude_linter_v2/hooks
 !x/claude_linter_v2/hooks
 !x/gitea/pr_gate/hooks
+!/devinfra/claude/claude_api/hooks
 
 **/.claude/settings.json
 **/.claude/skills

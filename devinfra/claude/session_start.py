@@ -35,8 +35,11 @@ from devinfra.claude import (
     tmpfs_setup,
 )
 from devinfra.claude.auth_proxy import setup as proxy_setup
-from devinfra.claude.claude_api.hook_output import SessionStartHookSpecificOutput, SessionStartOutput
-from devinfra.claude.claude_api.session_start_input import SessionStartHookInput
+from devinfra.claude.claude_api.hooks.session_start import (
+    SessionStartHookInput,
+    SessionStartHookSpecificOutput,
+    SessionStartOutput,
+)
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig

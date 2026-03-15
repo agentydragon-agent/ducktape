@@ -15,7 +15,10 @@ from devinfra.claude.k8s_secrets_setup import setup_k8s_secrets
 def _make_config(secrets: list[K8sSecretMapping]) -> HookConfig:
     return HookConfig(
         k8s=K8sConfig(
-            server="https://k8s.example.com", service_account="test-sa", sa_namespace="default", namespace="secrets-ns"
+            server="https://k8s.example.com",
+            service_account="test-sa",
+            service_account_namespace="default",
+            namespace="secrets-ns",
         ),
         k8s_secrets=K8sSecretsConfig(namespace="secrets-ns", secrets=secrets),
     )

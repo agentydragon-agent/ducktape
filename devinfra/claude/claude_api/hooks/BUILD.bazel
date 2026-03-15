@@ -1,0 +1,220 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "common",
+    srcs = ["common.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "session_start",
+    srcs = ["session_start.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "pre_tool_use",
+    srcs = ["pre_tool_use.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "post_tool_use",
+    srcs = ["post_tool_use.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "user_prompt_submit",
+    srcs = ["user_prompt_submit.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "notification",
+    srcs = ["notification.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "stop",
+    srcs = ["stop.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "subagent_start",
+    srcs = ["subagent_start.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "post_tool_use_failure",
+    srcs = ["post_tool_use_failure.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "permission_request",
+    srcs = ["permission_request.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "elicitation",
+    srcs = ["elicitation.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "config_change",
+    srcs = ["config_change.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "pre_compact",
+    srcs = ["pre_compact.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "post_compact",
+    srcs = ["post_compact.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":pre_compact",
+    ],
+)
+
+py_library(
+    name = "instructions_loaded",
+    srcs = ["instructions_loaded.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "worktree_create",
+    srcs = ["worktree_create.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "worktree_remove",
+    srcs = ["worktree_remove.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "session_end",
+    srcs = ["session_end.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "teammate_idle",
+    srcs = ["teammate_idle.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "task_completed",
+    srcs = ["task_completed.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [":common"],
+)
+
+py_library(
+    name = "dispatch_input",
+    srcs = ["dispatch_input.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config_change",
+        ":elicitation",
+        ":instructions_loaded",
+        ":notification",
+        ":permission_request",
+        ":post_compact",
+        ":post_tool_use",
+        ":post_tool_use_failure",
+        ":pre_compact",
+        ":pre_tool_use",
+        ":session_end",
+        ":session_start",
+        ":stop",
+        ":subagent_start",
+        ":task_completed",
+        ":teammate_idle",
+        ":user_prompt_submit",
+        ":worktree_create",
+        ":worktree_remove",
+        "@pypi//pydantic",
+    ],
+)

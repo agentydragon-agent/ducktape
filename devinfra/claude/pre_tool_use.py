@@ -4,7 +4,7 @@ Evaluates tool calls and returns allow/deny/ask decisions before Claude Code's
 normal permission system. Returns no output to fall through to normal flow.
 """
 
-from devinfra.claude.claude_api.pre_tool_use import (
+from devinfra.claude.claude_api.hooks.pre_tool_use import (
     PermissionDecision,
     PreToolUseDecision,
     PreToolUseInput,

@@ -254,7 +254,7 @@ py_library(
     srcs = ["pre_tool_use.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["//devinfra/claude/claude_api:pre_tool_use"],
+    deps = ["//devinfra/claude/claude_api/hooks:pre_tool_use"],
 )
 
 py_library(
@@ -262,7 +262,7 @@ py_library(
     srcs = ["post_tool_use.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-    deps = ["//devinfra/claude/claude_api:post_tool_use"],
+    deps = ["//devinfra/claude/claude_api/hooks:post_tool_use"],
 )
 
 py_library(
@@ -276,10 +276,10 @@ py_library(
         ":post_tool_use_lib",
         ":pre_tool_use_lib",
         ":session_start_lib",
-        "//devinfra/claude/claude_api:hook_dispatch_input",
-        "//devinfra/claude/claude_api:post_tool_use",
-        "//devinfra/claude/claude_api:pre_tool_use",
-        "//devinfra/claude/claude_api:session_start_input",
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "//devinfra/claude/claude_api/hooks:session_start",
         "@pypi//pydantic",
     ],
 )
@@ -323,8 +323,7 @@ py_library(
         ":tracing",
         "//devinfra:build_info",
         "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/claude_api:hook_output",
-        "//devinfra/claude/claude_api:session_start_input",
+        "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/supervisor:setup",
         "//util:env",
         "@pypi//mako",
@@ -378,8 +377,7 @@ py_test(
     deps = [
         ":conftest",
         ":post_tool_use_lib",
-        "//devinfra/claude/claude_api:post_tool_use",
-        "//devinfra/claude/claude_api:session_start_input",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -392,8 +390,7 @@ py_test(
     deps = [
         ":conftest",
         ":pre_tool_use_lib",
-        "//devinfra/claude/claude_api:pre_tool_use",
-        "//devinfra/claude/claude_api:session_start_input",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -417,7 +414,8 @@ py_test(
     imports = ["../.."],
     deps = [
         ":conftest",
-        "//devinfra/claude/claude_api:session_start_input",
+        "//devinfra/claude/claude_api/hooks:common",
+        "//devinfra/claude/claude_api/hooks:session_start",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

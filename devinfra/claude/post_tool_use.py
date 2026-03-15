@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from devinfra.claude.claude_api.post_tool_use import PostToolUseInput, PostToolUseOutput
+from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput, PostToolUseOutput
 
 logger = logging.getLogger(__name__)
 

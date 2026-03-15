@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.claude.claude_api.session_start_input import HookSource
+from devinfra.claude.claude_api.hooks.session_start import HookSource
 from devinfra.claude.testing import shell_helpers
 from devinfra.claude.testing.fixtures import MockEgressProxyFixture, collect_supervisor_logs
 from devinfra.claude.testing.session_start_helpers import IsolatedDirs, run_session_start_hook, setup_hook_env

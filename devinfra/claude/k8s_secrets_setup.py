@@ -16,7 +16,7 @@ import yaml
 from kubernetes import client as k8s_client
 from kubernetes.client import Configuration, CoreV1Api
 
-from devinfra.claude.hook_config import HookConfig
+from devinfra.claude.hook_config import HookConfig, K8sSecretRef
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,20 @@ class K8sSecretsResult:
     kubeconfig_path: Path | None = None
     buildbuddy_api_key: str | None = None
     otel_bearer_token: str | None = None
+
+
+def _read_secret_ref(api: CoreV1Api, ref: K8sSecretRef, namespace: str) -> str | None:
+    """Read a single key from a k8s Secret, returning the decoded value or None."""
+    try:
+        secret = api.read_namespaced_secret(ref.secret_name, namespace)
+        if secret.data and ref.data_key in secret.data:
+            value = base64.b64decode(secret.data[ref.data_key]).decode()
+            logger.info("Read %s/%s[%s]", namespace, ref.secret_name, ref.data_key)
+            return value
+        logger.warning("Key %r not found in secret %s/%s", ref.data_key, namespace, ref.secret_name)
+    except k8s_client.ApiException as e:
+        logger.warning("Failed to read secret %s/%s: %s", namespace, ref.secret_name, e.reason)
+    return None
 
 
 def _build_kubeconfig(token: str, server: str, service_account: str, namespace: str, ca_path: Path | None) -> dict:
@@ -104,31 +118,11 @@ def setup_k8s_secrets(
             result.env_vars[env_var] = value
             logger.info("Mapped %s/%s[%s] -> %s", secrets_cfg.namespace, entry.name, data_key, env_var)
 
-    # Fetch BuildBuddy API key (internal use only, not exported as env var)
+    # Fetch internal-use secrets (not exported as env vars)
     if secrets_cfg.buildbuddy_api_key:
-        ref = secrets_cfg.buildbuddy_api_key
-        try:
-            bb_secret = api.read_namespaced_secret(ref.secret_name, secrets_cfg.namespace)
-            if bb_secret.data and ref.data_key in bb_secret.data:
-                result.buildbuddy_api_key = base64.b64decode(bb_secret.data[ref.data_key]).decode()
-                logger.info(
-                    "BuildBuddy API key read from %s/%s[%s]", secrets_cfg.namespace, ref.secret_name, ref.data_key
-                )
-        except k8s_client.ApiException as e:
-            logger.warning("Failed to read BuildBuddy API key: %s", e.reason)
-
-    # Fetch OTEL bearer token (used internally, not exported as env var)
+        result.buildbuddy_api_key = _read_secret_ref(api, secrets_cfg.buildbuddy_api_key, secrets_cfg.namespace)
     if secrets_cfg.otel_bearer_token:
-        ref = secrets_cfg.otel_bearer_token
-        try:
-            otel_secret = api.read_namespaced_secret(ref.secret_name, secrets_cfg.namespace)
-            if otel_secret.data and ref.data_key in otel_secret.data:
-                result.otel_bearer_token = base64.b64decode(otel_secret.data[ref.data_key]).decode()
-                logger.info(
-                    "OTEL bearer token read from %s/%s[%s]", secrets_cfg.namespace, ref.secret_name, ref.data_key
-                )
-        except k8s_client.ApiException as e:
-            logger.warning("Failed to read OTEL bearer token: %s", e.reason)
+        result.otel_bearer_token = _read_secret_ref(api, secrets_cfg.otel_bearer_token, secrets_cfg.namespace)
 
     # Write kubeconfig
     kubeconfig = _build_kubeconfig(token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path)

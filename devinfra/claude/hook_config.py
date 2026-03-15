@@ -21,7 +21,11 @@ class OtelConfig(BaseModel):
     bearer_token: str | None = Field(default=None, description="Bearer token for the OTLP endpoint")
 
     def with_env_overrides(self) -> OtelConfig:
-        """Apply DUCKTAPE_CLAUDE_HOOKS_OTEL_* env var overrides."""
+        """Apply DUCKTAPE_CLAUDE_HOOKS_OTEL_* env var overrides.
+
+        TODO: Rationalize env var override pattern — consider using pydantic-settings
+        with a unified DUCKTAPE_CLAUDE_HOOKS_ prefix instead of ad-hoc os.environ.get().
+        """
         return OtelConfig(
             endpoint=os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_ENDPOINT", self.endpoint),
             bearer_token=os.environ.get("DUCKTAPE_CLAUDE_HOOKS_OTEL_AUTH_TOKEN", self.bearer_token),
@@ -64,10 +68,10 @@ class K8sSecretsConfig(BaseModel):
 class K8sConfig(BaseModel):
     """K8s cluster connection config."""
 
-    server: str
-    service_account: str
-    sa_namespace: str = "default"
-    namespace: str
+    server: str = Field(description="K8s API server URL")
+    service_account: str = Field(description="ServiceAccount name for kubeconfig user and context")
+    service_account_namespace: str = Field(default="default", description="Namespace of the ServiceAccount")
+    namespace: str = Field(description="Default namespace for kubectl operations")
 
 
 class HookConfig(BaseModel):

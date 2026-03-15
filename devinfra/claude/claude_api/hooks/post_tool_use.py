@@ -1,29 +1,18 @@
-"""Pydantic models for Claude Code PostToolUse hook input/output.
+"""Pydantic models for Claude Code PostToolUse hook.
 
-See https://docs.anthropic.com/en/docs/claude-code/hooks for the full API spec.
-Schema: https://json.schemastore.org/claude-code-settings.json
+See https://code.claude.com/docs/en/hooks for the full API spec.
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-from pydantic.alias_generators import to_camel
+from pydantic import Field, model_validator
 
-from devinfra.claude.claude_api.permission_mode import PermissionMode
-
-
-class _CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
-class PostToolUseInput(BaseModel):
-    session_id: str
-    transcript_path: Path
-    cwd: Path
-    permission_mode: PermissionMode
+class PostToolUseInput(HookInputBase):
     hook_event_name: Literal["PostToolUse"] = "PostToolUse"
     tool_name: str
     tool_input: dict[str, Any]
@@ -31,7 +20,7 @@ class PostToolUseInput(BaseModel):
     tool_response: str | None = None
 
 
-class PostToolUseOutput(_CamelModel):
+class PostToolUseOutput(CamelModel):
     """PostToolUse hook output per Claude Code API."""
 
     decision: Literal["block"] | None = Field(

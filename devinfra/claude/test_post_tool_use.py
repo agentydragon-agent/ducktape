@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.claude.claude_api.post_tool_use import PostToolUseInput, PostToolUseOutput
+from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput, PostToolUseOutput
 from devinfra.claude.post_tool_use import _find_git_root, evaluate
 
 _COMMON = {

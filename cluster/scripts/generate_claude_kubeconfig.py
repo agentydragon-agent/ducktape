@@ -36,7 +36,7 @@ def generate(root: Path) -> None:
     config.load_kube_config(kubeconfig_path)
 
     v1 = client.CoreV1Api()
-    secret = v1.read_namespaced_secret(SA_TOKEN_SECRET_NAME, hook_config.k8s.sa_namespace)
+    secret = v1.read_namespaced_secret(SA_TOKEN_SECRET_NAME, hook_config.k8s.service_account_namespace)
     # Secret data values are base64-encoded by the K8s API
     token = base64.b64decode(secret.data["token"]).decode()
 

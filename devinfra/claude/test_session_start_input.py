@@ -3,7 +3,8 @@
 import pytest
 import pytest_bazel
 
-from devinfra.claude.claude_api.session_start_input import PermissionMode, SessionStartHookInput
+from devinfra.claude.claude_api.hooks.common import PermissionMode
+from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 
 
 def test_missing_permission_mode_defaults_to_none() -> None:

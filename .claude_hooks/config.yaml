@@ -6,7 +6,7 @@ otel:
 k8s:
   server: https://api.allegedly.works:16443
   service_account: claude-code-web
-  sa_namespace: default
+  service_account_namespace: default
   namespace: claude-sandbox
 
 k8s_secrets:
