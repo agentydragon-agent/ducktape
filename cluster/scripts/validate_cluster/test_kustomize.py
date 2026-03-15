@@ -16,6 +16,8 @@ import pytest_bazel
 from cluster.scripts.validate_cluster.checks import CRD_TO_OPERATOR, OPERATOR_KUSTOMIZATIONS
 from cluster.scripts.validate_cluster.kustomize import KustomizeBuildResult
 
+pytest_plugins = ["cluster.scripts.validate_cluster.conftest"]
+
 
 def test_no_duplicate_external_secrets(kustomize_build_results: list[KustomizeBuildResult]) -> None:
     """Exactly one external-secrets HelmRelease must exist."""

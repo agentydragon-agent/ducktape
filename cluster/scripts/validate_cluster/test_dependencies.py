@@ -16,6 +16,8 @@ from cluster.scripts.validate_cluster.dependencies import (
 )
 from cluster.scripts.validate_cluster.flux import DependsOn, FluxKustomization
 
+pytest_plugins = ["cluster.scripts.validate_cluster.conftest"]
+
 
 class TestDependencyGraph:
     """Tests for dependency graph building and cycle detection."""

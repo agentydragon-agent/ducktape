@@ -10,6 +10,8 @@ import yaml
 from cluster.scripts.validate_cluster.flux import run_flux_build
 from cluster.scripts.validate_cluster.k8s import parse_k8s_resources
 
+pytest_plugins = ["cluster.scripts.validate_cluster.conftest"]
+
 
 def test_flux_build_succeeds(k8s_dir: Path) -> None:
     result = run_flux_build(k8s_dir)

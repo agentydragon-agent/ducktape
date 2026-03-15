@@ -10,6 +10,8 @@ from cluster.scripts.validate_cluster.cluster import ParsedCluster
 from cluster.scripts.validate_cluster.k8s import K8sResource
 from cluster.scripts.validate_cluster.kustomize import KustomizeFile
 
+pytest_plugins = ["cluster.scripts.validate_cluster.conftest"]
+
 _HEALTH_CHECK_REQUIRED_KINDS = ["HelmRelease", "Terraform"]
 
 
