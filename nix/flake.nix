@@ -32,7 +32,7 @@
     # CI-released artifacts — pinned to tagged releases, updated by release.yml.
     # URLs are rewritten by the update-downstream job after each release.
     kubespand-bin = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-15a18ab1/kubespand";
+      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/kubespand";
       flake = false;
     };
     ducktape-wheel = {

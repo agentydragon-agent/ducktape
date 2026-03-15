@@ -129,13 +129,13 @@
     "kubespand-bin": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-mr6og2Lcmylc3bAGDjIsRpqh+6hPzwolE9/uW1rOv40=",
+        "narHash": "sha256-AiAofqepIFDfw8C3Wt0rUbB2VchQT/qGWYxRbLzhAbo=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-15a18ab1/kubespand"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/kubespand"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-15a18ab1/kubespand"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/kubespand"
       }
     },
     "nix-colors": {
