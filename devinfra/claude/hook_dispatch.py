@@ -22,11 +22,13 @@ from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.hook_config import HookConfig
 from devinfra.claude.settings import HookSettings
-from util import env
 
 logger = logging.getLogger(__name__)
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
+
+# Claude Code stores per-session data at ~/.claude/session-env/<session_id>/
+_SESSION_ENV_BASE = Path.home() / ".claude" / "session-env"
 
 
 def main() -> None:
@@ -38,6 +40,8 @@ def main() -> None:
     if config and config.otel and config.otel.endpoint:
         otel.init_from_config(config.otel)
 
+    session_dir = _SESSION_ENV_BASE / parsed.session_id
+
     # TODO: Type output narrower than BaseModel (union of concrete output types).
     try:
         output: BaseModel
@@ -45,9 +49,7 @@ def main() -> None:
             case SessionStartHookInput():
                 from devinfra.claude.session_start import _async_handle
 
-                # CLAUDE_ENV_FILE is only provided for SessionStart hooks.
-                env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
-                settings = HookSettings(session_dir=env_file_path.parent)
+                settings = HookSettings(session_dir=session_dir)
                 output = asyncio.run(_async_handle(parsed, settings))
 
             case PreToolUseInput():

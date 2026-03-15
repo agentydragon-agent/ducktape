@@ -6,7 +6,6 @@ utilities used by both the main session_start tests and the podman integration t
 
 import asyncio
 import contextlib
-import json
 import os
 import signal
 import subprocess
@@ -21,13 +20,15 @@ from devinfra.claude import settings
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.claude_api.hooks.common import PermissionMode
-from devinfra.claude.claude_api.hooks.session_start import HookSource
+from devinfra.claude.claude_api.hooks.session_start import HookSource, SessionStartHookInput
 from devinfra.claude.testing import shell_helpers
 from devinfra.claude.testing.mock_egress_proxy import MockEgressProxy
 from devinfra.claude.tmpfs_setup import unmount_tmpfs_under
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
+
+TEST_SESSION_ID = "test-session-123"
 
 
 @dataclass
@@ -39,21 +40,27 @@ class IsolatedDirs:
     cache: Path
     config: Path
     runtime: Path
+    session_dir: Path
     env_file: Path
 
 
 @pytest.fixture
 def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
     """Create isolated directories for the test."""
+    home = tmp_path / "home"
+    # Mirror real Claude Code layout: ~/.claude/session-env/<session_id>/
+    session_dir = home / ".claude" / "session-env" / TEST_SESSION_ID
     dirs = IsolatedDirs(
-        home=tmp_path / "home",
+        home=home,
         project=tmp_path / "project",
         cache=tmp_path / "cache",
         config=tmp_path / "config",
         runtime=tmp_path / "runtime",
-        env_file=tmp_path / "env.sh",
+        session_dir=session_dir,
+        env_file=session_dir / "sessionstart-hook-0.sh",
     )
     dirs.home.mkdir()
+    dirs.session_dir.mkdir(parents=True)
     dirs.project.mkdir()
     dirs.cache.mkdir()
     dirs.config.mkdir()
@@ -125,17 +132,14 @@ def setup_hook_env(
 
 def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:
     """Create JSON input that Claude Code would send to the hook."""
-    return json.dumps(
-        {
-            "session_id": "test-session-123",
-            "cwd": str(project_dir),
-            "transcript_path": "/tmp/transcript.json",
-            "permission_mode": PermissionMode.DEFAULT,
-            "hook_event_name": "SessionStart",
-            "source": source,
-            "model": "claude-sonnet-4-6",
-        }
-    )
+    return SessionStartHookInput(
+        session_id=TEST_SESSION_ID,
+        cwd=project_dir,
+        transcript_path=Path("/tmp/transcript.json"),
+        permission_mode=PermissionMode.DEFAULT,
+        source=source,
+        model="claude-sonnet-4-6",
+    ).model_dump_json()
 
 
 def cleanup_supervisor(config_dir: Path) -> None:
@@ -224,6 +228,5 @@ async def run_session_start_hook(
 def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
     """Cleanup supervisor and tmpfs mounts after each test."""
     yield
-    session_dir = isolated_dirs.env_file.parent
-    unmount_tmpfs_under(session_dir)
-    cleanup_supervisor(session_dir)
+    unmount_tmpfs_under(isolated_dirs.session_dir)
+    cleanup_supervisor(isolated_dirs.session_dir)

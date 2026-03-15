@@ -3,7 +3,7 @@
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -24,9 +24,11 @@ class CamelModel(BaseModel):
 
 
 class HookInputBase(BaseModel):
-    """Common fields present in most hook inputs."""
+    """Common fields present in all hook inputs."""
 
     session_id: str
     transcript_path: Path
     cwd: Path
-    permission_mode: PermissionMode
+    permission_mode: PermissionMode | None = Field(
+        default=None, description="Not sent by Claude Code Web for some SessionStart events"
+    )

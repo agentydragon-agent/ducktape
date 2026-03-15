@@ -4,12 +4,11 @@ See https://code.claude.com/docs/en/hooks for the full API spec.
 """
 
 from enum import StrEnum
-from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, PermissionMode
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
 
 
 class HookSource(StrEnum):
@@ -21,16 +20,10 @@ class HookSource(StrEnum):
     COMPACT = "compact"
 
 
-class SessionStartHookInput(BaseModel):
+class SessionStartHookInput(HookInputBase):
     """Input for Claude Code SessionStart hooks (parsed from stdin JSON)."""
 
-    session_id: str
-    cwd: Path
-    transcript_path: Path
     model: str
-    permission_mode: PermissionMode | None = Field(
-        default=None, description="Not sent by Claude Code Web for SessionStart:resume events (observed 2025-01-18)."
-    )
     hook_event_name: Literal["SessionStart"] = "SessionStart"
     source: HookSource
     agent_type: str | None = Field(default=None, description="Present only when started with --agent")
