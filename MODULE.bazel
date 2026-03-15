@@ -191,7 +191,19 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "stable",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64")
+
+# Talos imager: builds reproducible Talos disk images from pinned boot assets.
+# Uses v1.13.0-alpha.2+ which supports unprivileged builds (no loop devices) and
+# deterministic output (SOURCE_DATE_EPOCH + DETERMINISTIC_SEED).
+# v1.12.x requires --privileged and produces non-reproducible images.
+oci.pull(
+    name = "talos_imager",
+    digest = "sha256:bc8bce35a1debae740a887be7a8a3e2907c243c29edca1d57b66720e96a73e24",
+    image = "ghcr.io/siderolabs/imager",
+    platforms = ["linux/amd64"],
+    tag = "v1.13.0-alpha.2",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
@@ -625,26 +637,19 @@ http_archive(
 
 # ─ Talos KubeSpan diagnostic test artifacts ───────────────────────────────────
 # Real Talos artifacts for verifying upstream KubeSpan through double NAT.
-# Version matches cluster (variables.tf talos_version).
-_TALOS_VERSION = "v1.12.3"
+# Uses v1.13.0-alpha.2 (same as talos_imager above) for unprivileged, reproducible
+# disk image generation. The test version need not match the cluster version — only
+# KubeSpan protocol compatibility matters.
+_TALOS_VERSION = "v1.13.0-alpha.2"
 
-# Default schematic ID (no extensions) for Image Factory.
-_TALOS_SCHEMATIC = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
-
-# TODO: Pin sha256 by mirroring to Harbor (registry.allegedly.works). Image Factory
-# regenerates images server-side (e.g. security patches), so the same URL can return
-# different bytes over time, breaking pinned checksums.
-http_file(
-    name = "talos_nocloud_amd64",
-    downloaded_file_path = "nocloud-amd64.raw.xz",
-    urls = ["https://factory.talos.dev/image/" + _TALOS_SCHEMATIC + "/" + _TALOS_VERSION + "/nocloud-amd64.raw.xz"],
-)
+# Nocloud disk image is built locally via the talos_imager container (see
+# cluster/kubespand/qemu_tests/talos/BUILD.bazel). No Image Factory download needed.
 
 http_file(
     name = "talosctl_amd64",
     downloaded_file_path = "talosctl",
     executable = True,
-    sha256 = "1b761b351964dcf764d3ec1a02ccd366428be22895a68dc641b6b4fa301589ed",
+    sha256 = "9299b3cb02befdf33f98a13f314ea08cafa1a1a21ac12f02858b22bb8fb832c5",
     urls = ["https://github.com/siderolabs/talos/releases/download/" + _TALOS_VERSION + "/talosctl-linux-amd64"],
 )
 

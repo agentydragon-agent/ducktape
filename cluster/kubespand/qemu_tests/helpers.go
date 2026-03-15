@@ -26,9 +26,10 @@ const (
 	KubespanInitramfs  = "cluster/kubespand/qemu_tests/vms/kubespan/initramfs.cpio.gz"
 	DoublenatInitramfs = "cluster/kubespand/qemu_tests/vms/doublenat/initramfs.cpio.gz"
 	NftInitramfs       = "cluster/kubespand/qemu_tests/nft/initramfs.cpio.gz"
-	// Talos artifacts from external repos — no _main/ prefix in Rlocation.
-	TalosNocloudImagePath = "talos_nocloud_amd64/file/nocloud-amd64.raw.xz"
-	TalosctlPath          = "talosctl_amd64/file/talosctl"
+	// Talos nocloud image built by genrule — under _main/ prefix.
+	TalosNocloudImagePath = "cluster/kubespand/qemu_tests/talos/nocloud-amd64.raw.zst"
+	// talosctl from external repo — no _main/ prefix in Rlocation.
+	TalosctlPath = "talosctl_amd64/file/talosctl"
 
 	// Pre-generated Talos configs (committed as testdata).
 	TalosVPSConfig  = "cluster/kubespand/qemu_tests/talos/testdata/vps/controlplane.yaml"

@@ -3,6 +3,7 @@ package talos_test
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,10 +12,11 @@ import (
 	"time"
 
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
+	"github.com/klauspost/compress/zstd"
 )
 
 func TestTalosKubeSpanDoubleNAT(t *testing.T) {
-	talosImageXZ := h.RunfilePath(t, h.TalosNocloudImagePath)
+	talosImageZst := h.RunfilePath(t, h.TalosNocloudImagePath)
 	alpineVmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	alpineInitramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	alpineInitramfsRouter := h.RunfilePath(t, h.RouterInitramfs)
@@ -22,20 +24,9 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
 
-	// Decompress Talos nocloud raw disk image.
+	// Decompress Talos nocloud raw disk image (zstd-compressed).
 	talosBaseImage := filepath.Join(tmpDir, "nocloud-amd64.raw")
-	xzCmd := exec.Command("xz", "-dk", "--stdout", talosImageXZ)
-	baseFile, err := os.Create(talosBaseImage)
-	if err != nil {
-		t.Fatalf("create base image: %v", err)
-	}
-	xzCmd.Stdout = baseFile
-	xzCmd.Stderr = os.Stderr
-	if err := xzCmd.Run(); err != nil {
-		baseFile.Close()
-		t.Fatalf("decompress talos image: %v", err)
-	}
-	baseFile.Close()
+	decompressZstd(t, talosImageZst, talosBaseImage)
 	t.Logf("decompressed talos base image: %s", talosBaseImage)
 
 	// Load pre-generated Talos machine configs (committed as testdata).
@@ -325,4 +316,29 @@ func parsePeerStatuses(output string) []kubespanPeerResult {
 		})
 	}
 	return peers
+}
+
+func decompressZstd(t *testing.T, src, dst string) {
+	t.Helper()
+	in, err := os.Open(src)
+	if err != nil {
+		t.Fatalf("open zstd source: %v", err)
+	}
+	defer in.Close()
+
+	dec, err := zstd.NewReader(in)
+	if err != nil {
+		t.Fatalf("create zstd decoder: %v", err)
+	}
+	defer dec.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		t.Fatalf("create output file: %v", err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, dec); err != nil {
+		t.Fatalf("decompress zstd: %v", err)
+	}
 }
