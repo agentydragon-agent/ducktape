@@ -71,12 +71,6 @@ py_library(
 )
 
 py_library(
-    name = "checks",
-    srcs = ["checks.py"],
-    imports = ["../../.."],
-)
-
-py_library(
     name = "dependencies",
     srcs = ["dependencies.py"],
     imports = ["../../.."],
@@ -267,7 +261,6 @@ py_test(
     ],
     imports = ["../../.."],
     deps = [
-        ":checks",
         ":conftest",
         ":k8s",
         ":kustomize",

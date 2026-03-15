@@ -19,7 +19,7 @@ class _DependencyRule:
 
 _DEPENDENCY_RULES: list[_DependencyRule] = [
     # external-secrets-config ordering is enforced dynamically by validate_external_secrets_dependencies().
-    # vault → external-secrets ordering is enforced by CRD layering checks in checks.py.
+    # vault → external-secrets ordering is enforced by CRD layering checks in test_kustomize.py.
     _DependencyRule(
         prerequisite="cert-manager",
         must_come_before=["gateway", "authentik", "gitea", "harbor"],
