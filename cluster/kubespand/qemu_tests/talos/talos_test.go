@@ -91,21 +91,21 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	waitForTalosAPI(t, talosClient, nodeIP, 120*time.Second)
 	// Observed: KubeSpan nftables rules applied ~35s after VM start.
 	// Peer discovery depends on discovery service + WireGuard handshake.
-	result := pollKubeSpanStatus(t, talosClient, nodeIP, 120*time.Second)
+	peers, err := pollKubeSpanStatus(t, talosClient, nodeIP, 120*time.Second)
 
-	statusJSON, _ := json.MarshalIndent(result, "", "  ")
+	statusJSON, _ := json.MarshalIndent(peers, "", "  ")
 	h.SaveArtifact(t, out, "kubespan-status.json", string(statusJSON))
 
-	if !result.success {
-		t.Errorf("KubeSpan peer discovery failed: %s", result.failReason)
+	if err != nil {
+		t.Errorf("KubeSpan peer discovery failed: %v", err)
 	}
-	for _, peer := range result.peers {
+	for _, peer := range peers {
 		if peer.State != kubespan.PeerStateUp {
 			t.Errorf("peer %s state=%s (want up), endpoint=%s", peer.Label, peer.State, peer.Endpoint)
 		}
 	}
-	if len(result.peers) < 2 {
-		t.Errorf("expected 2 KubeSpan peers, got %d", len(result.peers))
+	if len(peers) < 2 {
+		t.Errorf("expected 2 KubeSpan peers, got %d", len(peers))
 	}
 }
 
@@ -199,20 +199,6 @@ type kubespanPeerResult struct {
 	Endpoint string             `json:"endpoint"`
 }
 
-type kubespanResult struct {
-	success    bool
-	failReason string
-	peers      []kubespanPeerResult
-}
-
-func (r kubespanResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		Success    bool                 `json:"success"`
-		FailReason string               `json:"fail_reason,omitempty"`
-		Peers      []kubespanPeerResult `json:"peers"`
-	}{r.success, r.failReason, r.peers})
-}
-
 // waitForTalosAPI polls client.Version() until the Talos API responds.
 func waitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) {
 	t.Helper()
@@ -237,7 +223,7 @@ func waitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time
 	t.Fatalf("talos API not reachable after %v", timeout)
 }
 
-func pollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) kubespanResult {
+func pollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) ([]kubespanPeerResult, error) {
 	t.Helper()
 
 	deadline := time.Now().Add(timeout)
@@ -273,19 +259,13 @@ func pollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 		}
 
 		if allUp {
-			return kubespanResult{
-				success: true,
-				peers:   peers,
-			}
+			return peers, nil
 		}
 
 		time.Sleep(10 * time.Second)
 	}
 
-	return kubespanResult{
-		success:    false,
-		failReason: fmt.Sprintf("timeout after %v, last error: %s", timeout, lastErr),
-	}
+	return nil, fmt.Errorf("timeout after %v, last error: %s", timeout, lastErr)
 }
 
 func decompressZstd(t *testing.T, src, dst string) {
