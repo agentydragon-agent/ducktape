@@ -1,0 +1,109 @@
+"""Interface library for running pre-commit hooks programmatically.
+
+Wraps pre-commit's Python internals to provide structured per-hook results
+without subprocess calls or stdout parsing. All pre-commit imports are
+confined to this module.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from pre_commit.all_languages import languages
+from pre_commit.clientlib import load_config
+from pre_commit.commands.run import Classifier
+from pre_commit.constants import CONFIG_FILE
+from pre_commit.repository import all_hooks, install_hook_envs
+from pre_commit.store import Store
+
+logger = logging.getLogger(__name__)
+
+_MAX_OUTPUT_CHARS = 500
+
+
+@dataclass
+class HookResult:
+    hook_id: str
+    hook_name: str
+    passed: bool
+    output: str
+    files_modified: bool
+
+
+@dataclass
+class RunResult:
+    failed_hooks: list[HookResult] = field(default_factory=list)
+    modified_content: bytes = b""
+    original_content: bytes = b""
+
+
+def run_on_file(file_path: Path, project_dir: Path) -> RunResult | None:
+    """Run pre-commit hooks on a single file using the Python API.
+
+    Returns None if no config exists, no hooks apply, or all hooks pass.
+    Always restores the original file content after running.
+    """
+    config_path = project_dir / CONFIG_FILE
+    if not config_path.exists():
+        return None
+
+    original_content = file_path.read_bytes()
+    saved_cwd = Path.cwd()
+    try:
+        # pre-commit's internals assume cwd is the project root:
+        # Classifier uses relative paths and hooks inherit process cwd
+        # via subprocess.Popen (no cwd= parameter).
+        os.chdir(project_dir)
+        store = Store()
+        config = load_config(str(config_path))
+        hooks = [h for h in all_hooks(config, store) if not h.stages or "pre-commit" in h.stages]
+        if not hooks:
+            return None
+
+        install_hook_envs(hooks, store)
+
+        rel_path = str(file_path.relative_to(project_dir))
+        classifier = Classifier([rel_path])
+        hook_results: list[HookResult] = []
+
+        for hook in hooks:
+            filenames = tuple(classifier.filenames_for_hook(hook))
+            if not filenames and not hook.always_run:
+                continue
+
+            language = languages[hook.language]
+            with language.in_env(hook.prefix, hook.language_version):
+                retcode, out = language.run_hook(
+                    hook.prefix,
+                    hook.entry,
+                    hook.args,
+                    filenames if hook.pass_filenames else (),
+                    is_local=hook.src == "local",
+                    require_serial=hook.require_serial,
+                    color=False,
+                )
+
+            modified = file_path.read_bytes() != original_content
+            hook_results.append(
+                HookResult(
+                    hook_id=hook.id,
+                    hook_name=hook.name,
+                    passed=retcode == 0 and not modified,
+                    output=out.decode(errors="replace").strip()[:_MAX_OUTPUT_CHARS],
+                    files_modified=modified,
+                )
+            )
+
+        modified_content = file_path.read_bytes()
+    finally:
+        os.chdir(saved_cwd)
+        file_path.write_bytes(original_content)
+
+    failed = [r for r in hook_results if not r.passed]
+    if not failed:
+        return None
+
+    return RunResult(failed_hooks=failed, modified_content=modified_content, original_content=original_content)
