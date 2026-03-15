@@ -12,6 +12,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/version"
 	"go.uber.org/zap"
 
@@ -171,7 +172,7 @@ func run(configPath string, logger *zap.Logger) error {
 	logger.Info("starting COSI runtime")
 
 	// Start the API server (COSI state on Unix socket).
-	apiServer := api.NewServer(st, cfg.Api.SocketPath, logger)
+	apiServer := api.NewServer(st, constants.MachineSocketPath, logger)
 	apiErrCh := make(chan error, 1)
 	go func() {
 		apiErrCh <- apiServer.Run(ctx)

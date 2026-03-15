@@ -67,8 +67,6 @@ func ConfigureNetwork(linkIP, linkMask string) {
 func StartKubespand(cfg KubespandConfig) *exec.Cmd {
 	os.MkdirAll("/var/lib/kubespan", 0o755)
 	os.MkdirAll("/etc/kubespan", 0o755)
-	// Create socket directory for kubespand's COSI API server.
-	os.MkdirAll("/system/run/machined", 0o700)
 
 	listenPort := cfg.ListenPort
 	if listenPort == 0 {

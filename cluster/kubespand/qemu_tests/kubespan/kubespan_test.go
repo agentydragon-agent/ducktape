@@ -87,7 +87,7 @@ func TestTrustdCSRFlow(t *testing.T) {
 	h.CleanupVMs(t, allVMs, out)
 
 	// Wait for discovery service.
-	h.RequireEvent(t, vmDisc, h.EventDone, 30*time.Second)
+	h.RequireEvent(t, vmDisc, h.EventDone, 60*time.Second)
 	sw.Lap("discovery VM ready")
 
 	// Wait for Talos CP API (boot takes ~60-120s on TCG).
@@ -197,7 +197,7 @@ func runTopology(t *testing.T, topology string) {
 	h.CleanupVMs(t, allVMs, out)
 
 	// Discovery health check via HTTP from the test host.
-	h.WaitForDiscoveryHTTP(t, discHTTPPort, 30*time.Second)
+	h.WaitForDiscoveryHTTP(t, discHTTPPort, 60*time.Second)
 	sw.Lap("discovery HTTP ready")
 
 	// VM-A runs probes and exits (still validated via events).

@@ -37,11 +37,8 @@ type AgentConfig struct {
 	Api        ApiConfig        `yaml:"api"`
 }
 
-// ApiConfig holds COSI state API server and TLS certificate settings.
+// ApiConfig holds TLS certificate settings for the Talos API integration.
 type ApiConfig struct {
-	// SocketPath is the Unix socket path for the COSI state gRPC server.
-	// Default: /system/run/machined/machine.sock (same as Talos machined)
-	SocketPath string `yaml:"socket_path"`
 	// CACrt is the PEM-encoded Talos CA certificate (from machine.ca.crt).
 	// When set with Token, enables the Talos trustd CSR flow to obtain
 	// API certificates for apid mTLS on port 50000.
@@ -142,9 +139,6 @@ func Load(path string) (*AgentConfig, error) {
 		KubePrism: KubePrismConfig{
 			Host: "127.0.0.1",
 			Port: constants.DefaultKubePrismPort,
-		},
-		Api: ApiConfig{
-			SocketPath: constants.MachineSocketPath,
 		},
 	}
 

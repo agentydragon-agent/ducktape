@@ -197,7 +197,7 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 				host := u.Hostname()
 				if addr, addrErr := netip.ParseAddr(host); addrErr == nil {
 					if err := safe.WriterModify(ctx, r,
-						k8s.NewEndpoint(k8s.ControlPlaneNamespaceName, "controlplane"),
+						k8s.NewEndpoint(k8s.ControlPlaneNamespaceName, k8s.ControlPlaneKubernetesEndpointsID),
 						func(res *k8s.Endpoint) error {
 							res.TypedSpec().Addresses = []netip.Addr{addr}
 							return nil
@@ -212,8 +212,8 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 		// 8. network.Status — readiness gate for APIController.
 		// Set always-ready because NodeMetadataController doesn't dynamically track
 		// host network state (it only re-runs when kubespan.Identity or agentconfig
-		// change). On a laptop that loses connectivity, addresses go stale anyway —
-		// proper support would require a network watcher triggering re-reconciliation.
+		// change). On a laptop that loses connectivity, addresses go stale anyway.
+		// TODO: add a network watcher that triggers re-reconciliation on address changes.
 		if err := safe.WriterModify(ctx, r,
 			network.NewStatus(network.NamespaceName, network.StatusID),
 			func(res *network.Status) error {

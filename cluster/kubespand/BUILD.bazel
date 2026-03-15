@@ -22,6 +22,7 @@ go_library(
         "@com_github_siderolabs_talos//internal/app/machined/pkg/controllers/kubespan",
         "@com_github_siderolabs_talos//internal/app/machined/pkg/controllers/network",
         "@com_github_siderolabs_talos//internal/app/machined/pkg/controllers/secrets",
+        "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_siderolabs_talos_pkg_machinery//version",
         "@org_uber_go_zap//:zap",
     ],
