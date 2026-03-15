@@ -10,14 +10,13 @@ from devinfra.claude.claude_api.hooks.pre_tool_use import (
     PreToolUseInput,
     PreToolUseOutput,
 )
-from devinfra.claude.settings import HookSettings
 
 # --- Config ---
 
 ALWAYS_ALLOW_COMMANDS: set[str] = {"echo hello world"}
 
 
-def evaluate(hook_input: PreToolUseInput, settings: HookSettings) -> PreToolUseOutput:
+def evaluate(hook_input: PreToolUseInput) -> PreToolUseOutput:
     """Evaluate a tool call against permission policies."""
     if hook_input.tool_name == "Bash":
         command = hook_input.tool_input.get("command", "")

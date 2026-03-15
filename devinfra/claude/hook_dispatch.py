@@ -38,9 +38,6 @@ def main() -> None:
     if config and config.otel and config.otel.endpoint:
         otel.init_from_config(config.otel)
 
-    env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
-    settings = HookSettings(session_dir=env_file_path.parent)
-
     # TODO: Type output narrower than BaseModel (union of concrete output types).
     try:
         output: BaseModel
@@ -48,17 +45,20 @@ def main() -> None:
             case SessionStartHookInput():
                 from devinfra.claude.session_start import _async_handle
 
+                # CLAUDE_ENV_FILE is only provided for SessionStart hooks.
+                env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
+                settings = HookSettings(session_dir=env_file_path.parent)
                 output = asyncio.run(_async_handle(parsed, settings))
 
             case PreToolUseInput():
                 from devinfra.claude.pre_tool_use import evaluate as evaluate_pre
 
-                output = evaluate_pre(parsed, settings)
+                output = evaluate_pre(parsed)
 
             case PostToolUseInput():
                 from devinfra.claude.post_tool_use import evaluate as evaluate_post
 
-                output = evaluate_post(parsed, settings)
+                output = evaluate_post(parsed)
 
             case _:
                 logger.debug("Unhandled hook event: %s", parsed.hook_event_name)

@@ -16,7 +16,6 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.settings import HookSettings
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +55,7 @@ def _run_precommit(file_path: Path, project_dir: Path) -> bool:
     return file_path.read_bytes() != original_content
 
 
-def evaluate(hook_input: PostToolUseInput, settings: HookSettings) -> PostToolUseOutput:
+def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
     if hook_input.tool_name not in FILE_MODIFYING_TOOLS:
         return PostToolUseOutput()
 
