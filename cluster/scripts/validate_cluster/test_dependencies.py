@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from cluster.scripts.validate_cluster.cluster import ParsedCluster
 from cluster.scripts.validate_cluster.dependencies import (
     build_dependency_graph,
     check_required_dependencies,
     find_cycles,
+    validate_dependencies,
 )
 from cluster.scripts.validate_cluster.flux import DependsOn, FluxKustomization
 
@@ -94,6 +96,11 @@ class TestRequiredDependencies:
         }
         with pytest.raises(ValueError, match="unknown kustomization: cert-manager"):
             check_required_dependencies(kustomizations)
+
+
+def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    errors = validate_dependencies(cluster, k8s_dir)
+    assert not errors, "\n".join(errors)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Live test: flux kustomizations deploying HelmReleases/Terraform have healthChecks."""
+"""Test: flux kustomizations deploying HelmReleases/Terraform have healthChecks."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ import pytest_bazel
 from cluster.scripts.validate_cluster.cluster import ParsedCluster
 from cluster.scripts.validate_cluster.k8s import K8sResource
 from cluster.scripts.validate_cluster.kustomize import KustomizeFile
-
-pytest_plugins = ["cluster.scripts.validate_cluster.live_conftest"]
 
 _HEALTH_CHECK_REQUIRED_KINDS = ["HelmRelease", "Terraform"]
 

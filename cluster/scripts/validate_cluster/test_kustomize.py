@@ -1,4 +1,4 @@
-"""Live tests that require kustomize build output.
+"""Tests that require kustomize build output.
 
 All kustomize-dependent checks are combined in one test target so the
 genrule runs once. Individual checks are separate test functions for
@@ -16,8 +16,6 @@ import pytest_bazel
 from cluster.scripts.validate_cluster.checks import CRD_TO_OPERATOR, OPERATOR_KUSTOMIZATIONS
 from cluster.scripts.validate_cluster.kustomize import KustomizeBuildResult
 
-pytest_plugins = ["cluster.scripts.validate_cluster.live_conftest"]
-
 
 def test_no_duplicate_external_secrets(kustomize_build_results: list[KustomizeBuildResult]) -> None:
     """Exactly one external-secrets HelmRelease must exist."""
@@ -32,8 +30,7 @@ def test_no_duplicate_external_secrets(kustomize_build_results: list[KustomizeBu
         deployments,
         too_short=ValueError("No external-secrets HelmRelease found"),
         too_long=ValueError(
-            f"Multiple external-secrets HelmRelease found: "
-            + ", ".join(f"{k}: {v}" for k, v in deployments.items())
+            "Multiple external-secrets HelmRelease found: " + ", ".join(f"{k}: {v}" for k, v in deployments.items())
         ),
     )
 

@@ -1,4 +1,4 @@
-"""Shared fixtures for live cluster validation tests.
+"""Shared fixtures for cluster validation tests.
 
 Pure-analysis tests resolve cluster/k8s/ from runfiles (data deps).
 Kustomize-dependent tests load pre-built results from a JSON file (genrule output).

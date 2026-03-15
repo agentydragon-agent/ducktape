@@ -5,15 +5,15 @@
 #   validate_sealed_secrets — sealed secret decryption (separate, needs terraform state)
 #   kustomize_build_all — serialize kustomize build output to JSON
 #
-# Live tests (test_live_*):
-#   Individual cluster validation checks as Bazel test targets.
+# Integration tests (test_*):
+#   Validate real cluster/k8s/ config as Bazel test targets.
 #   Pure-analysis checks use //cluster/k8s:all_yaml as data deps.
 #   Kustomize-dependent checks consume a genrule that builds all kustomizations.
 #
 # Binaries (kustomize, flux, kubeseal, helm, tofu) are managed via rules_multitool.
 #
 # Usage:
-#   bazel test //cluster/scripts/validate_cluster:test_live_orphaned_files
+#   bazel test //cluster/scripts/validate_cluster:test_orphaned_files
 #   bazel test //cluster/scripts/validate_cluster/...
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
@@ -210,18 +210,6 @@ py_test(
 )
 
 py_test(
-    name = "test_dependencies",
-    srcs = ["test_dependencies.py"],
-    imports = ["../../.."],
-    deps = [
-        ":dependencies",
-        ":flux",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_check_runner",
     srcs = ["test_check_runner.py"],
     imports = ["../../.."],
@@ -234,16 +222,16 @@ py_test(
 )
 
 # ============================================================================
-# Live tests — validate real cluster/k8s/ config
+# Integration tests — validate real cluster/k8s/ config
 #
 # Pure-analysis tests use //cluster/k8s:all_yaml as data deps (sandboxed).
 # Kustomize-dependent tests consume :kustomize_build_results genrule output.
 # ============================================================================
 
-# Shared fixtures for live tests
+# Shared fixtures for integration tests
 py_library(
-    name = "live_conftest",
-    srcs = ["live_conftest.py"],
+    name = "conftest",
+    srcs = ["conftest.py"],
     imports = ["../../.."],
     deps = [
         ":cluster",
@@ -254,25 +242,23 @@ py_library(
 )
 
 py_test(
-    name = "test_live_orphaned_files",
-    srcs = ["test_live_orphaned_files.py"],
+    name = "test_orphaned_files",
+    srcs = ["test_orphaned_files.py"],
     data = ["//cluster/k8s:all_yaml"],
     imports = ["../../.."],
-
     deps = [
         ":cluster",
-        ":live_conftest",
+        ":conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
-    name = "test_live_blueprint_completeness",
-    srcs = ["test_live_blueprint_completeness.py"],
+    name = "test_blueprint_completeness",
+    srcs = ["test_blueprint_completeness.py"],
     data = ["//cluster/k8s:all_yaml"],
     imports = ["../../.."],
-
     deps = [
         "//util/bazel:runfiles",
         "@pypi//pytest",
@@ -282,48 +268,47 @@ py_test(
 )
 
 py_test(
-    name = "test_live_dependencies",
-    srcs = ["test_live_dependencies.py"],
+    name = "test_dependencies",
+    srcs = ["test_dependencies.py"],
     data = ["//cluster/k8s:all_yaml"],
     imports = ["../../.."],
-
-    deps = [
-        ":dependencies",
-        ":live_conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_live_controller_health_checks",
-    srcs = ["test_live_controller_health_checks.py"],
-    data = ["//cluster/k8s:all_yaml"],
-    imports = ["../../.."],
-
     deps = [
         ":cluster",
-        ":k8s",
-        ":kustomize",
-        ":live_conftest",
+        ":conftest",
+        ":dependencies",
+        ":flux",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
 
 py_test(
-    name = "test_live_kustomize",
-    srcs = ["test_live_kustomize.py"],
+    name = "test_controller_health_checks",
+    srcs = ["test_controller_health_checks.py"],
+    data = ["//cluster/k8s:all_yaml"],
+    imports = ["../../.."],
+    deps = [
+        ":cluster",
+        ":conftest",
+        ":k8s",
+        ":kustomize",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_kustomize",
+    srcs = ["test_kustomize.py"],
     data = [
         ":kustomize_build_results",
         "//cluster/k8s:all_yaml",
     ],
     imports = ["../../.."],
-
     deps = [
         ":checks",
+        ":conftest",
         ":kustomize",
-        ":live_conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -331,18 +316,17 @@ py_test(
 )
 
 py_test(
-    name = "test_live_flux_build",
-    srcs = ["test_live_flux_build.py"],
+    name = "test_flux_build",
+    srcs = ["test_flux_build.py"],
     data = [
         "//cluster/k8s:all_yaml",
         "@multitool//tools/flux",
     ],
     imports = ["../../.."],
-
     deps = [
+        ":conftest",
         ":flux",
         ":k8s",
-        ":live_conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
@@ -350,8 +334,8 @@ py_test(
 )
 
 py_test(
-    name = "test_live_helm_templates",
-    srcs = ["test_live_helm_templates.py"],
+    name = "test_helm_templates",
+    srcs = ["test_helm_templates.py"],
     data = [
         "//cluster/terraform/bootstrap/infrastructure:cilium-values.yaml",
         "@multitool//tools/helm",

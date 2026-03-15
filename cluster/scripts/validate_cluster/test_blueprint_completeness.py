@@ -1,4 +1,4 @@
-"""Live test: all authentik blueprint YAML files listed in configMapGenerator."""
+"""Test: all authentik blueprint YAML files listed in configMapGenerator."""
 
 from __future__ import annotations
 

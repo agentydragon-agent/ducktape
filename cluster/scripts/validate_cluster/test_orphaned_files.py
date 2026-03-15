@@ -1,4 +1,4 @@
-"""Live test: no orphaned YAML files (every file referenced by a kustomization)."""
+"""Test: no orphaned YAML files (every file referenced by a kustomization)."""
 
 from __future__ import annotations
 
@@ -7,8 +7,6 @@ from pathlib import Path
 import pytest_bazel
 
 from cluster.scripts.validate_cluster.cluster import ParsedCluster
-
-pytest_plugins = ["cluster.scripts.validate_cluster.live_conftest"]
 
 
 def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:
