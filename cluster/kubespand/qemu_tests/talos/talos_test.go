@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/cosi-project/runtime/pkg/safe"
-	"github.com/klauspost/compress/zstd"
 	"github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
@@ -23,7 +21,7 @@ import (
 func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 	sw := h.NewStopwatch(t)
 
-	talosImageZst := h.RunfilePath(t, h.TalosNocloudImagePath)
+	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
 	alpineVmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	alpineInitramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	alpineInitramfsRouter := h.RunfilePath(t, h.RouterInitramfs)
@@ -31,10 +29,6 @@ func TestTalosKubeSpanDoubleNAT(t *testing.T) {
 
 	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
-
-	talosBaseImage := filepath.Join(tmpDir, "nocloud-amd64.raw")
-	decompressZstd(t, talosImageZst, talosBaseImage)
-	sw.Lap("decompress talos image")
 
 	vpsConfig := readRunfile(t, h.TalosVPSConfig)
 	nat1Config := readRunfile(t, h.TalosNAT1Config)
@@ -145,14 +139,14 @@ func createCIDATA(t *testing.T, tmpDir, name string, machineConfig []byte) strin
 	return imgPath
 }
 
-// bootTalosVM starts a Talos QEMU VM from a raw disk image with CIDATA config.
-// Uses snapshot=on so QEMU creates a temporary overlay per VM, avoiding full
-// copies of the ~4.5 GB base image.
+// bootTalosVM starts a Talos QEMU VM from a qcow2 disk image with CIDATA config.
+// Uses snapshot=on so QEMU creates a temporary overlay per VM, keeping the
+// base image read-only and allowing multiple VMs to share it.
 func bootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int, netArgs []string) *h.VM {
 	t.Helper()
 
 	args := []string{
-		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw,snapshot=on", baseImage),
+		"-drive", fmt.Sprintf("file=%s,if=virtio,format=qcow2,snapshot=on", baseImage),
 		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw,readonly=on", cidataPath),
 		"-nographic",
 		"-m", "1536",
@@ -267,29 +261,4 @@ func pollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 	}
 
 	return nil, fmt.Errorf("timeout after %v, last error: %s", timeout, lastErr)
-}
-
-func decompressZstd(t *testing.T, src, dst string) {
-	t.Helper()
-	in, err := os.Open(src)
-	if err != nil {
-		t.Fatalf("open zstd source: %v", err)
-	}
-	defer in.Close()
-
-	dec, err := zstd.NewReader(in)
-	if err != nil {
-		t.Fatalf("create zstd decoder: %v", err)
-	}
-	defer dec.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		t.Fatalf("create output file: %v", err)
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, dec); err != nil {
-		t.Fatalf("decompress zstd: %v", err)
-	}
 }

@@ -2,7 +2,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_load")
 
 # ─ Talos nocloud disk image (built from pinned imager container) ─────────────
-# Produces a reproducible Talos nocloud raw disk image via the official imager.
+# Produces a reproducible Talos nocloud qcow2 disk image via the official imager.
 # The imager container is pinned by OCI digest in MODULE.bazel, and
 # SOURCE_DATE_EPOCH + DETERMINISTIC_SEED ensure identical output across builds.
 
@@ -20,27 +20,30 @@ filegroup(
 
 genrule(
     name = "talos_nocloud_image",
-    srcs = [":talos_imager_tarball"],
-    outs = ["nocloud-amd64.raw.zst"],
+    srcs = [
+        ":talos_imager_tarball",
+        "imager-profile.yaml",
+    ],
+    outs = ["nocloud-amd64.qcow2"],
     cmd = " && ".join([
         # Load the pinned imager image into Docker.
         "docker load -i $(location :talos_imager_tarball) >&2",
-        # Build a reproducible nocloud disk image.
+        # Build a reproducible Talos nocloud disk image in qcow2 format.
         # SOURCE_DATE_EPOCH + DETERMINISTIC_SEED ensure byte-identical output.
-        # Output goes to /tmp (scratch disk) to avoid filling the workspace disk
-        # — the imager creates a 4.5 GB intermediate raw image before compressing.
-        "mkdir -p /tmp/talos_out",
+        # qcow2 stores only non-zero blocks: ~200 MB vs 4.2 GB raw, eliminating
+        # the ~47s zstd decompression step the test previously needed.
+        "TALOS_OUT=$$(mktemp -d)",
         " ".join([
             "docker run --rm",
             "-e SOURCE_DATE_EPOCH=1700000000",
             "-e DETERMINISTIC_SEED=1",
-            "-v /tmp/talos_out:/out",
-            "siderolabs/imager:build",
-            "nocloud --arch amd64",
+            "-v $$TALOS_OUT:/out",
+            "-i siderolabs/imager:build",
+            "- < $(location imager-profile.yaml)",
             ">&2",
         ]),
-        "mv /tmp/talos_out/nocloud-amd64.raw.zst $@",
-        "rm -rf /tmp/talos_out",
+        "mv $$TALOS_OUT/nocloud-amd64.qcow2 $@",
+        "rm -rf $$TALOS_OUT",
     ]),
     tags = ["requires-docker"],
 )
@@ -59,7 +62,6 @@ go_test(
     deps = [
         "//cluster/kubespand/qemu_tests",
         "@com_github_cosi_project_runtime//pkg/safe",
-        "@com_github_klauspost_compress//zstd",
         "@com_github_siderolabs_talos_pkg_machinery//client",
         "@com_github_siderolabs_talos_pkg_machinery//client/config",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
