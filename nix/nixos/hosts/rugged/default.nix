@@ -111,9 +111,10 @@
 
   # System packages
   environment.systemPackages = with pkgs; [
-    acpi # Battery/thermal/AC adapter status
+    acpi
+    unzip
     bandwhich # Per-process/connection/host bandwidth monitor
-    nethogs # Per-process network bandwidth monitor
+    nethogs
     snapshot # GNOME camera app (uses libcamera/PipeWire natively)
     libsecret # secret-tool for keyring access (used by ansible vault)
     telegram-desktop
