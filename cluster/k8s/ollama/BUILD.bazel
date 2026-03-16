@@ -1,0 +1,31 @@
+# gazelle:ignore
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "generate_litellm",
+    srcs = ["generate_litellm.py"],
+    imports = ["../../.."],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_binary(
+    name = "generate_litellm_bin",
+    imports = ["../../.."],
+    main_module = "cluster.k8s.ollama.generate_litellm",
+    deps = [":generate_litellm"],
+)
+
+py_test(
+    name = "test_generate_litellm",
+    srcs = ["test_generate_litellm.py"],
+    data = ["litellm.yaml"],
+    imports = ["../../.."],
+    deps = [
+        ":generate_litellm",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
