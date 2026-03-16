@@ -1,20 +1,86 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+_TOPOLOGY_DATA = [
+    "//cluster/kubespand/qemu_tests:vmlinuz",
+    "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
+    "//cluster/kubespand/qemu_tests/talos:testdata/cp-kubespan.yaml",
+    "//cluster/kubespand/qemu_tests/talos:testdata/cp-kubespan-cross.yaml",
+    "//cluster/kubespand/qemu_tests/talos:testdata/talosconfig.yaml",
+    "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
+    "//cluster/kubespand/qemu_tests/vms/kubespan:initramfs",
+]
+
+_TOPOLOGY_TAGS = [
+    "cpu:4",
+    "requires_qemu",
+]
+
+# Each topology test gets its own RBE worker (4 VMs each: discovery + CP + VM-A + VM-B).
 go_test(
-    name = "kubespan_test",
+    name = "flat_test",
     timeout = "long",
-    srcs = ["kubespan_test.go"],
+    srcs = [
+        "flat_test.go",
+        "topology_test_helper.go",
+    ],
+    data = _TOPOLOGY_DATA,
+    tags = _TOPOLOGY_TAGS,
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+go_test(
+    name = "cross_subnet_test",
+    timeout = "long",
+    srcs = [
+        "cross_subnet_test.go",
+        "topology_test_helper.go",
+    ],
+    data = _TOPOLOGY_DATA,
+    tags = _TOPOLOGY_TAGS,
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+go_test(
+    name = "discovery_only_test",
+    timeout = "long",
+    srcs = [
+        "discovery_only_test.go",
+        "topology_test_helper.go",
+    ],
+    data = _TOPOLOGY_DATA,
+    tags = _TOPOLOGY_TAGS,
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+# Trustd CSR flow test: boots 3 VMs (discovery + Talos CP + kubespand).
+go_test(
+    name = "trustd_test",
+    timeout = "long",
+    srcs = ["trustd_test.go"],
     data = [
         "//cluster/kubespand/qemu_tests:vmlinuz",
-        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
-        "//cluster/kubespand/qemu_tests/vms/kubespan:initramfs",
-        # Trustd initramfs + Talos nocloud image + testdata for TestTrustdCSRFlow.
-        "//cluster/kubespand/qemu_tests/vms/trustd:initramfs",
         "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
-        "//cluster/kubespand/qemu_tests/talos:testdata/vps-controlplane.yaml",
         "//cluster/kubespand/qemu_tests/talos:testdata/talosconfig.yaml",
+        "//cluster/kubespand/qemu_tests/talos:testdata/vps-controlplane.yaml",
+        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
+        "//cluster/kubespand/qemu_tests/vms/trustd:initramfs",
     ],
-    tags = ["requires_qemu"],
+    tags = [
+        "cpu:4",
+        "requires_qemu",
+    ],
     deps = [
         "//cluster/kubespand/qemu_tests",
         "@in_gopkg_yaml_v3//:yaml_v3",

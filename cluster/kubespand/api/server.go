@@ -13,16 +13,19 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Server exposes kubespand's COSI state via gRPC on a Unix socket.
+// Server exposes kubespand's COSI state via gRPC on a Unix socket,
+// and optionally on a TCP address for remote access (e.g., test harnesses).
 type Server struct {
 	grpcServer *grpc.Server
 	socketPath string
+	tcpAddr    string
 	logger     *zap.Logger
 }
 
 // NewServer creates a gRPC server that exposes COSI state as read-only
 // and implements the Talos MachineService Version RPC.
-func NewServer(st state.CoreState, socketPath string, logger *zap.Logger) *Server {
+// If tcpAddr is non-empty, the server also listens on that TCP address.
+func NewServer(st state.CoreState, socketPath, tcpAddr string, logger *zap.Logger) *Server {
 	srv := grpc.NewServer()
 	v1alpha1.RegisterStateServer(srv, NewReadOnlyState(st))
 	RegisterMachineService(srv)
@@ -30,11 +33,12 @@ func NewServer(st state.CoreState, socketPath string, logger *zap.Logger) *Serve
 	return &Server{
 		grpcServer: srv,
 		socketPath: socketPath,
+		tcpAddr:    tcpAddr,
 		logger:     logger,
 	}
 }
 
-// Run starts the gRPC server on the configured Unix socket.
+// Run starts the gRPC server on the configured Unix socket (and optionally TCP).
 // Blocks until ctx is cancelled, then performs graceful shutdown.
 func (s *Server) Run(ctx context.Context) error {
 	dir := filepath.Dir(s.socketPath)
@@ -47,17 +51,28 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("removing stale socket %s: %w", s.socketPath, err)
 	}
 
-	lis, err := net.Listen("unix", s.socketPath)
+	unixLis, err := net.Listen("unix", s.socketPath)
 	if err != nil {
 		return fmt.Errorf("listening on %s: %w", s.socketPath, err)
 	}
 
 	if err := os.Chmod(s.socketPath, 0o600); err != nil {
-		lis.Close()
+		unixLis.Close()
 		return fmt.Errorf("setting socket permissions on %s: %w", s.socketPath, err)
 	}
 
 	s.logger.Info("API server listening", zap.String("socket", s.socketPath))
+
+	// Optional TCP listener for remote access (test harnesses, diagnostics).
+	if s.tcpAddr != "" {
+		tcpLis, err := net.Listen("tcp", s.tcpAddr)
+		if err != nil {
+			unixLis.Close()
+			return fmt.Errorf("listening on TCP %s: %w", s.tcpAddr, err)
+		}
+		s.logger.Info("API server listening on TCP", zap.String("addr", s.tcpAddr))
+		go s.grpcServer.Serve(tcpLis) //nolint:errcheck
+	}
 
 	go func() {
 		<-ctx.Done()
@@ -65,7 +80,7 @@ func (s *Server) Run(ctx context.Context) error {
 		s.grpcServer.GracefulStop()
 	}()
 
-	if err := s.grpcServer.Serve(lis); err != nil {
+	if err := s.grpcServer.Serve(unixLis); err != nil {
 		return fmt.Errorf("serving gRPC: %w", err)
 	}
 

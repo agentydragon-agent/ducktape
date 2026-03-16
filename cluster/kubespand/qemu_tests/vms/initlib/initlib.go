@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,28 +16,8 @@ import (
 var Role = "unknown"
 
 func EmitEvent(evt qemu.Event) {
-	evt.Timestamp = float64(Uptime())
-	evt.Role = Role
 	b, _ := json.Marshal(evt)
 	fmt.Println(string(b))
-}
-
-func Uptime() int64 {
-	data, err := os.ReadFile("/proc/uptime")
-	if err != nil {
-		return 0
-	}
-	parts := strings.Fields(string(data))
-	if len(parts) == 0 {
-		return 0
-	}
-	dotIdx := strings.Index(parts[0], ".")
-	if dotIdx < 0 {
-		v, _ := strconv.ParseInt(parts[0], 10, 64)
-		return v
-	}
-	v, _ := strconv.ParseInt(parts[0][:dotIdx], 10, 64)
-	return v
 }
 
 func Run(name string, args ...string) error {
@@ -95,6 +74,20 @@ func LoadNftablesModules() {
 		EmitEvent(qemu.Event{Type: qemu.EventError, Message: "modprobe nf_tables failed", Error: err.Error()})
 	}
 	EmitEvent(qemu.Event{Type: qemu.EventModules, Message: fmt.Sprintf("nftables modules loaded, kver=%s", kver)})
+}
+
+// HasInterface checks if a network interface appears within the given timeout.
+// Returns true if found, false on timeout (does not power off).
+func HasInterface(name string, timeout time.Duration) bool {
+	path := "/sys/class/net/" + name
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return false
 }
 
 func WaitForInterface(name string) {

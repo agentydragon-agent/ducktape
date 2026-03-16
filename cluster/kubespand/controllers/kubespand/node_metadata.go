@@ -147,16 +147,18 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 		}
 
 		// 5. network.NodeAddress — routed, current, and accumulative (same data for kubespand).
-		// APICertSANsController reads the accumulative variant.
+		// APICertSANsController reads the filtered (no-k8s) accumulative variant.
+		// apid's LocalAddressProvider reads the raw NodeAddressCurrentID to determine
+		// if a gRPC request target is the local node (required for worker-mode routing).
 		addrs := discovery.RoutedNodeAddresses()
 		prefixes := make([]netip.Prefix, 0, len(addrs))
 		for _, addr := range addrs {
 			prefixes = append(prefixes, netip.PrefixFrom(addr, addr.BitLen()))
 		}
 		routedID := network.FilteredNodeAddressID(network.NodeAddressRoutedID, k8s.NodeAddressFilterNoK8s)
-		currentID := network.FilteredNodeAddressID(network.NodeAddressCurrentID, k8s.NodeAddressFilterNoK8s)
+		filteredCurrentID := network.FilteredNodeAddressID(network.NodeAddressCurrentID, k8s.NodeAddressFilterNoK8s)
 		accumulativeID := network.FilteredNodeAddressID(network.NodeAddressAccumulativeID, k8s.NodeAddressFilterNoK8s)
-		for _, id := range []resource.ID{routedID, currentID, accumulativeID} {
+		for _, id := range []resource.ID{routedID, filteredCurrentID, accumulativeID, network.NodeAddressCurrentID} {
 			if err := safe.WriterModify(ctx, r,
 				network.NewNodeAddress(network.NamespaceName, id),
 				func(res *network.NodeAddress) error {
@@ -197,7 +199,7 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 				host := u.Hostname()
 				if addr, addrErr := netip.ParseAddr(host); addrErr == nil {
 					if err := safe.WriterModify(ctx, r,
-						k8s.NewEndpoint(k8s.ControlPlaneNamespaceName, "controlplane"),
+						k8s.NewEndpoint(k8s.ControlPlaneNamespaceName, k8s.ControlPlaneKubernetesEndpointsID),
 						func(res *k8s.Endpoint) error {
 							res.TypedSpec().Addresses = []netip.Addr{addr}
 							return nil
@@ -212,8 +214,8 @@ func (ctrl *NodeMetadataController) Run(ctx context.Context, r controller.Runtim
 		// 8. network.Status — readiness gate for APIController.
 		// Set always-ready because NodeMetadataController doesn't dynamically track
 		// host network state (it only re-runs when kubespan.Identity or agentconfig
-		// change). On a laptop that loses connectivity, addresses go stale anyway —
-		// proper support would require a network watcher triggering re-reconciliation.
+		// change). On a laptop that loses connectivity, addresses go stale anyway.
+		// TODO: add a network watcher that triggers re-reconciliation on address changes.
 		if err := safe.WriterModify(ctx, r,
 			network.NewStatus(network.NamespaceName, network.StatusID),
 			func(res *network.Status) error {

@@ -37,17 +37,27 @@ type AgentConfig struct {
 	Api        ApiConfig        `yaml:"api"`
 }
 
-// ApiConfig holds COSI state API server and TLS certificate settings.
+// ApiConfig holds TLS certificate settings for the Talos API integration.
 type ApiConfig struct {
-	// SocketPath is the Unix socket path for the COSI state gRPC server.
-	// Default: /system/run/machined/machine.sock (same as Talos machined)
-	SocketPath string `yaml:"socket_path"`
 	// CACrt is the PEM-encoded Talos CA certificate (from machine.ca.crt).
 	// When set with Token, enables the Talos trustd CSR flow to obtain
 	// API certificates for apid mTLS on port 50000.
 	CACrt string `yaml:"ca_crt"`
 	// Token is the Talos machine token for trustd authentication.
 	Token string `yaml:"token"`
+	// ApidPath is the path to the apid binary. When set (along with ca_crt
+	// and token), kubespand waits for secrets.API to appear in COSI state
+	// then starts apid as a subprocess. This follows Talos's pattern where
+	// machined's service manager waits for APIReadyCondition before starting
+	// apid. If empty, apid is not managed by kubespand.
+	ApidPath string `yaml:"apid_path"`
+	// CertSANs are additional IPs or DNS names to include in the apid TLS
+	// certificate SANs. Matches Talos machine.certSANs. Useful for
+	// testing via port forwarding (e.g., "127.0.0.1").
+	CertSANs []string `yaml:"cert_sans,omitempty"`
+	// ListenTCP is an optional TCP address (e.g., ":50100") to expose the
+	// read-only COSI API without mTLS. Useful for test harnesses and diagnostics.
+	ListenTCP string `yaml:"listen_tcp"`
 }
 
 // KubePrismConfig holds KubePrism local API server load balancer settings.
@@ -142,9 +152,6 @@ func Load(path string) (*AgentConfig, error) {
 		KubePrism: KubePrismConfig{
 			Host: "127.0.0.1",
 			Port: constants.DefaultKubePrismPort,
-		},
-		Api: ApiConfig{
-			SocketPath: constants.MachineSocketPath,
 		},
 	}
 

@@ -11,11 +11,18 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests",
     visibility = ["//cluster/kubespand:__subpackages__"],
     deps = [
+        "@com_github_cosi_project_runtime//api/v1alpha1",
+        "@com_github_cosi_project_runtime//pkg/controller/generic",
         "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_cosi_project_runtime//pkg/state/protobuf/client",
         "@com_github_siderolabs_talos_pkg_machinery//client",
         "@com_github_siderolabs_talos_pkg_machinery//client/config",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
         "@io_bazel_rules_go//go/runfiles",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
     ],
 )
 

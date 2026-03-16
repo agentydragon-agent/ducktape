@@ -28,6 +28,7 @@ genrule(
     srcs = [
         "@alpine_minirootfs_x86_64//file",
         "//cluster/kubespand",
+        "//cluster/kubespand/cmd/apid",
         ":kubespan",
         "//cluster/kubespand/qemu_tests:modules_tree",
     ],
@@ -36,9 +37,10 @@ genrule(
         set -e
         D=$$(mktemp -d)
         tar -xzf $(location @alpine_minirootfs_x86_64//file) -C $$D
-        mkdir -p $$D/var/lib/kubespan $$D/etc/kubespan
+        mkdir -p $$D/var/lib/kubespan $$D/etc/kubespan $$D/system/run/machined
         cp $(location :kubespan) $$D/init && chmod +x $$D/init
         cp $(location //cluster/kubespand:kubespand) $$D/kubespand && chmod +x $$D/kubespand
+        cp $(location //cluster/kubespand/cmd/apid) $$D/apid && chmod +x $$D/apid
         tar -xf $(location //cluster/kubespand/qemu_tests:modules_tree) -C $$D
         (cd $$D && find . -print0 | cpio --null -o -H newc 2>/dev/null) | gzip -9 > $@
         rm -rf $$D

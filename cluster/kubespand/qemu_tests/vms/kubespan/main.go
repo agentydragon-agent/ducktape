@@ -1,8 +1,11 @@
 // Binary kubespan is the PID-1 init for KubeSpan test VMs.
 // Handles flat, cross_subnet, and discovery_only topologies.
+// Optionally enables trustd CSR flow when ca_crt + token are provided;
+// kubespand manages the apid subprocess internally.
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"time"
@@ -90,6 +93,13 @@ func main() {
 		os.WriteFile("/proc/sys/net/ipv4/conf/default/rp_filter", []byte("0"), 0o644)
 	}
 
+	// eth1: mgmt NIC (QEMU user-mode) for port forwarding apid to the test host.
+	// Optional — only present when the test adds a hostfwd NIC.
+	if initlib.HasInterface("eth1", 2*time.Second) {
+		initlib.MustRun("ip", "link", "set", "eth1", "up")
+		initlib.MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
+	}
+
 	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("link=%s/24, topology=%s", linkIP, topology)})
 
 	cfg := kubespanlib.KubespandConfig{
@@ -98,13 +108,29 @@ func main() {
 		DiscoveryAddr:   discovery,
 		ListenPort:      listenPort,
 		EndpointFilters: endpointFilters,
+		ListenTCP:       params["listen_tcp"],
+	}
+
+	// If ca_crt + token are provided, enable the trustd CSR flow.
+	// kubespand manages apid as a subprocess (waits for secrets.API, then starts apid).
+	if caCrtB64 := params["ca_crt"]; caCrtB64 != "" {
+		caCrtPEM, err := base64.StdEncoding.DecodeString(caCrtB64)
+		if err != nil {
+			initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "ca_crt base64 decode failed", Error: err.Error()})
+			initlib.Poweroff()
+		}
+		cfg.ClusterEndpoint = params["cluster_endpoint"]
+		cfg.CACrt = string(caCrtPEM)
+		cfg.Token = params["token"]
+		cfg.ApidPath = "/apid"
 	}
 
 	kubespandCmd := kubespanlib.StartKubespand(cfg)
+
 	const probePort = 9999
 
 	peerAddr := kubespanlib.WaitForPeer(kubespandCmd)
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: "peer discovered", PeerAddr: peerAddr, PeerIPv4: peerBridgeIP})
+	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("peer discovered addr=%s ipv4=%s", peerAddr, peerBridgeIP)})
 
 	if initlib.Role == "b" {
 		cancel := kubespanlib.ServeTCP(probePort)
@@ -112,9 +138,16 @@ func main() {
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: fmt.Sprintf("role=b listening on tcp/%d, waiting (180s max)", probePort)})
 		time.Sleep(180 * time.Second)
 	} else {
+		// Wait for WireGuard handshake to complete (PeerStatus "up") before
+		// running probes. This also keeps kubespand alive long enough for the
+		// test host to observe "up" via the TCP COSI API.
+		kubespanlib.WaitForPeerUp(kubespandCmd, 1)
 		kubespanlib.DumpDiagnostics(peerBridgeIP)
 		kubespanlib.RunProbes(peerAddr, peerBridgeIP, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
+		// Keep kubespand alive briefly so the test host's PeerStatus poll
+		// (1s interval) can observe the "up" state before we exit.
+		time.Sleep(30 * time.Second)
 	}
 
 	kubespandCmd.Process.Kill()

@@ -51,6 +51,12 @@ func main() {
 	kubespanlib.LoadModules()
 	kubespanlib.ConfigureNetwork(linkIP, "24")
 
+	// eth1: mgmt NIC (QEMU user-mode) for port forwarding COSI API to the test host.
+	if initlib.HasInterface("eth1", 2*time.Second) {
+		initlib.MustRun("ip", "link", "set", "eth1", "up")
+		initlib.MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
+	}
+
 	if defaultGW != "" {
 		initlib.MustRun("ip", "route", "add", "default", "via", defaultGW)
 	}
@@ -66,6 +72,7 @@ func main() {
 		ClusterID:     clusterID,
 		SharedSecret:  sharedSecret,
 		DiscoveryAddr: discovery,
+		ListenTCP:     params["listen_tcp"],
 	})
 
 	const probePort = 9999
@@ -80,10 +87,15 @@ func main() {
 		peerAddrs := kubespanlib.WaitForPeers(kubespandCmd, 2)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDiscovery, Message: fmt.Sprintf("discovered %d peers", len(peerAddrs))})
 
+		// Wait for at least 1 peer handshake before probes (VPS is directly
+		// reachable; NAT1 may stay down due to endpoint-dependent filtering).
+		kubespanlib.WaitForPeerUp(kubespandCmd, 1)
 		kubespanlib.DumpDiagnostics()
 
 		kubespanlib.RunDoubleNATProbes(peerAddrs, probePort)
 		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "probes completed"})
+		// Keep kubespand alive for test host PeerStatus observation.
+		time.Sleep(30 * time.Second)
 	}
 
 	kubespandCmd.Process.Kill()

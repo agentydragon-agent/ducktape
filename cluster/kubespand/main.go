@@ -12,6 +12,7 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
+	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/version"
 	"go.uber.org/zap"
 
@@ -170,12 +171,21 @@ func run(configPath string, logger *zap.Logger) error {
 
 	logger.Info("starting COSI runtime")
 
-	// Start the API server (COSI state on Unix socket).
-	apiServer := api.NewServer(st, cfg.Api.SocketPath, logger)
+	// Start the API server (COSI state on Unix socket, optionally TCP).
+	apiServer := api.NewServer(st, constants.MachineSocketPath, cfg.Api.ListenTCP, logger)
 	apiErrCh := make(chan error, 1)
 	go func() {
 		apiErrCh <- apiServer.Run(ctx)
 	}()
+
+	// Start apid subprocess management if configured.
+	// Follows Talos pattern: wait for secrets.API (APIReadyCondition) then start apid.
+	apidErrCh := make(chan error, 1)
+	if cfg.Api.ApidPath != "" {
+		go func() {
+			apidErrCh <- runApid(ctx, st, cfg.Api.ApidPath, logger)
+		}()
+	}
 
 	// Start the COSI runtime in a goroutine.
 	runtimeErrCh := make(chan error, 1)
@@ -199,6 +209,11 @@ func run(configPath string, logger *zap.Logger) error {
 	case err := <-apiErrCh:
 		if err != nil {
 			return fmt.Errorf("API server: %w", err)
+		}
+		return nil
+	case err := <-apidErrCh:
+		if err != nil {
+			return fmt.Errorf("apid: %w", err)
 		}
 		return nil
 	case <-ctx.Done():

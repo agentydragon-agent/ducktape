@@ -2,11 +2,13 @@ package qemu_tests
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,7 +17,15 @@ import (
 	"testing"
 	"time"
 
+	v1alpha1 "github.com/cosi-project/runtime/api/v1alpha1"
+	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
+	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
+	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Runfile paths for shared test artifacts.
@@ -31,10 +41,12 @@ const (
 	TalosNocloudImagePath = "cluster/kubespand/qemu_tests/talos/nocloud-amd64.qcow2"
 
 	// Pre-generated Talos configs (committed as testdata).
-	TalosVPSConfig  = "cluster/kubespand/qemu_tests/talos/testdata/vps-controlplane.yaml"
-	TalosNAT1Config = "cluster/kubespand/qemu_tests/talos/testdata/nat1-worker.yaml"
-	TalosNAT2Config = "cluster/kubespand/qemu_tests/talos/testdata/nat2-worker.yaml"
-	TalosConfig     = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
+	KubespanCPConfig      = "cluster/kubespand/qemu_tests/talos/testdata/cp-kubespan.yaml"
+	KubespanCPCrossConfig = "cluster/kubespand/qemu_tests/talos/testdata/cp-kubespan-cross.yaml"
+	TalosVPSConfig        = "cluster/kubespand/qemu_tests/talos/testdata/vps-controlplane.yaml"
+	TalosNAT1Config       = "cluster/kubespand/qemu_tests/talos/testdata/nat1-worker.yaml"
+	TalosNAT2Config       = "cluster/kubespand/qemu_tests/talos/testdata/nat2-worker.yaml"
+	TalosConfig           = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
 )
 
 // VM represents a running QEMU VM.
@@ -414,6 +426,33 @@ func (s *Stopwatch) Summary(outDir string) {
 	}
 }
 
+// WaitForDiscoveryHTTP polls the discovery service's HTTP endpoint on the
+// forwarded mgmt port until it responds (or times out).
+func WaitForDiscoveryHTTP(t *testing.T, port int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	client := &http.Client{Timeout: 2 * time.Second}
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			t.Logf("discovery HTTP ready on port %d", port)
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Fatalf("discovery HTTP not ready after %v on port %d", timeout, port)
+}
+
+// MgmtNIC returns QEMU args for a user-mode NIC with a port forwarded to the host.
+func MgmtNIC(hostPort, guestPort int, mac string) []string {
+	return []string{
+		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:%d", hostPort, guestPort),
+		"-device", fmt.Sprintf("virtio-net-pci,netdev=mgmt,mac=%s", mac),
+	}
+}
+
 func probeOK(probes map[string]*bool, name string) bool {
 	s, ok := probes[name]
 	return ok && *s
@@ -465,4 +504,74 @@ func AssertProbes(t *testing.T, events []Event, topology string) {
 			t.Errorf("VM error: %s (%s)", e.Message, e.Error)
 		}
 	}
+}
+
+// PollKubespandPeerStatus connects to kubespand's TCP COSI API and polls
+// PeerStatus resources until at least minPeers peers report state "up".
+// Other discovered peers may be in any state (unknown, down).
+func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	var lastErr string
+
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		conn, err := grpc.NewClient(addr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			cancel()
+			lastErr = err.Error()
+			t.Logf("kubespand COSI connect (waiting): %s", lastErr)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		st := state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn)))
+		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, st)
+		cancel()
+		conn.Close()
+
+		if err != nil {
+			lastErr = err.Error()
+			t.Logf("kubespand COSI poll (waiting): %s", lastErr)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		var peers []KubespanPeerResult
+		for it := list.Iterator(); it.Next(); {
+			ps := it.Value()
+			peers = append(peers, KubespanPeerResult{
+				Label:    ps.TypedSpec().Label,
+				State:    ps.TypedSpec().State,
+				Endpoint: ps.TypedSpec().Endpoint.String(),
+			})
+		}
+
+		upCount := 0
+		for _, p := range peers {
+			if p.State == kubespan.PeerStateUp {
+				upCount++
+			}
+		}
+
+		var peerSummary strings.Builder
+		for i, p := range peers {
+			if i > 0 {
+				peerSummary.WriteString("; ")
+			}
+			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
+		}
+		t.Logf("kubespand COSI poll: %d peers, %d up (need %d) [%s]", len(peers), upCount, minPeers, peerSummary.String())
+
+		if upCount >= minPeers {
+			return peers, nil
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+
+	return nil, fmt.Errorf("timeout after %v waiting for %d peers up, last error: %s", timeout, minPeers, lastErr)
 }

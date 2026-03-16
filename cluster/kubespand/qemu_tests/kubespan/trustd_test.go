@@ -1,8 +1,8 @@
 package kubespan_test
 
 import (
-	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,21 +10,6 @@ import (
 
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
-
-func TestFlat(t *testing.T) {
-	t.Parallel()
-	runTopology(t, "flat")
-}
-
-func TestCrossSubnet(t *testing.T) {
-	t.Parallel()
-	runTopology(t, "cross_subnet")
-}
-
-func TestDiscoveryOnly(t *testing.T) {
-	t.Parallel()
-	runTopology(t, "discovery_only")
-}
 
 // TestTrustdCSRFlow verifies that kubespand can obtain TLS certificates from
 // a Talos controlplane node's trustd service via the standard CSR flow.
@@ -47,7 +32,7 @@ func TestTrustdCSRFlow(t *testing.T) {
 
 	// Parse Talos CP config to extract credentials for kubespand.
 	vpsConfigData := h.ReadRunfile(t, h.TalosVPSConfig)
-	var cfg talosConfig
+	var cfg trustdTalosConfig
 	if err := yaml.Unmarshal(vpsConfigData, &cfg); err != nil {
 		t.Fatalf("parse talos config: %v", err)
 	}
@@ -79,27 +64,76 @@ func TestTrustdCSRFlow(t *testing.T) {
 		"cluster_id=%s shared_secret=%s discovery=192.168.50.254:3000 ca_crt=%s token=%s cluster_endpoint=https://192.168.50.2:6443",
 		cfg.Cluster.ID, cfg.Cluster.Secret, cfg.Machine.CA.Crt, cfg.Machine.Token,
 	)
+	mgmtNIC := []string{
+		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", kubespandAPIPort),
+		"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
+	}
 	vmKubespand := h.BootVM(t, "trustd-kubespand", vmlinuz, initramfsTrustd, kernelArgs,
-		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), h.MgmtNIC(kubespandAPIPort)...)...)
+		append(h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01"), mgmtNIC...)...)
 	sw.Lap("boot kubespand VM")
 
 	allVMs := []*h.VM{vmCP, vmKubespand, vmDisc}
 	h.CleanupVMs(t, allVMs, out)
 
+	// On failure, dump all available diagnostics before cleanup kills the VMs.
+	var talosConfigPath string
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		t.Log("=== FAILURE DIAGNOSTICS ===")
+
+		// kubespand VM events (CSR flow status, process health).
+		t.Log("--- kubespand VM events ---")
+		for _, evt := range vmKubespand.GetEvents() {
+			t.Logf("  [%s] %s (error=%s)", evt.Type, evt.Message, evt.Error)
+		}
+
+		// kubespand VM raw log (stderr from diagnostics dumps inside the VM).
+		rawLog := vmKubespand.GetRawLog()
+		h.SaveArtifact(t, out, "trustd-kubespand-raw.log", rawLog)
+		lines := strings.Split(rawLog, "\n")
+		start := len(lines) - 300
+		if start < 0 {
+			start = 0
+		}
+		t.Logf("--- kubespand VM raw log (last %d of %d lines) ---", len(lines)-start, len(lines))
+		for _, line := range lines[start:] {
+			if line != "" {
+				t.Log(line)
+			}
+		}
+
+		// Talos CP diagnostics (if API was available).
+		if talosConfigPath != "" {
+			t.Log("--- Talos CP KubeSpan diagnostics (post-failure) ---")
+			client := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+			defer client.Close()
+			h.DumpKubeSpanDiagnostics(t, client, "192.168.50.2")
+		}
+
+		t.Log("=== END FAILURE DIAGNOSTICS ===")
+	})
+
 	// Wait for discovery service.
-	h.RequireEvent(t, vmDisc, h.EventDone, 30*time.Second)
+	h.RequireEvent(t, vmDisc, h.EventDone, 120*time.Second)
 	sw.Lap("discovery VM ready")
 
 	// Wait for Talos CP API (boot takes ~60-120s on TCG).
-	talosClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
+	talosConfigPath = h.RunfilePath(t, h.TalosConfig)
+	talosClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
 	defer talosClient.Close()
 	h.WaitForTalosAPI(t, talosClient, "192.168.50.2", 180*time.Second)
 	sw.Lap("Talos CP API ready")
 
+	// Dump Talos CP's KubeSpan state before waiting for kubespand apid.
+	h.DumpKubeSpanDiagnostics(t, talosClient, "192.168.50.2")
+	sw.Lap("initial CP diagnostics")
+
 	// Connect to kubespand's apid — success proves the full chain:
 	// kubespand → OSRootController → APICertSANsController → APIController
 	// → trustd CSR → secrets.API → apid serves mTLS on :50000.
-	kubespandClient := h.NewTalosClient(t, h.RunfilePath(t, h.TalosConfig), fmt.Sprintf("127.0.0.1:%d", kubespandAPIPort))
+	kubespandClient := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", kubespandAPIPort))
 	defer kubespandClient.Close()
 	h.WaitForTalosAPI(t, kubespandClient, "192.168.50.1", 300*time.Second)
 	sw.Lap("kubespand apid ready (trustd CSR flow succeeded)")
@@ -107,8 +141,8 @@ func TestTrustdCSRFlow(t *testing.T) {
 	sw.Summary(out)
 }
 
-// talosConfig holds the subset of Talos machine config needed by TestTrustdCSRFlow.
-type talosConfig struct {
+// trustdTalosConfig holds the subset of Talos machine config needed by TestTrustdCSRFlow.
+type trustdTalosConfig struct {
 	Machine struct {
 		Token string `yaml:"token"`
 		CA    struct {
@@ -119,70 +153,4 @@ type talosConfig struct {
 		ID     string `yaml:"id"`
 		Secret string `yaml:"secret"`
 	} `yaml:"cluster"`
-}
-
-func runTopology(t *testing.T, topology string) {
-	sw := h.NewStopwatch(t)
-
-	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
-	initramfs := h.RunfilePath(t, h.KubespanInitramfs)
-	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
-	out := h.OutputDir(t)
-	sw.Lap("resolve runfiles")
-
-	clusterID := h.RandomBase64(32)
-	sharedSecret := h.RandomBase64(32)
-	mcastPort := h.RandomPort()
-
-	var discIP string
-	switch topology {
-	case "flat", "discovery_only":
-		discIP = "192.168.50.254"
-	case "cross_subnet":
-		discIP = "10.1.0.254"
-	}
-	discAddr := fmt.Sprintf("%s:3000", discIP)
-
-	mcastAddr := fmt.Sprintf("230.0.0.1:%d", mcastPort)
-
-	kernelBase := fmt.Sprintf("mode=kubespan cluster_id=%s shared_secret=%s discovery=%s topology=%s",
-		clusterID, sharedSecret, discAddr, topology)
-
-	vmDisc := h.BootVM(t, "vm-disc", vmlinuz, initramfsDisc,
-		fmt.Sprintf("mode=discovery role=discovery discovery_ip=%s/24 topology=%s", discIP, topology),
-		h.McastNIC("net0", mcastAddr, "52:54:00:ff:00:01")...)
-	sw.Lap("boot discovery VM")
-
-	vmB := h.BootVM(t, "vm-b", vmlinuz, initramfs, kernelBase+" role=b",
-		h.McastNIC("net0", mcastAddr, "52:54:00:b0:00:01")...)
-	sw.Lap("boot VM-B")
-
-	vmA := h.BootVM(t, "vm-a", vmlinuz, initramfs, kernelBase+" role=a",
-		h.McastNIC("net0", mcastAddr, "52:54:00:a0:00:01")...)
-	sw.Lap("boot VM-A")
-
-	allVMs := []*h.VM{vmA, vmB, vmDisc}
-	h.CleanupVMs(t, allVMs, out)
-
-	h.RequireEvent(t, vmDisc, h.EventDone, 30*time.Second)
-	sw.Lap("discovery VM ready")
-
-	h.WaitVMDone(t, vmA, 300*time.Second)
-	sw.Lap("VM-A done (peer discovery + probes)")
-
-	summary := map[string]interface{}{
-		"topology":       topology,
-		"cluster_id":     clusterID,
-		"mcast_port":     mcastPort,
-		"vm_a_events":    vmA.GetEvents(),
-		"vm_b_events":    vmB.GetEvents(),
-		"vm_disc_events": vmDisc.GetEvents(),
-	}
-	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
-	h.SaveArtifact(t, out, "test-summary.json", string(summaryJSON))
-
-	h.AssertProbes(t, vmA.GetEvents(), topology)
-	sw.Lap("assertions")
-
-	sw.Summary(out)
 }

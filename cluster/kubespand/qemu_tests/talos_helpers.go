@@ -8,12 +8,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/cosi-project/runtime/pkg/controller/generic"
 	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
+	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
 )
 
@@ -22,14 +26,6 @@ type KubespanPeerResult struct {
 	Label    string             `json:"label"`
 	State    kubespan.PeerState `json:"state"`
 	Endpoint string             `json:"endpoint"`
-}
-
-// MgmtNIC returns QEMU args for a user-mode management NIC with TCP port forwarding to port 50000.
-func MgmtNIC(hostPort int) []string {
-	return []string{
-		"-netdev", fmt.Sprintf("user,id=mgmt,hostfwd=tcp::%d-:50000", hostPort),
-		"-device", "virtio-net-pci,netdev=mgmt,mac=52:54:00:ab:00:01",
-	}
 }
 
 // pollUntil calls fn every second until it returns true or the deadline passes.
@@ -64,7 +60,7 @@ func BootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int,
 	args = append(args, netArgs...)
 
 	if mgmtPort > 0 {
-		args = append(args, MgmtNIC(mgmtPort)...)
+		args = append(args, MgmtNIC(mgmtPort, 50000, "52:54:00:ab:00:01")...)
 	}
 
 	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...), false)
@@ -137,6 +133,7 @@ func WaitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time
 }
 
 // PollKubeSpanStatus polls the Talos COSI API for KubeSpan peer status.
+// Returns when at least minPeers peers are found and all are in "up" state.
 func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) ([]KubespanPeerResult, error) {
 	t.Helper()
 
@@ -162,7 +159,6 @@ func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 				Endpoint: ps.TypedSpec().Endpoint.String(),
 			})
 		}
-		t.Logf("COSI poll: %d peers found", len(peers))
 
 		allUp := len(peers) >= 2
 		for _, p := range peers {
@@ -170,6 +166,14 @@ func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 				allUp = false
 			}
 		}
+		var peerSummary strings.Builder
+		for i, p := range peers {
+			if i > 0 {
+				peerSummary.WriteString("; ")
+			}
+			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
+		}
+		t.Logf("COSI poll: %d peers, allUp=%v [%s]", len(peers), allUp, peerSummary.String())
 		finalPeers = peers
 		return allUp
 	})
@@ -184,4 +188,35 @@ func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 		return finalPeers, nil
 	}
 	return nil, fmt.Errorf("timeout after %v, last error: %s", timeout, lastErr)
+}
+
+// dumpCOSIList lists all resources of type T and logs each one with %+v.
+func dumpCOSIList[T generic.ResourceWithRD](t *testing.T, ctx context.Context, st state.State, label string) {
+	t.Helper()
+	list, err := safe.StateListAll[T](ctx, st)
+	if err != nil {
+		t.Logf("  %s: error: %v", label, err)
+		return
+	}
+	t.Logf("  %s: %d total", label, list.Len())
+	for it := list.Iterator(); it.Next(); {
+		r := it.Value()
+		t.Logf("    [%s] %+v", r.Metadata().ID(), r.Spec())
+	}
+}
+
+// DumpKubeSpanDiagnostics queries COSI resources from a Talos node via the Talos
+// API and logs them for debugging WireGuard handshake issues.
+func DumpKubeSpanDiagnostics(t *testing.T, c *client.Client, nodeIP string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 15*time.Second)
+	defer cancel()
+
+	t.Log("=== KubeSpan Diagnostics ===")
+	dumpCOSIList[*kubespan.Identity](t, ctx, c.COSI, "Identity")
+	dumpCOSIList[*kubespan.Config](t, ctx, c.COSI, "Config")
+	dumpCOSIList[*cluster.Affiliate](t, ctx, c.COSI, "Affiliates")
+	dumpCOSIList[*kubespan.PeerSpec](t, ctx, c.COSI, "PeerSpecs")
+	dumpCOSIList[*kubespan.PeerStatus](t, ctx, c.COSI, "PeerStatuses")
+	t.Log("=== End KubeSpan Diagnostics ===")
 }

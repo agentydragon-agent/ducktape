@@ -28,13 +28,9 @@ const (
 
 // Event is a structured message emitted by a QEMU VM as a JSON line.
 type Event struct {
-	Type      EventType `json:"type"`
-	Timestamp float64   `json:"ts"`
-	Role      string    `json:"role"`
-	Message   string    `json:"msg"`
-	PeerAddr  string    `json:"peer_addr,omitempty"`
-	PeerIPv4  string    `json:"peer_ipv4,omitempty"`
-	Target    string    `json:"target,omitempty"`
-	Success   *bool     `json:"success,omitempty"`
-	Error     string    `json:"error,omitempty"`
+	Type    EventType `json:"type"`
+	Message string    `json:"msg"`
+	Target  string    `json:"target,omitempty"`
+	Success *bool     `json:"success,omitempty"`
+	Error   string    `json:"error,omitempty"`
 }

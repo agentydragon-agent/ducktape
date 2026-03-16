@@ -9,6 +9,11 @@ go_library(
         "//cluster/kubespand/qemu_tests",
         "//cluster/kubespand/qemu_tests/vms/initlib",
         "//cluster/kubespand/qemu_tests/vms/kubespanlib",
+        "@com_github_cosi_project_runtime//pkg/resource",
+        "@com_github_cosi_project_runtime//pkg/safe",
+        "@com_github_cosi_project_runtime//pkg/state",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",
+        "@com_github_siderolabs_talos_pkg_machinery//resources/secrets",
     ],
 )
 
