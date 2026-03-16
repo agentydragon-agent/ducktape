@@ -91,9 +91,7 @@ class TestRequiredDependencies:
 
     def test_raises_on_unknown_prerequisite(self) -> None:
         """Raises ValueError when a rule references a kustomization not in the cluster."""
-        kustomizations = {
-            "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"))
-        }
+        kustomizations = {"authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"))}
         with pytest.raises(ValueError, match="unknown kustomization: cert-manager"):
             check_required_dependencies(kustomizations)
 

@@ -15,9 +15,7 @@ from cluster.validation.kustomize import KustomizeBuildResult
 
 
 def _build_result(path: Path, yaml_output: str) -> KustomizeBuildResult:
-    return KustomizeBuildResult(
-        kustomization_path=path, resources=parse_k8s_resources(yaml.safe_load_all(yaml_output))
-    )
+    return KustomizeBuildResult(kustomization_path=path, resources=parse_k8s_resources(yaml.safe_load_all(yaml_output)))
 
 
 _HELMRELEASE_ONLY = dedent("""
@@ -107,14 +105,7 @@ _VAULT_NESTED = dedent("""
         (Path("/k8s/vault/config/base/kustomization.yaml"), _VAULT_NESTED),
         (Path("/k8s/test-app/overlays/production/kustomization.yaml"), _MIXED_HELMRELEASE_AND_CRD),
     ],
-    ids=[
-        "helmrelease_only",
-        "crd_only",
-        "operator_with_crd",
-        "cert_manager_nested",
-        "vault_nested",
-        "overlay_skipped",
-    ],
+    ids=["helmrelease_only", "crd_only", "operator_with_crd", "cert_manager_nested", "vault_nested", "overlay_skipped"],
 )
 def test_valid_cases(path: Path, yaml_output: str) -> None:
     check_crd_layering(_build_result(path, yaml_output))
@@ -122,9 +113,7 @@ def test_valid_cases(path: Path, yaml_output: str) -> None:
 
 def test_detects_crd_layering_violation() -> None:
     with pytest.raises(CrdLayeringViolation, match="ExternalSecret"):
-        check_crd_layering(
-            _build_result(Path("/k8s/test-app/kustomization.yaml"), _MIXED_HELMRELEASE_AND_CRD)
-        )
+        check_crd_layering(_build_result(Path("/k8s/test-app/kustomization.yaml"), _MIXED_HELMRELEASE_AND_CRD))
 
 
 if __name__ == "__main__":
