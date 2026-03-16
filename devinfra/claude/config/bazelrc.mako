@@ -3,9 +3,13 @@
 startup --output_user_root=${bazel_cache_dir | sh}
 % endif
 % if web_proxy:
-# JVM proxy settings for Bazel server (BCR access, etc.)
-startup --host_jvm_args=-Dhttps.proxyHost=127.0.0.1
-startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
+# JVM proxy settings for Bazel server (BCR access via Anthropic's egress proxy).
+# Java 8u111+ disables Basic auth for HTTPS tunneling by default; these flags re-enable it.
+# Bazel's ProxyHelper reads HTTPS_PROXY from --repo_env below and installs a
+# java.net.Authenticator with the JWT credentials, so Bazel authenticates directly with the
+# egress proxy via 407 challenge/response — no local auth proxy shim needed.
+startup --host_jvm_args=-Djdk.http.auth.tunneling.disabledSchemes=
+startup --host_jvm_args=-Djdk.http.auth.proxying.disabledSchemes=
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
 startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=${truststore_password | sh}
 

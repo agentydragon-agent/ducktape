@@ -16,26 +16,25 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 ## Recovering from a Broken Session Start Hook (Claude Code Web)
 
 When running in Claude Code Web (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` is set), the
-session start hook at <devinfra/claude/README.md> sets up Bazel, the auth proxy, and
-other tooling. If the hook fails or was never run, you'll see errors like:
+session start hook at <devinfra/claude/README.md> sets up Bazel, TLS CA, and other
+tooling. If the hook fails or was never run, you'll see errors like:
 
 - **Certificate errors**: `SSL: CERTIFICATE_VERIFY_FAILED`, `unable to get local issuer certificate`,
   `x509: certificate signed by unknown authority` — the TLS inspection CA wasn't extracted
 - **`bazel: command not found`** — Bazelisk wasn't installed
-- **Bazel `FAILED: no such package '@...'`** or `Unable to fetch` — the auth proxy isn't running,
-  so Bazel can't reach BCR through the TLS-inspecting egress proxy
+- **Bazel `FAILED: no such package '@...'`** or `Unable to fetch` — the session bazelrc
+  wasn't written, so Bazel's JVM proxy auth flags are missing
 - **`source /tmp/claude_env: No such file`** — the environment file wasn't generated
 
 **Recovery steps:**
 
 1. Read <devinfra/claude/README.md> to understand the session start hook architecture
-2. Check the session start log: `tail -100 ~/.cache/claude-hooks/session-start.log`
+2. Check the session start log: `tail -100 ~/.claude/session-env/<session_id>/session-start.log`
 3. Source the env file if it exists: `source /tmp/claude_env` (or `CLAUDE_ENV_FILE` value)
 4. If env file is missing, run the session start steps manually:
    - Run `devinfra/claude/session_start.py` (see <devinfra/claude/README.md> for what it does)
-   - Or run individual steps: proxy setup, bazelisk install, env file generation
-5. Verify the auth proxy: `curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1`
-6. Verify Bazel: `bazel info`
+   - Or run individual steps: TLS CA setup, bazelisk install, env file generation
+5. Verify Bazel: `bazel info`
 
 **Notify the user** if you suspect the session start hook failed — they may need to
 re-run it or debug the hook configuration. Do not silently work around the problem.
