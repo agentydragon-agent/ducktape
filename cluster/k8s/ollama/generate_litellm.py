@@ -18,15 +18,14 @@ Parity enforced by:
 #   Stronger typing than Go templates; same "no committed output" property.
 """
 
-import subprocess
+from collections.abc import Iterator
 
 import yaml
 
-from util.bazel.runfiles import get_required_path
+from devinfra.prettier import prettier_format_in_place
 from util.bazel.workspace import get_build_workspace_directory
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
-_PRETTIER_RLOCATION = "_main/devinfra/ci/prettier_/prettier"
 
 # (name suffix, num_ctx). None num_ctx = model default (128k for gpt-oss).
 _CTX_VARIANTS: list[tuple[str, int | None]] = [("128k", None), ("256k", 262_144), ("512k", 524_288), ("1m", 1_048_576)]
@@ -38,9 +37,8 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 ]
 
 
-def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> list[dict]:
+def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> Iterator[dict]:
     name_base = tag.replace(":", "-")
-    entries = []
     for api, suffix, api_base in [
         ("openai", "-openai-chat", f"{_OLLAMA_BASE}/v1"),
         ("ollama", "-ollama-native", _OLLAMA_BASE),
@@ -49,14 +47,11 @@ def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> list
             params: dict = {"model": f"{api}/{tag}", "api_base": api_base}
             if num_ctx is not None:
                 params["extra_body"] = {"options": {"num_ctx": num_ctx}}
-            entries.append(
-                {
-                    "model_name": f"{name_base}-{ctx_suffix}{suffix}",
-                    "litellm_params": params,
-                    "model_info": {"mode": "chat", "supports_function_calling": True},
-                }
-            )
-    return entries
+            yield {
+                "model_name": f"{name_base}-{ctx_suffix}{suffix}",
+                "litellm_params": params,
+                "model_info": {"mode": "chat", "supports_function_calling": True},
+            }
 
 
 def generate() -> str:
@@ -78,8 +73,7 @@ def generate() -> str:
 def main() -> None:
     out_path = get_build_workspace_directory() / "cluster/k8s/ollama/litellm-proxy-config.yaml"
     out_path.write_text(generate())
-    prettier = get_required_path(_PRETTIER_RLOCATION)
-    subprocess.run([prettier, "--write", out_path], check=True)
+    prettier_format_in_place(out_path)
     print(f"Generated {out_path}")
 
 

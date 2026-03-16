@@ -2,6 +2,7 @@
 # CI scripts run via uv, not Bazel; they use relative imports
 
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
+load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
 load("@pypi//:requirements.bzl", "all_whl_requirements")
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
@@ -59,4 +60,23 @@ gazelle(
     name = "gazelle",
     data = [":gazelle_python_manifest"],
     gazelle = ":gazelle_python_binary",
+)
+
+prettier_bin.prettier_binary(
+    name = "prettier_bin",
+    data = ["//:prettierrc"],
+    fixed_args = [
+        "--config",
+        "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "prettier",
+    srcs = ["prettier.py"],
+    data = [":prettier_bin"],
+    imports = [".."],
+    visibility = ["//visibility:public"],
+    deps = ["//util/bazel:runfiles"],
 )

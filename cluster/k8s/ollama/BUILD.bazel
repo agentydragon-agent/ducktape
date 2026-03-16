@@ -6,10 +6,9 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "generate_litellm",
     srcs = ["generate_litellm.py"],
-    data = ["//devinfra/ci:prettier"],
     imports = ["../../.."],
     deps = [
-        "//util/bazel:runfiles",
+        "//devinfra:prettier",
         "//util/bazel:workspace",
         "@pypi//pyyaml",
     ],

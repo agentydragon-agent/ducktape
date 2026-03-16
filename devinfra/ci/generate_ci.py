@@ -9,7 +9,6 @@ Usage:
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import yaml
@@ -17,8 +16,8 @@ import yaml
 from devinfra.ci.diff_utils import BAZEL_DIFF_VERSION
 from devinfra.ci.github_actions import Job, Step, Workflow
 from devinfra.ci.models import HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
+from devinfra.prettier import prettier_format_in_place
 from util.bazel.query import BazelLabel
-from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 SCRIPT_DIR = Path(__file__).parent
@@ -597,14 +596,10 @@ def generate_harbor_images_config(images: list[HarborImageConfig]) -> Workflow:
     )
 
 
-_PRETTIER_RLOCATION = "_main/devinfra/ci/prettier_/prettier"
-
-
 def write_workflow(path: Path, workflow: Workflow) -> None:
     """Write a workflow file and run prettier to match pre-commit formatting."""
     path.write_text(generate_ci_yml(workflow))
-    prettier = get_required_path(_PRETTIER_RLOCATION)
-    subprocess.run([prettier, "--write", path], check=True)
+    prettier_format_in_place(path)
     print(f"Generated {path}")
 
 
