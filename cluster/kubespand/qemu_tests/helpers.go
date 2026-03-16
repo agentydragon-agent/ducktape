@@ -43,14 +43,6 @@ const (
 	TrustdInitramfs    = "cluster/kubespand/qemu_tests/vms/trustd/initramfs.cpio.gz"
 	// Talos nocloud image built by genrule — under _main/ prefix.
 	TalosNocloudImagePath = "cluster/kubespand/qemu_tests/talos/nocloud-amd64.qcow2"
-
-	// Pre-generated Talos configs (committed as testdata).
-	KubespanCPConfig      = "cluster/kubespand/qemu_tests/talos/testdata/cp-kubespan.yaml"
-	KubespanCPCrossConfig = "cluster/kubespand/qemu_tests/talos/testdata/cp-kubespan-cross.yaml"
-	TalosVPSConfig        = "cluster/kubespand/qemu_tests/talos/testdata/vps-controlplane.yaml"
-	TalosNAT1Config       = "cluster/kubespand/qemu_tests/talos/testdata/nat1-worker.yaml"
-	TalosNAT2Config       = "cluster/kubespand/qemu_tests/talos/testdata/nat2-worker.yaml"
-	TalosConfig           = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
 )
 
 // Well-known guest ports for the management NIC.
@@ -417,11 +409,30 @@ func MgmtNICMulti(forwards []PortForward, mac string) []string {
 	}
 }
 
+// TestClusterCreds holds shared credentials extracted from a Talos machine config.
+// Bridges Talos configs and kubespand agent configs so tests don't manually
+// extract fields from v1alpha1.Config in every test function.
+type TestClusterCreds struct {
+	ClusterID    string
+	SharedSecret string
+	CACrt        string // PEM-encoded Talos CA certificate (from machine.ca.crt)
+	MachineToken string // Talos machine token (from machine.token)
+}
+
+// NewRandomCreds generates random cluster credentials for tests that don't
+// need a Talos config (e.g., kubespand-only double-NAT tests).
+func NewRandomCreds() TestClusterCreds {
+	return TestClusterCreds{
+		ClusterID:    RandomBase64(32),
+		SharedSecret: RandomBase64(32),
+	}
+}
+
 // NewTestAgentConfig returns an AgentConfig with common test defaults.
 // Callers can override fields after construction.
-func NewTestAgentConfig(clusterID, sharedSecret, discoveryAddr string) agentconfig.AgentConfig {
+func NewTestAgentConfig(creds TestClusterCreds, discoveryAddr string) agentconfig.AgentConfig {
 	return agentconfig.AgentConfig{
-		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
+		Cluster:   agentconfig.ClusterConfig{ID: creds.ClusterID, Secret: creds.SharedSecret},
 		Discovery: agentconfig.DiscoveryConfig{Endpoint: discoveryAddr, Insecure: true, MachineType: "worker"},
 		Kubespan: agentconfig.KubespanConfig{
 			ForceRouting:          true,
@@ -601,7 +612,7 @@ func (v *VM) DumpDiagnostics() string {
 
 // PollPeerStatus connects to kubespand's COSI API and polls PeerStatus
 // resources until at least minPeers report state "up".
-func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
+func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]kubespan.PeerStatusSpec, error) {
 	v.t.Helper()
 
 	if v.cosiAddr == "" {
@@ -636,14 +647,9 @@ func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]KubespanPeer
 			continue
 		}
 
-		var peers []KubespanPeerResult
+		var peers []kubespan.PeerStatusSpec
 		for it := list.Iterator(); it.Next(); {
-			ps := it.Value()
-			peers = append(peers, KubespanPeerResult{
-				Label:    ps.TypedSpec().Label,
-				State:    ps.TypedSpec().State,
-				Endpoint: ps.TypedSpec().Endpoint.String(),
-			})
+			peers = append(peers, *it.Value().TypedSpec())
 		}
 
 		upCount := 0
