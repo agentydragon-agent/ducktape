@@ -27,6 +27,7 @@ resources:
   - monitoring-rules/flux-kustomization.yaml
   - loki/flux-kustomization.yaml
   - alloy/flux-kustomization.yaml
+  - alloy-otlp-bearer-token-tf/flux-kustomization.yaml
   - tempo/flux-kustomization.yaml
   - cert-manager-issuer-config/flux-kustomization.yaml
   - cert-manager/flux-kustomization.yaml
