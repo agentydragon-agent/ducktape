@@ -656,6 +656,7 @@ py_test(
         ":k8s_secrets_setup",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

@@ -45,12 +45,16 @@ def _read_secret_ref(api: CoreV1Api, ref: K8sSecretRef, namespace: str) -> str |
     return None
 
 
-def _build_kubeconfig(token: str, server: str, service_account: str, namespace: str, ca_path: Path | None) -> dict:
+def _build_kubeconfig(
+    token: str, server: str, service_account: str, namespace: str, ca_path: Path | None, proxy_url: str | None = None
+) -> dict:
     """Build kubeconfig dict for kubectl CLI use."""
     cluster_config: dict[str, str] = {"server": server}
     if ca_path and ca_path.exists():
         ca_pem = ca_path.read_text()
         cluster_config["certificate-authority-data"] = base64.b64encode(ca_pem.encode()).decode()
+    if proxy_url:
+        cluster_config["proxy-url"] = proxy_url
 
     return {
         "apiVersion": "v1",
@@ -124,8 +128,10 @@ def setup_k8s_secrets(
     if secrets_cfg.otel_bearer_token:
         result.otel_bearer_token = _read_secret_ref(api, secrets_cfg.otel_bearer_token, secrets_cfg.namespace)
 
-    # Write kubeconfig
-    kubeconfig = _build_kubeconfig(token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path)
+    # Write kubeconfig (pass proxy_url so kubectl routes through the same proxy as the Python client)
+    kubeconfig = _build_kubeconfig(
+        token, k8s_cfg.server, k8s_cfg.service_account, k8s_cfg.namespace, combined_ca_path, proxy_url=proxy
+    )
     kubeconfig_path = session_dir / "kubeconfig"
     kubeconfig_path.write_text(yaml.dump(kubeconfig, default_flow_style=False))
     kubeconfig_path.chmod(0o600)
