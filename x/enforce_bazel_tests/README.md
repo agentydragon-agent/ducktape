@@ -47,18 +47,24 @@ tests from a cold start. Also benchmarks simpler query strategies
 Measured on Claude Code web (gVisor container, Bazel 8.5.0, cold start
 each measurement — `bazel shutdown` before every query):
 
-| Query                                     |    Time | Targets |
-| ----------------------------------------- | ------: | ------: |
-| `find_affected_tests` (scoped rdeps)      | ~237s\* |   n/a\* |
-| `kind("py_test", //...)`                  |    ~35s |     302 |
-| `kind("go_test", //...)`                  |    ~34s |       8 |
-| `kind(".*_test", //...)`                  |    ~33s |     447 |
-| `//...` (enumerate all targets)           |    ~34s |   8,388 |
-| `rdeps(//..., //util/bazel:workspace.py)` |  ~56s\* |   n/a\* |
+| Query                                       |    Time | Targets |
+| ------------------------------------------- | ------: | ------: |
+| `find_affected_tests` (scoped rdeps)        | ~237s\* |   n/a\* |
+| `kind("py_test", //...)`                    |    ~35s |     302 |
+| `kind("go_test", //...)`                    |    ~34s |       8 |
+| `kind(".*_test", //...)`                    |    ~33s |     447 |
+| `//...` (enumerate all targets)             |    ~34s |   8,388 |
+| `rdeps(//..., <label>)`                     |  ~56s\* |   n/a\* |
+| `somepath(kind(".*_test", //...), <label>)` |     TBD |     TBD |
+| `kind(".*_test", allrdeps(<label>))`        |     TBD |     TBD |
 
 \* `find_affected_tests` and unscoped `rdeps` fail (exit 7) due to broken
 external deps in `//...` universe — the scoped universe excludes these, but
 still times out on cold start. With a warm server, scoped rdeps takes ~3s.
+
+`somepath` and `allrdeps` are alternative strategies being evaluated — they
+find tests first and then check for transitive dependency paths, rather than
+computing rdeps over the full universe.
 
 **Key takeaway**: Cold-start query time is ~33–35s regardless of query
 complexity (dominated by Bazel server startup + BCR resolution). The

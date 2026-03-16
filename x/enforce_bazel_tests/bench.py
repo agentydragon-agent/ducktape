@@ -5,6 +5,7 @@ Benchmarks from a cold Bazel server (shut down before each section):
 
 1. Affected-target discovery via find_affected_tests (validate + rdeps)
 2. Simple kind queries: all py_test, all go_test, all *_test targets
+3. Alternative strategies: somepath, allrdeps
 
 Usage:
     bazel run //x/enforce_bazel_tests:bench
@@ -110,10 +111,17 @@ def main() -> int:
     _bench_query(workspace, 'kind("go_test", //...)')
     _bench_query(workspace, 'kind(".*_test", //...)')
 
-    # --- Section 3: universe enumeration and rdeps ---
-    print("\n=== universe and rdeps (each from cold start) ===")
+    # --- Section 3: alternative strategies (each from cold start) ---
+    print("\n=== alternative strategies (each from cold start) ===")
     _bench_query(workspace, "//...")
     _bench_query(workspace, f"rdeps(//..., {label})")
+
+    # somepath: find all tests, then filter to those with a path to the changed label.
+    # This is the "find tests first, then check deps" approach.
+    _bench_query(workspace, f'somepath(kind(".*_test", //...), {label})')
+
+    # allrdeps with kind filter: equivalent to rdeps but may use different evaluation order.
+    _bench_query(workspace, f'kind(".*_test", allrdeps({label}))')
 
     return 0
 
