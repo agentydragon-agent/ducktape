@@ -9,10 +9,18 @@ resources:
   - httproute-direct.yaml
   - clusterrole-ollama-consumer.yaml
   - job-setup-gpt-oss-v1.yaml
-  - litellm.yaml
+  - litellm-deployment.yaml
+  - litellm-service.yaml
+  - litellm-serviceaccount.yaml
+  - litellm-servicemonitor.yaml
   - role-ollama-reader.yaml
 
 configMapGenerator:
+  - name: litellm-config
+    options:
+      disableNameSuffixHash: true
+    files:
+      - config.yaml=litellm-proxy-config.yaml
   - name: gpt-oss-scripts
     options:
       disableNameSuffixHash: true
