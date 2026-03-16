@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
 
 
 class ElicitationAction(StrEnum):
@@ -32,13 +32,11 @@ class ElicitationInput(HookInputBase):
 
 class ElicitationHookSpecificOutput(CamelModel):
     hook_event_name: Literal["Elicitation"] = "Elicitation"
-    action: ElicitationAction
+    action: ElicitationAction | None = None
     content: dict[str, Any] | None = None
 
 
-class ElicitationOutput(CamelModel):
-    continue_: bool = Field(default=True, alias="continue")
-    suppress_output: bool = False
+class ElicitationOutput(HookOutputBase):
     hook_specific_output: ElicitationHookSpecificOutput | None = None
 
 
@@ -53,11 +51,9 @@ class ElicitationResultInput(HookInputBase):
 
 class ElicitationResultHookSpecificOutput(CamelModel):
     hook_event_name: Literal["ElicitationResult"] = "ElicitationResult"
-    action: ElicitationAction
+    action: ElicitationAction | None = None
     content: dict[str, Any] | None = None
 
 
-class ElicitationResultOutput(CamelModel):
-    continue_: bool = Field(default=True, alias="continue")
-    suppress_output: bool = False
+class ElicitationResultOutput(HookOutputBase):
     hook_specific_output: ElicitationResultHookSpecificOutput | None = None

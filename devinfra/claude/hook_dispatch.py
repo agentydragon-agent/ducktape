@@ -80,7 +80,10 @@ def main() -> None:
                     return
 
             span.set_attribute("hook.handled", True)
-            sys.stdout.write(output.model_dump_json(by_alias=True))
+            # exclude_none: Zod .optional() accepts undefined (absent) but NOT null.
+            # Pydantic emits None as null by default; exclude_none omits those fields.
+            # (exclude_unset would also drop Literal defaults like hookEventName.)
+            sys.stdout.write(output.model_dump_json(by_alias=True, exclude_none=True))
         except Exception as e:
             span.set_status(trace.StatusCode.ERROR, str(e))
             span.record_exception(e)
