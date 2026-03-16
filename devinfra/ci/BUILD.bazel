@@ -22,7 +22,7 @@ prettier_bin.prettier_binary(
         "--config",
         "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
     ],
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
 )
 
 # === Base modules (no internal deps) ===

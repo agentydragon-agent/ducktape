@@ -1,7 +1,7 @@
-"""Generates cluster/k8s/ollama/litellm-config.yaml (ConfigMap).
+"""Generates cluster/k8s/ollama/litellm-proxy-config.yaml (raw LiteLLM proxy config).
 
 Run to regenerate the committed file:
-    bazel run //cluster/k8s/ollama:generate_litellm_bin > cluster/k8s/ollama/litellm-config.yaml
+    bazel run //cluster/k8s/ollama:generate_litellm_bin
 
 Parity enforced by:
     bazel test //cluster/k8s/ollama:test_generate_litellm
@@ -18,11 +18,15 @@ Parity enforced by:
 #   Stronger typing than Go templates; same "no committed output" property.
 """
 
-import sys
+import subprocess
 
 import yaml
 
+from util.bazel.runfiles import get_required_path
+from util.bazel.workspace import get_build_workspace_directory
+
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
+_PRETTIER_RLOCATION = "_main/devinfra/ci/prettier_/prettier"
 
 # (name suffix, num_ctx). None num_ctx = model default (128k for gpt-oss).
 _CTX_VARIANTS: list[tuple[str, int | None]] = [("128k", None), ("256k", 262_144), ("512k", 524_288), ("1m", 1_048_576)]
@@ -68,18 +72,15 @@ def generate() -> str:
         "environment_variables": {"LANGFUSE_HOST": "http://langfuse-web.langfuse.svc.cluster.local:3000"},
     }
 
-    configmap = {
-        "apiVersion": "v1",
-        "kind": "ConfigMap",
-        "metadata": {"name": "litellm-config", "namespace": "ollama"},
-        "data": {"config.yaml": yaml.dump(proxy_config, default_flow_style=False, sort_keys=False, allow_unicode=True)},
-    }
-
-    return yaml.dump(configmap, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return yaml.dump(proxy_config, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
 
 def main() -> None:
-    sys.stdout.write(generate())
+    out_path = get_build_workspace_directory() / "cluster/k8s/ollama/litellm-proxy-config.yaml"
+    out_path.write_text(generate())
+    prettier = get_required_path(_PRETTIER_RLOCATION)
+    subprocess.run([prettier, "--write", out_path], check=True)
+    print(f"Generated {out_path}")
 
 
 if __name__ == "__main__":

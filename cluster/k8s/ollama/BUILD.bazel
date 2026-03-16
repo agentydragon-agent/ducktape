@@ -6,8 +6,13 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "generate_litellm",
     srcs = ["generate_litellm.py"],
+    data = ["//devinfra/ci:prettier"],
     imports = ["../../.."],
-    deps = ["@pypi//pyyaml"],
+    deps = [
+        "//util/bazel:runfiles",
+        "//util/bazel:workspace",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_binary(
@@ -20,7 +25,7 @@ py_binary(
 py_test(
     name = "test_generate_litellm",
     srcs = ["test_generate_litellm.py"],
-    data = ["litellm-config.yaml"],
+    data = ["litellm-proxy-config.yaml"],
     imports = ["../../.."],
     deps = [
         ":generate_litellm",
