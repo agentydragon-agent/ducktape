@@ -16,31 +16,38 @@ If a component is macOS-only, document it explicitly. Do not silently assume mac
 ## Recovering from a Broken Session Start Hook (Claude Code Web)
 
 When running in Claude Code Web (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` is set), the
-session start hook at <devinfra/claude/README.md> sets up Bazel, TLS CA, and other
-tooling. If the hook fails or was never run, you'll see errors like:
+session start hook sets up Bazel, the auth proxy, TLS CA, k8s secrets, BuildBuddy RBE,
+and other tooling. If the hook fails or was never run, you'll see errors like certificate
+failures, `bazel: command not found`, `Unable to resolve host remote.buildbuddy.io`, or
+missing env files.
 
-- **Certificate errors**: `SSL: CERTIFICATE_VERIFY_FAILED`, `unable to get local issuer certificate`,
-  `x509: certificate signed by unknown authority` — the TLS inspection CA wasn't extracted
-- **`bazel: command not found`** — Bazelisk wasn't installed
-- **Bazel `FAILED: no such package '@...'`** or `Unable to fetch` — the session bazelrc
-  wasn't written, so Bazel's JVM proxy auth flags are missing
-- **`source /tmp/claude_env: No such file`** — the environment file wasn't generated
+**Recovery: read the implementation and replicate it manually.**
 
-**Recovery steps:**
+1. Read <devinfra/claude/session_start.py> — this is the entry point. Read `_setup_web()`
+   carefully to understand the full setup sequence and every step it performs.
+2. Read <devinfra/claude/README.md> for architecture context (proxy, TLS, Bazel auth).
+3. Read `.claude_hooks/config.yaml` for k8s server, namespace, and secret mappings.
+4. Read <devinfra/claude/config/bazelrc.mako> for the session bazelrc template.
+5. Read <devinfra/setup_buildbuddy.sh> for BuildBuddy configuration.
 
-1. Read <devinfra/claude/README.md> to understand the session start hook architecture
-2. Check the session start log: `tail -100 ~/.claude/session-env/<session_id>/session-start.log`
-3. Source the env file if it exists: `source /tmp/claude_env` (or `CLAUDE_ENV_FILE` value)
-4. If env file is missing, run the session start steps manually:
-   - Run `devinfra/claude/session_start.py` (see <devinfra/claude/README.md> for what it does)
-   - Or run individual steps: TLS CA setup, bazelisk install, env file generation
-5. Verify Bazel: `bazel info`
+**Follow the hook's process closely.** Do not skip steps or improvise shortcuts. Every
+step exists for a reason. In particular:
 
-**Notify the user** if you suspect the session start hook failed — they may need to
-re-run it or debug the hook configuration. Do not silently work around the problem.
+- **Do not skip k8s secrets setup** — this fetches the BuildBuddy API key
+  (`DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` env var has the SA token, config is in
+  `.claude_hooks/config.yaml`). Without BuildBuddy, RBE is unavailable and most
+  tests cannot run remotely.
+- **Do not skip BuildBuddy setup** — run `devinfra/setup_buildbuddy.sh` with the
+  fetched API key. Without this, Bazel has no remote cache or execution.
+
+Check the session start log first if it exists:
+`tail -100 ~/.claude/session-env/<session_id>/session-start.log`
 
 **Do NOT** fight certificate or proxy errors by setting `--noverify`, `SSL_VERIFY=false`, or
 similar bypasses. The root cause is always a missing or broken session start hook setup.
+
+**Notify the user** if you suspect the session start hook failed — they may need to
+re-run it or debug the hook configuration. Do not silently work around the problem.
 
 ## Sandbox
 
