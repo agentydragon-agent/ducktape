@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import pytest_bazel
+import yaml
 
 from devinfra.claude.hook_config import HookConfig, K8sConfig, K8sSecretMapping, K8sSecretsConfig
 from devinfra.claude.k8s_secrets_setup import setup_k8s_secrets
@@ -77,6 +78,32 @@ def test_unique_env_vars_succeeds(tmp_path: Path, mock_k8s_api: MagicMock) -> No
 
     assert result.env_vars["VAR_A"] == "value_a"
     assert result.env_vars["VAR_B"] == "value_b"
+
+
+def test_kubeconfig_proxy_url(tmp_path: Path, mock_k8s_api: MagicMock) -> None:
+    """When proxy is set, kubeconfig should include proxy-url in the cluster config."""
+    config = _make_config([])
+    mock_k8s_api.read_namespaced_secret.side_effect = []
+
+    result = setup_k8s_secrets(
+        token="tok", session_dir=tmp_path, combined_ca_path=None, config=config, proxy="http://localhost:18081"
+    )
+
+    assert result.kubeconfig_path is not None
+    kubeconfig = yaml.safe_load(result.kubeconfig_path.read_text())
+    assert kubeconfig["clusters"][0]["cluster"]["proxy-url"] == "http://localhost:18081"
+
+
+def test_kubeconfig_no_proxy_url_when_unset(tmp_path: Path, mock_k8s_api: MagicMock) -> None:
+    """When proxy is not set, kubeconfig should not include proxy-url."""
+    config = _make_config([])
+    mock_k8s_api.read_namespaced_secret.side_effect = []
+
+    result = setup_k8s_secrets(token="tok", session_dir=tmp_path, combined_ca_path=None, config=config)
+
+    assert result.kubeconfig_path is not None
+    kubeconfig = yaml.safe_load(result.kubeconfig_path.read_text())
+    assert "proxy-url" not in kubeconfig["clusters"][0]["cluster"]
 
 
 if __name__ == "__main__":
