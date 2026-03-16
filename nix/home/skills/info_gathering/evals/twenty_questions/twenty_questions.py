@@ -9,7 +9,6 @@ import argparse
 import asyncio
 import json
 import logging
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -124,24 +123,16 @@ class _TwentyQuestionsRunner:
     async def _run_turn(self, turn: int, agent_tool_params: list[ToolParam]) -> Correct | None:
         """Run one agent+sim exchange. Returns Correct if guessed, None to continue."""
         # Agent turn — with optional scratch tools
-        _t0 = time.monotonic()
         agent_resp = await self.client.call(
             messages=self.agent_messages, system=self.agent_system, tools=agent_tool_params or None
         )
         self.tracker.add(agent_resp.usage)
         log_response(
-            self.log_entries,
-            name=self.name,
-            player="agent",
-            turn=turn,
-            model=self.client.model,
-            response=agent_resp,
-            duration_s=time.monotonic() - _t0,
+            self.log_entries, name=self.name, player="agent", turn=turn, model=self.client.model, response=agent_resp
         )
 
         # Resolve any scratch tool calls — does not count as a new turn
         if extract_tool_calls(agent_resp):
-            _t1 = time.monotonic()
             agent_resp, self.agent_messages, usages = await self.client.resolve_tool_calls(
                 response=agent_resp,
                 messages=self.agent_messages,
@@ -157,7 +148,6 @@ class _TwentyQuestionsRunner:
                 turn=turn,
                 model=self.client.model,
                 response=agent_resp,
-                duration_s=time.monotonic() - _t1,
             )
 
         agent_msg = _serialize_message(agent_resp.choices[0].message)
@@ -174,19 +164,12 @@ class _TwentyQuestionsRunner:
 
         self.sim_messages.append({"role": "user", "content": agent_text})
 
-        _t2 = time.monotonic()
         sim_resp = await self.client.call(
             messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="auto"
         )
         self.tracker.add(sim_resp.usage)
         log_response(
-            self.log_entries,
-            name=self.name,
-            player="simulator",
-            turn=turn,
-            model=self.client.model,
-            response=sim_resp,
-            duration_s=time.monotonic() - _t2,
+            self.log_entries, name=self.name, player="simulator", turn=turn, model=self.client.model, response=sim_resp
         )
 
         sim_msg = _serialize_message(sim_resp.choices[0].message)
