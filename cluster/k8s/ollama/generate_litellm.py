@@ -37,7 +37,10 @@ _MODELS: list[tuple[str, list[tuple[str, int | None]]]] = [
 def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> list[dict]:
     name_base = tag.replace(":", "-")
     entries = []
-    for api, suffix, api_base in [("openai", "", f"{_OLLAMA_BASE}/v1"), ("ollama", "-native", _OLLAMA_BASE)]:
+    for api, suffix, api_base in [
+        ("openai", "-openai-chat", f"{_OLLAMA_BASE}/v1"),
+        ("ollama", "-ollama-native", _OLLAMA_BASE),
+    ]:
         for ctx_suffix, num_ctx in ctx_variants:
             params: dict = {"model": f"{api}/{tag}", "api_base": api_base}
             if num_ctx is not None:
