@@ -71,7 +71,6 @@ py_test(
         "//cluster/validation:crd_layering",
         "//cluster/validation:kustomize",
         "//util/bazel:runfiles",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

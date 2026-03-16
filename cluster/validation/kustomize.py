@@ -19,11 +19,9 @@ class KustomizeFile(BaseModel):
 
 
 class KustomizeBuildResult(BaseModel):
-    """Result of running kustomize build on a directory."""
+    """Successful kustomize build output for a single kustomization directory."""
 
     kustomization_path: Path
-    success: bool
-    error: str = ""
     resources: list[K8sResource] = []
 
 

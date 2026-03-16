@@ -16,23 +16,15 @@ from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 
-def get_private_key_from_tofu(tf_dir: Path) -> str | None:
+def get_private_key_from_tofu(state_path: Path) -> str:
     """Extract sealed_secrets_private_key_pem from tofu state."""
-    state_file = tf_dir / "terraform.tfstate"
-    if not state_file.exists():
-        return None
-
     tofu_bin = get_required_path("multitool/tools/tofu/tofu")
-    result = subprocess.run(
-        [tofu_bin, "output", "-raw", "sealed_secrets_private_key_pem"],
-        check=False,
-        cwd=tf_dir,
+    return subprocess.run(
+        [tofu_bin, "output", "-raw", "-state", state_path, "sealed_secrets_private_key_pem"],
+        check=True,
         capture_output=True,
         text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Could not read sealed_secrets_private_key_pem from tofu state: {result.stderr}")
-    return result.stdout
+    ).stdout
 
 
 def find_sealed_secrets(k8s_dir: Path) -> list[Path]:
@@ -61,17 +53,14 @@ def validate_sealed_secret(sealed_secret_path: Path, private_key_path: Path) -> 
 
 def main() -> int:
     workspace = get_build_workspace_directory()
-    cluster_root = workspace / "cluster"
-    tf_dir = cluster_root / "terraform" / "bootstrap" / "persistent-auth"
+    state_path = workspace / "cluster" / "terraform" / "bootstrap" / "persistent-auth" / "terraform.tfstate"
     k8s_dir = workspace / _K8S_SUBPATH
 
-    if not (tf_dir / "terraform.tfstate").exists():
-        print(f"No tofu state at {tf_dir}/terraform.tfstate — skipping SealedSecret validation")
+    if not state_path.exists():
+        print(f"No tofu state at {state_path} — skipping SealedSecret validation")
         return 0
 
-    if not (private_key := get_private_key_from_tofu(tf_dir)):
-        print(f"Could not read private key from tofu state — run 'tofu apply' in {tf_dir} first")
-        return 1
+    private_key = get_private_key_from_tofu(state_path)
 
     if not (sealed_secrets := find_sealed_secrets(k8s_dir)):
         print("No SealedSecret files found")
@@ -95,7 +84,7 @@ def main() -> int:
         if failed > 0:
             print()
             print("ERROR: Some SealedSecrets cannot be decrypted with the tofu keypair")
-            print(f"Run 'cd {tf_dir} && tofu apply' to re-seal")
+            print(f"Run 'cd {state_path.parent} && tofu apply' to re-seal")
             return 1
 
         print()

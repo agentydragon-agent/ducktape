@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import yaml
-
-from cluster.validation.k8s import parse_k8s_resources
 from cluster.validation.kustomize import KustomizeBuildResult
 
 # Operator kustomizations and the CRD kinds they manage.
@@ -42,16 +37,21 @@ CRD_TO_OPERATOR: dict[str, str] = {
 }
 
 
-def check_crd_layering(result: KustomizeBuildResult) -> list[str]:
-    """Check if a kustomization mixes HelmReleases with CRD instances."""
-    if not result.success:
-        return []
+class CrdLayeringViolation(Exception):
+    """Raised when a kustomization mixes HelmReleases with CRD instances."""
 
+
+def check_crd_layering(result: KustomizeBuildResult) -> None:
+    """Check if a kustomization mixes HelmReleases with CRD instances.
+
+    Raises CrdLayeringViolation if a violation is found.
+    Silently returns for operator kustomizations and overlays.
+    """
     if any(part in OPERATOR_CRDS for part in result.kustomization_path.parent.parts):
-        return []
+        return
 
     if "overlays" in result.kustomization_path.parts:
-        return []
+        return
 
     has_helmrelease = any(r.kind == "HelmRelease" for r in result.resources)
     crd_instances = [(r.kind, CRD_TO_OPERATOR[r.kind]) for r in result.resources if r.kind in CRD_TO_OPERATOR]
@@ -59,15 +59,7 @@ def check_crd_layering(result: KustomizeBuildResult) -> list[str]:
     if has_helmrelease and crd_instances:
         kust_name = result.kustomization_path.parent.name
         unique_crds = sorted({f"{k} (needs {op})" for k, op in crd_instances})
-        return [
+        raise CrdLayeringViolation(
             f"{kust_name}: mixes HelmRelease with CRD instances: {', '.join(unique_crds)}. "
             f"Split into a separate '{kust_name}-secrets/' Kustomization."
-        ]
-
-    return []
-
-
-def make_build_result(path: Path, yaml_output: str) -> KustomizeBuildResult:
-    return KustomizeBuildResult(
-        kustomization_path=path, success=True, resources=parse_k8s_resources(yaml.safe_load_all(yaml_output))
-    )
+        )

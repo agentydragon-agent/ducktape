@@ -5,9 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
 import pytest_bazel
+import yaml
 
-from cluster.validation.crd_layering import check_crd_layering, make_build_result
+from cluster.validation.crd_layering import CrdLayeringViolation, check_crd_layering
+from cluster.validation.k8s import parse_k8s_resources
+from cluster.validation.kustomize import KustomizeBuildResult
+
+
+def _build_result(path: Path, yaml_output: str) -> KustomizeBuildResult:
+    return KustomizeBuildResult(
+        kustomization_path=path, resources=parse_k8s_resources(yaml.safe_load_all(yaml_output))
+    )
 
 
 class TestCrdLayeringCheck:
@@ -22,7 +32,7 @@ class TestCrdLayeringCheck:
                 spec:
                   chart: test
         """)
-        assert check_crd_layering(make_build_result(Path("/k8s/test-app/kustomization.yaml"), output)) == []
+        check_crd_layering(_build_result(Path("/k8s/test-app/kustomization.yaml"), output))
 
     def test_valid_crd_only(self) -> None:
         output = dedent("""
@@ -34,7 +44,7 @@ class TestCrdLayeringCheck:
               secretStoreRef:
                 name: vault-backend
         """)
-        assert check_crd_layering(make_build_result(Path("/k8s/test-app/kustomization.yaml"), output)) == []
+        check_crd_layering(_build_result(Path("/k8s/test-app/kustomization.yaml"), output))
 
     def test_detects_crd_layering_violation(self) -> None:
         output = dedent("""
@@ -55,9 +65,8 @@ class TestCrdLayeringCheck:
               secretStoreRef:
                 name: vault-backend
         """)
-        errors = check_crd_layering(make_build_result(Path("/k8s/test-app/kustomization.yaml"), output))
-        assert len(errors) == 1
-        assert "ExternalSecret" in errors[0]
+        with pytest.raises(CrdLayeringViolation, match="ExternalSecret"):
+            check_crd_layering(_build_result(Path("/k8s/test-app/kustomization.yaml"), output))
 
     def test_skips_operator_kustomizations(self) -> None:
         output = dedent("""
@@ -71,9 +80,8 @@ class TestCrdLayeringCheck:
             metadata:
               name: vault
         """)
-        assert (
-            check_crd_layering(make_build_result(Path("/k8s/external-secrets-operator/kustomization.yaml"), output))
-            == []
+        check_crd_layering(
+            _build_result(Path("/k8s/external-secrets-operator/kustomization.yaml"), output)
         )
 
     def test_skips_nested_operator_kustomizations(self) -> None:
@@ -88,9 +96,8 @@ class TestCrdLayeringCheck:
             metadata:
               name: letsencrypt-prod
         """)
-        assert (
-            check_crd_layering(make_build_result(Path("/k8s/cert-manager-config/base/kustomization.yaml"), output))
-            == []
+        check_crd_layering(
+            _build_result(Path("/k8s/cert-manager-config/base/kustomization.yaml"), output)
         )
 
     def test_skips_deeply_nested_operator_kustomizations(self) -> None:
@@ -105,7 +112,7 @@ class TestCrdLayeringCheck:
             metadata:
               name: vault
         """)
-        assert check_crd_layering(make_build_result(Path("/k8s/vault/config/base/kustomization.yaml"), output)) == []
+        check_crd_layering(_build_result(Path("/k8s/vault/config/base/kustomization.yaml"), output))
 
     def test_skips_overlay_directories(self) -> None:
         output = dedent("""
@@ -119,9 +126,8 @@ class TestCrdLayeringCheck:
             metadata:
               name: test-secret
         """)
-        assert (
-            check_crd_layering(make_build_result(Path("/k8s/test-app/overlays/production/kustomization.yaml"), output))
-            == []
+        check_crd_layering(
+            _build_result(Path("/k8s/test-app/overlays/production/kustomization.yaml"), output)
         )
 
 

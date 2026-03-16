@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 
 class DependsOn(BaseModel):
@@ -27,16 +28,34 @@ class HealthCheck(BaseModel):
     namespace: str = ""
 
 
+class FluxKustomizationSpec(BaseModel):
+    """Spec portion of a Flux Kustomization CR."""
+
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
+
+    path: str = ""
+    depends_on: list[DependsOn] = []
+    health_checks: list[HealthCheck] = []
+
+
 class FluxKustomization(BaseModel):
     """Parsed flux-kustomization.yaml Kustomization CR."""
 
-    model_config = ConfigDict(populate_by_name=True, extra="ignore")
-
     name: str
     file_path: Path
-    spec_path: str = Field(default="", alias="path")
-    depends_on: list[DependsOn] = Field(default=[], alias="dependsOn")
-    health_checks: list[HealthCheck] = Field(default=[], alias="healthChecks")
+    spec: FluxKustomizationSpec
+
+    @property
+    def spec_path(self) -> str:
+        return self.spec.path
+
+    @property
+    def depends_on(self) -> list[DependsOn]:
+        return self.spec.depends_on
+
+    @property
+    def health_checks(self) -> list[HealthCheck]:
+        return self.spec.health_checks
 
 
 def parse_flux_kustomization(flux_file: Path) -> list[FluxKustomization]:
@@ -50,15 +69,10 @@ def parse_flux_kustomization(flux_file: Path) -> list[FluxKustomization]:
                 continue
             if not doc.get("apiVersion", "").startswith("kustomize.toolkit.fluxcd.io"):
                 continue
-
-            metadata = doc.get("metadata", {}) or {}
-            name = metadata.get("name", "")
-            if not name:
+            if not (name := (doc.get("metadata") or {}).get("name")):
                 continue
 
-            spec = doc.get("spec", {}) or {}
-            results.append(FluxKustomization.model_validate({"name": name, "file_path": flux_file, **spec}))
+            spec = FluxKustomizationSpec.model_validate(doc.get("spec") or {})
+            results.append(FluxKustomization(name=name, file_path=flux_file, spec=spec))
 
     return results
-
-

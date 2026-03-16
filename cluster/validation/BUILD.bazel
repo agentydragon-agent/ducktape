@@ -83,11 +83,7 @@ py_library(
     testonly = True,
     srcs = ["crd_layering.py"],
     imports = ["../.."],
-    deps = [
-        ":k8s",
-        ":kustomize",
-        "@pypi//pyyaml",
-    ],
+    deps = [":kustomize"],
 )
 
 # ============================================================================
@@ -232,7 +228,10 @@ py_test(
     imports = ["../.."],
     deps = [
         ":crd_layering",
+        ":k8s",
+        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
