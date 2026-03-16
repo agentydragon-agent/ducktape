@@ -1,7 +1,7 @@
-"""Generates cluster/k8s/ollama/litellm.yaml.
+"""Generates cluster/k8s/ollama/litellm-config.yaml (ConfigMap).
 
 Run to regenerate the committed file:
-    bazel run //cluster/k8s/ollama:generate_litellm
+    bazel run //cluster/k8s/ollama:generate_litellm_bin > cluster/k8s/ollama/litellm-config.yaml
 
 Parity enforced by:
     bazel test //cluster/k8s/ollama:test_generate_litellm
@@ -60,51 +60,22 @@ def generate() -> str:
     for tag, ctx_variants in _MODELS:
         model_list.extend(_model_entries(tag, ctx_variants))
 
-    helm_repo = {
-        "apiVersion": "source.toolkit.fluxcd.io/v1",
-        "kind": "HelmRepository",
-        "metadata": {"name": "litellm", "namespace": "ollama"},
-        "spec": {"type": "oci", "url": "oci://ghcr.io/berriai", "interval": "24h"},
+    # Master key is injected as LITELLM_MASTER_KEY env var in the Deployment;
+    # not repeated here. Langfuse keys come via envFrom: langfuse-api-keys secret.
+    proxy_config = {
+        "model_list": model_list,
+        "litellm_settings": {"drop_params": True, "success_callback": ["langfuse"]},
+        "environment_variables": {"LANGFUSE_HOST": "http://langfuse-web.langfuse.svc.cluster.local:3000"},
     }
 
-    helm_release = {
-        "apiVersion": "helm.toolkit.fluxcd.io/v2",
-        "kind": "HelmRelease",
-        "metadata": {"name": "litellm", "namespace": "ollama"},
-        "spec": {
-            "interval": "15m",
-            "install": {"remediation": {"retries": 3}},
-            "chart": {
-                "spec": {
-                    "chart": "litellm-helm",
-                    # Upstream issue BerriAI/litellm#15288: chart-derived image tags may not
-                    # exist on ghcr.io. Pin to main-stable (rolling stable tag).
-                    "version": "1.82.0-stable.patch5",
-                    "sourceRef": {"kind": "HelmRepository", "name": "litellm", "namespace": "ollama"},
-                }
-            },
-            "values": {
-                "image": {"tag": "main-stable"},
-                "proxy_config": {
-                    "model_list": model_list,
-                    "general_settings": {"master_key": "os.environ/LITELLM_MASTER_KEY"},
-                    "litellm_settings": {"drop_params": True, "success_callback": ["langfuse"]},
-                    "environment_variables": {"LANGFUSE_HOST": "http://langfuse-web.langfuse.svc.cluster.local:3000"},
-                },
-                "masterkeySecretName": "ollama-api-key",
-                "masterkeySecretKey": "api-key",
-                # Inject LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY from ESO-synced secret.
-                # The secret won't exist until Langfuse API keys are seeded in Vault —
-                # see cluster/k8s/props/plan.md for the required manual step.
-                "environmentSecrets": ["langfuse-api-keys"],
-                # No standalone database needed for simple proxying.
-                "db": {"deployStandalone": False},
-                "migrationJob": {"enabled": False},
-            },
-        },
+    configmap = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": "litellm-config", "namespace": "ollama"},
+        "data": {"config.yaml": yaml.dump(proxy_config, default_flow_style=False, sort_keys=False, allow_unicode=True)},
     }
 
-    return yaml.dump_all([helm_repo, helm_release], default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return yaml.dump(configmap, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
 
 def main() -> None:

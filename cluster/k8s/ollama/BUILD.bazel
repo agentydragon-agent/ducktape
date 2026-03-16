@@ -20,7 +20,7 @@ py_binary(
 py_test(
     name = "test_generate_litellm",
     srcs = ["test_generate_litellm.py"],
-    data = ["litellm.yaml"],
+    data = ["litellm-config.yaml"],
     imports = ["../../.."],
     deps = [
         ":generate_litellm",

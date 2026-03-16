@@ -1,0 +1,80 @@
+# Replaced LiteLLM Helm chart (litellm-helm v1.82.0-stable.patch5 from oci://ghcr.io/berriai/litellm-helm).
+# The chart handled Deployment, Service, ServiceAccount, ConfigMap, and optional DB/HPA/KEDA/ServiceMonitor.
+# We only used the core subset; hand-written manifests are simpler and avoid the Helm indirection.
+#
+# TODO: LiteLLM supports virtual key management, per-key spend limits, and rate limiting via
+# a PostgreSQL database. Consider enabling when multi-user/multi-team API key isolation is needed.
+# See: https://docs.litellm.ai/docs/proxy/virtual_keys
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: ollama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+    spec:
+      serviceAccountName: litellm
+      terminationGracePeriodSeconds: 90
+      containers:
+        - name: litellm
+          image: ghcr.io/berriai/litellm:main-v1.23.9
+          args: ["--config", "/etc/litellm/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: "4000"
+            - name: LITELLM_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ollama-api-key
+                  key: api-key
+          envFrom:
+            - secretRef:
+                name: langfuse-api-keys
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          startupProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          volumeMounts:
+            - name: config
+              mountPath: /etc/litellm/config.yaml
+              subPath: config.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+            items:
+              - key: config.yaml
+                path: config.yaml
