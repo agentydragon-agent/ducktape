@@ -165,21 +165,26 @@ class _TwentyQuestionsRunner:
         self.sim_messages.append({"role": "user", "content": agent_text})
 
         sim_resp = await self.client.call(
-            messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="auto"
+            messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="required"
         )
         self.tracker.add(sim_resp.usage)
         log_response(
             self.log_entries, name=self.name, player="simulator", turn=turn, model=self.client.model, response=sim_resp
         )
 
+        if not extract_tool_calls(sim_resp):
+            raise RuntimeError(
+                f"Turn {turn}: simulator made no tool call despite tool_choice=required "
+                f"(finish_reason={sim_resp.choices[0].finish_reason!r}, "
+                f"content={sim_resp.choices[0].message.content!r})"
+            )
+
         sim_msg = _serialize_message(sim_resp.choices[0].message)
         self.sim_messages.append(sim_msg)
 
         action = _parse_sim_action(sim_resp)
         if action is None:
-            logger.warning("Turn %d: could not parse simulator action", turn)
-            self.agent_messages.append({"role": "user", "content": "(no response)"})
-            return None
+            raise RuntimeError(f"Turn {turn}: simulator called unexpected tool, could not parse action")
 
         tool_name, answer = action
 
