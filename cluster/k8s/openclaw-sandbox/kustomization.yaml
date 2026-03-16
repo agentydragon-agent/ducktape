@@ -9,5 +9,6 @@ resources:
   - rolebinding-openclaw-sa.yaml
   - sa-token-secret.yaml
   - rolebinding-ollama-reader.yaml
+  - rolebinding-langfuse-reader.yaml
   - rolebinding-openclaw-reader.yaml
   - rolebinding-harbor-reader.yaml
