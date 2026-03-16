@@ -33,9 +33,8 @@ spec:
       tag: "main-stable"
     proxy_config:
       model_list:
-        # Use openai/ provider + /v1 base URL: Ollama's OpenAI-compatible endpoint
-        # correctly handles tool/function calling. The ollama/ provider uses the
-        # native /api/chat endpoint which ignores the tools parameter.
+        # openai/ provider: routes via Ollama's OpenAI-compatible endpoint
+        # (/v1/chat/completions). Correctly handles tool/function calling.
         - model_name: gpt-oss-20b-128k
           litellm_params:
             model: openai/gpt-oss:20b
@@ -79,6 +78,52 @@ spec:
           litellm_params:
             model: openai/gpt-oss:120b
             api_base: http://ollama.ollama.svc.cluster.local:11434/v1
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        # ollama/ provider: routes via Ollama's native /api/chat endpoint.
+        # Parallel variants for comparison/debugging.
+        - model_name: gpt-oss-20b-128k-native
+          litellm_params:
+            model: ollama/gpt-oss:20b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        - model_name: gpt-oss-20b-1m-native
+          litellm_params:
+            model: ollama/gpt-oss:20b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+            extra_body:
+              options:
+                num_ctx: 1048576
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        - model_name: gpt-oss-20b-256k-native
+          litellm_params:
+            model: ollama/gpt-oss:20b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+            extra_body:
+              options:
+                num_ctx: 262144
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        - model_name: gpt-oss-20b-512k-native
+          litellm_params:
+            model: ollama/gpt-oss:20b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
+            extra_body:
+              options:
+                num_ctx: 524288
+          model_info:
+            mode: chat
+            supports_function_calling: true
+        - model_name: gpt-oss-120b-128k-native
+          litellm_params:
+            model: ollama/gpt-oss:120b
+            api_base: http://ollama.ollama.svc.cluster.local:11434
           model_info:
             mode: chat
             supports_function_calling: true
