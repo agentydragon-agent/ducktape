@@ -35,9 +35,7 @@ py_test(
     ],
     exec_properties = {"dockerNetwork": "bridge"},
     imports = ["../../../.."],
-    tags = [
-        "requires-network",
-    ],
+    tags = ["requires-network"],
     deps = [
         "//cluster/validation:helm_templates",
         "//util/bazel:runfiles",

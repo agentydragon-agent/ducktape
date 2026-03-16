@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from textwrap import dedent
 
-import pytest
 import pytest_bazel
 
 from cluster.validation.dependencies import build_dependency_graph, find_cycles
 from cluster.validation.flux import parse_flux_kustomization
+from util.bazel.runfiles import get_required_path
 
 
 class TestParseFluxKustomization:
@@ -41,9 +40,7 @@ class TestParseFluxKustomization:
 
     def test_loads_cycle_testdata(self) -> None:
         """Loads cycle testdata and detects the cycle."""
-        testdata_dir = Path(os.environ.get("TEST_SRCDIR", ".")) / "ducktape/cluster/validation/testdata/cycle"
-        if not testdata_dir.exists():
-            pytest.skip("Testdata not available in this context")
+        testdata_dir = get_required_path("_main/cluster/validation/testdata/cycle")
 
         kustomizations = {}
         for flux_file in testdata_dir.rglob("flux-kustomization.yaml"):

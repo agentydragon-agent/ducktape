@@ -1,8 +1,7 @@
 """Validate all SealedSecrets can be decrypted with OpenTofu keypair.
 
 Uses kubeseal --recovery-unseal (works offline, no cluster needed).
-
-Run via Bazel: bazel run //cluster/validation:validate_sealed_secrets
+Called directly by //devinfra/precommit.
 """
 
 from __future__ import annotations
@@ -67,18 +66,14 @@ def main() -> int:
     k8s_dir = workspace / _K8S_SUBPATH
 
     if not (tf_dir / "terraform.tfstate").exists():
-        print(f"No tofu state found at {tf_dir}/terraform.tfstate")
-        print("   Skipping SealedSecret validation (state not initialized)")
+        print(f"No tofu state at {tf_dir}/terraform.tfstate — skipping SealedSecret validation")
         return 0
 
-    private_key = get_private_key_from_tofu(tf_dir)
-    if not private_key:
-        print("Could not read private key from tofu state")
-        print(f"   Run 'tofu apply' in {tf_dir} first")
+    if not (private_key := get_private_key_from_tofu(tf_dir)):
+        print(f"Could not read private key from tofu state — run 'tofu apply' in {tf_dir} first")
         return 1
 
-    sealed_secrets = find_sealed_secrets(k8s_dir)
-    if not sealed_secrets:
+    if not (sealed_secrets := find_sealed_secrets(k8s_dir)):
         print("No SealedSecret files found")
         return 0
 

@@ -10,21 +10,30 @@ so there's no need for a separate "all kustomizations build" test.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import more_itertools
+import pytest
 import pytest_bazel
+from pydantic import TypeAdapter
 
 from cluster.validation.crd_layering import check_crd_layering
 from cluster.validation.kustomize import KustomizeBuildResult
+from util.bazel.runfiles import get_required_path
+
+_RESULTS = TypeAdapter(list[KustomizeBuildResult]).validate_json(
+    get_required_path("_main/cluster/validation/kustomize_build_results.json").read_bytes()
+)
 
 
-def test_no_duplicate_external_secrets(kustomize_build_results: list[KustomizeBuildResult]) -> None:
+def test_no_duplicate_external_secrets() -> None:
     """Exactly one external-secrets HelmRelease must exist."""
-    deployments: dict[tuple[str | None, str | None], list[str]] = {}
-    for result in kustomize_build_results:
+    deployments: dict[tuple[str | None, str | None], list[Path]] = {}
+    for result in _RESULTS:
         for resource in result.resources:
             if resource.kind == "HelmRelease" and resource.name == "external-secrets":
                 key = (resource.namespace, resource.chart_version)
-                deployments.setdefault(key, []).append(str(result.kustomization_path.parent))
+                deployments.setdefault(key, []).append(result.kustomization_path.parent)
 
     more_itertools.one(
         deployments,
@@ -35,11 +44,10 @@ def test_no_duplicate_external_secrets(kustomize_build_results: list[KustomizeBu
     )
 
 
-def test_no_crd_layering_violations(kustomize_build_results: list[KustomizeBuildResult]) -> None:
+@pytest.mark.parametrize("result", _RESULTS, ids=lambda r: str(r.kustomization_path.parent))
+def test_no_crd_layering_violations(result: KustomizeBuildResult) -> None:
     """HelmReleases must not be mixed with CRD instances in one kustomization."""
-    errors = []
-    for result in kustomize_build_results:
-        errors.extend(check_crd_layering(result))
+    errors = check_crd_layering(result)
     assert not errors, "\n".join(errors)
 
 

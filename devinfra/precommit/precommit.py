@@ -23,16 +23,15 @@ import asyncio
 import os
 import sys
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import pygit2
 
+from cluster.validation.sealed_secrets import main as sealed_secrets_main
 from devinfra.check_pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from devinfra.precommit.check_filename_conventions import check_filename_conventions
 from devinfra.precommit.check_terraform_centralization import find_violations
-from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
 _LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
@@ -107,32 +106,6 @@ async def run_pytest_main_check(
     return ValidationResult(name, Passed(elapsed))
 
 
-async def run_subprocess_validation(
-    name: str,
-    bin_rlocation: str,
-    files: list[Path],
-    file_filter: Callable[[Path], bool],
-    repo_root: Path,
-    extra_args: list[str] | None = None,
-) -> ValidationResult:
-    """Run a subprocess validation if any files match the filter."""
-    if not any(file_filter(f) for f in files):
-        return ValidationResult(name, Skipped())
-
-    start = time.perf_counter()
-    validate_bin = get_required_path(bin_rlocation)
-    cmd = [validate_bin] + (extra_args or [])
-    proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=repo_root
-    )
-    stdout, stderr = await proc.communicate()
-    elapsed = time.perf_counter() - start
-
-    output = (stdout + stderr).decode()
-    if proc.returncode == 0:
-        return ValidationResult(name, Passed(elapsed))
-    return ValidationResult(name, Failed(elapsed, output))
-
 
 async def run_terraform_centralization_check(files: list[Path], repo_root: Path) -> ValidationResult:
     """Check terraform modules don't define provider versions."""
@@ -160,6 +133,20 @@ async def run_filename_convention_check(repo: pygit2.Repository) -> ValidationRe
     return ValidationResult(name, Passed(elapsed))
 
 
+async def run_sealed_secrets_check(files: list[Path]) -> ValidationResult:
+    """Validate SealedSecrets can be decrypted with tofu keypair."""
+    name = "sealed-secrets"
+    if not any(is_sealed_secret(f) for f in files):
+        return ValidationResult(name, Skipped())
+
+    start = time.perf_counter()
+    rc = sealed_secrets_main()
+    elapsed = time.perf_counter() - start
+    if rc == 0:
+        return ValidationResult(name, Passed(elapsed))
+    return ValidationResult(name, Failed(elapsed, "SealedSecret validation failed"))
+
+
 async def run_validate(
     files: list[Path], repo_root: Path, repo: pygit2.Repository, bazel_index: BazelPyTestIndex
 ) -> list[ValidationResult]:
@@ -169,9 +156,7 @@ async def run_validate(
             run_pytest_main_check(files, repo_root, repo, bazel_index),
             run_terraform_centralization_check(files, repo_root),
             run_filename_convention_check(repo),
-            run_subprocess_validation(
-                "sealed-secrets", "_main/cluster/validation/validate_sealed_secrets", files, is_sealed_secret, repo_root
-            ),
+            run_sealed_secrets_check(files),
         )
     )
 

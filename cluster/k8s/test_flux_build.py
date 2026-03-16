@@ -1,22 +1,19 @@
-"""Test: flux build kustomization succeeds and produces expected resources."""
+"""Test: flux build kustomization produces expected resources.
+
+Build failures are caught by the genrule itself (exits non-zero).
+This test validates the content of the output.
+"""
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest_bazel
 import yaml
 
-from cluster.validation.flux import run_flux_build
 from cluster.validation.k8s import parse_k8s_resources
 
 
-def test_flux_build_succeeds(k8s_dir: Path) -> None:
-    result = run_flux_build(k8s_dir)
-    assert result.returncode == 0, f"flux build failed:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
-    assert result.stdout.strip(), f"flux build returned empty output:\nstderr: {result.stderr.strip() or 'none'}"
-
-    kinds = {r.kind for r in parse_k8s_resources(yaml.safe_load_all(result.stdout))}
+def test_flux_build_has_expected_kinds(flux_build_output: str) -> None:
+    kinds = {r.kind for r in parse_k8s_resources(yaml.safe_load_all(flux_build_output))}
     assert "Kustomization" in kinds, "No Flux Kustomization resources in flux build output"
     assert "GitRepository" in kinds, "No GitRepository resource in flux build output"
 

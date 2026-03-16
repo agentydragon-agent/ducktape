@@ -26,8 +26,8 @@ def test_authentik_blueprint_completeness() -> None:
     on_disk = {p.name for p in blueprints_dir.glob("*.yaml")}
     unlisted = sorted(on_disk - listed_files)
 
-    assert not unlisted, "Authentik blueprints not listed in configMapGenerator:\n" + "\n".join(
-        f"  {name} — add 'blueprints/{name}' to authentik-sso-blueprints files list" for name in unlisted
+    assert not unlisted, (
+        f"Add to authentik-sso-blueprints files list: {', '.join(f'blueprints/{name}' for name in unlisted)}"
     )
 
 

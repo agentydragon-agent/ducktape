@@ -1,4 +1,8 @@
-"""Test: no orphaned YAML files (every file referenced by a kustomization)."""
+"""Integration tests: validate real cluster/k8s/ config via pure analysis.
+
+Tests that parse the cluster kustomization tree and check structural invariants
+(no orphaned files, valid dependencies, health checks on controller resources).
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,18 @@ from pathlib import Path
 import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
+from cluster.validation.dependencies import validate_dependencies
+from cluster.validation.health_checks import check_controller_health_checks
+
+
+def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    errors = validate_dependencies(cluster, k8s_dir)
+    assert not errors, "\n".join(errors)
+
+
+def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path, workspace: Path) -> None:
+    errors = check_controller_health_checks(cluster, k8s_dir, workspace)
+    assert not errors, "\n".join(errors)
 
 
 def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:

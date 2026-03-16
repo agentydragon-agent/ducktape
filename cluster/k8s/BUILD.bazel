@@ -32,9 +32,7 @@ py_library(
     imports = ["../.."],
     deps = [
         "//cluster/validation:cluster",
-        "//cluster/validation:kustomize",
         "//util/bazel:runfiles",
-        "@pypi//pydantic",
         "@pypi//pytest",
     ],
 )
@@ -47,40 +45,14 @@ py_library(
 # ============================================================================
 
 py_test(
-    name = "test_orphaned_files",
-    srcs = ["test_orphaned_files.py"],
-    data = [":all_yaml"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        "//cluster/validation:cluster",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_dependencies",
-    srcs = ["test_dependencies.py"],
+    name = "test_cluster_validation",
+    srcs = ["test_cluster_validation.py"],
     data = [":all_yaml"],
     imports = ["../.."],
     deps = [
         ":conftest",
         "//cluster/validation:cluster",
         "//cluster/validation:dependencies",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_controller_health_checks",
-    srcs = ["test_controller_health_checks.py"],
-    data = [":all_yaml"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        "//cluster/validation:cluster",
         "//cluster/validation:health_checks",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -96,10 +68,11 @@ py_test(
     ],
     imports = ["../.."],
     deps = [
-        ":conftest",
         "//cluster/validation:crd_layering",
         "//cluster/validation:kustomize",
+        "//util/bazel:runfiles",
         "@pypi//more_itertools",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -110,12 +83,11 @@ py_test(
     srcs = ["test_flux_build.py"],
     data = [
         ":all_yaml",
-        "@multitool//tools/flux",
+        "//cluster/validation:flux_build_results",
     ],
     imports = ["../.."],
     deps = [
         ":conftest",
-        "//cluster/validation:flux",
         "//cluster/validation:k8s",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

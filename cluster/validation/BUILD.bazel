@@ -38,8 +38,6 @@ py_library(
     srcs = ["flux.py"],
     imports = ["../.."],
     deps = [
-        ":k8s",
-        "//util/bazel:runfiles",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -59,6 +57,7 @@ py_library(
 
 py_library(
     name = "dependencies",
+    testonly = True,
     srcs = ["dependencies.py"],
     imports = ["../.."],
     deps = [
@@ -69,6 +68,7 @@ py_library(
 
 py_library(
     name = "health_checks",
+    testonly = True,
     srcs = ["health_checks.py"],
     imports = ["../.."],
     deps = [
@@ -80,6 +80,7 @@ py_library(
 
 py_library(
     name = "crd_layering",
+    testonly = True,
     srcs = ["crd_layering.py"],
     imports = ["../.."],
     deps = [
@@ -102,17 +103,6 @@ py_library(
         "//util/bazel:runfiles",
         "//util/bazel:workspace",
     ],
-)
-
-py_binary(
-    name = "validate_sealed_secrets",
-    data = [
-        "@multitool//tools/kubeseal",
-        "@multitool//tools/tofu",
-    ],
-    imports = ["../.."],
-    main_module = "cluster.validation.sealed_secrets",
-    deps = [":sealed_secrets"],
 )
 
 py_library(
@@ -149,7 +139,7 @@ py_binary(
 )
 
 # ============================================================================
-# Kustomize build genrule — builds all kustomizations, outputs JSON
+# Genrules — build outputs consumed by integration tests
 # ============================================================================
 
 genrule(
@@ -158,6 +148,14 @@ genrule(
     outs = ["kustomize_build_results.json"],
     cmd = "$(location :kustomize_build_all) cluster/k8s $@",
     tools = [":kustomize_build_all"],
+)
+
+genrule(
+    name = "flux_build_results",
+    srcs = ["//cluster/k8s:all_kustomize_inputs"],
+    outs = ["flux_build_results.yaml"],
+    cmd = "$(location @multitool//tools/flux/flux) build kustomization flux-system --path cluster/k8s --kustomization-file cluster/k8s/flux-system/gotk-sync.yaml --dry-run --verbose > $@",
+    tools = ["@multitool//tools/flux"],
 )
 
 # ============================================================================
@@ -183,6 +181,7 @@ py_test(
     deps = [
         ":dependencies",
         ":flux",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

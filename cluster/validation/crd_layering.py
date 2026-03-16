@@ -9,45 +9,36 @@ import yaml
 from cluster.validation.k8s import parse_k8s_resources
 from cluster.validation.kustomize import KustomizeBuildResult
 
-# Map CRD kinds to their operator Kustomization names
-CRD_TO_OPERATOR: dict[str, str] = {
-    # external-secrets-operator
-    "ExternalSecret": "external-secrets-operator",
-    "ClusterExternalSecret": "external-secrets-operator",
-    "SecretStore": "external-secrets-operator",
-    "ClusterSecretStore": "external-secrets-operator",
-    "Password": "external-secrets-operator",
-    "Fake": "external-secrets-operator",
-    "VaultDynamicSecret": "external-secrets-operator",
-    # cert-manager
-    "Certificate": "cert-manager",
-    "CertificateRequest": "cert-manager",
-    "Issuer": "cert-manager",
-    "ClusterIssuer": "cert-manager",
-    # kyverno
-    "ClusterPolicy": "kyverno",
-    "Policy": "kyverno",
-    # vault-operator
-    "Vault": "vault-operator",
-    # tofu-controller
-    "Terraform": "tofu-controller",
-    # powerdns-operator
-    "ClusterZone": "powerdns-operator",
-    "ClusterRRset": "powerdns-operator",
+# Operator kustomizations and the CRD kinds they manage.
+# Kustomizations with empty sets are part of the operator layer but don't define CRDs.
+OPERATOR_CRDS: dict[str, set[str]] = {
+    "external-secrets-operator": {
+        "ExternalSecret",
+        "ClusterExternalSecret",
+        "SecretStore",
+        "ClusterSecretStore",
+        "Password",
+        "Fake",
+        "VaultDynamicSecret",
+    },
+    "external-secrets": set(),
+    "cert-manager": {"Certificate", "CertificateRequest", "Issuer", "ClusterIssuer"},
+    "cert-manager-config": set(),
+    "cert-manager-trust": set(),
+    "cert-manager-environment": set(),
+    "cluster-ca": set(),
+    "kyverno": {"ClusterPolicy", "Policy"},
+    "kyverno-policies": set(),
+    "vault-operator": {"Vault"},
+    "vault": set(),
+    "tofu-controller": {"Terraform"},
+    "powerdns-operator": {"ClusterZone", "ClusterRRset"},
+    "sealed-secrets": set(),
 }
 
-# Kustomizations that ARE operators (or part of the operator layer) don't need to
-# depend on themselves. Derived from CRD_TO_OPERATOR values plus related config kustomizations.
-OPERATOR_KUSTOMIZATIONS = set(CRD_TO_OPERATOR.values()) | {
-    "external-secrets",  # config kustomization
-    "cert-manager-config",
-    "cert-manager-trust",
-    "cert-manager-environment",
-    "kyverno-policies",
-    "vault",
-    "tofu-controller",
-    "sealed-secrets",
-    "cluster-ca",  # Uses cert-manager CRDs but is part of cert-manager layer
+# Derived: CRD kind -> operator name (for error messages)
+CRD_TO_OPERATOR: dict[str, str] = {
+    kind: operator for operator, kinds in OPERATOR_CRDS.items() for kind in kinds
 }
 
 
@@ -56,7 +47,7 @@ def check_crd_layering(result: KustomizeBuildResult) -> list[str]:
     if not result.success:
         return []
 
-    if any(part in OPERATOR_KUSTOMIZATIONS for part in result.kustomization_path.parent.parts):
+    if any(part in OPERATOR_CRDS for part in result.kustomization_path.parent.parts):
         return []
 
     if "overlays" in result.kustomization_path.parts:
