@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 
 from cluster.validation.dependencies import build_dependency_graph, check_required_dependencies, find_cycles
-from cluster.validation.flux import DependsOn, FluxKustomization
+from cluster.validation.flux import DependsOn, FluxKustomization, FluxKustomizationSpec
 
 
 class TestDependencyGraph:
@@ -18,14 +18,16 @@ class TestDependencyGraph:
         """Builds correct dependency graph."""
         kustomizations = {
             "app-a": FluxKustomization(
-                name="app-a", file_path=Path("./k8s/app-a"), depends_on=[DependsOn(name="core")]
+                name="app-a",
+                file_path=Path("./k8s/app-a"),
+                spec=FluxKustomizationSpec(depends_on=[DependsOn(name="core")]),
             ),
             "app-b": FluxKustomization(
                 name="app-b",
                 file_path=Path("./k8s/app-b"),
-                depends_on=[DependsOn(name="core"), DependsOn(name="app-a")],
+                spec=FluxKustomizationSpec(depends_on=[DependsOn(name="core"), DependsOn(name="app-a")]),
             ),
-            "core": FluxKustomization(name="core", file_path=Path("./k8s/core"), depends_on=[]),
+            "core": FluxKustomization(name="core", file_path=Path("./k8s/core")),
         }
         graph = build_dependency_graph(kustomizations)
 
@@ -56,10 +58,12 @@ class TestRequiredDependencies:
     def test_detects_missing_dependency(self) -> None:
         """Detects when authentik is missing cert-manager dependency."""
         kustomizations = {
-            "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"), depends_on=[]),
-            "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager"), depends_on=[]),
+            "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik")),
+            "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager")),
             "gateway": FluxKustomization(
-                name="gateway", file_path=Path("./k8s/gateway"), depends_on=[DependsOn(name="cert-manager")]
+                name="gateway",
+                file_path=Path("./k8s/gateway"),
+                spec=FluxKustomizationSpec(depends_on=[DependsOn(name="cert-manager")]),
             ),
         }
         errors = check_required_dependencies(kustomizations)
@@ -72,12 +76,14 @@ class TestRequiredDependencies:
             "authentik": FluxKustomization(
                 name="authentik",
                 file_path=Path("./k8s/authentik"),
-                depends_on=[DependsOn(name="gateway"), DependsOn(name="cert-manager")],
+                spec=FluxKustomizationSpec(depends_on=[DependsOn(name="gateway"), DependsOn(name="cert-manager")]),
             ),
             "gateway": FluxKustomization(
-                name="gateway", file_path=Path("./k8s/gateway"), depends_on=[DependsOn(name="cert-manager")]
+                name="gateway",
+                file_path=Path("./k8s/gateway"),
+                spec=FluxKustomizationSpec(depends_on=[DependsOn(name="cert-manager")]),
             ),
-            "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager"), depends_on=[]),
+            "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager")),
         }
         errors = check_required_dependencies(kustomizations)
         authentik_errors = [e for e in errors if "authentik" in e]
@@ -86,7 +92,7 @@ class TestRequiredDependencies:
     def test_raises_on_unknown_prerequisite(self) -> None:
         """Raises ValueError when a rule references a kustomization not in the cluster."""
         kustomizations = {
-            "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"), depends_on=[])
+            "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"))
         }
         with pytest.raises(ValueError, match="unknown kustomization: cert-manager"):
             check_required_dependencies(kustomizations)

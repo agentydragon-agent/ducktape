@@ -43,19 +43,7 @@ class FluxKustomization(BaseModel):
 
     name: str
     file_path: Path
-    spec: FluxKustomizationSpec
-
-    @property
-    def spec_path(self) -> str:
-        return self.spec.path
-
-    @property
-    def depends_on(self) -> list[DependsOn]:
-        return self.spec.depends_on
-
-    @property
-    def health_checks(self) -> list[HealthCheck]:
-        return self.spec.health_checks
+    spec: FluxKustomizationSpec = FluxKustomizationSpec()
 
 
 def parse_flux_kustomization(flux_file: Path) -> list[FluxKustomization]:

@@ -37,7 +37,7 @@ def build_dependency_graph(flux_kustomizations: dict[str, FluxKustomization]) ->
     """Build dependency graph from flux kustomizations."""
     graph: dict[str, list[str]] = defaultdict(list)
     for name, kust in flux_kustomizations.items():
-        for dep in kust.depends_on:
+        for dep in kust.spec.depends_on:
             graph[dep.name].append(name)
     return dict(graph)
 
@@ -77,7 +77,7 @@ def check_required_dependencies(flux_kustomizations: dict[str, FluxKustomization
     # Build dependency lookup
     depends_on_map: dict[str, list[str]] = {}
     for name, kust in flux_kustomizations.items():
-        depends_on_map[name] = [dep.name for dep in kust.depends_on]
+        depends_on_map[name] = [dep.name for dep in kust.spec.depends_on]
 
     def has_dependency_path(from_kust: str, to_kust: str, visited: set[str] | None = None) -> bool:
         if visited is None:
@@ -120,7 +120,7 @@ def validate_external_secrets_dependencies(cluster: ParsedCluster, k8s_dir: Path
 
     for service in services_with_external_secrets:
         if service in cluster.flux_kustomizations:
-            deps = [dep.name for dep in cluster.flux_kustomizations[service].depends_on]
+            deps = [dep.name for dep in cluster.flux_kustomizations[service].spec.depends_on]
             if "external-secrets-config" not in deps:
                 errors.append(f"{service} uses ExternalSecret resources but doesn't depend on external-secrets-config")
 

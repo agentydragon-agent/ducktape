@@ -8,9 +8,6 @@ package(default_visibility = [
     "//devinfra/precommit:__pkg__",
 ])
 
-# ============================================================================
-# Domain modules
-# ============================================================================
 
 py_library(
     name = "k8s",
@@ -86,9 +83,6 @@ py_library(
     deps = [":kustomize"],
 )
 
-# ============================================================================
-# Sealed secrets validation (separate binary — different deps/trigger pattern)
-# ============================================================================
 
 py_library(
     name = "sealed_secrets",
@@ -108,9 +102,6 @@ py_library(
     deps = ["//util/bazel:runfiles"],
 )
 
-# ============================================================================
-# Kustomize build serialization (for external consumers / CI scripts)
-# ============================================================================
 
 py_library(
     name = "kustomize_build_all_lib",
@@ -134,9 +125,6 @@ py_binary(
     deps = [":kustomize_build_all_lib"],
 )
 
-# ============================================================================
-# Genrules — build outputs consumed by integration tests
-# ============================================================================
 
 genrule(
     name = "kustomize_build_results",
@@ -154,9 +142,6 @@ genrule(
     tools = ["@multitool//tools/flux"],
 )
 
-# ============================================================================
-# Unit tests (synthetic data, hermetic)
-# ============================================================================
 
 py_test(
     name = "test_k8s",

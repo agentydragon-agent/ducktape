@@ -8,7 +8,7 @@ import pytest
 import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.flux import FluxKustomization, HealthCheck
+from cluster.validation.flux import FluxKustomization, FluxKustomizationSpec, HealthCheck
 from cluster.validation.health_checks import check_controller_health_checks
 from cluster.validation.k8s import K8sResource
 from cluster.validation.kustomize import KustomizeFile
@@ -32,10 +32,12 @@ def _make_cluster(
             "test-app": FluxKustomization(
                 name="test-app",
                 file_path=flux_file,
-                path="./cluster/k8s/test-app",
-                healthChecks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")]
-                if health_check_kind
-                else [],
+                spec=FluxKustomizationSpec(
+                    path="./cluster/k8s/test-app",
+                    health_checks=[HealthCheck(kind=health_check_kind, name="test-app", namespace="test-app")]
+                    if health_check_kind
+                    else [],
+                ),
             )
         },
         source_resources={resource_file: [K8sResource(kind=resource_kind, apiVersion=resource_api_version)]},

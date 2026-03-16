@@ -35,8 +35,8 @@ class TestParseFluxKustomization:
         kustomizations = parse_flux_kustomization(kust_file)
         assert len(kustomizations) == 1
         assert kustomizations[0].name == "test-app"
-        assert len(kustomizations[0].depends_on) == 1
-        assert kustomizations[0].depends_on[0].name == "core"
+        assert len(kustomizations[0].spec.depends_on) == 1
+        assert kustomizations[0].spec.depends_on[0].name == "core"
 
     def test_loads_cycle_testdata(self) -> None:
         """Loads cycle testdata and detects the cycle."""

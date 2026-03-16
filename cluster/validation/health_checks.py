@@ -25,10 +25,10 @@ def check_controller_health_checks(cluster: ParsedCluster, k8s_dir: Path, worksp
         f"{name}: deploys a {kind} but has no healthChecks for it. "
         f"Add healthChecks with kind: {kind} to {flux_kust.file_path.relative_to(k8s_dir)}."
         for name, flux_kust in cluster.flux_kustomizations.items()
-        if flux_kust.spec_path
-        if (kust_dir := (workspace / flux_kust.spec_path.removeprefix("./")))
+        if flux_kust.spec.path
+        if (kust_dir := (workspace / flux_kust.spec.path.removeprefix("./")))
         if (kust := cluster.kustomize_files.get(kust_dir / "kustomization.yaml"))
         for kind in HEALTH_CHECK_REQUIRED_KINDS
         if kust_deploys_kind(kind, kust, cluster.source_resources)
-        if not any(hc.kind == kind for hc in flux_kust.health_checks)
+        if not any(hc.kind == kind for hc in flux_kust.spec.health_checks)
     ]
