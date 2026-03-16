@@ -22,6 +22,10 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"gopkg.in/yaml.v3"
+
+	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
+	pb "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
@@ -49,15 +53,30 @@ const (
 	TalosConfig           = "cluster/kubespand/qemu_tests/talos/testdata/talosconfig.yaml"
 )
 
+// Well-known guest ports for the management NIC.
+const (
+	// ProbeServerGuestPort is the port the probe gRPC server listens on inside the VM.
+	ProbeServerGuestPort = 50200
+	// COSIGuestPort is the port kubespand's COSI API listens on inside the VM.
+	COSIGuestPort = 50100
+)
+
+// mgmtMAC is the MAC address assigned to the management NIC by BootVM.
+// Must match initlib.MgmtMAC so the VM init can find it.
+const mgmtMAC = "52:54:00:aa:00:01"
+
 // VM represents a running QEMU VM.
 type VM struct {
 	Name   string
-	Events chan Event // buffered channel; receives all parsed events
 	Done   chan struct{}
 	cmd    *exec.Cmd
-	events []Event
 	rawLog strings.Builder
 	mu     sync.Mutex
+
+	t         *testing.T
+	probeAddr string         // "127.0.0.1:<port>" for probe gRPC, always set by BootVM
+	cosiAddr  string         // "127.0.0.1:<port>" for COSI API, empty if not forwarded
+	forwards  map[int]string // guestPort -> "127.0.0.1:<hostPort>"
 }
 
 func (v *VM) Wait() {
@@ -70,28 +89,45 @@ func (v *VM) Kill() {
 	}
 }
 
-func (v *VM) GetEvents() []Event {
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	return append([]Event{}, v.events...)
-}
-
 func (v *VM) GetRawLog() string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.rawLog.String()
 }
 
-// SaveLogs saves raw log and event artifacts for this VM using its name.
+// SaveLogs saves the raw log artifact for this VM.
 func (v *VM) SaveLogs(t *testing.T, dir string) {
 	t.Helper()
 	SaveArtifact(t, dir, v.Name+".log", v.GetRawLog())
-	SaveEventsArtifact(t, dir, v.Name+"-events.jsonl", v.GetEvents())
 }
 
 // BootVM starts a QEMU VM with the given kernel cmdline args.
-func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs string, extraQemuArgs ...string) *VM {
+// A management NIC with probe server port forwarding is always added.
+// meshNICs are the multicast NICs (from McastNIC calls).
+// extraForwards are additional port forwards on the mgmt NIC (e.g., COSI, HTTP).
+// PortForwards with HostPort==0 get a random port assigned.
+func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs string, meshNICs []string, extraForwards ...PortForward) *VM {
 	t.Helper()
+
+	probePort := RandomPort()
+	allForwards := []PortForward{{HostPort: probePort, GuestPort: ProbeServerGuestPort}}
+	forwards := map[int]string{
+		ProbeServerGuestPort: fmt.Sprintf("127.0.0.1:%d", probePort),
+	}
+	var cosiAddr string
+	for _, ef := range extraForwards {
+		if ef.HostPort == 0 {
+			ef.HostPort = RandomPort()
+		}
+		allForwards = append(allForwards, ef)
+		addr := fmt.Sprintf("127.0.0.1:%d", ef.HostPort)
+		forwards[ef.GuestPort] = addr
+		if ef.GuestPort == COSIGuestPort {
+			cosiAddr = addr
+		}
+	}
+
+	mgmtArgs := MgmtNICMulti(allForwards, mgmtMAC)
 
 	args := []string{
 		"-kernel", vmlinuz,
@@ -104,15 +140,20 @@ func BootVM(t *testing.T, name string, vmlinuz, initramfs string, kernelArgs str
 		"-cpu", "max",
 		"-display", "none",
 	}
-	args = append(args, extraQemuArgs...)
+	args = append(args, meshNICs...)
+	args = append(args, mgmtArgs...)
 
-	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...), true)
+	v := StartVM(t, name, exec.Command("qemu-system-x86_64", args...))
+	v.t = t
+	v.probeAddr = fmt.Sprintf("127.0.0.1:%d", probePort)
+	v.cosiAddr = cosiAddr
+	v.forwards = forwards
+	return v
 }
 
 // StartVM starts a QEMU process from a pre-built command and returns a VM.
 // Use this for custom QEMU configurations (e.g., Talos VMs with CIDATA drives).
-// If parseEvents is true, JSON event lines are parsed; otherwise only raw log is captured.
-func StartVM(t *testing.T, name string, cmd *exec.Cmd, parseEvents bool) *VM {
+func StartVM(t *testing.T, name string, cmd *exec.Cmd) *VM {
 	t.Helper()
 
 	stdout, err := cmd.StdoutPipe()
@@ -122,10 +163,9 @@ func StartVM(t *testing.T, name string, cmd *exec.Cmd, parseEvents bool) *VM {
 	cmd.Stderr = cmd.Stdout
 
 	v := &VM{
-		Name:   name,
-		Events: make(chan Event, 64),
-		Done:   make(chan struct{}),
-		cmd:    cmd,
+		Name: name,
+		Done: make(chan struct{}),
+		cmd:  cmd,
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -134,28 +174,14 @@ func StartVM(t *testing.T, name string, cmd *exec.Cmd, parseEvents bool) *VM {
 
 	go func() {
 		defer close(v.Done)
-		defer close(v.Events)
 		scanner := bufio.NewScanner(stdout)
-		if !parseEvents {
-			scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
-		}
+		scanner.Buffer(make([]byte, 0, 256*1024), 256*1024)
 		for scanner.Scan() {
 			line := scanner.Text()
 			v.mu.Lock()
 			v.rawLog.WriteString(line)
 			v.rawLog.WriteByte('\n')
 			v.mu.Unlock()
-
-			if parseEvents {
-				var evt Event
-				if json.Unmarshal([]byte(line), &evt) == nil && evt.Type != "" {
-					v.mu.Lock()
-					v.events = append(v.events, evt)
-					v.mu.Unlock()
-					t.Logf("[%s] %s: %s", name, evt.Type, evt.Message)
-					v.Events <- evt
-				}
-			}
 		}
 		cmd.Wait()
 	}()
@@ -187,17 +213,6 @@ func SaveArtifact(t *testing.T, dir, name, content string) {
 	os.WriteFile(path, []byte(content), 0o644)
 }
 
-func SaveEventsArtifact(t *testing.T, dir, name string, events []Event) {
-	t.Helper()
-	var sb strings.Builder
-	for _, e := range events {
-		b, _ := json.Marshal(e)
-		sb.Write(b)
-		sb.WriteByte('\n')
-	}
-	SaveArtifact(t, dir, name, sb.String())
-}
-
 func RandomBase64(n int) string {
 	buf := make([]byte, n)
 	rand.Read(buf)
@@ -207,73 +222,6 @@ func RandomBase64(n int) string {
 func RandomPort() int {
 	n, _ := rand.Int(rand.Reader, big.NewInt(50000))
 	return 10000 + int(n.Int64())
-}
-
-// WaitForEvent blocks until the VM emits an event of the given type.
-// Returns immediately on VM exit or timeout.
-func (v *VM) WaitForEvent(typ EventType, timeout time.Duration) (Event, bool) {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	for {
-		select {
-		case <-timer.C:
-			return Event{}, false
-		case evt, ok := <-v.Events:
-			if !ok {
-				return Event{}, false // VM exited, channel closed
-			}
-			if evt.Type == typ {
-				return evt, true
-			}
-			if evt.Type == EventError {
-				return evt, false
-			}
-		}
-	}
-}
-
-// RequireEvent waits for a VM event and fails the test if it doesn't arrive.
-func RequireEvent(t *testing.T, v *VM, typ EventType, timeout time.Duration) Event {
-	t.Helper()
-	evt, ok := v.WaitForEvent(typ, timeout)
-	if !ok {
-		if evt.Type == EventError {
-			t.Fatalf("[%s] error while waiting for %s: %s", v.Name, typ, evt.Message)
-		}
-		t.Fatalf("[%s] timed out waiting for %s event (%v)", v.Name, typ, timeout)
-	}
-	return evt
-}
-
-// RequireAllEvents waits for multiple VMs to emit the given event type in
-// parallel, with a single shared deadline. Fails the test if any VM doesn't
-// produce the event within the timeout.
-func RequireAllEvents(t *testing.T, vms []*VM, typ EventType, timeout time.Duration) {
-	t.Helper()
-
-	type result struct {
-		vm  *VM
-		evt Event
-		ok  bool
-	}
-
-	ch := make(chan result, len(vms))
-	for _, vm := range vms {
-		go func(v *VM) {
-			evt, ok := v.WaitForEvent(typ, timeout)
-			ch <- result{vm: v, evt: evt, ok: ok}
-		}(vm)
-	}
-
-	for range vms {
-		res := <-ch
-		if !res.ok {
-			if res.evt.Type == EventError {
-				t.Fatalf("[%s] error while waiting for %s: %s", res.vm.Name, typ, res.evt.Message)
-			}
-			t.Fatalf("[%s] timed out waiting for %s event (%v)", res.vm.Name, typ, timeout)
-		}
-	}
 }
 
 // CleanupVMs registers a t.Cleanup that kills all VMs and saves their logs.
@@ -302,11 +250,8 @@ func WaitVMDone(t *testing.T, v *VM, timeout time.Duration) bool {
 }
 
 // RunfilePath resolves a Bazel runfile path using rules_go's runfiles library.
-// Paths starting with an external repo name (no slash prefix) are resolved as
-// external repos; paths under cluster/ are resolved under _main/.
 func RunfilePath(t *testing.T, path string) string {
 	t.Helper()
-	// External repo paths don't get _main/ prefix.
 	rloc := "_main/" + path
 	if !strings.HasPrefix(path, "cluster/") {
 		rloc = path
@@ -330,7 +275,6 @@ func OutputDir(t *testing.T) string {
 	return dir
 }
 
-// RunCmd runs a command, logging output and failing on error.
 // ReadRunfile resolves a Bazel runfile path and reads the file contents.
 func ReadRunfile(t *testing.T, path string) []byte {
 	t.Helper()
@@ -367,14 +311,12 @@ type Phase struct {
 	Elapsed  time.Duration `json:"elapsed"`
 }
 
-// NewStopwatch creates a stopwatch and logs the start time.
 func NewStopwatch(t *testing.T) *Stopwatch {
 	t.Helper()
 	now := time.Now()
 	return &Stopwatch{t: t, start: now, last: now}
 }
 
-// Lap records a named phase and logs the time since the last lap.
 func (s *Stopwatch) Lap(name string) {
 	s.t.Helper()
 	now := time.Now()
@@ -385,7 +327,6 @@ func (s *Stopwatch) Lap(name string) {
 	s.last = now
 }
 
-// Summary logs all phases and total time, and saves a JSON artifact.
 func (s *Stopwatch) Summary(outDir string) {
 	s.t.Helper()
 	total := time.Since(s.start)
@@ -426,23 +367,28 @@ func (s *Stopwatch) Summary(outDir string) {
 	}
 }
 
+// ForwardAddr returns the host-side address for a forwarded guest port.
+func (v *VM) ForwardAddr(guestPort int) string {
+	return v.forwards[guestPort]
+}
+
 // WaitForDiscoveryHTTP polls the discovery service's HTTP endpoint on the
 // forwarded mgmt port until it responds (or times out).
-func WaitForDiscoveryHTTP(t *testing.T, port int, timeout time.Duration) {
+func WaitForDiscoveryHTTP(t *testing.T, addr string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
-	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
+	url := fmt.Sprintf("http://%s/", addr)
 	client := &http.Client{Timeout: 2 * time.Second}
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(url)
 		if err == nil {
 			resp.Body.Close()
-			t.Logf("discovery HTTP ready on port %d", port)
+			t.Logf("discovery HTTP ready at %s", addr)
 			return
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("discovery HTTP not ready after %v on port %d", timeout, port)
+	t.Fatalf("discovery HTTP not ready after %v at %s", timeout, addr)
 }
 
 // MgmtNIC returns QEMU args for a user-mode NIC with a port forwarded to the host.
@@ -453,77 +399,227 @@ func MgmtNIC(hostPort, guestPort int, mac string) []string {
 	}
 }
 
-func probeOK(probes map[string]*bool, name string) bool {
-	s, ok := probes[name]
-	return ok && *s
+// PortForward maps a host port to a guest port for QEMU user-mode networking.
+type PortForward struct {
+	HostPort  int
+	GuestPort int
 }
 
-// AssertProbes verifies that all required probes passed for a given topology.
-func AssertProbes(t *testing.T, events []Event, topology string) {
+// MgmtNICMulti returns QEMU args for a user-mode NIC with multiple port forwards.
+func MgmtNICMulti(forwards []PortForward, mac string) []string {
+	var fwds []string
+	for _, f := range forwards {
+		fwds = append(fwds, fmt.Sprintf("hostfwd=tcp::%d-:%d", f.HostPort, f.GuestPort))
+	}
+	return []string{
+		"-netdev", fmt.Sprintf("user,id=mgmt,%s", strings.Join(fwds, ",")),
+		"-device", fmt.Sprintf("virtio-net-pci,netdev=mgmt,mac=%s", mac),
+	}
+}
+
+// NewTestAgentConfig returns an AgentConfig with common test defaults.
+// Callers can override fields after construction.
+func NewTestAgentConfig(clusterID, sharedSecret, discoveryAddr string) agentconfig.AgentConfig {
+	return agentconfig.AgentConfig{
+		Cluster:   agentconfig.ClusterConfig{ID: clusterID, Secret: sharedSecret},
+		Discovery: agentconfig.DiscoveryConfig{Endpoint: discoveryAddr, Insecure: true, MachineType: "worker"},
+		Kubespan: agentconfig.KubespanConfig{
+			ForceRouting:          true,
+			MTU:                   1420,
+			IdentityFile:          "/var/lib/kubespan/identity.yaml",
+			HarvestExtraEndpoints: true,
+		},
+	}
+}
+
+// CreateKubespandCIDATA creates a FAT32 disk image containing the kubespand
+// agent config YAML. The VM init mounts this drive and copies agent.yaml to
+// /etc/kubespan/agent.yaml for kubespand to read.
+func CreateKubespandCIDATA(t *testing.T, tmpDir, name string, cfg agentconfig.AgentConfig) string {
 	t.Helper()
 
-	probes := map[string]*bool{}
-	for _, e := range events {
-		if e.Type == EventProbe && e.Success != nil {
-			s := *e.Success
-			probes[e.Message] = &s
-		}
+	configData, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal agent config: %v", err)
 	}
 
-	switch topology {
-	case "double_nat":
-		// In double NAT, NAT2 can reach VPS (directly routable through
-		// Router-B masquerade) but NOT NAT1 (behind Router-A's separate
-		// NAT — endpoint-dependent filtering blocks cross-NAT traffic).
-		// Require at least one peer's ICMP and TCP probes to pass.
-		icmpOK := probeOK(probes, fmt.Sprintf(ProbePeerULAICMPFmt, 1)) || probeOK(probes, fmt.Sprintf(ProbePeerULAICMPFmt, 2))
-		tcpOK := probeOK(probes, fmt.Sprintf(ProbePeerULATCPFmt, 1)) || probeOK(probes, fmt.Sprintf(ProbePeerULATCPFmt, 2))
-		if !icmpOK {
-			t.Errorf("no peer ULA ICMP probe succeeded (need at least VPS)")
-		}
-		if !tcpOK {
-			t.Errorf("no peer ULA TCP probe succeeded (need at least VPS)")
-		}
-	default:
-		for _, name := range []string{
-			ProbeIPv6ULAICMP,
-			ProbeIPv4Eth0ICMP,
-			ProbeIPv6ULATCP,
-			ProbeIPv4Eth0TCP,
-		} {
-			if s, ok := probes[name]; !ok {
-				t.Errorf("missing probe event: %s", name)
-			} else if !*s {
-				t.Errorf("probe failed: %s", name)
+	ciDir := filepath.Join(tmpDir, "kubespand-cidata-"+name)
+	os.MkdirAll(ciDir, 0o755)
+	os.WriteFile(filepath.Join(ciDir, "agent.yaml"), configData, 0o644)
+
+	imgPath := filepath.Join(tmpDir, fmt.Sprintf("kubespand-cidata-%s.img", name))
+	RunCmd(t, "dd", "if=/dev/zero", "of="+imgPath, "bs=1M", "count=1")
+	RunCmd(t, "/usr/sbin/mkfs.vfat", "-n", "KUBESPAND", imgPath)
+	RunCmd(t, "/usr/bin/mcopy", "-i", imgPath, filepath.Join(ciDir, "agent.yaml"), "::")
+
+	t.Logf("created kubespand CIDATA for %s: %s (%d bytes config)", name, imgPath, len(configData))
+	return imgPath
+}
+
+// CIDATADrive returns QEMU args to attach a CIDATA FAT32 image as a virtio drive.
+func CIDATADrive(path string) []string {
+	return []string{
+		"-drive", fmt.Sprintf("file=%s,if=virtio,format=raw,readonly=on", path),
+	}
+}
+
+// WaitForProbeServer polls the VM's probe gRPC server until it responds.
+// A responding probe server means the VM has completed initialization.
+func (v *VM) WaitForProbeServer(timeout time.Duration) bool {
+	v.t.Helper()
+	return v.probeWithRetry("wait for probe server", timeout,
+		func(client pb.ProbeServiceClient, ctx context.Context) (bool, string) {
+			_, err := client.Diagnostics(ctx, &pb.DiagnosticsRequest{})
+			if err != nil {
+				return false, err.Error()
 			}
-		}
+			return true, ""
+		})
+}
+
+// WaitForProbeServers waits for multiple VMs' probe servers to respond in parallel.
+func WaitForProbeServers(t *testing.T, vms []*VM, timeout time.Duration) {
+	t.Helper()
+
+	type result struct {
+		vm *VM
+		ok bool
 	}
 
-	for _, e := range events {
-		if e.Type == EventError {
-			t.Errorf("VM error: %s (%s)", e.Message, e.Error)
+	ch := make(chan result, len(vms))
+	for _, vm := range vms {
+		go func(v *VM) {
+			ch <- result{vm: v, ok: v.WaitForProbeServer(timeout)}
+		}(vm)
+	}
+
+	for range vms {
+		res := <-ch
+		if !res.ok {
+			t.Fatalf("[%s] probe server not ready after %v", res.vm.Name, timeout)
 		}
 	}
 }
 
-// PollKubespandPeerStatus connects to kubespand's TCP COSI API and polls
-// PeerStatus resources until at least minPeers peers report state "up".
-// Other discovered peers may be in any state (unknown, down).
-func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
-	t.Helper()
+// probeWithRetry runs a probe RPC with retry until success or timeout.
+func (v *VM) probeWithRetry(label string, timeout time.Duration, probeFn func(pb.ProbeServiceClient, context.Context) (bool, string)) bool {
+	v.t.Helper()
+	prefix := fmt.Sprintf("[%s] %s", v.Name, label)
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		conn, err := grpc.NewClient(v.probeAddr,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err != nil {
+			cancel()
+			v.t.Logf("%s: connect: %v", prefix, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		client := pb.NewProbeServiceClient(conn)
+		ok, detail := probeFn(client, ctx)
+		cancel()
+		conn.Close()
+
+		if ok {
+			v.t.Logf("%s: success", prefix)
+			return true
+		}
+		v.t.Logf("%s: %s (retrying)", prefix, detail)
+		time.Sleep(1 * time.Second)
+	}
+
+	v.t.Errorf("%s: timed out after %v", prefix, timeout)
+	return false
+}
+
+// ProbeICMP sends an ICMP probe request via the VM's probe server, retrying until success or timeout.
+func (v *VM) ProbeICMP(target string, timeout time.Duration) bool {
+	v.t.Helper()
+	return v.probeWithRetry(fmt.Sprintf("probe ICMP→%s", target), timeout,
+		func(client pb.ProbeServiceClient, ctx context.Context) (bool, string) {
+			resp, err := client.ICMPProbe(ctx, &pb.ICMPProbeRequest{
+				Target:         target,
+				TimeoutSeconds: 10,
+			})
+			if err != nil {
+				return false, err.Error()
+			}
+			if resp.Success {
+				return true, ""
+			}
+			return false, resp.Error
+		})
+}
+
+// ProbeTCP sends a TCP probe request via the VM's probe server, retrying until success or timeout.
+func (v *VM) ProbeTCP(target string, port int, timeout time.Duration) bool {
+	v.t.Helper()
+	return v.probeWithRetry(fmt.Sprintf("probe TCP→%s:%d", target, port), timeout,
+		func(client pb.ProbeServiceClient, ctx context.Context) (bool, string) {
+			resp, err := client.TCPProbe(ctx, &pb.TCPProbeRequest{
+				Target:         target,
+				Port:           int32(port),
+				TimeoutSeconds: 10,
+			})
+			if err != nil {
+				return false, err.Error()
+			}
+			if resp.Success {
+				return true, ""
+			}
+			return false, resp.Error
+		})
+}
+
+// DumpDiagnostics fetches routing/WG/nftables state from the VM's probe server.
+func (v *VM) DumpDiagnostics() string {
+	v.t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.NewClient(v.probeAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		v.t.Logf("[%s] diagnostics connect: %v", v.Name, err)
+		return ""
+	}
+	defer conn.Close()
+
+	client := pb.NewProbeServiceClient(conn)
+	resp, err := client.Diagnostics(ctx, &pb.DiagnosticsRequest{})
+	if err != nil {
+		v.t.Logf("[%s] diagnostics rpc: %v", v.Name, err)
+		return ""
+	}
+	return resp.Output
+}
+
+// PollPeerStatus connects to kubespand's COSI API and polls PeerStatus
+// resources until at least minPeers report state "up".
+func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]KubespanPeerResult, error) {
+	v.t.Helper()
+
+	if v.cosiAddr == "" {
+		v.t.Fatalf("[%s] PollPeerStatus called but COSI not configured", v.Name)
+	}
 
 	deadline := time.Now().Add(timeout)
 	var lastErr string
 
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		conn, err := grpc.NewClient(addr,
+		conn, err := grpc.NewClient(v.cosiAddr,
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 		)
 		if err != nil {
 			cancel()
 			lastErr = err.Error()
-			t.Logf("kubespand COSI connect (waiting): %s", lastErr)
+			v.t.Logf("[%s] COSI connect (waiting): %s", v.Name, lastErr)
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -535,7 +631,7 @@ func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout ti
 
 		if err != nil {
 			lastErr = err.Error()
-			t.Logf("kubespand COSI poll (waiting): %s", lastErr)
+			v.t.Logf("[%s] COSI poll (waiting): %s", v.Name, lastErr)
 			time.Sleep(1 * time.Second)
 			continue
 		}
@@ -564,7 +660,7 @@ func PollKubespandPeerStatus(t *testing.T, addr string, minPeers int, timeout ti
 			}
 			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
 		}
-		t.Logf("kubespand COSI poll: %d peers, %d up (need %d) [%s]", len(peers), upCount, minPeers, peerSummary.String())
+		v.t.Logf("[%s] COSI poll: %d peers, %d up (need %d) [%s]", v.Name, len(peers), upCount, minPeers, peerSummary.String())
 
 		if upCount >= minPeers {
 			return peers, nil

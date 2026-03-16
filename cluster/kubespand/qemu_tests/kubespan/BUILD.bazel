@@ -27,8 +27,6 @@ go_test(
     tags = _TOPOLOGY_TAGS,
     deps = [
         "//cluster/kubespand/qemu_tests",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
     ],
 )
 
@@ -43,24 +41,6 @@ go_test(
     tags = _TOPOLOGY_TAGS,
     deps = [
         "//cluster/kubespand/qemu_tests",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
-    ],
-)
-
-go_test(
-    name = "discovery_only_test",
-    timeout = "long",
-    srcs = [
-        "discovery_only_test.go",
-        "topology_test_helper.go",
-    ],
-    data = _TOPOLOGY_DATA,
-    tags = _TOPOLOGY_TAGS,
-    deps = [
-        "//cluster/kubespand/qemu_tests",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
     ],
 )
 
@@ -83,7 +63,5 @@ go_test(
     ],
     deps = [
         "//cluster/kubespand/qemu_tests",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
     ],
 )

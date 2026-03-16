@@ -17,9 +17,21 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
+	v1alpha1 "github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
+	"gopkg.in/yaml.v3"
 )
+
+// ParseTalosConfig parses a Talos machine config YAML into the upstream v1alpha1.Config type.
+func ParseTalosConfig(t *testing.T, data []byte) *v1alpha1.Config {
+	t.Helper()
+	var cfg v1alpha1.Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("parse talos config: %v", err)
+	}
+	return &cfg
+}
 
 // KubespanPeerResult holds the result of a KubeSpan peer status query.
 type KubespanPeerResult struct {
@@ -63,7 +75,7 @@ func BootTalosVM(t *testing.T, name, baseImage, cidataPath string, mgmtPort int,
 		args = append(args, MgmtNIC(mgmtPort, 50000, "52:54:00:ab:00:01")...)
 	}
 
-	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...), false)
+	return StartVM(t, name, exec.Command("qemu-system-x86_64", args...))
 }
 
 // CreateCIDATA creates a FAT32 disk image with cloud-init metadata for Talos.

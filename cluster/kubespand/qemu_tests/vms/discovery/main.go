@@ -4,29 +4,24 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"time"
 
-	qemu_tests "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 )
 
 func main() {
-	initlib.InitBasic()
-	params := initlib.ParseCmdline()
-	if v, ok := params["role"]; ok {
-		initlib.Role = v
-	}
+	params := initlib.Init()
 
 	discoveryIP := params["discovery_ip"]
 	if discoveryIP == "" {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "missing discovery_ip", Error: "discovery_ip parameter required"})
-		initlib.Poweroff()
+		log.Fatalf("missing discovery_ip parameter")
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventBoot, Message: fmt.Sprintf("discovery mode, ip=%s", discoveryIP)})
+	log.Printf("discovery mode, ip=%s", discoveryIP)
 
 	initlib.RunSilent("modprobe", "virtio_net")
 
@@ -43,14 +38,11 @@ func main() {
 		initlib.MustRun("ip", "route", "add", "10.0.0.0/8", "dev", "eth0")
 	}
 
-	// eth1: mgmt NIC (QEMU user-mode) for port forwarding to the test host.
+	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
 	// Optional — only present when the test adds a hostfwd NIC.
-	if initlib.HasInterface("eth1", 2*time.Second) {
-		initlib.MustRun("ip", "link", "set", "eth1", "up")
-		initlib.MustRun("ip", "addr", "add", "10.0.2.15/24", "dev", "eth1")
-	}
+	initlib.ConfigureMgmtNIC(false)
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventNetwork, Message: fmt.Sprintf("network ready, ip=%s", discoveryIP)})
+	log.Printf("network ready, ip=%s", discoveryIP)
 
 	// Start discovery service.
 	logFile, _ := os.Create("/tmp/discovery-service.log")
@@ -58,10 +50,9 @@ func main() {
 	discCmd.Stdout = logFile
 	discCmd.Stderr = logFile
 	if err := discCmd.Start(); err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "discovery-service failed to start", Error: err.Error()})
-		initlib.Poweroff()
+		log.Fatalf("discovery-service failed to start: %v", err)
 	}
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventKubespand, Message: fmt.Sprintf("discovery-service started pid=%d", discCmd.Process.Pid)})
+	log.Printf("discovery-service started pid=%d", discCmd.Process.Pid)
 
 	// Poll until ready.
 	for i := 0; i < 60; i++ {
@@ -73,13 +64,17 @@ func main() {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventDone, Message: "discovery-service running"})
+	// Start probe gRPC server on the mgmt NIC for test host diagnostics.
+	// The test host polls this server to detect VM readiness.
+	initlib.StartProbeServer(fmt.Sprintf(":%d", initlib.ProbeServerPort))
+
+	log.Printf("discovery-service running")
 
 	// Block until the discovery service exits (or the VM is killed).
 	// Using discCmd.Wait() instead of select{} avoids Go's deadlock
 	// detector, which would panic because no other goroutines are running.
 	if err := discCmd.Wait(); err != nil {
-		initlib.EmitEvent(qemu_tests.Event{Type: qemu_tests.EventError, Message: "discovery-service exited", Error: err.Error()})
+		log.Printf("discovery-service exited: %v", err)
 	}
 	initlib.Poweroff()
 }
