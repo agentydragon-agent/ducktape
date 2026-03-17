@@ -217,12 +217,18 @@ func RandomPort() int {
 }
 
 // CleanupVMs registers a t.Cleanup that kills all VMs and saves their logs.
+// On test failure, raw VM logs are also dumped to the test log for visibility.
 func CleanupVMs(t *testing.T, vms []*VM, outDir string) {
 	t.Helper()
 	t.Cleanup(func() {
 		KillAndWait(vms...)
 		for _, vm := range vms {
 			vm.SaveLogs(t, outDir)
+		}
+		if t.Failed() {
+			for _, vm := range vms {
+				t.Logf("=== raw log: %s ===\n%s", vm.Name, vm.GetRawLog())
+			}
 		}
 	})
 }

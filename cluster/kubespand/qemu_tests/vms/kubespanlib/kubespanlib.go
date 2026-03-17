@@ -42,11 +42,11 @@ func ConfigureNetwork(linkIP, linkMask string) {
 
 // StartKubespand starts kubespand from the pre-existing config at
 // /etc/kubespan/agent.yaml (written by initlib.MountKubespandCIDATA).
+// Output goes to stderr (VM console) so it appears in the test VM log.
 func StartKubespand() *exec.Cmd {
-	logFile, _ := os.Create("/tmp/kubespand.log")
 	cmd := exec.Command("/kubespand", "-config", "/etc/kubespan/agent.yaml", "-debug")
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("kubespand failed to start: %v", err)
 	}
