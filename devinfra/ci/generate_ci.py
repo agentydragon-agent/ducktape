@@ -197,6 +197,11 @@ def _binary_dist_path(label: BazelLabel) -> str:
     return f"bazel-bin/{label.package}/{label.name}_/{label.name}"
 
 
+def _tarball_dist_path(label: BazelLabel) -> str:
+    """Compute the bazel-bin path for a pkg_tar target."""
+    return f"bazel-bin/{label.package}/{label.name}.tar"
+
+
 def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflow:
     """Generate the consolidated release.yml workflow."""
     pkg_names = list(releases.keys())
@@ -384,6 +389,36 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                     ),
                 ]
             )
+        elif config.artifact_type == "tarball":
+            label = config.targets[0].bazel_target
+            tarball_path = _tarball_dist_path(label)
+            release_filename = f"{name}.tar"
+            release_steps.extend(
+                [
+                    Step(name="Build tarball", run=f"bazel build --remote_download_toplevel {label}"),
+                    Step(name="Prepare tarball", run=f"mkdir -p dist\ncp {tarball_path} dist/{release_filename}"),
+                    Step(
+                        name="Create release",
+                        uses="softprops/action-gh-release@v2",
+                        with_args={
+                            "tag_name": f"{name}-${{{{ env.SHORT_SHA }}}}",
+                            "name": f"{name} (${{{{ env.SHORT_SHA }}}})",
+                            "body": f"{config.release_body}\nCommit: ${{{{ github.sha }}}}\nBranch: ${{{{ github.ref_name }}}}",
+                            "files": f"dist/{release_filename}",
+                        },
+                    ),
+                    Step(
+                        uses="./.github/actions/update-latest-release",
+                        with_args={
+                            "package_prefix": name,
+                            "latest_tag": latest_tag,
+                            "title": f"{name} (latest)",
+                            "body": config.release_body,
+                            "files": f"dist/{release_filename}",
+                        },
+                    ),
+                ]
+            )
         else:
             if not config.wheel_name:
                 raise ValueError(f"wheel_name must be set for wheel package {name!r}")
@@ -450,6 +485,8 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
         for target in config.targets:
             if config.artifact_type == "binary":
                 file_pattern = target.bazel_target.name
+            elif config.artifact_type == "tarball":
+                file_pattern = f"{name}.tar"
             else:
                 if not config.wheel_name:
                     raise ValueError(f"wheel_name must be set for wheel package {name!r}")

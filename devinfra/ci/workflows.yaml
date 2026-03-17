@@ -91,12 +91,10 @@ workflows:
 #   release_needs:    Extra job names the release job depends on (beyond standard test)
 releases:
   kubespand:
-    artifact_type: binary
+    artifact_type: tarball
     targets:
-      - bazel_target: //cluster/kubespand:kubespand
-        flake_input: kubespand-bin
-      - bazel_target: //cluster/kubespand/cmd/apid
-        flake_input: apid-bin
+      - bazel_target: //cluster/kubespand:kubespand_tar
+        flake_input: kubespand-tar
     test_targets: //cluster/kubespand/...
     release_body: |
       kubespand — standalone KubeSpan daemon for non-Talos Linux.

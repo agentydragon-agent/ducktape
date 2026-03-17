@@ -1,23 +1,26 @@
-# kubespand: standalone KubeSpan daemon for non-Talos Linux
-# Binary fetched as a flake input (kubespand-bin) from GitHub Releases.
-# To update: nix flake lock --update-input kubespand-bin ./nix
+# kubespand + apid: standalone KubeSpan daemon and Talos API proxy for non-Talos Linux.
+# Both binaries are bundled in a single tarball fetched as a flake input (kubespand-tar)
+# from GitHub Releases.
+# To update: nix flake lock --update-input kubespand-tar
 {
   lib,
   pkgs,
-  kubespand-bin,
+  kubespand-tar,
 }:
 pkgs.stdenv.mkDerivation {
   pname = "kubespand";
   version = "latest";
 
-  dontUnpack = true;
+  src = kubespand-tar;
+  sourceRoot = ".";
 
   installPhase = ''
-    install -Dm755 ${kubespand-bin} $out/bin/kubespand
+    install -Dm755 kubespand $out/bin/kubespand
+    install -Dm755 apid $out/bin/apid
   '';
 
   meta = {
-    description = "Standalone KubeSpan daemon for non-Talos Linux";
+    description = "Standalone KubeSpan daemon and Talos API proxy for non-Talos Linux";
     homepage = "https://github.com/agentydragon/ducktape";
     license = lib.licenses.agpl3Only;
     mainProgram = "kubespand";

@@ -51,7 +51,7 @@ jobs:
         uses: ./.github/actions/check-release-needed
         with:
           package_prefix: kubespand
-          bazel_targets: //cluster/kubespand //cluster/kubespand/cmd/apid
+          bazel_targets: //cluster/kubespand:kubespand_tar
           latest_release_tag: kubespand-latest
       - name: Check ducktape
         id: check-ducktape
@@ -217,13 +217,12 @@ jobs:
           buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
       - name: Set short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::8}" >> $GITHUB_ENV
-      - name: Build binaries
-        run: bazel build --remote_download_toplevel //cluster/kubespand //cluster/kubespand/cmd/apid
-      - name: Prepare binaries
+      - name: Build tarball
+        run: bazel build --remote_download_toplevel //cluster/kubespand:kubespand_tar
+      - name: Prepare tarball
         run: |-
           mkdir -p dist
-          cp bazel-bin/cluster/kubespand/kubespand_/kubespand dist/
-          cp bazel-bin/cluster/kubespand/cmd/apid/apid_/apid dist/
+          cp bazel-bin/cluster/kubespand/kubespand_tar.tar dist/kubespand.tar
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -237,9 +236,7 @@ jobs:
 
             Commit: ${{ github.sha }}
             Branch: ${{ github.ref_name }}
-          files: |-
-            dist/kubespand
-            dist/apid
+          files: dist/kubespand.tar
       - uses: ./.github/actions/update-latest-release
         with:
           package_prefix: kubespand
@@ -250,9 +247,7 @@ jobs:
             apid — Talos API proxy daemon for kubespand (mTLS on port 50000).
 
             Static x86_64 binaries. See `cluster/kubespand/README.md` for usage.
-          files: |-
-            dist/kubespand
-            dist/apid
+          files: dist/kubespand.tar
   release-ducktape:
     name: Release ducktape
     runs-on: ubuntu-latest
@@ -462,10 +457,8 @@ jobs:
             fi
           }
           if [ "${{ needs.release-kubespand.outputs.released }}" = "true" ]; then
-            sed -i 's|releases/download/kubespand-[^/]*/kubespand|releases/download/${{ needs.release-kubespand.outputs.tag }}/kubespand|' flake.nix
-            sed -i 's|releases/download/kubespand-[^/]*/apid|releases/download/${{ needs.release-kubespand.outputs.tag }}/apid|' flake.nix
-            update_flake_input kubespand-bin
-            update_flake_input apid-bin
+            sed -i 's|releases/download/kubespand-[^/]*/kubespand.tar|releases/download/${{ needs.release-kubespand.outputs.tag }}/kubespand.tar|' flake.nix
+            update_flake_input kubespand-tar
           fi
           if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then
             sed -i 's|releases/download/ducktape-[^/]*/ducktape|releases/download/${{ needs.release-ducktape.outputs.tag }}/ducktape|' flake.nix

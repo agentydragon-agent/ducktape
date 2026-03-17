@@ -104,7 +104,7 @@ class ReleaseConfig(BaseModel):
 
     targets: list[ReleaseTarget]
     release_body: str
-    artifact_type: Literal["wheel", "binary"] = "wheel"
+    artifact_type: Literal["wheel", "binary", "tarball"] = "wheel"
     test_targets: str | None = None
     update_claude_settings: bool = False
     apt_packages: list[str] = Field(default_factory=list)

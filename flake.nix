@@ -31,12 +31,8 @@
 
     # CI-released artifacts — pinned to tagged releases, updated by release.yml.
     # URLs are rewritten by the update-downstream job after each release.
-    kubespand-bin = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/kubespand";
-      flake = false;
-    };
-    apid-bin = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/apid";
+    kubespand-tar = {
+      url = "https://github.com/agentydragon/ducktape/releases/download/kubespand-be787f26/kubespand.tar";
       flake = false;
     };
     ducktape-wheel = {
@@ -80,8 +76,7 @@
       nix-colors,
       claude-code-router,
       nixGL,
-      kubespand-bin,
-      apid-bin,
+      kubespand-tar,
       ducktape-wheel,
       headscale-cleanup-wheel,
       gterm-theme-wheel,
@@ -225,8 +220,7 @@
               hostname
               username
               homeManagerHost
-              kubespand-bin
-              apid-bin
+              kubespand-tar
               ;
           };
           modules = [

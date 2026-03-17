@@ -1,4 +1,15 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+pkg_tar(
+    name = "kubespand_tar",
+    srcs = [
+        ":kubespand",
+        "//cluster/kubespand/cmd/apid",
+    ],
+    mode = "0755",
+    visibility = ["//visibility:public"],
+)
 
 go_library(
     name = "kubespand_lib",

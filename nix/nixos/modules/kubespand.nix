@@ -12,8 +12,7 @@
   config,
   pkgs,
   lib,
-  kubespand-bin,
-  apid-bin,
+  kubespand-tar,
   ...
 }:
 let
@@ -25,7 +24,7 @@ in
 
     package = lib.mkOption {
       type = lib.types.package;
-      default = pkgs.callPackage ../packages/kubespand.nix { inherit kubespand-bin; };
+      default = pkgs.callPackage ../packages/kubespand.nix { inherit kubespand-tar; };
       description = "The kubespand binary package";
     };
 
@@ -52,13 +51,8 @@ in
 
       package = lib.mkOption {
         type = lib.types.package;
-        default = pkgs.stdenv.mkDerivation {
-          pname = "apid";
-          version = "latest";
-          dontUnpack = true;
-          installPhase = "install -Dm755 ${apid-bin} $out/bin/apid";
-        };
-        defaultText = lib.literalExpression "apid-bin derivation";
+        default = cfg.package;
+        defaultText = lib.literalExpression "cfg.package (same derivation as kubespand)";
         description = "Package containing the apid binary";
       };
 
