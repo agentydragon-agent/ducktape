@@ -23,6 +23,7 @@ from typing import Any
 from claude_web_env.tools.capture_manifest import capture, write_manifest
 from claude_web_env.tools.capture_versions import capture_versions_yaml
 from claude_web_env.tools.diff_manifests import REAL_DIFF_STATUSES, diff_manifests, generate_report
+from claude_web_env.tools.fetch_debs import fetch_debs
 from claude_web_env.tools.manifest import Entry, load_default_exclusions
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -40,9 +41,11 @@ def capture_proprietary_binaries(work_dir: Path) -> None:
     logger.info("Capturing proprietary binaries from live container...")
     ref_dir = work_dir / "reference"
 
+    # process_api runs as PID 1 and is only accessible via /proc/1/exe
+    # (the /process_api path is not a regular file in gVisor).
     for src, name in [
         ("/usr/local/bin/environment-manager", "environment-manager.gz"),
-        ("/process_api", "process_api.gz"),
+        ("/proc/1/exe", "process_api.gz"),
     ]:
         with (ref_dir / name).open("wb") as f:
             run(["gzip", "-c", src], stdout=f)
@@ -50,6 +53,15 @@ def capture_proprietary_binaries(work_dir: Path) -> None:
         logger.info("Captured %s: %s", Path(src).name, result.stdout.split()[0])
 
     logger.info("Proprietary binaries captured to reference/")
+
+
+def generate_local_debs(work_dir: Path) -> None:
+    """Fetch .deb packages from Ubuntu snapshot archives and PPAs.
+
+    Downloads exact package versions from pinned remote sources. Works from
+    any machine with network access — no dpkg-repack or live container needed.
+    """
+    fetch_debs(work_dir)
 
 
 def build_image(work_dir: Path) -> None:
@@ -150,6 +162,7 @@ def main() -> int:
 
     if not args.diff_only:
         capture_proprietary_binaries(work_dir)
+        generate_local_debs(work_dir)
         build_image(work_dir)
     else:
         logger.info("Skipping build (--diff-only)")
