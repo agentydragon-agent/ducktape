@@ -4,7 +4,9 @@ go_library(
     name = "qemu_tests",
     testonly = True,
     srcs = [
+        "doublenat_topology.go",
         "helpers.go",
+        "mesh_node.go",
         "talos_config_gen.go",
         "talos_helpers.go",
     ],
@@ -13,8 +15,10 @@ go_library(
     deps = [
         "//cluster/kubespand/agentconfig",
         "//cluster/kubespand/qemu_tests/probepb",
+        "//cluster/kubespand/qemu_tests/vmconst",
         "@com_github_cosi_project_runtime//api/v1alpha1",
         "@com_github_cosi_project_runtime//pkg/controller/generic",
+        "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/safe",
         "@com_github_cosi_project_runtime//pkg/state",
         "@com_github_cosi_project_runtime//pkg/state/protobuf/client",

@@ -26,11 +26,21 @@ import (
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/agentconfig"
 	pb "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/probepb"
+	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vmconst"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
+
+// collectList collects all items from a safe.List into a slice.
+func collectList[T safe.ListedResource](list safe.List[T]) []T {
+	result := make([]T, 0, list.Len())
+	for it := list.Iterator(); it.Next(); {
+		result = append(result, it.Value())
+	}
+	return result
+}
 
 // Runfile paths for shared test artifacts.
 const (
@@ -54,8 +64,25 @@ const (
 )
 
 // mgmtMAC is the MAC address assigned to the management NIC by BootVM.
-// Must match initlib.MgmtMAC so the VM init can find it.
-const mgmtMAC = "52:54:00:aa:00:01"
+const mgmtMAC = vmconst.MgmtMAC
+
+// MAC addresses for flat/cross-subnet/trustd topology VMs.
+const (
+	DiscoveryMAC = "52:54:00:ff:00:01"
+	NodeAMAC     = "52:54:00:a0:00:01"
+	NodeBMAC     = "52:54:00:b0:00:01"
+	NodeCPMAC    = "52:54:00:c0:00:01"
+)
+
+// ControlPlaneEndpoint returns the Talos API server URL for the given IP.
+func ControlPlaneEndpoint(ip string) string {
+	return "https://" + ip + ":6443"
+}
+
+// DiscoveryEndpoint returns the discovery service URL for the given IP.
+func DiscoveryEndpoint(ip string) string {
+	return "http://" + ip + ":3000"
+}
 
 // VM represents a running QEMU VM.
 type VM struct {
@@ -217,12 +244,18 @@ func RandomPort() int {
 }
 
 // CleanupVMs registers a t.Cleanup that kills all VMs and saves their logs.
+// On test failure, raw VM logs are also dumped to the test log for visibility.
 func CleanupVMs(t *testing.T, vms []*VM, outDir string) {
 	t.Helper()
 	t.Cleanup(func() {
 		KillAndWait(vms...)
 		for _, vm := range vms {
 			vm.SaveLogs(t, outDir)
+		}
+		if t.Failed() {
+			for _, vm := range vms {
+				t.Logf("=== raw log: %s ===\n%s", vm.Name, vm.GetRawLog())
+			}
 		}
 	})
 }
@@ -610,70 +643,35 @@ func (v *VM) DumpDiagnostics() string {
 	return resp.Output
 }
 
-// PollPeerStatus connects to kubespand's COSI API and polls PeerStatus
-// resources until at least minPeers report state "up".
-func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]kubespan.PeerStatusSpec, error) {
+// GetPeerSpecs queries PeerSpec resources from kubespand's COSI API.
+func (v *VM) GetPeerSpecs() ([]kubespan.PeerSpecSpec, error) {
 	v.t.Helper()
 
 	if v.cosiAddr == "" {
-		v.t.Fatalf("[%s] PollPeerStatus called but COSI not configured", v.Name)
+		return nil, fmt.Errorf("[%s] GetPeerSpecs called but COSI not configured", v.Name)
 	}
 
-	deadline := time.Now().Add(timeout)
-	var lastErr string
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		conn, err := grpc.NewClient(v.cosiAddr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			cancel()
-			lastErr = err.Error()
-			v.t.Logf("[%s] COSI connect (waiting): %s", v.Name, lastErr)
-			time.Sleep(1 * time.Second)
-			continue
-		}
+	conn, err := grpc.NewClient(v.cosiAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("COSI connect: %w", err)
+	}
+	defer conn.Close()
 
-		st := state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn)))
-		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, st)
-		cancel()
-		conn.Close()
-
-		if err != nil {
-			lastErr = err.Error()
-			v.t.Logf("[%s] COSI poll (waiting): %s", v.Name, lastErr)
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		var peers []kubespan.PeerStatusSpec
-		for it := list.Iterator(); it.Next(); {
-			peers = append(peers, *it.Value().TypedSpec())
-		}
-
-		upCount := 0
-		for _, p := range peers {
-			if p.State == kubespan.PeerStateUp {
-				upCount++
-			}
-		}
-
-		var peerSummary strings.Builder
-		for i, p := range peers {
-			if i > 0 {
-				peerSummary.WriteString("; ")
-			}
-			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
-		}
-		v.t.Logf("[%s] COSI poll: %d peers, %d up (need %d) [%s]", v.Name, len(peers), upCount, minPeers, peerSummary.String())
-
-		if upCount >= minPeers {
-			return peers, nil
-		}
-
-		time.Sleep(1 * time.Second)
+	st := state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn)))
+	list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, st)
+	if err != nil {
+		return nil, fmt.Errorf("COSI list PeerSpec: %w", err)
 	}
 
-	return nil, fmt.Errorf("timeout after %v waiting for %d peers up, last error: %s", timeout, minPeers, lastErr)
+	resources := collectList(list)
+	result := make([]kubespan.PeerSpecSpec, len(resources))
+	for i, r := range resources {
+		result[i] = *r.TypedSpec()
+	}
+	return result, nil
 }

@@ -6,11 +6,18 @@ go_test(
     srcs = ["doublenat_test.go"],
     data = [
         "//cluster/kubespand/qemu_tests:vmlinuz",
+        "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
         "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
         "//cluster/kubespand/qemu_tests/vms/doublenat:initramfs",
         "//cluster/kubespand/qemu_tests/vms/router:initramfs",
     ],
-    tags = ["requires_qemu"],
+    # QEMU tests run multiple VMs under TCG (no KVM) — need more CPU than the
+    # platform default (3 compute units).
+    exec_properties = {"EstimatedComputeUnits": "8"},
+    tags = [
+        "cpu:4",
+        "requires_qemu",
+    ],
     deps = [
         "//cluster/kubespand/qemu_tests",
     ],

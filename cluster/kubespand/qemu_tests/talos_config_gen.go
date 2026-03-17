@@ -17,6 +17,8 @@ import (
 	v1alpha1 "github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/role"
 	"gopkg.in/yaml.v3"
+
+	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vmconst"
 )
 
 // TestTalosSecrets holds all cryptographic material for a test Talos cluster.
@@ -109,6 +111,8 @@ type TalosNodeConfig struct {
 	IP string
 	// Gateway is the default gateway (optional, used for NAT workers).
 	Gateway string
+	// Routes are additional static routes for eth0 (e.g. cross-subnet reachability).
+	Routes []*v1alpha1.Route
 	// ControlPlaneEndpoint is the cluster API endpoint, e.g. "https://192.168.50.253:6443".
 	ControlPlaneEndpoint string
 	// DiscoveryEndpoint is the discovery service URL, e.g. "http://192.168.50.254:3000".
@@ -173,19 +177,21 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 		DeviceAddresses: []string{opts.IP},
 	}
 	if opts.Gateway != "" {
-		eth0.DeviceRoutes = []*v1alpha1.Route{{
+		eth0.DeviceRoutes = append(eth0.DeviceRoutes, &v1alpha1.Route{
 			RouteNetwork: "0.0.0.0/0",
 			RouteGateway: opts.Gateway,
-		}}
+		})
 	}
+	eth0.DeviceRoutes = append(eth0.DeviceRoutes, opts.Routes...)
 	// Management NIC (QEMU user-mode networking).
 	eth1 := &v1alpha1.Device{
 		DeviceInterface: "eth1",
-		DeviceAddresses: []string{"10.0.2.15/24"},
+		DeviceAddresses: []string{vmconst.MgmtIP + "/24"},
 	}
 
 	kubeSpan := &v1alpha1.NetworkKubeSpan{
-		KubeSpanEnabled: boolPtr(true),
+		KubeSpanEnabled:               boolPtr(true),
+		KubeSpanHarvestExtraEndpoints: boolPtr(true),
 	}
 	if len(opts.EndpointFilters) > 0 {
 		kubeSpan.KubeSpanFilters = &v1alpha1.KubeSpanFilters{
@@ -210,6 +216,13 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 			MachineInstall: &v1alpha1.InstallConfig{
 				InstallDisk: "/dev/sda",
 			},
+			// Disable NTP: QEMU test networks have no internet access.
+			// TimeBootTimeout defaults to infinity, blocking kubelet
+			// startup until NTP sync succeeds. WireGuard uses monotonic
+			// clocks for handshakes, so wall clock accuracy is irrelevant.
+			MachineTime: &v1alpha1.TimeConfig{
+				TimeDisabled: boolPtr(true),
+			},
 			MachineFeatures: &v1alpha1.FeaturesConfig{
 				RBAC:                 &trueVal,
 				StableHostname:       &trueVal,
@@ -220,8 +233,11 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 					ServerPort:    7445,
 				},
 				HostDNSSupport: &v1alpha1.HostDNSConfig{
-					HostDNSEnabled:              boolPtr(true),
-					HostDNSForwardKubeDNSToHost: boolPtr(true),
+					HostDNSEnabled: boolPtr(true),
+					// Don't forward to upstream DNS — no internet access
+					// in QEMU test networks. Avoids timeout errors from
+					// the host DNS resolver trying to reach 8.8.8.8.
+					HostDNSForwardKubeDNSToHost: boolPtr(false),
 				},
 			},
 		},
@@ -234,6 +250,11 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 			ClusterName:                      "test-kubespan",
 			BootstrapToken:                   s.ClusterToken,
 			ClusterSecretboxEncryptionSecret: s.SecretboxSecret,
+			// CoreDNS can't start (CNI is "none"), disable explicitly to
+			// avoid Talos waiting for it.
+			CoreDNSConfig: &v1alpha1.CoreDNS{
+				CoreDNSDisabled: boolPtr(true),
+			},
 			ClusterNetwork: &v1alpha1.ClusterNetworkConfig{
 				CNI: &v1alpha1.CNIConfig{
 					CNIName: "none",

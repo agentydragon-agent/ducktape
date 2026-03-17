@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -101,83 +100,6 @@ func NewTalosClient(t *testing.T, configPath, endpoint string) *client.Client {
 	return c
 }
 
-// WaitForTalosAPI polls client.Version() until the Talos API responds.
-func WaitForTalosAPI(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) {
-	t.Helper()
-	if !pollUntil(time.Now().Add(timeout), func() bool {
-		ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 5*time.Second)
-		resp, err := c.Version(ctx)
-		cancel()
-		if err != nil {
-			t.Logf("waiting for talos API: %v", err)
-			return false
-		}
-		tag := ""
-		for _, msg := range resp.Messages {
-			if msg.Version != nil {
-				tag = msg.Version.Tag
-			}
-		}
-		t.Logf("talos API ready: %s", tag)
-		return true
-	}) {
-		t.Fatalf("talos API not reachable after %v", timeout)
-	}
-}
-
-// PollKubeSpanStatus polls the Talos COSI API for KubeSpan peer status.
-// Returns when at least minPeers peers are found and all are in "up" state.
-func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout time.Duration) ([]kubespan.PeerStatusSpec, error) {
-	t.Helper()
-
-	var lastErr string
-	var finalPeers []kubespan.PeerStatusSpec
-
-	pollUntil(time.Now().Add(timeout), func() bool {
-		ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), nodeIP), 10*time.Second)
-		list, err := safe.StateListAll[*kubespan.PeerStatus](ctx, c.COSI)
-		cancel()
-		if err != nil {
-			lastErr = err.Error()
-			t.Logf("COSI poll (waiting): %s", lastErr)
-			return false
-		}
-
-		var peers []kubespan.PeerStatusSpec
-		for it := list.Iterator(); it.Next(); {
-			peers = append(peers, *it.Value().TypedSpec())
-		}
-
-		allUp := len(peers) >= 2
-		for _, p := range peers {
-			if p.State != kubespan.PeerStateUp {
-				allUp = false
-			}
-		}
-		var peerSummary strings.Builder
-		for i, p := range peers {
-			if i > 0 {
-				peerSummary.WriteString("; ")
-			}
-			fmt.Fprintf(&peerSummary, "%s state=%s ep=%s", p.Label, p.State, p.Endpoint)
-		}
-		t.Logf("COSI poll: %d peers, allUp=%v [%s]", len(peers), allUp, peerSummary.String())
-		finalPeers = peers
-		return allUp
-	})
-
-	allUp := len(finalPeers) >= 2
-	for _, p := range finalPeers {
-		if p.State != kubespan.PeerStateUp {
-			allUp = false
-		}
-	}
-	if allUp {
-		return finalPeers, nil
-	}
-	return nil, fmt.Errorf("timeout after %v, last error: %s", timeout, lastErr)
-}
-
 // dumpCOSIList lists all resources of type T and logs each one with %+v.
 func dumpCOSIList[T generic.ResourceWithRD](t *testing.T, ctx context.Context, st state.State, label string) {
 	t.Helper()
@@ -186,11 +108,8 @@ func dumpCOSIList[T generic.ResourceWithRD](t *testing.T, ctx context.Context, s
 		t.Logf("  %s: error: %v", label, err)
 		return
 	}
-	t.Logf("  %s: %d total", label, list.Len())
-	for it := list.Iterator(); it.Next(); {
-		r := it.Value()
-		t.Logf("    [%s] %+v", r.Metadata().ID(), r.Spec())
-	}
+	items := collectList(list)
+	t.Logf("  %s: %d total %+v", label, len(items), items)
 }
 
 // DumpKubeSpanDiagnostics queries COSI resources from a Talos node via the Talos
