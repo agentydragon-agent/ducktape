@@ -159,7 +159,7 @@ async fn main() {
     }
 
     // Log version info
-    log::info!("[INFO] process_api release: process_api_2026-02-02-04-57");
+    log::info!("[INFO] process_api release: process_api_2026-03-10-21-36");
     log::info!("[INFO] process_api package version: 0.1.0");
 
     // Broadcast channel for shutdown signaling

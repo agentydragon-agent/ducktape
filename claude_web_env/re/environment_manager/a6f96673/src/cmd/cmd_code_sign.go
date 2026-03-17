@@ -86,7 +86,7 @@ func RunCodeSignFromMain(ctx context.Context, args []string) error {
 //  3. If "-Y sign" found: calls handleSSHSign with the collected args
 //  4. If not found: returns error
 //     "unsupported code-sign operation: currently only SSH-style signing (-Y sign) is supported"
-func runCodeSign(args []string) error {
+func runCodeSign(ctx context.Context, args []string) error {
 	var remaining []string
 	isSign := false
 

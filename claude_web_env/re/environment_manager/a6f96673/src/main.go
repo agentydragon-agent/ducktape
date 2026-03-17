@@ -48,8 +48,8 @@ func main() {
 			Use:   "code-sign",
 			Short: "Sign code artifacts using MCP code-sign server",
 			Long:  `Sign code artifacts using the MCP code-sign server. This command is typically invoked as a symlink named "code-sign" and handles GPG/SSH signing operations for git commits and tags.`,
-			RunE: func(cmd *cobra.Command, args []string) error {
-				return cmd.RunCodeSign(cmd.Context(), args)
+			RunE: func(cobraCmd *cobra.Command, args []string) error {
+				return cmd.RunCodeSignFromMain(cobraCmd.Context(), args)
 			},
 			// Hidden: true (0x2b1)
 			// DisableFlagParsing: true (0x2b4)

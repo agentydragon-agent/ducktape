@@ -206,9 +206,14 @@ pub fn run_firecracker_init() {
     } else {
         // Snapstart template mode: signal ready and wait for POST /mount_root
         eprintln!("[INIT] Snapstart template mode: signaling ready...");
-        // Signal SNAPSTART_READY by writing to the freeze cgroup
-        // The actual mount_root config will come via the control server
-        // For now, return — the control server will handle mount_root
+        // Write SNAPSTART_READY to the freezer cgroup to signal the host
+        // that the template VM is ready to be snapshotted. The host will
+        // freeze the VM, take a snapshot, then thaw it later with a
+        // mount_root config supplied via POST /mount_root.
+        let _ = std::fs::write(
+            "/sys/fs/cgroup/freezer/process_api/freezer.state",
+            "SNAPSTART_READY",
+        );
         eprintln!("[INIT] Firecracker init complete, starting process_api services...");
         return;
     };
@@ -750,10 +755,46 @@ fn load_container_env() {
     }
 }
 
-/// Scrub auth tokens from saved configs.
+/// Scrub auth tokens from saved config files.
 /// Xrefs: "[INIT] Auth tokens scrubbed from config(s)"
+///
+/// Removes the `auth_token` field from /mount_config.json and any FUSE mount
+/// config files that were written during init, preventing tokens from persisting
+/// on disk after they are no longer needed.
 fn scrub_auth_tokens() {
-    // Remove auth_token fields from any saved config files
+    let config_paths = ["/mount_config.json", "/tmp/rclone-mount-config.json"];
+    for path in &config_paths {
+        if !Path::new(path).exists() {
+            continue;
+        }
+        if let Ok(data) = std::fs::read_to_string(path) {
+            if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&data) {
+                let mut modified = false;
+                // Scrub top-level auth_token
+                if json.get("auth_token").is_some() {
+                    json.as_object_mut().map(|obj| obj.remove("auth_token"));
+                    modified = true;
+                }
+                // Scrub auth_token in fuse_mounts array entries
+                if let Some(fuse_mounts) = json.get_mut("fuse_mounts") {
+                    if let Some(arr) = fuse_mounts.as_array_mut() {
+                        for entry in arr.iter_mut() {
+                            if entry.get("auth_token").is_some() {
+                                entry.as_object_mut().map(|obj| obj.remove("auth_token"));
+                                modified = true;
+                            }
+                        }
+                    }
+                }
+                if modified {
+                    let _ = std::fs::write(
+                        path,
+                        serde_json::to_string_pretty(&json).unwrap_or_default(),
+                    );
+                }
+            }
+        }
+    }
     eprintln!("[INIT] Auth tokens scrubbed from config(s)");
 }
 
@@ -801,10 +842,38 @@ fn drop_cap_sys_resource() {
     }
 }
 
-/// Create device nodes via mknod (basic set).
+/// Create essential device nodes via mknod.
 /// Xrefs: "[INIT] Created device nodes via mknod"
+///
+/// Creates /dev/null, /dev/zero, /dev/random, /dev/urandom, /dev/tty,
+/// /dev/console, and /dev/ptmx — the standard set needed for a minimal
+/// Linux init environment.
 #[allow(dead_code)]
 fn create_device_nodes() {
+    // (path, mode, major, minor)
+    let devices: &[(&str, u32, u32, u32)] = &[
+        ("/dev/null", libc::S_IFCHR | 0o666, 1, 3),
+        ("/dev/zero", libc::S_IFCHR | 0o666, 1, 5),
+        ("/dev/random", libc::S_IFCHR | 0o666, 1, 8),
+        ("/dev/urandom", libc::S_IFCHR | 0o666, 1, 9),
+        ("/dev/tty", libc::S_IFCHR | 0o666, 5, 0),
+        ("/dev/console", libc::S_IFCHR | 0o600, 5, 1),
+        ("/dev/ptmx", libc::S_IFCHR | 0o666, 5, 2),
+    ];
+
+    for (path, mode, major, minor) in devices {
+        if Path::new(path).exists() {
+            continue;
+        }
+        let path_c = std::ffi::CString::new(*path).unwrap();
+        unsafe {
+            libc::mknod(
+                path_c.as_ptr(),
+                *mode,
+                libc::makedev(*major, *minor) as libc::dev_t,
+            );
+        }
+    }
     eprintln!("[INIT] Created device nodes via mknod");
 }
 
@@ -853,19 +922,97 @@ fn libc_mount_result(
     }
 }
 
-/// Configure a network interface (simplified — actual binary uses ioctl).
-fn configure_network_interface(_sock: i32, name: &str, _ip: &str, _netmask: &str, _mtu: u32) {
-    // In the real binary, this uses SIOCSIFADDR, SIOCSIFNETMASK, SIOCSIFMTU ioctls.
-    // The implementation is complex C-level struct manipulation.
-    // Decompiled behavior: sets IP, netmask, and MTU on the named interface,
-    // then brings the interface up with SIOCSIFFLAGS (IFF_UP | IFF_RUNNING).
+/// Configure a network interface with IP, netmask, MTU, and bring it up.
+/// Uses SIOCSIFADDR, SIOCSIFNETMASK, SIOCSIFMTU, SIOCSIFFLAGS ioctls.
+fn configure_network_interface(sock: i32, name: &str, ip: &str, netmask: &str, mtu: u32) {
+    use std::ffi::CString;
     eprintln!("[INIT] Setting up {name}");
+
+    let name_c = CString::new(name).unwrap();
+
+    // Build a zeroed ifreq struct (40 bytes on x86_64)
+    let mut ifr: libc::ifreq = unsafe { std::mem::zeroed() };
+    // Copy interface name into ifr_name (max IFNAMSIZ = 16)
+    let name_bytes = name_c.as_bytes_with_nul();
+    let copy_len = name_bytes.len().min(libc::IFNAMSIZ);
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            name_bytes.as_ptr(),
+            ifr.ifr_name.as_mut_ptr() as *mut u8,
+            copy_len,
+        );
+    }
+
+    // Helper: build sockaddr_in from IP string
+    let make_sockaddr_in = |addr_str: &str| -> libc::sockaddr_in {
+        let mut sa: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+        sa.sin_family = libc::AF_INET as libc::sa_family_t;
+        let octets: Vec<u8> = addr_str.split('.').filter_map(|o| o.parse().ok()).collect();
+        if octets.len() == 4 {
+            sa.sin_addr.s_addr = u32::from_ne_bytes([octets[0], octets[1], octets[2], octets[3]]);
+        }
+        sa
+    };
+
+    // SIOCSIFADDR — set IP address
+    let sa = make_sockaddr_in(ip);
+    ifr.ifr_ifru.ifru_addr = unsafe { std::mem::transmute(sa) };
+    unsafe {
+        libc::ioctl(sock, libc::SIOCSIFADDR, &ifr);
+    }
+
+    // SIOCSIFNETMASK — set netmask
+    let sa = make_sockaddr_in(netmask);
+    ifr.ifr_ifru.ifru_addr = unsafe { std::mem::transmute(sa) };
+    unsafe {
+        libc::ioctl(sock, libc::SIOCSIFNETMASK, &ifr);
+    }
+
+    // SIOCSIFMTU — set MTU
+    ifr.ifr_ifru.ifru_mtu = mtu as libc::c_int;
+    unsafe {
+        libc::ioctl(sock, libc::SIOCSIFMTU, &ifr);
+    }
+
+    // SIOCSIFFLAGS — bring interface up (IFF_UP | IFF_RUNNING)
+    ifr.ifr_ifru.ifru_flags = (libc::IFF_UP | libc::IFF_RUNNING) as libc::c_short;
+    unsafe {
+        libc::ioctl(sock, libc::SIOCSIFFLAGS, &ifr);
+    }
 }
 
-/// Configure the default route via gateway.
-fn configure_default_route(_sock: i32, _gateway: &str) {
-    // In the real binary, this uses SIOCADDRT ioctl with a rtentry struct.
-    // Decompiled behavior: adds a default route (0.0.0.0/0) via the gateway.
+/// Configure the default route via gateway using SIOCADDRT ioctl.
+fn configure_default_route(sock: i32, gateway: &str) {
+    // Build an rtentry for the default route (0.0.0.0/0 via gateway)
+    let mut rt: libc::rtentry = unsafe { std::mem::zeroed() };
+
+    // Destination: 0.0.0.0
+    let mut dst: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+    dst.sin_family = libc::AF_INET as libc::sa_family_t;
+    dst.sin_addr.s_addr = 0; // 0.0.0.0
+    rt.rt_dst = unsafe { std::mem::transmute(dst) };
+
+    // Gateway
+    let mut gw: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+    gw.sin_family = libc::AF_INET as libc::sa_family_t;
+    let octets: Vec<u8> = gateway.split('.').filter_map(|o| o.parse().ok()).collect();
+    if octets.len() == 4 {
+        gw.sin_addr.s_addr = u32::from_ne_bytes([octets[0], octets[1], octets[2], octets[3]]);
+    }
+    rt.rt_gateway = unsafe { std::mem::transmute(gw) };
+
+    // Netmask: 0.0.0.0 (default route)
+    let mut mask: libc::sockaddr_in = unsafe { std::mem::zeroed() };
+    mask.sin_family = libc::AF_INET as libc::sa_family_t;
+    mask.sin_addr.s_addr = 0;
+    rt.rt_genmask = unsafe { std::mem::transmute(mask) };
+
+    // Flags: RTF_UP | RTF_GATEWAY
+    rt.rt_flags = (libc::RTF_UP | libc::RTF_GATEWAY) as u16;
+
+    unsafe {
+        libc::ioctl(sock, libc::SIOCADDRT, &rt);
+    }
 }
 
 /// Freeze the root filesystem (FIFREEZE ioctl).
