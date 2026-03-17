@@ -109,6 +109,8 @@ type TalosNodeConfig struct {
 	IP string
 	// Gateway is the default gateway (optional, used for NAT workers).
 	Gateway string
+	// Routes are additional static routes for eth0 (e.g. cross-subnet reachability).
+	Routes []*v1alpha1.Route
 	// ControlPlaneEndpoint is the cluster API endpoint, e.g. "https://192.168.50.253:6443".
 	ControlPlaneEndpoint string
 	// DiscoveryEndpoint is the discovery service URL, e.g. "http://192.168.50.254:3000".
@@ -173,11 +175,12 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 		DeviceAddresses: []string{opts.IP},
 	}
 	if opts.Gateway != "" {
-		eth0.DeviceRoutes = []*v1alpha1.Route{{
+		eth0.DeviceRoutes = append(eth0.DeviceRoutes, &v1alpha1.Route{
 			RouteNetwork: "0.0.0.0/0",
 			RouteGateway: opts.Gateway,
-		}}
+		})
 	}
+	eth0.DeviceRoutes = append(eth0.DeviceRoutes, opts.Routes...)
 	// Management NIC (QEMU user-mode networking).
 	eth1 := &v1alpha1.Device{
 		DeviceInterface: "eth1",

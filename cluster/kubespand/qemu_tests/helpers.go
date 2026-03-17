@@ -32,6 +32,15 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// collectList collects all items from a safe.List into a slice.
+func collectList[T safe.ListedResource](list safe.List[T]) []T {
+	result := make([]T, 0, list.Len())
+	for it := list.Iterator(); it.Next(); {
+		result = append(result, it.Value())
+	}
+	return result
+}
+
 // Runfile paths for shared test artifacts.
 const (
 	VmlinuzPath        = "cluster/kubespand/qemu_tests/vmlinuz-virt"
@@ -653,9 +662,10 @@ func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]kubespan.Pee
 			continue
 		}
 
-		var peers []kubespan.PeerStatusSpec
-		for it := list.Iterator(); it.Next(); {
-			peers = append(peers, *it.Value().TypedSpec())
+		resources := collectList(list)
+		peers := make([]kubespan.PeerStatusSpec, len(resources))
+		for i, r := range resources {
+			peers[i] = *r.TypedSpec()
 		}
 
 		upCount := 0
@@ -682,4 +692,37 @@ func (v *VM) PollPeerStatus(minPeers int, timeout time.Duration) ([]kubespan.Pee
 	}
 
 	return nil, fmt.Errorf("timeout after %v waiting for %d peers up, last error: %s", timeout, minPeers, lastErr)
+}
+
+// GetPeerSpecs queries PeerSpec resources from kubespand's COSI API.
+func (v *VM) GetPeerSpecs() ([]kubespan.PeerSpecSpec, error) {
+	v.t.Helper()
+
+	if v.cosiAddr == "" {
+		return nil, fmt.Errorf("[%s] GetPeerSpecs called but COSI not configured", v.Name)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	conn, err := grpc.NewClient(v.cosiAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("COSI connect: %w", err)
+	}
+	defer conn.Close()
+
+	st := state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn)))
+	list, err := safe.StateListAll[*kubespan.PeerSpec](ctx, st)
+	if err != nil {
+		return nil, fmt.Errorf("COSI list PeerSpec: %w", err)
+	}
+
+	resources := collectList(list)
+	result := make([]kubespan.PeerSpecSpec, len(resources))
+	for i, r := range resources {
+		result[i] = *r.TypedSpec()
+	}
+	return result, nil
 }

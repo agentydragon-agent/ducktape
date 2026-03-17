@@ -97,14 +97,23 @@ func TestDoubleNAT(t *testing.T) {
 	}
 	sw.Lap("NAT2 peers up (host-side PeerStatus)")
 
+	// Get peer ULAs from PeerSpec (PeerStatusSpec.Label is hostname, not address).
+	peerSpecs, err := vmNAT2.GetPeerSpecs()
+	if err != nil {
+		t.Errorf("NAT2 GetPeerSpecs: %v", err)
+	} else {
+		t.Logf("NAT2 peer specs: %v", peerSpecs)
+	}
+
 	// Probe each discovered peer from NAT2.
 	icmpOK := false
 	tcpOK := false
-	for _, peer := range nat2Peers {
-		if vmNAT2.ProbeICMP(peer.Label, 60*time.Second) {
+	for _, ps := range peerSpecs {
+		addr := ps.Address.String()
+		if vmNAT2.ProbeICMP(addr, 60*time.Second) {
 			icmpOK = true
 		}
-		if vmNAT2.ProbeTCP(peer.Label, 9999, 30*time.Second) {
+		if vmNAT2.ProbeTCP(addr, 9999, 30*time.Second) {
 			tcpOK = true
 		}
 	}

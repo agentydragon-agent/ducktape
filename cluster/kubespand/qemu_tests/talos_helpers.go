@@ -143,9 +143,10 @@ func PollKubeSpanStatus(t *testing.T, c *client.Client, nodeIP string, timeout t
 			return false
 		}
 
-		var peers []kubespan.PeerStatusSpec
-		for it := list.Iterator(); it.Next(); {
-			peers = append(peers, *it.Value().TypedSpec())
+		resources := collectList(list)
+		peers := make([]kubespan.PeerStatusSpec, len(resources))
+		for i, r := range resources {
+			peers[i] = *r.TypedSpec()
 		}
 
 		allUp := len(peers) >= 2
@@ -187,8 +188,7 @@ func dumpCOSIList[T generic.ResourceWithRD](t *testing.T, ctx context.Context, s
 		return
 	}
 	t.Logf("  %s: %d total", label, list.Len())
-	for it := list.Iterator(); it.Next(); {
-		r := it.Value()
+	for _, r := range collectList(list) {
 		t.Logf("    [%s] %+v", r.Metadata().ID(), r.Spec())
 	}
 }

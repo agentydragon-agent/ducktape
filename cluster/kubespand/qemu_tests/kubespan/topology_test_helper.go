@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	v1alpha1 "github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
+
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
 
@@ -27,6 +29,7 @@ func runTopology(t *testing.T, topology string) {
 	var cpIP, discIP string
 	var linkIPA, linkIPB, peerSubnetA, peerSubnetB string
 	var endpointFilters []string
+	var cpRoutes []*v1alpha1.Route
 
 	switch topology {
 	case "flat":
@@ -40,9 +43,17 @@ func runTopology(t *testing.T, topology string) {
 		discIP = "10.1.0.254"
 		linkIPA = "10.1.0.1"
 		linkIPB = "10.2.0.1"
-		peerSubnetA = "10.2.0.0/24"
-		peerSubnetB = "10.1.0.0/24"
+		// Comma-separated: peer subnet + CP subnet, so all VMs can
+		// reach each other on the shared L2 multicast segment.
+		peerSubnetA = "10.2.0.0/24,10.0.0.0/24"
+		peerSubnetB = "10.1.0.0/24,10.0.0.0/24"
 		endpointFilters = []string{"10.0.0.0/8"}
+		// CP is on 10.0.0.0/24 but needs to reach discovery (10.1.0.0/24)
+		// and peers (10.2.0.0/24) on the shared L2 segment.
+		cpRoutes = []*v1alpha1.Route{
+			{RouteNetwork: "10.1.0.0/24"},
+			{RouteNetwork: "10.2.0.0/24"},
+		}
 	}
 
 	discAddr := fmt.Sprintf("%s:3000", discIP)
@@ -54,6 +65,7 @@ func runTopology(t *testing.T, topology string) {
 
 	cpConfigData := secrets.ControlPlaneConfig(h.TalosNodeConfig{
 		IP:                   fmt.Sprintf("%s/24", cpIP),
+		Routes:               cpRoutes,
 		ControlPlaneEndpoint: fmt.Sprintf("https://%s:6443", cpIP),
 		DiscoveryEndpoint:    fmt.Sprintf("http://%s:3000", discIP),
 		EndpointFilters:      endpointFilters,
@@ -128,25 +140,42 @@ func runTopology(t *testing.T, topology string) {
 	}
 	sw.Lap("VM-A peers up (host-side PeerStatus)")
 
-	// Get peer ULA from the PeerStatus results.
-	var peerULA string
-	if len(vmAPeers) > 0 {
-		peerULA = vmAPeers[0].Label
+	// Get peer specs from COSI to find VM-B's ULA.
+	// PeerSpec has Address (ULA) and Endpoints (WireGuard endpoints).
+	// We match VM-B by its endpoint IP (linkIPB).
+	peerSpecs, err := vmA.GetPeerSpecs()
+	if err != nil {
+		t.Errorf("VM-A GetPeerSpecs: %v", err)
+	} else {
+		t.Logf("VM-A peer specs: %v", peerSpecs)
+	}
+
+	var vmBULA string
+	for _, ps := range peerSpecs {
+		for _, ep := range ps.Endpoints {
+			if ep.Addr().String() == linkIPB {
+				vmBULA = ps.Address.String()
+				break
+			}
+		}
+		if vmBULA != "" {
+			break
+		}
 	}
 
 	// VM-B's eth0 IP — use the same linkIPB we configured above.
 	peerBridgeIP := linkIPB
 
-	// Run probes from VM-A to VM-B.
-	if peerULA != "" {
-		if !vmA.ProbeICMP(peerULA, 60*time.Second) {
+	// Run probes from VM-A to VM-B via KubeSpan ULA.
+	if vmBULA != "" {
+		if !vmA.ProbeICMP(vmBULA, 60*time.Second) {
 			t.Log(vmA.DumpDiagnostics())
 		}
-		if !vmA.ProbeTCP(peerULA, 9999, 30*time.Second) {
+		if !vmA.ProbeTCP(vmBULA, 9999, 30*time.Second) {
 			t.Log(vmA.DumpDiagnostics())
 		}
 	} else {
-		t.Error("no peer ULA discovered, skipping ULA probes")
+		t.Error("could not determine VM-B's ULA, skipping ULA probes")
 	}
 
 	vmA.ProbeICMP(peerBridgeIP, 60*time.Second)

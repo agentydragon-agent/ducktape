@@ -6,6 +6,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib"
 	"github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/kubespanlib"
@@ -18,15 +19,17 @@ func main() {
 	if linkIP == "" {
 		log.Fatalf("missing link_ip kernel parameter")
 	}
-	peerSubnet := params["peer_subnet"]
+	peerSubnets := params["peer_subnet"]
 
-	log.Printf("kubespan mode, role=%s, link_ip=%s, peer_subnet=%s", initlib.Role, linkIP, peerSubnet)
+	log.Printf("kubespan mode, role=%s, link_ip=%s, peer_subnet=%s", initlib.Role, linkIP, peerSubnets)
 
 	kubespanlib.LoadModules()
 	kubespanlib.ConfigureNetwork(linkIP, "24")
 
-	if peerSubnet != "" {
-		initlib.MustRun("ip", "route", "add", peerSubnet, "dev", "eth0")
+	if peerSubnets != "" {
+		for _, subnet := range strings.Split(peerSubnets, ",") {
+			initlib.MustRun("ip", "route", "add", subnet, "dev", "eth0")
+		}
 		os.WriteFile("/proc/sys/net/ipv4/conf/eth0/rp_filter", []byte("1"), 0o644)
 		os.WriteFile("/proc/sys/net/ipv4/conf/default/rp_filter", []byte("0"), 0o644)
 	}
