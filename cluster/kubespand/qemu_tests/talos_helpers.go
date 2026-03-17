@@ -187,10 +187,8 @@ func dumpCOSIList[T generic.ResourceWithRD](t *testing.T, ctx context.Context, s
 		t.Logf("  %s: error: %v", label, err)
 		return
 	}
-	t.Logf("  %s: %d total", label, list.Len())
-	for _, r := range collectList(list) {
-		t.Logf("    [%s] %+v", r.Metadata().ID(), r.Spec())
-	}
+	items := collectList(list)
+	t.Logf("  %s: %d total %+v", label, len(items), items)
 }
 
 // DumpKubeSpanDiagnostics queries COSI resources from a Talos node via the Talos
