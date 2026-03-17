@@ -40,15 +40,15 @@
       flake = false;
     };
     ducktape-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-8f4548fa/ducktape-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-ab388584/ducktape-0.1.0-py3-none-any.whl";
       flake = false;
     };
     headscale-cleanup-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-c76ef0a2/headscale_cleanup-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-ab388584/headscale_cleanup-0.1.0-py3-none-any.whl";
       flake = false;
     };
     gterm-theme-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-c76ef0a2/gterm_theme-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-ab388584/gterm_theme-0.1.0-py3-none-any.whl";
       flake = false;
     };
 
