@@ -58,6 +58,8 @@ let
       tlsMinVersion = "VersionTLS12";
       # Some nodes (e.g. laptops) have swap enabled; don't fail on it.
       failSwapOn = false;
+      # Default is 110; wyrm2 runs 113+ pods with harbor/inventree/ollama/monitoring.
+      maxPods = 300;
     }
   );
 
