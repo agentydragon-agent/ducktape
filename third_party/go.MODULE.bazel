@@ -6,7 +6,7 @@ go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
-go_deps.from_file(go_mod = "//claude_web_env/re/environment_manager/6b49f1ca/src:go.mod")
+go_deps.from_file(go_mod = "//claude_web_env/re/environment_manager/a6f96673/src:go.mod")
 
 # finance/worthy Go dependencies (separate module; go_deps only allows one from_file)
 go_deps.module(

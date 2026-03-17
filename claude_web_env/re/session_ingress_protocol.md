@@ -1,6 +1,6 @@
 # Session Ingress API Protocol Specification
 
-**Reverse engineered from:** `environment-manager` binary (Build ID: 6b49f1ca, Go 1.25.6)
+**Reverse engineered from:** `environment-manager` binary (Build ID: a6f96673, Go 1.25.7)
 
 **Base URL:** `https://api.anthropic.com`
 
