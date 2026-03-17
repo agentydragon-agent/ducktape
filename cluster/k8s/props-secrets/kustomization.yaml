@@ -4,4 +4,3 @@ resources:
   - props-secrets-tf.yaml
   - evaluator-credentials-externalsecret.yaml
   - openai-api-key-sealed.yaml
-  - ollama-api-key-externalsecret.yaml

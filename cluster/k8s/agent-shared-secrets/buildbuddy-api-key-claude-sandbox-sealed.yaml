@@ -1,13 +1,21 @@
+---
 apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
   name: buildbuddy-api-key
   namespace: claude-sandbox
+  annotations:
+    description: BuildBuddy RBE API key for sandbox agents (app.buildbuddy.io), also reflected to openclaw-sandbox
 spec:
   encryptedData:
-    api-key: AgAGYiGyYmAK6MThMcfhHo6dsklOLg5fbBRaAS+php7CsGDdJtENO8UfYUGDBEwV9n1aUdZl7qUGFA3LiH3ePad649tf+Mx30+4lOZ88+bnvrKGTtkF2WiHPasefMRiyAUssrhAuMzsW9jJFVD7LQHqO9Ug13wR0qAfHn8eKxrnjjWjbTlNwp98SqFlVF3O7v13XtoFuCCdG+k02s5PaIjg0KE/50TAwCh9+YKtnLARahEI6sgh4Q0D0ANtozjrqW7dCrV5gnwWhs3u29zzLF+LwqhzM/HCsg1icuPqbgwTjVSjBgKvT+j06FX5ySC7QfQMKkjEhnhJT/KlzL6/YHyjIQAaHe+CerIuYglBm43nok2nQssDgs7Q1l8589izuoyx8EUwcpL6CazGWwkSruFtQoCiPdXfDDUxcDcDZ95c/r4nXjclE65VwBIiAGmhfgTLHZtSb/9RTyiYY50z4Yatb95Y3tbcXJiB3maAZXMGONBvEpVApLgW8muSteu6VE1qPBZmgfGAqpWLqkTXITMdBSzvz77AuyD3MIJk2uUB1XgNwZWob0oAj3LhUi/Vq0HFcZZkwpbHrl/uqcIdsepwibxkjSwkJxKdaOKuTBfnSVtf+Q0HIRUi46coJ1G5A636OF0poW9seRZDNAw49d24Qx7IkjmStD4JheRpo2HTsYo7GA1iN2stx4mvoEU4d6smskhF6yHsdzY8y2LG/KihafTSdyg==
+    api-key: AgCjvdBj0L1pzJxEj8J/ubZpienN4xbqTpxqYekpBTQ4q3dK8/I8+xQS8uk9B3WVcJkqDWboSa1QGYamvD5NTCAoYR/IHq5D1E2Xa3pYa7kDAoRKXxIQimgqDCQxpdzszVBp7JZDfUf1FnSoAkX4B2jHyLwfawrbaEigOUp9QE/4fBvmi00D3S/laHyY9MdnEoh58WytX6jSYguwNtXctarHbnmVkUFVi7PEvy1IuQIOPnX0sWGTd0V/f4LulrqEooIiAPUVfVcoeP2hkFl/nFGu2tsJ4H7WG+IfBgUq4UrAseTKf9n6ALh7ji5L/QEUXP7vaRnjCV0DvdZd+bACU4GreupUirWJD72BxeJU4EpV6NtLSvmedFmsqXsHHeDaoEIVd1/zST7shbmH25mTr2WorU4Oi92r5bmJVFgtAjScJaSEkNyY/Yfx2ygx9lyjiya2DT3zPUupjWKQc6MTONsSqwNxbQZ98PxpOc6J1FSTN2lecCkmFhXiIneGGBdG5EeyVYZhI+jJ+HKQxyc/I7kQLIxXVSS99IQy0bE+nPrwLkO1PcHMZ+lObY69iPjwrhPAZUg4mUeByBsDkxn5uw4S0efGyHWEpE4f/tlv4+n3EOtqK4+MesLU8uFQO9fOUFk4OZzb9s78VacUlv0FPaBS+3MN+yjmmqF5olI6/BrTEfXNwIcJll3ylfFd7g6K5cJ+VRGQ515feE555ehwGftclwsh+w==
   template:
     metadata:
+      annotations:
+        reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: openclaw-sandbox
+        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
+        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: openclaw-sandbox
       name: buildbuddy-api-key
       namespace: claude-sandbox
     type: Opaque

@@ -3,6 +3,8 @@ kind: ExternalSecret
 metadata:
   name: sandbox-sa-token
   namespace: openclaw-gateway
+  annotations:
+    description: K8s SA token from openclaw-sandbox namespace, lets OpenClaw gateway manage pods/exec in the sandbox
 spec:
   refreshInterval: 1h
   secretStoreRef:

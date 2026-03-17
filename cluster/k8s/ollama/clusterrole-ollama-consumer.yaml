@@ -7,6 +7,4 @@ rules:
     resources: ["secrets"]
     resourceNames:
       - ollama-api-key
-      - props-ollama-api-key
-      - openclaw-ollama-api-key
     verbs: ["get"]

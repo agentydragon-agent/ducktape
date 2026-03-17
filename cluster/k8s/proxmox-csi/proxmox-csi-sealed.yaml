@@ -4,6 +4,8 @@ kind: SealedSecret
 metadata:
   name: proxmox-csi-plugin
   namespace: csi-proxmox
+  annotations:
+    description: Proxmox VE API token (kubernetes-csi@pve!csi) for CSI driver (10.2.0.2:8006)
 spec:
   encryptedData:
     config.yaml: AgArs/L8F1/FZPJ4p/xrXmA5AwQ3M5k4YOJswk/3huRm1/89EQvJ/um3KOIvNmc2VHMUQp4fZFdZu48vr7d1NG5xccfgDEghFHr3z1UYeXxZ8bvFWV28uC0og+bg8hF8Wz+dN8NzlkomPdn3QhRAFfhGryC3xltUSJRM4uf48IHyhPG2XeC+bqowhtfocZeN3pvoI2urnlnmyMSYstf08uH5VuQ1v0ZT+UZ2FHrUzhFOXL5dcxVOgAzN1DNVNmFlmqIwMd81Iq7AK6PMG18eanvh64HmXb/E8X/+nfeIokl+SUH6NEDjHMjFKWJla7T4pOwRX/yxeSbAccO7+6IWZCaN7TpPp8cljFki5AtP5Kbo6+FWc1ArINPqxsBJcUdGvPY7HxFWZFXAnOp3/WIOw7jdU4k2kp5/HAqpbIt6pckaw/8RVfdVBngZ0vZtuNpiISzU0W+Kzhby2QTGEJumsB7SmG+v965I0gXO067jCmhkkkbuiJEZ8+wjrfa7Xhm9gKGGRNc3h2iRyq/a9mxIRMn13YEJtpDhFnNciCYz11t9UgxDO6EuMddDz19hz0jRgv16RyNC/54VYYWbTNBlDwo6dWipn+Sw/RFVGdTfP/u6+pwzzwTuCehHrHb1Od7jAqngqh8tpRmd8pUPCQOgTUpDuUYoAijiILgcoBUqZztsPpliWCLj9zczwstYI7+/fua/pkZqRJczvT54ncYFK646GRTYfUSgA8YGzIpNyuzGHdJTBLEHeI2YCZQeyQPDvd9WbNY4ecQcgYVMqIei0Bj8Z8S37FTnWWzN8Q58kJFkcqiSGFJMVW3H5EgWNFfHZsF9ReeF1Ff6aoxiBX+0T/FiKt2wj2LR38S0OJPg+MtzCaxp3g2XLtiJC3yV5fbfXfY870/1pB4g3BodI90eMPvd9UnG0KtZRgUXQ8dUmZVFzVn0/3rNvA==

@@ -182,6 +182,18 @@ logs from all nodes. Grafana has Loki as a datasource for interactive log explor
 
 @docs/secrets.md
 
+### Description Annotations
+
+Add `metadata.annotations.description` to SealedSecret and ExternalSecret objects when
+the purpose isn't immediately obvious from context (name + namespace + surrounding
+kustomization). About one line covering: what endpoint/service, what permissions/scope,
+which account. Examples: "AWS IAM key for Route 53 DNS-01 (allegedly.works zone)",
+"Full-access GitHub PAT for agentydragon-agent user".
+
+Skip descriptions for obvious cases — e.g., the only deployment under a kustomization
+named after a well-known service, SSO client secrets under `authentik-blueprint/`,
+SA token secrets.
+
 ## Troubleshooting
 
 @docs/troubleshooting.md

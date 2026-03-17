@@ -55,7 +55,7 @@ spec:
             - name: OLLAMA_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: props-ollama-api-key
+                  name: ollama-api-key
                   key: api-key
             - name: PROPS_EVALUATOR_PASSWORD
               valueFrom:

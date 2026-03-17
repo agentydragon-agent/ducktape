@@ -124,5 +124,13 @@ rules:
       - instancemanagers
       - settings
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - httproutes
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["postgresql.cnpg.io"]
+    resources:
+      - clusters
+    verbs: ["get", "list", "watch"]
 # pods/log and configmaps granted via namespaced Roles in monitoring, kube-system,
 # longhorn-system, flux-system (see role-logs-configmaps-reader.yaml).
