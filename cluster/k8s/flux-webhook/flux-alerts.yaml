@@ -20,8 +20,8 @@ spec:
   eventSeverity: error
   eventSources:
     - kind: Kustomization
-      name: '*'
+      name: "*"
     - kind: HelmRelease
-      name: '*'
+      name: "*"
     - kind: GitRepository
-      name: '*'
+      name: "*"
