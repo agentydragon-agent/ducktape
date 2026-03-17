@@ -4,6 +4,7 @@
 # ─ Go toolchain (environment-manager RE) ──────────────────────────────────
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
+go_sdk.nogo(nogo = "//devinfra/lint:nogo")
 
 go_deps = use_extension("@bazel_gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_mod = "//claude_web_env/re/environment_manager/a6f96673/src:go.mod")
