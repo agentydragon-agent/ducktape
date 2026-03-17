@@ -224,14 +224,28 @@ spec:
                 requests:
                   storage: 20Gi
 
-        # Resource limits for small cluster
+        # TODO(2026-03-17): Temporarily pinned to wyrm2 to recover from OOM kill
+        # cascade on VPS nodes (7.5GiB CPX31 too small for Prometheus + 33 other
+        # pods). Prometheus was using 1686Mi and getting OOM-killed every ~49min
+        # during WAL replay. wyrm2 has 96GiB RAM.
+        # Fix properly: add PriorityClasses, rebalance pods across nodes, consider
+        # CPX41 upgrade, then remove this pin.
+        # See cluster/debug/2026-03-17-cluster-down/observations.md
+        nodeSelector:
+          kubernetes.io/hostname: wyrm2
+
+        # TODO(2026-03-17): Temporarily bumped from 2Gi to 6Gi for WAL replay
+        # recovery. Prometheus OOM-killed 8 times in 49min at 2Gi limit.
+        # Investigate: which scrape targets / metrics are driving memory growth,
+        # whether retentionSize 15GB causes excessive WAL, and right-size after.
+        # Revert to a tighter limit once root cause is addressed.
         resources:
           requests:
             cpu: 200m
             memory: 1Gi
           limits:
             cpu: 1000m
-            memory: 2Gi
+            memory: 6Gi
 
         # Scrape interval
         scrapeInterval: 30s
