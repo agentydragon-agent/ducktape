@@ -29,8 +29,8 @@
 % endif
 % endif
 LLM inference (2x RTX 5090, Apache 2.0 `gpt-oss` models):
-  - `https://litellm.allegedly.works/v1` — OpenAI-compatible (LiteLLM proxy). Model: `gpt-oss-20b-128k`. API key: k8s secret `ollama-api-key` (key `api-key`) in `claude-sandbox`.
-  - `https://ollama.allegedly.works` — Ollama native API. Bearer token: k8s secret `ollama-direct-token` (key `token`) in `claude-sandbox`.
+  - `https://litellm.allegedly.works/v1` — OpenAI-compatible proxy (LiteLLM). Model: `gpt-oss-20b-128k`. API key: k8s secret `litellm-master-key` (key `api-key`) in `claude-sandbox`. LiteLLM routes to Ollama and can support additional providers.
+  - `https://ollama.allegedly.works` — Ollama native API (direct). Bearer token: k8s secret `ollama-direct-token` (key `token`) in `claude-sandbox`. Use for Ollama-specific features (model management, embeddings).
 % if secrets.buildbuddy_api_key:
 API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif

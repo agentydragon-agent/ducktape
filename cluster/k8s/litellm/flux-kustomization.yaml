@@ -17,8 +17,6 @@ spec:
         name: cert-manager-issuer-config
   dependsOn:
     - name: cert-manager-issuer-config
-    - name: ollama
-    - name: ollama-namespace
-    - name: ollama-secrets
+    - name: litellm-secrets
     - name: gateway
     - name: cert-manager-environment
