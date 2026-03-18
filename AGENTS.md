@@ -23,7 +23,7 @@ missing env files.
 
 **Recovery: read the implementation and replicate it manually.**
 
-1. Read <devinfra/claude/session_start.py> — this is the entry point. Read `_setup_web()`
+1. Read <devinfra/claude/hook_daemon/session_start.py> — this is the entry point. Read `_setup_web()`
    carefully to understand the full setup sequence and every step it performs.
 2. Read <devinfra/claude/README.md> for architecture context (proxy, TLS, Bazel auth).
 3. Read `.claude_hooks/config.yaml` for k8s server, namespace, and secret mappings.

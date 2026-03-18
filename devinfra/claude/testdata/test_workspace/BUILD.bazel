@@ -27,5 +27,5 @@ filegroup(
         "BUILD.bazel",
         "MODULE.bazel",
     ],
-    visibility = ["//devinfra/claude:__pkg__"],
+    visibility = ["//devinfra/claude:__subpackages__"],
 )

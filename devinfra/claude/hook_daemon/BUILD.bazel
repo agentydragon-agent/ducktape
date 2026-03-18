@@ -45,6 +45,41 @@ py_library(
 )
 
 py_library(
+    name = "session_start_lib",
+    srcs = ["session_start.py"],
+    data = ["//devinfra/claude:templates/session_context.mako"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra:build_info",
+        "//devinfra/claude:bazel_wrapper_lib",
+        "//devinfra/claude:bazelisk_setup",
+        "//devinfra/claude:buildbuddy_setup",
+        "//devinfra/claude:cli_tools_setup",
+        "//devinfra/claude:container_runtime",
+        "//devinfra/claude:debug",
+        "//devinfra/claude:env_file",
+        "//devinfra/claude:errors",
+        "//devinfra/claude:fork_remote_setup",
+        "//devinfra/claude:hook_config",
+        "//devinfra/claude:k8s_secrets_setup",
+        "//devinfra/claude:managed_files",
+        "//devinfra/claude:mkcert_setup",
+        "//devinfra/claude:nix_setup",
+        "//devinfra/claude:precommit_setup",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude:tmpfs_setup",
+        "//devinfra/claude:tracing",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "//devinfra/claude/supervisor:setup",
+        "@pypi//mako",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
     imports = ["../../.."],
@@ -53,8 +88,8 @@ py_library(
         ":models",
         ":post_tool_use_lib",
         ":pre_tool_use_lib",
+        ":session_start_lib",
         "//devinfra/claude:session_paths",
-        "//devinfra/claude:session_start_lib",
         "//devinfra/claude:settings",
         "//devinfra/claude/claude_api/hooks:dispatch_output",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
@@ -155,6 +190,92 @@ py_test(
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start",
+    size = "medium",
+    srcs = ["test_session_start.py"],
+    data = [
+        "//devinfra/claude:hook_dispatch",
+        "//devinfra/claude/auth_proxy:run",
+        "//devinfra/claude/testdata/test_workspace:workspace_files",
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
+    ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    env_inherit = [
+        "CURL_CA_BUNDLE",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    ],
+    imports = ["../../.."],
+    # local: keytool (Adoptium JDK) needs libjli.so which isn't on the RBE worker image
+    local = True,
+    tags = [
+        "e2e",
+        "external",
+    ],
+    deps = [
+        "//devinfra/claude:conftest",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/testing:fixtures",
+        "//devinfra/claude/testing:session_start_helpers",
+        "//devinfra/claude/testing:shell_helpers",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start_podman",
+    size = "medium",
+    srcs = ["test_session_start_podman.py"],
+    data = [
+        "//devinfra/claude:hook_dispatch",
+        "//devinfra/claude/auth_proxy:run",
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
+    ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    env_inherit = [
+        "CURL_CA_BUNDLE",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    ],
+    imports = ["../../.."],
+    # local: podman needs mount/networking capabilities blocked by linux-sandbox and RBE
+    local = True,
+    tags = [
+        "e2e",
+        "external",
+        "manual",  # podman path not used in prod currently
+    ],
+    deps = [
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/testing:fixtures",
+        "//devinfra/claude/testing:session_start_helpers",
+        "//devinfra/claude/testing:shell_helpers",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

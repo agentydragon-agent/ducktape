@@ -50,7 +50,7 @@ from devinfra.claude.tracing import add_otlp_exporter
 
 logger = logging.getLogger(__name__)
 
-_TEMPLATES_DIR = Path(__file__).parent / "templates"
+_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
 
 # ============================================================================
