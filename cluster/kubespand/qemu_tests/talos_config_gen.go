@@ -233,10 +233,10 @@ func (s *TestTalosSecrets) baseConfig(machineType string, opts TalosNodeConfig) 
 					ServerPort:    7445,
 				},
 				HostDNSSupport: &v1alpha1.HostDNSConfig{
-					HostDNSEnabled: boolPtr(true),
-					// Don't forward to upstream DNS — no internet access
-					// in QEMU test networks. Avoids timeout errors from
-					// the host DNS resolver trying to reach 8.8.8.8.
+					// Disable host DNS entirely — QEMU test networks have
+					// no internet access. Avoids log noise from DNS resolver
+					// retrying unreachable upstreams.
+					HostDNSEnabled:              boolPtr(false),
 					HostDNSForwardKubeDNSToHost: boolPtr(false),
 				},
 			},

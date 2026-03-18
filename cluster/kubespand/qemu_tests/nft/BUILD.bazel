@@ -39,7 +39,7 @@ initramfs(
 # ─ Test ──────────────────────────────────────────────────────────────────────
 go_test(
     name = "nft_test",
-    timeout = "long",
+    timeout = "short",
     srcs = ["nft_test.go"],
     data = [
         ":initramfs",

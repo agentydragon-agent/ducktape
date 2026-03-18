@@ -1,24 +1,34 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
-go_test(
-    name = "doublenat_test",
+_DOUBLENAT_DATA = [
+    "//cluster/kubespand/qemu_tests:vmlinuz",
+    "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
+    "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
+    "//cluster/kubespand/qemu_tests/vms/doublenat:initramfs",
+    "//cluster/kubespand/qemu_tests/vms/router:initramfs",
+]
+
+_QEMU_TAGS = [
+    "cpu:4",
+    "requires_qemu",
+]
+
+# Double-NAT tests have more VMs (6 total: discovery + 2 routers + CP + 2 workers).
+_EXEC_PROPERTIES = {
+    "kubespand": {"EstimatedComputeUnits": "8"},
+    "talos": {"EstimatedComputeUnits": "10"},
+}
+
+[go_test(
+    name = "doublenat_{worker_type}_test".format(worker_type = worker_type),
     timeout = "long",
     srcs = ["doublenat_test.go"],
-    data = [
-        "//cluster/kubespand/qemu_tests:vmlinuz",
-        "//cluster/kubespand/qemu_tests/talos:talos_nocloud_image",
-        "//cluster/kubespand/qemu_tests/vms/discovery:initramfs",
-        "//cluster/kubespand/qemu_tests/vms/doublenat:initramfs",
-        "//cluster/kubespand/qemu_tests/vms/router:initramfs",
-    ],
-    # QEMU tests run multiple VMs under TCG (no KVM) — need more CPU than the
-    # platform default (3 compute units).
-    exec_properties = {"EstimatedComputeUnits": "8"},
-    tags = [
-        "cpu:4",
-        "requires_qemu",
-    ],
-    deps = [
-        "//cluster/kubespand/qemu_tests",
-    ],
-)
+    args = ["-test.run=TestDoubleNAT/{worker_type}$$".format(worker_type = worker_type)],
+    data = _DOUBLENAT_DATA,
+    exec_properties = _EXEC_PROPERTIES[worker_type],
+    tags = _QEMU_TAGS,
+    deps = ["//cluster/kubespand/qemu_tests"],
+) for worker_type in [
+    "kubespand",
+    "talos",
+]]

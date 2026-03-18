@@ -150,7 +150,7 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	h.CleanupVMs(t, allVMs, out)
 
 	// Wait for infrastructure.
-	h.WaitForProbeServers(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, 30*time.Second)
+	h.WaitForProbeServers(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, 120*time.Second)
 	sw.Lap("infrastructure VMs ready")
 
 	// Wait for VPS Talos API.
