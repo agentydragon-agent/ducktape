@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -12,17 +11,6 @@ import (
 
 	h "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests"
 )
-
-// splitNonEmpty splits s by comma and returns non-empty parts.
-func splitNonEmpty(s string) []string {
-	var out []string
-	for _, p := range strings.Split(s, ",") {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
-}
 
 func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	sw := h.NewStopwatch(t)
@@ -39,8 +27,10 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 
 	// Topology-specific parameters.
 	var cpIP, discIP string
-	var linkIPA, linkIPB, peerSubnetA, peerSubnetB string
-	var cpRoutes []*v1alpha1.Route
+	var linkIPA, linkIPB string
+	var cpRoutes, workerARoutes, workerBRoutes []*v1alpha1.Route
+	// peerSubnetA/B are passed as kernel cmdline args to kubespand VMs.
+	var peerSubnetA, peerSubnetB string
 
 	switch topology {
 	case "flat":
@@ -58,6 +48,14 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 		cpRoutes = []*v1alpha1.Route{
 			{RouteNetwork: "10.1.0.0/24"},
 			{RouteNetwork: "10.2.0.0/24"},
+		}
+		workerARoutes = []*v1alpha1.Route{
+			{RouteNetwork: "10.2.0.0/24"},
+			{RouteNetwork: "10.0.0.0/24"},
+		}
+		workerBRoutes = []*v1alpha1.Route{
+			{RouteNetwork: "10.1.0.0/24"},
+			{RouteNetwork: "10.0.0.0/24"},
 		}
 	}
 
@@ -132,19 +130,6 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 		allVMs = []*h.VM{vmA, vmB, vmDisc}
 
 	case h.NodeTypeTalos:
-		// Build per-worker routes so Talos workers can reach the other subnets.
-		// peerSubnetA/B are comma-separated CIDRs (empty for flat topology).
-		var workerARoutes, workerBRoutes []*v1alpha1.Route
-		if peerSubnetA != "" {
-			for _, cidr := range splitNonEmpty(peerSubnetA) {
-				workerARoutes = append(workerARoutes, &v1alpha1.Route{RouteNetwork: cidr})
-			}
-		}
-		if peerSubnetB != "" {
-			for _, cidr := range splitNonEmpty(peerSubnetB) {
-				workerBRoutes = append(workerBRoutes, &v1alpha1.Route{RouteNetwork: cidr})
-			}
-		}
 		workerAConfig := secrets.WorkerConfig(h.TalosNodeConfig{
 			IP:                   fmt.Sprintf("%s/24", linkIPA),
 			Routes:               workerARoutes,
