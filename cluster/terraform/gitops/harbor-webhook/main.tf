@@ -1,9 +1,9 @@
 # Harbor webhook notification → Flux Receiver
 #
-# Configures the Harbor `props` project to send push_artifact events to the
+# Configures the Harbor `ducktape` project to send push_artifact events to the
 # Flux webhook receiver, eliminating the 5-minute ImageRepository poll lag.
 #
-# Depends on harbor-ci having run first (props project must exist).
+# Depends on harbor-ci having run first (ducktape project must exist).
 
 data "kubernetes_secret" "harbor_admin_password" {
   metadata {
@@ -28,12 +28,8 @@ data "vault_kv_secret_v2" "harbor_webhook_token" {
   name  = "harbor/webhook-token"
 }
 
-data "harbor_project" "props" {
-  name = "props"
-}
-
-data "harbor_project" "openclaw" {
-  name = "openclaw"
+data "harbor_project" "ducktape" {
+  name = "ducktape"
 }
 
 locals {
@@ -43,20 +39,8 @@ locals {
 
 resource "harbor_project_webhook" "flux_receiver" {
   name             = "flux-image-receiver"
-  project_id       = data.harbor_project.props.id
+  project_id       = data.harbor_project.ducktape.id
   description      = "Notifies Flux webhook receiver on image push, triggering immediate ImageRepository rescan"
-  enabled          = true
-  notify_type      = "http"
-  address          = local.flux_webhook_url
-  auth_header      = local.token
-  skip_cert_verify = false
-  events_types     = ["PUSH_ARTIFACT"]
-}
-
-resource "harbor_project_webhook" "flux_receiver_openclaw" {
-  name             = "flux-image-receiver"
-  project_id       = data.harbor_project.openclaw.id
-  description      = "Notifies Flux webhook receiver on openclaw image push"
   enabled          = true
   notify_type      = "http"
   address          = local.flux_webhook_url
