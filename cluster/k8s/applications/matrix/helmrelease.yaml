@@ -104,31 +104,6 @@ spec:
         enabled: true
         port: 8448
 
-    # Ingress disabled — traffic routed via Gateway API HTTPRoute
-    ingress:
-      enabled: false
-      className: "nginx"
-      annotations:
-        cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
-        nginx.ingress.kubernetes.io/ssl-redirect: "true"
-        # Increase body size for media uploads
-        nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-      # Client-to-Server API hosts
-      csHosts:
-        - matrix.allegedly.works
-      # Server-to-Server (federation) hosts
-      hosts:
-        - allegedly.works
-      # Include /_synapse admin APIs
-      includeUnderscoreSynapse: true
-      # Include server name in csHosts automatically
-      includeServerName: false
-      tls:
-        - secretName: matrix-synapse-tls
-          hosts:
-            - matrix.allegedly.works
-            - allegedly.works
-
     # PostgreSQL configuration with bundled chart
     postgresql:
       enabled: true

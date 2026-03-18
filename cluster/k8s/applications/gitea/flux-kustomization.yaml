@@ -12,10 +12,6 @@ spec:
   path: "./cluster/k8s/applications/gitea"
   prune: true
   wait: true
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   # Health check ensures Gitea is fully operational with SSO
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
@@ -23,7 +19,6 @@ spec:
       name: gitea
       namespace: gitea
   dependsOn:
-    - name: cert-manager-issuer-config
     - name: gitea-namespace
     - name: gateway
     - name: cert-manager

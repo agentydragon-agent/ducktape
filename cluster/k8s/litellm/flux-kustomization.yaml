@@ -11,12 +11,7 @@ spec:
     kind: GitRepository
     name: flux-system
   timeout: 10m
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   dependsOn:
-    - name: cert-manager-issuer-config
     - name: litellm-secrets
     - name: gateway
     - name: cert-manager-environment

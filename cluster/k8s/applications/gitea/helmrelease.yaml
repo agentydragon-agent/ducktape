@@ -129,23 +129,6 @@ spec:
         port: 2222
         nodePort: 30501
 
-    # Ingress disabled — traffic routed via Gateway API HTTPRoute
-    ingress:
-      enabled: false
-      className: "nginx"
-      annotations:
-        cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
-        nginx.ingress.kubernetes.io/ssl-redirect: "true"
-      hosts:
-        - host: git.allegedly.works
-          paths:
-            - path: /
-              pathType: Prefix
-      tls:
-        - secretName: gitea-tls
-          hosts:
-            - git.allegedly.works
-
     # Resources
     resources:
       limits:

@@ -12,14 +12,9 @@ spec:
   path: "./cluster/k8s/vault-ingress"
   prune: true
   wait: true
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: cert-manager-issuer-config
   # TLS now handled by wildcard cert on cluster-gateway in gateway-system namespace.
   # No per-service Certificate health check needed.
   dependsOn:
-    - name: cert-manager-issuer-config
     - name: vault # Core Vault must be ready first
     - name: gateway
     - name: cert-manager-environment

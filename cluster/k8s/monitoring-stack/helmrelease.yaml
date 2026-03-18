@@ -99,20 +99,6 @@ spec:
       defaultDashboardsEnabled: true
       defaultDashboardsTimezone: UTC
 
-      # Ingress disabled — traffic routed via Gateway API HTTPRoute
-      ingress:
-        enabled: false
-        ingressClassName: nginx
-        annotations:
-          cert-manager.io/cluster-issuer: "${LETSENCRYPT_ISSUER}"
-          external-dns.alpha.kubernetes.io/hostname: grafana.allegedly.works
-        hosts:
-          - grafana.allegedly.works
-        tls:
-          - secretName: grafana-tls
-            hosts:
-              - grafana.allegedly.works
-
       # CRITICAL: Use Recreate strategy for RWO volumes
       # Grafana uses RWO persistent volume for dashboards, plugins, and session data (10Gi).
       # RollingUpdate + RWO volumes = deadlock when pods fail during initialization.

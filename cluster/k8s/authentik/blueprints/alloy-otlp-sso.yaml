@@ -43,6 +43,17 @@ entries:
       name: "Alloy OTLP Service Account"
       type: service_account
 
+  # Delete any existing token so the next entry recreates it with the current key.
+  # Authentik token keys are immutable post-creation; state: present won't update them.
+  # This delete+recreate runs on every blueprint apply (every 60 min), which is safe
+  # for a telemetry endpoint — OTLP senders have retry logic and losing a trace during
+  # the brief deletion window is acceptable.
+  - model: authentik_core.token
+    id: alloy-otlp-token-cleanup
+    state: absent
+    identifiers:
+      identifier: alloy-otlp-api-key
+
   - model: authentik_core.token
     id: alloy-otlp-token
     state: present
