@@ -1,7 +1,7 @@
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: restrict-claude-kustomization-patch
+  name: restrict-agent-kustomization-patch
   annotations:
     policies.kyverno.io/title: Restrict Agent Kustomization Patches
     policies.kyverno.io/category: Access Control
