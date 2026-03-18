@@ -4,4 +4,3 @@ resources:
   - harbor-admin-tf.yaml
   - admin-password-generator.yaml
   - secrets.yaml
-  - certificate.yaml
