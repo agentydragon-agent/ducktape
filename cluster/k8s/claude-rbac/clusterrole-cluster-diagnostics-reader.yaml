@@ -126,7 +126,10 @@ rules:
     verbs: ["get", "list", "watch"]
   - apiGroups: ["gateway.networking.k8s.io"]
     resources:
+      - gateways
       - httproutes
+      - tlsroutes
+      - grpcroutes
     verbs: ["get", "list", "watch"]
   - apiGroups: ["postgresql.cnpg.io"]
     resources:
@@ -135,6 +138,43 @@ rules:
   - apiGroups: ["infra.contrib.fluxcd.io"]
     resources:
       - terraforms
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["image.toolkit.fluxcd.io"]
+    resources:
+      - imagepolicies
+      - imagerepositories
+      - imageupdateautomations
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["notification.toolkit.fluxcd.io"]
+    resources:
+      - receivers
+      - alerts
+      - providers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cilium.io"]
+    resources:
+      - ciliumnetworkpolicies
+      - ciliumclusterwidenetworkpolicies
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kyverno.io"]
+    resources:
+      - clusterpolicies
+      - policies
+      - policyreports
+      - clusterpolicyreports
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["dns.cav.enablers.ob"]
+    resources:
+      - clusterzones
+      - clusterrrsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["vault.banzaicloud.com"]
+    resources:
+      - vaults
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["trust.cert-manager.io"]
+    resources:
+      - bundles
     verbs: ["get", "list", "watch"]
 # pods/log and configmaps granted via namespaced Roles in monitoring, kube-system,
 # longhorn-system, flux-system (see role-logs-configmaps-reader.yaml).
