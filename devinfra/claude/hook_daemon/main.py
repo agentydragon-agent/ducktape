@@ -7,6 +7,7 @@ from pathlib import Path
 import uvicorn
 
 from devinfra.claude.hook_daemon.server import app, configure
+from devinfra.claude.tracing import init_daemon_tracing
 
 
 def main() -> None:
@@ -25,6 +26,7 @@ def main() -> None:
         handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
     )
 
+    init_daemon_tracing(daemon_dir)
     configure(daemon_dir)
 
     uvicorn.run(app, uds=args.sock, log_level="warning")

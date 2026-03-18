@@ -39,6 +39,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":server",
+        "//devinfra/claude:tracing",
         "@pypi//uvicorn",
     ],
 )

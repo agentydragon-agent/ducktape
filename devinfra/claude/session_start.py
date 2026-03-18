@@ -45,7 +45,7 @@ from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
-from devinfra.claude.tracing import add_otlp_exporter, init_tracing, shutdown_tracing
+from devinfra.claude.tracing import add_otlp_exporter
 
 logger = logging.getLogger(__name__)
 
@@ -471,7 +471,6 @@ async def run_session(
     """
 
     collector, log_file = setup_logging(settings, print_banner=web_mode)
-    trace_file = init_tracing(hook_input.session_id, settings.session_dir)
     tracer = trace.get_tracer(__name__)
     mode_label = "web" if web_mode else "cli"
     root_span = tracer.start_span(
@@ -595,8 +594,6 @@ async def run_session(
         )
 
     root_span.end()
-    shutdown_tracing()
-    logger.info("Trace file: %s", trace_file)
     return output
 
 

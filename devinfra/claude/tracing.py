@@ -1,10 +1,8 @@
 """OpenTelemetry tracing for claude hooks.
 
-Sets up a single TracerProvider with two exporters:
-- Local JSONL file (per-session, for post-hoc analysis)
-- Remote OTLP/HTTP (Grafana Alloy → Tempo, for live dashboards)
-
-Both are optional — local file needs session_dir, remote needs OtelConfig.
+Initialized once at daemon startup. Two exporters:
+- Local JSONL file (always, for post-hoc analysis)
+- Remote OTLP/HTTP (added later via add_otlp_exporter, for live dashboards)
 """
 
 import logging
@@ -30,25 +28,23 @@ def _format_span(span: ReadableSpan) -> str:
     return json_str + "\n"
 
 
-def init_tracing(session_id: str, session_dir: Path) -> Path:
+def init_daemon_tracing(trace_dir: Path) -> None:
     """Initialize OTel tracing with a local file exporter.
 
-    Sets the global TracerProvider. Callers get tracers via
-    trace.get_tracer(__name__) as usual. Call add_otlp_exporter()
-    later to also export to Grafana Alloy. Returns trace_file_path.
+    Called once at daemon startup. Sets the global TracerProvider.
+    Callers get tracers via trace.get_tracer(__name__).
+    Call add_otlp_exporter() later to add remote export.
     """
-    trace_file = session_dir / "traces.jsonl"
+    trace_file = trace_dir / "traces.jsonl"
 
-    resource = Resource.create({"service.name": "claude-hooks", "session.id": session_id})
+    resource = Resource.create({"service.name": "claude-hooks"})
     provider = TracerProvider(resource=resource)
 
-    # Local file exporter (always enabled)
     file_exporter = ConsoleSpanExporter(out=trace_file.open("a"), formatter=_format_span)
     provider.add_span_processor(SimpleSpanProcessor(file_exporter))
     logger.info("Tracing: local file → %s", trace_file)
 
     trace.set_tracer_provider(provider)
-    return trace_file
 
 
 def add_otlp_exporter(config: OtelConfig) -> None:
