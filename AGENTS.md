@@ -23,7 +23,7 @@ missing env files.
 
 **Recovery: read the implementation and replicate it manually.**
 
-1. Read <devinfra/claude/session_start.py> — this is the entry point. Read `_setup_web()`
+1. Read <devinfra/claude/hook_daemon/session_start.py> — this is the entry point. Read `_setup_web()`
    carefully to understand the full setup sequence and every step it performs.
 2. Read <devinfra/claude/README.md> for architecture context (proxy, TLS, Bazel auth).
 3. Read `.claude_hooks/config.yaml` for k8s server, namespace, and secret mappings.
@@ -63,6 +63,8 @@ connections like `kubectl` → haproxy on `localhost:7445`).
 ## Refactoring
 
 When renaming, moving, or deleting files/directories/symbols, search for **all references** across the entire codebase before committing: imports, BUILD files, CI configs, documentation, Dockerfiles, Kubernetes manifests, `AGENTS.md`/`README.md` files. Use Grep broadly. Missing a reference is worse than being thorough.
+
+**Atomic API changes**: When changing a function signature, class API, or module path, update all callers in the same commit. Do not introduce transitional forwarding methods, compatibility shims, or phased migrations within this monorepo. Change the API and fix every callsite atomically.
 
 ## Before Hand-off
 

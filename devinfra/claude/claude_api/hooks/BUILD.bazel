@@ -216,6 +216,28 @@ py_library(
 )
 
 py_library(
+    name = "dispatch_output",
+    srcs = ["dispatch_output.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":config_change",
+        ":elicitation",
+        ":notification",
+        ":permission_request",
+        ":post_tool_use",
+        ":post_tool_use_failure",
+        ":pre_tool_use",
+        ":session_start",
+        ":setup",
+        ":stop",
+        ":subagent_start",
+        ":subagent_stop",
+        ":user_prompt_submit",
+    ],
+)
+
+py_library(
     name = "dispatch_input",
     srcs = ["dispatch_input.py"],
     imports = ["../../../.."],

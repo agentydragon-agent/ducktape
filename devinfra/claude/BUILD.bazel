@@ -1,6 +1,11 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 
+exports_files(
+    ["templates/session_context.mako"],
+    visibility = ["//devinfra/claude/hook_daemon:__pkg__"],
+)
+
 # === Base modules (no internal deps) ===
 
 py_library(
@@ -29,6 +34,16 @@ py_library(
     srcs = ["managed_files.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "session_paths",
+    srcs = ["session_paths.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+    ],
 )
 
 py_library(
@@ -65,17 +80,6 @@ py_library(
 py_library(
     name = "tracing",
     srcs = ["tracing.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//opentelemetry_api",
-        "@pypi//opentelemetry_sdk",
-    ],
-)
-
-py_library(
-    name = "otel",
-    srcs = ["otel.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
@@ -135,6 +139,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":platform_utils",
+        ":session_paths",
         ":settings",
         "//util/bazel:subprocess",
     ],
@@ -154,7 +159,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":platform_utils",
-        ":settings",
+        ":session_paths",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
     ],
@@ -168,6 +173,7 @@ py_library(
     deps = [
         ":errors",
         ":managed_files",
+        ":session_paths",
         ":settings",
         ":streaming",
     ],
@@ -197,6 +203,7 @@ py_library(
     deps = [
         ":errors",
         ":managed_files",
+        ":session_paths",
         ":settings",
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
@@ -240,6 +247,7 @@ py_library(
         ":debug",
         ":env_file",
         ":errors",
+        ":session_paths",
         ":settings",
         "//devinfra/claude/auth_proxy:credentials",
         "//devinfra/claude/auth_proxy:setup",
@@ -247,59 +255,6 @@ py_library(
         "//devinfra/claude/supervisor:client",
         "//devinfra/claude/supervisor:setup",
         "//util:env",
-    ],
-)
-
-py_library(
-    name = "pre_tool_use_lib",
-    srcs = ["pre_tool_use.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/claude/claude_api/hooks:pre_tool_use",
-    ],
-)
-
-py_library(
-    name = "precommit_runner",
-    srcs = ["precommit_runner.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//util:fs",
-        "@pypi//pre_commit",
-    ],
-)
-
-py_library(
-    name = "post_tool_use_lib",
-    srcs = ["post_tool_use.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":precommit_runner",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
-    ],
-)
-
-py_library(
-    name = "hook_dispatch_lib",
-    srcs = ["hook_dispatch.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":hook_config",
-        ":otel",
-        ":post_tool_use_lib",
-        ":pre_tool_use_lib",
-        ":session_start_lib",
-        ":settings",
-        "//devinfra/claude/claude_api/hooks:dispatch_input",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
-        "//devinfra/claude/claude_api/hooks:pre_tool_use",
-        "//devinfra/claude/claude_api/hooks:session_start",
-        "@pypi//opentelemetry_api",
-        "@pypi//pydantic",
     ],
 )
 
@@ -316,50 +271,7 @@ py_library(
     ],
 )
 
-py_library(
-    name = "session_start_lib",
-    srcs = ["session_start.py"],
-    data = ["templates/session_context.mako"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":bazel_wrapper_lib",
-        ":bazelisk_setup",
-        ":buildbuddy_setup",
-        ":cli_tools_setup",
-        ":container_runtime",
-        ":debug",
-        ":env_file",
-        ":errors",
-        ":fork_remote_setup",
-        ":hook_config",
-        ":k8s_secrets_setup",
-        ":mkcert_setup",
-        ":nix_setup",
-        ":precommit_setup",
-        ":settings",
-        ":tmpfs_setup",
-        ":tracing",
-        "//devinfra:build_info",
-        "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/claude_api/hooks:session_start",
-        "//devinfra/claude/supervisor:setup",
-        "//util:env",
-        "@pypi//mako",
-        "@pypi//opentelemetry_api",
-    ],
-)
-
 # === Binaries ===
-
-py_binary(
-    name = "hook_dispatch",
-    data = [":bazel_wrapper"],
-    imports = ["../.."],
-    main_module = "devinfra.claude.hook_dispatch",
-    visibility = ["//visibility:public"],
-    deps = [":hook_dispatch_lib"],
-)
 
 py_binary(
     name = "bazel_wrapper",
@@ -388,35 +300,9 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":session_paths",
         ":settings",
         "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "test_post_tool_use",
-    srcs = ["test_post_tool_use.py"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        ":post_tool_use_lib",
-        ":precommit_runner",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_pre_tool_use",
-    srcs = ["test_pre_tool_use.py"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        ":pre_tool_use_lib",
-        "//devinfra/claude/claude_api/hooks:pre_tool_use",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -458,92 +344,6 @@ py_test(
 )
 
 py_test(
-    name = "test_session_start",
-    size = "medium",
-    srcs = ["test_session_start.py"],
-    data = [
-        ":hook_dispatch",
-        "//devinfra/claude/auth_proxy:run",
-        "//devinfra/claude/testdata/test_workspace:workspace_files",
-        "//third_party/jdk:cacerts",
-        "//third_party/jdk:keytool",
-    ],
-    env = {
-        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
-        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
-    },
-    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
-    env_inherit = [
-        "CURL_CA_BUNDLE",
-        "HTTPS_PROXY",
-        "https_proxy",
-        "NODE_EXTRA_CA_CERTS",
-        "REQUESTS_CA_BUNDLE",
-        "SSL_CERT_FILE",
-    ],
-    imports = ["../.."],
-    # local: keytool (Adoptium JDK) needs libjli.so which isn't on the RBE worker image
-    local = True,
-    tags = [
-        "e2e",
-        "external",
-    ],
-    deps = [
-        ":conftest",
-        ":settings",
-        "//devinfra/claude/testing:fixtures",
-        "//devinfra/claude/testing:session_start_helpers",
-        "//devinfra/claude/testing:shell_helpers",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_session_start_podman",
-    size = "medium",
-    srcs = ["test_session_start_podman.py"],
-    data = [
-        ":hook_dispatch",
-        "//devinfra/claude/auth_proxy:run",
-        "//third_party/jdk:cacerts",
-        "//third_party/jdk:keytool",
-    ],
-    env = {
-        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
-        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
-    },
-    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
-    env_inherit = [
-        "CURL_CA_BUNDLE",
-        "HTTPS_PROXY",
-        "https_proxy",
-        "NODE_EXTRA_CA_CERTS",
-        "REQUESTS_CA_BUNDLE",
-        "SSL_CERT_FILE",
-    ],
-    imports = ["../.."],
-    # local: podman needs mount/networking capabilities blocked by linux-sandbox and RBE
-    local = True,
-    tags = [
-        "e2e",
-        "external",
-        "manual",  # podman path not used in prod currently
-    ],
-    deps = [
-        ":conftest",
-        "//devinfra/claude/testing:fixtures",
-        "//devinfra/claude/testing:session_start_helpers",
-        "//devinfra/claude/testing:shell_helpers",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_proxy",
     srcs = ["test_proxy.py"],
     imports = ["../.."],
@@ -563,6 +363,7 @@ py_test(
         ":bazel_wrapper_lib",
         ":conftest",
         ":errors",
+        ":session_paths",
         ":settings",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -602,6 +403,7 @@ py_test(
     tags = ["e2e"],
     deps = [
         ":conftest",
+        ":session_paths",
         ":settings",
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/supervisor:client",

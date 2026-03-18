@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 # Runfiles paths for binaries
-HOOK_DISPATCH = "_main/devinfra/claude/hook_dispatch"
+HOOK_DISPATCH = "_main/devinfra/claude/hook_daemon/hook_dispatch"
 
 
 async def run_with_env_file(

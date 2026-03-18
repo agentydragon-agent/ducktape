@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 
 from devinfra.claude.claude_api.hooks.pre_tool_use import PermissionDecision, PreToolUseInput
-from devinfra.claude.pre_tool_use import ALWAYS_ALLOW_COMMANDS, evaluate
+from devinfra.claude.hook_daemon.pre_tool_use import ALWAYS_ALLOW_COMMANDS, evaluate
 
 _COMMON = {
     "session_id": "test-session",

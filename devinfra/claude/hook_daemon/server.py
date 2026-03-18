@@ -1,0 +1,115 @@
+"""FastAPI app for the hook daemon.
+
+Handles all Claude Code hook types over UDS. Imports expensive modules once at
+startup (pydantic, opentelemetry, session_start) so individual hook calls are fast.
+"""
+
+import asyncio
+import json
+import logging
+import signal
+import time
+from pathlib import Path
+
+from fastapi import FastAPI
+from opentelemetry import trace
+
+from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
+from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
+from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
+from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
+from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
+from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
+from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
+from devinfra.claude.hook_daemon.session_start import _async_handle
+from devinfra.claude.session_paths import SessionPaths
+from devinfra.claude.settings import HookSettings
+
+logger = logging.getLogger(__name__)
+
+IDLE_TIMEOUT_SECONDS = 300  # 5 minutes
+IDLE_CHECK_INTERVAL_SECONDS = 30
+
+app = FastAPI()
+
+
+def configure(daemon_dir: Path) -> None:
+    """Set daemon runtime directory and shared config. Call before starting uvicorn."""
+    app.state.daemon_dir = daemon_dir
+    app.state.settings = HookSettings()
+    app.state.last_request_time = time.monotonic()
+
+
+def _save_session_env(env: dict[str, str]) -> None:
+    """Persist caller's env to disk for debuggability and daemon restart survival."""
+    daemon_dir: Path | None = getattr(app.state, "daemon_dir", None)
+    if daemon_dir is None:
+        return
+    env_file = daemon_dir / "session_env.json"
+    env_file.write_text(json.dumps(env, indent=2))
+
+
+@app.post("/hook")
+async def handle_hook(req: HookRequest) -> HookResponse:
+    app.state.last_request_time = time.monotonic()
+
+    tracer = trace.get_tracer(__name__)
+    hook_name = req.hook.hook_event_name
+
+    with tracer.start_as_current_span(
+        f"hook.{hook_name}",
+        attributes={
+            "hook.event_name": hook_name,
+            "hook.session_id": req.hook.session_id,
+            "hook.input": req.model_dump_json(),
+        },
+    ) as span:
+        # Persist env to disk on every call
+        _save_session_env(req.env)
+
+        output: AnyHookOutput | None = None
+        match req.hook:
+            case SessionStartHookInput():
+                output = await _handle_session_start(req.hook, req.env)
+            case PreToolUseInput():
+                output = evaluate_pre(req.hook)
+            case PostToolUseInput():
+                output = evaluate_post(req.hook)
+            case _:
+                pass  # All other hooks: noop
+
+        resp = HookResponse(output=output)
+        resp_json = resp.model_dump_json(by_alias=True, exclude_none=True)
+
+        span.set_attribute("hook.output", resp_json)
+        logger.info("hook %s → %s", hook_name, resp_json)
+
+        return resp
+
+
+async def _handle_session_start(hook_input: SessionStartHookInput, env: dict[str, str]) -> AnyHookOutput | None:
+    """Handle SessionStart by passing caller's env through to session_start."""
+    paths = SessionPaths(hook_input.session_id)
+    return await _async_handle(hook_input, paths, app.state.settings, caller_env=env)
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    """Health check — does NOT reset idle timer."""
+    return {"status": "ok"}
+
+
+async def _idle_watchdog() -> None:
+    """Background task: exit after IDLE_TIMEOUT_SECONDS of no requests."""
+    while True:
+        await asyncio.sleep(IDLE_CHECK_INTERVAL_SECONDS)
+        idle_seconds = time.monotonic() - app.state.last_request_time
+        if idle_seconds >= IDLE_TIMEOUT_SECONDS:
+            logger.info("Idle timeout reached (%.0fs), shutting down", idle_seconds)
+            signal.raise_signal(signal.SIGTERM)
+            return
+
+
+@app.on_event("startup")
+async def _start_idle_watchdog() -> None:
+    app.state.watchdog_task = asyncio.create_task(_idle_watchdog())

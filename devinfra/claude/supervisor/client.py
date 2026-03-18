@@ -25,6 +25,7 @@ from devinfra.claude.managed_files import write_ini_config
 from util.net import is_port_in_use
 
 if TYPE_CHECKING:
+    from devinfra.claude.session_paths import SessionPaths
     from devinfra.claude.settings import HookSettings
 
 logger = logging.getLogger(__name__)
@@ -88,14 +89,14 @@ async def _xmlrpc_call(url: str, method: str, params: tuple[Any, ...], request_t
     return result[0] if len(result) == 1 else result
 
 
-async def try_connect(settings: HookSettings) -> SupervisorClient | None:
+async def try_connect(paths: SessionPaths, settings: HookSettings) -> SupervisorClient | None:
     """Try to connect to a running supervisord.
 
     Returns a connected client if supervisor is reachable, None otherwise.
     Performs quick pre-checks (port, pidfile) before attempting XML-RPC.
     """
-    port = settings.get_supervisor_port()
-    pidfile = settings.get_supervisor_pidfile()
+    port = settings.supervisor_port
+    pidfile = paths.supervisor_pidfile
 
     logger.debug("try_connect check: port=%d, pidfile=%s", port, pidfile)
 
@@ -116,7 +117,7 @@ async def try_connect(settings: HookSettings) -> SupervisorClient | None:
             return None
 
     try:
-        client = SupervisorClient(settings)
+        client = SupervisorClient(paths, settings)
         await client.get_state()
         return client
     except (ConnectionError, OSError, xmlrpc.client.Fault, httpx.ConnectError) as e:
@@ -124,14 +125,14 @@ async def try_connect(settings: HookSettings) -> SupervisorClient | None:
         return None
 
 
-def get_service_config_path(settings: HookSettings, name: str) -> Path:
+def get_service_config_path(paths: SessionPaths, name: str) -> Path:
     """Get the path to a service's config file."""
-    return settings.get_supervisor_dir() / "conf.d" / f"{name}.conf"
+    return paths.supervisor_dir / "conf.d" / f"{name}.conf"
 
 
-def read_service_command(settings: HookSettings, name: str) -> str | None:
+def read_service_command(paths: SessionPaths, name: str) -> str | None:
     """Read the command from a service's config file. Returns None if not found."""
-    config_path = get_service_config_path(settings, name)
+    config_path = get_service_config_path(paths, name)
     if not config_path.exists():
         return None
     config = configparser.ConfigParser()
@@ -143,17 +144,17 @@ def read_service_command(settings: HookSettings, name: str) -> str | None:
 
 
 def write_service_config(
-    settings: HookSettings, name: str, command: str, directory: Path, environment: dict[str, str] | None = None
+    paths: SessionPaths, name: str, command: str, directory: Path, environment: dict[str, str] | None = None
 ) -> Path:
     """Build and write service config for supervisor."""
-    service_conf = get_service_config_path(settings, name)
+    service_conf = get_service_config_path(paths, name)
     service_conf.parent.mkdir(parents=True, exist_ok=True)
 
     section_content: dict[str, str] = {
         "command": command,
         "directory": str(directory),
-        "stdout_logfile": str(settings.get_supervisor_dir() / f"{name}.log"),
-        "stderr_logfile": str(settings.get_supervisor_dir() / f"{name}.err.log"),
+        "stdout_logfile": str(paths.supervisor_dir / f"{name}.log"),
+        "stderr_logfile": str(paths.supervisor_dir / f"{name}.err.log"),
     }
     if environment:
         # Supervisor environment format: KEY="value",KEY2="value2"
@@ -176,9 +177,9 @@ class SupervisorClient:
     supervisor's HTTP/1.0 XML-RPC server.
     """
 
-    def __init__(self, settings: HookSettings, timeout: float = XMLRPC_TIMEOUT) -> None:
-        self._settings = settings
-        self._url = f"http://127.0.0.1:{settings.get_supervisor_port()}/RPC2"
+    def __init__(self, paths: SessionPaths, settings: HookSettings, timeout: float = XMLRPC_TIMEOUT) -> None:
+        self._paths = paths
+        self._url = f"http://127.0.0.1:{settings.supervisor_port}/RPC2"
         self._timeout = timeout
         logger.info("SupervisorClient connecting to %s (timeout=%ds)", self._url, timeout)
 
@@ -240,7 +241,7 @@ class SupervisorClient:
             logger.info("Service %s already exists (state=%s)", name, info.statename)
             return
 
-        write_service_config(self._settings, name, command, directory, environment)
+        write_service_config(self._paths, name, command, directory, environment)
 
         # Reload supervisor config via XML-RPC
         try:
@@ -324,7 +325,7 @@ class SupervisorClient:
         Note: The supervisor XML-RPC API doesn't expose the command, so we read
         from the config file directly. This is a sync operation (filesystem only).
         """
-        return read_service_command(self._settings, name)
+        return read_service_command(self._paths, name)
 
     async def update_service(
         self, name: str, command: str, directory: Path, environment: dict[str, str] | None = None
@@ -334,7 +335,7 @@ class SupervisorClient:
         Rewrites the config file, reloads supervisor, removes the old process group,
         and adds the new one. This ensures the new command takes effect.
         """
-        write_service_config(self._settings, name, command, directory, environment)
+        write_service_config(self._paths, name, command, directory, environment)
 
         # Stop the running process
         try:

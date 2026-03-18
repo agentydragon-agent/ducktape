@@ -180,7 +180,7 @@ async def run_session_start_hook(
 ) -> subprocess.CompletedProcess[str]:
     """Run the session start hook as an async subprocess.
 
-    By default, runs via `python -m devinfra.claude.session_start` for Bazel tests.
+    By default, runs via `python -m devinfra.claude.hook_daemon.session_start` for Bazel tests.
     Set DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-hook` console
     script instead - this tests the actual wheel packaging.
 

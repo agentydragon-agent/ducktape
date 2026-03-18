@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from devinfra.claude import settings
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 from devinfra.claude.supervisor.client import try_connect
 from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, MockEgressProxy
@@ -42,24 +43,31 @@ class IsolatedSupervisorDirs:
     auth_proxy_dir: Path
 
 
+TEST_SESSION_ID = "test-session"
+
+
 @pytest.fixture
 def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[IsolatedSupervisorDirs]:
     """Create isolated session/supervisor/auth-proxy dirs with free ports.
 
+    Sets HOME so SessionPaths derives paths under tmp_path.
     Sets environment variables so HookSettings() picks them up.
     Cleans up any supervisor processes on teardown.
     """
-    session_dir = tmp_path / "session"
-    session_dir.mkdir()
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    # SessionPaths(TEST_SESSION_ID) will derive: home/.claude/session-env/test-session
+    session_dir = home / ".claude" / "session-env" / TEST_SESSION_ID
+    session_dir.mkdir(parents=True)
     supervisor_dir = session_dir / "supervisor"
     supervisor_dir.mkdir()
     auth_proxy_dir = session_dir / "auth-proxy"
     auth_proxy_dir.mkdir()
 
     monkeypatch.setenv(settings.ENV_SESSION_DIR, str(session_dir))
-    monkeypatch.setenv(settings.ENV_SUPERVISOR_DIR, str(supervisor_dir))
     monkeypatch.setenv(settings.ENV_SUPERVISOR_PORT, str(pick_free_port()))
-    monkeypatch.setenv(settings.ENV_AUTH_PROXY_DIR, str(auth_proxy_dir))
     monkeypatch.setenv(settings.ENV_AUTH_PROXY_PORT, str(pick_free_port()))
 
     with supervisor_cleanup(supervisor_dir / "supervisord.pid"):
@@ -72,9 +80,15 @@ def isolated_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Generator[
 
 
 @pytest.fixture
-def hook_settings(isolated_dirs: IsolatedSupervisorDirs) -> HookSettings:
+def session_paths(isolated_dirs: IsolatedSupervisorDirs) -> SessionPaths:
+    """SessionPaths wired to isolated dirs."""
+    return SessionPaths(TEST_SESSION_ID)
+
+
+@pytest.fixture
+def hook_settings() -> HookSettings:
     """HookSettings wired to isolated dirs."""
-    return HookSettings(session_dir=isolated_dirs.session_dir)
+    return HookSettings()
 
 
 @pytest.fixture
@@ -135,9 +149,9 @@ def collect_supervisor_logs(supervisor_dir: Path) -> None:
 # === Supervisor lifecycle helpers ===
 
 
-async def supervisor_is_running(settings_obj: HookSettings) -> bool:
+async def supervisor_is_running(paths: SessionPaths, settings: HookSettings) -> bool:
     """Check if supervisord is running (test helper)."""
-    return await try_connect(settings_obj) is not None
+    return await try_connect(paths, settings) is not None
 
 
 def stop_supervisor_by_pidfile(pidfile: Path) -> None:

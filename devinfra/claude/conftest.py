@@ -1,10 +1,12 @@
 """Pytest configuration for claude tests."""
 
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 
 
@@ -14,9 +16,15 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture
-def hook_settings(tmp_path: Path) -> HookSettings:
+def session_paths() -> SessionPaths:
+    """Minimal SessionPaths for tests that don't need supervisor/proxy infrastructure."""
+    return SessionPaths(f"test-session-{uuid.uuid4().hex[:8]}")
+
+
+@pytest.fixture
+def hook_settings() -> HookSettings:
     """Minimal HookSettings for tests that don't need supervisor/proxy infrastructure."""
-    return HookSettings(session_dir=tmp_path / "session")
+    return HookSettings()
 
 
 @pytest.fixture

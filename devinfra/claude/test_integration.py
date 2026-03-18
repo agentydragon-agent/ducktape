@@ -13,12 +13,13 @@ from cryptography.x509.oid import NameOID
 
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.auth_proxy.setup import AUTH_PROXY_SERVICE
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 from devinfra.claude.supervisor.setup import start as supervisor_start
 from devinfra.claude.testing.fixtures import MockEgressProxyFixture, supervisor_is_running
 from util.net import async_wait_for_port
 
-# Register shared fixtures (isolated_dirs, hook_settings, mock_egress_proxy)
+# Register shared fixtures (isolated_dirs, session_paths, hook_settings, mock_egress_proxy)
 pytest_plugins = ["devinfra.claude.testing.fixtures"]
 
 
@@ -38,25 +39,25 @@ def hook_settings(
     return HookSettings()
 
 
-async def test_supervisor_starts_and_proxy_runs(hook_settings: HookSettings) -> None:
+async def test_supervisor_starts_and_proxy_runs(session_paths: SessionPaths, hook_settings: HookSettings) -> None:
     """Test that setup_auth_proxy starts supervisor and proxy service."""
-    supervisor_result = await supervisor_start(hook_settings)
-    await proxy_setup.ensure_proxy_running(hook_settings, supervisor_result.client)
+    supervisor_result = await supervisor_start(session_paths, hook_settings)
+    await proxy_setup.ensure_proxy_running(session_paths, hook_settings, supervisor_result.client)
 
-    assert await supervisor_is_running(hook_settings), "Supervisor should be running"
+    assert await supervisor_is_running(session_paths, hook_settings), "Supervisor should be running"
     assert await supervisor_result.client.is_service_running(AUTH_PROXY_SERVICE), "auth-proxy service should be running"
-    await async_wait_for_port("127.0.0.1", hook_settings.get_auth_proxy_port(), timeout_secs=5)
+    await async_wait_for_port("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5)
 
 
-async def test_ca_extraction(hook_settings: HookSettings) -> None:
+async def test_ca_extraction(session_paths: SessionPaths, hook_settings: HookSettings) -> None:
     """Test that CA certificate is extracted from TLS chain."""
-    supervisor_result = await supervisor_start(hook_settings)
-    await proxy_setup.ensure_proxy_running(hook_settings, supervisor_result.client)
-    await async_wait_for_port("127.0.0.1", hook_settings.get_auth_proxy_port(), timeout_secs=5)
+    supervisor_result = await supervisor_start(session_paths, hook_settings)
+    await proxy_setup.ensure_proxy_running(session_paths, hook_settings, supervisor_result.client)
+    await async_wait_for_port("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5)
 
-    proxy_setup._extract_proxy_ca(hook_settings)
+    proxy_setup._extract_proxy_ca(session_paths)
 
-    ca_file = hook_settings.get_auth_proxy_ca_file()
+    ca_file = session_paths.auth_proxy_ca_file
     assert ca_file.exists(), "CA file should be created"
 
     ca_content = ca_file.read_text()
@@ -69,22 +70,25 @@ async def test_ca_extraction(hook_settings: HookSettings) -> None:
 
 
 async def test_credential_rotation(
-    hook_settings: HookSettings, mock_egress_proxy: MockEgressProxyFixture, monkeypatch: pytest.MonkeyPatch
+    session_paths: SessionPaths,
+    hook_settings: HookSettings,
+    mock_egress_proxy: MockEgressProxyFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test that credential changes are written to file (hot-reload)."""
-    supervisor_result = await supervisor_start(hook_settings)
+    supervisor_result = await supervisor_start(session_paths, hook_settings)
     client = supervisor_result.client
-    await proxy_setup.ensure_proxy_running(hook_settings, client)
-    await async_wait_for_port("127.0.0.1", hook_settings.get_auth_proxy_port(), timeout_secs=5)
+    await proxy_setup.ensure_proxy_running(session_paths, hook_settings, client)
+    await async_wait_for_port("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5)
 
-    creds_file = hook_settings.get_auth_proxy_creds_file()
+    creds_file = session_paths.auth_proxy_creds_file
     assert creds_file.exists(), "Creds file should exist"
     assert "proxy_user" in creds_file.read_text(), "Initial creds should have original credentials"
 
     new_proxy_url = f"http://newuser:newpass@127.0.0.1:{mock_egress_proxy.proxy.port}"
     monkeypatch.setenv("HTTPS_PROXY", new_proxy_url)
 
-    await proxy_setup.ensure_proxy_running(hook_settings, client)
+    await proxy_setup.ensure_proxy_running(session_paths, hook_settings, client)
 
     assert "newuser" in creds_file.read_text(), "Creds file should have new credentials"
     assert await client.is_service_running(AUTH_PROXY_SERVICE), "Proxy should still be running"

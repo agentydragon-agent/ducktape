@@ -181,7 +181,7 @@ py_package(
     ],
     deps = [
         # Unified hook dispatcher (transitively pulls in all hook handler deps)
-        "//devinfra/claude:hook_dispatch_lib",
+        "//devinfra/claude/hook_daemon:hook_dispatch_lib",
         "//devinfra/claude:statusline_lib",
         # Auth proxy main module — invoked as subprocess by supervisor
         # (not transitively reachable from hook_dispatch_lib)
@@ -202,7 +202,7 @@ py_wheel(
             "git-commit-ai = git_commit_ai.cli:main",
             "difftree = difftree.cli:main",
             "gmail-archiver = gmail_archiver.main:app",
-            "claude-hook = devinfra.claude.hook_dispatch:main",
+            "claude-hook = devinfra.claude.hook_daemon.hook_dispatch:main",
             "claude-statusline = devinfra.claude.statusline:main",
             "hetzner-vnc-screenshot = skills.hetzner_vnc_screenshot.vnc_screenshot:app",
             "vm-interact = skills.proxmox_vm.vm_interact:app",

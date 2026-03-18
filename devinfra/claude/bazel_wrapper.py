@@ -24,7 +24,8 @@ from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH, ENV_SESSION_BAZELRC
 from devinfra.claude.errors import AuthProxyError
-from devinfra.claude.settings import HookSettings, is_web_mode
+from devinfra.claude.session_paths import SessionPaths
+from devinfra.claude.settings import ENV_SESSION_DIR, HookSettings, is_web_mode
 from devinfra.claude.supervisor.client import try_connect
 from devinfra.claude.supervisor.setup import start as supervisor_start
 from util.env import get_required_env
@@ -41,9 +42,9 @@ def _invocation_name() -> str:
     return os.environ.get(_WRAPPER_NAME_ENV, "bazel")
 
 
-def warn_if_credentials_expiring(settings: HookSettings) -> None:
+def warn_if_credentials_expiring(paths: SessionPaths) -> None:
     """Check JWT expiry and log warning if concerning."""
-    creds_file = settings.get_auth_proxy_creds_file()
+    creds_file = paths.auth_proxy_creds_file
     if not creds_file.exists():
         return
 
@@ -62,7 +63,7 @@ def warn_if_credentials_expiring(settings: HookSettings) -> None:
         logger.info("JWT valid for %.0f min", minutes_remaining)
 
 
-def _setup_logging(settings: HookSettings) -> None:
+def _setup_logging(paths: SessionPaths) -> None:
     """Configure logging to both stderr and file.
 
     File logging persists even if the subprocess is killed (e.g., by test timeout),
@@ -76,7 +77,7 @@ def _setup_logging(settings: HookSettings) -> None:
     stderr_handler.setLevel(logging.WARNING)
 
     # File: verbose (DEBUG+) for post-mortem debugging
-    log_file = settings.get_sandbox_writable_dir() / "bazel-wrapper.log"
+    log_file = paths.sandbox_writable_dir / "bazel-wrapper.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
@@ -119,21 +120,21 @@ def _resolve_real_binary() -> str:
     raise FileNotFoundError(f"No {invoked_as} found on PATH")
 
 
-async def _ensure_proxy_with_supervisor_restart(settings: HookSettings) -> None:
+async def _ensure_proxy_with_supervisor_restart(paths: SessionPaths, settings: HookSettings) -> None:
     """Ensure proxy is running, restarting supervisor if it's dead."""
-    client = await try_connect(settings)
+    client = await try_connect(paths, settings)
     if client is None:
         logger.warning("Supervisor is not reachable, restarting...")
-        client = (await supervisor_start(settings)).client
+        client = (await supervisor_start(paths, settings)).client
 
-    await proxy_setup.ensure_proxy_running(settings, client)
+    await proxy_setup.ensure_proxy_running(paths, settings, client)
 
 
-async def _async_main(settings: HookSettings) -> None:
+async def _async_main(paths: SessionPaths, settings: HookSettings) -> None:
     """Async entry point — all async work happens here."""
     if is_web_mode():
-        await _ensure_proxy_with_supervisor_restart(settings)
-        warn_if_credentials_expiring(settings)
+        await _ensure_proxy_with_supervisor_restart(paths, settings)
+        warn_if_credentials_expiring(paths)
 
         local_proxy = get_required_env(ENV_AUTH_PROXY_URL)
         for var in PROXY_ENV_VARS:
@@ -148,17 +149,22 @@ async def _async_main(settings: HookSettings) -> None:
 
 def main() -> None:
     """Main entry point."""
+    session_dir_str = os.environ.get(ENV_SESSION_DIR)
+    if not session_dir_str:
+        raise RuntimeError(f"{ENV_SESSION_DIR} environment variable is required")
+    session_id = Path(session_dir_str).name
+    paths = SessionPaths(session_id)
     settings = HookSettings()
 
-    _setup_logging(settings)
+    _setup_logging(paths)
     log_entrypoint_debug("bazel_wrapper")
 
     try:
-        asyncio.run(_async_main(settings))
+        asyncio.run(_async_main(paths, settings))
     except AuthProxyError as e:
         logger.error("%s", e)
         logger.info("Supervisor auto-restart was attempted but setup still failed")
-        logger.info("Logs: %s", settings.get_supervisor_dir())
+        logger.info("Logs: %s", paths.supervisor_dir)
         raise SystemExit(1) from e
 
 

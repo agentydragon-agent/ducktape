@@ -1,0 +1,303 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "//devinfra/claude/claude_api/hooks:dispatch_output",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "pre_tool_use_lib",
+    srcs = ["pre_tool_use.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+    ],
+)
+
+py_library(
+    name = "precommit_runner",
+    srcs = ["precommit_runner.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util:fs",
+        "@pypi//pre_commit",
+    ],
+)
+
+py_library(
+    name = "post_tool_use_lib",
+    srcs = ["post_tool_use.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":precommit_runner",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+    ],
+)
+
+py_library(
+    name = "session_start_lib",
+    srcs = ["session_start.py"],
+    data = ["//devinfra/claude:templates/session_context.mako"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra:build_info",
+        "//devinfra/claude:bazel_wrapper_lib",
+        "//devinfra/claude:bazelisk_setup",
+        "//devinfra/claude:buildbuddy_setup",
+        "//devinfra/claude:cli_tools_setup",
+        "//devinfra/claude:container_runtime",
+        "//devinfra/claude:debug",
+        "//devinfra/claude:env_file",
+        "//devinfra/claude:errors",
+        "//devinfra/claude:fork_remote_setup",
+        "//devinfra/claude:hook_config",
+        "//devinfra/claude:k8s_secrets_setup",
+        "//devinfra/claude:managed_files",
+        "//devinfra/claude:mkcert_setup",
+        "//devinfra/claude:nix_setup",
+        "//devinfra/claude:precommit_setup",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude:tmpfs_setup",
+        "//devinfra/claude:tracing",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "//devinfra/claude/supervisor:setup",
+        "@pypi//mako",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        ":post_tool_use_lib",
+        ":pre_tool_use_lib",
+        ":session_start_lib",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/claude_api/hooks:dispatch_output",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "@pypi//fastapi",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":server",
+        "//devinfra/claude:tracing",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "main",
+    imports = ["../../.."],
+    main_module = "devinfra.claude.hook_daemon.main",
+    deps = [":main_lib"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main_lib",
+        ":models",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "//util/bazel:subprocess",
+    ],
+)
+
+py_library(
+    name = "hook_dispatch_lib",
+    srcs = ["hook_dispatch.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "hook_dispatch",
+    data = ["//devinfra/claude:bazel_wrapper"],
+    imports = ["../../.."],
+    main_module = "devinfra.claude.hook_daemon.hook_dispatch",
+    visibility = ["//visibility:public"],
+    deps = [":hook_dispatch_lib"],
+)
+
+py_test(
+    name = "test_hook_daemon",
+    srcs = ["test_hook_daemon.py"],
+    imports = ["../../.."],
+    deps = [
+        ":models",
+        ":server",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "//devinfra/claude/claude_api/hooks:stop",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hook_daemon_restart",
+    srcs = ["test_hook_daemon_restart.py"],
+    imports = ["../../.."],
+    deps = [
+        ":client",
+        ":models",
+        ":server",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:stop",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_pre_tool_use",
+    srcs = ["test_pre_tool_use.py"],
+    imports = ["../../.."],
+    deps = [
+        ":pre_tool_use_lib",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_post_tool_use",
+    srcs = ["test_post_tool_use.py"],
+    imports = ["../../.."],
+    deps = [
+        ":post_tool_use_lib",
+        ":precommit_runner",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start",
+    size = "medium",
+    srcs = ["test_session_start.py"],
+    data = [
+        ":hook_dispatch",
+        "//devinfra/claude/auth_proxy:run",
+        "//devinfra/claude/testdata/test_workspace:workspace_files",
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
+    ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    env_inherit = [
+        "CURL_CA_BUNDLE",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    ],
+    imports = ["../../.."],
+    # local: keytool (Adoptium JDK) needs libjli.so which isn't on the RBE worker image
+    local = True,
+    tags = [
+        "e2e",
+        "external",
+    ],
+    deps = [
+        "//devinfra/claude:conftest",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/testing:fixtures",
+        "//devinfra/claude/testing:session_start_helpers",
+        "//devinfra/claude/testing:shell_helpers",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_session_start_podman",
+    size = "medium",
+    srcs = ["test_session_start_podman.py"],
+    data = [
+        ":hook_dispatch",
+        "//devinfra/claude/auth_proxy:run",
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
+    ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
+    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    env_inherit = [
+        "CURL_CA_BUNDLE",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE",
+    ],
+    imports = ["../../.."],
+    # local: podman needs mount/networking capabilities blocked by linux-sandbox and RBE
+    local = True,
+    tags = [
+        "e2e",
+        "external",
+        "manual",  # podman path not used in prod currently
+    ],
+    deps = [
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/testing:fixtures",
+        "//devinfra/claude/testing:session_start_helpers",
+        "//devinfra/claude/testing:shell_helpers",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

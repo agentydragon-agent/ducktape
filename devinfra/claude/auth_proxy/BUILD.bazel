@@ -23,6 +23,7 @@ py_library(
     deps = [
         ":vars",
         "//devinfra/claude:errors",
+        "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/supervisor:client",
         "//util:net",

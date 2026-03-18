@@ -10,7 +10,6 @@ and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 import asyncio
 import logging
 import logging.handlers
-import os
 import shutil
 import sys
 from dataclasses import dataclass, field
@@ -44,14 +43,14 @@ from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
 from devinfra.claude.managed_files import write_config
-from devinfra.claude.settings import CONFIG_FILES, HookSettings, is_web_mode
+from devinfra.claude.session_paths import SessionPaths
+from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
-from devinfra.claude.tracing import init_tracing, shutdown_tracing
-from util import env
+from devinfra.claude.tracing import add_otlp_exporter
 
 logger = logging.getLogger(__name__)
 
-_TEMPLATES_DIR = Path(__file__).parent / "templates"
+_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
 
 # ============================================================================
@@ -135,12 +134,12 @@ class LogCollector(logging.handlers.MemoryHandler):
         return any(r.levelno == logging.WARNING for r in self.buffer)
 
 
-def setup_logging(settings: HookSettings, *, print_banner: bool = True) -> tuple[LogCollector, Path]:
+def setup_logging(paths: SessionPaths, *, print_banner: bool = True) -> tuple[LogCollector, Path]:
     """Configure root logger so all modules in devinfra.claude get handlers.
 
     Returns (LogCollector, log_file_path) tuple.
     """
-    log_file = settings.get_log_file()
+    log_file = paths.log_file
 
     formatter = logging.Formatter("%(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
     collector = LogCollector()
@@ -181,6 +180,7 @@ async def run_in_thread(func, *args):
 
 
 async def _setup_web(
+    paths: SessionPaths,
     settings: HookSettings,
     project_dir: Path,
     tracer: trace.Tracer,
@@ -196,7 +196,7 @@ async def _setup_web(
 
     async def traced_supervisor_start():
         with tracer.start_as_current_span("supervisor_start", context=root_ctx):
-            return await supervisor_setup.start(settings)
+            return await supervisor_setup.start(paths, settings)
 
     # Start supervisor (required by proxy and podman)
     supervisor_task = asyncio.create_task(traced_supervisor_start())
@@ -222,26 +222,26 @@ async def _setup_web(
         with tracer.start_as_current_span("setup_proxy", context=root_ctx):
             supervisor_result = await supervisor_task
             return await proxy_setup.setup_auth_proxy(
-                settings, supervisor_result.client, buildbuddy_configured=buildbuddy_configured
+                paths, settings, supervisor_result.client, buildbuddy_configured=buildbuddy_configured
             )
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
         """Set up configured container runtime (depends on supervisor + per-component tmpfs)."""
         with tracer.start_as_current_span("setup_container_runtime", context=root_ctx):
-            storage_dir = container_runtime.get_storage_dir(settings)
+            storage_dir = container_runtime.get_storage_dir(paths, settings)
             if storage_dir is None:
                 raise SkipError(f"Container runtime disabled (container_runtime={settings.container_runtime})")
             supervisor_result = await supervisor_task
             # tmpfs failure is non-fatal — runtime falls back to VFS on 9p
             tmpfs_mounted = await mount_tmpfs_at(storage_dir)
             return await container_runtime.setup_container_runtime(
-                settings, supervisor_result.client, tmpfs_mounted=tmpfs_mounted
+                paths, settings, supervisor_result.client, tmpfs_mounted=tmpfs_mounted
             )
 
     async def setup_bazel_on_tmpfs() -> tmpfs_setup.TmpfsSetup:
         """Set up Bazel cache (mounts dedicated tmpfs under session dir)."""
         with tracer.start_as_current_span("setup_bazel_tmpfs", context=root_ctx):
-            bazel_cache_dir = settings.get_bazel_cache_dir()
+            bazel_cache_dir = paths.bazel_cache_dir
             await mount_tmpfs_at(bazel_cache_dir)
             return tmpfs_setup.setup_bazel_cache(bazel_cache_dir)
 
@@ -252,17 +252,14 @@ async def _setup_web(
         Always installs the wrapper. Optionally downloads bazelisk unless
         DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK is False.
         """
-        wrapper_path = bazelisk_setup.install_wrapper(settings)
+        wrapper_path = bazelisk_setup.install_wrapper(paths)
         skipped = not settings.install_bazelisk
         if not skipped:
-            bazelisk_setup.install_bazelisk(settings)
+            bazelisk_setup.install_bazelisk(paths)
         else:
             logger.info("Skipping bazelisk download (install_bazelisk=False)")
         return bazelisk_setup.BazeliskSetup(
-            bazelisk_path=settings.get_bazelisk_path(),
-            wrapper_path=wrapper_path,
-            settings=settings,
-            bazelisk_skipped=skipped,
+            bazelisk_path=paths.bazelisk_path, wrapper_path=wrapper_path, paths=paths, bazelisk_skipped=skipped
         )
 
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
@@ -283,7 +280,7 @@ async def _setup_web(
             if not settings.install_mkcert:
                 raise SkipError("mkcert disabled (install_mkcert=False)")
             # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
-            return await mkcert_setup.setup_mkcert(settings, combined_ca=None)
+            return await mkcert_setup.setup_mkcert(paths, combined_ca=None)
 
     # Start cert generation immediately, without waiting for the proxy.
     mkcert_task = asyncio.create_task(mkcert_generate_certs())
@@ -293,22 +290,22 @@ async def _setup_web(
         with tracer.start_as_current_span("mkcert_append_bundle", context=root_ctx):
             mkcert_result = await mkcert_task
             await proxy_task
-            combined_ca = settings.get_auth_proxy_combined_ca()
+            combined_ca = paths.auth_proxy_combined_ca
             if combined_ca.exists():
                 mkcert_setup.append_mkcert_ca_to_bundle(mkcert_result.ca_root, combined_ca)
             return mkcert_result
 
     @tracer.start_as_current_span("install_precommit", context=root_ctx)
     async def traced_precommit():
-        return await run_in_thread(precommit_setup.install_precommit, project_dir, settings.session_dir)
+        return await run_in_thread(precommit_setup.install_precommit, project_dir, paths.session_dir)
 
     @tracer.start_as_current_span("install_nix", context=root_ctx)
     async def traced_nix():
-        return await run_in_thread(nix_setup.install_nix, settings)
+        return await run_in_thread(nix_setup.install_nix, paths, settings)
 
     @tracer.start_as_current_span("install_cli_tools", context=root_ctx)
     async def traced_cli_tools():
-        return await run_in_thread(cli_tools_setup.install_cli_tools, settings.get_wrapper_dir())
+        return await run_in_thread(cli_tools_setup.install_cli_tools, paths.wrapper_dir)
 
     results = await asyncio.gather(
         proxy_task,
@@ -366,7 +363,7 @@ async def _setup_web(
         raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
 
     # Verify combined CA was created (sanity check - should always exist after successful proxy setup)
-    combined_ca = settings.get_auth_proxy_combined_ca()
+    combined_ca = paths.auth_proxy_combined_ca
     if not combined_ca.exists():
         raise RuntimeError("Combined CA bundle not found - proxy setup incomplete")
 
@@ -377,10 +374,10 @@ async def _setup_web(
         with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
             secrets = k8s_secrets_setup.setup_k8s_secrets(
                 token=settings.k8s_token,
-                session_dir=settings.session_dir,
+                session_dir=paths.session_dir,
                 combined_ca_path=combined_ca,
                 config=hook_config,
-                proxy=f"http://localhost:{settings.get_auth_proxy_port()}",
+                proxy=f"http://localhost:{settings.auth_proxy_port}",
             )
 
     # Configure BuildBuddy now that k8s secrets (with API key) are available.
@@ -403,9 +400,10 @@ async def _setup_web(
             logger.warning("Fork remote setup failed: %s", e)
 
     # Determine bazelisk_path: use system_bazel if install_bazelisk=False, otherwise downloaded bazelisk
+    bazelisk_path: Path | None
     if isinstance(bazelisk_result, bazelisk_setup.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
         if settings.system_bazel is not None:
-            bazelisk_path = settings.system_bazel
+            bazelisk_path = Path(settings.system_bazel)
         else:
             # Auto-detect system bazelisk/bazel
             auto_bazel = shutil.which("bazelisk") or shutil.which("bazel")
@@ -413,7 +411,7 @@ async def _setup_web(
                 raise RuntimeError("install_bazelisk=False but no bazelisk/bazel found on PATH")
             bazelisk_path = Path(auto_bazel)
     else:
-        bazelisk_path = settings.get_bazelisk_path()
+        bazelisk_path = paths.bazelisk_path
 
     logger.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_result, auth_proxy_result.status, auth_proxy_result.ca_status
@@ -423,15 +421,15 @@ async def _setup_web(
 
     return PlatformSetup(
         # Bazelrc rendering
-        proxy_port=settings.get_auth_proxy_port(),
-        truststore_path=settings.get_auth_proxy_truststore(),
+        proxy_port=settings.auth_proxy_port,
+        truststore_path=paths.auth_proxy_truststore,
         truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
-        local_proxy=f"http://localhost:{settings.get_auth_proxy_port()}",
+        local_proxy=f"http://localhost:{settings.auth_proxy_port}",
         combined_ca_path=combined_ca,
         bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs_setup.TmpfsSetup) else None,
         # EnvVars
-        session_dir=settings.session_dir,
-        supervisor_port=settings.get_supervisor_port(),
+        session_dir=paths.session_dir,
+        supervisor_port=settings.supervisor_port,
         repo_root=project_dir,
         bazelisk_path=bazelisk_path,
         nix_paths=nix_result.paths if isinstance(nix_result, nix_setup.NixSetup) else [],
@@ -456,15 +454,25 @@ async def _setup_web(
 
 
 async def run_session(
-    hook_input: SessionStartHookInput, settings: HookSettings, env_file_path: Path, *, web_mode: bool
+    hook_input: SessionStartHookInput,
+    paths: SessionPaths,
+    settings: HookSettings,
+    env_file_path: Path,
+    *,
+    web_mode: bool,
+    caller_env: dict[str, str],
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
     Dispatches platform-specific setup, then runs shared steps:
     bazelrc render, wrapper install, env file write, session context emit.
+
+    caller_env: the hook client's environment dict, threaded through from
+    the daemon to avoid os.environ patching.
     """
-    collector, log_file = setup_logging(settings, print_banner=web_mode)
-    tracer, trace_file = init_tracing(hook_input.session_id, settings.session_dir)
+
+    collector, log_file = setup_logging(paths, print_banner=web_mode)
+    tracer = trace.get_tracer(__name__)
     mode_label = "web" if web_mode else "cli"
     root_span = tracer.start_span(
         "session_start",
@@ -475,26 +483,34 @@ async def run_session(
     logger.info("Session start hook (%s mode)", mode_label)
     logger.info("Hook input: %s", hook_input.model_dump_json())
     log_entrypoint_debug("session_start")
-    logger.info("Environment: %s", dict(os.environ))
+    logger.info("Environment: %s", caller_env)
 
-    project_dir = env.get_required_env_path("CLAUDE_PROJECT_DIR")
+    project_dir_str = caller_env.get("CLAUDE_PROJECT_DIR")
+    if not project_dir_str:
+        msg = "CLAUDE_PROJECT_DIR environment variable is required"
+        raise KeyError(msg)
+    project_dir = Path(project_dir_str)
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
-    logger.info("Session directory: %s", settings.session_dir)
+    logger.info("Session directory: %s", paths.session_dir)
 
     # Load hook config (general config file, not gated on k8s_token).
     hook_config = HookConfig.load_from_repo(project_dir)
+
+    # Add remote OTLP exporter now that we have the config
+    if hook_config and hook_config.otel:
+        add_otlp_exporter(hook_config.otel.with_env_overrides())
 
     # K8s secrets are read after platform setup (proxy must be up for web mode TLS).
     secrets: k8s_secrets_setup.K8sSecretsResult | None = None
 
     # Platform-specific setup
     if web_mode:
-        setup = await _setup_web(settings, project_dir, tracer, root_ctx, hook_config)
+        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
         if settings.k8s_token and hook_config:
             secrets = k8s_secrets_setup.setup_k8s_secrets(
-                token=settings.k8s_token, session_dir=settings.session_dir, combined_ca_path=None, config=hook_config
+                token=settings.k8s_token, session_dir=paths.session_dir, combined_ca_path=None, config=hook_config
             )
         setup = PlatformSetup(
             buildbuddy_configured=buildbuddy_setup.is_buildbuddy_configured(),
@@ -519,23 +535,23 @@ async def run_session(
             buildbuddy_bazelrc=buildbuddy_setup.BUILDBUDDY_BAZELRC,
             bazel_cache_dir=setup.bazel_cache_dir,
         )
-        session_bazelrc = settings.session_dir / "bazelrc"
+        session_bazelrc = paths.session_dir / "bazelrc"
         write_config(session_bazelrc, bazelrc_content, "session bazelrc")
 
     # Install bazel wrapper (web mode already downloaded bazelisk in parallel)
     with tracer.start_as_current_span("install_bazel_wrappers", context=root_ctx):
-        bazelisk_setup.install_wrapper(settings)
+        bazelisk_setup.install_wrapper(paths)
 
     # Generate timestamp
     hook_timestamp = datetime.now()
-    timestamp_file = settings.session_dir / "session-hook-last-run"
+    timestamp_file = paths.session_dir / "session-hook-last-run"
     timestamp_file.write_text(f"{hook_timestamp.isoformat()}\n")
     logger.info("Session start hook timestamp: %s", hook_timestamp.isoformat())
 
     # Write environment file
     with tracer.start_as_current_span("write_env_file", context=root_ctx):
         env_vars = env_file.EnvVars(
-            bazel_wrapper_dir=settings.get_wrapper_dir(),
+            bazel_wrapper_dir=paths.wrapper_dir,
             session_bazelrc=session_bazelrc,
             session_dir=setup.session_dir,
             proxy_port=setup.proxy_port,
@@ -579,13 +595,17 @@ async def run_session(
         )
 
     root_span.end()
-    shutdown_tracing()
-    logger.info("Trace file: %s", trace_file)
     return output
 
 
-async def _async_handle(hook_input: SessionStartHookInput, settings: HookSettings) -> SessionStartOutput:
-    """Async entry point called from hook_dispatch. Dispatches to web or CLI mode."""
-    env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
-    web_mode = is_web_mode()
-    return await run_session(hook_input, settings, env_file_path, web_mode=web_mode)
+async def _async_handle(
+    hook_input: SessionStartHookInput, paths: SessionPaths, settings: HookSettings, caller_env: dict[str, str]
+) -> SessionStartOutput:
+    """Async entry point called from the hook daemon with the client's env."""
+    env_file_path_str = caller_env.get("CLAUDE_ENV_FILE")
+    if not env_file_path_str:
+        msg = "CLAUDE_ENV_FILE environment variable is required"
+        raise KeyError(msg)
+    env_file_path = Path(env_file_path_str)
+    web_mode = caller_env.get("CLAUDE_CODE_REMOTE") == "true"
+    return await run_session(hook_input, paths, settings, env_file_path, web_mode=web_mode, caller_env=caller_env)
