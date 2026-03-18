@@ -77,7 +77,7 @@ func (s *MeshState) Summary() string {
 // cosiEvent wraps a COSI state.Event with source node name and resource type.
 type cosiEvent struct {
 	NodeName     string
-	ResourceType string
+	ResourceType resource.Type
 	Event        state.Event
 }
 
@@ -104,15 +104,14 @@ type nodeReady struct {
 type watchSpec struct {
 	Namespace    string
 	ResourceType resource.Type
-	Label        string
 }
 
 var defaultWatches = []watchSpec{
-	{kubespan.NamespaceName, kubespan.IdentityType, "Identity"},
-	{kubespan.NamespaceName, kubespan.PeerSpecType, "PeerSpec"},
-	{kubespan.NamespaceName, kubespan.PeerStatusType, "PeerStatus"},
-	{kubespan.NamespaceName, kubespan.EndpointType, "Endpoint"},
-	{cluster.NamespaceName, cluster.AffiliateType, "Affiliate"},
+	{kubespan.NamespaceName, kubespan.IdentityType},
+	{kubespan.NamespaceName, kubespan.PeerSpecType},
+	{kubespan.NamespaceName, kubespan.PeerStatusType},
+	{kubespan.NamespaceName, kubespan.EndpointType},
+	{cluster.NamespaceName, cluster.AffiliateType},
 }
 
 // Run blocks until SuccessFunc returns true or ctx is cancelled.
@@ -181,11 +180,7 @@ func (r *MeshTestRunner) Run(ctx context.Context) {
 		case pr := <-probeCh:
 			ns := meshState.Nodes[pr.NodeName]
 			ns.ProbeResults[pr.Key] = pr.OK
-			if pr.OK {
-				r.T.Logf("[%s] probe %s: ok", pr.NodeName, pr.Key)
-			} else {
-				r.T.Logf("[%s] probe %s: FAIL", pr.NodeName, pr.Key)
-			}
+			r.T.Logf("[%s] probe: %+v", pr.NodeName, pr)
 			if r.SuccessFunc(meshState) {
 				r.Stopwatch.Lap("success")
 				return
@@ -232,7 +227,7 @@ func (r *MeshTestRunner) watchNode(ctx context.Context, node *MeshNode, eventCh 
 		ch := make(chan state.Event, 16)
 		kind := resource.NewMetadata(ws.Namespace, ws.ResourceType, "", resource.VersionUndefined)
 		if err := st.WatchKind(nctx, kind, ch, state.WithBootstrapContents(true)); err != nil {
-			r.T.Logf("[%s] WatchKind %s: %v", name, ws.Label, err)
+			r.T.Logf("[%s] WatchKind %s: %v", name, ws.ResourceType, err)
 			continue
 		}
 		go func() {
@@ -243,7 +238,7 @@ func (r *MeshTestRunner) watchNode(ctx context.Context, node *MeshNode, eventCh 
 				case ev := <-ch:
 					eventCh <- cosiEvent{
 						NodeName:     name,
-						ResourceType: ws.Label,
+						ResourceType: ws.ResourceType,
 						Event:        ev,
 					}
 				}
@@ -305,7 +300,7 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 		id := res.Metadata().ID()
 
 		switch ev.ResourceType {
-		case "PeerStatus":
+		case kubespan.PeerStatusType:
 			ps, ok := res.(*kubespan.PeerStatus)
 			if !ok {
 				return
@@ -313,16 +308,15 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 			spec := *ps.TypedSpec()
 			if ev.Event.Type == state.Updated {
 				if old, exists := ns.PeerStatuses[id]; exists && old.State != spec.State {
-					r.T.Logf("[%s] PeerStatus %s: %s -> %s ep=%s",
-						ev.NodeName, spec.Label, old.State, spec.State, spec.Endpoint)
+					r.T.Logf("[%s] PeerStatus %s -> %s: %+v",
+						ev.NodeName, old.State, spec.State, spec)
 				}
 			} else {
-				r.T.Logf("[%s] PeerStatus created: %s state=%s ep=%s",
-					ev.NodeName, spec.Label, spec.State, spec.Endpoint)
+				r.T.Logf("[%s] PeerStatus created: %+v", ev.NodeName, spec)
 			}
 			ns.PeerStatuses[id] = spec
 
-		case "PeerSpec":
+		case kubespan.PeerSpecType:
 			ps, ok := res.(*kubespan.PeerSpec)
 			if !ok {
 				return
@@ -331,21 +325,20 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 			r.T.Logf("[%s] PeerSpec %s: %s %+v", ev.NodeName, ev.Event.Type, id, spec)
 			ns.PeerSpecs[id] = spec
 
-		case "Affiliate":
+		case cluster.AffiliateType:
 			aff, ok := res.(*cluster.Affiliate)
 			if !ok {
 				return
 			}
 			spec := *aff.TypedSpec()
-			r.T.Logf("[%s] Affiliate %s: %s hostname=%s nodeID=%s",
-				ev.NodeName, ev.Event.Type, id, spec.Hostname, spec.NodeID)
+			r.T.Logf("[%s] Affiliate %s: %+v", ev.NodeName, ev.Event.Type, spec)
 			ns.Affiliates[id] = spec
 
-		case "Identity":
+		case kubespan.IdentityType:
 			r.T.Logf("[%s] Identity %s: %s %+v", ev.NodeName, ev.Event.Type, id, res)
 			ns.HasIdentity = true
 
-		case "Endpoint":
+		case kubespan.EndpointType:
 			r.T.Logf("[%s] Endpoint %s: %s %+v", ev.NodeName, ev.Event.Type, id, res)
 		}
 
@@ -361,13 +354,13 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 		r.T.Logf("[%s] %s destroyed: %s", ev.NodeName, ev.ResourceType, id)
 
 		switch ev.ResourceType {
-		case "PeerStatus":
+		case kubespan.PeerStatusType:
 			delete(ns.PeerStatuses, id)
-		case "PeerSpec":
+		case kubespan.PeerSpecType:
 			delete(ns.PeerSpecs, id)
-		case "Affiliate":
+		case cluster.AffiliateType:
 			delete(ns.Affiliates, id)
-		case "Identity":
+		case kubespan.IdentityType:
 			ns.HasIdentity = false
 		}
 
