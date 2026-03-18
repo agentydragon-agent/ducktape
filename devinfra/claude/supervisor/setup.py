@@ -14,6 +14,7 @@ from dataclasses import dataclass
 
 from devinfra.claude.errors import SupervisorError
 from devinfra.claude.managed_files import write_ini_config
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 from devinfra.claude.supervisor.client import SupervisorClient, try_connect
 from util.bazel.subprocess import async_run_python_module
@@ -27,19 +28,18 @@ class SupervisorSetup:
     """Result of supervisor setup."""
 
     client: SupervisorClient
-    settings: HookSettings
 
 
-def _write_config(settings: HookSettings) -> None:
+def _write_config(paths: SessionPaths, settings: HookSettings) -> None:
     """Write supervisor configuration file."""
-    supervisor_dir = settings.get_supervisor_dir()
+    supervisor_dir = paths.supervisor_dir
     supervisor_dir.mkdir(parents=True, exist_ok=True)
 
     supervisor_conf = supervisor_dir / "supervisord.conf"
-    supervisor_port = settings.get_supervisor_port()
+    supervisor_port = settings.supervisor_port
     supervisor_url = f"http://127.0.0.1:{supervisor_port}"
     supervisor_log = supervisor_dir / "supervisord.log"
-    supervisor_pidfile = settings.get_supervisor_pidfile()
+    supervisor_pidfile = paths.supervisor_pidfile
 
     config = configparser.ConfigParser()
     # Use TCP socket instead of Unix socket to avoid 9p filesystem limitations
@@ -65,25 +65,25 @@ def _write_config(settings: HookSettings) -> None:
     (supervisor_dir / "conf.d").mkdir(parents=True, exist_ok=True)
 
 
-def _cleanup_stale_supervisor_files(settings: HookSettings) -> None:
+def _cleanup_stale_supervisor_files(paths: SessionPaths) -> None:
     """Clean up stale supervisor pidfile.
 
     Called before starting supervisord when try_connect() returns None
     but the pidfile still exists (stale state).
     """
-    pidfile = settings.get_supervisor_pidfile()
+    pidfile = paths.supervisor_pidfile
     if pidfile.exists():
         logger.info("Removing stale supervisor pidfile: %s", pidfile)
         pidfile.unlink()
 
 
-def _dump_supervisor_debug_info(settings: HookSettings) -> str:
+def _dump_supervisor_debug_info(paths: SessionPaths, settings: HookSettings) -> str:
     """Gather comprehensive debug info for supervisor startup failures."""
     lines = []
-    supervisor_dir = settings.get_supervisor_dir()
+    supervisor_dir = paths.supervisor_dir
     supervisor_log = supervisor_dir / "supervisord.log"
-    port = settings.get_supervisor_port()
-    pidfile = settings.get_supervisor_pidfile()
+    port = settings.supervisor_port
+    pidfile = paths.supervisor_pidfile
 
     # State of key files
     lines.append("=== Supervisor state ===")
@@ -119,28 +119,28 @@ def _dump_supervisor_debug_info(settings: HookSettings) -> str:
     return "\n".join(lines)
 
 
-async def start(settings: HookSettings) -> SupervisorSetup:
+async def start(paths: SessionPaths, settings: HookSettings) -> SupervisorSetup:
     """Start supervisord if not already running.
 
     Raises:
         SupervisorError: If supervisor cannot be started.
     """
-    existing_client = await try_connect(settings)
+    existing_client = await try_connect(paths, settings)
     if existing_client:
         logger.info("supervisord already running")
-        return SupervisorSetup(client=existing_client, settings=settings)
+        return SupervisorSetup(client=existing_client)
 
     logger.info("Starting supervisord...")
 
     # Clean up any stale files from previous crashed supervisor
-    _cleanup_stale_supervisor_files(settings)
+    _cleanup_stale_supervisor_files(paths)
 
-    supervisor_dir = settings.get_supervisor_dir()
+    supervisor_dir = paths.supervisor_dir
     supervisor_conf = supervisor_dir / "supervisord.conf"
 
     # Ensure config exists
     if not supervisor_conf.exists():
-        _write_config(settings)
+        _write_config(paths, settings)
 
     # Validate config file is readable
     if not supervisor_conf.is_file():
@@ -156,7 +156,7 @@ async def start(settings: HookSettings) -> SupervisorSetup:
     # Start supervisord using Python module to ensure it's on the right Python path
     # Use Popen with start_new_session to fully detach the daemon process
     supervisor_log = supervisor_dir / "supervisord.log"
-    supervisor_port = settings.get_supervisor_port()
+    supervisor_port = settings.supervisor_port
 
     # Log what we're about to execute
     logger.info("Starting supervisor.supervisord -c %s", supervisor_conf)
@@ -201,14 +201,14 @@ async def start(settings: HookSettings) -> SupervisorSetup:
     # Wait for supervisor to be ready (up to 5 seconds)
     for i in range(20):
         await asyncio.sleep(0.25)
-        client = await try_connect(settings)
+        client = await try_connect(paths, settings)
         if client:
             logger.info("supervisord started successfully")
-            return SupervisorSetup(client=client, settings=settings)
+            return SupervisorSetup(client=client)
         if i % 4 == 3:  # Log every second
             logger.debug("Waiting for supervisord... (%d/20)", i + 1)
 
     # Gather comprehensive debug info for the error
-    debug_info = _dump_supervisor_debug_info(settings)
+    debug_info = _dump_supervisor_debug_info(paths, settings)
 
     raise SupervisorError(f"supervisord did not start in time\n{debug_info}")

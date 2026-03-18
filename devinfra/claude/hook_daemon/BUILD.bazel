@@ -21,6 +21,7 @@ py_library(
         ":models",
         "//devinfra/claude:post_tool_use_lib",
         "//devinfra/claude:pre_tool_use_lib",
+        "//devinfra/claude:session_paths",
         "//devinfra/claude:session_start_lib",
         "//devinfra/claude:settings",
         "//devinfra/claude/claude_api/hooks:dispatch_output",
@@ -59,7 +60,7 @@ py_library(
     deps = [
         ":main_lib",
         ":models",
-        "//devinfra/claude:settings",
+        "//devinfra/claude:session_paths",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
         "//util/bazel:subprocess",
     ],

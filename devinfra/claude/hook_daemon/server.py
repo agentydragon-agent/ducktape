@@ -21,6 +21,7 @@ from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.pre_tool_use import evaluate as evaluate_pre
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.session_start import _async_handle
 from devinfra.claude.settings import HookSettings
 
@@ -87,9 +88,9 @@ async def handle_hook(req: HookRequest) -> HookResponse:
 
 async def _handle_session_start(hook_input: SessionStartHookInput, env: dict[str, str]) -> AnyHookOutput | None:
     """Handle SessionStart by passing caller's env through to session_start."""
-    session_dir = HookSettings.session_dir_for_id(hook_input.session_id)
-    settings = HookSettings(session_dir=session_dir)
-    return await _async_handle(hook_input, settings, caller_env=env)
+    paths = SessionPaths(hook_input.session_id)
+    settings = HookSettings()
+    return await _async_handle(hook_input, paths, settings, caller_env=env)
 
 
 @app.get("/health")

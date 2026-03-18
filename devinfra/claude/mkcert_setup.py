@@ -16,7 +16,7 @@ import httpx
 from opentelemetry import trace
 
 from devinfra.claude.platform_utils import get_platform
-from devinfra.claude.settings import HookSettings
+from devinfra.claude.session_paths import SessionPaths
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -34,12 +34,12 @@ class MkcertSetup:
     status: str
 
 
-def _get_mkcert_dir(settings: HookSettings) -> Path:
-    return settings.get_mkcert_dir()
+def _get_mkcert_dir(paths: SessionPaths) -> Path:
+    return paths.mkcert_dir
 
 
-def _get_mkcert_binary(settings: HookSettings) -> Path:
-    return settings.get_mkcert_binary()
+def _get_mkcert_binary(paths: SessionPaths) -> Path:
+    return paths.mkcert_binary
 
 
 def _get_download_url() -> str:
@@ -51,10 +51,10 @@ def _get_download_url() -> str:
     )
 
 
-async def _download_mkcert(settings: HookSettings) -> Path:
+async def _download_mkcert(paths: SessionPaths) -> Path:
     """Download mkcert binary if not already present."""
-    mkcert_dir = _get_mkcert_dir(settings)
-    mkcert_path = _get_mkcert_binary(settings)
+    mkcert_dir = _get_mkcert_dir(paths)
+    mkcert_path = _get_mkcert_binary(paths)
 
     mkcert_dir.mkdir(parents=True, exist_ok=True)
 
@@ -93,7 +93,7 @@ def append_mkcert_ca_to_bundle(ca_root: Path, combined_ca: Path) -> None:
     logger.info("Appended mkcert root CA to %s", combined_ca)
 
 
-async def setup_mkcert(settings: HookSettings, combined_ca: Path | None) -> MkcertSetup:
+async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertSetup:
     """Generate a trusted localhost TLS certificate via mkcert.
 
     Downloads the mkcert binary if needed, generates a certificate for
@@ -106,7 +106,7 @@ async def setup_mkcert(settings: HookSettings, combined_ca: Path | None) -> Mkce
     automatically creates rootCA.pem in CAROOT when generating the first cert,
     so -install is not needed to produce the CA file.
     """
-    mkcert_dir = _get_mkcert_dir(settings)
+    mkcert_dir = _get_mkcert_dir(paths)
     mkcert_dir.mkdir(parents=True, exist_ok=True)
 
     ca_root = mkcert_dir / "ca"
@@ -119,7 +119,7 @@ async def setup_mkcert(settings: HookSettings, combined_ca: Path | None) -> Mkce
 
     if not cert_path.exists() or not key_path.exists():
         with tracer.start_as_current_span("mkcert_download_binary"):
-            mkcert_bin = await _download_mkcert(settings)
+            mkcert_bin = await _download_mkcert(paths)
 
         logger.info("Generating localhost certificate...")
         with tracer.start_as_current_span("mkcert_generate_cert"):

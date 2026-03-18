@@ -18,7 +18,7 @@ from pathlib import Path
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
-from devinfra.claude.settings import HookSettings
+from devinfra.claude.session_paths import SessionPaths
 from util.bazel.subprocess import python_env
 
 logger = logging.getLogger(__name__)
@@ -37,9 +37,9 @@ class _UDSConnection(http.client.HTTPConnection):
         self.sock.connect(str(self._sock_path))
 
 
-def call_daemon(hook_input: AnyHookInput, env: dict[str, str], settings: HookSettings) -> HookResponse | None:
+def call_daemon(hook_input: AnyHookInput, env: dict[str, str], paths: SessionPaths) -> HookResponse | None:
     """POST to daemon over UDS. If unreachable, start daemon and retry."""
-    sock_path = settings.get_hook_daemon_sock()
+    sock_path = paths.hook_daemon_sock
     request = HookRequest(hook=hook_input, env=env)
 
     if sock_path.exists():
@@ -49,7 +49,7 @@ def call_daemon(hook_input: AnyHookInput, env: dict[str, str], settings: HookSet
         logger.info("Daemon unreachable on existing socket %s, will restart", sock_path)
 
     # Daemon unreachable or socket missing — start it
-    if _start_daemon(settings):
+    if _start_daemon(paths):
         _wait_for_sock(sock_path, timeout_secs=5)
         return _post_to_daemon(request, sock_path)
 
@@ -83,11 +83,11 @@ def _is_pid_alive(pid: int) -> bool:
         return False
 
 
-def _start_daemon(settings: HookSettings) -> bool:
+def _start_daemon(paths: SessionPaths) -> bool:
     """Fork daemon as a detached background process. Returns True if started."""
-    daemon_dir = settings.get_hook_daemon_dir()
-    sock_path = settings.get_hook_daemon_sock()
-    pidfile = settings.get_hook_daemon_pidfile()
+    daemon_dir = paths.hook_daemon_dir
+    sock_path = paths.hook_daemon_sock
+    pidfile = paths.hook_daemon_pidfile
 
     # Check if daemon is already running (pidfile with live process)
     if pidfile.exists():

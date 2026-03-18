@@ -32,6 +32,16 @@ py_library(
 )
 
 py_library(
+    name = "session_paths",
+    srcs = ["session_paths.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+    ],
+)
+
+py_library(
     name = "settings",
     srcs = ["settings.py"],
     data = [
@@ -124,6 +134,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":platform_utils",
+        ":session_paths",
         ":settings",
         "//util/bazel:subprocess",
     ],
@@ -143,7 +154,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":platform_utils",
-        ":settings",
+        ":session_paths",
         "@pypi//httpx",
         "@pypi//opentelemetry_api",
     ],
@@ -157,6 +168,7 @@ py_library(
     deps = [
         ":errors",
         ":managed_files",
+        ":session_paths",
         ":settings",
         ":streaming",
     ],
@@ -186,6 +198,7 @@ py_library(
     deps = [
         ":errors",
         ":managed_files",
+        ":session_paths",
         ":settings",
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
@@ -229,6 +242,7 @@ py_library(
         ":debug",
         ":env_file",
         ":errors",
+        ":session_paths",
         ":settings",
         "//devinfra/claude/auth_proxy:credentials",
         "//devinfra/claude/auth_proxy:setup",
@@ -277,7 +291,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":settings",
+        ":session_paths",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
         "//devinfra/claude/hook_daemon:client",
         "@pypi//pydantic",
@@ -318,6 +332,7 @@ py_library(
         ":mkcert_setup",
         ":nix_setup",
         ":precommit_setup",
+        ":session_paths",
         ":settings",
         ":tmpfs_setup",
         ":tracing",
@@ -369,6 +384,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":session_paths",
         ":settings",
         "@pypi//pytest",
     ],
@@ -544,6 +560,7 @@ py_test(
         ":bazel_wrapper_lib",
         ":conftest",
         ":errors",
+        ":session_paths",
         ":settings",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
@@ -583,6 +600,7 @@ py_test(
     tags = ["e2e"],
     deps = [
         ":conftest",
+        ":session_paths",
         ":settings",
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/supervisor:client",

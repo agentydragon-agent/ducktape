@@ -9,6 +9,7 @@ from pathlib import Path
 
 from devinfra.claude.errors import SkipError
 from devinfra.claude.managed_files import write_config
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.streaming import run_streaming
 
@@ -50,9 +51,9 @@ def setup_nix_path(nix_store_bin: Path) -> None:
         logger.info("Added to PATH: %s", ", ".join(map(str, paths)))
 
 
-def _write_nix_conf(settings: HookSettings) -> Path:
+def _write_nix_conf(paths: SessionPaths) -> Path:
     """Write nix.conf to shared cache directory, return path."""
-    cache_dir = settings.get_cache_dir()
+    cache_dir = paths.cache_dir
     cache_dir.mkdir(parents=True, exist_ok=True)
     nix_conf_path = cache_dir / "nix.conf"
 
@@ -62,7 +63,7 @@ def _write_nix_conf(settings: HookSettings) -> Path:
     return nix_conf_path
 
 
-def install_nix(settings: HookSettings) -> NixSetup:
+def install_nix(paths: SessionPaths, settings: HookSettings) -> NixSetup:
     """Install nix if not present.
 
     Raises:
@@ -73,7 +74,7 @@ def install_nix(settings: HookSettings) -> NixSetup:
         raise SkipError("Nix")
 
     # Write nix.conf to shared cache directory
-    nix_conf = _write_nix_conf(settings)
+    nix_conf = _write_nix_conf(paths)
     os.environ["NIX_USER_CONF_FILES"] = str(nix_conf)
     logger.info("Using nix.conf: %s", nix_conf)
 
@@ -81,7 +82,7 @@ def install_nix(settings: HookSettings) -> NixSetup:
     nix_store_bin = find_nix_bin()
     if not nix_store_bin:
         logger.info("Installing nix...")
-        nix_install_script = settings.session_dir / "nix-install.sh"
+        nix_install_script = paths.session_dir / "nix-install.sh"
         with urllib.request.urlopen("https://nixos.org/nix/install", timeout=60) as response:
             nix_install_script.write_bytes(response.read())
 

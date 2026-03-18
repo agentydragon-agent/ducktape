@@ -52,6 +52,7 @@ py_library(
     imports = ["../../.."],
     deps = [
         ":mock_egress_proxy",
+        "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/supervisor:client",
         "//util:net",

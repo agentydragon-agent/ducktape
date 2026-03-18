@@ -20,6 +20,7 @@ from opentelemetry import trace
 
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.errors import CaBundleError, CaExtractionError, ProxyServiceError, TruststoreError
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 from devinfra.claude.supervisor.client import SupervisorClient
 from util.bazel.subprocess import python_env
@@ -148,7 +149,7 @@ def _is_anthropic_tls_inspection_ca(cert: x509.Certificate) -> bool:
 
 
 @tracer.start_as_current_span("proxy_extract_ca")
-def _extract_proxy_ca(settings: HookSettings) -> None:
+def _extract_proxy_ca(paths: SessionPaths) -> None:
     """Load the TLS inspection CA certificate from the filesystem.
 
     Claude Code web containers have the Anthropic CA pre-installed.
@@ -169,7 +170,7 @@ def _extract_proxy_ca(settings: HookSettings) -> None:
         raise CaExtractionError(f"CA at {ca_file} is not an Anthropic TLS Inspection CA")
 
     logger.info("Loaded Anthropic CA from filesystem: %s", ca_file)
-    settings.get_auth_proxy_ca_file().write_text(ca_pem)
+    paths.auth_proxy_ca_file.write_text(ca_pem)
 
 
 def _get_cert_attr(name: x509.Name, oid: x509.ObjectIdentifier) -> str:
@@ -181,7 +182,7 @@ def _get_cert_attr(name: x509.Name, oid: x509.ObjectIdentifier) -> str:
         return ""
 
 
-async def _create_java_truststore(settings: HookSettings) -> None:
+async def _create_java_truststore(paths: SessionPaths) -> None:
     """Create a Java truststore with the system CAs plus the proxy CA.
 
     Uses keytool (from JDK) to import the CA certificate into a copy of
@@ -193,8 +194,8 @@ async def _create_java_truststore(settings: HookSettings) -> None:
     Raises:
         TruststoreError: If truststore could not be created.
     """
-    ca_file = settings.get_auth_proxy_ca_file()
-    truststore = settings.get_auth_proxy_truststore()
+    ca_file = paths.auth_proxy_ca_file
+    truststore = paths.auth_proxy_truststore
 
     if not ca_file.exists():
         raise TruststoreError("No CA file to add to truststore")
@@ -241,39 +242,39 @@ async def _create_java_truststore(settings: HookSettings) -> None:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 
-def _build_auth_proxy_command(settings: HookSettings) -> str:
+def _build_auth_proxy_command(paths: SessionPaths, settings: HookSettings) -> str:
     """Build command to run auth proxy.
 
     Uses sys.executable -m to run the module. This works in both:
     - Bazel mode: PYTHONPATH is set and forwarded via python_env()
     - Wheel mode: the package is installed, so the module is importable
     """
-    proxy_port = settings.get_auth_proxy_port()
-    creds_file = settings.get_auth_proxy_creds_file()
+    proxy_port = settings.auth_proxy_port
+    creds_file = paths.auth_proxy_creds_file
     auth_proxy_cmd = f"{sys.executable} -m devinfra.claude.auth_proxy.main"
     return f"{auth_proxy_cmd} --listen-port {proxy_port} --creds-file {creds_file}"
 
 
-def _write_creds_file(settings: HookSettings, https_proxy: str) -> None:
+def _write_creds_file(paths: SessionPaths, https_proxy: str) -> None:
     """Write the upstream proxy URL to the credentials file.
 
     The proxy reads this file on each connection for hot-reload.
     """
-    creds_file = settings.get_auth_proxy_creds_file()
+    creds_file = paths.auth_proxy_creds_file
     creds_file.parent.mkdir(parents=True, exist_ok=True)
     creds_file.write_text(https_proxy)
     logger.debug("Wrote proxy credentials to %s", creds_file)
 
 
 async def _wait_for_proxy_running(
-    settings: HookSettings, supervisor: SupervisorClient, timeout_seconds: float = 5.0
+    settings: HookSettings, supervisor: SupervisorClient, *, timeout_seconds: float = 5.0
 ) -> None:
     """Wait for proxy port to be listening AND supervisor to report RUNNING.
 
     Raises:
         ProxyServiceError: If proxy does not become ready within timeout.
     """
-    proxy_port = settings.get_auth_proxy_port()
+    proxy_port = settings.auth_proxy_port
     try:
         async with asyncio.timeout(timeout_seconds):
             await async_wait_for_port("127.0.0.1", proxy_port, timeout_secs=timeout_seconds)
@@ -287,7 +288,7 @@ async def _wait_for_proxy_running(
         )
 
 
-async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorClient) -> None:
+async def ensure_proxy_running(paths: SessionPaths, settings: HookSettings, supervisor: SupervisorClient) -> None:
     """Ensure proxy is running with current credentials.
 
     Writes the current https_proxy URL to the credentials file. The proxy
@@ -297,7 +298,7 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
     Raises:
         ProxyServiceError: If https_proxy not set or proxy fails to start.
     """
-    proxy_dir = settings.get_auth_proxy_dir()
+    proxy_dir = paths.auth_proxy_dir
     proxy_dir.mkdir(parents=True, exist_ok=True)
 
     https_proxy = get_upstream_proxy_url()
@@ -305,15 +306,15 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
         raise ProxyServiceError("No https_proxy environment variable set")
 
     # Write current proxy URL (proxy reads on each connection)
-    _write_creds_file(settings, https_proxy)
+    _write_creds_file(paths, https_proxy)
 
     # If proxy is already running, we're done (it will pick up new creds)
     if await supervisor.is_service_running(AUTH_PROXY_SERVICE):
         return
 
     # Service exists but not running (FATAL/STOPPED/EXITED) - restart it
-    command = _build_auth_proxy_command(settings)
-    proxy_port = settings.get_auth_proxy_port()
+    command = _build_auth_proxy_command(paths, settings)
+    proxy_port = settings.auth_proxy_port
     if await supervisor.service_exists(AUTH_PROXY_SERVICE):
         logger.info("Restarting proxy service on port %d", proxy_port)
         await supervisor.update_service(
@@ -332,7 +333,7 @@ async def ensure_proxy_running(settings: HookSettings, supervisor: SupervisorCli
 
 
 @tracer.start_as_current_span("proxy_create_bundle")
-def _create_combined_ca_bundle(settings: HookSettings) -> None:
+def _create_combined_ca_bundle(paths: SessionPaths) -> None:
     """Create a combined CA bundle with system CAs plus the proxy CA.
 
     This is needed for tools like uv that use SSL_CERT_FILE.
@@ -340,8 +341,8 @@ def _create_combined_ca_bundle(settings: HookSettings) -> None:
     Raises:
         CaBundleError: If bundle could not be created.
     """
-    combined_ca = settings.get_auth_proxy_combined_ca()
-    ca_file_path = settings.get_auth_proxy_ca_file()
+    combined_ca = paths.auth_proxy_combined_ca
+    ca_file_path = paths.auth_proxy_ca_file
 
     # Prefer extracted CA (written by _extract_proxy_ca) — it's always the validated,
     # correct CA for this session. In tests, ANTHROPIC_CA_PATH overrides the CA;
@@ -365,9 +366,9 @@ def _create_combined_ca_bundle(settings: HookSettings) -> None:
     logger.info("Created combined CA bundle at %s", combined_ca)
 
 
-async def _snapshot_proxy_status(settings: HookSettings, supervisor: SupervisorClient, port: int) -> str:
+async def _snapshot_proxy_status(paths: SessionPaths, supervisor: SupervisorClient, port: int) -> str:
     """Snapshot the current proxy status."""
-    if not settings.get_auth_proxy_truststore().exists():
+    if not paths.auth_proxy_truststore.exists():
         return "not configured"
     if await supervisor.is_service_running(AUTH_PROXY_SERVICE):
         return f"running (port {port})"
@@ -375,7 +376,7 @@ async def _snapshot_proxy_status(settings: HookSettings, supervisor: SupervisorC
 
 
 async def setup_auth_proxy(
-    settings: HookSettings, supervisor: SupervisorClient, *, buildbuddy_configured: bool = False
+    paths: SessionPaths, settings: HookSettings, supervisor: SupervisorClient, *, buildbuddy_configured: bool = False
 ) -> ProxySetup:
     """Set up the complete auth proxy environment for TLS-inspecting proxies.
 
@@ -386,8 +387,8 @@ async def setup_auth_proxy(
     3. Create Java truststore with the CA
     4. Create combined CA bundle for SSL tools
     """
-    port = settings.get_auth_proxy_port()
-    combined_ca = settings.get_auth_proxy_combined_ca()
+    port = settings.auth_proxy_port
+    combined_ca = paths.auth_proxy_combined_ca
 
     if not get_upstream_proxy_url():
         logger.info("No https_proxy set, auth proxy setup not needed")
@@ -396,29 +397,29 @@ async def setup_auth_proxy(
     logger.info("Setting up auth proxy for TLS-inspecting proxy...")
 
     # Ensure proxy dir exists
-    settings.get_auth_proxy_dir().mkdir(parents=True, exist_ok=True)
+    paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Start auth proxy first (needed for CA extraction)
     with tracer.start_as_current_span("proxy_start_service"):
-        await ensure_proxy_running(settings, supervisor)
+        await ensure_proxy_running(paths, settings, supervisor)
 
     # Step 2: Load the TLS inspection CA from filesystem
-    _extract_proxy_ca(settings)
+    _extract_proxy_ca(paths)
 
     # Step 3: Create Java truststore with the CA
     with tracer.start_as_current_span("proxy_create_truststore"):
-        await _create_java_truststore(settings)
+        await _create_java_truststore(paths)
 
     # Step 4: Create combined CA bundle (for tools like uv that use SSL_CERT_FILE)
-    _create_combined_ca_bundle(settings)
+    _create_combined_ca_bundle(paths)
 
-    status = await _snapshot_proxy_status(settings, supervisor, port)
+    status = await _snapshot_proxy_status(paths, supervisor, port)
     ca_status = "custom CA" if combined_ca.exists() else "system"
 
     logger.info("Auth proxy setup complete")
     return ProxySetup(port=port, combined_ca=combined_ca, status=status, ca_status=ca_status)
 
 
-def is_configured(settings: HookSettings) -> bool:
+def is_configured(paths: SessionPaths) -> bool:
     """Check if auth proxy is configured."""
-    return settings.get_auth_proxy_truststore().exists()
+    return paths.auth_proxy_truststore.exists()

@@ -13,7 +13,7 @@ from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.hook_daemon.client import call_daemon
-from devinfra.claude.settings import HookSettings
+from devinfra.claude.session_paths import SessionPaths
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
 
@@ -22,10 +22,9 @@ def main() -> None:
     raw = sys.stdin.buffer.read()
     parsed = _adapter.validate_json(raw)
 
-    session_dir = HookSettings.session_dir_for_id(parsed.session_id)
-    settings = HookSettings(session_dir=session_dir)
+    paths = SessionPaths(parsed.session_id)
 
-    result = call_daemon(parsed, dict(os.environ), settings)
+    result = call_daemon(parsed, dict(os.environ), paths)
     if result is not None and result.output is not None:
         # exclude_none: Zod .optional() accepts undefined (absent) but NOT null.
         # Pydantic emits None as null by default; exclude_none omits those fields.

@@ -16,7 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from devinfra.claude.platform_utils import get_platform
-from devinfra.claude.settings import ENV_SESSION_DIR, HookSettings
+from devinfra.claude.session_paths import SessionPaths
+from devinfra.claude.settings import ENV_SESSION_DIR
 from util.bazel.subprocess import write_shell_wrapper
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,7 @@ class BazeliskSetup:
 
     bazelisk_path: Path
     wrapper_path: Path
-    settings: HookSettings
+    paths: SessionPaths
     bazelisk_skipped: bool = False
 
     @property
@@ -39,7 +40,7 @@ class BazeliskSetup:
         if self.bazelisk_skipped:
             return "skipped (wrapper installed)"
 
-        version = get_bazelisk_version(self.settings)
+        version = get_bazelisk_version(self.paths)
         if not version:
             return "not installed"
 
@@ -51,9 +52,9 @@ class BazeliskSetup:
         return f"{version} (no wrapper)"
 
 
-def get_bazelisk_version(settings: HookSettings) -> str | None:
+def get_bazelisk_version(paths: SessionPaths) -> str | None:
     """Get bazelisk version string, or None if not installed/working."""
-    bazelisk_path = settings.get_bazelisk_path()
+    bazelisk_path = paths.bazelisk_path
     if not bazelisk_path.exists():
         return None
     # Use --version (a bazelisk flag) instead of "version" (a bazel subcommand).
@@ -73,18 +74,18 @@ def get_bazelisk_url() -> str:
     return f"https://github.com/bazelbuild/bazelisk/releases/download/v{BAZELISK_VERSION}/{binary}"
 
 
-def install_bazelisk(settings: HookSettings) -> Path:
+def install_bazelisk(paths: SessionPaths) -> Path:
     """Download bazelisk to private location, returning the binary path.
 
     Installs to ~/.cache/claude-hooks/auth-proxy/bazelisk (private, not on PATH).
     The wrapper script in ~/.cache/claude-hooks/auth-proxy/bin/bazel will call this.
     Skips download if already installed.
     """
-    bazelisk_path = settings.get_bazelisk_path()
+    bazelisk_path = paths.bazelisk_path
     bazelisk_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Check if already installed
-    if get_bazelisk_version(settings):
+    if get_bazelisk_version(paths):
         logger.info("Bazelisk already installed: %s", bazelisk_path)
         return bazelisk_path
 
@@ -108,7 +109,7 @@ _WRAPPER_RUNTIME_LINES = (
 )
 
 
-def install_wrapper(settings: HookSettings, *, wrapper_dir: Path | None = None) -> Path:
+def install_wrapper(paths: SessionPaths, *, wrapper_dir: Path | None = None) -> Path:
     """Install wrapper script that sets proxy env vars before calling bazelisk.
 
     The wrapper is in ~/.cache/claude-hooks/auth-proxy/bin/bazel (web mode) or a
@@ -118,11 +119,11 @@ def install_wrapper(settings: HookSettings, *, wrapper_dir: Path | None = None) 
     (pre-commit, CI) that don't source the env file still have the session dir set.
 
     Args:
-        settings: Hook settings
-        wrapper_dir: Optional directory for wrappers (defaults to settings.get_wrapper_dir())
+        paths: Session paths
+        wrapper_dir: Optional directory for wrappers (defaults to paths.wrapper_dir)
     """
     if wrapper_dir is None:
-        wrapper_dir = settings.get_wrapper_dir()
+        wrapper_dir = paths.wrapper_dir
     wrapper_path = wrapper_dir / "bazel"
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
@@ -130,7 +131,7 @@ def install_wrapper(settings: HookSettings, *, wrapper_dir: Path | None = None) 
     write_shell_wrapper(
         wrapper_path,
         "devinfra.claude.bazel_wrapper",
-        baked_env={ENV_SESSION_DIR: settings.session_dir},
+        baked_env={ENV_SESSION_DIR: str(paths.session_dir)},
         extra_lines=_WRAPPER_RUNTIME_LINES,
     )
     logger.info("Installed bazel wrapper at %s", wrapper_path)

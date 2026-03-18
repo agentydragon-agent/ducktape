@@ -20,6 +20,7 @@ py_library(
     deps = [
         "//devinfra/claude:errors",
         "//devinfra/claude:managed_files",
+        "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//util:net",
         "@pypi//httpx",
@@ -37,6 +38,7 @@ py_library(
         ":client",
         "//devinfra/claude:errors",
         "//devinfra/claude:managed_files",
+        "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//util:net",
         "//util/bazel:subprocess",

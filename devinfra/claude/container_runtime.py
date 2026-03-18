@@ -39,6 +39,7 @@ from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.errors import SkipError
 from devinfra.claude.managed_files import write_config
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 from devinfra.claude.supervisor.client import ProcessInfo, ProcessState, SupervisorClient
 from devinfra.claude.supervisor.service_utils import log_service_failure, wait_for_service_socket
@@ -155,7 +156,7 @@ async def _start_service(
 # ============================================================================
 
 
-def _configure_docker(settings: HookSettings, tmpfs_mounted: bool) -> _RuntimeSpec:
+def _configure_docker(paths: SessionPaths, tmpfs_mounted: bool) -> _RuntimeSpec:
     """Write daemon.json and return the runtime spec for Docker.
 
     Configuration requirements for gVisor:
@@ -163,10 +164,10 @@ def _configure_docker(settings: HookSettings, tmpfs_mounted: bool) -> _RuntimeSp
     2. Use tmpfs for data-root (9p doesn't support overlay mounts)
     3. Disable bridge networking (only host networking works in gVisor)
     """
-    docker_dir = settings.get_docker_dir()
+    docker_dir = paths.docker_dir
     docker_dir.mkdir(parents=True, exist_ok=True)
 
-    data_root = settings.get_container_storage_dir()
+    data_root = paths.container_storage_dir
     driver = "overlay" if tmpfs_mounted else "vfs"
     data_root.mkdir(parents=True, exist_ok=True)
     logger.info("Using %s storage at %s", driver, data_root)
@@ -224,7 +225,7 @@ async def install_podman() -> None:
     logger.info("Podman and crun installed successfully")
 
 
-def _get_podman_socket_path(settings: HookSettings) -> Path:
+def _get_podman_socket_path(paths: SessionPaths) -> Path:
     """Return the podman Unix socket path.
 
     Unix sockets have a 108-character path limit (UNIX_PATH_MAX).  When
@@ -232,9 +233,7 @@ def _get_podman_socket_path(settings: HookSettings) -> Path:
     natural path can exceed this limit, so we use a short /tmp path with a
     hash for uniqueness.
     """
-    if settings.podman_socket is not None:
-        return settings.podman_socket
-    dir_hash = hashlib.sha256(str(settings.get_podman_dir()).encode()).hexdigest()[:12]
+    dir_hash = hashlib.sha256(str(paths.podman_dir).encode()).hexdigest()[:12]
     return Path(f"/tmp/claude-podman-{dir_hash}.sock")
 
 
@@ -245,7 +244,7 @@ def _install_crun_wrapper(podman_dir: Path, podman_config: Traversable) -> Path:
     return wrapper_path
 
 
-def _configure_podman(settings: HookSettings, tmpfs_mounted: bool) -> _RuntimeSpec:
+def _configure_podman(paths: SessionPaths, tmpfs_mounted: bool) -> _RuntimeSpec:
     """Write podman config files and return the runtime spec.
 
     Writes containers.conf, registries.conf, policy.json, storage.conf, and the
@@ -258,12 +257,12 @@ def _configure_podman(settings: HookSettings, tmpfs_mounted: bool) -> _RuntimeSp
     2. Host user namespace (userns = "host")
     3. run.oci.keep_original_groups=1 annotation (via crun-gvisor-wrapper)
     """
-    podman_dir = settings.get_podman_dir()
+    podman_dir = paths.podman_dir
     podman_dir.mkdir(parents=True, exist_ok=True)
 
     podman_config: Traversable = importlib.resources.files("devinfra.claude.config.podman")
 
-    storage_root = settings.get_container_storage_dir()
+    storage_root = paths.container_storage_dir
     driver = "overlay" if tmpfs_mounted else "vfs"
     storage_dir = storage_root / "storage"
     runroot_dir = storage_root / "run"
@@ -289,7 +288,7 @@ def _configure_podman(settings: HookSettings, tmpfs_mounted: bool) -> _RuntimeSp
         podman_dir / "policy.json", podman_config.joinpath("policy.json").read_text(), "policy.json", canary=False
     )
 
-    socket_path = _get_podman_socket_path(settings)
+    socket_path = _get_podman_socket_path(paths)
     socket_path.parent.mkdir(parents=True, exist_ok=True)
     socket_url = f"unix://{socket_path}"
 
@@ -317,11 +316,11 @@ def _configure_podman(settings: HookSettings, tmpfs_mounted: bool) -> _RuntimeSp
 # ============================================================================
 
 
-def get_storage_dir(settings: HookSettings) -> Path | None:
+def get_storage_dir(paths: SessionPaths, settings: HookSettings) -> Path | None:
     """Return the shared container storage directory for tmpfs mounting, or None if disabled."""
     if settings.container_runtime == "none":
         return None
-    return settings.get_container_storage_dir()
+    return paths.container_storage_dir
 
 
 def _cleanup_stale_docker_pid() -> None:
@@ -389,7 +388,7 @@ def _cleanup_stale_docker_pid() -> None:
 
 
 async def setup_container_runtime(
-    settings: HookSettings, supervisor: SupervisorClient, tmpfs_mounted: bool
+    paths: SessionPaths, settings: HookSettings, supervisor: SupervisorClient, tmpfs_mounted: bool
 ) -> ContainerRuntimeSetup:
     """Set up the configured container runtime (Docker or Podman) under supervisor.
 
@@ -405,9 +404,9 @@ async def setup_container_runtime(
     if runtime == "podman":
         if shutil.which("podman") is None:
             await install_podman()
-        spec = _configure_podman(settings, tmpfs_mounted)
+        spec = _configure_podman(paths, tmpfs_mounted)
     elif runtime == "docker":
-        spec = _configure_docker(settings, tmpfs_mounted)
+        spec = _configure_docker(paths, tmpfs_mounted)
     else:
         raise SkipError(f"Container runtime disabled (container_runtime={runtime})")
 
@@ -446,7 +445,7 @@ async def setup_container_runtime(
 
     def on_podman_failure(info: ProcessInfo) -> None:
         log_service_failure("Podman", info)
-        podman_dir = settings.get_podman_dir()
+        podman_dir = paths.podman_dir
         logger.error(
             "Common cause: storage driver mismatch. "
             "If podman was previously used with a different driver, run: rm -rf %s %s",
