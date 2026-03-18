@@ -93,13 +93,98 @@ when updated via control server.
 - [x] Phase 3: main.rs updated (new CLI flags, firecracker-init code path, UDS/vsock listeners)
 - [x] Phase 3: control_server.rs updated (mount_root, fs_sync, vsock, persist)
 - [x] Phase 4: BUILD.bazel updated (new source file, new deps, static-pie note)
+- [x] Phase 4: FIFREEZE/FITHAW ioctl values verified (0xC0045877, 0xC0045878 = `_IOWR('X', 119/120, int)`)
+- [x] Phase 4: `create_device_nodes()` implemented and wired into `mount_essential_filesystems()`
+- [x] Phase 4: `scrub_auth_tokens()` verified complete (scrubs `/mount_config.json` and `/tmp/rclone-mount-config.json`)
+- [x] Phase 4: Binary string comparison (1775 strings extracted, cross-referenced with source)
 - [x] Phase 5: Documentation updated
+
+## Phase 4 String Comparison Findings
+
+### FIFREEZE/FITHAW Verification
+
+Confirmed correct against Linux kernel headers:
+
+- `FIFREEZE = _IOWR('X', 119, int) = 0xC0045877`
+- `FITHAW = _IOWR('X', 120, int) = 0xC0045878`
+
+### Device Nodes
+
+Binary string evidence shows only 4 device paths as standalone literals:
+`/dev/null`, `/dev/random`, `/dev/urandom`, `/dev/tty`. Updated
+`create_device_nodes()` to match (removed `/dev/zero`, `/dev/console`,
+`/dev/ptmx` which were speculative). Now called from
+`mount_essential_filesystems()`.
+
+### JWT Authentication (NOT YET IMPLEMENTED)
+
+Major missing functionality. The binary contains a full JWT authentication
+flow in the WebSocket connection handler (`io.rs`), guarded by the
+`/auth_public_key` control server endpoint. Key strings found in binary
+but not in source:
+
+**WebSocket JWT flow** (first message routing):
+
+- `"[DEBUG] Unexpected first byte '"`
+- `"': expected '{' (JSON) or 'e' (JWT)"`
+- `"[DEBUG] Received JWT token, verifying..."`
+- `"[DEBUG] JWT verified successfully: sub='"`
+- `"[DEBUG] JWT verification failed: "`
+- `"[DEBUG] No auth public key loaded, accepting JWT without verification"`
+- `"[DEBUG] Received ProcessConnection JSON (no JWT)"`
+- `"[DEBUG] Failed to get ProcessConnection after JWT: "`
+- `"Client closed connection after JWT"`
+- `"Second message after JWT should be text json CreateProcess"`
+- `"Empty first message"`
+
+**JWT validation errors** (from jsonwebtoken crate):
+
+- `"Invalid JWT claims: "`, `"JWT authentication failed: "`
+- `"JWT decode error: "`, `"JWT key error: "`
+- `"Invalid JWT signature"`, `"JWT token has expired"`
+
+**Control server auth endpoint** (`POST /auth_public_key`):
+
+- `"[CONTROL] Auth public key set successfully"`
+- `"[CONTROL] Invalid auth public key: "`
+- `"Invalid base64 for auth public key: "`
+- `"Ed25519 public key must be exactly 32 bytes, got "`
+- `"Auth public key must be exactly 32 bytes (raw Ed25519), got "`
+- `"[CONTROL] Failed to persist auth key to container_info.json: "`
+- `"[WARN] Failed to load auth key:"`
+
+**Implications**: The first WebSocket message is inspected by its first byte:
+`'{'` routes to JSON (CreateProcess/ProcessConnection), `'e'` routes to JWT
+token (base64url-encoded JWT starts with `ey`). After JWT verification, a
+second message carries the actual CreateProcess/ProcessConnection JSON. The
+auth public key is an Ed25519 key set via the control server and persisted
+to `/container_info.json`.
+
+### Control Server Vsock CID Validation
+
+Binary string found: `"[CONTROL] [SECURITY] Rejected connection from non-host CID "`.
+Not in source (vsock control server is a stub). Requires tokio-vsock.
+
+### tokio-vsock and jsonwebtoken Crate Status
+
+Neither `tokio-vsock` nor `jsonwebtoken` exist in the root `Cargo.toml`.
+They remain commented out in `BUILD.bazel`. Adding them requires:
+
+1. Add crate entries to root `Cargo.toml`
+2. Run `CARGO_BAZEL_REPIN=1 bazel build @crates//:all`
+3. Uncomment deps in `BUILD.bazel`
+
+Binary confirms versions via panic paths:
+
+- `jsonwebtoken-9.3.1` (at `artifactory.infra.ant.dev-7db23613d841872b`)
+- `tokio-vsock-0.7.2` (at `artifactory.infra.ant.dev-7db23613d841872b`)
+- `ring-0.17.14` (Ed25519 signing, dependency of jsonwebtoken)
 
 ## Open Items
 
-- [ ] Full vsock listener implementation (requires tokio-vsock in Bazel)
-- [ ] UDS WebSocket adapter (requires stream type conversion)
-- [ ] JWT validation integration in auth endpoints
-- [ ] FIFREEZE/FITHAW ioctl number verification
+- [ ] Full vsock listener implementation (requires tokio-vsock in `Cargo.toml` + Bazel repin)
+- [ ] JWT authentication flow in `io.rs` WebSocket handler (requires jsonwebtoken in `Cargo.toml` + Bazel repin)
+- [ ] `POST /auth_public_key` endpoint in `control_server.rs` (Ed25519 key, base64-encoded)
+- [ ] Auth key persistence/loading from `/container_info.json`
 - [ ] Network ioctl implementation detail (SIOCSIFADDR etc.)
 - [ ] Behavioral test harness

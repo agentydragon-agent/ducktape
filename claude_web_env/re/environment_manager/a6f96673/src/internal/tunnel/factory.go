@@ -7,6 +7,7 @@ package tunnel
 import (
 	"log/slog"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/dogmetrics"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/manager"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/tunnel/actions"
 )
@@ -24,15 +25,16 @@ func init() {
 //
 //	0: logger (*slog.Logger)
 //	1: ctx (context.Context) - not used by NewClient
-//	2: sessionID (string) - used as metricsKey and tunnelID
-//	3: apiURL (string) - not directly used
-//	4: tunnelEndpoint (string)
-//	5: sessionConfig (interface{}) - not directly used
-//	6: authToken (string)
-//	7: actionRegistry (*actions.Registry) - optional
+//	2: metricsClient (dogmetrics.Client) - DataDog metrics client
+//	3: sessionID (string) - used as tunnelID
+//	4: apiURL (string) - not directly used
+//	5: tunnelEndpoint (string)
+//	6: sessionConfig (interface{}) - not directly used
+//	7: authToken (string)
+//	8: actionRegistry (*actions.Registry) - optional
 func newTunnelClientFactory(opts ...interface{}) manager.TunnelClient {
 	// Validate minimum parameters
-	if len(opts) < 7 {
+	if len(opts) < 8 {
 		return nil
 	}
 
@@ -42,35 +44,36 @@ func newTunnelClientFactory(opts ...interface{}) manager.TunnelClient {
 		return nil
 	}
 
-	sessionID, ok := opts[2].(string)
+	metricsClient, _ := opts[2].(dogmetrics.Client)
+
+	sessionID, ok := opts[3].(string)
 	if !ok {
 		return nil
 	}
 
-	tunnelEndpoint, ok := opts[4].(string)
+	tunnelEndpoint, ok := opts[5].(string)
 	if !ok {
 		return nil
 	}
 
-	authToken, ok := opts[6].(string)
+	authToken, ok := opts[7].(string)
 	if !ok {
 		return nil
 	}
 
 	// Extract optional action registry
 	var registry *actions.Registry
-	if len(opts) >= 8 {
-		if reg, ok := opts[7].(*actions.Registry); ok {
+	if len(opts) >= 9 {
+		if reg, ok := opts[8].(*actions.Registry); ok {
 			registry = reg
 		}
 	}
 
 	// Create the tunnel client
-	// Use sessionID as both metricsKey and tunnelID (common pattern in the codebase)
 	client := NewClient(
 		logger,
-		sessionID, // metricsKey
-		sessionID, // tunnelID
+		metricsClient, // dogmetrics.Client (may be nil)
+		sessionID,     // tunnelID
 		tunnelEndpoint,
 		authToken,
 		registry,

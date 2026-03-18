@@ -5,4 +5,7 @@ go_library(
     srcs = ["dogmetrics.go"],
     importpath = "github.com/anthropics/anthropic/api-go/environment-manager/internal/dogmetrics",
     visibility = ["//claude_web_env/re/environment_manager/a6f96673/src:__subpackages__"],
+    deps = [
+        "@com_github_datadog_datadog_go_v5//statsd",
+    ],
 )

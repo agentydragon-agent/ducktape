@@ -6,11 +6,17 @@
 package deploy
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -276,12 +282,120 @@ func (a *DeployAction) executeAntspace(
 	}, nil
 }
 
-// CreateTarball creates a gzipped tarball of the given files from the project directory.
+// CreateTarball creates a gzipped tarball by walking the project directory.
 //
-// Binary: present in deploy package (CollectFiles.func1 and CreateTarball.func1 visible)
+// Binary address: 0xb9d1c0
+// Binary uses filepath.WalkDir with a closure (CreateTarball.func1 at 0xb9d520).
+//
+// Flow:
+//  1. Create bytes.Buffer
+//  2. Create gzip.NewWriterLevel(buf, gzip.BestCompression) -- binary passes -1 (0xffffffffffffffff)
+//     which maps to flate.BestCompression (level 9)
+//  3. Create tar.NewWriter(gzipWriter)
+//  4. Walk projectDir with filepath.WalkDir closure
+//  5. Closure (func1): skip directories, compute relative path, get FileInfo,
+//     create tar header via tar.FileInfoHeader, set Name to relative path,
+//     write header, read file content via os.ReadFile, accumulate total size
+//     (limit 100MB = 0x6400000), write content to tar
+//  6. Close tar writer, close gzip writer
+//  7. Return buffer bytes
+//
+// Error strings from binary:
+//   - "walk error at %s: %w"
+//   - "failed to compute relative path for %s: %w"
+//   - "failed to get info for %s: %w"
+//   - "failed to create tar header for %s: %w"
+//   - "failed to write tar header for %s: %w"
+//   - "failed to read %s: %w"
+//   - "project exceeds %dMB limit"
+//   - "failed to write tar data for %s: %w"
+//   - "failed to create tarball from %s: %w"
+//   - "failed to close tar writer: %w"
+//   - "failed to close gzip writer: %w"
 func CreateTarball(projectDir string, files []FileEntry) ([]byte, error) {
-	// TODO(re): Full implementation pending disassembly of CreateTarball
-	return nil, fmt.Errorf("CreateTarball: not yet implemented")
+	var buf bytes.Buffer
+	gzWriter, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+	tw := tar.NewWriter(gzWriter)
+
+	var totalSize int64
+
+	err := filepath.WalkDir(projectDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("walk error at %s: %w", path, err)
+		}
+
+		// Skip directories (binary: bt $0x1b,%eax checks IsDir bit)
+		if d.IsDir() {
+			return nil
+		}
+
+		// Compute relative path
+		relPath, err := filepath.Rel(projectDir, path)
+		if err != nil {
+			return fmt.Errorf("failed to compute relative path for %s: %w", path, err)
+		}
+
+		// Get file info for tar header
+		info, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("failed to get info for %s: %w", path, err)
+		}
+
+		// Create tar header from file info
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return fmt.Errorf("failed to create tar header for %s: %w", path, err)
+		}
+
+		// Set the Name to the relative path (binary: 0xb9d80e stores relPath at header offset 0x10)
+		header.Name = relPath
+
+		// Write header
+		if err := tw.WriteHeader(header); err != nil {
+			return fmt.Errorf("failed to write tar header for %s: %w", path, err)
+		}
+
+		// Check if regular file (binary: calls d.Type().IsRegular())
+		if !info.Mode().IsRegular() {
+			return nil
+		}
+
+		// Increment file count (binary: incq at closure captured counter)
+
+		// Read file content
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", path, err)
+		}
+
+		// Accumulate total size and check limit (100MB = 0x6400000)
+		totalSize += int64(len(content))
+		if totalSize > 0x6400000 {
+			return fmt.Errorf("project exceeds %dMB limit", 100)
+		}
+
+		// Write file content to tar
+		if _, err := tw.Write(content); err != nil {
+			return fmt.Errorf("failed to write tar data for %s: %w", path, err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create tarball from %s: %w", projectDir, err)
+	}
+
+	// Close tar writer
+	if err := tw.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close tar writer: %w", err)
+	}
+
+	// Close gzip writer
+	if err := gzWriter.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }
 
 // Ensure DeployAction implements actions.Action.

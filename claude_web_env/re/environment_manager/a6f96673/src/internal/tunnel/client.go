@@ -45,16 +45,16 @@ type WSResponseSender interface {
 //
 // Binary address: type at multiple locations; see individual methods.
 type Client struct {
-	logger     *slog.Logger       // offset 0x00
-	metricsKey string             // offset 0x08 (ptr + len)
-	httpClient *httpClientWrapper // offset 0x10
-	wsHandler  *WSHandler         // offset 0x18
-	tunnelID   string             // offset 0x20 (ptr + len)
-	endpoint   string             // offset 0x30 (ptr + len)
-	authToken  string             // offset 0x40 (ptr + len)
-	registry   *actions.Registry  // offset 0x50
-	conn       *websocket.Conn    // offset 0x58
-	mu         isync.Mutex        // offset 0x60
+	logger        *slog.Logger       // offset 0x00
+	metricsClient dogmetrics.Client  // offset 0x08 (interface: itab + data, 16 bytes)
+	httpClient    *httpClientWrapper // offset 0x18
+	wsHandler     *WSHandler         // offset 0x20
+	tunnelID      string             // offset 0x28 (ptr + len)
+	endpoint      string             // offset 0x38 (ptr + len)
+	authToken     string             // offset 0x48 (ptr + len)
+	registry      *actions.Registry  // offset 0x58
+	conn          *websocket.Conn    // offset 0x60
+	mu            isync.Mutex        // offset 0x68
 	// ... additional internal fields
 	handler      *Handler
 	writeTimeout time.Duration // offset 0x110, default 30s (0x6fc23ac00)
@@ -90,7 +90,7 @@ type wsResponseSender struct {
 // Binary address: 0xb60520
 func NewClient(
 	logger *slog.Logger,
-	metricsKey string,
+	metricsClient dogmetrics.Client,
 	tunnelID string,
 	endpoint string,
 	authToken string,
@@ -118,7 +118,7 @@ func NewClient(
 	wsHandler := newWSHandler(logger, httpWrapper, handler)
 
 	c.logger = logger
-	c.metricsKey = metricsKey
+	c.metricsClient = metricsClient
 	c.httpClient = httpWrapper
 	c.wsHandler = wsHandler
 	c.tunnelID = tunnelID
@@ -423,7 +423,7 @@ func (c *Client) pingLoop(ctx context.Context, cancel context.CancelCauseFunc, c
 			c.mu.Unlock()
 
 			if err != nil {
-				dogmetrics.Incr(c.metricsKey, "tunnel.ping_failed")
+				dogmetrics.Incr(c.metricsClient, "tunnel.ping_failed")
 				slog.Warn("tunnel ping failed", "error", err)
 				return err
 			}
@@ -464,14 +464,14 @@ func (c *Client) connectWithRetries(ctx context.Context) error {
 			"tunnel_id", c.tunnelID,
 		)
 
-		dogmetrics.Incr(c.metricsKey, "tunnel.connect_attempt")
+		dogmetrics.Incr(c.metricsClient, "tunnel.connect_attempt")
 
 		err := c.Connect(ctx)
 		if err == nil {
 			return nil
 		}
 
-		dogmetrics.Incr(c.metricsKey, "tunnel.connect_failed")
+		dogmetrics.Incr(c.metricsClient, "tunnel.connect_failed")
 
 		// Unwrap the error for logging
 		errMsg := err.Error()
@@ -528,7 +528,7 @@ func (c *Client) ConnectAndRun(ctx context.Context) error {
 				"tunnel_id", c.tunnelID,
 			)
 
-			dogmetrics.Incr(c.metricsKey, "tunnel.disconnected")
+			dogmetrics.Incr(c.metricsClient, "tunnel.disconnected")
 			c.closeConnection()
 			continue
 		}
@@ -588,14 +588,14 @@ func (c *Client) sendResponse(resp *tunnelpb.TunnelResponse) error {
 	// Marshal response to protojson
 	data, err := protojson.Marshal(resp)
 	if err != nil {
-		dogmetrics.Incr(c.metricsKey, "tunnel.send_response_marshal_failed")
+		dogmetrics.Incr(c.metricsClient, "tunnel.send_response_marshal_failed")
 		slog.Error("failed to marshal tunnel response", "error", err)
 		return fmt.Errorf("failed to marshal tunnel response: %w", err)
 	}
 
 	// Write the message
 	if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		dogmetrics.Incr(c.metricsKey, "tunnel.send_response_write_failed")
+		dogmetrics.Incr(c.metricsClient, "tunnel.send_response_write_failed")
 		slog.Error("failed to send tunnel response",
 			"error", err,
 			"tunnel_id", c.tunnelID,

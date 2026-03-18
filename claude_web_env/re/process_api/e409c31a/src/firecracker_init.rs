@@ -240,6 +240,13 @@ pub fn apply_mount_config(config: &MountRootConfig) -> Result<String, String> {
     let start = Instant::now();
     let mut status_parts = Vec::new();
 
+    // Thaw the root filesystem if resuming from a frozen snapshot.
+    // Binary: "[INIT] Thawed /  resumed from frozen full-checkpoint snapshot"
+    // The VM may have been frozen with FIFREEZE before snapshotting.
+    if let Err(e) = thaw_root() {
+        eprintln!("[INIT] FITHAW failed (continuing): {e}");
+    }
+
     // Mount root filesystem from /dev/vda
     mount_root_and_pivot(&config.destination)?;
 
@@ -380,6 +387,9 @@ fn mount_essential_filesystems() {
         let _ = std::fs::create_dir_all(&path);
         libc_mount("cgroup", &path, "cgroup", 0, controller);
     }
+
+    // Create device nodes that devtmpfs may not auto-populate in Firecracker
+    create_device_nodes();
 
     eprintln!("[INIT] Essential filesystems mounted");
 }
@@ -643,8 +653,22 @@ fn spawn_rclone_mount(mount: &FuseMountConfig, config: &MountRootConfig) -> Resu
     eprintln!("[INIT] Spawning: {cmd_str}");
 
     match std::process::Command::new(rclone_bin).args(&args).spawn() {
-        Ok(child) => {
-            eprintln!("[INIT] Spawned {cmd_str} (pid={})", child.id());
+        Ok(mut child) => {
+            let pid = child.id();
+            eprintln!("[INIT] Spawned {cmd_str} (pid={pid})");
+            // Brief delay then check if the process exited immediately (e.g., bad config)
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    eprintln!(
+                        "[INIT] WARNING: try_wait on rclone (pid={pid}): exited with {status}"
+                    );
+                }
+                Ok(None) => {} // Still running — expected
+                Err(e) => {
+                    eprintln!("[INIT] WARNING: try_wait on rclone (pid={pid}): {e}");
+                }
+            }
             Ok(())
         }
         Err(e) => Err(format!("Failed to spawn rclone: {e}")),
@@ -845,20 +869,24 @@ fn drop_cap_sys_resource() {
 /// Create essential device nodes via mknod.
 /// Xrefs: "[INIT] Created device nodes via mknod"
 ///
-/// Creates /dev/null, /dev/zero, /dev/random, /dev/urandom, /dev/tty,
-/// /dev/console, and /dev/ptmx — the standard set needed for a minimal
-/// Linux init environment.
-#[allow(dead_code)]
+/// Creates /dev/null, /dev/random, /dev/urandom, /dev/tty — the devices
+/// confirmed present as string literals in the binary (at offsets near
+/// 0x28c66f). Called from mount_essential_filesystems() after mounting
+/// devtmpfs on /dev, to ensure these nodes exist even if devtmpfs doesn't
+/// auto-populate them in Firecracker.
+///
+/// Binary string evidence: `/dev/null`, `/dev/random`, `/dev/urandom`,
+/// `/dev/tty` are standalone strings. `/dev/zero`, `/dev/console`, and
+/// `/dev/ptmx` were NOT found; they are likely provided by devtmpfs or
+/// /dev/pts automatically.
 fn create_device_nodes() {
     // (path, mode, major, minor)
+    // Only the devices confirmed in binary string literals.
     let devices: &[(&str, u32, u32, u32)] = &[
         ("/dev/null", libc::S_IFCHR | 0o666, 1, 3),
-        ("/dev/zero", libc::S_IFCHR | 0o666, 1, 5),
         ("/dev/random", libc::S_IFCHR | 0o666, 1, 8),
         ("/dev/urandom", libc::S_IFCHR | 0o666, 1, 9),
         ("/dev/tty", libc::S_IFCHR | 0o666, 5, 0),
-        ("/dev/console", libc::S_IFCHR | 0o600, 5, 1),
-        ("/dev/ptmx", libc::S_IFCHR | 0o666, 5, 2),
     ];
 
     for (path, mode, major, minor) in devices {
@@ -1018,6 +1046,8 @@ fn configure_default_route(sock: i32, gateway: &str) {
 /// Freeze the root filesystem (FIFREEZE ioctl).
 /// Xrefs: "[CONTROL] Freezing / ...", "[CONTROL] / frozen",
 ///   "[CONTROL] FIFREEZE failed (continuing): ..."
+///
+/// FIFREEZE = _IOWR('X', 119, int) = 0xC0045877 (verified against Linux headers)
 pub fn freeze_root() -> Result<(), String> {
     let fd = unsafe { libc::open(c"/".as_ptr(), libc::O_RDONLY) };
     if fd < 0 {
@@ -1027,7 +1057,7 @@ pub fn freeze_root() -> Result<(), String> {
         ));
     }
 
-    // FIFREEZE = 0xC0045877
+    // FIFREEZE = _IOWR('X', 119, int) = 0xC0045877
     let ret = unsafe { libc::ioctl(fd, 0xC0045877, 0) };
     unsafe {
         libc::close(fd);
@@ -1044,8 +1074,10 @@ pub fn freeze_root() -> Result<(), String> {
 }
 
 /// Thaw the root filesystem (FITHAW ioctl).
-/// Xrefs: "[INIT] Thawed / ..."
-#[allow(dead_code)]
+/// Xrefs: "[INIT] Thawed / ", " resumed from frozen full-checkpoint snapshot"
+///
+/// FIFREEZE = _IOWR('X', 119, int) = 0xC0045877 (verified against Linux headers)
+/// FITHAW   = _IOWR('X', 120, int) = 0xC0045878 (verified against Linux headers)
 pub fn thaw_root() -> Result<(), String> {
     let fd = unsafe { libc::open(c"/".as_ptr(), libc::O_RDONLY) };
     if fd < 0 {
@@ -1067,7 +1099,7 @@ pub fn thaw_root() -> Result<(), String> {
             std::io::Error::last_os_error()
         ))
     } else {
-        eprintln!("[INIT] Thawed / ");
+        eprintln!("[INIT] Thawed /  resumed from frozen full-checkpoint snapshot");
         Ok(())
     }
 }
