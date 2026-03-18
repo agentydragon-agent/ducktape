@@ -29,8 +29,6 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	var cpIP, discIP string
 	var linkIPA, linkIPB string
 	var cpRoutes, workerARoutes, workerBRoutes []*v1alpha1.Route
-	// peerSubnetA/B are passed as kernel cmdline args to kubespand VMs.
-	var peerSubnetA, peerSubnetB string
 
 	switch topology {
 	case "flat":
@@ -43,8 +41,6 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 		discIP = "10.1.0.254"
 		linkIPA = "10.1.0.1"
 		linkIPB = "10.2.0.1"
-		peerSubnetA = "10.2.0.0/24,10.0.0.0/24"
-		peerSubnetB = "10.1.0.0/24,10.0.0.0/24"
 		cpRoutes = []*v1alpha1.Route{
 			{RouteNetwork: "10.1.0.0/24"},
 			{RouteNetwork: "10.2.0.0/24"},
@@ -95,15 +91,13 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	case h.NodeTypeKubespand:
 		cfgB := h.NewTestAgentConfig(creds, discAddr, cpEndpoint)
 		cfgB.Kubespan.ListenPort = 51821
+		cfgB.Network.Interface = "eth0"
+		cfgB.Network.Routes = workerBRoutes
 		cidataB := h.CreateKubespandCIDATA(t, tmpDir, "vm-b", cfgB)
 
-		vmBArgs := fmt.Sprintf("role=vm-b link_ip=%s", linkIPB)
-		if peerSubnetB != "" {
-			vmBArgs += fmt.Sprintf(" peer_subnet=%s", peerSubnetB)
-		}
 		bAPIPort := h.RandomPort()
 		vmB := h.BootVM(t, "vm-b", vmlinuz, kubespandInitramfs,
-			vmBArgs,
+			fmt.Sprintf("role=vm-b link_ip=%s", linkIPB),
 			append(h.McastNIC("net0", mcastAddr, h.NodeBMAC), h.CIDATADrive(cidataB)...),
 			h.PortForward{GuestPort: h.COSIGuestPort},
 			h.PortForward{HostPort: bAPIPort, GuestPort: h.ApidGuestPort})
@@ -111,15 +105,13 @@ func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 
 		cfgA := h.NewTestAgentConfig(creds, discAddr, cpEndpoint)
 		cfgA.Kubespan.ListenPort = 51820
+		cfgA.Network.Interface = "eth0"
+		cfgA.Network.Routes = workerARoutes
 		cidataA := h.CreateKubespandCIDATA(t, tmpDir, "vm-a", cfgA)
 
-		vmAArgs := fmt.Sprintf("role=vm-a link_ip=%s", linkIPA)
-		if peerSubnetA != "" {
-			vmAArgs += fmt.Sprintf(" peer_subnet=%s", peerSubnetA)
-		}
 		aAPIPort := h.RandomPort()
 		vmA := h.BootVM(t, "vm-a", vmlinuz, kubespandInitramfs,
-			vmAArgs,
+			fmt.Sprintf("role=vm-a link_ip=%s", linkIPA),
 			append(h.McastNIC("net0", mcastAddr, h.NodeAMAC), h.CIDATADrive(cidataA)...),
 			h.PortForward{GuestPort: h.COSIGuestPort},
 			h.PortForward{HostPort: aAPIPort, GuestPort: h.ApidGuestPort})

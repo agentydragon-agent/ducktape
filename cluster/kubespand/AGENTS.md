@@ -36,6 +36,31 @@ kubespand code:
   agentconfig/               ↔  (kubespand-only: YAML config + COSI resource)
 ```
 
+## Cost Framing
+
+kubespand's cost is the **size of the delta** from Talos — the glue code, shims, and
+patches needed to bridge kubespand's YAML-config world to Talos's COSI controller world.
+Code imported directly from Talos (via `@talos_internal` or `@com_github_siderolabs_talos`)
+is free — it's an upstream dependency, not ducktape LOC.
+
+**Prefer importing a 3k-LOC Talos controller over writing a 300-LOC reimplementation**,
+if the controller works as a drop-in. Examples:
+
+- `RouteConfigController` (346 LOC), `RouteMergeController` (42 LOC): imported directly,
+  our cost is ~25 LOC of glue (`NetworkConfig` struct, `DeviceConfigSpec` shim, registration).
+- `PeerSpecController`, `EndpointController`: imported directly from `@talos_internal`.
+- `KubePrismController`, `APIController`, `APICertSANsController`: imported directly.
+
+When evaluating whether to import vs reimplement, consider:
+
+1. **Does it work as a drop-in?** Check what resources it reads/writes, and whether
+   kubespand can produce the required inputs (possibly via a shim).
+2. **Does it pull in unwanted dependencies?** Some Talos controllers depend on `machined`
+   internals (udev, STATE partition) that don't exist on non-Talos hosts.
+3. **Is the shim simpler than the reimplementation?** e.g., `DeviceConfigSpec` shim
+   (~10 LOC) vs importing `DeviceConfigController` (245 LOC of device selector/bond
+   expansion we don't need).
+
 **Rules:**
 
 1. **Upstream Talos code lives in `@talos_internal`** — `go_library` targets in

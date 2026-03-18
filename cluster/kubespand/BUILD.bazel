@@ -40,6 +40,8 @@ go_library(
         "@com_github_siderolabs_talos//internal/app/machined/pkg/controllers/runtime",
         "@com_github_siderolabs_talos//internal/app/machined/pkg/controllers/secrets",
         "@com_github_siderolabs_talos//internal/app/machined/pkg/runtime",
+        "@com_github_siderolabs_talos_pkg_machinery//config/config",
+        "@com_github_siderolabs_talos_pkg_machinery//config/types/v1alpha1",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_siderolabs_talos_pkg_machinery//resources/network",
         "@com_github_siderolabs_talos_pkg_machinery//resources/secrets",

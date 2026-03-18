@@ -98,6 +98,19 @@ cluster:
 #   # Local port to listen on. Default: 7445.
 #   port: 7445
 
+# network:
+#   # Host network interface name. Used for static route management.
+#   # Default: "eth0".
+#   interface: "eth0"
+#
+#   # Static routes managed by kubespand via the Talos route pipeline
+#   # (RouteConfigController → RouteMergeController → RouteSpecController).
+#   # Uses Talos v1alpha1.Route format.
+#   routes:
+#     - network: "10.2.0.0/24"
+#     - network: "10.0.0.0/24"
+#       gateway: "10.1.0.1"
+
 # api:
 #   # Unix socket path for the COSI state + MachineService gRPC server.
 #   # Exposes all kubespand resources (peer status, affiliates, identity, etc.)

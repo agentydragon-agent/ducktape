@@ -9,6 +9,7 @@
 //   - runtime.DevicesStatus — devices ready gate (always true for non-Talos hosts)
 //   - network.NodeAddressFilter — K8s subnet exclusion for NodeAddressController
 //   - network.NodeAddressSortAlgorithm — address sorting config
+//   - network.DeviceConfigSpec — static routes shim for RouteConfigController
 //
 // This mirrors Talos's pattern where MachineConfig is decomposed into
 // domain-specific config resources by dedicated controllers.
@@ -27,6 +28,7 @@ import (
 
 	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
+	"github.com/siderolabs/talos/pkg/machinery/config/config"
 	"github.com/siderolabs/talos/pkg/machinery/nethelpers"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	talosconfig "github.com/siderolabs/talos/pkg/machinery/resources/config"
@@ -49,6 +51,11 @@ type ConfigController struct {
 	// KubernetesServiceCIDRs are K8s service network ranges to exclude from
 	// node addresses (injected into NodeAddressFilter).
 	KubernetesServiceCIDRs []netip.Prefix
+
+	// NetworkDevice is the shim device config for RouteConfigController.
+	// Wraps the host interface name and static routes from YAML config as a
+	// Talos DeviceConfigSpec, feeding the standard route pipeline.
+	NetworkDevice config.Device
 }
 
 // Name implements controller.Controller.
@@ -72,6 +79,7 @@ func (ctrl *ConfigController) Outputs() []controller.Output {
 		{Type: runtime.DevicesStatusType, Kind: controller.OutputExclusive},
 		{Type: network.NodeAddressFilterType, Kind: controller.OutputExclusive},
 		{Type: network.NodeAddressSortAlgorithmType, Kind: controller.OutputExclusive},
+		{Type: network.DeviceConfigSpecType, Kind: controller.OutputShared},
 	}
 }
 
@@ -187,6 +195,23 @@ func (ctrl *ConfigController) Run(ctx context.Context, r controller.Runtime, log
 			},
 		); err != nil {
 			return fmt.Errorf("writing node address sort algorithm: %w", err)
+		}
+
+		// DeviceConfigSpec shim: wraps the host interface + routes from YAML
+		// config as a Talos DeviceConfigSpec. This feeds RouteConfigController
+		// which converts routes to RouteSpecSpec via processDevicesConfiguration.
+		// Simpler than importing DeviceConfigController (245 LOC) which does
+		// device selector/bond expansion we don't need.
+		if ctrl.NetworkDevice != nil {
+			if err := safe.WriterModify(ctx, r,
+				network.NewDeviceConfig("kubespand/000", ctrl.NetworkDevice),
+				func(res *network.DeviceConfigSpec) error {
+					res.TypedSpec().Device = ctrl.NetworkDevice
+					return nil
+				},
+			); err != nil {
+				return fmt.Errorf("writing device config spec: %w", err)
+			}
 		}
 
 		logger.Info("config resources injected via COSI controller")

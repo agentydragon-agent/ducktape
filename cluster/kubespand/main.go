@@ -13,6 +13,8 @@ import (
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
 	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	v1alpha1runtime "github.com/siderolabs/talos/internal/app/machined/pkg/runtime"
+	"github.com/siderolabs/talos/pkg/machinery/config/config"
+	"github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/version"
 	"go.uber.org/zap"
@@ -105,12 +107,26 @@ func run(configPath string, logger *zap.Logger) error {
 		return fmt.Errorf("creating controller runtime: %w", err)
 	}
 
+	// Build the network device shim for RouteConfigController if routes are configured.
+	var networkDevice config.Device
+	if len(cfg.Network.Routes) > 0 {
+		iface := cfg.Network.Interface
+		if iface == "" {
+			iface = "eth0"
+		}
+		networkDevice = &v1alpha1.Device{
+			DeviceInterface: iface,
+			DeviceRoutes:    cfg.Network.Routes,
+		}
+	}
+
 	// Register controllers.
 	if err := rt.RegisterController(&kubespandctrl.ConfigController{
 		KubespanSpec:           kubespanSpec,
 		ClusterSpec:            clusterSpec,
 		AgentSpec:              agentSpec,
 		KubernetesServiceCIDRs: cfg.Kubernetes.ServiceCIDRs,
+		NetworkDevice:          networkDevice,
 	}); err != nil {
 		return fmt.Errorf("registering config controller: %w", err)
 	}
@@ -167,6 +183,12 @@ func run(configPath string, logger *zap.Logger) error {
 	}
 	if err := rt.RegisterController(&taloscontrollersnetwork.RouteSpecController{}); err != nil {
 		return fmt.Errorf("registering route spec controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersnetwork.RouteConfigController{}); err != nil {
+		return fmt.Errorf("registering route config controller: %w", err)
+	}
+	if err := rt.RegisterController(taloscontrollersnetwork.NewRouteMergeController()); err != nil {
+		return fmt.Errorf("registering route merge controller: %w", err)
 	}
 	if err := rt.RegisterController(&taloscontrollerskubespan.EndpointController{}); err != nil {
 		return fmt.Errorf("registering endpoint controller: %w", err)
