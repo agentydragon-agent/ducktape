@@ -281,11 +281,7 @@ func (w *MeshNode) DumpNetstat(t *testing.T) {
 
 	for _, msg := range resp.Messages {
 		for _, rec := range msg.Connectrecord {
-			w.Logf("%s %s:%d -> %s:%d state=%s",
-				rec.L4Proto,
-				rec.Localip, rec.Localport,
-				rec.Remoteip, rec.Remoteport,
-				rec.State)
+			w.Logf("netstat: %+v", rec)
 		}
 	}
 }

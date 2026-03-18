@@ -99,8 +99,7 @@ cluster:
 #   port: 7445
 
 # network:
-#   # Host network interface name. Used for static route management.
-#   # Default: "eth0".
+#   # Host network interface name. Required when routes are configured.
 #   interface: "eth0"
 #
 #   # Static routes managed by kubespand via the Talos route pipeline

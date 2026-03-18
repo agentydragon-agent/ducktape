@@ -110,12 +110,11 @@ func run(configPath string, logger *zap.Logger) error {
 	// Build the network device shim for RouteConfigController if routes are configured.
 	var networkDevice config.Device
 	if len(cfg.Network.Routes) > 0 {
-		iface := cfg.Network.Interface
-		if iface == "" {
-			iface = "eth0"
+		if cfg.Network.Interface == "" {
+			return fmt.Errorf("network.interface is required when network.routes are configured")
 		}
 		networkDevice = &v1alpha1.Device{
-			DeviceInterface: iface,
+			DeviceInterface: cfg.Network.Interface,
 			DeviceRoutes:    cfg.Network.Routes,
 		}
 	}

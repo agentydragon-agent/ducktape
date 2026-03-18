@@ -43,7 +43,7 @@ type AgentConfig struct {
 // Routes use Talos's v1alpha1.Route type directly, fed through the standard
 // Talos route pipeline (RouteConfigController → RouteMergeController → RouteSpecController).
 type NetworkConfig struct {
-	// Interface is the network interface for static routes. Default: "eth0".
+	// Interface is the network interface for static routes. Required when routes are configured.
 	Interface string `yaml:"interface,omitempty"`
 	// Routes are static routes to apply on the host interface.
 	// Uses the same type as Talos machine config routes.
