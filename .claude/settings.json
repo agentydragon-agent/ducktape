@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool install https://github.com/agentydragon/ducktape/releases/download/ducktape-e9e84d37/ducktape-0.1.0-py3-none-any.whl --force >&2"
+            "command": "uv tool install https://github.com/agentydragon/ducktape/releases/download/ducktape-ab388584/ducktape-0.1.0-py3-none-any.whl --force >&2"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool install https://github.com/agentydragon/ducktape/releases/download/ducktape-e9e84d37/ducktape-0.1.0-py3-none-any.whl --force >&2; ~/.local/bin/claude-hook"
+            "command": "uv tool install https://github.com/agentydragon/ducktape/releases/download/ducktape-ab388584/ducktape-0.1.0-py3-none-any.whl --force >&2; ~/.local/bin/claude-hook"
           }
         ]
       }
