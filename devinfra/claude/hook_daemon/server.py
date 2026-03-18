@@ -19,8 +19,8 @@ from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
+from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
-from devinfra.claude.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.session_start import _async_handle
 from devinfra.claude.settings import HookSettings

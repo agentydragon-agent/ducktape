@@ -18,7 +18,7 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.precommit_runner import RunResult, run_on_file
+from devinfra.claude.hook_daemon.precommit_runner import RunResult, run_on_file
 
 logger = logging.getLogger(__name__)
 

@@ -11,8 +11,8 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.post_tool_use import _find_git_root, _format_check_result, _make_short_diff, evaluate
-from devinfra.claude.precommit_runner import HookResult, RunResult
+from devinfra.claude.hook_daemon.post_tool_use import _find_git_root, _format_check_result, _make_short_diff, evaluate
+from devinfra.claude.hook_daemon.precommit_runner import HookResult, RunResult
 
 _COMMON = {
     "session_id": "test-session",
@@ -181,7 +181,7 @@ def test_precommit_with_diff(git_project: tuple[Path, Path]) -> None:
         modified_content=b"x = 1\n",
     )
 
-    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=fake_result):
+    with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
         result = evaluate(inp)
 
@@ -206,7 +206,7 @@ def test_precommit_no_file_change(git_project: tuple[Path, Path]) -> None:
         modified_content=b"x=1\n",
     )
 
-    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=fake_result):
+    with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
         result = evaluate(inp)
 
@@ -228,7 +228,7 @@ def test_precommit_passes(git_project: tuple[Path, Path]) -> None:
         modified_content=b"x=1\n",
     )
 
-    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=fake_result):
+    with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
         result = evaluate(inp)
 
@@ -239,7 +239,7 @@ def test_no_hooks_applied(git_project: tuple[Path, Path]) -> None:
     """When no hooks apply (empty RunResult), no output is returned."""
     _, test_file = git_project
 
-    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=RunResult()):
+    with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=RunResult()):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
         result = evaluate(inp)
 
@@ -271,7 +271,7 @@ def test_precommit_multiple_hooks_fail(git_project: tuple[Path, Path]) -> None:
         modified_content=b"x=1\n",
     )
 
-    with patch("devinfra.claude.post_tool_use.run_on_file", return_value=fake_result):
+    with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
         result = evaluate(inp)
 
