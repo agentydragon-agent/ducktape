@@ -3,6 +3,10 @@
 Tests that parse the cluster kustomization tree and check structural invariants
 (no orphaned files, valid dependencies, health checks on controller resources,
 blueprint completeness).
+
+TODO: These checks duplicate validate_cluster (run via pre-commit). Consolidate by
+enforcing affected bazel tests pass before commit (PR #819 WIP), then remove the
+validate_cluster pre-commit hook and use this test as the single source of truth.
 """
 
 from __future__ import annotations
