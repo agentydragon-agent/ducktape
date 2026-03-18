@@ -63,6 +63,12 @@ func (w *MeshNode) Close() {
 	}
 }
 
+// Logf logs a message prefixed with the node name.
+func (w *MeshNode) Logf(format string, args ...interface{}) {
+	w.T.Helper()
+	w.T.Logf("[%s] "+format, append([]interface{}{w.VM.Name}, args...)...)
+}
+
 // waitForReady waits for the node to become reachable. Returns an error instead
 // of calling t.Fatalf, so it's safe to call from goroutines.
 func (w *MeshNode) waitForReady(timeout time.Duration) error {
@@ -173,7 +179,7 @@ func (w *MeshNode) GetPeerSpecs() ([]kubespan.PeerSpecSpec, error) {
 // nodes (skips with true for Talos nodes that lack a probe server).
 func (w *MeshNode) ProbeICMP(target string, timeout time.Duration) bool {
 	if !w.HasProbeServer() {
-		w.T.Logf("[%s] skipping ICMP probe (Talos node, no probe server)", w.VM.Name)
+		w.Logf("skipping ICMP probe (Talos node, no probe server)")
 		return true // not a failure, just not testable
 	}
 	return w.VM.ProbeICMP(target, timeout)
@@ -183,7 +189,7 @@ func (w *MeshNode) ProbeICMP(target string, timeout time.Duration) bool {
 // nodes (skips with true for Talos nodes that lack a probe server).
 func (w *MeshNode) ProbeTCP(target string, port int, timeout time.Duration) bool {
 	if !w.HasProbeServer() {
-		w.T.Logf("[%s] skipping TCP probe (Talos node, no probe server)", w.VM.Name)
+		w.Logf("skipping TCP probe (Talos node, no probe server)")
 		return true
 	}
 	return w.VM.ProbeTCP(target, port, timeout)
@@ -194,7 +200,7 @@ func (w *MeshNode) ProbeTCP(target string, port int, timeout time.Duration) bool
 // Kubespand nodes additionally dump routing/nft diagnostics from the probe server.
 func (w *MeshNode) DumpDiagnostics(t *testing.T) {
 	t.Helper()
-	t.Logf("=== %s diagnostics (%s) ===", w.VM.Name, w.Type)
+	w.Logf("=== diagnostics (%s) ===", w.Type)
 
 	// COSI KubeSpan state (works for both node types via Talos mTLS API).
 	if w.TalosClient != nil {
@@ -204,11 +210,11 @@ func (w *MeshNode) DumpDiagnostics(t *testing.T) {
 	// Routing/WG/nftables state from probe server (kubespand only — these are
 	// subprocess commands with no MachineService equivalent).
 	if w.HasProbeServer() {
-		t.Logf("[%s] probe server diagnostics:", w.VM.Name)
+		w.Logf("probe server diagnostics:")
 		t.Log(w.VM.DumpDiagnostics())
 	}
 
-	t.Logf("=== end %s diagnostics ===", w.VM.Name)
+	w.Logf("=== end diagnostics ===")
 }
 
 // DumpDmesg logs kernel messages from the node via the Talos MachineService
@@ -217,7 +223,7 @@ func (w *MeshNode) DumpDmesg(t *testing.T) {
 	t.Helper()
 
 	if w.TalosClient == nil {
-		t.Logf("[%s] dmesg: no Talos client", w.VM.Name)
+		w.Logf("dmesg: no Talos client")
 		return
 	}
 
@@ -226,24 +232,24 @@ func (w *MeshNode) DumpDmesg(t *testing.T) {
 
 	stream, err := w.TalosClient.Dmesg(ctx, false, false)
 	if err != nil {
-		t.Logf("[%s] dmesg error: %v", w.VM.Name, err)
+		w.Logf("dmesg error: %v", err)
 		return
 	}
 
 	reader, err := client.ReadStream(stream)
 	if err != nil {
-		t.Logf("[%s] dmesg read stream error: %v", w.VM.Name, err)
+		w.Logf("dmesg read stream error: %v", err)
 		return
 	}
 	defer reader.Close()
 
 	data, err := io.ReadAll(reader)
 	if err != nil {
-		t.Logf("[%s] dmesg read error: %v", w.VM.Name, err)
+		w.Logf("dmesg read error: %v", err)
 		return
 	}
 
-	t.Logf("[%s] dmesg (%d bytes):\n%s", w.VM.Name, len(data), string(data))
+	w.Logf("dmesg (%d bytes):\n%s", len(data), string(data))
 }
 
 // DumpNetstat logs network socket information from the node via the Talos
@@ -252,7 +258,7 @@ func (w *MeshNode) DumpNetstat(t *testing.T) {
 	t.Helper()
 
 	if w.TalosClient == nil {
-		t.Logf("[%s] netstat: no Talos client", w.VM.Name)
+		w.Logf("netstat: no Talos client")
 		return
 	}
 
@@ -269,14 +275,14 @@ func (w *MeshNode) DumpNetstat(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Logf("[%s] netstat error: %v", w.VM.Name, err)
+		w.Logf("netstat error: %v", err)
 		return
 	}
 
 	for _, msg := range resp.Messages {
 		for _, rec := range msg.Connectrecord {
-			t.Logf("[%s] %s %s:%d -> %s:%d state=%s",
-				w.VM.Name, rec.L4Proto,
+			w.Logf("%s %s:%d -> %s:%d state=%s",
+				rec.L4Proto,
 				rec.Localip, rec.Localport,
 				rec.Remoteip, rec.Remoteport,
 				rec.State)
@@ -285,56 +291,37 @@ func (w *MeshNode) DumpNetstat(t *testing.T) {
 }
 
 // DumpMemoryStats logs memory usage from the node via the Talos MachineService
-// Memory() RPC. Both kubespand and Talos nodes serve this RPC on the same mTLS
-// port (50000), accessed uniformly via the Talos client.
+// Memory() RPC.
 func (w *MeshNode) DumpMemoryStats(t *testing.T) {
 	t.Helper()
 
 	if w.TalosClient == nil {
-		t.Logf("[%s] memory stats: no Talos client", w.VM.Name)
+		w.Logf("memory stats: no Talos client")
 		return
 	}
 	ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), w.NodeIP), 10*time.Second)
 	defer cancel()
 	resp, err := w.TalosClient.Memory(ctx)
 	if err != nil {
-		t.Logf("[%s] memory stats error: %v", w.VM.Name, err)
+		w.Logf("memory stats error: %v", err)
 		return
 	}
 	for _, msg := range resp.Messages {
 		if msg.Meminfo != nil {
-			t.Logf("[%s] memory: %+v", w.VM.Name, msg.Meminfo)
+			w.Logf("memory: %+v", msg.Meminfo)
 		}
 	}
-}
-
-// DumpAllMemoryStats logs memory stats for all nodes.
-func DumpAllMemoryStats(t *testing.T, nodes []*MeshNode) {
-	t.Helper()
-	t.Log("=== Memory Stats ===")
-	for _, n := range nodes {
-		n.DumpMemoryStats(t)
-	}
-	t.Log("=== End Memory Stats ===")
 }
 
 // DumpAllDiagnostics dumps comprehensive diagnostics for all nodes:
 // memory stats, dmesg, and netstat. Called at the end of every test.
 func DumpAllDiagnostics(t *testing.T, nodes []*MeshNode) {
 	t.Helper()
-	DumpAllMemoryStats(t, nodes)
-
-	t.Log("=== Dmesg ===")
 	for _, n := range nodes {
+		n.DumpMemoryStats(t)
 		n.DumpDmesg(t)
-	}
-	t.Log("=== End Dmesg ===")
-
-	t.Log("=== Netstat ===")
-	for _, n := range nodes {
 		n.DumpNetstat(t)
 	}
-	t.Log("=== End Netstat ===")
 }
 
 // cosiState returns a COSI state.State client via the Talos mTLS API.

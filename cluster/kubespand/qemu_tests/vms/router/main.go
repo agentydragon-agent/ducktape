@@ -28,13 +28,7 @@ func main() {
 	initlib.LoadNftablesModules()
 
 	// Load NAT-related kernel modules.
-	for _, mod := range []string{"nf_conntrack", "nf_nat", "nft_masq", "nft_chain_nat"} {
-		if err := initlib.RunSilent("modprobe", mod); err != nil {
-			log.Printf("modprobe %s failed: %v", mod, err)
-		}
-	}
-	log.Printf("NAT modules loaded")
-	initlib.RunSilent("modprobe", "virtio_net")
+	initlib.Modprobe("nf_conntrack", "nf_nat", "nft_masq", "nft_chain_nat", "virtio_net")
 
 	// Configure eth0 (internet bridge).
 	log.Printf("waiting for eth0")
