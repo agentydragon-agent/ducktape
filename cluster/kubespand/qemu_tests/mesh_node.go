@@ -1,6 +1,6 @@
 // MeshNode abstracts over Talos and kubespand VMs participating in the KubeSpan
-// mesh. Both expose COSI state (PeerStatus, PeerSpec) but via different
-// transports: Talos via its mTLS API client, kubespand via direct insecure gRPC.
+// mesh. Both expose COSI state and MachineService RPCs via the Talos mTLS API
+// (kubespand via its apid subprocess, Talos natively).
 // MeshNode provides a unified interface for mesh verification and test probes.
 package qemu_tests
 
@@ -8,18 +8,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"testing"
 	"time"
 
-	v1alpha1 "github.com/cosi-project/runtime/api/v1alpha1"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
-	stateclient "github.com/cosi-project/runtime/pkg/state/protobuf/client"
+	"github.com/siderolabs/talos/pkg/machinery/api/machine"
 	"github.com/siderolabs/talos/pkg/machinery/client"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // NodeType identifies whether a mesh node runs Talos or kubespand.
@@ -192,60 +190,167 @@ func (w *MeshNode) ProbeTCP(target string, port int, timeout time.Duration) bool
 }
 
 // DumpDiagnostics logs diagnostic information from the node.
+// Both node types dump COSI KubeSpan state via the Talos mTLS API.
+// Kubespand nodes additionally dump routing/nft diagnostics from the probe server.
 func (w *MeshNode) DumpDiagnostics(t *testing.T) {
 	t.Helper()
-	switch w.Type {
-	case NodeTypeKubespand:
-		t.Logf("=== %s diagnostics (kubespand) ===", w.VM.Name)
+	t.Logf("=== %s diagnostics (%s) ===", w.VM.Name, w.Type)
+
+	// COSI KubeSpan state (works for both node types via Talos mTLS API).
+	if w.TalosClient != nil {
+		DumpKubeSpanDiagnostics(t, w.TalosClient, w.NodeIP)
+	}
+
+	// Routing/WG/nftables state from probe server (kubespand only — these are
+	// subprocess commands with no MachineService equivalent).
+	if w.HasProbeServer() {
+		t.Logf("[%s] probe server diagnostics:", w.VM.Name)
 		t.Log(w.VM.DumpDiagnostics())
-	case NodeTypeTalos:
-		t.Logf("=== %s diagnostics (talos) ===", w.VM.Name)
-		if w.TalosClient != nil {
-			DumpKubeSpanDiagnostics(t, w.TalosClient, w.NodeIP)
+	}
+
+	t.Logf("=== end %s diagnostics ===", w.VM.Name)
+}
+
+// DumpDmesg logs kernel messages from the node via the Talos MachineService
+// Dmesg() RPC. Both kubespand and Talos nodes serve this RPC.
+func (w *MeshNode) DumpDmesg(t *testing.T) {
+	t.Helper()
+
+	if w.TalosClient == nil {
+		t.Logf("[%s] dmesg: no Talos client", w.VM.Name)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), w.NodeIP), 10*time.Second)
+	defer cancel()
+
+	stream, err := w.TalosClient.Dmesg(ctx, false, false)
+	if err != nil {
+		t.Logf("[%s] dmesg error: %v", w.VM.Name, err)
+		return
+	}
+
+	reader, err := client.ReadStream(stream)
+	if err != nil {
+		t.Logf("[%s] dmesg read stream error: %v", w.VM.Name, err)
+		return
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		t.Logf("[%s] dmesg read error: %v", w.VM.Name, err)
+		return
+	}
+
+	t.Logf("[%s] dmesg (%d bytes):\n%s", w.VM.Name, len(data), string(data))
+}
+
+// DumpNetstat logs network socket information from the node via the Talos
+// MachineService Netstat() RPC. Both kubespand and Talos nodes serve this RPC.
+func (w *MeshNode) DumpNetstat(t *testing.T) {
+	t.Helper()
+
+	if w.TalosClient == nil {
+		t.Logf("[%s] netstat: no Talos client", w.VM.Name)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), w.NodeIP), 10*time.Second)
+	defer cancel()
+
+	resp, err := w.TalosClient.Netstat(ctx, &machine.NetstatRequest{
+		Filter: machine.NetstatRequest_LISTENING,
+		L4Proto: &machine.NetstatRequest_L4Proto{
+			Tcp:  true,
+			Tcp6: true,
+			Udp:  true,
+			Udp6: true,
+		},
+	})
+	if err != nil {
+		t.Logf("[%s] netstat error: %v", w.VM.Name, err)
+		return
+	}
+
+	for _, msg := range resp.Messages {
+		for _, rec := range msg.Connectrecord {
+			t.Logf("[%s] %s %s:%d -> %s:%d state=%s",
+				w.VM.Name, rec.L4Proto,
+				rec.Localip, rec.Localport,
+				rec.Remoteip, rec.Remoteport,
+				rec.State)
 		}
 	}
 }
 
-// cosiState returns a COSI state.State client appropriate for the node type.
-// For kubespand: insecure gRPC to vm.cosiAddr.
-// For Talos: the client's COSI field.
+// DumpMemoryStats logs memory usage from the node via the Talos MachineService
+// Memory() RPC. Both kubespand and Talos nodes serve this RPC on the same mTLS
+// port (50000), accessed uniformly via the Talos client.
+func (w *MeshNode) DumpMemoryStats(t *testing.T) {
+	t.Helper()
+
+	if w.TalosClient == nil {
+		t.Logf("[%s] memory stats: no Talos client", w.VM.Name)
+		return
+	}
+	ctx, cancel := context.WithTimeout(client.WithNode(context.Background(), w.NodeIP), 10*time.Second)
+	defer cancel()
+	resp, err := w.TalosClient.Memory(ctx)
+	if err != nil {
+		t.Logf("[%s] memory stats error: %v", w.VM.Name, err)
+		return
+	}
+	for _, msg := range resp.Messages {
+		if msg.Meminfo != nil {
+			t.Logf("[%s] memory: %+v", w.VM.Name, msg.Meminfo)
+		}
+	}
+}
+
+// DumpAllMemoryStats logs memory stats for all nodes.
+func DumpAllMemoryStats(t *testing.T, nodes []*MeshNode) {
+	t.Helper()
+	t.Log("=== Memory Stats ===")
+	for _, n := range nodes {
+		n.DumpMemoryStats(t)
+	}
+	t.Log("=== End Memory Stats ===")
+}
+
+// DumpAllDiagnostics dumps comprehensive diagnostics for all nodes:
+// memory stats, dmesg, and netstat. Called at the end of every test.
+func DumpAllDiagnostics(t *testing.T, nodes []*MeshNode) {
+	t.Helper()
+	DumpAllMemoryStats(t, nodes)
+
+	t.Log("=== Dmesg ===")
+	for _, n := range nodes {
+		n.DumpDmesg(t)
+	}
+	t.Log("=== End Dmesg ===")
+
+	t.Log("=== Netstat ===")
+	for _, n := range nodes {
+		n.DumpNetstat(t)
+	}
+	t.Log("=== End Netstat ===")
+}
+
+// cosiState returns a COSI state.State client via the Talos mTLS API.
+// Both kubespand (via apid) and Talos nodes expose COSI through this path.
 // cleanup must be called when done.
-//
-// TODO: Unify COSI access via Talos mTLS API for both node types. kubespand
-// implements apid (port 50000) with trustd CSR flow, so both could use the Talos
-// client. Requires setting up API config (ca_crt, token, cert_sans) in all tests,
-// not just the trustd test.
 func (w *MeshNode) cosiState() (state.State, func(), error) {
-	switch w.Type {
-	case NodeTypeKubespand:
-		if w.VM.cosiAddr == "" {
-			return nil, nil, fmt.Errorf("[%s] COSI not configured", w.VM.Name)
-		}
-		conn, err := grpc.NewClient(w.VM.cosiAddr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
-		if err != nil {
-			return nil, nil, fmt.Errorf("COSI connect: %w", err)
-		}
-		st := state.WrapCore(stateclient.NewAdapter(v1alpha1.NewStateClient(conn)))
-		return st, func() { conn.Close() }, nil
-
-	case NodeTypeTalos:
-		if w.TalosClient == nil {
-			return nil, nil, fmt.Errorf("[%s] Talos client not configured", w.VM.Name)
-		}
-		return w.TalosClient.COSI, func() {}, nil
-
-	default:
-		return nil, nil, fmt.Errorf("unknown node type: %s", w.Type)
+	if w.TalosClient == nil {
+		return nil, nil, fmt.Errorf("[%s] Talos client not configured", w.VM.Name)
 	}
+	return w.TalosClient.COSI, func() {}, nil
 }
 
-// nodeContext returns a context appropriate for the node type.
-// For Talos, wraps with client.WithNode to target the specific node.
+// nodeContext returns a context with client.WithNode set for the target node.
 func (w *MeshNode) nodeContext() context.Context {
 	ctx := context.Background()
-	if w.Type == NodeTypeTalos && w.NodeIP != "" {
+	if w.NodeIP != "" {
 		ctx = client.WithNode(ctx, w.NodeIP)
 	}
 	return ctx

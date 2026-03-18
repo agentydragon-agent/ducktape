@@ -452,20 +452,16 @@ type TestClusterCreds struct {
 	MachineToken string // Talos machine token (from machine.token)
 }
 
-// NewRandomCreds generates random cluster credentials for tests that don't
-// need a Talos config (e.g., kubespand-only double-NAT tests).
-func NewRandomCreds() TestClusterCreds {
-	return TestClusterCreds{
-		ClusterID:    RandomBase64(32),
-		SharedSecret: RandomBase64(32),
-	}
-}
-
-// NewTestAgentConfig returns an AgentConfig with common test defaults.
-// Callers can override fields after construction.
-func NewTestAgentConfig(creds TestClusterCreds, discoveryAddr string) agentconfig.AgentConfig {
+// NewTestAgentConfig returns an AgentConfig with common test defaults,
+// including apid/trustd CSR flow fields so kubespand serves mTLS on port 50000.
+// Callers can override fields (e.g., Kubespan.ListenPort) after construction.
+func NewTestAgentConfig(creds TestClusterCreds, discoveryAddr, cpEndpoint string) agentconfig.AgentConfig {
 	return agentconfig.AgentConfig{
-		Cluster:   agentconfig.ClusterConfig{ID: creds.ClusterID, Secret: creds.SharedSecret},
+		Cluster: agentconfig.ClusterConfig{
+			ID:       creds.ClusterID,
+			Secret:   creds.SharedSecret,
+			Endpoint: cpEndpoint,
+		},
 		Discovery: agentconfig.DiscoveryConfig{Endpoint: discoveryAddr, Insecure: true, MachineType: "worker"},
 		Kubespan: agentconfig.KubespanConfig{
 			ForceRouting:          true,
@@ -473,8 +469,18 @@ func NewTestAgentConfig(creds TestClusterCreds, discoveryAddr string) agentconfi
 			IdentityFile:          "/var/lib/kubespan/identity.yaml",
 			HarvestExtraEndpoints: true,
 		},
+		Api: agentconfig.ApiConfig{
+			CACrt:     creds.CACrt,
+			Token:     creds.MachineToken,
+			ApidPath:  "/apid",
+			CertSANs:  []string{"127.0.0.1"},
+			ListenTCP: ":50100",
+		},
 	}
 }
+
+// ApidGuestPort is the guest port where kubespand's apid listens (mTLS).
+const ApidGuestPort = 50000
 
 // CreateKubespandCIDATA creates a FAT32 disk image containing the kubespand
 // agent config YAML. The VM init mounts this drive and copies agent.yaml to
