@@ -233,5 +233,8 @@ previous. Violations detected by pre-commit (`validate_kustomizations.py`).
 
 1. Create `{app}-secrets/` for ESO resources (`dependsOn: external-secrets-operator`)
 2. Create `{app}/` for HelmRelease only (`dependsOn: {app}-secrets`)
-3. Add cert-manager issuer toggle if app has TLS: `postBuild.substituteFrom` from
-   `cert-manager-issuer-config` ConfigMap + `dependsOn: cert-manager-issuer-config`
+3. Add cert-manager issuer toggle **only if the app's own manifests reference
+   `${LETSENCRYPT_ISSUER}`** (Certificate resources, ClusterIssuer annotations, or
+   HelmRelease values): `postBuild.substituteFrom` from `cert-manager-issuer-config`
+   ConfigMap + `dependsOn: cert-manager-issuer-config`. Do NOT add this when the app's
+   TLS is handled entirely by the gateway — the gateway kustomization already has it.
