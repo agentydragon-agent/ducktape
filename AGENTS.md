@@ -64,6 +64,8 @@ connections like `kubectl` → haproxy on `localhost:7445`).
 
 When renaming, moving, or deleting files/directories/symbols, search for **all references** across the entire codebase before committing: imports, BUILD files, CI configs, documentation, Dockerfiles, Kubernetes manifests, `AGENTS.md`/`README.md` files. Use Grep broadly. Missing a reference is worse than being thorough.
 
+**Atomic API changes**: When changing a function signature, class API, or module path, update all callers in the same commit. Do not introduce transitional forwarding methods, compatibility shims, or phased migrations within this monorepo. Change the API and fix every callsite atomically.
+
 ## Before Hand-off
 
 ```bash
