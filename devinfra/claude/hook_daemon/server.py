@@ -34,8 +34,9 @@ app = FastAPI()
 
 
 def configure(daemon_dir: Path) -> None:
-    """Set daemon runtime directory (for env persistence, logs). Call before starting uvicorn."""
+    """Set daemon runtime directory and shared config. Call before starting uvicorn."""
     app.state.daemon_dir = daemon_dir
+    app.state.settings = HookSettings()
     app.state.last_request_time = time.monotonic()
 
 
@@ -89,8 +90,7 @@ async def handle_hook(req: HookRequest) -> HookResponse:
 async def _handle_session_start(hook_input: SessionStartHookInput, env: dict[str, str]) -> AnyHookOutput | None:
     """Handle SessionStart by passing caller's env through to session_start."""
     paths = SessionPaths(hook_input.session_id)
-    settings = HookSettings()
-    return await _async_handle(hook_input, paths, settings, caller_env=env)
+    return await _async_handle(hook_input, paths, app.state.settings, caller_env=env)
 
 
 @app.get("/health")

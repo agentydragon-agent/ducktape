@@ -110,8 +110,9 @@ def _start_daemon(paths: SessionPaths) -> bool:
         except (ValueError, OSError) as e:
             logger.warning("Bad pidfile %s: %s", pidfile, e)
 
-    # Create daemon dir
+    # Create daemon dir and socket dir
     daemon_dir.mkdir(parents=True, exist_ok=True)
+    paths.ensure_dirs()
 
     # Clean stale socket
     if sock_path.exists():

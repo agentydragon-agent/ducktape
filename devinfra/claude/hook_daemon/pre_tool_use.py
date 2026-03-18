@@ -13,7 +13,7 @@ from devinfra.claude.claude_api.hooks.pre_tool_use import (
 
 # --- Config ---
 
-ALWAYS_ALLOW_COMMANDS: set[str] = {"echo hello world"}
+ALWAYS_ALLOW_COMMANDS: frozenset[str] = frozenset({"echo hello world"})
 
 
 def evaluate(hook_input: PreToolUseInput) -> PreToolUseOutput:

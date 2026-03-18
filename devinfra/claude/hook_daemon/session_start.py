@@ -400,9 +400,10 @@ async def _setup_web(
             logger.warning("Fork remote setup failed: %s", e)
 
     # Determine bazelisk_path: use system_bazel if install_bazelisk=False, otherwise downloaded bazelisk
+    bazelisk_path: Path | None
     if isinstance(bazelisk_result, bazelisk_setup.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
         if settings.system_bazel is not None:
-            bazelisk_path = settings.system_bazel
+            bazelisk_path = Path(settings.system_bazel)
         else:
             # Auto-detect system bazelisk/bazel
             auto_bazel = shutil.which("bazelisk") or shutil.which("bazel")

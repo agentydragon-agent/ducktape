@@ -132,10 +132,13 @@ class SessionPaths:
         """UDS path for the hook daemon.
 
         Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
+        The parent directory is created by ensure_dirs(), not on every access.
         """
-        sock_dir = Path(f"/tmp/claude-hd-{self._session_id}")
-        sock_dir.mkdir(parents=True, exist_ok=True)
-        return sock_dir / "d.sock"
+        return Path(f"/tmp/claude-hd-{self._session_id}") / "d.sock"
+
+    def ensure_dirs(self) -> None:
+        """Create all directories that must exist before use (socket dir, session dir, etc.)."""
+        self.hook_daemon_sock.parent.mkdir(parents=True, exist_ok=True)
 
     @property
     def hook_daemon_pidfile(self) -> Path:
