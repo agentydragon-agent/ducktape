@@ -40,3 +40,13 @@ events=TICK_60
 ```
 
 Script uses socket to test port, writes READY/RESULT per supervisor protocol.
+
+## Hook Daemon Lifecycle Management
+
+**Problem**: The hook daemon client (`hook_daemon/client.py`) manually manages daemon lifecycle: pidfile read/write, process liveness checks, stale socket cleanup, fork+wait. This is ~50 lines of somewhat fiddly code.
+
+**Potential solutions**:
+
+- [`python-daemon`](https://pypi.org/project/python-daemon/) — handles server-side daemonization (double-fork, PID file, signal handling). Doesn't help with the client-side "ensure running" logic.
+- [`zdaemon`](https://pypi.org/project/zdaemon/) — Zope-era daemon controller with start/stop/restart/status and PID management. Closest fit but adds a Zope dependency.
+- **Move under supervisord** — the auth proxy already runs under supervisor. Adding the hook daemon there would eliminate the pidfile/fork logic entirely (client calls `supervisorctl start hook-daemon` if socket is dead). Trades custom lifecycle code for coupling to supervisor availability.

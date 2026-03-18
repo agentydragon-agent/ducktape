@@ -9,7 +9,6 @@ Environment Variables (in priority order):
 3. Platform defaults (Linux: ~/.cache, ~/.config; macOS: ~/Library/Caches, etc.)
 """
 
-import hashlib
 import importlib.resources
 import os
 from importlib.resources.abc import Traversable
@@ -226,10 +225,11 @@ class HookSettings(BaseSettings):
 
         Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
         The session_dir path (in ~/.claude/session-env/<session_id>/) can exceed
-        this limit, especially in Bazel test sandboxes.
+        this limit, especially in Bazel test sandboxes. The session_id (a UUID)
+        is the last component of session_dir.
         """
-        dir_hash = hashlib.sha256(str(self.session_dir).encode()).hexdigest()[:12]
-        sock_dir = Path(f"/tmp/claude-hd-{dir_hash}")
+        session_id = self.session_dir.name
+        sock_dir = Path(f"/tmp/claude-hd-{session_id}")
         sock_dir.mkdir(parents=True, exist_ok=True)
         return sock_dir / "d.sock"
 
