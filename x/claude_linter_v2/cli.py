@@ -19,12 +19,12 @@ import click
 import humanize
 from pytimeparse import parse as parse_duration
 
-from claude_linter_v2.checker import FileChecker
-from claude_linter_v2.config.models import AutofixCategory
-from claude_linter_v2.hooks.exceptions import HookBugError
-from claude_linter_v2.hooks.handler import HOOK_REQUEST_TYPES, HookHandler
-from claude_linter_v2.session.manager import RuleAction, SessionInfo, SessionManager
 from llm.claude_code_api import SessionID
+from x.claude_linter_v2.checker import FileChecker
+from x.claude_linter_v2.config.models import AutofixCategory
+from x.claude_linter_v2.hooks.exceptions import HookBugError
+from x.claude_linter_v2.hooks.handler import HOOK_REQUEST_TYPES, HookHandler
+from x.claude_linter_v2.session.manager import RuleAction, SessionInfo, SessionManager
 
 __version__ = "2.0.0a1"
 

@@ -4,12 +4,12 @@ import logging
 from dataclasses import dataclass
 from enum import IntEnum
 
-from claude_linter_v2.access.context import PredicateContext
-from claude_linter_v2.access.evaluator import PredicateEvaluator
-from claude_linter_v2.config.clean_models import ModularConfig
-from claude_linter_v2.config.models import AccessControlRule, RuleAction
-from claude_linter_v2.session.manager import SessionManager
-from claude_linter_v2.types import SessionID
+from x.claude_linter_v2.access.context import PredicateContext
+from x.claude_linter_v2.access.evaluator import PredicateEvaluator
+from x.claude_linter_v2.config.clean_models import ModularConfig
+from x.claude_linter_v2.config.models import AccessControlRule, RuleAction
+from x.claude_linter_v2.session.manager import SessionManager
+from x.claude_linter_v2.types import SessionID
 
 logger = logging.getLogger(__name__)
 

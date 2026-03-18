@@ -6,9 +6,9 @@ import pytest
 import pytest_bazel
 from hamcrest import all_of, assert_that, contains_string, has_entries
 
-from claude_linter_v2.config.models import StopHookConfig
-from claude_linter_v2.hooks.handler import HookHandler
 from llm.claude_code_api import StopRequest
+from x.claude_linter_v2.config.models import StopHookConfig
+from x.claude_linter_v2.hooks.handler import HookHandler
 
 
 @pytest.fixture

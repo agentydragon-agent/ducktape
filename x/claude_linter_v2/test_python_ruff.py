@@ -6,11 +6,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from claude_linter_v2.linters.python_ruff import PythonRuffLinter
+from x.claude_linter_v2.linters.python_ruff import PythonRuffLinter
 
 TEST_FILE = Path("/tmp/test.py")
 
-_MOCK_FIND = "claude_linter_v2.linters.python_ruff.find_ruff_binary"
+_MOCK_FIND = "x.claude_linter_v2.linters.python_ruff.find_ruff_binary"
 
 
 @pytest.fixture

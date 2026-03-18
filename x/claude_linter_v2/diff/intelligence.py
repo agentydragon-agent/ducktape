@@ -3,10 +3,10 @@
 from collections import defaultdict
 from typing import Any
 
-from claude_linter_v2.config.models import Violation
-from claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategorizer, ViolationCategory
-from claude_linter_v2.diff.parser import parse_tool_response
 from llm.claude_code_api import EditToolCall, MultiEditToolCall
+from x.claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategorizer, ViolationCategory
+from x.claude_linter_v2.diff.parser import parse_tool_response
 
 
 class DiffIntelligence:

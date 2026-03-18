@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from claude_linter_v2.types import SessionID, parse_session_id
 from llm.claude_code_api import PostToolUseRequest, PreToolUseRequest
+from x.claude_linter_v2.types import SessionID, parse_session_id
 
 # Synthetic file path for tests that need a path but don't create real files
 TEST_FILE = Path("/test/file.py")

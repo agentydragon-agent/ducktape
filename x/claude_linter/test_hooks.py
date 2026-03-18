@@ -7,7 +7,7 @@ import pytest_bazel
 import yaml
 from click.testing import CliRunner
 
-from claude_linter.cli import cli
+from x.claude_linter.cli import cli
 
 
 @pytest.fixture

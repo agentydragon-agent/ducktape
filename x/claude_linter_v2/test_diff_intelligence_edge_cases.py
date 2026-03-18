@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest_bazel
 
-from claude_linter_v2.config.models import Violation
-from claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategory
-from claude_linter_v2.diff.intelligence import DiffIntelligence
-from claude_linter_v2.diff.parser import parse_tool_response
 from llm.claude_code_api import EditOperation, EditToolCall, MultiEditToolCall
+from x.claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.diff.categorizer import CategorizedViolation, ViolationCategory
+from x.claude_linter_v2.diff.intelligence import DiffIntelligence
+from x.claude_linter_v2.diff.parser import parse_tool_response
 
 TEST_FILE = Path("/test.py")
 

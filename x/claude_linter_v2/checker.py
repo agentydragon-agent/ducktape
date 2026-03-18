@@ -3,11 +3,11 @@
 import logging
 from pathlib import Path
 
-from claude_linter_v2.config.loader import ConfigLoader
-from claude_linter_v2.config.models import AutofixCategory, Violation
-from claude_linter_v2.linters.python_ast import PythonASTAnalyzer
-from claude_linter_v2.linters.python_formatter import PythonFormatter
-from claude_linter_v2.linters.python_ruff import PythonRuffLinter
+from x.claude_linter_v2.config.loader import ConfigLoader
+from x.claude_linter_v2.config.models import AutofixCategory, Violation
+from x.claude_linter_v2.linters.python_ast import PythonASTAnalyzer
+from x.claude_linter_v2.linters.python_formatter import PythonFormatter
+from x.claude_linter_v2.linters.python_ruff import PythonRuffLinter
 
 logger = logging.getLogger(__name__)
 

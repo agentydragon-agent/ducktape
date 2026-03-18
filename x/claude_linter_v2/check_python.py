@@ -2,11 +2,11 @@
 
 from pathlib import Path
 
-from claude_linter_v2.config.clean_models import ModularConfig
-from claude_linter_v2.config.models import Violation
-from claude_linter_v2.linters.python_ast import PythonASTAnalyzer
-from claude_linter_v2.linters.python_ruff import PythonRuffLinter
-from claude_linter_v2.pattern_matcher import PatternMatcher
+from x.claude_linter_v2.config.clean_models import ModularConfig
+from x.claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.linters.python_ast import PythonASTAnalyzer
+from x.claude_linter_v2.linters.python_ruff import PythonRuffLinter
+from x.claude_linter_v2.pattern_matcher import PatternMatcher
 
 
 def check_python_file(

@@ -1,0 +1,2 @@
+# gazelle:ignore
+# Manual test scripts not intended as Bazel targets.

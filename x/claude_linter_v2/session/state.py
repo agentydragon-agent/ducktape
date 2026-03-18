@@ -6,8 +6,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
-from claude_linter_v2.config.models import Violation
-from claude_linter_v2.types import SessionID
+from x.claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.types import SessionID
 
 
 class Rule(BaseModel):

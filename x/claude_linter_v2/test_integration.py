@@ -20,7 +20,7 @@ def _has_ruff() -> bool:
 
 def _run_cli(*args: str, **kwargs) -> subprocess.CompletedProcess:
     """Run the claude-linter-v2 CLI via run_python_module."""
-    return run_python_module("claude_linter_v2.cli", *args, capture_output=True, text=True, check=False, **kwargs)
+    return run_python_module("x.claude_linter_v2.cli", *args, capture_output=True, text=True, check=False, **kwargs)
 
 
 class TestCLIIntegration:
@@ -214,7 +214,7 @@ class TestSessionCommands:
     def test_session_list(self, tmp_path):
         """Test listing sessions."""
         result = run_python_module(
-            "claude_linter_v2.cli", "session", "list", capture_output=True, text=True, cwd=tmp_path, check=False
+            "x.claude_linter_v2.cli", "session", "list", capture_output=True, text=True, cwd=tmp_path, check=False
         )
 
         assert result.returncode == 0
@@ -224,7 +224,7 @@ class TestSessionCommands:
     def test_session_allow(self, tmp_path):
         """Test adding an allow rule."""
         result = run_python_module(
-            "claude_linter_v2.cli",
+            "x.claude_linter_v2.cli",
             "session",
             "allow",
             "Edit('**/*.py')",

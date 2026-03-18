@@ -9,7 +9,7 @@ from pathlib import Path
 from platformdirs import user_data_dir
 from pydantic import BaseModel, ConfigDict, Field
 
-from claude_linter_v2.types import SessionID, parse_session_id
+from x.claude_linter_v2.types import SessionID, parse_session_id
 
 
 class RuleAction(StrEnum):

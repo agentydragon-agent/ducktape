@@ -4,7 +4,7 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
@@ -20,7 +20,7 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//platformdirs",
@@ -31,7 +31,7 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//llm:claude_code_api",
@@ -42,7 +42,7 @@ py_library(
 py_library(
     name = "precommit_runner",
     srcs = ["precommit_runner.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util/bazel:subprocess",
@@ -55,7 +55,7 @@ py_library(
 py_binary(
     name = "claude_linter",
     srcs = ["cli.py"],
-    imports = [".."],
+    imports = ["../.."],
     main = "cli.py",
     deps = [
         ":cli",
@@ -73,7 +73,7 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//pygit2",
@@ -85,7 +85,7 @@ py_library(
 py_test(
     name = "test_claude_linter",
     srcs = ["test_claude_linter.py"],
-    imports = [".."],
+    imports = ["../.."],
     main = "test_claude_linter.py",
     deps = [
         ":cli",
@@ -98,7 +98,7 @@ py_test(
 py_test(
     name = "test_claude_post_hook",
     srcs = ["test_claude_post_hook.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":cli",
         ":conftest",
@@ -112,7 +112,7 @@ py_test(
 py_test(
     name = "test_claude_pre_hook",
     srcs = ["test_claude_pre_hook.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":cli",
         ":conftest",
@@ -125,7 +125,7 @@ py_test(
 py_test(
     name = "test_hooks",
     srcs = ["test_hooks.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":cli",
         ":conftest",

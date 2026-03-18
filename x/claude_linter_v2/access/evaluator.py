@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from more_itertools import one
 
-from claude_linter_v2.access.context import PredicateContext
+from x.claude_linter_v2.access.context import PredicateContext
 
 logger = logging.getLogger(__name__)
 

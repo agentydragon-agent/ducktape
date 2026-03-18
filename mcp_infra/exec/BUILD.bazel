@@ -6,6 +6,8 @@ load("//devinfra/testing:defs.bzl", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
+# gazelle:exclude test_exec_roundtrip.py
+
 # Core models - no MCP dependencies, usable outside fastmcp
 py_library(
     name = "models",

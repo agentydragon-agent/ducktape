@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
-    from claude_linter_v2.config.models import Violation
+    from x.claude_linter_v2.config.models import Violation
 
 
 @dataclass(frozen=True)

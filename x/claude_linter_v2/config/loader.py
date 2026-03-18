@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import ClassVar
 
-from claude_linter_v2.config.clean_models import LogLevel, ModularConfig
+from x.claude_linter_v2.config.clean_models import LogLevel, ModularConfig
 
 logger = logging.getLogger(__name__)
 

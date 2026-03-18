@@ -3,7 +3,7 @@
 import pytest_bazel
 from click.testing import CliRunner
 
-from claude_linter.cli import cli
+from x.claude_linter.cli import cli
 
 
 def run_claude_linter(args: list[str], input_text: str | None = None):

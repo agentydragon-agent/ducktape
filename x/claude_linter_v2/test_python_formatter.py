@@ -6,12 +6,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from claude_linter_v2.config.models import AutofixCategory
-from claude_linter_v2.linters.python_formatter import PythonFormatter
+from x.claude_linter_v2.config.models import AutofixCategory
+from x.claude_linter_v2.linters.python_formatter import PythonFormatter
 
 TEST_FILE = Path("/tmp/test.py")
 
-_MOCK_FIND = "claude_linter_v2.linters.python_formatter.find_ruff_binary"
+_MOCK_FIND = "x.claude_linter_v2.linters.python_formatter.find_ruff_binary"
 
 
 @pytest.fixture

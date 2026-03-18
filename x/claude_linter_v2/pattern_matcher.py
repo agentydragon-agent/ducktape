@@ -3,7 +3,7 @@
 import fnmatch
 from pathlib import Path
 
-from claude_linter_v2.config.models import PatternBasedRule
+from x.claude_linter_v2.config.models import PatternBasedRule
 
 
 class PatternMatcher:

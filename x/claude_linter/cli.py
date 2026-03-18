@@ -8,10 +8,10 @@ import click
 import platformdirs
 from pydantic import ValidationError
 
-from claude_linter.config import get_merged_config
-from claude_linter.models import HookRequest, LinterHookResponse
-from claude_linter.precommit_runner import PreCommitRunner
 from llm.claude_code_api import EditToolCall, MultiEditToolCall, WriteToolCall
+from x.claude_linter.config import get_merged_config
+from x.claude_linter.models import HookRequest, LinterHookResponse
+from x.claude_linter.precommit_runner import PreCommitRunner
 
 
 def get_cache_dir() -> Path:

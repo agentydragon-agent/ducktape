@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest_bazel
 from click.testing import CliRunner
 
-from claude_linter.cli import cli
-from claude_linter.precommit_runner import PreCommitRunner
+from x.claude_linter.cli import cli
+from x.claude_linter.precommit_runner import PreCommitRunner
 
 
 def run_pre_hook(test_input: str):

@@ -4,7 +4,7 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "check_python",
     srcs = ["check_python.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":pattern_matcher",
@@ -18,7 +18,7 @@ py_library(
 py_library(
     name = "checker",
     srcs = ["checker.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//x/claude_linter_v2/config:loader",
@@ -32,7 +32,7 @@ py_library(
 py_library(
     name = "checkers_v2",
     srcs = ["checkers_v2.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":rule_registry",
@@ -44,7 +44,7 @@ py_library(
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":checker",
@@ -62,7 +62,7 @@ py_library(
 py_library(
     name = "conftest",
     srcs = ["conftest.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":types",
@@ -74,7 +74,7 @@ py_library(
 py_library(
     name = "llm_analyzer",
     srcs = ["llm_analyzer.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//llm:claude_code_api",
@@ -85,14 +85,14 @@ py_library(
 py_library(
     name = "notifications",
     srcs = ["notifications.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "pattern_matcher",
     srcs = ["pattern_matcher.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = ["//x/claude_linter_v2/config:models"],
 )
@@ -100,7 +100,7 @@ py_library(
 py_library(
     name = "rule_registry",
     srcs = ["rule_registry.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = ["//x/claude_linter_v2/config:models"],
 )
@@ -108,7 +108,7 @@ py_library(
 py_library(
     name = "types",
     srcs = ["types.py"],
-    imports = [".."],
+    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = ["//llm:claude_code_api"],
 )
@@ -116,7 +116,7 @@ py_library(
 py_binary(
     name = "claude_linter_v2",
     srcs = ["cli.py"],
-    imports = [".."],
+    imports = ["../.."],
     main = "cli.py",
     deps = [
         ":checker",
@@ -136,7 +136,7 @@ py_test(
     srcs = ["test_cl2_check.py"],
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":cli",
         ":conftest",
@@ -150,7 +150,7 @@ py_test(
 py_test(
     name = "test_diff_intelligence",
     srcs = ["test_diff_intelligence.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         "//llm:claude_code_api",
@@ -165,7 +165,7 @@ py_test(
 py_test(
     name = "test_diff_intelligence_edge_cases",
     srcs = ["test_diff_intelligence_edge_cases.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         "//llm:claude_code_api",
@@ -182,7 +182,7 @@ py_test(
     srcs = ["test_integration.py"],
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":cli",
         ":conftest",
@@ -196,7 +196,7 @@ py_test(
 py_test(
     name = "test_mcp_tools",
     srcs = ["test_mcp_tools.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         ":types",
@@ -213,7 +213,7 @@ py_test(
 py_test(
     name = "test_modular_config",
     srcs = ["test_modular_config.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         ":rule_registry",
@@ -226,7 +226,7 @@ py_test(
 py_test(
     name = "test_multiline_predicates",
     srcs = ["test_multiline_predicates.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         ":types",
@@ -240,7 +240,7 @@ py_test(
 py_test(
     name = "test_python_ast",
     srcs = ["test_python_ast.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         "//x/claude_linter_v2/linters:python_ast",
@@ -253,7 +253,7 @@ py_test(
     srcs = ["test_python_formatter.py"],
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         "//x/claude_linter_v2/config:models",
@@ -268,7 +268,7 @@ py_test(
     srcs = ["test_python_ruff.py"],
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         "//x/claude_linter_v2/linters:python_ruff",
@@ -282,7 +282,7 @@ py_test(
     srcs = ["test_stop_hook_fresh_scan.py"],
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         "//llm:claude_code_api",
@@ -300,7 +300,7 @@ py_test(
     srcs = ["test_stop_hook_gitignore.py"],
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         "//llm:claude_code_api",
@@ -316,7 +316,7 @@ py_test(
     srcs = ["test_stop_hook_quality_gate.py"],
     data = ["@multitool//tools/ruff"],
     env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         "//llm:claude_code_api",

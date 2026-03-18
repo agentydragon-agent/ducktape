@@ -4,8 +4,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from enum import StrEnum
 
-from claude_linter_v2.config.models import Violation
-from claude_linter_v2.diff.parser import ParsedDiff
+from x.claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.diff.parser import ParsedDiff
 
 
 class ViolationCategory(StrEnum):
