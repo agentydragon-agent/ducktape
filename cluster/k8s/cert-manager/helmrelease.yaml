@@ -47,7 +47,7 @@ spec:
     prometheus:
       enabled: true
       servicemonitor:
-        enabled: true
+        enabled: false # Deployed separately via cert-manager-servicemonitor/ kustomization
 
     # Resource configuration
     resources:

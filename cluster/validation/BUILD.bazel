@@ -195,3 +195,19 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_cluster_integration",
+    srcs = ["test_cluster_integration.py"],
+    data = ["//cluster/k8s:cluster_yaml_files"],
+    imports = ["../.."],
+    deps = [
+        ":cluster",
+        ":dependencies",
+        ":health_checks",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

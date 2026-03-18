@@ -1,0 +1,8 @@
+filegroup(
+    name = "cluster_yaml_files",
+    srcs = glob(
+        ["**/*.yaml"],
+        exclude = ["flux-system/**"],
+    ),
+    visibility = ["//cluster:__subpackages__"],
+)

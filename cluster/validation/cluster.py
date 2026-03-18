@@ -56,6 +56,10 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
         if "charts" in yaml_file.parts:
             continue
 
+        # Skip blueprints directory (Authentik-specific YAML with !Env tags, not K8s resources)
+        if "blueprints" in yaml_file.parts:
+            continue
+
         all_yaml_files.add(yaml_file.resolve())
 
         if yaml_file.name == "kustomization.yaml":
