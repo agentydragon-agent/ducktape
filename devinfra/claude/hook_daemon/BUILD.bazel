@@ -133,6 +133,28 @@ py_library(
     ],
 )
 
+py_library(
+    name = "hook_dispatch_lib",
+    srcs = ["hook_dispatch.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "hook_dispatch",
+    data = ["//devinfra/claude:bazel_wrapper"],
+    imports = ["../../.."],
+    main_module = "devinfra.claude.hook_daemon.hook_dispatch",
+    visibility = ["//visibility:public"],
+    deps = [":hook_dispatch_lib"],
+)
+
 py_test(
     name = "test_hook_daemon",
     srcs = ["test_hook_daemon.py"],
@@ -199,7 +221,7 @@ py_test(
     size = "medium",
     srcs = ["test_session_start.py"],
     data = [
-        "//devinfra/claude:hook_dispatch",
+        ":hook_dispatch",
         "//devinfra/claude/auth_proxy:run",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
         "//third_party/jdk:cacerts",
@@ -243,7 +265,7 @@ py_test(
     size = "medium",
     srcs = ["test_session_start_podman.py"],
     data = [
-        "//devinfra/claude:hook_dispatch",
+        ":hook_dispatch",
         "//devinfra/claude/auth_proxy:run",
         "//third_party/jdk:cacerts",
         "//third_party/jdk:keytool",
