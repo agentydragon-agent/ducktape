@@ -45,6 +45,12 @@ def _model_entries(tag: str, ctx_variants: list[tuple[str, int | None]]) -> Iter
     ]:
         for ctx_suffix, num_ctx in ctx_variants:
             params: dict = {"model": f"{api}/{tag}", "api_base": api_base}
+            # Ollama doesn't require an API key, but the OpenAI SDK (used by
+            # LiteLLM's openai provider) refuses to initialize without one.
+            # TODO: Use a real API key once Ollama per-user auth is deployed
+            # (see cluster/docs/plan.md "Ollama: per-user auth").
+            if api == "openai":
+                params["api_key"] = "ollama"
             if num_ctx is not None:
                 params["extra_body"] = {"options": {"num_ctx": num_ctx}}
             yield {
