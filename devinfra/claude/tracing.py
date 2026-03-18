@@ -30,11 +30,12 @@ def _format_span(span: ReadableSpan) -> str:
     return json_str + "\n"
 
 
-def init_tracing(session_id: str, session_dir: Path) -> tuple[trace.Tracer, Path]:
+def init_tracing(session_id: str, session_dir: Path) -> Path:
     """Initialize OTel tracing with a local file exporter.
 
-    Call add_otlp_exporter() later to also export to Grafana Alloy.
-    Returns (tracer, trace_file_path).
+    Sets the global TracerProvider. Callers get tracers via
+    trace.get_tracer(__name__) as usual. Call add_otlp_exporter()
+    later to also export to Grafana Alloy. Returns trace_file_path.
     """
     trace_file = session_dir / "traces.jsonl"
 
@@ -47,7 +48,7 @@ def init_tracing(session_id: str, session_dir: Path) -> tuple[trace.Tracer, Path
     logger.info("Tracing: local file → %s", trace_file)
 
     trace.set_tracer_provider(provider)
-    return trace.get_tracer(__name__), trace_file
+    return trace_file
 
 
 def add_otlp_exporter(config: OtelConfig) -> None:

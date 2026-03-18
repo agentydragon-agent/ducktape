@@ -471,7 +471,8 @@ async def run_session(
     """
 
     collector, log_file = setup_logging(settings, print_banner=web_mode)
-    tracer, trace_file = init_tracing(hook_input.session_id, settings.session_dir)
+    trace_file = init_tracing(hook_input.session_id, settings.session_dir)
+    tracer = trace.get_tracer(__name__)
     mode_label = "web" if web_mode else "cli"
     root_span = tracer.start_span(
         "session_start",
