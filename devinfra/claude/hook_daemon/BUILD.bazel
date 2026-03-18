@@ -1,0 +1,98 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "//devinfra/claude/claude_api/hooks:dispatch_output",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":models",
+        "//devinfra/claude:post_tool_use_lib",
+        "//devinfra/claude:pre_tool_use_lib",
+        "//devinfra/claude:session_start_lib",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/claude_api/hooks:dispatch_output",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "@pypi//fastapi",
+    ],
+)
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":server",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "main",
+    imports = ["../../.."],
+    main_module = "devinfra.claude.hook_daemon.main",
+    deps = [":main_lib"],
+)
+
+py_library(
+    name = "client",
+    srcs = ["client.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":main_lib",
+        ":models",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/claude_api/hooks:dispatch_input",
+        "//util/bazel:subprocess",
+    ],
+)
+
+py_test(
+    name = "test_hook_daemon",
+    srcs = ["test_hook_daemon.py"],
+    imports = ["../../.."],
+    deps = [
+        ":models",
+        ":server",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "//devinfra/claude/claude_api/hooks:stop",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hook_daemon_restart",
+    srcs = ["test_hook_daemon_restart.py"],
+    imports = ["../../.."],
+    deps = [
+        ":client",
+        ":models",
+        ":server",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:stop",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//uvicorn",
+    ],
+)

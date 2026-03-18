@@ -46,7 +46,7 @@ from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings, is_web_mode
 from devinfra.claude.supervisor import setup as supervisor_setup
-from devinfra.claude.tracing import init_tracing, shutdown_tracing
+from devinfra.claude.tracing import add_otlp_exporter, init_tracing, shutdown_tracing
 from util import env
 
 logger = logging.getLogger(__name__)
@@ -483,6 +483,10 @@ async def run_session(
 
     # Load hook config (general config file, not gated on k8s_token).
     hook_config = HookConfig.load_from_repo(project_dir)
+
+    # Add remote OTLP exporter now that we have the config
+    if hook_config and hook_config.otel:
+        add_otlp_exporter(hook_config.otel.with_env_overrides())
 
     # K8s secrets are read after platform setup (proxy must be up for web mode TLS).
     secrets: k8s_secrets_setup.K8sSecretsResult | None = None

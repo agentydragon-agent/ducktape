@@ -9,6 +9,7 @@ Environment Variables (in priority order):
 3. Platform defaults (Linux: ~/.cache, ~/.config; macOS: ~/Library/Caches, etc.)
 """
 
+import hashlib
 import importlib.resources
 import os
 from importlib.resources.abc import Traversable
@@ -210,3 +211,27 @@ class HookSettings(BaseSettings):
     def get_bazel_cache_dir(self) -> Path:
         """Get Bazel cache directory (tmpfs-backed, pointed to via startup --output_user_root in session bazelrc)."""
         return self.session_dir / "bazel-cache"
+
+    def get_hook_daemon_dir(self) -> Path:
+        """Runtime directory for hook daemon (socket, pidfile, logs)."""
+        return self.session_dir / "hook-daemon"
+
+    def get_hook_daemon_sock(self) -> Path:
+        """UDS path for the hook daemon.
+
+        Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
+        The session_dir path (in ~/.claude/session-env/<session_id>/) can exceed
+        this limit, especially in Bazel test sandboxes.
+        """
+        dir_hash = hashlib.sha256(str(self.session_dir).encode()).hexdigest()[:12]
+        sock_dir = Path(f"/tmp/claude-hd-{dir_hash}")
+        sock_dir.mkdir(parents=True, exist_ok=True)
+        return sock_dir / "d.sock"
+
+    def get_hook_daemon_pidfile(self) -> Path:
+        """PID file for the hook daemon process."""
+        return self.get_hook_daemon_dir() / "daemon.pid"
+
+    def get_hook_daemon_env_file(self) -> Path:
+        """Persisted session env (written by daemon on each request)."""
+        return self.get_hook_daemon_dir() / "session_env.json"

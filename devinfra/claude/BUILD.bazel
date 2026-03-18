@@ -68,17 +68,6 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "@pypi//opentelemetry_api",
-        "@pypi//opentelemetry_sdk",
-    ],
-)
-
-py_library(
-    name = "otel",
-    srcs = ["otel.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
         ":hook_config",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_exporter_otlp_proto_http",
@@ -288,17 +277,9 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        ":hook_config",
-        ":otel",
-        ":post_tool_use_lib",
-        ":pre_tool_use_lib",
-        ":session_start_lib",
         ":settings",
         "//devinfra/claude/claude_api/hooks:dispatch_input",
-        "//devinfra/claude/claude_api/hooks:post_tool_use",
-        "//devinfra/claude/claude_api/hooks:pre_tool_use",
-        "//devinfra/claude/claude_api/hooks:session_start",
-        "@pypi//opentelemetry_api",
+        "//devinfra/claude/hook_daemon:client",
         "@pypi//pydantic",
     ],
 )
