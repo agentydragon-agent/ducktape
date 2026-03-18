@@ -278,6 +278,7 @@ manifest:
     nbconvert: nbconvert
     nbformat: nbformat
     nest_asyncio: nest_asyncio
+    networkx: networkx
     nio: matrix_nio
     nodeenv: nodeenv
     numpy: numpy
@@ -508,4 +509,4 @@ manifest:
     zmq: pyzmq
   pip_repository:
     name: pypi
-integrity: a7e17ac3c3434be8311d772bfbf1752f8d5cd5ff2139d2b41c03367624c95634
+integrity: cc5b081634595d1db3b534715d8ed77fcd057a596804a34783a41be5c20ed65a
