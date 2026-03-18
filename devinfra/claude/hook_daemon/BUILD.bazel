@@ -13,14 +13,24 @@ py_library(
 )
 
 py_library(
+    name = "pre_tool_use_lib",
+    srcs = ["pre_tool_use.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+    ],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":models",
+        ":pre_tool_use_lib",
         "//devinfra/claude:post_tool_use_lib",
-        "//devinfra/claude:pre_tool_use_lib",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:session_start_lib",
         "//devinfra/claude:settings",
@@ -97,5 +107,18 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//uvicorn",
+    ],
+)
+
+py_test(
+    name = "test_pre_tool_use",
+    srcs = ["test_pre_tool_use.py"],
+    imports = ["../../.."],
+    deps = [
+        ":pre_tool_use_lib",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:pre_tool_use",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
