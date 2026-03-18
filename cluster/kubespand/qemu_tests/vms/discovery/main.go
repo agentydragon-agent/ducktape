@@ -23,7 +23,7 @@ func main() {
 
 	log.Printf("discovery mode, ip=%s", discoveryIP)
 
-	initlib.RunSilent("modprobe", "virtio_net")
+	initlib.Modprobe("virtio_net")
 
 	// Configure eth0.
 	initlib.WaitForInterface("eth0")

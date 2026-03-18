@@ -20,14 +20,10 @@ func LoadModules() {
 	// virtio_blk: CIDATA virtio drive to appear as /dev/vda.
 	// fat, vfat: mount the FAT32 CIDATA filesystem.
 	// These are modules (not built-in) in the Alpine linux-virt kernel.
-	for _, mod := range []string{
+	initlib.Modprobe(
 		"wireguard", "virtio_net", "virtio_blk", "fat", "vfat",
 		"br_netfilter", "yama",
-	} {
-		if err := initlib.RunSilent("modprobe", mod); err != nil {
-			log.Printf("modprobe %s failed: %v", mod, err)
-		}
-	}
+	)
 	log.Printf("all modules loaded")
 }
 

@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/resources/cluster"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubespan"
@@ -35,6 +36,18 @@ type AgentConfig struct {
 	Kubernetes KubernetesConfig `yaml:"kubernetes"`
 	KubePrism  KubePrismConfig  `yaml:"kubeprism"`
 	Api        ApiConfig        `yaml:"api"`
+	Network    NetworkConfig    `yaml:"network"`
+}
+
+// NetworkConfig holds static network configuration for the host interface.
+// Routes use Talos's v1alpha1.Route type directly, fed through the standard
+// Talos route pipeline (RouteConfigController → RouteMergeController → RouteSpecController).
+type NetworkConfig struct {
+	// Interface is the network interface for static routes. Default: "eth0".
+	Interface string `yaml:"interface,omitempty"`
+	// Routes are static routes to apply on the host interface.
+	// Uses the same type as Talos machine config routes.
+	Routes []*v1alpha1.Route `yaml:"routes,omitempty"`
 }
 
 // ApiConfig holds TLS certificate settings for the Talos API integration.

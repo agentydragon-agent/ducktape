@@ -28,30 +28,35 @@ func main() {
 	initlib.LoadNftablesModules()
 
 	// Load NAT-related kernel modules.
-	for _, mod := range []string{"nf_conntrack", "nf_nat", "nft_masq", "nft_chain_nat"} {
-		initlib.RunSilent("modprobe", mod)
-	}
-	initlib.RunSilent("modprobe", "virtio_net")
+	initlib.Modprobe("nf_conntrack", "nf_nat", "nft_masq", "nft_chain_nat", "virtio_net")
 
 	// Configure eth0 (internet bridge).
+	log.Printf("waiting for eth0")
 	initlib.WaitForInterface("eth0")
+	log.Printf("eth0 found")
 	initlib.MustRun("ip", "link", "set", "lo", "up")
 	initlib.MustRun("ip", "link", "set", "eth0", "up")
 	initlib.MustRun("ip", "addr", "add", internetIP, "dev", "eth0")
+	log.Printf("eth0 configured")
 
 	// Configure eth1 (LAN bridge).
+	log.Printf("waiting for eth1")
 	initlib.WaitForInterface("eth1")
+	log.Printf("eth1 found")
 	initlib.MustRun("ip", "link", "set", "eth1", "up")
 	initlib.MustRun("ip", "addr", "add", lanIP, "dev", "eth1")
+	log.Printf("eth1 configured")
 
 	// Enable IP forwarding.
 	os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0o644)
+	log.Printf("ip_forward enabled, setting up nftables")
 
 	// Set up nftables masquerade on eth0.
 	conn, err := nftables.New()
 	if err != nil {
 		log.Fatalf("nftables.New() failed: %v", err)
 	}
+	log.Printf("nftables connection created")
 	table := conn.AddTable(&nftables.Table{Family: nftables.TableFamilyIPv4, Name: "nat"})
 	chain := conn.AddChain(&nftables.Chain{
 		Name:     "postrouting",
@@ -90,6 +95,7 @@ func main() {
 			&expr.Masq{Persistent: true},
 		},
 	})
+	log.Printf("flushing nftables rules")
 	if err := conn.Flush(); err != nil {
 		log.Fatalf("nftables flush failed: %v", err)
 	}
@@ -97,7 +103,9 @@ func main() {
 	log.Printf("router ready, internet=%s, lan=%s", internetIP, lanIP)
 
 	// mgmt NIC (QEMU user-mode) for port forwarding to the test host.
+	log.Printf("configuring mgmt NIC")
 	initlib.ConfigureMgmtNIC(false)
+	log.Printf("mgmt NIC configured")
 
 	// Start probe gRPC server on the mgmt NIC for test host diagnostics.
 	// The test host polls this server to detect VM readiness.

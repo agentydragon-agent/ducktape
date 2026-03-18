@@ -27,10 +27,12 @@ initramfs(
     testonly = True,
     extra_binaries = {
         "//cluster/kubespand": "/kubespand",
+        "//cluster/kubespand/cmd/apid": "/apid",
     },
     extra_dirs = [
         "/var/lib/kubespan",
         "/etc/kubespan",
+        "/system/run/machined",
     ],
     init = ":doublenat",
     visibility = ["//cluster/kubespand:__subpackages__"],

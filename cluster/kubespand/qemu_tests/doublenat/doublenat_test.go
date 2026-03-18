@@ -100,22 +100,26 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 
 	switch workerType {
 	case h.NodeTypeKubespand:
-		nat1Cfg := h.NewTestAgentConfig(creds, h.DoubleNATDiscoveryAddr)
+		nat1Cfg := h.NewTestAgentConfig(creds, h.DoubleNATDiscoveryAddr, cpEndpoint)
 		cidataNAT1 := h.CreateKubespandCIDATA(t, tmpDir, "nat1", nat1Cfg)
+		nat1APIPort := h.RandomPort()
 		vmNAT1 := h.BootVM(t, "vm-nat1", vmlinuz, kubespandInitramfs,
 			"role=nat1 link_ip="+h.DoubleNATNAT1IP+" default_gw="+h.DoubleNATNAT1Gateway,
-			append(h.McastNIC("net0", mcastLanA, h.DoubleNATNAT1MAC), h.CIDATADrive(cidataNAT1)...))
+			append(h.McastNIC("net0", mcastLanA, h.DoubleNATNAT1MAC), h.CIDATADrive(cidataNAT1)...),
+			h.PortForward{GuestPort: h.COSIGuestPort},
+			h.PortForward{HostPort: nat1APIPort, GuestPort: h.ApidGuestPort})
 
-		nat2Cfg := h.NewTestAgentConfig(creds, h.DoubleNATDiscoveryAddr)
-		nat2Cfg.Api.ListenTCP = ":50100"
+		nat2Cfg := h.NewTestAgentConfig(creds, h.DoubleNATDiscoveryAddr, cpEndpoint)
 		cidataNAT2 := h.CreateKubespandCIDATA(t, tmpDir, "nat2", nat2Cfg)
+		nat2APIPort := h.RandomPort()
 		vmNAT2 := h.BootVM(t, "vm-nat2", vmlinuz, kubespandInitramfs,
 			"role=nat2 link_ip="+h.DoubleNATNAT2IP+" default_gw="+h.DoubleNATNAT2Gateway,
 			append(h.McastNIC("net0", mcastLanB, h.DoubleNATNAT2MAC), h.CIDATADrive(cidataNAT2)...),
-			h.PortForward{GuestPort: h.COSIGuestPort})
+			h.PortForward{GuestPort: h.COSIGuestPort},
+			h.PortForward{HostPort: nat2APIPort, GuestPort: h.ApidGuestPort})
 
-		nat1 = &h.MeshNode{VM: vmNAT1, Type: h.NodeTypeKubespand, T: t}
-		nat2 = &h.MeshNode{VM: vmNAT2, Type: h.NodeTypeKubespand, T: t}
+		nat1 = h.NewTalosMeshNode(t, vmNAT1, h.DoubleNATNAT1IP, talosConfigPath, nat1APIPort)
+		nat2 = h.NewTalosMeshNode(t, vmNAT2, h.DoubleNATNAT2IP, talosConfigPath, nat2APIPort)
 		allVMs = append(allVMs, vmNAT1, vmNAT2)
 
 	case h.NodeTypeTalos:
@@ -153,57 +157,19 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	h.WaitForProbeServers(t, []*h.VM{vmDiscovery, vmRouterA, vmRouterB}, 120*time.Second)
 	sw.Lap("infrastructure VMs ready")
 
-	// Wait for VPS Talos API.
 	vpsNode := h.NewTalosMeshNode(t, vmVPS, h.DoubleNATVPSIP, talosConfigPath, vpsAPIPort)
 
-	// Wait for all nodes to be ready (parallel).
-	h.WaitForNodesReady(t, []*h.MeshNode{vpsNode, nat1, nat2}, h.NodeReadyTimeout)
-	sw.Lap("all nodes ready")
-
-	// Full mesh: every node must see all other nodes as "up".
-	if err := h.WaitForFullMesh(t, []*h.MeshNode{vpsNode, nat1, nat2}, h.FullMeshTimeout); err != nil {
-		nat1.DumpDiagnostics(t)
-		nat2.DumpDiagnostics(t)
-		vpsNode.DumpDiagnostics(t)
-		t.Fatalf("full mesh not achieved: %v", err)
+	// Run convergence loop: watches COSI on all nodes, streams dmesg,
+	// fires probes when peers come up, exits on full mesh + probes pass.
+	runner := &h.MeshTestRunner{
+		T:            t,
+		Nodes:        []*h.MeshNode{vpsNode, nat1, nat2},
+		Stopwatch:    sw,
+		OutDir:       out,
+		SuccessFunc:  h.FullMeshSuccess(2), // each node expects 2 peers
+		ProbeTargets: h.ULAProbeTargets,
 	}
-	sw.Lap("full mesh achieved")
-
-	// Data-plane probes (kubespand workers only).
-	if nat2.HasProbeServer() {
-		peerSpecs, err := nat2.GetPeerSpecs()
-		if err != nil {
-			t.Errorf("NAT2 GetPeerSpecs: %v", err)
-		} else {
-			t.Logf("NAT2 peer specs: %v", peerSpecs)
-		}
-
-		icmpOK := false
-		tcpOK := false
-		for _, ps := range peerSpecs {
-			addr := ps.Address.String()
-			if nat2.ProbeICMP(addr, 60*time.Second) {
-				icmpOK = true
-			}
-			if nat2.ProbeTCP(addr, 9999, 30*time.Second) {
-				tcpOK = true
-			}
-		}
-		if !icmpOK {
-			t.Errorf("no peer ULA ICMP probe succeeded (need at least VPS)")
-		}
-		if !tcpOK {
-			t.Errorf("no peer ULA TCP probe succeeded (need at least VPS)")
-		}
-		sw.Lap("probes completed")
-	}
-
-	// Dump diagnostics on failure.
-	if t.Failed() {
-		nat1.DumpDiagnostics(t)
-		nat2.DumpDiagnostics(t)
-		vpsNode.DumpDiagnostics(t)
-	}
+	runner.Run(t.Context())
 
 	summary := map[string]interface{}{
 		"topology":            "double_nat",
@@ -215,7 +181,4 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	}
 	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
 	h.SaveArtifact(t, out, "test-summary.json", string(summaryJSON))
-	sw.Lap("assertions")
-
-	sw.Summary(out)
 }

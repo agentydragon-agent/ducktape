@@ -12,6 +12,7 @@ go_library(
         "@com_github_cosi_project_runtime//pkg/resource",
         "@com_github_cosi_project_runtime//pkg/resource/meta",
         "@com_github_cosi_project_runtime//pkg/resource/typed",
+        "@com_github_siderolabs_talos_pkg_machinery//config/types/v1alpha1",
         "@com_github_siderolabs_talos_pkg_machinery//constants",
         "@com_github_siderolabs_talos_pkg_machinery//resources/cluster",
         "@com_github_siderolabs_talos_pkg_machinery//resources/kubespan",

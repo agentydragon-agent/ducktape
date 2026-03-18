@@ -56,16 +56,22 @@ func ParseCmdline() map[string]string {
 	return params
 }
 
+// Modprobe loads kernel modules, logging failures without fataling.
+func Modprobe(modules ...string) {
+	for _, mod := range modules {
+		if err := RunSilent("modprobe", mod); err != nil {
+			log.Printf("modprobe %s failed: %v", mod, err)
+		}
+	}
+}
+
 func LoadNftablesModules() {
 	kvers, _ := os.ReadDir("/lib/modules")
 	if len(kvers) == 0 {
 		log.Fatalf("no kernel modules found: empty /lib/modules/")
 	}
 	kver := kvers[0].Name()
-	RunSilent("modprobe", "crc32c_generic")
-	if err := RunSilent("modprobe", "nf_tables"); err != nil {
-		log.Printf("modprobe nf_tables failed: %v", err)
-	}
+	Modprobe("crc32c_generic", "nf_tables")
 	log.Printf("nftables modules loaded, kver=%s", kver)
 }
 

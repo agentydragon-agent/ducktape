@@ -3,7 +3,6 @@ package kubespan_test
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -87,19 +86,14 @@ func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 	switch workerType {
 	case h.NodeTypeKubespand:
 		initramfsTrustd := h.RunfilePath(t, h.TrustdInitramfs)
-		kubespandCfg := h.NewTestAgentConfig(creds, discIP+":3000")
-		kubespandCfg.Cluster.Endpoint = cpEndpoint
+		kubespandCfg := h.NewTestAgentConfig(creds, discIP+":3000", cpEndpoint)
 		kubespandCfg.Kubespan.ListenPort = 51820
-		kubespandCfg.Api.CACrt = creds.CACrt
-		kubespandCfg.Api.Token = creds.MachineToken
-		kubespandCfg.Api.ApidPath = "/apid"
-		kubespandCfg.Api.CertSANs = []string{"127.0.0.1"}
 		kubespandCI := h.CreateKubespandCIDATA(t, tmpDir, "trustd-worker", kubespandCfg)
 
-		workerAPIPort = 50000 // kubespand apid port
+		workerAPIPort = h.RandomPort()
 		workerVM = h.BootVM(t, "trustd-worker", vmlinuz, initramfsTrustd, "",
 			append(h.McastNIC("net0", mcastAddr, h.NodeBMAC), h.CIDATADrive(kubespandCI)...),
-			h.PortForward{GuestPort: workerAPIPort})
+			h.PortForward{HostPort: workerAPIPort, GuestPort: h.ApidGuestPort})
 
 	case h.NodeTypeTalos:
 		workerConfig := secrets.WorkerConfig(h.TalosNodeConfig{
@@ -118,52 +112,22 @@ func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 	allVMs := []*h.VM{vmCP, workerVM, vmDisc}
 	h.CleanupVMs(t, allVMs, out)
 
-	// On failure, dump diagnostics.
-	t.Cleanup(func() {
-		if !t.Failed() {
-			return
-		}
-		t.Log("=== FAILURE DIAGNOSTICS ===")
-
-		rawLog := workerVM.GetRawLog()
-		h.SaveArtifact(t, out, "trustd-worker-raw.log", rawLog)
-		lines := strings.Split(rawLog, "\n")
-		start := len(lines) - 300
-		if start < 0 {
-			start = 0
-		}
-		t.Logf("--- worker VM raw log (last %d of %d lines) ---", len(lines)-start, len(lines))
-		for _, line := range lines[start:] {
-			if line != "" {
-				t.Log(line)
-			}
-		}
-
-		t.Log("--- Talos CP KubeSpan diagnostics (post-failure) ---")
-		cpDiag := h.NewTalosClient(t, talosConfigPath, fmt.Sprintf("127.0.0.1:%d", talosAPIPort))
-		defer cpDiag.Close()
-		h.DumpKubeSpanDiagnostics(t, cpDiag, cpIP)
-
-		t.Log("=== END FAILURE DIAGNOSTICS ===")
-	})
-
 	// Wait for discovery service.
 	vmDisc.WaitForProbeServer(120 * time.Second)
 	sw.Lap("discovery VM ready")
 
-	// Wait for Talos CP API (must be ready before worker, which needs CP for trustd).
 	cpNode := h.NewTalosMeshNode(t, vmCP, cpIP, talosConfigPath, talosAPIPort)
-	h.WaitForNodesReady(t, []*h.MeshNode{cpNode}, 180*time.Second)
-	sw.Lap("Talos CP API ready")
-
-	cpNode.DumpDiagnostics(t)
-	sw.Lap("initial CP diagnostics")
-
-	// Verify worker's API is accessible — proves trustd CSR flow succeeded.
-	// Both kubespand (apid on 50000) and Talos (native API) speak the Talos API.
 	workerNode := h.NewTalosMeshNode(t, workerVM, workerIP, talosConfigPath, workerAPIPort)
-	h.WaitForNodesReady(t, []*h.MeshNode{workerNode}, 300*time.Second)
-	sw.Lap("worker API ready (trustd CSR flow succeeded)")
 
-	sw.Summary(out)
+	// Run convergence loop: worker becoming "ready" (COSI watches established)
+	// proves the trustd CSR flow succeeded — the worker's TalosClient connecting
+	// requires a signed certificate from the CP's trustd service.
+	runner := &h.MeshTestRunner{
+		T:           t,
+		Nodes:       []*h.MeshNode{cpNode, workerNode},
+		Stopwatch:   sw,
+		OutDir:      out,
+		SuccessFunc: h.WorkerAPISuccess(workerVM.Name),
+	}
+	runner.Run(t.Context())
 }
