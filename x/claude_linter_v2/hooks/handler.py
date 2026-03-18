@@ -9,33 +9,6 @@ from typing import Any
 
 import platformdirs
 
-from claude_linter_v2.access.context import PredicateContext
-from claude_linter_v2.access.rule_engine import RuleEngine
-from claude_linter_v2.check_python import check_python_file
-from claude_linter_v2.checkers_v2 import filter_violations
-from claude_linter_v2.config.clean_models import ModularConfig
-from claude_linter_v2.config.loader import ConfigLoader
-from claude_linter_v2.config.models import (
-    AutofixCategory,
-    NotificationHookConfig,
-    PostToolHookConfig,
-    RuleAction,
-    StopHookConfig,
-    Violation,
-)
-from claude_linter_v2.diff.categorizer import ViolationCategory
-from claude_linter_v2.diff.intelligence import DiffIntelligence
-from claude_linter_v2.hooks.exceptions import HookBugError
-from claude_linter_v2.hooks.formatting import format_access_denial, format_llm_message
-from claude_linter_v2.hooks.validation import validate_hook_outcome
-from claude_linter_v2.linters.python_formatter import PythonFormatter
-from claude_linter_v2.llm_analyzer import LLMAnalyzer
-from claude_linter_v2.notifications import close_desktop_notification, send_desktop_notification
-from claude_linter_v2.pattern_matcher import PatternMatcher
-from claude_linter_v2.session.manager import SessionManager
-from claude_linter_v2.session.violations import ViolationTracker
-from claude_linter_v2.types import SessionID
-from claude_linter_v2.utils.gitignore import get_git_tracked_files
 from llm.claude_code_api import (
     BaseHookRequest,
     BaseResponse,
@@ -62,6 +35,33 @@ from llm.claude_outcomes import (
     StopPrevent,
     SubagentStopAllow,
 )
+from x.claude_linter_v2.access.context import PredicateContext
+from x.claude_linter_v2.access.rule_engine import RuleEngine
+from x.claude_linter_v2.check_python import check_python_file
+from x.claude_linter_v2.checkers_v2 import filter_violations
+from x.claude_linter_v2.config.clean_models import ModularConfig
+from x.claude_linter_v2.config.loader import ConfigLoader
+from x.claude_linter_v2.config.models import (
+    AutofixCategory,
+    NotificationHookConfig,
+    PostToolHookConfig,
+    RuleAction,
+    StopHookConfig,
+    Violation,
+)
+from x.claude_linter_v2.diff.categorizer import ViolationCategory
+from x.claude_linter_v2.diff.intelligence import DiffIntelligence
+from x.claude_linter_v2.hooks.exceptions import HookBugError
+from x.claude_linter_v2.hooks.formatting import format_access_denial, format_llm_message
+from x.claude_linter_v2.hooks.validation import validate_hook_outcome
+from x.claude_linter_v2.linters.python_formatter import PythonFormatter
+from x.claude_linter_v2.llm_analyzer import LLMAnalyzer
+from x.claude_linter_v2.notifications import close_desktop_notification, send_desktop_notification
+from x.claude_linter_v2.pattern_matcher import PatternMatcher
+from x.claude_linter_v2.session.manager import SessionManager
+from x.claude_linter_v2.session.violations import ViolationTracker
+from x.claude_linter_v2.types import SessionID
+from x.claude_linter_v2.utils.gitignore import get_git_tracked_files
 
 logger = logging.getLogger(__name__)
 

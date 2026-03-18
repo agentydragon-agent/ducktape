@@ -6,8 +6,8 @@ import subprocess
 from pathlib import Path
 from typing import ClassVar
 
-from claude_linter_v2.config.models import Violation
-from claude_linter_v2.linters.ruff_binary import find_ruff_binary
+from x.claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.linters.ruff_binary import find_ruff_binary
 
 logger = logging.getLogger(__name__)
 

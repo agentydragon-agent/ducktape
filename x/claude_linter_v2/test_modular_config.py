@@ -2,9 +2,9 @@
 
 import pytest_bazel
 
-from claude_linter_v2.config.clean_models import ModularConfig, RuleConfig
-from claude_linter_v2.config.loader import ConfigLoader
-from claude_linter_v2.rule_registry import RuleRegistry
+from x.claude_linter_v2.config.clean_models import ModularConfig, RuleConfig
+from x.claude_linter_v2.config.loader import ConfigLoader
+from x.claude_linter_v2.rule_registry import RuleRegistry
 
 
 def test_modular_config_creation():

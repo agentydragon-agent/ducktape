@@ -1,5 +1,8 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
+# gazelle:exclude material_test.py
+# gazelle:exclude test_material_test.py
+
 py_library(
     name = "material_test_lib",
     srcs = ["material_test.py"],

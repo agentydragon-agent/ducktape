@@ -7,11 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from claude_linter_v2.config.models import Violation
-from claude_linter_v2.types import SessionID
+from x.claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.types import SessionID
 
 if TYPE_CHECKING:
-    from claude_linter_v2.session.manager import SessionManager
+    from x.claude_linter_v2.session.manager import SessionManager
 
 logger = logging.getLogger(__name__)
 

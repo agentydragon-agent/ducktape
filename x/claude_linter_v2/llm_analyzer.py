@@ -4,8 +4,8 @@ import json
 import logging
 from typing import Any
 
-from claude_linter_v2.config.models import LLMAnalysisConfig, Violation
 from llm.claude_code_api import EditToolCall, MultiEditToolCall, ToolCall, WriteToolCall
+from x.claude_linter_v2.config.models import LLMAnalysisConfig, Violation
 
 logger = logging.getLogger(__name__)
 

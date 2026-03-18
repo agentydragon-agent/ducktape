@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest_bazel
 
-from claude_linter_v2.linters.python_ast import PythonASTAnalyzer
+from x.claude_linter_v2.linters.python_ast import PythonASTAnalyzer
 
 TEST_FILE = Path("/tmp/test.py")
 

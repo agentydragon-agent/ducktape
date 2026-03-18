@@ -4,7 +4,7 @@ import ast
 import logging
 from pathlib import Path
 
-from claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.config.models import Violation
 
 logger = logging.getLogger(__name__)
 

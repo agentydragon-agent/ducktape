@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from click.testing import CliRunner
 
-from claude_linter_v2.cli import cli
+from x.claude_linter_v2.cli import cli
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from claude_linter_v2.types import SessionID
+from x.claude_linter_v2.types import SessionID
 
 
 @dataclass

@@ -10,7 +10,7 @@ import pytest_bazel
 import yaml
 from click.testing import CliRunner
 
-from claude_linter.cli import cli
+from x.claude_linter.cli import cli
 
 
 def run_post_hook(test_input: dict[str, Any]):

@@ -6,9 +6,9 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
-from claude_linter_v2.access.context import PredicateContext
-from claude_linter_v2.access.evaluator import PredicateEvaluator
-from claude_linter_v2.types import SessionID
+from x.claude_linter_v2.access.context import PredicateContext
+from x.claude_linter_v2.access.evaluator import PredicateEvaluator
+from x.claude_linter_v2.types import SessionID
 
 # Test session ID using valid UUID format
 TEST_SESSION_ID = SessionID(UUID("00000000-0000-0000-0000-000000000001"))

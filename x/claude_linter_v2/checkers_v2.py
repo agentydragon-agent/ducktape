@@ -2,9 +2,9 @@
 
 from typing import Literal
 
-from claude_linter_v2.config.clean_models import ModularConfig
-from claude_linter_v2.config.models import Violation
-from claude_linter_v2.rule_registry import RuleRegistry, map_violation_to_rule_key
+from x.claude_linter_v2.config.clean_models import ModularConfig
+from x.claude_linter_v2.config.models import Violation
+from x.claude_linter_v2.rule_registry import RuleRegistry, map_violation_to_rule_key
 
 
 def filter_violations(

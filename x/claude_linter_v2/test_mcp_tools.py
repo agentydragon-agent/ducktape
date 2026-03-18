@@ -9,12 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from claude_linter_v2.config.clean_models import ModularConfig
-from claude_linter_v2.config.models import AutofixCategory, PostToolHookConfig
-from claude_linter_v2.hooks.handler import HookHandler
-from claude_linter_v2.types import SessionID
 from llm.claude_code_api import PostToolUseRequest, PreToolUseRequest
 from llm.claude_outcomes import PostToolSuccess, PreToolApprove
+from x.claude_linter_v2.config.clean_models import ModularConfig
+from x.claude_linter_v2.config.models import AutofixCategory, PostToolHookConfig
+from x.claude_linter_v2.hooks.handler import HookHandler
+from x.claude_linter_v2.types import SessionID
 
 
 def make_pre_tool_request(session_id: SessionID, tool_name: str, tool_input: dict[str, Any]) -> PreToolUseRequest:
