@@ -167,7 +167,7 @@ func run(configPath string, logger *zap.Logger) error {
 			return fmt.Errorf("registering API controller: %w", err)
 		}
 	}
-	if err := rt.RegisterController(&kubespanctrl.ManagerController{}); err != nil {
+	if err := rt.RegisterController(&taloscontrollerskubespan.ManagerController{}); err != nil {
 		return fmt.Errorf("registering manager controller: %w", err)
 	}
 	if err := rt.RegisterController(&networkctrl.WireguardLinkController{}); err != nil {
@@ -188,6 +188,12 @@ func run(configPath string, logger *zap.Logger) error {
 	if err := rt.RegisterController(taloscontrollersnetwork.NewRouteMergeController()); err != nil {
 		return fmt.Errorf("registering route merge controller: %w", err)
 	}
+	if err := rt.RegisterController(taloscontrollersnetwork.NewAddressMergeController()); err != nil {
+		return fmt.Errorf("registering address merge controller: %w", err)
+	}
+	if err := rt.RegisterController(taloscontrollersnetwork.NewLinkMergeController()); err != nil {
+		return fmt.Errorf("registering link merge controller: %w", err)
+	}
 	if err := rt.RegisterController(&taloscontrollerskubespan.EndpointController{}); err != nil {
 		return fmt.Errorf("registering endpoint controller: %w", err)
 	}
@@ -199,6 +205,9 @@ func run(configPath string, logger *zap.Logger) error {
 	}
 	if err := rt.RegisterController(&taloscontrollersnetwork.LinkStatusController{}); err != nil {
 		return fmt.Errorf("registering link status controller: %w", err)
+	}
+	if err := rt.RegisterController(&taloscontrollersnetwork.HardwareAddrController{}); err != nil {
+		return fmt.Errorf("registering hardware addr controller: %w", err)
 	}
 	if err := rt.RegisterController(&taloscontrollersnetwork.NodeAddressController{}); err != nil {
 		return fmt.Errorf("registering node address controller: %w", err)
