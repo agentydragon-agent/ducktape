@@ -13,6 +13,7 @@ See <changelog.md> for detailed change history.
 ### Suspended Kustomizations
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`
+- **Grocy**: `grocy`, `grocy-namespace` — revisit when needed
 
 ### Next Actions
 
