@@ -101,7 +101,7 @@ rules:
   - apiGroups: ["kustomize.toolkit.fluxcd.io"]
     resources:
       - kustomizations
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["metrics.k8s.io"]
     resources:
       - pods

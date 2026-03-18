@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - require-gitops.yaml
   - inject-mitmproxy-proxy.yaml
+  - restrict-claude-kustomization-patch.yaml
