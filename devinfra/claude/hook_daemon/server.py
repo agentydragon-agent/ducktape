@@ -7,7 +7,6 @@ startup (pydantic, opentelemetry, session_start) so individual hook calls are fa
 import asyncio
 import json
 import logging
-import os
 import signal
 import time
 from pathlib import Path
@@ -87,22 +86,10 @@ async def handle_hook(req: HookRequest) -> HookResponse:
 
 
 async def _handle_session_start(hook_input: SessionStartHookInput, env: dict[str, str]) -> AnyHookOutput | None:
-    """Handle SessionStart by running the existing session_start logic.
-
-    Patches os.environ with the caller's env so session_start code (which reads
-    os.environ) gets the correct values. The full refactor to pass env dicts
-    through session_start internals can come later.
-    """
-    old_environ = os.environ.copy()
-    os.environ.clear()
-    os.environ.update(env)
-    try:
-        session_dir = HookSettings.session_dir_for_id(hook_input.session_id)
-        settings = HookSettings(session_dir=session_dir)
-        return await _async_handle(hook_input, settings)
-    finally:
-        os.environ.clear()
-        os.environ.update(old_environ)
+    """Handle SessionStart by passing caller's env through to session_start."""
+    session_dir = HookSettings.session_dir_for_id(hook_input.session_id)
+    settings = HookSettings(session_dir=session_dir)
+    return await _async_handle(hook_input, settings, caller_env=env)
 
 
 @app.get("/health")

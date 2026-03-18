@@ -10,7 +10,6 @@ and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 import asyncio
 import logging
 import logging.handlers
-import os
 import shutil
 import sys
 from dataclasses import dataclass, field
@@ -44,10 +43,9 @@ from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
 from devinfra.claude.managed_files import write_config
-from devinfra.claude.settings import CONFIG_FILES, HookSettings, is_web_mode
+from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
 from devinfra.claude.tracing import add_otlp_exporter, init_tracing, shutdown_tracing
-from util import env
 
 logger = logging.getLogger(__name__)
 
@@ -456,13 +454,22 @@ async def _setup_web(
 
 
 async def run_session(
-    hook_input: SessionStartHookInput, settings: HookSettings, env_file_path: Path, *, web_mode: bool
+    hook_input: SessionStartHookInput,
+    settings: HookSettings,
+    env_file_path: Path,
+    *,
+    web_mode: bool,
+    caller_env: dict[str, str],
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
     Dispatches platform-specific setup, then runs shared steps:
     bazelrc render, wrapper install, env file write, session context emit.
+
+    caller_env: the hook client's environment dict, threaded through from
+    the daemon to avoid os.environ patching.
     """
+
     collector, log_file = setup_logging(settings, print_banner=web_mode)
     tracer, trace_file = init_tracing(hook_input.session_id, settings.session_dir)
     mode_label = "web" if web_mode else "cli"
@@ -475,9 +482,13 @@ async def run_session(
     logger.info("Session start hook (%s mode)", mode_label)
     logger.info("Hook input: %s", hook_input.model_dump_json())
     log_entrypoint_debug("session_start")
-    logger.info("Environment: %s", dict(os.environ))
+    logger.info("Environment: %s", caller_env)
 
-    project_dir = env.get_required_env_path("CLAUDE_PROJECT_DIR")
+    project_dir_str = caller_env.get("CLAUDE_PROJECT_DIR")
+    if not project_dir_str:
+        msg = "CLAUDE_PROJECT_DIR environment variable is required"
+        raise KeyError(msg)
+    project_dir = Path(project_dir_str)
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
     logger.info("Session directory: %s", settings.session_dir)
 
@@ -588,8 +599,14 @@ async def run_session(
     return output
 
 
-async def _async_handle(hook_input: SessionStartHookInput, settings: HookSettings) -> SessionStartOutput:
-    """Async entry point called from hook_dispatch. Dispatches to web or CLI mode."""
-    env_file_path = env.get_required_env_path("CLAUDE_ENV_FILE")
-    web_mode = is_web_mode()
-    return await run_session(hook_input, settings, env_file_path, web_mode=web_mode)
+async def _async_handle(
+    hook_input: SessionStartHookInput, settings: HookSettings, caller_env: dict[str, str]
+) -> SessionStartOutput:
+    """Async entry point called from the hook daemon with the client's env."""
+    env_file_path_str = caller_env.get("CLAUDE_ENV_FILE")
+    if not env_file_path_str:
+        msg = "CLAUDE_ENV_FILE environment variable is required"
+        raise KeyError(msg)
+    env_file_path = Path(env_file_path_str)
+    web_mode = caller_env.get("CLAUDE_CODE_REMOTE") == "true"
+    return await run_session(hook_input, settings, env_file_path, web_mode=web_mode, caller_env=caller_env)
