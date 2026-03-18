@@ -6,6 +6,8 @@ from pathlib import Path
 
 import uvicorn
 
+from devinfra.claude.hook_daemon.server import app, configure
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Hook daemon")
@@ -16,15 +18,12 @@ def main() -> None:
     daemon_dir = Path(args.daemon_dir)
     daemon_dir.mkdir(parents=True, exist_ok=True)
 
-    # Configure file logging before importing the app (which sets up module loggers)
     log_file = daemon_dir / "daemon.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
     )
-
-    from devinfra.claude.hook_daemon.server import app, configure  # noqa: PLC0415 — after logging setup
 
     configure(daemon_dir)
 

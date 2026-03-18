@@ -46,6 +46,7 @@ def call_daemon(hook_input: AnyHookInput, env: dict[str, str], settings: HookSet
         result = _post_to_daemon(request, sock_path)
         if result is not None:
             return result
+        logger.info("Daemon unreachable on existing socket %s, will restart", sock_path)
 
     # Daemon unreachable or socket missing — start it
     if _start_daemon(settings):
@@ -73,6 +74,15 @@ def _post_to_daemon(request: HookRequest, sock_path: Path) -> HookResponse | Non
         return None
 
 
+def _is_pid_alive(pid: int) -> bool:
+    """Check if a process with the given PID is alive."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, OSError):
+        return False
+
+
 def _start_daemon(settings: HookSettings) -> bool:
     """Fork daemon as a detached background process. Returns True if started."""
     daemon_dir = settings.get_hook_daemon_dir()
@@ -83,33 +93,37 @@ def _start_daemon(settings: HookSettings) -> bool:
     if pidfile.exists():
         try:
             pid = int(pidfile.read_text().strip())
-            os.kill(pid, 0)  # Check if process is alive
-            # PID is alive but socket is gone — stale state, kill it
-            if not sock_path.exists():
-                logger.info("Stale daemon (pid=%d, no socket), killing", pid)
-                os.kill(pid, signal.SIGTERM)
-                time.sleep(0.5)
-                with contextlib.suppress(ProcessLookupError):
-                    os.kill(pid, signal.SIGKILL)
+            if _is_pid_alive(pid):
+                # PID is alive but socket is gone — stale state, kill it
+                if not sock_path.exists():
+                    logger.info("Stale daemon (pid=%d, socket missing), killing", pid)
+                    os.kill(pid, signal.SIGTERM)
+                    time.sleep(0.5)
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, signal.SIGKILL)
+                    logger.info("Killed stale daemon pid=%d", pid)
+                else:
+                    logger.debug("Daemon already running (pid=%d, socket=%s)", pid, sock_path)
+                    return True
             else:
-                # Daemon is running with socket — nothing to do
-                return True
-        except (ProcessLookupError, ValueError, OSError):
-            pass  # PID is dead, clean up below
+                logger.info("Stale pidfile (pid=%d is dead), cleaning up", pid)
+        except (ValueError, OSError) as e:
+            logger.warning("Bad pidfile %s: %s", pidfile, e)
 
     # Create daemon dir
     daemon_dir.mkdir(parents=True, exist_ok=True)
 
     # Clean stale socket
     if sock_path.exists():
+        logger.debug("Removing stale socket %s", sock_path)
         sock_path.unlink()
 
-    # Find the daemon entry point
-    daemon_module = "devinfra.claude.hook_daemon.main"
-
     # Fork daemon as detached subprocess
+    daemon_module = "devinfra.claude.hook_daemon.main"
     log_out = daemon_dir / "daemon.log"
     log_err = daemon_dir / "daemon.err.log"
+
+    logger.info("Starting daemon: module=%s sock=%s daemon_dir=%s", daemon_module, sock_path, daemon_dir)
 
     with log_out.open("a") as stdout_f, log_err.open("a") as stderr_f:
         proc = subprocess.Popen(
@@ -128,6 +142,7 @@ def _start_daemon(settings: HookSettings) -> bool:
 
 def _wait_for_sock(sock_path: Path, *, timeout_secs: float = 5) -> bool:
     """Poll until socket file exists and accepts connections."""
+    logger.debug("Waiting for daemon socket %s (timeout=%.1fs)", sock_path, timeout_secs)
     deadline = time.monotonic() + timeout_secs
     while time.monotonic() < deadline:
         if sock_path.exists():
@@ -135,9 +150,10 @@ def _wait_for_sock(sock_path: Path, *, timeout_secs: float = 5) -> bool:
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.connect(str(sock_path))
                 s.close()
+                logger.debug("Daemon socket ready at %s", sock_path)
                 return True
             except (ConnectionRefusedError, OSError):
                 pass
         time.sleep(0.1)
-    logger.warning("Daemon socket did not appear within %.1fs", timeout_secs)
+    logger.warning("Daemon socket did not appear within %.1fs at %s", timeout_secs, sock_path)
     return False

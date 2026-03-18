@@ -28,6 +28,7 @@ py_library(
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:session_start",
         "@pypi//fastapi",
+        "@pypi//opentelemetry_api",
     ],
 )
 

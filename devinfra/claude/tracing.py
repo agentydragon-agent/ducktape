@@ -11,9 +11,10 @@ import logging
 from pathlib import Path
 
 from opentelemetry import trace
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SimpleSpanProcessor
 
 from devinfra.claude.hook_config import OtelConfig
 
@@ -60,10 +61,6 @@ def add_otlp_exporter(config: OtelConfig) -> None:
     provider = trace.get_tracer_provider()
     if not isinstance(provider, TracerProvider):
         return
-
-    # Defer heavy OTLP imports — avoids paying ~200ms import cost when not configured
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # noqa: PLC0415
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor  # noqa: PLC0415
 
     headers: dict[str, str] = {}
     if config.bearer_token:

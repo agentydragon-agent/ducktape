@@ -108,6 +108,11 @@ class HookSettings(BaseSettings):
     # All session-scoped outputs (auth-proxy CAs, supervisor, bin wrappers, etc.) go here.
     session_dir: Path = Field(description="Per-session output directory")
 
+    @staticmethod
+    def session_dir_for_id(session_id: str) -> Path:
+        """Compute session directory from a session ID."""
+        return Path.home() / ".claude" / "session-env" / session_id
+
     def get_cache_dir(self) -> Path:
         """Get base cache directory for claude-hooks (auto-created)."""
         return Path(user_cache_dir(appname="claude-hooks", ensure_exists=True))
