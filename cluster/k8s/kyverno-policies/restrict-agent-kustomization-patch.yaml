@@ -45,14 +45,18 @@ spec:
             - expression: "object.spec == oldObject.spec"
               message: "Changes to spec are not permitted."
             - expression: >
-                object.metadata.annotations.all(k,
-                  k == 'reconcile.fluxcd.io/requestedAt' ||
-                  (k in oldObject.metadata.annotations &&
-                   object.metadata.annotations[k] == oldObject.metadata.annotations[k]))
+                (!has(object.metadata.annotations) ||
+                 object.metadata.annotations.all(k,
+                   k == 'reconcile.fluxcd.io/requestedAt' ||
+                   (has(oldObject.metadata.annotations) &&
+                    k in oldObject.metadata.annotations &&
+                    object.metadata.annotations[k] == oldObject.metadata.annotations[k])))
                 &&
-                oldObject.metadata.annotations.all(k,
-                  k == 'reconcile.fluxcd.io/requestedAt' ||
-                  (k in object.metadata.annotations &&
-                   oldObject.metadata.annotations[k] == object.metadata.annotations[k]))
+                (!has(oldObject.metadata.annotations) ||
+                 oldObject.metadata.annotations.all(k,
+                   k == 'reconcile.fluxcd.io/requestedAt' ||
+                   (has(object.metadata.annotations) &&
+                    k in object.metadata.annotations &&
+                    oldObject.metadata.annotations[k] == object.metadata.annotations[k])))
               message: "Only the reconcile.fluxcd.io/requestedAt annotation may be changed."
   validationFailureAction: Enforce
