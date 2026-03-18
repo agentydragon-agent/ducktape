@@ -20,6 +20,9 @@ See <changelog.md> for detailed change history.
   or CPX41 upgrade.
 - **BuildBuddy Executor**: `buildbuddy-executor` — suspended (was already scaled to 0
   replicas). Re-enable when remote execution is needed.
+- **InvenTree**: `inventree`, `inventree-namespace`, `inventree-secrets`,
+  `inventree-token-provisioner`, `authentik-blueprint-inventree-secret` — suspended to
+  reduce VPS memory pressure. Re-enable after pod rebalancing or CPX41 upgrade.
 
 ### Next Actions
 
