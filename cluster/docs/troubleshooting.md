@@ -408,6 +408,56 @@ startup GC only deletes genuinely expired secrets, not all existing ones.
 
 **Lessons Learned**: See <lessons_learned/2025-11-19-tofu-controller-tls-cache-desync.md>
 
+### tofu-controller Stale State Locks After Restart
+
+**Symptoms**:
+
+- Terraform resources stuck with `error acquiring the state lock`
+- Lock info shows `Who: runner@xxx-tf-runner` referencing a pod that no longer exists
+- `kubectl get leases -n flux-system` shows `lock-tfstate-*` Leases with `holderIdentity` set
+- Runner pods cycle rapidly: start → hit lock → Error → Terminating → repeat every 15s
+- Cascade: dozens of Flux Kustomizations blocked on stuck Terraform resources
+
+**Root Cause**:
+
+`kubectl rollout restart` (or any pod template change) kills the controller pod while runner
+pods are mid-plan. Runner pods are standalone (no `ownerReferences`) — they survive the
+restart as orphans. The TLS cache desync bug breaks gRPC between the new controller and
+orphaned runners, so the lock-release call chain never executes. The lock (a `Lease` object
+with `holderIdentity` set) persists indefinitely. tofu-controller has no stale lock detection
+or force-unlock logic.
+
+**Diagnosis**:
+
+```bash
+# List stale locks
+kubectl get leases -n flux-system -o json | python3 -c "
+import json, sys
+for item in json.load(sys.stdin)['items']:
+    name = item['metadata']['name']
+    holder = item['spec'].get('holderIdentity', '')
+    if name.startswith('lock-tfstate-') and holder:
+        print(f'LOCKED: {name.replace(\"lock-tfstate-default-\", \"\"):35s} holder={holder}')
+"
+```
+
+**Resolution**:
+
+```bash
+# Delete all lock Leases (they are recreated on next lock acquisition)
+kubectl delete leases -n flux-system -l tfstate=true
+
+# Force reconcile
+kubectl annotate terraform -n flux-system --all \
+  reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
+```
+
+**Prevention**: Never `kubectl rollout restart` the tofu-controller without first suspending
+all Terraform resources and deleting runner pods. See the safe restart procedure in
+<lessons_learned/2026-03-18-tofu-controller-stale-state-locks.md>.
+
+**Lessons Learned**: See <lessons_learned/2026-03-18-tofu-controller-stale-state-locks.md>
+
 ### ESO Password Generator Desynchronization (SSO Authentication Failures)
 
 **Symptoms**:
