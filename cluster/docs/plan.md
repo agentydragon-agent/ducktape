@@ -14,6 +14,12 @@ See <changelog.md> for detailed change history.
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`
 - **Grocy**: `grocy`, `grocy-namespace` — revisit when needed
+- **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `gitea-admin-token`,
+  `gitea-servicemonitor`, `authentik-blueprint-gitea-secret` — suspended to reduce
+  VPS memory pressure after 2026-03-17 OOM incident. Re-enable after pod rebalancing
+  or CPX41 upgrade.
+- **BuildBuddy Executor**: `buildbuddy-executor` — suspended (was already scaled to 0
+  replicas). Re-enable when remote execution is needed.
 
 ### Next Actions
 
