@@ -127,7 +127,7 @@ def _start_daemon(settings: HookSettings) -> bool:
 
     with log_out.open("a") as stdout_f, log_err.open("a") as stderr_f:
         proc = subprocess.Popen(
-            [sys.executable, "-m", daemon_module, "--sock", str(sock_path), "--daemon-dir", str(daemon_dir)],
+            [sys.executable, "-m", daemon_module, "--sock", sock_path, "--daemon-dir", daemon_dir],
             stdout=stdout_f,
             stderr=stderr_f,
             env=python_env(),
