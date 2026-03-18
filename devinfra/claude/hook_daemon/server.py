@@ -21,7 +21,8 @@ from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
-from devinfra.claude.hook_daemon.session_start import _async_handle
+from devinfra.claude.hook_daemon.session_start import handle as handle_session_start
+from devinfra.claude.http_client import build_http_client
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 
@@ -70,7 +71,11 @@ async def handle_hook(req: HookRequest) -> HookResponse:
         output: AnyHookOutput | None = None
         match req.hook:
             case SessionStartHookInput():
-                output = await _handle_session_start(req.hook, req.env)
+                paths = SessionPaths.from_env(req.hook.session_id, req.env)
+                with build_http_client(req.env) as http:
+                    output = await handle_session_start(
+                        req.hook, paths, app.state.settings, caller_env=req.env, http=http
+                    )
             case PreToolUseInput():
                 output = evaluate_pre(req.hook)
             case PostToolUseInput():
@@ -85,12 +90,6 @@ async def handle_hook(req: HookRequest) -> HookResponse:
         logger.info("hook %s → %s", hook_name, resp_json)
 
         return resp
-
-
-async def _handle_session_start(hook_input: SessionStartHookInput, env: dict[str, str]) -> AnyHookOutput | None:
-    """Handle SessionStart by passing caller's env through to session_start."""
-    paths = SessionPaths(hook_input.session_id)
-    return await _async_handle(hook_input, paths, app.state.settings, caller_env=env)
 
 
 @app.get("/health")
