@@ -223,6 +223,7 @@ module "wyrm2" {
   additional_disks = [
     { interface = "scsi30", size_gb = 200 },  # containerd (/var/lib/containerd)
     { interface = "virtio0", size_gb = 500 }, # local-path provisioner (/var/local-path-provisioner)
+    { interface = "virtio1", size_gb = 100 }, # Longhorn (/var/mnt/longhorn)
   ]
 
   proxmox_node_name = var.proxmox_node_name

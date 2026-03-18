@@ -34,6 +34,7 @@
       "topology.kubernetes.io/region" = "proxmox";
       "topology.kubernetes.io/zone" = "atlas";
       "csi.proxmox.sinextra.dev/max-volume-attachments" = "29";
+      "node.longhorn.io/create-default-disk" = "true";
     };
     # nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
@@ -73,6 +74,12 @@
   };
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+  };
+  fileSystems."/var/mnt/longhorn" = {
+    device = "/dev/vdb";
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;

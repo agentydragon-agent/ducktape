@@ -17,6 +17,26 @@ See <changelog.md> for detailed change history.
 
 ### Next Actions
 
+- [ ] **Prometheus: investigate memory growth and right-size** — Prometheus was OOM-killed
+      8 times in 49 minutes at 2Gi limit (1686Mi usage, WAL replay spikes higher).
+      Currently pinned to wyrm2 with temporary 6Gi limit. Investigate: which scrape
+      targets / metrics drive memory growth, whether `retentionSize: 15GB` causes
+      excessive WAL, and what the steady-state memory footprint actually is. Then
+      right-size the limit (probably 2-3Gi) and revert to a tighter value.
+      See <debug/2026-03-17-cluster-down/observations.md>.
+- [ ] **Prometheus: unpin from wyrm2** — Currently pinned via `nodeSelector:
+kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
+      on VPS nodes (7.5GiB CPX31 too small for Prometheus + 33 other pods). Remove the
+      pin once: (a) PriorityClasses are deployed so Prometheus survives eviction, (b) VPS
+      nodes have enough headroom (CPX41 upgrade or pod rebalancing), and (c) Prometheus
+      memory limit is right-sized. The pin prevents HA and ties Prometheus to a single
+      home node.
+- [ ] **wyrm2: apply dedicated Longhorn disk** — `virtio1` 100GB disk added to Terraform
+      (`terraform/nixos-dev-env/main.tf`), mounted at `/var/mnt/longhorn` in NixOS
+      (`nix/nixos/hosts/wyrm2/default.nix`). Needs `tofu apply` + `nixos-rebuild switch`.
+      After applying, migrate Longhorn data from `/var/lib/longhorn` (root filesystem) to
+      the dedicated disk. The Kyverno `longhorn-disk-config` policy already handles
+      `region: proxmox` nodes with path `/var/mnt/longhorn`.
 - [ ] **Enable low-priority workloads to schedule on rugged (roaming node)** — Add
       `node-role.kubernetes.io/roaming=true:NoSchedule` toleration to stateless,
       downtime-tolerant deployments currently pinned to wyrm2: `grocy`, `scanner`,
@@ -322,6 +342,10 @@ Apply `restricted` PSS labels to application namespaces. System namespaces (`kub
 `csi-proxmox`, `cilium`) keep `privileged`. Start with `warn` mode, promote to `enforce`.
 
 ### TODO: Scheduling Priorities for Degraded Mode
+
+**Motivated by**: 2026-03-17 outage — Prometheus (1686Mi) OOM-killed 8 times on VPS nodes
+(7.5GiB CPX31, 34 pods, 92% memory). Without PriorityClasses, the scheduler couldn't evict
+lower-priority pods to make room. See <debug/2026-03-17-cluster-down/observations.md>.
 
 Define pod priority classes and resource budgets so that when the cluster loses nodes
 (e.g., reduced to 1 VPS only), the scheduler evicts non-critical workloads to keep
