@@ -164,7 +164,7 @@ to validate them against the token's identity.`,
 			var poller orchestrator.PollerInterface
 			if pollHook != "" {
 				// Create PollHook when poll hook command is specified
-				poller = orchestrator.NewPollHook(nil, pollHook, pollHookTimeout, nil, sandboxBackend, nil, log)
+				poller = orchestrator.NewPollHook(nil, pollHook, pollHookTimeout, nil, sandboxBackend != "" && sandboxBackend != "none", sandboxBackend, nil, log)
 			} else {
 				// Create regular Poller when no hook command
 				poller = orchestrator.NewPollerWithWorkerID(apiURL, environmentID, secret, serviceKeyFile, clientID, log)

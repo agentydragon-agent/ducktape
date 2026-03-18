@@ -226,6 +226,12 @@ Provide a JSON object via stdin with the following structure:
 			stdinParseDuration := time.Since(stdinStartTime)
 			o11y.RecordDuration("env_manager.stdin_parse.duration_ms", nil, nil, float64(stdinParseDuration.Milliseconds()))
 
+			// Derive apiURL from parsed context's startup context.
+			var apiURL string
+			if parsedCtx != nil && parsedCtx.StartupContext != nil {
+				apiURL = parsedCtx.StartupContext.APIBaseURL
+			}
+
 			// 0xb79583: Create HTTP client for session ingress and activity recorder
 			var activityRecorder session.ActivityRecorder
 			if parsedCtx != nil && parsedCtx.AuthContext != nil {
