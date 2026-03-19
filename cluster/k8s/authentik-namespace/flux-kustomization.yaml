@@ -4,6 +4,7 @@ metadata:
   name: authentik-namespace
   namespace: flux-system
 spec:
+  retries: 0
   interval: 1h
   path: ./cluster/k8s/authentik-namespace
   prune: false # Don't delete namespace on kustomization removal

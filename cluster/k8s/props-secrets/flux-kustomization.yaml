@@ -4,6 +4,8 @@ metadata:
   name: props-secrets
   namespace: flux-system
 spec:
+  retries: 3
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/props-secrets
   prune: true

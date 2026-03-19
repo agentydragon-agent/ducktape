@@ -36,6 +36,9 @@ class FluxKustomizationSpec(BaseModel):
     path: str = ""
     depends_on: list[DependsOn] = []
     health_checks: list[HealthCheck] = []
+    retries: int | None = None
+    retry_interval: str | None = None
+    wait: bool = False
 
 
 class FluxKustomization(BaseModel):

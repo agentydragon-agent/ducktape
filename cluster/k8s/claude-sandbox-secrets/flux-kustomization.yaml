@@ -4,6 +4,7 @@ metadata:
   name: claude-sandbox-secrets
   namespace: flux-system
 spec:
+  retries: 0
   interval: 10m
   path: ./cluster/k8s/claude-sandbox-secrets
   prune: true

@@ -4,6 +4,7 @@ metadata:
   name: scanner-namespace
   namespace: flux-system
 spec:
+  retries: 0
   interval: 10m
   path: ./cluster/k8s/scanner-namespace
   prune: true

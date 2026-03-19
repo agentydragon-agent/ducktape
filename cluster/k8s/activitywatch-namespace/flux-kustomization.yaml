@@ -4,6 +4,7 @@ metadata:
   name: activitywatch-namespace
   namespace: flux-system
 spec:
+  retries: 0
   interval: 10m
   path: ./cluster/k8s/activitywatch-namespace
   prune: true

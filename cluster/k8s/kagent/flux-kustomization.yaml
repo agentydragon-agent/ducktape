@@ -4,6 +4,8 @@ metadata:
   name: kagent
   namespace: flux-system
 spec:
+  retries: 5
+  retryInterval: 1m
   suspend: true
   interval: 10m
   path: ./cluster/k8s/kagent

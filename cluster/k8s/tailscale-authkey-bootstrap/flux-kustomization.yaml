@@ -4,6 +4,8 @@ metadata:
   name: tailscale-authkey-bootstrap
   namespace: flux-system
 spec:
+  retries: 5
+  retryInterval: 1m
   suspend: true # Tailscale DaemonSet conflicts with Cilium Gateway (hostNetwork routing)
   interval: 10m
   timeout: 5m

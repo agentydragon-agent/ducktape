@@ -4,6 +4,8 @@ metadata:
   name: homeassistant-proxy-namespace
   namespace: flux-system
 spec:
+  retries: 5
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/homeassistant-proxy-namespace
   prune: true

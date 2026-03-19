@@ -19,7 +19,7 @@ import yaml
 
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
-from cluster.validation.health_checks import check_controller_health_checks
+from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
@@ -50,6 +50,10 @@ def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
 def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path, workspace: Path) -> None:
     errors = check_controller_health_checks(cluster, k8s_dir, workspace)
     assert not errors, "\n".join(errors)
+
+
+def test_retry_policy(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    check_retry_policy(cluster, k8s_dir)
 
 
 @pytest.mark.xfail(reason="Pre-existing orphaned files (config.yaml referenced via configMapGenerator, not resources)")

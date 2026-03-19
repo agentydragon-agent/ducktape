@@ -4,6 +4,8 @@ metadata:
   name: inventree-secrets
   namespace: flux-system
 spec:
+  retries: 3
+  retryInterval: 1m
   suspend: true
   interval: 10m
   path: ./cluster/k8s/applications/inventree-secrets

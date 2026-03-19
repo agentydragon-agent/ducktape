@@ -4,6 +4,7 @@ metadata:
   name: atuin-user-provisioner
   namespace: flux-system
 spec:
+  retries: 0
   interval: 10m
   path: ./cluster/k8s/applications/atuin-user-provisioner
   prune: true

@@ -5,6 +5,8 @@ metadata:
   name: harbor-proxy-cache
   namespace: flux-system
 spec:
+  retries: 3
+  retryInterval: 1m
   interval: 10m0s
   path: ./cluster/k8s/harbor-proxy-cache
   prune: true

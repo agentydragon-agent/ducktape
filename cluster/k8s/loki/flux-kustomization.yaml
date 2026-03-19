@@ -4,6 +4,8 @@ metadata:
   name: loki
   namespace: flux-system
 spec:
+  retries: 5
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/loki
   prune: true

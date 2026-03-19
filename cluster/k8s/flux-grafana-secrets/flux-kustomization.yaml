@@ -1,13 +1,13 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: dns-automation
+  name: flux-grafana-secrets
   namespace: flux-system
 spec:
-  retries: 3
+  retries: 5
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/dns-automation
+  path: ./cluster/k8s/flux-grafana-secrets
   prune: true
   sourceRef:
     kind: GitRepository
@@ -15,10 +15,11 @@ spec:
   healthChecks:
     - apiVersion: infra.contrib.fluxcd.io/v1alpha2
       kind: Terraform
-      name: dns-records
+      name: grafana-flux-token
       namespace: flux-system
+  timeout: 5m
   dependsOn:
+    - name: monitoring-stack
+    - name: vault-token
+    - name: external-secrets-config
     - name: tofu-controller
-    - name: sealed-secrets # aws-credentials-sealed.yaml
-    - name: powerdns # PowerDNS must be running (API endpoint)
-    - name: reflector # Reflector must copy powerdns-api-key to flux-system

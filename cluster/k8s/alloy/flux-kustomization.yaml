@@ -4,6 +4,8 @@ metadata:
   name: alloy
   namespace: flux-system
 spec:
+  retries: 5
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/alloy
   prune: true

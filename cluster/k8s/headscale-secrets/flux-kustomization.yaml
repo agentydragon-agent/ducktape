@@ -4,6 +4,8 @@ metadata:
   name: headscale-secrets
   namespace: flux-system
 spec:
+  retries: 3
+  retryInterval: 1m
   interval: 10m
   timeout: 10m
   sourceRef:

@@ -4,6 +4,7 @@ metadata:
   name: agent-shared-rbac
   namespace: flux-system
 spec:
+  retries: 0
   interval: 10m
   path: ./cluster/k8s/agent-shared-rbac
   prune: true
@@ -11,3 +12,5 @@ spec:
     kind: GitRepository
     name: flux-system
   timeout: 2m
+  dependsOn:
+    - name: kyverno-policies

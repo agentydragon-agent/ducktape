@@ -4,6 +4,8 @@ metadata:
   name: kyverno
   namespace: flux-system
 spec:
+  retries: 5
+  retryInterval: 1m
   interval: 10m0s
   path: ./cluster/k8s/kyverno
   prune: true

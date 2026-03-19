@@ -4,6 +4,7 @@ metadata:
   name: claude-rbac
   namespace: flux-system
 spec:
+  retries: 0
   interval: 10m
   path: ./cluster/k8s/claude-rbac
   prune: true
@@ -11,6 +12,8 @@ spec:
     kind: GitRepository
     name: flux-system
   timeout: 2m
+  dependsOn:
+    - name: kyverno-policies
   healthChecks:
     - apiVersion: v1
       kind: Namespace

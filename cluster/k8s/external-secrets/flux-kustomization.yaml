@@ -4,6 +4,7 @@ metadata:
   name: external-secrets-config
   namespace: flux-system
 spec:
+  retries: 3
   interval: 10m0s
   retryInterval: 30s
   path: ./cluster/k8s/external-secrets

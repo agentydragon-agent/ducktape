@@ -4,6 +4,8 @@ metadata:
   name: ollama-secrets
   namespace: flux-system
 spec:
+  retries: 3
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/ollama-secrets
   prune: true

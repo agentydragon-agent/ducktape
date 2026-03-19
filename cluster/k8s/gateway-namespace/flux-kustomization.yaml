@@ -4,6 +4,7 @@ metadata:
   name: gateway-namespace
   namespace: flux-system
 spec:
+  retries: 0
   interval: 10m
   path: ./cluster/k8s/gateway-namespace
   prune: true

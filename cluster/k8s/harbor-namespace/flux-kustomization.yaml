@@ -4,6 +4,7 @@ metadata:
   name: harbor-namespace
   namespace: flux-system
 spec:
+  retries: 0
   interval: 1h
   path: ./cluster/k8s/harbor-namespace
   prune: false

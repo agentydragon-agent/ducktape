@@ -5,6 +5,8 @@ metadata:
   name: powerdns-operator
   namespace: flux-system
 spec:
+  retries: 5
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/powerdns-operator
   prune: true
