@@ -86,8 +86,8 @@ variable "memory_floating_mb" {
   default     = null
 }
 
-variable "gpu_mappings" {
-  description = "PCI hardware mapping names for GPU passthrough"
+variable "gpu_pci_ids" {
+  description = "Raw PCI device IDs for GPU passthrough (e.g. '0000:01:00.0')"
   type        = list(string)
   default     = []
 }

@@ -217,7 +217,7 @@ module "wyrm2" {
   image_import_path  = module.wyrm2_image.import_path
   machine_type       = "q35"
   memory_floating_mb = 0 # Disable balloon (VFIO incompatible)
-  gpu_mappings       = ["gpu0", "gpu1"]
+  gpu_pci_ids        = ["0000:01:00.0", "0000:03:00.0"]
   vga_type           = "qxl"
   # cache=never: virtiofsd with cache=auto leaks memory — it caches all accessed
   # files with no eviction, growing to 10+ GiB over days. On a 128 GiB host with

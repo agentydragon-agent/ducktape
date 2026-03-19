@@ -55,14 +55,14 @@ resource "proxmox_virtual_environment_vm" "vm" {
     floating  = var.memory_floating_mb
   }
 
-  # GPU passthrough via PCI hardware mappings
+  # GPU passthrough via raw PCI device IDs
   dynamic "hostpci" {
-    for_each = { for i, name in var.gpu_mappings : i => name }
+    for_each = { for i, id in var.gpu_pci_ids : i => id }
     content {
-      device  = "hostpci${hostpci.key}"
-      mapping = hostpci.value
-      pcie    = true
-      rombar  = true
+      device = "hostpci${hostpci.key}"
+      id     = hostpci.value
+      pcie   = true
+      rombar = true
     }
   }
 
