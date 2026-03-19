@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - flux-system/
   - flux-webhook/flux-kustomization.yaml
+  - flux-grafana-secrets/flux-kustomization.yaml
   - kyverno/flux-kustomization.yaml
   - sealed-secrets/flux-kustomization.yaml
   - tofu-controller/flux-kustomization.yaml
@@ -67,6 +68,7 @@ resources:
   - applications/harbor-secrets/flux-kustomization.yaml
   - harbor-proxy-cache/flux-kustomization.yaml
   - harbor-ci/flux-kustomization.yaml
+  - harbor-props/flux-kustomization.yaml
   - harbor-pull-secret/flux-kustomization.yaml
   - harbor-webhook/flux-kustomization.yaml
   - gitea-namespace/flux-kustomization.yaml

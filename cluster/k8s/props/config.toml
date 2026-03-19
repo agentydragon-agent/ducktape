@@ -5,7 +5,7 @@ backend_url = "http://props:8000"
 [executor]
 type = "kubernetes"
 namespace = "props"
-image_pull_secret = "props-registry-pull"
+image_pull_secret = "props-harbor-robot"
 
 [agent_env]
 PGHOST = "props-postgresql"

@@ -63,13 +63,25 @@ spec:
                   name: props-evaluator-credentials
                   key: password
             - name: PROPS_REGISTRY_UPSTREAM_URL
-              value: http://props-registry:5000
+              value: http://harbor.harbor:80
+            - name: PROPS_REGISTRY_UPSTREAM_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: props-harbor-robot
+                  key: username
+            - name: PROPS_REGISTRY_UPSTREAM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: props-harbor-robot
+                  key: password
+            - name: PROPS_REGISTRY_UPSTREAM_PROJECT
+              value: props
             - name: PROPS_REGISTRY_HOST
               value: props
             - name: PROPS_REGISTRY_PORT
               value: "8000"
             - name: PROPS_REGISTRY_PULL_HOST
-              value: props.allegedly.works
+              value: registry.allegedly.works
           volumeMounts:
             - name: config
               mountPath: /etc/props

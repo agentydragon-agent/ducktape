@@ -11,7 +11,6 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -29,7 +28,7 @@ from props.backend.auth import (
     is_critic_dev_agent,
 )
 from props.backend.deps import AdminDb
-from props.core.oci_utils import is_digest
+from props.core.oci_utils import UpstreamRegistryConfig, get_upstream_registry_config, is_digest
 from props.db.database import Database
 from props.db.models import AgentDefinition, AgentType
 from props.db.notifications import GRADER_DEFINITION_CHANGED_CHANNEL, GraderDefinitionChangedNotification
@@ -41,25 +40,30 @@ router = APIRouter()
 _OCI_VERSION_HEADER = {"Docker-Distribution-API-Version": "registry/2.0"}
 
 
-def _upstream_registry_url() -> str:
-    """Read upstream registry URL from env on each call.
+def _get_upstream() -> UpstreamRegistryConfig:
+    """Read upstream registry config from env on each call.
 
-    Avoids caching at import time, which breaks tests that set
-    PROPS_REGISTRY_UPSTREAM_URL via monkeypatch after module import.
+    Avoids caching at import time, which breaks tests that set env vars
+    via monkeypatch after module import.
     """
-    return os.environ["PROPS_REGISTRY_UPSTREAM_URL"]
+    return get_upstream_registry_config()
 
 
 async def _proxy_to_upstream(request: Request) -> Response:
     """Forward request to upstream registry and return response."""
-    upstream_url = f"{_upstream_registry_url()}{request.url.path}"
+    upstream = _get_upstream()
+    upstream_url = f"{upstream.url}{upstream.rewrite_path(request.url.path)}"
     if request.url.query:
         upstream_url += f"?{request.url.query}"
 
     async with httpx.AsyncClient() as client:
         # Preserve multi-valued headers (e.g. multiple Accept lines from Docker)
         # by using a list of tuples instead of dict (which deduplicates keys).
-        headers = [(k, v) for k, v in request.headers.raw if k != b"host"]
+        # Strip the client's Authorization header — upstream uses its own credentials.
+        headers = [(k, v) for k, v in request.headers.raw if k not in (b"host", b"authorization")]
+        auth = upstream.auth_header()
+        if auth:
+            headers.append((b"authorization", auth.encode()))
 
         body = await request.body() if request.method not in ("GET", "HEAD") else b""
 
@@ -96,10 +100,13 @@ async def _extract_image_metadata(manifest_body: bytes, repository: str) -> _Ima
         if not config_digest:
             return _ImageMetadata(base_digest=None, display_name=None)
 
-        config_url = f"{_upstream_registry_url()}/v2/{repository}/blobs/{config_digest}"
+        upstream = _get_upstream()
+        config_url = f"{upstream.url}/v2/{upstream.repo_path(repository)}/blobs/{config_digest}"
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.get(config_url, timeout=5.0)
+                auth = upstream.auth_header()
+                headers = {"Authorization": auth} if auth else {}
+                response = await client.get(config_url, headers=headers, timeout=5.0)
                 if response.status_code != 200:
                     return _ImageMetadata(base_digest=None, display_name=None)
 
