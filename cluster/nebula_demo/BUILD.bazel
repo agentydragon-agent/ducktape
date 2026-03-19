@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "nebula_demo",
+    testonly = True,
+    srcs = [
+        "constants.go",
+        "nebula_config.go",
+        "talos_nebula_config.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/cluster/nebula_demo",
+    visibility = ["//cluster/nebula_demo:__subpackages__"],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "//cluster/kubespand/qemu_tests/vmconst",
+        "@com_github_siderolabs_crypto//x509",
+        "@com_github_siderolabs_talos_pkg_machinery//config/types/v1alpha1",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)
+
+go_test(
+    name = "nebula_doublenat_test",
+    timeout = "long",
+    srcs = ["nebula_doublenat_test.go"],
+    data = [
+        "//cluster/kubespand/qemu_tests:vmlinuz",
+        "//cluster/kubespand/qemu_tests/vms/router:initramfs",
+        "//cluster/nebula_demo/talos:talos_nebula_image",
+    ] + glob(["testdata/**"]),
+    embed = [":nebula_demo"],
+    tags = [
+        "cpu:4",
+        "manual",
+        "requires-docker",
+        "requires_qemu",
+    ],
+    deps = [
+        "//cluster/kubespand/qemu_tests",
+        "//cluster/kubespand/qemu_tests/vmconst",
+        "@com_github_siderolabs_talos_pkg_machinery//client",
+    ],
+)

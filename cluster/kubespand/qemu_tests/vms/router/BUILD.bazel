@@ -21,12 +21,18 @@ go_binary(
     goarch = "amd64",
     goos = "linux",
     static = "on",
-    visibility = ["//cluster/kubespand:__subpackages__"],
+    visibility = [
+        "//cluster/kubespand:__subpackages__",
+        "//cluster/nebula_demo:__subpackages__",
+    ],
 )
 
 initramfs(
     name = "initramfs",
     testonly = True,
     init = ":router",
-    visibility = ["//cluster/kubespand:__subpackages__"],
+    visibility = [
+        "//cluster/kubespand:__subpackages__",
+        "//cluster/nebula_demo:__subpackages__",
+    ],
 )

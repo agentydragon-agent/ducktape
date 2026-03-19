@@ -1,0 +1,12 @@
+baseProfileName: nocloud
+arch: amd64
+customization:
+  systemExtensions:
+    officialExtensions:
+      - siderolabs/nebula
+output:
+  kind: image
+  outFormat: raw
+  imageOptions:
+    diskFormat: qcow2
+    diskFormatOptions: "compat=1.1"

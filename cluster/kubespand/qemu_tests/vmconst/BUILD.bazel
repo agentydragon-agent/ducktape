@@ -5,5 +5,8 @@ go_library(
     testonly = True,
     srcs = ["vmconst.go"],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vmconst",
-    visibility = ["//cluster/kubespand:__subpackages__"],
+    visibility = [
+        "//cluster/kubespand:__subpackages__",
+        "//cluster/nebula_demo:__subpackages__",
+    ],
 )

@@ -1,0 +1,30 @@
+load("@rules_oci//oci:defs.bzl", "oci_load")
+
+# Talos nocloud disk image with Nebula system extension.
+# Same build pattern as //cluster/kubespand/qemu_tests/talos, but the
+# imager profile includes siderolabs/nebula.
+
+oci_load(
+    name = "talos_imager_load",
+    image = "@talos_imager_linux_amd64",
+    repo_tags = ["siderolabs/imager:build"],
+)
+
+filegroup(
+    name = "talos_imager_tarball",
+    srcs = [":talos_imager_load"],
+    output_group = "tarball",
+)
+
+genrule(
+    name = "talos_nebula_image",
+    srcs = [
+        ":talos_imager_tarball",
+        "build_talos_image.sh",
+        "imager-profile.yaml",
+    ],
+    outs = ["nocloud-amd64.qcow2"],
+    cmd = "$(location build_talos_image.sh) $(location :talos_imager_tarball) $(location imager-profile.yaml) $@",
+    tags = ["requires-docker"],
+    visibility = ["//cluster/nebula_demo:__subpackages__"],
+)

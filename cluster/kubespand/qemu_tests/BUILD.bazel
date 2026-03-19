@@ -12,7 +12,10 @@ go_library(
         "talos_helpers.go",
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests",
-    visibility = ["//cluster/kubespand:__subpackages__"],
+    visibility = [
+        "//cluster/kubespand:__subpackages__",
+        "//cluster/nebula_demo:__subpackages__",
+    ],
     deps = [
         "//cluster/kubespand/agentconfig",
         "//cluster/kubespand/qemu_tests/probepb",
@@ -46,7 +49,10 @@ genrule(
     srcs = ["@alpine_linux_virt//file"],
     outs = ["vmlinuz-virt"],
     cmd = "tar --warning=no-unknown-keyword -xzf $< -O boot/vmlinuz-virt > $@",
-    visibility = ["//cluster/kubespand:__subpackages__"],
+    visibility = [
+        "//cluster/kubespand:__subpackages__",
+        "//cluster/nebula_demo:__subpackages__",
+    ],
 )
 
 # ─ Extract full kernel modules tree for modprobe ─────────────────────────────
@@ -58,5 +64,8 @@ genrule(
     ],
     outs = ["modules_tree.tar"],
     cmd = "$(location extract_modules.sh) $(location @alpine_linux_virt//file) $@",
-    visibility = ["//cluster/kubespand:__subpackages__"],
+    visibility = [
+        "//cluster/kubespand:__subpackages__",
+        "//cluster/nebula_demo:__subpackages__",
+    ],
 )
