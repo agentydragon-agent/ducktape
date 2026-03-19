@@ -33,7 +33,8 @@ from skills.info_gathering.evals.harness import (
     load_skill,
     model_from_args,
     output_dir_from_args,
-    save_results,
+    run_output_paths,
+    save_summary,
 )
 from util.bazel.runfiles import get_required_path
 
@@ -63,12 +64,16 @@ class AnswerInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-@dataclass
-class SimAction:
-    """Records the sim's game action from a tool call."""
+class SimAnswer(BaseModel):
+    kind: Literal["answer"] = "answer"
+    response: Literal["yes", "no", "sort_of"]
 
-    tool_name: str
-    answer: str | None = None
+
+class SimCorrectAnswer(BaseModel):
+    kind: Literal["correct_answer"] = "correct_answer"
+
+
+SimAction = SimAnswer | SimCorrectAnswer
 
 
 @dataclass
@@ -116,24 +121,24 @@ class _TurnLogHandler(BaseHandler):
         *,
         eval_name: str,
         player: Literal["agent", "simulator"],
-        log_entries: list[LogEntry],
+        write_entry: Callable[[LogEntry], None],
         turn_getter: Callable[[], int],
     ) -> None:
         self._eval_name = eval_name
         self._player = player
-        self._log_entries = log_entries
+        self._write_entry = write_entry
         self._turn_getter = turn_getter
         self._text = ""
-        self._tool_calls: list[dict] = []
+        self._tool_calls: list[ToolCall] = []
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
         self._text += evt.text
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        self._tool_calls.append({"id": evt.call_id, "name": evt.name, "arguments": evt.args_json})
+        self._tool_calls.append(evt)
 
     def on_response(self, evt: Response) -> None:
-        self._log_entries.append(
+        self._write_entry(
             LogEntry(
                 timestamp=datetime.now(UTC).isoformat(),
                 eval_name=self._eval_name,
@@ -163,104 +168,117 @@ class _TwentyQuestionsRunner:
     ) -> None:
         self.name = name
         self.model = model
-        self.log_entries: list[LogEntry] = []
-        self._current_turn = 0
+        self._agent_system = agent_system
+        self._sim_system = sim_system
+        self._agent_tool_provider = agent_tool_provider
+
+    async def run(self, *, first_user_message: str, turn_limit: int, output_dir: Path) -> RunSummary:
+        """Run the full game loop and return summary."""
+        calls_path, summary_path = run_output_paths(self.name, output_dir)
+
+        with calls_path.open("w") as calls_file:
+
+            def write_entry(entry: LogEntry) -> None:
+                calls_file.write(entry.model_dump_json() + "\n")
+                calls_file.flush()
+
+            summary = await self._run_game(
+                first_user_message=first_user_message, turn_limit=turn_limit, write_entry=write_entry
+            )
+
+        save_summary(summary=summary, summary_path=summary_path)
+        return summary
+
+    async def _run_game(
+        self, *, first_user_message: str, turn_limit: int, write_entry: Callable[[LogEntry], None]
+    ) -> RunSummary:
+        current_turn = 0
 
         # Sim tool provider: closures capture sim_action
-        self.sim_action: SimAction | None = None
+        sim_action: SimAction | None = None
         sim_provider = DirectToolProvider()
 
         @sim_provider.tool
         def answer(args: AnswerInput) -> str:
             """Answer the player's yes/no question."""
-            self.sim_action = SimAction(tool_name="answer", answer=args.response)
+            nonlocal sim_action
+            sim_action = SimAnswer(response=args.response)
             return args.response
 
         @sim_provider.tool
         def correct_answer() -> None:
             """The player correctly guessed the secret."""
-            self.sim_action = SimAction(tool_name="correct_answer")
+            nonlocal sim_action
+            sim_action = SimCorrectAnswer()
 
         agent_log = _TurnLogHandler(
-            eval_name=name, player="agent", log_entries=self.log_entries, turn_getter=lambda: self._current_turn
+            eval_name=self.name, player="agent", write_entry=write_entry, turn_getter=lambda: current_turn
         )
         sim_log = _TurnLogHandler(
-            eval_name=name, player="simulator", log_entries=self.log_entries, turn_getter=lambda: self._current_turn
+            eval_name=self.name, player="simulator", write_entry=write_entry, turn_getter=lambda: current_turn
         )
-        self._text_capture = _TextCaptureHandler()
+        text_capture = _TextCaptureHandler()
 
-        self._agent = Agent(
-            tool_provider=agent_tool_provider,
-            client=model,
+        agent = Agent(
+            tool_provider=self._agent_tool_provider,
+            client=self.model,
             parallel_tool_calls=False,
-            handlers=[agent_log, self._text_capture],
+            handlers=[agent_log, text_capture],
             tool_policy=AllowAnyToolOrTextMessage(),
         )
-        self._agent.process_message(SystemMessage.text(agent_system))
+        agent.process_message(SystemMessage.text(self._agent_system))
 
-        self._sim = Agent(
+        sim = Agent(
             tool_provider=sim_provider,
-            client=model,
+            client=self.model,
             parallel_tool_calls=False,
             handlers=[sim_log],
             tool_policy=RequireAnyTool(),
         )
-        self._sim.process_message(SystemMessage.text(sim_system))
+        sim.process_message(SystemMessage.text(self._sim_system))
 
-    async def _agent_turn(self) -> str | None:
-        """Step the agent until it produces text. Returns the text or None if stuck."""
-        for _ in range(_MAX_SCRATCH_STEPS):
-            await self._agent.step()
-            text = self._text_capture.take()
-            if text:
-                return text
-        logger.warning("Agent hit scratch step limit without producing text")
-        return None
+        async def agent_turn() -> str | None:
+            for _ in range(_MAX_SCRATCH_STEPS):
+                await agent.step()
+                text = text_capture.take()
+                if text:
+                    return text
+            logger.warning("Agent hit scratch step limit without producing text")
+            return None
 
-    async def _sim_turn(self, question: str) -> SimAction | None:
-        """Feed question to sim and step once. Returns the sim's action or None on failure."""
-        self.sim_action = None
-        self._sim.process_message(UserMessage.text(question))
-        await self._sim.step()
-        if self.sim_action is None:
-            logger.warning("Sim step produced no action (tool_choice=required was ignored)")
-        return self.sim_action
+        async def sim_turn(question: str) -> SimAction | None:
+            nonlocal sim_action
+            sim_action = None
+            sim.process_message(UserMessage.text(question))
+            await sim.step()
+            if sim_action is None:
+                logger.warning("Sim step produced no action (tool_choice=required was ignored)")
+            return sim_action
 
-    async def run(self, *, first_user_message: str, turn_limit: int, output_dir: Path) -> RunSummary:
-        """Run the full game loop and return summary."""
-        self._agent.process_message(UserMessage.text(first_user_message))
+        agent.process_message(UserMessage.text(first_user_message))
 
-        result: Correct | Timeout | None = None
-        turn = 0
+        result: Correct | Timeout = Timeout(limit=turn_limit)
+        last_turn = 0
         for turn in range(1, turn_limit + 1):
-            self._current_turn = turn
+            last_turn = turn
+            current_turn = turn
             logger.info("Turn %d...", turn)
 
-            agent_text = await self._agent_turn()
+            agent_text = await agent_turn()
             if not agent_text:
-                result = Timeout(limit=turn_limit)
                 break
 
-            action = await self._sim_turn(agent_text)
+            action = await sim_turn(agent_text)
             if action is None:
-                result = Timeout(limit=turn_limit)
                 break
 
-            if action.tool_name == "correct_answer":
+            if isinstance(action, SimCorrectAnswer):
                 result = Correct(turns=turn)
                 break
 
-            assert action.answer is not None
-            self._agent.process_message(UserMessage.text(action.answer))
-        else:
-            result = Timeout(limit=turn_limit)
+            agent.process_message(UserMessage.text(action.response))
 
-        if result is None:
-            result = Timeout(limit=turn_limit)
-
-        summary = RunSummary(eval_name=self.name, model=self.model.model, turns=turn, result=result)
-        save_results(name=self.name, log_entries=self.log_entries, summary=summary, output_dir=output_dir)
-        return summary
+        return RunSummary(eval_name=self.name, model=self.model.model, turns=last_turn, result=result)
 
 
 async def run_twenty_questions(

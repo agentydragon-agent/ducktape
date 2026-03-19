@@ -17,6 +17,7 @@ from typing import Literal
 from openai import AsyncOpenAI
 from pydantic import BaseModel
 
+from agent_core.events import ToolCall
 from openai_utils.model import BoundOpenAIModel, OpenAIModelProto
 from openai_utils.retry import RetryingOpenAIModel
 from util.bazel.runfiles import get_required_path
@@ -34,7 +35,7 @@ class LogEntry(BaseModel):
     turn: int
     model: str
     content: str
-    tool_calls: list[dict] = []
+    tool_calls: list[ToolCall] = []
     stop_reason: str
 
 
@@ -48,18 +49,19 @@ class RunSummary(BaseModel):
 # === Logging/saving helpers ===================================================
 
 
-def save_results(*, name: str, log_entries: list[LogEntry], summary: RunSummary, output_dir: Path) -> None:
+def run_output_paths(name: str, output_dir: Path) -> tuple[Path, Path]:
+    """Create output_dir and return (calls_jsonl_path, summary_json_path)."""
     output_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     prefix = output_dir / f"{name}_{ts}"
-
     calls_path = prefix.with_name(prefix.name + "_calls.jsonl")
-    calls_path.write_text("".join(entry.model_dump_json() + "\n" for entry in log_entries))
-
     summary_path = prefix.with_name(prefix.name + "_summary.json")
-    summary_path.write_text(summary.model_dump_json(indent=2))
+    return calls_path, summary_path
 
-    logger.info("Saved: %s_*", prefix)
+
+def save_summary(*, summary: RunSummary, summary_path: Path) -> None:
+    summary_path.write_text(summary.model_dump_json(indent=2))
+    logger.info("Saved results to %s", summary_path.parent)
 
 
 # === CLI helpers ==============================================================
