@@ -1,6 +1,7 @@
 package doublenat_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -170,7 +171,9 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 		SuccessFunc:  h.FullMeshSuccess(2), // each node expects 2 peers
 		ProbeTargets: h.ULAProbeTargets,
 	}
-	runner.Run(t.Context())
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancel()
+	runner.Run(ctx)
 
 	summary := map[string]interface{}{
 		"topology":            "double_nat",
