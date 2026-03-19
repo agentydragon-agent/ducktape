@@ -2,6 +2,7 @@
 
 **Date**: 2026-03-07
 **Status**: Resolved (explicit hostnames added, image ignore_changes added)
+**Affected**: Both Hetzner VPS nodes and Proxmox node
 
 ## Incident Summary
 
@@ -12,36 +13,206 @@ cluster (2/3 etcd members lost).
 
 ## Root Cause 1: Hostname Loss After talosctl upgrade
 
-Talos derives hostnames from platform metadata (cloud-init for Proxmox/nocloud, Hetzner
-metadata API for hcloud). During `talosctl upgrade`, the node kexecs into the new image.
-The platform metadata is **not re-read during kexec** — only on full boot from disk image.
-Without an explicit `machine.network.hostname` in the machine config, Talos falls back to
-generating a random hostname from the machine ID (e.g., `talos-6we-boc` instead of
-`talos-vps-cp-0`).
+### What happened
 
-**Symptoms**:
+After `talosctl upgrade`, all three nodes (2 Hetzner VPS + 1 Proxmox) lost their hostnames
+and registered with random names like `talos-6we-boc` instead of `talos-vps-cp-0`.
+
+### Mechanistic explanation: Talos hostname resolution internals
+
+Talos determines hostnames through a **controller-based pipeline** with layered config
+sources. Understanding the full pipeline explains why hostname was lost.
+
+#### The hostname controller pipeline
+
+Talos v1alpha2 runtime uses three controllers for hostname resolution:
+
+1. **`HostnameConfigController`** — produces hostname config specs from multiple sources,
+   each tagged with a config layer (cmdline, machine config, platform, default)
+2. **`HostnameMergeController`** — merges specs from all layers by precedence
+3. **`HostnameSpecController`** — applies the winning hostname to the system
+
+`HostnameConfigController` consults these sources in order:
+
+| Source                | Config layer                 | How it works                                       |
+| --------------------- | ---------------------------- | -------------------------------------------------- |
+| Kernel cmdline        | `ConfigCmdline`              | Parsed from boot args via `ParseCmdlineNetwork()`  |
+| Machine configuration | `ConfigMachineConfiguration` | From `machine.network.hostname` in machine config  |
+| Platform metadata     | `ConfigPlatform`             | From `PlatformConfig` resource (see below)         |
+| Auto-generated        | `ConfigDefault`              | Based on `HostnameConfig.auto` setting (see below) |
+
+The merge controller picks the highest-precedence non-empty source. If machine config
+has no hostname, and platform metadata provides nothing, the auto-generated fallback wins.
+
+#### The platform metadata pipeline
+
+Platform metadata flows through four controllers:
+
+1. **`PlatformConfigController`** — calls `platform.NetworkConfiguration()` to fetch
+   metadata from the platform-specific source (Hetzner metadata API, nocloud cidata disk,
+   etc.). Publishes to a `PlatformConfig` resource in runtime state.
+2. **`PlatformConfigStoreController`** — persists the `PlatformConfig` to disk on the
+   STATE partition (at `constants.PlatformNetworkConfigFilename`). Only writes when
+   content changes (content-based comparison, not timestamp-based).
+3. **`PlatformConfigLoadController`** — on boot, loads the previously-persisted
+   `PlatformConfig` from disk as the initial value.
+4. **`PlatformConfigApplyController`** — applies the platform config to network resources.
+
+**The critical detail**: `PlatformConfigController` runs continuously and calls the
+platform's `NetworkConfiguration()` method. But what that method does depends on
+whether the platform-specific metadata source is accessible.
+
+#### Platform-specific metadata reading
+
+**Hetzner (`hcloud` platform)**:
+
+- Calls the Hetzner metadata API (`http://169.254.169.254/...`) to get hostname and
+  network config
+- Hostname comes from the server name via the metadata service
+- The metadata API is accessible from the VM at any time (it's a link-local HTTP endpoint
+  on the hypervisor), so in theory it should work after kexec too
+
+**Proxmox (`nocloud` platform)**:
+
+- Reads from a `cidata`-labeled disk (ISO9660/VFAT) containing `meta-data`,
+  `network-config`, and `user-data` files
+- Hostname comes from `local-hostname` field in `meta-data`
+- Network config (static IPs, routes) comes from `network-config`
+
+#### Why kexec loses platform metadata
+
+During `talosctl upgrade`, the default reboot mode is **kexec** — the new kernel is loaded
+directly into memory via the `kexec()` syscall, bypassing full BIOS/firmware boot.
+
+The upgrade sequence (`v1alpha1_sequencer.go Upgrade()`) runs:
+
+1. Cordon and drain node
+2. Stop services and unmount filesystems
+3. Write new OS image to disk
+4. `ReloadMeta` — reload META partition (boot metadata, not platform metadata)
+5. `KexecPrepare` — load new kernel into memory
+6. Stop all remaining services
+7. `Reboot` — execute kexec (or full reboot if kexec disabled)
+
+After kexec, the system boots the new kernel. The boot sequence
+(`v1alpha1_sequencer.go Boot()`) starts services including all controllers. The
+`PlatformConfigController` starts and attempts to fetch metadata. Here's where the
+two platforms diverge:
+
+**Nocloud after kexec**: The `acquireConfig()` method looks for the cidata disk. During
+kexec, the cidata disk image is **not re-attached by the hypervisor** — it was a
+one-time boot medium. The code handles this gracefully: if `metadataNetworkConfigDl == nil`,
+it returns `nil` (no data). The `PlatformConfigLoadController` loads the last-persisted
+config from the STATE partition. But this cached config was from the **initial boot**, and
+the critical question is whether it still provides hostname. In practice, the nocloud
+platform lost hostname because the cidata disk was unavailable and the cached platform
+config either didn't include hostname or was treated as stale.
+
+**Hcloud after kexec**: The Hetzner metadata API should be accessible (it's a link-local
+endpoint). However, during kexec the network stack is reinitialized. There may be a
+timing window where the `PlatformConfigController` tries to fetch before network is up,
+gets an error, and the backoff/retry doesn't resolve before the hostname controller has
+already settled on a fallback. The exact failure mode may also involve the platform config
+cache on STATE being empty or incomplete from a prior boot.
+
+**In both cases**: When platform metadata fails to provide hostname, and machine config has
+no `machine.network.hostname`, the `HostnameConfigController` falls through to the
+auto-generated default.
+
+#### The auto-generated hostname fallback
+
+The `HostnameConfig` document controls automatic hostname generation. The `auto` field
+has three modes:
+
+| Mode                           | Behavior                                                                             |
+| ------------------------------ | ------------------------------------------------------------------------------------ |
+| `stable` (default since v1.12) | SHA256 hash of node identity → `talos-{b36[1:4]}-{b36[4:7]}` (e.g., `talos-6we-boc`) |
+| `addr`                         | Derives from default node address → `talos-{ip-with-dashes}`                         |
+| `off`                          | No auto-generation; hostname must come from another source                           |
+
+Before our fix, no `HostnameConfig` document was explicitly set, so the default `auto: stable`
+was in effect. When platform metadata failed to provide hostname after kexec, the stable
+auto-generation produced random-looking hostnames from the machine ID hash.
+
+#### Why it's not stupid that explicit hostname is needed
+
+The design intent is:
+
+- **Platform metadata** is the primary hostname source for cloud VMs
+- **Machine config** is the persistent, user-controlled override
+- **Auto-generated** is the last-resort fallback for bare-metal or degraded scenarios
+
+The assumption is that platform metadata is always available. This holds for full reboots
+(firmware re-attaches cidata, network comes up cleanly before controllers). But kexec skips
+firmware — it's a kernel-to-kernel transition. The nocloud cidata disk is literally gone.
+For hcloud, the metadata API may be inaccessible during the network reinitialization window.
+
+This is a **known gap in Talos's upgrade path**: kexec trades boot speed for completeness
+of the boot environment. Platform metadata is a casualty. The Talos Terraform provider
+actually appends an auto-generated `HostnameConfig` document (with `auto: stable`) to
+machine configs by default — this is why the fallback is specifically the stable hash, not
+a truly random name.
+
+The fix is correct: set `machine.network.hostname` in the machine config (or use an explicit
+`HostnameConfig` with `auto: off`). Machine config is stored on the SYSTEM partition and
+persists across both kexec and full reboot. It's the only hostname source guaranteed to
+survive all upgrade paths.
+
+### Proxmox-specific: static IP also lost
+
+On Proxmox, the problem was worse. The nocloud `network-config` file provides static IP
+configuration (addresses, routes, nameservers). When the cidata disk is unavailable after
+kexec, the node also loses its static IP and falls back to DHCP — getting a different
+address, breaking etcd peering. The fix required adding explicit `machine.network.interfaces`
+with `dhcp = false` and static addressing to the machine config.
+
+### Symptoms
 
 - `kubectl get nodes` shows random names alongside stale NotReady entries with original names
-- Upgraded nodes register as new Kubernetes nodes (new name, same IP)
+- Upgraded nodes register as new Kubernetes nodes (new name, same IP on Hetzner; different
+  IP on Proxmox)
 - Old node entries remain as `NotReady,SchedulingDisabled` (cordoned during upgrade)
 
-**Fix**: Add explicit `machine.network.hostname` as a separate config patch in Terraform
-for all node types:
+### Fix
+
+Two complementary patches in the Terraform machine config:
+
+**1. Explicit hostname** via `HostnameConfig` document (both Hetzner and Proxmox):
 
 ```hcl
-# Separate config patch (Talos merges patches, so this safely adds hostname
-# without conflicting with the existing network.kubespan config)
 yamlencode({
-  machine = {
-    network = {
-      hostname = each.value.name
-    }
-  }
+  apiVersion = "v1alpha1"
+  kind       = "HostnameConfig"
+  auto       = "off"
+  hostname   = each.value.name
 })
 ```
 
-This survives `talosctl upgrade` because the machine config is preserved across upgrades —
-only the OS image changes.
+This overrides the Terraform provider's default `auto: stable` HostnameConfig and sets an
+explicit hostname that persists in machine config across all reboot modes.
+
+**2. Explicit network interfaces** (Proxmox only):
+
+```hcl
+machine = {
+  network = {
+    interfaces = [{
+      interface   = "eth0"
+      dhcp        = false
+      addresses   = ["${each.value.ip}/16"]
+      routes      = [{ network = "0.0.0.0/0", gateway = local.proxmox_gateway }]
+    }]
+    nameservers = ["1.1.1.1", "8.8.8.8"]
+  }
+}
+```
+
+Hetzner doesn't need this because the hcloud platform's metadata API (link-local HTTP)
+is more reliably available than nocloud's cidata disk.
+
+**Workaround**: `talosctl upgrade --reboot-mode powercycle` forces a full BIOS reboot
+instead of kexec, which re-reads platform metadata. But this is slower and doesn't fix the
+underlying config gap.
 
 **Affected files**:
 
@@ -79,13 +250,36 @@ Schematic/image changes are applied via `talosctl upgrade`, not server replaceme
 ## Prevention Checklist
 
 1. **Always set explicit hostnames** in Talos machine config — never rely on platform
-   auto-detection surviving upgrades
-2. **Never run `tofu apply -auto-approve`** with `-target` flags that might pull in
+   auto-detection surviving upgrades. Use `HostnameConfig` with `auto: off` and explicit
+   `hostname`, or `machine.network.hostname`.
+2. **Always set explicit network interfaces** for platforms with one-time metadata
+   sources (nocloud/cidata). The cidata disk is not available after kexec.
+3. **Never run `tofu apply -auto-approve`** with `-target` flags that might pull in
    destructive upstream dependencies — always review the plan first
-3. **Add `image` to `ignore_changes`** for `hcloud_server` resources — image changes
+4. **Add `image` to `ignore_changes`** for `hcloud_server` resources — image changes
    should only happen via `talosctl upgrade`
-4. **Verify `tofu plan` output** for `must be replaced` before applying — even targeted
+5. **Verify `tofu plan` output** for `must be replaced` before applying — even targeted
    applies can cascade through dependencies
+6. **Prefer `--reboot-mode powercycle`** when upgrading nodes without explicit hostname/IP
+   in machine config, as a safety measure (slower but re-reads platform metadata)
+
+## Guidance for Future Talos Upgrades
+
+When setting up new Talos nodes on any platform, always include in the machine config:
+
+1. **Explicit hostname** — via `HostnameConfig` document or `machine.network.hostname`
+2. **Explicit network config** — via `machine.network.interfaces` if the platform uses
+   one-time metadata sources (nocloud cidata, VMware guestinfo, etc.)
+3. **Explicit nameservers** — if not using DHCP
+
+These settings are stored on the SYSTEM partition and survive all upgrade modes (kexec,
+powercycle, staged). Platform metadata is a convenience for initial provisioning, not a
+reliable source across the node lifecycle.
+
+For platforms with persistent metadata APIs (Hetzner, AWS, GCP, Azure), explicit network
+config is less critical (the API remains accessible after kexec), but explicit hostname is
+still recommended because the platform controller may fail to fetch during the network
+reinitialization window after kexec.
 
 ## Timeline
 
