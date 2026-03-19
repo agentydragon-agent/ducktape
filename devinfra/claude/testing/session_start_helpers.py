@@ -139,30 +139,45 @@ def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) 
     ).model_dump_json()
 
 
+def _kill_by_pidfile(pidfile: Path) -> None:
+    """Kill a process using its pidfile. Ignores errors."""
+    if not pidfile.exists():
+        return
+    try:
+        pid = int(pidfile.read_text().strip())
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(20):
+            time.sleep(0.1)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+        else:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
+    except (ValueError, ProcessLookupError, OSError):
+        pass
+    with contextlib.suppress(OSError):
+        pidfile.unlink()
+
+
 def cleanup_supervisor(config_dir: Path) -> None:
     """Kill any lingering supervisor processes."""
-    pidfile = config_dir / "supervisor" / "supervisord.pid"
-    if pidfile.exists():
-        try:
-            pid = int(pidfile.read_text().strip())
-            # Send SIGTERM first
-            os.kill(pid, signal.SIGTERM)
-            # Wait for process to die (up to 2 seconds)
-            for _ in range(20):
-                time.sleep(0.1)
-                try:
-                    os.kill(pid, 0)  # Check if process exists
-                except ProcessLookupError:
-                    break  # Process is gone
-            else:
-                # Force kill if still running
-                with contextlib.suppress(ProcessLookupError):
-                    os.kill(pid, signal.SIGKILL)
-        except (ValueError, ProcessLookupError, OSError):
-            pass
-        # Clean up pidfile
-        with contextlib.suppress(OSError):
-            pidfile.unlink()
+    _kill_by_pidfile(config_dir / "supervisor" / "supervisord.pid")
+
+
+def cleanup_hook_daemon(session_dir: Path) -> None:
+    """Kill any lingering hook daemon process and remove its socket.
+
+    The daemon shares a socket path based on session_id, so killing it between
+    tests ensures each test gets a fresh daemon with its own isolated port config.
+    """
+    _kill_by_pidfile(session_dir / "hook-daemon" / "daemon.pid")
+    # Remove the shared socket so the next test's daemon can bind to it
+    # Socket path: /tmp/claude-hd/<session_id>/d.sock (see SessionPaths.hook_daemon_sock)
+    sock_path = Path("/tmp/claude-hd") / session_dir.name / "d.sock"
+    with contextlib.suppress(OSError):
+        sock_path.unlink()
 
 
 def write_output_log(name: str, content: str) -> Path:
@@ -223,7 +238,8 @@ async def run_session_start_hook(
 
 @pytest.fixture(autouse=True)
 def cleanup_after_test(isolated_dirs: IsolatedDirs) -> Generator[None]:
-    """Cleanup supervisor and tmpfs mounts after each test."""
+    """Cleanup supervisor, hook daemon, and tmpfs mounts after each test."""
     yield
     unmount_tmpfs_under(isolated_dirs.session_dir)
     cleanup_supervisor(isolated_dirs.session_dir)
+    cleanup_hook_daemon(isolated_dirs.session_dir)

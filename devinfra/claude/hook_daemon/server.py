@@ -46,7 +46,7 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     app.state.settings = HookSettings()
     app.state.otlp_exporter = otlp_exporter
     app.state.last_request_time = time.monotonic()
-    app.state.proxy: AuthForwardingProxy | None = None
+    app.state.proxy = None
 
     # Start auth proxy in-process if upstream proxy is configured.
     # The proxy binds the port immediately; credentials are written later

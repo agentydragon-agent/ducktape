@@ -78,7 +78,7 @@ class SessionPaths:
     @property
     def bazelisk_path(self) -> Path:
         """Bazelisk binary path (global cache, not session-scoped)."""
-        return self.cache_dir / "bazelisk"
+        return self.cache_dir / "bin" / "bazelisk"
 
     @property
     def wrapper_dir(self) -> Path:

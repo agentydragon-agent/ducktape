@@ -161,6 +161,7 @@ def _extract_proxy_ca(paths: SessionPaths) -> None:
         raise CaExtractionError(f"CA at {ca_file} is not an Anthropic TLS Inspection CA")
 
     logger.info("Loaded Anthropic CA from filesystem: %s", ca_file)
+    paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
     paths.auth_proxy_ca_file.write_text(ca_pem)
 
 
@@ -193,8 +194,9 @@ async def _create_java_truststore(paths: SessionPaths) -> None:
 
     try:
         system_cacerts = _find_system_file(_get_java_cacerts_candidates(), "system Java cacerts")
-    except FileNotFoundError as e:
-        raise TruststoreError(str(e)) from e
+    except FileNotFoundError:
+        logger.warning("No Java cacerts found; skipping Java truststore creation")
+        return
 
     logger.info("Creating custom Java truststore from %s", system_cacerts)
 

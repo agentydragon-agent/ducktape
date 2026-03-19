@@ -52,27 +52,19 @@ def check_controller_health_checks(cluster: ParsedCluster, k8s_dir: Path, worksp
 
 
 def check_retry_policy(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Enforce semantically correct retry policies on Flux Kustomizations.
+    """Enforce retryInterval on async Flux Kustomizations.
 
-    Async kustomizations (those with async health check kinds or wait: true)
-    require retries > 0 AND retryInterval. Retries without retryInterval is
-    nearly useless — retries default to the interval cadence (10m).
+    spec.retries does not exist in the Flux Kustomization CRD (v2.7.5+).
+    Only spec.retryInterval is valid — require it on kustomizations with async
+    health checks or wait: true.
     """
     errors: list[str] = []
     for name, flux_kust in cluster.flux_kustomizations.items():
         needs_retry = _has_async_health_checks(cluster, name) or flux_kust.spec.wait
-        retries = flux_kust.spec.retries
-        retry_interval = flux_kust.spec.retry_interval
-
         if not needs_retry:
             continue
-
-        rel_path = flux_kust.file_path.relative_to(k8s_dir)
-        if retries is None or retries <= 0:
-            errors.append(
-                f"{name}: has async health checks or wait: true but retries={retries}. Set retries > 0 in {rel_path}."
-            )
-        if not retry_interval:
+        if not flux_kust.spec.retry_interval:
+            rel_path = flux_kust.file_path.relative_to(k8s_dir)
             errors.append(
                 f"{name}: has async health checks or wait: true but no retryInterval. "
                 f"Set retryInterval (e.g. 1m) in {rel_path}."
