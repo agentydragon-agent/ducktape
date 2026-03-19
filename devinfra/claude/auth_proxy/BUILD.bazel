@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
     name = "vars",
@@ -21,14 +21,13 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":proxy",
         ":vars",
         "//devinfra/claude:errors",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
-        "//devinfra/claude/supervisor:client",
         "//util:net",
         "//util/bazel:runfiles",
-        "//util/bazel:subprocess",
         "@pypi//cryptography",
         "@pypi//opentelemetry_api",
     ],
@@ -39,23 +38,4 @@ py_library(
     srcs = ["proxy.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "main",
-    srcs = ["main.py"],
-    imports = ["../../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":proxy",
-        "//devinfra/claude:debug",
-    ],
-)
-
-py_binary(
-    name = "run",
-    imports = ["../../.."],
-    main_module = "devinfra.claude.auth_proxy.main",
-    visibility = ["//visibility:public"],
-    deps = [":main"],
 )

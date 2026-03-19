@@ -57,8 +57,8 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Proxy Setup (via `proxy_setup.py`)
 
-1. Starts supervisord for process management
-2. Registers proxy with supervisor at `127.0.0.1:18081`
+1. Auth proxy starts in-process in the hook daemon at daemon startup (daemon threads, port `127.0.0.1:18081`)
+2. Session start writes credentials to the daemon's creds file
 3. Loads the TLS inspection CA from the pre-installed filesystem path (`/usr/local/share/ca-certificates/swp-ca-production.crt`)
 4. Creates a Java truststore with the CA using keytool
 5. Creates combined CA bundle (system CAs + proxy CA)
@@ -145,43 +145,10 @@ See BUILD.bazel for the full dependency list. Key runtime requirements:
 
 ## Usage
 
-### Via Supervisor (recommended)
-
-The proxy runs under supervisor for automatic restarts and easy log access:
-
-```bash
-# View proxy status (use the Python that has supervisor installed)
-python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf status auth-proxy
-
-# Restart proxy (e.g., after credential refresh)
-python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf restart auth-proxy
-
-# View proxy logs (stdout)
-tail -f ~/.config/claude-hooks/supervisor/auth-proxy.log
-
-# View proxy errors (stderr)
-tail -f ~/.config/claude-hooks/supervisor/auth-proxy.err.log
-
-# Stop proxy
-python -m supervisor.supervisorctl -c ~/.config/claude-hooks/supervisor/supervisord.conf stop auth-proxy
-```
-
-**Note**: Use the same Python interpreter that has the `supervisor` package installed. In Claude Code web environments, this is typically the interpreter from the claude-hooks uv tool environment.
-
-### From session-start hook
-
-The session-start hook (`session_start.py`) calls `proxy_setup.py` which performs
-the proxy setup steps described above.
-
-### Manual startup (for debugging)
-
-For debugging only. Normal operation uses supervisor:
-
-```bash
-# The auth proxy reads upstream URL from a file (enables credential hot-reload)
-# File format: http://username:password@host:port
-claude-auth-proxy --listen-port 18081 --creds-file /path/to/upstream_proxy
-```
+The proxy runs in-process within the hook daemon as daemon threads. It starts
+automatically when the daemon starts (if `HTTPS_PROXY` is set) and stops when
+the daemon shuts down. Credentials are written by session start and read on
+each connection (hot-reload).
 
 ## How It Works
 
@@ -198,7 +165,7 @@ Bazel/Bazelisk
     └──► bazel wrapper
            │
            ├── 1. Reads HTTPS_PROXY (fresh JWT from Anthropic)
-           ├── 2. Writes to creds file (~/.cache/.../upstream_proxy)
+           ├── 2. Writes to creds file (<session_dir>/hook-daemon/upstream_proxy)
            ├── 3. Sets HTTPS_PROXY=localhost:18081 for subprocess only
            └── 4. Execs bazelisk
                    │
@@ -211,7 +178,7 @@ Bazel/Bazelisk
 
 ### Flow Details
 
-1. **Session hook** starts the auth proxy daemon via supervisor
+1. **Hook daemon** starts the auth proxy in-process at daemon startup
 2. **Bazel wrapper** (invoked instead of bazel directly):
    - Reads current `HTTPS_PROXY` from environment (Anthropic's proxy with fresh JWT)
    - Writes upstream URL to credentials file (for the long-running proxy daemon)
@@ -229,50 +196,49 @@ Bazel/Bazelisk
 
 ## Lifecycle Management
 
-The auth proxy runs under supervisor:
+The auth proxy runs in-process within the hook daemon:
 
-- **Process Manager**: supervisord (`~/.config/claude-hooks/supervisor/supervisord.conf`)
-- **Service Config**: `~/.config/claude-hooks/supervisor/conf.d/auth-proxy.conf`
-- **Logging**: Stdout/stderr to `~/.config/claude-hooks/supervisor/auth-proxy.{log,err.log}`
-- **Auto-restart**: Supervisor automatically restarts on crashes
+- **Host process**: Hook daemon (FastAPI on UDS, `~/.claude/session-env/<session_id>/hook-daemon/`)
+- **Threading**: Daemon threads (`ThreadPoolExecutor`), non-blocking `start()`/`stop()`
+- **Shutdown**: Stopped automatically when the hook daemon shuts down (idle timeout or SIGTERM)
 - **Credentials**: Read from file on each connection (hot-reload)
+- **Creds file**: `~/.claude/session-env/<session_id>/hook-daemon/upstream_proxy`
 
 ## Verification
 
 After session start:
 
 ```bash
-# Verify supervisor is running the proxy
-# SESSION_DIR is exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR by the env file
-python -m supervisor.supervisorctl -c "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/supervisord.conf" status
-
 # Proxy should be accessible
 curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1
 
 # Bazel should be able to access BCR
 bazel info
 
-# Check proxy logs
-tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/auth-proxy.log"
-tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/supervisor/auth-proxy.err.log"
+# Check hook daemon logs (proxy runs in-process)
+tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/hook-daemon/daemon.log"
 ```
 
 ## Files
 
 All session-scoped files live under `<session_dir>` = `~/.claude/session-env/<session_id>/`.
 
-Supervisor files (in `<session_dir>/supervisor/`):
+Supervisor files (in `<session_dir>/supervisor/`, used for container runtime only):
 
 - `supervisord.conf` - Supervisor main configuration
 - `supervisord.{log,pid}` - Supervisor daemon state
-- `conf.d/auth-proxy.conf` - Proxy service configuration
-- `auth-proxy.{log,err.log}` - Proxy stdout/stderr logs
 
 Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file).
 
+Hook daemon files (in `<session_dir>/hook-daemon/`):
+
+- `upstream_proxy` - Auth proxy credentials (read by in-process proxy on each connection)
+- `daemon.sock` - UDS for hook RPC
+- `daemon.pid` - Daemon pidfile
+- `daemon.log` - Daemon and session start logs
+
 Auth proxy files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`):
 
-- `upstream_proxy` - Upstream proxy credentials (read on each connection)
 - `anthropic_ca.pem` - Loaded TLS inspection CA
 - `combined_ca.pem` - System CAs + Anthropic CA bundle
 - `cacerts.jks` - Java truststore with CA
