@@ -14,12 +14,13 @@ import (
 
 func runTopology(t *testing.T, topology string, workerType h.NodeType) {
 	sw := h.NewStopwatch(t)
+	out := h.OutputDir(t)
+	sw.SetOutDir(out)
 
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	kubespandInitramfs := h.RunfilePath(t, h.KubespanInitramfs)
 	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
-	out := h.OutputDir(t)
 	sw.Lap("resolve runfiles")
 
 	mcastPort := h.RandomPort()

@@ -36,12 +36,13 @@ func TestDoubleNAT(t *testing.T) {
 //	                          [Discovery]
 func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	sw := h.NewStopwatch(t)
+	out := h.OutputDir(t)
+	sw.SetOutDir(out)
 
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	initramfsRouter := h.RunfilePath(t, h.RouterInitramfs)
 	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
-	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
 
 	kubespandInitramfs := h.RunfilePath(t, h.DoublenatInitramfs)

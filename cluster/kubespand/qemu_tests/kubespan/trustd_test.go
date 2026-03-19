@@ -29,6 +29,8 @@ func TestTrustdCSRFlow(t *testing.T) {
 
 func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 	sw := h.NewStopwatch(t)
+	out := h.OutputDir(t)
+	sw.SetOutDir(out)
 
 	// Resolve runfiles.
 	talosBaseImage := h.RunfilePath(t, h.TalosNocloudImagePath)
@@ -36,7 +38,6 @@ func runTrustdCSRFlow(t *testing.T, workerType h.NodeType) {
 	initramfsDisc := h.RunfilePath(t, h.DiscoveryInitramfs)
 	sw.Lap("resolve runfiles")
 
-	out := h.OutputDir(t)
 	tmpDir := t.TempDir()
 
 	// Generate all crypto material and configs at test time.

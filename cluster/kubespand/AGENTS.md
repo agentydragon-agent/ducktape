@@ -4,6 +4,22 @@
 
 - **nftables is mandatory**: The KubeSpan agent MUST use nftables for packet marking and policy routing. Do NOT implement fallback modes that bypass nftables (e.g., direct routes without fwmark-based routing). If nftables operations fail, fix the root cause rather than working around it.
 
+## Test Timeouts
+
+**Do NOT increase test timeouts to mask failures.** A test timing out means something is
+broken — the test is stuck, not "slow". The flat topology QEMU tests pass in ~2 minutes;
+doublenat should be comparable. Only increase a timeout if you have concrete evidence from
+test logs (`events.log`, `timing.json`, VM serial logs) showing the test is actively making
+progress at the moment it gets killed.
+
+**Diagnosing timeouts:**
+
+1. Fetch `events.log` and `timing.json` from BuildBuddy test outputs (they survive SIGALRM)
+2. Check which convergence phase the test was in when killed
+3. Look for the actual error: nodes not becoming ready, peers stuck in `unknown`/`down`,
+   discovery service unreachable, WireGuard handshake failures
+4. Fix the root cause, don't bump the timeout
+
 ## Talos Correspondence
 
 kubespand reimplements Talos's KubeSpan for non-Talos Linux. Maintain structural
