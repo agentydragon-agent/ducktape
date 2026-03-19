@@ -9,6 +9,7 @@ Usage:
 import argparse
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,7 +23,7 @@ from agent_core.events import AssistantText, Response, ToolCall
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage, RequireAnyTool
 from agent_core.tool_provider import ToolProvider
-from openai_utils.model import OpenAIModelProto, UserMessage
+from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
 from skills.info_gathering.evals.harness import (
     LogEntry,
@@ -87,8 +88,28 @@ VARIANTS: dict[str, Variant] = {
 }
 
 
+class _TextCaptureHandler(BaseHandler):
+    """Captures assistant text produced during an agent step."""
+
+    def __init__(self) -> None:
+        self._text: str | None = None
+
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
+        self._text = (self._text or "") + evt.text
+
+    def take(self) -> str | None:
+        """Return captured text and reset state."""
+        text = self._text
+        self._text = None
+        return text.strip() if text else None
+
+
 class _TurnLogHandler(BaseHandler):
-    """Records a LogEntry per LLM response call for eval output."""
+    """Records a LogEntry per LLM response call for eval output.
+
+    on_response fires after _process_resp_output, so self._text and self._tool_calls
+    already hold the content from the current response when the entry is flushed.
+    """
 
     def __init__(
         self,
@@ -96,7 +117,7 @@ class _TurnLogHandler(BaseHandler):
         eval_name: str,
         player: Literal["agent", "simulator"],
         log_entries: list[LogEntry],
-        turn_getter: object,  # callable returning current turn int
+        turn_getter: Callable[[], int],
     ) -> None:
         self._eval_name = eval_name
         self._player = player
@@ -117,7 +138,7 @@ class _TurnLogHandler(BaseHandler):
                 timestamp=datetime.now(UTC).isoformat(),
                 eval_name=self._eval_name,
                 player=self._player,
-                turn=self._turn_getter(),  # type: ignore[call-arg]
+                turn=self._turn_getter(),
                 model=evt.model,
                 content=self._text,
                 tool_calls=list(self._tool_calls),
@@ -166,39 +187,33 @@ class _TwentyQuestionsRunner:
         sim_log = _TurnLogHandler(
             eval_name=name, player="simulator", log_entries=self.log_entries, turn_getter=lambda: self._current_turn
         )
-
-        _agent_system = agent_system
-        _sim_system = sim_system
-
-        async def _agent_instr() -> str:
-            return _agent_system
-
-        async def _sim_instr() -> str:
-            return _sim_system
+        self._text_capture = _TextCaptureHandler()
 
         self._agent = Agent(
             tool_provider=agent_tool_provider,
             client=model,
             parallel_tool_calls=False,
-            handlers=[agent_log],
+            handlers=[agent_log, self._text_capture],
             tool_policy=AllowAnyToolOrTextMessage(),
-            dynamic_instructions=_agent_instr,
         )
+        self._agent.process_message(SystemMessage.text(agent_system))
+
         self._sim = Agent(
             tool_provider=sim_provider,
             client=model,
             parallel_tool_calls=False,
             handlers=[sim_log],
             tool_policy=RequireAnyTool(),
-            dynamic_instructions=_sim_instr,
         )
+        self._sim.process_message(SystemMessage.text(sim_system))
 
     async def _agent_turn(self) -> str | None:
         """Step the agent until it produces text. Returns the text or None if stuck."""
         for _ in range(_MAX_SCRATCH_STEPS):
-            result = await self._agent.step()
-            if result.text:
-                return result.text
+            await self._agent.step()
+            text = self._text_capture.take()
+            if text:
+                return text
         logger.warning("Agent hit scratch step limit without producing text")
         return None
 

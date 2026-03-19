@@ -72,11 +72,10 @@ class AgentResult:
 class StepResult:
     """Result of one agent step (one LLM call + tool resolution).
 
-    text: text produced by the model in this step, or None if it only called tools.
-    done: True if a handler signaled the loop should stop (e.g. MaxTurnsHandler, AbortIf).
+    done: True if a handler signaled the agent should stop.
+    To capture agent output, install a BaseHandler and read from it after step() returns.
     """
 
-    text: str | None
     done: bool
 
 
@@ -605,26 +604,22 @@ class Agent:
         Does not reset assistant_text_chunks or loop. Always resets self.finished=False
         after the step so step() can be called again by the caller.
 
-        Returns StepResult with:
-          - text: any text the model produced in this step (stripped), or None if only tools
-          - done: True if a handler signaled the agent should stop
+        To capture output from the model, install a BaseHandler that overrides
+        on_assistant_text_event() and/or on_tool_call_event().
 
         Usage for multi-agent loops where each agent runs one turn at a time:
+            capture = MyTextCapture()  # BaseHandler subclass
+            agent = Agent(..., handlers=[capture])
             agent.process_message(UserMessage.text("question"))
-            while True:
-                result = await agent.step()
-                if result.text:
-                    break  # agent produced its response; result.text is the question/answer
-                # else: model called scratch tools; keep stepping
+            while not captured_text:
+                await agent.step()
         """
-        text_before = len(self.assistant_text_chunks)
         await self._run_one_phase()
         if self.pending_function_calls:
             await self._handle_pending_tool_calls()
         done = self.finished
         self.finished = False  # Reset so step() can be called again
-        new_text = "".join(self.assistant_text_chunks[text_before:]).strip()
-        return StepResult(text=new_text or None, done=done)
+        return StepResult(done=done)
 
     async def run(self) -> AgentResult:
         """Run the agent loop until a handler signals completion.
@@ -899,14 +894,13 @@ class Agent:
                 if sdk_usage is not None
                 else GroundTruthUsage(model=self._client.model)
             )
+            resp_output = resp.output
+            if resp_output is not None:
+                self._process_resp_output(resp_output)
             for h in self._handlers:
                 h.on_response(
                     Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
                 )
-            resp_output = resp.output
-
-        if resp_output is not None:
-            self._process_resp_output(resp_output)
         # Note: Loop termination is now controlled by handlers (e.g., AbortIf, MaxTurnsHandler)
         # or explicit tool policies (e.g., RequireAnyTool prevents text-only responses)
 
