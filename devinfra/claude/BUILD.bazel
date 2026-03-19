@@ -183,6 +183,13 @@ py_library(
 )
 
 py_library(
+    name = "apt_setup",
+    srcs = ["apt_setup.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "container_runtime",
     srcs = ["container_runtime.py"],
     imports = ["../.."],

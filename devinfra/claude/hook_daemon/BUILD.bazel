@@ -66,6 +66,7 @@ py_library(
     deps = [
         ":tracing",
         "//devinfra:build_info",
+        "//devinfra/claude:apt_setup",
         "//devinfra/claude:bazel_wrapper_lib",
         "//devinfra/claude:bazelisk_setup",
         "//devinfra/claude:buildbuddy_setup",
