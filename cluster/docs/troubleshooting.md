@@ -55,6 +55,42 @@ reviewing the full plan first.
 
 **Lessons Learned**: See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>
 
+### Stale podCIDR After Node Hostname Change
+
+**Symptoms**:
+
+- Pods on a node can't reach ClusterIP services (`10.96.0.1:443` → "no route to host")
+- Longhorn manager `Ready: False` with `ManagerPodDown`, volumes can't attach
+- Cascade: Vault down → external-secrets down → most kustomizations blocked
+- Some pods show `Running` but with IPs outside the node's `spec.podCIDR`
+
+**Root Cause**:
+
+When a node re-registers with a different hostname (transient or permanent), the
+kube-controller-manager assigns a new podCIDR. After Cilium restarts, it only routes
+the new CIDR. DaemonSet pods that survived the transition still hold old-CIDR IPs
+and lose all network connectivity.
+
+**Diagnosis**:
+
+```bash
+# Check for podCIDR mismatch
+kubectl get nodes -o custom-columns='NAME:.metadata.name,CIDR:.spec.podCIDR'
+
+# Find pods with IPs outside current CIDR
+kubectl get pods -A --field-selector spec.nodeName=<node> \
+  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,IP:.status.podIP'
+# Compare pod IPs against the node's podCIDR
+
+# Check Longhorn node readiness
+kubectl get nodes.longhorn.io -n longhorn-system
+```
+
+**Fix**: Delete pods with old-CIDR IPs — DaemonSets recreate them with correct IPs.
+
+**Lessons Learned**: See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>
+(Root Cause 3) and <../debug/vps-cp-1-networking.md>.
+
 ### Cilium Gateway Controller Dies After Talos Machine Config Apply
 
 **Symptoms**:

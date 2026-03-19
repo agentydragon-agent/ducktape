@@ -247,6 +247,69 @@ lifecycle {
 
 Schematic/image changes are applied via `talosctl upgrade`, not server replacement.
 
+## Root Cause 3: podCIDR Reassignment After Transient Hostname (2026-03-19)
+
+When a node registers with a transient hostname (e.g., `talos-34f-5sc` instead of
+`talos-vps-cp-1`), the Kubernetes node controller assigns it a fresh podCIDR from
+`--cluster-cidr`. When the node later re-registers with its correct hostname, it gets
+**yet another** podCIDR — the original allocation is orphaned under the transient name.
+
+In IPAM mode `kubernetes` (used here), Cilium reads `spec.podCIDR` from the Node object
+and programs eBPF routes accordingly. After a Cilium restart, it only routes the new CIDR.
+
+**The dangerous part**: DaemonSet pods and long-lived pods that survived the hostname
+transition still hold IPs from the **old** CIDR. These pods lose all connectivity —
+they can't reach ClusterIP services, the API server, or any other pod. But they appear
+`Running` in kubectl because the kubelet on the node still sees them as alive.
+
+**Observed cascade (2026-03-19)**:
+
+1. After TF-driven upgrade, `talos-vps-cp-1` temporarily registered as `talos-34f-5sc`
+   and `talos-ner-5do`
+2. podCIDR changed from `10.244.4.0/24` (old) to `10.244.2.0/24` (new)
+3. Cilium restarted and only programs routes for `10.244.2.0/24`
+4. 5 DaemonSet pods survived with `10.244.4.x` IPs — notably `longhorn-manager`
+5. `longhorn-manager` can't reach API server (`10.96.0.1:443` → "no route to host")
+   → Longhorn marks node as `NotReady` (`ManagerPodDown`)
+6. Longhorn can't attach volumes → Vault stuck in `Init:0/1` → `vault-backend`
+   ClusterSecretStore invalid → `external-secrets-config` fails → **84 kustomizations
+   blocked**, 44 pods Pending
+
+Also left behind stale Longhorn node entries (`talos-34f-5sc`, `talos-ner-5do`) holding
+volume replicas that can't be rebuilt until the stale nodes are cleaned up.
+
+**Fix (immediate)**: Delete pods with old-CIDR IPs so DaemonSets recreate them:
+
+```bash
+# Identify stale pods (IPs not in the node's current podCIDR)
+kubectl get pods -A --field-selector spec.nodeName=<node> \
+  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,IP:.status.podIP' | \
+  grep "10.244.4\."  # old CIDR
+
+# Delete them — DaemonSets will recreate with correct IPs
+kubectl delete pod <pod> -n <namespace>
+```
+
+**Fix (cleanup)**: Remove stale Longhorn nodes after verifying no unique replicas:
+
+```bash
+kubectl delete node.longhorn.io <stale-hostname> -n longhorn-system
+```
+
+**TODO — unsolved**: This will happen again on any future node upgrade/replacement
+that involves a transient hostname change. The explicit `machine.network.hostname`
+fix (Root Cause 1) prevents hostname loss during `talosctl upgrade`, but a full
+server replacement via `tofu apply` (e.g., if `ignore_changes` is bypassed or a new
+server is provisioned) can still cause a CIDR gap. Needs investigation into whether:
+
+- kube-controller-manager can be configured to reuse CIDRs for nodes with the same IP
+- A pre-upgrade drain + node deletion would prevent CIDR orphaning
+- Cilium's `kubernetes` IPAM mode handles this better in newer versions
+- Switching to Cilium's `cluster-pool` IPAM mode (which manages CIDRs itself) would
+  avoid this class of problem entirely
+
+See <../../debug/vps-cp-1-networking.md> for the full 2026-03-19 diagnostic.
+
 ## Prevention Checklist
 
 1. **Always set explicit hostnames** in Talos machine config — never rely on platform
@@ -262,6 +325,11 @@ Schematic/image changes are applied via `talosctl upgrade`, not server replaceme
    applies can cascade through dependencies
 6. **Prefer `--reboot-mode powercycle`** when upgrading nodes without explicit hostname/IP
    in machine config, as a safety measure (slower but re-reads platform metadata)
+7. **After any node hostname change**: check for pods with IPs outside the node's current
+   `spec.podCIDR` and delete them. Check `kubectl get nodes.longhorn.io -n longhorn-system`
+   for stale entries
+8. **After any TF apply that touches nodes**: verify podCIDRs haven't changed
+   (`kubectl get nodes -o custom-columns='NAME:.metadata.name,CIDR:.spec.podCIDR'`)
 
 ## Guidance for Future Talos Upgrades
 
