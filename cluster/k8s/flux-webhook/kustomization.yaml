@@ -7,5 +7,6 @@ resources:
   - harbor-webhook-token-secret.yaml
   - flux-webhook-httproute.yaml
   - allow-gateway-webhook-ingress.yaml
-  - flux-alerts.yaml
+  - ntfy-alerts.yaml
+  - grafana-alerts.yaml
   - ntfy-webhook-sealed.yaml
