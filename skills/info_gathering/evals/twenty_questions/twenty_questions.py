@@ -9,14 +9,13 @@ import argparse
 import asyncio
 import json
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ValidationError
-from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt, wait_fixed
+from pydantic import BaseModel
 
+from agent_core.direct_provider import DirectToolProvider
 from agent_core.tool_provider import ToolProvider
 from skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
 from skills.info_gathering.evals.harness import (
@@ -32,16 +31,13 @@ from skills.info_gathering.evals.harness import (
     log_response,
     output_dir_from_args,
     save_results,
-    tool_def,
 )
-from skills.info_gathering.evals.litellm_tool_provider import ToolParam, tool_params_from_provider
+from skills.info_gathering.evals.litellm_tool_provider import ToolParam, tool_params_from_provider, tool_result_content
 from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
 _SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
-
-_SIM_RETRIES = 5
 
 _SCRATCH_SYSTEM_NOTE = """\
 You have access to an `exec` tool — a private Docker container for scratch computation. \
@@ -61,14 +57,12 @@ class AnswerInput(BaseModel):
     response: Literal["yes", "no", "sort_of"]
 
 
-class CorrectAnswerInput(BaseModel):
-    """The player correctly guessed the secret."""
+@dataclass
+class SimAction:
+    """Records the sim's game action from a tool call."""
 
-
-ANSWER_TOOL = tool_def("answer", "Answer the player's yes/no question.", AnswerInput)
-CORRECT_ANSWER_TOOL = tool_def("correct_answer", "The player correctly guessed the secret.", CorrectAnswerInput)
-
-SIM_TOOLS: list[ToolParam] = [ANSWER_TOOL, CORRECT_ANSWER_TOOL]
+    tool_name: str
+    answer: str | None = None
 
 
 @dataclass
@@ -88,30 +82,6 @@ VARIANTS: dict[str, Variant] = {
 }
 
 
-def _clean_function_name(name: str) -> str:
-    """Strip harmony format noise (e.g. `answer<|channel|>commentary` → `answer`)."""
-    return re.sub(r"<\|.*", "", name)
-
-
-def _parse_sim_action(response: Any) -> tuple[str, str | None]:
-    """Parse the simulator's tool call into (tool_name, answer_value).
-
-    Raises ValueError if no valid tool call found or arguments fail validation.
-    """
-    tcs = extract_tool_calls(response)
-    if len(tcs) != 1:
-        raise ValueError(f"Expected exactly 1 tool call, got {len(tcs)}")
-    tc = tcs[0]
-    name = _clean_function_name(tc.function.name)
-    if name == "correct_answer":
-        return ("correct_answer", None)
-    if name == "answer":
-        args = json.loads(tc.function.arguments)
-        validated = AnswerInput.model_validate(args)
-        return ("answer", validated.response)
-    raise ValueError(f"Unknown tool call: {tc.function.name!r}")
-
-
 class _TwentyQuestionsRunner:
     """Runs a single 20Q eval game, tracking conversation state."""
 
@@ -123,12 +93,27 @@ class _TwentyQuestionsRunner:
         self.agent_system = agent_system
         self.sim_system = sim_system
         self.agent_tool_provider = agent_tool_provider
+        self.sim_provider = DirectToolProvider()
+        self.sim_action: SimAction | None = None
+
+        @self.sim_provider.tool
+        def answer(args: AnswerInput) -> str:
+            """Answer the player's yes/no question."""
+            self.sim_action = SimAction(tool_name="answer", answer=args.response)
+            return args.response
+
+        @self.sim_provider.tool
+        def correct_answer() -> None:
+            """The player correctly guessed the secret."""
+            self.sim_action = SimAction(tool_name="correct_answer")
+
         self.log_entries: list[LogEntry] = []
         self.agent_messages: list[dict[str, Any]] = []
         self.sim_messages: list[dict[str, Any]] = []
-        self._last_tc_id: str | None = None
 
-    async def _run_turn(self, turn: int, agent_tool_params: list[ToolParam]) -> Correct | None:
+    async def _run_turn(
+        self, turn: int, agent_tool_params: list[ToolParam], sim_tool_params: list[ToolParam]
+    ) -> Correct | None:
         """Run one agent+sim exchange. Returns Correct if guessed, None to continue."""
         # Agent turn — with optional scratch tools
         agent_resp = await self.client.call(
@@ -162,77 +147,53 @@ class _TwentyQuestionsRunner:
         if not agent_text:
             return None
 
-        # Sim turn — provide tool result from previous call if needed
-        if self._last_tc_id:
-            self.sim_messages.append({"role": "tool", "tool_call_id": self._last_tc_id, "content": "ok"})
-        self._last_tc_id = None
-
         self.sim_messages.append({"role": "user", "content": agent_text})
 
-        # Retry sim call with tenacity: handles both missing tool calls (drop_params
-        # silently stripping tool_choice="required") and malformed arguments (model
-        # returning free-text instead of enum values).
-        def _log_sim_retry(state: RetryCallState) -> None:
-            logger.warning(
-                "Turn %d: sim attempt %d/%d failed (%s), retrying...",
-                turn,
-                state.attempt_number,
-                _SIM_RETRIES,
-                state.outcome.exception() if state.outcome else "unknown",
-            )
-
-        @retry(
-            stop=stop_after_attempt(_SIM_RETRIES),
-            wait=wait_fixed(0),
-            retry=retry_if_exception_type((ValueError, ValidationError)),
-            before_sleep=_log_sim_retry,
-            reraise=True,
+        # Sim turn — call with tool_choice="required", execute tool calls directly.
+        # No re-call needed: the sim produces exactly one tool call (answer/correct_answer),
+        # and the action is captured by the tool closure.
+        sim_resp = await self.client.call(
+            messages=self.sim_messages, system=self.sim_system, tools=sim_tool_params, tool_choice="required"
         )
-        async def _sim_call_with_parse() -> tuple[Any, tuple[str, str | None]]:
-            sim_resp = await self.client.call(
-                messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="required"
-            )
-            log_response(
-                self.log_entries,
-                name=self.name,
-                player="simulator",
-                turn=turn,
-                model=self.client.model,
-                response=sim_resp,
-            )
-            action = _parse_sim_action(sim_resp)
-            return sim_resp, action
+        log_response(
+            self.log_entries, name=self.name, player="simulator", turn=turn, model=self.client.model, response=sim_resp
+        )
 
-        sim_resp, action = await _sim_call_with_parse()
+        tcs = extract_tool_calls(sim_resp)
+        if not tcs:
+            raise ValueError("Sim failed to produce a tool call despite tool_choice=required")
 
-        sim_msg = _serialize_message(sim_resp.choices[0].message)
-        self.sim_messages.append(sim_msg)
+        self.sim_action = None
+        self.sim_messages.append(_serialize_message(sim_resp.choices[0].message))
+        for tc in tcs:
+            args = json.loads(tc.function.arguments)
+            result = await self.sim_provider.call_tool(tc.function.name, args)
+            self.sim_messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_result_content(result)})
 
-        tool_name, answer = action
+        action = self.sim_action
+        if action is None:
+            raise ValueError("Sim tool call did not produce a valid action")
 
-        if tool_name == "correct_answer":
+        if action.tool_name == "correct_answer":
             return Correct(turns=turn)
 
-        # answer action
-        assert answer is not None
-        tcs = extract_tool_calls(sim_resp)
-        if tcs:
-            self._last_tc_id = tcs[0].id
-        self.agent_messages.append({"role": "user", "content": answer})
+        assert action.answer is not None
+        self.agent_messages.append({"role": "user", "content": action.answer})
         return None
 
     async def run(self, *, first_user_message: str, turn_limit: int, output_dir: Path) -> RunSummary:
         """Run the full game loop and return summary."""
         self.agent_messages.append({"role": "user", "content": first_user_message})
 
-        # Compute agent tool params once (avoids repeated list_tools() calls per turn)
+        # Compute tool params once (avoids repeated list_tools() calls per turn)
         agent_tool_params: list[ToolParam] = await tool_params_from_provider(self.agent_tool_provider)
+        sim_tool_params: list[ToolParam] = await tool_params_from_provider(self.sim_provider)
 
         result: Correct | Timeout | None = None
         turn = 0
         for turn in range(1, turn_limit + 1):
             logger.info("Turn %d...", turn)
-            result = await self._run_turn(turn, agent_tool_params)
+            result = await self._run_turn(turn, agent_tool_params, sim_tool_params)
             if result:
                 break
         else:

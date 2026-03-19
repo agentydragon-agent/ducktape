@@ -12,7 +12,7 @@ from skills.info_gathering.evals.twenty_questions.twenty_questions import Correc
 
 
 def _text_response(text: str) -> litellm.ModelResponse:
-    """Build a mock agent response (text only, stop=stop)."""
+    """Build a mock response (text only, finish_reason=stop)."""
     return litellm.ModelResponse(
         id="msg_test",
         choices=[{"finish_reason": "stop", "index": 0, "message": {"content": text, "role": "assistant"}}],
@@ -22,7 +22,7 @@ def _text_response(text: str) -> litellm.ModelResponse:
 
 
 def _tool_response(tool_name: str, tool_input: dict, tool_id: str) -> litellm.ModelResponse:
-    """Build a mock sim response (single tool call, stop=stop)."""
+    """Build a mock response (single tool call, finish_reason=stop)."""
     return litellm.ModelResponse(
         id="msg_test",
         choices=[
@@ -53,6 +53,7 @@ TEST_CLIENT = LLMClient(model="anthropic/test-model")
 @patch.object(LLMClient, "call")
 async def test_timeout(mock_call, tmp_path):
     """3-turn game with no correct guess -> Timeout, score=0."""
+    # Each turn: agent text response + sim tool call (no re-call after tool execution)
     mock_call.side_effect = [
         _text_response("Is it alive?"),
         _tool_response("answer", {"response": "no"}, "tu_1"),

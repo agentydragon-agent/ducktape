@@ -3,6 +3,7 @@ load("//devinfra/testing:defs.bzl", "py_test")
 load("//openai_utils/testing:testing.bzl", "live_openai_py_test")
 
 # gazelle:exclude test_ollama_reasoning.py
+# gazelle:exclude test_ollama_tool_calling.py
 
 py_library(
     name = "pydantic_utils",
@@ -360,6 +361,26 @@ live_openai_py_test(
         "//agent_core/testing/mcp:responses",
         "//openai_utils:model",
         "//openai_utils/testing:fixtures",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+live_openai_py_test(
+    name = "test_ollama_tool_calling",
+    srcs = ["test_ollama_tool_calling.py"],
+    tags = ["ollama"],
+    deps = [
+        ":agent",
+        ":conftest",
+        ":direct_provider",
+        ":handler",
+        ":logging_handler",
+        ":loop_control",
+        ":turn_limit",
+        "//agent_core/testing:responses",
+        "//openai_utils:model",
+        "//openai_utils/testing:fixtures",
+        "@pypi//pydantic",
         "@pypi//pytest_bazel",
     ],
 )

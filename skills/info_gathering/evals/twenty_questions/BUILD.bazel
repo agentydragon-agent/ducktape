@@ -5,14 +5,13 @@ py_library(
     srcs = ["twenty_questions.py"],
     imports = ["../../../.."],
     deps = [
+        "//agent_core:direct_provider",
         "//agent_core:tool_provider",
         "//skills/info_gathering/evals:docker_scratch",
         "//skills/info_gathering/evals:harness",
         "//skills/info_gathering/evals:litellm_tool_provider",
         "//util/bazel:runfiles",
-        "@pypi//litellm",
         "@pypi//pydantic",
-        "@pypi//tenacity",
     ],
 )
 

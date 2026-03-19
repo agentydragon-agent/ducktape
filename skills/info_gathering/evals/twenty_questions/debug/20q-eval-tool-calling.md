@@ -249,3 +249,40 @@ The tool-calling infrastructure is working end-to-end. The remaining failures
 are model reliability issues (intermittent tool call omission, slow inference)
 rather than transport/client problems. The switch from litellm to openai SDK
 resolved the deterministic failure at turn 4.
+
+## OpenAI Responses API (`/v1/responses`) — Verified Working
+
+Tested 2026-03-18. LiteLLM proxies the OpenAI Responses API to Ollama
+successfully. Both text completion and tool calling work:
+
+```bash
+# Text completion
+curl -s -X POST https://litellm.allegedly.works/v1/responses \
+  -H "Authorization: Bearer $LITELLM_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openai/gpt-oss:20b", "input": "What is the capital of France?"}'
+# → output includes message with text "Paris" ✓
+
+# Tool calling
+curl -s -X POST https://litellm.allegedly.works/v1/responses \
+  -H "Authorization: Bearer $LITELLM_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-oss:20b",
+    "input": "Use the lookup_capital tool to find the capital of France.",
+    "tools": [{
+      "type": "function", "name": "lookup_capital",
+      "description": "Look up the capital city of a country.",
+      "parameters": {"type": "object", "properties": {"country": {"type": "string"}},
+                     "required": ["country"], "additionalProperties": false},
+      "strict": true
+    }]
+  }'
+# → output includes function_call with name "lookup_capital",
+#   arguments '{"country":"France"}' ✓
+```
+
+This means `agent_core` (which uses the Responses API via `openai.AsyncOpenAI`)
+can work with the Ollama/LiteLLM stack. A smoke test exists at
+`agent_core/test_ollama_tool_calling.py` (mock target passes; live target
+requires `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL` env vars).
