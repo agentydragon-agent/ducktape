@@ -4,7 +4,6 @@ metadata:
   name: openclaw-mitmproxy-namespace
   namespace: flux-system
 spec:
-  retries: 0
   interval: 1h
   path: ./cluster/k8s/openclaw-mitmproxy-namespace
   prune: false

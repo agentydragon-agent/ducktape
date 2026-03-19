@@ -4,7 +4,6 @@ metadata:
   name: flux-grafana-secrets
   namespace: flux-system
 spec:
-  retries: 5
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/flux-grafana-secrets

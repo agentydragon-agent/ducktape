@@ -4,7 +4,6 @@ metadata:
   name: alloy-otlp-bearer-token-tf
   namespace: flux-system
 spec:
-  retries: 3
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/alloy-otlp-bearer-token-tf

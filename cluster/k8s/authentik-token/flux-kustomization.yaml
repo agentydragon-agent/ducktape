@@ -4,7 +4,6 @@ metadata:
   name: authentik-token
   namespace: flux-system
 spec:
-  retries: 3
   retryInterval: 1m
   interval: 15m0s
   path: ./cluster/k8s/authentik-token

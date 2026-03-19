@@ -4,7 +4,6 @@ metadata:
   name: flux-image-automation
   namespace: flux-system
 spec:
-  retries: 0
   interval: 10m
   path: ./cluster/k8s/flux-image-automation
   prune: true

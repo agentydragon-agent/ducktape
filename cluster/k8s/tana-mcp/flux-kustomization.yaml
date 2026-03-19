@@ -4,7 +4,6 @@ metadata:
   name: tana-mcp
   namespace: flux-system
 spec:
-  retries: 5
   retryInterval: 1m
   interval: 10m
   timeout: 5m

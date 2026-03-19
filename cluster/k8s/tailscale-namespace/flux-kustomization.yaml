@@ -4,7 +4,6 @@ metadata:
   name: tailscale-namespace
   namespace: flux-system
 spec:
-  retries: 5
   retryInterval: 1m
   suspend: true
   interval: 10m

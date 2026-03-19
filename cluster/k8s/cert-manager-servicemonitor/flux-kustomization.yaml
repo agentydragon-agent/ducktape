@@ -4,7 +4,6 @@ metadata:
   name: cert-manager-servicemonitor
   namespace: flux-system
 spec:
-  retries: 0
   interval: 10m
   path: ./cluster/k8s/cert-manager-servicemonitor
   prune: true

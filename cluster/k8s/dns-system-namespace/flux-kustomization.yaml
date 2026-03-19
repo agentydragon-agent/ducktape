@@ -4,7 +4,6 @@ metadata:
   name: dns-system-namespace
   namespace: flux-system
 spec:
-  retries: 0
   interval: 1h
   path: ./cluster/k8s/dns-system-namespace
   prune: false

@@ -4,7 +4,6 @@ metadata:
   name: inventree-namespace
   namespace: flux-system
 spec:
-  retries: 0
   suspend: true
   interval: 1h
   path: ./cluster/k8s/inventree-namespace

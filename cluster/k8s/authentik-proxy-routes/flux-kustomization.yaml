@@ -4,7 +4,6 @@ metadata:
   name: authentik-proxy-routes
   namespace: flux-system
 spec:
-  retries: 0
   interval: 10m
   sourceRef:
     kind: GitRepository

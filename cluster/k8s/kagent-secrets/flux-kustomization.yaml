@@ -4,7 +4,6 @@ metadata:
   name: kagent-secrets
   namespace: flux-system
 spec:
-  retries: 0
   suspend: true
   interval: 10m
   path: ./cluster/k8s/kagent-secrets

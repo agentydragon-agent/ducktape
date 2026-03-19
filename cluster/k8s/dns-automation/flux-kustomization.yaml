@@ -4,7 +4,6 @@ metadata:
   name: dns-automation
   namespace: flux-system
 spec:
-  retries: 3
   retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/dns-automation

@@ -4,7 +4,6 @@ metadata:
   name: authentik-blueprint-sso-secrets
   namespace: flux-system
 spec:
-  retries: 3
   retryInterval: 1m
   interval: 10m
   timeout: 5m

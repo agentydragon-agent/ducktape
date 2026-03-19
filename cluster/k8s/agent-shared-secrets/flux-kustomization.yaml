@@ -4,7 +4,6 @@ metadata:
   name: agent-shared-secrets
   namespace: flux-system
 spec:
-  retries: 0
   interval: 10m
   path: ./cluster/k8s/agent-shared-secrets
   prune: true

@@ -218,11 +218,12 @@ repos:
           -schema-location default
           -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
           -ignore-missing-schemas
-          -skip CustomResourceDefinition,Kustomization
         files: ^cluster/k8s/.*\.(yaml|yml)$
         exclude: |
           (?x)^(
             cluster/k8s/flux-system/gotk-components\.yaml|
+            # kustomize config files (kustomize.config.k8s.io/v1beta1) — not K8s resources
+            cluster/k8s/.*/kustomization\.yaml|
             # Authentik blueprints are not K8s manifests, skip validation
             cluster/k8s/authentik/blueprints/.*|
             # Application config files, not K8s manifests
