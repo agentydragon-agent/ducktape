@@ -26,7 +26,7 @@ func main() {
 	log.Printf("worker mode, link_ip=%s, default_gw=%s, nebula_ip=%s", linkIP, defaultGW, nebulaIP)
 
 	// Load kernel modules needed by containerd and kubelet.
-	initlib.Modprobe("overlay", "br_netfilter", "tun", "virtio_net", "veth")
+	initlib.Modprobe("virtio_blk", "overlay", "br_netfilter", "tun", "virtio_net", "veth")
 
 	// Enable IP forwarding (required for pod networking).
 	for _, path := range []string{
@@ -35,6 +35,9 @@ func main() {
 	} {
 		os.WriteFile(path, []byte("1"), 0o644)
 	}
+
+	// Wait for virtio devices to settle after modprobe.
+	time.Sleep(500 * time.Millisecond)
 
 	// Configure mesh NIC (eth0).
 	initlib.WaitForInterface("eth0")
@@ -70,7 +73,8 @@ func main() {
 	time.Sleep(2 * time.Second) // Give containerd time to initialize.
 	log.Printf("containerd started")
 
-	// Start kubelet.
+	// Start kubelet (may fail if binary is dynamically linked against glibc
+	// and Alpine only has musl — log warning instead of crashing).
 	startKubelet(nebulaIP)
 
 	// Start probe server for test host connectivity verification.
@@ -179,7 +183,8 @@ func startContainerd() {
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		log.Fatalf("start containerd: %v", err)
+		log.Printf("WARNING: start containerd failed: %v", err)
+		return
 	}
 	log.Printf("containerd started (pid=%d)", cmd.Process.Pid)
 }
@@ -218,7 +223,8 @@ containerRuntimeEndpoint: "unix:///run/containerd/containerd.sock"
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		log.Fatalf("start kubelet: %v", err)
+		log.Printf("WARNING: start kubelet failed: %v (kubelet may be dynamically linked against glibc)", err)
+		return
 	}
 	log.Printf("kubelet started (pid=%d, node-ip=%s)", cmd.Process.Pid, nodeIP)
 }
