@@ -194,9 +194,8 @@ async def _create_java_truststore(paths: SessionPaths) -> None:
 
     try:
         system_cacerts = _find_system_file(_get_java_cacerts_candidates(), "system Java cacerts")
-    except FileNotFoundError:
-        logger.warning("No Java cacerts found; skipping Java truststore creation")
-        return
+    except FileNotFoundError as e:
+        raise TruststoreError(str(e)) from e
 
     logger.info("Creating custom Java truststore from %s", system_cacerts)
 

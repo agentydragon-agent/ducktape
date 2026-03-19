@@ -1,6 +1,5 @@
 """Pytest configuration for claude tests."""
 
-import os
 import uuid
 from pathlib import Path
 from unittest.mock import patch
@@ -17,9 +16,17 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 @pytest.fixture
-def session_paths() -> SessionPaths:
+def session_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SessionPaths:
     """Minimal SessionPaths for tests that don't need supervisor/proxy infrastructure."""
-    return SessionPaths.from_env(f"test-session-{uuid.uuid4().hex[:8]}", dict(os.environ))
+    home = tmp_path / "session-home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    session_id = f"test-session-{uuid.uuid4().hex[:8]}"
+    paths = SessionPaths.from_env(session_id, {"HOME": str(home)})
+    # Pre-create subdirs that production code expects to exist
+    paths.session_dir.mkdir(parents=True, exist_ok=True)
+    paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
+    return paths
 
 
 @pytest.fixture

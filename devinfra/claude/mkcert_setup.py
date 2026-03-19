@@ -58,6 +58,7 @@ def _download_mkcert(paths: SessionPaths, http: httpx.Client) -> Path:
     mkcert_path = _get_mkcert_binary(paths)
 
     mkcert_dir.mkdir(parents=True, exist_ok=True)
+    mkcert_path.parent.mkdir(parents=True, exist_ok=True)
 
     if mkcert_path.exists():
         logger.info("mkcert already downloaded: %s", mkcert_path)

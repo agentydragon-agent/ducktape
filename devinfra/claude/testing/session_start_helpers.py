@@ -21,6 +21,7 @@ from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.claude_api.hooks.common import PermissionMode
 from devinfra.claude.claude_api.hooks.session_start import HookSource, SessionStartHookInput
+from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.testing import shell_helpers
 from devinfra.claude.testing.mock_egress_proxy import MockEgressProxy
 from devinfra.claude.tmpfs_setup import unmount_tmpfs_under
@@ -172,12 +173,11 @@ def cleanup_hook_daemon(session_dir: Path) -> None:
     The daemon shares a socket path based on session_id, so killing it between
     tests ensures each test gets a fresh daemon with its own isolated port config.
     """
-    _kill_by_pidfile(session_dir / "hook-daemon" / "daemon.pid")
-    # Remove the shared socket so the next test's daemon can bind to it
-    # Socket path: /tmp/claude-hd/<session_id>/d.sock (see SessionPaths.hook_daemon_sock)
-    sock_path = Path("/tmp/claude-hd") / session_dir.name / "d.sock"
+    home = session_dir.parent.parent.parent  # session_dir = home/.claude/session-env/<id>
+    paths = SessionPaths.from_env(session_dir.name, {"HOME": str(home)})
+    _kill_by_pidfile(paths.hook_daemon_pidfile)
     with contextlib.suppress(OSError):
-        sock_path.unlink()
+        paths.hook_daemon_sock.unlink()
 
 
 def write_output_log(name: str, content: str) -> Path:
