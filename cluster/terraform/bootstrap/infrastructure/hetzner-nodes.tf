@@ -16,6 +16,7 @@ resource "talos_image_factory_schematic" "hcloud" {
         officialExtensions = [
           "siderolabs/qemu-guest-agent",
           "siderolabs/iscsi-tools",
+          "siderolabs/nebula",
         ]
       }
     }
@@ -133,8 +134,6 @@ data "talos_machine_configuration" "vps" {
           "node.longhorn.io/create-default-disk" = "true"
         }
         kubelet = {
-          # Allow TCP MTU probing sysctl for PowerDNS AXFR over Tailscale/KubeSpan
-          # Required to handle MTU mismatch (WireGuard 1280 vs pod 1500)
           extraArgs = {
             allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
           }
@@ -142,10 +141,11 @@ data "talos_machine_configuration" "vps" {
       })
       cluster = local.common_cluster_config
     }),
-    # Hostname: hcloud platform derives from server name on first boot.
-    # TODO: explicit hostname needed for talosctl upgrade (platform metadata
-    # not re-read during kexec), but conflicts with platform on first boot.
-    # Need separate user_data vs machine_configuration_apply configs to fix.
+    # Hostname is set via HostnameConfig in data.talos_machine_configuration.vps_nebula.
+    # NOTE: nebula_machine_patch is NOT included here — it references
+    # hcloud_server.vps[*].ipv4_address which would create a dependency cycle
+    # (hcloud_server.user_data → machine_config → nebula_patch → hcloud_server.ipv4_address).
+    # Applied separately via talos_machine_configuration_apply.vps_nebula below.
   ]
 }
 
@@ -161,4 +161,61 @@ resource "talos_machine_configuration_apply" "vps" {
   node                        = hcloud_server.vps[each.key].ipv4_address
 
   depends_on = [hcloud_server.vps]
+}
+
+# Nebula config applied via a separate data source + apply to break the dependency cycle:
+#   hcloud_server.user_data → data.talos_machine_configuration.vps (no nebula patch)
+#   data.talos_machine_configuration.vps_nebula → nebula_patch → hcloud_server.ipv4_address
+# hcloud_server.user_data only references the non-nebula data source, so no cycle.
+data "talos_machine_configuration" "vps_nebula" {
+  for_each = local.vps_nodes
+
+  cluster_name       = var.cluster_name
+  cluster_endpoint   = local.cluster_endpoint
+  machine_secrets    = local.machine_secrets
+  machine_type       = "controlplane"
+  talos_version      = var.talos_version
+  kubernetes_version = var.kubernetes_version
+  examples           = false
+  docs               = false
+
+  config_patches = concat(
+    [
+      yamlencode({
+        machine = merge(local.common_machine_base, {
+          nodeLabels = {
+            "topology.kubernetes.io/region"        = "hetzner"
+            "topology.kubernetes.io/zone"          = var.hetzner_location
+            "node.longhorn.io/create-default-disk" = "true"
+          }
+          kubelet = {
+            extraArgs = {
+              allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
+            }
+          }
+        })
+        cluster = local.common_cluster_config
+      }),
+      # Explicit hostname — overrides the auto-generated HostnameConfig
+      # (auto: stable) that the Terraform provider appends. Without this,
+      # talosctl upgrade (kexec) loses the platform-derived hostname.
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "HostnameConfig"
+        auto       = "off"
+        hostname   = each.value.name
+      }),
+    ],
+    local.nebula_machine_patches[each.key],
+  )
+}
+
+resource "talos_machine_configuration_apply" "vps_nebula" {
+  for_each = local.vps_nodes
+
+  client_configuration        = local.client_configuration
+  machine_configuration_input = data.talos_machine_configuration.vps_nebula[each.key].machine_configuration
+  node                        = hcloud_server.vps[each.key].ipv4_address
+
+  depends_on = [talos_machine_configuration_apply.vps]
 }

@@ -1,0 +1,9 @@
+# Nebula private keys — never commit
+*.key
+
+# Node certificates contain public keys only but are still gitignored
+# to avoid leaking node identity information; ca.crt is tracked (public)
+talos-*.crt
+wyrm2.crt
+rugged.crt
+k8s-worker-test.crt

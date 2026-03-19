@@ -11,6 +11,7 @@ let
 in
 pkgs.mkShell {
   buildInputs = [
+    pkgs.openssl
     pkgs.talosctl
     pkgs.fluxcd
     pkgs.kubernetes-helm

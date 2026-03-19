@@ -182,7 +182,7 @@ jobs:
         run: uv tool install bazel-bin/ducktape-*.whl
       - name: Test installed wheel
         run: |
-          bazel test //devinfra/claude/hook_daemon:test_session_start \
+          bazel test //devinfra/claude:test_session_start \
             --test_output=all \
             --nocache_test_results \
             --spawn_strategy=local \

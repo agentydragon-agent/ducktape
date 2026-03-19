@@ -1,7 +1,6 @@
-# Cilium CNI — Talos-recommended defaults + KubeSpan-compatible MTU
+# Cilium CNI — Talos-recommended defaults + Nebula-compatible MTU
 #
-# IMPORTANT: Do not add non-default options without verifying KubeSpan compatibility.
-# See: https://docs.siderolabs.com/talos/v1.11/networking/kubespan
+# IMPORTANT: Do not add non-default options without verifying Nebula overlay compatibility.
 # See: https://docs.siderolabs.com/kubernetes-guides/cni/deploying-cilium
 
 # Required: Talos-recommended IPAM
@@ -26,10 +25,11 @@ cgroup:
   autoMount:
     enabled: false
 
-# Required: Account for double encapsulation (VXLAN + KubeSpan WireGuard)
-# eth0 MTU (1500) - VXLAN overhead (50) - WireGuard overhead (80) = 1370
-# Without this, packets >1370 bytes fragment at the WireGuard interface.
-MTU: 1370
+# Account for double encapsulation (VXLAN + Nebula overlay)
+# eth0 MTU (1500) - VXLAN overhead (50) - Nebula overhead (~38) = 1412
+# Verify with: ping -M do -s 1380 <nebula-ip> after Nebula deployment.
+# NOTE: Applied via helm upgrade in Phase 4 Step 5, after KubeSpan is disabled.
+MTU: 1412
 
 # Gateway API: replaces ingress-nginx (retired March 2026)
 # Reuses per-node Envoy DaemonSet — zero additional controllers.

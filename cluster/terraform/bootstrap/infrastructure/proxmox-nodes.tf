@@ -16,6 +16,7 @@ resource "talos_image_factory_schematic" "proxmox" {
         officialExtensions = [
           "siderolabs/qemu-guest-agent",
           "siderolabs/iscsi-tools",
+          "siderolabs/nebula",
         ]
       }
     }
@@ -405,6 +406,21 @@ data "talos_machine_configuration" "proxmox" {
   config_patches = concat(
     [yamlencode(merge(local.proxmox_base_config_patch, {
       machine = merge(local.proxmox_base_config_patch.machine, {
+        # Explicit network config — cloud-init network-config isn't preserved
+        # across talosctl upgrade (kexec or powercycle). Without this, the node
+        # gets a DHCP address instead of the configured static IP.
+        network = merge(local.proxmox_base_config_patch.machine.network, {
+          interfaces = [{
+            interface = "eth0"
+            dhcp      = false
+            addresses = ["${each.value.ip}/16"]
+            routes = [{
+              network = "0.0.0.0/0"
+              gateway = local.proxmox_gateway
+            }]
+          }]
+          nameservers = ["1.1.1.1", "8.8.8.8"]
+        })
         nodeLabels = local.proxmox_node_labels
         kubelet = {
           extraArgs = {
@@ -416,12 +432,24 @@ data "talos_machine_configuration" "proxmox" {
           }
         }
       })
-    }))],
-    # Proxmox nocloud platform derives hostname from VM name — no explicit
-    # hostname needed (unlike Hetzner where platform metadata isn't re-read
-    # during talosctl upgrade kexec)
+      })),
+      # Explicit hostname — overrides HostnameConfig auto: stable (Talos v1.12+).
+      # Also needed because `talosctl upgrade` uses kexec which doesn't re-read
+      # nocloud platform metadata (cloud-init). Without this, the node loses BOTH
+      # its hostname AND static IP after upgrade (gets DHCP address instead of
+      # the configured static IP, breaking etcd peering).
+      # Use `talosctl upgrade --reboot-mode powercycle` as a workaround if this
+      # patch isn't applied before upgrade.
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "HostnameConfig"
+        auto       = "off"
+        hostname   = each.value.name
+      }),
+    ],
     each.value.type == "worker" ? [local.worker_link_config] : [],
     [local.longhorn_disk_config],
+    local.nebula_machine_patches[each.key],
   )
 }
 

@@ -34,7 +34,7 @@ output "talos_config" {
 
 output "talos_reader_config" {
   description = "Talos readonly client configuration (os:reader role)"
-  value       = local.talos_reader_config
+  value       = data.local_file.talos_reader_config.content
   sensitive   = true
 }
 
