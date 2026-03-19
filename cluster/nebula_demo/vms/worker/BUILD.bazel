@@ -1,0 +1,80 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//cluster/kubespand/qemu_tests:initramfs.bzl", "initramfs")
+
+go_library(
+    name = "worker_lib",
+    testonly = True,
+    srcs = ["main.go"],
+    importpath = "github.com/agentydragon/ducktape/cluster/nebula_demo/vms/worker",
+    visibility = ["//visibility:private"],
+    deps = ["//cluster/kubespand/qemu_tests/vms/initlib"],
+)
+
+go_binary(
+    name = "worker",
+    testonly = True,
+    embed = [":worker_lib"],
+    goarch = "amd64",
+    goos = "linux",
+    static = "on",
+    visibility = ["//cluster/nebula_demo:__subpackages__"],
+)
+
+# Extract nebula binary from the release tarball.
+genrule(
+    name = "nebula_bin",
+    testonly = True,
+    srcs = ["@nebula_linux_amd64//file"],
+    outs = ["nebula"],
+    cmd = "tar -xzf $< -C $$(dirname $@) nebula && chmod +x $@",
+    visibility = ["//cluster/nebula_demo:__subpackages__"],
+)
+
+# Extract containerd binary from the static release.
+genrule(
+    name = "containerd_bin",
+    testonly = True,
+    srcs = ["@containerd_static_linux_amd64//:bin/containerd"],
+    outs = ["containerd"],
+    cmd = "cp $< $@ && chmod +x $@",
+    visibility = ["//cluster/nebula_demo:__subpackages__"],
+)
+
+# Extract containerd-shim-runc-v2 from the static release.
+genrule(
+    name = "containerd_shim_bin",
+    testonly = True,
+    srcs = ["@containerd_static_linux_amd64//:bin/containerd-shim-runc-v2"],
+    outs = ["containerd-shim-runc-v2"],
+    cmd = "cp $< $@ && chmod +x $@",
+    visibility = ["//cluster/nebula_demo:__subpackages__"],
+)
+
+initramfs(
+    name = "initramfs",
+    testonly = True,
+    extra_binaries = {
+        ":nebula_bin": "/usr/bin/nebula",
+        "@kubelet_linux_amd64//file": "/usr/bin/kubelet",
+        ":containerd_bin": "/usr/bin/containerd",
+        ":containerd_shim_bin": "/usr/bin/containerd-shim-runc-v2",
+        "@runc_linux_amd64//file": "/usr/sbin/runc",
+        "@cni_plugins_linux_amd64//:bridge": "/opt/cni/bin/bridge",
+        "@cni_plugins_linux_amd64//:loopback": "/opt/cni/bin/loopback",
+        "@cni_plugins_linux_amd64//:host-local": "/opt/cni/bin/host-local",
+    },
+    extra_dirs = [
+        "/etc/nebula",
+        "/etc/kubernetes/pki",
+        "/etc/cni/net.d",
+        "/opt/cni/bin",
+        "/var/lib/containerd",
+        "/var/lib/kubelet",
+        "/run/containerd",
+        "/var/log",
+    ],
+    init = ":worker",
+    visibility = [
+        "//cluster/nebula_demo:__subpackages__",
+    ],
+)

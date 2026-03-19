@@ -8,7 +8,10 @@ go_library(
         "probe_server.go",
     ],
     importpath = "github.com/agentydragon/ducktape/cluster/kubespand/qemu_tests/vms/initlib",
-    visibility = ["//cluster/kubespand:__subpackages__"],
+    visibility = [
+        "//cluster/kubespand:__subpackages__",
+        "//cluster/nebula_demo:__subpackages__",
+    ],
     deps = [
         "//cluster/kubespand/qemu_tests/probepb",
         "//cluster/kubespand/qemu_tests/vmconst",

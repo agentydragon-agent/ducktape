@@ -20,11 +20,11 @@ genrule(
     name = "talos_nebula_image",
     srcs = [
         ":talos_imager_tarball",
-        "build_talos_image.sh",
+        "//cluster/kubespand/qemu_tests/talos:build_talos_image.sh",
         "imager-profile.yaml",
     ],
     outs = ["nocloud-amd64.qcow2"],
-    cmd = "$(location build_talos_image.sh) $(location :talos_imager_tarball) $(location imager-profile.yaml) $@",
+    cmd = "$(location //cluster/kubespand/qemu_tests/talos:build_talos_image.sh) $(location :talos_imager_tarball) $(location imager-profile.yaml) $@",
     tags = ["requires-docker"],
     visibility = ["//cluster/nebula_demo:__subpackages__"],
 )

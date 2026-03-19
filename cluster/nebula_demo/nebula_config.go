@@ -1,6 +1,11 @@
 // Nebula configuration generation for the double NAT demo.
 // Produces YAML configs matching the patterns from
 // cluster/terraform/bootstrap/infrastructure/nebula.tf.
+//
+// We define our own config structs because Nebula's Go library
+// (github.com/slackhq/nebula/config) uses map[string]any with
+// viper-like dynamic access (GetString, GetBool, etc.) — no typed
+// config structs are exported for marshaling.
 package nebula_demo
 
 import "gopkg.in/yaml.v3"

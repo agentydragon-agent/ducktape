@@ -714,6 +714,47 @@ http_archive(
     urls = ["https://github.com/google/go-containerregistry/releases/download/v0.18.0/go-containerregistry_Linux_x86_64.tar.gz"],
 )
 
+# ─ Nebula demo: Alpine worker VM binary dependencies ─────────────────────────
+# Statically linked binaries for the Alpine initramfs-based k8s worker VM.
+
+http_file(
+    name = "nebula_linux_amd64",
+    downloaded_file_path = "nebula-linux-amd64.tar.gz",
+    sha256 = "af57ded8f3370f0486bb24011942924b361d77fa34e3478995b196a5441dbf71",
+    urls = ["https://github.com/slackhq/nebula/releases/download/v1.9.5/nebula-linux-amd64.tar.gz"],
+)
+
+http_file(
+    name = "kubelet_linux_amd64",
+    downloaded_file_path = "kubelet",
+    executable = True,
+    sha256 = "024bb7faffa787c7717a2b37398a8c6df35694a8585a73074b052c3f4c4906ce",
+    urls = ["https://dl.k8s.io/release/v1.32.3/bin/linux/amd64/kubelet"],
+)
+
+http_archive(
+    name = "containerd_static_linux_amd64",
+    build_file_content = 'exports_files(glob(["bin/*"]), visibility = ["//visibility:public"])\n',
+    sha256 = "b8785bc2ca5417fe62fcd5efc687e630cce11ca57e50edd6b9baca10d41b4c1c",
+    strip_prefix = ".",
+    urls = ["https://github.com/containerd/containerd/releases/download/v2.0.4/containerd-static-2.0.4-linux-amd64.tar.gz"],
+)
+
+http_file(
+    name = "runc_linux_amd64",
+    downloaded_file_path = "runc",
+    executable = True,
+    sha256 = "fbd851fce6a8e0d67a9d184ea544c2abf67c9fd29b80fcc1adf67dfe9eb036a1",
+    urls = ["https://github.com/opencontainers/runc/releases/download/v1.2.5/runc.amd64"],
+)
+
+http_archive(
+    name = "cni_plugins_linux_amd64",
+    build_file_content = 'exports_files(glob(["*"]), visibility = ["//visibility:public"])\n',
+    sha256 = "b8e811578fb66023f90d2e238d80cec3bdfca4b44049af74c374d4fae0f9c090",
+    urls = ["https://github.com/containernetworking/plugins/releases/download/v1.6.2/cni-plugins-linux-amd64-v1.6.2.tgz"],
+)
+
 # ─ Specimen code archives (remote-VCS specimens) ─────────────────────────────
 # These specimens reference external Git repos rather than bundled code/ dirs.
 # Code is fetched at build time and exposed as filegroups for create_code_tar.

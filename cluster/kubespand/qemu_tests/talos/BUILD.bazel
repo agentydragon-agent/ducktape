@@ -1,5 +1,13 @@
 load("@rules_oci//oci:defs.bzl", "oci_load")
 
+exports_files(
+    ["build_talos_image.sh"],
+    visibility = [
+        "//cluster/kubespand:__subpackages__",
+        "//cluster/nebula_demo:__subpackages__",
+    ],
+)
+
 # ─ Talos nocloud disk image (built from pinned imager container) ─────────────
 # Produces a reproducible Talos nocloud qcow2 disk image via the official imager.
 # The imager container is pinned by OCI digest in MODULE.bazel, and
