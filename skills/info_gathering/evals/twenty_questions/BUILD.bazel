@@ -12,6 +12,7 @@ py_library(
         "//skills/info_gathering/evals:litellm_tool_provider",
         "//util/bazel:runfiles",
         "@pypi//pydantic",
+        "@pypi//tenacity",
     ],
 )
 

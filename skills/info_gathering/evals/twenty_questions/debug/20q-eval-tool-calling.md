@@ -250,6 +250,30 @@ are model reliability issues (intermittent tool call omission, slow inference)
 rather than transport/client problems. The switch from litellm to openai SDK
 resolved the deterministic failure at turn 4.
 
+## Eval Run Results (2026-03-19) — with sim retry logic
+
+Re-added tenacity retry (5 attempts) around the sim call after the
+DirectToolProvider refactoring removed it. The eval now runs to completion.
+
+### Via LiteLLM proxy (openai SDK, `gpt-oss-20b-128k-openai-chat`)
+
+Result: **Timeout after 20 turns** (did not guess "New Mexico").
+
+Retry log:
+
+- Turn 9: 4 retries (mix of "no tool call" and "invalid action"), succeeded on attempt 5
+- Turn 12: 3 retries ("no tool call"), succeeded on attempt 4
+
+The model went down wrong paths (Northeast → Connecticut, then reset to South).
+`ExecInput` validation errors persist (model doesn't provide required scratch
+tool fields) but are handled by the agent's `resolve_tool_calls` loop.
+
+### Assessment
+
+The retry fix makes the eval robust against intermittent sim tool call failures.
+The remaining issue is model quality — `gpt-oss:20b` is not reliably good at
+20 Questions with the current SKILL.md prompt.
+
 ## OpenAI Responses API (`/v1/responses`) — Verified Working
 
 Tested 2026-03-18. LiteLLM proxies the OpenAI Responses API to Ollama
@@ -286,3 +310,62 @@ This means `agent_core` (which uses the Responses API via `openai.AsyncOpenAI`)
 can work with the Ollama/LiteLLM stack. A smoke test exists at
 `agent_core/test_ollama_tool_calling.py` (mock target passes; live target
 requires `OPENAI_API_KEY` + `OPENAI_BASE_URL` + `OPENAI_MODEL` env vars).
+
+## Running the 20Q Eval with gpt-oss via LiteLLM
+
+The eval uses Chat Completions API (via `LLMClient`), not the Responses API.
+
+### Via LiteLLM proxy
+
+```bash
+LITELLM_KEY=$(kubectl get secret litellm-master-key -n litellm \
+  -o jsonpath='{.data.api-key}' | base64 -d)
+
+bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
+  --variant states \
+  --model openai/gpt-oss-20b-128k-openai-chat \
+  --base-url https://litellm.allegedly.works/v1 \
+  --api-key "$LITELLM_KEY" \
+  --thinking-budget 0
+```
+
+### Via direct Ollama (bypassing LiteLLM proxy)
+
+```bash
+OLLAMA_TOKEN=$(kubectl get secret -n ollama ollama-direct-token \
+  -o jsonpath='{.data.token}' | base64 -d)
+
+bazel run //skills/info_gathering/evals/twenty_questions:twenty_questions_bin -- \
+  --variant states \
+  --model openai/gpt-oss:20b \
+  --base-url https://ollama.allegedly.works/v1 \
+  --api-key "$OLLAMA_TOKEN" \
+  --thinking-budget 0
+```
+
+### Notes
+
+- Use `--thinking-budget 0` for non-reasoning models (gpt-oss doesn't support thinking).
+- Use `--variant wide` for the broader domain variant (25-turn limit).
+- Results are saved to `eval_results/` with timestamped directories.
+- The `openai-chat` model suffix is required for LiteLLM — the `ollama-native` variant
+  drops tool calls (see finding #1 above).
+- The eval requires Docker for the scratch container (agent's exec tool).
+
+### agent_core Responses API smoke test
+
+Separate from the eval — tests `agent_core` (Responses API) against Ollama/LiteLLM:
+
+```bash
+LITELLM_KEY=$(kubectl get secret litellm-master-key -n litellm \
+  -o jsonpath='{.data.api-key}' | base64 -d)
+
+# Mock test (no cluster needed)
+bazel test //agent_core:test_ollama_tool_calling.mock
+
+# Live test (requires Ollama/LiteLLM)
+OPENAI_API_KEY=$LITELLM_KEY \
+  OPENAI_BASE_URL=https://litellm.allegedly.works/v1 \
+  OPENAI_MODEL=openai/gpt-oss:20b \
+  bazel test //agent_core:test_ollama_tool_calling.live
+```

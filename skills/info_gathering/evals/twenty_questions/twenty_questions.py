@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from agent_core.direct_provider import DirectToolProvider
 from agent_core.tool_provider import ToolProvider
@@ -152,27 +153,50 @@ class _TwentyQuestionsRunner:
         # Sim turn — call with tool_choice="required", execute tool calls directly.
         # No re-call needed: the sim produces exactly one tool call (answer/correct_answer),
         # and the action is captured by the tool closure.
-        sim_resp = await self.client.call(
-            messages=self.sim_messages, system=self.sim_system, tools=sim_tool_params, tool_choice="required"
+        # Retry on intermittent failures: model sometimes omits tool calls or returns
+        # malformed arguments despite tool_choice="required".
+        sim_msg_snapshot = len(self.sim_messages)
+
+        @retry(
+            stop=stop_after_attempt(5),
+            retry=retry_if_exception_type((ValueError, ValidationError)),
+            wait=wait_fixed(0),
+            before_sleep=lambda rs: logger.warning("Sim retry %d: %s", rs.attempt_number, rs.outcome.exception()),
         )
-        log_response(
-            self.log_entries, name=self.name, player="simulator", turn=turn, model=self.client.model, response=sim_resp
-        )
+        async def _sim_call() -> SimAction:
+            # Roll back messages appended by a failed attempt.
+            del self.sim_messages[sim_msg_snapshot:]
 
-        tcs = extract_tool_calls(sim_resp)
-        if not tcs:
-            raise ValueError("Sim failed to produce a tool call despite tool_choice=required")
+            sim_resp = await self.client.call(
+                messages=self.sim_messages, system=self.sim_system, tools=sim_tool_params, tool_choice="required"
+            )
+            log_response(
+                self.log_entries,
+                name=self.name,
+                player="simulator",
+                turn=turn,
+                model=self.client.model,
+                response=sim_resp,
+            )
 
-        self.sim_action = None
-        self.sim_messages.append(_serialize_message(sim_resp.choices[0].message))
-        for tc in tcs:
-            args = json.loads(tc.function.arguments)
-            result = await self.sim_provider.call_tool(tc.function.name, args)
-            self.sim_messages.append({"role": "tool", "tool_call_id": tc.id, "content": tool_result_content(result)})
+            tcs = extract_tool_calls(sim_resp)
+            if not tcs:
+                raise ValueError("Sim failed to produce a tool call despite tool_choice=required")
 
-        action = self.sim_action
-        if action is None:
-            raise ValueError("Sim tool call did not produce a valid action")
+            self.sim_action = None
+            self.sim_messages.append(_serialize_message(sim_resp.choices[0].message))
+            for tc in tcs:
+                args = json.loads(tc.function.arguments)
+                result = await self.sim_provider.call_tool(tc.function.name, args)
+                self.sim_messages.append(
+                    {"role": "tool", "tool_call_id": tc.id, "content": tool_result_content(result)}
+                )
+
+            if self.sim_action is None:
+                raise ValueError("Sim tool call did not produce a valid action")
+            return self.sim_action
+
+        action = await _sim_call()
 
         if action.tool_name == "correct_answer":
             return Correct(turns=turn)
