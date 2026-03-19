@@ -26,5 +26,5 @@ const (
 
 // Runfile paths.
 const (
-	TalosNebulaImagePath = "cluster/nebula_demo/talos/nocloud-amd64.qcow2"
+	TalosNebulaImageZstPath = "cluster/nebula_demo/talos/nocloud-amd64.raw.zst"
 )

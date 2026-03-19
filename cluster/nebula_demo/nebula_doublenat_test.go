@@ -43,9 +43,9 @@ func TestNebulaDoubleNAT(t *testing.T) {
 	vmlinuz := h.RunfilePath(t, h.VmlinuzPath)
 	initramfsRouter := h.RunfilePath(t, h.RouterInitramfs)
 	initramfsWorker := h.RunfilePath(t, WorkerInitramfsPath)
-	talosBaseImage := h.RunfilePath(t, TalosNebulaImagePath)
 	tmpDir := t.TempDir()
-	sw.Lap("resolve runfiles")
+	talosBaseImage := DecompressTalosImage(t, tmpDir)
+	sw.Lap("resolve runfiles + decompress image")
 
 	// Read pre-generated Nebula certificates from testdata.
 	caCrt := ReadTestdataCert(t, "ca.crt")
@@ -149,12 +149,12 @@ users:
 
 	// Boot VPS (Talos CP + Nebula lighthouse/relay).
 	vpsAPIPort := h.RandomPort()
-	vmVPS := h.BootTalosVM(t, "vm-vps", talosBaseImage, vpsCI,
+	vmVPS := BootTalosRawVM(t, "vm-vps", talosBaseImage, vpsCI,
 		vpsAPIPort, h.McastNIC("net0", mcastInternet, h.DoubleNATVPSMAC))
 
 	// Boot NAT1 (Talos worker + Nebula).
 	nat1APIPort := h.RandomPort()
-	vmNAT1 := h.BootTalosVM(t, "vm-nat1", talosBaseImage, nat1CI,
+	vmNAT1 := BootTalosRawVM(t, "vm-nat1", talosBaseImage, nat1CI,
 		nat1APIPort, h.McastNIC("net0", mcastLanA, h.DoubleNATNAT1MAC))
 
 	// Boot NAT2 (Alpine worker + Nebula + kubelet).

@@ -4,6 +4,7 @@ go_library(
     name = "nebula_demo",
     testonly = True,
     srcs = [
+        "boot_talos.go",
         "constants.go",
         "nebula_config.go",
         "talos_nebula_config.go",

@@ -1,32 +1,17 @@
-load("@rules_oci//oci:defs.bzl", "oci_load")
-
 # Talos nocloud disk image with Nebula system extension.
-# Same build pattern as //cluster/kubespand/qemu_tests/talos, but the
-# imager profile includes siderolabs/nebula.
-
-oci_load(
-    name = "talos_imager_load",
-    image = "@talos_imager_linux_amd64",
-    repo_tags = ["siderolabs/imager:build"],
-)
-
-filegroup(
-    name = "talos_imager_tarball",
-    srcs = [":talos_imager_load"],
-    output_group = "tarball",
-)
+# Downloaded pre-built from Talos Image Factory, converted to qcow2.
+# The imager profile's systemExtensions field is only supported by the
+# Image Factory API, not the bare imager container.
 
 genrule(
     name = "talos_nebula_image",
-    srcs = [
-        ":talos_imager_tarball",
-        "build_talos_nebula_image.sh",
-        "imager-profile.yaml",
-    ],
-    outs = ["nocloud-amd64.qcow2"],
-    # Uses its own build script with --network=host so the imager can pull
-    # the Nebula extension from ghcr.io/siderolabs/extensions.
-    cmd = "$(location build_talos_nebula_image.sh) $(location :talos_imager_tarball) $(location imager-profile.yaml) $@",
-    tags = ["requires-docker"],
+    outs = ["nocloud-amd64.raw.zst"],
+    cmd = """
+        set -e
+        SCHEMATIC="011ccccdcfa98314d2550cb33b56426be8f45553fce129a1e6124de63e9f1598"
+        VERSION="v1.13.0-alpha.2"
+        URL="https://factory.talos.dev/image/$${SCHEMATIC}/$${VERSION}/nocloud-amd64.raw.zst"
+        curl -sSfL "$$URL" -o $@
+    """,
     visibility = ["//cluster/nebula_demo:__subpackages__"],
 )
