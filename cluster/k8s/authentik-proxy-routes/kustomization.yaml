@@ -7,7 +7,6 @@ resources:
   - openclaw-httproute.yaml
   - alloy-otlp-httproute.yaml
   - grocy-httproute.yaml
-  - oauth-broker-httproute.yaml
   - filebrowser-httproute.yaml
   - openclaw-mitmproxy-httproute.yaml
   - proxmox-httproute.yaml

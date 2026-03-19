@@ -208,3 +208,29 @@ class YieldAfterMs(BaseModel):
 
 
 WaitMode = Annotated[BlockingWait | YieldAfterMs, Field(discriminator="mode")]
+
+
+class ConnectedOAuthStatus(BaseModel):
+    state: Literal["connected"] = "connected"
+    expires_at: datetime
+    scope: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DisconnectedOAuthStatus(BaseModel):
+    state: Literal["disconnected"] = "disconnected"
+
+    model_config = ConfigDict(extra="forbid")
+
+
+OAuthConnectionStatus = Annotated[ConnectedOAuthStatus | DisconnectedOAuthStatus, Field(discriminator="state")]
+
+
+class OAuthProviderStatus(BaseModel):
+    name: str = Field(description="Provider identifier")
+    display_name: str = Field(description="Human-readable name")
+    provider_type: str = Field(description="oauth2 or plaid")
+    status: OAuthConnectionStatus
+
+    model_config = ConfigDict(extra="forbid")

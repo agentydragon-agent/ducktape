@@ -26,7 +26,6 @@ entries:
         - !Find [authentik_providers_proxy.proxyprovider, [name, grocy]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, hubble]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, loki]]
-        - !Find [authentik_providers_proxy.proxyprovider, [name, oauth-broker]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, openclaw]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, openclaw-mitmproxy]]
         - !Find [authentik_providers_proxy.proxyprovider, [name, proxmox]]

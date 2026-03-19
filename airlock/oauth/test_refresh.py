@@ -1,4 +1,4 @@
-"""Tests for oauth_broker.refresh."""
+"""Tests for airlock.oauth.refresh."""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -7,14 +7,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import pytest_bazel
 
-from oauth_broker.provider import (
+from airlock.oauth.provider import (
     ACCESS_TOKEN_FIELDS,
     GenericOAuth2Provider,
     OAuth2ProviderConfig,
     TokenData,
     TokenSecretConfig,
 )
-from oauth_broker.refresh import token_refresh_loop
+from airlock.oauth.refresh import token_refresh_loop
 
 
 @pytest.fixture

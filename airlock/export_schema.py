@@ -13,9 +13,27 @@ from typing import Any
 
 from pydantic import TypeAdapter
 
-from airlock.models import Action, ActionKey, ActionStatus, LogEntry, LogEventKind
+from airlock.models import (
+    Action,
+    ActionKey,
+    ActionStatus,
+    ConnectedOAuthStatus,
+    DisconnectedOAuthStatus,
+    LogEntry,
+    LogEventKind,
+    OAuthProviderStatus,
+)
 
-_MODELS_TO_EXPORT: list[type[Any]] = [Action, ActionKey, ActionStatus, LogEntry, LogEventKind]
+_MODELS_TO_EXPORT: list[type[Any]] = [
+    Action,
+    ActionKey,
+    ActionStatus,
+    ConnectedOAuthStatus,
+    DisconnectedOAuthStatus,
+    LogEntry,
+    LogEventKind,
+    OAuthProviderStatus,
+]
 
 
 def main() -> None:

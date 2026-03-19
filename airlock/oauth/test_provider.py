@@ -1,8 +1,6 @@
-"""Tests for oauth_broker.provider."""
+"""Tests for airlock.oauth.provider."""
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from textwrap import dedent
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -10,10 +8,10 @@ import pytest_bazel
 import respx
 from httpx import Response
 
-from oauth_broker.provider import (
-    BrokerConfig,
+from airlock.oauth.provider import (
     GenericOAuth2Provider,
     OAuth2ProviderConfig,
+    OAuthConfig,
     TokenData,
     TokenSecretConfig,
     _parse_token_response,
@@ -168,28 +166,27 @@ def test_parse_token_response_missing_refresh_token() -> None:
     assert token.refresh_token == ""
 
 
-def test_broker_config_from_yaml(tmp_path: Path) -> None:
-    config_file = tmp_path / "config.yaml"
-    config_file.write_text(
-        dedent("""\
-        target_namespace: test-ns
-        providers:
-          - name: test
-            provider_type: oauth2
-            display_name: Test
-            authorize_url: https://example.com/auth
-            token_url: https://example.com/token
-            scopes: [a]
-            redirect_uri: http://localhost/callback/test
-            refresh_secret:
-              name: test-tokens
-            access_secret:
-              name: test-access-token
-              annotations:
-                reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
-    """)
-    )
-    config = BrokerConfig.from_file(config_file)
+def test_oauth_config_from_dict() -> None:
+    data = {
+        "target_namespace": "test-ns",
+        "providers": [
+            {
+                "name": "test",
+                "provider_type": "oauth2",
+                "display_name": "Test",
+                "authorize_url": "https://example.com/auth",
+                "token_url": "https://example.com/token",
+                "scopes": ["a"],
+                "redirect_uri": "http://localhost/callback/test",
+                "refresh_secret": {"name": "test-tokens"},
+                "access_secret": {
+                    "name": "test-access-token",
+                    "annotations": {"reflector.v1.k8s.emberstack.com/reflection-allowed": "true"},
+                },
+            }
+        ],
+    }
+    config = OAuthConfig.model_validate(data)
     assert config.target_namespace == "test-ns"
     assert len(config.providers) == 1
     assert config.providers[0].name == "test"
@@ -200,8 +197,8 @@ def test_broker_config_from_yaml(tmp_path: Path) -> None:
     }
 
 
-def test_broker_config_defaults() -> None:
-    config = BrokerConfig(providers=[])
+def test_oauth_config_defaults() -> None:
+    config = OAuthConfig(providers=[])
     assert config.target_namespace is None
 
 

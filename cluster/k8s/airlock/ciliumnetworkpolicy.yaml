@@ -44,6 +44,16 @@ spec:
         - ports:
             - port: "8765"
               protocol: TCP
+    # Authentik embedded proxy outpost — OAuth broker UI behind SSO.
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: authentik
+            app.kubernetes.io/component: server
+            app.kubernetes.io/name: authentik
+      toPorts:
+        - ports:
+            - port: "8765"
+              protocol: TCP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

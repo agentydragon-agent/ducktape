@@ -1,9 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - oura-client-credentials-sealed.yaml
-  - google-client-credentials-sealed.yaml
-  # plaid-client-credentials-sealed.yaml intentionally omitted:
-  # Plaid is not yet configured. When Plaid integration is ready, add the
-  # sealed secret back and add PLAID_CLIENT_ID/PLAID_CLIENT_SECRET env vars
-  # to the deployment and a plaid provider entry to config.yaml.

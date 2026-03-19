@@ -98,22 +98,22 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
       gateway-side injection, or upstream PR for `"trusted-proxy"` in `sharedAuthOk`.
 - [ ] **Proxy outpost HA: shared session storage** — 1 replica limit (sessions in `/dev/shm`).
       Options: `CiliumEnvoyConfig` cookie hash, Gateway API `BackendLBPolicy`, upstream fix.
-- [ ] **OAuth broker: upgrade Google scopes (needs approval flow)** — Add write
+- [ ] **Airlock OAuth: upgrade Google scopes (needs approval flow)** — Add write
       scopes once agent approval mechanism is in place: `calendar` (read-write),
       `gmail.send`, `gmail.compose` (drafts + send), `drive` (read-write),
       `spreadsheets` (read-write).
-- [ ] **OAuth broker: add Google Photos readonly** —
+- [ ] **Airlock OAuth: add Google Photos readonly** —
       `photoslibrary.readonly`. Enable Photos Library API in GCP project.
-- [ ] **OAuth broker: add Google Tasks readonly** —
+- [ ] **Airlock OAuth: add Google Tasks readonly** —
       `tasks.readonly`. Enable Tasks API in GCP project.
-- [ ] **OAuth broker: add Google Slides readonly** —
+- [ ] **Airlock OAuth: add Google Slides readonly** —
       `presentations.readonly`. Enable Slides API in GCP project.
-- [ ] **OAuth broker: add Google Forms readonly** —
+- [ ] **Airlock OAuth: add Google Forms readonly** —
       `forms.body.readonly` + `forms.responses.readonly`. Enable Forms API in GCP project.
-- [ ] **OAuth broker: reflect only access tokens** — Currently the Reflector-mirrored
+- [ ] **Airlock OAuth: reflect only access tokens** — Currently the Reflector-mirrored
       secret contains the long-lived refresh token. Consider reflecting only the
       short-lived access token to consumer namespaces, keeping refresh tokens in the
-      `oauth-broker` namespace only. Reduces blast radius if a consumer namespace is
+      `airlock` namespace only. Reduces blast radius if a consumer namespace is
       compromised.
 - [ ] **Proxmox OIDC auth via Authentik** — Proxmox supports native OpenID Connect
       realms (`Datacenter → Permissions → Realms → Add → OpenID Connect`). Create an
@@ -312,7 +312,7 @@ currently has no backup strategy. Velero integrates with Proxmox CSI and Hetzner
 
 Most services lack network policies. Intra-cluster APIs are unprotected — any pod
 (including openclaw sandbox, props evaluators) can reach sensitive services directly.
-Authentik proxy-backed services (grocy, gatus, hubble-ui, oauth-broker, scanner,
+Authentik proxy-backed services (grocy, gatus, hubble-ui, airlock, scanner,
 openclaw, alloy-otlp) now have policies; see the pattern in `cluster/AGENTS.md`.
 
 **End goal**: Default-deny per namespace with explicit allow-rules. Use Hubble to
@@ -405,10 +405,10 @@ Per-workload override via annotation: `goldilocks.fairwinds.com/vpa-update-mode=
 
 Namespace labels applied:
 
-- **`auto`** (21 namespaces): activitywatch, atuin, gatus, gitea, google-workspace-mcp,
-  grocy, harbor, headlamp, homeassistant-proxy, inventree, langfuse, matrix, nix-cache,
-  oauth-broker, ollama, openclaw-gateway, openclaw-mitmproxy, props, proxmox-proxy,
-  scanner, tana-mcp
+- **`auto`** (21 namespaces): activitywatch, airlock, atuin, gatus, gitea,
+  google-workspace-mcp, grocy, harbor, headlamp, homeassistant-proxy, inventree,
+  langfuse, matrix, nix-cache, ollama, openclaw-gateway, openclaw-mitmproxy, props,
+  proxmox-proxy, scanner, tana-mcp
 - **`initial`** (7 namespaces): authentik, cnpg-system, dns-system, headscale, loki,
   monitoring, vault
 - **Off/unlabeled**: kube-system, flux-system, cert-manager, csi-proxmox, kyverno, and

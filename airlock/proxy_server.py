@@ -17,6 +17,7 @@ Resources:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import logging
 from collections import defaultdict
@@ -146,6 +147,20 @@ class AirlockServer(EnhancedFastMCP):
         self._subscriptions: defaultdict[ServerSession, set[str]] = defaultdict(set)
         # Keyed by ActionKey while action is parked awaiting a human decision.
         self._pending_decisions: dict[ActionKey, asyncio.Future[OperatorDecision]] = {}
+        self._sse_listeners: set[asyncio.Queue[dict[str, Any]]] = set()
+
+    # ── SSE listener management ───────────────────────────────────────────────
+
+    def add_sse_listener(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        self._sse_listeners.add(queue)
+
+    def remove_sse_listener(self, queue: asyncio.Queue[dict[str, Any]]) -> None:
+        self._sse_listeners.discard(queue)
+
+    def _broadcast_sse(self, event: dict[str, Any]) -> None:
+        for q in list(self._sse_listeners):
+            with contextlib.suppress(asyncio.QueueFull):
+                q.put_nowait(event)
 
     # ── Lifespan ──────────────────────────────────────────────────────────────
 
@@ -296,6 +311,7 @@ class AirlockServer(EnhancedFastMCP):
             key = action.key
             await self._append_log_and_notify(key, ActionReceivedDetail())
             await self.broadcast_resource_list_changed()
+            self._broadcast_sse({"type": "actions_changed"})
 
             effective = wait_mode if wait_mode is not None else self._default_wait_mode
             effective_timeout = _wait_mode_to_timeout(effective)
@@ -441,4 +457,5 @@ class AirlockServer(EnhancedFastMCP):
         action, _ = await self._req_storage.update_state_and_log(key, new_state, detail)
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/actions/{key.action_seq}")
         await self._notify_subscribers(f"resource://sessions/{key.session_key}/log_hwm")
+        self._broadcast_sse({"type": "action_updated", "session_key": key.session_key, "action_seq": key.action_seq})
         return action

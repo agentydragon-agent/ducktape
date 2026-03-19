@@ -206,10 +206,6 @@ releases:
 # The bazel-harbor-images workflow (generated from this config) builds and
 # pushes all images in a single job, sharing Bazel setup and registry login.
 harbor_images:
-  - bazel_target: //oauth_broker:load
-    local_tag: oauth-broker:latest
-    remote_path: ducktape/oauth-broker
-
   - bazel_target: //cluster/k8s/applications/inventree-token-provisioner:load
     local_tag: inventree-token-provisioner:latest
     remote_path: ducktape/token-provisioner

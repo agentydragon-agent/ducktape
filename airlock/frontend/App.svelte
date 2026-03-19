@@ -1,13 +1,26 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getMcpClient } from "./mcp.ts";
+  import { getApiClient } from "./api.ts";
   import ActionList from "./ActionList.svelte";
   import ActionDetail from "./ActionDetail.svelte";
+  import OAuthProviders from "./OAuthProviders.svelte";
   import type { Action } from "./types.ts";
 
-  const actionMatch = window.location.hash.match(/^#\/sessions\/([^/]+)\/actions\/(\d+)\/?$/);
-  const sessionKey: string | null = actionMatch ? actionMatch[1] : null;
-  const actionSeq: number | null = actionMatch ? parseInt(actionMatch[2], 10) : null;
+  type Route = { kind: "list" } | { kind: "action"; sessionKey: string; actionSeq: number } | { kind: "oauth" };
+
+  function parseRoute(): Route {
+    const hash = window.location.hash;
+    const actionMatch = hash.match(/^#\/sessions\/([^/]+)\/actions\/(\d+)\/?$/);
+    if (actionMatch) {
+      return { kind: "action", sessionKey: actionMatch[1], actionSeq: parseInt(actionMatch[2], 10) };
+    }
+    if (hash === "#/oauth") {
+      return { kind: "oauth" };
+    }
+    return { kind: "list" };
+  }
+
+  const route = parseRoute();
 
   let pending = $state<Action[]>([]);
   let recent = $state<Action[]>([]);
@@ -16,16 +29,15 @@
   let error = $state<string | null>(null);
 
   async function loadList(): Promise<void> {
-    const mcp = await getMcpClient();
-    [pending, recent] = await Promise.all([mcp.listActions("pending"), mcp.listActions(undefined, 20)]);
+    const api = await getApiClient();
+    [pending, recent] = await Promise.all([api.listActions("pending"), api.listActions(undefined, 20)]);
   }
 
   onMount(async () => {
-    if (sessionKey !== null && actionSeq !== null) {
+    if (route.kind === "action") {
       try {
-        const mcp = await getMcpClient();
-        const uri = `resource://sessions/${sessionKey}/actions/${actionSeq}`;
-        await mcp.subscribeAction<Action>(uri, (a) => {
+        const api = await getApiClient();
+        await api.subscribeAction<Action>(route.sessionKey, route.actionSeq, (a) => {
           action = a;
           loading = false;
           error = null;
@@ -38,7 +50,7 @@
         error = String(err);
         loading = false;
       }
-    } else {
+    } else if (route.kind === "list") {
       try {
         await loadList();
       } catch (e) {
@@ -46,10 +58,12 @@
       } finally {
         loading = false;
       }
-      const mcp = await getMcpClient();
-      mcp.onListChanged(() => {
+      const api = await getApiClient();
+      api.onListChanged(() => {
         loadList();
       });
+    } else {
+      loading = false;
     }
   });
 </script>
@@ -57,6 +71,10 @@
 {#snippet defaultHeader()}
   <header class="app-header px-4 py-3 sm:px-6 flex items-center gap-3">
     <h1 class="app-header-title text-lg font-semibold m-0">Airlock</h1>
+    <nav class="flex gap-3 ml-auto text-sm">
+      <a href="#/" class="app-header-link">Actions</a>
+      <a href="#/oauth" class="app-header-link">OAuth</a>
+    </nav>
   </header>
 {/snippet}
 
@@ -68,7 +86,7 @@
   <main class="max-w-4xl mx-auto px-4 py-6">
     <p class="font-medium" style="color: var(--color-error);">Failed to load: {error}</p>
   </main>
-{:else if sessionKey !== null && actionSeq !== null}
+{:else if route.kind === "action"}
   {#if action}
     <ActionDetail {action} />
   {:else}
@@ -77,6 +95,11 @@
       <p class="font-medium" style="color: var(--color-error);">Action not found.</p>
     </main>
   {/if}
+{:else if route.kind === "oauth"}
+  {@render defaultHeader()}
+  <main class="max-w-4xl mx-auto px-4 py-6">
+    <OAuthProviders />
+  </main>
 {:else}
   <ActionList {pending} {recent} />
 {/if}

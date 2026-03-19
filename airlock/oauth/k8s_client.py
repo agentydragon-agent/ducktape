@@ -7,13 +7,13 @@ from typing import Self
 from kubernetes_asyncio import client, config
 from kubernetes_asyncio.client import ApiException
 
-from oauth_broker.provider import ALL_TOKEN_FIELDS, TokenData
+from airlock.oauth.provider import ALL_TOKEN_FIELDS, TokenData
 
 logger = logging.getLogger(__name__)
 
 # TODO: A more civilized cleanup strategy would be to set ownerReferences on each
-# managed secret pointing to a stable anchor object (e.g. the oauth-broker ConfigMap).
-# That way, secrets are garbage-collected automatically by K8s even if the oauth-broker
+# managed secret pointing to a stable anchor object (e.g. the airlock ConfigMap).
+# That way, secrets are garbage-collected automatically by K8s even if the airlock
 # deployment is deleted entirely, without needing the broker to be running. The current
 # label-based sweep requires the broker to be alive to clean up after itself.
 

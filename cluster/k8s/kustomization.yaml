@@ -100,9 +100,6 @@ resources:
   - applications/grocy/flux-kustomization.yaml
   - activitywatch-namespace/flux-kustomization.yaml
   - applications/activitywatch/flux-kustomization.yaml
-  - oauth-broker-namespace/flux-kustomization.yaml
-  - oauth-broker-secrets/flux-kustomization.yaml
-  - oauth-broker/flux-kustomization.yaml
   - google-workspace-mcp/flux-kustomization.yaml
   - scanner-namespace/flux-kustomization.yaml
   - scanner/flux-kustomization.yaml

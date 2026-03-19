@@ -30,6 +30,7 @@ from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from airlock.models import WaitMode, YieldAfterMs
+from airlock.oauth.provider import GenericOAuth2Provider, OAuthConfig, PlaidProvider, PlaidProviderConfig, Provider
 from mcp_infra.prefix import MCPMountPrefix
 
 
@@ -48,6 +49,7 @@ class Settings(BaseModel):
     oidc_issuer: str
     oidc_client_id: str
     default_wait_mode: WaitMode = YieldAfterMs(timeout_ms=0)
+    oauth: OAuthConfig = Field(description="OAuth token broker configuration")
     host: str = "0.0.0.0"
     port: int
 
@@ -67,3 +69,17 @@ class Settings(BaseModel):
                 if isinstance(backend, RemoteMCPServer) and "Authorization" not in backend.headers:
                     backend.headers["Authorization"] = f"Bearer {exec_token}"
         return settings
+
+
+def build_oauth_providers(oauth_config: OAuthConfig) -> dict[str, Provider]:
+    """Construct OAuth provider instances from config + env vars."""
+    providers: dict[str, Provider] = {}
+    for p in oauth_config.providers:
+        prefix = p.name.upper()
+        client_id = os.environ[f"{prefix}_CLIENT_ID"]
+        client_secret = os.environ[f"{prefix}_CLIENT_SECRET"]
+        if isinstance(p, PlaidProviderConfig):
+            providers[p.name] = PlaidProvider(p, client_id, client_secret)
+        else:
+            providers[p.name] = GenericOAuth2Provider(p, client_id, client_secret)
+    return providers
