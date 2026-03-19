@@ -69,6 +69,17 @@ class AgentResult:
 
 
 @dataclass
+class StepResult:
+    """Result of one agent step (one LLM call + tool resolution).
+
+    done: True if a handler signaled the agent should stop.
+    To capture agent output, install a BaseHandler and read from it after step() returns.
+    """
+
+    done: bool
+
+
+@dataclass
 class CompactionResult:
     """Result of transcript compaction operation."""
 
@@ -587,10 +598,33 @@ class Agent:
 
         raise RuntimeError("Summary generation failed: LLM response missing assistant message")
 
-    async def run(self) -> AgentResult:
-        """Run the agent loop until completion.
+    async def step(self) -> StepResult:
+        """Run one iteration of the agent loop (one LLM call + tool resolution).
 
-        Before calling run(), add messages to the transcript using process_message() or insert_messages().
+        Does not reset assistant_text_chunks or loop. Always resets self.finished=False
+        after the step so step() can be called again by the caller.
+
+        To capture output from the model, install a BaseHandler that overrides
+        on_assistant_text_event() and/or on_tool_call_event().
+
+        Usage for multi-agent loops where each agent runs one turn at a time:
+            capture = MyTextCapture()  # BaseHandler subclass
+            agent = Agent(..., handlers=[capture])
+            agent.process_message(UserMessage.text("question"))
+            while not captured_text:
+                await agent.step()
+        """
+        await self._run_one_phase()
+        if self.pending_function_calls:
+            await self._handle_pending_tool_calls()
+        done = self.finished
+        self.finished = False  # Reset so step() can be called again
+        return StepResult(done=done)
+
+    async def run(self) -> AgentResult:
+        """Run the agent loop until a handler signals completion.
+
+        Before calling run(), add messages to the transcript using process_message().
         Example:
             agent.process_message(SystemMessage.text("You are a helpful assistant"))
             agent.process_message(UserMessage.text("Hello"))
@@ -600,11 +634,10 @@ class Agent:
         self.pending_function_calls.clear()
         self.finished = False
         try:
-            while not self.finished:
-                # Pre-phase inserts now handled by handlers via Continue.inserts_input
-                await self._run_one_phase()
-                if self.pending_function_calls:
-                    await self._handle_pending_tool_calls()
+            while True:
+                result = await self.step()
+                if result.done:
+                    break
             return AgentResult(text="\n".join(self.assistant_text_chunks))
         except Exception as exc:
             # Forward error to all handlers
@@ -861,14 +894,13 @@ class Agent:
                 if sdk_usage is not None
                 else GroundTruthUsage(model=self._client.model)
             )
+            resp_output = resp.output
+            if resp_output is not None:
+                self._process_resp_output(resp_output)
             for h in self._handlers:
                 h.on_response(
                     Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
                 )
-            resp_output = resp.output
-
-        if resp_output is not None:
-            self._process_resp_output(resp_output)
         # Note: Loop termination is now controlled by handlers (e.g., AbortIf, MaxTurnsHandler)
         # or explicit tool policies (e.g., RequireAnyTool prevents text-only responses)
 
