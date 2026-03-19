@@ -102,10 +102,13 @@ variable "additional_disks" {
   default = []
 }
 
-variable "virtiofs_mappings" {
-  description = "Proxmox directory mapping IDs for virtiofs shares"
-  type        = list(string)
-  default     = []
+variable "virtiofs_mounts" {
+  description = "Virtiofs shared filesystem mounts from Proxmox host"
+  type = list(object({
+    mapping = string           # Proxmox directory mapping ID
+    cache   = optional(string) # Cache policy: "auto", "always", "metadata", "never"
+  }))
+  default = []
 }
 
 variable "vga_type" {

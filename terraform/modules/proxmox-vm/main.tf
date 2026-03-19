@@ -76,9 +76,10 @@ resource "proxmox_virtual_environment_vm" "vm" {
 
   # virtiofs shared filesystems from Proxmox host
   dynamic "virtiofs" {
-    for_each = var.virtiofs_mappings
+    for_each = var.virtiofs_mounts
     content {
-      mapping = virtiofs.value
+      mapping = virtiofs.value.mapping
+      cache   = virtiofs.value.cache
     }
   }
 

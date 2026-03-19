@@ -219,7 +219,15 @@ module "wyrm2" {
   memory_floating_mb = 0 # Disable balloon (VFIO incompatible)
   gpu_mappings       = ["gpu0", "gpu1"]
   vga_type           = "qxl"
-  virtiofs_mappings  = ["tankshare", "code"]
+  # cache=never: virtiofsd with cache=auto leaks memory — it caches all accessed
+  # files with no eviction, growing to 10+ GiB over days. On a 128 GiB host with
+  # 96 GiB pinned for this VM, that starves ZFS ARC and causes system-wide stalls.
+  # See debug/wyrm-oom/LOG.md (virtiofsd FD leak) and
+  # debug/atlas/black_screen_lockup.md (incident 15, memory overcommit).
+  virtiofs_mounts = [
+    { mapping = "tankshare", cache = "never" },
+    { mapping = "code", cache = "never" },
+  ]
   additional_disks = [
     { interface = "scsi30", size_gb = 200 },  # containerd (/var/lib/containerd)
     { interface = "virtio0", size_gb = 500 }, # local-path provisioner (/var/local-path-provisioner)
