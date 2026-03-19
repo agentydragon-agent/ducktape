@@ -89,11 +89,12 @@ func DiscoveryEndpoint(ip string) string {
 
 // VM represents a running QEMU VM.
 type VM struct {
-	Name   string
-	Done   chan struct{}
-	cmd    *exec.Cmd
-	rawLog strings.Builder
-	mu     sync.Mutex
+	Name    string
+	Done    chan struct{}
+	cmd     *exec.Cmd
+	rawLog  strings.Builder // TODO: remove rawLog once all callers (nft_test.go, CleanupVMs) read from log files instead
+	mu      sync.Mutex
+	logFile *os.File // live log file (nil if no output dir set)
 
 	t         *testing.T
 	probeAddr string         // "127.0.0.1:<port>" for probe gRPC, always set by BootVM
@@ -117,9 +118,40 @@ func (v *VM) GetRawLog() string {
 	return v.rawLog.String()
 }
 
+// StreamLogsTo opens a live log file for this VM in the given directory.
+// Lines are written as they arrive from the VM's serial console, so
+// the file is populated even if the test is killed by SIGALRM.
+func (v *VM) StreamLogsTo(dir string) {
+	path := filepath.Join(dir, v.Name+".log")
+	f, err := os.Create(path)
+	if err != nil {
+		v.t.Logf("[%s] failed to create live log file: %v", v.Name, err)
+		return
+	}
+	v.mu.Lock()
+	v.logFile = f
+	// Flush any lines already buffered before StreamLogsTo was called.
+	if v.rawLog.Len() > 0 {
+		f.WriteString(v.rawLog.String())
+		f.Sync()
+	}
+	v.mu.Unlock()
+}
+
 // SaveLogs saves the raw log artifact for this VM.
+// If StreamLogsTo was called, the file already exists and is up-to-date;
+// this syncs and closes it.
 func (v *VM) SaveLogs(t *testing.T, dir string) {
 	t.Helper()
+	v.mu.Lock()
+	if v.logFile != nil {
+		v.logFile.Sync()
+		v.logFile.Close()
+		v.logFile = nil
+		v.mu.Unlock()
+		return
+	}
+	v.mu.Unlock()
 	SaveArtifact(t, dir, v.Name+".log", v.GetRawLog())
 }
 
@@ -203,6 +235,10 @@ func StartVM(t *testing.T, name string, cmd *exec.Cmd) *VM {
 			v.mu.Lock()
 			v.rawLog.WriteString(line)
 			v.rawLog.WriteByte('\n')
+			if v.logFile != nil {
+				v.logFile.WriteString(line)
+				v.logFile.WriteString("\n")
+			}
 			v.mu.Unlock()
 		}
 		cmd.Wait()
@@ -246,10 +282,15 @@ func RandomPort() int {
 	return 10000 + int(n.Int64())
 }
 
-// CleanupVMs registers a t.Cleanup that kills all VMs and saves their logs.
+// CleanupVMs starts streaming VM logs to outDir and registers a t.Cleanup
+// that kills all VMs and finalizes their logs. Live streaming ensures VM
+// serial output is available even if the test is killed by SIGALRM.
 // On test failure, raw VM logs are also dumped to the test log for visibility.
 func CleanupVMs(t *testing.T, vms []*VM, outDir string) {
 	t.Helper()
+	for _, vm := range vms {
+		vm.StreamLogsTo(outDir)
+	}
 	t.Cleanup(func() {
 		KillAndWait(vms...)
 		for _, vm := range vms {
@@ -330,6 +371,7 @@ type Stopwatch struct {
 	start  time.Time
 	last   time.Time
 	phases []Phase
+	outDir string // if set, timing.json is updated on every Lap
 }
 
 // Phase records the name and duration of a test phase.
@@ -345,6 +387,11 @@ func NewStopwatch(t *testing.T) *Stopwatch {
 	return &Stopwatch{t: t, start: now, last: now}
 }
 
+// SetOutDir enables incremental timing.json writes on every Lap call.
+func (s *Stopwatch) SetOutDir(dir string) {
+	s.outDir = dir
+}
+
 func (s *Stopwatch) Lap(name string) {
 	s.t.Helper()
 	now := time.Now()
@@ -353,6 +400,40 @@ func (s *Stopwatch) Lap(name string) {
 	s.phases = append(s.phases, Phase{Name: name, Duration: dur, Elapsed: elapsed})
 	s.t.Logf("[stopwatch] %s: %s (total %s)", name, dur.Round(time.Millisecond), elapsed.Round(time.Millisecond))
 	s.last = now
+	// Write timing.json incrementally so it survives SIGALRM.
+	if s.outDir != "" {
+		s.writeTimingJSON()
+	}
+}
+
+func (s *Stopwatch) writeTimingJSON() {
+	total := time.Since(s.start)
+	type summaryJSON struct {
+		Phases []struct {
+			Name       string  `json:"name"`
+			DurationMs int64   `json:"duration_ms"`
+			ElapsedMs  int64   `json:"elapsed_ms"`
+			Pct        float64 `json:"pct"`
+		} `json:"phases"`
+		TotalMs int64 `json:"total_ms"`
+	}
+	var sj summaryJSON
+	for _, p := range s.phases {
+		sj.Phases = append(sj.Phases, struct {
+			Name       string  `json:"name"`
+			DurationMs int64   `json:"duration_ms"`
+			ElapsedMs  int64   `json:"elapsed_ms"`
+			Pct        float64 `json:"pct"`
+		}{
+			Name:       p.Name,
+			DurationMs: p.Duration.Milliseconds(),
+			ElapsedMs:  p.Elapsed.Milliseconds(),
+			Pct:        float64(p.Duration) / float64(total) * 100,
+		})
+	}
+	sj.TotalMs = total.Milliseconds()
+	data, _ := json.MarshalIndent(sj, "", "  ")
+	SaveArtifact(s.t, s.outDir, "timing.json", string(data))
 }
 
 func (s *Stopwatch) Summary(outDir string) {
@@ -366,32 +447,8 @@ func (s *Stopwatch) Summary(outDir string) {
 	s.t.Logf("[stopwatch]   %-40s %10s", "TOTAL", total.Round(time.Millisecond))
 
 	if outDir != "" {
-		type summaryJSON struct {
-			Phases []struct {
-				Name       string  `json:"name"`
-				DurationMs int64   `json:"duration_ms"`
-				ElapsedMs  int64   `json:"elapsed_ms"`
-				Pct        float64 `json:"pct"`
-			} `json:"phases"`
-			TotalMs int64 `json:"total_ms"`
-		}
-		var sj summaryJSON
-		for _, p := range s.phases {
-			sj.Phases = append(sj.Phases, struct {
-				Name       string  `json:"name"`
-				DurationMs int64   `json:"duration_ms"`
-				ElapsedMs  int64   `json:"elapsed_ms"`
-				Pct        float64 `json:"pct"`
-			}{
-				Name:       p.Name,
-				DurationMs: p.Duration.Milliseconds(),
-				ElapsedMs:  p.Elapsed.Milliseconds(),
-				Pct:        float64(p.Duration) / float64(total) * 100,
-			})
-		}
-		sj.TotalMs = total.Milliseconds()
-		data, _ := json.MarshalIndent(sj, "", "  ")
-		SaveArtifact(s.t, outDir, "timing.json", string(data))
+		s.outDir = outDir
+		s.writeTimingJSON()
 	}
 }
 

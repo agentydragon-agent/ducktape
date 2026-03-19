@@ -8,6 +8,8 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +36,8 @@ type MeshTestRunner struct {
 	// ProbeTargets returns probe specs to fire when a node's peers are all "up".
 	// nil means no probes.
 	ProbeTargets func(node *MeshNode, peerSpecs map[string]kubespan.PeerSpecSpec) []ProbeSpec
+
+	eventLog *os.File // live event log, survives SIGALRM
 }
 
 // ProbeSpec describes a single connectivity probe to fire.
@@ -114,9 +118,27 @@ var defaultWatches = []watchSpec{
 	{cluster.NamespaceName, cluster.AffiliateType},
 }
 
+// logf writes to both t.Log and the live event log file (if OutDir is set).
+// The live file survives SIGALRM kills; t.Log only flushes on clean exit.
+func (r *MeshTestRunner) logf(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	r.T.Log(msg)
+	if r.eventLog != nil {
+		fmt.Fprintf(r.eventLog, "[%s] %s\n", time.Now().Format("15:04:05.000"), msg)
+	}
+}
+
 // Run blocks until SuccessFunc returns true or ctx is cancelled.
 func (r *MeshTestRunner) Run(ctx context.Context) {
 	r.T.Helper()
+
+	// Open live event log — survives SIGALRM unlike t.Log output.
+	if r.OutDir != "" {
+		f, err := os.Create(filepath.Join(r.OutDir, "events.log"))
+		if err == nil {
+			r.eventLog = f
+		}
+	}
 
 	meshState := &MeshState{Nodes: make(map[string]*NodeState, len(r.Nodes))}
 	for _, n := range r.Nodes {
@@ -143,24 +165,28 @@ func (r *MeshTestRunner) Run(ctx context.Context) {
 		DumpAllDiagnostics(r.T, r.Nodes)
 		r.Stopwatch.Lap("diagnostics")
 		r.Stopwatch.Summary(r.OutDir)
+		if r.eventLog != nil {
+			r.eventLog.Sync()
+			r.eventLog.Close()
+		}
 	})
 
 	// Main event loop.
 	for {
 		select {
 		case <-ctx.Done():
-			r.T.Logf("=== timeout: final state ===\n%s", meshState.Summary())
+			r.logf("=== timeout: final state ===\n%s", meshState.Summary())
 			r.T.Fatalf("test timed out waiting for success conditions")
 			return
 
 		case nr := <-readyCh:
 			if nr.Err != nil {
-				r.T.Logf("[%s] failed to become ready: %v", nr.NodeName, nr.Err)
+				r.logf("[%s] failed to become ready: %v", nr.NodeName, nr.Err)
 				continue
 			}
 			ns := meshState.Nodes[nr.NodeName]
 			ns.Ready = true
-			r.T.Logf("[%s] COSI watches established", nr.NodeName)
+			r.logf("[%s] COSI watches established", nr.NodeName)
 			r.Stopwatch.Lap(nr.NodeName + " ready")
 			if r.SuccessFunc(meshState) {
 				r.Stopwatch.Lap("success")
@@ -175,12 +201,12 @@ func (r *MeshTestRunner) Run(ctx context.Context) {
 			}
 
 		case dl := <-dmesgCh:
-			r.T.Logf("[%s] dmesg: %s", dl.NodeName, dl.Line)
+			r.logf("[%s] dmesg: %s", dl.NodeName, dl.Line)
 
 		case pr := <-probeCh:
 			ns := meshState.Nodes[pr.NodeName]
 			ns.ProbeResults[pr.Key] = pr.OK
-			r.T.Logf("[%s] probe: %+v", pr.NodeName, pr)
+			r.logf("[%s] probe: %+v", pr.NodeName, pr)
 			if r.SuccessFunc(meshState) {
 				r.Stopwatch.Lap("success")
 				return
@@ -227,7 +253,7 @@ func (r *MeshTestRunner) watchNode(ctx context.Context, node *MeshNode, eventCh 
 		ch := make(chan state.Event, 16)
 		kind := resource.NewMetadata(ws.Namespace, ws.ResourceType, "", resource.VersionUndefined)
 		if err := st.WatchKind(nctx, kind, ch, state.WithBootstrapContents(true)); err != nil {
-			r.T.Logf("[%s] WatchKind %s: %v", name, ws.ResourceType, err)
+			r.logf("[%s] WatchKind %s: %v", name, ws.ResourceType, err)
 			continue
 		}
 		go func() {
@@ -259,13 +285,13 @@ func (r *MeshTestRunner) streamDmesg(ctx context.Context, node *MeshNode, dmesgC
 
 	stream, err := node.TalosClient.Dmesg(dctx, true, true)
 	if err != nil {
-		r.T.Logf("[%s] dmesg stream error: %v", name, err)
+		r.logf("[%s] dmesg stream error: %v", name, err)
 		return
 	}
 
 	reader, err := client.ReadStream(stream)
 	if err != nil {
-		r.T.Logf("[%s] dmesg ReadStream error: %v", name, err)
+		r.logf("[%s] dmesg ReadStream error: %v", name, err)
 		return
 	}
 	defer reader.Close()
@@ -283,7 +309,7 @@ func (r *MeshTestRunner) streamDmesg(ctx context.Context, node *MeshNode, dmesgC
 		}
 	}
 	if err := scanner.Err(); err != nil && ctx.Err() == nil {
-		r.T.Logf("[%s] dmesg scanner error: %v", name, err)
+		r.logf("[%s] dmesg scanner error: %v", name, err)
 	}
 }
 
@@ -308,11 +334,11 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 			spec := *ps.TypedSpec()
 			if ev.Event.Type == state.Updated {
 				if old, exists := ns.PeerStatuses[id]; exists && old.State != spec.State {
-					r.T.Logf("[%s] PeerStatus %s -> %s: %+v",
+					r.logf("[%s] PeerStatus %s -> %s: %+v",
 						ev.NodeName, old.State, spec.State, spec)
 				}
 			} else {
-				r.T.Logf("[%s] PeerStatus created: %+v", ev.NodeName, spec)
+				r.logf("[%s] PeerStatus created: %+v", ev.NodeName, spec)
 			}
 			ns.PeerStatuses[id] = spec
 
@@ -322,7 +348,7 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 				return
 			}
 			spec := *ps.TypedSpec()
-			r.T.Logf("[%s] PeerSpec %s: %s %+v", ev.NodeName, ev.Event.Type, id, spec)
+			r.logf("[%s] PeerSpec %s: %s %+v", ev.NodeName, ev.Event.Type, id, spec)
 			ns.PeerSpecs[id] = spec
 
 		case cluster.AffiliateType:
@@ -331,15 +357,15 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 				return
 			}
 			spec := *aff.TypedSpec()
-			r.T.Logf("[%s] Affiliate %s: %+v", ev.NodeName, ev.Event.Type, spec)
+			r.logf("[%s] Affiliate %s: %+v", ev.NodeName, ev.Event.Type, spec)
 			ns.Affiliates[id] = spec
 
 		case kubespan.IdentityType:
-			r.T.Logf("[%s] Identity %s: %s %+v", ev.NodeName, ev.Event.Type, id, res)
+			r.logf("[%s] Identity %s: %s %+v", ev.NodeName, ev.Event.Type, id, res)
 			ns.HasIdentity = true
 
 		case kubespan.EndpointType:
-			r.T.Logf("[%s] Endpoint %s: %s %+v", ev.NodeName, ev.Event.Type, id, res)
+			r.logf("[%s] Endpoint %s: %s %+v", ev.NodeName, ev.Event.Type, id, res)
 		}
 
 		// Check if we should fire probes: all peers on this node are "up".
@@ -351,7 +377,7 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 			return
 		}
 		id := res.Metadata().ID()
-		r.T.Logf("[%s] %s destroyed: %s", ev.NodeName, ev.ResourceType, id)
+		r.logf("[%s] %s destroyed: %s", ev.NodeName, ev.ResourceType, id)
 
 		switch ev.ResourceType {
 		case kubespan.PeerStatusType:
@@ -365,11 +391,11 @@ func (r *MeshTestRunner) handleCOSIEvent(ctx context.Context, meshState *MeshSta
 		}
 
 	case state.Bootstrapped:
-		r.T.Logf("[%s] %s bootstrap complete", ev.NodeName, ev.ResourceType)
+		r.logf("[%s] %s bootstrap complete", ev.NodeName, ev.ResourceType)
 
 	case state.Errored:
 		if ev.Event.Error != nil {
-			r.T.Logf("[%s] %s watch error: %v", ev.NodeName, ev.ResourceType, ev.Event.Error)
+			r.logf("[%s] %s watch error: %v", ev.NodeName, ev.ResourceType, ev.Event.Error)
 		}
 	}
 }
@@ -408,7 +434,7 @@ func (r *MeshTestRunner) maybeFireProbes(ctx context.Context, nodeName string, n
 	}
 
 	ns.probesFired = true
-	r.T.Logf("[%s] all peers up, firing %d probes", nodeName, len(probes))
+	r.logf("[%s] all peers up, firing %d probes", nodeName, len(probes))
 	r.Stopwatch.Lap(nodeName + " full mesh")
 
 	for _, p := range probes {
