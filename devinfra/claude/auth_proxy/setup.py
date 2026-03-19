@@ -161,6 +161,7 @@ def _extract_proxy_ca(paths: SessionPaths) -> None:
         raise CaExtractionError(f"CA at {ca_file} is not an Anthropic TLS Inspection CA")
 
     logger.info("Loaded Anthropic CA from filesystem: %s", ca_file)
+    paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
     paths.auth_proxy_ca_file.write_text(ca_pem)
 
 

@@ -485,6 +485,7 @@ async def run_session(
 
     # Platform-specific setup
     if ctx.web_mode:
+        assert proxy is not None, "proxy must be running in web mode"
         setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, http=http, proxy=proxy)
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).

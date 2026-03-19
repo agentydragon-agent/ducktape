@@ -374,6 +374,14 @@ py_test(
 py_test(
     name = "test_integration",
     srcs = ["test_integration.py"],
+    data = [
+        "//third_party/jdk:cacerts",
+        "//third_party/jdk:keytool",
+    ],
+    env = {
+        "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
+        "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
+    },
     env_inherit = [
         "HTTPS_PROXY",
         "https_proxy",
@@ -381,6 +389,8 @@ py_test(
         "REQUESTS_CA_BUNDLE",
     ],
     imports = ["../.."],
+    # local: keytool (Adoptium JDK) needs libjli.so which isn't on the RBE worker image
+    local = True,
     tags = ["e2e"],
     deps = [
         ":conftest",

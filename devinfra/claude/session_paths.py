@@ -76,9 +76,18 @@ class SessionPaths:
         return self.auth_proxy_dir / "cacerts.jks"
 
     @property
+    def cached_bin_dir(self) -> Path:
+        """Cached binary directory for downloaded tools (bazelisk, mkcert, etc.).
+
+        Unlike wrapper_dir, this is not session-scoped — binaries are shared
+        across sessions and only downloaded once.
+        """
+        return self.cache_dir / "bin"
+
+    @property
     def bazelisk_path(self) -> Path:
         """Bazelisk binary path (global cache, not session-scoped)."""
-        return self.cache_dir / "bazelisk"
+        return self.cached_bin_dir / "bazelisk"
 
     @property
     def wrapper_dir(self) -> Path:
@@ -98,7 +107,7 @@ class SessionPaths:
     @property
     def mkcert_binary(self) -> Path:
         """mkcert binary path (global cache, not session-scoped)."""
-        return self.cache_dir / "mkcert"
+        return self.cached_bin_dir / "mkcert"
 
     @property
     def podman_dir(self) -> Path:
