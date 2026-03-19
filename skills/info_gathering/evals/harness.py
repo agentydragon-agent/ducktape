@@ -1,13 +1,12 @@
 """Shared eval harness for info-gathering skill.
 
 Agent (uses skill) vs Simulator (holds ground truth). Provides:
-- LLMClient wrapping LiteLLM (call, resolve_tool_calls)
+- LLMClient wrapping OpenAI SDK / LiteLLM (call, resolve_tool_calls)
 - CLI utilities (add_common_args, load_skill, etc.)
 - Pydantic models for results and logging
 
-Supports any LiteLLM-compatible model string, e.g.:
-  anthropic/claude-haiku-4-5-20251001
-  openai/gpt-oss:20b  (with --base-url for custom endpoints)
+Uses openai SDK directly for OpenAI-compatible endpoints (Ollama, LiteLLM proxy).
+Uses litellm for Anthropic models (which need provider-specific params like thinking).
 """
 
 import argparse
@@ -16,10 +15,10 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import litellm
-from litellm.types.utils import Usage
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from agent_core.tool_provider import ToolProvider
@@ -46,7 +45,7 @@ class LogEntry(BaseModel):
     reasoning_content: str | None = None
     tool_calls: list[dict[str, Any]] = []
     stop_reason: str
-    usage: dict[str, Any]
+    raw_response: dict[str, Any]
 
 
 class RunSummary(BaseModel):
@@ -71,13 +70,24 @@ def tool_def(name: str, description: str, input_model: type[BaseModel]) -> ToolP
 
 
 def extract_tool_calls(response: Any) -> list[Any]:
-    """Extract tool calls from a LiteLLM ModelResponse."""
+    """Extract tool calls from an API response (OpenAI SDK or LiteLLM)."""
     msg = response.choices[0].message
     return msg.tool_calls or []
 
 
+def _has_tool_calls(response: Any) -> bool:
+    """Check if response indicates the model wants to call tools."""
+    finish = response.choices[0].finish_reason
+    # "tool_use" = Anthropic, "tool_calls" = OpenAI/Ollama, "stop" = some providers
+    return finish in ("tool_use", "tool_calls") or (finish == "stop" and bool(extract_tool_calls(response)))
+
+
 class LLMClient:
-    """Wraps LiteLLM completion with shared config (model, base_url, api_key, thinking)."""
+    """Wraps OpenAI SDK / LiteLLM with shared config (model, base_url, api_key, thinking).
+
+    For anthropic/ models: uses litellm (handles thinking budgets, Anthropic-specific params).
+    For all other models: uses openai SDK directly, bypassing litellm's parameter filtering.
+    """
 
     def __init__(
         self, *, model: str, thinking_budget: int | None = None, base_url: str | None = None, api_key: str | None = None
@@ -86,6 +96,9 @@ class LLMClient:
         self.thinking_budget = thinking_budget
         self.base_url = base_url
         self.api_key = api_key
+
+        if not model.startswith("anthropic/"):
+            self._openai_client = AsyncOpenAI(base_url=base_url, api_key=api_key or "unused")
 
     async def call(
         self,
@@ -96,18 +109,37 @@ class LLMClient:
         tool_choice: str | dict[str, Any] | None = None,
         max_tokens: int = 4096,
     ) -> Any:
-        """Call the LLM via LiteLLM."""
+        """Call the LLM."""
         full_messages: list[dict[str, Any]] = [{"role": "system", "content": system}, *messages]
 
-        # Reasoning models (e.g. gpt-oss) need max_completion_tokens instead of max_tokens,
-        # otherwise reasoning consumes the entire token budget leaving empty content.
         if self.model.startswith("anthropic/"):
-            token_kwarg = {"max_tokens": max_tokens}
-        else:
-            token_kwarg = {"max_completion_tokens": max_tokens}
+            return await self._call_anthropic(
+                full_messages=full_messages, tools=tools, tool_choice=tool_choice, max_tokens=max_tokens
+            )
 
+        # OpenAI-compatible path (Ollama, LiteLLM proxy, OpenAI, etc.)
+        model_name = self.model.removeprefix("openai/")
+        kwargs: dict[str, Any] = {}
+        if tools:
+            kwargs["tools"] = tools
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
+
+        return await self._openai_client.chat.completions.create(
+            model=model_name, messages=cast(Any, full_messages), max_completion_tokens=max_tokens, **kwargs
+        )
+
+    async def _call_anthropic(
+        self,
+        *,
+        full_messages: list[dict[str, Any]],
+        tools: list[ToolParam] | None,
+        tool_choice: str | dict[str, Any] | None,
+        max_tokens: int,
+    ) -> Any:
+        """Call Anthropic models via litellm (handles thinking budgets, etc.)."""
         thinking = None
-        if self.thinking_budget and self.model.startswith("anthropic/"):
+        if self.thinking_budget:
             thinking = {"type": "enabled", "budget_tokens": self.thinking_budget}
 
         return await litellm.acompletion(
@@ -118,7 +150,7 @@ class LLMClient:
             api_base=self.base_url,
             api_key=self.api_key,
             thinking=thinking,
-            **token_kwarg,
+            max_tokens=max_tokens,
         )
 
     async def resolve_tool_calls(
@@ -129,15 +161,13 @@ class LLMClient:
         system: str,
         provider: ToolProvider,
         max_tokens: int = 4096,
-    ) -> tuple[Any, list[dict[str, Any]], list[Usage]]:
-        """Keep calling API until no more tool_use stops. Returns final response."""
+    ) -> tuple[Any, list[dict[str, Any]], list[Any]]:
+        """Keep calling API until no more tool calls. Returns final response."""
         tools = await tool_params_from_provider(provider)
-        usages: list[Usage] = []
+        usages: list[Any] = []
         messages = list(messages)
 
-        while response.choices[0].finish_reason == "tool_use" or (
-            response.choices[0].finish_reason == "stop" and extract_tool_calls(response)
-        ):
+        while _has_tool_calls(response):
             tcs = extract_tool_calls(response)
             if not tcs:
                 break
@@ -161,7 +191,7 @@ class LLMClient:
 
 
 def _serialize_message(msg: Any) -> dict[str, Any]:
-    """Serialize a LiteLLM message to a typed dict for conversation history."""
+    """Serialize an API message to a typed dict for conversation history."""
     result: dict[str, Any] = {"role": "assistant", "content": msg.content}
     if msg.tool_calls:
         result["tool_calls"] = [
@@ -191,8 +221,7 @@ def log_response(
             {"id": tc.id, "name": tc.function.name, "arguments": tc.function.arguments} for tc in msg.tool_calls
         ]
 
-    # LiteLLM's Message type declares reasoning_content as Optional[str],
-    # but deletes the attribute when None for OpenAI spec compatibility.
+    # reasoning_content may not exist on all response types
     reasoning: str | None = None
     with contextlib.suppress(AttributeError):
         reasoning = msg.reasoning_content
@@ -208,7 +237,7 @@ def log_response(
             reasoning_content=reasoning,
             tool_calls=tool_calls_data,
             stop_reason=response.choices[0].finish_reason or "",
-            usage=response.usage.model_dump(),
+            raw_response=response.model_dump(),
         )
     )
 
@@ -250,7 +279,7 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
-        help="LiteLLM model string, e.g. anthropic/claude-haiku-4-5-20251001 or openai/gpt-oss:20b",
+        help="Model string, e.g. anthropic/claude-haiku-4-5-20251001 or openai/gpt-oss:20b",
     )
     parser.add_argument(
         "--thinking-budget", type=int, default=DEFAULT_THINKING, help="0 to disable (only for anthropic/ models)"

@@ -9,11 +9,13 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+from tenacity import RetryCallState, retry, retry_if_exception_type, stop_after_attempt, wait_fixed
 
 from agent_core.tool_provider import ToolProvider
 from skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
@@ -39,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 _SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
 
-_SIM_RETRIES = 3
+_SIM_RETRIES = 5
 
 _SCRATCH_SYSTEM_NOTE = """\
 You have access to an `exec` tool — a private Docker container for scratch computation. \
@@ -86,22 +88,28 @@ VARIANTS: dict[str, Variant] = {
 }
 
 
-def _parse_sim_action(response: Any) -> tuple[str, str | None] | None:
+def _clean_function_name(name: str) -> str:
+    """Strip harmony format noise (e.g. `answer<|channel|>commentary` → `answer`)."""
+    return re.sub(r"<\|.*", "", name)
+
+
+def _parse_sim_action(response: Any) -> tuple[str, str | None]:
     """Parse the simulator's tool call into (tool_name, answer_value).
 
-    Returns None if no valid tool call found.
+    Raises ValueError if no valid tool call found or arguments fail validation.
     """
     tcs = extract_tool_calls(response)
     if len(tcs) != 1:
-        return None
+        raise ValueError(f"Expected exactly 1 tool call, got {len(tcs)}")
     tc = tcs[0]
-    if tc.function.name == "correct_answer":
+    name = _clean_function_name(tc.function.name)
+    if name == "correct_answer":
         return ("correct_answer", None)
-    if tc.function.name == "answer":
+    if name == "answer":
         args = json.loads(tc.function.arguments)
         validated = AnswerInput.model_validate(args)
         return ("answer", validated.response)
-    return None
+    raise ValueError(f"Unknown tool call: {tc.function.name!r}")
 
 
 class _TwentyQuestionsRunner:
@@ -161,11 +169,26 @@ class _TwentyQuestionsRunner:
 
         self.sim_messages.append({"role": "user", "content": agent_text})
 
-        # Retry sim call up to SIM_RETRIES times if no tool call produced.
-        # Some backends (e.g. LiteLLM proxy with drop_params=true) silently drop
-        # tool_choice="required", so the model occasionally responds with text.
-        sim_resp = None
-        for attempt in range(_SIM_RETRIES):
+        # Retry sim call with tenacity: handles both missing tool calls (drop_params
+        # silently stripping tool_choice="required") and malformed arguments (model
+        # returning free-text instead of enum values).
+        def _log_sim_retry(state: RetryCallState) -> None:
+            logger.warning(
+                "Turn %d: sim attempt %d/%d failed (%s), retrying...",
+                turn,
+                state.attempt_number,
+                _SIM_RETRIES,
+                state.outcome.exception() if state.outcome else "unknown",
+            )
+
+        @retry(
+            stop=stop_after_attempt(_SIM_RETRIES),
+            wait=wait_fixed(0),
+            retry=retry_if_exception_type((ValueError, ValidationError)),
+            before_sleep=_log_sim_retry,
+            reraise=True,
+        )
+        async def _sim_call_with_parse() -> tuple[Any, tuple[str, str | None]]:
             sim_resp = await self.client.call(
                 messages=self.sim_messages, system=self.sim_system, tools=SIM_TOOLS, tool_choice="required"
             )
@@ -177,30 +200,13 @@ class _TwentyQuestionsRunner:
                 model=self.client.model,
                 response=sim_resp,
             )
-            if extract_tool_calls(sim_resp):
-                break
-            logger.warning(
-                "Turn %d: sim attempt %d/%d produced no tool call (content=%r), retrying...",
-                turn,
-                attempt + 1,
-                _SIM_RETRIES,
-                sim_resp.choices[0].message.content,
-            )
-        assert sim_resp is not None
+            action = _parse_sim_action(sim_resp)
+            return sim_resp, action
 
-        if not extract_tool_calls(sim_resp):
-            raise RuntimeError(
-                f"Turn {turn}: simulator made no tool call after {_SIM_RETRIES} attempts "
-                f"(finish_reason={sim_resp.choices[0].finish_reason!r}, "
-                f"content={sim_resp.choices[0].message.content!r})"
-            )
+        sim_resp, action = await _sim_call_with_parse()
 
         sim_msg = _serialize_message(sim_resp.choices[0].message)
         self.sim_messages.append(sim_msg)
-
-        action = _parse_sim_action(sim_resp)
-        if action is None:
-            raise RuntimeError(f"Turn {turn}: simulator called unexpected tool, could not parse action")
 
         tool_name, answer = action
 

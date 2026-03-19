@@ -71,8 +71,8 @@ spec:
             failureThreshold: 12
           volumeMounts:
             - name: config
-              mountPath: /etc/litellm/config.yaml
-              subPath: config.yaml
+              mountPath: /etc/litellm
+              readOnly: true
       volumes:
         - name: config
           configMap:

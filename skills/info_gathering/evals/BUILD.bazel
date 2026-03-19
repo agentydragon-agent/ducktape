@@ -22,6 +22,7 @@ py_library(
         "//openai_utils:json_schema",
         "//util/bazel:runfiles",
         "@pypi//litellm",
+        "@pypi//openai",
         "@pypi//pydantic",
     ],
 )

@@ -47,13 +47,13 @@ def _tool_response(tool_name: str, tool_input: dict, tool_id: str) -> litellm.Mo
     )
 
 
-TEST_CLIENT = LLMClient(model="test-model")
+TEST_CLIENT = LLMClient(model="anthropic/test-model")
 
 
-@patch("skills.info_gathering.evals.harness.litellm.acompletion")
-async def test_timeout(mock_acompletion, tmp_path):
+@patch.object(LLMClient, "call")
+async def test_timeout(mock_call, tmp_path):
     """3-turn game with no correct guess -> Timeout, score=0."""
-    mock_acompletion.side_effect = [
+    mock_call.side_effect = [
         _text_response("Is it alive?"),
         _tool_response("answer", {"response": "no"}, "tu_1"),
         _text_response("Is it man-made?"),
@@ -76,13 +76,13 @@ async def test_timeout(mock_acompletion, tmp_path):
     assert isinstance(summary.result, Timeout)
     assert summary.result.limit == 3
     assert summary.turns == 3
-    assert mock_acompletion.call_count == 6
+    assert mock_call.call_count == 6
 
 
-@patch("skills.info_gathering.evals.harness.litellm.acompletion")
-async def test_success_on_turn_2(mock_acompletion, tmp_path):
+@patch.object(LLMClient, "call")
+async def test_success_on_turn_2(mock_call, tmp_path):
     """Agent guesses correctly on turn 2 -> Correct(turns=2)."""
-    mock_acompletion.side_effect = [
+    mock_call.side_effect = [
         _text_response("Is it a US state?"),
         _tool_response("answer", {"response": "yes"}, "tu_1"),
         _text_response("My answer is: New Mexico"),
@@ -103,13 +103,13 @@ async def test_success_on_turn_2(mock_acompletion, tmp_path):
     assert isinstance(summary.result, Correct)
     assert summary.result.turns == 2
     assert summary.turns == 2
-    assert mock_acompletion.call_count == 4
+    assert mock_call.call_count == 4
 
 
-@patch("skills.info_gathering.evals.harness.litellm.acompletion")
-async def test_success_on_turn_1(mock_acompletion, tmp_path):
+@patch.object(LLMClient, "call")
+async def test_success_on_turn_1(mock_call, tmp_path):
     """Agent guesses correctly on turn 1 -> Correct(turns=1)."""
-    mock_acompletion.side_effect = [
+    mock_call.side_effect = [
         _text_response("My answer is: sourdough starter"),
         _tool_response("correct_answer", {}, "tu_1"),
     ]

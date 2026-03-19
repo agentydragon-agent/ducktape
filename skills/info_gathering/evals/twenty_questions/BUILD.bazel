@@ -12,6 +12,7 @@ py_library(
         "//util/bazel:runfiles",
         "@pypi//litellm",
         "@pypi//pydantic",
+        "@pypi//tenacity",
     ],
 )
 
