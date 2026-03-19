@@ -1,0 +1,6 @@
+{
+  "eval_name": "20q_states",
+  "model": "gpt-oss:20b",
+  "turns": 4,
+  "result": {}
+}

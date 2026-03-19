@@ -17,11 +17,9 @@ py_library(
     imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
-        ":litellm_tool_provider",
-        "//agent_core:tool_provider",
-        "//openai_utils:json_schema",
+        "//openai_utils:model",
+        "//openai_utils:retry",
         "//util/bazel:runfiles",
-        "@pypi//litellm",
         "@pypi//openai",
         "@pypi//pydantic",
     ],

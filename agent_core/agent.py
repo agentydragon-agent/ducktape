@@ -69,6 +69,18 @@ class AgentResult:
 
 
 @dataclass
+class StepResult:
+    """Result of one agent step (one LLM call + tool resolution).
+
+    text: text produced by the model in this step, or None if it only called tools.
+    done: True if a handler signaled the loop should stop (e.g. MaxTurnsHandler, AbortIf).
+    """
+
+    text: str | None
+    done: bool
+
+
+@dataclass
 class CompactionResult:
     """Result of transcript compaction operation."""
 
@@ -587,10 +599,37 @@ class Agent:
 
         raise RuntimeError("Summary generation failed: LLM response missing assistant message")
 
-    async def run(self) -> AgentResult:
-        """Run the agent loop until completion.
+    async def step(self) -> StepResult:
+        """Run one iteration of the agent loop (one LLM call + tool resolution).
 
-        Before calling run(), add messages to the transcript using process_message() or insert_messages().
+        Does not reset assistant_text_chunks or loop. Always resets self.finished=False
+        after the step so step() can be called again by the caller.
+
+        Returns StepResult with:
+          - text: any text the model produced in this step (stripped), or None if only tools
+          - done: True if a handler signaled the agent should stop
+
+        Usage for multi-agent loops where each agent runs one turn at a time:
+            agent.process_message(UserMessage.text("question"))
+            while True:
+                result = await agent.step()
+                if result.text:
+                    break  # agent produced its response; result.text is the question/answer
+                # else: model called scratch tools; keep stepping
+        """
+        text_before = len(self.assistant_text_chunks)
+        await self._run_one_phase()
+        if self.pending_function_calls:
+            await self._handle_pending_tool_calls()
+        done = self.finished
+        self.finished = False  # Reset so step() can be called again
+        new_text = "".join(self.assistant_text_chunks[text_before:]).strip()
+        return StepResult(text=new_text or None, done=done)
+
+    async def run(self) -> AgentResult:
+        """Run the agent loop until a handler signals completion.
+
+        Before calling run(), add messages to the transcript using process_message().
         Example:
             agent.process_message(SystemMessage.text("You are a helpful assistant"))
             agent.process_message(UserMessage.text("Hello"))
@@ -600,11 +639,10 @@ class Agent:
         self.pending_function_calls.clear()
         self.finished = False
         try:
-            while not self.finished:
-                # Pre-phase inserts now handled by handlers via Continue.inserts_input
-                await self._run_one_phase()
-                if self.pending_function_calls:
-                    await self._handle_pending_tool_calls()
+            while True:
+                result = await self.step()
+                if result.done:
+                    break
             return AgentResult(text="\n".join(self.assistant_text_chunks))
         except Exception as exc:
             # Forward error to all handlers
