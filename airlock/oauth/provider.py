@@ -3,12 +3,10 @@
 import logging
 import secrets
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlencode, urlparse
 
 import httpx
-import yaml
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -57,18 +55,14 @@ class TokenData(BaseModel):
     scope: str
 
 
-class BrokerConfig(BaseModel):
+class OAuthConfig(BaseModel):
     target_namespace: str | None = Field(
         default=None, description="K8s namespace to write token secrets to (auto-detected from pod if omitted)"
     )
     managed_by: str = Field(
-        default="oauth-broker", description="Value for app.kubernetes.io/managed-by label on managed secrets"
+        default="airlock", description="Value for app.kubernetes.io/managed-by label on managed secrets"
     )
     providers: list[ProviderConfig] = Field(description="Provider configurations")
-
-    @classmethod
-    def from_file(cls, path: Path) -> "BrokerConfig":
-        return cls.model_validate(yaml.safe_load(path.read_text()))
 
 
 class _BaseProvider:

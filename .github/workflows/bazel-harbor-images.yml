@@ -39,12 +39,6 @@ jobs:
           registry: registry.allegedly.works
           username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
           password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
-      - name: Build and push oauth-broker
-        run: |-
-          .github/scripts/harbor_push.sh \
-            //oauth_broker:load \
-            oauth-broker:latest \
-            registry.allegedly.works/ducktape/oauth-broker
       - name: Build and push inventree-token-provisioner
         run: |-
           .github/scripts/harbor_push.sh \

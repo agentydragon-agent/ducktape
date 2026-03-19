@@ -64,6 +64,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":models",
+        "//airlock/oauth:provider",
         "//mcp_infra:prefix",
         "@pypi//fastmcp",
         "@pypi//pydantic",
@@ -101,8 +102,14 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":config",
+        ":models",
         ":predicates",
         ":proxy_server",
+        "//airlock/oauth:k8s_client",
+        "//airlock/oauth:provider",
+        "//airlock/oauth:refresh",
+        "//airlock/oauth:routes",
+        "@pypi//fastapi",
         "@pypi//fastmcp",
         "@pypi//httpx",
         "@pypi//starlette",

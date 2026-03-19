@@ -4,8 +4,8 @@ import asyncio
 import logging
 from collections.abc import Mapping
 
-from oauth_broker.k8s_client import K8sTokenStore
-from oauth_broker.provider import ACCESS_TOKEN_FIELDS, Provider
+from airlock.oauth.k8s_client import K8sTokenStore
+from airlock.oauth.provider import ACCESS_TOKEN_FIELDS, Provider
 
 logger = logging.getLogger(__name__)
 

@@ -8,8 +8,6 @@ resources:
   - openclaw-image-policy.yaml
   - activitywatch-image-repository.yaml
   - activitywatch-image-policy.yaml
-  - oauth-broker-image-repository.yaml
-  - oauth-broker-image-policy.yaml
   - airlock-image-repository.yaml
   - airlock-image-policy.yaml
   - auth-proxy-image-repository.yaml

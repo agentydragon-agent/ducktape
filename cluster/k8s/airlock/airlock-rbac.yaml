@@ -1,8 +1,8 @@
----
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: oauth-broker-secret-writer
+  name: airlock-secret-writer
+  namespace: airlock
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -11,13 +11,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: oauth-broker-secret-writer
-  namespace: oauth-broker
+  name: airlock-secret-writer
+  namespace: airlock
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: oauth-broker-secret-writer
+  kind: Role
+  name: airlock-secret-writer
 subjects:
   - kind: ServiceAccount
-    name: oauth-broker
-    namespace: oauth-broker
+    name: airlock
+    namespace: airlock

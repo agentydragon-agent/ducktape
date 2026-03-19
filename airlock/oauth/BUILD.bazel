@@ -1,0 +1,87 @@
+"""Airlock OAuth token management subpackage."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "provider",
+    srcs = ["provider.py"],
+    imports = ["../.."],
+    visibility = ["//airlock:__subpackages__"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "k8s_client",
+    srcs = ["k8s_client.py"],
+    imports = ["../.."],
+    visibility = ["//airlock:__subpackages__"],
+    deps = [
+        ":provider",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "refresh",
+    srcs = ["refresh.py"],
+    imports = ["../.."],
+    visibility = ["//airlock:__subpackages__"],
+    deps = [
+        ":k8s_client",
+        ":provider",
+    ],
+)
+
+py_library(
+    name = "routes",
+    srcs = ["routes.py"],
+    imports = ["../.."],
+    visibility = ["//airlock:__subpackages__"],
+    deps = [
+        ":k8s_client",
+        ":provider",
+        "@pypi//fastapi",
+    ],
+)
+
+# Tests
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+)
+
+py_test(
+    name = "test_provider",
+    srcs = ["test_provider.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":provider",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+        "@pypi//respx",
+    ],
+)
+
+py_test(
+    name = "test_refresh",
+    srcs = ["test_refresh.py"],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        ":provider",
+        ":refresh",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
