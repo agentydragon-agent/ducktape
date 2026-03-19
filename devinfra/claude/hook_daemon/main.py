@@ -2,12 +2,16 @@
 
 import argparse
 import logging
+import os
 from pathlib import Path
 
 import uvicorn
 
 from devinfra.claude.hook_daemon.server import app, configure
-from devinfra.claude.tracing import init_daemon_tracing
+from devinfra.claude.hook_daemon.tracing import init_daemon_tracing
+from devinfra.claude.settings import HookSettings
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -26,8 +30,13 @@ def main() -> None:
         handlers=[logging.FileHandler(log_file), logging.StreamHandler()],
     )
 
-    init_daemon_tracing(daemon_dir)
-    configure(daemon_dir)
+    # Log all env var keys available at daemon startup (before any session start hook runs).
+    # Values are omitted to avoid leaking secrets into logs.
+    logger.info("Daemon startup env var keys: %s", sorted(os.environ))
+    logger.info("Daemon startup settings: %s", HookSettings().model_dump())
+
+    otlp_exporter = init_daemon_tracing(daemon_dir)
+    configure(daemon_dir, otlp_exporter)
 
     uvicorn.run(app, uds=args.sock, log_level="warning")
 

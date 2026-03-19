@@ -22,6 +22,7 @@ from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session_start import handle as handle_session_start
+from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.http_client import build_http_client
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
@@ -34,10 +35,11 @@ IDLE_CHECK_INTERVAL_SECONDS = 30
 app = FastAPI()
 
 
-def configure(daemon_dir: Path) -> None:
+def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     """Set daemon runtime directory and shared config. Call before starting uvicorn."""
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
+    app.state.otlp_exporter = otlp_exporter
     app.state.last_request_time = time.monotonic()
 
 
@@ -74,7 +76,12 @@ async def handle_hook(req: HookRequest) -> HookResponse:
                 paths = SessionPaths.from_env(req.hook.session_id, req.env)
                 with build_http_client(req.env) as http:
                     output = await handle_session_start(
-                        req.hook, paths, app.state.settings, caller_env=req.env, http=http
+                        req.hook,
+                        paths,
+                        app.state.settings,
+                        caller_env=req.env,
+                        http=http,
+                        otlp_exporter=app.state.otlp_exporter,
                     )
             case PreToolUseInput():
                 output = evaluate_pre(req.hook)

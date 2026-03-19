@@ -1,6 +1,19 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "tracing",
+    srcs = ["tracing.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:hook_config",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_exporter_otlp_proto_http",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
     name = "models",
     srcs = ["models.py"],
     imports = ["../../.."],
@@ -51,6 +64,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":tracing",
         "//devinfra:build_info",
         "//devinfra/claude:bazel_wrapper_lib",
         "//devinfra/claude:bazelisk_setup",
@@ -70,7 +84,6 @@ py_library(
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude:tmpfs_setup",
-        "//devinfra/claude:tracing",
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/supervisor:setup",
@@ -90,6 +103,7 @@ py_library(
         ":post_tool_use_lib",
         ":pre_tool_use_lib",
         ":session_start_lib",
+        ":tracing",
         "//devinfra/claude:http_client",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
@@ -109,7 +123,8 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":server",
-        "//devinfra/claude:tracing",
+        ":tracing",
+        "//devinfra/claude:settings",
         "@pypi//uvicorn",
     ],
 )
@@ -164,6 +179,7 @@ py_test(
     deps = [
         ":models",
         ":server",
+        ":tracing",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
@@ -183,6 +199,7 @@ py_test(
         ":client",
         ":models",
         ":server",
+        ":tracing",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:stop",
         "@pypi//pytest",

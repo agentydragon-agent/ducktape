@@ -19,6 +19,7 @@ from devinfra.claude.claude_api.hooks.stop import StopInput
 from devinfra.claude.hook_daemon.client import _post_to_daemon
 from devinfra.claude.hook_daemon.models import HookRequest
 from devinfra.claude.hook_daemon.server import app, configure
+from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 
 _COMMON = {
     "session_id": "test-session",
@@ -37,7 +38,7 @@ def short_tmp() -> Generator[Path]:
 
 def _start_uvicorn_in_thread(sock_path: Path, daemon_dir: Path) -> uvicorn.Server:
     """Start uvicorn serving the daemon app on a UDS in a background thread."""
-    configure(daemon_dir)
+    configure(daemon_dir, DeferredOtlpExporter())
     config = uvicorn.Config(app=app, uds=str(sock_path), log_level="warning")
     server = uvicorn.Server(config)
 

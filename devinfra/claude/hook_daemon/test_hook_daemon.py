@@ -13,6 +13,7 @@ from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.server import app, configure
+from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 
 _COMMON = {
     "session_id": "test-session",
@@ -29,7 +30,7 @@ async def client(tmp_path: Path) -> AsyncGenerator[AsyncClient]:
     """Create an async test client for the daemon app."""
     daemon_dir = tmp_path / "hook-daemon"
     daemon_dir.mkdir()
-    configure(daemon_dir)
+    configure(daemon_dir, DeferredOtlpExporter())
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c

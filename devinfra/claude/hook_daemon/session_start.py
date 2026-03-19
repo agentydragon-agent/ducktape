@@ -40,13 +40,13 @@ from devinfra.claude.claude_api.hooks.session_start import (
 )
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
-from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig
+from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig
+from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.hook_logging import setup_file_logging
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
-from devinfra.claude.tracing import add_otlp_exporter
 
 logger = logging.getLogger(__name__)
 
@@ -463,6 +463,7 @@ async def run_session(
     settings: HookSettings,
     ctx: CallerContext,
     http: httpx.Client,
+    otlp_exporter: DeferredOtlpExporter,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -489,10 +490,6 @@ async def run_session(
     # Load hook config (general config file, not gated on k8s_token).
     hook_config = HookConfig.load_from_repo(project_dir)
 
-    # Add remote OTLP exporter now that we have the config
-    if hook_config and hook_config.otel:
-        add_otlp_exporter(hook_config.otel.with_env_overrides())
-
     # K8s secrets are read after platform setup (proxy must be up for web mode TLS).
     secrets: k8s_secrets_setup.K8sSecretsResult | None = None
 
@@ -511,6 +508,15 @@ async def run_session(
             secrets=secrets,
             secrets_env_vars=secrets.env_vars if secrets else None,
         )
+
+    # Configure OTLP now that k8s secrets (with bearer token) are available.
+    # Bearer token from k8s overrides config file / env var. Idempotent across sessions.
+    if hook_config and hook_config.otel:
+        otel_config = hook_config.otel.with_env_overrides()
+        otel_token = setup.secrets.otel_bearer_token if setup.secrets else None
+        if otel_token:
+            otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=otel_token)
+        otlp_exporter.configure(otel_config)
 
     # Render session bazelrc
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
@@ -596,8 +602,9 @@ async def handle(
     settings: HookSettings,
     caller_env: dict[str, str],
     http: httpx.Client,
+    otlp_exporter: DeferredOtlpExporter,
 ) -> SessionStartOutput:
     """Entry point called from the hook daemon with the client's env."""
     logger.info("Caller environment: %s", caller_env)
     ctx = CallerContext.from_env(caller_env)
-    return await run_session(hook_input, paths, settings, ctx, http)
+    return await run_session(hook_input, paths, settings, ctx, http, otlp_exporter)
