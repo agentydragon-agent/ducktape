@@ -9,10 +9,12 @@ FastMCP server: per-session Docker container exec.
 from __future__ import annotations
 
 from pathlib import PurePosixPath
+from typing import Any
 
 import aiodocker
 import mcp.types as mcp_types
 from fastmcp.server.context import Context
+from pydantic import Field, create_model
 
 from mcp_infra.enhanced.flat_mixin import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -24,13 +26,49 @@ from mcp_infra.exec.docker.container_session import (
     session_state_from_ctx,
 )
 from mcp_infra.exec.docker.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
-from mcp_infra.exec.models import BaseExecResult, ExecInput, async_timer
+from mcp_infra.exec.models import BaseExecResult, EnvVar, ExecInput, TimeoutMs, async_timer
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
 from mcp_infra.prefix import MCPMountPrefix
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # URI template for file:// resource (file:///absolute/path format)
 # Uses {path*} wildcard syntax (RFC 6570) to match paths with slashes
 FILE_RESOURCE_URI_TEMPLATE = "file://{path*}"
+
+
+def _make_exec_input_model(*, allow_user: bool, allow_env: bool) -> type:
+    """Dynamically create an ExecInput-compatible Pydantic model for the exec tool.
+
+    When allow_user=False or allow_env=False, the corresponding field is omitted from
+    the schema so the LLM cannot set it (the handler substitutes None for disabled fields).
+    """
+    fields: dict[str, Any] = {
+        "cmd": (
+            list[str],
+            Field(
+                description=(
+                    "Command array passed directly to Docker exec API (no shell). "
+                    "DO NOT include shell quotes around arguments - array elements are passed as-is. "
+                    "WRONG: ['sed', '-n', \"'1,10p'\", 'file'] (quotes in string). "
+                    "RIGHT: ['sed', '-n', '1,10p', 'file'] (no quotes). "
+                    "For shell features (pipes, globs), use: ['sh', '-c', 'sed -n 1,10p file | head']"
+                )
+            ),
+        ),
+        "cwd": (str | None, Field(description="Working directory inside container (None = container default)")),
+        "timeout_ms": (
+            TimeoutMs,
+            Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)"),
+        ),
+    }
+    if allow_env:
+        fields["env"] = (
+            list[EnvVar] | None,
+            Field(description="Environment variables as ['NAME=value', ...] (None = inherit container env)"),
+        )
+    if allow_user:
+        fields["user"] = (str | None, Field(description="Username inside container (None = container default)"))
+    return create_model("ExecInput", __base__=OpenAIStrictModeBaseModel, **fields)
 
 
 class ContainerExecServer(EnhancedFastMCP):
@@ -59,12 +97,23 @@ class ContainerExecServer(EnhancedFastMCP):
         """Construct file:// URI for a container path (file:///absolute/path)."""
         return f"file://{path}"
 
-    def __init__(self, docker_client: aiodocker.Docker, opts: ContainerOptions):
+    def __init__(
+        self,
+        docker_client: aiodocker.Docker,
+        opts: ContainerOptions,
+        *,
+        allow_user_field: bool = True,
+        allow_env_field: bool = True,
+    ):
         """Create a generic per-session container exec FastMCP server.
 
         Args:
             docker_client: Async Docker client (owned and managed by caller).
             opts: Container configuration options
+            allow_user_field: Expose ``user`` in the exec tool schema. Set False to
+                prevent the LLM from switching Unix users inside the container.
+            allow_env_field: Expose ``env`` in the exec tool schema. Set False to
+                prevent the LLM from injecting arbitrary environment variables.
 
         Note:
             The caller must create and manage the docker_client lifecycle. The server
@@ -119,8 +168,12 @@ class ContainerExecServer(EnhancedFastMCP):
             description="Docker container details for this session",
         )(container_info_json)
 
-        # Register exec tool - name derived from function name
-        async def exec(input: ExecInput, context: Context) -> BaseExecResult:
+        # Register exec tool - name derived from function name.
+        # Input model is created dynamically based on allow_user_field / allow_env_field;
+        # annotation is set after definition so FastMCP sees the correct schema.
+        exec_input_type = _make_exec_input_model(allow_user=allow_user_field, allow_env=allow_env_field)
+
+        async def exec(input, context: Context) -> BaseExecResult:
             """Run a command inside the per-session Docker container.
 
             The cmd array is passed directly to Docker exec (execve-style, no shell).
@@ -130,7 +183,6 @@ class ContainerExecServer(EnhancedFastMCP):
             - Simple command: {"cmd": ["python", "--version"]}
             - With arguments: {"cmd": ["nl", "-ba", "/workspace/file.py"]}
             - Shell features (pipes, redirection): {"cmd": ["sh", "-c", "grep pattern | head"]}
-            - Python from stdin: {"cmd": ["python"], "stdin_text": "print('hello')\\n"}
             - Working directory: {"cmd": ["ls"], "cwd": "/snapshots"}
 
             Common mistakes:
@@ -140,15 +192,21 @@ class ContainerExecServer(EnhancedFastMCP):
             """
             async with async_timer() as get_duration_ms:
                 s = session_state_from_ctx(context)
-
-                # Pass cmd directly to Docker
-                cmd = input.cmd
-
-                (stdout_buf, stderr_buf, exit_code, timed_out) = await run_session_container(s, cmd, input, opts)
-
+                # Build a full ExecInput for run_session_container; disabled fields become None.
+                effective = ExecInput(
+                    cmd=input.cmd,
+                    cwd=input.cwd,
+                    timeout_ms=input.timeout_ms,
+                    env=input.env if allow_env_field else None,
+                    user=input.user if allow_user_field else None,
+                )
+                (stdout_buf, stderr_buf, exit_code, timed_out) = await run_session_container(
+                    s, effective.cmd, effective, opts
+                )
                 duration_ms = get_duration_ms()
                 return render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)
 
+        exec.__annotations__["input"] = exec_input_type
         self.exec_tool = self.flat_model()(exec)
 
         # Register file:// resource template for reading files from container

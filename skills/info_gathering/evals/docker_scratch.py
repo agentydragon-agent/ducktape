@@ -29,7 +29,7 @@ async def scratch_container(image: str) -> AsyncGenerator[MCPToolProvider]:
     """
     opts = ContainerOptions(image=image)  # network_mode defaults to "none"
     async with aiodocker.Docker() as docker_client:
-        server = ContainerExecServer(docker_client, opts)
+        server = ContainerExecServer(docker_client, opts, allow_user_field=False, allow_env_field=False)
         async with Client(server) as mcp_client:
             logger.info("Scratch container started (image=%s)", image)
             yield MCPToolProvider(mcp_client)
