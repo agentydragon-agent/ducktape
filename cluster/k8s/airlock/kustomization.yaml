@@ -4,6 +4,8 @@ resources:
   - namespace.yaml
   - externalsecret.yaml
   - exec-backend-token.yaml
+  - oura-client-credentials-sealed.yaml
+  - google-client-credentials-sealed.yaml
   - airlock-pvc.yaml
   - kubeapi-admin-exec-mcp-deployment.yaml
   - kubeapi-admin-exec-mcp-service.yaml
