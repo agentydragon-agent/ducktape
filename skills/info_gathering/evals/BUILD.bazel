@@ -17,6 +17,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
+        "//agent_core:events",
         "//openai_utils:model",
         "//openai_utils:retry",
         "//util/bazel:runfiles",
