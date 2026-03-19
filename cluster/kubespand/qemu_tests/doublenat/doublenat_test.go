@@ -35,6 +35,16 @@ func TestDoubleNAT(t *testing.T) {
 //	                                 |
 //	                            [VPS (CP)]
 //	                          [Discovery]
+//
+// Hub-spoke (VPS↔NAT) connects in ~20s. Peer-to-peer (NAT1↔NAT2) requires NAT
+// hole-punching: both sides must send WireGuard handshakes to each other's public
+// endpoint simultaneously. The ManagerController cycles through endpoints every ~45s
+// (15s EndpointConnectionTimeout + up to 30s reconcile interval). Each NAT node has
+// 4 endpoints for its peer (mgmt NIC, private LAN IP, IPv6 link-local, public IP),
+// of which only the public IP works cross-NAT. Both sides must independently land on
+// the correct endpoint at the same time for hole-punching to succeed.
+//
+// See debug/doublenat-test-timeout.md for full analysis.
 func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 	sw := h.NewStopwatch(t)
 	out := h.OutputDir(t)
@@ -171,6 +181,11 @@ func runDoubleNAT(t *testing.T, workerType h.NodeType) {
 		SuccessFunc:  h.FullMeshSuccess(2), // each node expects 2 peers
 		ProbeTargets: h.ULAProbeTargets,
 	}
+	// Go-level timeout fires before Bazel's SIGALRM (900s) so t.Log output,
+	// t.Cleanup (VM logs, diagnostics, timing), and test output artifacts all
+	// flush properly. Currently set to 5 minutes — the test is expected to pass
+	// well within this once the endpoint list is trimmed to remove unreachable
+	// addresses (see debug/doublenat-test-timeout.md).
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	runner.Run(ctx)
