@@ -1,3 +1,4 @@
+# Talos nocloud image with Nebula system extension.
 baseProfileName: nocloud
 arch: amd64
 customization:

@@ -73,8 +73,11 @@ func main() {
 	time.Sleep(2 * time.Second) // Give containerd time to initialize.
 	log.Printf("containerd started")
 
-	// Start kubelet (may fail if binary is dynamically linked against glibc
-	// and Alpine only has musl — log warning instead of crashing).
+	// Create glibc compat symlinks for dynamically-linked binaries (kubelet, containerd).
+	// Alpine uses musl, but k8s binaries are built with CGO against glibc.
+	setupGlibcCompat()
+
+	// Start kubelet.
 	startKubelet(nebulaIP)
 
 	// Start probe server for test host connectivity verification.
@@ -82,6 +85,21 @@ func main() {
 
 	log.Printf("worker running: nebula=%s, kubelet starting", nebulaIP)
 	select {}
+}
+
+// setupGlibcCompat creates symlinks so dynamically-linked glibc binaries
+// (kubelet, containerd) can run on Alpine's musl libc.
+func setupGlibcCompat() {
+	os.MkdirAll("/lib64", 0o755)
+	// The dynamic linker path that glibc binaries expect.
+	musl := "/lib/ld-musl-x86_64.so.1"
+	if _, err := os.Stat(musl); err != nil {
+		log.Printf("WARNING: musl not found at %s, glibc compat unavailable", musl)
+		return
+	}
+	os.Symlink(musl, "/lib64/ld-linux-x86-64.so.2")
+	os.Symlink(musl, "/lib/ld-linux-x86-64.so.2")
+	log.Printf("glibc compat symlinks created")
 }
 
 // mountCIDATA mounts the CIDATA virtio drive and extracts Nebula + k8s configs.
@@ -183,8 +201,7 @@ func startContainerd() {
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		log.Printf("WARNING: start containerd failed: %v", err)
-		return
+		log.Fatalf("start containerd: %v", err)
 	}
 	log.Printf("containerd started (pid=%d)", cmd.Process.Pid)
 }
@@ -223,8 +240,7 @@ containerRuntimeEndpoint: "unix:///run/containerd/containerd.sock"
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
-		log.Printf("WARNING: start kubelet failed: %v (kubelet may be dynamically linked against glibc)", err)
-		return
+		log.Fatalf("start kubelet: %v", err)
 	}
 	log.Printf("kubelet started (pid=%d, node-ip=%s)", cmd.Process.Pid, nodeIP)
 }

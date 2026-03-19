@@ -20,11 +20,13 @@ genrule(
     name = "talos_nebula_image",
     srcs = [
         ":talos_imager_tarball",
-        "//cluster/kubespand/qemu_tests/talos:build_talos_image.sh",
+        "build_talos_nebula_image.sh",
         "imager-profile.yaml",
     ],
     outs = ["nocloud-amd64.qcow2"],
-    cmd = "$(location //cluster/kubespand/qemu_tests/talos:build_talos_image.sh) $(location :talos_imager_tarball) $(location imager-profile.yaml) $@",
+    # Uses its own build script with --network=host so the imager can pull
+    # the Nebula extension from ghcr.io/siderolabs/extensions.
+    cmd = "$(location build_talos_nebula_image.sh) $(location :talos_imager_tarball) $(location imager-profile.yaml) $@",
     tags = ["requires-docker"],
     visibility = ["//cluster/nebula_demo:__subpackages__"],
 )
