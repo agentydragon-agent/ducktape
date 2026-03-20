@@ -35,6 +35,18 @@
         "type": "github"
       }
     },
+    "claude-hooks-wheel": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-cICPLO01FV/Rjir48qNntVHGtmI35xBSuOnVTymP2TY=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-bda4aea1/claude_hooks-0.1.0-py3-none-any.whl"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-bda4aea1/claude_hooks-0.1.0-py3-none-any.whl"
+      }
+    },
     "claude-plugins-official": {
       "flake": false,
       "locked": {
@@ -54,13 +66,13 @@
     "ducktape-wheel": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-VVkdCo9Ikt+JjUIKLtQdYRcGs/0brfedqckMtit0nq8=",
+        "narHash": "sha256-5mL/CIW0RRHhPc72yOVi1rnC3FWZ7vfoUbVCaXdSwNE=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-0342bd78/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-bda4aea1/ducktape-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-0342bd78/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-bda4aea1/ducktape-0.1.0-py3-none-any.whl"
       }
     },
     "flake-utils": {
@@ -232,6 +244,7 @@
     "root": {
       "inputs": {
         "claude-code-router": "claude-code-router",
+        "claude-hooks-wheel": "claude-hooks-wheel",
         "claude-plugins-official": "claude-plugins-official",
         "ducktape-wheel": "ducktape-wheel",
         "gterm-theme-wheel": "gterm-theme-wheel",
