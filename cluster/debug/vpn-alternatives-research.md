@@ -92,6 +92,24 @@ machines behind different NATs, with DNS support and public-IP relay nodes.
 | Firezone            | Via gateway          | Yes             | Hub-spoke       | Open-core | Moderate   |
 | OpenZiti            | Yes                  | Embedded        | Fabric routing  | Yes       | High       |
 
+## Talos Linux Extensions
+
+Official Talos extensions from [siderolabs/extensions](https://github.com/siderolabs/extensions):
+
+| Solution     | Talos Extension | Image                          |
+| ------------ | --------------- | ------------------------------ |
+| Tailscale    | Yes             | `ghcr.io/siderolabs/tailscale` |
+| Nebula       | Yes             | `ghcr.io/siderolabs/nebula`    |
+| **NetBird**  | Yes             | `ghcr.io/siderolabs/netbird`   |
+| **ZeroTier** | Yes             | `ghcr.io/siderolabs/zerotier`  |
+| Netmaker     | No              | —                              |
+| Innernet     | No              | —                              |
+| Firezone     | No              | —                              |
+
+Extensions run as system services on Talos nodes, packaged under
+`/usr/local/lib/containers/{name}/`. This is relevant for the Talos cluster
+where KubeSpan currently provides the inter-node mesh.
+
 ## Recommendation
 
 **NetBird** is the strongest alternative if moving away from Headscale. It matches
@@ -111,3 +129,5 @@ switch would be:
 - <https://netbird.io/compare>
 - <https://dev.to/lightningdev123/open-source-alternatives-to-tailscale-in-2026-132p>
 - <https://github.com/cedrickchee/awesome-wireguard>
+- <https://github.com/siderolabs/extensions>
+- <https://deepwiki.com/siderolabs/extensions/3.4-networking-extensions>
