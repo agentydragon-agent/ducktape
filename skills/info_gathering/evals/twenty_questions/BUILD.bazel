@@ -1,5 +1,7 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
+exports_files(["sim.txt"])
+
 py_library(
     name = "twenty_questions",
     srcs = ["twenty_questions.py"],

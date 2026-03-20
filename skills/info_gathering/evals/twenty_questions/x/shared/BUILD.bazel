@@ -1,0 +1,57 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "variants",
+    srcs = ["variants.py"],
+    imports = ["../../../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
+)
+
+py_library(
+    name = "result_types",
+    srcs = ["result_types.py"],
+    imports = ["../../../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "output",
+    srcs = ["output.py"],
+    imports = ["../../../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
+    deps = [":result_types"],
+)
+
+py_library(
+    name = "cli",
+    srcs = ["cli.py"],
+    imports = ["../../../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
+)
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    imports = ["../../../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_library(
+    name = "docker_exec",
+    srcs = ["docker_exec.py"],
+    imports = ["../../../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
+    deps = [
+        "//mcp_infra/exec:docker",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    srcs = ["conftest.py"],
+    imports = ["../../../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
+)
