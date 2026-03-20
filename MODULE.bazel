@@ -204,7 +204,16 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "v1.13.0-alpha.2",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+
+# Test infrastructure: Python base image for container e2e tests (wheel install + hook exercise)
+oci.pull(
+    name = "python_3_13_slim",
+    digest = "sha256:7d8999b140f22939451e00b79c0fd86f13d0bc0577b369f8212fce063101fb2a",
+    image = "docker.io/library/python",
+    platforms = ["linux/amd64"],
+    tag = "3.13-slim",
+)
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")

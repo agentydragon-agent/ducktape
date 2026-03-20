@@ -57,3 +57,16 @@ filegroup(
     output_group = "tarball",
     visibility = ["//visibility:public"],
 )
+
+oci_load(
+    name = "python_3_13_slim_load",
+    image = "@python_3_13_slim_linux_amd64",
+    repo_tags = ["python:3.13-slim"],
+)
+
+filegroup(
+    name = "python_3_13_slim_tarball",
+    srcs = [":python_3_13_slim_load"],
+    output_group = "tarball",
+    visibility = ["//visibility:public"],
+)

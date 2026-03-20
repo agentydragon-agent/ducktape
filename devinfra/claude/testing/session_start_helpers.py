@@ -192,28 +192,15 @@ async def run_session_start_hook(
 ) -> subprocess.CompletedProcess[str]:
     """Run the session start hook as an async subprocess.
 
-    By default, runs via `python -m devinfra.claude.hook_daemon.session_start` for Bazel tests.
-    Set DUCKTAPE_CLAUDE_HOOKS_USE_WHEEL=1 to run via the installed `claude-hook` console
-    script instead - this tests the actual wheel packaging.
-
+    Runs via the hook_dispatch binary from Bazel runfiles.
     Hook output is written to log files in TEST_UNDECLARED_OUTPUTS_DIR for debugging.
     """
     hook_input = make_hook_input(project_dir, source)
 
-    use_wheel = os.environ.get(settings.ENV_USE_WHEEL) == "1"
-
-    cmd: str | Path = "claude-hook" if use_wheel else get_required_path(shell_helpers.HOOK_DISPATCH)
-
-    env = dict(os.environ)
-    if use_wheel:
-        # Bazel's test runner sets PYTHONPATH to all runfiles site-packages.
-        # The subprocess inherits this, so it can import packages (like httpx)
-        # from Bazel's deps even though they're missing from the wheel's
-        # requires list. Clear it so only the wheel venv's packages are visible.
-        env.pop("PYTHONPATH", None)
+    cmd: Path = get_required_path(shell_helpers.HOOK_DISPATCH)
 
     proc = await asyncio.create_subprocess_exec(
-        cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env
+        cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(input=hook_input.encode()), timeout=300)
