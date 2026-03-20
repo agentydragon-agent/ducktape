@@ -123,6 +123,17 @@ repos:
   # ============================================================================
   # LOCAL HOOKS
   # ============================================================================
+
+  # Block amending already-pushed commits (prepare-commit-msg stage)
+  - repo: local
+    hooks:
+      - id: block-amend-pushed
+        name: Block amending pushed commits
+        entry: devinfra/precommit/block_amend_pushed.sh
+        language: system
+        stages: [prepare-commit-msg]
+        always_run: true
+
   - repo: local
     hooks:
       # Ansible syntax check: Fast validation for pre-commit
