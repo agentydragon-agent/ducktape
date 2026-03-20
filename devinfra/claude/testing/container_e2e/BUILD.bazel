@@ -1,7 +1,10 @@
 load("//devinfra/testing:defs.bzl", "py_test")
 
 exports_files(
-    ["run_in_container.py"],
+    [
+        "Dockerfile",
+        "run_in_container.py",
+    ],
     visibility = ["//visibility:private"],
 )
 
@@ -10,10 +13,10 @@ py_test(
     size = "large",
     srcs = ["test_container_e2e.py"],
     data = [
+        "Dockerfile",
         "run_in_container.py",
         "//:wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
-        "//third_party/containers:python_3_13_slim_tarball",
     ],
     # Inherit proxy env vars so MockEgressProxy can chain through real proxy
     env_inherit = [
@@ -37,9 +40,7 @@ py_test(
         "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/testing:conftest",
         "//devinfra/claude/testing:mock_egress_proxy",
-        "//third_party/containers:rlocations",
         "//util:net",
-        "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",

@@ -6,13 +6,13 @@ through the mock egress proxy).
 
 Architecture:
     Host side:
-        - MockEgressProxy on 0.0.0.0 (TLS-intercepting, requires auth)
+        - MockEgressProxy on 127.0.0.1 (TLS-intercepting + plain HTTP, requires auth)
         - Builds the ducktape wheel via Bazel
-        - Loads python:3.13-slim OCI image
-        - Creates Docker container on bridge network with broken DNS
+        - Builds or loads the e2e-container image (python:3.13-slim + git + JDK)
+        - Creates Docker container with --network=host and broken DNS
 
     Container side (run_in_container.py):
-        - Installs ducktape wheel
+        - Installs ducktape wheel (pip through proxy)
         - Runs claude-hook (session start hook) which sets up:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
@@ -31,10 +31,8 @@ import pytest_bazel
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, MockEgressProxy
-from third_party.containers.rlocations import PYTHON_3_13_SLIM_TARBALL
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
-from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -48,8 +46,11 @@ _RUN_IN_CONTAINER_RLOCATION = "_main/devinfra/claude/testing/container_e2e/run_i
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 
-# Docker image tag for the loaded python:3.13-slim
-_PYTHON_IMAGE_TAG = "python:3.13-slim"
+# Rlocation for the Dockerfile
+_DOCKERFILE_RLOCATION = "_main/devinfra/claude/testing/container_e2e/Dockerfile"
+
+# Docker image tag for the e2e test container (built from Dockerfile)
+_E2E_IMAGE_TAG = "ducktape-e2e-container:local"
 
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"
@@ -72,7 +73,6 @@ def _collect_container_logs(container_name: str) -> None:
     """Copy session logs from container to undeclared test outputs."""
     out_dir = undeclared_outputs_dir() / "container-e2e" / "session-logs"
     out_dir.mkdir(parents=True, exist_ok=True)
-    # Copy the entire session directory from the container
     result = _docker(
         "cp", f"{container_name}:/root/.claude/session-env/container-e2e-test/.", str(out_dir), check=False
     )
@@ -89,10 +89,23 @@ def docker_available() -> None:
 
 
 @pytest.fixture
-def python_image(docker_available: None) -> str:
-    """Load python:3.13-slim from Bazel runfiles into Docker."""
-    load_image(PYTHON_3_13_SLIM_TARBALL)
-    return _PYTHON_IMAGE_TAG
+def e2e_image(docker_available: None) -> str:
+    """Build or reuse the e2e test container image.
+
+    The image extends python:3.13-slim with git and JDK (keytool)
+    pre-installed, avoiding slow apt-get at test time.
+    """
+    # Check if image already exists (e.g., from previous test run)
+    result = _docker("image", "inspect", _E2E_IMAGE_TAG, check=False)
+    if result.returncode == 0:
+        logger.info("E2E image %s already exists, reusing", _E2E_IMAGE_TAG)
+        return _E2E_IMAGE_TAG
+
+    # Build from Dockerfile in runfiles
+    dockerfile_path = get_required_path(_DOCKERFILE_RLOCATION)
+    logger.info("Building E2E image from %s", dockerfile_path)
+    _docker("build", "-t", _E2E_IMAGE_TAG, "-f", str(dockerfile_path), str(dockerfile_path.parent))
+    return _E2E_IMAGE_TAG
 
 
 @pytest.fixture
@@ -114,10 +127,10 @@ def test_workspace_path() -> Path:
 
 
 async def test_container_e2e(
-    tmp_path: Path, python_image: str, wheel_path: Path, container_script_path: Path, test_workspace_path: Path
+    tmp_path: Path, e2e_image: str, wheel_path: Path, container_script_path: Path, test_workspace_path: Path
 ) -> None:
     """Full E2E: install wheel in container, run hook, bazel build through proxy."""
-    # Start mock egress proxy on 0.0.0.0 so the container can reach it
+    # Start mock egress proxy — handles both CONNECT (TLS MITM) and plain HTTP
     async with MockEgressProxy(
         listen_port=0,
         listen_address="127.0.0.1",
@@ -213,7 +226,9 @@ async def test_container_e2e(
         # Network isolation: --network=host for gVisor compatibility, but DNS is
         # broken inside the container (resolv.conf overwritten with unreachable
         # nameserver). This forces tools to use the proxy for CONNECT tunneling
-        # (CONNECT doesn't need client-side DNS resolution).
+        # (CONNECT doesn't need client-side DNS resolution). Plain HTTP requests
+        # (like pip install) also go through the proxy which resolves DNS on the
+        # host side.
         network_args = ["--network=host"]
 
         docker_cmd = [
@@ -224,14 +239,11 @@ async def test_container_e2e(
             *env_args,
             *mount_args,
             *network_args,
-            python_image,
+            e2e_image,
             "bash",
             "-c",
-            # Unset proxy vars for apt-get (HTTP proxy can't handle apt traffic),
-            # install JDK (keytool needed for Java truststore creation) and git,
-            # then break DNS to enforce proxy usage, then run the test.
-            "env -u HTTP_PROXY -u http_proxy -u HTTPS_PROXY -u https_proxy "
-            "bash -c 'apt-get update -qq && apt-get install -y -qq default-jdk-headless git >/dev/null 2>&1' && "
+            # git + JDK are pre-installed in the e2e image.
+            # Break DNS to enforce proxy usage, then run the test.
             "mkdir -p /project/.git /cache /config /run/user/0 && "
             "echo 'nameserver 192.0.2.1' > /etc/resolv.conf && "
             "python /run_in_container.py",
