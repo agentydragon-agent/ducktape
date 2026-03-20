@@ -340,11 +340,15 @@ class MockEgressProxy:
         self.stats.record_failure(error)
 
     async def _connect_to_target(
-        self, target_host: str, target_port: int
+        self, target_host: str, target_port: int, *, use_tls: bool = True
     ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         if self.upstream_proxy:
-            return await self._connect_via_upstream(target_host, target_port)
-        return await self._connect_direct(target_host, target_port)
+            if use_tls:
+                return await self._connect_via_upstream(target_host, target_port)
+            return await self._connect_via_upstream_plain(target_host, target_port)
+        if use_tls:
+            return await self._connect_direct(target_host, target_port)
+        return await self._connect_direct_plain(target_host, target_port)
 
     async def _connect_direct(
         self, target_host: str, target_port: int
@@ -354,6 +358,25 @@ class MockEgressProxy:
             server_ctx.check_hostname = False
             server_ctx.verify_mode = ssl.CERT_NONE
         return await asyncio.open_connection(target_host, target_port, ssl=server_ctx)
+
+    async def _connect_direct_plain(
+        self, target_host: str, target_port: int
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """Connect to target over plain TCP (no TLS)."""
+        return await asyncio.open_connection(target_host, target_port)
+
+    async def _connect_via_upstream_plain(
+        self, target_host: str, target_port: int
+    ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        """Connect to target through upstream proxy for plain HTTP.
+
+        For plain HTTP, we open a TCP connection to the upstream proxy and
+        let the caller send the full HTTP request with absolute URL.
+        The upstream proxy will forward it.
+        """
+        upstream = self.upstream_proxy
+        assert upstream is not None
+        return await asyncio.open_connection(upstream.host, upstream.port)
 
     async def _connect_via_upstream(
         self, target_host: str, target_port: int
@@ -420,106 +443,180 @@ class MockEgressProxy:
             proxy_writer.close()
             raise
 
+    def _check_proxy_auth(self, request: bytes) -> bool:
+        """Check Proxy-Authorization header in an HTTP request."""
+        for line in request.split(b"\r\n"):
+            if line.lower().startswith(b"proxy-authorization: basic "):
+                encoded = line.split(b" ", 2)[2]
+                decoded = base64.b64decode(encoded).decode()
+                if ":" in decoded:
+                    user, passwd = decoded.split(":", 1)
+                    return user == self.username and passwd == self.password
+                return False
+        return False
+
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         target_host = "<unknown>"
         target_port = 0
 
         try:
             async with _close_writer(writer):
-                # Read CONNECT request
+                # Read HTTP request headers
                 try:
                     request = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=60)
                 except (TimeoutError, asyncio.IncompleteReadError):
                     return
 
                 request_line = request.split(b"\r\n", 1)[0].decode()
-                if not request_line.startswith("CONNECT "):
-                    await self._send_error(
-                        writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", f"Non-CONNECT request: {request_line[:50]}"
-                    )
-                    return
 
-                # Parse target host:port
-                parts = request_line.split()
-                if len(parts) < 2:
-                    await self._send_error(writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", "Malformed CONNECT request")
-                    return
-
-                target = parts[1]
-                if ":" in target:
-                    target_host, port_str = target.rsplit(":", 1)
-                    target_port = int(port_str)
+                if request_line.startswith("CONNECT "):
+                    await self._handle_connect(reader, writer, request, request_line)
                 else:
-                    target_host = target
-                    target_port = 443
-
-                conn_id = self.stats.total_connections
-                logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
-
-                # Check auth header (always required, matching real egress proxy)
-                auth_ok = False
-                for line in request.split(b"\r\n"):
-                    if line.lower().startswith(b"proxy-authorization: basic "):
-                        encoded = line.split(b" ", 2)[2]
-                        decoded = base64.b64decode(encoded).decode()
-                        if ":" in decoded:
-                            user, passwd = decoded.split(":", 1)
-                            if user == self.username and passwd == self.password:
-                                auth_ok = True
-                        break
-
-                if not auth_ok:
-                    await self._send_error(
-                        writer,
-                        b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
-                        f"Auth failed for {target_host}:{target_port}",
-                    )
-                    return
-
-                # Connect to target (with concurrency limit)
-                async with self._outbound_semaphore:
-                    logger.info("[conn %d] Connecting to target %s:%d", conn_id, target_host, target_port)
-                    try:
-                        server_reader, server_writer = await asyncio.wait_for(
-                            self._connect_to_target(target_host, target_port), timeout=60
-                        )
-                        logger.info("[conn %d] Connected to target %s:%d", conn_id, target_host, target_port)
-                    except Exception as e:
-                        error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
-                        logger.warning("[conn %d] %s", conn_id, error_msg)
-                        await self._send_error(writer, b"HTTP/1.1 502 Bad Gateway\r\n\r\n", error_msg)
-                        return
-
-                async with _close_writer(server_writer):
-                    # Send 200 Connection Established (only after successful target connection)
-                    logger.info("[conn %d] Sending 200 to client for %s:%d", conn_id, target_host, target_port)
-                    writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                    await writer.drain()
-
-                    # Generate server cert and upgrade client connection to TLS (server-side)
-                    server_cert_pem, server_key_pem = self._get_server_cert(target_host)
-                    client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-                    _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem, self._ca_cert_pem)
-                    # server_side is auto-detected from the protocol (client_connected_cb is set
-                    # for connections from asyncio.start_server), so no need to pass it explicitly.
-                    await writer.start_tls(client_ctx)
-
-                    bytes_forwarded = await self._forward_bidirectional(
-                        reader, writer, server_reader, server_writer, target_host
-                    )
-                    self.stats.record_success(bytes_forwarded)
-                    logger.info(
-                        "[conn %d] Completed %s:%d, %d bytes forwarded",
-                        conn_id,
-                        target_host,
-                        target_port,
-                        bytes_forwarded,
-                    )
+                    await self._handle_plain_http(reader, writer, request, request_line)
 
         except asyncio.CancelledError:
             raise
         except (TimeoutError, ssl.SSLError, OSError, ValueError) as e:
             self.stats.record_failure(f"{target_host}:{target_port}: {e}")
+
+    async def _handle_connect(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, request: bytes, request_line: str
+    ) -> None:
+        """Handle CONNECT tunneling (TLS interception)."""
+        parts = request_line.split()
+        if len(parts) < 2:
+            await self._send_error(writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", "Malformed CONNECT request")
+            return
+
+        target = parts[1]
+        if ":" in target:
+            target_host, port_str = target.rsplit(":", 1)
+            target_port = int(port_str)
+        else:
+            target_host = target
+            target_port = 443
+
+        conn_id = self.stats.total_connections
+        logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
+
+        if not self._check_proxy_auth(request):
+            await self._send_error(
+                writer,
+                b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
+                f"Auth failed for {target_host}:{target_port}",
+            )
+            return
+
+        # Connect to target (with concurrency limit)
+        async with self._outbound_semaphore:
+            logger.info("[conn %d] Connecting to target %s:%d", conn_id, target_host, target_port)
+            try:
+                server_reader, server_writer = await asyncio.wait_for(
+                    self._connect_to_target(target_host, target_port), timeout=60
+                )
+                logger.info("[conn %d] Connected to target %s:%d", conn_id, target_host, target_port)
+            except Exception as e:
+                error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
+                logger.warning("[conn %d] %s", conn_id, error_msg)
+                await self._send_error(writer, b"HTTP/1.1 502 Bad Gateway\r\n\r\n", error_msg)
+                return
+
+        async with _close_writer(server_writer):
+            # Send 200 Connection Established (only after successful target connection)
+            logger.info("[conn %d] Sending 200 to client for %s:%d", conn_id, target_host, target_port)
+            writer.write(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+            await writer.drain()
+
+            # Generate server cert and upgrade client connection to TLS (server-side)
+            server_cert_pem, server_key_pem = self._get_server_cert(target_host)
+            client_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            _load_cert_chain_from_bytes(client_ctx, server_cert_pem, server_key_pem, self._ca_cert_pem)
+            await writer.start_tls(client_ctx)
+
+            bytes_forwarded = await self._forward_bidirectional(
+                reader, writer, server_reader, server_writer, target_host
+            )
+            self.stats.record_success(bytes_forwarded)
+            logger.info(
+                "[conn %d] Completed %s:%d, %d bytes forwarded", conn_id, target_host, target_port, bytes_forwarded
+            )
+
+    async def _handle_plain_http(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, request: bytes, request_line: str
+    ) -> None:
+        """Handle plain HTTP proxy requests (GET http://host/path, etc.).
+
+        Forwards the request to the target server over plain TCP and relays
+        the response back. Used by tools like apt-get that use HTTP_PROXY.
+        """
+        parts = request_line.split()
+        if len(parts) < 3:
+            await self._send_error(writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", "Malformed HTTP request")
+            return
+
+        method, url, http_version = parts[0], parts[1], parts[2]
+
+        # Parse absolute URL (e.g., http://archive.ubuntu.com/ubuntu/dists/...)
+        parsed = urllib.parse.urlparse(url)
+        if not parsed.hostname:
+            await self._send_error(writer, b"HTTP/1.1 400 Bad Request\r\n\r\n", f"Non-absolute URL: {url[:80]}")
+            return
+
+        target_host = parsed.hostname
+        target_port = parsed.port or 80
+
+        conn_id = self.stats.total_connections
+        logger.info("[conn %d] %s %s (plain HTTP proxy)", conn_id, method, url[:120])
+
+        if not self._check_proxy_auth(request):
+            await self._send_error(
+                writer,
+                b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n",
+                f"Auth failed for {method} {target_host}:{target_port}",
+            )
+            return
+
+        async with self._outbound_semaphore:
+            try:
+                server_reader, server_writer = await asyncio.wait_for(
+                    self._connect_to_target(target_host, target_port, use_tls=False), timeout=60
+                )
+            except Exception as e:
+                error_msg = f"Failed to connect to {target_host}:{target_port}: {e}"
+                logger.warning("[conn %d] %s", conn_id, error_msg)
+                await self._send_error(writer, b"HTTP/1.1 502 Bad Gateway\r\n\r\n", error_msg)
+                return
+
+        async with _close_writer(server_writer):
+            # Rewrite absolute URL to relative path for direct connections.
+            # When chaining through an upstream proxy, keep the absolute URL.
+            if self.upstream_proxy:
+                rewritten_request_line = request_line
+            else:
+                relative_path = parsed.path or "/"
+                if parsed.query:
+                    relative_path += f"?{parsed.query}"
+                rewritten_request_line = f"{method} {relative_path} {http_version}"
+
+            # Rebuild headers, stripping Proxy-Authorization (not forwarded to origin)
+            header_lines: list[str] = []
+            for line in request.split(b"\r\n")[1:]:
+                if not line:
+                    break
+                if line.lower().startswith(b"proxy-authorization:"):
+                    continue
+                header_lines.append(line.decode())
+
+            forwarded_request = rewritten_request_line + "\r\n" + "\r\n".join(header_lines) + "\r\n\r\n"
+            server_writer.write(forwarded_request.encode())
+            await server_writer.drain()
+
+            # Relay bidirectionally (handles request body and response)
+            bytes_forwarded = await self._forward_bidirectional(
+                reader, writer, server_reader, server_writer, target_host
+            )
+            self.stats.record_success(bytes_forwarded)
+            logger.info("[conn %d] Completed %s %s, %d bytes", conn_id, method, target_host, bytes_forwarded)
 
     async def _forward_bidirectional(
         self,

@@ -324,5 +324,108 @@ class TestBidirectionalForwarding:
             assert received == b""
 
 
+# ---------------------------------------------------------------------------
+# Plain HTTP forwarding tests
+# ---------------------------------------------------------------------------
+
+
+@contextlib.asynccontextmanager
+async def _http_server(handler: _Handler, host: str = "127.0.0.1") -> AsyncGenerator[tuple[str, int]]:
+    """Start a plain HTTP server (no TLS), yield (host, port), then shut down."""
+    server = await asyncio.start_server(handler, host, 0)
+    addrs = server.sockets
+    assert addrs
+    port = addrs[0].getsockname()[1]
+    try:
+        yield host, port
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+async def _http_echo_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    """Read an HTTP request and respond with the request line and headers as the body."""
+    try:
+        request = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=10)
+        body = request.decode()
+        response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(body)}\r\nConnection: close\r\n\r\n{body}"
+        writer.write(response.encode())
+        await writer.drain()
+    except (OSError, asyncio.IncompleteReadError, TimeoutError):
+        pass
+    finally:
+        writer.close()
+
+
+class TestPlainHttpForwarding:
+    """Test plain HTTP proxy forwarding (non-CONNECT requests)."""
+
+    async def test_plain_http_get(self, forwarding_proxy: MockEgressProxy) -> None:
+        """Plain HTTP GET through proxy reaches the target server."""
+        async with _http_server(_http_echo_handler) as (host, port):
+            reader, writer = await asyncio.open_connection("127.0.0.1", forwarding_proxy.port)
+            try:
+                creds = base64.b64encode(f"{forwarding_proxy.username}:{forwarding_proxy.password}".encode()).decode()
+                request = (
+                    f"GET http://{host}:{port}/test/path HTTP/1.1\r\n"
+                    f"Host: {host}:{port}\r\n"
+                    f"Proxy-Authorization: Basic {creds}\r\n"
+                    f"\r\n"
+                )
+                writer.write(request.encode())
+                await writer.drain()
+
+                response = await asyncio.wait_for(reader.read(4096), timeout=10)
+                response_str = response.decode()
+
+                # Should get 200 OK
+                assert response_str.startswith("HTTP/1.1 200 OK"), f"Expected 200, got: {response_str[:100]}"
+                # The echo handler reflects the request — verify the path was rewritten to relative
+                assert "GET /test/path HTTP/1.1" in response_str
+                # Proxy-Authorization should be stripped before forwarding
+                assert "Proxy-Authorization" not in response_str.split("\r\n\r\n", 1)[-1]
+            finally:
+                writer.close()
+
+    async def test_plain_http_requires_auth(self, forwarding_proxy: MockEgressProxy) -> None:
+        """Plain HTTP requests without auth get 407."""
+        reader, writer = await asyncio.open_connection("127.0.0.1", forwarding_proxy.port)
+        try:
+            writer.write(b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")
+            await writer.drain()
+            response = await asyncio.wait_for(reader.read(1024), timeout=10)
+            assert b"407" in response, f"Expected 407, got: {response!r}"
+        finally:
+            writer.close()
+
+    async def test_plain_http_wrong_auth(self, forwarding_proxy: MockEgressProxy) -> None:
+        """Plain HTTP requests with wrong credentials get 407."""
+        reader, writer = await asyncio.open_connection("127.0.0.1", forwarding_proxy.port)
+        try:
+            creds = base64.b64encode(b"wrong:credentials").decode()
+            request = (
+                f"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: Basic {creds}\r\n\r\n"
+            )
+            writer.write(request.encode())
+            await writer.drain()
+            response = await asyncio.wait_for(reader.read(1024), timeout=10)
+            assert b"407" in response, f"Expected 407, got: {response!r}"
+        finally:
+            writer.close()
+
+    async def test_plain_http_non_absolute_url_rejected(self, forwarding_proxy: MockEgressProxy) -> None:
+        """Plain HTTP requests with relative URLs get 400."""
+        reader, writer = await asyncio.open_connection("127.0.0.1", forwarding_proxy.port)
+        try:
+            creds = base64.b64encode(f"{forwarding_proxy.username}:{forwarding_proxy.password}".encode()).decode()
+            request = f"GET /relative/path HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: Basic {creds}\r\n\r\n"
+            writer.write(request.encode())
+            await writer.drain()
+            response = await asyncio.wait_for(reader.read(1024), timeout=10)
+            assert b"400" in response, f"Expected 400, got: {response!r}"
+        finally:
+            writer.close()
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
