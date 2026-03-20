@@ -1,16 +1,10 @@
 load("//devinfra/testing:defs.bzl", "py_test")
 
-exports_files(
-    ["run_in_container.py"],
-    visibility = ["//visibility:private"],
-)
-
 py_test(
     name = "test_container_e2e",
     size = "large",
     srcs = ["test_container_e2e.py"],
     data = [
-        "run_in_container.py",
         "//:wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
     ],
