@@ -86,7 +86,6 @@ resources:
   - applications/headscale/flux-kustomization.yaml
   - headscale-api-key-bootstrap/flux-kustomization.yaml
   - headscale-config/flux-kustomization.yaml
-  - activitywatch-authkey-bootstrap/flux-kustomization.yaml
   - tailscale-namespace/flux-kustomization.yaml
   - tailscale-authkey-bootstrap/flux-kustomization.yaml
   - tailscale/flux-kustomization.yaml

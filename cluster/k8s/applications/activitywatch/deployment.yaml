@@ -82,25 +82,9 @@ spec:
               port: 5601
             initialDelaySeconds: 2
             periodSeconds: 10
-        - name: tailscale
-          image: ghcr.io/tailscale/tailscale:latest
-          env:
-            - name: TS_AUTHKEY
-              valueFrom:
-                secretKeyRef:
-                  name: activitywatch-authkey
-                  key: TS_AUTHKEY
-            - name: TS_EXTRA_ARGS
-              value: "--login-server=https://headscale.allegedly.works"
-            - name: TS_USERSPACE
-              value: "false"
-            - name: TS_KUBE_SECRET
-              value: "tailscale-state"
-            - name: TS_HOSTNAME
-              value: "activitywatch"
-            # Talos nodes lack ip_tables kernel module; use nftables backend.
-            - name: TS_DEBUG_FIREWALL_MODE
-              value: "nftables"
+        - name: nebula
+          image: ghcr.io/slackhq/nebula:latest
+          command: ["nebula", "-config", "/etc/nebula/config.yaml"]
           securityContext:
             capabilities:
               add:
@@ -109,6 +93,22 @@ spec:
           volumeMounts:
             - name: dev-tun
               mountPath: /dev/net/tun
+            - name: nebula-certs
+              mountPath: /etc/nebula/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            - name: nebula-certs
+              mountPath: /etc/nebula/host.crt
+              subPath: host.crt
+              readOnly: true
+            - name: nebula-certs
+              mountPath: /etc/nebula/host.key
+              subPath: host.key
+              readOnly: true
+            - name: nebula-config
+              mountPath: /etc/nebula/config.yaml
+              subPath: config.yaml
+              readOnly: true
           resources:
             requests:
               cpu: 10m
@@ -127,3 +127,9 @@ spec:
           hostPath:
             path: /dev/net/tun
             type: CharDevice
+        - name: nebula-certs
+          secret:
+            secretName: activitywatch-nebula-certs
+        - name: nebula-config
+          configMap:
+            name: activitywatch-nebula-config

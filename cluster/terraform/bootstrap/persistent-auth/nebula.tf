@@ -15,6 +15,7 @@ locals {
     "wyrm2"           = { ip = "10.42.0.20/16", groups = "worker,proxmox,gpu" }
     "rugged"          = { ip = "10.42.0.30/16", groups = "worker,roaming" }
     "k8s-worker-test" = { ip = "10.42.0.99/16", groups = "worker,test" }
+    "activitywatch"   = { ip = "10.42.0.40/16", groups = "service" }
   }
 }
 

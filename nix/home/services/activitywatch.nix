@@ -14,17 +14,17 @@ in
     home.packages = [ pkgs.activitywatch ];
 
     # ActivityWatch configuration files
-    # Server runs in the K8s cluster. NixOS workers are K8s nodes with Cilium,
-    # so they can reach ClusterIP services via cluster-internal DNS.
+    # Server runs in the K8s cluster with a Nebula sidecar (cert name "activitywatch").
+    # Lighthouse DNS resolves the bare name to the pod's Nebula IP.
     xdg.configFile."activitywatch/aw-client/aw-client.toml".source = toTOML "aw-client.toml" {
       server = {
-        hostname = "activitywatch.activitywatch.svc.cluster.local";
+        hostname = "activitywatch";
         port = "5600";
       };
     };
 
     xdg.configFile."activitywatch/aw-qt/aw-qt.toml".source = toTOML "aw-qt.toml" {
-      # No local server — data goes to the cluster via Headscale mesh.
+      # No local server — data goes to the cluster via Nebula mesh.
       aw-qt.autostart_modules = [
         "aw-watcher-afk"
         "aw-watcher-window"

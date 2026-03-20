@@ -3,28 +3,3 @@ kind: ServiceAccount
 metadata:
   name: activitywatch
   namespace: activitywatch
----
-# Tailscale stores node identity in a K8s Secret (TS_KUBE_SECRET)
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: activitywatch
-  namespace: activitywatch
-rules:
-  - apiGroups: [""]
-    resources: ["secrets"]
-    verbs: ["get", "list", "create", "update", "patch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: activitywatch
-  namespace: activitywatch
-subjects:
-  - kind: ServiceAccount
-    name: activitywatch
-    namespace: activitywatch
-roleRef:
-  kind: Role
-  name: activitywatch
-  apiGroup: rbac.authorization.k8s.io

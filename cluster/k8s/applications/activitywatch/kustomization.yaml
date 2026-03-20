@@ -7,6 +7,8 @@ resources:
   - pvc.yaml
   - service.yaml
   - cilium-network-policy.yaml
+  - nebula-config.yaml
+  - nebula-certs-sealed.yaml
 
 configMapGenerator:
   - name: activitywatch-readonly-proxy

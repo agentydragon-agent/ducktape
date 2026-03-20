@@ -486,8 +486,8 @@ clusters. Low priority — current setup survives single-node failure via automa
 Setup and architecture details in <../README.md>.
 
 - [ ] **Public access via Authentik proxy outpost** — follow Grocy pattern (proxy
-      provider blueprint, shared outpost, HTTPRoute, networkpolicy). Watchers would
-      still need Headscale (no native auth support).
+      provider blueprint, shared outpost, HTTPRoute, networkpolicy). Watchers use
+      Nebula mesh (no native auth support).
 - [ ] **Android sync** — not feasible (`aw-android` embeds its own server). Revisit
       when `aw-sync` ships for Android.
 
