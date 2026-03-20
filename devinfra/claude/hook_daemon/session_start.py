@@ -22,6 +22,7 @@ from opentelemetry import trace
 from devinfra.build_info import get_build_info
 from devinfra.claude import (
     apt_setup,
+    bazel_server_warmup,
     bazelisk_setup,
     buildbuddy_setup,
     cli_tools_setup,
@@ -52,6 +53,9 @@ from devinfra.claude.supervisor import setup as supervisor_setup
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+
+# Strong references to fire-and-forget background tasks (prevents GC).
+_background_tasks: set[asyncio.Task] = set()
 
 
 @dataclass(frozen=True)
@@ -465,6 +469,21 @@ async def _setup_web(
 # ============================================================================
 
 
+async def _run_bazel_warmup(
+    paths: SessionPaths, project_dir: Path, env: dict[str, str], tracer: trace.Tracer, root_ctx: trace.Context
+) -> None:
+    """Fire-and-forget Bazel server warmup. Logs errors, never raises."""
+    try:
+        with tracer.start_as_current_span("bazel_server_warmup", context=root_ctx):
+            await bazel_server_warmup.warmup_bazel_server(
+                wrapper_path=paths.wrapper_path, project_dir=project_dir, env=env
+            )
+    except TimeoutError:
+        logger.warning("Bazel server warmup timed out")
+    except Exception as e:
+        logger.warning("Bazel server warmup failed: %s", e)
+
+
 async def run_session(
     hook_input: SessionStartHookInput,
     paths: SessionPaths,
@@ -577,6 +596,14 @@ async def run_session(
         )
         env_file.write_env_file(ctx.env_file_path, env_vars)
     logger.info("Wrote environment to %s", ctx.env_file_path)
+
+    # Fire-and-forget Bazel server warmup (both web and CLI modes).
+    # Store task reference to prevent GC before completion.
+    if settings.warmup_bazel_server:
+        warmup_env = env_file.build_subprocess_env(env_vars)
+        task = asyncio.create_task(_run_bazel_warmup(paths, ctx.project_dir, warmup_env, tracer, root_ctx))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):

@@ -70,6 +70,8 @@ class HookSettings(BaseSettings):
 
     k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
 
+    warmup_bazel_server: bool = Field(default=True, description="Start Bazel server in background after session setup")
+
     # Test configuration
     use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
 
