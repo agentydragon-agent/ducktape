@@ -6,6 +6,7 @@
 # Triggers:
 #   - push to main/devel when Dockerfile changes
 #   - workflow_dispatch for manual rebuilds
+#   - workflow_call (from ci.yml)
 #
 # After push, update the oci.pull digest in MODULE.bazel:
 #   docker manifest inspect ghcr.io/agentydragon/e2e-container:latest \
@@ -19,6 +20,7 @@ on:
       - "devinfra/claude/testing/container_e2e/Dockerfile"
       - ".github/workflows/e2e-container-image.yml"
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: e2e-container-image-${{ github.ref }}
