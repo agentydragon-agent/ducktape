@@ -11,37 +11,37 @@ Architecture:
         - Pulls e2e-container image from GHCR (python:3.13-slim + git + JDK)
         - Creates two Docker networks:
           - e2e-proxy (bridge): proxy container has internet access
-          - e2e-isolated (internal bridge): test container ↔ proxy container only
+          - e2e-isolated (internal bridge): test container <-> proxy container only
         - MockEgressProxy runs as a container on both networks
         - Drives test steps via docker exec calls
 
     Container side (via docker exec):
-        - Installs ducktape wheel (pip through proxy → MockEgressProxy container)
+        - Installs ducktape wheel (pip through proxy -> MockEgressProxy container)
         - Runs claude-hook (session start hook) which sets up:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
 """
 
-import asyncio
 import json
 import logging
 import os
 import shlex
 import shutil
-import urllib.parse
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import aiodocker
+import aiohttp
 import pytest
 import pytest_bazel
 import tenacity
+from yarl import URL
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig
+from devinfra.claude.testing.mock_egress_proxy import ConnectionStats, EgressProxyConfig
 from util.bazel.runfiles import get_required_path
 from util.oci import load_bazel_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -126,7 +126,7 @@ async def _exec(
     inspect_result = await exec_obj.inspect()
     exit_code = inspect_result.get("ExitCode", -1)
 
-    logger.info("exec %s → rc=%d, stdout=%d bytes, stderr=%d bytes", cmd, exit_code, len(stdout_buf), len(stderr_buf))
+    logger.info("exec %s -> rc=%d, stdout=%d bytes, stderr=%d bytes", cmd, exit_code, len(stdout_buf), len(stderr_buf))
     if stdout_buf:
         logger.info("stdout: %s", stdout_buf.decode(errors="replace"))
     if stderr_buf:
@@ -142,28 +142,22 @@ async def _exec(
     return exit_code, bytes(stdout_buf), bytes(stderr_buf)
 
 
-async def _mgmt_get(host: str, port: int, path: str) -> bytes:
+async def _mgmt_get(session: aiohttp.ClientSession, url: URL) -> bytes:
     """HTTP GET against the proxy management API. Returns the response body."""
-    reader, writer = await asyncio.open_connection(host, port)
-    try:
-        writer.write(f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())
-        await writer.drain()
-        response = await reader.read(1024 * 1024)
-        _, _, body = response.partition(b"\r\n\r\n")
-        return body
-    finally:
-        writer.close()
+    async with session.get(url) as resp:
+        resp.raise_for_status()
+        return await resp.read()
 
 
 @tenacity.retry(
     stop=tenacity.stop_after_delay(_PROXY_READY_TIMEOUT),
     wait=tenacity.wait_fixed(0.3),
-    retry=tenacity.retry_if_exception_type((OSError, TimeoutError, asyncio.IncompleteReadError)),
+    retry=tenacity.retry_if_exception_type((OSError, TimeoutError, aiohttp.ClientError)),
     reraise=True,
 )
-async def _wait_for_proxy_ready(host: str, port: int) -> None:
+async def _wait_for_proxy_ready(session: aiohttp.ClientSession, mgmt_base: URL) -> None:
     """Poll the management /ready endpoint until it responds."""
-    body = await asyncio.wait_for(_mgmt_get(host, port, "/ready"), timeout=2)
+    body = await _mgmt_get(session, mgmt_base / "ready")
     assert body == b"ok", f"Unexpected /ready response: {body!r}"
 
 
@@ -177,12 +171,9 @@ def _build_upstream_proxy_args(upstream: EgressProxyConfig, gateway_ip: str, pro
     if host in ("localhost", "127.0.0.1"):
         host = gateway_ip
 
-    url = "http://"
-    if upstream.username and upstream.password:
-        url += f"{urllib.parse.quote(upstream.username)}:{urllib.parse.quote(upstream.password)}@"
-    url += f"{host}:{upstream.port}"
+    url = URL.build(scheme="http", user=upstream.username, password=upstream.password, host=host, port=upstream.port)
 
-    args = ["--upstream-proxy-url", url]
+    args = ["--upstream-proxy-url", str(url)]
 
     if upstream.ca_bundle:
         shutil.copy2(upstream.ca_bundle, proxy_shared / "upstream_ca.pem")
@@ -213,7 +204,7 @@ class ProxySetup:
 
     proxy_url: str
     mock_ca_pem: bytes
-    mgmt_host_port: int
+    mgmt_base: URL
     isolated_net_name: str
 
 
@@ -287,7 +278,7 @@ async def proxy_env(
 
     The proxy container sits on both the proxy network (internet access)
     and the isolated network (reachable by the test container). Yields a
-    ProxySetup with the proxy URL, CA cert, management port, and isolated
+    ProxySetup with the proxy URL, CA cert, management base URL, and isolated
     network name. Cleans up the proxy container on teardown.
     """
     proxy_shared = tmp_path / "proxy_shared"
@@ -318,9 +309,8 @@ async def proxy_env(
     host_config: dict[str, Any] = {
         "NetworkMode": docker_networks.proxy_net_name,
         "PortBindings": {f"{_PROXY_MGMT_PORT}/tcp": [{"HostPort": "0"}]},
+        "Binds": binds_proxy,
     }
-    if binds_proxy:
-        host_config["Binds"] = binds_proxy
 
     proxy_container = await docker_client.containers.create(
         {
@@ -338,15 +328,17 @@ async def proxy_env(
         # Get the published mgmt port on the host
         proxy_info = await proxy_container.show()
         mgmt_host_port = int(proxy_info["NetworkSettings"]["Ports"][f"{_PROXY_MGMT_PORT}/tcp"][0]["HostPort"])
-        logger.info("Proxy management API on localhost:%d", mgmt_host_port)
+        mgmt_base = URL.build(scheme="http", host="127.0.0.1", port=mgmt_host_port)
+        logger.info("Proxy management API at %s", mgmt_base)
 
         # Connect proxy container to the isolated network
         await docker_networks.isolated_net.connect({"Container": proxy_container._id})
 
-        await _wait_for_proxy_ready("127.0.0.1", mgmt_host_port)
-        logger.info("MockEgressProxy container is ready")
+        async with aiohttp.ClientSession() as session:
+            await _wait_for_proxy_ready(session, mgmt_base)
+            logger.info("MockEgressProxy container is ready")
 
-        mock_ca_pem = await _mgmt_get("127.0.0.1", mgmt_host_port, "/ca.pem")
+            mock_ca_pem = await _mgmt_get(session, mgmt_base / "ca.pem")
 
         # Get proxy container's IP on the isolated network (re-inspect after connect)
         proxy_info = await proxy_container.show()
@@ -356,7 +348,7 @@ async def proxy_env(
         yield ProxySetup(
             proxy_url=f"http://proxy_user:test_jwt_token@{proxy_ip}:{_PROXY_LISTEN_PORT}",
             mock_ca_pem=mock_ca_pem,
-            mgmt_host_port=mgmt_host_port,
+            mgmt_base=mgmt_base,
             isolated_net_name=docker_networks.isolated_net_name,
         )
 
@@ -472,9 +464,10 @@ async def test_container_e2e(
         await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
         # Fetch stats from management API
-        stats_body = await _mgmt_get("127.0.0.1", proxy_env.mgmt_host_port, "/stats")
-        stats = json.loads(stats_body)
-        assert stats["total_connections"] > 0, (
+        async with aiohttp.ClientSession() as session:
+            stats_body = await _mgmt_get(session, proxy_env.mgmt_base / "stats")
+        stats = ConnectionStats(**json.loads(stats_body))
+        assert stats.total_connections > 0, (
             "Mock egress proxy received no connections - network isolation may not be working"
         )
         logger.info("Proxy stats: %s", stats)

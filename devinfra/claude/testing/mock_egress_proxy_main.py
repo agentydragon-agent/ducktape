@@ -12,10 +12,11 @@ Management endpoints (on --mgmt-port, default 8081):
 import argparse
 import asyncio
 import dataclasses
-import json
 import logging
 import signal
-import urllib.parse
+
+from aiohttp import web
+from yarl import URL
 
 from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, MockEgressProxy
 
@@ -37,60 +38,31 @@ def _parse_args() -> argparse.Namespace:
 
 def _parse_upstream_config(url: str, ca_bundle: str | None) -> EgressProxyConfig:
     """Parse upstream proxy URL into EgressProxyConfig."""
-    parsed = urllib.parse.urlparse(url)
-    if not parsed.hostname:
+    parsed = URL(url)
+    if not parsed.host:
         raise ValueError(f"Invalid upstream proxy URL: {url}")
     return EgressProxyConfig(
-        host=parsed.hostname,
-        port=parsed.port or 8080,
-        username=urllib.parse.unquote(parsed.username) if parsed.username else None,
-        password=urllib.parse.unquote(parsed.password) if parsed.password else None,
-        ca_bundle=ca_bundle,
+        host=parsed.host, port=parsed.port or 8080, username=parsed.user, password=parsed.password, ca_bundle=ca_bundle
     )
 
 
-def _build_mgmt_handler(proxy: MockEgressProxy) -> tuple[dict[str, bytes], dict[str, str]]:
-    """Build response maps for the management HTTP server."""
-    bodies = {"/ready": b"ok", "/ca.pem": proxy.ca_cert_pem}
-    content_types = {"/ready": "text/plain", "/ca.pem": "application/x-pem-file", "/stats": "application/json"}
-    return bodies, content_types
+def _build_mgmt_app(proxy: MockEgressProxy) -> web.Application:
+    """Build the aiohttp management API application."""
 
+    async def handle_ready(_request: web.Request) -> web.Response:
+        return web.Response(text="ok")
 
-async def _handle_mgmt_request(
-    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, proxy: MockEgressProxy
-) -> None:
-    """Handle a single HTTP request on the management port."""
-    try:
-        request = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=10)
-    except (TimeoutError, asyncio.IncompleteReadError):
-        writer.close()
-        return
+    async def handle_ca_pem(_request: web.Request) -> web.Response:
+        return web.Response(body=proxy.ca_cert_pem, content_type="application/x-pem-file")
 
-    request_line = request.split(b"\r\n", 1)[0].decode()
-    parts = request_line.split()
-    path = parts[1] if len(parts) > 1 else "/"
+    async def handle_stats(_request: web.Request) -> web.Response:
+        return web.json_response(dataclasses.asdict(proxy.stats))
 
-    if path == "/ready":
-        body = b"ok"
-        content_type = "text/plain"
-        status = "200 OK"
-    elif path == "/ca.pem":
-        body = proxy.ca_cert_pem
-        content_type = "application/x-pem-file"
-        status = "200 OK"
-    elif path == "/stats":
-        body = json.dumps(dataclasses.asdict(proxy.stats)).encode()
-        content_type = "application/json"
-        status = "200 OK"
-    else:
-        body = b"not found"
-        content_type = "text/plain"
-        status = "404 Not Found"
-
-    header = f"HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {len(body)}\r\n\r\n"
-    writer.write(header.encode() + body)
-    await writer.drain()
-    writer.close()
+    app = web.Application()
+    app.router.add_get("/ready", handle_ready)
+    app.router.add_get("/ca.pem", handle_ca_pem)
+    app.router.add_get("/stats", handle_stats)
+    return app
 
 
 async def _run(args: argparse.Namespace) -> None:
@@ -106,10 +78,11 @@ async def _run(args: argparse.Namespace) -> None:
         upstream_proxy=upstream,
         verify_target_certs=not args.no_verify_target_certs,
     ) as proxy:
-        # Start management HTTP server
-        mgmt_server = await asyncio.start_server(
-            lambda r, w: _handle_mgmt_request(r, w, proxy), "0.0.0.0", args.mgmt_port
-        )
+        app = _build_mgmt_app(proxy)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", args.mgmt_port)
+        await site.start()
         logger.info("Management API on port %d, proxy on port %d", args.mgmt_port, proxy.port)
 
         # Wait for SIGTERM/SIGINT
@@ -120,8 +93,7 @@ async def _run(args: argparse.Namespace) -> None:
         await stop.wait()
 
         logger.info("Shutting down...")
-        mgmt_server.close()
-        await mgmt_server.wait_closed()
+        await runner.cleanup()
 
 
 def main() -> None:

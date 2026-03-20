@@ -34,9 +34,11 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//aiodocker",
+        "@pypi//aiohttp",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
         "@pypi//tenacity",
+        "@pypi//yarl",
     ],
 )

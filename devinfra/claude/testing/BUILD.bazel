@@ -73,7 +73,11 @@ py_library(
     testonly = True,
     srcs = ["mock_egress_proxy_main.py"],
     imports = ["../../.."],
-    deps = [":mock_egress_proxy"],
+    deps = [
+        ":mock_egress_proxy",
+        "@pypi//aiohttp",
+        "@pypi//yarl",
+    ],
 )
 
 aspect_py_binary(
