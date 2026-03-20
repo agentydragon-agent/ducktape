@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool install https://github.com/agentydragon/ducktape/releases/download/claude-hooks-a5a1043c/claude_hooks-0.1.0-py3-none-any.whl --force >&2; ~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "uv tool install https://github.com/agentydragon/ducktape/releases/download/claude-hooks-a5a1043c/claude_hooks-0.1.0-py3-none-any.whl --force >&2; ~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -51,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -62,7 +62,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -73,7 +73,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -84,7 +84,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -95,7 +95,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -106,7 +106,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -117,7 +117,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -128,7 +128,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -139,7 +139,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -150,7 +150,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -161,7 +161,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -172,7 +172,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -183,7 +183,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -194,7 +194,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -205,7 +205,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -216,7 +216,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -227,7 +227,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
@@ -238,7 +238,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.local/bin/claude-hook"
+            "command": "claude-hook"
           }
         ]
       }
