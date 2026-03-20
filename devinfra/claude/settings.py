@@ -36,7 +36,6 @@ ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
 ENV_INSTALL_BAZELISK = _env_name("install_bazelisk")
 ENV_CONTAINER_RUNTIME = _env_name("container_runtime")
 ENV_SYSTEM_BAZEL = _env_name("system_bazel")
-ENV_USE_WHEEL = _env_name("use_wheel")
 ENV_SESSION_DIR = _env_name("session_dir")
 
 
@@ -71,9 +70,6 @@ class HookSettings(BaseSettings):
     k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
 
     warmup_bazel_server: bool = Field(default=True, description="Start Bazel server in background after session setup")
-
-    # Test configuration
-    use_wheel: bool = Field(default=False, description="Use installed wheel instead of source")
 
     # Per-session output directory. Exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR so
     # subprocesses (e.g. bazel_wrapper) pick it up automatically via pydantic-settings.

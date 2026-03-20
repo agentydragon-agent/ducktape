@@ -249,12 +249,14 @@ class MockEgressProxy:
         *,
         upstream_proxy: EgressProxyConfig | None,
         listen_port: int = 0,
+        listen_address: str = "127.0.0.1",
         username: str = "testuser",
         password: str = "testpass",
         max_concurrent_outbound: int = 20,
         verify_target_certs: bool = True,
     ):
         self.listen_port = listen_port
+        self.listen_address = listen_address
         self.username = username
         self.password = password
         self.upstream_proxy = upstream_proxy
@@ -281,7 +283,7 @@ class MockEgressProxy:
         return f"http://{self.username}:{self.password}@127.0.0.1:{self.port}"
 
     async def __aenter__(self) -> MockEgressProxy:
-        self._server = await asyncio.start_server(self._on_connection, "127.0.0.1", self.listen_port)
+        self._server = await asyncio.start_server(self._on_connection, self.listen_address, self.listen_port)
         addrs = self._server.sockets
         assert addrs, "Server has no sockets"
         self.port = addrs[0].getsockname()[1]
