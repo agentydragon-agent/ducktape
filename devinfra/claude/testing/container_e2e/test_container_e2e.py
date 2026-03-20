@@ -39,6 +39,10 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
 
+# Docker exec stream type codes (same as mcp_infra/exec/docker/container_session.py)
+STREAM_TYPE_STDOUT = 1
+STREAM_TYPE_STDERR = 2
+
 # Rlocation for the ducktape wheel (built by //:wheel)
 _WHEEL_RLOCATION = "_main/ducktape-0.1.0-py3-none-any.whl"
 
@@ -85,11 +89,11 @@ async def _ensure_image(docker: aiodocker.Docker, image: str) -> None:
 
 async def _exec(
     container: aiodocker.containers.DockerContainer, cmd: list[str], *, workdir: str | None = None, check: bool = True
-) -> tuple[int, str, str]:
+) -> tuple[int, bytes, bytes]:
     """Run a command in the container via docker exec.
 
-    Returns (exit_code, stdout, stderr). Raises AssertionError if check=True
-    and the command fails.
+    Returns (exit_code, stdout, stderr) as raw bytes. Raises AssertionError
+    if check=True and the command fails.
     """
     exec_obj = await container.exec(cmd, stdout=True, stderr=True, stdin=False, tty=False, workdir=workdir or "")
     stream: Any = exec_obj.start()
@@ -101,21 +105,28 @@ async def _exec(
         if chunk is None:
             break
         data = chunk.data if isinstance(chunk.data, bytes) else chunk.data.encode()
-        if chunk.stream == 1:  # stdout
+        if chunk.stream == STREAM_TYPE_STDOUT:
             stdout_buf.extend(data)
-        elif chunk.stream == 2:  # stderr
+        elif chunk.stream == STREAM_TYPE_STDERR:
             stderr_buf.extend(data)
 
     inspect_result = await exec_obj.inspect()
     exit_code = inspect_result.get("ExitCode", -1)
 
-    stdout_str = stdout_buf.decode(errors="replace")
-    stderr_str = stderr_buf.decode(errors="replace")
+    logger.info("exec %s → rc=%d, stdout=%d bytes, stderr=%d bytes", cmd, exit_code, len(stdout_buf), len(stderr_buf))
+    if stdout_buf:
+        logger.info("stdout: %s", stdout_buf.decode(errors="replace"))
+    if stderr_buf:
+        logger.info("stderr: %s", stderr_buf.decode(errors="replace"))
 
     if check and exit_code != 0:
-        raise AssertionError(f"Command {cmd} failed (rc={exit_code}):\nstdout:\n{stdout_str}\nstderr:\n{stderr_str}")
+        raise AssertionError(
+            f"Command {cmd} failed (rc={exit_code}):\n"
+            f"stdout:\n{stdout_buf.decode(errors='replace')}\n"
+            f"stderr:\n{stderr_buf.decode(errors='replace')}"
+        )
 
-    return exit_code, stdout_str, stderr_str
+    return exit_code, bytes(stdout_buf), bytes(stderr_buf)
 
 
 @pytest.fixture
@@ -226,6 +237,8 @@ async def test_container_e2e(tmp_path: Path, wheel_path: Path, test_workspace_pa
                 await _exec(container, ["mkdir", "-p", "/project/.git"])
 
                 # Install ducktape wheel
+                # TODO(container-e2e): Install via uv by reading .claude/settings.json
+                # hook definition and piping the JSON into sh, instead of raw pip.
                 logger.info("Installing wheel")
                 await _exec(
                     container, ["pip", "install", "--break-system-packages", "/wheel/ducktape-0.1.0-py3-none-any.whl"]
@@ -247,19 +260,14 @@ async def test_container_e2e(tmp_path: Path, wheel_path: Path, test_workspace_pa
                 hook_rc, hook_stdout, hook_stderr = await _exec(
                     container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"], check=False
                 )
-                logger.info("Hook stdout: %s", hook_stdout)
-                logger.info("Hook stderr: %s", hook_stderr)
 
                 if hook_rc != 0:
-                    # Dump daemon logs for debugging
-                    daemon_log_path = f"/root/.claude/session-env/{_SESSION_ID}/hook-daemon/daemon.log"
-                    daemon_err_path = f"/root/.claude/session-env/{_SESSION_ID}/hook-daemon/daemon.err.log"
-                    for log_path in [daemon_log_path, daemon_err_path]:
-                        rc, log_content, _ = await _exec(container, ["cat", log_path], check=False)
-                        if rc == 0:
-                            logger.info("=== %s:\n%s", log_path, log_content)
+                    # Daemon logs are in the bind-mounted session_logs_dir and will
+                    # appear in undeclared outputs automatically.
                     raise AssertionError(
-                        f"claude-hook failed (rc={hook_rc}):\nstdout:\n{hook_stdout}\nstderr:\n{hook_stderr}"
+                        f"claude-hook failed (rc={hook_rc}):\n"
+                        f"stdout:\n{hook_stdout.decode(errors='replace')}\n"
+                        f"stderr:\n{hook_stderr.decode(errors='replace')}"
                     )
 
                 # Run bazel build through the proxy chain
@@ -268,12 +276,6 @@ async def test_container_e2e(tmp_path: Path, wheel_path: Path, test_workspace_pa
                 await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
                 logger.info("Container E2E test PASSED")
-
-                # Save container logs for debugging
-                stdout = "".join(await container.log(stdout=True, stderr=False))
-                stderr = "".join(await container.log(stdout=False, stderr=True))
-                _save_output("container-stdout.log", stdout)
-                _save_output("container-stderr.log", stderr)
 
                 # Verify the mock proxy actually saw traffic
                 assert proxy.stats.total_connections > 0, (
@@ -286,6 +288,15 @@ async def test_container_e2e(tmp_path: Path, wheel_path: Path, test_workspace_pa
                 )
 
             finally:
+                # Save container logs before cleanup
+                try:
+                    stdout = "".join(await container.log(stdout=True, stderr=False))
+                    stderr = "".join(await container.log(stdout=False, stderr=True))
+                    _save_output("container-stdout.log", stdout)
+                    _save_output("container-stderr.log", stderr)
+                except Exception:
+                    logger.warning("Failed to collect container logs", exc_info=True)
+
                 await container.delete(force=True)
                 # Session logs are already on host via bind-mount; just clean up
                 # dangling symlinks (e.g. bin/bazelisk) that Bazel would reject
