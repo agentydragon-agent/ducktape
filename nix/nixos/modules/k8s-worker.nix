@@ -61,12 +61,15 @@ let
     }
   );
 
-  # Use the host's real IPv4 (from default route) as kubelet node IP.
+  # Resolve kubelet node IP from the Nebula mesh interface.
+  # TODO: Consider a more robust approach — e.g. a nodeIP option with subnet
+  # matching (like Talos's validSubnets), or reading the IP from the Nebula cert.
+  # Currently we just grab whatever IPv4 is on nebula1.
   resolveNodeIp = pkgs.writeShellScript "resolve-node-ip" ''
-    ${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 \
-      | ${pkgs.gnugrep}/bin/grep -oP 'src \K\S+' > /run/kubelet-node-ip
+    ${pkgs.iproute2}/bin/ip -4 addr show nebula1 \
+      | ${pkgs.gnugrep}/bin/grep -oP 'inet \K[^/]+' > /run/kubelet-node-ip
     if [ ! -s /run/kubelet-node-ip ]; then
-      echo "Failed to read host IPv4 from default route" >&2
+      echo "Failed to read IPv4 from nebula1 interface" >&2
       exit 1
     fi
   '';
