@@ -14,11 +14,11 @@ in
     home.packages = [ pkgs.activitywatch ];
 
     # ActivityWatch configuration files
-    # Server runs in the K8s cluster with a Headscale tailscale sidecar.
-    # Devices enrolled in Headscale can reach it via MagicDNS.
+    # Server runs in the K8s cluster. NixOS workers are K8s nodes with Cilium,
+    # so they can reach ClusterIP services via cluster-internal DNS.
     xdg.configFile."activitywatch/aw-client/aw-client.toml".source = toTOML "aw-client.toml" {
       server = {
-        hostname = "activitywatch.tailnet.allegedly.works";
+        hostname = "activitywatch.activitywatch.svc.cluster.local";
         port = "5600";
       };
     };

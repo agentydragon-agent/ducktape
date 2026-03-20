@@ -22,6 +22,4 @@
   # Add user to docker group
   users.users.${username}.extraGroups = [ "docker" ];
 
-  # Tailscale VPN
-  services.tailscale.enable = true;
 }
