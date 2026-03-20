@@ -303,6 +303,7 @@
           # Build: nix build .#wyrm2-image
           # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
           wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
+          bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
           k8s-worker-test-image =
             self.nixosConfigurations.k8s-worker-test.config.system.build.images.qemu-efi;
           # NixOS LXC tarball for Proxmox.
@@ -412,6 +413,13 @@
           hostname = "lxc-k8s-test";
           username = "agentydragon";
           homeManagerHost = "nixos-vm";
+        };
+
+        # Generic bootstrap NixOS — minimal SSH-able image for initial provisioning.
+        bootstrap = mkNixos {
+          hostname = "bootstrap";
+          username = "agentydragon";
+          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
         };
 
         # Minimal NixOS container for testing Bazel compatibility.

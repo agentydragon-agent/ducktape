@@ -44,3 +44,19 @@ variable "ssh_public_key" {
   type        = string
   default     = ""
 }
+
+# =============================================================================
+# IMAGE BUILD & PROVISIONING
+# =============================================================================
+
+variable "rebuild_image" {
+  description = "Rebuild and re-upload the bootstrap NixOS image. Only needed for initial VM creation or bootstrap config changes."
+  type        = bool
+  default     = false
+}
+
+variable "nixos_rebuild" {
+  description = "Run nixos-rebuild switch on wyrm2 after VM is ready. Deploys the full wyrm2 config from GitHub."
+  type        = bool
+  default     = false
+}

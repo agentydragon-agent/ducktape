@@ -14,33 +14,23 @@ output "instructions" {
   description = "Setup instructions and next steps"
   value       = <<-EOT
 
-    ✅ Environment created successfully!
+    VM: wyrm2 (ID: ${module.wyrm2.vm_id})
 
-    VMs:
-    - wyrm2 (ID: ${module.wyrm2.vm_id}) — dev workstation + k8s worker
+    Workflows:
 
-    Next steps:
+    Initial provisioning (build bootstrap image + deploy full config):
+      tofu apply -var="rebuild_image=true" -var="nixos_rebuild=true"
 
-    1. Wait for VM to boot (~30 seconds)
+    VM hardware changes only (CPU, RAM, disks):
+      tofu apply
 
-    2. Get VM IP address:
-       terraform output wyrm2
+    Deploy NixOS config changes:
+      tofu apply -var="nixos_rebuild=true"
+      # or manually:
+      ssh wyrm2 'sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#wyrm2'
 
-    3. SSH into the VM:
-       ssh agentydragon@<vm-ip>
-
-    4. Approve the kubelet CSR to join the cluster:
-       kubectl get csr
-       kubectl certificate approve <csr-name>
-
-    5. Verify node joined:
-       kubectl get nodes
-
-    NOTE: tofu apply only provisions the VM and injects cloud-init
-    credentials. It does NOT run nixos-rebuild — the VM boots with
-    whatever NixOS config was baked into the qcow2 image. To apply
-    NixOS config changes to a running VM, SSH in and run:
-
-      sudo nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#wyrm2
+    After deploying, approve the kubelet CSR to join the cluster:
+      kubectl get csr
+      kubectl certificate approve <csr-name>
   EOT
 }

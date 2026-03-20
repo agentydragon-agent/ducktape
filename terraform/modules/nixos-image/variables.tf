@@ -13,7 +13,8 @@ variable "repo_root" {
   type        = string
 }
 
-variable "nix_dir_hash" {
-  description = "Hash of nix/ directory contents (triggers rebuild on change)"
-  type        = string
+variable "build_enabled" {
+  description = "When false, skip image build/upload (image assumed to already exist on Proxmox)"
+  type        = bool
+  default     = true
 }

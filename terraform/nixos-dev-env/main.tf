@@ -33,10 +33,7 @@ locals {
     local.ssh_key_path != "" ? trimspace(file(local.ssh_key_path)) : ""
   )
 
-  # NixOS image build inputs
-  nix_dir_hash = sha1(join("", [for f in sort(fileset("${path.module}/../../nix", "**/*.nix")) : filesha1("${path.module}/../../nix/${f}")]))
-  repo_root    = "${path.module}/../.."
-
+  repo_root = "${path.module}/../.."
 }
 
 # =============================================================================
@@ -53,33 +50,6 @@ check "ssh_key_required" {
       Fix by either:
       1. Creating an SSH key: ssh-keygen -t ed25519 -C "your_email@example.com"
       2. Providing key via variable: terraform apply -var="ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)"
-    EOT
-  }
-}
-
-# Check if nix/ tree has uncommitted changes
-# (nix/ config is baked into the qcow2 image built locally)
-data "external" "git_status" {
-  program = ["bash", "-c", <<-EOT
-    cd "${path.module}/../.."
-    dirty="false"
-
-    if ! git diff --quiet HEAD -- nix/ 2>/dev/null || [ -n "$(git status --porcelain -- nix/ 2>/dev/null)" ]; then
-      dirty="true"
-    fi
-
-    printf '{"dirty":"%s"}' "$dirty"
-  EOT
-  ]
-}
-
-check "git_clean" {
-  assert {
-    condition     = data.external.git_status.result.dirty == "false"
-    error_message = <<-EOT
-      WARNING: nix/ tree has uncommitted changes!
-      The VM image is built from committed nix/ config. Uncommitted changes
-      will not be included in the image. Commit your changes first.
     EOT
   }
 }
@@ -142,14 +112,14 @@ provider "proxmox" {
 # resource "proxmox_virtual_environment_acl" "storage_access_local" { ... }
 # resource "proxmox_virtual_environment_acl" "sdn_access" { ... }
 
-# Per-host NixOS qcow2 images (built via nix, uploaded to Proxmox)
-# Uses system.build.images.qemu-efi (nixos-generators upstreamed in nixpkgs 25.05+)
+# Bootstrap NixOS qcow2 image — minimal SSH-able image for initial VM provisioning.
+# Only rebuilt when rebuild_image=true. After boot, nixos-rebuild deploys the full config.
 module "wyrm2_image" {
-  source       = "../modules/nixos-image"
-  flake_target = "wyrm2"
-  proxmox_host = var.proxmox_host
-  repo_root    = local.repo_root
-  nix_dir_hash = local.nix_dir_hash
+  source        = "../modules/nixos-image"
+  flake_target  = "bootstrap"
+  proxmox_host  = var.proxmox_host
+  repo_root     = local.repo_root
+  build_enabled = var.rebuild_image
 }
 
 # Cleanup on destroy (agent-test user — commented out, no longer provisioned)
@@ -202,4 +172,34 @@ module "wyrm2" {
   # no cloud-init credential injection needed.
 
   depends_on = [module.wyrm2_image]
+}
+
+# =============================================================================
+# NIXOS-REBUILD (optional — deploys full wyrm2 config from GitHub)
+# =============================================================================
+
+resource "null_resource" "wyrm2_nixos_rebuild" {
+  count = var.nixos_rebuild ? 1 : 0
+
+  triggers = {
+    # Always re-run when the variable is set (user explicitly requested it)
+    run = timestamp()
+  }
+
+  connection {
+    type    = "ssh"
+    host    = module.wyrm2.ipv4_addresses[1][0]
+    user    = "root"
+    timeout = "5m"
+    agent   = true
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "until nix --version 2>/dev/null; do sleep 2; done",
+      "nixos-rebuild switch --flake github:agentydragon/ducktape?ref=devel#wyrm2",
+    ]
+  }
+
+  depends_on = [module.wyrm2]
 }

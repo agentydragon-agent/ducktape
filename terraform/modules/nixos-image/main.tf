@@ -1,6 +1,7 @@
 # NixOS Image Module
 # Builds a per-host qcow2 image via `nix build` and uploads it to Proxmox.
 # Uses system.build.images.qemu-efi (nixos-generators upstreamed in nixpkgs 25.05+).
+# Set build_enabled = false to skip build/upload (image assumed to already exist).
 
 terraform {
   required_version = ">= 1.0"
@@ -21,6 +22,7 @@ terraform {
 # Runs before the (slow) nix build so we don't waste time building an image
 # we can't upload.
 data "external" "ssh_check" {
+  count   = var.build_enabled ? 1 : 0
   program = ["bash", "-c", <<-EOT
     if ssh -o BatchMode=yes -o ConnectTimeout=5 root@${var.proxmox_host} true 2>/dev/null; then
       printf '{"status":"ok"}'
@@ -36,8 +38,9 @@ data "external" "ssh_check" {
 # Step 2: Build the NixOS qcow2 image.
 # Output symlink goes to /tmp so it doesn't pollute the repo working tree.
 resource "null_resource" "build" {
+  count = var.build_enabled ? 1 : 0
+
   triggers = {
-    nix_dir_hash = var.nix_dir_hash
     flake_target = var.flake_target
   }
 
@@ -55,8 +58,9 @@ resource "null_resource" "build" {
 
 # Step 3: Upload the built image to Proxmox.
 resource "null_resource" "upload" {
+  count = var.build_enabled ? 1 : 0
+
   triggers = {
-    nix_dir_hash = var.nix_dir_hash
     proxmox_host = var.proxmox_host
     flake_target = var.flake_target
   }
