@@ -19,8 +19,6 @@ py_test(
         "SSL_CERT_FILE",
     ],
     imports = ["../../../.."],
-    # local: needs Docker daemon access
-    local = True,
     tags = [
         "e2e",
         "external",
