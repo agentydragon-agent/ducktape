@@ -1,7 +1,12 @@
 """CLI entry point for containerized MockEgressProxy.
 
-Wraps MockEgressProxy with CLI args and file-based I/O for CA cert export,
-ready signaling, and stats output. Used as the entrypoint for the OCI image.
+Wraps MockEgressProxy with CLI args and an HTTP management API for CA cert
+retrieval, readiness checks, and stats. Used as the entrypoint for the OCI image.
+
+Management endpoints (on --mgmt-port, default 8081):
+    GET /ready   — 200 when proxy is listening
+    GET /ca.pem  — PEM-encoded CA certificate
+    GET /stats   — JSON connection statistics
 """
 
 import argparse
@@ -11,7 +16,6 @@ import json
 import logging
 import signal
 import urllib.parse
-from pathlib import Path
 
 from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, MockEgressProxy
 
@@ -22,14 +26,12 @@ logger = logging.getLogger(__name__)
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="MockEgressProxy container entry point")
     parser.add_argument("--listen-port", type=int, default=8080)
+    parser.add_argument("--mgmt-port", type=int, default=8081, help="Management API port")
     parser.add_argument("--username", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--upstream-proxy-url", help="Upstream proxy URL (http://user:pass@host:port)")
     parser.add_argument("--upstream-ca-bundle", help="Path to CA bundle for upstream proxy TLS")
     parser.add_argument("--no-verify-target-certs", action="store_true")
-    parser.add_argument("--ca-output-dir", required=True, help="Directory to write ca.pem")
-    parser.add_argument("--ready-file", required=True, help="Sentinel file to create when ready")
-    parser.add_argument("--stats-output-file", help="File to write stats JSON on shutdown")
     return parser.parse_args()
 
 
@@ -47,6 +49,50 @@ def _parse_upstream_config(url: str, ca_bundle: str | None) -> EgressProxyConfig
     )
 
 
+def _build_mgmt_handler(proxy: MockEgressProxy) -> tuple[dict[str, bytes], dict[str, str]]:
+    """Build response maps for the management HTTP server."""
+    bodies = {"/ready": b"ok", "/ca.pem": proxy.ca_cert_pem}
+    content_types = {"/ready": "text/plain", "/ca.pem": "application/x-pem-file", "/stats": "application/json"}
+    return bodies, content_types
+
+
+async def _handle_mgmt_request(
+    reader: asyncio.StreamReader, writer: asyncio.StreamWriter, proxy: MockEgressProxy
+) -> None:
+    """Handle a single HTTP request on the management port."""
+    try:
+        request = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), timeout=10)
+    except (TimeoutError, asyncio.IncompleteReadError):
+        writer.close()
+        return
+
+    request_line = request.split(b"\r\n", 1)[0].decode()
+    parts = request_line.split()
+    path = parts[1] if len(parts) > 1 else "/"
+
+    if path == "/ready":
+        body = b"ok"
+        content_type = "text/plain"
+        status = "200 OK"
+    elif path == "/ca.pem":
+        body = proxy.ca_cert_pem
+        content_type = "application/x-pem-file"
+        status = "200 OK"
+    elif path == "/stats":
+        body = json.dumps(dataclasses.asdict(proxy.stats)).encode()
+        content_type = "application/json"
+        status = "200 OK"
+    else:
+        body = b"not found"
+        content_type = "text/plain"
+        status = "404 Not Found"
+
+    header = f"HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {len(body)}\r\n\r\n"
+    writer.write(header.encode() + body)
+    await writer.drain()
+    writer.close()
+
+
 async def _run(args: argparse.Namespace) -> None:
     upstream = None
     if args.upstream_proxy_url:
@@ -60,15 +106,11 @@ async def _run(args: argparse.Namespace) -> None:
         upstream_proxy=upstream,
         verify_target_certs=not args.no_verify_target_certs,
     ) as proxy:
-        # Export CA cert
-        ca_dir = Path(args.ca_output_dir)
-        ca_dir.mkdir(parents=True, exist_ok=True)
-        (ca_dir / "ca.pem").write_bytes(proxy.ca_cert_pem)
-        logger.info("CA cert written to %s/ca.pem", ca_dir)
-
-        # Signal ready
-        Path(args.ready_file).touch()
-        logger.info("Ready (listening on port %d)", proxy.port)
+        # Start management HTTP server
+        mgmt_server = await asyncio.start_server(
+            lambda r, w: _handle_mgmt_request(r, w, proxy), "0.0.0.0", args.mgmt_port
+        )
+        logger.info("Management API on port %d, proxy on port %d", args.mgmt_port, proxy.port)
 
         # Wait for SIGTERM/SIGINT
         stop = asyncio.Event()
@@ -78,12 +120,8 @@ async def _run(args: argparse.Namespace) -> None:
         await stop.wait()
 
         logger.info("Shutting down...")
-
-        # Write stats on shutdown
-        if args.stats_output_file:
-            stats_path = Path(args.stats_output_file)
-            stats_path.write_text(json.dumps(dataclasses.asdict(proxy.stats)))
-            logger.info("Stats written to %s", stats_path)
+        mgmt_server.close()
+        await mgmt_server.wait_closed()
 
 
 def main() -> None:

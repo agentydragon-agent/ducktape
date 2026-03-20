@@ -29,6 +29,7 @@ import os
 import shlex
 import shutil
 import urllib.parse
+import urllib.request
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
@@ -71,8 +72,9 @@ _SESSION_ID = "container-e2e-test"
 
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
 
-# Port the proxy listens on inside its container
+# Ports inside the proxy container
 _PROXY_LISTEN_PORT = 8080
+_PROXY_MGMT_PORT = 8081
 
 # Timeout for proxy container readiness (seconds)
 _PROXY_READY_TIMEOUT = 60
@@ -94,14 +96,7 @@ def _cleanup_dangling_symlinks(directory: Path) -> None:
 
 async def _ensure_image(docker: aiodocker.Docker, image: str) -> None:
     """Pull the image if not already present locally."""
-    try:
-        await docker.images.inspect(image)
-        logger.info("E2E image %s already exists, reusing", image)
-    except aiodocker.DockerError as e:
-        if e.status != 404:
-            raise
-        logger.info("Pulling E2E image %s", image)
-        await docker.pull(image)
+    await docker.pull(image)
 
 
 async def _exec(
@@ -144,6 +139,33 @@ async def _exec(
         )
 
     return exit_code, bytes(stdout_buf), bytes(stderr_buf)
+
+
+async def _mgmt_get(host: str, port: int, path: str) -> bytes:
+    """HTTP GET against the proxy management API. Returns the response body."""
+    reader, writer = await asyncio.open_connection(host, port)
+    try:
+        writer.write(f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())
+        await writer.drain()
+        response = await reader.read(1024 * 1024)
+        _, _, body = response.partition(b"\r\n\r\n")
+        return body
+    finally:
+        writer.close()
+
+
+async def _wait_for_proxy_ready(host: str, port: int) -> None:
+    """Poll the management /ready endpoint until it responds."""
+    deadline = asyncio.get_event_loop().time() + _PROXY_READY_TIMEOUT
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            body = await asyncio.wait_for(_mgmt_get(host, port, "/ready"), timeout=2)
+            if body == b"ok":
+                return
+        except (OSError, TimeoutError, asyncio.IncompleteReadError):
+            pass
+        await asyncio.sleep(0.3)
+    raise TimeoutError("MockEgressProxy container failed to become ready")
 
 
 def _build_upstream_proxy_args(upstream: EgressProxyConfig, gateway_ip: str, proxy_shared: Path) -> list[str]:
@@ -201,7 +223,7 @@ async def test_container_e2e(
     """Full E2E: install wheel in container, run hook, bazel build through proxy."""
     await _ensure_image(docker_client, _E2E_IMAGE)
 
-    # Shared directory for proxy ↔ host communication (CA cert, ready signal, stats)
+    # Shared directory — only needed for upstream CA bundle (input to container)
     proxy_shared = tmp_path / "proxy_shared"
     proxy_shared.mkdir()
 
@@ -243,59 +265,59 @@ async def test_container_e2e(
         proxy_cmd = [
             "--listen-port",
             str(_PROXY_LISTEN_PORT),
+            "--mgmt-port",
+            str(_PROXY_MGMT_PORT),
             "--username",
             "proxy_user",
             "--password",
             "test_jwt_token",
-            "--ca-output-dir",
-            "/shared",
-            "--ready-file",
-            "/shared/ready",
-            "--stats-output-file",
-            "/shared/stats.json",
         ]
 
         # Detect upstream proxy from host environment
         upstream = EgressProxyConfig.from_env()
+        binds_proxy: list[str] = []
         if upstream:
             proxy_cmd += _build_upstream_proxy_args(upstream, gateway_ip, proxy_shared)
+            if upstream.ca_bundle:
+                binds_proxy.append(f"{proxy_shared / 'upstream_ca.pem'}:/shared/upstream_ca.pem:ro")
         else:
             proxy_cmd.append("--no-verify-target-certs")
 
         # Start proxy container on proxy network (has internet access)
+        # Publish mgmt port so the host test process can query it
+        host_config: dict[str, Any] = {
+            "NetworkMode": proxy_net_name,
+            "PortBindings": {f"{_PROXY_MGMT_PORT}/tcp": [{"HostPort": "0"}]},
+        }
+        if binds_proxy:
+            host_config["Binds"] = binds_proxy
+
         proxy_container = await docker_client.containers.create(
             {
                 "Image": mock_proxy_image,
                 "Cmd": proxy_cmd,
-                "HostConfig": {"NetworkMode": proxy_net_name, "Binds": [f"{proxy_shared}:/shared"]},
+                "ExposedPorts": {f"{_PROXY_MGMT_PORT}/tcp": {}},
+                "HostConfig": host_config,
             },
             name=proxy_name,
         )
         await proxy_container.start()
         logger.info("Started proxy container %s", proxy_name)
 
+        # Get the published mgmt port on the host
+        proxy_info = await proxy_container.show()
+        mgmt_host_port = int(proxy_info["NetworkSettings"]["Ports"][f"{_PROXY_MGMT_PORT}/tcp"][0]["HostPort"])
+        logger.info("Proxy management API on localhost:%d", mgmt_host_port)
+
         # Connect proxy container to the isolated network too
         await isolated_net.connect({"Container": proxy_container._id})
 
-        # Wait for proxy to become ready
-        for _ in range(int(_PROXY_READY_TIMEOUT / 0.2)):
-            if (proxy_shared / "ready").exists():
-                break
-            await asyncio.sleep(0.2)
-        else:
-            # Collect proxy logs for debugging
-            try:
-                stdout = "".join(await proxy_container.log(stdout=True, stderr=True))
-                _save_output("proxy-container.log", stdout)
-                logger.error("Proxy container logs:\n%s", stdout)
-            except Exception:
-                pass
-            raise TimeoutError("MockEgressProxy container failed to become ready")
-
+        # Wait for proxy to become ready via management API
+        await _wait_for_proxy_ready("127.0.0.1", mgmt_host_port)
         logger.info("MockEgressProxy container is ready")
 
-        # Read mock CA cert from shared volume
-        mock_ca_pem = (proxy_shared / "ca.pem").read_bytes()
+        # Fetch mock CA cert from management API
+        mock_ca_pem = await _mgmt_get("127.0.0.1", mgmt_host_port, "/ca.pem")
 
         # Create combined CA bundle (system CAs + mock proxy CA)
         system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
@@ -306,7 +328,7 @@ async def test_container_e2e(
         mock_ca_path = tmp_path / "mock_ca.pem"
         mock_ca_path.write_bytes(mock_ca_pem)
 
-        # Get proxy container's IP on the isolated network
+        # Get proxy container's IP on the isolated network (re-inspect after network connect)
         proxy_info = await proxy_container.show()
         proxy_ip = proxy_info["NetworkSettings"]["Networks"][isolated_net_name]["IPAddress"]
         logger.info("Proxy container IP on isolated network: %s", proxy_ip)
@@ -392,12 +414,9 @@ async def test_container_e2e(
         bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
         await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
-        # Stop proxy container (SIGTERM triggers stats write)
-        await proxy_container.kill(signal="SIGTERM")
-        await proxy_container.wait()
-
-        # Verify the mock proxy actually saw traffic
-        stats = json.loads((proxy_shared / "stats.json").read_text())
+        # Fetch stats from management API
+        stats_body = await _mgmt_get("127.0.0.1", mgmt_host_port, "/stats")
+        stats = json.loads(stats_body)
         assert stats["total_connections"] > 0, (
             "Mock egress proxy received no connections - network isolation may not be working"
         )
