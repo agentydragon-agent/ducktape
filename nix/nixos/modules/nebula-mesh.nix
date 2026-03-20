@@ -110,7 +110,14 @@ in
 
     # systemd-resolved for split DNS — lighthouse DNS resolves bare mesh
     # hostnames (cert names), normal DNS handles everything else.
-    services.resolved.enable = true;
+    # ResolveUnicastSingleLabel: by default, resolved does NOT send
+    # single-label names (no dots) to DNS servers — it only tries
+    # mDNS/LLMNR. Nebula cert names are single-label ("rugged", "wyrm2"),
+    # so we must enable this.
+    services.resolved = {
+      enable = true;
+      extraConfig = "ResolveUnicastSingleLabel=yes";
+    };
 
     # State directory for Nebula
     systemd.tmpfiles.rules = [ "d /var/lib/nebula 0700 root root -" ];
