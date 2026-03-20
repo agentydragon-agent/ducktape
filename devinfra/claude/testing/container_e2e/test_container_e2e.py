@@ -8,7 +8,7 @@ Architecture:
     Host side:
         - MockEgressProxy on 127.0.0.1 (TLS-intercepting + plain HTTP, requires auth)
         - Builds the ducktape wheel via Bazel
-        - Builds or loads the e2e-container image (python:3.13-slim + git + JDK)
+        - Pulls e2e-container image from GHCR (python:3.13-slim + git + JDK)
         - Creates Docker container with --network=host and broken DNS
 
     Container side (run_in_container.py):
@@ -46,11 +46,8 @@ _RUN_IN_CONTAINER_RLOCATION = "_main/devinfra/claude/testing/container_e2e/run_i
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 
-# Rlocation for the Dockerfile
-_DOCKERFILE_RLOCATION = "_main/devinfra/claude/testing/container_e2e/Dockerfile"
-
-# Docker image tag for the e2e test container (built from Dockerfile)
-_E2E_IMAGE_TAG = "ducktape-e2e-container:local"
+# GHCR image for the e2e test container (built by e2e-container-image.yml CI workflow)
+_E2E_IMAGE = "ghcr.io/agentydragon/e2e-container:latest"
 
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"
@@ -70,14 +67,11 @@ def _save_output(name: str, content: str) -> None:
 
 
 def _collect_container_logs(container_name: str) -> None:
-    """Copy session logs from container to undeclared test outputs."""
-    out_dir = undeclared_outputs_dir() / "container-e2e" / "session-logs"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    result = _docker(
-        "cp", f"{container_name}:/root/.claude/session-env/container-e2e-test/.", str(out_dir), check=False
-    )
-    if result.returncode != 0:
-        logger.warning("Failed to copy session logs: %s", result.stderr)
+    """Save container logs (stdout/stderr) to undeclared test outputs."""
+    result = _docker("logs", container_name, check=False)
+    if result.returncode == 0:
+        _save_output("docker-logs-stdout.log", result.stdout)
+        _save_output("docker-logs-stderr.log", result.stderr)
 
 
 @pytest.fixture
@@ -90,22 +84,16 @@ def docker_available() -> None:
 
 @pytest.fixture
 def e2e_image(docker_available: None) -> str:
-    """Build or reuse the e2e test container image.
-
-    The image extends python:3.13-slim with git and JDK (keytool)
-    pre-installed, avoiding slow apt-get at test time.
-    """
-    # Check if image already exists (e.g., from previous test run)
-    result = _docker("image", "inspect", _E2E_IMAGE_TAG, check=False)
+    """Pull the pre-built e2e test container image from GHCR."""
+    # Reuse if already present locally
+    result = _docker("image", "inspect", _E2E_IMAGE, check=False)
     if result.returncode == 0:
-        logger.info("E2E image %s already exists, reusing", _E2E_IMAGE_TAG)
-        return _E2E_IMAGE_TAG
+        logger.info("E2E image %s already exists, reusing", _E2E_IMAGE)
+        return _E2E_IMAGE
 
-    # Build from Dockerfile in runfiles
-    dockerfile_path = get_required_path(_DOCKERFILE_RLOCATION)
-    logger.info("Building E2E image from %s", dockerfile_path)
-    _docker("build", "-t", _E2E_IMAGE_TAG, "-f", str(dockerfile_path), str(dockerfile_path.parent))
-    return _E2E_IMAGE_TAG
+    logger.info("Pulling E2E image %s", _E2E_IMAGE)
+    _docker("pull", _E2E_IMAGE)
+    return _E2E_IMAGE
 
 
 @pytest.fixture
