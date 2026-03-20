@@ -2,6 +2,7 @@ keys:
   - &admin age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
   - &wyrm2 age1tzq86mfj30su8hvw9e0y5zw9mg254frtk5s2mp48580uky8fdppsju42pp
   - &rugged age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
+  - &atlas age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
 creation_rules:
   # Per-host secrets (only the host + admin can decrypt)
   - path_regex: nix/secrets/wyrm2-.*\.yaml$
