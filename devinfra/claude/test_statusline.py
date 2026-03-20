@@ -49,6 +49,13 @@ FULL_INPUT_JSON = json.dumps(
         "exceeds_200k_tokens": False,
         "vim": {"mode": "NORMAL"},
         "agent": {"name": "test-agent"},
+        "worktree": {
+            "name": "my-feature",
+            "path": "/home/user/.claude/worktrees/my-feature",
+            "branch": "worktree-my-feature",
+            "original_cwd": "/home/user/code",
+            "original_branch": "main",
+        },
     }
 )
 
@@ -71,6 +78,12 @@ def test_parse_full_input():
     assert data.vim.mode == "NORMAL"
     assert data.agent is not None
     assert data.agent.name == "test-agent"
+    assert data.worktree is not None
+    assert data.worktree.name == "my-feature"
+    assert data.worktree.path == "/home/user/.claude/worktrees/my-feature"
+    assert data.worktree.branch == "worktree-my-feature"
+    assert data.worktree.original_cwd == "/home/user/code"
+    assert data.worktree.original_branch == "main"
 
 
 def test_parse_minimal_input():

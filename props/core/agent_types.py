@@ -142,7 +142,7 @@ class AgentConfig(BaseModel):
     """
 
     image_ref: str = Field(description="Image reference (short name or digest) - resolved to image_digest")
-    model: str = Field(description="LLM model to use (e.g., 'claude-sonnet-4-20250514')")
+    model: str = Field(description="LLM model to use (e.g., 'claude-sonnet-4-6')")
     parent_agent_run_id: UUID | None = Field(
         default=None, description="Parent agent run ID for sub-agents (FK to agent_runs)"
     )

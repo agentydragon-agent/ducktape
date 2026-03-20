@@ -5,6 +5,6 @@ metadata:
   namespace: agents
 spec:
   provider: Anthropic
-  model: "claude-sonnet-4-20250514"
+  model: "claude-sonnet-4-6"
   apiKeySecret: kagent-anthropic
   apiKeySecretKey: ANTHROPIC_API_KEY

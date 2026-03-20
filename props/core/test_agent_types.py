@@ -153,10 +153,10 @@ class TestAgentConfig:
     def test_basic_construction_with_critic(self) -> None:
         """AgentConfig accepts all required fields with CriticTypeConfig."""
         config = AgentConfig(
-            image_ref=BUILTIN_TAG, model="claude-sonnet-4-20250514", type_config=CriticTypeConfig(example=TEST_EXAMPLE)
+            image_ref=BUILTIN_TAG, model="claude-sonnet-4-6", type_config=CriticTypeConfig(example=TEST_EXAMPLE)
         )
         assert config.image_ref == BUILTIN_TAG
-        assert config.model == "claude-sonnet-4-20250514"
+        assert config.model == "claude-sonnet-4-6"
         assert config.parent_agent_run_id is None
         assert isinstance(config.type_config, CriticTypeConfig)
 
@@ -171,7 +171,7 @@ class TestAgentConfig:
     )
     def test_agent_type_property_delegates_to_type_config(self, type_config: TypeConfig) -> None:
         """agent_type property delegates to type_config.agent_type."""
-        config = AgentConfig(image_ref="test", model="claude-sonnet-4-20250514", type_config=type_config)
+        config = AgentConfig(image_ref="test", model="claude-sonnet-4-6", type_config=type_config)
         assert config.agent_type == type_config.agent_type
 
     def test_parent_agent_run_id_accepts_uuid(self) -> None:
@@ -179,7 +179,7 @@ class TestAgentConfig:
         parent_id = UUID("550e8400-e29b-41d4-a716-446655440000")
         config = AgentConfig(
             image_ref="freeform",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             parent_agent_run_id=parent_id,
             type_config=FreeformTypeConfig(),
         )
@@ -189,7 +189,7 @@ class TestAgentConfig:
         """parent_agent_run_id is coerced from string to UUID."""
         config = AgentConfig(
             image_ref="freeform",
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             parent_agent_run_id="550e8400-e29b-41d4-a716-446655440000",
             type_config=FreeformTypeConfig(),
         )
@@ -199,7 +199,7 @@ class TestAgentConfig:
         """AgentConfig can be serialized to JSON and back."""
         original = AgentConfig(
             image_ref=BUILTIN_TAG,
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             parent_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
             type_config=CriticTypeConfig(example=TEST_EXAMPLE),
         )

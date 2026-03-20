@@ -22,6 +22,8 @@ from devinfra.claude.claude_api.hooks.session_end import SessionEndInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.claude_api.hooks.setup import SetupInput
 from devinfra.claude.claude_api.hooks.stop import StopInput
+
+# TODO: Add StopFailure hook model and dispatch entry when schema is confirmed
 from devinfra.claude.claude_api.hooks.subagent_start import SubagentStartInput
 from devinfra.claude.claude_api.hooks.subagent_stop import SubagentStopInput
 from devinfra.claude.claude_api.hooks.task_completed import TaskCompletedInput

@@ -54,6 +54,14 @@ class Agent(BaseModel):
     name: str
 
 
+class Worktree(BaseModel):
+    name: str
+    path: str
+    branch: str | None = None
+    original_cwd: str
+    original_branch: str | None = None
+
+
 class Input(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -69,3 +77,4 @@ class Input(BaseModel):
     exceeds_200k_tokens: bool = False
     vim: Vim | None = None
     agent: Agent | None = None
+    worktree: Worktree | None = None

@@ -70,8 +70,8 @@ def test_critic_dev_optimize_prompt(db: Database):
         helpers={
             "type_config": CriticDevOptimizeTypeConfig(
                 target_metric=TargetMetric.WHOLE_REPO,
-                optimizer_model="claude-opus-4-5",
-                critic_model="claude-sonnet-4-5",
+                optimizer_model="claude-opus-4-6",
+                critic_model="claude-sonnet-4-6",
             )
         },
     )
@@ -88,8 +88,8 @@ def test_critic_dev_improve_prompt(db: Database):
             "type_config": CriticDevImproveTypeConfig(
                 baseline_image_digests=["sha256:abc123"],
                 allowed_examples=[WholeSnapshotExample(snapshot_slug="test/s")],
-                improvement_model="claude-opus-4-5",
-                critic_model="claude-sonnet-4-5",
+                improvement_model="claude-opus-4-6",
+                critic_model="claude-sonnet-4-6",
             )
         },
     )
