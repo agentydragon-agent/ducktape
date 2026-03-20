@@ -21,15 +21,22 @@
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
-  # K8s worker (Nebula mesh)
-  # Cloud-init writes Nebula certs, /etc/kubernetes/pki/ca.crt,
-  # and bootstrap kubeconfig. Services must wait for cloud-init.
-  services.cloud-init.enable = true;
-  systemd.services.nebula.after = [ "cloud-final.service" ];
-  systemd.services.kubelet.after = [ "cloud-final.service" ];
+  # K8s worker (Nebula mesh) — credentials via sops-nix
+  sops.secrets.nebula_ca_cert.sopsFile = ../../secrets/k8s-worker.yaml;
+  sops.secrets.k8s_ca_cert.sopsFile = ../../secrets/k8s-worker.yaml;
+  sops.secrets.k8s_bootstrap_kubeconfig.sopsFile = ../../secrets/k8s-worker.yaml;
+  sops.secrets.nebula_host_cert.sopsFile = ../../secrets/wyrm2-nebula.yaml;
+  sops.secrets.nebula_host_key.sopsFile = ../../secrets/wyrm2-nebula.yaml;
+
+  ducktape.nebulaMesh.caCertPath = config.sops.secrets.nebula_ca_cert.path;
+  ducktape.nebulaMesh.hostCertPath = config.sops.secrets.nebula_host_cert.path;
+  ducktape.nebulaMesh.hostKeyPath = config.sops.secrets.nebula_host_key.path;
+
   ducktape.k8sWorker = {
     enable = true;
     enableNvidiaRuntime = true;
+    caCertPath = config.sops.secrets.k8s_ca_cert.path;
+    bootstrapKubeconfigPath = config.sops.secrets.k8s_bootstrap_kubeconfig.path;
     nodeLabels = {
       "topology.kubernetes.io/region" = "proxmox";
       "topology.kubernetes.io/zone" = "atlas";

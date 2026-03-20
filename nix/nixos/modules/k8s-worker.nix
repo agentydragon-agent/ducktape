@@ -10,9 +10,8 @@
 #   - Kubelet unit depends on local kube-apiserver.service
 #   - Builds/seeds a custom pause container instead of registry.k8s.io/pause
 #
-# Credential placement:
-#   Cloud-init (via terraform/modules/proxmox-vm) writes bootstrap kubeconfig, CA cert,
-#   and Nebula config. Services auto-start on boot.
+# Credential placement: sops-nix decrypts CA cert + bootstrap kubeconfig at
+# activation time. Set caCertPath + bootstrapKubeconfigPath to sops secret paths.
 #
 # Manual step after boot:
 #   Approve the CSR on the cluster:
@@ -87,7 +86,13 @@ in
     caCertPath = lib.mkOption {
       type = lib.types.str;
       default = "/etc/kubernetes/pki/ca.crt";
-      description = "Path to the cluster CA certificate (placed manually)";
+      description = "Path to the cluster CA certificate";
+    };
+
+    bootstrapKubeconfigPath = lib.mkOption {
+      type = lib.types.str;
+      default = "/etc/kubernetes/bootstrap-kubelet.conf";
+      description = "Path to the bootstrap kubeconfig for kubelet TLS bootstrap";
     };
 
     nodeLabels = lib.mkOption {
@@ -211,7 +216,7 @@ in
         ExecStart = pkgs.writeShellScript "kubelet-start" ''
           NODE_IP=$(</run/kubelet-node-ip)
           exec ${pkgs.kubernetes}/bin/kubelet \
-            --bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf \
+            --bootstrap-kubeconfig=${cfg.bootstrapKubeconfigPath} \
             --kubeconfig=/var/lib/kubelet/kubelet.conf \
             --config=/etc/kubernetes/kubelet-config.yaml \
             --node-ip="$NODE_IP" \

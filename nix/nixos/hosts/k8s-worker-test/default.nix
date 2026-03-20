@@ -2,7 +2,9 @@
 #
 # Headless (SSH + console only) for fast provisioning.
 # Uses Nebula mesh for inter-node connectivity.
-# See nix/nixos/modules/k8s-worker.nix for manual setup steps.
+#
+# TODO: Set up sops-nix for this VM (add age key to .sops.yaml, create
+# k8s-worker-test-nebula.yaml) to provide Nebula + K8s credentials.
 {
   config,
   pkgs,
@@ -13,19 +15,14 @@
 {
   imports = [
     ../../modules/k8s-worker.nix
+    ../../modules/sops.nix
   ];
 
   time.timeZone = "UTC";
 
-  # Cloud-init: consumes Proxmox-injected user data to write
-  # Nebula certs, /etc/kubernetes/pki/ca.crt, bootstrap kubeconfig
-  services.cloud-init.enable = true;
-
-  # Nebula and kubelet must wait for cloud-init to write config files
-  systemd.services.nebula.after = [ "cloud-final.service" ];
-  systemd.services.kubelet.after = [ "cloud-final.service" ];
-
-  ducktape.k8sWorker.enable = true;
+  # TODO: Add sops secrets and configure cert paths once age key is known,
+  # then re-enable k8sWorker.
+  # ducktape.k8sWorker.enable = true;
 
   # Headless auto-login on console
   services.getty.autologinUser = username;

@@ -17,13 +17,6 @@ data "terraform_remote_state" "persistent_auth" {
   }
 }
 
-data "terraform_remote_state" "infrastructure" {
-  backend = "local"
-  config = {
-    path = "../infrastructure/terraform.tfstate"
-  }
-}
-
 # =============================================================================
 # LOCALS
 # =============================================================================
@@ -51,69 +44,6 @@ locals {
   nix_dir_hash = sha1(join("", [for f in sort(fileset("${path.module}/../../../../nix", "**/*.nix")) : filesha1("${path.module}/../../../../nix/${f}")]))
   repo_root    = "${path.module}/../../../.."
 
-  # K8s credentials from infrastructure state
-  infra = data.terraform_remote_state.infrastructure.outputs
-
-  # The CA cert from talos_machine_secrets is already base64-encoded.
-  # Decode it for the PEM file written by cloud-init.
-  k8s_ca_cert_pem = base64decode(local.infra.k8s_ca_cert)
-
-  # Construct bootstrap kubeconfig from infrastructure state.
-  # Server is a control plane Nebula IP — Nebula mesh provides direct connectivity.
-  bootstrap_kubeconfig = yamlencode({
-    apiVersion = "v1"
-    kind       = "Config"
-    clusters = [{
-      name = "kubernetes"
-      cluster = {
-        certificate-authority-data = local.infra.k8s_ca_cert
-        server                     = "https://10.42.0.1:6443"
-      }
-    }]
-    contexts = [{
-      name = "bootstrap@kubernetes"
-      context = {
-        cluster = "kubernetes"
-        user    = "bootstrap"
-      }
-    }]
-    current-context = "bootstrap@kubernetes"
-    users = [{
-      name = "bootstrap"
-      user = {
-        token = local.infra.k8s_bootstrap_token
-      }
-    }]
-  })
-
-  # Nebula credentials from persistent-auth
-  persistent = data.terraform_remote_state.persistent_auth.outputs
-  node_name  = "k8s-worker-test"
-
-  nebula_config = yamlencode({
-    pki = {
-      ca   = "/etc/nebula/ca.crt"
-      cert = "/etc/nebula/host.crt"
-      key  = "/etc/nebula/host.key"
-    }
-    static_host_map = {
-      "10.42.0.1" = ["${local.infra.cluster_nodes.vps_ips["vps0"]}:4242"]
-      "10.42.0.2" = ["${local.infra.cluster_nodes.vps_ips["vps1"]}:4242"]
-    }
-    lighthouse = {
-      am_lighthouse = false
-      interval      = 10
-      hosts         = ["10.42.0.1", "10.42.0.2"]
-    }
-    relay  = { relays = ["10.42.0.1", "10.42.0.2"], use_relays = true }
-    listen = { host = "0.0.0.0", port = 4242 }
-    punchy = { punch = true, respond = true }
-    tun    = { dev = "nebula1" }
-    firewall = {
-      outbound = [{ port = "any", proto = "any", host = "any" }]
-      inbound  = [{ port = "any", proto = "any", host = "any" }]
-    }
-  })
 }
 
 # =============================================================================
@@ -181,15 +111,8 @@ module "k8s_worker_test" {
   network_bridge    = var.network_bridge
   ssh_public_key    = local.ssh_public_key
 
-  k8s_cluster_join = {
-    bootstrap_kubeconfig = local.bootstrap_kubeconfig
-    ca_cert              = local.k8s_ca_cert_pem
-    node_name            = local.node_name
-    nebula_ca_cert       = local.persistent.nebula_ca_cert
-    nebula_host_cert     = local.persistent.nebula_node_certs[local.node_name].cert
-    nebula_host_key      = local.persistent.nebula_node_certs[local.node_name].key
-    nebula_config        = local.nebula_config
-  }
+  # Credentials now managed by sops-nix in NixOS config, not cloud-init.
+  # k8s_cluster_join = null (default)
 
   depends_on = [module.k8s_worker_test_image]
 }

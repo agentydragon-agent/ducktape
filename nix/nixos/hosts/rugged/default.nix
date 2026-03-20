@@ -38,25 +38,30 @@
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
-  # K8s worker (Nebula mesh)
-  # Credentials placed manually (physical machine, no cloud-init):
-  #   /etc/nebula/config.yaml     — Nebula config (PKI, lighthouse, relay)
-  #   /etc/nebula/ca.crt          — Nebula CA cert
-  #   /etc/nebula/host.crt        — node Nebula cert
-  #   /etc/nebula/host.key        — node Nebula key
-  #   /etc/kubernetes/pki/ca.crt  — cluster CA cert
-  #   /etc/kubernetes/bootstrap-kubelet.conf — bootstrap kubeconfig with token
-  # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
-  ducktape.ipu7Camera.enable = true;
+  # K8s worker (Nebula mesh) — credentials via sops-nix
+  sops.secrets.nebula_ca_cert.sopsFile = ../../secrets/k8s-worker.yaml;
+  sops.secrets.k8s_ca_cert.sopsFile = ../../secrets/k8s-worker.yaml;
+  sops.secrets.k8s_bootstrap_kubeconfig.sopsFile = ../../secrets/k8s-worker.yaml;
+  sops.secrets.nebula_host_cert.sopsFile = ../../secrets/rugged-nebula.yaml;
+  sops.secrets.nebula_host_key.sopsFile = ../../secrets/rugged-nebula.yaml;
+
+  ducktape.nebulaMesh.caCertPath = config.sops.secrets.nebula_ca_cert.path;
+  ducktape.nebulaMesh.hostCertPath = config.sops.secrets.nebula_host_cert.path;
+  ducktape.nebulaMesh.hostKeyPath = config.sops.secrets.nebula_host_key.path;
 
   ducktape.k8sWorker = {
     enable = true;
+    caCertPath = config.sops.secrets.k8s_ca_cert.path;
+    bootstrapKubeconfigPath = config.sops.secrets.k8s_bootstrap_kubeconfig.path;
     nodeLabels = {
       "topology.kubernetes.io/region" = "roaming";
       "node.kubernetes.io/role" = "roaming";
     };
     nodeTaints = [ "node-role.kubernetes.io/roaming=true:NoSchedule" ];
   };
+
+  # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)
+  ducktape.ipu7Camera.enable = true;
 
   # Separate btrfs subvolumes for containerd and local-path-provisioner storage.
   # Create them before first boot with:

@@ -2,15 +2,8 @@
 # Proxmox infrastructure + dev workstation VMs using the shared proxmox-vm module
 
 # =============================================================================
-# REMOTE STATE (k8s cluster credentials)
+# REMOTE STATE (Proxmox auth token)
 # =============================================================================
-
-data "terraform_remote_state" "infrastructure" {
-  backend = "local"
-  config = {
-    path = "${path.module}/../../cluster/terraform/bootstrap/infrastructure/terraform.tfstate"
-  }
-}
 
 data "terraform_remote_state" "persistent_auth" {
   backend = "local"
@@ -44,40 +37,6 @@ locals {
   nix_dir_hash = sha1(join("", [for f in sort(fileset("${path.module}/../../nix", "**/*.nix")) : filesha1("${path.module}/../../nix/${f}")]))
   repo_root    = "${path.module}/../.."
 
-  # K8s credentials from infrastructure state
-  infra = data.terraform_remote_state.infrastructure.outputs
-
-  # The CA cert from talos_machine_secrets is already base64-encoded.
-  # Decode it for the PEM file written by cloud-init.
-  k8s_ca_cert_pem = base64decode(local.infra.k8s_ca_cert)
-
-  # Construct bootstrap kubeconfig from infrastructure state.
-  # Server is localhost:7445 — HAProxy on the VM proxies to api.allegedly.works:6443.
-  bootstrap_kubeconfig = yamlencode({
-    apiVersion = "v1"
-    kind       = "Config"
-    clusters = [{
-      name = "kubernetes"
-      cluster = {
-        certificate-authority-data = local.infra.k8s_ca_cert
-        server                     = "https://localhost:7445"
-      }
-    }]
-    contexts = [{
-      name = "bootstrap@kubernetes"
-      context = {
-        cluster = "kubernetes"
-        user    = "bootstrap"
-      }
-    }]
-    current-context = "bootstrap@kubernetes"
-    users = [{
-      name = "bootstrap"
-      user = {
-        token = local.infra.k8s_bootstrap_token
-      }
-    }]
-  })
 }
 
 # =============================================================================
@@ -239,13 +198,8 @@ module "wyrm2" {
   network_bridge    = var.network_bridge
   ssh_public_key    = local.ssh_public_key
 
-  k8s_cluster_join = {
-    bootstrap_kubeconfig = local.bootstrap_kubeconfig
-    ca_cert              = local.k8s_ca_cert_pem
-    cluster_id           = local.infra.kubespan_cluster_id
-    cluster_secret       = local.infra.kubespan_cluster_secret
-    node_name            = "wyrm2"
-  }
+  # K8s + Nebula credentials managed by sops-nix on the NixOS side,
+  # no cloud-init credential injection needed.
 
   depends_on = [module.wyrm2_image]
 }
