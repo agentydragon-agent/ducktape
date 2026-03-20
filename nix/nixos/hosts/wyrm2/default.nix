@@ -24,7 +24,7 @@
   # K8s worker (Nebula mesh) — credentials via sops-nix
   sops.secrets.nebula_ca_cert.sopsFile = ../../../secrets/k8s-worker.yaml;
   sops.secrets.k8s_ca_cert.sopsFile = ../../../secrets/k8s-worker.yaml;
-  sops.secrets.k8s_bootstrap_kubeconfig.sopsFile = ../../../secrets/k8s-worker.yaml;
+  sops.secrets.k8s_bootstrap_token.sopsFile = ../../../secrets/k8s-worker.yaml;
   sops.secrets.nebula_host_cert.sopsFile = ../../../secrets/wyrm2-nebula.yaml;
   sops.secrets.nebula_host_key.sopsFile = ../../../secrets/wyrm2-nebula.yaml;
 
@@ -36,7 +36,7 @@
     enable = true;
     enableNvidiaRuntime = true;
     caCertPath = config.sops.secrets.k8s_ca_cert.path;
-    bootstrapKubeconfigPath = config.sops.secrets.k8s_bootstrap_kubeconfig.path;
+    bootstrapTokenPath = config.sops.secrets.k8s_bootstrap_token.path;
     nodeLabels = {
       "topology.kubernetes.io/region" = "proxmox";
       "topology.kubernetes.io/zone" = "atlas";

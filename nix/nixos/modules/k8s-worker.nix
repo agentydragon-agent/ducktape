@@ -10,8 +10,12 @@
 #   - Kubelet unit depends on local kube-apiserver.service
 #   - Builds/seeds a custom pause container instead of registry.k8s.io/pause
 #
-# Credential placement: sops-nix decrypts CA cert + bootstrap kubeconfig at
-# activation time. Set caCertPath + bootstrapKubeconfigPath to sops secret paths.
+# API server access: haproxy on 127.0.0.1:7445 load-balances across all control
+# plane Nebula IPs with TCP health checks (replaces kubeprism).
+#
+# Credential placement: sops-nix decrypts CA cert + bootstrap token at activation
+# time. The module generates the bootstrap kubeconfig from these components with
+# the local haproxy as the server endpoint.
 #
 # Manual step after boot:
 #   Approve the CSR on the cluster:
@@ -73,6 +77,38 @@ let
       exit 1
     fi
   '';
+
+  # Generate bootstrap kubeconfig from components (CA cert + token + local haproxy).
+  # Runs as ExecStartPre because sops secrets are only available at runtime.
+  generateBootstrapKubeconfig = pkgs.writeShellScript "generate-bootstrap-kubeconfig" ''
+    TOKEN=$(<"${cfg.bootstrapTokenPath}")
+    cat > /run/kubelet-bootstrap-kubeconfig <<EOF
+    apiVersion: v1
+    kind: Config
+    clusters:
+    - cluster:
+        certificate-authority: ${cfg.caCertPath}
+        server: https://127.0.0.1:7445
+      name: default
+    contexts:
+    - context:
+        cluster: default
+        user: kubelet-bootstrap
+      name: default
+    current-context: default
+    users:
+    - name: kubelet-bootstrap
+      user:
+        token: $TOKEN
+    EOF
+    chmod 600 /run/kubelet-bootstrap-kubeconfig
+  '';
+
+  haproxyServerLines = lib.concatStringsSep "\n    " (
+    lib.imap1 (
+      i: ep: "server cp-${toString i} ${ep} check inter 5s fall 3 rise 2"
+    ) cfg.controlPlaneEndpoints
+  );
 in
 {
   imports = [ ./nebula-mesh.nix ];
@@ -92,10 +128,9 @@ in
       description = "Path to the cluster CA certificate";
     };
 
-    bootstrapKubeconfigPath = lib.mkOption {
+    bootstrapTokenPath = lib.mkOption {
       type = lib.types.str;
-      default = "/etc/kubernetes/bootstrap-kubelet.conf";
-      description = "Path to the bootstrap kubeconfig for kubelet TLS bootstrap";
+      description = "Path to the bootstrap token file (sops secret). The module generates the kubeconfig.";
     };
 
     nodeLabels = lib.mkOption {
@@ -116,6 +151,16 @@ in
     };
 
     enableNvidiaRuntime = lib.mkEnableOption "NVIDIA GPU support via CDI (Container Device Interface)";
+
+    controlPlaneEndpoints = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "10.42.0.1:6443" # talos-vps-cp-0
+        "10.42.0.2:6443" # talos-vps-cp-1
+        "10.42.0.10:6443" # talos-pve-cp-0
+      ];
+      description = "Control plane API server endpoints (IP:port) for the local haproxy load balancer";
+    };
 
   };
 
@@ -197,6 +242,38 @@ in
     # Kubelet config file
     environment.etc."kubernetes/kubelet-config.yaml".source = kubeletConfigYaml;
 
+    # haproxy TCP proxy for kube-apiserver HA (replaces kubeprism).
+    # Load-balances across all control plane Nebula IPs with health checks.
+    services.haproxy = {
+      enable = true;
+      config = ''
+        global
+          maxconn 1024
+
+        defaults
+          mode tcp
+          timeout connect 5s
+          timeout client 30s
+          timeout server 30s
+          retries 3
+
+        frontend kube-apiserver
+          bind 127.0.0.1:7445
+          default_backend kube-apiserver
+
+        backend kube-apiserver
+          option tcp-check
+          balance roundrobin
+          ${haproxyServerLines}
+      '';
+    };
+
+    # haproxy needs Nebula up to reach CP nodes
+    systemd.services.haproxy = {
+      after = [ "nebula.service" ];
+      requires = [ "nebula.service" ];
+    };
+
     # Kubelet systemd service
     systemd.services.kubelet = {
       description = "Kubernetes Kubelet";
@@ -204,22 +281,29 @@ in
         "network-online.target"
         "containerd.service"
         "nebula.service"
+        "haproxy.service"
       ];
       wants = [
         "network-online.target"
         "containerd.service"
       ];
-      # Hard dependency — kubelet stops if Nebula mesh dies
-      requires = [ "nebula.service" ];
+      # Hard dependencies — kubelet stops if mesh or API proxy dies
+      requires = [
+        "nebula.service"
+        "haproxy.service"
+      ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         # Prepend /run/wrappers/bin for NixOS setuid mount/umount wrappers.
         Environment = "PATH=/run/wrappers/bin:${lib.makeBinPath kubeletDeps}:/usr/bin:/bin";
-        ExecStartPre = resolveNodeIp;
+        ExecStartPre = [
+          resolveNodeIp
+          generateBootstrapKubeconfig
+        ];
         ExecStart = pkgs.writeShellScript "kubelet-start" ''
           NODE_IP=$(</run/kubelet-node-ip)
           exec ${pkgs.kubernetes}/bin/kubelet \
-            --bootstrap-kubeconfig=${cfg.bootstrapKubeconfigPath} \
+            --bootstrap-kubeconfig=/run/kubelet-bootstrap-kubeconfig \
             --kubeconfig=/var/lib/kubelet/kubelet.conf \
             --config=/etc/kubernetes/kubelet-config.yaml \
             --node-ip="$NODE_IP" \

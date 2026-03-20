@@ -119,6 +119,23 @@ in
       extraConfig = "ResolveUnicastSingleLabel=yes";
     };
 
+    # systemd-networkd manages DNS settings for the nebula1 TUN interface.
+    # DNSDefaultRoute=true makes nebula1 an additional default DNS route
+    # (not exclusive). systemd-resolved queries both nebula1 and the regular
+    # interface in parallel — first positive reply wins, so lighthouse
+    # NXDOMAIN for regular names doesn't break normal resolution.
+    # NetworkManager manages physical interfaces; networkd only manages nebula1.
+    systemd.network.enable = true;
+    systemd.network.wait-online.enable = false;
+    systemd.network.networks."50-nebula1" = {
+      matchConfig.Name = "nebula1";
+      networkConfig = {
+        DNS = cfg.lighthouses;
+        DNSDefaultRoute = true;
+      };
+    };
+    networking.networkmanager.unmanaged = [ "nebula1" ];
+
     # State directory for Nebula
     systemd.tmpfiles.rules = [ "d /var/lib/nebula 0700 root root -" ];
 
@@ -137,21 +154,6 @@ in
       serviceConfig = {
         Type = "simple";
         ExecStart = "${pkgs.nebula}/bin/nebula -config /etc/nebula/config.yaml";
-        # Configure nebula1 link DNS after the TUN interface is up.
-        # Lighthouse DNS resolves bare cert names (e.g., "rugged" → 10.42.0.30).
-        # ~. makes nebula1 a default DNS route; systemd-resolved queries both
-        # this and the main interface's DNS in parallel, using whichever
-        # returns a positive answer.
-        ExecStartPost = pkgs.writeShellScript "nebula-dns-setup" ''
-          for i in $(seq 1 30); do
-            if ${pkgs.iproute2}/bin/ip link show nebula1 &>/dev/null; then
-              break
-            fi
-            sleep 1
-          done
-          ${pkgs.systemd}/bin/resolvectl dns nebula1 ${lib.concatStringsSep " " cfg.lighthouses}
-          ${pkgs.systemd}/bin/resolvectl domain nebula1 '~.'
-        '';
         Restart = "on-failure";
         RestartSec = "5";
         # Required capabilities for TUN device management
