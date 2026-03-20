@@ -108,18 +108,43 @@ in
     # on nebula1 with source IPs whose reverse path goes via the physical interface).
     networking.firewall.checkReversePath = "loose";
 
+    # systemd-resolved for split DNS — lighthouse DNS resolves bare mesh
+    # hostnames (cert names), normal DNS handles everything else.
+    services.resolved.enable = true;
+
     # State directory for Nebula
     systemd.tmpfiles.rules = [ "d /var/lib/nebula 0700 root root -" ];
 
     systemd.services.nebula = {
       description = "Nebula mesh network";
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
+      after = [
+        "network-online.target"
+        "systemd-resolved.service"
+      ];
+      wants = [
+        "network-online.target"
+        "systemd-resolved.service"
+      ];
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
         Type = "simple";
         ExecStart = "${pkgs.nebula}/bin/nebula -config /etc/nebula/config.yaml";
+        # Configure nebula1 link DNS after the TUN interface is up.
+        # Lighthouse DNS resolves bare cert names (e.g., "rugged" → 10.42.0.30).
+        # ~. makes nebula1 a default DNS route; systemd-resolved queries both
+        # this and the main interface's DNS in parallel, using whichever
+        # returns a positive answer.
+        ExecStartPost = pkgs.writeShellScript "nebula-dns-setup" ''
+          for i in $(seq 1 30); do
+            if ${pkgs.iproute2}/bin/ip link show nebula1 &>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          ${pkgs.systemd}/bin/resolvectl dns nebula1 ${lib.concatStringsSep " " cfg.lighthouses}
+          ${pkgs.systemd}/bin/resolvectl domain nebula1 '~.'
+        '';
         Restart = "on-failure";
         RestartSec = "5";
         # Required capabilities for TUN device management
