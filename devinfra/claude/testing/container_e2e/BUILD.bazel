@@ -37,5 +37,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )

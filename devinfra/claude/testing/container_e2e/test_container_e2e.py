@@ -37,6 +37,7 @@ from typing import Any
 import aiodocker
 import pytest
 import pytest_bazel
+import tenacity
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
@@ -78,6 +79,11 @@ _PROXY_MGMT_PORT = 8081
 
 # Timeout for proxy container readiness (seconds)
 _PROXY_READY_TIMEOUT = 60
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _save_output(name: str, content: str) -> None:
@@ -149,18 +155,16 @@ async def _mgmt_get(host: str, port: int, path: str) -> bytes:
         writer.close()
 
 
+@tenacity.retry(
+    stop=tenacity.stop_after_delay(_PROXY_READY_TIMEOUT),
+    wait=tenacity.wait_fixed(0.3),
+    retry=tenacity.retry_if_exception_type((OSError, TimeoutError, asyncio.IncompleteReadError)),
+    reraise=True,
+)
 async def _wait_for_proxy_ready(host: str, port: int) -> None:
     """Poll the management /ready endpoint until it responds."""
-    deadline = asyncio.get_event_loop().time() + _PROXY_READY_TIMEOUT
-    while asyncio.get_event_loop().time() < deadline:
-        try:
-            body = await asyncio.wait_for(_mgmt_get(host, port, "/ready"), timeout=2)
-            if body == b"ok":
-                return
-        except (OSError, TimeoutError, asyncio.IncompleteReadError):
-            pass
-        await asyncio.sleep(0.3)
-    raise TimeoutError("MockEgressProxy container failed to become ready")
+    body = await asyncio.wait_for(_mgmt_get(host, port, "/ready"), timeout=2)
+    assert body == b"ok", f"Unexpected /ready response: {body!r}"
 
 
 def _build_upstream_proxy_args(upstream: EgressProxyConfig, gateway_ip: str, proxy_shared: Path) -> list[str]:
@@ -188,18 +192,29 @@ def _build_upstream_proxy_args(upstream: EgressProxyConfig, gateway_ip: str, pro
 
 
 # ---------------------------------------------------------------------------
-# Typed result from the proxy_env fixture
+# Fixture result types
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DockerNetworks:
+    """Docker networks for the E2E test."""
+
+    proxy_net_name: str
+    isolated_net_name: str
+    gateway_ip: str
+    proxy_net: aiodocker.networks.DockerNetwork
+    isolated_net: aiodocker.networks.DockerNetwork
 
 
 @dataclass(frozen=True)
 class ProxySetup:
     """Everything the test needs from the proxy infrastructure."""
 
-    proxy_url: str = ""
-    mock_ca_pem: bytes = b""
-    mgmt_host_port: int = 0
-    isolated_net_name: str = ""
+    proxy_url: str
+    mock_ca_pem: bytes
+    mgmt_host_port: int
+    isolated_net_name: str
 
 
 # ---------------------------------------------------------------------------
@@ -233,127 +248,122 @@ async def docker_client() -> AsyncGenerator[aiodocker.Docker]:
 
 
 @pytest.fixture
-async def proxy_env(
-    tmp_path: Path, mock_proxy_image: str, docker_client: aiodocker.Docker
-) -> AsyncGenerator[ProxySetup]:
-    """Start MockEgressProxy container on isolated Docker networks.
+async def docker_networks(docker_client: aiodocker.Docker) -> AsyncGenerator[DockerNetworks]:
+    """Create proxy (bridge) and isolated (internal) Docker networks.
 
-    Creates a bridge network (proxy_net) for internet access and an internal
-    network (isolated_net) for the test container. The proxy container sits on
-    both. Yields a ProxySetup with the proxy URL, CA cert, management port,
-    and isolated network name.
-
-    Cleans up the proxy container and networks on teardown.
+    The proxy network provides internet access; the isolated network has no
+    external routing. Cleaned up on teardown.
     """
-    proxy_shared = tmp_path / "proxy_shared"
-    proxy_shared.mkdir()
-
     pid = os.getpid()
     proxy_net_name = f"e2e-proxy-{pid}"
     isolated_net_name = f"e2e-isolated-{pid}"
-    proxy_name = f"{_CONTAINER_NAME}-proxy-{pid}"
 
     proxy_net = await docker_client.networks.create({"Name": proxy_net_name, "Driver": "bridge"})
     isolated_net = await docker_client.networks.create(
         {"Name": isolated_net_name, "Driver": "bridge", "Internal": True}
     )
 
-    proxy_container: aiodocker.containers.DockerContainer | None = None
+    proxy_net_info = await proxy_net.show()
+    gateway_ip = proxy_net_info["IPAM"]["Config"][0]["Gateway"]
+    logger.info("Created networks: proxy=%s (gateway %s), isolated=%s", proxy_net_name, gateway_ip, isolated_net_name)
+
+    yield DockerNetworks(
+        proxy_net_name=proxy_net_name,
+        isolated_net_name=isolated_net_name,
+        gateway_ip=gateway_ip,
+        proxy_net=proxy_net,
+        isolated_net=isolated_net,
+    )
+
+    await isolated_net.delete()
+    await proxy_net.delete()
+
+
+@pytest.fixture
+async def proxy_env(
+    tmp_path: Path, mock_proxy_image: str, docker_client: aiodocker.Docker, docker_networks: DockerNetworks
+) -> AsyncGenerator[ProxySetup]:
+    """Start MockEgressProxy container on the Docker networks.
+
+    The proxy container sits on both the proxy network (internet access)
+    and the isolated network (reachable by the test container). Yields a
+    ProxySetup with the proxy URL, CA cert, management port, and isolated
+    network name. Cleans up the proxy container on teardown.
+    """
+    proxy_shared = tmp_path / "proxy_shared"
+    proxy_shared.mkdir()
+
+    proxy_name = f"{_CONTAINER_NAME}-proxy-{os.getpid()}"
+
+    proxy_cmd = [
+        "--listen-port",
+        str(_PROXY_LISTEN_PORT),
+        "--mgmt-port",
+        str(_PROXY_MGMT_PORT),
+        "--username",
+        "proxy_user",
+        "--password",
+        "test_jwt_token",
+    ]
+
+    upstream = EgressProxyConfig.from_env()
+    binds_proxy: list[str] = []
+    if upstream:
+        proxy_cmd += _build_upstream_proxy_args(upstream, docker_networks.gateway_ip, proxy_shared)
+        if upstream.ca_bundle:
+            binds_proxy.append(f"{proxy_shared / 'upstream_ca.pem'}:/shared/upstream_ca.pem:ro")
+    else:
+        proxy_cmd.append("--no-verify-target-certs")
+
+    host_config: dict[str, Any] = {
+        "NetworkMode": docker_networks.proxy_net_name,
+        "PortBindings": {f"{_PROXY_MGMT_PORT}/tcp": [{"HostPort": "0"}]},
+    }
+    if binds_proxy:
+        host_config["Binds"] = binds_proxy
+
+    proxy_container = await docker_client.containers.create(
+        {
+            "Image": mock_proxy_image,
+            "Cmd": proxy_cmd,
+            "ExposedPorts": {f"{_PROXY_MGMT_PORT}/tcp": {}},
+            "HostConfig": host_config,
+        },
+        name=proxy_name,
+    )
+    await proxy_container.start()
+    logger.info("Started proxy container %s", proxy_name)
+
     try:
-        # Get gateway IP of the proxy network (host is reachable at this IP)
-        proxy_net_info = await proxy_net.show()
-        gateway_ip = proxy_net_info["IPAM"]["Config"][0]["Gateway"]
-        logger.info("Proxy network gateway (host reachable at): %s", gateway_ip)
-
-        # Build proxy container command
-        proxy_cmd = [
-            "--listen-port",
-            str(_PROXY_LISTEN_PORT),
-            "--mgmt-port",
-            str(_PROXY_MGMT_PORT),
-            "--username",
-            "proxy_user",
-            "--password",
-            "test_jwt_token",
-        ]
-
-        # Detect upstream proxy from host environment
-        upstream = EgressProxyConfig.from_env()
-        binds_proxy: list[str] = []
-        if upstream:
-            proxy_cmd += _build_upstream_proxy_args(upstream, gateway_ip, proxy_shared)
-            if upstream.ca_bundle:
-                binds_proxy.append(f"{proxy_shared / 'upstream_ca.pem'}:/shared/upstream_ca.pem:ro")
-        else:
-            proxy_cmd.append("--no-verify-target-certs")
-
-        # Start proxy container on proxy network (has internet access)
-        # Publish mgmt port so the host test process can query it
-        host_config: dict[str, Any] = {
-            "NetworkMode": proxy_net_name,
-            "PortBindings": {f"{_PROXY_MGMT_PORT}/tcp": [{"HostPort": "0"}]},
-        }
-        if binds_proxy:
-            host_config["Binds"] = binds_proxy
-
-        proxy_container = await docker_client.containers.create(
-            {
-                "Image": mock_proxy_image,
-                "Cmd": proxy_cmd,
-                "ExposedPorts": {f"{_PROXY_MGMT_PORT}/tcp": {}},
-                "HostConfig": host_config,
-            },
-            name=proxy_name,
-        )
-        await proxy_container.start()
-        logger.info("Started proxy container %s", proxy_name)
-
         # Get the published mgmt port on the host
         proxy_info = await proxy_container.show()
         mgmt_host_port = int(proxy_info["NetworkSettings"]["Ports"][f"{_PROXY_MGMT_PORT}/tcp"][0]["HostPort"])
         logger.info("Proxy management API on localhost:%d", mgmt_host_port)
 
-        # Connect proxy container to the isolated network too
-        await isolated_net.connect({"Container": proxy_container._id})
+        # Connect proxy container to the isolated network
+        await docker_networks.isolated_net.connect({"Container": proxy_container._id})
 
-        # Wait for proxy to become ready via management API
         await _wait_for_proxy_ready("127.0.0.1", mgmt_host_port)
         logger.info("MockEgressProxy container is ready")
 
-        # Fetch mock CA cert from management API
         mock_ca_pem = await _mgmt_get("127.0.0.1", mgmt_host_port, "/ca.pem")
 
         # Get proxy container's IP on the isolated network (re-inspect after connect)
         proxy_info = await proxy_container.show()
-        proxy_ip = proxy_info["NetworkSettings"]["Networks"][isolated_net_name]["IPAddress"]
+        proxy_ip = proxy_info["NetworkSettings"]["Networks"][docker_networks.isolated_net_name]["IPAddress"]
         logger.info("Proxy container IP on isolated network: %s", proxy_ip)
 
-        proxy_url = f"http://proxy_user:test_jwt_token@{proxy_ip}:{_PROXY_LISTEN_PORT}"
-
         yield ProxySetup(
-            proxy_url=proxy_url,
+            proxy_url=f"http://proxy_user:test_jwt_token@{proxy_ip}:{_PROXY_LISTEN_PORT}",
             mock_ca_pem=mock_ca_pem,
             mgmt_host_port=mgmt_host_port,
-            isolated_net_name=isolated_net_name,
+            isolated_net_name=docker_networks.isolated_net_name,
         )
 
     finally:
-        if proxy_container is not None:
-            try:
-                stdout = "".join(await proxy_container.log(stdout=True, stderr=True))
-                _save_output("proxy-container.log", stdout)
-            except Exception:
-                logger.warning("Failed to collect proxy container logs", exc_info=True)
-            await proxy_container.delete(force=True)
-
-        try:
-            await isolated_net.delete()
-        except Exception:
-            logger.warning("Failed to delete isolated network", exc_info=True)
-        try:
-            await proxy_net.delete()
-        except Exception:
-            logger.warning("Failed to delete proxy network", exc_info=True)
+        stdout = "".join(await proxy_container.log(stdout=True, stderr=True))
+        _save_output("proxy-container.log", stdout)
+        await proxy_container.delete(force=True)
 
 
 # ---------------------------------------------------------------------------
@@ -389,10 +399,8 @@ async def test_container_e2e(
     session_logs_dir = undeclared_outputs_dir() / "container-e2e" / "session-logs"
     session_logs_dir.mkdir(parents=True, exist_ok=True)
 
-    pid = os.getpid()
-    container_name = f"{_CONTAINER_NAME}-{pid}"
+    container_name = f"{_CONTAINER_NAME}-{os.getpid()}"
 
-    # Environment variables
     env = {
         "CLAUDE_CODE_REMOTE": "true",
         "CLAUDE_PROJECT_DIR": "/project",
@@ -416,7 +424,6 @@ async def test_container_e2e(
         f"{session_logs_dir}:/root/.claude/session-env/{_SESSION_ID}",
     ]
 
-    # Test container on isolated network only — no direct internet access
     container = await docker_client.containers.create(
         {
             "Image": _E2E_IMAGE,
@@ -436,7 +443,6 @@ async def test_container_e2e(
         assert rc != 0, "Container should have no external internet access on --internal network"
         logger.info("Network isolation verified: container cannot reach internet directly")
 
-        # Create project dir with .git (needed for pre-commit install)
         await _exec(container, ["mkdir", "-p", "/project/.git"])
 
         # Install ducktape wheel
@@ -474,13 +480,10 @@ async def test_container_e2e(
         logger.info("Proxy stats: %s", stats)
 
     finally:
-        try:
-            stdout = "".join(await container.log(stdout=True, stderr=False))
-            stderr = "".join(await container.log(stdout=False, stderr=True))
-            _save_output("container-stdout.log", stdout)
-            _save_output("container-stderr.log", stderr)
-        except Exception:
-            logger.warning("Failed to collect container logs", exc_info=True)
+        stdout = "".join(await container.log(stdout=True, stderr=False))
+        stderr = "".join(await container.log(stdout=False, stderr=True))
+        _save_output("container-stdout.log", stdout)
+        _save_output("container-stderr.log", stderr)
         await container.delete(force=True)
 
         _cleanup_dangling_symlinks(session_logs_dir)
