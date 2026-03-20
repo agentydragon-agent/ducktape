@@ -3,7 +3,7 @@
 #
 # Talos is pre-installed on a Hetzner snapshot (built by Packer via rescue+dd).
 # Servers boot directly from the snapshot — single Talos boot, single identity.
-# This eliminates the KubeSpan phantom peer problem from ISO-to-disk reboot.
+# This eliminates the dual-identity problem from ISO-to-disk reboot.
 
 # ============================================================================
 # TALOS IMAGE FACTORY - Generate custom Talos image for Hetzner
@@ -113,6 +113,28 @@ resource "hcloud_server" "vps" {
 # TALOS MACHINE CONFIGURATION
 # ============================================================================
 
+# Shared VPS config patch — used by both the user_data data source (no nebula)
+# and the full apply data source (with nebula + hostname).
+locals {
+  vps_config_patch = yamlencode({
+    machine = merge(local.common_machine_base, {
+      nodeLabels = {
+        "topology.kubernetes.io/region"        = "hetzner"
+        "topology.kubernetes.io/zone"          = var.hetzner_location
+        "node.longhorn.io/create-default-disk" = "true"
+      }
+      kubelet = merge(local.common_machine_base.kubelet, {
+        extraArgs = {
+          allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
+        }
+      })
+    })
+    cluster = local.common_cluster_config
+  })
+}
+
+# Base config for hcloud_server.user_data — no nebula patches (would create a
+# dependency cycle: hcloud_server.user_data → nebula_patch → hcloud_server.ipv4_address).
 data "talos_machine_configuration" "vps" {
   for_each = local.vps_nodes
 
@@ -125,48 +147,11 @@ data "talos_machine_configuration" "vps" {
   examples           = false
   docs               = false
 
-  config_patches = [
-    yamlencode({
-      machine = merge(local.common_machine_base, {
-        nodeLabels = {
-          "topology.kubernetes.io/region"        = "hetzner"
-          "topology.kubernetes.io/zone"          = var.hetzner_location
-          "node.longhorn.io/create-default-disk" = "true"
-        }
-        kubelet = {
-          extraArgs = {
-            allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
-          }
-        }
-      })
-      cluster = local.common_cluster_config
-    }),
-    # Hostname is set via HostnameConfig in data.talos_machine_configuration.vps_nebula.
-    # NOTE: nebula_machine_patch is NOT included here — it references
-    # hcloud_server.vps[*].ipv4_address which would create a dependency cycle
-    # (hcloud_server.user_data → machine_config → nebula_patch → hcloud_server.ipv4_address).
-    # Applied separately via talos_machine_configuration_apply.vps_nebula below.
-  ]
+  config_patches = [local.vps_config_patch]
 }
 
-# ============================================================================
-# MACHINE CONFIGURATION APPLY
-# ============================================================================
-
-resource "talos_machine_configuration_apply" "vps" {
-  for_each = local.vps_nodes
-
-  client_configuration        = local.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.vps[each.key].machine_configuration
-  node                        = hcloud_server.vps[each.key].ipv4_address
-
-  depends_on = [hcloud_server.vps]
-}
-
-# Nebula config applied via a separate data source + apply to break the dependency cycle:
-#   hcloud_server.user_data → data.talos_machine_configuration.vps (no nebula patch)
-#   data.talos_machine_configuration.vps_nebula → nebula_patch → hcloud_server.ipv4_address
-# hcloud_server.user_data only references the non-nebula data source, so no cycle.
+# Full config with nebula + hostname — applied via Talos API after servers exist.
+# Separate data source breaks the dependency cycle (nebula patches reference server IPs).
 data "talos_machine_configuration" "vps_nebula" {
   for_each = local.vps_nodes
 
@@ -181,21 +166,7 @@ data "talos_machine_configuration" "vps_nebula" {
 
   config_patches = concat(
     [
-      yamlencode({
-        machine = merge(local.common_machine_base, {
-          nodeLabels = {
-            "topology.kubernetes.io/region"        = "hetzner"
-            "topology.kubernetes.io/zone"          = var.hetzner_location
-            "node.longhorn.io/create-default-disk" = "true"
-          }
-          kubelet = {
-            extraArgs = {
-              allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
-            }
-          }
-        })
-        cluster = local.common_cluster_config
-      }),
+      local.vps_config_patch,
       # Explicit hostname — overrides the auto-generated HostnameConfig
       # (auto: stable) that the Terraform provider appends. Without this,
       # talosctl upgrade (kexec) loses the platform-derived hostname.
@@ -210,12 +181,16 @@ data "talos_machine_configuration" "vps_nebula" {
   )
 }
 
-resource "talos_machine_configuration_apply" "vps_nebula" {
+# ============================================================================
+# MACHINE CONFIGURATION APPLY
+# ============================================================================
+
+resource "talos_machine_configuration_apply" "vps" {
   for_each = local.vps_nodes
 
   client_configuration        = local.client_configuration
   machine_configuration_input = data.talos_machine_configuration.vps_nebula[each.key].machine_configuration
   node                        = hcloud_server.vps[each.key].ipv4_address
 
-  depends_on = [talos_machine_configuration_apply.vps]
+  depends_on = [hcloud_server.vps]
 }

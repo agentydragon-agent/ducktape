@@ -28,7 +28,7 @@ cgroup:
 # Account for double encapsulation (VXLAN + Nebula overlay)
 # eth0 MTU (1500) - VXLAN overhead (50) - Nebula overhead (~38) = 1412
 # Verify with: ping -M do -s 1380 <nebula-ip> after Nebula deployment.
-# NOTE: Applied via helm upgrade in Phase 4 Step 5, after KubeSpan is disabled.
+# NOTE: MTU accounts for Nebula + VXLAN double encapsulation.
 MTU: 1412
 
 # Gateway API: replaces ingress-nginx (retired March 2026)

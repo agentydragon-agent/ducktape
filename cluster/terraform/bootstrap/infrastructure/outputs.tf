@@ -55,8 +55,8 @@ output "cluster_domain" {
 output "cluster_nodes" {
   description = "Cluster node information"
   value = {
-    vps_ips = { for k, v in hcloud_server.vps : k => v.ipv4_address }
-    # home_ip will be added when Proxmox node is implemented
+    vps_ips     = { for k, v in hcloud_server.vps : k => v.ipv4_address }
+    proxmox_ips = { for k, v in local.proxmox_nodes : k => v.ip }
   }
 }
 
@@ -91,7 +91,7 @@ output "infrastructure_ready" {
 
 # Expose controlplane IPs for use by other modules
 output "controlplane_ips" {
-  description = "List of controlplane node IPs"
+  description = "Public IPs of VPS controlplane nodes (for external API access)"
   value       = [for k, v in hcloud_server.vps : v.ipv4_address]
 }
 
@@ -117,13 +117,13 @@ output "k8s_bootstrap_token" {
 }
 
 output "kubespan_cluster_id" {
-  description = "KubeSpan cluster ID for mesh discovery"
+  description = "Talos cluster ID (used by k8s-worker modules for cluster identity)"
   value       = talos_machine_secrets.cluster.machine_secrets.cluster.id
   sensitive   = true
 }
 
 output "kubespan_cluster_secret" {
-  description = "KubeSpan shared secret for mesh authentication"
+  description = "Talos cluster secret (used by k8s-worker modules for cluster authentication)"
   value       = talos_machine_secrets.cluster.machine_secrets.cluster.secret
   sensitive   = true
 }

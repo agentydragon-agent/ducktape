@@ -1,6 +1,6 @@
 # LAYER 1: HYBRID INFRASTRUCTURE
 # 3-node Talos cluster: 2x Hetzner VPS (controlplane) + 1x Proxmox home (controlplane)
-# Machine secrets generated fresh per lifecycle (prevents stale KubeSpan discovery)
+# Machine secrets generated fresh per lifecycle (prevents stale discovery from previous clusters)
 
 # ============================================================================
 # REMOTE STATE: Import shared secrets from persistent auth layer
@@ -38,13 +38,6 @@ locals {
     pve_cp0 = { name = "talos-pve-cp-0", type = "controlplane", vm_id = 10000, ip = "10.2.1.1" }
   }
 
-  # GPU worker nodes — emptied: wyrm2 (NixOS) now handles GPU duties.
-  # Kept as empty map so for_each references remain valid (no-op).
-  # TODO: Delete all proxmox_gpu_nodes references once wyrm2 is confirmed stable.
-  proxmox_gpu_nodes = {
-    # pve_gpu_worker0 = { name = "talos-pve-gpu-worker-0", type = "worker", vm_id = 10100, ip = "10.2.2.1" }
-  }
-
   # Proxmox network configuration
   proxmox_gateway = "10.2.0.1"
 
@@ -52,7 +45,7 @@ locals {
   bootstrap_node = "vps0"
 
   # Total expected node count (for health checks)
-  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes) + length(local.proxmox_gpu_nodes)
+  expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes)
 
   # All controlplane endpoints (for talosconfig) - VPS IPs + Proxmox controlplane IPs
   all_controlplane_ips = concat(
@@ -123,6 +116,7 @@ locals {
     allowSchedulingOnControlPlanes = true
     apiServer                      = local.api_server_config
     discovery                      = { enabled = true }
+    etcd                           = { advertisedSubnets = ["10.42.0.0/16"] }
     network                        = { cni = { name = "none" } }
     proxy                          = { disabled = true }
   }
@@ -132,8 +126,7 @@ locals {
   common_machine_base = {
     network = {
       kubespan = {
-        enabled             = true
-        allowDownPeerBypass = true
+        enabled = false
       }
     }
     features = {
@@ -147,10 +140,7 @@ locals {
     }
     kubelet = {
       nodeIP = {
-        # Exclude Tailscale CGNAT range — prevents kubelet from registering
-        # with a 100.64.x.x IP when the Tailscale DaemonSet creates a
-        # tailscale0 interface on the host.
-        validSubnets = ["!100.64.0.0/10"]
+        validSubnets = ["10.42.0.0/16"]
       }
     }
   }
@@ -241,11 +231,11 @@ resource "hcloud_firewall" "talos" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  # KubeSpan (WireGuard)
+  # Nebula mesh overlay
   rule {
     direction  = "in"
     protocol   = "udp"
-    port       = "51820"
+    port       = "4242"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 

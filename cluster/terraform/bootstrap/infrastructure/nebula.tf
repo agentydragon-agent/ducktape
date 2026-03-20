@@ -1,25 +1,23 @@
-# Nebula Mesh — PKI and per-node machine config patches
+# Nebula Mesh — per-node machine config patches
 #
-# Prerequisite: Generate certs with nebula-cert before running tofu apply:
-#
-#   nebula-cert ca -name "allegedly.works" -duration 87600h
-#   mv ca.key cluster/terraform/bootstrap/persistent-auth/nebula-ca.key
-#   mv ca.crt cluster/terraform/bootstrap/infrastructure/nebula/ca.crt
-#
-#   For each node (see Phase 1 in kubespand → Nebula migration plan):
-#   nebula-cert sign -ca-crt nebula/ca.crt -ca-key ../persistent-auth/nebula-ca.key \
-#     -name "talos-vps-cp-0" -ip "10.42.0.1/16" \
-#     -groups "lighthouse,controlplane,vps" \
-#     -out-crt nebula/talos-vps-cp-0.crt \
-#     -out-key nebula/talos-vps-cp-0.key
-#   (repeat for talos-vps-cp-1, talos-pve-cp-0, wyrm2, rugged, k8s-worker-test)
-#
-# CA key is stored in persistent-auth (never committed to git).
-# Node certs and keys are gitignored (nebula/.gitignore).
-# Only ca.crt is committed (public — safe to share).
+# PKI (CA + node certs) is managed in persistent-auth/ and read via
+# terraform_remote_state. To add a new node, add it to
+# persistent-auth/nebula.tf:local.nebula_nodes and run tofu apply there first.
 
 locals {
-  nebula_ca_cert = file("${path.module}/nebula/ca.crt")
+  nebula_ca_cert = data.terraform_remote_state.persistent_auth.outputs.nebula_ca_cert
+
+  # Maps TF node keys → persistent-auth node names for cert lookup
+  nebula_node_names = {
+    vps0    = "talos-vps-cp-0"
+    vps1    = "talos-vps-cp-1"
+    pve_cp0 = "talos-pve-cp-0"
+  }
+
+  nebula_certs = {
+    for key, name in local.nebula_node_names :
+    key => data.terraform_remote_state.persistent_auth.outputs.nebula_node_certs[name]
+  }
 
   # VPS public IPs for the static host map — lighthouses must be reachable by IP
   nebula_static_host_map = {
@@ -80,46 +78,11 @@ locals {
     }
   }
 
-  # Maps TF node keys → node names used for cert filenames
-  nebula_cert_paths = {
-    vps0    = "talos-vps-cp-0"
-    vps1    = "talos-vps-cp-1"
-    pve_cp0 = "talos-pve-cp-0"
-  }
-
-  nebula_certs = {
-    for key, node_name in local.nebula_cert_paths :
-    key => {
-      cert = file("${path.module}/nebula/${node_name}.crt")
-      key  = file("${path.module}/nebula/${node_name}.key")
-    }
-  }
-
-  # Nebula machine config patches per node — two separate documents:
-  #
-  # 1. Standard machine config patch: set kubelet.nodeIP.validSubnets so kubelet
-  #    registers with its Nebula IP (10.42.0.x). Talos extension services start
-  #    before kubelet, so nebula1 exists when kubelet selects its IP.
-  #
-  # 2. ExtensionServiceConfig document (apiVersion: v1alpha1 / kind: ExtensionServiceConfig):
-  #    mounts Nebula certs + config into the extension service's filesystem.
-  #    This is a separate Talos document type, NOT a field under machine:.
-  #    The extension runs: nebula -config /usr/local/etc/nebula/config.yml
-
-  # tflint-ignore: terraform_unused_declarations — needed in Pass B after KubeSpan disabled
-  # Uncomment in Pass B after KubeSpan is disabled:
-  # nebula_kubelet_patch = yamlencode({
-  #   machine = {
-  #     kubelet = {
-  #       nodeIP = {
-  #         validSubnets = ["10.42.0.0/16"]
-  #       }
-  #     }
-  #   }
-  # })
-
+  # Per-node ExtensionServiceConfig documents (apiVersion: v1alpha1 /
+  # kind: ExtensionServiceConfig): mount Nebula certs + config into the extension
+  # service's filesystem. The extension runs: nebula -config /usr/local/etc/nebula/config.yml
   nebula_extension_config = {
-    for key, node_name in local.nebula_cert_paths :
+    for key, _ in local.nebula_node_names :
     key => yamlencode({
       apiVersion = "v1alpha1"
       kind       = "ExtensionServiceConfig"
@@ -146,12 +109,8 @@ locals {
   }
 
   # Combined list of patches per node (used in config_patches concat).
-  # NOTE: nebula_kubelet_patch (nodeIP.validSubnets → 10.42.0.0/16) is NOT
-  # included here — it must only be applied in Pass B after KubeSpan is disabled.
-  # Applying it while KubeSpan is active breaks etcd peering (kubelet registers
-  # with Nebula IP but KubeSpan can't route to it).
   nebula_machine_patches = {
-    for key in keys(local.nebula_cert_paths) :
+    for key in keys(local.nebula_node_names) :
     key => [local.nebula_extension_config[key]]
   }
 }

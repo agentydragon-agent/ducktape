@@ -2,7 +2,7 @@
 #
 # Boots a temporary server in rescue mode, downloads the Talos disk image from
 # Image Factory, writes it to /dev/sda, and takes a snapshot. This eliminates
-# the dual-identity problem from ISO-to-disk reboot (phantom KubeSpan peers).
+# the dual-identity problem from ISO-to-disk reboot.
 #
 # Called by terraform_data.talos_hcloud_image in hetzner-nodes.tf.
 

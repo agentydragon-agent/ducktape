@@ -70,3 +70,20 @@ output "nix_cache_private_key" {
   value       = local.nix_cache_keys.private_key
   sensitive   = true
 }
+
+# Nebula mesh PKI
+output "nebula_ca_cert" {
+  description = "Nebula CA public certificate (safe to share)"
+  value       = data.local_file.nebula_ca_crt.content
+}
+
+output "nebula_node_certs" {
+  description = "Per-node Nebula certificates and keys"
+  value = {
+    for name, _ in local.nebula_nodes : name => {
+      cert = data.local_file.nebula_node_crt[name].content
+      key  = data.local_sensitive_file.nebula_node_key[name].content
+    }
+  }
+  sensitive = true
+}
