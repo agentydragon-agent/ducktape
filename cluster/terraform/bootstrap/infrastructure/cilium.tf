@@ -26,7 +26,6 @@ resource "null_resource" "gateway_api_crds" {
       KUBECONFIG = local_file.kubeconfig.filename
     }
     # Experimental channel CRDs (superset of standard: adds TLSRoute, etc.).
-    # TLSRoute needed for Headscale passthrough (Tailscale noise protocol).
     # Server-side apply required: HTTPRoute CRD exceeds 256KB annotation limit.
     command = <<-EOT
       set -e

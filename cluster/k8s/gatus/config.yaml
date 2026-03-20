@@ -186,13 +186,6 @@ endpoints:
       - "[STATUS] == 200"
       - "[BODY].server == InvenTree"
 
-  - name: Headscale
-    group: services
-    url: https://headscale.allegedly.works/health
-    interval: 60s
-    conditions:
-      - "[STATUS] == 200"
-
   - name: Nix Cache
     group: services
     url: https://cache.allegedly.works/nix-cache-info

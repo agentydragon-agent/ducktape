@@ -944,15 +944,6 @@ git add k8s/path/my-sealed.yaml && git commit
 - **Cause**: Controller cache doesn't auto-refresh for new CRDs
 - **Fix**: Restart kustomize-controller (usually resolves automatically)
 
-### Headscale OIDC Split-Brain (Multi-Replica)
-
-- **Issue**: OIDC authentication fails intermittently when running >1 replica
-- **Cause**: OIDC state (nonces, PKCE verifiers) stored in per-process memory, not DB.
-  Callback hitting a different replica than the initial redirect loses the state.
-  Multi-replica also breaks node map updates, IP allocation, and route primary election.
-- **Fix**: Run exactly 1 replica. This is a permanent architectural constraint, not a bug.
-- **Lessons Learned**: <lessons_learned/2026-03-07-headscale-single-replica-only.md>
-
 ### Worker Node Kubelet Issues
 
 - **Issue**: Node stuck NotReady with "InvalidDiskCapacity"

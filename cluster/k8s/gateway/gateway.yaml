@@ -31,19 +31,6 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    # TLS passthrough for Headscale — Envoy routes by SNI without decrypting.
-    # Headscale handles TLS termination and the Tailscale noise protocol natively.
-    # Required because Cilium's auto-generated Envoy config only allows websocket
-    # upgrades, returning 403 for `Upgrade: tailscale-control-protocol`.
-    - name: headscale-passthrough
-      hostname: "headscale.allegedly.works"
-      port: 443
-      protocol: TLS
-      tls:
-        mode: Passthrough
-      allowedRoutes:
-        namespaces:
-          from: All
     - name: http
       port: 80
       protocol: HTTP

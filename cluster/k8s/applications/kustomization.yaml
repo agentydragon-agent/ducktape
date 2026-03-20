@@ -5,6 +5,5 @@ resources:
   - gitea
   - matrix
   - firecrawl
-  - headscale
   - website
-  # atlas-proxy - deferred, using headscale mesh for atlas access
+  # atlas-proxy - deferred, using Nebula mesh for atlas access

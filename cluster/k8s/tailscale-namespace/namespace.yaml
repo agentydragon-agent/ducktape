@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: tailscale
-  labels:
-    name: tailscale
-    # Tailscale DaemonSet needs privileged (hostNetwork, NET_ADMIN, /dev/net/tun)
-    pod-security.kubernetes.io/enforce: privileged

@@ -168,7 +168,7 @@ provider "proxmox" {
     username = "root"
     node {
       name    = var.proxmox_node_name
-      address = var.proxmox_node_name # Direct Tailscale access
+      address = var.proxmox_node_name # Direct SSH access
     }
   }
 }
@@ -300,14 +300,6 @@ resource "hcloud_firewall" "talos" {
     direction  = "in"
     protocol   = "tcp"
     port       = "10250"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
-  # Tailscale WireGuard (direct peer connections for DaemonSet)
-  rule {
-    direction  = "in"
-    protocol   = "udp"
-    port       = "41641"
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 

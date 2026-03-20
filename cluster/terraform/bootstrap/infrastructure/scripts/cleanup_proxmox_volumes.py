@@ -71,7 +71,7 @@ def delete_volume(proxmox_host: str, volume_id: str) -> bool:
 def main():
     if len(sys.argv) < 3:
         print("Usage: cleanup_proxmox_volumes.py <kubeconfig_path> <proxmox_ssh_host>")
-        print("  proxmox_ssh_host: Tailscale hostname (e.g., 'atlas'), NOT the FQDN")
+        print("  proxmox_ssh_host: hostname (e.g., 'atlas'), NOT the FQDN")
         sys.exit(1)
     kubeconfig_path = sys.argv[1]
     proxmox_ssh_host = sys.argv[2]

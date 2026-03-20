@@ -4,7 +4,7 @@
 
 **Status**: Running with 5 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker + 1 roaming laptop).
 Cilium Gateway API serving HTTPS traffic. DNS automation working. Authentik auth verified.
-PowerDNS, Authentik, Headscale migrated to CloudNativePG on `local-path`.
+PowerDNS and Authentik migrated to CloudNativePG on `local-path`.
 rugged (Dell Rugged 12) joined as roaming worker via `k8s-worker.nix` + Nebula, with
 `node-role.kubernetes.io/roaming=true:NoSchedule` taint.
 
@@ -26,6 +26,9 @@ See <changelog.md> for detailed change history.
 
 ### Next Actions
 
+- [ ] **Atlas: add to Nebula mesh** — Proxmox host `atlas` needs a Nebula cert and
+      config so it's reachable via the mesh (currently only accessible from VLAN).
+      High priority — required for remote management without being on the home network.
 - [ ] **Prometheus: investigate memory growth and right-size** — Prometheus was OOM-killed
       8 times in 49 minutes at 2Gi limit (1686Mi usage, WAL replay spikes higher).
       Currently pinned to wyrm2 with temporary 6Gi limit. Investigate: which scrape
@@ -84,16 +87,6 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
 - [ ] **Wire `scripts/check-authentik-login.py` into bootstrap/CI**
 - [ ] **Gatus: Harbor robot token for authenticated `/v2/` probe**
 - [ ] **Nix cache: initialize Attic cache** — No caches created yet. Run `attic cache create main` + `attic cache configure main --public`. May need init Job or interactive setup.
-- [x] **Headscale: test with a real device** — Verified with atlas and wyrm via
-      OIDC auth through Authentik. Uses TLSRoute passthrough (not HTTPRoute) because
-      Cilium's Envoy only allows `upgradeType: websocket`, returning 403 for Tailscale's
-      `Upgrade: tailscale-control-protocol`. Headscale terminates TLS itself (cert-manager
-      cert), Envoy routes by SNI without decrypting.
-- [ ] **Headscale: migrate from CNPG to SQLite on Longhorn** — PostgreSQL is upstream
-      "maintenance mode" (latest migrations SQLite-only). Data is tiny (~20 rows, <1 MB).
-      Deploy Longhorn, create a Hetzner-resident PVC, switch Headscale to SQLite. Eliminates
-      a 2-instance CNPG cluster for negligible data. Re-enroll devices or use community
-      pg→sqlite migration tool.
 - [ ] **OpenClaw: eliminate one-time token entry** — Options: operator bootstrap config,
       gateway-side injection, or upstream PR for `"trusted-proxy"` in `sharedAuthOk`.
 - [ ] **Proxy outpost HA: shared session storage** — 1 replica limit (sessions in `/dev/shm`).
@@ -171,26 +164,10 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
 
 ## 📋 Production Cutover (`agentydragon.com`)
 
-- [ ] Migrate remaining devices from ansible VPS headscale to cluster headscale
-      (atlas and wyrm already enrolled at `headscale.allegedly.works`)
-- [x] Atlas Proxmox accessible via headscale mesh (`atlas.tailnet.allegedly.works`)
+- [x] Atlas Proxmox accessible via Nebula mesh
 - [ ] Website hosted in cluster, verify accessible
 - [ ] Update `agentydragon.com` DNS to point to cluster
 - [ ] Decommission ansible-managed VPS
-
-### Headscale Bootstrap DNS Workaround
-
-**Context**: Tailscale's bootstrap DNS (via DERP servers) only resolves `tailscale.com`
-domains. With headscale using `agentydragon.com`, clients can't resolve the control
-server on boot (chicken-and-egg: DNS is set to 100.100.100.100 which requires the
-tunnel to be up first).
-
-**Workaround**: Static `/etc/hosts` entry on atlas pointing `agentydragon.com`
-to the VPS IP. Managed in `ansible/atlas.yaml` (atlas-specific, not in the role).
-
-**When VPS changes**: Must re-run ansible on all tailscale clients to update the IP.
-Eventually `agentydragon.com` will have multiple IPs (cluster VPS nodes) — the hosts
-entry will need to list all of them or use a single stable entry point.
 
 ## 🛡️ VPS-Only Resilience Invariants
 
@@ -267,8 +244,8 @@ VXLAN (8472) to admin IPs and inter-node CIDRs.
 
 ### ~~TODO: Remote Proxmox API Access~~ — DONE
 
-Proxmox is accessible via Headscale mesh at `atlas.tailnet.allegedly.works`. Any enrolled
-device can reach the API and web UI without being on the home network.
+Proxmox is accessible via Nebula mesh. Any enrolled device can reach the API and web UI
+without being on the home network.
 
 ### TODO: Multi-Endpoint Kubeconfig via DNS
 
@@ -348,7 +325,6 @@ observe traffic flows first, then generate baseline allow-rules.
 
 **Priority 3 — Remaining services** (lower risk, still should be locked down):
 
-- [ ] **Headscale** — restrict API to Authentik proxy, gateway.
 - [ ] **Cert-Manager** — restrict metrics endpoint to monitoring namespace.
 - [ ] **Metrics Server** — restrict to Prometheus, HPA controllers.
 - [ ] **ESO webhook** — restrict to kube-system, flux-system.
@@ -409,7 +385,7 @@ Namespace labels applied:
   google-workspace-mcp, grocy, harbor, headlamp, homeassistant-proxy, inventree,
   langfuse, matrix, nix-cache, ollama, openclaw-gateway, openclaw-mitmproxy, props,
   proxmox-proxy, scanner, tana-mcp
-- **`initial`** (7 namespaces): authentik, cnpg-system, dns-system, headscale, loki,
+- **`initial`** (6 namespaces): authentik, cnpg-system, dns-system, loki,
   monitoring, vault
 - **Off/unlabeled**: kube-system, flux-system, cert-manager, csi-proxmox, kyverno, and
   other system namespaces
@@ -556,23 +532,9 @@ for network stack diagrams and diagnostic checklist.
 | VPS      | Vault, Authentik, Gateway, DNS, cert-mgr (all on `local-path`) | Always-on, critical path (invariant) |
 | Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache                 | Storage-heavy, can tolerate downtime |
 
-Authentik, PowerDNS, and Headscale each have dedicated 2-instance CloudNativePG clusters
-on `local-path`, pinned to VPS nodes. Individual CNPG clusters preferred over a single
-shared PostgreSQL for fault isolation.
-
-### Headscale: Single Replica (No HA)
-
-**Decision**: Run Headscale at 1 replica — multi-replica is architecturally impossible.
-
-**Rationale**: Headscale holds extensive in-memory state (node store, long-poll connections,
-OIDC state, registration cache, route primary election, IP allocation) that serves as the
-authoritative data plane. The database is used for persistence only, not as a coordination
-layer. Running 2 replicas causes OIDC split-brain (callback hits wrong replica) and node
-update desync (map responses built from per-process snapshots). PostgreSQL backend exists
-but is "highly discouraged" upstream and wouldn't help — the problem is in-process state,
-not the DB.
-
-See <lessons_learned/2026-03-07-headscale-single-replica-only.md> for full analysis.
+Authentik and PowerDNS each have dedicated 2-instance CloudNativePG clusters on `local-path`,
+pinned to VPS nodes. Individual CNPG clusters preferred over a single shared PostgreSQL for
+fault isolation.
 
 ## 🔗 Related Documentation
 
@@ -580,7 +542,6 @@ See <lessons_learned/2026-03-07-headscale-single-replica-only.md> for full analy
 - **Troubleshooting**: <troubleshooting.md>
 - **Changelog**: <changelog.md>
 - **Secret Sync Analysis**: <lessons_learned/2025-11-28-eso-password-generator-desync.md>
-- **Headscale Single Replica**: <lessons_learned/2026-03-07-headscale-single-replica-only.md>
 
 ## 📊 Cluster Specifications
 
