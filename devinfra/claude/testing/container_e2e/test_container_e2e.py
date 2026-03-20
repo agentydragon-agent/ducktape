@@ -32,7 +32,6 @@ from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, MockEgressProxy
 from util.bazel.runfiles import get_required_path
-from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -133,11 +132,6 @@ async def test_container_e2e(
 
             container_name = f"{_CONTAINER_NAME}-{os.getpid()}"
 
-            # Pick isolated ports for supervisor and auth proxy (avoid conflicts
-            # with host services when using --network=host)
-            container_supervisor_port = pick_free_port()
-            container_auth_proxy_port = pick_free_port()
-
             # Environment variables
             env = {
                 # Web mode trigger
@@ -148,14 +142,10 @@ async def test_container_e2e(
                 # Isolated dirs
                 "HOME": "/root",
                 "XDG_CACHE_HOME": "/cache",
-                "XDG_CONFIG_HOME": "/config",
-                "XDG_RUNTIME_DIR": "/run/user/0",
                 # Hook settings
                 "DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK": "true",
                 "DUCKTAPE_CLAUDE_HOOKS_INSTALL_MKCERT": "false",
                 "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
-                "DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT": str(container_supervisor_port),
-                "DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT": str(container_auth_proxy_port),
                 # Mock CA path (used by _extract_proxy_ca in proxy_setup)
                 "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
                 # Wheel path inside container
@@ -200,7 +190,7 @@ async def test_container_e2e(
                     "-c",
                     # git + JDK are pre-installed in the e2e image.
                     # Break DNS to enforce proxy usage, then run the test.
-                    "mkdir -p /project/.git /cache /config /run/user/0 && "
+                    "mkdir -p /project/.git /cache && "
                     "echo 'nameserver 192.0.2.1' > /etc/resolv.conf && "
                     "python /run_in_container.py",
                 ],

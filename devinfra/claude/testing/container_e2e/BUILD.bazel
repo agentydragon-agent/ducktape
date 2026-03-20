@@ -37,7 +37,6 @@ py_test(
         "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/testing:conftest",
         "//devinfra/claude/testing:mock_egress_proxy",
-        "//util:net",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//aiodocker",
