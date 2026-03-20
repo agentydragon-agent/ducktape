@@ -175,7 +175,7 @@ async def test_container_e2e(
                 f"{staged_script}:/run_in_container.py:ro",
                 f"{mock_ca_path}:/certs/mock_ca.pem:ro",
                 f"{combined_ca_path}:/certs/combined_ca.pem:ro",
-                f"{staged_workspace}:/testdata/test_workspace:ro",
+                f"{staged_workspace}:/project/test_workspace:ro",
                 f"{session_logs_dir}:/root/.claude/session-env/{_SESSION_ID}",
             ]
 

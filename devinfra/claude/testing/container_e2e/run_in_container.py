@@ -11,8 +11,7 @@ Expected environment (set by the test orchestrator):
     HTTPS_PROXY / HTTP_PROXY: Mock egress proxy URL (on host)
     ANTHROPIC_CA_PATH: Path to the mock CA cert
     SSL_CERT_FILE / REQUESTS_CA_BUNDLE / CURL_CA_BUNDLE / NODE_EXTRA_CA_CERTS: Combined CA
-    HOME: Isolated home directory
-    DUCKTAPE_CLAUDE_HOOKS_*: Hook settings (ports, flags)
+    DUCKTAPE_CLAUDE_HOOKS_*: Hook settings
 """
 
 import json
@@ -84,12 +83,8 @@ def main() -> int:
     assert env_file.exists(), f"Env file not created at {env_file}"
     print("=== Session start artifacts verified", flush=True)
 
-    # Copy test workspace into the project dir
-    test_workspace_src = Path("/testdata/test_workspace")
-    test_workspace = project_dir / "test_workspace"
-    subprocess.run(["cp", "-r", str(test_workspace_src), str(test_workspace)], check=True)
-
     # Run bazel build through the proxy chain
+    test_workspace = project_dir / "test_workspace"
     # Source the env file (like Claude Code would) then run bazel
     output_base = Path("/tmp/bazel_output_base")
     output_base.mkdir(parents=True, exist_ok=True)
