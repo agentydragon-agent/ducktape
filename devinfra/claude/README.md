@@ -390,6 +390,17 @@ Key files: TF module in `cluster/terraform/gitops/alloy-otlp-bearer-token/`,
 Authentik blueprint in `cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml`.
 Rotation: bump `rotation_version` in the TF module.
 
+## Web Setup
+
+To use this repository with Claude Code on the web, configure the following setup script in the Claude Code web UI:
+
+```bash
+#!/bin/bash
+pip install --break-system-packages --force-reinstall https://github.com/agentydragon/ducktape/releases/download/claude-hooks-latest/claude_hooks-0.1.0-py3-none-any.whl 2>&1 | tee /tmp/setup-script.log
+```
+
+This installs the `claude-hooks` wheel which provides the `claude-hook` binary used by the session start and other hooks in `.claude/settings.json`.
+
 ## Development
 
 ```bash
