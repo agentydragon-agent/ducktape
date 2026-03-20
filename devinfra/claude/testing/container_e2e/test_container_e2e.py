@@ -6,14 +6,17 @@ all external connectivity).
 
 Architecture:
     Host side:
-        - MockEgressProxy on 127.0.0.1 (TLS-intercepting + plain HTTP, requires auth)
+        - MockEgressProxy on 0.0.0.0 (TLS-intercepting + plain HTTP, requires auth)
         - Builds the ducktape wheel via Bazel
         - Pulls e2e-container image from GHCR (python:3.13-slim + git + JDK)
-        - Creates Docker container on --internal network
+        - Creates two Docker networks:
+          - e2e-proxy (bridge): sidecar ↔ host
+          - e2e-isolated (internal bridge): test container ↔ sidecar only
+        - Sidecar container runs tcp_forwarder.py to bridge the two networks
         - Drives test steps via docker exec calls
 
     Container side (via docker exec):
-        - Installs ducktape wheel (pip through proxy)
+        - Installs ducktape wheel (pip through proxy → sidecar → MockEgressProxy)
         - Runs claude-hook (session start hook) which sets up:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
@@ -24,6 +27,7 @@ import logging
 import os
 import shlex
 import shutil
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +53,9 @@ _WHEEL_RLOCATION = "_main/ducktape-0.1.0-py3-none-any.whl"
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 
+# Rlocation for tcp_forwarder.py (staged into sidecar container)
+_TCP_FORWARDER_RLOCATION = "_main/devinfra/claude/testing/container_e2e/tcp_forwarder.py"
+
 # GHCR image for the e2e test container (built by e2e-container-image.yml CI workflow)
 _E2E_IMAGE = "ghcr.io/agentydragon/e2e-container:latest"
 
@@ -59,6 +66,9 @@ _CONTAINER_NAME = "ducktape-container-e2e"
 _SESSION_ID = "container-e2e-test"
 
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
+
+# Port the sidecar listens on inside the isolated network
+_SIDECAR_LISTEN_PORT = 8080
 
 
 def _save_output(name: str, content: str) -> None:
@@ -141,166 +151,229 @@ def test_workspace_path() -> Path:
     return get_required_path(_TEST_WORKSPACE_MODULE).parent
 
 
-async def test_container_e2e(tmp_path: Path, wheel_path: Path, test_workspace_path: Path) -> None:
+@pytest.fixture
+def tcp_forwarder_path() -> Path:
+    """Resolve the tcp_forwarder.py script from runfiles."""
+    return get_required_path(_TCP_FORWARDER_RLOCATION)
+
+
+@pytest.fixture
+async def docker_client() -> AsyncGenerator[aiodocker.Docker]:
+    """Yield an aiodocker client, closing on teardown."""
+    async with aiodocker.Docker() as client:
+        yield client
+
+
+@pytest.fixture
+async def mock_proxy() -> AsyncGenerator[MockEgressProxy]:
+    """Yield a MockEgressProxy listening on 0.0.0.0 (reachable from bridge network)."""
+    async with MockEgressProxy(
+        listen_port=0,
+        listen_address="0.0.0.0",
+        username="proxy_user",
+        password="test_jwt_token",
+        upstream_proxy=EgressProxyConfig.from_env(),
+    ) as proxy:
+        yield proxy
+
+
+async def test_container_e2e(
+    tmp_path: Path,
+    wheel_path: Path,
+    test_workspace_path: Path,
+    tcp_forwarder_path: Path,
+    docker_client: aiodocker.Docker,
+    mock_proxy: MockEgressProxy,
+) -> None:
     """Full E2E: install wheel in container, run hook, bazel build through proxy."""
-    async with aiodocker.Docker() as docker:
-        await _ensure_image(docker, _E2E_IMAGE)
+    await _ensure_image(docker_client, _E2E_IMAGE)
 
-        # Start mock egress proxy — handles both CONNECT (TLS MITM) and plain HTTP
-        async with MockEgressProxy(
-            listen_port=0,
-            listen_address="127.0.0.1",
-            username="proxy_user",
-            password="test_jwt_token",
-            upstream_proxy=EgressProxyConfig.from_env(),
-        ) as proxy:
-            logger.info("MockEgressProxy listening on port %d", proxy.port)
+    logger.info("MockEgressProxy listening on port %d", mock_proxy.port)
 
-            # Write mock CA cert to a file the container can access
-            mock_ca_path = tmp_path / "mock_ca.pem"
-            mock_ca_path.write_bytes(proxy.ca_cert_pem)
+    # Write mock CA cert to a file the container can access
+    mock_ca_path = tmp_path / "mock_ca.pem"
+    mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
 
-            # Create combined CA bundle (system CAs + mock proxy CA)
-            system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
-            combined_ca_path = tmp_path / "combined_ca.pem"
-            system_cas = system_ca_path.read_bytes() if system_ca_path else b""
-            combined_ca_path.write_bytes(system_cas + b"\n" + proxy.ca_cert_pem)
+    # Create combined CA bundle (system CAs + mock proxy CA)
+    system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
+    combined_ca_path = tmp_path / "combined_ca.pem"
+    system_cas = system_ca_path.read_bytes() if system_ca_path else b""
+    combined_ca_path.write_bytes(system_cas + b"\n" + mock_proxy.ca_cert_pem)
 
-            # With --network=host, the container shares the host network namespace
-            # so localhost:port works directly
-            proxy_url = f"http://proxy_user:test_jwt_token@127.0.0.1:{proxy.port}"
+    # Copy files to a staging directory so Docker can mount real files
+    # (runfiles may be symlinks that Docker cannot resolve in gVisor)
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    staged_wheel = staging / "ducktape-0.1.0-py3-none-any.whl"
+    shutil.copy2(wheel_path, staged_wheel)
+    staged_workspace = staging / "test_workspace"
+    shutil.copytree(test_workspace_path, staged_workspace)
+    staged_forwarder = staging / "tcp_forwarder.py"
+    shutil.copy2(tcp_forwarder_path, staged_forwarder)
 
-            container_name = f"{_CONTAINER_NAME}-{os.getpid()}"
+    # Bind-mount the session dir so logs land directly in undeclared outputs
+    session_logs_dir = undeclared_outputs_dir() / "container-e2e" / "session-logs"
+    session_logs_dir.mkdir(parents=True, exist_ok=True)
 
-            # Environment variables
-            env = {
-                # Web mode trigger
-                "CLAUDE_CODE_REMOTE": "true",
-                # Project and env file paths (inside container)
-                "CLAUDE_PROJECT_DIR": "/project",
-                "CLAUDE_ENV_FILE": _ENV_FILE,
-                # Hook settings
-                "DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK": "true",
-                "DUCKTAPE_CLAUDE_HOOKS_INSTALL_MKCERT": "false",
-                "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
-                # Mock CA path (used by _extract_proxy_ca in proxy_setup)
-                "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
-                # Wheel path inside container
-                "WHEEL_PATH": "/wheel/ducktape-0.1.0-py3-none-any.whl",
-            }
-            # Proxy configuration — all proxy vars point to the mock egress proxy
-            for var in PROXY_ENV_VARS:
-                env[var] = proxy_url
-            # SSL CA configuration — point to the combined CA inside the container
-            for var in SSL_CA_ENV_VARS:
-                env[var] = "/certs/combined_ca.pem"
+    pid = os.getpid()
+    proxy_net_name = f"e2e-proxy-{pid}"
+    isolated_net_name = f"e2e-isolated-{pid}"
+    container_name = f"{_CONTAINER_NAME}-{pid}"
+    sidecar_name = f"{_CONTAINER_NAME}-sidecar-{pid}"
 
-            # Copy files to a staging directory so Docker can mount real files
-            # (runfiles may be symlinks that Docker cannot resolve in gVisor)
-            staging = tmp_path / "staging"
-            staging.mkdir()
-            staged_wheel = staging / "ducktape-0.1.0-py3-none-any.whl"
-            shutil.copy2(wheel_path, staged_wheel)
-            staged_workspace = staging / "test_workspace"
-            shutil.copytree(test_workspace_path, staged_workspace)
+    # Create networks
+    proxy_net = await docker_client.networks.create({"Name": proxy_net_name, "Driver": "bridge"})
+    isolated_net = await docker_client.networks.create(
+        {"Name": isolated_net_name, "Driver": "bridge", "Internal": True}
+    )
 
-            # Bind-mount the session dir so logs land directly in undeclared outputs
-            session_logs_dir = undeclared_outputs_dir() / "container-e2e" / "session-logs"
-            session_logs_dir.mkdir(parents=True, exist_ok=True)
+    sidecar: aiodocker.containers.DockerContainer | None = None
+    container: aiodocker.containers.DockerContainer | None = None
 
-            binds = [
-                f"{staged_wheel}:/wheel/ducktape-0.1.0-py3-none-any.whl:ro",
-                f"{mock_ca_path}:/certs/mock_ca.pem:ro",
-                f"{combined_ca_path}:/certs/combined_ca.pem:ro",
-                f"{staged_workspace}:/project/test_workspace:ro",
-                f"{session_logs_dir}:/root/.claude/session-env/{_SESSION_ID}",
-            ]
+    try:
+        # Get gateway IP of the proxy network (host is reachable at this IP)
+        proxy_net_info = await proxy_net.show()
+        gateway_ip = proxy_net_info["IPAM"]["Config"][0]["Gateway"]
+        logger.info("Proxy network gateway (host reachable at): %s", gateway_ip)
 
-            container_config = {
+        # Start sidecar container on proxy network — forwards traffic to host MockEgressProxy
+        sidecar_cmd = ["python3", "/tcp_forwarder.py", str(_SIDECAR_LISTEN_PORT), gateway_ip, str(mock_proxy.port)]
+        sidecar = await docker_client.containers.create(
+            {
+                "Image": _E2E_IMAGE,
+                "Cmd": sidecar_cmd,
+                "HostConfig": {"NetworkMode": proxy_net_name, "Binds": [f"{staged_forwarder}:/tcp_forwarder.py:ro"]},
+            },
+            name=sidecar_name,
+        )
+        await sidecar.start()
+        logger.info("Started sidecar %s", sidecar_name)
+
+        # Connect sidecar to the isolated network too
+        await isolated_net.connect({"Container": sidecar._id})
+
+        # Get sidecar's IP on the isolated network
+        sidecar_info = await sidecar.show()
+        sidecar_ip = sidecar_info["NetworkSettings"]["Networks"][isolated_net_name]["IPAddress"]
+        logger.info("Sidecar IP on isolated network: %s", sidecar_ip)
+
+        # Proxy URL points through sidecar
+        proxy_url = f"http://proxy_user:test_jwt_token@{sidecar_ip}:{_SIDECAR_LISTEN_PORT}"
+
+        # Environment variables
+        env = {
+            # Web mode trigger
+            "CLAUDE_CODE_REMOTE": "true",
+            # Project and env file paths (inside container)
+            "CLAUDE_PROJECT_DIR": "/project",
+            "CLAUDE_ENV_FILE": _ENV_FILE,
+            # Hook settings
+            "DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK": "true",
+            "DUCKTAPE_CLAUDE_HOOKS_INSTALL_MKCERT": "false",
+            "DUCKTAPE_CLAUDE_HOOKS_CONTAINER_RUNTIME": "none",
+            # Mock CA path (used by _extract_proxy_ca in proxy_setup)
+            "ANTHROPIC_CA_PATH": "/certs/mock_ca.pem",
+            # Wheel path inside container
+            "WHEEL_PATH": "/wheel/ducktape-0.1.0-py3-none-any.whl",
+        }
+        # Proxy configuration — all proxy vars point through the sidecar
+        for var in PROXY_ENV_VARS:
+            env[var] = proxy_url
+        # SSL CA configuration — point to the combined CA inside the container
+        for var in SSL_CA_ENV_VARS:
+            env[var] = "/certs/combined_ca.pem"
+
+        binds = [
+            f"{staged_wheel}:/wheel/ducktape-0.1.0-py3-none-any.whl:ro",
+            f"{mock_ca_path}:/certs/mock_ca.pem:ro",
+            f"{combined_ca_path}:/certs/combined_ca.pem:ro",
+            f"{staged_workspace}:/project/test_workspace:ro",
+            f"{session_logs_dir}:/root/.claude/session-env/{_SESSION_ID}",
+        ]
+
+        # Test container on isolated network only — no direct internet access
+        container = await docker_client.containers.create(
+            {
                 "Image": _E2E_IMAGE,
                 "Env": [f"{k}={v}" for k, v in env.items()],
                 "Cmd": ["sleep", "infinity"],
-                "HostConfig": {"NetworkMode": "host", "Binds": binds},
+                "HostConfig": {"NetworkMode": isolated_net_name, "Binds": binds},
+            },
+            name=container_name,
+        )
+        await container.start()
+        logger.info("Started test container %s on isolated network", container_name)
+
+        # Verify network isolation — container must not reach the internet directly
+        rc, _, _ = await _exec(container, ["bash", "-c", "curl --max-time 3 https://google.com"], check=False)
+        assert rc != 0, "Container should have no external internet access on --internal network"
+        logger.info("Network isolation verified: container cannot reach internet directly")
+
+        # Create project dir with .git (needed for pre-commit install)
+        await _exec(container, ["mkdir", "-p", "/project/.git"])
+
+        # Install ducktape wheel
+        # TODO(container-e2e): Install via uv by reading .claude/settings.json
+        # hook definition and piping the JSON into sh, instead of raw pip.
+        logger.info("Installing wheel")
+        await _exec(container, ["pip", "install", "--break-system-packages", "/wheel/ducktape-0.1.0-py3-none-any.whl"])
+
+        # Run session start hook
+        logger.info("Running claude-hook (session start)")
+        hook_input = json.dumps(
+            {
+                "hook_event_name": "SessionStart",
+                "session_id": _SESSION_ID,
+                "cwd": "/project",
+                "transcript_path": "/tmp/transcript.json",
+                "permission_mode": "default",
+                "source": "startup",
+                "model": "claude-sonnet-4-6",
             }
+        )
+        await _exec(container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"])
 
-            logger.info("Creating container: %s", container_name)
-            container = await docker.containers.create(
-                container_config,  # type: ignore[arg-type]
-                name=container_name,
-            )
+        # Run bazel build through the proxy chain
+        logger.info("Running bazel build")
+        bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
+        await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
+        # Verify the mock proxy actually saw traffic
+        assert mock_proxy.stats.total_connections > 0, (
+            "Mock egress proxy received no connections - network isolation may not be working"
+        )
+        logger.info("Proxy stats: %s", mock_proxy.stats)
+
+    finally:
+        # Save container logs before cleanup
+        if container is not None:
             try:
-                await container.start()
-                logger.info("Started container %s", container_name)
+                stdout = "".join(await container.log(stdout=True, stderr=False))
+                stderr = "".join(await container.log(stdout=False, stderr=True))
+                _save_output("container-stdout.log", stdout)
+                _save_output("container-stderr.log", stderr)
+            except Exception:
+                logger.warning("Failed to collect container logs", exc_info=True)
+            await container.delete(force=True)
 
-                # Create project dir with .git (needed for pre-commit install)
-                await _exec(container, ["mkdir", "-p", "/project/.git"])
+        if sidecar is not None:
+            await sidecar.delete(force=True)
 
-                # Install ducktape wheel
-                # TODO(container-e2e): Install via uv by reading .claude/settings.json
-                # hook definition and piping the JSON into sh, instead of raw pip.
-                logger.info("Installing wheel")
-                await _exec(
-                    container, ["pip", "install", "--break-system-packages", "/wheel/ducktape-0.1.0-py3-none-any.whl"]
-                )
+        # Disconnect containers from networks before deleting networks
+        # (force=True on delete already stops containers, but network cleanup
+        # needs containers disconnected first)
+        try:
+            await isolated_net.delete()
+        except Exception:
+            logger.warning("Failed to delete isolated network", exc_info=True)
+        try:
+            await proxy_net.delete()
+        except Exception:
+            logger.warning("Failed to delete proxy network", exc_info=True)
 
-                # Run session start hook
-                logger.info("Running claude-hook (session start)")
-                hook_input = json.dumps(
-                    {
-                        "hook_event_name": "SessionStart",
-                        "session_id": _SESSION_ID,
-                        "cwd": "/project",
-                        "transcript_path": "/tmp/transcript.json",
-                        "permission_mode": "default",
-                        "source": "startup",
-                        "model": "claude-sonnet-4-6",
-                    }
-                )
-                hook_rc, hook_stdout, hook_stderr = await _exec(
-                    container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"], check=False
-                )
-
-                if hook_rc != 0:
-                    # Daemon logs are in the bind-mounted session_logs_dir and will
-                    # appear in undeclared outputs automatically.
-                    raise AssertionError(
-                        f"claude-hook failed (rc={hook_rc}):\n"
-                        f"stdout:\n{hook_stdout.decode(errors='replace')}\n"
-                        f"stderr:\n{hook_stderr.decode(errors='replace')}"
-                    )
-
-                # Run bazel build through the proxy chain
-                logger.info("Running bazel build")
-                bazel_cmd = f"source {_ENV_FILE} && bazel --output_base=/tmp/bazel_output_base build //:hello"
-                await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
-
-                logger.info("Container E2E test PASSED")
-
-                # Verify the mock proxy actually saw traffic
-                assert proxy.stats.total_connections > 0, (
-                    "Mock egress proxy received no connections - network isolation may not be working"
-                )
-                logger.info(
-                    "Container E2E passed: %d proxy connections, %d successful",
-                    proxy.stats.total_connections,
-                    proxy.stats.successful_connections,
-                )
-
-            finally:
-                # Save container logs before cleanup
-                try:
-                    stdout = "".join(await container.log(stdout=True, stderr=False))
-                    stderr = "".join(await container.log(stdout=False, stderr=True))
-                    _save_output("container-stdout.log", stdout)
-                    _save_output("container-stderr.log", stderr)
-                except Exception:
-                    logger.warning("Failed to collect container logs", exc_info=True)
-
-                await container.delete(force=True)
-                # Session logs are already on host via bind-mount; just clean up
-                # dangling symlinks (e.g. bin/bazelisk) that Bazel would reject
-                _cleanup_dangling_symlinks(session_logs_dir)
+        # Session logs are already on host via bind-mount; just clean up
+        # dangling symlinks (e.g. bin/bazelisk) that Bazel would reject
+        _cleanup_dangling_symlinks(session_logs_dir)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,13 @@
 load("//devinfra/testing:defs.bzl", "py_test")
 
+exports_files(["tcp_forwarder.py"])
+
 py_test(
     name = "test_container_e2e",
-    size = "large",
+    size = "small",
     srcs = ["test_container_e2e.py"],
     data = [
+        "tcp_forwarder.py",
         "//:wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
     ],
