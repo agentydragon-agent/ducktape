@@ -1,16 +1,14 @@
 """CLI entry point for containerized MockEgressProxy.
 
 Wraps MockEgressProxy with CLI args and an HTTP management API for CA cert
-retrieval, readiness checks, and stats. Used as the entrypoint for the OCI image.
+retrieval and readiness checks. Used as the entrypoint for the OCI image.
 
 Management endpoints (on --mgmt-port, default 8081):
     GET /ready   — 200 when proxy is listening
     GET /ca.pem  — PEM-encoded CA certificate
-    GET /stats   — JSON connection statistics
 
 When --log-dir is set, adds a FileHandler to the proxy logger so all proxy
-output (including per-connection JSON records) lands in the specified directory.
-Mount a host dir there to collect as test output.
+output (including per-connection log lines) lands in the specified directory.
 """
 
 import argparse
@@ -59,13 +57,9 @@ def _build_mgmt_app(proxy: MockEgressProxy) -> web.Application:
     async def handle_ca_pem(_request: web.Request) -> web.Response:
         return web.Response(body=proxy.ca_cert_pem, content_type="application/x-pem-file")
 
-    async def handle_stats(_request: web.Request) -> web.Response:
-        return web.json_response(proxy.stats.model_dump(exclude={"connections"}))
-
     app = web.Application()
     app.router.add_get("/ready", handle_ready)
     app.router.add_get("/ca.pem", handle_ca_pem)
-    app.router.add_get("/stats", handle_stats)
     return app
 
 

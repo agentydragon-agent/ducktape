@@ -27,7 +27,6 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-from pydantic import BaseModel
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
@@ -212,41 +211,6 @@ def generate_server_cert(ca_cert_pem: bytes, ca_key_pem: bytes, hostname: str) -
     return cert_pem, key_pem
 
 
-class ConnectionRecord(BaseModel):
-    """A single proxied connection."""
-
-    method: str
-    host: str
-    port: int
-    success: bool
-    bytes_forwarded: int = 0
-    error: str | None = None
-
-
-class ConnectionStats(BaseModel):
-    """Track connection statistics for debugging."""
-
-    total_connections: int = 0
-    successful_connections: int = 0
-    failed_connections: int = 0
-    bytes_forwarded: int = 0
-    errors: list[str] = []
-    connections: list[ConnectionRecord] = []
-
-    def record_success(self, bytes_count: int = 0) -> None:
-        self.successful_connections += 1
-        self.bytes_forwarded += bytes_count
-
-    def record_failure(self, error: str) -> None:
-        self.failed_connections += 1
-        self.errors.append(error)
-        if len(self.errors) > 100:
-            self.errors = self.errors[-100:]
-
-    def record_connection(self) -> None:
-        self.total_connections += 1
-
-
 class MockEgressProxy:
     """A TLS-intercepting proxy that forwards traffic to real destinations.
 
@@ -284,7 +248,9 @@ class MockEgressProxy:
         # Cache for generated server certs (hostname -> (cert_pem, key_pem))
         self._server_certs: dict[str, tuple[bytes, bytes]] = {}
 
-        self.stats = ConnectionStats()
+        self._total_connections = 0
+        self._successful_connections = 0
+        self._failed_connections = 0
         self._outbound_semaphore = asyncio.Semaphore(max_concurrent_outbound)
 
     @property
@@ -324,18 +290,15 @@ class MockEgressProxy:
             await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
         logger.info(
-            "MockEgressProxy stopped. Stats: %d total, %d success, %d failed, %d bytes",
-            self.stats.total_connections,
-            self.stats.successful_connections,
-            self.stats.failed_connections,
-            self.stats.bytes_forwarded,
+            "MockEgressProxy stopped. Stats: %d total, %d success, %d failed",
+            self._total_connections,
+            self._successful_connections,
+            self._failed_connections,
         )
-        if self.stats.errors:
-            logger.info("Recent errors: %s", self.stats.errors[-5:])
 
     async def _on_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         """Callback for asyncio.start_server — wraps _handle_client in a tracked task."""
-        self.stats.record_connection()
+        self._total_connections += 1
         task = asyncio.current_task()
         assert task is not None
         self._tasks.add(task)
@@ -347,7 +310,8 @@ class MockEgressProxy:
     async def _send_error(self, writer: asyncio.StreamWriter, response: bytes, error: str) -> None:
         writer.write(response)
         await writer.drain()
-        self.stats.record_failure(error)
+        self._failed_connections += 1
+        logger.warning("Proxy error: %s", error)
 
     async def _require_auth(self, writer: asyncio.StreamWriter, request: bytes, context: str) -> bool:
         """Check Proxy-Authorization header, send 407 if it fails. Returns True if auth passed."""
@@ -478,7 +442,8 @@ class MockEgressProxy:
         except asyncio.CancelledError:
             raise
         except (TimeoutError, ssl.SSLError, OSError, ValueError) as e:
-            self.stats.record_failure(f"{target_host}:{target_port}: {e}")
+            self._failed_connections += 1
+            logger.warning("Connection error for %s:%d: %s", target_host, target_port, e)
 
     async def _handle_connect(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, request: bytes, request_line: str
@@ -497,7 +462,7 @@ class MockEgressProxy:
             target_host = target
             target_port = 443
 
-        conn_id = self.stats.total_connections
+        conn_id = self._total_connections
         logger.info("[conn %d] CONNECT request for %s:%d", conn_id, target_host, target_port)
 
         if not await self._require_auth(writer, request, f"{target_host}:{target_port}"):
@@ -552,7 +517,7 @@ class MockEgressProxy:
         target_host = parsed.hostname
         target_port = parsed.port or 80
 
-        conn_id = self.stats.total_connections
+        conn_id = self._total_connections
         logger.info("[conn %d] %s %s (plain HTTP proxy)", conn_id, method, url[:120])
 
         if not await self._require_auth(writer, request, f"{method} {target_host}:{target_port}"):
@@ -610,10 +575,11 @@ class MockEgressProxy:
         port: int,
         conn_id: int,
     ) -> None:
-        """Bidirectional relay + stats recording + connection logging."""
+        """Bidirectional relay + connection logging."""
+        # Track bytes outside the tasks so cancellation doesn't lose counts
+        byte_counts = [0, 0]  # [c2s, s2c]
 
-        async def forward(src: asyncio.StreamReader, dst: asyncio.StreamWriter, direction: str) -> int:
-            count = 0
+        async def forward(src: asyncio.StreamReader, dst: asyncio.StreamWriter, direction: str, idx: int) -> None:
             try:
                 while True:
                     data = await src.read(65536)
@@ -621,25 +587,30 @@ class MockEgressProxy:
                         break
                     dst.write(data)
                     await dst.drain()
-                    count += len(data)
+                    byte_counts[idx] += len(data)
             except (OSError, ssl.SSLError, ConnectionError) as e:
                 logger.debug("Forward %s finished for %s: %s", direction, host, e)
-            return count
 
-        c2s = asyncio.create_task(forward(client_reader, server_writer, "c2s"))
-        s2c = asyncio.create_task(forward(server_reader, client_writer, "s2c"))
+        c2s = asyncio.create_task(forward(client_reader, server_writer, "c2s", 0))
+        s2c = asyncio.create_task(forward(server_reader, client_writer, "s2c", 1))
 
-        done, pending = await asyncio.wait([c2s, s2c], return_when=asyncio.FIRST_COMPLETED)
+        _done, pending = await asyncio.wait([c2s, s2c], return_when=asyncio.FIRST_COMPLETED)
         for task in pending:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task
 
-        bytes_forwarded = sum(t.result() for t in done if not t.cancelled() and t.exception() is None)
-        self.stats.record_success(bytes_forwarded)
-        record = ConnectionRecord(method=method, host=host, port=port, success=True, bytes_forwarded=bytes_forwarded)
-        self.stats.connections.append(record)
-        logger.info("[conn %d] %s", conn_id, record.model_dump_json())
+        self._successful_connections += 1
+        logger.info(
+            "[conn %d] done %s %s:%d c2s=%d s2c=%d total=%d",
+            conn_id,
+            method,
+            host,
+            port,
+            byte_counts[0],
+            byte_counts[1],
+            byte_counts[0] + byte_counts[1],
+        )
 
 
 @contextlib.asynccontextmanager
