@@ -115,15 +115,3 @@ output "k8s_bootstrap_token" {
   value       = talos_machine_secrets.cluster.machine_secrets.secrets.bootstrap_token
   sensitive   = true
 }
-
-output "kubespan_cluster_id" {
-  description = "Talos cluster ID (used by k8s-worker modules for cluster identity)"
-  value       = talos_machine_secrets.cluster.machine_secrets.cluster.id
-  sensitive   = true
-}
-
-output "kubespan_cluster_secret" {
-  description = "Talos cluster secret (used by k8s-worker modules for cluster authentication)"
-  value       = talos_machine_secrets.cluster.machine_secrets.cluster.secret
-  sensitive   = true
-}

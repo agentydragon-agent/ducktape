@@ -40,8 +40,8 @@ def main() -> None:
         print("talosctl not found in PATH", file=sys.stderr)
         sys.exit(1)
 
-    # Extract bootstrap kubeconfig (server URL is https://localhost:7445 —
-    # kubespand's KubePrism LB proxies to API server).
+    # Extract bootstrap kubeconfig (server URL points to a control plane
+    # Nebula IP for direct API server access via the mesh).
     bootstrap_kubeconfig = run_talosctl("cat", "/etc/kubernetes/bootstrap-kubeconfig")
 
     # Extract CA certificate.

@@ -15,7 +15,7 @@ output "instructions" {
 
     k8s-worker-test VM deployed (ID: ${module.k8s_worker_test.vm_id})
 
-    kubespand and kubelet auto-start on boot.
+    Nebula and kubelet auto-start on boot.
     After boot completes (~2-3 minutes), approve the CSR:
       kubectl get csr
       kubectl certificate approve <csr-name>

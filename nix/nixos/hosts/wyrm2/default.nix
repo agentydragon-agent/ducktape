@@ -1,6 +1,6 @@
 # Wyrm2 - NixOS dev workstation VM + k8s worker
 # Similar to rugged (Dell Rugged tablet) but for Proxmox VM.
-# Joins the Talos k8s cluster via KubeSpan mesh.
+# Joins the Talos k8s cluster via Nebula mesh.
 {
   config,
   pkgs,
@@ -21,11 +21,11 @@
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
-  # K8s worker (KubeSpan fabric)
-  # Cloud-init writes /etc/kubespan/agent.yaml, /etc/kubernetes/pki/ca.crt,
+  # K8s worker (Nebula mesh)
+  # Cloud-init writes Nebula certs, /etc/kubernetes/pki/ca.crt,
   # and bootstrap kubeconfig. Services must wait for cloud-init.
   services.cloud-init.enable = true;
-  systemd.services.kubespand.after = [ "cloud-final.service" ];
+  systemd.services.nebula.after = [ "cloud-final.service" ];
   systemd.services.kubelet.after = [ "cloud-final.service" ];
   ducktape.k8sWorker = {
     enable = true;

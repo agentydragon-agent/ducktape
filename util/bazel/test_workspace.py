@@ -22,7 +22,10 @@ from util.bazel.workspace import BazelLabel, BazelWorkspace
         ("@@canonical//pkg:target", BazelLabel(repo="canonical", package=Path("pkg"), name="target")),
         # Short form: //pkg implies //pkg:pkg
         ("//foo/bar", BazelLabel(repo="", package=Path("foo/bar"), name="bar")),
-        ("//cluster/kubespand/cmd/apid", BazelLabel(repo="", package=Path("cluster/kubespand/cmd/apid"), name="apid")),
+        (
+            "//cluster/scripts/validate_cluster/cmd/main",
+            BazelLabel(repo="", package=Path("cluster/scripts/validate_cluster/cmd/main"), name="main"),
+        ),
         ("@repo//pkg", BazelLabel(repo="repo", package=Path("pkg"), name="pkg")),
     ],
 )
@@ -101,7 +104,10 @@ def test_package_path_property(label: BazelLabel, expected: Path | None) -> None
         (BazelLabel(repo="canonical", package=Path("pkg"), name="target"), "@canonical//pkg:target"),
         # Short form: name matches last package component
         (BazelLabel(repo="", package=Path("foo/bar"), name="bar"), "//foo/bar"),
-        (BazelLabel(repo="", package=Path("cluster/kubespand/cmd/apid"), name="apid"), "//cluster/kubespand/cmd/apid"),
+        (
+            BazelLabel(repo="", package=Path("cluster/scripts/validate_cluster/cmd/main"), name="main"),
+            "//cluster/scripts/validate_cluster/cmd/main",
+        ),
         (BazelLabel(repo="repo", package=Path("pkg"), name="pkg"), "@repo//pkg"),
     ],
 )

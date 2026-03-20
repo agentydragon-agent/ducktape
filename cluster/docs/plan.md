@@ -5,7 +5,7 @@
 **Status**: Running with 5 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker + 1 roaming laptop).
 Cilium Gateway API serving HTTPS traffic. DNS automation working. Authentik auth verified.
 PowerDNS, Authentik, Headscale migrated to CloudNativePG on `local-path`.
-rugged (Dell Rugged 12) joined as roaming worker via `k8s-worker.nix` + KubeSpan, with
+rugged (Dell Rugged 12) joined as roaming worker via `k8s-worker.nix` + Nebula, with
 `node-role.kubernetes.io/roaming=true:NoSchedule` taint.
 
 See <changelog.md> for detailed change history.
@@ -61,7 +61,7 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
       upstream issue arguing `security: full` should opt out, or refine agent prompts
       to avoid inline Python with those keywords.
 - [ ] **OpenClaw: fix Ollama model discovery timeout on startup** — `TimeoutError` on
-      every pod restart (KubeSpan not ready). Options: init container wait, retry with
+      every pod restart (Nebula not ready). Options: init container wait, retry with
       backoff, or `startupProbe` delay.
 - [ ] **Plaid integration: fix onboarding** — `link/token/create` returns 400.
       Plaid's production onboarding process is involved (redirect URI registration,
@@ -252,7 +252,7 @@ Deployed in Audit mode. `require-gitops` ClusterPolicy, HA (3 replicas).
 ### Cilium Mutual Authentication (SPIRE) — Paused
 
 SPIRE is disabled in `cilium-values.yaml` — install times out during bootstrap on Talos
-(SPIRE pods never become ready). KubeSpan provides inter-node encryption. Revisit when
+(SPIRE pods never become ready). Nebula provides inter-node encryption. Revisit when
 SPIRE/Talos compatibility improves.
 
 - [ ] **Investigate SPIRE timeout** — determine root cause of SPIRE pod startup failure
@@ -262,7 +262,7 @@ SPIRE/Talos compatibility improves.
 ### TODO: Firewall Hardening
 
 All Hetzner firewall rules currently allow `0.0.0.0/0`. Keep 80/443/53 public; restrict
-K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet (10250), KubeSpan (51820),
+K8s API (6443), Talos API (50000-50001), etcd (2379-2380), kubelet (10250), Nebula (51820),
 VXLAN (8472) to admin IPs and inter-node CIDRs.
 
 ### ~~TODO: Remote Proxmox API Access~~ — DONE
@@ -429,7 +429,7 @@ multi-burn-rate alerts (Google SRE methodology).
 
 ### GPU Worker Node ✅
 
-wyrm2 (NixOS, not Talos): 2x RTX 5090, joined via `k8s-worker.nix` + KubeSpan. NVIDIA
+wyrm2 (NixOS, not Talos): 2x RTX 5090, joined via `k8s-worker.nix` + Nebula. NVIDIA
 device plugin uses `envvar` strategy with `nvidia-container-runtime.cdi` (CDI-based GPU
 injection from host-generated specs). Ollama at `ollama.allegedly.works` (native API) and LiteLLM at `litellm.allegedly.works` run on both GPUs.
 TODO: Revisit virtio-mem when Proxmox adds support (Bugzilla #2949).
@@ -525,7 +525,7 @@ Trade-off: invalidates existing cached store paths (acceptable if cache is ephem
 
 Shared storage mountable from both cluster pods and non-cluster VMs (e.g., wyrm).
 Use cases: LLM model snapshots, media libraries, shared caches. Cross-site access
-via KubeSpan adds latency — large data should stay home-only.
+via Nebula mesh adds latency — large data should stay home-only.
 
 ## 📐 Architecture Decisions
 
@@ -538,9 +538,9 @@ via KubeSpan adds latency — large data should stay home-only.
 - Hetzner VPS nodes are not on same L2 network
 - Native routing fails: "gateway must be directly reachable"
 - VXLAN encapsulates pod traffic between nodes
-- KubeSpan docs warn non-default Cilium options cause "asymmetric routing"
-- `MTU: 1370` in Helm values (uppercase key — case-sensitive, lowercase is silently ignored)
-- Avoids fragmentation: VXLAN overhead (50) + WireGuard overhead (80) = 130, so 1500 - 130 = 1370
+- Nebula docs warn non-default Cilium options cause "asymmetric routing"
+- `MTU: 1412` in Helm values (uppercase key — case-sensitive, lowercase is silently ignored)
+- Avoids fragmentation: VXLAN overhead (50) + Nebula overhead (38) = 88, so 1500 - 88 = 1412
 
 **Firewall**: UDP 8472 required for VXLAN overlay
 

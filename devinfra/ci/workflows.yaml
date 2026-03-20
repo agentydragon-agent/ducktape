@@ -93,18 +93,6 @@ workflows:
 #   extra_jobs:       Additional jobs spliced into the workflow (name → job config)
 #   release_needs:    Extra job names the release job depends on (beyond standard test)
 releases:
-  kubespand:
-    artifact_type: tarball
-    targets:
-      - bazel_target: //cluster/kubespand:kubespand_tar
-        flake_input: kubespand-tar
-    test_targets: //cluster/kubespand/...
-    release_body: |
-      kubespand — standalone KubeSpan daemon for non-Talos Linux.
-      apid — Talos API proxy daemon for kubespand (mTLS on port 50000).
-
-      Static x86_64 binaries. See `cluster/kubespand/README.md` for usage.
-
   ducktape:
     targets:
       - bazel_target: //:wheel

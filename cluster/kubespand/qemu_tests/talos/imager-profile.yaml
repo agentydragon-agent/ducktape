@@ -1,8 +1,0 @@
-baseProfileName: nocloud
-arch: amd64
-output:
-  kind: image
-  outFormat: raw
-  imageOptions:
-    diskFormat: qcow2
-    diskFormatOptions: "compat=1.1"

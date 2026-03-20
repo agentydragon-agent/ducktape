@@ -15,6 +15,7 @@
 
 - Sealed secrets keypair (RSA 4096, 10-year validity)
 - Proxmox API tokens (CSI, OpenTofu)
+- Nebula mesh PKI (CA cert + per-node certs/keys)
 - Nix cache signing key, Flux deploy key
 - Storage: local `terraform.tfstate` (gitignored)
 - Note: Talos machine secrets are in Layer 1 (ephemeral — fresh `cluster.id` per lifecycle)

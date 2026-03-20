@@ -150,16 +150,16 @@ kubectl logs -n kube-system -l name=cilium-operator --tail=50 | grep "gateway\|c
 **Root Cause**:
 
 The Cilium Helm chart (v1.16.x) defines the MTU parameter as **uppercase** `MTU`, not lowercase `mtu`.
-Helm values are case-sensitive — using `mtu: 1370` is silently ignored, leaving all pod interfaces
+Helm values are case-sensitive — using `mtu: 1412` is silently ignored, leaving all pod interfaces
 at the default MTU of 1500.
 
-With VXLAN + KubeSpan (WireGuard), the maximum payload without fragmentation is:
+With VXLAN + Nebula, the maximum payload without fragmentation is:
 
-- eth0 MTU (1500) - VXLAN overhead (50) - WireGuard overhead (80) = **1370 bytes**
+- eth0 MTU (1500) - VXLAN overhead (50) - Nebula overhead (38) = **1412 bytes**
 
-When pod MTU is 1500 (wrong), VXLAN-encapsulated packets (up to 1550 bytes) exceed the kubespan
-interface MTU (1420), forcing kernel fragmentation at the WireGuard interface. UDP fragments
-traversing NAT/middleboxes between Hetzner VPS and home Proxmox are intermittently dropped.
+When pod MTU is 1500 (wrong), VXLAN-encapsulated packets exceed the Nebula interface MTU,
+forcing kernel fragmentation. UDP fragments traversing NAT/middleboxes between Hetzner VPS
+and home Proxmox are intermittently dropped.
 
 **Diagnosis**:
 
@@ -786,40 +786,35 @@ done
 
 ## 🚨 Fast Path Health Checks
 
-### KubeSpan (WireGuard Mesh) - VPS Hybrid Cluster
+### Nebula Mesh - VPS Hybrid Cluster
 
-**Debug commands for KubeSpan mesh connectivity:**
+**Debug commands for Nebula mesh connectivity:**
 
 ```bash
-# Primary debug - peer status (state should be "up")
-talosctl -n <node-ip> get kubespanpeerstatuses -o yaml
+# Check Nebula extension logs on Talos nodes
+talosctl -n <node-ip> logs ext-nebula
 
-# Peer specs (discovered endpoints)
-talosctl -n <node-ip> get kubespanpeerspecs -o yaml
+# Check Nebula service status on NixOS workers
+systemctl status nebula
 
-# Identity (WireGuard keys)
-talosctl -n <node-ip> get kubespanidentities -o yaml
+# Verify Nebula tunnel interface exists
+ip link show nebula1
 
-# Discovery members (both nodes should appear)
-talosctl -n <node-ip> get members -o yaml
-talosctl -n <node-ip> get affiliates -o yaml
+# Check Nebula handshakes (look for peer IPs)
+nebula -config /etc/nebula/config.yaml -test
+
+# Verify lighthouse connectivity from a non-lighthouse node
+ping 10.42.0.1  # vps0 lighthouse
+ping 10.42.0.2  # vps1 lighthouse
 ```
-
-**KubeSpan State Meanings:**
-
-| State     | Meaning                                                    |
-| --------- | ---------------------------------------------------------- |
-| `unknown` | No endpoint set yet, or endpoint just changed (within 15s) |
-| `up`      | WireGuard handshake within last ~275s                      |
-| `down`    | No handshake for >275s                                     |
 
 **Key Constants:**
 
-- WireGuard port: UDP 51820
-- PeerDownInterval: 275 seconds
-- EndpointConnectionTimeout: 15 seconds
+- Nebula port: UDP 4242
+- Lighthouses: 10.42.0.1 (vps0), 10.42.0.2 (vps1)
+- Relays: same as lighthouses (for NAT traversal)
 
-**If peers show `down`:** Check firewall allows UDP 51820, verify discovery service (`discovery.talos.dev:443`) reachable.
+**If mesh is down:** Check firewall allows UDP 4242, verify Nebula certs are valid (`nebula-cert print -path /etc/nebula/host.crt`).
 
 ### Storage (Proxmox CSI) - Known Tricky Component
 

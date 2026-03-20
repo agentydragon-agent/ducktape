@@ -93,8 +93,8 @@ ephemeral — they capture hard-won knowledge about subtle bugs.
 
 Convention: `<subproject>/debug/<topic>.md`. Examples:
 
-- `cluster/kubespand/debug/kubespan-nixos-routing.md` — rp_filter routing analysis
-- `cluster/kubespand/debug/qemu-test-architecture.md` — QEMU test structure reference
+- `cluster/docs/lessons_learned/kubespand-tombstone.md` — decommissioned KubeSpan reimplementation
+- `cluster/docs/lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md` — MTU/fragmentation analysis
 
 ## Development Practices
 

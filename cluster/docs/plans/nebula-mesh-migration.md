@@ -1,5 +1,9 @@
 # Nebula Mesh Migration Plan
 
+**Status**: Completed (2026-03). KubeSpan disabled on all Talos nodes, Nebula deployed on
+all nodes, kubespand decommissioned. See
+<../lessons_learned/kubespand-tombstone.md> for the full post-mortem.
+
 ## Motivation
 
 KubeSpan (Talos's built-in WireGuard mesh) doesn't reliably support the target

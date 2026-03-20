@@ -38,9 +38,12 @@
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
-  # K8s worker (KubeSpan fabric)
+  # K8s worker (Nebula mesh)
   # Credentials placed manually (physical machine, no cloud-init):
-  #   /etc/kubespan/agent.yaml     — kubespand config (cluster.id, cluster.secret)
+  #   /etc/nebula/config.yaml     — Nebula config (PKI, lighthouse, relay)
+  #   /etc/nebula/ca.crt          — Nebula CA cert
+  #   /etc/nebula/host.crt        — node Nebula cert
+  #   /etc/nebula/host.key        — node Nebula key
   #   /etc/kubernetes/pki/ca.crt  — cluster CA cert
   #   /etc/kubernetes/bootstrap-kubelet.conf — bootstrap kubeconfig with token
   # IPU7 webcam (Intel Lunar Lake, OV08X40 sensor)

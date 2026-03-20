@@ -126,19 +126,6 @@
         "type": "github"
       }
     },
-    "kubespand-tar": {
-      "flake": false,
-      "locked": {
-        "lastModified": 946684800,
-        "narHash": "sha256-z1gEVv4H4Q98iTZO46Zka4EyIDiGyh2PnKhDC3mLSC8=",
-        "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-d3a364c7/kubespand.tar"
-      },
-      "original": {
-        "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/kubespand-d3a364c7/kubespand.tar"
-      }
-    },
     "nix-colors": {
       "inputs": {
         "base16-schemes": "base16-schemes",
@@ -250,7 +237,6 @@
         "gterm-theme-wheel": "gterm-theme-wheel",
         "headscale-cleanup-wheel": "headscale-cleanup-wheel",
         "home-manager": "home-manager",
-        "kubespand-tar": "kubespand-tar",
         "nix-colors": "nix-colors",
         "nixGL": "nixGL",
         "nixpkgs": "nixpkgs_2",

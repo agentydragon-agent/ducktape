@@ -28,9 +28,9 @@ See <docs/bootstrap.md> for full setup.
 - Domain: `*.allegedly.works` (PowerDNS in-cluster, DNS-01 challenges, dual LE issuers)
 - HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
   - Exception: Headscale uses TLSRoute passthrough (Envoy routes by SNI, Headscale terminates TLS)
-- KubeSpan: WireGuard mesh between VPS and Proxmox (UDP 51820)
-- Cilium MTU: `MTU: 1370` (uppercase key required — VXLAN 50 + WireGuard 80 = 130 overhead)
-- KubePrism: `localhost:7445` as cluster endpoint (no VIP possible across VPS+home; kubeconfig patched post-bootstrap to real VPS IP)
+- Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on VPS nodes)
+- Cilium MTU: `MTU: 1412` (uppercase key required — VXLAN 50 + Nebula 38 = 88 overhead)
+- Kubeconfig patched post-bootstrap to real VPS IP (no VIP possible across VPS+home)
 
 ## Services
 
@@ -65,7 +65,7 @@ Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) �
 ## GPU (NVIDIA)
 
 wyrm2 is a NixOS machine (not Talos) joined as a K8s worker via `k8s-worker.nix` and
-KubeSpan. It provides 2x RTX 5090 GPUs to the cluster.
+Nebula mesh. It provides 2x RTX 5090 GPUs to the cluster.
 
 **Stack**: NixOS `hardware.nvidia-container-toolkit` generates CDI specs at
 `/var/run/cdi/` → containerd configured with `nvidia-container-runtime.cdi` as a named

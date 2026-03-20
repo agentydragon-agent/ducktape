@@ -119,13 +119,15 @@ variable "vga_type" {
 
 # K8s cluster join credentials (optional)
 variable "k8s_cluster_join" {
-  description = "K8s cluster join credentials. When set, cloud-init writes credential files for kubelet and kubespand."
+  description = "K8s cluster join credentials. When set, cloud-init writes credential files for kubelet and Nebula mesh."
   type = object({
     bootstrap_kubeconfig = string
     ca_cert              = string
-    cluster_id           = string
-    cluster_secret       = string
     node_name            = string
+    nebula_ca_cert       = string
+    nebula_host_cert     = string
+    nebula_host_key      = string
+    nebula_config        = string
   })
   default   = null
   sensitive = true

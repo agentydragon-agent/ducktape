@@ -1,6 +1,6 @@
 # Kubernetes worker node module
 # Joins a NixOS machine as a worker to an external (Talos) K8s cluster
-# via KubeSpan (WireGuard mesh).
+# via Nebula mesh overlay.
 #
 # Does NOT use services.kubernetes — it's designed as a self-contained cluster
 # provisioner, not for joining external clusters. Specifically:
@@ -12,7 +12,7 @@
 #
 # Credential placement:
 #   Cloud-init (via terraform/modules/proxmox-vm) writes bootstrap kubeconfig, CA cert,
-#   and kubespand config. Services auto-start on boot.
+#   and Nebula config. Services auto-start on boot.
 #
 # Manual step after boot:
 #   Approve the CSR on the cluster:
@@ -34,7 +34,6 @@ let
     conntrack-tools
     util-linux
     nftables
-    wireguard-tools
     tcpdump
     iproute2
     openiscsi # Longhorn requires iscsiadm on the host
@@ -64,11 +63,7 @@ let
   );
 
   # Use the host's real IPv4 (from default route) as kubelet node IP.
-  # NOT the KubeSpan IPv6 ULA — using that causes Cilium to detect the
-  # kubespan interface (IPv6-only) as the direct routing device, which
-  # fails with "IPv4 direct routing device IP not found" since Cilium
-  # needs IPv4 for VXLAN tunnel mode.
-  resolveNodeIp = pkgs.writeShellScript "resolve-kubespan-ip" ''
+  resolveNodeIp = pkgs.writeShellScript "resolve-node-ip" ''
     ${pkgs.iproute2}/bin/ip -4 route get 1.1.1.1 \
       | ${pkgs.gnugrep}/bin/grep -oP 'src \K\S+' > /run/kubelet-node-ip
     if [ ! -s /run/kubelet-node-ip ]; then
@@ -78,10 +73,10 @@ let
   '';
 in
 {
-  imports = [ ./kubespand.nix ];
+  imports = [ ./nebula-mesh.nix ];
 
   options.ducktape.k8sWorker = {
-    enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster via KubeSpan)";
+    enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster via Nebula mesh)";
 
     clusterDNS = lib.mkOption {
       type = lib.types.str;
@@ -132,18 +127,15 @@ in
       "net.bridge.bridge-nf-call-iptables" = 1;
       "net.bridge.bridge-nf-call-ip6tables" = 1;
       "net.ipv4.ip_forward" = 1;
-      # Disable reverse path filtering for KubeSpan. Packets decrypted by
-      # WireGuard arrive on kubespan with source IPs whose reverse path goes
-      # through ens18 (e.g., VPS public IPs). Both the kernel sysctl rpfilter
-      # and iptables rpfilter module must be disabled/loosened independently.
-      # default.rp_filter controls new interfaces (kubespan is created at
-      # runtime by kubespand); all.rp_filter is max'd with per-interface value.
+      # Disable reverse path filtering for Nebula. Packets decrypted by
+      # Nebula arrive on the nebula1 interface with source IPs whose reverse
+      # path goes through ens18. Both the kernel sysctl rpfilter and iptables
+      # rpfilter module must be disabled/loosened independently.
       "net.ipv4.conf.default.rp_filter" = 0;
       "net.ipv4.conf.all.rp_filter" = 0;
     };
 
-    # Loose iptables rpfilter for the same reason as above — the iptables
-    # rpfilter module is a separate check from the kernel sysctl.
+    # Loose iptables rpfilter — separate check from kernel sysctl rp_filter.
     networking.firewall.checkReversePath = "loose";
 
     # Containerd
@@ -203,14 +195,14 @@ in
       after = [
         "network-online.target"
         "containerd.service"
-        "kubespand.service"
+        "nebula.service"
       ];
       wants = [
         "network-online.target"
         "containerd.service"
       ];
-      # Hard dependency — kubelet stops if kubespand dies
-      requires = [ "kubespand.service" ];
+      # Hard dependency — kubelet stops if Nebula mesh dies
+      requires = [ "nebula.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         # Prepend /run/wrappers/bin for NixOS setuid mount/umount wrappers.
@@ -236,8 +228,8 @@ in
       };
     };
 
-    # KubeSpan mesh (includes KubePrism: localhost:7445 → discovered CP endpoints)
-    ducktape.kubespand.enable = true;
+    # Nebula mesh overlay (inter-node connectivity)
+    ducktape.nebulaMesh.enable = true;
 
     # Firewall: allow VXLAN (Cilium) and kubelet
     networking.firewall.allowedUDPPorts = [

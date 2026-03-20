@@ -1,7 +1,7 @@
 # k8s-worker-test — lean NixOS VM for testing K8s worker node enrollment
 #
 # Headless (SSH + console only) for fast provisioning.
-# Uses KubeSpan fabric (kubespand) for mesh connectivity.
+# Uses Nebula mesh for inter-node connectivity.
 # See nix/nixos/modules/k8s-worker.nix for manual setup steps.
 {
   config,
@@ -18,11 +18,11 @@
   time.timeZone = "UTC";
 
   # Cloud-init: consumes Proxmox-injected user data to write
-  # /etc/kubespan/agent.yaml, /etc/kubernetes/pki/ca.crt, bootstrap kubeconfig
+  # Nebula certs, /etc/kubernetes/pki/ca.crt, bootstrap kubeconfig
   services.cloud-init.enable = true;
 
-  # kubespand and kubelet must wait for cloud-init to write config files
-  systemd.services.kubespand.after = [ "cloud-final.service" ];
+  # Nebula and kubelet must wait for cloud-init to write config files
+  systemd.services.nebula.after = [ "cloud-final.service" ];
   systemd.services.kubelet.after = [ "cloud-final.service" ];
 
   ducktape.k8sWorker.enable = true;

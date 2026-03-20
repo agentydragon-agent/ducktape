@@ -13,28 +13,34 @@ write_files:
       ${indent(6, k8s_cluster_join.ca_cert)}
 
   # Bootstrap kubeconfig for kubelet TLS bootstrap
-  # Server URL is https://localhost:7445 — kubespand's KubePrism LB proxies to API server
   - path: /etc/kubernetes/bootstrap-kubelet.conf
     owner: root:root
     permissions: '0600'
     content: |
       ${indent(6, k8s_cluster_join.bootstrap_kubeconfig)}
 
-  # kubespand configuration (KubeSpan mesh credentials)
-  - path: /etc/kubespan/agent.yaml
+  # Nebula mesh credentials
+  - path: /etc/nebula/config.yaml
     owner: root:root
     permissions: '0600'
     content: |
-      cluster:
-        id: "${k8s_cluster_join.cluster_id}"
-        secret: "${k8s_cluster_join.cluster_secret}"
-        endpoint: "https://api.allegedly.works:6443"
-      kubernetes:
-        advertise_networks: true
-        kubeconfig_path: "/var/lib/kubelet/kubelet.conf"
-        node_name: "${k8s_cluster_join.node_name}"
-        service_cidrs:
-          - "10.96.0.0/12"
-      kubeprism:
-        enabled: true
+      ${indent(6, k8s_cluster_join.nebula_config)}
+
+  - path: /etc/nebula/ca.crt
+    owner: root:root
+    permissions: '0644'
+    content: |
+      ${indent(6, k8s_cluster_join.nebula_ca_cert)}
+
+  - path: /etc/nebula/host.crt
+    owner: root:root
+    permissions: '0644'
+    content: |
+      ${indent(6, k8s_cluster_join.nebula_host_cert)}
+
+  - path: /etc/nebula/host.key
+    owner: root:root
+    permissions: '0600'
+    content: |
+      ${indent(6, k8s_cluster_join.nebula_host_key)}
 %{ endif ~}
