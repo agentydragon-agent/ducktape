@@ -185,17 +185,27 @@ Not a major differentiator.
 
 ### Failure Mode Complexity
 
-For infrastructure fabric, simpler = better. Each additional component (STUN
-server, TURN server, signal server, management API) is another thing that can
-break and take the cluster down.
+For infrastructure fabric, simpler = better. Each additional component is
+another thing that can break and take the cluster down. However, distinguish
+between what runs **on each node** (the agent/client) vs what runs as
+**infrastructure** (can be a pod, a separate VM, or even a SaaS).
 
-| Solution | Components needed                  | Failure characteristics                              |
-| -------- | ---------------------------------- | ---------------------------------------------------- |
-| KubeSpan | Discovery service (`talos.dev`)    | External dependency on discovery                     |
-| Nebula   | Lighthouse(s) only                 | Simple — lighthouse down = no new conns, existing up |
-| NetBird  | Mgmt server + signal server + TURN | Most moving parts                                    |
-| ZeroTier | Controller + root servers          | Controller down = no config changes, existing up     |
-| Netmaker | Server + TURN + DNS + UI           | Complex, many components                             |
+| Solution | Node-side       | Infrastructure components       | Failure characteristics                              |
+| -------- | --------------- | ------------------------------- | ---------------------------------------------------- |
+| KubeSpan | Built-in        | Discovery service (`talos.dev`) | External dependency on discovery                     |
+| Nebula   | Talos extension | Lighthouse(s) only              | Simple — lighthouse down = no new conns, existing up |
+| NetBird  | Talos extension | Mgmt + signal + relay (or SaaS) | More components, but can run as k8s pods or SaaS     |
+| ZeroTier | Talos extension | Controller + root servers       | Controller down = no config changes, existing up     |
+| Netmaker | No extension    | Server + TURN + DNS + UI        | Complex, many components                             |
+
+**NetBird nuance**: The 3 server components (management, signal, relay) don't
+run on the nodes — only the lightweight client agent does. The server
+components can run as pods in the cluster, on a separate VM, or even use
+NetBird's hosted SaaS (`api.netbird.io`). Since v0.29, management and signal
+share ports via HTTP/2, reducing to effectively 2 services + STUN. The default
+single-server deployment bundles all components into one container behind
+Traefik. Clients tolerate management server outages — existing P2P and relay
+connections survive.
 
 ### Pod/Service CIDR Routing
 
@@ -212,30 +222,125 @@ transport layer.
 | Kernel crypto          | Yes           | No             | Yes            | No             |
 | NAT traversal          | Limited       | Weaker         | Best           | Good           |
 | TCP meltdown risk      | No (no relay) | No             | Yes (TURN-TCP) | Low            |
-| Operational simplicity | Best          | Simple         | Complex        | Moderate       |
+| Node agent complexity  | Built-in      | Simple         | Simple         | Simple         |
+| Infra components       | 0 (built-in)  | 1 (lighthouse) | 1-3 (or SaaS)  | 1 (controller) |
 | Convergence speed      | Fast          | Fast           | Slower (ICE)   | Slow           |
 | Maturity for fabric    | Designed for  | Slack-scale    | Device-focused | Device-focused |
 | Talos extension        | Built-in      | Yes            | Yes            | Yes            |
 | Pod CIDR routing       | Automatic     | Manual/Cilium  | Manual/Cilium  | Manual/Cilium  |
-| Server components      | 0 (built-in)  | 1 (lighthouse) | 3              | 1 (controller) |
-| Failure blast radius   | Low           | Low            | High           | Moderate       |
+| Survives ctrl plane dn | No (no relay) | Yes            | Yes            | Yes            |
+
+## Talos Extension Configuration Examples
+
+### NetBird on Talos
+
+Node-side config is minimal — just a setup key and management URL:
+
+```yaml
+# netbird-config.yaml — apply with: talosctl patch mc -p @netbird-config.yaml
+apiVersion: v1alpha1
+kind: ExtensionServiceConfig
+name: netbird
+environment:
+  - NB_SETUP_KEY=<peer setup key>
+  - NB_MANAGEMENT_URL=https://netbird.allegedly.works:443
+  - NB_ADMIN_URL=https://netbird.allegedly.works:443
+```
+
+The server side (management + signal + relay) runs separately — as a pod in the
+cluster, on a VM, or via NetBird's SaaS. Default single-server deployment
+bundles everything behind Traefik on ports 80/443 (TCP) + 3478 (UDP/STUN).
+
+Since v0.29, management and signal share ports via HTTP/2. Minimal
+self-hosted deployment is one container + a domain with TLS.
+
+### Nebula on Talos
+
+Requires PKI certificates (already prepared in Terraform):
+
+```yaml
+# nebula-config.yaml — apply with: talosctl patch mc -p @nebula-config.yaml
+apiVersion: v1alpha1
+kind: ExtensionServiceConfig
+name: nebula
+configFiles:
+  - content: |
+      pki:
+        ca: /usr/local/etc/nebula/ca.crt
+        cert: /usr/local/etc/nebula/node.crt
+        key: /usr/local/etc/nebula/node.key
+      lighthouse:
+        hosts:
+          - "<lighthouse-nebula-ip>"
+      listen:
+        host: 0.0.0.0
+        port: 4242
+      tun:
+        dev: nebula1
+      firewall:
+        outbound:
+          - port: any
+            proto: any
+            host: any
+        inbound:
+          - port: any
+            proto: any
+            host: any
+    mountPath: /usr/local/etc/nebula/config.yml
+  - content: <ca-certificate-pem>
+    mountPath: /usr/local/etc/nebula/ca.crt
+  - content: <node-certificate-pem>
+    mountPath: /usr/local/etc/nebula/node.crt
+  - content: <node-private-key-pem>
+    mountPath: /usr/local/etc/nebula/node.key
+```
+
+More verbose than NetBird due to PKI, but no external server dependency beyond
+the lighthouse (which is just another Nebula node with a public IP).
 
 ## Recommendation
 
 ### For cluster fabric
 
-**Nebula** is the strongest fabric candidate despite weaker NAT traversal:
+Both **Nebula** and **NetBird** are viable. The trade-off:
 
-- Simple (lighthouse-only architecture)
-- No TCP meltdown risk (UDP only)
+**Nebula** advantages:
+
+- No TCP meltdown risk (UDP only, no relay fallback)
 - Designed for infrastructure (built at Slack for exactly this)
-- Public-IP machines as lighthouses solve NAT (at least one side always public)
+- Lighthouse is just another Nebula node — no separate server software
 - Certificate-based trust model suits infrastructure well
 - PKI already prepared in Terraform
-- Talos extension available
+- Zero external dependencies once running (no management API to go down)
 
-Main downside: userspace crypto (no kernel WireGuard), but Nebula's Noise
-protocol is fast enough for most cluster workloads.
+**Nebula** disadvantages:
+
+- Userspace crypto (no kernel WireGuard) — more CPU per packet
+- Weaker NAT traversal (UDP hole-punching only, no relay)
+- More verbose Talos config (PKI files vs one setup key)
+- Experimental DNS support (lighthouse-only, no forwarding)
+
+**NetBird** advantages:
+
+- Kernel WireGuard (faster crypto)
+- Best NAT traversal (ICE/STUN/TURN — always connects)
+- Built-in DNS with forwarding
+- Trivial node config (one setup key)
+- Web UI for management and access control
+- Clients survive management server outages
+
+**NetBird** disadvantages:
+
+- ICE negotiation adds seconds to initial connection setup
+- TURN-over-TCP fallback risks TCP-in-TCP meltdown for fabric traffic
+- Server components needed (though can be single container or SaaS)
+- Device-focused design, less battle-tested as infrastructure fabric
+
+**Key question**: How important is relay fallback? If at least one side of
+every connection has a public IP (true for VPS nodes), both Nebula and NetBird
+will establish direct UDP connections and the relay question is moot. If you
+ever have nodes where _both_ sides are behind NAT with no public IP, NetBird's
+relay becomes essential while Nebula will fail.
 
 ### For device mesh (laptops, phones)
 
@@ -247,14 +352,11 @@ protocol is fast enough for most cluster workloads.
 - Web UI for management
 - Talos extension available
 
-ICE negotiation overhead and 3-component server architecture make it less
-suited for infrastructure fabric, but those trade-offs are fine for device mesh
-where connection setup time is less critical.
-
 ### Split architecture option
 
 Run **Nebula** for cluster fabric and **NetBird** (or keep Headscale) for device
-mesh. Different tools for different requirements.
+mesh. Or run **NetBird** for both if you accept the ICE overhead and want a
+single solution.
 
 ## Sources
 
@@ -265,3 +367,7 @@ mesh. Different tools for different requirements.
 - <https://github.com/cedrickchee/awesome-wireguard>
 - <https://github.com/siderolabs/extensions>
 - <https://deepwiki.com/siderolabs/extensions/3.4-networking-extensions>
+- <https://docs.netbird.io/about-netbird/how-netbird-works>
+- <https://docs.netbird.io/selfhosted/selfhosted-guide>
+- <https://docs.netbird.io/selfhosted/maintenance/scaling/scaling-your-self-hosted-deployment>
+- <https://github.com/siderolabs/talos/discussions/8338>
