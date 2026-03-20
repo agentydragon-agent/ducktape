@@ -1,0 +1,13 @@
+---
+nebula_listen_port: 4242
+
+# Path to sops-encrypted secrets file (relative to repo root)
+nebula_sops_secrets_file: ""
+
+# Upstream DNS servers for dnsmasq (non-mesh queries)
+nebula_upstream_dns:
+  - "1.1.1.1"
+  - "8.8.8.8"
+
+# Path to shared mesh config (nebula-mesh.json at repo root)
+nebula_mesh_config_file: "{{ playbook_dir }}/../nebula-mesh.json"

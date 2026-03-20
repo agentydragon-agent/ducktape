@@ -26,9 +26,9 @@ See <changelog.md> for detailed change history.
 
 ### Next Actions
 
-- [ ] **Atlas: add to Nebula mesh** — Proxmox host `atlas` needs a Nebula cert and
-      config so it's reachable via the mesh (currently only accessible from VLAN).
-      High priority — required for remote management without being on the home network.
+- [x] **Atlas: add to Nebula mesh** — Proxmox host `atlas` added to mesh (10.42.0.5,
+      groups: hypervisor,proxmox). Cert via Terraform PKI, config via Ansible `nebula`
+      role, DNS via dnsmasq forwarding to lighthouse DNS. Tailscale removed.
 - [ ] **Prometheus: investigate memory growth and right-size** — Prometheus was OOM-killed
       8 times in 49 minutes at 2Gi limit (1686Mi usage, WAL replay spikes higher).
       Currently pinned to wyrm2 with temporary 6Gi limit. Investigate: which scrape

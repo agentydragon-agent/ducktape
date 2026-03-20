@@ -5,20 +5,33 @@ keys:
   - &atlas age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
 creation_rules:
   # Per-host secrets (only the host + admin can decrypt)
-  - path_regex: nix/secrets/wyrm2-.*\.yaml$
+  - path_regex: secrets/wyrm2-.*\.yaml$
     key_groups:
       - age:
           - *admin
           - *wyrm2
-  - path_regex: nix/secrets/rugged-.*\.yaml$
+  - path_regex: secrets/rugged-.*\.yaml$
     key_groups:
       - age:
           - *admin
           - *rugged
-  # Shared secrets (all hosts can decrypt)
-  - path_regex: nix/secrets/.*\.yaml$
+  - path_regex: secrets/atlas-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *atlas
+  # K8s worker secrets (k8s workers only)
+  - path_regex: secrets/k8s-worker\.yaml$
     key_groups:
       - age:
           - *admin
           - *wyrm2
           - *rugged
+  # Shared secrets (all hosts)
+  - path_regex: secrets/buildbuddy\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2
+          - *rugged
+          - *atlas

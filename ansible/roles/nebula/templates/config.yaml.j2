@@ -1,0 +1,48 @@
+pki:
+  ca: /etc/nebula/ca.crt
+  cert: /etc/nebula/host.crt
+  key: /etc/nebula/host.key
+
+static_host_map:
+{% for nebula_ip, endpoints in nebula_static_host_map.items() %}
+  "{{ nebula_ip }}":
+{% for endpoint in endpoints %}
+    - "{{ endpoint }}"
+{% endfor %}
+{% endfor %}
+
+lighthouse:
+  am_lighthouse: false
+  interval: 10
+  hosts:
+{% for host in nebula_lighthouses %}
+    - "{{ host }}"
+{% endfor %}
+
+relay:
+  relays:
+{% for host in nebula_lighthouses %}
+    - "{{ host }}"
+{% endfor %}
+  use_relays: true
+
+listen:
+  host: "0.0.0.0"
+  port: {{ nebula_listen_port }}
+
+punchy:
+  punch: true
+  respond: true
+
+tun:
+  dev: nebula1
+
+firewall:
+  outbound:
+    - port: any
+      proto: any
+      host: any
+  inbound:
+    - port: any
+      proto: any
+      host: any

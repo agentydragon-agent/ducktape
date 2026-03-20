@@ -1,0 +1,10 @@
+---
+- name: Restart nebula
+  ansible.builtin.systemd:
+    name: nebula
+    state: restarted
+
+- name: Restart dnsmasq
+  ansible.builtin.systemd:
+    name: dnsmasq
+    state: restarted

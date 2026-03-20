@@ -1,0 +1,124 @@
+---
+# Install and configure Nebula mesh network + dnsmasq for hostname resolution
+
+- name: Load mesh topology from nebula-mesh.json
+  ansible.builtin.set_fact:
+    nebula_mesh_config: "{{ lookup('file', nebula_mesh_config_file) | from_json }}"
+  tags: [nebula, config]
+
+- name: Set lighthouse vars from mesh config
+  ansible.builtin.set_fact:
+    nebula_lighthouses: "{{ nebula_mesh_config.lighthouse_ips }}"
+    nebula_static_host_map: "{{ nebula_mesh_config.static_host_map }}"
+  tags: [nebula, config]
+
+- name: Install nebula
+  ansible.builtin.apt:
+    name: nebula
+    state: present
+  tags: [nebula, install]
+
+- name: Load sops-encrypted Nebula secrets
+  community.sops.load_vars:
+    file: "{{ nebula_sops_secrets_file }}"
+    name: nebula_secrets
+  tags: [nebula, secrets]
+
+- name: Create /etc/nebula directory
+  ansible.builtin.file:
+    path: /etc/nebula
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  tags: [nebula, config]
+
+- name: Deploy Nebula CA certificate
+  ansible.builtin.copy:
+    content: "{{ nebula_secrets.nebula_ca_cert }}"
+    dest: /etc/nebula/ca.crt
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nebula
+  tags: [nebula, config]
+
+- name: Deploy Nebula host certificate
+  ansible.builtin.copy:
+    content: "{{ nebula_secrets.nebula_host_cert }}"
+    dest: /etc/nebula/host.crt
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nebula
+  tags: [nebula, config]
+
+- name: Deploy Nebula host key
+  ansible.builtin.copy:
+    content: "{{ nebula_secrets.nebula_host_key }}"
+    dest: /etc/nebula/host.key
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart nebula
+  tags: [nebula, config]
+
+- name: Deploy Nebula configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/nebula/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart nebula
+  tags: [nebula, config]
+
+- name: Enable and start nebula service
+  ansible.builtin.systemd:
+    name: nebula
+    state: started
+    enabled: true
+  tags: [nebula, service]
+
+# dnsmasq for bare hostname resolution via Nebula lighthouse DNS
+
+- name: Install dnsmasq
+  ansible.builtin.apt:
+    name: dnsmasq
+    state: present
+  tags: [nebula, dns]
+
+- name: Deploy dnsmasq Nebula DNS configuration
+  ansible.builtin.template:
+    src: dnsmasq-nebula.conf.j2
+    dest: /etc/dnsmasq.d/nebula.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dnsmasq
+  tags: [nebula, dns]
+
+- name: Configure resolv.conf to use local dnsmasq
+  ansible.builtin.copy:
+    content: |
+      # Managed by Ansible (nebula role)
+      # dnsmasq forwards to Nebula lighthouses + upstream DNS
+      nameserver 127.0.0.1
+    dest: /etc/resolv.conf
+    owner: root
+    group: root
+    mode: "0644"
+  tags: [nebula, dns]
+
+- name: Remove resolvconf package (replaced by dnsmasq)
+  ansible.builtin.apt:
+    name: resolvconf
+    state: absent
+  tags: [nebula, dns]
+
+- name: Enable and start dnsmasq service
+  ansible.builtin.systemd:
+    name: dnsmasq
+    state: started
+    enabled: true
+  tags: [nebula, dns]

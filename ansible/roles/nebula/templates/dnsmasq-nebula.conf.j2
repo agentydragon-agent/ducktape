@@ -1,0 +1,9 @@
+# Managed by Ansible (nebula role)
+# Nebula lighthouse DNS for mesh hostname resolution
+{% for host in nebula_lighthouses %}
+server={{ host }}
+{% endfor %}
+# Upstream DNS for non-mesh queries
+{% for dns in nebula_upstream_dns %}
+server={{ dns }}
+{% endfor %}

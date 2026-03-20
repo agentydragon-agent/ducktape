@@ -78,6 +78,18 @@ resource "powerdns_record" "ns" {
   records = [each.value.ip]
 }
 
+# Nebula lighthouse DNS records (downstream nodes use these instead of hardcoded IPs)
+# Same pattern as ns1/ns2: per-VPS A records from cluster-info ConfigMap.
+resource "powerdns_record" "nebula_lighthouse" {
+  for_each = local.ns_records
+
+  zone    = "${local.domain}."
+  name    = "lh${tonumber(substr(each.key, 3, -1)) + 1}.nebula.${local.domain}."
+  type    = "A"
+  ttl     = 3600
+  records = [each.value.ip]
+}
+
 # Kubernetes API endpoint (round-robin to all VPS control-plane nodes)
 resource "powerdns_record" "api" {
   zone    = "${local.domain}."

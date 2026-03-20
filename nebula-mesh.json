@@ -1,0 +1,8 @@
+{
+  "_comment": "Single source of truth for Nebula mesh lighthouse topology. Read by: Nix (nebula-mesh.nix), Ansible (nebula role), Terraform (infrastructure). Downstream nodes use DNS hostnames for static_host_map endpoints. VPS lighthouse Talos configs use dynamic hcloud_server IPs instead.",
+  "lighthouse_ips": ["10.42.0.1", "10.42.0.2"],
+  "static_host_map": {
+    "10.42.0.1": ["lh1.nebula.allegedly.works:4242"],
+    "10.42.0.2": ["lh2.nebula.allegedly.works:4242"]
+  }
+}

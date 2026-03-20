@@ -14,7 +14,7 @@ in
   imports = [ inputs.sops-nix.nixosModules.sops ];
 
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
-  sops.defaultSopsFile = ../../secrets/buildbuddy.yaml;
+  sops.defaultSopsFile = ../../../secrets/buildbuddy.yaml;
 
   sops.secrets.buildbuddy_api_key = { };
 

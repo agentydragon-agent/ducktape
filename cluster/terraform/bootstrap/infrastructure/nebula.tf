@@ -7,6 +7,10 @@
 locals {
   nebula_ca_cert = data.terraform_remote_state.persistent_auth.outputs.nebula_ca_cert
 
+  # Lighthouse topology from shared config (single source of truth)
+  nebula_mesh_config    = jsondecode(file("${path.module}/../../../../nebula-mesh.json"))
+  nebula_lighthouse_ips = local.nebula_mesh_config.lighthouse_ips
+
   # Maps TF node keys → persistent-auth node names for cert lookup
   nebula_node_names = {
     vps0    = "talos-vps-cp-0"
@@ -68,9 +72,9 @@ locals {
       lighthouse = {
         am_lighthouse = false
         interval      = 10
-        hosts         = ["10.42.0.1", "10.42.0.2"]
+        hosts         = local.nebula_lighthouse_ips
       }
-      relay    = { relays = ["10.42.0.1", "10.42.0.2"], use_relays = true }
+      relay    = { relays = local.nebula_lighthouse_ips, use_relays = true }
       listen   = { host = "0.0.0.0", port = 4242 }
       punchy   = { punch = true, respond = true }
       tun      = { dev = "nebula1" }

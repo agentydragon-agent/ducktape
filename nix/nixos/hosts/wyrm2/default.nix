@@ -22,11 +22,11 @@
   ducktape.systemInspectionSudo.enable = true;
 
   # K8s worker (Nebula mesh) — credentials via sops-nix
-  sops.secrets.nebula_ca_cert.sopsFile = ../../../secrets/k8s-worker.yaml;
-  sops.secrets.k8s_ca_cert.sopsFile = ../../../secrets/k8s-worker.yaml;
-  sops.secrets.k8s_bootstrap_token.sopsFile = ../../../secrets/k8s-worker.yaml;
-  sops.secrets.nebula_host_cert.sopsFile = ../../../secrets/wyrm2-nebula.yaml;
-  sops.secrets.nebula_host_key.sopsFile = ../../../secrets/wyrm2-nebula.yaml;
+  sops.secrets.nebula_ca_cert.sopsFile = ../../../../secrets/k8s-worker.yaml;
+  sops.secrets.k8s_ca_cert.sopsFile = ../../../../secrets/k8s-worker.yaml;
+  sops.secrets.k8s_bootstrap_token.sopsFile = ../../../../secrets/k8s-worker.yaml;
+  sops.secrets.nebula_host_cert.sopsFile = ../../../../secrets/wyrm2-nebula.yaml;
+  sops.secrets.nebula_host_key.sopsFile = ../../../../secrets/wyrm2-nebula.yaml;
 
   ducktape.nebulaMesh.caCertPath = config.sops.secrets.nebula_ca_cert.path;
   ducktape.nebulaMesh.hostCertPath = config.sops.secrets.nebula_host_cert.path;
