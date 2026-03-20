@@ -66,12 +66,11 @@ def _save_output(name: str, content: str) -> None:
     (out_dir / name).write_text(content)
 
 
-def _collect_container_logs(container_name: str) -> None:
-    """Save container logs (stdout/stderr) to undeclared test outputs."""
-    result = _docker("logs", container_name, check=False)
-    if result.returncode == 0:
-        _save_output("docker-logs-stdout.log", result.stdout)
-        _save_output("docker-logs-stderr.log", result.stderr)
+def _cleanup_dangling_symlinks(directory: Path) -> None:
+    """Remove dangling symlinks — Bazel rejects them in output trees."""
+    for p in directory.rglob("*"):
+        if p.is_symlink() and not p.exists():
+            p.unlink()
 
 
 @pytest.fixture
@@ -197,6 +196,10 @@ async def test_container_e2e(
         staged_workspace = staging / "test_workspace"
         shutil.copytree(test_workspace_path, staged_workspace)
 
+        # Bind-mount the session dir so logs land directly in undeclared outputs
+        session_logs_dir = undeclared_outputs_dir() / "container-e2e" / "session-logs"
+        session_logs_dir.mkdir(parents=True, exist_ok=True)
+
         # Volume mounts
         mount_args = [
             "-v",
@@ -209,6 +212,8 @@ async def test_container_e2e(
             f"{combined_ca_path}:/certs/combined_ca.pem:ro",
             "-v",
             f"{staged_workspace}:/testdata/test_workspace:ro",
+            "-v",
+            f"{session_logs_dir}:/root/.claude/session-env/container-e2e-test",
         ]
 
         # Network isolation: --network=host for gVisor compatibility, but DNS is
@@ -274,9 +279,10 @@ async def test_container_e2e(
             )
 
         finally:
-            # Copy session logs from container before removing it
-            _collect_container_logs(container_name)
             _docker("rm", "-f", container_name, check=False)
+            # Session logs are already on host via bind-mount; just clean up
+            # dangling symlinks (e.g. bin/bazelisk) that Bazel would reject
+            _cleanup_dangling_symlinks(session_logs_dir)
 
 
 if __name__ == "__main__":
