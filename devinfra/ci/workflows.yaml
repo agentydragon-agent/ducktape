@@ -36,6 +36,9 @@ workflows:
   rbe-image:
     trigger: { kind: path, pattern: "^devinfra/rbe_image/" }
 
+  e2e-container-image:
+    trigger: { kind: path, pattern: "^devinfra/claude/testing/container_e2e/Dockerfile" }
+
   # Bazel image workflows always trigger. Bazel builds are hermetic, so same
   # inputs → same image digest. The workflow compares the local digest against
   # the registry and skips the push when unchanged. This avoids the stale-image

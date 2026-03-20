@@ -154,7 +154,7 @@ def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
         jobs[name] = build_workflow_job(name, config, has_rbe_image_job=has_rbe_image_job)
 
     # Jobs that push to GHCR need packages:write.
-    ghcr_jobs = {"rbe-image"}
+    ghcr_jobs = {"rbe-image", "e2e-container-image"}
     permissions: dict[str, str] = {"contents": "read"}
     if ghcr_jobs & manifest.workflows.keys():
         permissions["packages"] = "write"

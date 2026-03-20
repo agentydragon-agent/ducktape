@@ -1,0 +1,59 @@
+# Build and push the container E2E test image to GHCR.
+#
+# Pre-bakes python:3.13-slim + git + JDK (keytool) so the container E2E test
+# doesn't spend time on apt-get at test runtime.
+#
+# Triggers:
+#   - push to main/devel when Dockerfile changes
+#   - workflow_dispatch for manual rebuilds
+#   - workflow_call (from ci.yml)
+#
+# After push, update the oci.pull digest in MODULE.bazel:
+#   docker manifest inspect ghcr.io/agentydragon/e2e-container:latest \
+#     --format '{{.Descriptor.Digest}}'
+name: E2E Container Image
+
+on:
+  push:
+    branches: [main, devel]
+    paths:
+      - "devinfra/claude/testing/container_e2e/Dockerfile"
+      - ".github/workflows/e2e-container-image.yml"
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: e2e-container-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/e2e-container
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: devinfra/claude/testing/container_e2e
+          file: devinfra/claude/testing/container_e2e/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
