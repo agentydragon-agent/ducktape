@@ -217,18 +217,61 @@ transport layer.
 
 ## Cluster Fabric Comparison
 
-| Criterion              | KubeSpan      | Nebula         | NetBird        | ZeroTier       |
-| ---------------------- | ------------- | -------------- | -------------- | -------------- |
-| Kernel crypto          | Yes           | No             | Yes            | No             |
-| NAT traversal          | Limited       | Weaker         | Best           | Good           |
-| TCP meltdown risk      | No (no relay) | No             | Yes (TURN-TCP) | Low            |
-| Node agent complexity  | Built-in      | Simple         | Simple         | Simple         |
-| Infra components       | 0 (built-in)  | 1 (lighthouse) | 1-3 (or SaaS)  | 1 (controller) |
-| Convergence speed      | Fast          | Fast           | Slower (ICE)   | Slow           |
-| Maturity for fabric    | Designed for  | Slack-scale    | Device-focused | Device-focused |
-| Talos extension        | Built-in      | Yes            | Yes            | Yes            |
-| Pod CIDR routing       | Automatic     | Manual/Cilium  | Manual/Cilium  | Manual/Cilium  |
-| Survives ctrl plane dn | No (no relay) | Yes            | Yes            | Yes            |
+| Criterion              | KubeSpan       | Nebula         | NetBird        | ZeroTier       |
+| ---------------------- | -------------- | -------------- | -------------- | -------------- |
+| Kernel crypto          | Yes            | No             | Yes            | No             |
+| NAT traversal          | Limited        | Weaker         | Best           | Good           |
+| TCP meltdown risk      | No (no relay)  | No             | Yes (TURN-TCP) | Low            |
+| Node agent complexity  | Built-in       | Simple         | Simple         | Simple         |
+| Infra components       | 0 (built-in)   | 1 (lighthouse) | 1-3 (or SaaS)  | 1 (controller) |
+| Convergence speed      | Fast           | Fast           | Slower (ICE)   | Slow           |
+| Maturity for fabric    | Designed for   | Slack-scale    | Device-focused | Device-focused |
+| Talos extension        | Built-in       | Yes            | Yes            | Yes            |
+| Pod CIDR routing       | Automatic      | Manual/Cilium  | Manual/Cilium  | Manual/Cilium  |
+| Survives ctrl plane dn | No (no relay)  | Yes            | Yes            | Yes            |
+| VPS can host infra     | N/A (built-in) | Yes (natural)  | Hard           | Hard           |
+
+## Bootstrap Problem: VPS Talos Nodes as Mesh Infrastructure
+
+If the VPS Talos nodes themselves must host the mesh infrastructure (because
+the mesh IS the inter-node fabric), there's a chicken-and-egg constraint: the
+mesh infra must be reachable _before_ the mesh is up, so it must run at the
+system level (Talos extension or host service), not as a Kubernetes pod.
+
+### How each option handles this
+
+**Nebula — works naturally.** The lighthouse IS just a regular Nebula node with
+`am_lighthouse: true` in its config. VPS nodes run the same Nebula binary as
+every other node, just with one extra config flag. No separate server software,
+no separate container, no separate process. The Talos extension handles
+everything. This is the ideal architecture for self-hosted fabric on Talos.
+
+**NetBird — bootstrap problem.** The management/signal/relay server is a
+separate binary from the client agent. It needs SQLite/Postgres, Traefik for
+TLS, and serves a web UI. Options:
+
+- **As a k8s pod**: Chicken-and-egg — cluster needs mesh, mesh needs management
+- **As a Talos extension**: Only the client agent is packaged, not the server
+- **On a non-Talos VPS**: Works but defeats the goal
+- **Via SaaS** (`api.netbird.io`): Avoids the problem but adds external dependency
+
+NetBird's architecture fundamentally separates client from server. The server
+can't easily run on Talos nodes as system-level infrastructure.
+
+**ZeroTier — similar problem.** The controller is separate software. Moon nodes
+(relay) work, but the controller still needs to run somewhere accessible.
+Controller licensing is also commercially restricted.
+
+**KubeSpan — already does this.** Discovery is external (`talos.dev`), but the
+WireGuard mesh between nodes is self-contained at the system level. Limited
+NAT traversal though (no relay fallback).
+
+### Summary
+
+For "VPS Talos nodes host the mesh infra", the only option that works cleanly
+is **Nebula** — the lighthouse is architecturally identical to any other node.
+NetBird and ZeroTier require separate server software that doesn't fit the
+Talos extension model.
 
 ## Talos Extension Configuration Examples
 
@@ -256,10 +299,12 @@ self-hosted deployment is one container + a domain with TLS.
 
 ### Nebula on Talos
 
-Requires PKI certificates (already prepared in Terraform):
+Requires PKI certificates (already prepared in Terraform).
+
+**VPS node (lighthouse)** — same extension, `am_lighthouse: true`:
 
 ```yaml
-# nebula-config.yaml — apply with: talosctl patch mc -p @nebula-config.yaml
+# nebula-lighthouse.yaml — VPS node with public IP
 apiVersion: v1alpha1
 kind: ExtensionServiceConfig
 name: nebula
@@ -270,8 +315,7 @@ configFiles:
         cert: /usr/local/etc/nebula/node.crt
         key: /usr/local/etc/nebula/node.key
       lighthouse:
-        hosts:
-          - "<lighthouse-nebula-ip>"
+        am_lighthouse: true
       listen:
         host: 0.0.0.0
         port: 4242
@@ -295,68 +339,99 @@ configFiles:
     mountPath: /usr/local/etc/nebula/node.key
 ```
 
-More verbose than NetBird due to PKI, but no external server dependency beyond
-the lighthouse (which is just another Nebula node with a public IP).
+**Non-VPS node (behind NAT)** — points to lighthouses:
+
+```yaml
+# nebula-node.yaml — node behind NAT
+apiVersion: v1alpha1
+kind: ExtensionServiceConfig
+name: nebula
+configFiles:
+  - content: |
+      pki:
+        ca: /usr/local/etc/nebula/ca.crt
+        cert: /usr/local/etc/nebula/node.crt
+        key: /usr/local/etc/nebula/node.key
+      lighthouse:
+        hosts:
+          - "<vps1-nebula-ip>"
+          - "<vps2-nebula-ip>"
+      static_host_map:
+        "<vps1-nebula-ip>":
+          - "<vps1-public-ip>:4242"
+        "<vps2-nebula-ip>":
+          - "<vps2-public-ip>:4242"
+      listen:
+        host: 0.0.0.0
+        port: 4242
+      tun:
+        dev: nebula1
+      firewall:
+        outbound:
+          - port: any
+            proto: any
+            host: any
+        inbound:
+          - port: any
+            proto: any
+            host: any
+    mountPath: /usr/local/etc/nebula/config.yml
+  - content: <ca-certificate-pem>
+    mountPath: /usr/local/etc/nebula/ca.crt
+  - content: <node-certificate-pem>
+    mountPath: /usr/local/etc/nebula/node.crt
+  - content: <node-private-key-pem>
+    mountPath: /usr/local/etc/nebula/node.key
+```
+
+Key point: the lighthouse is the same binary with one extra flag. Both VPS and
+NAT nodes use the same Talos extension. PKI is more verbose than NetBird's
+setup key, but Terraform already has the CA and cert generation prepared.
 
 ## Recommendation
 
-### For cluster fabric
+### For cluster fabric (VPS-hosted infra)
 
-Both **Nebula** and **NetBird** are viable. The trade-off:
+**Nebula** is the only option that cleanly supports VPS Talos nodes hosting the
+mesh infrastructure:
 
-**Nebula** advantages:
-
+- Lighthouse = same binary with one flag — no bootstrap problem
 - No TCP meltdown risk (UDP only, no relay fallback)
 - Designed for infrastructure (built at Slack for exactly this)
-- Lighthouse is just another Nebula node — no separate server software
 - Certificate-based trust model suits infrastructure well
 - PKI already prepared in Terraform
-- Zero external dependencies once running (no management API to go down)
+- Zero external dependencies once running
+- 2 VPS lighthouses provide redundancy
 
-**Nebula** disadvantages:
+Downsides to accept:
 
 - Userspace crypto (no kernel WireGuard) — more CPU per packet
-- Weaker NAT traversal (UDP hole-punching only, no relay)
+- Weaker NAT traversal (UDP hole-punching only, no relay). Acceptable when at
+  least one side has a public IP (true for VPS↔home and VPS↔VPS connections).
+  Problem only if both sides are behind NAT with no public IP.
 - More verbose Talos config (PKI files vs one setup key)
 - Experimental DNS support (lighthouse-only, no forwarding)
 
-**NetBird** advantages:
-
-- Kernel WireGuard (faster crypto)
-- Best NAT traversal (ICE/STUN/TURN — always connects)
-- Built-in DNS with forwarding
-- Trivial node config (one setup key)
-- Web UI for management and access control
-- Clients survive management server outages
-
-**NetBird** disadvantages:
-
-- ICE negotiation adds seconds to initial connection setup
-- TURN-over-TCP fallback risks TCP-in-TCP meltdown for fabric traffic
-- Server components needed (though can be single container or SaaS)
-- Device-focused design, less battle-tested as infrastructure fabric
-
-**Key question**: How important is relay fallback? If at least one side of
-every connection has a public IP (true for VPS nodes), both Nebula and NetBird
-will establish direct UDP connections and the relay question is moot. If you
-ever have nodes where _both_ sides are behind NAT with no public IP, NetBird's
-relay becomes essential while Nebula will fail.
+NetBird is not viable for this use case due to the bootstrap problem — the
+management server can't run as a Talos extension.
 
 ### For device mesh (laptops, phones)
 
-**NetBird** is the strongest device mesh candidate:
+Keep **Headscale** or evaluate **NetBird**:
 
 - Best NAT traversal (ICE/TURN)
-- Built-in DNS
-- Fully open source
+- Built-in DNS with forwarding
 - Web UI for management
-- Talos extension available
+- Management server can run as a k8s pod (no bootstrap problem for device
+  mesh — the cluster is already up when devices connect)
 
-### Split architecture option
+### Combined architecture
 
-Run **Nebula** for cluster fabric and **NetBird** (or keep Headscale) for device
-mesh. Or run **NetBird** for both if you accept the ICE overhead and want a
-single solution.
+- **Nebula** for cluster fabric (Talos extension on all nodes, VPS as lighthouses)
+- **Headscale** (or NetBird) for device mesh (k8s pod, separate concern)
+
+This separates infrastructure fabric (must bootstrap before k8s) from device
+mesh (runs on top of k8s). Each tool handles what it's designed for.
 
 ## Sources
 
