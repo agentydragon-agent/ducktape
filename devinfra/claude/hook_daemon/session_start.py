@@ -54,9 +54,6 @@ logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
-# Strong references to fire-and-forget background tasks (prevents GC).
-_background_tasks: set[asyncio.Task] = set()
-
 
 @dataclass(frozen=True)
 class CallerContext:
@@ -492,6 +489,7 @@ async def run_session(
     http: httpx.Client,
     otlp_exporter: DeferredOtlpExporter,
     proxy: AuthForwardingProxy | None,
+    background_tasks: set[asyncio.Task[object]] | None = None,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -598,12 +596,12 @@ async def run_session(
     logger.info("Wrote environment to %s", ctx.env_file_path)
 
     # Fire-and-forget Bazel server warmup (both web and CLI modes).
-    # Store task reference to prevent GC before completion.
-    if settings.warmup_bazel_server:
+    # Store task reference in background_tasks to prevent GC before completion.
+    if settings.warmup_bazel_server and background_tasks is not None:
         warmup_env = env_file.build_subprocess_env(env_vars)
         task = asyncio.create_task(_run_bazel_warmup(paths, ctx.project_dir, warmup_env, tracer, root_ctx))
-        _background_tasks.add(task)
-        task.add_done_callback(_background_tasks.discard)
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
@@ -641,8 +639,11 @@ async def handle(
     http: httpx.Client,
     otlp_exporter: DeferredOtlpExporter,
     proxy: AuthForwardingProxy | None,
+    background_tasks: set[asyncio.Task[object]] | None = None,
 ) -> SessionStartOutput:
     """Entry point called from the hook daemon with the client's env."""
     logger.info("Caller environment: %s", caller_env)
     ctx = CallerContext.from_env(caller_env)
-    return await run_session(hook_input, paths, settings, ctx, http, otlp_exporter, proxy=proxy)
+    return await run_session(
+        hook_input, paths, settings, ctx, http, otlp_exporter, proxy=proxy, background_tasks=background_tasks
+    )
