@@ -80,28 +80,48 @@ let
 
   # Generate bootstrap kubeconfig from components (CA cert + token + local haproxy).
   # Runs as ExecStartPre because sops secrets are only available at runtime.
+  # Bootstrap kubeconfig template — everything except the token (runtime secret).
+  # builtins.toJSON produces valid YAML (JSON is a YAML subset).
+  bootstrapKubeconfigTemplate = pkgs.writeText "bootstrap-kubeconfig-template.json" (
+    builtins.toJSON {
+      apiVersion = "v1";
+      kind = "Config";
+      clusters = [
+        {
+          cluster = {
+            certificate-authority = cfg.caCertPath;
+            server = "https://127.0.0.1:7445";
+          };
+          name = "default";
+        }
+      ];
+      contexts = [
+        {
+          context = {
+            cluster = "default";
+            user = "kubelet-bootstrap";
+          };
+          name = "default";
+        }
+      ];
+      current-context = "default";
+      users = [
+        {
+          name = "kubelet-bootstrap";
+          user = {
+            token = "__BOOTSTRAP_TOKEN__";
+          };
+        }
+      ];
+    }
+  );
+
+  # Substitute the sops-decrypted token into the template at runtime.
   generateBootstrapKubeconfig = pkgs.writeShellScript "generate-bootstrap-kubeconfig" ''
     TOKEN=$(<"${cfg.bootstrapTokenPath}")
-    cat > /run/kubelet-bootstrap-kubeconfig <<EOF
-    apiVersion: v1
-    kind: Config
-    clusters:
-    - cluster:
-        certificate-authority: ${cfg.caCertPath}
-        server: https://127.0.0.1:7445
-      name: default
-    contexts:
-    - context:
-        cluster: default
-        user: kubelet-bootstrap
-      name: default
-    current-context: default
-    users:
-    - name: kubelet-bootstrap
-      user:
-        token: $TOKEN
-    EOF
-    chmod 600 /run/kubelet-bootstrap-kubeconfig
+    ${pkgs.gnused}/bin/sed "s/__BOOTSTRAP_TOKEN__/$TOKEN/" \
+      ${bootstrapKubeconfigTemplate} > /run/kubelet-bootstrap-kubeconfig
+    ${pkgs.coreutils}/bin/chmod 600 /run/kubelet-bootstrap-kubeconfig
   '';
 
   haproxyServerLines = lib.concatStringsSep "\n    " (

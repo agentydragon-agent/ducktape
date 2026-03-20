@@ -119,21 +119,7 @@ in
       extraConfig = "ResolveUnicastSingleLabel=yes";
     };
 
-    # systemd-networkd manages DNS settings for the nebula1 TUN interface.
-    # DNSDefaultRoute=true makes nebula1 an additional default DNS route
-    # (not exclusive). systemd-resolved queries both nebula1 and the regular
-    # interface in parallel — first positive reply wins, so lighthouse
-    # NXDOMAIN for regular names doesn't break normal resolution.
-    # NetworkManager manages physical interfaces; networkd only manages nebula1.
-    systemd.network.enable = true;
-    systemd.network.wait-online.enable = false;
-    systemd.network.networks."50-nebula1" = {
-      matchConfig.Name = "nebula1";
-      networkConfig = {
-        DNS = cfg.lighthouses;
-        DNSDefaultRoute = true;
-      };
-    };
+    # NetworkManager should not touch the Nebula TUN interface.
     networking.networkmanager.unmanaged = [ "nebula1" ];
 
     # State directory for Nebula
@@ -154,6 +140,24 @@ in
       serviceConfig = {
         Type = "simple";
         ExecStart = "${pkgs.nebula}/bin/nebula -config /etc/nebula/config.yaml";
+        # Configure nebula1 link DNS after the TUN interface is up.
+        # Lighthouse DNS resolves bare cert names (e.g., "rugged" → 10.42.0.30).
+        # default-route=true makes nebula1 an additional default DNS route
+        # (not exclusive). systemd-resolved queries both nebula1 and the regular
+        # interface in parallel — first positive reply wins, so lighthouse
+        # NXDOMAIN for regular names doesn't break normal resolution.
+        # (Using ~. routing domain instead would make nebula1 the EXCLUSIVE
+        # handler, breaking regular DNS when lighthouse returns NXDOMAIN.)
+        ExecStartPost = pkgs.writeShellScript "nebula-dns-setup" ''
+          for i in $(seq 1 30); do
+            if ${pkgs.iproute2}/bin/ip link show nebula1 &>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          ${pkgs.systemd}/bin/resolvectl dns nebula1 ${lib.concatStringsSep " " cfg.lighthouses}
+          ${pkgs.systemd}/bin/resolvectl default-route nebula1 true
+        '';
         Restart = "on-failure";
         RestartSec = "5";
         # Required capabilities for TUN device management
