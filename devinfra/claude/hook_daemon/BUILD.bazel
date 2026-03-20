@@ -67,6 +67,7 @@ py_library(
         ":tracing",
         "//devinfra:build_info",
         "//devinfra/claude:apt_setup",
+        "//devinfra/claude:bazel_server_warmup",
         "//devinfra/claude:bazel_wrapper_lib",
         "//devinfra/claude:bazelisk_setup",
         "//devinfra/claude:buildbuddy_setup",

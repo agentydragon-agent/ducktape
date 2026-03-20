@@ -47,6 +47,7 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     app.state.otlp_exporter = otlp_exporter
     app.state.last_request_time = time.monotonic()
     app.state.proxy = None
+    app.state.background_tasks = set[asyncio.Task[object]]()
 
     # Start auth proxy in-process if upstream proxy is configured.
     # The proxy binds the port immediately; credentials are written later
@@ -100,6 +101,7 @@ async def handle_hook(req: HookRequest) -> HookResponse:
                         http=http,
                         otlp_exporter=app.state.otlp_exporter,
                         proxy=app.state.proxy,
+                        background_tasks=app.state.background_tasks,
                     )
             case PreToolUseInput():
                 output = evaluate_pre(req.hook)

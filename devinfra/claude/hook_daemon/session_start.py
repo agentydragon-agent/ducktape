@@ -22,6 +22,7 @@ from opentelemetry import trace
 from devinfra.build_info import get_build_info
 from devinfra.claude import (
     apt_setup,
+    bazel_server_warmup,
     bazelisk_setup,
     buildbuddy_setup,
     cli_tools_setup,
@@ -473,6 +474,7 @@ async def run_session(
     http: httpx.Client,
     otlp_exporter: DeferredOtlpExporter,
     proxy: AuthForwardingProxy | None,
+    background_tasks: set[asyncio.Task[object]] | None = None,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -578,6 +580,17 @@ async def run_session(
         env_file.write_env_file(ctx.env_file_path, env_vars)
     logger.info("Wrote environment to %s", ctx.env_file_path)
 
+    # Fire-and-forget Bazel server warmup (both web and CLI modes).
+    # Store task reference in background_tasks to prevent GC before completion.
+    if settings.warmup_bazel_server and background_tasks is not None:
+        task = asyncio.create_task(
+            bazel_server_warmup.warmup_bazel_server(
+                wrapper_path=paths.wrapper_path, project_dir=ctx.project_dir, env_file=ctx.env_file_path
+            )
+        )
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
+
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
         status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
@@ -614,8 +627,11 @@ async def handle(
     http: httpx.Client,
     otlp_exporter: DeferredOtlpExporter,
     proxy: AuthForwardingProxy | None,
+    background_tasks: set[asyncio.Task[object]] | None = None,
 ) -> SessionStartOutput:
     """Entry point called from the hook daemon with the client's env."""
     logger.info("Caller environment: %s", caller_env)
     ctx = CallerContext.from_env(caller_env)
-    return await run_session(hook_input, paths, settings, ctx, http, otlp_exporter, proxy=proxy)
+    return await run_session(
+        hook_input, paths, settings, ctx, http, otlp_exporter, proxy=proxy, background_tasks=background_tasks
+    )
