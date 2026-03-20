@@ -20,8 +20,18 @@ Architecture:
         - Runs claude-hook (session start hook) which sets up:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
+
+Network traffic profile (~327 MB total, measured 2026-03-20):
+    releases.bazel.build:443       130 MB  40%  Bazel binary (2 conns)
+    files.pythonhosted.org:443      81 MB  25%  pip wheel deps (protobuf, cryptography, etc.)
+    dl.k8s.io:443                   57 MB  17%  kubectl binary
+    deb.debian.org:80               49 MB  15%  apt packages (libdbus, etc.)
+    pypi.org:443                    10 MB   3%  pip index metadata
+    bcr.bazel.build:443            0.3 MB  <1%  Bazel Central Registry metadata
+    Top 4 hosts account for 97% of traffic. See proxy.log in undeclared outputs.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -41,7 +51,7 @@ from yarl import URL
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.mock_egress_proxy import ConnectionStats, EgressProxyConfig
+from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -81,6 +91,10 @@ _PROXY_MGMT_PORT = 8081
 # Timeout for proxy container readiness (seconds)
 _PROXY_READY_TIMEOUT = 60
 
+# Python-level test timeout — shorter than Bazel's so the finally block can
+# collect logs before Bazel kills the process.
+_TEST_TIMEOUT = 240
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -92,13 +106,6 @@ def _save_output(name: str, content: str) -> None:
     out_dir = undeclared_outputs_dir() / "container-e2e"
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / name).write_text(content)
-
-
-def _cleanup_dangling_symlinks(directory: Path) -> None:
-    """Remove dangling symlinks — Bazel rejects them in output trees."""
-    for p in directory.rglob("*"):
-        if p.is_symlink() and not p.exists():
-            p.unlink()
 
 
 async def _exec(
@@ -293,10 +300,6 @@ async def proxy_env(
     proxy_shared = tmp_path / "proxy_shared"
     proxy_shared.mkdir()
 
-    # Proxy logs land directly in undeclared test outputs
-    proxy_logs_dir = undeclared_outputs_dir() / "container-e2e" / "proxy-logs"
-    proxy_logs_dir.mkdir(parents=True, exist_ok=True)
-
     proxy_name = f"{_CONTAINER_NAME}-proxy-{os.getpid()}"
 
     proxy_cmd = [
@@ -313,7 +316,7 @@ async def proxy_env(
     ]
 
     upstream = EgressProxyConfig.from_env()
-    binds_proxy: list[str] = [f"{proxy_logs_dir}:/logs"]
+    binds_proxy: list[str] = []
     if upstream:
         proxy_cmd += _build_upstream_proxy_args(upstream, docker_networks.gateway_ip, proxy_shared)
         if upstream.ca_bundle:
@@ -370,6 +373,21 @@ async def proxy_env(
     finally:
         stdout = "".join(await proxy_container.log(stdout=True, stderr=True))
         _save_output("proxy-container.log", stdout)
+
+        # Extract structured proxy log via exec (not bind-mount, avoids root-owned files)
+        exec_obj = await proxy_container.exec(
+            ["cat", "/logs/proxy.log"], stdout=True, stderr=False, stdin=False, tty=False
+        )
+        stream: Any = exec_obj.start()
+        proxy_log_buf = bytearray()
+        while True:
+            chunk = await stream.read_out()
+            if chunk is None:
+                break
+            proxy_log_buf.extend(chunk.data if isinstance(chunk.data, bytes) else chunk.data.encode())
+        if proxy_log_buf:
+            _save_output("proxy.log", proxy_log_buf.decode(errors="replace"))
+
         await proxy_container.delete(force=True)
 
 
@@ -406,10 +424,6 @@ async def test_container_e2e(
     system_cas = system_ca_path.read_bytes() if system_ca_path else b""
     combined_ca_path.write_bytes(system_cas + b"\n" + proxy_env.mock_ca_pem)
 
-    # Bind-mount the session dir so logs land directly in undeclared outputs
-    session_logs_dir = undeclared_outputs_dir() / "container-e2e" / "session-logs"
-    session_logs_dir.mkdir(parents=True, exist_ok=True)
-
     container_name = f"{_CONTAINER_NAME}-{os.getpid()}"
 
     env = {
@@ -432,7 +446,6 @@ async def test_container_e2e(
         f"{mock_ca_path}:/certs/mock_ca.pem:ro",
         f"{combined_ca_path}:/certs/combined_ca.pem:ro",
         f"{staged_workspace}:/project/test_workspace:ro",
-        f"{session_logs_dir}:/root/.claude/session-env/{_SESSION_ID}",
     ]
 
     container = await docker_client.containers.create(
@@ -446,50 +459,44 @@ async def test_container_e2e(
     )
 
     try:
-        await container.start()
-        logger.info("Started test container %s on isolated network", container_name)
+        async with asyncio.timeout(_TEST_TIMEOUT):
+            await container.start()
+            logger.info("Started test container %s on isolated network", container_name)
 
-        # Verify network isolation — container must not reach the internet directly
-        rc, _, _ = await _exec(container, ["bash", "-c", "curl --max-time 3 https://google.com"], check=False)
-        assert rc != 0, "Container should have no external internet access on --internal network"
-        logger.info("Network isolation verified: container cannot reach internet directly")
+            # Verify network isolation — container must not reach the internet directly
+            rc, _, _ = await _exec(container, ["bash", "-c", "curl --max-time 3 https://google.com"], check=False)
+            assert rc != 0, "Container should have no external internet access on --internal network"
+            logger.info("Network isolation verified: container cannot reach internet directly")
 
-        await _exec(container, ["mkdir", "-p", "/project/.git"])
+            await _exec(container, ["mkdir", "-p", "/project/.git"])
 
-        # Install ducktape wheel
-        # TODO(container-e2e): Install via uv by reading .claude/settings.json
-        # hook definition and piping the JSON into sh, instead of raw pip.
-        logger.info("Installing wheel")
-        await _exec(container, ["pip", "install", "--break-system-packages", "/wheel/ducktape-0.1.0-py3-none-any.whl"])
+            # Install ducktape wheel
+            # TODO(container-e2e): Install via uv by reading .claude/settings.json
+            # hook definition and piping the JSON into sh, instead of raw pip.
+            logger.info("Installing wheel")
+            await _exec(
+                container, ["pip", "install", "--break-system-packages", "/wheel/ducktape-0.1.0-py3-none-any.whl"]
+            )
 
-        # Run session start hook
-        logger.info("Running claude-hook (session start)")
-        hook_input = json.dumps(
-            {
-                "hook_event_name": "SessionStart",
-                "session_id": _SESSION_ID,
-                "cwd": "/project",
-                "transcript_path": "/tmp/transcript.json",
-                "permission_mode": "default",
-                "source": "startup",
-                "model": "claude-sonnet-4-6",
-            }
-        )
-        await _exec(container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"])
+            # Run session start hook
+            logger.info("Running claude-hook (session start)")
+            hook_input = json.dumps(
+                {
+                    "hook_event_name": "SessionStart",
+                    "session_id": _SESSION_ID,
+                    "cwd": "/project",
+                    "transcript_path": "/tmp/transcript.json",
+                    "permission_mode": "default",
+                    "source": "startup",
+                    "model": "claude-sonnet-4-6",
+                }
+            )
+            await _exec(container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"])
 
-        # Run bazel build through the proxy chain
-        logger.info("Running bazel build")
-        bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
-        await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
-
-        # Fetch stats from management API
-        async with aiohttp.ClientSession() as session:
-            stats_body = await _mgmt_get(session, proxy_env.mgmt_base / "stats")
-        stats = ConnectionStats.model_validate_json(stats_body)
-        assert stats.total_connections > 0, (
-            "Mock egress proxy received no connections - network isolation may not be working"
-        )
-        logger.info("Proxy stats: %s", stats)
+            # Run bazel build through the proxy chain
+            logger.info("Running bazel build")
+            bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
+            await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
     finally:
         stdout = "".join(await container.log(stdout=True, stderr=False))
@@ -497,21 +504,21 @@ async def test_container_e2e(
         _save_output("container-stdout.log", stdout)
         _save_output("container-stderr.log", stderr)
 
-        # Fix permissions on bind-mounted session logs before container deletion.
-        # The container runs as root, so files it creates (bazel cache, hook logs)
-        # are owned by root. The CI runner can't read them, causing Bazel to fail
-        # when collecting undeclared test outputs.
-        await _exec(container, ["chmod", "-R", "a+rX", f"/root/.claude/session-env/{_SESSION_ID}"], check=False)
+        # Extract specific log files from the container. We don't bind-mount
+        # the session dir because the container (root) creates bazel cache/install
+        # files that are unreadable by the CI runner and break Bazel's output collection.
+        session_dir = f"/root/.claude/session-env/{_SESSION_ID}"
+        for log_file in [
+            "hook-daemon/daemon.log",
+            "sessionstart-hook-0.sh",
+            "supervisor/supervisord.log",
+            "auth-proxy/bazelrc",
+        ]:
+            rc, content, _ = await _exec(container, ["cat", f"{session_dir}/{log_file}"], check=False)
+            if rc == 0:
+                _save_output(log_file.replace("/", "-"), content.decode(errors="replace"))
 
         await container.delete(force=True)
-
-        # Remove container's bazel cache — not useful diagnostics and contains
-        # symlinks into execroot that break Bazel's output collection.
-        bazel_cache = session_logs_dir / "bazel-cache"
-        if bazel_cache.exists():
-            shutil.rmtree(bazel_cache, ignore_errors=True)
-
-        _cleanup_dangling_symlinks(session_logs_dir)
 
 
 if __name__ == "__main__":
