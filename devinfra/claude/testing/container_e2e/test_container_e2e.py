@@ -139,9 +139,6 @@ async def test_container_e2e(
                 # Project and env file paths (inside container)
                 "CLAUDE_PROJECT_DIR": "/project",
                 "CLAUDE_ENV_FILE": f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh",
-                # Isolated dirs
-                "HOME": "/root",
-                "XDG_CACHE_HOME": "/cache",
                 # Hook settings
                 "DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK": "true",
                 "DUCKTAPE_CLAUDE_HOOKS_INSTALL_MKCERT": "false",
@@ -190,7 +187,7 @@ async def test_container_e2e(
                     "-c",
                     # git + JDK are pre-installed in the e2e image.
                     # Break DNS to enforce proxy usage, then run the test.
-                    "mkdir -p /project/.git /cache && "
+                    "mkdir -p /project/.git && "
                     "echo 'nameserver 192.0.2.1' > /etc/resolv.conf && "
                     "python /run_in_container.py",
                 ],
