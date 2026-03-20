@@ -29,14 +29,11 @@ logger = logging.getLogger(__name__)
 
 
 class LogEntry(BaseModel):
-    timestamp: str
-    eval_name: str
+    timestamp: datetime
     player: Literal["agent", "simulator"]
-    turn: int
     model: str
     content: str
     tool_calls: list[ToolCall] = []
-    stop_reason: str
 
 
 class RunSummary(BaseModel):

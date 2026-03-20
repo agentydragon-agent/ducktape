@@ -110,24 +110,11 @@ class _TextCaptureHandler(BaseHandler):
 
 
 class _TurnLogHandler(BaseHandler):
-    """Records a LogEntry per LLM response call for eval output.
+    """Logs a LogEntry per LLM response."""
 
-    on_response fires after _process_resp_output, so self._text and self._tool_calls
-    already hold the content from the current response when the entry is flushed.
-    """
-
-    def __init__(
-        self,
-        *,
-        eval_name: str,
-        player: Literal["agent", "simulator"],
-        write_entry: Callable[[LogEntry], None],
-        turn_getter: Callable[[], int],
-    ) -> None:
-        self._eval_name = eval_name
+    def __init__(self, *, player: Literal["agent", "simulator"], write_entry: Callable[[LogEntry], None]) -> None:
         self._player = player
         self._write_entry = write_entry
-        self._turn_getter = turn_getter
         self._text = ""
         self._tool_calls: list[ToolCall] = []
 
@@ -140,14 +127,11 @@ class _TurnLogHandler(BaseHandler):
     def on_response(self, evt: Response) -> None:
         self._write_entry(
             LogEntry(
-                timestamp=datetime.now(UTC).isoformat(),
-                eval_name=self._eval_name,
+                timestamp=datetime.now(UTC),
                 player=self._player,
-                turn=self._turn_getter(),
                 model=evt.model,
                 content=self._text,
                 tool_calls=list(self._tool_calls),
-                stop_reason="tool_calls" if self._tool_calls else "stop",
             )
         )
         self._text = ""
@@ -192,18 +176,15 @@ class _TwentyQuestionsRunner:
     async def _run_game(
         self, *, first_user_message: str, turn_limit: int, write_entry: Callable[[LogEntry], None]
     ) -> RunSummary:
-        current_turn = 0
-
         # Sim tool provider: closures capture sim_action
         sim_action: SimAction | None = None
         sim_provider = DirectToolProvider()
 
         @sim_provider.tool
-        def answer(args: AnswerInput) -> str:
+        def answer(args: AnswerInput) -> None:
             """Answer the player's yes/no question."""
             nonlocal sim_action
             sim_action = SimAnswer(response=args.response)
-            return args.response
 
         @sim_provider.tool
         def correct_answer() -> None:
@@ -211,12 +192,8 @@ class _TwentyQuestionsRunner:
             nonlocal sim_action
             sim_action = SimCorrectAnswer()
 
-        agent_log = _TurnLogHandler(
-            eval_name=self.name, player="agent", write_entry=write_entry, turn_getter=lambda: current_turn
-        )
-        sim_log = _TurnLogHandler(
-            eval_name=self.name, player="simulator", write_entry=write_entry, turn_getter=lambda: current_turn
-        )
+        agent_log = _TurnLogHandler(player="agent", write_entry=write_entry)
+        sim_log = _TurnLogHandler(player="simulator", write_entry=write_entry)
         text_capture = _TextCaptureHandler()
 
         agent = Agent(
@@ -258,10 +235,8 @@ class _TwentyQuestionsRunner:
         agent.process_message(UserMessage.text(first_user_message))
 
         result: Correct | Timeout = Timeout(limit=turn_limit)
-        last_turn = 0
+        turn = 0
         for turn in range(1, turn_limit + 1):
-            last_turn = turn
-            current_turn = turn
             logger.info("Turn %d...", turn)
 
             agent_text = await agent_turn()
@@ -278,7 +253,7 @@ class _TwentyQuestionsRunner:
 
             agent.process_message(UserMessage.text(action.response))
 
-        return RunSummary(eval_name=self.name, model=self.model.model, turns=last_turn, result=result)
+        return RunSummary(eval_name=self.name, model=self.model.model, turns=turn, result=result)
 
 
 async def run_twenty_questions(
