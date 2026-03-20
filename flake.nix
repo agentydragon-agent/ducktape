@@ -36,11 +36,11 @@
       flake = false;
     };
     headscale-cleanup-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-b9b1b5d5/headscale_cleanup-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/headscale-cleanup-2eb67be2/headscale_cleanup-0.1.0-py3-none-any.whl";
       flake = false;
     };
     gterm-theme-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-b9b1b5d5/gterm_theme-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-2eb67be2/gterm_theme-0.1.0-py3-none-any.whl";
       flake = false;
     };
 
