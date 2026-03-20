@@ -6,27 +6,29 @@ all external connectivity).
 
 Architecture:
     Host side:
-        - MockEgressProxy on 0.0.0.0 (TLS-intercepting + plain HTTP, requires auth)
         - Builds the ducktape wheel via Bazel
+        - Builds MockEgressProxy OCI image via Bazel and loads it into Docker
         - Pulls e2e-container image from GHCR (python:3.13-slim + git + JDK)
         - Creates two Docker networks:
-          - e2e-proxy (bridge): sidecar ↔ host
-          - e2e-isolated (internal bridge): test container ↔ sidecar only
-        - Sidecar container runs tcp_forwarder.py to bridge the two networks
+          - e2e-proxy (bridge): proxy container has internet access
+          - e2e-isolated (internal bridge): test container ↔ proxy container only
+        - MockEgressProxy runs as a container on both networks
         - Drives test steps via docker exec calls
 
     Container side (via docker exec):
-        - Installs ducktape wheel (pip through proxy → sidecar → MockEgressProxy)
+        - Installs ducktape wheel (pip through proxy → MockEgressProxy container)
         - Runs claude-hook (session start hook) which sets up:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
 """
 
+import asyncio
 import json
 import logging
 import os
 import shlex
 import shutil
+import urllib.parse
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
@@ -37,8 +39,9 @@ import pytest_bazel
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, MockEgressProxy
+from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig
 from util.bazel.runfiles import get_required_path
+from util.oci import load_bazel_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
@@ -53,11 +56,12 @@ _WHEEL_RLOCATION = "_main/ducktape-0.1.0-py3-none-any.whl"
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 
-# Rlocation for tcp_forwarder.py (staged into sidecar container)
-_TCP_FORWARDER_RLOCATION = "_main/devinfra/claude/testing/container_e2e/tcp_forwarder.py"
-
 # GHCR image for the e2e test container (built by e2e-container-image.yml CI workflow)
 _E2E_IMAGE = "ghcr.io/agentydragon/e2e-container:latest"
+
+# OCI image for the mock egress proxy container
+_MOCK_PROXY_IMAGE = "mock-egress-proxy:latest"
+_MOCK_PROXY_LOAD_SCRIPT = "devinfra/claude/testing/mock_egress_proxy_load/load.sh"
 
 # Container name prefix
 _CONTAINER_NAME = "ducktape-container-e2e"
@@ -67,8 +71,11 @@ _SESSION_ID = "container-e2e-test"
 
 _ENV_FILE = f"/root/.claude/session-env/{_SESSION_ID}/sessionstart-hook-0.sh"
 
-# Port the sidecar listens on inside the isolated network
-_SIDECAR_LISTEN_PORT = 8080
+# Port the proxy listens on inside its container
+_PROXY_LISTEN_PORT = 8080
+
+# Timeout for proxy container readiness (seconds)
+_PROXY_READY_TIMEOUT = 60
 
 
 def _save_output(name: str, content: str) -> None:
@@ -139,6 +146,30 @@ async def _exec(
     return exit_code, bytes(stdout_buf), bytes(stderr_buf)
 
 
+def _build_upstream_proxy_args(upstream: EgressProxyConfig, gateway_ip: str, proxy_shared: Path) -> list[str]:
+    """Build CLI args for upstream proxy configuration.
+
+    Rewrites localhost references to gateway_ip so the proxy container can
+    reach host-side services via the bridge network gateway.
+    """
+    host = upstream.host
+    if host in ("localhost", "127.0.0.1"):
+        host = gateway_ip
+
+    url = "http://"
+    if upstream.username and upstream.password:
+        url += f"{urllib.parse.quote(upstream.username)}:{urllib.parse.quote(upstream.password)}@"
+    url += f"{host}:{upstream.port}"
+
+    args = ["--upstream-proxy-url", url]
+
+    if upstream.ca_bundle:
+        shutil.copy2(upstream.ca_bundle, proxy_shared / "upstream_ca.pem")
+        args += ["--upstream-ca-bundle", "/shared/upstream_ca.pem"]
+
+    return args
+
+
 @pytest.fixture
 def wheel_path() -> Path:
     """Resolve the built ducktape wheel from runfiles."""
@@ -152,9 +183,9 @@ def test_workspace_path() -> Path:
 
 
 @pytest.fixture
-def tcp_forwarder_path() -> Path:
-    """Resolve the tcp_forwarder.py script from runfiles."""
-    return get_required_path(_TCP_FORWARDER_RLOCATION)
+def mock_proxy_image() -> str:
+    """Load the mock egress proxy OCI image into Docker."""
+    return load_bazel_image(_MOCK_PROXY_LOAD_SCRIPT, _MOCK_PROXY_IMAGE)
 
 
 @pytest.fixture
@@ -164,41 +195,15 @@ async def docker_client() -> AsyncGenerator[aiodocker.Docker]:
         yield client
 
 
-@pytest.fixture
-async def mock_proxy() -> AsyncGenerator[MockEgressProxy]:
-    """Yield a MockEgressProxy listening on 0.0.0.0 (reachable from bridge network)."""
-    async with MockEgressProxy(
-        listen_port=0,
-        listen_address="0.0.0.0",
-        username="proxy_user",
-        password="test_jwt_token",
-        upstream_proxy=EgressProxyConfig.from_env(),
-    ) as proxy:
-        yield proxy
-
-
 async def test_container_e2e(
-    tmp_path: Path,
-    wheel_path: Path,
-    test_workspace_path: Path,
-    tcp_forwarder_path: Path,
-    docker_client: aiodocker.Docker,
-    mock_proxy: MockEgressProxy,
+    tmp_path: Path, wheel_path: Path, test_workspace_path: Path, mock_proxy_image: str, docker_client: aiodocker.Docker
 ) -> None:
     """Full E2E: install wheel in container, run hook, bazel build through proxy."""
     await _ensure_image(docker_client, _E2E_IMAGE)
 
-    logger.info("MockEgressProxy listening on port %d", mock_proxy.port)
-
-    # Write mock CA cert to a file the container can access
-    mock_ca_path = tmp_path / "mock_ca.pem"
-    mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
-
-    # Create combined CA bundle (system CAs + mock proxy CA)
-    system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
-    combined_ca_path = tmp_path / "combined_ca.pem"
-    system_cas = system_ca_path.read_bytes() if system_ca_path else b""
-    combined_ca_path.write_bytes(system_cas + b"\n" + mock_proxy.ca_cert_pem)
+    # Shared directory for proxy ↔ host communication (CA cert, ready signal, stats)
+    proxy_shared = tmp_path / "proxy_shared"
+    proxy_shared.mkdir()
 
     # Copy files to a staging directory so Docker can mount real files
     # (runfiles may be symlinks that Docker cannot resolve in gVisor)
@@ -208,8 +213,6 @@ async def test_container_e2e(
     shutil.copy2(wheel_path, staged_wheel)
     staged_workspace = staging / "test_workspace"
     shutil.copytree(test_workspace_path, staged_workspace)
-    staged_forwarder = staging / "tcp_forwarder.py"
-    shutil.copy2(tcp_forwarder_path, staged_forwarder)
 
     # Bind-mount the session dir so logs land directly in undeclared outputs
     session_logs_dir = undeclared_outputs_dir() / "container-e2e" / "session-logs"
@@ -219,7 +222,7 @@ async def test_container_e2e(
     proxy_net_name = f"e2e-proxy-{pid}"
     isolated_net_name = f"e2e-isolated-{pid}"
     container_name = f"{_CONTAINER_NAME}-{pid}"
-    sidecar_name = f"{_CONTAINER_NAME}-sidecar-{pid}"
+    proxy_name = f"{_CONTAINER_NAME}-proxy-{pid}"
 
     # Create networks
     proxy_net = await docker_client.networks.create({"Name": proxy_net_name, "Driver": "bridge"})
@@ -227,7 +230,7 @@ async def test_container_e2e(
         {"Name": isolated_net_name, "Driver": "bridge", "Internal": True}
     )
 
-    sidecar: aiodocker.containers.DockerContainer | None = None
+    proxy_container: aiodocker.containers.DockerContainer | None = None
     container: aiodocker.containers.DockerContainer | None = None
 
     try:
@@ -236,29 +239,80 @@ async def test_container_e2e(
         gateway_ip = proxy_net_info["IPAM"]["Config"][0]["Gateway"]
         logger.info("Proxy network gateway (host reachable at): %s", gateway_ip)
 
-        # Start sidecar container on proxy network — forwards traffic to host MockEgressProxy
-        sidecar_cmd = ["python3", "/tcp_forwarder.py", str(_SIDECAR_LISTEN_PORT), gateway_ip, str(mock_proxy.port)]
-        sidecar = await docker_client.containers.create(
+        # Build proxy container command
+        proxy_cmd = [
+            "--listen-port",
+            str(_PROXY_LISTEN_PORT),
+            "--username",
+            "proxy_user",
+            "--password",
+            "test_jwt_token",
+            "--ca-output-dir",
+            "/shared",
+            "--ready-file",
+            "/shared/ready",
+            "--stats-output-file",
+            "/shared/stats.json",
+        ]
+
+        # Detect upstream proxy from host environment
+        upstream = EgressProxyConfig.from_env()
+        if upstream:
+            proxy_cmd += _build_upstream_proxy_args(upstream, gateway_ip, proxy_shared)
+        else:
+            proxy_cmd.append("--no-verify-target-certs")
+
+        # Start proxy container on proxy network (has internet access)
+        proxy_container = await docker_client.containers.create(
             {
-                "Image": _E2E_IMAGE,
-                "Cmd": sidecar_cmd,
-                "HostConfig": {"NetworkMode": proxy_net_name, "Binds": [f"{staged_forwarder}:/tcp_forwarder.py:ro"]},
+                "Image": mock_proxy_image,
+                "Cmd": proxy_cmd,
+                "HostConfig": {"NetworkMode": proxy_net_name, "Binds": [f"{proxy_shared}:/shared"]},
             },
-            name=sidecar_name,
+            name=proxy_name,
         )
-        await sidecar.start()
-        logger.info("Started sidecar %s", sidecar_name)
+        await proxy_container.start()
+        logger.info("Started proxy container %s", proxy_name)
 
-        # Connect sidecar to the isolated network too
-        await isolated_net.connect({"Container": sidecar._id})
+        # Connect proxy container to the isolated network too
+        await isolated_net.connect({"Container": proxy_container._id})
 
-        # Get sidecar's IP on the isolated network
-        sidecar_info = await sidecar.show()
-        sidecar_ip = sidecar_info["NetworkSettings"]["Networks"][isolated_net_name]["IPAddress"]
-        logger.info("Sidecar IP on isolated network: %s", sidecar_ip)
+        # Wait for proxy to become ready
+        for _ in range(int(_PROXY_READY_TIMEOUT / 0.2)):
+            if (proxy_shared / "ready").exists():
+                break
+            await asyncio.sleep(0.2)
+        else:
+            # Collect proxy logs for debugging
+            try:
+                stdout = "".join(await proxy_container.log(stdout=True, stderr=True))
+                _save_output("proxy-container.log", stdout)
+                logger.error("Proxy container logs:\n%s", stdout)
+            except Exception:
+                pass
+            raise TimeoutError("MockEgressProxy container failed to become ready")
 
-        # Proxy URL points through sidecar
-        proxy_url = f"http://proxy_user:test_jwt_token@{sidecar_ip}:{_SIDECAR_LISTEN_PORT}"
+        logger.info("MockEgressProxy container is ready")
+
+        # Read mock CA cert from shared volume
+        mock_ca_pem = (proxy_shared / "ca.pem").read_bytes()
+
+        # Create combined CA bundle (system CAs + mock proxy CA)
+        system_ca_path = next((p for p in SYSTEM_CA_BUNDLES if p.exists()), None)
+        combined_ca_path = tmp_path / "combined_ca.pem"
+        system_cas = system_ca_path.read_bytes() if system_ca_path else b""
+        combined_ca_path.write_bytes(system_cas + b"\n" + mock_ca_pem)
+
+        mock_ca_path = tmp_path / "mock_ca.pem"
+        mock_ca_path.write_bytes(mock_ca_pem)
+
+        # Get proxy container's IP on the isolated network
+        proxy_info = await proxy_container.show()
+        proxy_ip = proxy_info["NetworkSettings"]["Networks"][isolated_net_name]["IPAddress"]
+        logger.info("Proxy container IP on isolated network: %s", proxy_ip)
+
+        # Proxy URL for the test container
+        proxy_url = f"http://proxy_user:test_jwt_token@{proxy_ip}:{_PROXY_LISTEN_PORT}"
 
         # Environment variables
         env = {
@@ -276,7 +330,7 @@ async def test_container_e2e(
             # Wheel path inside container
             "WHEEL_PATH": "/wheel/ducktape-0.1.0-py3-none-any.whl",
         }
-        # Proxy configuration — all proxy vars point through the sidecar
+        # Proxy configuration — all proxy vars point through the proxy container
         for var in PROXY_ENV_VARS:
             env[var] = proxy_url
         # SSL CA configuration — point to the combined CA inside the container
@@ -338,11 +392,16 @@ async def test_container_e2e(
         bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
         await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
+        # Stop proxy container (SIGTERM triggers stats write)
+        await proxy_container.kill(signal="SIGTERM")
+        await proxy_container.wait()
+
         # Verify the mock proxy actually saw traffic
-        assert mock_proxy.stats.total_connections > 0, (
+        stats = json.loads((proxy_shared / "stats.json").read_text())
+        assert stats["total_connections"] > 0, (
             "Mock egress proxy received no connections - network isolation may not be working"
         )
-        logger.info("Proxy stats: %s", mock_proxy.stats)
+        logger.info("Proxy stats: %s", stats)
 
     finally:
         # Save container logs before cleanup
@@ -356,8 +415,13 @@ async def test_container_e2e(
                 logger.warning("Failed to collect container logs", exc_info=True)
             await container.delete(force=True)
 
-        if sidecar is not None:
-            await sidecar.delete(force=True)
+        if proxy_container is not None:
+            try:
+                stdout = "".join(await proxy_container.log(stdout=True, stderr=True))
+                _save_output("proxy-container.log", stdout)
+            except Exception:
+                logger.warning("Failed to collect proxy container logs", exc_info=True)
+            await proxy_container.delete(force=True)
 
         # Disconnect containers from networks before deleting networks
         # (force=True on delete already stops containers, but network cleanup

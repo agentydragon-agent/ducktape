@@ -1,17 +1,15 @@
 load("//devinfra/testing:defs.bzl", "py_test")
 
-exports_files(["tcp_forwarder.py"])
-
 py_test(
     name = "test_container_e2e",
     size = "small",
     srcs = ["test_container_e2e.py"],
     data = [
-        "tcp_forwarder.py",
         "//:wheel",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
+        "//devinfra/claude/testing:mock_egress_proxy_load",
     ],
-    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    # Inherit proxy env vars so the proxy container can chain through real proxy
     env_inherit = [
         "CURL_CA_BUNDLE",
         "DOCKER_HOST",
@@ -32,6 +30,7 @@ py_test(
         "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/testing:conftest",
         "//devinfra/claude/testing:mock_egress_proxy",
+        "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//aiodocker",
