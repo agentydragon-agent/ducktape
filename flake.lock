@@ -54,13 +54,13 @@
     "ducktape-wheel": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-nrNnXQsAJWLAarXh8AlYEzcAdy+3n5oM3h0dDwgUQDU=",
+        "narHash": "sha256-j/yxUsvZwI8b7vN5aDUP/ga8IKCtrI6FN64foymlpVc=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-e9e84d37/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-30eb53bc/ducktape-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-e9e84d37/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-30eb53bc/ducktape-0.1.0-py3-none-any.whl"
       }
     },
     "flake-utils": {
