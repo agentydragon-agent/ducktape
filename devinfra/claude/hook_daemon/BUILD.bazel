@@ -240,6 +240,23 @@ py_test(
 )
 
 py_test(
+    name = "test_precommit_e2e",
+    srcs = ["test_precommit_e2e.py"],
+    data = ["__snapshots__/test_precommit_e2e.ambr"],
+    imports = ["../../.."],
+    deps = [
+        ":post_tool_use_lib",
+        ":precommit_runner",
+        "//devinfra/claude:conftest",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
     name = "test_session_start_podman",
     size = "medium",
     srcs = ["test_session_start_podman.py"],
