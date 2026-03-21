@@ -12,6 +12,9 @@
 resource "talos_image_factory_schematic" "hcloud" {
   schematic = yamlencode({
     customization = {
+      extraKernelArgs = [
+        "talos.platform=hcloud",
+      ]
       systemExtensions = {
         officialExtensions = [
           "siderolabs/qemu-guest-agent",
@@ -122,6 +125,9 @@ locals {
         "topology.kubernetes.io/region"        = "hetzner"
         "topology.kubernetes.io/zone"          = var.hetzner_location
         "node.longhorn.io/create-default-disk" = "true"
+      }
+      install = {
+        image = "factory.talos.dev/installer/${talos_image_factory_schematic.hcloud.id}:${var.talos_version}"
       }
       kubelet = merge(local.common_machine_base.kubelet, {
         extraArgs = {
