@@ -8,7 +8,7 @@ from devinfra.claude.claude_api.hooks.common import HookInputBase, HookOutputBas
 class StopInput(HookInputBase):
     hook_event_name: Literal["Stop"] = "Stop"
     stop_hook_active: bool
-    last_assistant_message: str
+    last_assistant_message: str | None = None
 
 
 class StopOutput(HookOutputBase):

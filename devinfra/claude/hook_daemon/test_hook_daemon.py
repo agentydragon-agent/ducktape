@@ -85,6 +85,12 @@ class TestHandleHook:
         result = await _post_hook(client, HookRequest(hook=hook_input, env=env))
         assert result.output is None
 
+    async def test_stop_without_last_assistant_message(self, client: AsyncClient, env: dict[str, str]) -> None:
+        """Stop hook works when last_assistant_message is absent."""
+        hook_input = StopInput(**_COMMON, hook_event_name="Stop", stop_hook_active=False)
+        result = await _post_hook(client, HookRequest(hook=hook_input, env=env))
+        assert result.output is None
+
     async def test_env_persisted_to_disk(self, client: AsyncClient, tmp_path: Path) -> None:
         """Session env is written to disk on each request."""
         env = {"MY_VAR": "my_value", "PATH": "/usr/bin"}
