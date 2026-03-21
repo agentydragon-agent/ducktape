@@ -49,6 +49,12 @@ nix = { version = "^0.31.1", features = ["signal", "process", "fs"] }
 bytes = "^1.11.0"
 parking_lot = "^0.12.5"
 libc = "^0.2.172"
+# x/twenty_questions_frameworks/rig
+anyhow = "^1.0"
+# rig-core's default `reqwest-rustls` feature pulls aws-lc-rs → aws-lc-sys (needs cmake).
+# Use native-tls instead (system OpenSSL on Linux, no cmake required).
+rig-core = { version = "^0.33.0", default-features = false, features = ["derive", "reqwest-native-tls"] }
+bollard = "^0.20.2"
 
 [[bin]]
 name = "ducktape_fake"

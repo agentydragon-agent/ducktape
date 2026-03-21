@@ -452,13 +452,13 @@ use_repo(buildbuddy, "buildbuddy_toolchain")
 register_toolchains("@buildbuddy_toolchain//:ubuntu_cc_toolchain")
 
 # Rust rules
-bazel_dep(name = "rules_rust", version = "0.68.1")  # upgraded from 0.61.0 to fix bzlmod ctve repo naming
+bazel_dep(name = "rules_rust", version = "0.69.0")
 
 # — rust toolchains —
 rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
 rust.toolchain(
     edition = "2024",
-    versions = ["1.87.0"],  # trying 1.87.0 to fix proc-macro loading issue
+    versions = ["1.88.0"],
 )
 use_repo(rust, "rust_toolchains")
 
