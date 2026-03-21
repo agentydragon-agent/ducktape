@@ -156,21 +156,16 @@ each connection (hot-reload).
 
 ```
 Most tools (curl, pip, npm, etc.)
-    │
     └──► HTTPS_PROXY (Anthropic's proxy) ──► Internet
          (unchanged, fresh JWT)
 
 Bazel/Bazelisk
-    │
     └──► bazel wrapper
-           │
            ├── 1. Reads HTTPS_PROXY (fresh JWT from Anthropic)
            ├── 2. Writes to creds file (<session_dir>/hook-daemon/upstream_proxy)
            ├── 3. Sets HTTPS_PROXY=localhost:18081 for subprocess only
            └── 4. Execs bazelisk
-                   │
                    └──► Auth proxy (localhost:18081)
-                          │
                           ├── Reads creds file on each connection
                           ├── Adds Proxy-Authorization header
                           └──► Anthropic's proxy ──► Internet
@@ -331,10 +326,3 @@ This runs <web_setup.sh> which installs:
 
 1. The `claude-hooks` wheel (provides the `claude-hook` binary used by hooks in `.claude/settings.json`)
 2. Skills tarball (deployed to `~/.claude/skills/` for AI agent use)
-
-## Development
-
-```bash
-# Run tests
-bazel test //devinfra/claude:test_proxy
-```
