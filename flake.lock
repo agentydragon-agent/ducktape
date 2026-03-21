@@ -38,13 +38,13 @@
     "claude-hooks-wheel": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-5lRqIwGCKjFAMuX2o1CedU9ca/vQS/QSwwIdUhIjcRM=",
+        "narHash": "sha256-6pg2bTgMaXh74BtPFuFFTC/qa+664mrg/89ivpetndM=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-48758faa/claude_hooks-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-6440e46b/claude_hooks-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-48758faa/claude_hooks-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-6440e46b/claude_hooks-0.1.0-py3-none-any.whl"
       }
     },
     "claude-plugins-official": {
