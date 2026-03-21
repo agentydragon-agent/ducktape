@@ -14,18 +14,13 @@
 
   tasks:
     # Fix Proxmox repository issues
-    - name: Remove Proxmox enterprise and stale repository files
+    - name: Remove Proxmox enterprise
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
       loop:
         - /etc/apt/sources.list.d/pve-enterprise.sources
         - /etc/apt/sources.list.d/ceph.sources
-        # Stale PVE 8 era files
-        - /etc/apt/sources.list.d/pve-enterprise.list
-        - /etc/apt/sources.list.d/ceph.list
-        - /etc/apt/sources.list.d/pve-no-subscription.list
-        - /etc/apt/sources.list.d/pve-no-subscription.list.save
       tags: [repositories]
 
     - name: Add Proxmox no-subscription repository (PVE 9 / trixie)
@@ -72,36 +67,6 @@
       ansible.builtin.apt:
         update_cache: true
       tags: [repositories]
-
-    #- name: Ensure ducktape directory parent exists
-    #  ansible.builtin.file:
-    #    path: "/home/{{ my_user }}/code"
-    #    state: directory
-    #    owner: "{{ my_user }}"
-    #    group: "{{ my_user }}"
-    #    mode: "0755"
-    #  tags: [dotfiles]
-
-    #- name: Clone ducktape repository if not present # noqa: latest[git]
-    #  ansible.builtin.git:
-    #    repo: "git@gitlab.com:agentydragon/ducktape"
-    #    dest: "{{ cli_ducktape_path }}"
-    #    accept_hostkey: true
-    #  become: true
-    #  become_user: "{{ my_user }}"
-    #  async: "{{ git_async_timeout }}"
-    #  poll: 0
-    #  register: ducktape_git_job
-
-    #- name: Wait for ducktape repository clone
-    #  ansible.builtin.async_status:
-    #    jid: "{{ ducktape_git_job.ansible_job_id }}"
-    #  register: ducktape_git_status
-    #  until: ducktape_git_status.finished
-    #  retries: "{{ (git_async_timeout // apt_async_poll_interval) | int }}"
-    #  delay: "{{ apt_async_poll_interval }}"
-    #  failed_when: ducktape_git_status.rc is defined and ducktape_git_status.rc != 0
-    #  tags: [dotfiles]
 
     - name: Install AMD CPU microcode updates
       ansible.builtin.apt:
@@ -165,42 +130,6 @@
         state: started
       tags: [desktop]
 
-    # Remove Tailscale — replaced by Nebula mesh
-    - name: Stop and disable Tailscale service
-      ansible.builtin.systemd:
-        name: tailscaled
-        state: stopped
-        enabled: false
-      failed_when: false
-      tags: [tailscale, cleanup]
-
-    - name: Remove Tailscale packages
-      ansible.builtin.apt:
-        name:
-          - tailscale
-        state: absent
-        purge: true
-      tags: [tailscale, cleanup]
-
-    - name: Remove Tailscale apt repository
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /etc/apt/sources.list.d/tailscale.list
-        - /etc/apt/sources.list.d/tailscale.list.save
-        - /etc/apt/sources.list.d/tailscale.sources
-      tags: [tailscale, cleanup]
-
-    - name: Remove Tailscale GPG key
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: absent
-      loop:
-        - /usr/share/keyrings/tailscale-archive-keyring.gpg
-        - /etc/apt/keyrings/tailscale-archive-keyring.gpg
-      tags: [tailscale, cleanup]
-
     - name: Apply system inspection nopasswd role
       ansible.builtin.import_role:
         name: system_inspection_nopasswd
@@ -256,13 +185,6 @@
         - vfio_pci
         # vfio_virqfd was merged into the vfio module in kernel 6.2+
         # (atlas runs 6.17.x). No longer a separate module.
-      tags: [gpu_passthrough, vfio]
-
-    - name: Remove stale vfio_virqfd from /etc/modules
-      ansible.builtin.lineinfile:
-        path: /etc/modules
-        line: vfio_virqfd
-        state: absent
       tags: [gpu_passthrough, vfio]
 
     # Kernel modules required by NixOS LXC containers running k8s workers.
@@ -324,13 +246,6 @@
       notify: Reload udev rules
       tags: [pcie, power_management]
 
-    - name: Remove obsolete per-bridge D3cold udev rule
-      ansible.builtin.file:
-        path: /etc/udev/rules.d/99-pcie-bridge-no-d3cold.rules
-        state: absent
-      notify: Reload udev rules
-      tags: [pcie, power_management]
-
     - name: Update initramfs after module changes
       ansible.builtin.command:
         cmd: update-initramfs -u
@@ -381,12 +296,6 @@
     # The atlas host has a MediaTek MT7927 WiFi 7 card. MT7927 support was added
     # to the mt76 driver in Linux 6.12. Upgrade to Proxmox VE 9 (kernel 6.12+)
     # will enable this. After upgrade, install: wireless-tools, wpasupplicant, iw
-
-    # TODO: Manage Proxmox VM configurations in Ansible
-    # Currently VM configs live only in /etc/pve/qemu-server/*.conf
-    # Key VM to manage:
-    # - VM 100 (wyrm): vga=virtio-gl, hostpci0=01:00,hostpci1=03:00 (2x NVIDIA 5090), 32 cores, 64GB RAM
-    # Consider using community.general.proxmox_kvm module or templating .conf files
 
   handlers:
     - name: Refresh proxmox boot
