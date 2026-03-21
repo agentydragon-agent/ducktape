@@ -30,16 +30,18 @@ def test_python_env_no_inherit_minimal():
     assert "PATH" not in env
 
 
-def test_python_env_uses_existing_pythonpath():
+def test_python_env_merges_sys_path_and_pythonpath():
+    """PYTHONPATH merges sys.path with os.environ PYTHONPATH (both included)."""
     with patch.dict(os.environ, {"PYTHONPATH": "/custom/path"}):
-        env = python_env(inherit=False)
-        assert env["PYTHONPATH"] == "/custom/path"
+        result_paths = set(python_env(inherit=False)["PYTHONPATH"].split(os.pathsep))
+        assert {"/custom/path"} <= result_paths
+        assert {p for p in sys.path if p} <= result_paths
 
 
-def test_python_env_falls_back_to_sys_path():
+def test_python_env_uses_sys_path_when_no_pythonpath():
     with patch.dict(os.environ, {}, clear=True):
-        env = python_env(inherit=False)
-        assert env["PYTHONPATH"] == os.pathsep.join(sys.path)
+        result_paths = set(python_env(inherit=False)["PYTHONPATH"].split(os.pathsep))
+        assert {p for p in sys.path if p} <= result_paths
 
 
 def test_run_python_module_basic():

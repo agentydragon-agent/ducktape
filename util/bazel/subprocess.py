@@ -26,7 +26,17 @@ def python_env(*, inherit: bool = True) -> dict[str, str]:
                  dict with only PYTHONPATH.
     """
     env = os.environ.copy() if inherit else {}
-    env["PYTHONPATH"] = os.environ.get("PYTHONPATH") or os.pathsep.join(sys.path)
+    # Merge sys.path (includes Nix site.addsitedir paths) with existing PYTHONPATH.
+    # Using only os.environ["PYTHONPATH"] loses sys.path entries added at runtime
+    # (e.g., Nix wrapper's site.addsitedir); using only sys.path loses env entries.
+    existing = os.environ.get("PYTHONPATH", "").split(os.pathsep) if os.environ.get("PYTHONPATH") else []
+    merged: list[str] = []
+    seen: set[str] = set()
+    for p in [*sys.path, *existing]:
+        if p and p not in seen:
+            seen.add(p)
+            merged.append(p)
+    env["PYTHONPATH"] = os.pathsep.join(merged)
     return env
 
 
@@ -87,7 +97,7 @@ def generate_shell_wrapper(
         extra_lines: Raw shell lines inserted after exports and before the ``exec``
                      (use for dynamic expressions like ``$(...)``).
     """
-    pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(sys.path)
+    pythonpath = python_env(inherit=False)["PYTHONPATH"]
     env: dict[str, str | Path] = {"PYTHONPATH": pythonpath}
     if baked_env:
         env.update(baked_env)
