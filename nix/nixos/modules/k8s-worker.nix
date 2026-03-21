@@ -70,9 +70,9 @@ let
       # Default is 110; wyrm2 runs 113+ pods with harbor/inventree/ollama/monitoring.
       maxPods = 300;
       # NixOS uses systemd-resolved in stub mode, so /etc/resolv.conf has
-      # nameserver 127.0.0.53. Inside pod netns nothing listens there, causing
-      # CoreDNS to loop (forward . /etc/resolv.conf -> itself). Point kubelet
-      # at the real upstream resolv.conf instead.
+      # nameserver 127.0.0.53. Point kubelet at the real upstream resolv.conf
+      # so all pods (including dnsPolicy:Default like CoreDNS) get real
+      # upstreams instead of the stub. See debug/coredns-loop-nixos.md.
       resolvConf = "/run/systemd/resolve/resolv.conf";
     }
   );
@@ -317,6 +317,10 @@ in
     # Kubelet systemd service
     systemd.services.kubelet = {
       description = "Kubernetes Kubelet";
+      # Restart kubelet when its config file changes. kubelet reads --config
+      # only at startup; a nixos-rebuild switch that changes the config won't
+      # take effect until kubelet restarts.
+      restartTriggers = [ kubeletConfigYaml ];
       after = [
         "network-online.target"
         "containerd.service"
