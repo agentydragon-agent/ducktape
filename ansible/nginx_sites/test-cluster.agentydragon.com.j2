@@ -1,9 +1,0 @@
-# Stream-level SNI passthrough for cluster traffic on port 443
-# HTTP redirect to HTTPS on port 443 for cluster subdomains
-
-# Redirect HTTP to HTTPS on port 443 for all cluster subdomains
-server {
-    listen 80;
-    server_name *.test-cluster.agentydragon.com;
-    return 301 https://$host$request_uri;
-}

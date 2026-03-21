@@ -37,29 +37,10 @@
       #   fonts-roboto, freecad, geeqie, gimp, gnome-tweaks, krita, mplayer, mpv
       #   openscad, scrcpy, transmission-gtk, virt-viewer, vlc, vscode, wireshark
       #   xclip, xournalpp, yt-dlp
-      - blender
-      - chrome-gnome-shell
-      - kdenlive # Video editor
       - kiwix # For offline Wikipedia etc.
-      - libreoffice
       - openjdk-8-jdk
-      - psensor
       - snapd # For Telegram etc.
       - syncthing-gtk # Not available in nixpkgs, kept in apt
-      - torbrowser-launcher
-      - tuxguitar # Broken in nixpkgs (swt build failure), kept in apt
-      - vinagre # VNC client
-      - virtualbox
-      - virtualbox-dkms
-      - wine-stable
-      - winetricks
-
-      - fonts-bebas-neue
-
-- name: Install OBS Studio
-  ansible.builtin.include_tasks: obs_studio.yml
-- name: Install KiCad
-  ansible.builtin.include_tasks: kicad.yml
 
 # Snaps now managed by Nix home-manager (nix/home/home.nix)
 - name: Uninstall Nix-managed snaps
@@ -90,30 +71,6 @@
   community.general.snap:
     name: youtube-dl
     state: absent
-
-- name: Telegram
-  install_handler:
-    apt: telegram-desktop
-    snap: telegram-desktop
-    flatpak: com.telegram.desktop
-    # trying out on 2023-11-24: install Telegram as snap
-    # if it still works in a couple months, keep it like this
-    # 2025-04-13 seems to work at least on gpd?
-    #
-    # 2025-05-05: bug in snap: https://github.com/telegramdesktop/tdesktop/issues/29208
-    # (missing tray icon due to AppArmor)
-    use: snap
-
-- name: Slack
-  install_handler:
-    apt: slack-desktop
-    snap: slack
-    # Slack has to be installed as an APT package, not as a Snap.
-    #
-    # Slack Snap on Pop OS won't start because it's confined from reading
-    # Pop OS's bespoke /etc/os-release location - /etc/pop-os/os-release.
-    # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
-    use: apt
 
 # Packages now managed by Nix home-manager (nix/home/home.nix)
 - name: Uninstall Nix-managed packages
@@ -161,16 +118,6 @@
 
 # GNOME terminal configuration moved to legacy_without_home_manager/gui role
 # Datetime format now managed by Nix: nix/home/modules/datetime-format.nix
-
-- name: Configure X.org terminate shortcut
-  ansible.builtin.include_tasks: xorg_terminate.yml
-- name: Install Google Chrome
-  ansible.builtin.include_tasks: google_chrome.yml
-
-# Install Tana desktop application
-- name: Install Tana desktop application
-  ansible.builtin.import_tasks: tana.yml
-  tags: tana
 
 # AppImageLauncher installation with version acknowledgment
 - name: Install AppImageLauncher

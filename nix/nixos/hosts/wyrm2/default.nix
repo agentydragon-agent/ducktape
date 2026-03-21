@@ -70,6 +70,9 @@ in
   };
   hardware.nvidia-container-toolkit.enable = true;
 
+  # Podman
+  virtualisation.podman.enable = true;
+
   # GNOME 49 dropped X11 sessions — Wayland is the only option.
   # NixOS auto-disables Wayland for NVIDIA, but the display is QXL (not NVIDIA).
   services.displayManager.gdm.wayland = true;
@@ -97,6 +100,9 @@ in
     autoFormat = true;
     autoResize = true;
   };
+
+  # TODO: Create /mnt/tankshare/shared/{pip-cache,uv-cache} via systemd.tmpfiles.rules
+  # and configure pip/uv to use them as cache directories
 
   # virtiofs shared from Proxmox host (atlas)
   fileSystems."/mnt/tankshare" = {
@@ -144,4 +150,7 @@ in
   services.openssh.settings.PermitRootLogin = lib.mkForce "prohibit-password";
 
   boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
+
+  # MOTD
+  users.motd = "🐉 Welcome to wyrm2!\n";
 }

@@ -13,10 +13,9 @@
     - role: docker
     # - role: gui
     # - role: laptop
-    # - role: scanbox
     - role: system_inspection_nopasswd
-    - role: tailscale_uninstall
-      tags: [tailscale]
+    - role: legacy_vpn_uninstall
+      tags: [wireguard, tailscale]
 
   tasks:
     - name: Install CUDA (NVidia-specific)

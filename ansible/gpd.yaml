@@ -12,10 +12,8 @@
     - role: gui
     - role: legacy_gui
     - role: laptop
-    - role: wireguard_uninstall
-      tags: [wireguard, wireguard_uninstall]
-    - role: tailscale_uninstall
-      tags: [tailscale]
+    - role: legacy_vpn_uninstall
+      tags: [wireguard, tailscale]
 
   tasks:
     # TODO: add Ubuntu startup programs, like Flameshot etc.

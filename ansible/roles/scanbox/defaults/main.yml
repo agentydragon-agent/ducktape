@@ -1,6 +1,0 @@
-# sane defaults – override in play/playbook vars
-scanbox_size: 300M # loop-file size
-scanbox_img: /var/lib/samba/scanbox.img
-scanbox_mount: /srv/scanbox
-scanbox_user: scanbox
-scanbox_printer_ip: 10.0.69.151

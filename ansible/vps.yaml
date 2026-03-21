@@ -208,10 +208,10 @@
             state: absent
           become: true
 
-    - name: Uninstall tailscale
+    - name: Uninstall legacy VPN services
       ansible.builtin.import_role:
-        name: tailscale_uninstall
-      tags: [tailscale]
+        name: legacy_vpn_uninstall
+      tags: [wireguard, tailscale]
 
     - name: Copy nginx.conf
       ansible.builtin.copy:
@@ -226,8 +226,6 @@
           - agentydragon.com
           - adgn.link
           - atlas.agentydragon.com
-          - k3s.agentydragon.com
-          - test-cluster.agentydragon.com
       block:
         - name: "Render and enable nginx websites"
           ansible.builtin.template:

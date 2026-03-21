@@ -1,4 +1,32 @@
 ---
+# Uninstall legacy VPN services (WireGuard and Tailscale)
+# Both replaced by Nebula mesh overlay.
+
+# WireGuard
+- name: Stop and disable WireGuard service
+  become: true
+  ansible.builtin.systemd:
+    name: "wg-quick@wg0"
+    enabled: false
+    state: stopped
+  failed_when: false
+
+- name: Remove WireGuard packages
+  become: true
+  ansible.builtin.package:
+    name:
+      - wireguard
+      - wireguard-tools
+    state: absent
+  failed_when: false
+
+- name: Remove WireGuard configuration directory
+  become: true
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: absent
+
+# Tailscale
 - name: Stop and disable tailscaled service
   ansible.builtin.systemd:
     name: tailscaled
