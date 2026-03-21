@@ -266,16 +266,6 @@
           tags: syncthing
       tags: syncthing
 
-    - name: ActivityWatch server
-      ansible.builtin.include_role:
-        name: activitywatch_server
-        apply:
-          tags: activitywatch
-      tags: activitywatch
-      vars:
-        # Listens on localhost; uploading data works via SSH tunnel.
-        activitywatch_server_state: present
-
     # Setup agentydragon user with CLI tools and dotfiles
     - name: Setup agentydragon user environment
       tags: [user-setup]

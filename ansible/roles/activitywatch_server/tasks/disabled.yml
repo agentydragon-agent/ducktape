@@ -1,8 +1,0 @@
----
-# ActivityWatch server disabled – ensure the service is **not** running
-# Any on-disk data is retained so that the service can be re-enabled later without loss.
-- name: Disable aw-server service
-  ansible.builtin.systemd:
-    name: aw-server
-    state: stopped
-    enabled: false

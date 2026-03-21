@@ -169,9 +169,14 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
       `headscale-cleanup-latest` releases on GitHub. Tool has been removed from the repo.
 - [ ] **Decommission ansible-managed VPS** — the old VPS running `agentydragon.com` is
       being retired. Before decommission:
-  - [ ] Back up InvenTree data from VPS (database + media)
-  - [ ] Sweep for any other data on VPS not backed up elsewhere
+  - [x] Back up InvenTree data from VPS (database + media) — backed up to `agentydragon.com-vps-backups/`
+  - [x] Back up Trilium data from VPS — backed up to `agentydragon.com-vps-backups/`, Ansible role deleted
+  - [x] Clean up VPS services — deleted Grocy, ActivityWatch, webhook-inbox, llm-html,
+        bazel-remote-cache data and containers. Stopped/disabled aw-server, headscale,
+        tailscaled. Removed ActivityWatch Ansible role.
   - [ ] Migrate Syncthing to cluster (see file sync below) or alternative
+  - [ ] Clean up remaining VPS: stale nginx sites, PostgreSQL 14+16, Let's Encrypt certs,
+        stale home dirs (`/home/{trilium,grocy,pygmy,bazel-remote-cache}`), `/tmp` tarball
   - [ ] Verify no remaining services depend on the old VPS
   - [ ] Update DNS records, tear down VPS
 

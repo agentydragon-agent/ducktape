@@ -1,4 +1,0 @@
-activitywatch_server_host: 127.0.0.1 # by default, listen on localhost
-activitywatch_server_port: 5600 # API port
-activitywatch_server_data_dir: "/opt/activitywatch/data"
-activitywatch_server_state: "present" # whether service should be running (present/absent)
