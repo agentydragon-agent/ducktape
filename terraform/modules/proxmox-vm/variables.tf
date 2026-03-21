@@ -112,9 +112,15 @@ variable "virtiofs_mounts" {
 }
 
 variable "vga_type" {
-  description = "VGA display type (e.g. 'virtio-gl' for SPICE, null for provider default)"
+  description = "VGA display type (e.g. 'virtio', 'qxl', null for provider default)"
   type        = string
   default     = null
+}
+
+variable "vga_memory_mb" {
+  description = "VGA memory in MiB (virtio-gpu needs >=256 for composited desktops)"
+  type        = number
+  default     = 256
 }
 
 # K8s cluster join credentials (optional)

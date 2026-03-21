@@ -17,7 +17,14 @@ Chain:
 
 ## Display hardware
 
-The display is **QXL-driven**, not NVIDIA:
+**Update 2026-03-20**: Virtual display switched from QXL to VirtIO-GPU
+(`vga: virtio`) to fix QXL TTM freezes. See <debug/atlas/wyrm2-freezes.md>.
+The Proxmox web console now shows "Display output not active" because
+virtio-gpu lacks native SPICE support. The QXL TTM bug is reportedly fixed
+in kernel 6.14+ — switching back to QXL is an option if console access is
+needed (wyrm2 runs kernel 6.17).
+
+Previously QXL-driven:
 
 | DRM card | Device          | Status                    |
 | -------- | --------------- | ------------------------- |
@@ -64,7 +71,10 @@ Broken on Wayland — upstream limitation. spice-vdagent can't access the Waylan
 clipboard (no standard protocol; `wlr-data-control` is wlroots-only, not GNOME).
 See [upstream issue #26](https://gitlab.freedesktop.org/spice/linux/vd_agent/-/issues/26).
 
-### Resize flow
+### Resize flow (QXL only)
+
+**Note**: This flow only works with QXL. With virtio-gpu, SPICE resize is
+unavailable (no SPICE console at all).
 
 1. SPICE client tells QEMU desired resolution
 2. QEMU updates QXL's available DRM modes

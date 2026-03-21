@@ -57,17 +57,44 @@ running gnome-shell. The freezes come from QXL's broken TTM, not from NVIDIA.
 4. QXL graphics pipeline stalls → UI freezes
 5. NVIDIA GPUs are unrelated (no Xid errors, no DRM errors, VRAM nearly empty)
 
-## Fix
+## Fix Applied
 
-**Switch from QXL to VirtIO-GPU** — change `vga: qxl` to `vga: virtio` in the
-VM config. This eliminates the broken QXL TTM entirely. Proxmox forum confirms
-this workaround is stable (tested for weeks without crashes).
+**Switched from QXL to VirtIO-GPU** (`vga: virtio`) in
+`terraform/nixos-dev-env/main.tf:150`. Eliminates the broken QXL TTM entirely.
 
-Alternative: increase QXL VRAM with `vgamem: 65536`, but this had limited
-success in reports.
+**Initial problem**: Proxmox console showed "Display output not active" with
+virtio-gpu. Root cause: `max_hostmem=16MB` (Proxmox default `memory=16`) was
+too small — QEMU rejected guest display operations with
+`VIRTIO_GPU_RESP_ERR_INVALID_RESOURCE_ID` (0x1203) for `SET_SCANOUT`,
+`RESOURCE_FLUSH`, and `TRANSFER_TO_HOST_2D` as resources were discarded under
+memory pressure. Fixed by setting `vga: virtio,memory=256` (256MB). Proxmox
+noVNC console now works with smooth composited desktop rendering.
 
-Alternative: set `vga: none` and use the passthrough GPUs exclusively (requires
-physical monitor or Looking Glass, loses SPICE console).
+## QXL TTM Bug — Upstream Fix Status (updated 2026-03-20)
+
+The root cause commit `5a838e5d5825` ("drm/qxl: simplify qxl_fence_wait") had
+a messy upstream history:
+
+1. Reverted in kernel 6.8.7 (`07ed11afb68d`)
+2. **Reapplied** in 6.8.10
+3. Reverted again; fix confirmed in **kernel 6.14+**
+
+wyrm2 is on kernel 6.17, so **the QXL TTM bug should be fixed**. Switching back
+to QXL is an option if Proxmox console access is needed. QXL as a project is
+essentially unmaintained (no active development), but the kernel driver receives
+bug fixes.
+
+Sources:
+
+- https://access.redhat.com/solutions/7129359
+- https://bugs.launchpad.net/bugs/2065153
+- https://lists.ubuntu.com/archives/kernel-team/2025-July/161302.html
+
+### Other alternatives considered
+
+- Increase QXL VRAM with `vgamem: 65536` — limited success in reports.
+- `vga: none` — headless, loses all virtual console access.
+- `vga: std` — basic VGA, VNC works, low resolution/no acceleration.
 
 ## PCIe Link Speed (separate issue, not related to freezes)
 
@@ -198,9 +225,9 @@ balloon: 0
 cores: 32
 hostpci0: 0000:01:00.0,pcie=1  (RTX 5090)
 hostpci1: 0000:03:00.0,pcie=1  (RTX 5090)
-vga: qxl                            ← change to virtio
-virtiofs0: tankshare,cache=auto     ← pending: cache=never
-virtiofs1: code,cache=auto          ← pending: cache=never
+vga: virtio                         ← changed from qxl (2026-03-19)
+virtiofs0: tankshare,cache=never    ← changed from cache=auto
+virtiofs1: code,cache=never         ← changed from cache=auto
 ```
 
 ## Host Memory Accounting (for reference)

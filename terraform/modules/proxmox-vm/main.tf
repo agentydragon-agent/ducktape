@@ -66,11 +66,12 @@ resource "proxmox_virtual_environment_vm" "vm" {
     }
   }
 
-  # VGA display (e.g. virtio-gl for SPICE console)
+  # VGA display (e.g. virtio for VNC console, qxl for SPICE)
   dynamic "vga" {
     for_each = var.vga_type != null ? [var.vga_type] : []
     content {
-      type = vga.value
+      type   = vga.value
+      memory = var.vga_memory_mb
     }
   }
 
