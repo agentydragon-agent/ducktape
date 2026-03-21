@@ -150,12 +150,14 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.extend(exports_from_dict(vars.secrets_env_vars))
 
     # Point Ansible's local tmp to a sandbox-writable directory so that
-    # pre-commit ansible-syntax-check works when ~/.ansible/tmp is read-only.
-    # TODO: verify that Claude CLI on agentydragon/gpd can now successfully run
-    # pre-commit (ansible-syntax-check hook) without the read-only tmp error.
-    ansible_tmp = Path(os.environ.get("TMPDIR", "/tmp")) / "ansible-tmp"
+    # pre-commit ansible-syntax-check works when /tmp is read-only in the
+    # Claude Code sandbox. Use $TMPDIR at runtime (set by sandbox to a
+    # writable path like /tmp/claude), not the hook daemon's TMPDIR which
+    # resolves to bare /tmp.
+    # Raw shell expression — not passed through exports_from_dict because
+    # shlex.quote would single-quote the $TMPDIR variable expansion.
     exports.extend(["", "# Ansible (pre-commit sandbox compatibility)"])
-    exports.extend(exports_from_dict({"ANSIBLE_LOCAL_TEMP": ansible_tmp}))
+    exports.append('export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/ansible-tmp"')
 
     # Enable enforce-bazel-tests pre-commit check (verifies affected tests are cached/passing)
     exports.extend(["", "# Pre-commit: enforce affected Bazel tests are passing"])
