@@ -162,7 +162,7 @@ See <ansible/README.md> for details.
 
 - **System Base**: `cli/`, `gui/`, `common/`
 - **Development**: `golang/`, `dev_env/`, `dev_clojure/`
-- **Services**: `trilium_server/`, `syncthing_server/`
+- **Services**: `syncthing_server/`
 
 ### Network Infrastructure
 

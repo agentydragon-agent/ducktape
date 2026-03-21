@@ -252,15 +252,6 @@
           notify:
             - Reload nginx
 
-    - name: Trilium server
-      ansible.builtin.include_role:
-        name: trilium_server
-        apply:
-          tags: trilium
-      vars:
-        trilium_server_state: absent
-      tags: [trilium]
-
     - name: Start and enable nginx
       ansible.builtin.service:
         name: nginx

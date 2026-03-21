@@ -1,8 +1,0 @@
----
-trilium_server_state: "present"
-
-# Hostname is needed in tasks/enabled.yml for certificate hook path
-trilium_server_host: "trilium.agentydragon.com"
-
-# External port to expose Trilium HTTPS service on the host (443->port?)
-trilium_server_ssl_port: 3000
