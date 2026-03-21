@@ -1,0 +1,26 @@
+---
+- name: Stop and disable tailscaled service
+  ansible.builtin.systemd:
+    name: tailscaled
+    state: stopped
+    enabled: false
+  become: true
+  failed_when: false
+
+- name: Remove tailscale package
+  ansible.builtin.apt:
+    name: tailscale
+    state: absent
+    purge: true
+  become: true
+
+- name: Remove tailscale apt repository and GPG key
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  become: true
+  loop:
+    - /etc/apt/sources.list.d/tailscale.sources
+    - /etc/apt/sources.list.d/tailscale.list
+    - /usr/share/keyrings/tailscale-archive-keyring.gpg
+    - /etc/NetworkManager/conf.d/99-tailscale-unmanaged.conf

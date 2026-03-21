@@ -15,7 +15,8 @@
     # - role: laptop
     # - role: scanbox
     - role: system_inspection_nopasswd
-    - role: tailscale_client
+    - role: tailscale_uninstall
+      tags: [tailscale]
 
   tasks:
     - name: Install CUDA (NVidia-specific)

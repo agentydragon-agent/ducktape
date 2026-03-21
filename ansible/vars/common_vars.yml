@@ -2,8 +2,3 @@
 # Common defaults for personal playbooks
 my_user: agentydragon
 local_scripts_path: "{{ ansible_user_dir }}/.local/bin"
-
-# Headscale/Tailscale configuration for all hosts
-headscale_auto_register: true
-headscale_register_user: "agentydragon"
-headscale_delegate_host: "agentydragon.com"

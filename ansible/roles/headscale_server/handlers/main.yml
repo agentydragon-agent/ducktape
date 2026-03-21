@@ -1,9 +1,0 @@
----
-- name: Reload Systemd
-  ansible.builtin.systemd:
-    daemon_reload: true
-
-- name: Restart Headscale
-  ansible.builtin.systemd:
-    name: headscale
-    state: restarted

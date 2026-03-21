@@ -169,12 +169,10 @@ See <ansible/README.md> for details.
 
 - **System Base**: `cli/`, `gui/`, `common/`
 - **Development**: `golang/`, `dev_env/`, `dev_clojure/`
-- **Services**: `trilium_server/`, `headscale_server/`, `syncthing_server/`
-- **Networking**: `tailscale_client/`
+- **Services**: `trilium_server/`, `syncthing_server/`
 
 ### Network Infrastructure
 
-- **Headscale**: Self-hosted Tailscale controller (100.64.0.0/10)
 - **Syncthing**: Cross-device file synchronization
 
 ## Development

@@ -23,7 +23,6 @@
     rcup_computer: vps
     # Disable heavy dev packages on VPS
     include_heavy_dev_packages: false
-    headscale_server_health_host: agentydragon.com
     # TLS stream routing defaults
     nginx_https_listener_port: 4443
     nginx_stream_default_backend: "127.0.0.1:{{ nginx_https_listener_port }}"
@@ -172,14 +171,46 @@
         letsencrypt_domains:
           - "atlas.agentydragon.com"
 
-    - name: Apply headscale role
-      ansible.builtin.include_role:
-        name: headscale_server
+    - name: Uninstall headscale server
       tags: [headscale]
+      block:
+        - name: Stop and disable headscale service
+          ansible.builtin.systemd:
+            name: headscale
+            state: stopped
+            enabled: false
+          become: true
+          failed_when: false
 
-    - name: Apply tailscale role
+        - name: Remove headscale files and directories
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          become: true
+          loop:
+            - /etc/systemd/system/headscale.service
+            - /usr/local/bin/headscale
+            - /etc/headscale
+            - /var/lib/headscale
+            - /etc/letsencrypt/renewal-hooks/post/restart-headscale.sh
+          notify: Reload systemd daemon
+
+        - name: Remove headscale user
+          ansible.builtin.user:
+            name: headscale
+            state: absent
+            remove: true
+          become: true
+
+        - name: Remove headscale group
+          ansible.builtin.group:
+            name: headscale
+            state: absent
+          become: true
+
+    - name: Uninstall tailscale
       ansible.builtin.import_role:
-        name: tailscale_client
+        name: tailscale_uninstall
       tags: [tailscale]
 
     - name: Copy nginx.conf
@@ -360,6 +391,12 @@
         daemon_reload: true
         enabled: true
       tags: [nginx]
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: true
+      become: true
+      tags: [headscale]
 
     - name: Restart fail2ban
       tags: [fail2ban]

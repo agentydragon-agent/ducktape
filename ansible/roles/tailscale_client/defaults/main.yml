@@ -1,4 +1,0 @@
----
-# Tailscale client configuration defaults
-
-tailscale_client_headscale_server_url: "https://headscale.allegedly.works"

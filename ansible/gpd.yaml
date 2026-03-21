@@ -14,8 +14,9 @@
     - role: laptop
     - role: wireguard_uninstall
       tags: [wireguard, wireguard_uninstall]
-    - role: tailscale_client
+    - role: tailscale_uninstall
       tags: [tailscale]
+
   tasks:
     # TODO: add Ubuntu startup programs, like Flameshot etc.
 
