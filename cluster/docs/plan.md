@@ -47,12 +47,6 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
       node and should not host Longhorn replicas. Disable scheduling on the node in Longhorn,
       evict existing replicas to other nodes (wyrm2, VPS), and remove the Longhorn disk
       configuration. Currently has stopped replicas causing "degraded" volume status.
-- [ ] **wyrm2: apply dedicated Longhorn disk** — `virtio1` 100GB disk added to Terraform
-      (`terraform/nixos-dev-env/main.tf`), mounted at `/var/mnt/longhorn` in NixOS
-      (`nix/nixos/hosts/wyrm2/default.nix`). Needs `tofu apply` + `nixos-rebuild switch`.
-      After applying, migrate Longhorn data from `/var/lib/longhorn` (root filesystem) to
-      the dedicated disk. The Kyverno `longhorn-disk-config` policy already handles
-      `region: proxmox` nodes with path `/var/mnt/longhorn`.
 - [ ] **Enable low-priority workloads to schedule on rugged (roaming node)** — Add
       `node-role.kubernetes.io/roaming=true:NoSchedule` toleration to stateless,
       downtime-tolerant deployments currently pinned to wyrm2: `grocy`, `scanner`,
@@ -488,7 +482,7 @@ Setup and architecture details in <../README.md>.
 - [ ] Paperless-ngx (document management)
 - [ ] File sync service (see "File Sync" section above)
 - [ ] Bazel Remote Cache
-- [ ] Capacitor / Weave GitOps (Flux dependency DAG visualization)
+- [x] Capacitor (Flux dependency DAG visualization) — deployed at `capacitor.allegedly.works`
 - [ ] Tetragon (eBPF runtime security enforcement, complements Cilium)
 - [ ] Flagger (progressive delivery / canary analysis for deployments)
 

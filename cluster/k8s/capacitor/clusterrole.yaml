@@ -1,0 +1,61 @@
+# Read-only access to Flux CRDs and core Kubernetes resources.
+# Based on upstream capacitor-next rbac-preset-readonly.yaml, trimmed to
+# only the API groups relevant to this cluster.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: capacitor-readonly
+rules:
+  # Core API — common resources (no secrets)
+  - apiGroups: [""]
+    resources:
+      - configmaps
+      - endpoints
+      - events
+      - namespaces
+      - nodes
+      - persistentvolumeclaims
+      - pods
+      - pods/log
+      - pods/status
+      - serviceaccounts
+      - services
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  # Flux CD
+  - apiGroups: ["source.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kustomize.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["helm.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["notification.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["image.toolkit.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  # tofu-controller
+  - apiGroups: ["infra.contrib.fluxcd.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  # SelfSubjectAccessReview for UI permission checks
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["selfsubjectaccessreviews"]
+    verbs: ["create"]
+  # CRDs (for discovering installed controllers)
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  # Gateway API
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]

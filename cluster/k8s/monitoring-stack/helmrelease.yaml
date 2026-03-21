@@ -99,6 +99,18 @@ spec:
       defaultDashboardsEnabled: true
       defaultDashboardsTimezone: UTC
 
+      # Official Flux CD dashboards, pulled from grafana.com on pod startup
+      dashboards:
+        default:
+          flux-cluster:
+            gnetId: 16714 # Flux Cluster Stats — reconciliation counts, status overview
+            revision: 1
+            datasource: Prometheus
+          flux-control-plane:
+            gnetId: 16715 # Flux Control Plane — controller CPU/memory/queue metrics
+            revision: 1
+            datasource: Prometheus
+
       # CRITICAL: Use Recreate strategy for RWO volumes
       # Grafana uses RWO persistent volume for dashboards, plugins, and session data (10Gi).
       # RollingUpdate + RWO volumes = deadlock when pods fail during initialization.

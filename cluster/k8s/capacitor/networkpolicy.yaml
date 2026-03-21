@@ -1,0 +1,26 @@
+# Restrict Capacitor ingress to the Authentik embedded proxy outpost only.
+# Capacitor has no built-in auth — anyone reaching port 8080 sees all
+# Flux resources cluster-wide.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: capacitor-ingress
+  namespace: capacitor
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: capacitor
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: authentik
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/component: server
+              app.kubernetes.io/name: authentik
+      ports:
+        - port: 8080
+          protocol: TCP
