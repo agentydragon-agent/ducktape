@@ -43,6 +43,10 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
       nodes have enough headroom (CPX41 upgrade or pod rebalancing), and (c) Prometheus
       memory limit is right-sized. The pin prevents HA and ties Prometheus to a single
       home node.
+- [ ] **talos-pve-cp-0: evict Longhorn storage** — `talos-pve-cp-0` is a pure control-plane
+      node and should not host Longhorn replicas. Disable scheduling on the node in Longhorn,
+      evict existing replicas to other nodes (wyrm2, VPS), and remove the Longhorn disk
+      configuration. Currently has stopped replicas causing "degraded" volume status.
 - [ ] **wyrm2: apply dedicated Longhorn disk** — `virtio1` 100GB disk added to Terraform
       (`terraform/nixos-dev-env/main.tf`), mounted at `/var/mnt/longhorn` in NixOS
       (`nix/nixos/hosts/wyrm2/default.nix`). Needs `tofu apply` + `nixos-rebuild switch`.
