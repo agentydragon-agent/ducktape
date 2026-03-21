@@ -1,7 +1,0 @@
-# Reload GNOME Shell like Alt-F2 → r
-- name: Restart GNOME Shell
-  ansible.builtin.shell: |
-    dbus-send --session --dest=org.gnome.Shell \
-      /org/gnome/Shell org.gnome.Shell.Eval \
-      string:'global.reexec_self()'
-  changed_when: false

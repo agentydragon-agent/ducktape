@@ -1,8 +1,0 @@
----
-- name: Show mcp config changes
-  ansible.builtin.debug:
-    msg: |
-      MCP Configuration Applied:
-      - Servers added: {{ (mcp_apply_data | default({})).servers_added | default([]) | join(', ') }}
-      - Servers updated: {{ (mcp_apply_data | default({})).servers_updated | default([]) | join(', ') }}
-      - Message: {{ (mcp_apply_data | default({})).msg | default('') }}
