@@ -83,6 +83,7 @@ def _run_hooks(file_path: Path, project_dir: Path) -> list[HookResult]:
     classifier = Classifier([rel_path])
     results: list[HookResult] = []
 
+    content_before_hook = original_content
     for hook in hooks:
         filenames = tuple(classifier.filenames_for_hook(hook))
         if not filenames and not hook.always_run:
@@ -100,7 +101,9 @@ def _run_hooks(file_path: Path, project_dir: Path) -> list[HookResult]:
                 color=False,
             )
 
-        modified = file_path.read_bytes() != original_content
+        current_content = file_path.read_bytes()
+        modified = current_content != content_before_hook
+        content_before_hook = current_content
         results.append(
             HookResult(
                 hook_id=hook.id,

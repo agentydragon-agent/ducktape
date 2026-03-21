@@ -136,13 +136,15 @@ def _render_extra_context(
     project_dir: Path,
     secrets: k8s_secrets_setup.K8sSecretsResult | None,
     fork_result: fork_remote_setup.ForkRemoteSetup | None = None,
+    *,
+    web_mode: bool = False,
 ) -> str:
     """Render repo-specific context from .claude_hooks/templates/context.mako if it exists."""
     extra_template_path = project_dir / HOOKS_DOTDIR / "templates" / "context.mako"
     if not extra_template_path.exists():
         return ""
     template = Template(extra_template_path.read_text())
-    result: str = template.render(secrets=secrets, fork_result=fork_result)
+    result: str = template.render(secrets=secrets, fork_result=fork_result, web_mode=web_mode)
     return result.rstrip("\n")
 
 
@@ -607,7 +609,7 @@ async def run_session(
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
         status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
-        extra_context = _render_extra_context(project_dir, setup.secrets, setup.fork_result)
+        extra_context = _render_extra_context(project_dir, setup.secrets, setup.fork_result, web_mode=ctx.web_mode)
         template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
         context_output: str = template.render(
             WARNING=logging.WARNING,
