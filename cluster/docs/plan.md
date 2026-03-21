@@ -73,10 +73,6 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
 - [ ] **Plaid integration: fix onboarding** — `link/token/create` returns 400.
       Plaid's production onboarding process is involved (redirect URI registration,
       per-product approval, environment-specific keys). Revisit when needed.
-- [ ] **Deploy readonly Talos credentials into cluster** — Store the `os:reader`
-      talosconfig (generated in `talos-reader-config.tf`) into Vault, then create
-      ExternalSecrets in `claude-sandbox-secrets/` and `openclaw-sandbox-secrets/` so
-      both sandbox namespaces can read Talos cluster state.
 - [ ] **Grocy: provision API token for agent access**
 - [x] **Harbor: co-locate core and Redis on same node** — Harbor core crashes on startup
       when Redis is on a different node and Cilium hasn't fully programmed the cross-node
@@ -444,13 +440,6 @@ See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/kuberay>
 
 Kueue is a K8s-native quota and job queuing system — useful for managing GPU workload scheduling.
 See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/kueue>
-
-### TODO: Talos API access from Kubernetes
-
-`kubernetesTalosAPIAccess` feature lets pods call the Talos API directly, scoped by namespace
-and Talos role. Useful for granting agentydragon's tooling read/admin access to node-level
-Talos operations without leaving the cluster.
-See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/talos-api-access-from-k8s>
 
 ### BuildBuddy Remote Executor
 
