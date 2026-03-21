@@ -454,6 +454,13 @@ See <https://docs.siderolabs.com/kubernetes-guides/advanced-guides/talos-api-acc
 Deployed on Proxmox, currently scaled to 0 replicas. Re-enable by setting `replicaCount > 0`
 in the HelmRelease when remote execution is needed.
 
+### TODO: Self-Hosted Bazel Remote Cache
+
+The legacy VPS previously ran a self-hosted `bazel-remote-cache` with htpasswd auth. That's
+been removed. If a self-hosted Bazel cache is needed again (e.g., to reduce BuildBuddy
+dependency or for faster local cache hits), deploy it in-cluster — likely on Proxmox storage
+(`proxmox-csi-retain`) behind Authentik or basic auth via the gateway.
+
 ### Service Mesh (Future)
 
 If Cilium mutual auth proves insufficient (need L7 policies, traffic splitting, retries,

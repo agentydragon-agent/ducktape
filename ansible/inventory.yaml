@@ -12,17 +12,6 @@ all:
       ansible_become_pass_ask: true
       # ansible_host: 10.0.167.15
       # ansible_user: agentydragon
-    rugged:
-      ansible_connection: local # _cached_sudo
     atlas:
       ansible_host: atlas.tailnet.allegedly.works # on tailnet
       ansible_user: root
-
-k3s_nodes:
-  hosts:
-    k3s-master:
-      ansible_host: 10.0.200.200
-      ansible_user: ubuntu
-    k3s-worker:
-      ansible_host: 10.0.200.201
-      ansible_user: ubuntu

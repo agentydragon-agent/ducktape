@@ -40,34 +40,12 @@ ansible-playbook vps.yaml
 NOTE: running with `--skip-tags` might not work in any reasonable way. I didn't
 assign task particularly with that in mind... :/
 
-On GPD: `--skip-tags bazel-remote-cache` -- because I don't have the Bazel
-remote cache `htpasswd` on GPD.
-
 ## To deploy gpd
 
 ```bash
 cd ansible
 ansible-playbook gpd.yaml --ask-become-pass
 ```
-
-### TODO
-
-Make worthy work, actually.
-
-- zoom (for meetings)
-- ubuntu-desktop
-
-TODO: minimize texlive, etc.
-
-TODO: store htpasswd into Ansible Vault
-
-## Manual VPS installation steps
-
-These parts aren't yet done by Ansible:
-
-- `htpasswd` for `bazel-remote-cache` is not stored in the repo - but that
-  should be fine, those creds are cheap to rotate.
-  It's expected to be in `$(repo root)/ansible/bazel_remote_cache.htpasswd`.
 
 ## Manual laptop installation steps
 

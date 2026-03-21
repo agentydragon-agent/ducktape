@@ -1,6 +1,0 @@
-# List of GNOME Shell extension UUIDs that must be disabled.
-#
-# Other roles/playbooks should override this variable with the extensions they
-# wish to disable.  An empty list keeps the role effectively a no-op.
-
-disable_extensions_list: []
