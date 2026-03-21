@@ -325,7 +325,6 @@ observe traffic flows first, then generate baseline allow-rules.
       tampering, backdoor user creation.
 - [x] **Prometheus** — restrict `prometheus.monitoring:9090` to Grafana, Alertmanager.
       No auth; exposes full cluster topology, node IPs, resource usage, secret cardinality.
-- [ ] **Sealed Secrets webhook** — restrict to flux-system namespace only.
 
 **Priority 2 — Application services** (unauthenticated APIs, medium blast radius):
 
