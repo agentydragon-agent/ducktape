@@ -18,10 +18,48 @@
     state: present
   tags: [nebula, install]
 
-- name: Load sops-encrypted Nebula secrets
-  community.sops.load_vars:
-    file: "{{ nebula_sops_secrets_file }}"
-    name: nebula_secrets
+- name: Install sops binary
+  github_release_install:
+    release_spec:
+      repo: "getsops/sops"
+      version: "latest"
+      asset_pattern: "sops-.*\\.linux\\.amd64$"
+    method:
+      name: binary
+      dest_path: /usr/local/bin/sops
+  tags: [nebula, sops]
+
+- name: Install ssh-to-age binary
+  github_release_install:
+    release_spec:
+      repo: "Mic92/ssh-to-age"
+      version: "latest"
+      asset_pattern: "ssh-to-age\\.linux-amd64$"
+    method:
+      name: binary
+      dest_path: /usr/local/bin/ssh-to-age
+  tags: [nebula, sops]
+
+- name: Convert host SSH key to age key for sops decryption
+  ansible.builtin.shell: |
+    ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key
+  register: nebula_age_key
+  changed_when: false
+  no_log: true
+  tags: [nebula, secrets]
+
+- name: Decrypt Nebula secrets with sops
+  ansible.builtin.shell: |
+    SOPS_AGE_KEY={{ nebula_age_key.stdout }} sops decrypt {{ nebula_sops_secrets_file }}
+  register: nebula_secrets_raw
+  changed_when: false
+  no_log: true
+  tags: [nebula, secrets]
+
+- name: Parse Nebula secrets
+  ansible.builtin.set_fact:
+    nebula_secrets: "{{ nebula_secrets_raw.stdout | from_yaml }}"
+  no_log: true
   tags: [nebula, secrets]
 
 - name: Create /etc/nebula directory
@@ -75,7 +113,7 @@
 
 - name: Enable and start nebula service
   ansible.builtin.systemd:
-    name: nebula
+    name: nebula@config
     state: started
     enabled: true
   tags: [nebula, service]

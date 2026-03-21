@@ -1,6 +1,7 @@
 ---
 - name: Configure atlas Proxmox host
   hosts: atlas
+  become: true
   vars_files:
     - vars/common_vars.yml
   vars:
