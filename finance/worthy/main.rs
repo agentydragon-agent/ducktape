@@ -70,7 +70,7 @@ async fn get_source_snapshots(
                     let assets = result.unwrap_or_else(|_| {
                         panic!("getting result from source {source_id} failed")
                     });
-                    info!("{} {} {:?}", source_id, source_config.name, assets);
+                    info!("{source_id} {} {assets:?}", source_config.name);
                     use config::SourceType::*;
                     SourceSnapshot {
                         id: source_id.clone(),
@@ -108,7 +108,7 @@ async fn get_converter_snapshots(
     use ConverterConfig::*;
     stream::iter(converter_configs)
         .flat_map(|(converter_name, converter_config)| {
-            info!("{}", converter_name);
+            info!("{converter_name}");
             match converter_config {
                 AlphaVantage(config) => {
                     // TODO: Err(ParsingError("missing metadata"))
@@ -158,7 +158,7 @@ fn get_snapshot_paths(config: &Config) -> Vec<String> {
     for entry in glob(pattern.as_path().to_str().unwrap()).unwrap() {
         match entry {
             Ok(path) => paths.push(path.to_str().unwrap().to_string()),
-            Err(e) => panic!("{:?}", e),
+            Err(e) => panic!("{e:?}"),
         }
     }
     paths
@@ -176,7 +176,7 @@ async fn model_and_show(
         .iter()
         .flat_map(|snapshot| snapshot.snapshot.clone())
         .collect();
-    info!("All conversions: {:?}", all_conversions);
+    info!("All conversions: {all_conversions:?}");
 
     // TODO: deduplicate
     let mut all_assets = HashMap::new();
@@ -188,14 +188,15 @@ async fn model_and_show(
             *all_assets.get_mut(&asset.denomination).unwrap() += asset.amount;
         }
     }
-    info!("All assets: {:?}", all_assets);
+    info!("All assets: {all_assets:?}");
 
     let in_common_currency = common_currency::in_common_currency(&all_conversions, &base);
-    info!("In common currency: {:?}", in_common_currency);
+    info!("In common currency: {in_common_currency:?}");
 
     let mut total_amount = Decimal::ZERO;
     for ss in source_snapshots.iter() {
         info!("{} {}", ss.id, ss.name);
+
         for asset in ss.snapshot.iter() {
             if let Some(conversion_rate) = in_common_currency.get(&asset.denomination) {
                 let amount = asset.amount * conversion_rate;
@@ -433,7 +434,7 @@ async fn main() {
                     *all_assets.get_mut(&asset.denomination).unwrap() += asset.amount;
                 }
             }
-            info!("All assets: {:?}", all_assets);
+            info!("All assets: {all_assets:?}");
 
             // TODO: check it exists
             let base = Denomination::Currency {
