@@ -1,13 +1,12 @@
 load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
 
 package(default_visibility = ["//devinfra/claude:__subpackages__"])
 
 py_library(
-    name = "mock_egress_proxy",
+    name = "proxy_ca",
     testonly = True,
-    srcs = ["mock_egress_proxy.py"],
+    srcs = ["proxy_ca.py"],
     imports = ["../../.."],
     deps = [
         "//devinfra/claude/auth_proxy:setup",
@@ -24,21 +23,6 @@ py_library(
     deps = ["@pypi//pytest"],
 )
 
-py_test(
-    name = "test_mock_egress_proxy",
-    srcs = ["test_mock_egress_proxy.py"],
-    args = ["--asyncio-mode=auto"],
-    imports = ["../../.."],
-    deps = [
-        ":conftest",
-        ":fixtures",
-        ":mock_egress_proxy",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "shell_helpers",
     testonly = True,
@@ -52,7 +36,7 @@ py_library(
     srcs = ["fixtures.py"],
     imports = ["../../.."],
     deps = [
-        ":mock_egress_proxy",
+        ":mitmproxy_fixture",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/supervisor:client",
@@ -63,7 +47,7 @@ py_library(
 )
 
 # =============================================================================
-# mitmproxy (for container E2E test)
+# mitmproxy testcontainer
 # =============================================================================
 
 oci_load(
@@ -81,12 +65,29 @@ filegroup(
 )
 
 py_library(
+    name = "mitmproxy_fixture",
+    testonly = True,
+    srcs = ["mitmproxy_fixture.py"],
+    data = [":mitmproxy_tarball"],
+    imports = ["../../.."],
+    deps = [
+        ":proxy_ca",
+        "//util:oci",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiodocker",
+        "@pypi//pytest",
+        "@pypi//tenacity",
+        "@pypi//yarl",
+    ],
+)
+
+py_library(
     name = "session_start_helpers",
     testonly = True,
     srcs = ["session_start_helpers.py"],
     imports = ["../../.."],
     deps = [
-        ":mock_egress_proxy",
+        ":mitmproxy_fixture",
         ":shell_helpers",
         "//devinfra/claude:settings",
         "//devinfra/claude:tmpfs_setup",

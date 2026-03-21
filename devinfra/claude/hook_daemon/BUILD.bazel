@@ -252,7 +252,7 @@ py_test(
         "JAVA_CACERTS_RLOCATION": "$(rlocationpath //third_party/jdk:cacerts)",
         "KEYTOOL_RLOCATION": "$(rlocationpath //third_party/jdk:keytool)",
     },
-    # Inherit proxy env vars so MockEgressProxy can chain through real proxy
+    # Inherit proxy env vars so mitmproxy can chain through real proxy
     env_inherit = [
         "CURL_CA_BUNDLE",
         "HTTPS_PROXY",
@@ -272,6 +272,7 @@ py_test(
     deps = [
         "//devinfra/claude:conftest",
         "//devinfra/claude/testing:fixtures",
+        "//devinfra/claude/testing:mitmproxy_fixture",
         "//devinfra/claude/testing:session_start_helpers",
         "//devinfra/claude/testing:shell_helpers",
         "@pypi//pytest",

@@ -23,7 +23,7 @@ from devinfra.claude.claude_api.hooks.common import PermissionMode
 from devinfra.claude.claude_api.hooks.session_start import HookSource, SessionStartHookInput
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.testing import shell_helpers
-from devinfra.claude.testing.mock_egress_proxy import MockEgressProxy
+from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
 from devinfra.claude.tmpfs_setup import unmount_tmpfs_under
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
@@ -73,7 +73,7 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
 def setup_hook_env(
     monkeypatch: pytest.MonkeyPatch,
     isolated_dirs: IsolatedDirs,
-    mock_proxy: MockEgressProxy,
+    mock_proxy: MitmproxyFixture,
     *,
     container_runtime: str = "none",
 ) -> None:
@@ -82,7 +82,7 @@ def setup_hook_env(
     Args:
         monkeypatch: pytest monkeypatch fixture
         isolated_dirs: Test isolation directories
-        mock_proxy: TLS proxy simulating Anthropic's proxy
+        mock_proxy: mitmproxy fixture simulating Anthropic's proxy
         container_runtime: Container runtime to use ("none", "podman", "docker")
     """
     # Create combined CA bundle with system CAs + mock proxy CA

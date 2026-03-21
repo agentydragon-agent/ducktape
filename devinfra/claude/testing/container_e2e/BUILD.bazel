@@ -38,7 +38,7 @@ py_test(
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/testing:conftest",
-        "//devinfra/claude/testing:mock_egress_proxy",
+        "//devinfra/claude/testing:proxy_ca",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

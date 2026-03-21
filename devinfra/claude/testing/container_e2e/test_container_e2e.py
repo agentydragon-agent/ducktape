@@ -51,7 +51,7 @@ from yarl import URL
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, generate_mock_ca
+from devinfra.claude.testing.proxy_ca import EgressProxyConfig, generate_mock_ca
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
