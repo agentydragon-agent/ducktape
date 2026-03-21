@@ -36,7 +36,7 @@
       flake = false;
     };
     claude-hooks-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-6440e46b/claude_hooks-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-0e16be61/claude_hooks-0.1.0-py3-none-any.whl";
       flake = false;
     };
     gterm-theme-wheel = {
