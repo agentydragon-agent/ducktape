@@ -212,16 +212,24 @@ in
       "net.bridge.bridge-nf-call-iptables" = 1;
       "net.bridge.bridge-nf-call-ip6tables" = 1;
       "net.ipv4.ip_forward" = 1;
-      # Disable reverse path filtering for Nebula. Packets decrypted by
-      # Nebula arrive on the nebula1 interface with source IPs whose reverse
-      # path goes through ens18. Both the kernel sysctl rpfilter and iptables
-      # rpfilter module must be disabled/loosened independently.
+      # Disable reverse path filtering. Cilium manages its own source
+      # validation; kernel rp_filter breaks pod-to-node hairpin traffic
+      # (e.g., hubble-relay → hubble-peer via ClusterIP routed to local
+      # node). The kernel uses max(all, interface) semantics, so per-
+      # interface values of 2 override all=0. The wildcard overrides
+      # systemd's 50-default.conf which sets conf.*.rp_filter = 2.
+      # See: https://docs.cilium.io/en/stable/operations/system_requirements/
+      #      https://github.com/cilium/cilium/issues/31565
       "net.ipv4.conf.default.rp_filter" = 0;
       "net.ipv4.conf.all.rp_filter" = 0;
+      "net.ipv4.conf.*.rp_filter" = 0;
     };
 
-    # Loose iptables rpfilter — separate check from kernel sysctl rp_filter.
-    networking.firewall.checkReversePath = "loose";
+    # Disable iptables rpfilter (nixos-fw-rpfilter chain in mangle/
+    # PREROUTING). nebula-mesh.nix sets "loose", but even loose rpfilter
+    # drops pod-to-node hairpin traffic. Talos has no iptables rpfilter.
+    # See: https://github.com/NixOS/nixpkgs/issues/298165
+    networking.firewall.checkReversePath = lib.mkForce false;
 
     # Containerd
     virtualisation.containerd = {
@@ -361,6 +369,19 @@ in
     ];
     networking.firewall.allowedTCPPorts = [
       10250 # kubelet API
+    ];
+    # Trust cluster-internal interfaces. Without this, the NixOS firewall
+    # drops inter-node and pod-to-node traffic to ports not explicitly
+    # opened (hubble-peer 4244, cilium health 4240, etc.). Talos has no
+    # host firewall. nebula1 carries all inter-node cluster traffic;
+    # cilium_host and lxc* carry pod-to-node traffic (lxc* are Cilium's
+    # per-pod veth interfaces on the host side).
+    # See: https://github.com/cilium/cilium/issues/31565
+    #      https://github.com/NixOS/nixpkgs/issues/437920
+    networking.firewall.trustedInterfaces = [
+      "nebula1"
+      "cilium_host"
+      "lxc+"
     ];
   };
 }
