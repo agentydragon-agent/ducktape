@@ -48,24 +48,32 @@ locals {
     vps0 = {
       pki             = local.nebula_pki
       static_host_map = local.nebula_static_host_map
-      lighthouse      = { am_lighthouse = true, serve_dns = true, interval = 10 }
-      dns             = { host = "10.42.0.1", port = 53 }
-      relay           = { am_relay = true }
-      listen          = { host = "0.0.0.0", port = 4242 }
-      punchy          = { punch = true, respond = true }
-      tun             = { dev = "nebula1" }
-      firewall        = local.nebula_firewall
+      lighthouse = {
+        am_lighthouse = true
+        serve_dns     = true
+        interval      = 10
+        dns           = { host = "10.42.0.1", port = 53 }
+      }
+      relay    = { am_relay = true }
+      listen   = { host = "0.0.0.0", port = 4242 }
+      punchy   = { punch = true, respond = true }
+      tun      = { dev = "nebula1" }
+      firewall = local.nebula_firewall
     }
     vps1 = {
       pki             = local.nebula_pki
       static_host_map = local.nebula_static_host_map
-      lighthouse      = { am_lighthouse = true, serve_dns = true, interval = 10 }
-      dns             = { host = "10.42.0.2", port = 53 }
-      relay           = { am_relay = true }
-      listen          = { host = "0.0.0.0", port = 4242 }
-      punchy          = { punch = true, respond = true }
-      tun             = { dev = "nebula1" }
-      firewall        = local.nebula_firewall
+      lighthouse = {
+        am_lighthouse = true
+        serve_dns     = true
+        interval      = 10
+        dns           = { host = "10.42.0.2", port = 53 }
+      }
+      relay    = { am_relay = true }
+      listen   = { host = "0.0.0.0", port = 4242 }
+      punchy   = { punch = true, respond = true }
+      tun      = { dev = "nebula1" }
+      firewall = local.nebula_firewall
     }
     # Proxmox home node: not a lighthouse, uses VPS relays for NAT traversal
     pve_cp0 = {
