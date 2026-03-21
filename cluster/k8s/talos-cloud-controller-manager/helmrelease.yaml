@@ -26,7 +26,10 @@ spec:
         name: talos-ccm
         namespace: kube-system
   values:
-    enabledControllers: cloud-node,cloud-node-lifecycle,node-csr-approval
+    enabledControllers:
+      - cloud-node
+      - cloud-node-lifecycle
+      - node-csr-approval
     tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
@@ -37,9 +40,9 @@ spec:
     transformations:
       - name: hcloud-nodes
         nodeSelector:
-          matchExpressions:
-            - key: "topology.kubernetes.io/region"
-              operator: In
-              values: ["hetzner"]
+          - matchExpressions:
+              - key: "topology.kubernetes.io/region"
+                operator: In
+                values: ["hetzner"]
         features:
           publicIPDiscovery: true
