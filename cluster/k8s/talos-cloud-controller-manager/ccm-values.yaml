@@ -1,9 +1,0 @@
-transformations:
-  - name: hcloud-nodes
-    nodeSelector:
-      matchExpressions:
-        - key: "topology.kubernetes.io/region"
-          operator: In
-          values: ["hetzner"]
-    features:
-      publicIPDiscovery: true

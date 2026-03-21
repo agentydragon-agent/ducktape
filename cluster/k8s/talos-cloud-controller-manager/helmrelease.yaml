@@ -25,10 +25,6 @@ spec:
         kind: HelmRepository
         name: talos-ccm
         namespace: kube-system
-  valuesFrom:
-    - kind: ConfigMap
-      name: talos-ccm-values
-      valuesKey: values.yaml
   values:
     enabledControllers: cloud-node,cloud-node-lifecycle,node-csr-approval
     tolerations:
@@ -38,3 +34,12 @@ spec:
       - key: node.cloudprovider.kubernetes.io/uninitialized
         operator: Exists
         effect: NoSchedule
+    transformations:
+      - name: hcloud-nodes
+        nodeSelector:
+          matchExpressions:
+            - key: "topology.kubernetes.io/region"
+              operator: In
+              values: ["hetzner"]
+        features:
+          publicIPDiscovery: true
