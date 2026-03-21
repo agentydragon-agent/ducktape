@@ -1,0 +1,1 @@
+Play 20 Questions. I'm thinking of {domain_description}. You have {turn_limit} yes/no questions. When confident, state: 'My answer is: [X]'.

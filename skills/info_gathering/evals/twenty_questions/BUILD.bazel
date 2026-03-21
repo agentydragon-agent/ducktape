@@ -1,12 +1,31 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
-exports_files(["sim.txt"])
+exports_files([
+    "first_user_message.txt",
+    "scratch_system_note.txt",
+    "sim.txt",
+])
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    data = [
+        "first_user_message.txt",
+        "scratch_system_note.txt",
+        "sim.txt",
+        "//skills/info_gathering:SKILL.md",
+    ],
+    imports = ["../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions:__subpackages__"],
+    deps = ["//util/bazel:runfiles"],
+)
 
 py_library(
     name = "twenty_questions",
     srcs = ["twenty_questions.py"],
     imports = ["../../../.."],
     deps = [
+        ":prompts",
         "//agent_core:agent",
         "//agent_core:direct_provider",
         "//agent_core:events",
@@ -16,7 +35,6 @@ py_library(
         "//openai_utils:model",
         "//skills/info_gathering/evals:docker_scratch",
         "//skills/info_gathering/evals:harness",
-        "//util/bazel:runfiles",
         "@pypi//pydantic",
     ],
 )
@@ -24,8 +42,6 @@ py_library(
 py_binary(
     name = "twenty_questions_bin",
     data = [
-        "sim.txt",
-        "//skills/info_gathering:SKILL.md",
         "//third_party/debian_slim:tarball",
     ],
     imports = ["../../../.."],

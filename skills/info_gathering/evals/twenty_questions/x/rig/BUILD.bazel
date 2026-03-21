@@ -1,0 +1,32 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "twenty_questions",
+    srcs = [
+        "docker_exec.rs",
+        "game.rs",
+        "main.rs",
+    ],
+    crate_root = "main.rs",
+    data = [
+        "//skills/info_gathering:SKILL.md",
+        "//skills/info_gathering/evals/twenty_questions:first_user_message.txt",
+        "//skills/info_gathering/evals/twenty_questions:scratch_system_note.txt",
+        "//skills/info_gathering/evals/twenty_questions:sim.txt",
+    ],
+    edition = "2024",
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:bollard",
+        "@crates//:chrono",
+        "@crates//:clap",
+        "@crates//:env_logger",
+        "@crates//:futures",
+        "@crates//:log",
+        "@crates//:rig-core",
+        "@crates//:serde",
+        "@crates//:serde_json",
+        "@crates//:tokio",
+        "@rules_rust//tools/runfiles",
+    ],
+)

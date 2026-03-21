@@ -1,0 +1,34 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "genkit_lib",
+    srcs = [
+        "docker_exec.go",
+        "game.go",
+        "main.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/skills/info_gathering/evals/twenty_questions/x/genkit",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_docker_docker//api/types/container",
+        "@com_github_docker_docker//client",
+        "@com_github_docker_docker//pkg/stdcopy",
+        "@com_github_firebase_genkit_go//ai",
+        "@com_github_firebase_genkit_go//genkit",
+        "@com_github_firebase_genkit_go//plugins/compat_oai/anthropic",
+        "@com_github_firebase_genkit_go//plugins/compat_oai/openai",
+        "@io_bazel_rules_go//go/runfiles",
+    ],
+)
+
+go_binary(
+    name = "twenty_questions",
+    data = [
+        "//skills/info_gathering:SKILL.md",
+        "//skills/info_gathering/evals/twenty_questions:first_user_message.txt",
+        "//skills/info_gathering/evals/twenty_questions:scratch_system_note.txt",
+        "//skills/info_gathering/evals/twenty_questions:sim.txt",
+    ],
+    embed = [":genkit_lib"],
+    visibility = ["//visibility:public"],
+)

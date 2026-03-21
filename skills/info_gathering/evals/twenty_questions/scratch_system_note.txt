@@ -1,0 +1,1 @@
+You have access to an `exec` tool — a private Docker container for scratch computation. Use it freely: run code, track hypothesis spaces, write notes, organize your reasoning. Calling this tool does NOT use up one of your question turns.

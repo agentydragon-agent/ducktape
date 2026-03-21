@@ -36,16 +36,13 @@ from skills.info_gathering.evals.harness import (
     run_output_paths,
     save_summary,
 )
-from util.bazel.runfiles import get_required_path
+from skills.info_gathering.evals.twenty_questions.prompts import (
+    first_user_message as build_first_user_message,
+    load_scratch_system_note,
+    load_sim_prompt,
+)
 
 logger = logging.getLogger(__name__)
-
-_SIM_RLOCATION = "_main/skills/info_gathering/evals/twenty_questions/sim.txt"
-
-_SCRATCH_SYSTEM_NOTE = """\
-You have access to an `exec` tool — a private Docker container for scratch computation. \
-Use it freely: run code, track hypothesis spaces, write notes, organize your reasoning. \
-Calling this tool does NOT use up one of your question turns."""
 
 # Safety cap: max scratch tool call rounds per agent turn before we give up.
 _MAX_SCRATCH_STEPS = 20
@@ -287,18 +284,14 @@ async def _async_main(args: argparse.Namespace) -> None:
     name = f"20q_{args.variant}"
 
     skill_text = load_skill()
-    agent_system = build_agent_system(skill_text, extra_system=_SCRATCH_SYSTEM_NOTE)
+    scratch_note = load_scratch_system_note()
+    agent_system = build_agent_system(skill_text, extra_system=scratch_note)
     model = model_from_args(args)
     output_dir = output_dir_from_args(args)
 
-    sim_template = get_required_path(_SIM_RLOCATION).read_text()
-    sim_system = sim_template.format(secret=v.secret, turn_limit=v.turn_limit)
+    sim_system = load_sim_prompt(secret=v.secret, turn_limit=v.turn_limit)
 
-    first_user_message = (
-        f"Play 20 Questions. I'm thinking of {v.domain_description}. "
-        f"You have {v.turn_limit} yes/no questions. "
-        "When confident, state: 'My answer is: [X]'."
-    )
+    first_user_message = build_first_user_message(domain_description=v.domain_description, turn_limit=v.turn_limit)
 
     logger.info("=" * 60)
     logger.info("  %s  |  %s", name, model.model)

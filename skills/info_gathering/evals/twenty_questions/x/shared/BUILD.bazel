@@ -31,14 +31,6 @@ py_library(
 )
 
 py_library(
-    name = "prompts",
-    srcs = ["prompts.py"],
-    imports = ["../../../../../.."],
-    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
-    deps = ["//util/bazel:runfiles"],
-)
-
-py_library(
     name = "docker_exec",
     srcs = ["docker_exec.py"],
     imports = ["../../../../../.."],
