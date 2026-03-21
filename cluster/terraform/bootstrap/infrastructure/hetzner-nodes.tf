@@ -126,6 +126,7 @@ locals {
       kubelet = merge(local.common_machine_base.kubelet, {
         extraArgs = {
           allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
+          cloud-provider         = "external"
         }
       })
     })

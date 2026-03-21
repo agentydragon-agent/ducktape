@@ -134,6 +134,13 @@ locals {
         enabled = true
         port    = 7445
       }
+      # Allow talos-cloud-controller-manager (in kube-system) to read node
+      # platform metadata via the Talos API for ExternalIP discovery.
+      kubernetesTalosAPIAccess = {
+        enabled                     = true
+        allowedRoles                = ["os:reader"]
+        allowedKubernetesNamespaces = ["kube-system"]
+      }
     }
     registries = {
       mirrors = local.registry_mirrors
