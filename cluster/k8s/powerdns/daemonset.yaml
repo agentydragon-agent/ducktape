@@ -29,13 +29,14 @@ spec:
       # queries to Talos DNS proxy at 127.0.0.53:53, breaking image pulls.
       #
       # With hostNetwork, PowerDNS binds directly in the host namespace.
-      # Port 53 coexistence with Talos DNS proxy:
-      #   - PowerDNS local-address = node's public IP (via Downward API)
+      # Port 53 coexistence requires binding to specific IPs:
+      #   - PowerDNS local-address = node's ExternalIP (public, from K8s API)
       #   - Talos dns-resolve-cache binds 127.0.0.53:53 (loopback only)
-      # These are disjoint addresses, so no conflict.
+      #   - Nebula lighthouse DNS binds to Nebula IP:53 (10.42.0.x)
+      # All three are disjoint addresses, so no conflict.
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
-      serviceAccountName: default
+      serviceAccountName: powerdns
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -52,7 +53,32 @@ spec:
               cp /etc/powerdns-template/pdns.conf /etc/powerdns/pdns.conf
               echo "gpgsql-password=${GPGSQL_PASSWORD}" >> /etc/powerdns/pdns.conf
               echo "api-key=${API_KEY}" >> /etc/powerdns/pdns.conf
-              echo "local-address=${POD_IP}" >> /etc/powerdns/pdns.conf
+              # Bind to the node's public IP (ExternalIP), NOT POD_IP which is the
+              # Nebula overlay IP (10.42.0.x). Binding to the Nebula IP on port 53
+              # shadows Nebula's lighthouse DNS server on the same IP:53.
+              # The Talos CCM sets ExternalIP via Hetzner metadata; we read it from
+              # the K8s API using the mounted ServiceAccount token.
+              PUBLIC_IP=$(python3 -c "
+              import json, urllib.request, ssl, ipaddress
+              ca = '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+              token = open('/var/run/secrets/kubernetes.io/serviceaccount/token').read()
+              ctx = ssl.create_default_context(cafile=ca)
+              req = urllib.request.Request(
+                  'https://kubernetes.default.svc/api/v1/nodes/${NODE_NAME}',
+                  headers={'Authorization': f'Bearer {token}'})
+              node = json.load(urllib.request.urlopen(req, context=ctx))
+              for addr in node['status']['addresses']:
+                  if addr['type'] == 'ExternalIP':
+                      ip = ipaddress.ip_address(addr['address'])
+                      if ip.version == 4:
+                          print(addr['address'])
+                          break
+              ")
+              if [ -z "$PUBLIC_IP" ]; then
+                echo "FATAL: could not discover ExternalIP for node ${NODE_NAME}" >&2
+                exit 1
+              fi
+              echo "local-address=${PUBLIC_IP}" >> /etc/powerdns/pdns.conf
               exec pdns_server --config-dir=/etc/powerdns --guardian=no --daemon=no
           # Security context: must run as root for hostNetwork port 53 binding.
           # Verified via /proc/PID/status: containerd/runc does NOT populate the
@@ -82,13 +108,10 @@ spec:
                 secretKeyRef:
                   name: powerdns-api-key
                   key: powerdns_api_key
-            # Bind PowerDNS to the node's IP only (not 0.0.0.0) to avoid conflicting
-            # with Talos dns-resolve-cache at 127.0.0.53:53.
-            # With hostNetwork: true, status.podIP = node IP.
-            - name: POD_IP
+            - name: NODE_NAME
               valueFrom:
                 fieldRef:
-                  fieldPath: status.podIP
+                  fieldPath: spec.nodeName
           ports:
             - name: dns-tcp
               containerPort: 53
