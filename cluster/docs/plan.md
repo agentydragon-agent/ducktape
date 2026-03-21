@@ -168,8 +168,8 @@ kubernetes.io/hostname: wyrm2` as a temporary fix for the 2026-03-17 OOM cascade
   - [x] Clean up VPS services — deleted Grocy, ActivityWatch, webhook-inbox, llm-html,
         bazel-remote-cache data and containers. Stopped/disabled aw-server, headscale,
         tailscaled. Removed ActivityWatch Ansible role.
-  - [ ] Migrate Syncthing to cluster (see file sync below) or alternative
-  - [ ] Clean up remaining VPS: stale nginx sites, PostgreSQL 14+16, Let's Encrypt certs,
+  - [x] Migrate Syncthing to cluster (see file sync below) or alternative — data backed up to `agentydragon.com-vps-backups/syncthing/`, service stopped on VPS
+  - [ ] Clean up remaining VPS: stale nginx sites, ~~PostgreSQL 14+16~~, Let's Encrypt certs,
         stale home dirs (`/home/{trilium,grocy,pygmy,bazel-remote-cache}`), `/tmp` tarball
   - [ ] Verify no remaining services depend on the old VPS
   - [ ] Update DNS records, tear down VPS
@@ -510,6 +510,20 @@ Trade-off: invalidates existing cached store paths (acceptable if cache is ephem
 Shared storage mountable from both cluster pods and non-cluster VMs (e.g., wyrm).
 Use cases: LLM model snapshots, media libraries, shared caches. Cross-site access
 via Nebula mesh adds latency — large data should stay home-only.
+
+**Options** (lightest first):
+
+- **Longhorn NFS export** (built-in) — Longhorn can expose any volume as NFS,
+  giving RWX with zero new infrastructure. Single share-manager pod per volume
+  (SPOF). Try this first.
+- **NFS server on Proxmox** — plain NFS export from wyrm2/atlas + `nfs-subdir-external-provisioner`.
+  Dead simple, no replication.
+- **JuiceFS** — POSIX FUSE filesystem backed by S3 + metadata engine (Redis/PostgreSQL).
+  Lightweight client (~50-100 MB RAM), native RWX. More moving parts.
+- **SeaweedFS** — lightweight distributed storage with FUSE/S3/NFS. Less mature.
+- **Rook-Ceph** — CephFS provides RWX but is expensive (~2-4 GB RAM/node, raw block
+  devices, 3-node MON quorum, PG balancing, CRUSH maps). Not viable on 7.5 GiB
+  VPS nodes.
 
 ## 📐 Architecture Decisions
 
