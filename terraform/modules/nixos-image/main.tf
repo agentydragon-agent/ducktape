@@ -22,7 +22,7 @@ terraform {
 # Runs before the (slow) nix build so we don't waste time building an image
 # we can't upload.
 data "external" "ssh_check" {
-  count   = var.build_enabled ? 1 : 0
+  count = var.build_enabled ? 1 : 0
   program = ["bash", "-c", <<-EOT
     if ssh -o BatchMode=yes -o ConnectTimeout=5 root@${var.proxmox_host} true 2>/dev/null; then
       printf '{"status":"ok"}'

@@ -115,9 +115,7 @@ def isolated_net() -> Generator[docker.models.networks.Network]:
 
 @pytest.fixture
 def mitmproxy_proxy(
-    tmp_path: Path,
-    proxy_net: docker.models.networks.Network,
-    isolated_net: docker.models.networks.Network,
+    tmp_path: Path, proxy_net: docker.models.networks.Network, isolated_net: docker.models.networks.Network
 ) -> Generator[MitmproxyFixture]:
     """Start a mitmproxy container for proxy testing.
 
@@ -139,7 +137,8 @@ def mitmproxy_proxy(
         .with_exposed_ports(_PROXY_LISTEN_PORT)
         # Start on proxy_net only (not default bridge); name sets the container
         # hostname used for Docker DNS on any network it joins.
-        .with_kwargs(network=proxy_net.name, name=_MITMPROXY_ALIAS)
+        .with_name(_MITMPROXY_ALIAS)
+        .with_kwargs(network=proxy_net.name)
     )
     with container:
         isolated_net.connect(container.get_wrapped_container(), aliases=[_MITMPROXY_ALIAS])

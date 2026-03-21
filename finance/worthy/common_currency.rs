@@ -101,10 +101,7 @@ where
             let j = edge.target();
             let w = *edge.weight();
             if distance[ix(i)] + w < distance[ix(j)] {
-                warn!(
-                    "neg cycle, detected from {:?} to {:?}, weight={:?}",
-                    i, j, w
-                );
+                warn!("neg cycle, detected from {i:?} to {j:?}, weight={w:?}");
                 //break true;
             }
         }
@@ -205,7 +202,7 @@ pub fn in_common_currency(
             ]
         })
         .collect();
-    trace!("{:?}", conversion_tuples);
+    trace!("{conversion_tuples:?}");
     g.extend_with_edges(&conversion_tuples);
 
     // println!("{:?}", petgraph::dot::Dot::with_config(&g, &[]));
@@ -214,7 +211,7 @@ pub fn in_common_currency(
     let start = denomination_to_node[base];
     trace!("Start: {:?}", &start);
     let costs = bellman_ford(&g, start);
-    trace!("costs={:?}", costs);
+    trace!("costs={costs:?}");
 
     // On success, return one vec with path costs, and another one which points
     // out the predecessor of a node along a shortest path.

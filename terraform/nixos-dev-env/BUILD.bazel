@@ -3,7 +3,6 @@ load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 tf_providers_versions(
     name = "providers",
     providers = {
-        "external": "hashicorp/external:~>2.3.0",
         "null": "hashicorp/null:~>3.2.0",
         "proxmox": "bpg/proxmox:~>0.91.0",
     },
@@ -13,7 +12,6 @@ tf_providers_versions(
 tf_module(
     name = "nixos-dev-env",
     providers = [
-        "external",
         "null",
         "proxmox",
     ],
