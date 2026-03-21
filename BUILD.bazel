@@ -165,6 +165,7 @@ py_package(
         "devinfra.claude",
         "devinfra.claude.auth_proxy",
         "devinfra.claude.claude_api",
+        "devinfra.claude.hook_daemon.session_start",
         "devinfra.claude.supervisor",
         "util",
         "util.bazel",

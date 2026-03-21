@@ -64,7 +64,7 @@ The hook runs at the start of each Claude Code web session and:
 5. Creates combined CA bundle (system CAs + proxy CA)
 6. Writes bazelrc to `<session_dir>/auth-proxy/bazelrc`
 
-### Bazel Setup (via `bazelisk_setup.py`)
+### Bazel Setup (via `hook_daemon/session_start/bazelisk.py`)
 
 7. Downloads and installs Bazelisk
 8. Creates wrapper script at `<session_dir>/bin/bazel`
@@ -88,14 +88,14 @@ See `.claude/settings.json` for hook configuration.
 ## Observed: `Setup` and `SessionStart` Use Different Session IDs
 
 **Observed 2026-03-21 during session compaction.** Claude Code sends hook events with
-*mismatched* session IDs: the `Setup` hook fires with the **new** post-compaction session
+_mismatched_ session IDs: the `Setup` hook fires with the **new** post-compaction session
 ID, while the `SessionStart` hook fires with the **old** pre-compaction session ID (with
 `source: compact`).
 
 Example (from daemon traces):
 
-| Hook           | Session ID                             |
-| -------------- | -------------------------------------- |
+| Hook           | Session ID                                   |
+| -------------- | -------------------------------------------- |
 | `Setup`        | `f1126fbf-c415-48e0-8b16-09b95c4b556a` (new) |
 | `SessionStart` | `c11a6aa8-4bb3-4bfb-8d25-3224a2ab7efb` (old) |
 
@@ -104,7 +104,7 @@ Example (from daemon traces):
 The hook daemon is keyed by session ID: each session ID gets its own socket path, daemon
 directory, and auth proxy creds file. When `Setup` starts a daemon for the new ID, and
 `SessionStart` arrives for the old ID, the client finds no socket for the old ID and tries
-to start a *second* daemon. The second daemon crashes because the auth proxy port (18081)
+to start a _second_ daemon. The second daemon crashes because the auth proxy port (18081)
 is already bound by the first.
 
 **Consequences:**
@@ -113,7 +113,7 @@ is already bound by the first.
   for the new session ID, grab port 18081, and block the real `SessionStart` daemon.
   The `Setup` hook handler is a noop anyway (the daemon returns `{}` immediately).
 - **Session-local files** (socket, creds file, wrapper dir, session bazelrc): always
-  keyed by `SessionStart`'s session ID, which may be the *old* ID after a compaction.
+  keyed by `SessionStart`'s session ID, which may be the _old_ ID after a compaction.
 - **Session-global files** (bazelisk binary at `~/.cache/claude-hooks/bazelisk`): shared
   across all session IDs, safe for concurrent daemons.
 - **Auth proxy port** (18081): a single fixed port shared by all daemons in the same

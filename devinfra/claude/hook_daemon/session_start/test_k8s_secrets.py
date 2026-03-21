@@ -10,7 +10,7 @@ import pytest_bazel
 import yaml
 
 from devinfra.claude.hook_config import HookConfig, K8sConfig, K8sSecretMapping, K8sSecretsConfig
-from devinfra.claude.k8s_secrets_setup import setup_k8s_secrets
+from devinfra.claude.hook_daemon.session_start.k8s_secrets import setup_k8s_secrets
 
 
 def _make_config(secrets: list[K8sSecretMapping]) -> HookConfig:
@@ -36,8 +36,8 @@ def _make_mock_k8s_secret(data: dict[str, str]) -> MagicMock:
 def mock_k8s_api() -> Generator[MagicMock]:
     """Mock the kubernetes CoreV1Api."""
     with (
-        patch("devinfra.claude.k8s_secrets_setup.k8s_client"),
-        patch("devinfra.claude.k8s_secrets_setup.CoreV1Api") as mock_api_cls,
+        patch("devinfra.claude.hook_daemon.session_start.k8s_secrets.k8s_client"),
+        patch("devinfra.claude.hook_daemon.session_start.k8s_secrets.CoreV1Api") as mock_api_cls,
     ):
         mock_api = MagicMock()
         mock_api_cls.return_value = mock_api

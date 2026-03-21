@@ -1,0 +1,185 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "apt",
+    srcs = ["apt.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "bazelisk",
+    srcs = ["bazelisk.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:http_client",
+        "//devinfra/claude:platform_utils",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//util/bazel:subprocess",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "bazel_warmup",
+    srcs = ["bazel_warmup.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "buildbuddy",
+    srcs = ["buildbuddy.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "cli_tools",
+    srcs = ["cli_tools.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:http_client",
+        "//devinfra/claude:platform_utils",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "container_runtime",
+    srcs = ["container_runtime.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:errors",
+        "//devinfra/claude:managed_files",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/auth_proxy:vars",
+        "//devinfra/claude/supervisor:client",
+        "//devinfra/claude/supervisor:service_utils",
+        "@pypi//httpx",
+    ],
+)
+
+py_library(
+    name = "fork_remote",
+    srcs = ["fork_remote.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_library(
+    name = "k8s_secrets",
+    srcs = ["k8s_secrets.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:hook_config",
+        "@pypi//kubernetes",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "mkcert",
+    srcs = ["mkcert.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:http_client",
+        "//devinfra/claude:platform_utils",
+        "//devinfra/claude:session_paths",
+        "@pypi//httpx",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+py_library(
+    name = "precommit",
+    srcs = ["precommit.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "tmpfs",
+    srcs = ["tmpfs.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//psutil"],
+)
+
+py_library(
+    name = "session_start_lib",
+    srcs = ["handler.py"],
+    data = ["//devinfra/claude:templates/session_context.mako"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":apt",
+        ":bazel_warmup",
+        ":bazelisk",
+        ":buildbuddy",
+        ":cli_tools",
+        ":container_runtime",
+        ":fork_remote",
+        ":k8s_secrets",
+        ":mkcert",
+        ":precommit",
+        ":tmpfs",
+        "//devinfra:build_info",
+        "//devinfra/claude:bazel_wrapper_lib",
+        "//devinfra/claude:debug",
+        "//devinfra/claude:env_file",
+        "//devinfra/claude:errors",
+        "//devinfra/claude:hook_config",
+        "//devinfra/claude:managed_files",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude:settings",
+        "//devinfra/claude/auth_proxy:proxy",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/claude_api/hooks:session_start",
+        "//devinfra/claude/hook_daemon:tracing",
+        "//devinfra/claude/supervisor:setup",
+        "@pypi//httpx",
+        "@pypi//mako",
+        "@pypi//opentelemetry_api",
+    ],
+)
+
+# === Tests ===
+
+py_test(
+    name = "test_bazel_warmup",
+    srcs = ["test_bazel_warmup.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":bazel_warmup",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_k8s_secrets",
+    srcs = ["test_k8s_secrets.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":k8s_secrets",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude:hook_config",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)

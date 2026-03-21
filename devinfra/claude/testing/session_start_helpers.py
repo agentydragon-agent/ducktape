@@ -21,10 +21,10 @@ from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.claude_api.hooks.common import PermissionMode
 from devinfra.claude.claude_api.hooks.session_start import HookSource, SessionStartHookInput
+from devinfra.claude.hook_daemon.session_start.tmpfs import unmount_tmpfs_under
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.testing import shell_helpers
 from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
-from devinfra.claude.tmpfs_setup import unmount_tmpfs_under
 from util.bazel.runfiles import get_required_path
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir

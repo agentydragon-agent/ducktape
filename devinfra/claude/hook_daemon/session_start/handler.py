@@ -20,20 +20,7 @@ from mako.template import Template
 from opentelemetry import trace
 
 from devinfra.build_info import get_build_info
-from devinfra.claude import (
-    apt_setup,
-    bazel_server_warmup,
-    bazelisk_setup,
-    buildbuddy_setup,
-    cli_tools_setup,
-    container_runtime,
-    env_file,
-    fork_remote_setup,
-    k8s_secrets_setup,
-    mkcert_setup,
-    precommit_setup,
-    tmpfs_setup,
-)
+from devinfra.claude import env_file
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
 from devinfra.claude.claude_api.hooks.session_start import (
@@ -44,6 +31,23 @@ from devinfra.claude.claude_api.hooks.session_start import (
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig
+
+# isort: off
+# Bazel's auto-generated __init__.py doesn't support `from pkg import submodule`.
+# Use `import ... as` to force Python to resolve the full module path.
+from devinfra.claude.hook_daemon.session_start import apt
+from devinfra.claude.hook_daemon.session_start import bazel_warmup
+from devinfra.claude.hook_daemon.session_start import bazelisk
+from devinfra.claude.hook_daemon.session_start import buildbuddy
+from devinfra.claude.hook_daemon.session_start import cli_tools
+from devinfra.claude.hook_daemon.session_start import container_runtime
+from devinfra.claude.hook_daemon.session_start import fork_remote
+from devinfra.claude.hook_daemon.session_start import k8s_secrets
+from devinfra.claude.hook_daemon.session_start import mkcert
+from devinfra.claude.hook_daemon.session_start import precommit
+from devinfra.claude.hook_daemon.session_start import tmpfs
+
+# isort: on
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
@@ -52,7 +56,7 @@ from devinfra.claude.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
 
-_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+_TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
 
 
 @dataclass(frozen=True)
@@ -120,10 +124,10 @@ class PlatformSetup:
     # Session context params
     auth_proxy: proxy_setup.ProxySetup | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
-    precommit: precommit_setup.PrecommitSetup | None = None
-    secrets: k8s_secrets_setup.K8sSecretsResult | None = None
-    mkcert: mkcert_setup.MkcertSetup | None = None
-    fork_result: fork_remote_setup.ForkRemoteSetup | None = None
+    precommit_result: precommit.PrecommitSetup | None = None
+    secrets: k8s_secrets.K8sSecretsResult | None = None
+    mkcert_result: mkcert.MkcertSetup | None = None
+    fork_result: fork_remote.ForkRemoteSetup | None = None
     buildbuddy_configured: bool = False
 
 
@@ -134,8 +138,8 @@ class PlatformSetup:
 
 def _render_extra_context(
     project_dir: Path,
-    secrets: k8s_secrets_setup.K8sSecretsResult | None,
-    fork_result: fork_remote_setup.ForkRemoteSetup | None = None,
+    secrets: k8s_secrets.K8sSecretsResult | None,
+    fork_result: fork_remote.ForkRemoteSetup | None = None,
     *,
     web_mode: bool = False,
 ) -> str:
@@ -204,7 +208,7 @@ async def _setup_web(
     project_dir: Path,
     tracer: trace.Tracer,
     root_ctx: trace.Context,
-    hook_config: k8s_secrets_setup.HookConfig | None,
+    hook_config: k8s_secrets.HookConfig | None,
     http: httpx.Client,
     proxy: AuthForwardingProxy,
 ) -> PlatformSetup:
@@ -226,7 +230,7 @@ async def _setup_web(
         """Mount a tmpfs at the given path. Returns True on success, False on failure."""
         path.mkdir(parents=True, exist_ok=True)
         try:
-            await run_in_thread(tmpfs_setup.ensure_tmpfs_mounted, path)
+            await run_in_thread(tmpfs.ensure_tmpfs_mounted, path)
             return True
         except Exception as e:
             logger.warning("tmpfs mount failed at %s, will fall back to 9p: %s", path, e)
@@ -253,27 +257,27 @@ async def _setup_web(
                 paths, settings, supervisor_result.client, tmpfs_mounted=tmpfs_mounted
             )
 
-    async def setup_bazel_on_tmpfs() -> tmpfs_setup.TmpfsSetup:
+    async def setup_bazel_on_tmpfs() -> tmpfs.TmpfsSetup:
         """Set up Bazel cache (mounts dedicated tmpfs under session dir)."""
         with tracer.start_as_current_span("setup_bazel_tmpfs", context=root_ctx):
             bazel_cache_dir = paths.bazel_cache_dir
             await mount_tmpfs_at(bazel_cache_dir)
-            return tmpfs_setup.setup_bazel_cache(bazel_cache_dir)
+            return tmpfs.setup_bazel_cache(bazel_cache_dir)
 
     @tracer.start_as_current_span("install_bazelisk", context=root_ctx)
-    def install_bazelisk_wrapper() -> bazelisk_setup.BazeliskSetup:
+    def install_bazelisk_wrapper() -> bazelisk.BazeliskSetup:
         """Install bazelisk and wrapper.
 
         Always installs the wrapper. Optionally downloads bazelisk unless
         DUCKTAPE_CLAUDE_HOOKS_INSTALL_BAZELISK is False.
         """
-        wrapper_path = bazelisk_setup.install_wrapper(paths)
+        wrapper_path = bazelisk.install_wrapper(paths)
         skipped = not settings.install_bazelisk
         if not skipped:
-            bazelisk_setup.install_bazelisk(paths, http)
+            bazelisk.install_bazelisk(paths, http)
         else:
             logger.info("Skipping bazelisk download (install_bazelisk=False)")
-        return bazelisk_setup.BazeliskSetup(
+        return bazelisk.BazeliskSetup(
             bazelisk_path=paths.bazelisk_path, wrapper_path=wrapper_path, paths=paths, bazelisk_skipped=skipped
         )
 
@@ -289,17 +293,17 @@ async def _setup_web(
     # Consolidated apt install: native dev headers (if enabled) + podman (if needed).
     apt_packages: list[str] = []
     if settings.install_apt_packages:
-        apt_packages.extend(apt_setup.NATIVE_DEV_PACKAGES)
+        apt_packages.extend(apt.NATIVE_DEV_PACKAGES)
     else:
         logger.info("Skipping native apt packages (install_apt_packages=False)")
     if settings.container_runtime == "podman" and shutil.which("podman") is None:
-        apt_packages.extend(apt_setup.PODMAN_PACKAGES)
+        apt_packages.extend(apt.PODMAN_PACKAGES)
 
     @tracer.start_as_current_span("install_apt_packages", context=root_ctx)
-    async def traced_apt_setup():
-        return await apt_setup.install_packages(apt_packages)
+    async def traced_apt():
+        return await apt.install_packages(apt_packages)
 
-    apt_task = asyncio.create_task(traced_apt_setup())
+    apt_task = asyncio.create_task(traced_apt())
 
     # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
     # k8s secrets which in turn depend on proxy being up for TLS).
@@ -307,30 +311,30 @@ async def _setup_web(
     # This task writes credentials and sets up CA/truststore.
     proxy_task = asyncio.create_task(setup_proxy_credentials())
 
-    async def mkcert_generate_certs() -> mkcert_setup.MkcertSetup:
+    async def mkcert_generate_certs() -> mkcert.MkcertSetup:
         """Generate mkcert certs (no proxy dependency — runs immediately in parallel)."""
         with tracer.start_as_current_span("setup_mkcert", context=root_ctx):
             if not settings.install_mkcert:
                 raise SkipError("mkcert disabled (install_mkcert=False)")
             # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
-            return await mkcert_setup.setup_mkcert(paths, combined_ca=None, http=http)
+            return await mkcert.setup_mkcert(paths, combined_ca=None, http=http)
 
     # Start cert generation immediately, without waiting for the proxy.
     mkcert_task = asyncio.create_task(mkcert_generate_certs())
 
-    async def mkcert_append_bundle() -> mkcert_setup.MkcertSetup:
+    async def mkcert_append_bundle() -> mkcert.MkcertSetup:
         """Append mkcert CA to the combined CA bundle (depends on proxy + cert gen)."""
         with tracer.start_as_current_span("mkcert_append_bundle", context=root_ctx):
             mkcert_result = await mkcert_task
             await proxy_task
             combined_ca = paths.auth_proxy_combined_ca
             if combined_ca.exists():
-                mkcert_setup.append_mkcert_ca_to_bundle(mkcert_result.ca_root, combined_ca)
+                mkcert.append_mkcert_ca_to_bundle(mkcert_result.ca_root, combined_ca)
             return mkcert_result
 
     @tracer.start_as_current_span("install_precommit", context=root_ctx)
     async def traced_precommit():
-        return await run_in_thread(precommit_setup.install_precommit, project_dir, paths.session_dir)
+        return await run_in_thread(precommit.install_precommit, project_dir, paths.session_dir)
 
     @tracer.start_as_current_span("install_cli_tools", context=root_ctx)
     async def traced_cli_tools():
@@ -343,7 +347,7 @@ async def _setup_web(
             ]
             if not enabled
         }
-        return await run_in_thread(lambda: cli_tools_setup.install_cli_tools(paths.wrapper_dir, http, skip=skip_tools))
+        return await run_in_thread(lambda: cli_tools.install_cli_tools(paths.wrapper_dir, http, skip=skip_tools))
 
     results = await asyncio.gather(
         proxy_task,
@@ -359,12 +363,12 @@ async def _setup_web(
     # Unpack with explicit type annotations for mypy
     auth_proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
     container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
-    precommit_result: precommit_setup.PrecommitSetup | BaseException = results[2]
-    bazelisk_result: bazelisk_setup.BazeliskSetup | BaseException = results[3]
-    tmpfs_result: tmpfs_setup.TmpfsSetup | BaseException = results[4]
-    mkcert_result: mkcert_setup.MkcertSetup | BaseException = results[5]
+    precommit_result: precommit.PrecommitSetup | BaseException = results[2]
+    bazelisk_result: bazelisk.BazeliskSetup | BaseException = results[3]
+    tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[4]
+    mkcert_result: mkcert.MkcertSetup | BaseException = results[5]
     cli_tools_result: list[str] | BaseException = results[6]
-    apt_result: apt_setup.AptSetup | BaseException = results[7]
+    apt_result: apt.AptSetup | BaseException = results[7]
 
     # Log non-critical failures
     if isinstance(precommit_result, BaseException):
@@ -400,10 +404,10 @@ async def _setup_web(
 
     # Read k8s secrets now that combined CA is available for TLS.
     # Route through the auth proxy so the upstream egress proxy gets credentials.
-    secrets: k8s_secrets_setup.K8sSecretsResult | None = None
+    secrets: k8s_secrets.K8sSecretsResult | None = None
     if settings.k8s_token and hook_config:
         with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
-            secrets = k8s_secrets_setup.setup_k8s_secrets(
+            secrets = k8s_secrets.setup_k8s_secrets(
                 token=settings.k8s_token,
                 session_dir=paths.session_dir,
                 combined_ca_path=combined_ca,
@@ -414,25 +418,23 @@ async def _setup_web(
     # Configure BuildBuddy now that k8s secrets (with API key) are available.
     buildbuddy_api_key = secrets.buildbuddy_api_key if secrets else None
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
-        buildbuddy_result = await run_in_thread(lambda: buildbuddy_setup.setup_buildbuddy(api_key=buildbuddy_api_key))
-    buildbuddy_configured = (
-        isinstance(buildbuddy_result, buildbuddy_setup.BuildbuddySetup) and buildbuddy_result.configured
-    )
+        buildbuddy_result = await run_in_thread(lambda: buildbuddy.setup_buildbuddy(api_key=buildbuddy_api_key))
+    buildbuddy_configured = isinstance(buildbuddy_result, buildbuddy.BuildbuddySetup) and buildbuddy_result.configured
     if isinstance(buildbuddy_result, BaseException):
         logger.warning("Failed to configure BuildBuddy: %s", buildbuddy_result)
 
     # Ensure 'fork' git remote when GITHUB_TOKEN is available.
-    fork_result: fork_remote_setup.ForkRemoteSetup | None = None
+    fork_result: fork_remote.ForkRemoteSetup | None = None
     if secrets and "GITHUB_TOKEN" in secrets.env_vars:
         try:
             with tracer.start_as_current_span("setup_fork_remote", context=root_ctx):
-                fork_result = fork_remote_setup.ensure_fork_remote(secrets.env_vars["GITHUB_TOKEN"], project_dir)
+                fork_result = fork_remote.ensure_fork_remote(secrets.env_vars["GITHUB_TOKEN"], project_dir)
         except Exception as e:
             logger.warning("Fork remote setup failed: %s", e)
 
     # Determine bazelisk_path: use system_bazel if install_bazelisk=False, otherwise downloaded bazelisk
     bazelisk_path: Path | None
-    if isinstance(bazelisk_result, bazelisk_setup.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
+    if isinstance(bazelisk_result, bazelisk.BazeliskSetup) and bazelisk_result.bazelisk_skipped:
         if settings.system_bazel is not None:
             bazelisk_path = Path(settings.system_bazel)
         else:
@@ -456,21 +458,21 @@ async def _setup_web(
         truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
         local_proxy=f"http://localhost:{settings.auth_proxy_port}",
         combined_ca_path=combined_ca,
-        bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs_setup.TmpfsSetup) else None,
+        bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
         # EnvVars
         session_dir=paths.session_dir,
         supervisor_port=settings.supervisor_port,
         bazelisk_path=bazelisk_path,
         docker_env=docker_env,
-        mkcert_cert=mkcert_result.cert_path if isinstance(mkcert_result, mkcert_setup.MkcertSetup) else None,
-        mkcert_key=mkcert_result.key_path if isinstance(mkcert_result, mkcert_setup.MkcertSetup) else None,
+        mkcert_cert=mkcert_result.cert_path if isinstance(mkcert_result, mkcert.MkcertSetup) else None,
+        mkcert_key=mkcert_result.key_path if isinstance(mkcert_result, mkcert.MkcertSetup) else None,
         secrets_env_vars=secrets.env_vars if secrets else None,
         # Session context
         auth_proxy=auth_proxy_result,
         container=None if isinstance(container_result, BaseException) else container_result,
-        precommit=None if isinstance(precommit_result, BaseException) else precommit_result,
+        precommit_result=None if isinstance(precommit_result, BaseException) else precommit_result,
         secrets=secrets,
-        mkcert=None if isinstance(mkcert_result, BaseException) else mkcert_result,
+        mkcert_result=None if isinstance(mkcert_result, BaseException) else mkcert_result,
         fork_result=fork_result,
         buildbuddy_configured=buildbuddy_configured,
     )
@@ -518,7 +520,7 @@ async def run_session(
     hook_config = HookConfig.load_from_repo(project_dir)
 
     # K8s secrets are read after platform setup (proxy must be up for web mode TLS).
-    secrets: k8s_secrets_setup.K8sSecretsResult | None = None
+    secrets: k8s_secrets.K8sSecretsResult | None = None
 
     # Platform-specific setup
     if ctx.web_mode:
@@ -527,11 +529,11 @@ async def run_session(
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
         if settings.k8s_token and hook_config:
-            secrets = k8s_secrets_setup.setup_k8s_secrets(
+            secrets = k8s_secrets.setup_k8s_secrets(
                 token=settings.k8s_token, session_dir=paths.session_dir, combined_ca_path=None, config=hook_config
             )
         setup = PlatformSetup(
-            buildbuddy_configured=buildbuddy_setup.is_buildbuddy_configured(),
+            buildbuddy_configured=buildbuddy.is_buildbuddy_configured(),
             with_direnv=True,
             secrets=secrets,
             secrets_env_vars=secrets.env_vars if secrets else None,
@@ -559,7 +561,7 @@ async def run_session(
             local_proxy=setup.local_proxy,
             combined_ca_path=setup.combined_ca_path,
             buildbuddy_configured=setup.buildbuddy_configured,
-            buildbuddy_bazelrc=buildbuddy_setup.BUILDBUDDY_BAZELRC,
+            buildbuddy_bazelrc=buildbuddy.BUILDBUDDY_BAZELRC,
             bazel_cache_dir=setup.bazel_cache_dir,
         )
         session_bazelrc = paths.session_dir / "bazelrc"
@@ -567,7 +569,7 @@ async def run_session(
 
     # Install bazel wrapper (web mode already downloaded bazelisk in parallel)
     with tracer.start_as_current_span("install_bazel_wrappers", context=root_ctx):
-        bazelisk_setup.install_wrapper(paths)
+        bazelisk.install_wrapper(paths)
 
     # Generate timestamp
     hook_timestamp = datetime.now()
@@ -599,7 +601,7 @@ async def run_session(
     # Store task reference in background_tasks to prevent GC before completion.
     if settings.warmup_bazel_server and background_tasks is not None:
         task = asyncio.create_task(
-            bazel_server_warmup.warmup_bazel_server(
+            bazel_warmup.warmup_bazel_server(
                 wrapper_path=paths.wrapper_path, project_dir=ctx.project_dir, env_file=ctx.env_file_path
             )
         )
@@ -617,9 +619,9 @@ async def run_session(
             status=status,
             proxy=setup.auth_proxy,
             container=setup.container,
-            precommit=setup.precommit,
-            PrecommitInstallingHooks=precommit_setup.PrecommitInstallingHooks,
-            mkcert=setup.mkcert,
+            precommit=setup.precommit_result,
+            PrecommitInstallingHooks=precommit.PrecommitInstallingHooks,
+            mkcert=setup.mkcert_result,
             log_entries=collector.buffer,
             secrets=setup.secrets,
             extra_context=extra_context,

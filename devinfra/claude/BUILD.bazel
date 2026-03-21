@@ -6,7 +6,7 @@ exports_files(
         "templates/post_tool_use.mako",
         "templates/session_context.mako",
     ],
-    visibility = ["//devinfra/claude/hook_daemon:__pkg__"],
+    visibility = ["//devinfra/claude/hook_daemon:__subpackages__"],
 )
 
 # === Base modules (no internal deps) ===
@@ -107,13 +107,6 @@ py_library(
 )
 
 py_library(
-    name = "buildbuddy_setup",
-    srcs = ["buildbuddy_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "http_client",
     srcs = ["http_client.py"],
     imports = ["../.."],
@@ -122,119 +115,10 @@ py_library(
 )
 
 py_library(
-    name = "cli_tools_setup",
-    srcs = ["cli_tools_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":http_client",
-        ":platform_utils",
-        "@pypi//httpx",
-    ],
-)
-
-py_library(
-    name = "bazel_server_warmup",
-    srcs = ["bazel_server_warmup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "bazelisk_setup",
-    srcs = ["bazelisk_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":http_client",
-        ":platform_utils",
-        ":session_paths",
-        ":settings",
-        "//util/bazel:subprocess",
-        "@pypi//httpx",
-    ],
-)
-
-py_library(
     name = "platform_utils",
     srcs = ["platform_utils.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "mkcert_setup",
-    srcs = ["mkcert_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":http_client",
-        ":platform_utils",
-        ":session_paths",
-        "@pypi//httpx",
-        "@pypi//opentelemetry_api",
-    ],
-)
-
-py_library(
-    name = "tmpfs_setup",
-    srcs = ["tmpfs_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//psutil"],
-)
-
-py_library(
-    name = "precommit_setup",
-    srcs = ["precommit_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
-)
-
-py_library(
-    name = "apt_setup",
-    srcs = ["apt_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "container_runtime",
-    srcs = ["container_runtime.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":errors",
-        ":managed_files",
-        ":session_paths",
-        ":settings",
-        "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/auth_proxy:vars",
-        "//devinfra/claude/supervisor:client",
-        "//devinfra/claude/supervisor:service_utils",
-        "@pypi//httpx",
-    ],
-)
-
-py_library(
-    name = "k8s_secrets_setup",
-    srcs = ["k8s_secrets_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":hook_config",
-        "@pypi//kubernetes",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_library(
-    name = "fork_remote_setup",
-    srcs = ["fork_remote_setup.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//pygit2"],
 )
 
 # === Libraries for binary sources ===
@@ -358,19 +242,6 @@ py_test(
 )
 
 py_test(
-    name = "test_bazel_server_warmup",
-    srcs = ["test_bazel_server_warmup.py"],
-    imports = ["../.."],
-    deps = [
-        ":bazel_server_warmup",
-        ":conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_bazel_wrapper",
     srcs = ["test_bazel_wrapper.py"],
     imports = ["../.."],
@@ -436,20 +307,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_k8s_secrets_setup",
-    srcs = ["test_k8s_secrets_setup.py"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        ":hook_config",
-        ":k8s_secrets_setup",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
     ],
 )
 

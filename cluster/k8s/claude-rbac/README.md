@@ -62,7 +62,7 @@ chmod 600 /tmp/claude-kubeconfig.yaml
 ## Kubeconfig Provisioning
 
 Kubeconfig is generated automatically by the session start hook via
-`k8s_secrets_setup.py`. The SA token is stored as a k8s Secret in the
+`devinfra/claude/hook_daemon/session_start/k8s_secrets.py`. The SA token is stored as a k8s Secret in the
 `claude-sandbox` namespace and read at session start. No manual encryption needed.
 
 ## Testing Permissions

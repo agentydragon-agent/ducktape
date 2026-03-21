@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest_bazel
 
-from devinfra.claude.bazel_server_warmup import warmup_bazel_server
+from devinfra.claude.hook_daemon.session_start.bazel_warmup import warmup_bazel_server
 
 
 async def test_warmup_success(tmp_path: Path):

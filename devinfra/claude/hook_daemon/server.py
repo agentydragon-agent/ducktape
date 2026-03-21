@@ -27,7 +27,7 @@ from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
-from devinfra.claude.hook_daemon.session_start import handle as handle_session_start
+from devinfra.claude.hook_daemon.session_start.handler import handle as handle_session_start
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.http_client import build_http_client
 from devinfra.claude.session_paths import SessionPaths
@@ -82,8 +82,7 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
                     f"Auth proxy port {settings.auth_proxy_port} already in use; "
                     "this daemon cannot start its auth proxy and will exit."
                 ) from e
-            else:
-                raise
+            raise
 
 
 def _save_session_env(env: dict[str, str]) -> None:
