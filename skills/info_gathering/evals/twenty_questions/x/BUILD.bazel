@@ -1,0 +1,17 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "compare_results",
+    srcs = ["compare_results.py"],
+    imports = ["../../../../.."],
+    deps = [
+        "//skills/info_gathering/evals/twenty_questions:result_types",
+    ],
+)
+
+py_binary(
+    name = "compare_results_bin",
+    imports = ["../../../../.."],
+    main_module = "skills.info_gathering.evals.twenty_questions.x.compare_results",
+    deps = [":compare_results"],
+)

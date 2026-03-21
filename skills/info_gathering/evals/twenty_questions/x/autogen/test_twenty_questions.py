@@ -14,8 +14,8 @@ from autogen_core import FunctionCall
 from autogen_core.models import CreateResult, RequestUsage
 from autogen_ext.models.replay import ReplayChatCompletionClient
 
+from skills.info_gathering.evals.twenty_questions.result_types import RunSummary
 from skills.info_gathering.evals.twenty_questions.x.autogen.twenty_questions import run_game
-from skills.info_gathering.evals.twenty_questions.x.shared.result_types import RunSummary
 
 _ZERO_USAGE = RequestUsage(prompt_tokens=0, completion_tokens=0)
 

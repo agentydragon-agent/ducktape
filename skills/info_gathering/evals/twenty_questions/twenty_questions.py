@@ -26,8 +26,6 @@ from agent_core.tool_provider import ToolProvider
 from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from skills.info_gathering.evals.docker_scratch import load_scratch_image, scratch_container
 from skills.info_gathering.evals.harness import (
-    LogEntry,
-    RunSummary,
     add_common_args,
     build_agent_system,
     load_skill,
@@ -41,19 +39,12 @@ from skills.info_gathering.evals.twenty_questions.prompts import (
     load_scratch_system_note,
     load_sim_prompt,
 )
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, RunSummary, Timeout
 
 logger = logging.getLogger(__name__)
 
 # Safety cap: max scratch tool call rounds per agent turn before we give up.
 _MAX_SCRATCH_STEPS = 20
-
-
-class Correct(BaseModel):
-    turns: int
-
-
-class Timeout(BaseModel):
-    limit: int
 
 
 class AnswerInput(BaseModel):
@@ -109,7 +100,7 @@ class _TextCaptureHandler(BaseHandler):
 class _TurnLogHandler(BaseHandler):
     """Logs a LogEntry per LLM response."""
 
-    def __init__(self, *, player: Literal["agent", "simulator"], write_entry: Callable[[LogEntry], None]) -> None:
+    def __init__(self, *, player: Literal["guesser", "simulator"], write_entry: Callable[[LogEntry], None]) -> None:
         self._player = player
         self._write_entry = write_entry
         self._text = ""
@@ -128,7 +119,7 @@ class _TurnLogHandler(BaseHandler):
                 player=self._player,
                 model=evt.model,
                 content=self._text,
-                tool_calls=list(self._tool_calls),
+                tool_calls=[{"name": tc.name, "args": tc.args_json, "call_id": tc.call_id} for tc in self._tool_calls],
             )
         )
         self._text = ""
@@ -189,7 +180,7 @@ class _TwentyQuestionsRunner:
             nonlocal sim_action
             sim_action = SimCorrectAnswer()
 
-        agent_log = _TurnLogHandler(player="agent", write_entry=write_entry)
+        agent_log = _TurnLogHandler(player="guesser", write_entry=write_entry)
         sim_log = _TurnLogHandler(player="simulator", write_entry=write_entry)
         text_capture = _TextCaptureHandler()
 
@@ -250,7 +241,9 @@ class _TwentyQuestionsRunner:
 
             agent.process_message(UserMessage.text(action.response))
 
-        return RunSummary(eval_name=self.name, model=self.model.model, turns=turn, result=result)
+        return RunSummary(
+            eval_name=self.name, framework="agent_core", model=self.model.model, api="openai", turns=turn, result=result
+        )
 
 
 async def run_twenty_questions(

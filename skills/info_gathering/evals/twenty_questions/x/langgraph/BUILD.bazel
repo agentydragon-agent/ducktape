@@ -7,10 +7,10 @@ py_library(
     deps = [
         "//mcp_infra/exec:docker",
         "//skills/info_gathering/evals/twenty_questions:prompts",
+        "//skills/info_gathering/evals/twenty_questions:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
         "//skills/info_gathering/evals/twenty_questions/x/shared:docker_exec",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
-        "//skills/info_gathering/evals/twenty_questions/x/shared:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
         "@pypi//fastmcp",
         "@pypi//langchain_anthropic",

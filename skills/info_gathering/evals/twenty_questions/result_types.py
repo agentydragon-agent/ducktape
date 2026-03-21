@@ -22,6 +22,7 @@ Result = Annotated[Correct | Timeout, Field(discriminator="kind")]
 class LogEntry(BaseModel):
     timestamp: datetime
     player: Literal["guesser", "simulator"]
+    model: str | None = None
     content: str
     tool_calls: list[dict[str, object]] = Field(default_factory=list)
 

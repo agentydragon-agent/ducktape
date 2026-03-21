@@ -42,6 +42,7 @@ from skills.info_gathering.evals.twenty_questions.prompts import (
     load_sim_prompt,
     load_skill_prompt,
 )
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Result, RunSummary, Timeout
 from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     add_common_args,
     output_dir_from_args,
@@ -49,13 +50,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
 )
 from skills.info_gathering.evals.twenty_questions.x.shared.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
-from skills.info_gathering.evals.twenty_questions.x.shared.result_types import (
-    Correct,
-    LogEntry,
-    Result,
-    RunSummary,
-    Timeout,
-)
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 
 logger = logging.getLogger(__name__)

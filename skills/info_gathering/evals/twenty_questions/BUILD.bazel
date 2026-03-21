@@ -7,6 +7,14 @@ exports_files([
 ])
 
 py_library(
+    name = "result_types",
+    srcs = ["result_types.py"],
+    imports = ["../../../.."],
+    visibility = ["//skills/info_gathering/evals/twenty_questions:__subpackages__"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "prompts",
     srcs = ["prompts.py"],
     data = [
@@ -26,6 +34,7 @@ py_library(
     imports = ["../../../.."],
     deps = [
         ":prompts",
+        ":result_types",
         "//agent_core:agent",
         "//agent_core:direct_provider",
         "//agent_core:events",

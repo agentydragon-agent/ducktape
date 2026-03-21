@@ -4,7 +4,7 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from skills.info_gathering.evals.twenty_questions.x.shared.result_types import RunSummary
+from skills.info_gathering.evals.twenty_questions.result_types import RunSummary
 
 logger = logging.getLogger(__name__)
 

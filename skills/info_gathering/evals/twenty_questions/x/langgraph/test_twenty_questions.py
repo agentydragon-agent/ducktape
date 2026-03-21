@@ -7,8 +7,8 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, Timeout
 from skills.info_gathering.evals.twenty_questions.x.langgraph.twenty_questions import GameState, build_graph
-from skills.info_gathering.evals.twenty_questions.x.shared.result_types import Correct, Timeout
 
 
 class _ExecInput(BaseModel):

@@ -5,22 +5,22 @@ py_library(
     srcs = ["twenty_questions.py"],
     imports = ["../../../../../.."],
     deps = [
+        "//mcp_infra/exec:docker",
         "//skills/info_gathering/evals/twenty_questions:prompts",
         "//skills/info_gathering/evals/twenty_questions:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
         "//skills/info_gathering/evals/twenty_questions/x/shared:docker_exec",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
-        "@pypi//autogen_core",
-        "@pypi//autogen_ext",
-        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pydantic_ai_slim",
     ],
 )
 
 py_binary(
     name = "twenty_questions_bin",
     imports = ["../../../../../.."],
-    main_module = "skills.info_gathering.evals.twenty_questions.x.autogen.twenty_questions",
+    main_module = "skills.info_gathering.evals.twenty_questions.x.pydantic_ai.twenty_questions",
     deps = [":twenty_questions"],
 )
 
@@ -35,8 +35,7 @@ py_test(
         ":twenty_questions",
         "//skills/info_gathering/evals/twenty_questions:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:conftest",
-        "@pypi//autogen_core",
-        "@pypi//autogen_ext",
+        "@pypi//pydantic_ai_slim",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
