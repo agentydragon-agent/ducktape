@@ -23,13 +23,14 @@ Architecture:
           auth proxy, supervisor, bazel wrapper, CA bundles, env file
         - Runs bazel build through the full proxy chain
 
-Network traffic profile (~221 MB with cli tools + apt skipped, measured 2026-03-20):
-    releases.bazel.build:443       130 MB  59%  Bazel binary (2 conns)
-    files.pythonhosted.org:443      81 MB  37%  pip wheel deps (protobuf, cryptography, etc.)
-    pypi.org:443                    10 MB   4%  pip index metadata
-    bcr.bazel.build:443            0.3 MB  <1%  Bazel Central Registry metadata
-    Skipped by settings: kubectl (57 MB), apt packages (49 MB), gh, flux.
-    See proxy.log in undeclared outputs.
+Network traffic profile (~110 MB with cli tools + apt skipped, measured 2026-03-21):
+    releases.bazel.build:443        61 MB  56%  Bazel binary
+    files.pythonhosted.org:443      27 MB  25%  pip wheel deps
+    release-assets:443              18 MB  16%  Bazelisk + BCR module sources
+    pypi.org:443                     4 MB   4%  pip index metadata
+    bcr.bazel.build:443            0.2 MB  <1%  Bazel Central Registry metadata
+    Skipped by settings: kubectl, apt packages, gh, flux.
+    See proxy.har in undeclared outputs.
 """
 
 import json
@@ -171,6 +172,7 @@ def test_container_e2e(
     shutil.copy2(wheel_path, staged_wheel)
     staged_workspace = staging / "test_workspace"
     shutil.copytree(test_workspace_path, staged_workspace)
+    (staged_workspace / ".git").mkdir()  # pre-commit needs a git repo
 
     # Write CA certs to files for bind-mounting
     mock_ca_path = tmp_path / "mock_ca.pem"
@@ -212,7 +214,7 @@ def test_container_e2e(
             str(staged_wheel): {"bind": f"/wheel/{_WHEEL_FILENAME}", "mode": "ro"},
             str(mock_ca_path): {"bind": "/certs/mock_ca.pem", "mode": "ro"},
             str(combined_ca_path): {"bind": "/certs/combined_ca.pem", "mode": "ro"},
-            str(staged_workspace): {"bind": "/project/test_workspace", "mode": "ro"},
+            str(staged_workspace): {"bind": "/project", "mode": "ro"},
         },
         detach=True,
     )
@@ -224,8 +226,6 @@ def test_container_e2e(
         rc, _, _ = _exec(container, ["bash", "-c", "curl --max-time 3 https://google.com"], check=False)
         assert rc != 0, "Container should have no external internet access on --internal network"
         logger.info("Network isolation verified: container cannot reach internet directly")
-
-        _exec(container, ["mkdir", "-p", "/project/.git"])
 
         # Install ducktape wheel
         # TODO(container-e2e): Install via uv by reading .claude/settings.json
@@ -251,7 +251,7 @@ def test_container_e2e(
         # Run bazel build through the proxy chain
         logger.info("Running bazel build")
         bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
-        _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
+        _exec(container, ["bash", "-c", bazel_cmd], workdir="/project")
 
     finally:
         stdout_logs = container.logs(stdout=True, stderr=False)

@@ -13,6 +13,7 @@ teardown, available independently for tests that need them.
 
 import logging
 import os
+import shutil
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,9 +22,9 @@ import docker
 import docker.models.networks
 import pytest
 from testcontainers.core.container import DockerContainer
-from testcontainers.core.waiting_utils import wait_for_logs
 
 from devinfra.claude.testing.proxy_ca import generate_mock_ca
+from util.net import wait_for_port
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -34,6 +35,8 @@ _MITMPROXY_TARBALL = "_main/devinfra/claude/testing/mitmproxy_load/tarball.tar"
 
 _PROXY_LISTEN_PORT = 80
 _PROXY_CREDENTIALS = "proxy_user:test_jwt_token"
+
+_HAR_CONTAINER_PATH = "/certs/proxy.har"
 
 _MITMPROXY_CMD = [
     "mitmdump",
@@ -46,6 +49,8 @@ _MITMPROXY_CMD = [
     "--set",
     f"proxyauth={_PROXY_CREDENTIALS}",
     "--ssl-insecure",
+    "--set",
+    f"hardump={_HAR_CONTAINER_PATH}",
 ]
 
 # Network alias used for Docker DNS resolution on the isolated network
@@ -81,16 +86,22 @@ def _setup_mitmproxy_certs(tmp_path: Path) -> tuple[bytes, Path]:
     cert_pem, key_pem = generate_mock_ca()
     certs_dir = tmp_path / "mitmproxy_certs"
     certs_dir.mkdir()
+    certs_dir.chmod(0o777)
     (certs_dir / "mitmproxy-ca.pem").write_bytes(key_pem + cert_pem)
     (certs_dir / "mitmproxy-ca-cert.pem").write_bytes(cert_pem)
     return cert_pem, certs_dir
 
 
-def _save_mitmproxy_logs(container: DockerContainer, name: str = "mitmproxy.log") -> None:
-    log_file = undeclared_outputs_dir() / name
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    stdout, stderr = container.get_logs()
-    log_file.write_bytes(stdout + stderr)
+def _save_mitmproxy_har(certs_dir: Path) -> None:
+    """Copy the HAR dump from the host-mounted certs volume to test outputs.
+
+    Called after container exit so mitmproxy has flushed the HAR file.
+    """
+    har_file = certs_dir / "proxy.har"
+    if har_file.exists():
+        out_dir = undeclared_outputs_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(har_file, out_dir / "proxy.har")
 
 
 @pytest.fixture
@@ -142,15 +153,17 @@ def mitmproxy_proxy(
     )
     with container:
         isolated_net.connect(container.get_wrapped_container(), aliases=[_MITMPROXY_ALIAS])
-        wait_for_logs(container, "Proxy server listening")
         host_port = container.get_exposed_port(_PROXY_LISTEN_PORT)
+        # TCP readiness gate — log-based waiting breaks with journald Docker log driver
+        wait_for_port("127.0.0.1", int(host_port), timeout_secs=5)
         logger.info("mitmproxy ready: host=%s container=%s", host_port, _MITMPROXY_ALIAS)
-        try:
-            yield MitmproxyFixture(
-                url=f"http://{_PROXY_CREDENTIALS}@127.0.0.1:{host_port}",
-                container_url=f"http://{_PROXY_CREDENTIALS}@{_MITMPROXY_ALIAS}",
-                ca_cert_pem=cert_pem,
-                container=container,
-            )
-        finally:
-            _save_mitmproxy_logs(container)
+        yield MitmproxyFixture(
+            url=f"http://{_PROXY_CREDENTIALS}@127.0.0.1:{host_port}",
+            container_url=f"http://{_PROXY_CREDENTIALS}@{_MITMPROXY_ALIAS}",
+            ca_cert_pem=cert_pem,
+            container=container,
+        )
+        # Stop mitmproxy gracefully so it flushes the HAR file to the host volume,
+        # then copy it to test outputs before testcontainers removes the container.
+        container.get_wrapped_container().stop(timeout=10)
+        _save_mitmproxy_har(certs_dir)
