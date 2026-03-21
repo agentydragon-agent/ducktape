@@ -58,6 +58,13 @@ let
       containerRuntimeEndpoint = "unix:///run/containerd/containerd.sock";
       serverTLSBootstrap = true;
       tlsMinVersion = "VersionTLS12";
+      # Graceful node shutdown: kubelet listens for systemd's PrepareForShutdown
+      # DBus signal, sets the node NotReady, and terminates pods in priority order
+      # before releasing the inhibitor lock. Without this, Longhorn engine pods
+      # get killed during shutdown, iSCSI targets vanish, and mounted volumes hit
+      # I/O errors and EXT4 journal corruption.
+      shutdownGracePeriod = "60s";
+      shutdownGracePeriodCriticalPods = "15s";
       # Some nodes (e.g. laptops) have swap enabled; don't fail on it.
       failSwapOn = false;
       # Default is 110; wyrm2 runs 113+ pods with harbor/inventree/ollama/monitoring.
