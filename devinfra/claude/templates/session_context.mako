@@ -12,7 +12,8 @@
 ${container.status}, `DOCKER_HOST=${container.socket_url}`
 % if container.runtime == "docker":
 - `docker run` works. `docker build --network=host` works (BuildKit handles large output gracefully).
-  See <devinfra/claude/docs/docker_evaluation_results.md> for details. Note: Use `--network=host` for builds; Alpine apk may need `--no-check-certificate` for TLS proxy.
+  Details: <devinfra/claude/docs/docker_evaluation_results.md>
+  Use `--network=host` for builds; Alpine apk may need `--no-check-certificate` for TLS proxy.
 - Storage: \
 % if container.storage_driver == "overlay":
 overlay on tmpfs (layer caching works for <~35 layers). Use `--layers=false` for larger Dockerfiles.
@@ -21,7 +22,8 @@ VFS on 9p (no layer caching, slower builds).
 % endif
 % elif container.runtime == "podman":
 - `podman run` works (with `--network=host`). `podman build` works (gVisor workarounds are pre-configured).
-  See <devinfra/claude/docs/gvisor_dockerfile_build.md> for details. Note: RUN steps producing >~3MB stdout may hit a buildah SIGPIPE bug — redirect output if needed.
+  Details: <devinfra/claude/docs/gvisor_dockerfile_build.md>
+  RUN steps producing >~3MB stdout may hit a buildah SIGPIPE bug — redirect output if needed.
 - Storage: \
 % if container.storage_driver == "overlay":
 overlay on tmpfs (layer caching works for <~50 layers).
