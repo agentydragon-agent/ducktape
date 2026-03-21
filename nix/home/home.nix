@@ -79,20 +79,32 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
+  # Flake inputs with flake=false produce store paths named "source" (no .whl
+  # extension). pypaInstallPhase globs *.whl, so we rename to restore it.
+  renameWheel =
+    name: input:
+    pkgs.runCommand name { } ''
+      cp ${input} $out
+    '';
+
   # git-commit-ai, difftree, gmail-archiver
-  ducktape = pkgs.callPackage ./packages/ducktape.nix { inherit ducktape-wheel; };
+  ducktape = pkgs.callPackage ./packages/ducktape.nix {
+    ducktape-wheel = renameWheel "ducktape-0.1.0-py3-none-any.whl" ducktape-wheel;
+  };
 
   # Claude Code hooks/statusline
-  claude-hooks = pkgs.callPackage ./packages/claude-hooks.nix { inherit claude-hooks-wheel; };
+  claude-hooks = pkgs.callPackage ./packages/claude-hooks.nix {
+    claude-hooks-wheel = renameWheel "claude_hooks-0.1.0-py3-none-any.whl" claude-hooks-wheel;
+  };
 
   # headscale-cleanup - Headscale node management tool
   headscale-cleanup = pkgs.callPackage ./packages/headscale-cleanup.nix {
-    inherit headscale-cleanup-wheel;
+    headscale-cleanup-wheel = renameWheel "headscale_cleanup-0.1.0-py3-none-any.whl" headscale-cleanup-wheel;
   };
 
   # gterm-theme - GNOME Terminal theme follower
   gterm-theme = pkgs.callPackage ./packages/gterm-theme.nix {
-    inherit gterm-theme-wheel;
+    gterm-theme-wheel = renameWheel "gterm_theme-0.1.0-py3-none-any.whl" gterm-theme-wheel;
   };
 in
 {

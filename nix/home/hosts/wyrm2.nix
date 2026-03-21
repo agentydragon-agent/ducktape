@@ -7,6 +7,7 @@
   ...
 }:
 let
+  bebas-neue-font = pkgs.callPackage ../packages/bebas-neue-font.nix { };
   tana = pkgs.callPackage ../packages/tana.nix { };
 in
 {
@@ -20,10 +21,11 @@ in
     pkgs.gnomeExtensions.appindicator
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
-    pkgs.bebas-neue-font
+    bebas-neue-font
     pkgs.kicad
     pkgs.openscad
-    pkgs.psensor
+    # TODO: Add a GUI system monitor with graphs (psensor not in nixpkgs;
+    # candidates: gnomeExtensions.vitals, gnomeExtensions.astra-monitor)
     pkgs.telegram-desktop
     pkgs.tor-browser
     pkgs.tuxguitar

@@ -15,10 +15,7 @@
 }:
 let
   # Unpack the CI-built skills tarball into the Nix store (once, shared across prefixes).
-  skillsSrc = pkgs.runCommand "skills-unpacked" { } ''
-    mkdir -p $out
-    tar xf ${skills-tar} -C $out
-  '';
+  skillsSrc = skills-tar;
 
   # Auto-discover skill directories from the unpacked tarball.
   skillDirs = lib.filterAttrs (_: type: type == "directory") (builtins.readDir skillsSrc);

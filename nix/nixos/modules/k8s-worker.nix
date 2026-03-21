@@ -69,6 +69,11 @@ let
       failSwapOn = false;
       # Default is 110; wyrm2 runs 113+ pods with harbor/inventree/ollama/monitoring.
       maxPods = 300;
+      # NixOS uses systemd-resolved in stub mode, so /etc/resolv.conf has
+      # nameserver 127.0.0.53. Inside pod netns nothing listens there, causing
+      # CoreDNS to loop (forward . /etc/resolv.conf -> itself). Point kubelet
+      # at the real upstream resolv.conf instead.
+      resolvConf = "/run/systemd/resolve/resolv.conf";
     }
   );
 
