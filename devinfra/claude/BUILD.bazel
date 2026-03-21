@@ -2,7 +2,10 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 
 exports_files(
-    ["templates/session_context.mako"],
+    [
+        "templates/post_tool_use.mako",
+        "templates/session_context.mako",
+    ],
     visibility = ["//devinfra/claude/hook_daemon:__pkg__"],
 )
 

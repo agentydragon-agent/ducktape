@@ -5,13 +5,14 @@ from unittest.mock import patch
 
 import pytest
 import pytest_bazel
+from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseHookSpecificOutput,
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.hook_daemon.post_tool_use import _find_git_root, _format_check_result, _make_short_diff, evaluate
+from devinfra.claude.hook_daemon.post_tool_use import _find_git_root, _format_check_result, evaluate
 from devinfra.claude.hook_daemon.precommit_runner import HookResult, RunResult
 
 _COMMON = {
@@ -91,80 +92,114 @@ def test_stop_reason_with_continue_false() -> None:
     assert out.continue_ is False
 
 
-# === Diff generation tests ===
+# === Format output tests (snapshot) ===
 
 
-def test_make_short_diff_no_change() -> None:
-    content = b"hello\nworld\n"
-    assert _make_short_diff(content, content, "test.py") == ""
-
-
-def test_make_short_diff_with_change() -> None:
-    original = b"hello\nworld\n"
-    modified = b"hello\nearth\n"
-    diff = _make_short_diff(original, modified, "test.py")
-    assert "a/test.py" in diff
-    assert "-world" in diff
-    assert "+earth" in diff
-
-
-def test_make_short_diff_truncates() -> None:
-    """Long diffs are truncated to _MAX_DIFF_LINES."""
-    original = "".join(f"line{i}\n" for i in range(50)).encode()
-    modified = "".join(f"changed{i}\n" for i in range(50)).encode()
-    diff = _make_short_diff(original, modified, "big.py")
-    assert "truncated" in diff
-
-
-# === Format output tests ===
-
-
-def test_format_check_result_basic() -> None:
+def test_format_report_only_failure(snapshot: SnapshotAssertion) -> None:
     result = RunResult(
         hooks=[
             HookResult(hook_id="ruff", hook_name="ruff-format", output=b"bad indent", files_modified=True, exit_code=1)
-        ],
-        original_content=b"x=1\n",
-        modified_content=b"x = 1\n",
+        ]
     )
-    output = _format_check_result(result, Path("test.py"))
-    assert "1 hook failed on test.py:" in output
-    assert "ruff-format (modified file)" in output
-    assert "bad indent" in output
-    assert "pre-commit run" in output
+    assert _format_check_result(result, Path("test.py")) == snapshot
 
 
-def test_format_check_result_with_diff() -> None:
+def test_format_non_zero_exit(snapshot: SnapshotAssertion) -> None:
+    result = RunResult(
+        hooks=[HookResult(hook_id="mypy", hook_name="mypy", output=b"type error", files_modified=False, exit_code=1)]
+    )
+    assert _format_check_result(result, Path("test.py")) == snapshot
+
+
+def test_format_auto_applied_only(snapshot: SnapshotAssertion) -> None:
     result = RunResult(
         hooks=[
-            HookResult(hook_id="ruff", hook_name="ruff-format", output=b"err1", files_modified=True, exit_code=1),
-            HookResult(hook_id="mypy", hook_name="mypy", output=b"err2", files_modified=False, exit_code=1),
-        ],
-        original_content=b"old\n",
-        modified_content=b"new\n",
+            HookResult(
+                hook_id="ruff-format",
+                hook_name="ruff-format",
+                output=b"1 file reformatted",
+                files_modified=True,
+                exit_code=0,
+                auto_applied=True,
+            )
+        ]
     )
-    output = _format_check_result(result, Path("f.py"))
-    assert "2 hooks failed" in output
-    assert "Changes pre-commit would make:" in output
-    assert "+new" in output
+    assert _format_check_result(result, Path("test.py")) == snapshot
 
 
-def test_format_check_result_non_zero_exit() -> None:
+def test_format_mixed_auto_apply_and_report(snapshot: SnapshotAssertion) -> None:
     result = RunResult(
-        hooks=[HookResult(hook_id="mypy", hook_name="mypy", output=b"type error", files_modified=False, exit_code=1)],
-        original_content=b"x = 1\n",
-        modified_content=b"x = 1\n",
+        hooks=[
+            HookResult(
+                hook_id="ruff-format",
+                hook_name="ruff-format",
+                output=b"reformatted",
+                files_modified=True,
+                exit_code=0,
+                auto_applied=True,
+            ),
+            HookResult(
+                hook_id="ruff-check",
+                hook_name="ruff-check",
+                output=b"F401 unused import",
+                files_modified=False,
+                exit_code=1,
+            ),
+        ]
     )
-    output = _format_check_result(result, Path("test.py"))
-    assert "mypy (exit 1)" in output
-    assert "Changes pre-commit would make:" not in output
+    assert _format_check_result(result, Path("test.py")) == snapshot
 
 
-# === Pre-commit integration tests ===
+def test_format_with_diff(snapshot: SnapshotAssertion) -> None:
+    result = RunResult(
+        hooks=[HookResult(hook_id="fixer", hook_name="fixer", output=b"fixed", files_modified=True, exit_code=1)],
+        report_only_diff=["@@ -1 +1 @@\n", "-x=1\n", "+x = 1\n"],
+    )
+    assert _format_check_result(result, Path("test.py")) == snapshot
 
 
-def test_precommit_with_diff(git_project: tuple[Path, Path]) -> None:
-    """When pre-commit modifies a file, the diff is included."""
+# === RunResult property tests ===
+
+
+def test_run_result_all_passed_with_auto_applied() -> None:
+    result = RunResult(
+        hooks=[
+            HookResult(
+                hook_id="ruff-format",
+                hook_name="ruff-format",
+                output=b"",
+                files_modified=True,
+                exit_code=0,
+                auto_applied=True,
+            ),
+            HookResult(hook_id="check-ast", hook_name="check-ast", output=b"", files_modified=False, exit_code=0),
+        ]
+    )
+    assert result.all_passed
+
+
+def test_run_result_failed_hooks_excludes_auto_applied() -> None:
+    result = RunResult(
+        hooks=[
+            HookResult(
+                hook_id="ruff-format",
+                hook_name="ruff-format",
+                output=b"",
+                files_modified=True,
+                exit_code=0,
+                auto_applied=True,
+            ),
+            HookResult(hook_id="ruff-check", hook_name="ruff-check", output=b"err", files_modified=False, exit_code=1),
+        ]
+    )
+    assert len(result.failed_hooks) == 1
+    assert result.failed_hooks[0].hook_id == "ruff-check"
+
+
+# === Integration tests (mocked run_on_file) ===
+
+
+def test_precommit_report_only_failure(git_project: tuple[Path, Path]) -> None:
     _, test_file = git_project
 
     fake_result = RunResult(
@@ -176,9 +211,7 @@ def test_precommit_with_diff(git_project: tuple[Path, Path]) -> None:
                 files_modified=True,
                 exit_code=0,
             )
-        ],
-        original_content=b"x=1\n",
-        modified_content=b"x = 1\n",
+        ]
     )
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
@@ -188,44 +221,16 @@ def test_precommit_with_diff(git_project: tuple[Path, Path]) -> None:
     assert result.hook_specific_output is not None
     ctx = result.hook_specific_output.additional_context
     assert ctx is not None
-    assert "-x=1" in ctx
-    assert "+x = 1" in ctx
-
-
-def test_precommit_no_file_change(git_project: tuple[Path, Path]) -> None:
-    """When pre-commit fails but doesn't modify the file, no diff is shown."""
-    _, test_file = git_project
-
-    fake_result = RunResult(
-        hooks=[
-            HookResult(
-                hook_id="check-yaml", hook_name="check-yaml", output=b"invalid yaml", files_modified=False, exit_code=1
-            )
-        ],
-        original_content=b"x=1\n",
-        modified_content=b"x=1\n",
-    )
-
-    with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
-        inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
-        result = evaluate(inp)
-
-    assert result.hook_specific_output is not None
-    ctx = result.hook_specific_output.additional_context
-    assert ctx is not None
-    assert "Changes pre-commit would make:" not in ctx
+    assert "ruff-format (modified file)" in ctx
 
 
 def test_precommit_passes(git_project: tuple[Path, Path]) -> None:
-    """When all hooks pass, no output is returned."""
     _, test_file = git_project
 
     fake_result = RunResult(
         hooks=[
             HookResult(hook_id="ruff-format", hook_name="ruff-format", output=b"", files_modified=False, exit_code=0)
-        ],
-        original_content=b"x=1\n",
-        modified_content=b"x=1\n",
+        ]
     )
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
@@ -236,7 +241,6 @@ def test_precommit_passes(git_project: tuple[Path, Path]) -> None:
 
 
 def test_no_hooks_applied(git_project: tuple[Path, Path]) -> None:
-    """When no hooks apply (empty RunResult), no output is returned."""
     _, test_file = git_project
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=RunResult()):
@@ -246,8 +250,7 @@ def test_no_hooks_applied(git_project: tuple[Path, Path]) -> None:
     assert result.hook_specific_output is None
 
 
-def test_precommit_multiple_hooks_fail(git_project: tuple[Path, Path]) -> None:
-    """Multiple hooks failing reports correct count."""
+def test_auto_applied_only_returns_context(git_project: tuple[Path, Path]) -> None:
     _, test_file = git_project
 
     fake_result = RunResult(
@@ -255,20 +258,12 @@ def test_precommit_multiple_hooks_fail(git_project: tuple[Path, Path]) -> None:
             HookResult(
                 hook_id="ruff-format",
                 hook_name="ruff-format",
-                output=b"- files were modified",
+                output=b"1 file reformatted",
                 files_modified=True,
                 exit_code=0,
-            ),
-            HookResult(
-                hook_id="ruff-check",
-                hook_name="ruff-check",
-                output=b"E001 bad style",
-                files_modified=False,
-                exit_code=1,
-            ),
-        ],
-        original_content=b"x=1\n",
-        modified_content=b"x=1\n",
+                auto_applied=True,
+            )
+        ]
     )
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
@@ -278,7 +273,7 @@ def test_precommit_multiple_hooks_fail(git_project: tuple[Path, Path]) -> None:
     assert result.hook_specific_output is not None
     ctx = result.hook_specific_output.additional_context
     assert ctx is not None
-    assert "2 hooks failed" in ctx
+    assert "Auto-applied: ruff-format" in ctx
 
 
 if __name__ == "__main__":

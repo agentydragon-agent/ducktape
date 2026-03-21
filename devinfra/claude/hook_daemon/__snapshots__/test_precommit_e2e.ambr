@@ -3,11 +3,11 @@
   '''
   2 hooks failed on test.py:
     fixer (foo->bar) (modified file)
-    checker (no BANNED) (non-zero exit)
+    checker (no BANNED) (exit 1)
       test.py: contains BANNED keyword
   Changes pre-commit would make:
-  --- a/test.py
-  +++ b/test.py
+  --- 
+  +++ 
   @@ -1 +1 @@
   -foo = 1  # BANNED
   +bar = 1  # BANNED
@@ -17,7 +17,7 @@
 # name: test_only_checker_fails
   '''
   1 hook failed on test.py:
-    checker (no BANNED) (non-zero exit)
+    checker (no BANNED) (exit 1)
       test.py: contains BANNED keyword
   Run `pre-commit run --files test.py` to apply fixes.
   '''

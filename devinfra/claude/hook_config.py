@@ -74,12 +74,22 @@ class K8sConfig(BaseModel):
     namespace: str = Field(description="Default namespace for kubectl operations")
 
 
+class PreCommitConfig(BaseModel):
+    """Pre-commit hook behavior configuration."""
+
+    auto_apply_hooks: set[str] = Field(
+        description="Hook IDs whose file modifications are kept (not reverted). "
+        "All other hooks' modifications are reverted and reported as diffs."
+    )
+
+
 class HookConfig(BaseModel):
     """Top-level hook config file (.claude_hooks/config.yaml)."""
 
     k8s: K8sConfig | None = None
     k8s_secrets: K8sSecretsConfig | None = None
     otel: OtelConfig | None = None
+    pre_commit: PreCommitConfig | None = None
 
     @classmethod
     def load(cls, config_path: Path) -> HookConfig:

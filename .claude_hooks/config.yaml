@@ -9,6 +9,17 @@ k8s:
   service_account_namespace: default
   namespace: claude-sandbox
 
+pre_commit:
+  auto_apply_hooks:
+    - ruff-format
+    - buildifier
+    - shfmt
+    - prettier
+    - nixfmt
+    - gofumpt
+    - trailing-whitespace
+    - end-of-file-fixer
+
 k8s_secrets:
   namespace: claude-sandbox
   secrets:

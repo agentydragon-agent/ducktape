@@ -1,32 +1,31 @@
 """PostToolUse hook: lint-check files after Edit/Write tool calls.
 
-Runs pre-commit on files that Claude Code just modified, reports any
-issues back to the agent (with a short diff of what pre-commit would
-change), then restores the original file content so the agent can
-fix issues itself.
+Runs pre-commit on files that Claude Code just modified. Hooks listed in
+the pre_commit.auto_apply_hooks config keep their changes on disk. All
+other hooks' changes are reverted and issues are reported back to the agent.
 """
 
 from __future__ import annotations
 
-import difflib
 import logging
 from pathlib import Path
 from typing import Any
+
+from mako.template import Template
 
 from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseHookSpecificOutput,
     PostToolUseInput,
     PostToolUseOutput,
 )
+from devinfra.claude.hook_config import HookConfig
 from devinfra.claude.hook_daemon.precommit_runner import RunResult, run_on_file
 
 logger = logging.getLogger(__name__)
 
 FILE_MODIFYING_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit"})
 
-_MAX_ISSUES_SHOWN = 3
-_MAX_DIFF_LINES = 20
-_MAX_OUTPUT_CHARS = 500
+_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 
 def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
@@ -45,36 +44,16 @@ def _find_git_root(start: Path) -> Path | None:
     return None
 
 
-def _make_short_diff(original: bytes, modified: bytes, filename: str) -> str:
-    """Generate a truncated unified diff between original and modified content."""
-    orig_lines = original.decode(errors="replace").splitlines(keepends=True)
-    mod_lines = modified.decode(errors="replace").splitlines(keepends=True)
-    diff_lines = list(difflib.unified_diff(orig_lines, mod_lines, fromfile=f"a/{filename}", tofile=f"b/{filename}"))
-    if not diff_lines:
-        return ""
-    if len(diff_lines) > _MAX_DIFF_LINES:
-        diff_lines = diff_lines[:_MAX_DIFF_LINES]
-        diff_lines.append(f"... (diff truncated, {len(diff_lines)} more lines)\n")
-    return "".join(diff_lines).rstrip()
-
-
 def _format_check_result(result: RunResult, file_path: Path) -> str:
-    failed = result.failed_hooks
-    noun = "hook" if len(failed) == 1 else "hooks"
-    parts = [f"{len(failed)} {noun} failed on {file_path.name}:"]
-    for hr in failed:
-        status = "modified file" if hr.files_modified else f"exit {hr.exit_code}"
-        parts.append(f"  {hr.hook_name} ({status})")
-        output_text = hr.output.decode(errors="replace").strip()[:_MAX_OUTPUT_CHARS]
-        if output_text:
-            for line in output_text.splitlines()[:_MAX_ISSUES_SHOWN]:
-                parts.append(f"    {line}")
-    diff = _make_short_diff(result.original_content, result.modified_content, file_path.name)
-    if diff:
-        parts.append("Changes pre-commit would make:")
-        parts.append(diff)
-    parts.append(f"Run `pre-commit run --files {file_path}` to apply fixes.")
-    return "\n".join(parts)
+    template = Template((_TEMPLATES_DIR / "post_tool_use.mako").read_text())
+    output: str = template.render(
+        auto_applied=result.auto_applied_results,
+        failed=result.failed_hooks,
+        diff_lines=result.report_only_diff,
+        file_name=file_path.name,
+        file_path=file_path,
+    )
+    return output.strip()
 
 
 def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
@@ -89,10 +68,15 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
     if project_dir is None:
         return PostToolUseOutput()
 
-    run_result = run_on_file(file_path, project_dir)
+    config = HookConfig.load_from_repo(project_dir)
+    auto_apply_hooks = frozenset(config.pre_commit.auto_apply_hooks) if config and config.pre_commit else frozenset()
+
+    run_result = run_on_file(file_path, project_dir, auto_apply_hooks=auto_apply_hooks)
 
     for hr in run_result.hooks:
-        if hr.passed:
+        if hr.auto_applied:
+            logger.info("hook %s auto-applied on %s", hr.hook_name, file_path.name)
+        elif hr.passed:
             logger.debug("hook %s passed on %s", hr.hook_name, file_path.name)
         else:
             logger.info(
@@ -104,7 +88,7 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
                 hr.output.decode(errors="replace"),
             )
 
-    if run_result.all_passed:
+    if run_result.all_passed and not run_result.auto_applied_results:
         return PostToolUseOutput()
 
     return PostToolUseOutput(
