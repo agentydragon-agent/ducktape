@@ -83,6 +83,7 @@ resources:
   - applications/nix-cache/flux-kustomization.yaml
   - atuin-namespace/flux-kustomization.yaml
   - atuin-secrets/flux-kustomization.yaml
+  - atuin-db/flux-kustomization.yaml
   - applications/atuin/flux-kustomization.yaml
   - applications/atuin-user-provisioner/flux-kustomization.yaml
   - proxmox-proxy-namespace/flux-kustomization.yaml

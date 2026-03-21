@@ -20,7 +20,7 @@ data:
 
     USERNAME = "agentydragon"
     EMAIL = "agentydragon@allegedly.works"
-    DB_HOST = "atuin-postgres.atuin.svc.cluster.local"
+    DB_HOST = "atuin-db-rw.atuin.svc.cluster.local"
     DB_PORT = 5432
     DB_NAME = "atuin"
     DB_USER = "atuin"
@@ -106,8 +106,8 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: atuin-secrets
-                  key: postgres-password
+                  name: atuin-db-app
+                  key: password
           volumeMounts:
             - name: script
               mountPath: /scripts

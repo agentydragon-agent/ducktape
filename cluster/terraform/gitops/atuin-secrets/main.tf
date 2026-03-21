@@ -23,29 +23,6 @@ provider "vault" {
   token   = var.vault_token
 }
 
-resource "random_password" "postgres_password" {
-  length  = 32
-  special = false
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
-resource "vault_kv_secret_v2" "atuin_secrets" {
-  mount = "kv"
-  name  = "atuin/secrets"
-  cas   = 0
-
-  data_json = jsonencode({
-    postgres_password = random_password.postgres_password.result
-  })
-
-  lifecycle {
-    ignore_changes = [data_json]
-  }
-}
-
 resource "random_password" "user_password" {
   length  = 32
   special = false

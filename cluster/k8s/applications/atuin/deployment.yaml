@@ -37,8 +37,8 @@ spec:
             - name: ATUIN_DB_URI
               valueFrom:
                 secretKeyRef:
-                  name: atuin-secrets
-                  key: db-uri
+                  name: atuin-db-app
+                  key: uri
             - name: RUST_LOG
               value: info
           resources:
