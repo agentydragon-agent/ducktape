@@ -74,15 +74,10 @@
         state: present
       tags: [packages, system]
 
-    - name: Install Firefox
-      ansible.builtin.package:
-        name: firefox-esr
-        state: present
-      tags: [packages]
-
     - name: Install desktop and virtualization packages
       ansible.builtin.apt:
         name:
+          - firefox-esr
           - gnome
           - gdm3 # GNOME Display Manager
           - zsh
@@ -183,8 +178,6 @@
         - vfio
         - vfio_iommu_type1
         - vfio_pci
-        # vfio_virqfd was merged into the vfio module in kernel 6.2+
-        # (atlas runs 6.17.x). No longer a separate module.
       tags: [gpu_passthrough, vfio]
 
     # Kernel modules required by NixOS LXC containers running k8s workers.
