@@ -427,7 +427,7 @@ py_test(
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/testing:fixtures",
-        "//devinfra/claude/testing:mock_egress_proxy",
+        "//devinfra/claude/testing:mitmproxy_fixture",
         "//util:net",
         "@pypi//cryptography",
         "@pypi//pytest",

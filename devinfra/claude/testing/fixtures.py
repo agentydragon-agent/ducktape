@@ -9,7 +9,7 @@ import os
 import shutil
 import signal
 import time
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,19 +19,11 @@ from devinfra.claude import settings
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 from devinfra.claude.supervisor.client import try_connect
-from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, MockEgressProxy
+from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture  # noqa: F401
 from util.net import pick_free_port
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class MockEgressProxyFixture:
-    """Container for mock egress proxy and its associated log file."""
-
-    proxy: MockEgressProxy
-    log_file: Path
 
 
 @dataclass
@@ -89,35 +81,6 @@ def session_paths(isolated_dirs: IsolatedSupervisorDirs) -> SessionPaths:
 def hook_settings() -> HookSettings:
     """HookSettings wired to isolated dirs."""
     return HookSettings()
-
-
-@pytest.fixture
-async def mock_egress_proxy() -> AsyncGenerator[MockEgressProxyFixture]:
-    """Mock of Anthropic's TLS-inspecting egress proxy that chains through upstream if available.
-
-    Works in gVisor environments by detecting HTTPS_PROXY and chaining through it.
-    Configures file logging for debugging proxy behavior in CI.
-
-    Yields a MockEgressProxyFixture with both the proxy and its log file path.
-    """
-    log_file = undeclared_outputs_dir() / "mock-egress-proxy.log"
-
-    proxy_logger = logging.getLogger("devinfra.claude.testing.mock_egress_proxy")
-    proxy_logger.setLevel(logging.DEBUG)
-
-    handler = logging.FileHandler(log_file)
-    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    handler.setLevel(logging.DEBUG)
-    proxy_logger.addHandler(handler)
-
-    try:
-        async with MockEgressProxy(
-            listen_port=0, username="proxy_user", password="test_jwt_token", upstream_proxy=EgressProxyConfig.from_env()
-        ) as proxy:
-            yield MockEgressProxyFixture(proxy=proxy, log_file=log_file)
-    finally:
-        handler.close()
-        proxy_logger.removeHandler(handler)
 
 
 def collect_supervisor_logs(supervisor_dir: Path) -> None:

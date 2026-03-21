@@ -10,12 +10,12 @@ web environments.
 
 ## Glossary
 
-| Concept                            | Canonical term        | Rationale                                                                                                                         |
-| ---------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Anthropic's Envoy gateway          | **egress proxy**      | Matches Anthropic's own docs ("egress controls"). Unambiguous.                                                                    |
-| Local auth-adding proxy            | **auth proxy**        | Describes function. Short.                                                                                                        |
-| Mock TLS MITM for tests            | **mock egress proxy** | Says what it simulates.                                                                                                           |
-| "The proxy this proxy forwards to" | **upstream proxy**    | Standard networking term. Context-dependent (auth proxy's upstream = egress proxy; mock's upstream = auth proxy or egress proxy). |
+| Concept                            | Canonical term      | Rationale                                                       |
+| ---------------------------------- | ------------------- | --------------------------------------------------------------- |
+| Anthropic's Envoy gateway          | **egress proxy**    | Matches Anthropic's own docs ("egress controls"). Unambiguous.  |
+| Local auth-adding proxy            | **auth proxy**      | Describes function. Short.                                      |
+| mitmproxy testcontainer for tests  | **mitmproxy proxy** | Stock mitmproxy:11 in Docker, simulates egress proxy TLS MITM.  |
+| "The proxy this proxy forwards to" | **upstream proxy**  | Standard networking term. Auth proxy's upstream = egress proxy. |
 
 ## Anthropic's TLS-Inspecting Proxy
 
@@ -295,49 +295,15 @@ Configuration via environment variable:
 
 ## Test Environments
 
-### How Tests Work in Each Environment
+### Proxy in Tests
 
-**GitHub Actions CI** (no egress proxy):
+Tests that need an egress proxy simulation use a **mitmproxy testcontainer** (stock
+`mitmproxy:11` in Docker). The fixture generates a mock CA, starts mitmdump with Basic
+auth, and exposes the proxy on a random host port. Tests point `HTTPS_PROXY` at it.
 
-- `HTTPS_PROXY` is not set
-- `MockEgressProxy` connects directly to the internet
-- The auth proxy is started by the test's session start hook but never receives traffic
-  (nothing points `HTTPS_PROXY` at it — the mock connects directly)
-- DNS resolution works directly
-
-**Claude Code Web** (gVisor sandbox with egress proxy):
-
-- `HTTPS_PROXY` is set to `http://CONTAINER:JWT@host:port` by Anthropic
-- The bazel wrapper rewrites `HTTPS_PROXY=http://localhost:18081` before exec'ing bazelisk
-- `env_inherit` in BUILD.bazel passes the **rewritten** `HTTPS_PROXY` to the test process
-- `MockEgressProxy` detects `HTTPS_PROXY=localhost:18081` via `EgressProxyConfig.from_env()`
-  and chains through: mock → auth proxy (18081) → egress proxy → internet
-- DNS does NOT work directly (all traffic must go through egress proxy)
-
-**Developer laptop** (no proxy):
-
-- Same as CI — `MockEgressProxy` connects directly
-
-### Proxy Chain in Tests (Claude Code Web)
-
-```
-test client (e.g. bazel, podman)
-    │
-    └──► mock egress proxy (random port, TLS MITM)
-           │ simulates Anthropic's TLS inspection
-           │ chains through HTTPS_PROXY if set
-           └──► auth proxy (localhost:18081, no TLS)
-                  │ adds Proxy-Authorization: Basic
-                  └──► egress proxy (21.x.x.x:15004)
-                         │ TLS inspection, JWT validation
-                         └──► internet
-```
-
-### The `env_inherit` + Bazel Wrapper Interaction
-
-The BUILD.bazel target has `env_inherit = ["HTTPS_PROXY", ...]`. When tests run via the `bazel` command (which is actually the bazel wrapper), the wrapper rewrites `HTTPS_PROXY` to `localhost:18081` before exec'ing bazelisk. So the test process inherits the rewritten value, not the original egress proxy URL.
-
-This is correct behavior: it means the mock egress proxy chains through the auth proxy, which adds credentials and forwards to the real egress proxy. The full chain works.
+The mitmproxy container connects directly to the internet — no upstream proxy chaining.
+Tests requiring a proxy are designed to run on RBE or CI where direct internet access
+is available. They are **not** compatible with Claude Code web's egress proxy.
 
 ## Encrypted Secrets
 

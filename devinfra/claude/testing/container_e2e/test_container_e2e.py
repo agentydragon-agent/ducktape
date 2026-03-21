@@ -32,35 +32,31 @@ Network traffic profile (~221 MB with cli tools + apt skipped, measured 2026-03-
     See proxy.log in undeclared outputs.
 """
 
-import asyncio
 import json
 import logging
 import os
 import shlex
 import shutil
-from collections.abc import AsyncGenerator
+import socket
+import time
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-import aiodocker
+import docker
+import docker.models.containers
+import docker.models.networks
 import pytest
 import pytest_bazel
-import tenacity
-from yarl import URL
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
-from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.mock_egress_proxy import EgressProxyConfig, generate_mock_ca
+from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS, get_upstream_proxy_url
+from devinfra.claude.testing.proxy_ca import generate_mock_ca
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
-
-# Docker exec stream type codes (same as mcp_infra/exec/docker/container_session.py)
-STREAM_TYPE_STDOUT = 1
-STREAM_TYPE_STDERR = 2
 
 # Rlocation for the claude_hooks wheel (built by //:claude_hooks_wheel)
 _WHEEL_RLOCATION = "_main/claude_hooks-0.1.0-py3-none-any.whl"
@@ -95,9 +91,18 @@ _PROXY_PASSWORD = "test_jwt_token"
 # Timeout for proxy container readiness (seconds)
 _PROXY_READY_TIMEOUT = 60
 
-# Python-level test timeout — shorter than Bazel's so the finally block can
-# collect logs before Bazel kills the process.
-_TEST_TIMEOUT = 240
+_MITMPROXY_CMD = [
+    "mitmdump",
+    "--listen-host",
+    "0.0.0.0",
+    "--listen-port",
+    str(_PROXY_LISTEN_PORT),
+    "--set",
+    "confdir=/certs",
+    "--set",
+    f"proxyauth={_PROXY_USERNAME}:{_PROXY_PASSWORD}",
+    "--ssl-insecure",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -112,88 +117,49 @@ def _save_output(name: str, content: str) -> None:
     (out_dir / name).write_text(content)
 
 
-async def _exec(
-    container: aiodocker.containers.DockerContainer, cmd: list[str], *, workdir: str | None = None, check: bool = True
+def _exec(
+    container: docker.models.containers.Container, cmd: list[str], *, workdir: str | None = None, check: bool = True
 ) -> tuple[int, bytes, bytes]:
     """Run a command in the container via docker exec.
 
     Returns (exit_code, stdout, stderr) as raw bytes. Raises AssertionError
     if check=True and the command fails.
     """
-    exec_obj = await container.exec(cmd, stdout=True, stderr=True, stdin=False, tty=False, workdir=workdir or "")
-    stream: Any = exec_obj.start()
+    kwargs: dict = {"stdout": True, "stderr": True, "demux": True}
+    if workdir:
+        kwargs["workdir"] = workdir
 
-    stdout_buf = bytearray()
-    stderr_buf = bytearray()
-    while True:
-        chunk = await stream.read_out()
-        if chunk is None:
-            break
-        data = chunk.data if isinstance(chunk.data, bytes) else chunk.data.encode()
-        if chunk.stream == STREAM_TYPE_STDOUT:
-            stdout_buf.extend(data)
-        elif chunk.stream == STREAM_TYPE_STDERR:
-            stderr_buf.extend(data)
+    exit_code, output = container.exec_run(cmd, **kwargs)
+    stdout = output[0] or b""
+    stderr = output[1] or b""
 
-    inspect_result = await exec_obj.inspect()
-    exit_code = inspect_result.get("ExitCode", -1)
-
-    logger.info("exec %s -> rc=%d, stdout=%d bytes, stderr=%d bytes", cmd, exit_code, len(stdout_buf), len(stderr_buf))
-    if stdout_buf:
-        logger.info("stdout: %s", stdout_buf.decode(errors="replace"))
-    if stderr_buf:
-        logger.info("stderr: %s", stderr_buf.decode(errors="replace"))
+    logger.info("exec %s -> rc=%d, stdout=%d bytes, stderr=%d bytes", cmd, exit_code, len(stdout), len(stderr))
+    if stdout:
+        logger.info("stdout: %s", stdout.decode(errors="replace"))
+    if stderr:
+        logger.info("stderr: %s", stderr.decode(errors="replace"))
 
     if check and exit_code != 0:
         raise AssertionError(
             f"Command {cmd} failed (rc={exit_code}):\n"
-            f"stdout:\n{stdout_buf.decode(errors='replace')}\n"
-            f"stderr:\n{stderr_buf.decode(errors='replace')}"
+            f"stdout:\n{stdout.decode(errors='replace')}\n"
+            f"stderr:\n{stderr.decode(errors='replace')}"
         )
 
-    return exit_code, bytes(stdout_buf), bytes(stderr_buf)
+    return exit_code, bytes(stdout), bytes(stderr)
 
 
-@tenacity.retry(
-    stop=tenacity.stop_after_delay(_PROXY_READY_TIMEOUT),
-    wait=tenacity.wait_fixed(0.3),
-    retry=tenacity.retry_if_exception_type(OSError),
-    reraise=True,
-)
-async def _wait_for_proxy_ready(host: str, port: int) -> None:
+def _wait_for_proxy_ready(host: str, port: int, timeout: float = _PROXY_READY_TIMEOUT) -> None:
     """TCP connect to the proxy port until it accepts connections."""
-    _, writer = await asyncio.open_connection(host, port)
-    writer.close()
-    await writer.wait_closed()
-
-
-def _build_mitmproxy_cmd(upstream: EgressProxyConfig | None) -> list[str]:
-    """Build mitmdump command line for the proxy container."""
-    cmd = [
-        "mitmdump",
-        "--listen-host",
-        "0.0.0.0",
-        "--listen-port",
-        str(_PROXY_LISTEN_PORT),
-        "--set",
-        "confdir=/certs",
-        "--set",
-        f"proxyauth={_PROXY_USERNAME}:{_PROXY_PASSWORD}",
-    ]
-
-    if upstream:
-        url = URL.build(scheme="http", host=upstream.host, port=upstream.port)
-        cmd += ["--mode", f"upstream:{url}"]
-        if upstream.username and upstream.password:
-            cmd += ["--upstream-auth", f"{upstream.username}:{upstream.password}"]
-        if upstream.ca_bundle:
-            cmd += ["--set", "ssl_verify_upstream_trusted_ca=/shared/upstream_ca.pem"]
-        else:
-            cmd += ["--ssl-insecure"]
-    else:
-        cmd += ["--ssl-insecure"]
-
-    return cmd
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                return
+        except OSError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +174,8 @@ class DockerNetworks:
     proxy_net_name: str
     isolated_net_name: str
     gateway_ip: str
-    proxy_net: aiodocker.networks.DockerNetwork
-    isolated_net: aiodocker.networks.DockerNetwork
+    proxy_net: docker.models.networks.Network
+    isolated_net: docker.models.networks.Network
 
 
 @dataclass(frozen=True)
@@ -253,14 +219,15 @@ def mitmproxy_image() -> str:
 
 
 @pytest.fixture
-async def docker_client() -> AsyncGenerator[aiodocker.Docker]:
-    """Yield an aiodocker client, closing on teardown."""
-    async with aiodocker.Docker() as client:
-        yield client
+def docker_client() -> Generator[docker.DockerClient]:
+    """Yield a docker-py client, closing on teardown."""
+    client = docker.from_env()
+    yield client
+    client.close()
 
 
 @pytest.fixture
-async def docker_networks(docker_client: aiodocker.Docker) -> AsyncGenerator[DockerNetworks]:
+def docker_networks(docker_client: docker.DockerClient) -> Generator[DockerNetworks]:
     """Create proxy (bridge) and isolated (internal) Docker networks.
 
     The proxy network provides internet access; the isolated network has no
@@ -270,13 +237,11 @@ async def docker_networks(docker_client: aiodocker.Docker) -> AsyncGenerator[Doc
     proxy_net_name = f"e2e-proxy-{pid}"
     isolated_net_name = f"e2e-isolated-{pid}"
 
-    proxy_net = await docker_client.networks.create({"Name": proxy_net_name, "Driver": "bridge"})
-    isolated_net = await docker_client.networks.create(
-        {"Name": isolated_net_name, "Driver": "bridge", "Internal": True}
-    )
+    proxy_net = docker_client.networks.create(proxy_net_name, driver="bridge")
+    isolated_net = docker_client.networks.create(isolated_net_name, driver="bridge", internal=True)
 
-    proxy_net_info = await proxy_net.show()
-    gateway_ip = proxy_net_info["IPAM"]["Config"][0]["Gateway"]
+    proxy_net.reload()
+    gateway_ip = proxy_net.attrs["IPAM"]["Config"][0]["Gateway"]
     logger.info("Created networks: proxy=%s (gateway %s), isolated=%s", proxy_net_name, gateway_ip, isolated_net_name)
 
     yield DockerNetworks(
@@ -287,21 +252,29 @@ async def docker_networks(docker_client: aiodocker.Docker) -> AsyncGenerator[Doc
         isolated_net=isolated_net,
     )
 
-    await isolated_net.delete()
-    await proxy_net.delete()
+    isolated_net.remove()
+    proxy_net.remove()
 
 
 @pytest.fixture
-async def proxy_env(
-    tmp_path: Path, mitmproxy_image: str, docker_client: aiodocker.Docker, docker_networks: DockerNetworks
-) -> AsyncGenerator[ProxySetup]:
+def proxy_env(
+    tmp_path: Path, mitmproxy_image: str, docker_client: docker.DockerClient, docker_networks: DockerNetworks
+) -> Generator[ProxySetup]:
     """Start mitmproxy container on the Docker networks.
 
     The proxy container sits on both the proxy network (internet access)
     and the isolated network (reachable by the test container). CA cert is
     generated host-side and mounted into the container. Yields a ProxySetup
     with the proxy URL, CA cert, and isolated network name.
+
+    Requires direct internet access — upstream proxy chaining is not supported.
+    Run via ``bazel test`` (goes to RBE) rather than inside Claude Code web.
     """
+    assert not get_upstream_proxy_url(), (
+        "Container E2E test requires direct internet access (no HTTPS_PROXY). "
+        "Upstream proxy chaining is not supported — run via 'bazel test' on RBE."
+    )
+
     # Generate CA host-side and write mitmproxy confdir files
     cert_pem, key_pem = generate_mock_ca()
     certs_dir = tmp_path / "mitmproxy_certs"
@@ -310,47 +283,28 @@ async def proxy_env(
     (certs_dir / "mitmproxy-ca.pem").write_bytes(key_pem + cert_pem)
     (certs_dir / "mitmproxy-ca-cert.pem").write_bytes(cert_pem)
 
-    proxy_shared = tmp_path / "proxy_shared"
-    proxy_shared.mkdir()
-
     proxy_name = f"{_CONTAINER_NAME}-proxy-{os.getpid()}"
 
-    upstream = EgressProxyConfig.from_env()
-    binds: list[str] = [f"{certs_dir}:/certs:ro"]
-    if upstream:
-        # Rewrite localhost to gateway IP so container can reach host services
-        if upstream.host in ("localhost", "127.0.0.1"):
-            upstream = EgressProxyConfig(
-                host=docker_networks.gateway_ip,
-                port=upstream.port,
-                username=upstream.username,
-                password=upstream.password,
-                ca_bundle=upstream.ca_bundle,
-            )
-        if upstream.ca_bundle:
-            shutil.copy2(upstream.ca_bundle, proxy_shared / "upstream_ca.pem")
-            binds.append(f"{proxy_shared / 'upstream_ca.pem'}:/shared/upstream_ca.pem:ro")
-
-    proxy_cmd = _build_mitmproxy_cmd(upstream)
-
-    host_config: dict[str, Any] = {"NetworkMode": docker_networks.proxy_net_name, "Binds": binds}
-
-    proxy_container = await docker_client.containers.create(
-        {"Image": mitmproxy_image, "Cmd": proxy_cmd, "HostConfig": host_config}, name=proxy_name
+    proxy_container = docker_client.containers.run(
+        mitmproxy_image,
+        command=_MITMPROXY_CMD,
+        name=proxy_name,
+        network=docker_networks.proxy_net_name,
+        volumes={str(certs_dir): {"bind": "/certs", "mode": "ro"}},
+        detach=True,
     )
-    await proxy_container.start()
     logger.info("Started mitmproxy container %s", proxy_name)
 
     try:
         # Connect proxy container to the isolated network
-        await docker_networks.isolated_net.connect({"Container": proxy_container._id})
+        docker_networks.isolated_net.connect(proxy_container)
 
         # Wait for mitmproxy to be ready (TCP connect to proxy port)
-        proxy_info = await proxy_container.show()
-        proxy_ip = proxy_info["NetworkSettings"]["Networks"][docker_networks.isolated_net_name]["IPAddress"]
+        proxy_container.reload()
+        proxy_ip = proxy_container.attrs["NetworkSettings"]["Networks"][docker_networks.isolated_net_name]["IPAddress"]
         logger.info("Proxy container IP on isolated network: %s", proxy_ip)
 
-        await _wait_for_proxy_ready(proxy_ip, _PROXY_LISTEN_PORT)
+        _wait_for_proxy_ready(proxy_ip, _PROXY_LISTEN_PORT)
         logger.info("mitmproxy container is ready")
 
         yield ProxySetup(
@@ -361,10 +315,10 @@ async def proxy_env(
 
     finally:
         # Collect mitmproxy logs (stdout/stderr)
-        proxy_logs = "".join(await proxy_container.log(stdout=True, stderr=True))
-        _save_output("proxy.log", proxy_logs)
+        proxy_logs = proxy_container.logs()
+        _save_output("proxy.log", proxy_logs.decode(errors="replace"))
 
-        await proxy_container.delete(force=True)
+        proxy_container.remove(force=True)
 
 
 # ---------------------------------------------------------------------------
@@ -372,12 +326,12 @@ async def proxy_env(
 # ---------------------------------------------------------------------------
 
 
-async def test_container_e2e(
+def test_container_e2e(
     tmp_path: Path,
     wheel_path: Path,
     test_workspace_path: Path,
     proxy_env: ProxySetup,
-    docker_client: aiodocker.Docker,
+    docker_client: docker.DockerClient,
     e2e_image: str,
 ) -> None:
     """Full E2E: install wheel in container, run hook, bazel build through proxy."""
@@ -421,66 +375,62 @@ async def test_container_e2e(
     for var in SSL_CA_ENV_VARS:
         env[var] = "/certs/combined_ca.pem"
 
-    binds = [
-        f"{staged_wheel}:/wheel/{_WHEEL_FILENAME}:ro",
-        f"{mock_ca_path}:/certs/mock_ca.pem:ro",
-        f"{combined_ca_path}:/certs/combined_ca.pem:ro",
-        f"{staged_workspace}:/project/test_workspace:ro",
-    ]
-
-    container = await docker_client.containers.create(
-        {
-            "Image": e2e_image,
-            "Env": [f"{k}={v}" for k, v in env.items()],
-            "Cmd": ["sleep", "infinity"],
-            "HostConfig": {"NetworkMode": proxy_env.isolated_net_name, "Binds": binds},
-        },
+    container = docker_client.containers.run(
+        e2e_image,
+        command=["sleep", "infinity"],
         name=container_name,
+        environment=env,
+        network=proxy_env.isolated_net_name,
+        volumes={
+            str(staged_wheel): {"bind": f"/wheel/{_WHEEL_FILENAME}", "mode": "ro"},
+            str(mock_ca_path): {"bind": "/certs/mock_ca.pem", "mode": "ro"},
+            str(combined_ca_path): {"bind": "/certs/combined_ca.pem", "mode": "ro"},
+            str(staged_workspace): {"bind": "/project/test_workspace", "mode": "ro"},
+        },
+        detach=True,
     )
 
     try:
-        async with asyncio.timeout(_TEST_TIMEOUT):
-            await container.start()
-            logger.info("Started test container %s on isolated network", container_name)
+        logger.info("Started test container %s on isolated network", container_name)
 
-            # Verify network isolation — container must not reach the internet directly
-            rc, _, _ = await _exec(container, ["bash", "-c", "curl --max-time 3 https://google.com"], check=False)
-            assert rc != 0, "Container should have no external internet access on --internal network"
-            logger.info("Network isolation verified: container cannot reach internet directly")
+        # Verify network isolation — container must not reach the internet directly
+        rc, _, _ = _exec(container, ["bash", "-c", "curl --max-time 3 https://google.com"], check=False)
+        assert rc != 0, "Container should have no external internet access on --internal network"
+        logger.info("Network isolation verified: container cannot reach internet directly")
 
-            await _exec(container, ["mkdir", "-p", "/project/.git"])
+        _exec(container, ["mkdir", "-p", "/project/.git"])
 
-            # Install ducktape wheel
-            # TODO(container-e2e): Install via uv by reading .claude/settings.json
-            # hook definition and piping the JSON into sh, instead of raw pip.
-            logger.info("Installing wheel")
-            await _exec(container, ["pip", "install", "--break-system-packages", f"/wheel/{_WHEEL_FILENAME}"])
+        # Install ducktape wheel
+        # TODO(container-e2e): Install via uv by reading .claude/settings.json
+        # hook definition and piping the JSON into sh, instead of raw pip.
+        logger.info("Installing wheel")
+        _exec(container, ["pip", "install", "--break-system-packages", f"/wheel/{_WHEEL_FILENAME}"])
 
-            # Run session start hook
-            logger.info("Running claude-hook (session start)")
-            hook_input = json.dumps(
-                {
-                    "hook_event_name": "SessionStart",
-                    "session_id": _SESSION_ID,
-                    "cwd": "/project",
-                    "transcript_path": "/tmp/transcript.json",
-                    "permission_mode": "default",
-                    "source": "startup",
-                    "model": "claude-sonnet-4-6",
-                }
-            )
-            await _exec(container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"])
+        # Run session start hook
+        logger.info("Running claude-hook (session start)")
+        hook_input = json.dumps(
+            {
+                "hook_event_name": "SessionStart",
+                "session_id": _SESSION_ID,
+                "cwd": "/project",
+                "transcript_path": "/tmp/transcript.json",
+                "permission_mode": "default",
+                "source": "startup",
+                "model": "claude-sonnet-4-6",
+            }
+        )
+        _exec(container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"])
 
-            # Run bazel build through the proxy chain
-            logger.info("Running bazel build")
-            bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
-            await _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
+        # Run bazel build through the proxy chain
+        logger.info("Running bazel build")
+        bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"
+        _exec(container, ["bash", "-c", bazel_cmd], workdir="/project/test_workspace")
 
     finally:
-        stdout = "".join(await container.log(stdout=True, stderr=False))
-        stderr = "".join(await container.log(stdout=False, stderr=True))
-        _save_output("container-stdout.log", stdout)
-        _save_output("container-stderr.log", stderr)
+        stdout_logs = container.logs(stdout=True, stderr=False)
+        stderr_logs = container.logs(stdout=False, stderr=True)
+        _save_output("container-stdout.log", stdout_logs.decode(errors="replace"))
+        _save_output("container-stderr.log", stderr_logs.decode(errors="replace"))
 
         # Extract specific log files from the container. We don't bind-mount
         # the session dir because the container (root) creates bazel cache/install
@@ -492,11 +442,11 @@ async def test_container_e2e(
             "supervisor/supervisord.log",
             "auth-proxy/bazelrc",
         ]:
-            rc, content, _ = await _exec(container, ["cat", f"{session_dir}/{log_file}"], check=False)
+            rc, content, _ = _exec(container, ["cat", f"{session_dir}/{log_file}"], check=False)
             if rc == 0:
                 _save_output(log_file.replace("/", "-"), content.decode(errors="replace"))
 
-        await container.delete(force=True)
+        container.remove(force=True)
 
 
 if __name__ == "__main__":

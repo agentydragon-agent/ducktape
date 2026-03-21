@@ -1,6 +1,6 @@
 """Integration tests for claude proxy infrastructure.
 
-These tests use the in-process auth proxy and a TLS-inspecting mock proxy
+These tests use the in-process auth proxy and a mitmproxy container
 to verify end-to-end behavior.
 """
 
@@ -16,25 +16,25 @@ from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
-from devinfra.claude.testing.fixtures import MockEgressProxyFixture
+from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
 from util.net import async_wait_for_port
 
-# Register shared fixtures (isolated_dirs, session_paths, hook_settings, mock_egress_proxy)
-pytest_plugins = ["devinfra.claude.testing.fixtures"]
+# Register shared fixtures (isolated_dirs, session_paths, hook_settings, mitmproxy_proxy)
+pytest_plugins = ["devinfra.claude.testing.fixtures", "devinfra.claude.testing.mitmproxy_fixture"]
 
 
 @pytest.fixture
 def hook_settings(
-    isolated_dirs, mock_egress_proxy: MockEgressProxyFixture, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    isolated_dirs, mitmproxy_proxy: MitmproxyFixture, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> HookSettings:
     """Override shared hook_settings to also configure upstream proxy and CA path."""
     # Set HTTPS_PROXY (uppercase) which get_upstream_proxy_url() checks first.
     # Also clear lowercase to avoid ambiguity.
-    monkeypatch.setenv("HTTPS_PROXY", mock_egress_proxy.proxy.url)
+    monkeypatch.setenv("HTTPS_PROXY", mitmproxy_proxy.url)
     monkeypatch.delenv("https_proxy", raising=False)
     # Write mock CA to a temp file so _extract_proxy_ca can load it from filesystem
     ca_file = tmp_path / "mock-ca.crt"
-    ca_file.write_bytes(mock_egress_proxy.proxy.ca_cert_pem)
+    ca_file.write_bytes(mitmproxy_proxy.ca_cert_pem)
     monkeypatch.setenv("ANTHROPIC_CA_PATH", str(ca_file))
     return HookSettings()
 
@@ -86,7 +86,7 @@ async def test_credential_rotation(
     auth_proxy: AuthForwardingProxy,
     session_paths: SessionPaths,
     hook_settings: HookSettings,
-    mock_egress_proxy: MockEgressProxyFixture,
+    mitmproxy_proxy: MitmproxyFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test that credential changes are written to the proxy's creds file (hot-reload)."""
@@ -95,7 +95,7 @@ async def test_credential_rotation(
     assert "proxy_user" in creds_file.read_text(), "Initial creds should have original credentials"
 
     # Simulate credential rotation
-    new_proxy_url = f"http://newuser:newpass@127.0.0.1:{mock_egress_proxy.proxy.port}"
+    new_proxy_url = f"http://newuser:newpass@127.0.0.1:{mitmproxy_proxy.port}"
     monkeypatch.setenv("HTTPS_PROXY", new_proxy_url)
 
     # Re-run setup — should update creds file

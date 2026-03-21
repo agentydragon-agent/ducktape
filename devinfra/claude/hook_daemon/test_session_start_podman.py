@@ -12,11 +12,16 @@ import pytest
 import pytest_bazel
 
 from devinfra.claude.testing import shell_helpers
-from devinfra.claude.testing.fixtures import MockEgressProxyFixture, collect_supervisor_logs
+from devinfra.claude.testing.fixtures import collect_supervisor_logs
+from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
 from devinfra.claude.testing.session_start_helpers import IsolatedDirs, run_session_start_hook, setup_hook_env
 
 # Register fixtures from modules (pytest-native, no direct name import needed)
-pytest_plugins = ["devinfra.claude.testing.fixtures", "devinfra.claude.testing.session_start_helpers"]
+pytest_plugins = [
+    "devinfra.claude.testing.fixtures",
+    "devinfra.claude.testing.mitmproxy_fixture",
+    "devinfra.claude.testing.session_start_helpers",
+]
 
 
 def _extract_docker_host_socket(env_file: Path) -> Path:
@@ -43,17 +48,15 @@ class TestPodmanIntegration:
 
     @pytest.fixture
     def podman_hook_env(
-        self, monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, mock_egress_proxy: MockEgressProxyFixture
+        self, monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, mitmproxy_proxy: MitmproxyFixture
     ) -> None:
         """Set up environment for running session start hook WITH podman enabled."""
-        setup_hook_env(monkeypatch, isolated_dirs, mock_egress_proxy.proxy, container_runtime="podman")
+        setup_hook_env(monkeypatch, isolated_dirs, mitmproxy_proxy, container_runtime="podman")
 
-    async def test_podman_can_run_container(
-        self, isolated_dirs: IsolatedDirs, podman_hook_env: None, mock_egress_proxy: MockEgressProxyFixture
-    ) -> None:
+    async def test_podman_can_run_container(self, isolated_dirs: IsolatedDirs, podman_hook_env: None) -> None:
         """Verify podman service starts and can run a container after session start hook.
 
-        Runs podman through the MockEgressProxy to verify the full proxy chain works,
+        Runs podman through the mitmproxy to verify the full proxy chain works,
         including CA certificate configuration for container registry pulls.
         """
         result = await run_session_start_hook(isolated_dirs.project)
@@ -78,21 +81,11 @@ class TestPodmanIntegration:
                 check=False,
             )
 
-        # Include proxy stats in failure message for debugging
-        proxy = mock_egress_proxy.proxy
-        proxy_stats = (
-            f"\nProxy stats: {proxy.stats.total_connections} total, "
-            f"{proxy.stats.successful_connections} success, "
-            f"{proxy.stats.failed_connections} failed"
-        )
-        if proxy.stats.errors:
-            proxy_stats += f"\nProxy errors: {proxy.stats.errors[-5:]}"
-
         assert podman_result.returncode == 0, (
-            f"Podman run failed:\nstdout: {podman_result.stdout}\nstderr: {podman_result.stderr}{proxy_stats}"
+            f"Podman run failed:\nstdout: {podman_result.stdout}\nstderr: {podman_result.stderr}"
         )
         assert "Hello from Docker" in podman_result.stdout, (
-            f"Expected 'Hello from Docker' in output:\n{podman_result.stdout}{proxy_stats}"
+            f"Expected 'Hello from Docker' in output:\n{podman_result.stdout}"
         )
 
 
