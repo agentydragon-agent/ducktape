@@ -169,7 +169,7 @@ async fn main() {
     let controller = loop {
         match cgroup::setup_cgroup(cli.cgroupv2).await {
             Ok(c) => {
-                log::debug!("[DEBUG] Cgroup setup successful: {:?}", c);
+                log::debug!("[DEBUG] Cgroup setup successful: {c:?}");
                 break c;
             }
             Err(e) => {
@@ -365,7 +365,7 @@ async fn main() {
                 l
             }
             Err(e) => {
-                log::error!("Failed to bind to {}: {e}", addr);
+                log::error!("Failed to bind to {addr}: {e}");
                 return;
             }
         };

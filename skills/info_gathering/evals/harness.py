@@ -36,11 +36,13 @@ class LogEntry(BaseModel):
     tool_calls: list[ToolCall] = []
 
 
-class RunSummary(BaseModel):
+class RunSummary[ResultT: BaseModel](BaseModel):
     eval_name: str
+    framework: str
     model: str
+    api: str
     turns: int
-    result: BaseModel
+    result: ResultT
 
 
 # === Logging/saving helpers ===================================================

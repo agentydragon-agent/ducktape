@@ -261,8 +261,7 @@ pub async fn wait_for_child_to_exit(
     let nix_pid = Pid::from_raw(pid as i32);
 
     log::debug!(
-        "[DEBUG] Starting wait_for_child_to_exit for process (PID {pid}), start_time: {:?}, memory_limit_bytes: {memory_limit_bytes:?}",
-        start
+        "[DEBUG] Starting wait_for_child_to_exit for process (PID {pid}), start_time: {start:?}, memory_limit_bytes: {memory_limit_bytes:?}",
     );
 
     let mut oom_rx = oom_killed_rx;
