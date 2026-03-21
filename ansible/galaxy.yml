@@ -20,6 +20,5 @@ build_ignore:
   - molecule
   - tools
   - docs
-  - inventree
   - tasker
   - workspace_kb_shortcuts

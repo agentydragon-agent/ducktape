@@ -288,24 +288,6 @@
           notify:
             - Reload nginx
 
-    - name: Grocy
-      ansible.builtin.include_role:
-        name: grocy
-        apply:
-          tags: grocy
-      vars:
-        grocy_state: absent # disabled
-      tags: [grocy]
-
-    - name: InvenTree
-      ansible.builtin.include_role:
-        name: inventree
-        apply:
-          tags: inventree
-      vars:
-        inventree_state: present
-      tags: [inventree]
-
     - name: Trilium server
       ansible.builtin.include_role:
         name: trilium_server

@@ -1,8 +1,0 @@
----
-- name: Include tasks to enable InvenTree
-  ansible.builtin.include_tasks: enabled.yml
-  when: (inventree_state | default('present')) in ['present', 'enabled', 'on']
-
-- name: Include tasks to disable InvenTree
-  ansible.builtin.include_tasks: disabled.yml
-  when: (inventree_state | default('present')) in ['absent', 'disabled', 'off']
