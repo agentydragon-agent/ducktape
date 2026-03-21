@@ -21,29 +21,32 @@ Six chipset-level incidents documented (incidents 1–6), plus a new pattern of 
 
 ## Current Status
 
-**Mar 12 ~04:40 CET** (boot `978abe76`, kernel 6.17, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`): Fresh boot of atlas with wyrm2 (96 GiB, 2 GPUs: Zotac 01:00.0 + Gigabyte 03:00.0) + Talos CP VM (10000, 8 GiB). **7 hours uptime, zero errors** — no SATA errors, no PCIe failures, no soft lockups. VFIO resets completed cleanly. ZFS ARC healthy (`memory_available_bytes` = 799 MB, `size` = 9.3 GiB, above `c_min` = 3.9 GiB). This is full production config (both GPUs + Talos CP) running stable — the longest 2-GPU VFIO survival by a wide margin (incidents 7–10, 12, 14 all died within 0–2 min).
+**Mar 20 ~19:58 CET** (boot `5dadd617`, kernel 6.17.13-1-pve, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`): Rebooted after incident 16 (hard power-off due to memory pressure freeze). Current boot clean — zero SATA/GPU/lockup errors. Memory already at 119 GiB used / 123 GiB total (3.7 GiB available) with wyrm2 running. virtiofsd `cache=never` confirmed active.
+
+**Incident 16** (Mar 20): Boot `978abe76` survived **9 days** (Mar 11 19:50 → Mar 20 ~19:52) — the longest uptime since incidents began. No SATA errors, no GPU/VFIO crashes for the entire run. System died from **memory pressure**: `systemd-journald: Under memory pressure, flushing caches` at 19:52:17, then journal silence. A terminal scope consumed 5.2 GiB peak memory (likely a Bazel build), and `pve-firewall`/`pvestatd` updates took 5–6 seconds (normally sub-second). The chipset PCIe and VFIO issues appear fully mitigated; the remaining instability is memory overcommit with wyrm2 at 96 GiB on a 128 GiB host.
 
 ## Recurrence Log
 
 Boot IDs are the first 8 hex chars of the systemd journal boot UUID (`journalctl --list-boots`).
 
-| #   | Boot ID    | Boot time    | Onset         | Hang          | Recovery                     | Uptime before failure  | Devices affected                                                                                                                                                                                                           |
-| --- | ---------- | ------------ | ------------- | ------------- | ---------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `ba60fe65` | Feb 27 19:17 | Feb 28 00:04  | Feb 28 ~18:05 | Mar 4 20:52 (powercycle)     | ~5h after boot         | SATA (`ata7`, `ata8`, `ata10`)                                                                                                                                                                                             |
-| 2   | `b825ed78` | Mar 4 20:52  | Mar 5 02:38   | Mar 5 ~06:47  | Mar 6 01:17 (powercycle)     | ~6h after boot         | SATA (`ata7`, `ata8`), Atlantic NIC, PCIe `08:08.0`                                                                                                                                                                        |
-| 3   | `6522a81a` | Mar 6 01:17  | Mar 7 00:01   | Mar 7 ~06:42  | Mar 7 06:54 (powercycle)     | ~23h after boot        | SATA (all 4), xHCI USB, Atlantic NIC                                                                                                                                                                                       |
-| 4   | `df5a691c` | Mar 7 13:00  | Mar 7 18:29   | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                                                                                                                                                                                 |
-| 5   | `4089259e` | Mar 9 22:37  | Mar 10 00:01  | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                                                                                                                                                                                   |
-| 6   | `c2a8b888` | Mar 10 01:06 | —             | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg)                                                                                                                                                                |
-| 7   | `f96c21cc` | Mar 10 19:18 | —             | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                                                                                                                                                                                          |
-| 8   | `b0e04dde` | Mar 10 19:24 | —             | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                          |
-| 9   | `4e2daf12` | Mar 10 21:07 | —             | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                          |
-| 10  | `104bc613` | Mar 10 21:10 | —             | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                          |
-| 11  | `01bca0b8` | Mar 10 21:17 | Mar 10 23:48  | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade                                                                                                                                                                        |
-| 12  | `dcad0e96` | Mar 11 03:49 | —             | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze (D3cold workaround active)                                                                                                                                                               |
-| 13  | `e6081d6d` | Mar 11 15:23 | —             | Mar 11 ~15:41 | Mar 11 15:48 (powercycle)    | ~17 min                | Kernel 6.8: wyrm2+GPUs ran 17min, froze ~22s after Talos CP VM (10000, no GPU) started                                                                                                                                     |
-| 14  | `c740ecfd` | Mar 11 15:48 | —             | Mar 11 ~15:49 | Mar 11 15:50 (powercycle)    | ~1 min                 | Kernel 6.17: VFIO GPU reset → immediate freeze                                                                                                                                                                             |
-| 15  | `5ef3cedb` | Mar 11 15:50 | Mar 11 ~16:54 | **survived**  | Mar 11 19:27 (clean reboot)  | ~1h onset, 3.6h up     | Kernel 6.17, modeset=0: 1 GPU (Zotac) + Talos CP → ZFS hung tasks (122s), pcieport 18:00.0 D3cold fail. Two stalls (~16:54, ~18:12), both recovered. Load avg hit 101. PCIe bridge D3cold/PM disabled live during recovery |
+| #   | Boot ID    | Boot time    | Onset         | Hang          | Recovery                     | Uptime before failure  | Devices affected                                                                                                                                                                                                                                 |
+| --- | ---------- | ------------ | ------------- | ------------- | ---------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `ba60fe65` | Feb 27 19:17 | Feb 28 00:04  | Feb 28 ~18:05 | Mar 4 20:52 (powercycle)     | ~5h after boot         | SATA (`ata7`, `ata8`, `ata10`)                                                                                                                                                                                                                   |
+| 2   | `b825ed78` | Mar 4 20:52  | Mar 5 02:38   | Mar 5 ~06:47  | Mar 6 01:17 (powercycle)     | ~6h after boot         | SATA (`ata7`, `ata8`), Atlantic NIC, PCIe `08:08.0`                                                                                                                                                                                              |
+| 3   | `6522a81a` | Mar 6 01:17  | Mar 7 00:01   | Mar 7 ~06:42  | Mar 7 06:54 (powercycle)     | ~23h after boot        | SATA (all 4), xHCI USB, Atlantic NIC                                                                                                                                                                                                             |
+| 4   | `df5a691c` | Mar 7 13:00  | Mar 7 18:29   | **survived**  | Mar 9 22:36 (clean shutdown) | ~5h onset, 2.5d uptime | SATA (`ata7` only) — errors but no cascade                                                                                                                                                                                                       |
+| 5   | `4089259e` | Mar 9 22:37  | Mar 10 00:01  | Mar 10 ~01:04 | Mar 10 01:06 (powercycle)    | ~1.5h after boot       | SATA (`ata7`), Atlantic NIC, soft lockup                                                                                                                                                                                                         |
+| 6   | `c2a8b888` | Mar 10 01:06 | —             | Mar 10 ~06:31 | Mar 10 13:21 (powercycle)    | ~5.5h after boot       | Atlantic NIC, soft lockup (pci_mmcfg_read + aq_hw_read_reg)                                                                                                                                                                                      |
+| 7   | `f96c21cc` | Mar 10 19:18 | —             | Mar 10 ~19:19 | Mar 10 19:24 (powercycle)    | ~1 min                 | VFIO GPU reset → immediate freeze                                                                                                                                                                                                                |
+| 8   | `b0e04dde` | Mar 10 19:24 | —             | Mar 10 ~19:24 | Mar 10 21:07 (powercycle)    | ~30 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                                                |
+| 9   | `4e2daf12` | Mar 10 21:07 | —             | Mar 10 ~21:08 | Mar 10 21:10 (powercycle)    | ~45 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                                                |
+| 10  | `104bc613` | Mar 10 21:10 | —             | Mar 10 ~21:10 | Mar 10 21:17 (powercycle)    | ~40 sec                | VFIO GPU reset → immediate freeze                                                                                                                                                                                                                |
+| 11  | `01bca0b8` | Mar 10 21:17 | Mar 10 23:48  | **survived**  | Mar 11 02:51 (clean reboot)  | ~2.5h onset, 5.5h up   | SATA (`ata7` only) — no GPUs, errors but no cascade                                                                                                                                                                                              |
+| 12  | `dcad0e96` | Mar 11 03:49 | —             | Mar 11 ~03:51 | Mar 11 03:54 (powercycle)    | ~2 min                 | VFIO GPU reset → immediate freeze (D3cold workaround active)                                                                                                                                                                                     |
+| 13  | `e6081d6d` | Mar 11 15:23 | —             | Mar 11 ~15:41 | Mar 11 15:48 (powercycle)    | ~17 min                | Kernel 6.8: wyrm2+GPUs ran 17min, froze ~22s after Talos CP VM (10000, no GPU) started                                                                                                                                                           |
+| 14  | `c740ecfd` | Mar 11 15:48 | —             | Mar 11 ~15:49 | Mar 11 15:50 (powercycle)    | ~1 min                 | Kernel 6.17: VFIO GPU reset → immediate freeze                                                                                                                                                                                                   |
+| 15  | `5ef3cedb` | Mar 11 15:50 | Mar 11 ~16:54 | **survived**  | Mar 11 19:27 (clean reboot)  | ~1h onset, 3.6h up     | Kernel 6.17, modeset=0: 1 GPU (Zotac) + Talos CP → ZFS hung tasks (122s), pcieport 18:00.0 D3cold fail. Two stalls (~16:54, ~18:12), both recovered. Load avg hit 101. PCIe bridge D3cold/PM disabled live during recovery                       |
+| 16  | `978abe76` | Mar 11 19:50 | Mar 20 ~19:52 | Mar 20 ~19:52 | Mar 20 19:58 (powercycle)    | **~9 days**            | Memory pressure freeze. No SATA/GPU/chipset errors. journald "Under memory pressure, flushing caches" then silence. Terminal scope peaked at 5.2 GiB + 2.7 GiB swap. pve-firewall/pvestatd updates took 5–6s. inotify exhausted earlier at 16:55 |
 
 ## Incident 1 — Feb 28
 
@@ -578,6 +581,57 @@ Readable via `/sys/firmware/efi/efivars/` after enabling "Publish HII Resources"
 - **`PcieExpressNative` = 1** means the OS (not firmware) controls PCIe native features including ASPM. This is why `pcie_aspm=off` in the kernel cmdline is effective — the firmware delegates ASPM control to Linux.
 - The `Setup` var (365 bytes) and `AMD_PBS_SETUP` (256 bytes) contain the full BIOS configuration but require IFR extraction from the BIOS ROM to decode field offsets. No IFR extraction tools are installed on atlas.
 - `BiosSettingMappingTableV2` (4596 bytes) is the ASUS mapping table linking string IDs to Setup var offsets — binary format, would need the HII string database to decode.
+
+## Incident 16 — Mar 20 (memory pressure freeze, 9-day uptime)
+
+Boot `978abe76` (kernel 6.17, `pcie_aspm=off`, `ahci.mobile_lpm_policy=1`, `nvidia-drm.modeset=0` on guest). Full production config: wyrm2 (96 GiB, 2x RTX 5090 via VFIO) + Talos CP VM (10000, 8 GiB).
+
+### Timeline
+
+| Time               | Event                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| Mar 11 19:50       | Boot started                                                                            |
+| Mar 11 19:56–20:37 | VFIO resets for both GPUs completed cleanly                                             |
+| Mar 18 22:02–22:36 | wyrm2 restart: VFIO resets completed cleanly                                            |
+| Mar 20 16:55       | inotify watch descriptors exhausted ("No space left on device") for terminal cgroup     |
+| Mar 20 18:01–19:52 | Repeated gnome-shell `libinput error: event processing lagging behind` (22–57ms)        |
+| Mar 20 19:49       | Terminal scope consumed **5.2 GiB memory peak, 2.7 GiB swap peak** (likely Bazel build) |
+| Mar 20 19:51:29    | `cups.service` timing out and crash-looping (apparmor denying socket ops)               |
+| Mar 20 19:52:01    | gnome-shell: input processing lagging 42ms                                              |
+| Mar 20 19:52:17    | **`systemd-journald: Under memory pressure, flushing caches`** (twice)                  |
+| Mar 20 19:52:17    | `pve-firewall` update took **5.9 seconds** (normally sub-second)                        |
+| Mar 20 19:52:20    | `pvestatd` update took **5.6 seconds** (normally sub-second)                            |
+| Mar 20 19:52:23    | Last journal entry (terminal scope started). **Journal silence — hard freeze**          |
+| Mar 20 19:58       | Hard power-off (5-second power button hold) and reboot                                  |
+
+### Analysis
+
+**This is NOT a chipset/SATA/VFIO failure.** Zero `ata`, `SError`, `vfio`, `MCE`, or soft lockup messages for the entire 9-day run. All three previously-identified failure modes (slow-onset chipset, VFIO reset crash, memory pressure) are distinguishable — this is purely failure mode 3: **memory pressure / host starvation**.
+
+The host has 128 GiB total (123 GiB usable). wyrm2 takes 96 GiB (balloon=0, fixed). Talos CP takes 8 GiB. That leaves ~19 GiB for the host, ZFS ARC, and all host processes. A Bazel build in a terminal peaked at 5.2 GiB + 2.7 GiB swap, which combined with ZFS ARC and normal host overhead pushed the system past the edge.
+
+**virtiofsd**: `cache=never` was active (confirmed on post-reboot). Not the cause this time (unlike the Mar 18 recurrence where virtiofsd grew to 6.6 GiB RSS with `cache=auto`).
+
+**Positive signal**: 9 days of uptime with full GPU VFIO passthrough and zero chipset errors confirms that `ahci.mobile_lpm_policy=1` + `pcie_aspm=off` + PCIe bridge D3cold/PM disabled effectively mitigate the chipset and VFIO failure modes.
+
+### Remaining problem
+
+Memory headroom is too thin. With 96+8=104 GiB committed to VMs, the host has ~19 GiB for everything else — but ZFS ARC, gnome-shell, Proxmox daemons, and any user processes (Bazel) compete for that. Any spike can push into OOM territory with no recovery.
+
+**Compounding factor**: Swap was on a ZFS zvol (`/dev/zd0`, 128 GiB on rpool). Under memory pressure, swapping to a zvol deadlocks — ZFS needs memory to perform the zvol I/O, but memory is why we're swapping in the first place. The 2.7 GiB swap peak logged earlier shows some swapping worked under light pressure, but once pressure crossed a threshold the zvol swap path deadlocked and froze the host.
+
+### Applied fix (Mar 20)
+
+1. **Replaced ZFS zvol swap with zram swap** — zram compresses pages in RAM (no disk I/O), eliminating the ZFS deadlock. Configured via `zram-tools` package: 50% of RAM (~64 GiB), zstd compression, priority 100. Ansible task added to `atlas.yaml` (tags: `swap`, `zram`).
+2. **Disabled zvol swap** — removed `/dev/zd0` from fstab, ran `swapoff /dev/zd0`. The zvol itself (`rpool/swap` or similar) has not been deleted yet — can be destroyed later with `zfs destroy` to reclaim 128 GiB on rpool.
+3. **Set `vm.swappiness=150`** — with zram, values >100 are valid and tell the kernel to prefer swapping to zram (compressed RAM) over evicting file cache.
+
+**Further options** (not yet applied):
+
+1. Reduce wyrm2 to 88 GiB (frees ~8 GiB more headroom)
+2. Enable KSM (Kernel Samepage Merging) for VM deduplication
+3. Set a hard ZFS ARC max (`zfs_arc_max`) to prevent ARC from growing unbounded
+4. Install `earlyoom` / `systemd-oomd` to kill runaway processes before deadlock
 
 ## Recommended Next Steps
 

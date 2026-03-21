@@ -12,10 +12,57 @@
     nebula_static_host_map: "{{ nebula_mesh_config.static_host_map }}"
   tags: [nebula, config]
 
-- name: Install nebula
+- name: Remove Debian nebula package (dfsg build lacks v2 cert support)
   ansible.builtin.apt:
     name: nebula
-    state: present
+    state: absent
+    purge: true
+  tags: [nebula, install]
+
+- name: Install nebula binary from GitHub
+  github_release_install:
+    release_spec:
+      repo: "slackhq/nebula"
+      version: "latest"
+      asset_pattern: "nebula-linux-amd64\\.tar\\.gz$"
+    method:
+      name: archive
+      dest_path: /usr/local/bin/nebula
+      extract_file: nebula
+  notify: Restart nebula
+  tags: [nebula, install]
+
+- name: Install nebula-cert binary from GitHub
+  github_release_install:
+    release_spec:
+      repo: "slackhq/nebula"
+      version: "latest"
+      asset_pattern: "nebula-linux-amd64\\.tar\\.gz$"
+    method:
+      name: archive
+      dest_path: /usr/local/bin/nebula-cert
+      extract_file: nebula-cert
+  tags: [nebula, install]
+
+- name: Deploy nebula systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/nebula@.service
+    content: |
+      [Unit]
+      Description=Nebula mesh network (%i)
+      Wants=basic.target network-online.target
+      After=basic.target network-online.target
+
+      [Service]
+      SyslogIdentifier=nebula-%i
+      ExecReload=/bin/kill -HUP $MAINPID
+      ExecStart=/usr/local/bin/nebula -config /etc/nebula/%i.yaml
+      Restart=always
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: "0644"
+  notify: Restart nebula
   tags: [nebula, install]
 
 - name: Install sops binary

@@ -165,6 +165,42 @@
         state: started
       tags: [desktop]
 
+    # Remove Tailscale — replaced by Nebula mesh
+    - name: Stop and disable Tailscale service
+      ansible.builtin.systemd:
+        name: tailscaled
+        state: stopped
+        enabled: false
+      failed_when: false
+      tags: [tailscale, cleanup]
+
+    - name: Remove Tailscale packages
+      ansible.builtin.apt:
+        name:
+          - tailscale
+        state: absent
+        purge: true
+      tags: [tailscale, cleanup]
+
+    - name: Remove Tailscale apt repository
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/tailscale.list
+        - /etc/apt/sources.list.d/tailscale.list.save
+        - /etc/apt/sources.list.d/tailscale.sources
+      tags: [tailscale, cleanup]
+
+    - name: Remove Tailscale GPG key
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /usr/share/keyrings/tailscale-archive-keyring.gpg
+        - /etc/apt/keyrings/tailscale-archive-keyring.gpg
+      tags: [tailscale, cleanup]
+
     - name: Apply system inspection nopasswd role
       ansible.builtin.import_role:
         name: system_inspection_nopasswd
@@ -302,6 +338,45 @@
       changed_when: initramfs_result.rc == 0
       tags: [gpu_passthrough]
 
+    # zram swap — replaces the ZFS zvol swap (/dev/zd0).
+    # ZFS-backed swap deadlocks under memory pressure: the kernel tries to swap
+    # out pages via the zvol, but ZFS needs memory to perform that I/O, causing
+    # a priority inversion that freezes the host. zram compresses pages in RAM
+    # (no disk I/O) and avoids the deadlock entirely.
+    # See debug/atlas/black_screen_lockup.md, incident 16.
+    - name: Install zram-tools
+      ansible.builtin.apt:
+        name: zram-tools
+        state: present
+      tags: [swap, zram]
+
+    - name: Configure zram swap (50% of RAM, zstd compression)
+      ansible.builtin.copy:
+        dest: /etc/default/zramswap
+        content: |
+          # Managed by Ansible — see atlas.yaml
+          ALGO=zstd
+          PERCENT=50
+          PRIORITY=100
+        mode: "0644"
+      notify: Restart zramswap
+      tags: [swap, zram]
+
+    - name: Enable zramswap service
+      ansible.builtin.systemd:
+        name: zramswap
+        enabled: true
+        state: started
+      tags: [swap, zram]
+
+    - name: Set swappiness to prefer zram over disk
+      ansible.posix.sysctl:
+        name: vm.swappiness
+        value: "150"
+        sysctl_file: /etc/sysctl.d/99-zram.conf
+        reload: true
+      tags: [swap, zram]
+
     # TODO: WiFi Configuration - MediaTek MT7927 (14c3:7927)
     # The atlas host has a MediaTek MT7927 WiFi 7 card. MT7927 support was added
     # to the mt76 driver in Linux 6.12. Upgrade to Proxmox VE 9 (kernel 6.12+)
@@ -325,3 +400,8 @@
         cmd: udevadm control --reload-rules
       register: udev_result
       changed_when: udev_result.rc == 0
+
+    - name: Restart zramswap
+      ansible.builtin.systemd:
+        name: zramswap
+        state: restarted

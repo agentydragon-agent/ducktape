@@ -159,7 +159,12 @@ class ActionModule(ActionBase):
 
         # Step 4: Clean up temp files
         for path in (temp_archive, temp_extract_dir):
-            self._rm_temp(path, task_vars, tmp)
+            self._execute_module(
+                module_name="ansible.builtin.file",
+                module_args={"path": str(path), "state": "absent"},
+                task_vars=task_vars,
+                tmp=tmp,
+            )
 
         if copy_result.get("failed"):
             return copy_result
