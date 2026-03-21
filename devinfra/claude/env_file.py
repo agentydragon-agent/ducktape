@@ -77,7 +77,7 @@ class EnvVars:
     mkcert_cert: Path | None = None
     mkcert_key: Path | None = None
 
-    # Age-decrypted env var secrets (web mode)
+    # K8s secrets env vars (web mode)
     secrets_env_vars: dict[str, str] | None = None
 
     # CLI mode: include direnv eval for .envrc propagation
@@ -146,7 +146,7 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.extend(exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
 
     if vars.secrets_env_vars:
-        exports.extend(["", "# Decrypted secrets (from *.age component files)"])
+        exports.extend(["", "# K8s cluster secrets"])
         exports.extend(exports_from_dict(vars.secrets_env_vars))
 
     # Point Ansible's local tmp to a sandbox-writable directory so that

@@ -305,44 +305,6 @@ The mitmproxy container connects directly to the internet — no upstream proxy 
 Tests requiring a proxy are designed to run on RBE or CI where direct internet access
 is available. They are **not** compatible with Claude Code web's egress proxy.
 
-## Encrypted Secrets
-
-Secrets are stored as per-component age-encrypted JSON files in `.claude_hooks/secrets/` at the repo root — NOT inside the wheel. Each `.age` file decrypts to a JSON dict mapping env var names to values (e.g. `{"OLLAMA_API_KEY": "..."}"`).
-
-When `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` is set (in Claude Code web environment), the session start hook decrypts all `.age` files and exports the merged env vars to `CLAUDE_ENV_FILE`.
-
-Uses asymmetric X25519 encryption via [age](https://age-encryption.org/):
-
-- **Public key**: `.claude_hooks/secrets/recipients.txt` (anyone can encrypt)
-- **Private key**: `DUCKTAPE_CLAUDE_HOOKS_SECRETS_AGE_KEY` env var (only the decryptor needs this)
-- **Repo-specific context**: `.claude_hooks/templates/context.mako` is rendered and appended to the session context
-
-### Decrypting a component
-
-```bash
-age -d -i <key_file> .claude_hooks/secrets/ollama.age
-```
-
-### Editing a component
-
-```bash
-# Decrypt to a temp file
-age -d -i <key_file> .claude_hooks/secrets/ollama.age > /tmp/component.json
-
-# Edit the JSON dict
-$EDITOR /tmp/component.json
-
-# Re-encrypt
-age -e -R .claude_hooks/secrets/recipients.txt /tmp/component.json > .claude_hooks/secrets/ollama.age
-
-# Clean up
-rm /tmp/component.json
-```
-
-### Adding a new recipient
-
-Add their age public key (one per line) to `.claude_hooks/secrets/recipients.txt`, then re-encrypt all component files.
-
 ## OTEL Tracing
 
 Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
