@@ -38,20 +38,21 @@ VFS on 9p (no layer caching, slower builds).
 % if isinstance(precommit, PrecommitInstallingHooks):
 
 ## pre-commit
-Hook environments installing in background (pid ${precommit.pid}). First `git commit` may block briefly on pre-commit's flock until done. Log: `${precommit.log_path}`
+Hook environments installing in background (pid ${precommit.pid}, `${precommit.log_path}`). First `git commit` may block briefly.
 % endif
 % if secrets:
 
 ## Secrets
 ${len(secrets.env_vars)} env var(s) loaded from k8s cluster secrets.
 % if secrets.kubeconfig_path:
-`kubectl`: configured for `claude-sandbox` namespace (full admin), read-only in `props`. RBAC defined in `cluster/k8s/claude-rbac/` and `cluster/k8s/agent-shared-rbac/`.
+`kubectl` access available: `cluster/k8s/{claude,agent-shared}-rbac/` includes admin in `claude-sandbox` namespace, read-only in `props`.
 % endif
 % endif
 % if buildbuddy_configured:
 
 ## BuildBuddy
-API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
+Bazel builds and tests by default execute remotely via BuildBuddy.
+Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
 % endif
 
 % if any(r.levelno >= WARNING for r in log_entries):
@@ -59,12 +60,12 @@ API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> fo
 ## Warnings
 % for record in log_entries:
 % if record.levelno >= WARNING:
-- **${record.levelname}:** ${record.getMessage()}
+- ${record.levelname}: ${record.getMessage()}
 % endif
 % endfor
 % endif
 
-**Setup log:** `${log_file}`
+Session start log: `${log_file}`
 % if extra_context:
 ${extra_context}
 % endif
