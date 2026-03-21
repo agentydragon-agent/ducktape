@@ -7,7 +7,7 @@
 genrule(
     name = "resolved",
     outs = ["diff"],
-    cmd = "ln -s /usr/bin/diff $@",
+    cmd = "cp $$(which diff) $@",
     executable = True,
     visibility = ["//visibility:public"],
 )
