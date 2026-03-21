@@ -47,11 +47,10 @@ import aiodocker
 import pytest
 import pytest_bazel
 import tenacity
-from yarl import URL
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS, SYSTEM_CA_BUNDLES
-from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.testing.proxy_ca import EgressProxyConfig, generate_mock_ca
+from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS, get_upstream_proxy_url
+from devinfra.claude.testing.proxy_ca import generate_mock_ca
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -167,33 +166,18 @@ async def _wait_for_proxy_ready(host: str, port: int) -> None:
     await writer.wait_closed()
 
 
-def _build_mitmproxy_cmd(upstream: EgressProxyConfig | None) -> list[str]:
-    """Build mitmdump command line for the proxy container."""
-    cmd = [
-        "mitmdump",
-        "--listen-host",
-        "0.0.0.0",
-        "--listen-port",
-        str(_PROXY_LISTEN_PORT),
-        "--set",
-        "confdir=/certs",
-        "--set",
-        f"proxyauth={_PROXY_USERNAME}:{_PROXY_PASSWORD}",
-    ]
-
-    if upstream:
-        url = URL.build(scheme="http", host=upstream.host, port=upstream.port)
-        cmd += ["--mode", f"upstream:{url}"]
-        if upstream.username and upstream.password:
-            cmd += ["--upstream-auth", f"{upstream.username}:{upstream.password}"]
-        if upstream.ca_bundle:
-            cmd += ["--set", "ssl_verify_upstream_trusted_ca=/shared/upstream_ca.pem"]
-        else:
-            cmd += ["--ssl-insecure"]
-    else:
-        cmd += ["--ssl-insecure"]
-
-    return cmd
+_MITMPROXY_CMD = [
+    "mitmdump",
+    "--listen-host",
+    "0.0.0.0",
+    "--listen-port",
+    str(_PROXY_LISTEN_PORT),
+    "--set",
+    "confdir=/certs",
+    "--set",
+    f"proxyauth={_PROXY_USERNAME}:{_PROXY_PASSWORD}",
+    "--ssl-insecure",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -301,7 +285,15 @@ async def proxy_env(
     and the isolated network (reachable by the test container). CA cert is
     generated host-side and mounted into the container. Yields a ProxySetup
     with the proxy URL, CA cert, and isolated network name.
+
+    Requires direct internet access — upstream proxy chaining is not supported.
+    Run via ``bazel test`` (goes to RBE) rather than inside Claude Code web.
     """
+    assert not get_upstream_proxy_url(), (
+        "Container E2E test requires direct internet access (no HTTPS_PROXY). "
+        "Upstream proxy chaining is not supported — run via 'bazel test' on RBE."
+    )
+
     # Generate CA host-side and write mitmproxy confdir files
     cert_pem, key_pem = generate_mock_ca()
     certs_dir = tmp_path / "mitmproxy_certs"
@@ -310,33 +302,14 @@ async def proxy_env(
     (certs_dir / "mitmproxy-ca.pem").write_bytes(key_pem + cert_pem)
     (certs_dir / "mitmproxy-ca-cert.pem").write_bytes(cert_pem)
 
-    proxy_shared = tmp_path / "proxy_shared"
-    proxy_shared.mkdir()
-
     proxy_name = f"{_CONTAINER_NAME}-proxy-{os.getpid()}"
 
-    upstream = EgressProxyConfig.from_env()
     binds: list[str] = [f"{certs_dir}:/certs:ro"]
-    if upstream:
-        # Rewrite localhost to gateway IP so container can reach host services
-        if upstream.host in ("localhost", "127.0.0.1"):
-            upstream = EgressProxyConfig(
-                host=docker_networks.gateway_ip,
-                port=upstream.port,
-                username=upstream.username,
-                password=upstream.password,
-                ca_bundle=upstream.ca_bundle,
-            )
-        if upstream.ca_bundle:
-            shutil.copy2(upstream.ca_bundle, proxy_shared / "upstream_ca.pem")
-            binds.append(f"{proxy_shared / 'upstream_ca.pem'}:/shared/upstream_ca.pem:ro")
-
-    proxy_cmd = _build_mitmproxy_cmd(upstream)
 
     host_config: dict[str, Any] = {"NetworkMode": docker_networks.proxy_net_name, "Binds": binds}
 
     proxy_container = await docker_client.containers.create(
-        {"Image": mitmproxy_image, "Cmd": proxy_cmd, "HostConfig": host_config}, name=proxy_name
+        {"Image": mitmproxy_image, "Cmd": _MITMPROXY_CMD, "HostConfig": host_config}, name=proxy_name
     )
     await proxy_container.start()
     logger.info("Started mitmproxy container %s", proxy_name)

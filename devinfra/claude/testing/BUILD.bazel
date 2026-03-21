@@ -9,8 +9,6 @@ py_library(
     srcs = ["proxy_ca.py"],
     imports = ["../../.."],
     deps = [
-        "//devinfra/claude/auth_proxy:setup",
-        "//devinfra/claude/auth_proxy:vars",
         "@pypi//cryptography",
     ],
 )
@@ -74,10 +72,8 @@ py_library(
         ":proxy_ca",
         "//util:oci",
         "//util/testing:undeclared_outputs",
-        "@pypi//aiodocker",
         "@pypi//pytest",
-        "@pypi//tenacity",
-        "@pypi//yarl",
+        "@pypi//testcontainers",
     ],
 )
 

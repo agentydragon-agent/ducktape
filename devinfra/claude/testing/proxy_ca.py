@@ -1,68 +1,17 @@
-"""Proxy CA generation and upstream proxy config for testing.
+"""Mock CA generation for proxy testing.
 
-Provides mock CA certificates matching Anthropic's real format and upstream
-proxy detection for chaining through the egress proxy in test environments.
+Generates self-signed CA certificates matching Anthropic's real TLS inspection
+CA format, used by mitmproxy testcontainers.
 """
 
 from __future__ import annotations
 
-import logging
-import os
-import urllib.parse
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-
-from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS
-from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
-
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class EgressProxyConfig:
-    """Configuration for upstream proxy."""
-
-    host: str
-    port: int
-    username: str | None = None
-    password: str | None = None
-    ca_bundle: Path | None = None
-
-    @classmethod
-    def from_env(cls) -> EgressProxyConfig | None:
-        """Parse upstream proxy from environment variables.
-
-        Looks for HTTPS_PROXY or https_proxy in format:
-        http://user:pass@host:port or http://host:port
-
-        Localhost proxies (e.g. the auth proxy at localhost:18081)
-        are valid upstream targets — they forward to the real egress proxy.
-        """
-        proxy_url = get_upstream_proxy_url()
-        if not proxy_url:
-            return None
-
-        parsed = urllib.parse.urlparse(proxy_url)
-        if not parsed.hostname:
-            return None
-
-        # Get CA bundle for verifying upstream proxy's TLS interception cert.
-        ca_bundle_str = next((v for var in SSL_CA_ENV_VARS if (v := os.environ.get(var))), None)
-        ca_bundle = Path(ca_bundle_str) if ca_bundle_str else None
-
-        return cls(
-            host=parsed.hostname,
-            port=parsed.port or 8080,
-            username=urllib.parse.unquote(parsed.username) if parsed.username else None,
-            password=urllib.parse.unquote(parsed.password) if parsed.password else None,
-            ca_bundle=ca_bundle,
-        )
 
 
 def generate_mock_ca() -> tuple[bytes, bytes]:
