@@ -9,7 +9,7 @@ use rust_decimal_macros::*;
 fn parse_asset() {
     let json = r#"{"Type": "currency", "Symbol": "A", "Amount": 1.23}"#;
     let parsed: Asset = serde_json::from_str(json).expect("could not parse");
-    println!("{:#?}", parsed);
+    println!("{parsed:#?}");
 
     let expected = Asset {
         denomination: Denomination::Currency {
@@ -83,7 +83,7 @@ fn parse_snapshot() {
         }
     "#;
     let parsed: Snapshot = serde_json::from_str(json).expect("could not parse");
-    println!("{:#?}", parsed);
+    println!("{parsed:#?}");
 
     //denomination: Denomination::Currency {
     //    symbol: "CHF".to_string(),

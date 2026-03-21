@@ -44,13 +44,13 @@ impl Converter for AlphaVantageConverter {
                     .get_time_series_intraday(stock, IntradayInterval::OneMinute)
                     .await;
                 if time_series.is_err() {
-                    error!("{} {:?}", stock, time_series);
+                    error!("{stock} {time_series:?}");
                     continue;
                 }
                 let time_series = time_series.unwrap();
 
                 let entry = time_series.entries.last().unwrap();
-                trace!("{} {:?}", stock, entry);
+                trace!("{stock} {entry:?}");
 
                 rates.push(ExchangeRate {
                     //timestamp: entry.date.timestamp,
@@ -74,10 +74,7 @@ impl Converter for AlphaVantageConverter {
                 }
                 let exchange_rate = client.get_exchange_rate(currency_from, currency_to).await;
                 if exchange_rate.is_err() {
-                    error!(
-                        "for {}:{} -> {:?}: skip",
-                        currency_from, currency_to, exchange_rate
-                    );
+                    error!("for {currency_from}:{currency_to} -> {exchange_rate:?}: skip");
                 } else {
                     trace!("{:?}: ok", exchange_rate.unwrap());
                 }

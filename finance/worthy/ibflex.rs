@@ -29,7 +29,7 @@ mod status_deserializer {
         match s.as_str() {
             "Success" => Ok(Status::Success),
             "Fail" => Ok(Status::Fail),
-            _ => Err(serde::de::Error::custom(format!("unknown status: {}", s))),
+            _ => Err(serde::de::Error::custom(format!("unknown status: {s}"))),
         }
     }
 }
@@ -279,9 +279,9 @@ async fn run_flex_query2(
 
     let response = reqwest::get(url).await?;
     check_http_ok(&response)?;
-    trace!("{:?}", response);
+    trace!("{response:?}");
     let text = response.text().await?;
-    trace!("{:?}", text);
+    trace!("{text:?}");
     Ok(serde_xml_rs::from_str(&text).unwrap())
 }
 
@@ -300,7 +300,7 @@ async fn fetch_flex_query_result(
     let response = reqwest::get(url).await?;
     check_http_ok(&response)?;
     let text = response.text().await?;
-    trace!("{:?}", text);
+    trace!("{text:?}");
     parse_flex_query_response(&text)
 }
 
@@ -329,14 +329,12 @@ pub async fn run_flex_query(
     query_id: &str,
 ) -> Result<FlexQuerySuccess, Box<dyn Error>> {
     let response = run_flex_query2(token, query_id).await?;
-    trace!("Response: {:?}", response);
+    trace!("Response: {response:?}");
     // TODO: Error response: code=1004 message=Statement is incomplete at this time. Please try again shortly.
     if response.status != Status::Success {
-        error!(
-            "Error response: code={} message={}",
-            response.error_code.as_ref().unwrap(),
-            response.error_message.as_ref().unwrap(),
-        );
+        let code = response.error_code.as_ref().unwrap();
+        let message = response.error_message.as_ref().unwrap();
+        error!("Error response: code={code} message={message}");
         return Err(Box::new(FlexError {
             code: response.error_code.unwrap(),
             message: response.error_message.unwrap(),

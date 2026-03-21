@@ -200,10 +200,11 @@ async fn model_and_show(
         for asset in ss.snapshot.iter() {
             if let Some(conversion_rate) = in_common_currency.get(&asset.denomination) {
                 let amount = asset.amount * conversion_rate;
-                info!("{:?}: {:?} in common currency", asset, amount);
+                info!("{asset:?}: {amount:?} in common currency");
                 total_amount += amount;
             } else {
-                warn!("{:?} not connected to common currency", asset.denomination);
+                let denomination = &asset.denomination;
+                warn!("{denomination:?} not connected to common currency");
             }
         }
     }
@@ -212,7 +213,7 @@ async fn model_and_show(
         amount: total_amount,
         denomination: base.clone(),
     };
-    info!("Total in common currency: {:?}", total);
+    info!("Total in common currency: {total:?}");
 
     if config.cfiresim.is_some() {
         let c = config.cfiresim.as_ref().unwrap();
@@ -227,11 +228,11 @@ async fn model_and_show(
         let add_up_amounts = |account_names: &Vec<String>| -> Decimal {
             let mut total = Decimal::zero();
             for source in account_names {
-                info!("source: {}", source);
+                info!("source: {source}");
                 let snapshot = &snapshot_by_id[source];
                 for asset in snapshot.snapshot.iter() {
                     let val = in_common_currency[&asset.denomination] * asset.amount;
-                    info!("{:?}: {:?} in common currency", asset, val);
+                    info!("{asset:?}: {val:?} in common currency");
                     total += val;
                 }
             }
@@ -239,7 +240,7 @@ async fn model_and_show(
         };
 
         let portfolio_total = add_up_amounts(&c.portfolio);
-        info!("portfolio total: {}", portfolio_total);
+        info!("portfolio total: {portfolio_total}");
 
         let csrf_middleware_token: &str =
             "eFBajFh8XEERVEK6yuI00J4R1qWjonS4xv417X4toibJYzGc220Y36dEcFGcvFZr";
@@ -330,7 +331,7 @@ async fn model_and_show(
                 c.adjustment[0].year.to_string(),
             );
             let adjustment_total = add_up_amounts(&c.adjustment[0].source);
-            info!("adjustment total: {}", adjustment_total);
+            info!("adjustment total: {adjustment_total}");
             params.insert(
                 "form-0-amount_per_year".to_string(),
                 adjustment_total.to_string(),
@@ -357,7 +358,7 @@ async fn model_and_show(
                 ("end_year", "2100".to_string()),
                 ("inflation_type", "cpi".to_string()),
             ] {
-                params.insert(format!("form-{}-{}", i, k), v.clone());
+                params.insert(format!("form-{i}-{k}"), v.clone());
             }
         }
 
@@ -369,7 +370,7 @@ async fn model_and_show(
             .await
             .unwrap();
         if !response.status().is_success() {
-            println!("{:#?}", response);
+            println!("{response:#?}");
             println!("{:#?}", response.text().await);
             panic!("error response");
         }
@@ -409,11 +410,11 @@ async fn model_and_show(
 async fn main() {
     env_logger::init();
     let opt = Opt::from_args();
-    trace!("Options: {:?}", opt);
+    trace!("Options: {opt:?}");
 
     let xdg_dirs = xdg::BaseDirectories::with_prefix("worthy");
     let config = load_config(&xdg_dirs).unwrap();
-    trace!("Config: {:?}", config);
+    trace!("Config: {config:?}");
 
     let now = Utc::now().into();
 
@@ -505,7 +506,7 @@ async fn main() {
                 let file = File::open(&path).unwrap();
                 let snapshot: json_output::Snapshot =
                     serde_json::from_reader(file).unwrap_or_else(|error: serde_json::Error| {
-                        panic!("error parsing {}: {}", path, error)
+                        panic!("error parsing {path}: {error}")
                     });
 
                 wtr.write_record(&[
@@ -515,7 +516,7 @@ async fn main() {
                 .unwrap();
             }
 
-            println!("Written: {}", csv_path);
+            println!("Written: {csv_path}");
         }
         Server => panic!("TODO"),
     }

@@ -4,7 +4,7 @@ use rust_decimal_macros::*;
 
 // TODO: deduplicate
 fn decimal_log(x: Decimal) -> Decimal {
-    info!("ln({})", x);
+    info!("ln({x})");
     let x = x.to_f64().unwrap();
     Decimal::from_f64(x.ln()).unwrap()
 }

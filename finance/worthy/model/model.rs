@@ -46,7 +46,7 @@ impl FiInfo {
             State::Reached {
                 overreach_percentage,
             } => {
-                format!("{:.0}% ✓", overreach_percentage)
+                format!("{overreach_percentage:.0}% ✓")
             }
             State::NotReached {
                 lasts_until,
@@ -90,7 +90,7 @@ pub fn model_fi_info(
                 overreach_percentage: (total / target) * dec!(100),
             }
         } else {
-            info!("We need {}, we have {}", target, total);
+            info!("We need {target}, we have {total}");
             let durability =
                 differential::get_investment_durability(total, yearly_yield, monthly_goal);
             let need_years =

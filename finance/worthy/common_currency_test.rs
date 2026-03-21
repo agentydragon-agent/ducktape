@@ -20,7 +20,7 @@ fn one_conversion() {
         }],
         &czk,
     );
-    println!("{:?}", result);
+    println!("{result:?}");
     assert!((result[&usd] - dec!(30)).abs() < dec!(0.001));
 }
 
@@ -53,6 +53,6 @@ fn two_conversions_chain() {
         ],
         &plz,
     );
-    println!("{:?}", result);
+    println!("{result:?}");
     assert!((result[&usd] - dec!(6.0)).abs() < dec!(0.001));
 }
