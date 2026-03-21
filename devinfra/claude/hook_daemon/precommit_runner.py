@@ -25,8 +25,6 @@ from util.fs import restore_file
 
 logger = logging.getLogger(__name__)
 
-_MAX_OUTPUT_CHARS = 500
-
 
 @contextlib.contextmanager
 def _chdir(path: Path) -> Generator[None]:
@@ -43,9 +41,13 @@ def _chdir(path: Path) -> Generator[None]:
 class HookResult:
     hook_id: str
     hook_name: str
-    passed: bool
-    output: str
+    output: bytes
     files_modified: bool
+    exit_code: int
+
+    @property
+    def passed(self) -> bool:
+        return self.exit_code == 0 and not self.files_modified
 
 
 @dataclass
@@ -105,13 +107,7 @@ def _run_hooks(file_path: Path, project_dir: Path) -> list[HookResult]:
         modified = current_content != content_before_hook
         content_before_hook = current_content
         results.append(
-            HookResult(
-                hook_id=hook.id,
-                hook_name=hook.name,
-                passed=retcode == 0 and not modified,
-                output=out.decode(errors="replace").strip()[:_MAX_OUTPUT_CHARS],
-                files_modified=modified,
-            )
+            HookResult(hook_id=hook.id, hook_name=hook.name, output=out, files_modified=modified, exit_code=retcode)
         )
 
     return results

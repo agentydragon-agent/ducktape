@@ -26,6 +26,7 @@ FILE_MODIFYING_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit"})
 
 _MAX_ISSUES_SHOWN = 3
 _MAX_DIFF_LINES = 20
+_MAX_OUTPUT_CHARS = 500
 
 
 def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
@@ -62,10 +63,11 @@ def _format_check_result(result: RunResult, file_path: Path) -> str:
     noun = "hook" if len(failed) == 1 else "hooks"
     parts = [f"{len(failed)} {noun} failed on {file_path.name}:"]
     for hr in failed:
-        status = "modified file" if hr.files_modified else "non-zero exit"
+        status = "modified file" if hr.files_modified else f"exit {hr.exit_code}"
         parts.append(f"  {hr.hook_name} ({status})")
-        if hr.output:
-            for line in hr.output.splitlines()[:_MAX_ISSUES_SHOWN]:
+        output_text = hr.output.decode(errors="replace").strip()[:_MAX_OUTPUT_CHARS]
+        if output_text:
+            for line in output_text.splitlines()[:_MAX_ISSUES_SHOWN]:
                 parts.append(f"    {line}")
     diff = _make_short_diff(result.original_content, result.modified_content, file_path.name)
     if diff:
@@ -88,6 +90,19 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
         return PostToolUseOutput()
 
     run_result = run_on_file(file_path, project_dir)
+
+    for hr in run_result.hooks:
+        if hr.passed:
+            logger.debug("hook %s passed on %s", hr.hook_name, file_path.name)
+        else:
+            logger.info(
+                "hook %s failed on %s (exit_code=%d, files_modified=%s):\n%s",
+                hr.hook_name,
+                file_path.name,
+                hr.exit_code,
+                hr.files_modified,
+                hr.output.decode(errors="replace"),
+            )
 
     if run_result.all_passed:
         return PostToolUseOutput()

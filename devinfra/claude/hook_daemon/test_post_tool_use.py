@@ -122,7 +122,7 @@ def test_make_short_diff_truncates() -> None:
 def test_format_check_result_basic() -> None:
     result = RunResult(
         hooks=[
-            HookResult(hook_id="ruff", hook_name="ruff-format", passed=False, output="bad indent", files_modified=True)
+            HookResult(hook_id="ruff", hook_name="ruff-format", output=b"bad indent", files_modified=True, exit_code=1)
         ],
         original_content=b"x=1\n",
         modified_content=b"x = 1\n",
@@ -137,8 +137,8 @@ def test_format_check_result_basic() -> None:
 def test_format_check_result_with_diff() -> None:
     result = RunResult(
         hooks=[
-            HookResult(hook_id="ruff", hook_name="ruff-format", passed=False, output="err1", files_modified=True),
-            HookResult(hook_id="mypy", hook_name="mypy", passed=False, output="err2", files_modified=False),
+            HookResult(hook_id="ruff", hook_name="ruff-format", output=b"err1", files_modified=True, exit_code=1),
+            HookResult(hook_id="mypy", hook_name="mypy", output=b"err2", files_modified=False, exit_code=1),
         ],
         original_content=b"old\n",
         modified_content=b"new\n",
@@ -151,12 +151,12 @@ def test_format_check_result_with_diff() -> None:
 
 def test_format_check_result_non_zero_exit() -> None:
     result = RunResult(
-        hooks=[HookResult(hook_id="mypy", hook_name="mypy", passed=False, output="type error", files_modified=False)],
+        hooks=[HookResult(hook_id="mypy", hook_name="mypy", output=b"type error", files_modified=False, exit_code=1)],
         original_content=b"x = 1\n",
         modified_content=b"x = 1\n",
     )
     output = _format_check_result(result, Path("test.py"))
-    assert "mypy (non-zero exit)" in output
+    assert "mypy (exit 1)" in output
     assert "Changes pre-commit would make:" not in output
 
 
@@ -172,9 +172,9 @@ def test_precommit_with_diff(git_project: tuple[Path, Path]) -> None:
             HookResult(
                 hook_id="ruff-format",
                 hook_name="ruff-format",
-                passed=False,
-                output="- files were modified by this hook",
+                output=b"- files were modified by this hook",
                 files_modified=True,
+                exit_code=0,
             )
         ],
         original_content=b"x=1\n",
@@ -199,7 +199,7 @@ def test_precommit_no_file_change(git_project: tuple[Path, Path]) -> None:
     fake_result = RunResult(
         hooks=[
             HookResult(
-                hook_id="check-yaml", hook_name="check-yaml", passed=False, output="invalid yaml", files_modified=False
+                hook_id="check-yaml", hook_name="check-yaml", output=b"invalid yaml", files_modified=False, exit_code=1
             )
         ],
         original_content=b"x=1\n",
@@ -222,7 +222,7 @@ def test_precommit_passes(git_project: tuple[Path, Path]) -> None:
 
     fake_result = RunResult(
         hooks=[
-            HookResult(hook_id="ruff-format", hook_name="ruff-format", passed=True, output="", files_modified=False)
+            HookResult(hook_id="ruff-format", hook_name="ruff-format", output=b"", files_modified=False, exit_code=0)
         ],
         original_content=b"x=1\n",
         modified_content=b"x=1\n",
@@ -255,16 +255,16 @@ def test_precommit_multiple_hooks_fail(git_project: tuple[Path, Path]) -> None:
             HookResult(
                 hook_id="ruff-format",
                 hook_name="ruff-format",
-                passed=False,
-                output="- files were modified",
+                output=b"- files were modified",
                 files_modified=True,
+                exit_code=0,
             ),
             HookResult(
                 hook_id="ruff-check",
                 hook_name="ruff-check",
-                passed=False,
-                output="E001 bad style",
+                output=b"E001 bad style",
                 files_modified=False,
+                exit_code=1,
             ),
         ],
         original_content=b"x=1\n",
