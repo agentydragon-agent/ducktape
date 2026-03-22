@@ -3,7 +3,6 @@
 Handles startup and shutdown of application-scoped resources (database engine, templates, etc.).
 """
 
-import asyncio
 import logging
 import os
 from collections.abc import AsyncGenerator, Callable
@@ -19,7 +18,6 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi_csrf_protect import CsrfProtect
 from pydantic import BaseModel
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from x.gatelet.server.auth.dependencies import (
@@ -137,26 +135,6 @@ def _register_auth_routes(app: FastAPI, settings: Settings) -> None:
     logger.info("Auth-wrapped routes registered")
 
 
-async def _wait_for_database(dsn: str, *, timeout: float = 60, interval: float = 1) -> None:
-    """Wait for the database to accept connections."""
-    engine = create_async_engine(dsn, pool_pre_ping=True)
-    deadline = asyncio.get_event_loop().time() + timeout
-    last_exc: Exception | None = None
-    try:
-        while asyncio.get_event_loop().time() < deadline:
-            try:
-                async with engine.connect() as conn:
-                    await conn.execute(text("SELECT 1"))
-                logger.info("Database is ready")
-                return
-            except Exception as exc:
-                last_exc = exc
-                await asyncio.sleep(interval)
-        raise TimeoutError(f"Database not ready after {timeout}s: {last_exc}")
-    finally:
-        await engine.dispose()
-
-
 def _run_migrations(dsn: str) -> None:
     """Run alembic migrations to head."""
     alembic_cfg = AlembicConfig()
@@ -186,10 +164,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logger.info("Starting Gatelet server...")
     settings = get_settings()
 
-    # Wait for database and run migrations (opt-in via env var for container deployments).
+    # Run migrations (opt-in via env var for container deployments).
     # Tests manage their own schema via Base.metadata.create_all in conftest fixtures.
     if os.environ.get("GATELET_RUN_MIGRATIONS") == "1":
-        await _wait_for_database(str(settings.database.dsn))
         _run_migrations(str(settings.database.dsn))
 
     # Initialize CSRF protection (deferred from import time)
