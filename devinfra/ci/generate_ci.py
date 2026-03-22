@@ -15,7 +15,7 @@ import yaml
 
 from devinfra.ci.diff_utils import BAZEL_DIFF_VERSION
 from devinfra.ci.github_actions import Job, Step, Workflow
-from devinfra.ci.models import HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
+from devinfra.ci.models import AlwaysTrigger, HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
 from devinfra.prettier import prettier_format_in_place
 from util.bazel.workspace import BazelLabel, get_build_workspace_directory
 
@@ -30,6 +30,9 @@ HEADER = """\
 # AUTO-GENERATED from devinfra/ci/workflows.yaml - DO NOT EDIT DIRECTLY
 # Regenerate with: bazel run //devinfra/ci:generate_ci_bin
 """
+
+
+HARBOR_REGISTRY = "registry.allegedly.works"
 
 
 COMPUTE_TARGETS_JOB = Job(
@@ -106,15 +109,24 @@ COMPUTE_TARGETS_JOB = Job(
 )
 
 
-RBE_IMAGE_JOB = "rbe-image"
+DOCKERFILE_IMAGES_JOB = "dockerfile-images"
 
 
 def _uses_rbe(name: str, config: WorkflowConfig) -> bool:
     """Whether this workflow uses BuildBuddy RBE and should receive rbe_image."""
-    return name != RBE_IMAGE_JOB and config.secrets == "inherit" and config.rbe
+    return name != DOCKERFILE_IMAGES_JOB and config.secrets == "inherit" and config.buildbuddy_rbe
 
 
-def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: bool) -> Job:
+def _event_filter(config: WorkflowConfig) -> str | None:
+    """Build a GHA `if` expression for event filtering, or None if all events are allowed."""
+    default_events = frozenset({"push", "pull_request", "workflow_dispatch"})
+    if config.events == default_events:
+        return None
+    conditions = [f"github.event_name == '{e}'" for e in sorted(config.events)]
+    return " || ".join(conditions)
+
+
+def build_workflow_job(name: str, config: WorkflowConfig, *, has_dockerfile_images_job: bool) -> Job:
     """Build a job definition from workflow config."""
     with_args: dict[str, str] = {}
     if config.targets:
@@ -122,22 +134,37 @@ def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: 
     if config.inputs:
         with_args.update(config.inputs)
 
-    needs: str | list[str] = "compute-targets"
-    if_cond = f"contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), '{name}')"
+    # Always-trigger workflows don't need compute-targets — they can start
+    # immediately, which is faster since compute-targets runs bazel-diff.
+    is_always = isinstance(config.trigger, AlwaysTrigger)
+
+    needs_list: list[str] = [] if is_always else ["compute-targets"]
+
+    # The trigger condition gates whether the job runs at all.
+    if is_always:
+        trigger_cond = _event_filter(config)
+    else:
+        trigger_cond = f"contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), '{name}')"
 
     # Bazel workflows that use RBE should wait for the rbe-image job (when
     # it exists) and forward the built image reference. The job may be skipped
     # when no RBE image files changed, so we allow skipped results.
-    if has_rbe_image_job and _uses_rbe(name, config):
-        needs = ["compute-targets", RBE_IMAGE_JOB]
-        if_cond = (
-            f"always() && !cancelled() && !failure() "
-            f"&& contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), '{name}')"
-        )
-        with_args["rbe_image"] = f"${{{{ needs.{RBE_IMAGE_JOB}.outputs.rbe_image }}}}"
+    if has_dockerfile_images_job and _uses_rbe(name, config):
+        needs_list.append(DOCKERFILE_IMAGES_JOB)
+        with_args["rbe_image"] = f"${{{{ needs.{DOCKERFILE_IMAGES_JOB}.outputs.rbe_image }}}}"
+
+    # When a job has dependencies that may be skipped, we need
+    # always() && !cancelled() && !failure() to allow running anyway.
+    has_skippable_deps = len(needs_list) > 1 or (needs_list and is_always)
+    if has_skippable_deps:
+        if_cond = "always() && !cancelled() && !failure()"
+        if trigger_cond:
+            if_cond += f" && ({trigger_cond})"
+    else:
+        if_cond = trigger_cond
 
     return Job(
-        needs=needs,
+        needs=needs_list or None,
         if_cond=if_cond,
         uses=f"./.github/workflows/{name}.yml",
         with_args=with_args if with_args else None,
@@ -147,17 +174,19 @@ def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: 
 
 def generate_ci_config(manifest: WorkflowManifest) -> Workflow:
     """Generate the complete ci.yml config."""
-    has_rbe_image_job = RBE_IMAGE_JOB in manifest.workflows
+    has_dockerfile_images_job = DOCKERFILE_IMAGES_JOB in manifest.workflows
 
     jobs: dict[str, Job] = {"compute-targets": COMPUTE_TARGETS_JOB}
     for name, config in manifest.workflows.items():
-        jobs[name] = build_workflow_job(name, config, has_rbe_image_job=has_rbe_image_job)
+        jobs[name] = build_workflow_job(name, config, has_dockerfile_images_job=has_dockerfile_images_job)
 
-    # Jobs that push to GHCR need packages:write.
-    ghcr_jobs = {"rbe-image", "e2e-container-image"}
+    # Merge permissions from all workflows — each workflow declares what
+    # the caller (ci.yml) needs. write > read when both are requested.
     permissions: dict[str, str] = {"contents": "read"}
-    if ghcr_jobs & manifest.workflows.keys():
-        permissions["packages"] = "write"
+    for config in manifest.workflows.values():
+        for perm, level in config.permissions.items():
+            if level == "write" or perm not in permissions:
+                permissions[perm] = level
 
     return Workflow(
         name="CI",
@@ -540,7 +569,13 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
         "  exit 0\n"
         "fi\n"
         "\n"
-        'git commit -m "chore: bump release artifacts [skip ci]"\n'
+        "BUMPED=()\n"
+        + "".join(
+            f'if [ "${{{{ needs.release-{_pkg_id(n)}.outputs.released }}}}" = "true" ]; then BUMPED+=({n}); fi\n'
+            for n in pkg_names
+        )
+        + 'BUMPED_STR=$(IFS=", "; echo "${BUMPED[*]}")\n'
+        'git commit -m "chore: bump release artifacts ($BUMPED_STR) [skip ci]"\n'
         "\n"
         'BRANCH="${{ github.ref_name }}"\n'
         'git pull --rebase origin "$BRANCH"\n'
@@ -592,8 +627,6 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
         jobs=jobs,
     )
 
-
-HARBOR_REGISTRY = "registry.allegedly.works"
 
 
 def generate_harbor_images_config(images: list[HarborImageConfig]) -> Workflow:

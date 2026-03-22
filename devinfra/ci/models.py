@@ -60,8 +60,11 @@ class WorkflowConfig(BaseModel):
     targets: bool = False
     inputs: dict[str, str] = Field(default_factory=dict)
     secrets: Literal["inherit"] | None = None
-    rbe: bool = True
+    buildbuddy_rbe: bool = True
     events: frozenset[str] = frozenset({"push", "pull_request", "workflow_dispatch"})
+    permissions: dict[str, str] = Field(
+        default_factory=dict, description="Extra permissions the caller (ci.yml) needs for this workflow"
+    )
 
 
 class ExtraJobStep(BaseModel):

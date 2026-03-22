@@ -383,7 +383,14 @@ jobs:
             exit 0
           fi
 
-          git commit -m "chore: bump release artifacts [skip ci]"
+          BUMPED=()
+          if [ "${{ needs.release-claude_hooks.outputs.released }}" = "true" ]; then BUMPED+=(claude-hooks); fi
+          if [ "${{ needs.release-ducktape.outputs.released }}" = "true" ]; then BUMPED+=(ducktape); fi
+          if [ "${{ needs.release-headscale_cleanup.outputs.released }}" = "true" ]; then BUMPED+=(headscale-cleanup); fi
+          if [ "${{ needs.release-gterm_theme.outputs.released }}" = "true" ]; then BUMPED+=(gterm-theme); fi
+          if [ "${{ needs.release-skills.outputs.released }}" = "true" ]; then BUMPED+=(skills); fi
+          BUMPED_STR=$(IFS=", "; echo "${BUMPED[*]}")
+          git commit -m "chore: bump release artifacts ($BUMPED_STR) [skip ci]"
 
           BRANCH="${{ github.ref_name }}"
           git pull --rebase origin "$BRANCH"

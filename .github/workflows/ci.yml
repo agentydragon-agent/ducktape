@@ -13,7 +13,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 permissions:
-  contents: read
+  contents: write
   packages: write
 jobs:
   compute-targets:
@@ -83,63 +83,56 @@ jobs:
   bazel-check:
     needs:
       - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-check')
+      - dockerfile-images
+    if: always() && !cancelled() && !failure() && (contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-check'))
     uses: ./.github/workflows/bazel-check.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+      rbe_image: ${{ needs.dockerfile-images.outputs.rbe_image }}
     secrets: inherit
   bazel-test:
     needs:
       - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-test')
+      - dockerfile-images
+    if: always() && !cancelled() && !failure() && (contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-test'))
     uses: ./.github/workflows/bazel-test.yml
     with:
       targets: ${{ needs.compute-targets.outputs.targets }}
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+      rbe_image: ${{ needs.dockerfile-images.outputs.rbe_image }}
     secrets: inherit
-  rbe-image:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')
-    uses: ./.github/workflows/rbe-image.yml
-  e2e-container-image:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'e2e-container-image')
-    uses: ./.github/workflows/e2e-container-image.yml
+  dockerfile-images:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/dockerfile-images.yml
+    secrets: inherit
   props-images:
     needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'props-images')
+      - dockerfile-images
+    if: always() && !cancelled() && !failure() && (github.event_name == 'push')
     uses: ./.github/workflows/props-images.yml
     with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+      rbe_image: ${{ needs.dockerfile-images.outputs.rbe_image }}
     secrets: inherit
   bazel-harbor-images:
     needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-harbor-images')
+      - dockerfile-images
+    if: always() && !cancelled() && !failure() && (github.event_name == 'push')
     uses: ./.github/workflows/bazel-harbor-images.yml
     with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+      rbe_image: ${{ needs.dockerfile-images.outputs.rbe_image }}
     secrets: inherit
   openclaw-image:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-image')
+    if: github.event_name == 'push'
     uses: ./.github/workflows/openclaw-image.yml
     secrets: inherit
   nix-flake-check:
-    needs: compute-targets
+    needs:
+      - compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')
     uses: ./.github/workflows/nix-flake-check.yml
   ansible-lint:
-    needs: compute-targets
+    needs:
+      - compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'ansible-lint')
     uses: ./.github/workflows/ansible-lint.yml
   pre-commit:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'pre-commit')
     uses: ./.github/workflows/pre-commit.yml

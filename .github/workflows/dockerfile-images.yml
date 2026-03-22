@@ -1,0 +1,152 @@
+# Build and push all Dockerfile-based images (GHCR + Harbor).
+#
+# Always triggers on push via ci.yml. Registry-based layer caching makes
+# unchanged rebuilds fast on ephemeral GHA runners. Consolidates what was
+# previously rbe-image.yml, e2e-container-image.yml, and tana-mcp-image.yml.
+#
+# Image pins (RBE tag, e2e digest) are stored in devinfra/image_pins.json
+# and updated structurally with Python — no sed on Starlark files.
+name: Dockerfile Images
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      rbe_image:
+        description: "Full RBE image reference (e.g. ghcr.io/.../rbe-worker:<sha>)"
+        value: ${{ jobs.build-and-push.outputs.rbe_image }}
+    secrets:
+      HARBOR_ROBOT_USERNAME:
+        required: true
+      HARBOR_ROBOT_TOKEN:
+        required: true
+
+concurrency:
+  group: dockerfile-images-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  GHCR_OWNER: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  build-and-push:
+    name: Build and Push
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      rbe_image: ${{ steps.rbe-meta.outputs.rbe_image }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
+
+      # --- Registry logins ---
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: registry.allegedly.works
+          username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
+          password: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+
+      # --- RBE Worker (GHCR) ---
+      - name: Compute RBE worker tags
+        id: rbe-meta
+        run: |
+          SHA="${{ github.sha }}"
+          TS="$(date -u +%Y%m%d%H%M%S)"
+          BRANCH="${{ github.ref_name }}"
+          PIN_TAG="${BRANCH}-${TS}-${SHA:0:7}"
+          IMAGE="${{ env.GHCR_OWNER }}/rbe-worker"
+          TAGS="${IMAGE}:${SHA},${IMAGE}:${PIN_TAG},${IMAGE}:latest"
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "rbe_image=${IMAGE}:${SHA}" >> "$GITHUB_OUTPUT"
+          echo "pin_tag=$PIN_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push RBE worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: devinfra/rbe_image/Dockerfile
+          push: true
+          tags: ${{ steps.rbe-meta.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.GHCR_OWNER }}/rbe-worker:latest
+          cache-to: type=inline
+
+      # --- E2E Container (GHCR) ---
+      - name: Build and push E2E container
+        id: e2e-build
+        uses: docker/build-push-action@v6
+        with:
+          context: devinfra/claude/testing/container_e2e
+          file: devinfra/claude/testing/container_e2e/Dockerfile
+          push: true
+          tags: |
+            ${{ env.GHCR_OWNER }}/e2e-container:latest
+            ${{ env.GHCR_OWNER }}/e2e-container:${{ github.sha }}
+          cache-from: type=registry,ref=${{ env.GHCR_OWNER }}/e2e-container:latest
+          cache-to: type=inline
+
+      # --- Tana MCP Desktop (Harbor) ---
+      - uses: ./.github/actions/harbor-build-push
+        with:
+          image: registry.allegedly.works/ducktape/tana-desktop
+          context: tana/mcp_server
+          harbor_robot_username: ${{ secrets.HARBOR_ROBOT_USERNAME }}
+          harbor_robot_token: ${{ secrets.HARBOR_ROBOT_TOKEN }}
+
+      # --- Update image pins (structured JSON, no sed) ---
+      - name: Update image pins
+        run: |
+          python3 -c "
+          import json, pathlib
+          pins_path = pathlib.Path('devinfra/image_pins.json')
+          pins = json.loads(pins_path.read_text())
+          pins['rbe-worker']['tag'] = '${{ steps.rbe-meta.outputs.pin_tag }}'
+          pins['e2e-container']['tag'] = '${{ github.sha }}'
+          pins['e2e-container']['digest'] = '${{ steps.e2e-build.outputs.digest }}'
+          pins_path.write_text(json.dumps(pins, indent=2, sort_keys=True) + '\n')
+          "
+
+      - name: Commit and push pin updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add devinfra/image_pins.json
+          if git diff --cached --quiet; then
+            echo "No pin changes"
+            exit 0
+          fi
+          git commit -m "chore: update image pins [skip ci]"
+          BRANCH="${{ github.ref_name }}"
+          if ! git pull --rebase origin "$BRANCH"; then
+            echo "::error::Rebase failed"
+            git status
+            exit 1
+          fi
+          git push origin "HEAD:${BRANCH}"
+
+  # Clean up old GHCR images to avoid storage bloat
+  cleanup-e2e-images:
+    name: Cleanup Old E2E Images
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/delete-package-versions@v5
+        with:
+          package-name: e2e-container
+          package-type: container
+          min-versions-to-keep: 10
+          delete-only-untagged-versions: false

@@ -32,7 +32,13 @@ from pydantic import BaseModel, Field
 from devinfra.ci.bazel_query import filter_for_ci, query_with_targets
 from devinfra.ci.diff_utils import get_changed_files, get_ci_base_commit, has_infra_changes, run_bazel_diff
 from devinfra.ci.github_actions import CIEnvironment, PushStrategy
-from devinfra.ci.models import AlwaysTrigger, BazelQueryTrigger, PathPatternTrigger, WorkflowConfig, WorkflowManifest
+from devinfra.ci.models import (
+    AlwaysTrigger,
+    BazelQueryTrigger,
+    PathPatternTrigger,
+    WorkflowConfig,
+    WorkflowManifest,
+)
 from util.bazel.workspace import BazelWorkspace
 from util.env import get_optional_env_path, get_required_existing_path
 from util.fmt import format_limited_list

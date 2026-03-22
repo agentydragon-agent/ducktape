@@ -58,3 +58,5 @@ runs:
         file: ${{ inputs.file }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
+        cache-from: type=registry,ref=${{ inputs.image }}:latest
+        cache-to: type=inline

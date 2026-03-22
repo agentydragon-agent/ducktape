@@ -1,0 +1,11 @@
+{
+  "e2e-container": {
+    "digest": "sha256:4316440032a7985420eb5859ba9898717dcfd0b89f09aa2371dae919be9e62e6",
+    "image": "ghcr.io/agentydragon/e2e-container",
+    "tag": "b9b1b5d543f5185ad46645a364696f1fdc96eb04"
+  },
+  "rbe-worker": {
+    "image": "ghcr.io/agentydragon/rbe-worker",
+    "tag": "devel-20260321132610-48758fa"
+  }
+}

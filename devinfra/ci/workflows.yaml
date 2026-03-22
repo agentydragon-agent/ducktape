@@ -32,19 +32,22 @@ workflows:
     targets: true
     secrets: inherit
 
-  # Image builds
-  rbe-image:
-    trigger: { kind: path, pattern: "^devinfra/rbe_image/" }
+  # Dockerfile-based images (RBE worker, E2E container, Tana MCP).
+  # Always trigger on push with registry-based layer caching for fast
+  # unchanged rebuilds. Pins updated via devinfra/image_pins.json.
+  dockerfile-images:
+    trigger: { kind: always }
+    events: [push]
+    secrets: inherit
+    buildbuddy_rbe: false
+    permissions: { contents: write, packages: write }
 
   e2e-container-image:
     trigger: { kind: path, pattern: "^devinfra/claude/testing/container_e2e/Dockerfile" }
 
-  # Bazel image workflows always trigger. Bazel builds are hermetic, so same
-  # inputs → same image digest. Docker push deduplicates at the blob level
-  # (existing layers aren't re-uploaded), so unchanged images have minimal
-  # network cost. Always-trigger also avoids the stale-image bug where
-  # bazel-diff (HEAD vs HEAD~1) misses changes from earlier commits whose
-  # push step failed.
+  # Bazel image workflows always trigger. Bazel builds are hermetic,
+  # so same inputs → same image digest. harbor_push.sh compares the local
+  # digest against the registry and skips the push when unchanged.
   props-images:
     trigger: { kind: always }
     events: [push]
@@ -57,11 +60,12 @@ workflows:
     events: [push]
     secrets: inherit
 
+  # OpenClaw stays separate (has bazel pre-build step for airlock plugin).
   openclaw-image:
-    trigger: { kind: path, pattern: "^(openclaw/|airlock/openclaw/)" }
+    trigger: { kind: always }
     events: [push]
     secrets: inherit
-    rbe: false
+    buildbuddy_rbe: false
 
   # Path-based workflows (non-Bazel)
   nix-flake-check:
