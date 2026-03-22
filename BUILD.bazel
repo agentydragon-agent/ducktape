@@ -183,6 +183,7 @@ py_wheel(
         "console_scripts": [
             "claude-hook = devinfra.claude.hook_daemon.hook_dispatch:main",
             "claude-statusline = devinfra.claude.statusline:main",
+            "ducktape-precommit = devinfra.precommit.ducktape_precommit:main",
         ],
     },
     python_requires = ">=3.13",

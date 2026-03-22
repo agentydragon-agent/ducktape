@@ -334,7 +334,7 @@ async def _setup_web(
 
     @tracer.start_as_current_span("install_precommit", context=root_ctx)
     async def traced_precommit():
-        return await run_in_thread(precommit.install_precommit, project_dir, paths.session_dir)
+        return await run_in_thread(precommit.install_precommit, project_dir)
 
     @tracer.start_as_current_span("install_cli_tools", context=root_ctx)
     async def traced_cli_tools():
@@ -621,6 +621,7 @@ async def run_session(
             container=setup.container,
             precommit=setup.precommit_result,
             PrecommitInstallingHooks=precommit.PrecommitInstallingHooks,
+            PrecommitNotInstalled=precommit.PrecommitNotInstalled,
             mkcert=setup.mkcert_result,
             log_entries=collector.buffer,
             secrets=setup.secrets,
