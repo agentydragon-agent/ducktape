@@ -123,6 +123,18 @@ variable "vga_memory_mb" {
   default     = 256
 }
 
+variable "audio_device" {
+  description = "Audio device type (e.g. 'ich9-intel-hda', 'AC97', null = no audio)"
+  type        = string
+  default     = null
+}
+
+variable "audio_driver" {
+  description = "Audio driver/output (e.g. 'spice', 'none')"
+  type        = string
+  default     = "spice"
+}
+
 # K8s cluster join credentials (optional)
 variable "k8s_cluster_join" {
   description = "K8s cluster join credentials. When set, cloud-init writes credential files for kubelet and Nebula mesh."

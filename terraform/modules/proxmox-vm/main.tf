@@ -66,6 +66,16 @@ resource "proxmox_virtual_environment_vm" "vm" {
     }
   }
 
+  # Audio device (e.g. ich9-intel-hda with spice driver for SPICE client audio)
+  dynamic "audio_device" {
+    for_each = var.audio_device != null ? [var.audio_device] : []
+    content {
+      device  = audio_device.value
+      driver  = var.audio_driver
+      enabled = true
+    }
+  }
+
   # VGA display (e.g. virtio for VNC console, qxl for SPICE)
   dynamic "vga" {
     for_each = var.vga_type != null ? [var.vga_type] : []

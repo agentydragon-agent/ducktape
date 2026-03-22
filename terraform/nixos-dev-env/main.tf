@@ -148,6 +148,8 @@ module "wyrm2" {
   memory_floating_mb = 0 # Disable balloon (VFIO incompatible)
   gpu_pci_ids        = ["0000:01:00.0", "0000:03:00.0"]
   vga_type           = "virtio"
+  audio_device       = "ich9-intel-hda"
+  audio_driver       = "spice"
   # cache=never: virtiofsd with cache=auto leaks memory — it caches all accessed
   # files with no eviction, growing to 10+ GiB over days. On a 128 GiB host with
   # 96 GiB pinned for this VM, that starves ZFS ARC and causes system-wide stalls.
