@@ -25,33 +25,26 @@ priority.
 
 ## 2. Terraform State: Single Point of Failure
 
-**Risk**: High
-**Current state**: `persistent-auth/terraform.tfstate` is local-only, no backup
+**Risk**: Medium (partially mitigated)
 
-This file is the SSOT for the sealed-secrets keypair, Proxmox CSI tokens, Nix signing
-key, and Flux deploy key. Losing it means:
+`nixos-dev-env` state migrated to `pg` backend (CNPG `tofu-state-db`, 2 replicas on
+VPS `local-path`). Backup CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every
+6 hours. Access via `kubectl port-forward`.
+
+`persistent-auth/terraform.tfstate` remains local-only, no backup. This file is the SSOT
+for the sealed-secrets keypair, Proxmox CSI tokens, Nix signing key, and Flux deploy key.
+Losing it means:
 
 - All SealedSecrets in git become undecryptable (5 sealed secrets)
 - CSI storage tokens desynchronize with Proxmox
 - Full secret re-generation and git commit churn required
 
-### Current Best Practice
-
-Remote state with encryption, versioning, and locking. For OpenTofu (which the cluster
-uses), the options ranked by fit:
-
-| Option                                   | Complexity | Cost                | Fit                              |
-| ---------------------------------------- | ---------- | ------------------- | -------------------------------- |
-| **S3 + native locking** (OpenTofu 1.11+) | Low        | ~$0.50/mo           | Best for infrastructure state    |
-| **Encrypted git (git-crypt/SOPS)**       | Low        | Free                | Acceptable for small state files |
-| **rclone to cloud storage**              | Low        | Free-$2/mo          | Simple backup, no locking        |
-| **HCP Terraform / Spacelift**            | Medium     | Free tier available | Overkill for personal infra      |
-
 ### Recommendation
 
-**Minimum viable**: rclone cron job pushing encrypted state to Google Drive or S3.
-**Better**: Migrate to S3 backend with `use_lockfile = true` (OpenTofu native locking,
-no DynamoDB needed). Enable S3 versioning for automatic rollback.
+Migrate `persistent-auth` state to a remote backend (S3 with encryption + versioning,
+or rclone to encrypted cloud as minimum viable). The `pg` backend used by `nixos-dev-env`
+is not suitable for `persistent-auth` since it bootstraps the cluster the pg backend
+lives in.
 
 OpenTofu now supports [native state encryption](https://opentofu.org/docs/language/state/encryption/)
 — encrypt at rest without relying on the storage layer. This is an OpenTofu-exclusive
@@ -119,14 +112,14 @@ that operate on workload identity rather than IP addresses.
 
 ### Key Policies to Create
 
-| Policy           | Scope                        | Purpose             |
-| ---------------- | ---------------------------- | ------------------- |
-| Default deny all | Every namespace              | Zero-trust baseline |
-| Allow DNS        | All pods → kube-dns          | CoreDNS resolution  |
-| Allow ingress    | Cilium gateway → backend pods | HTTP routing       |
-| Allow Vault      | ESO → Vault                  | Secret sync         |
-| Allow monitoring | Prometheus → all pods        | Metric scraping     |
-| Allow Authentik  | Apps → Authentik             | SSO/forward-auth    |
+| Policy           | Scope                         | Purpose             |
+| ---------------- | ----------------------------- | ------------------- |
+| Default deny all | Every namespace               | Zero-trust baseline |
+| Allow DNS        | All pods → kube-dns           | CoreDNS resolution  |
+| Allow ingress    | Cilium gateway → backend pods | HTTP routing        |
+| Allow Vault      | ESO → Vault                   | Secret sync         |
+| Allow monitoring | Prometheus → all pods         | Metric scraping     |
+| Allow Authentik  | Apps → Authentik              | SSO/forward-auth    |
 
 ---
 
@@ -373,10 +366,10 @@ For the current scale (62 modules, single operator), the pragmatic path is:
 
 ### P0 — Do Now (Blocking/Urgent)
 
-| #   | Item                                                  | Risk                                | Effort |
-| --- | ----------------------------------------------------- | ----------------------------------- | ------ |
-| 1   | ~~**Migrate off ingress-nginx**~~ (DONE 2026-02-16)   | ~~Service disruption~~              | ~~Done~~ |
-| 2   | **Back up persistent-auth tofu state**                | Unrecoverable secret loss           | Small  |
+| #   | Item                                                | Risk                      | Effort   |
+| --- | --------------------------------------------------- | ------------------------- | -------- |
+| 1   | ~~**Migrate off ingress-nginx**~~ (DONE 2026-02-16) | ~~Service disruption~~    | ~~Done~~ |
+| 2   | **Back up persistent-auth tofu state**              | Unrecoverable secret loss | Small    |
 
 ### P1 — Do Soon (High Value)
 
@@ -390,15 +383,15 @@ For the current scale (62 modules, single operator), the pragmatic path is:
 
 ### P2 — Do When Convenient (Good Practice)
 
-| #   | Item                                                 | Risk                          | Effort |
-| --- | ---------------------------------------------------- | ----------------------------- | ------ |
-| 8   | **Kyverno Audit → Enforce**                          | Configuration drift           | Small  |
-| 9   | **SLO definitions** (Pyrra/Sloth)                    | Alert fatigue / missed issues | Medium |
-| 10  | **Velero for PVC backup**                            | Application data loss         | Medium |
-| 11  | **ResourceQuota + LimitRange** per namespace         | Resource contention           | Small  |
-| 12  | **Golden Signals dashboards**                        | Visibility gaps               | Small  |
-| 13  | ~~**Flux webhook receiver**~~ (DONE)                 | ~~Reconciliation delay~~      | ~~Done~~ |
-| 14  | **Image registry allowlist** via Kyverno             | Supply chain risk             | Small  |
+| #   | Item                                         | Risk                          | Effort   |
+| --- | -------------------------------------------- | ----------------------------- | -------- |
+| 8   | **Kyverno Audit → Enforce**                  | Configuration drift           | Small    |
+| 9   | **SLO definitions** (Pyrra/Sloth)            | Alert fatigue / missed issues | Medium   |
+| 10  | **Velero for PVC backup**                    | Application data loss         | Medium   |
+| 11  | **ResourceQuota + LimitRange** per namespace | Resource contention           | Small    |
+| 12  | **Golden Signals dashboards**                | Visibility gaps               | Small    |
+| 13  | ~~**Flux webhook receiver**~~ (DONE)         | ~~Reconciliation delay~~      | ~~Done~~ |
+| 14  | **Image registry allowlist** via Kyverno     | Supply chain risk             | Small    |
 
 ### P3 — Future Consideration
 
