@@ -7,7 +7,7 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_binary(
     name = "server",
     imports = ["../../.."],
-    main_module = "hack.gatelet.server.main",
+    main_module = "x.gatelet.server.main",
     visibility = ["//x/gatelet:__pkg__"],
     deps = [":main"],
 )
@@ -85,6 +85,11 @@ py_library(
 py_library(
     name = "lifespan",
     srcs = ["lifespan.py"],
+    data = [
+        "//x/gatelet/server/migrations:env",
+        "//x/gatelet/server/migrations/versions:001_initial_schema",
+        "//x/gatelet/server/migrations/versions:002_normalize_webhook_payload",
+    ],
     imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
@@ -94,6 +99,7 @@ py_library(
         "//x/gatelet/server/endpoints:activitywatch",
         "//x/gatelet/server/endpoints:homeassistant",
         "//x/gatelet/server/endpoints:webhook_view",
+        "@pypi//alembic",
         "@pypi//fastapi",
         "@pypi//fastapi_csrf_protect",
         "@pypi//jinja2",

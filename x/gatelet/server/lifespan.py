@@ -4,12 +4,15 @@ Handles startup and shutdown of application-scoped resources (database engine, t
 """
 
 import logging
+import os
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 from typing import Literal
 
+from alembic import command as alembic_command
+from alembic.config import Config as AlembicConfig
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -132,6 +135,16 @@ def _register_auth_routes(app: FastAPI, settings: Settings) -> None:
     logger.info("Auth-wrapped routes registered")
 
 
+def _run_migrations(dsn: str) -> None:
+    """Run alembic migrations to head."""
+    alembic_cfg = AlembicConfig()
+    alembic_cfg.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+    alembic_cfg.set_main_option("sqlalchemy.url", dsn.replace("+asyncpg", ""))
+    logger.info("Running database migrations...")
+    alembic_command.upgrade(alembic_cfg, "head")
+    logger.info("Database migrations complete")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifespan: startup and shutdown.
@@ -150,6 +163,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # Startup
     logger.info("Starting Gatelet server...")
     settings = get_settings()
+
+    # Run migrations (opt-in via env var for container deployments).
+    # Tests manage their own schema via Base.metadata.create_all in conftest fixtures.
+    if os.environ.get("GATELET_RUN_MIGRATIONS") == "1":
+        _run_migrations(str(settings.database.dsn))
 
     # Initialize CSRF protection (deferred from import time)
     _init_csrf_config(settings.security.csrf_secret)

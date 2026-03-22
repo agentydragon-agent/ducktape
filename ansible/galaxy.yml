@@ -17,7 +17,7 @@ homepage: https://gitlab.com/agentydragon/ducktape
 issues: https://gitlab.com/agentydragon/ducktape/-/issues
 build_ignore:
   - .ansible
-  - molecule
+
   - tools
   - docs
   - tasker
