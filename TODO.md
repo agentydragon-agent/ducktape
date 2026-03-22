@@ -34,6 +34,26 @@
 - [ ] Set up BuildBuddy [remote runner features](https://www.buildbuddy.io/docs/remote-runner-features) for artifacts / extra test outputs
 - [ ] Upgrade protobuf once UPB uninitialized variable warnings are fixed upstream. Currently on `protobuf 34.0.bcr.1` (latest in BCR as of March 2026). GCC emits `-Wmaybe-uninitialized` warnings from `external/protobuf+/upb/wire/decode.c` (lines 281, 732, 1089: `upb_StringView sv` used uninitialized). These are false positives from GCC's static analysis failing to prove the variable is always set before use. Upstream issues: [#17052](https://github.com/protocolbuffers/protobuf/issues/17052), [PR #18805](https://github.com/protocolbuffers/protobuf/pull/18805). Also `src/google/protobuf/compiler/rust/message.cc` triggers `-Wdeprecated-declarations` for `FieldOptions::weak()`. Monitor protobuf releases >34.0 for fixes.
 
+## Dependency Tracking (Renovate)
+
+Renovate is configured (`renovate.json`) with `config:recommended` and dashboard-only mode (`prCreation: "approval"`).
+
+### Custom Renovate managers
+
+Add regex managers for upstream dependencies that `config:recommended` doesn't cover:
+
+- [ ] `oci.pull` blocks in `MODULE.bazel` (image + tag + digest → `docker` datasource)
+- [ ] Terraform provider versions in `tf.download(mirror = {...})` in `MODULE.bazel` (→ `terraform-provider` datasource)
+- [ ] OpenTofu version in `MODULE.bazel` (`version = "1.11.2"` in `tf.download`)
+- [ ] `tfdoc_version` and `tflint_version` in `MODULE.bazel`
+- [ ] Helm chart versions in `cluster/k8s/**/helmrelease.yaml` (verify Flux manager covers these)
+- [ ] Container image tags in `cluster/k8s/**/*.yaml` (verify Docker manager covers these)
+- [ ] Talos extension/imager versions if pinned outside standard patterns
+
+### LLM-powered update summaries
+
+- [ ] Add a scheduled GitHub Action that collects open Renovate PRs / dashboard state and produces an LLM-generated summary of breaking changes, notable features, and update recommendations. Options: `actions/ai-inference` (free, single LLM call, action must pre-fetch changelogs) or Copilot coding agent (assign `@copilot` to issue, agent can browse, costs premium requests). Consider storing verbose LLM-facing context on a branch to enable incremental analysis across runs.
+
 ## Repository
 
 - [ ] Pick a sane license schema (probably AGPL)
