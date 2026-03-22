@@ -139,10 +139,20 @@ cluster — tofu-controller creates the DNS record, Flux deploys the proxy.
 
 - [ ] Patch TF-generated kubeconfig post-bootstrap to use `api.allegedly.works:16443`
 
-### Backup: persistent-auth Terraform State
+### OpenTofu State Backend
 
-`persistent-auth/terraform.tfstate` is local-only SSOT. Minimum: rclone to encrypted cloud.
-Better: S3 backend with OpenTofu state encryption + versioning.
+`nixos-dev-env` state migrated to `pg` backend (CNPG `tofu-state-db` in k8s, 2 replicas
+on VPS `local-path`). Backup CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every
+6 hours. Access via `kubectl port-forward` + `PG_CONN_STR` env var.
+
+**Future**: consider migrating `bootstrap/infrastructure` and `bootstrap/flux` state to
+the same pg backend. Low priority — these are ephemeral (destroyed and recreated by
+`bazel run //cluster:bootstrap`). If `terraform/` is consolidated into `cluster/`, all
+non-persistent-auth state could share the pg backend.
+
+`persistent-auth/terraform.tfstate` must stay local — it's the root of trust that
+bootstraps the cluster. Minimum: rclone to encrypted cloud. Better: S3 backend with
+OpenTofu state encryption + versioning.
 
 ### GitHub Webhook Reconciliation
 
