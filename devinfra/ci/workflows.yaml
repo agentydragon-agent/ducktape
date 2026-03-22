@@ -40,10 +40,11 @@ workflows:
     trigger: { kind: path, pattern: "^devinfra/claude/testing/container_e2e/Dockerfile" }
 
   # Bazel image workflows always trigger. Bazel builds are hermetic, so same
-  # inputs → same image digest. The workflow compares the local digest against
-  # the registry and skips the push when unchanged. This avoids the stale-image
-  # bug where bazel-diff (HEAD vs HEAD~1) misses changes from earlier commits
-  # whose push step failed.
+  # inputs → same image digest. Docker push deduplicates at the blob level
+  # (existing layers aren't re-uploaded), so unchanged images have minimal
+  # network cost. Always-trigger also avoids the stale-image bug where
+  # bazel-diff (HEAD vs HEAD~1) misses changes from earlier commits whose
+  # push step failed.
   props-images:
     trigger: { kind: always }
     events: [push]
