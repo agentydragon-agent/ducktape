@@ -8,7 +8,7 @@ Architecture:
     Host side:
         - Builds the claude_hooks wheel via Bazel
         - Loads mitmproxy:11 OCI image into Docker
-        - Pulls e2e-container image from GHCR (python:3.13-slim + git + JDK)
+        - Loads e2e-container image (python:3.13-slim + git + JDK, built by Bazel)
         - Creates two Docker networks:
           - e2e-proxy (bridge): proxy container has internet access
           - e2e-isolated (internal bridge): test container <-> proxy container only
@@ -64,7 +64,7 @@ _WHEEL_FILENAME = _WHEEL_RLOCATION.rsplit("/", 1)[-1]
 # Rlocation for a file in the test workspace (used to derive directory path)
 _TEST_WORKSPACE_MODULE = "_main/devinfra/claude/testdata/test_workspace/MODULE.bazel"
 
-# E2E test container image (pinned in MODULE.bazel via oci.pull, loaded via oci_load)
+# E2E test container image (built by Bazel via rules_distroless, loaded via oci_load)
 _E2E_IMAGE = "e2e-container:pinned"
 _E2E_TARBALL = "_main/devinfra/claude/testing/container_e2e/e2e_container_load/tarball.tar"
 

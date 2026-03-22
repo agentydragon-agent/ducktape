@@ -104,10 +104,6 @@ jobs:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')
     uses: ./.github/workflows/rbe-image.yml
-  e2e-container-image:
-    needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'e2e-container-image')
-    uses: ./.github/workflows/e2e-container-image.yml
   props-images:
     needs:
       - compute-targets
