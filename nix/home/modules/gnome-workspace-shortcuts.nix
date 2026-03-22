@@ -1,6 +1,6 @@
 # GNOME workspace switching shortcuts configuration
 # Configures Ctrl+Alt+Up/Down for workspace switching using GNOME's native vertical shortcuts
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 {
   # Note: V-Shell package included but extension disabled to avoid conflicts
   home.packages = with pkgs; [
@@ -20,6 +20,9 @@
     # Pop!_OS workspace shortcuts workaround
     # Clear Pop!_OS defaults to free up Ctrl+Alt+↑/↓ for GNOME's native shortcuts
     "org/gnome/shell/extensions/pop-shell" = {
+      gap-inner = lib.hm.gvariant.mkUint32 1;
+      gap-outer = lib.hm.gvariant.mkUint32 1;
+      tile-by-default = true;
       pop-workspace-up = [ ];
       pop-workspace-down = [ ];
       pop-monitor-left = [ ];
