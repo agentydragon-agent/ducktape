@@ -1,6 +1,7 @@
 """Shared utility libraries."""
 
 load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 
 py_library(
     name = "fs",
@@ -89,4 +90,31 @@ py_library(
         "@pypi//playwright",
         "@pypi//pytest",
     ],
+)
+
+py_package(
+    name = "util_pkg",
+    packages = [
+        "util",
+        "util.bazel",
+    ],
+    deps = [
+        ":env",
+        ":fmt",
+        ":fs",
+        ":net",
+        ":typer",
+        "//util/bazel:runfiles",
+        "//util/bazel:subprocess",
+        "//util/bazel:workspace",
+    ],
+)
+
+py_wheel(
+    name = "wheel",
+    distribution = "ducktape_util",
+    python_requires = ">=3.13",
+    requires = ["tenacity"],
+    version = "0.1.0",
+    deps = [":util_pkg"],
 )

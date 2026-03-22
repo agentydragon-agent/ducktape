@@ -171,8 +171,6 @@ py_package(
         "devinfra.claude.supervisor",
         "devinfra.precommit",
         "devinfra.precommit.enforce_bazel_tests",
-        "util",
-        "util.bazel",
     ],
     deps = [
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
@@ -217,6 +215,7 @@ py_wheel(
         "supervisor",
         "tenacity",
         "uvicorn>=0.30.0",
+        "ducktape-util",
     ],
     version = "0.1.0",
     visibility = ["//devinfra/claude/hook_daemon/session_start/container_e2e:__pkg__"],
@@ -238,8 +237,6 @@ py_package(
         "openai_utils",
         "skills.hetzner_vnc_screenshot",
         "skills.proxmox_vm",
-        "util",
-        "util.bazel",
     ],
     deps = [
         # CLI tool entry points
@@ -298,6 +295,7 @@ py_wheel(
         "hcloud>=2.0.0",
         "pillow>=10.0.0",
         "websockets>=15.0",
+        "ducktape-util",
     ],
     version = "0.1.0",
     deps = [":ducktape_pkg"],

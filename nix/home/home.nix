@@ -15,6 +15,7 @@
   ducktape-wheel,
   claude-hooks-wheel,
   gterm-theme-wheel,
+  ducktape-util-wheel,
   bbapi-binary,
   ...
 }:
@@ -78,32 +79,13 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
-  # Flake inputs with flake=false produce store paths named "source" (no .whl
-  # extension). pypaInstallPhase globs *.whl, so we rename to restore it.
-  renameWheel =
-    name: input:
-    pkgs.runCommand name { } ''
-      cp ${input} $out
-    '';
-
-  # git-commit-ai, difftree, gmail-archiver
-  ducktape = pkgs.callPackage ./packages/ducktape.nix {
-    ducktape-wheel = renameWheel "ducktape-0.1.0-py3-none-any.whl" ducktape-wheel;
+  ducktapePackages = import ../ducktape {
+    inherit lib pkgs ducktape-wheel claude-hooks-wheel gterm-theme-wheel ducktape-util-wheel;
   };
-
-  # Claude Code hooks/statusline
-  claude-hooks = pkgs.callPackage ./packages/claude-hooks.nix {
-    claude-hooks-wheel = renameWheel "claude_hooks-0.1.0-py3-none-any.whl" claude-hooks-wheel;
-  };
+  inherit (ducktapePackages) ducktape-util ducktape claude-hooks gterm-theme;
 
   # bbapi - BuildBuddy API CLI
   bbapi = pkgs.callPackage ./packages/bbapi.nix { inherit bbapi-binary; };
-
-  # gterm-theme - GNOME Terminal theme follower
-  gterm-theme = pkgs.callPackage ./packages/gterm-theme.nix {
-    gterm-theme-wheel = renameWheel "gterm_theme-0.1.0-py3-none-any.whl" gterm-theme-wheel;
-  };
-
 in
 {
   imports = [
@@ -429,6 +411,7 @@ in
       stylua # Lua formatter
 
       # Custom packages from ducktape repo
+      ducktape-util # shared util library
       ducktape # git-commit-ai, difftree, gmail-archiver
       claude-hooks # Claude Code hooks/statusline
       bbapi # BuildBuddy API CLI

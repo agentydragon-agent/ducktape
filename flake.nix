@@ -134,6 +134,7 @@
                 ducktape-wheel = artifacts.ducktape;
                 claude-hooks-wheel = artifacts.claude-hooks;
                 gterm-theme-wheel = artifacts.gterm-theme;
+                ducktape-util-wheel = artifacts.ducktape-util;
                 bbapi-binary = artifacts.bbapi;
                 skills-tar = skillsUnpacked;
                 inherit
@@ -191,6 +192,7 @@
                 ducktape-wheel = artifacts.ducktape;
                 claude-hooks-wheel = artifacts.claude-hooks;
                 gterm-theme-wheel = artifacts.gterm-theme;
+                ducktape-util-wheel = artifacts.ducktape-util;
                 bbapi-binary = artifacts.bbapi;
                 skills-tar = skillsUnpacked;
                 inherit
@@ -272,20 +274,22 @@
         rec {
           tana = pkgs.callPackage ./nix/home/packages/tana.nix { };
           gmail-mcp = pkgs.callPackage ./nix/home/packages/gmail-mcp.nix { };
-          # ducktape wheel — provides ducktape-precommit (and git-commit-ai, difftree, etc.)
-          # Used by CI pre-commit to satisfy the enforce-bazel-tests hook (language: system).
-          ducktape = pkgs.callPackage ./nix/home/packages/ducktape.nix {
-            ducktape-wheel = pkgs.runCommand "ducktape-0.1.0-py3-none-any.whl" { } ''
-              cp ${artifacts.ducktape} $out
-            '';
-          };
-          # Claude Code session hooks (claude-hook, claude-statusline, ducktape-precommit).
-          claude-hooks = pkgs.callPackage ./nix/home/packages/claude-hooks.nix {
-            claude-hooks-wheel = artifacts.claude-hooks;
-          };
-          gterm-theme = pkgs.callPackage ./nix/home/packages/gterm-theme.nix {
-            gterm-theme-wheel = artifacts.gterm-theme;
-          };
+
+          # Ducktape wheels — centralized in nix/ducktape/
+          inherit
+            (import ./nix/ducktape {
+              inherit lib pkgs;
+              ducktape-wheel = artifacts.ducktape;
+              claude-hooks-wheel = artifacts.claude-hooks;
+              gterm-theme-wheel = artifacts.gterm-theme;
+              ducktape-util-wheel = artifacts.ducktape-util;
+            })
+            ducktape-util
+            ducktape
+            claude-hooks
+            gterm-theme
+            ;
+
           bbapi = pkgs.callPackage ./nix/home/packages/bbapi.nix {
             bbapi-binary = artifacts.bbapi;
           };
