@@ -16,6 +16,18 @@
         "type": "github"
       }
     },
+    "bbapi-binary": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-QYdLUizeM5qR3rVSFT/Iv6XuV4R/I9o/1/M/DlYSB3c=",
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-11038987/bbapi"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-11038987/bbapi"
+      }
+    },
     "claude-code-router": {
       "inputs": {
         "nixpkgs": "nixpkgs"
@@ -68,11 +80,11 @@
       "locked": {
         "narHash": "sha256-cjcym2Dp561yu0g7ThYb0KTc3mgwISV11QxpFC3iO5o=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-e3e77e90/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-11038987/ducktape-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-e3e77e90/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-11038987/ducktape-0.1.0-py3-none-any.whl"
       }
     },
     "flake-utils": {
@@ -98,11 +110,11 @@
       "locked": {
         "narHash": "sha256-ZAR+yEeTX8wGcthDdrfQi7wXfjMXUxoMINhDeGlmcpY=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-e3e77e90/gterm_theme-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-11038987/gterm_theme-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-e3e77e90/gterm_theme-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-11038987/gterm_theme-0.1.0-py3-none-any.whl"
       }
     },
     "home-manager": {
@@ -231,6 +243,7 @@
     },
     "root": {
       "inputs": {
+        "bbapi-binary": "bbapi-binary",
         "claude-code-router": "claude-code-router",
         "claude-hooks-wheel": "claude-hooks-wheel",
         "claude-plugins-official": "claude-plugins-official",
@@ -266,13 +279,13 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-XuUSIJ2IFiVDtZltwHJCTKiSPz5aOTU6FgWSBKMFJxA=",
+        "narHash": "sha256-WdvyOzFspeR4zqoND5SaNv6kNLDarUFEcMDwMmC2ao0=",
         "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-2bb61748/skills.tar"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-11038987/skills.tar"
       },
       "original": {
         "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-2bb61748/skills.tar"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-11038987/skills.tar"
       }
     },
     "sops-nix": {
