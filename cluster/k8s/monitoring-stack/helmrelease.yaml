@@ -99,20 +99,48 @@ spec:
       defaultDashboardsEnabled: true
       defaultDashboardsTimezone: UTC
 
-      # Official Flux CD dashboards, pulled from grafana.com on pod startup
+      # Dashboards pulled from grafana.com on pod startup
       dashboards:
         default:
           flux-cluster:
-            gnetId: 16714 # Flux Cluster Stats — reconciliation counts, status overview
+            gnetId: 16714 # Flux Cluster Stats
             revision: 1
             datasource: Prometheus
           flux-control-plane:
-            gnetId: 16715 # Flux Control Plane — controller CPU/memory/queue metrics
+            gnetId: 16715 # Flux Control Plane
             revision: 1
             datasource: Prometheus
           harbor:
-            gnetId: 14075 # Harbor — core request rates, quotas, artifacts
+            gnetId: 14075 # Harbor
             revision: 2
+            datasource: Prometheus
+          cert-manager:
+            gnetId: 20842 # cert-manager certificates overview
+            revision: 3
+            datasource: Prometheus
+          authentik:
+            gnetId: 14837 # Authentik
+            revision: 2
+            datasource: Prometheus
+          vault:
+            gnetId: 12904 # HashiCorp Vault
+            revision: 2
+            datasource: Prometheus
+          cloudnative-pg:
+            gnetId: 20417 # CloudNativePG
+            revision: 3
+            datasource: Prometheus
+          longhorn:
+            gnetId: 16888 # Longhorn storage
+            revision: 9
+            datasource: Prometheus
+          cilium-agent:
+            gnetId: 16611 # Cilium agent metrics
+            revision: 1
+            datasource: Prometheus
+          etcd:
+            gnetId: 3070 # etcd by Prometheus
+            revision: 5
             datasource: Prometheus
 
       # CRITICAL: Use Recreate strategy for RWO volumes

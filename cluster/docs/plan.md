@@ -17,6 +17,8 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 
 ## Next Actions
 
+- [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
+- [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
 - [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)
 - [ ] Prometheus: unpin from wyrm2 (blocked on PriorityClasses + right-sizing + VPS headroom)
 - [x] ~~`talos-pve-cp-0`: evict Longhorn storage (pure CP node, has stopped replicas)~~
