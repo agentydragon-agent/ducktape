@@ -17,38 +17,29 @@ gatelet-reporter  # Run as daemon per config
 
 ## Development Setup
 
-Requires Python 3.10+ and PostgreSQL.
-
-### Docker Compose (Recommended)
+Requires PostgreSQL.
 
 ```bash
-pip install -e '.[dev]'
 cp gatelet.example.toml gatelet.toml  # Edit with your API keys
-invoke setup  # Starts PostgreSQL + Gatelet with live reload at http://localhost:8000
-```
-
-Key commands: `invoke up`, `invoke down`, `invoke test`, `invoke db`, `invoke --list`.
-
-### Manual Setup
-
-```bash
-# Start PostgreSQL, then:
-pip install -e '.[dev]'
-cp gatelet.example.toml gatelet.toml
 export DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet
-alembic upgrade head
-uvicorn gatelet.server.app:app --reload --host 0.0.0.0 --port 8000
+bazel run //x/gatelet/server:server
 ```
 
+The server waits for PostgreSQL on startup and runs alembic migrations automatically.
 Set `home_assistant.api_url` in `gatelet.toml` to your HA instance.
 
-For Codex devcontainer: run `gatelet/setup.sh` from repo root before network access is disabled.
+### Container Image
+
+```bash
+bazel build //x/gatelet:image   # Build OCI image
+bazel run //x/gatelet:load      # Load into local Docker
+```
 
 ### Administration
 
 ```bash
-make -C gatelet reset-db        # Fresh database (confirms before dropping)
-make -C gatelet change-password # Change admin password
+bazel run //x/gatelet:manage -- reset-db        # Fresh database
+bazel run //x/gatelet:manage -- change-password  # Change admin password
 ```
 
 ## LLM-Friendly Design

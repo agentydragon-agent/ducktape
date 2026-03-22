@@ -1,5 +1,4 @@
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
@@ -20,7 +19,7 @@ py_library(
 py_binary(
     name = "reporter",
     imports = ["../.."],
-    main_module = "hack.gatelet.reporter",
+    main_module = "x.gatelet.reporter",
     visibility = ["//:__subpackages__"],
     deps = [
         ":reporter_lib",
@@ -45,34 +44,28 @@ py_library(
 py_binary(
     name = "manage",
     imports = ["../.."],
-    main_module = "hack.gatelet.manage",
+    main_module = "x.gatelet.manage",
     visibility = ["//:__subpackages__"],
     deps = [":manage_lib"],
 )
 
 # --- OCI Image ---
 
-pkg_tar(
-    name = "alembic_tar",
-    srcs = ["alembic.ini"],
-    package_dir = "/app",
-)
-
 oci_image(
     name = "image",
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint(
         "server_bin",
-        binary_package = "hack/gatelet/server",
+        binary_package = "x/gatelet/server",
     ),
     env = py_image_env(
         "server_bin",
-        binary_package = "hack/gatelet/server",
+        binary_package = "x/gatelet/server",
+        extra_env = {"GATELET_RUN_MIGRATIONS": "1"},
     ),
     exposed_ports = ["8000/tcp"],
     tars = [
         "//x/gatelet/server:layers",
-        ":alembic_tar",
     ],
 )
 
@@ -89,9 +82,3 @@ py_binary(
     deps = ["@pypi//aw_client"],
 )
 
-py_library(
-    name = "tasks",
-    srcs = ["tasks.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//invoke"],
-)
