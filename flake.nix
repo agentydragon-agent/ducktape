@@ -375,7 +375,7 @@
         atlas = mkHome {
           hostname = "atlas";
           enableGui = true;
-          enableKube = false;
+          enableKube = true;
           isNixOS = false;
           enableHeavyPackages = false;
         };

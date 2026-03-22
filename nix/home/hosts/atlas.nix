@@ -18,5 +18,5 @@
   home.stateVersion = "24.05";
 
   # Atlas runs on Proxmox VE (Debian-based), not NixOS
-  # GUI is enabled in flake.nix, Kube is disabled
+  # GUI and Kube enabled in flake.nix
 }
