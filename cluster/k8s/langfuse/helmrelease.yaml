@@ -94,22 +94,15 @@ spec:
               name: langfuse-secrets
               key: LANGFUSE_INIT_USER_PASSWORD
 
-    # TODO(reliability): Move PostgreSQL to hcloud-volumes on VPS for
-    # durability and cross-node HA. Currently on Proxmox — acceptable
-    # for non-critical observability data.
     postgresql:
-      deploy: true
+      deploy: false
+      host: langfuse-db-rw
       auth:
-        existingSecret: langfuse-secrets
+        username: langfuse
+        database: langfuse
+        existingSecret: langfuse-db-app
         secretKeys:
-          adminPasswordKey: postgres-password
-          userPasswordKey: postgres-password
-      primary:
-        nodeSelector:
-          topology.kubernetes.io/region: proxmox
-        persistence:
-          storageClass: proxmox-csi-retain
-          size: 10Gi
+          userPasswordKey: password
 
     # TODO(reliability): ClickHouse replication (3-node cluster) for
     # durability. Currently single-node on Proxmox.

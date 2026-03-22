@@ -52,15 +52,6 @@ resource "random_password" "encryption_key" {
   }
 }
 
-resource "random_password" "postgres_password" {
-  length  = 32
-  special = false
-
-  lifecycle {
-    ignore_changes = [length, special]
-  }
-}
-
 # Langfuse headless init — API keys for the bootstrap project.
 # These are passed to Langfuse via LANGFUSE_INIT_PROJECT_* env vars and
 # read by LiteLLM via the langfuse-api-keys ExternalSecret in ollama namespace.
@@ -125,7 +116,6 @@ resource "vault_kv_secret_v2" "langfuse_secrets" {
     nextauth_secret     = random_password.nextauth_secret.result
     salt                = random_password.salt.result
     encryption_key      = random_password.encryption_key.result
-    postgres_password   = random_password.postgres_password.result
     project_public_key  = local.project_public_key
     project_secret_key  = local.project_secret_key
     admin_password      = random_password.admin_password.result

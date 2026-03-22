@@ -20,5 +20,6 @@ spec:
   dependsOn:
     - name: langfuse-namespace
     - name: langfuse-secrets
+    - name: langfuse-db
     - name: gateway
     - name: proxmox-csi

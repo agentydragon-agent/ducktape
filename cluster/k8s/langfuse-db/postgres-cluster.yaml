@@ -1,0 +1,31 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: langfuse-db
+  namespace: langfuse
+spec:
+  instances: 1
+
+  # CNPG 1.27+ kills isolated primaries by default (liveness probe).
+  # Disable to prevent false positives from transient network blips.
+  probes:
+    liveness:
+      isolationCheck:
+        enabled: false
+
+  affinity:
+    nodeSelector:
+      topology.kubernetes.io/region: proxmox
+
+  storage:
+    storageClass: proxmox-csi-retain
+    size: 10Gi
+
+  monitoring:
+    enablePodMonitor: true
+
+  bootstrap:
+    initdb:
+      database: langfuse
+      owner: langfuse
+      # CNPG auto-generates credentials in secret langfuse-db-app
