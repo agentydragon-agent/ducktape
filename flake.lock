@@ -68,11 +68,11 @@
       "locked": {
         "narHash": "sha256-cjcym2Dp561yu0g7ThYb0KTc3mgwISV11QxpFC3iO5o=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-04cbbd03/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-e3e77e90/ducktape-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-04cbbd03/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-e3e77e90/ducktape-0.1.0-py3-none-any.whl"
       }
     },
     "flake-utils": {
@@ -98,11 +98,11 @@
       "locked": {
         "narHash": "sha256-ZAR+yEeTX8wGcthDdrfQi7wXfjMXUxoMINhDeGlmcpY=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-04cbbd03/gterm_theme-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-e3e77e90/gterm_theme-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-04cbbd03/gterm_theme-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-e3e77e90/gterm_theme-0.1.0-py3-none-any.whl"
       }
     },
     "home-manager": {
@@ -268,11 +268,11 @@
         "lastModified": 946684800,
         "narHash": "sha256-uk2XPYg1Gh2lCtL24IBW9MB0u0Rs2CnKJk32rivueFg=",
         "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-04cbbd03/skills.tar"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-e3e77e90/skills.tar"
       },
       "original": {
         "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-04cbbd03/skills.tar"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-e3e77e90/skills.tar"
       }
     },
     "sops-nix": {
