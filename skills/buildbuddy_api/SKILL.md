@@ -19,10 +19,10 @@ Proto definitions: `proto/buildbuddy_service.proto` (internal, ~70 RPCs) and
 
 ## Session Setup
 
-Run once before any API calls:
+Run once before any API calls. All recipes below use `bb` / `bb_get`.
 
 ```bash
-KEY="$(grep -oP 'x-buildbuddy-api-key=\K.*' ~/.config/bazel/buildbuddy.bazelrc)"
+KEY="${BUILDBUDDY_API_KEY:-$(grep -oP 'x-buildbuddy-api-key=\K.*' ~/.config/bazel/buildbuddy.bazelrc)}"
 BB="https://app.buildbuddy.io"
 bb_get() { curl -s -H "x-buildbuddy-api-key: $KEY" "$@"; }
 bb()     { bb_get -X POST -H "Content-Type: application/json" "$@"; }
@@ -77,11 +77,11 @@ bb_get "$BB/file/download?bytestream_url=$(python3 -c "import urllib.parse,sys; 
 
 ## Other Endpoints
 
-| Path                | Method | Notes                             |
-| ------------------- | ------ | --------------------------------- |
+| Path                | Method | Notes                                 |
+| ------------------- | ------ | ------------------------------------- |
 | `/api/v1/GetTarget` | POST   | Targets with label, status, rule type |
-| `/api/v1/GetLog`    | POST   | Build stderr                      |
-| `/api/v1/GetFile`   | POST   | Download blob by bytestream URI   |
+| `/api/v1/GetLog`    | POST   | Build stderr                          |
+| `/api/v1/GetFile`   | POST   | Download blob by bytestream URI       |
 
 For the full ~70 internal RPCs, see `proto/buildbuddy_service.proto` in the
 [BuildBuddy repo](https://github.com/buildbuddy-io/buildbuddy).
