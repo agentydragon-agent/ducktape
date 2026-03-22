@@ -15,8 +15,8 @@ from pathlib import Path
 import httpx
 from opentelemetry import trace
 
-from devinfra.claude.http_client import download
-from devinfra.claude.platform_utils import get_platform
+from devinfra.claude.hook_daemon.session_start.http_client import download
+from devinfra.claude.hook_daemon.session_start.platform_utils import get_platform
 from devinfra.claude.session_paths import SessionPaths
 
 logger = logging.getLogger(__name__)

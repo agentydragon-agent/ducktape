@@ -28,8 +28,8 @@ from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session_start.handler import handle as handle_session_start
+from devinfra.claude.hook_daemon.session_start.http_client import build_http_client
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
-from devinfra.claude.http_client import build_http_client
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 
