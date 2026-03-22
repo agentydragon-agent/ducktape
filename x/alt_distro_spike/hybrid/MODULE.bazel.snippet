@@ -1,0 +1,27 @@
+# Add to root MODULE.bazel to pull a custom-built RBE worker base image.
+#
+# The base image is built from devinfra/rbe_image/Dockerfile, pushed to GHCR,
+# and pinned here by digest. Application-specific layers (dockerd wrapper,
+# extra configs) are added by rules_oci in BUILD.bazel.
+#
+# To update the digest after rebuilding the base:
+#   docker manifest inspect ghcr.io/agentydragon/rbe-worker-base:latest \
+#     | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
+
+oci.pull(
+    name = "rbe_worker_base",
+    # Replace with actual digest after first push
+    digest = "sha256:REPLACE_WITH_ACTUAL_DIGEST_AFTER_PUSH",
+    image = "ghcr.io/agentydragon/rbe-worker-base",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
+
+# Example: pulling a Nix-built Python app base
+oci.pull(
+    name = "python_app_base",
+    digest = "sha256:REPLACE_WITH_ACTUAL_DIGEST",
+    image = "ghcr.io/agentydragon/python-app-base",
+    platforms = ["linux/amd64"],
+    tag = "latest",
+)
