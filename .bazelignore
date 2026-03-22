@@ -8,6 +8,9 @@ bazel-js-skeletons
 .venv
 venv
 
+# Claude Code agent worktrees
+.claude/worktrees
+
 # Development environment caches
 # Root level
 .devenv
