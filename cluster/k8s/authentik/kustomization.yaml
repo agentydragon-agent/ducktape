@@ -32,7 +32,7 @@ configMapGenerator:
       - blueprints/proxmox-sso.yaml
       - blueprints/goldilocks-sso.yaml
       - blueprints/google-workspace-mcp-sso.yaml
-      - blueprints/shared-proxy-outpost.yaml
+      - blueprints/embedded-outpost.yaml
       - blueprints/openclaw-agent-oauth2.yaml
       - blueprints/airlock-sso.yaml
       - blueprints/claude-code-airlock-oauth2.yaml

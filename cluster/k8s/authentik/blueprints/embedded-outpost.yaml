@@ -1,6 +1,6 @@
 version: 1
 metadata:
-  name: SSO - Shared Proxy Outpost
+  name: SSO - Embedded Outpost
   labels:
     blueprints.goauthentik.io/description: "Embedded proxy outpost for all proxy-mode SSO providers"
 
