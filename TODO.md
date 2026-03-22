@@ -42,17 +42,24 @@
 
 Renovate is configured (`renovate.json`) with `config:recommended` and dashboard-only mode (`prCreation: "approval"`).
 
-### Custom Renovate managers
+### Coverage gaps
 
-Add regex managers for upstream dependencies that `config:recommended` doesn't cover:
+Already covered by built-in managers (verified on dashboard):
 
-- [ ] `oci.pull` blocks in `MODULE.bazel` (image + tag + digest → `docker` datasource)
-- [ ] Terraform provider versions in `tf.download(mirror = {...})` in `MODULE.bazel` (→ `terraform-provider` datasource)
+- `bazel-module`: `bazel_dep()` AND `oci.pull()` blocks in MODULE.bazel (both tags and digests)
+- `terraform`: `required_providers` version constraints in `.tf` files
+- Container images in k8s manifests, Dockerfiles, etc.
+
+Not covered — need custom regex managers or restructuring:
+
+- [ ] `tf.download(mirror = {...})` exact pins in `MODULE.bazel` — these are the authoritative provider versions for hermetic Bazel builds, but Renovate only tracks the loose `>=` constraints in `.tf` files. The two can drift.
 - [ ] OpenTofu version in `MODULE.bazel` (`version = "1.11.2"` in `tf.download`)
 - [ ] `tfdoc_version` and `tflint_version` in `MODULE.bazel`
-- [ ] Helm chart versions in `cluster/k8s/**/helmrelease.yaml` (verify Flux manager covers these)
-- [ ] Container image tags in `cluster/k8s/**/*.yaml` (verify Docker manager covers these)
 - [ ] Talos extension/imager versions if pinned outside standard patterns
+
+Needs verification:
+
+- [ ] Helm chart versions in `cluster/k8s/**/helmrelease.yaml` — `flux` manager should cover these but no Helm updates appeared on dashboard. Check if `HelmRepository` sources are needed for Renovate to resolve chart versions.
 
 ### LLM-powered update summaries
 
