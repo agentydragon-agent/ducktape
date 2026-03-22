@@ -25,6 +25,14 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 
 ## Next Actions
 
+- [ ] Authentik blueprint secret rotation: Authentik blueprints use file content hash to
+      decide whether to re-apply. `!Env` tags are resolved _after_ the hash check, so rotating
+      secrets in Vault (via Terraform `sso-secrets/`) updates the K8s secret and pod env vars,
+      but Authentik's DB is never updated because the blueprint YAML didn't change. Need a
+      mechanism to force blueprint re-application when `authentik-sso-client-secrets` changes
+      (e.g., Stakater Reloader on Authentik worker to restart pods + a post-start hook that
+      clears `last_applied_hash`, or a sidecar/CronJob that calls the Authentik API to force
+      re-apply). Until fixed, any secret rotation breaks all SSO logins cluster-wide.
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
 - [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)
