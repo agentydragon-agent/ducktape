@@ -21,3 +21,4 @@ configMapGenerator:
       disableNameSuffixHash: true
     files:
       - default.conf.template=nginx-auth-proxy.conf.template
+      - nginx.conf
