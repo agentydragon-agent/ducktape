@@ -24,5 +24,5 @@ See <../nix/home/migration_plan.md> for full status. GPD is the last legacy hold
 
 - [ ] Update to latest Ansible version
 - [ ] Migrate deprecated modules
-- [ ] Add molecule tests for roles
+
 - [ ] Document vault variable requirements
