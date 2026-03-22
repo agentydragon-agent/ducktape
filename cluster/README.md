@@ -33,19 +33,18 @@ See <docs/bootstrap.md> for full setup.
 
 ## Services
 
-| Service        | URL                                 | Purpose                         |
-| -------------- | ----------------------------------- | ------------------------------- |
-| Authentik      | <https://auth.allegedly.works>      | SSO provider                    |
-| Gitea          | <https://git.allegedly.works>       | Git hosting                     |
-| Harbor         | <https://registry.allegedly.works>  | Container registry              |
-| Vault          | <https://vault.allegedly.works>     | Secrets management              |
-| Matrix/Element | <https://chat.allegedly.works>      | Chat                            |
-| Grafana        | <https://grafana.allegedly.works>   | Monitoring                      |
-| Nix Cache      | <https://cache.allegedly.works>     | Binary cache                    |
-| Gatus          | <https://status.allegedly.works>    | Health monitoring               |
-| OpenClaw       | <https://openclaw.allegedly.works>  | AI coding agent                 |
-| Capacitor      | <https://capacitor.allegedly.works> | Flux CD visualization           |
-| ActivityWatch  | `activitywatch:5600`                | Activity tracking (Nebula mesh) |
+| Service        | URL                                | Purpose                         |
+| -------------- | ---------------------------------- | ------------------------------- |
+| Authentik      | <https://auth.allegedly.works>     | SSO provider                    |
+| Gitea          | <https://git.allegedly.works>      | Git hosting                     |
+| Harbor         | <https://registry.allegedly.works> | Container registry              |
+| Vault          | <https://vault.allegedly.works>    | Secrets management              |
+| Matrix/Element | <https://chat.allegedly.works>     | Chat                            |
+| Grafana        | <https://grafana.allegedly.works>  | Monitoring                      |
+| Nix Cache      | <https://cache.allegedly.works>    | Binary cache                    |
+| Gatus          | <https://status.allegedly.works>   | Health monitoring               |
+| OpenClaw       | <https://openclaw.allegedly.works> | AI coding agent                 |
+| ActivityWatch  | `activitywatch:5600`               | Activity tracking (Nebula mesh) |
 
 Credentials: `get-passwords` (requires direnv in cluster directory).
 OpenClaw requires a one-time gateway token entry in the UI — the token is included in

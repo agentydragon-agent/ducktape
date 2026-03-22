@@ -37,8 +37,6 @@ resources:
   - cert-manager-servicemonitor/flux-kustomization.yaml
   - cert-manager-trust/flux-kustomization.yaml
   - cert-manager-environment/flux-kustomization.yaml
-  - capacitor-namespace/flux-kustomization.yaml
-  - capacitor/flux-kustomization.yaml
   - gateway-namespace/flux-kustomization.yaml
   - gateway/flux-kustomization.yaml
   - dns-system-namespace/flux-kustomization.yaml

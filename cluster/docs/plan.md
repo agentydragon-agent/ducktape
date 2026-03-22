@@ -4,6 +4,14 @@
 Cilium Gateway API, DNS automation, Authentik SSO. PowerDNS and Authentik on
 CloudNativePG `local-path`. See <changelog.md> for history.
 
+## Dropped Services
+
+- **Capacitor** (2026-03-22): Removed. `ghcr.io/gimlet-io/capacitor-next` requires a
+  proprietary license key despite the Apache 2.0 source license — the license check is
+  injected in Gimlet's private build pipeline, not in the published source. Weave GitOps
+  (the main alternative with dep graph visualization) has had no stable release since
+  2023-12-06. Use Headlamp + `flux` CLI instead.
+
 ## Suspended Kustomizations
 
 - **Kagent**: `kagent`, `kagent-namespace`, `kagent-secrets`
