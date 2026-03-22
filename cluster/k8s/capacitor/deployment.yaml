@@ -1,5 +1,4 @@
 # Capacitor (Flux UI) — https://github.com/gimlet-io/capacitor
-# Based on upstream self-host/yaml/capacitor-next/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -26,7 +25,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: capacitor
-          image: ghcr.io/gimlet-io/capacitor-next:0.14.0
+          image: ghcr.io/gimlet-io/capacitor:v0.14.0
           ports:
             - containerPort: 8080
               name: http
