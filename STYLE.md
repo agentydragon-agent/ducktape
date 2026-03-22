@@ -151,6 +151,7 @@ Style and convention rules for this repository. Package-specific elaborations be
 - **Iterate correctly**: Use `.values()` not `.items()` when key is unused. Don't reimplement pagination/batching when the client class already provides it.
 - **Simple string ops over regex**: Don't use `re.compile()` for simple substring checks — use `str.lower()` + `in`.
 - **No grab-bag modules**: No `core.py`, `utils.py`, `constants.py`. Name modules by what they do. Organize by domain/feature, not by role (classes vs functions vs constants).
+- **Flat over nested**: Don't create `parsers/base.py`, `parsers/constants.py`, `parsers/__init__.py` when you can just have `parsers.py`. If a subdirectory has <3 files, flatten it.
 - **Prefer sets for unordered collections**: When a collection's order is semantically irrelevant (changed files, unique IDs, tags), use `set[T]` instead of `list[T]`. Sets make the "no duplicates, order doesn't matter" intent explicit and provide O(1) membership testing. Use lists only when order matters or duplicates are valid.
 - **Prefer `more_itertools` over manual iterator patterns**: Use `more_itertools` when it expresses intent more clearly than raw Python. Key utilities:
   - `one(iterable)` — extract the single element, raise if zero or multiple. Use instead of `next(iter(x))` when exactly one item is expected. Prefer over length checks followed by indexing. Also use for searching a collection for exactly one expected match (e.g., `one(x for x in items if x.id == target_id)`) instead of handrolled filter-and-check loops.

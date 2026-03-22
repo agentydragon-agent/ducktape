@@ -6,7 +6,6 @@ Elaborations on the root <../../STYLE.md>. Do not duplicate rules already covere
 
 - **Separate concerns**: Domain logic (Plan, Action) and view/display code (display_plan, summarize_plan) belong in separate modules.
 - **Name by purpose**: `plan.py` + `plan_display.py` is better than `core.py` containing both.
-- **Flat over nested**: Don't make `parsers/base.py`, `parsers/constants.py`, `parsers/__init__.py` when you can just have `parsers.py`. If a subdirectory has <3 files, flatten it.
 
 ## Project-Specific Patterns
 
