@@ -11,8 +11,8 @@ import pytest_bazel
 from devinfra.claude.claude_api.credentials import read_access_token
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
 from devinfra.claude.claude_api.usage import UsageBucket, UsageResponse
-from devinfra.claude.statusline import _format_context, _format_quota
-from devinfra.claude.usage_cache import CACHE_TTL, CachedUsage, get_cached_usage
+from devinfra.claude.statusline.statusline import _format_context, _format_quota
+from devinfra.claude.statusline.usage_cache import CACHE_TTL, CachedUsage, get_cached_usage
 
 # === statusline_models tests ===
 
@@ -161,7 +161,7 @@ def test_get_cached_usage_fresh_cache(tmp_path: Path):
     cached = CachedUsage(fetched_at=datetime.now(UTC), usage=usage)
     cache_file.write_text(cached.model_dump_json())
 
-    with patch("devinfra.claude.usage_cache.CACHE_PATH", cache_file):
+    with patch("devinfra.claude.statusline.usage_cache.CACHE_PATH", cache_file):
         result = get_cached_usage()
 
     assert result is not None
@@ -176,7 +176,7 @@ def test_get_cached_usage_stale_cache_no_token(tmp_path: Path, no_credentials):
     cached = CachedUsage(fetched_at=stale_time, usage=usage)
     cache_file.write_text(cached.model_dump_json())
 
-    with patch("devinfra.claude.usage_cache.CACHE_PATH", cache_file):
+    with patch("devinfra.claude.statusline.usage_cache.CACHE_PATH", cache_file):
         result = get_cached_usage()
 
     # Falls back to stale cache

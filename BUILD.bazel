@@ -171,8 +171,8 @@ py_package(
         "util.bazel",
     ],
     deps = [
-        "//devinfra/claude:statusline_lib",
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
+        "//devinfra/claude/statusline:statusline_lib",
     ],
 )
 

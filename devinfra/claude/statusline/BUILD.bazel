@@ -1,0 +1,50 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+py_library(
+    name = "usage_cache",
+    srcs = ["usage_cache.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude/claude_api:credentials",
+        "//devinfra/claude/claude_api:usage",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "statusline_lib",
+    srcs = ["statusline.py"],
+    imports = ["../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":usage_cache",
+        "//devinfra/claude/claude_api:statusline",
+        "//devinfra/claude/claude_api:usage",
+        "@pypi//rich",
+    ],
+)
+
+py_binary(
+    name = "statusline",
+    imports = ["../../.."],
+    main_module = "devinfra.claude.statusline.statusline",
+    visibility = ["//visibility:public"],
+    deps = [":statusline_lib"],
+)
+
+py_test(
+    name = "test_statusline",
+    srcs = ["test_statusline.py"],
+    imports = ["../../.."],
+    deps = [
+        ":statusline_lib",
+        ":usage_cache",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api:credentials",
+        "//devinfra/claude/claude_api:statusline",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

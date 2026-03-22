@@ -13,7 +13,7 @@ from rich.console import Console
 from rich.text import Text
 
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
-from devinfra.claude.usage_cache import CachedUsage, get_cached_usage
+from devinfra.claude.statusline.usage_cache import CachedUsage, get_cached_usage
 
 _STALE_THRESHOLD = timedelta(seconds=10)
 _SEP = Text(" ")

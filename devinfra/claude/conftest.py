@@ -53,5 +53,5 @@ def no_credentials(tmp_path: Path):
 @pytest.fixture
 def no_usage_cache(tmp_path: Path):
     """Patch CACHE_PATH to a nonexistent file (no cached usage)."""
-    with patch("devinfra.claude.usage_cache.CACHE_PATH", tmp_path / "nonexistent"):
+    with patch("devinfra.claude.statusline.usage_cache.CACHE_PATH", tmp_path / "nonexistent"):
         yield

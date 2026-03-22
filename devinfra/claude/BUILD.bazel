@@ -79,18 +79,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "usage_cache",
-    srcs = ["usage_cache.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/claude/claude_api:credentials",
-        "//devinfra/claude/claude_api:usage",
-        "@pypi//pydantic",
-    ],
-)
-
 # === Modules with internal deps ===
 
 py_library(
@@ -129,19 +117,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "statusline_lib",
-    srcs = ["statusline.py"],
-    imports = ["../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":usage_cache",
-        "//devinfra/claude/claude_api:statusline",
-        "//devinfra/claude/claude_api:usage",
-        "@pypi//rich",
-    ],
-)
-
 # === Binaries ===
 
 py_binary(
@@ -150,14 +125,6 @@ py_binary(
     main_module = "devinfra.claude.bazel_wrapper",
     visibility = ["//visibility:public"],
     deps = [":bazel_wrapper_lib"],
-)
-
-py_binary(
-    name = "statusline",
-    imports = ["../.."],
-    main_module = "devinfra.claude.statusline",
-    visibility = ["//visibility:public"],
-    deps = [":statusline_lib"],
 )
 
 # Packaging targets are in the root //:wheel (merged ducktape wheel).
@@ -238,21 +205,6 @@ py_test(
         ":settings",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_statusline",
-    srcs = ["test_statusline.py"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        ":statusline_lib",
-        ":usage_cache",
-        "//devinfra/claude/claude_api:credentials",
-        "//devinfra/claude/claude_api:statusline",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )
