@@ -11,77 +11,46 @@ description: >
 allowed-tools: Bash
 ---
 
-# BuildBuddy API Reference
+# BuildBuddy API
 
-BuildBuddy's backend is open-source (<https://github.com/buildbuddy-io/buildbuddy>).
-Proto definitions: `proto/buildbuddy_service.proto` (internal, ~70 RPCs) and
-`proto/api/v1/service.proto` (public, 9 endpoints).
+## Prerequisites
 
-## Session Setup
+All commands require `BUILDBUDDY_API_KEY` to be set (session hook exports it automatically).
 
-Run once before any API calls. All recipes below use `bb` / `bb_get`.
+## CLI (`bbapi`)
 
-```bash
-KEY="${BUILDBUDDY_API_KEY:-$(grep -oP 'x-buildbuddy-api-key=\K.*' ~/.config/bazel/buildbuddy.bazelrc)}"
-BB="https://app.buildbuddy.io"
-bb_get() { curl -s -H "x-buildbuddy-api-key: $KEY" "$@"; }
-bb()     { bb_get -X POST -H "Content-Type: application/json" "$@"; }
-```
-
-## Common Recipes
+If `bbapi` is in PATH, prefer it over raw API calls:
 
 ```bash
-# List recent invocations for this repo
-bb -d '{"query":{"repo_url":"https://github.com/agentydragon/ducktape"},"count":10}' \
-  "$BB/rpc/BuildBuddyService/SearchInvocation"
+# List recent invocations (auto-detects repo from git remote)
+bbapi invocations [--repo URL] [--count N]
 
-# Get invocation by ID (public API)
-bb -d '{"selector":{"invocation_id":"<UUID>"}}' "$BB/api/v1/GetInvocation"
+# Print build log
+bbapi log <invocation-id> [--lines N]
 
-# Get build log (chunked; increase min_lines for larger logs)
-bb -d '{"invocation_id":"<UUID>","min_lines":500}' \
-  "$BB/rpc/BuildBuddyService/GetEventLogChunk"
+# List remote executions for an invocation
+bbapi executions <invocation-id>
 
-# Get remote executions for an invocation
-bb -d '{"execution_lookup":{"invocation_id":"<UUID>"},"inline_execute_response":true}' \
-  "$BB/rpc/BuildBuddyService/GetExecution"
+# Show cache scorecard (per-action hit/miss)
+bbapi cache <invocation-id>
 
-# Get cache scorecard (per-action hit/miss, durations, sizes)
-bb -d '{"invocation_id":"<UUID>"}' "$BB/rpc/BuildBuddyService/GetCacheScoreCard"
+# List test output artifacts (label + filename)
+bbapi artifacts ls <invocation-id>
 
-# Download BES event stream (JSON) — contains all build events
-bb_get "$BB/file/download?invocation_id=<UUID>&artifact=raw_json"
-
-# Download build profile (open in chrome://tracing or ui.perfetto.dev)
-bb_get "$BB/file/download?invocation_id=<UUID>&artifact=execution_profile&execution_id=<EXEC_ID>"
+# Download an artifact by name match (prints to stdout)
+bbapi artifacts get <invocation-id> <name-substring>
 ```
 
-## Downloading Undeclared Test Outputs from RBE
+All commands support `--json` for raw JSON output.
 
-Tests running on RBE write undeclared outputs (`TEST_UNDECLARED_OUTPUTS_DIR`) to the
-remote worker. These are uploaded as BES artifacts and downloadable via `/file/download`.
+## Raw API Fallback
 
-```bash
-INVOCATION="<UUID>"
+If `bbapi` is not available, use the Twirp JSON API at `app.buildbuddy.io` directly
+with curl. Read <devinfra/buildbuddy_cli/client.go> for how the CLI talks to the API
+(Twirp JSON over HTTP). The API key comes from `BUILDBUDDY_API_KEY` env var, or
+parse it from `~/.config/bazel/buildbuddy.bazelrc` (`x-buildbuddy-api-key=...`).
 
-# 1. Fetch the BES event stream
-bb_get "$BB/file/download?invocation_id=$INVOCATION&artifact=raw_json" > bes.json
+Proto definitions for request/response schemas:
 
-# 2. List all test output files
-jq -r '.[].testResult.testActionOutput[]?.name' bes.json | sort
-
-# 3. Download one file by name
-URI=$(jq -r '.[].testResult.testActionOutput[]? | select(.name | contains("proxy.log")) | .uri' bes.json | head -1)
-bb_get "$BB/file/download?bytestream_url=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1],safe=''))" "$URI")"
-```
-
-## Other Endpoints
-
-| Path                | Method | Notes                                 |
-| ------------------- | ------ | ------------------------------------- |
-| `/api/v1/GetTarget` | POST   | Targets with label, status, rule type |
-| `/api/v1/GetLog`    | POST   | Build stderr                          |
-| `/api/v1/GetFile`   | POST   | Download blob by bytestream URI       |
-
-For the full ~70 internal RPCs, see `proto/buildbuddy_service.proto` in the
-[BuildBuddy repo](https://github.com/buildbuddy-io/buildbuddy).
+- <https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/buildbuddy_service.proto> (internal, ~70 RPCs)
+- <https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto> (public, 9 endpoints)

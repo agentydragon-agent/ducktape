@@ -144,6 +144,17 @@ releases:
 
       Extract to ~/.claude/skills/ or ~/.gemini/skills/.
 
+  bbapi:
+    targets:
+      - bazel_target: //devinfra/buildbuddy_cli:bbapi
+        flake_input: bbapi-binary
+    artifact_type: binary
+    release_body: |
+      bbapi — BuildBuddy API CLI (Linux x86_64).
+
+      Commands: invocations, log, executions, cache, artifacts ls/get.
+      Requires BUILDBUDDY_API_KEY env var.
+
 # List of Bazel-built images pushed to Harbor (registry.allegedly.works).
 # The bazel-harbor-images workflow (generated from this config) builds and
 # pushes all images in a single job, sharing Bazel setup and registry login.

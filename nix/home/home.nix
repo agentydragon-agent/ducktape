@@ -15,6 +15,7 @@
   ducktape-wheel,
   claude-hooks-wheel,
   gterm-theme-wheel,
+  bbapi-binary,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -99,6 +100,9 @@ let
   gterm-theme = pkgs.callPackage ./packages/gterm-theme.nix {
     gterm-theme-wheel = renameWheel "gterm_theme-0.1.0-py3-none-any.whl" gterm-theme-wheel;
   };
+
+  # bbapi - BuildBuddy API CLI
+  bbapi = pkgs.callPackage ./packages/bbapi.nix { inherit bbapi-binary; };
 in
 {
   imports = [
@@ -428,6 +432,7 @@ in
       ducktape # git-commit-ai, difftree, gmail-archiver
       claude-hooks # Claude Code hooks/statusline
       gterm-theme # GNOME Terminal theme follower
+      bbapi # BuildBuddy API CLI
     ]
     ++ lib.optionals enableKube [
       kubectl

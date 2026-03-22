@@ -44,6 +44,12 @@
       flake = false;
     };
 
+    # CI-released bbapi binary — updated by release.yml update-downstream job.
+    bbapi-binary = {
+      url = "https://github.com/agentydragon/ducktape/releases/download/bbapi-latest/bbapi";
+      flake = false;
+    };
+
     # CI-released skills tarball — updated by release.yml update-downstream job.
     skills-tar = {
       url = "https://github.com/agentydragon/ducktape/releases/download/skills-2bb61748/skills.tar";
@@ -81,6 +87,7 @@
       ducktape-wheel,
       claude-hooks-wheel,
       gterm-theme-wheel,
+      bbapi-binary,
       skills-tar,
       claude-plugins-official,
       siderolabs-docs,
@@ -152,6 +159,7 @@
                   ducktape-wheel
                   claude-hooks-wheel
                   gterm-theme-wheel
+                  bbapi-binary
                   skills-tar
                   claude-plugins-official
                   siderolabs-docs
@@ -208,6 +216,7 @@
                   ducktape-wheel
                   claude-hooks-wheel
                   gterm-theme-wheel
+                  bbapi-binary
                   skills-tar
                   claude-plugins-official
                   siderolabs-docs

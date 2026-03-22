@@ -1,0 +1,1016 @@
+"""BuildBuddy proto definitions (subset for bbapi CLI).
+
+Fetched from github.com/buildbuddy-io/buildbuddy at a pinned commit.
+Only the protos needed by //devinfra/buildbuddy_cli are compiled here.
+"""
+
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# ── googleapis go_grpc workaround ───────────────────────────────────────
+# BCR googleapis does not support go_grpc_library targets with bzlmod.
+
+go_proto_library(
+    name = "google_longrunning_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "google.golang.org/genproto/googleapis/longrunning",
+    proto = "@googleapis//google/longrunning:operations_proto",
+    deps = [
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+proto_library(
+    name = "user_id_proto",
+    srcs = ["proto/user_id.proto"],
+)
+
+go_proto_library(
+    name = "user_id_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/user_id",
+    proto = ":user_id_proto",
+)
+
+proto_library(
+    name = "invocation_status_proto",
+    srcs = ["proto/invocation_status.proto"],
+)
+
+go_proto_library(
+    name = "invocation_status_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/invocation_status",
+    proto = ":invocation_status_proto",
+)
+
+proto_library(
+    name = "capability_proto",
+    srcs = ["proto/capability.proto"],
+)
+
+go_proto_library(
+    name = "capability_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/capability",
+    proto = ":capability_proto",
+)
+
+proto_library(
+    name = "option_filters_proto",
+    srcs = ["proto/option_filters.proto"],
+)
+
+go_proto_library(
+    name = "option_filters_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/options",
+    proto = ":option_filters_proto",
+)
+
+proto_library(
+    name = "failure_details_proto",
+    srcs = ["proto/failure_details.proto"],
+    deps = [
+        "@protobuf//:descriptor_proto",
+    ],
+)
+
+go_proto_library(
+    name = "failure_details_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/failure_details",
+    proto = ":failure_details_proto",
+)
+
+proto_library(
+    name = "strategy_policy_proto",
+    srcs = ["proto/strategy_policy.proto"],
+)
+
+go_proto_library(
+    name = "strategy_policy_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/strategy_policy",
+    proto = ":strategy_policy_proto",
+)
+
+proto_library(
+    name = "action_cache_proto",
+    srcs = ["proto/action_cache.proto"],
+)
+
+go_proto_library(
+    name = "action_cache_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/action_cache",
+    proto = ":action_cache_proto",
+)
+
+proto_library(
+    name = "package_load_metrics_proto",
+    srcs = ["proto/package_load_metrics.proto"],
+    deps = [
+        "@protobuf//:duration_proto",
+    ],
+)
+
+go_proto_library(
+    name = "package_load_metrics_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/package_load_metrics",
+    proto = ":package_load_metrics_proto",
+)
+
+proto_library(
+    name = "semver_proto",
+    srcs = ["proto/semver.proto"],
+)
+
+go_proto_library(
+    name = "semver_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/semver",
+    proto = ":semver_proto",
+)
+
+proto_library(
+    name = "trace_proto",
+    srcs = ["proto/trace.proto"],
+)
+
+go_proto_library(
+    name = "trace_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/trace",
+    proto = ":trace_proto",
+)
+
+proto_library(
+    name = "git_proto",
+    srcs = ["proto/git.proto"],
+)
+
+go_proto_library(
+    name = "git_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/git",
+    proto = ":git_proto",
+)
+
+proto_library(
+    name = "acl_proto",
+    srcs = ["proto/acl.proto"],
+    deps = [
+        ":user_id_proto",
+    ],
+)
+
+go_proto_library(
+    name = "acl_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/acl",
+    proto = ":acl_proto",
+    deps = [
+        ":user_id_go_proto",
+    ],
+)
+
+proto_library(
+    name = "context_proto",
+    srcs = ["proto/context.proto"],
+    deps = [
+        ":user_id_proto",
+    ],
+)
+
+go_proto_library(
+    name = "context_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/context",
+    proto = ":context_proto",
+    deps = [
+        ":user_id_go_proto",
+    ],
+)
+
+proto_library(
+    name = "stat_filter_proto",
+    srcs = ["proto/stat_filter.proto"],
+    deps = [
+        ":invocation_status_proto",
+        "@protobuf//:descriptor_proto",
+    ],
+)
+
+go_proto_library(
+    name = "stat_filter_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/stat_filter",
+    proto = ":stat_filter_proto",
+    deps = [
+        ":invocation_status_go_proto",
+    ],
+)
+
+proto_library(
+    name = "invocation_policy_proto",
+    srcs = ["proto/invocation_policy.proto"],
+    deps = [
+        ":strategy_policy_proto",
+    ],
+)
+
+go_proto_library(
+    name = "invocation_policy_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/invocation_policy",
+    proto = ":invocation_policy_proto",
+    deps = [
+        ":strategy_policy_go_proto",
+    ],
+)
+
+proto_library(
+    name = "command_line_proto",
+    srcs = ["proto/command_line.proto"],
+    deps = [
+        ":option_filters_proto",
+    ],
+)
+
+go_proto_library(
+    name = "command_line_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/command_line",
+    proto = ":command_line_proto",
+    deps = [
+        ":option_filters_go_proto",
+    ],
+)
+
+proto_library(
+    name = "resource_proto",
+    srcs = ["proto/resource.proto"],
+    deps = [
+        ":remote_execution_proto",
+    ],
+)
+
+go_proto_library(
+    name = "resource_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/resource",
+    proto = ":resource_proto",
+    deps = [
+        ":remote_execution_go_proto",
+    ],
+)
+
+proto_library(
+    name = "scheduler_proto",
+    srcs = ["proto/scheduler.proto"],
+    deps = [
+        ":acl_proto",
+        ":context_proto",
+        ":trace_proto",
+        "@googleapis//google/rpc:status_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "scheduler_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/scheduler",
+    proto = ":scheduler_proto",
+    deps = [
+        ":acl_go_proto",
+        ":context_go_proto",
+        ":trace_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+proto_library(
+    name = "build_event_stream_proto",
+    srcs = ["proto/build_event_stream.proto"],
+    deps = [
+        ":action_cache_proto",
+        ":command_line_proto",
+        ":failure_details_proto",
+        ":invocation_policy_proto",
+        ":package_load_metrics_proto",
+        "@protobuf//:any_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "build_event_stream_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream",
+    proto = ":build_event_stream_proto",
+    deps = [
+        ":action_cache_go_proto",
+        ":command_line_go_proto",
+        ":failure_details_go_proto",
+        ":invocation_policy_go_proto",
+        ":package_load_metrics_go_proto",
+    ],
+)
+
+proto_library(
+    name = "remote_execution_proto",
+    srcs = ["proto/remote_execution.proto"],
+    deps = [
+        ":scheduler_proto",
+        ":semver_proto",
+        "@googleapis//google/api:annotations_proto",
+        "@googleapis//google/longrunning:operations_proto",
+        "@googleapis//google/rpc:status_proto",
+        "@protobuf//:any_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+        "@protobuf//:wrappers_proto",
+    ],
+)
+
+go_proto_library(
+    name = "remote_execution_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
+    proto = ":remote_execution_proto",
+    deps = [
+        ":google_longrunning_go_proto",
+        ":scheduler_go_proto",
+        ":semver_go_proto",
+        "@org_golang_google_genproto_googleapis_api//annotations",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+proto_library(
+    name = "api_v1_common_proto",
+    srcs = ["proto/api/v1/common.proto"],
+    deps = [
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "api_v1_common_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common",
+    proto = ":api_v1_common_proto",
+)
+
+proto_library(
+    name = "target_proto",
+    srcs = ["proto/target.proto"],
+    deps = [
+        ":api_v1_common_proto",
+        ":build_event_stream_proto",
+        ":context_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "target_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/target",
+    proto = ":target_proto",
+    deps = [
+        ":api_v1_common_go_proto",
+        ":build_event_stream_go_proto",
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "cache_proto",
+    srcs = ["proto/cache.proto"],
+    deps = [
+        ":context_proto",
+        ":remote_execution_proto",
+        ":resource_proto",
+        "@googleapis//google/rpc:status_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:field_mask_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "cache_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/cache",
+    proto = ":cache_proto",
+    deps = [
+        ":context_go_proto",
+        ":remote_execution_go_proto",
+        ":resource_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+proto_library(
+    name = "invocation_proto",
+    srcs = ["proto/invocation.proto"],
+    deps = [
+        ":acl_proto",
+        ":build_event_stream_proto",
+        ":cache_proto",
+        ":capability_proto",
+        ":command_line_proto",
+        ":context_proto",
+        ":invocation_status_proto",
+        ":stat_filter_proto",
+        ":target_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "invocation_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/invocation",
+    proto = ":invocation_proto",
+    deps = [
+        ":acl_go_proto",
+        ":build_event_stream_go_proto",
+        ":cache_go_proto",
+        ":capability_go_proto",
+        ":command_line_go_proto",
+        ":context_go_proto",
+        ":invocation_status_go_proto",
+        ":stat_filter_go_proto",
+        ":target_go_proto",
+    ],
+)
+
+proto_library(
+    name = "eventlog_proto",
+    srcs = ["proto/eventlog.proto"],
+    deps = [
+        ":context_proto",
+        ":invocation_status_proto",
+    ],
+)
+
+go_proto_library(
+    name = "eventlog_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/eventlog",
+    proto = ":eventlog_proto",
+    deps = [
+        ":context_go_proto",
+        ":invocation_status_go_proto",
+    ],
+)
+
+proto_library(
+    name = "execution_stats_proto",
+    srcs = ["proto/execution_stats.proto"],
+    deps = [
+        ":acl_proto",
+        ":context_proto",
+        ":invocation_status_proto",
+        ":remote_execution_proto",
+        ":scheduler_proto",
+        ":stat_filter_proto",
+        "@googleapis//google/longrunning:operations_proto",
+        "@googleapis//google/rpc:status_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "execution_stats_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_stats",
+    proto = ":execution_stats_proto",
+    deps = [
+        ":acl_go_proto",
+        ":context_go_proto",
+        ":google_longrunning_go_proto",
+        ":invocation_status_go_proto",
+        ":remote_execution_go_proto",
+        ":scheduler_go_proto",
+        ":stat_filter_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+proto_library(
+    name = "api_key_proto",
+    srcs = ["proto/api_key.proto"],
+    deps = [
+        ":capability_proto",
+        ":context_proto",
+        "@protobuf//:duration_proto",
+    ],
+)
+
+go_proto_library(
+    name = "api_key_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/api_key",
+    proto = ":api_key_proto",
+    deps = [
+        ":capability_go_proto",
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "encryption_proto",
+    srcs = ["proto/encryption.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "encryption_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/encryption",
+    proto = ":encryption_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "github_bb_proto",
+    srcs = ["proto/github.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "github_bb_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/github",
+    proto = ":github_bb_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "gcp_proto",
+    srcs = ["proto/gcp.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "gcp_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/gcp",
+    proto = ":gcp_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "user_list_proto",
+    srcs = ["proto/user_list.proto"],
+    deps = [
+        ":context_proto",
+        ":user_id_proto",
+    ],
+)
+
+go_proto_library(
+    name = "user_list_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/user_list",
+    proto = ":user_list_proto",
+    deps = [
+        ":context_go_proto",
+        ":user_id_go_proto",
+    ],
+)
+
+proto_library(
+    name = "group_proto",
+    srcs = ["proto/grp.proto"],
+    deps = [
+        ":api_key_proto",
+        ":capability_proto",
+        ":context_proto",
+        ":user_id_proto",
+        ":user_list_proto",
+    ],
+)
+
+go_proto_library(
+    name = "group_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/group",
+    proto = ":group_proto",
+    deps = [
+        ":api_key_go_proto",
+        ":capability_go_proto",
+        ":context_go_proto",
+        ":user_id_go_proto",
+        ":user_list_go_proto",
+    ],
+)
+
+proto_library(
+    name = "iprules_proto",
+    srcs = ["proto/iprules.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "iprules_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/iprules",
+    proto = ":iprules_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "secrets_proto",
+    srcs = ["proto/secrets.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "secrets_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/secrets",
+    proto = ":secrets_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "firecracker_proto",
+    srcs = ["proto/firecracker.proto"],
+    deps = [
+        ":remote_execution_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "firecracker_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/firecracker",
+    proto = ":firecracker_proto",
+    deps = [
+        ":remote_execution_go_proto",
+    ],
+)
+
+proto_library(
+    name = "workflow_proto",
+    srcs = ["proto/workflow.proto"],
+    deps = [
+        ":context_proto",
+        ":firecracker_proto",
+        ":invocation_status_proto",
+        "@googleapis//google/rpc:status_proto",
+        "@protobuf//:duration_proto",
+    ],
+)
+
+go_proto_library(
+    name = "workflow_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/workflow",
+    proto = ":workflow_proto",
+    deps = [
+        ":context_go_proto",
+        ":firecracker_go_proto",
+        ":invocation_status_go_proto",
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
+)
+
+proto_library(
+    name = "auditlog_proto",
+    srcs = ["proto/auditlog.proto"],
+    deps = [
+        ":api_key_proto",
+        ":context_proto",
+        ":encryption_proto",
+        ":github_bb_proto",
+        ":group_proto",
+        ":invocation_proto",
+        ":iprules_proto",
+        ":secrets_proto",
+        ":user_list_proto",
+        ":workflow_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "auditlog_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/auditlog",
+    proto = ":auditlog_proto",
+    deps = [
+        ":api_key_go_proto",
+        ":context_go_proto",
+        ":encryption_go_proto",
+        ":github_bb_go_proto",
+        ":group_go_proto",
+        ":invocation_go_proto",
+        ":iprules_go_proto",
+        ":secrets_go_proto",
+        ":user_list_go_proto",
+        ":workflow_go_proto",
+    ],
+)
+
+proto_library(
+    name = "quota_proto",
+    srcs = ["proto/quota.proto"],
+    deps = [
+        ":context_proto",
+        "@protobuf//:duration_proto",
+    ],
+)
+
+go_proto_library(
+    name = "quota_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/quota",
+    proto = ":quota_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "repo_proto",
+    srcs = ["proto/repo.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "repo_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/repo",
+    proto = ":repo_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "runner_proto",
+    srcs = ["proto/runner.proto"],
+    deps = [
+        ":context_proto",
+        ":git_proto",
+        ":remote_execution_proto",
+    ],
+)
+
+go_proto_library(
+    name = "runner_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/runner",
+    proto = ":runner_proto",
+    deps = [
+        ":context_go_proto",
+        ":git_go_proto",
+        ":remote_execution_go_proto",
+    ],
+)
+
+proto_library(
+    name = "index_proto",
+    srcs = ["proto/index.proto"],
+    deps = [
+        ":context_proto",
+        ":git_proto",
+        ":resource_proto",
+    ],
+)
+
+go_proto_library(
+    name = "index_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/index",
+    proto = ":index_proto",
+    deps = [
+        ":context_go_proto",
+        ":git_go_proto",
+        ":resource_go_proto",
+    ],
+)
+
+proto_library(
+    name = "search_proto",
+    srcs = ["proto/search.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "search_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/search",
+    proto = ":search_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "stats_proto",
+    srcs = ["proto/stats.proto"],
+    deps = [
+        ":context_proto",
+        ":invocation_status_proto",
+        ":stat_filter_proto",
+        "@protobuf//:duration_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+go_proto_library(
+    name = "stats_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/stats",
+    proto = ":stats_proto",
+    deps = [
+        ":context_go_proto",
+        ":invocation_status_go_proto",
+        ":stat_filter_go_proto",
+    ],
+)
+
+proto_library(
+    name = "suggestion_proto",
+    srcs = ["proto/suggestion.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "suggestion_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/suggestion",
+    proto = ":suggestion_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "usage_proto",
+    srcs = ["proto/usage.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "usage_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/usage",
+    proto = ":usage_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "user_proto",
+    srcs = ["proto/user.proto"],
+    deps = [
+        ":context_proto",
+        ":group_proto",
+        ":user_id_proto",
+    ],
+)
+
+go_proto_library(
+    name = "user_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/user",
+    proto = ":user_proto",
+    deps = [
+        ":context_go_proto",
+        ":group_go_proto",
+        ":user_id_go_proto",
+    ],
+)
+
+proto_library(
+    name = "workspace_proto",
+    srcs = ["proto/workspace.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "workspace_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/workspace",
+    proto = ":workspace_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+proto_library(
+    name = "zip_proto",
+    srcs = ["proto/zip.proto"],
+    deps = [
+        ":context_proto",
+        ":remote_execution_proto",
+    ],
+)
+
+go_proto_library(
+    name = "zip_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/zip",
+    proto = ":zip_proto",
+    deps = [
+        ":context_go_proto",
+        ":remote_execution_go_proto",
+    ],
+)
+
+proto_library(
+    name = "bazel_config_proto",
+    srcs = ["proto/bazel_config.proto"],
+    deps = [
+        ":api_key_proto",
+        ":context_proto",
+    ],
+)
+
+go_proto_library(
+    name = "bazel_config_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/bazel_config",
+    proto = ":bazel_config_proto",
+    deps = [
+        ":api_key_go_proto",
+        ":context_go_proto",
+    ],
+)
+
+# ── buildbuddy_service (the full Twirp/gRPC service) ───────────────────
+
+proto_library(
+    name = "buildbuddy_service_proto",
+    srcs = ["proto/buildbuddy_service.proto"],
+    deps = [
+        ":api_key_proto",
+        ":auditlog_proto",
+        ":bazel_config_proto",
+        ":cache_proto",
+        ":encryption_proto",
+        ":eventlog_proto",
+        ":execution_stats_proto",
+        ":gcp_proto",
+        ":github_bb_proto",
+        ":group_proto",
+        ":index_proto",
+        ":invocation_proto",
+        ":iprules_proto",
+        ":quota_proto",
+        ":repo_proto",
+        ":resource_proto",
+        ":runner_proto",
+        ":scheduler_proto",
+        ":search_proto",
+        ":secrets_proto",
+        ":stats_proto",
+        ":suggestion_proto",
+        ":target_proto",
+        ":usage_proto",
+        ":user_list_proto",
+        ":user_proto",
+        ":workflow_proto",
+        ":workspace_proto",
+        ":zip_proto",
+    ],
+)
+
+go_proto_library(
+    name = "buildbuddy_service_go_proto",
+    compilers = ["@io_bazel_rules_go//proto:go_grpc"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service",
+    proto = ":buildbuddy_service_proto",
+    deps = [
+        ":api_key_go_proto",
+        ":auditlog_go_proto",
+        ":bazel_config_go_proto",
+        ":cache_go_proto",
+        ":encryption_go_proto",
+        ":eventlog_go_proto",
+        ":execution_stats_go_proto",
+        ":gcp_go_proto",
+        ":github_bb_go_proto",
+        ":group_go_proto",
+        ":index_go_proto",
+        ":invocation_go_proto",
+        ":iprules_go_proto",
+        ":quota_go_proto",
+        ":repo_go_proto",
+        ":resource_go_proto",
+        ":runner_go_proto",
+        ":scheduler_go_proto",
+        ":search_go_proto",
+        ":secrets_go_proto",
+        ":stats_go_proto",
+        ":suggestion_go_proto",
+        ":target_go_proto",
+        ":usage_go_proto",
+        ":user_go_proto",
+        ":user_list_go_proto",
+        ":workflow_go_proto",
+        ":workspace_go_proto",
+        ":zip_go_proto",
+    ],
+)
