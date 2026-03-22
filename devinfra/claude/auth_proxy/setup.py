@@ -192,20 +192,27 @@ async def _create_java_truststore(paths: SessionPaths) -> None:
     if not ca_file.exists():
         raise TruststoreError("No CA file to add to truststore")
 
+    system_cacerts: Path | None = None
     try:
         system_cacerts = _find_system_file(_get_java_cacerts_candidates(), "system Java cacerts")
-    except FileNotFoundError as e:
-        raise TruststoreError(str(e)) from e
-
-    logger.info("Creating custom Java truststore from %s", system_cacerts)
+    except FileNotFoundError:
+        # No system cacerts (e.g., rules_distroless image where ca-certificates-java
+        # postinst never ran). keytool will create a fresh keystore containing only
+        # our custom CA. This is fine for environments where all traffic goes through
+        # the TLS-inspecting proxy.
+        logger.warning("No system Java cacerts found; creating truststore with custom CA only")
 
     try:
-        # Copy system truststore to our location
-        shutil.copy2(system_cacerts, truststore)
-        # Make writable (system cacerts may be read-only)
-        truststore.chmod(0o644)
+        if system_cacerts:
+            logger.info("Creating custom Java truststore from %s", system_cacerts)
+            # Copy system truststore to our location
+            shutil.copy2(system_cacerts, truststore)
+            # Make writable (system cacerts may be read-only)
+            truststore.chmod(0o644)
+        else:
+            logger.info("Creating fresh Java truststore (no system cacerts)")
 
-        # Import the proxy CA using keytool
+        # Import the proxy CA using keytool (creates keystore if it doesn't exist)
         keytool = _find_keytool()
         process = await asyncio.create_subprocess_exec(
             keytool,
