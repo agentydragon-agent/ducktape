@@ -133,19 +133,6 @@ resource "proxmox_virtual_environment_vm" "talos" {
     import_from  = proxmox_virtual_environment_download_file.talos_disk.id
   }
 
-  # Dedicated Longhorn storage disk (mounted at /var/mnt/longhorn by Talos).
-  # Uses scsi30 (highest slot) to avoid conflicts with Proxmox CSI which
-  # allocates upward from scsi1 for PVC volumes.
-  disk {
-    datastore_id = "local-zfs"
-    interface    = "scsi30"
-    iothread     = true
-    ssd          = true
-    discard      = "on"
-    size         = var.longhorn_disk_size_gb
-    file_format  = "raw"
-  }
-
   agent {
     enabled = true
     trim    = true
@@ -183,25 +170,7 @@ locals {
     "topology.kubernetes.io/region"                   = "proxmox"
     "topology.kubernetes.io/zone"                     = "atlas"
     "csi.proxmox.sinextra.dev/max-volume-attachments" = "29"
-    "node.longhorn.io/create-default-disk"            = "true"
   }
-
-  # Longhorn dedicated disk mount (selected by stable by-id path).
-  # Proxmox with virtio-scsi-single uses the drive ID (drive-scsi<N>) as the
-  # SCSI device_id, which udev exposes as /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi<N>.
-  # This is stable regardless of how many CSI PVC disks are attached.
-  longhorn_disk_config = yamlencode({
-    machine = {
-      disks = [
-        {
-          device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi30"
-          partitions = [
-            { mountpoint = "/var/mnt/longhorn" }
-          ]
-        }
-      ]
-    }
-  })
 
 }
 
@@ -262,7 +231,6 @@ data "talos_machine_configuration" "proxmox" {
       }),
     ],
     each.value.type == "worker" ? [local.worker_link_config] : [],
-    [local.longhorn_disk_config],
     local.nebula_machine_patches[each.key],
   )
 }

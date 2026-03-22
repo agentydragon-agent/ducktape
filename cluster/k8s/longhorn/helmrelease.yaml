@@ -21,6 +21,23 @@ spec:
       defaultDataPath: /var/lib/longhorn
       defaultReplicaCount: 2
       createDefaultDiskLabeledNodesOnly: true
+      replicaAutoBalance: best-effort
+      nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+      systemManagedComponentsNodeSelector: "node.longhorn.io/create-default-disk:true"
+    longhornManager:
+      nodeSelector:
+        node.longhorn.io/create-default-disk: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+    longhornDriver:
+      nodeSelector:
+        node.longhorn.io/create-default-disk: "true"
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
     longhornUI:
       nodeSelector:
         topology.kubernetes.io/region: hetzner

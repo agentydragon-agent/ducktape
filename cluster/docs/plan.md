@@ -19,7 +19,7 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 
 - [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)
 - [ ] Prometheus: unpin from wyrm2 (blocked on PriorityClasses + right-sizing + VPS headroom)
-- [ ] `talos-pve-cp-0`: evict Longhorn storage (pure CP node, has stopped replicas)
+- [x] ~~`talos-pve-cp-0`: evict Longhorn storage (pure CP node, has stopped replicas)~~
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`, `activitywatch`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
