@@ -122,9 +122,11 @@ def setup_k8s_secrets(
             result.env_vars[env_var] = value
             logger.info("Mapped %s/%s[%s] -> %s", secrets_cfg.namespace, entry.name, data_key, env_var)
 
-    # Fetch internal-use secrets (not exported as env vars)
+    # Fetch internal-use secrets (also exported as env vars for CLI tools)
     if secrets_cfg.buildbuddy_api_key:
         result.buildbuddy_api_key = _read_secret_ref(api, secrets_cfg.buildbuddy_api_key, secrets_cfg.namespace)
+        if result.buildbuddy_api_key:
+            result.env_vars["BUILDBUDDY_API_KEY"] = result.buildbuddy_api_key
     if secrets_cfg.otel_bearer_token:
         result.otel_bearer_token = _read_secret_ref(api, secrets_cfg.otel_bearer_token, secrets_cfg.namespace)
 
