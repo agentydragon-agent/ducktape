@@ -1,0 +1,10 @@
+# Spike: alternative approaches to hermetic container image building in Bazel.
+#
+# This is exploratory code — not production targets.
+# See README.md for the full analysis.
+
+filegroup(
+    name = "alt_distro_spike",
+    srcs = ["README.md"],
+    visibility = ["//visibility:private"],
+)

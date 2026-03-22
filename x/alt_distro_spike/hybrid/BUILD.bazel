@@ -1,0 +1,111 @@
+# Hybrid approach: Dockerfile-built base + Bazel application layers.
+#
+# This shows the complete pattern for:
+# 1. Consuming a pre-built base image (pulled by digest in MODULE.bazel)
+# 2. Adding application-specific layers with rules_oci
+# 3. Pushing the final image
+#
+# This pattern is already used for Python app images in the repo
+# (debian_slim base + py_image_layer). Here we extend it to the
+# RBE worker and other heavier images.
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+# ============================================================================
+# Pattern 1: RBE Worker — base image with extra file overlay
+# ============================================================================
+
+# Package the dockerd wrapper script as a tar layer.
+# This is the only customization on top of the base image.
+pkg_tar(
+    name = "dockerd_wrapper_layer",
+    srcs = ["//devinfra/rbe_image:dockerd_wrapper.sh"],
+    package_dir = "/usr/bin",
+    # The Dockerfile does: mv dockerd_wrapper.sh -> dockerd
+    # With rules_oci, we'd use a different mechanism (see below).
+)
+
+# Assemble the final RBE worker image.
+# Base has all system packages. We add the dockerd wrapper on top.
+#
+# NOTE: The real Dockerfile also does `mv /usr/bin/dockerd /usr/bin/dockerd.real`
+# and replaces dockerd with the wrapper. In a Bazel-assembled image, we'd
+# handle this differently — either:
+# a) Include the rename in the base Dockerfile
+# b) Use a separate init script
+# c) Package both files in the overlay layer
+#
+# oci_image(
+#     name = "rbe_worker_image",
+#     base = "@rbe_worker_base",
+#     tars = [":dockerd_wrapper_layer"],
+# )
+#
+# oci_push(
+#     name = "push_rbe_worker",
+#     image = ":rbe_worker_image",
+#     repository = "ghcr.io/agentydragon/rbe-worker",
+#     remote_tags = ["latest"],
+# )
+#
+# oci_load(
+#     name = "load_rbe_worker",
+#     image = ":rbe_worker_image",
+#     repo_tags = ["ghcr.io/agentydragon/rbe-worker:latest"],
+# )
+
+# ============================================================================
+# Pattern 2: Python App — base image + py_image_layer (already done in repo)
+# ============================================================================
+#
+# This is the existing pattern from props/backend/BUILD.bazel and others.
+# Shown here for completeness.
+#
+# load("@aspect_rules_py//py:defs.bzl", "py_image_layer")
+#
+# py_image_layer(
+#     name = "app_layer",
+#     binary = "//ember:emberd",
+# )
+#
+# oci_image(
+#     name = "ember_image",
+#     base = "@debian_slim",  # Already in MODULE.bazel
+#     tars = [":app_layer"],
+#     entrypoint = ["/opt/emberd/emberd"],
+#     env = {
+#         "PYTHONUNBUFFERED": "1",
+#     },
+# )
+
+# ============================================================================
+# Pattern 3: Multi-layer with config files
+# ============================================================================
+#
+# For images that need config files alongside code:
+#
+# pkg_tar(
+#     name = "config_layer",
+#     srcs = ["nginx.conf"],
+#     package_dir = "/etc/nginx",
+# )
+#
+# oci_image(
+#     name = "app_with_config",
+#     base = "@python_app_base",
+#     tars = [
+#         ":app_layer",
+#         ":config_layer",
+#     ],
+# )
+
+# Placeholder target
+filegroup(
+    name = "hybrid_spike",
+    srcs = [
+        "MODULE.bazel.snippet",
+        "README.md",
+        "ci_build_base.sh",
+    ],
+)
