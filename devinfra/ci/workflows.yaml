@@ -46,8 +46,9 @@ workflows:
     trigger: { kind: path, pattern: "^devinfra/claude/testing/container_e2e/Dockerfile" }
 
   # Bazel image workflows always trigger. Bazel builds are hermetic,
-  # so same inputs → same image digest. harbor_push.sh compares the local
-  # digest against the registry and skips the push when unchanged.
+  # so same inputs → same image digest. Docker push deduplicates at the
+  # blob level (existing layers aren't re-uploaded), so unchanged images
+  # have minimal network cost, but the push + tagging always runs.
   props-images:
     trigger: { kind: always }
     events: [push]
