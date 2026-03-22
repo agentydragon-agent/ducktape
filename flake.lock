@@ -38,13 +38,13 @@
     "claude-hooks-wheel": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-WEnAFwdpF+Kl8KN6h3KcFnlSVpD74tsBYHL2ltVVKXk=",
+        "narHash": "sha256-nTggnpfeu2zO2YrDsj0OO7HRMdhMmM4RKOKJocp2Tbw=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-e5db5695/claude_hooks-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-2815120f/claude_hooks-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-e5db5695/claude_hooks-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-2815120f/claude_hooks-0.1.0-py3-none-any.whl"
       }
     },
     "claude-plugins-official": {
@@ -66,13 +66,13 @@
     "ducktape-wheel": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-5mL/CIW0RRHhPc72yOVi1rnC3FWZ7vfoUbVCaXdSwNE=",
+        "narHash": "sha256-cjcym2Dp561yu0g7ThYb0KTc3mgwISV11QxpFC3iO5o=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-48758faa/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-2815120f/ducktape-0.1.0-py3-none-any.whl"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-48758faa/ducktape-0.1.0-py3-none-any.whl"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-2815120f/ducktape-0.1.0-py3-none-any.whl"
       }
     },
     "flake-utils": {

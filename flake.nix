@@ -32,11 +32,11 @@
     # CI-released artifacts — pinned to tagged releases, updated by release.yml.
     # URLs are rewritten by the update-downstream job after each release.
     ducktape-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-48758faa/ducktape-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-2815120f/ducktape-0.1.0-py3-none-any.whl";
       flake = false;
     };
     claude-hooks-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-e5db5695/claude_hooks-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-2815120f/claude_hooks-0.1.0-py3-none-any.whl";
       flake = false;
     };
     gterm-theme-wheel = {
