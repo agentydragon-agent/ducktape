@@ -33,6 +33,11 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       (e.g., Stakater Reloader on Authentik worker to restart pods + a post-start hook that
       clears `last_applied_hash`, or a sidecar/CronJob that calls the Authentik API to force
       re-apply). Until fixed, any secret rotation breaks all SSO logins cluster-wide.
+- [ ] Resync SSO client secrets: Authentik DB has stale secrets for all OAuth2 providers
+      (Gitea, Grafana, Gatus, Harbor, Headlamp, InvenTree, Matrix, etc.) after TF state
+      loss caused `sso-secrets` to regenerate all `random_password` resources. Fix by
+      force re-applying all SSO blueprints (clear `last_applied_hash` via `ak shell`) so
+      the DB picks up the current env var values.
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
 - [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)
