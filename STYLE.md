@@ -88,8 +88,13 @@ Style and convention rules for this repository. Package-specific elaborations be
   return info.state == "RUNNING"
   ```
 
+- **Don't wrap bugs in try/except**: If an error represents a programming bug, let it crash — don't catch and return early.
+- **No defensive early returns for no-ops**: Don't add `if not items: return` when the subsequent loop would just be a no-op anyway.
 - **Strict data mapping**: When parsing enums/typed values from persistence or inputs, do not ignore invalid values. Validate early or raise; do not `continue` on exceptions.
 - **Prefer functional style**: Use concise comprehensions and idiomatic patterns. Keep public interfaces typed with Pydantic where appropriate.
+- **Functions over classes**: Only use classes when you have state to manage. If `__init__` just does `self.x = SomeClass()` with no real state, use functions instead.
+- **Inline trivial locals**: Don't create intermediate variables just to hold a value used once.
+- **Use framework features**: Prefer built-in validation (e.g., typer `exists=True`) over manual checks.
 - **Prefer precise types**: Use discriminated unions, Protocols, TypedDicts, or concrete Pydantic models for heterogeneous values. `Any`/`object` is acceptable only when a field truly allows any value and no stronger contract exists; document such cases.
 - **Make invalid states unrepresentable**: Prefer algebraic types (discriminated unions) over flags and optional fields that allow nonsensical combinations. A model with `hook_installed: bool` and `pid: int | None` permits `hook_installed=False, pid=42` — instead use a union of distinct result types where each variant carries exactly the fields that make sense for it. In Python code, dispatch on union variants with `isinstance` checks (which let mypy narrow the type), not string comparisons on discriminator fields. In templates (Mako/Jinja) where `isinstance` is unavailable, `kind` string checks are acceptable.
 - **Typed concurrency messages**: Actor/mailbox patterns should use explicit dataclasses or Pydantic models for messages and result types—never `dict[str, T]`.

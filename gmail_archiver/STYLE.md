@@ -2,18 +2,6 @@
 
 Elaborations on the root <../../STYLE.md>. Do not duplicate rules already covered there.
 
-## Python Style
-
-- **Functions over classes**: Only use classes when you have state to manage.
-- **Constants live where they're used**: Shared constants go in shared modules. Constants used by only one module stay in that module — no `constants.py` dumping ground.
-- **Inline trivial locals**: Don't create intermediate variables just to hold a value used once.
-- **Use framework features**: Prefer built-in validation (e.g., typer `exists=True`) over manual checks.
-
-## Error Handling
-
-- **Don't wrap bugs in try/except**: If an error represents a programming bug (e.g., plan collision), let it crash — don't catch and return early.
-- **No defensive early returns for no-ops**: Don't add `if not items: return` when the subsequent loop would just be a no-op anyway.
-
 ## Module Organization
 
 - **Separate concerns**: Domain logic (Plan, Action) and view/display code (display_plan, summarize_plan) belong in separate modules.
