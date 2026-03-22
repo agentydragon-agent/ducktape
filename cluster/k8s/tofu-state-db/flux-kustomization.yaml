@@ -17,4 +17,3 @@ spec:
     - name: tofu-state-namespace
     - name: cnpg
     - name: local-path-provisioner
-    - name: gateway
