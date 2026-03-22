@@ -1,0 +1,97 @@
+# Demonstration of wrapping Dockerfile builds in Bazel.
+#
+# Two approaches shown:
+# 1. rules_buildx (if available)
+# 2. genrule fallback (always works, just needs docker)
+#
+# NOTE: These targets require Docker daemon access and network.
+# Run with: bazel build --spawn_strategy=local //x/alt_distro_spike/buildx:...
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+
+# ============================================================================
+# Approach 1: rules_buildx (if the module is added)
+# ============================================================================
+
+# load("@rules_buildx//buildx:defs.bzl", "buildx_image")
+#
+# buildx_image(
+#     name = "rbe_image_buildx",
+#     dockerfile = "//devinfra/rbe_image:Dockerfile",
+#     context = "//devinfra/rbe_image",
+#     # Bazel tracks these as inputs for cache invalidation
+#     srcs = [
+#         "//devinfra/rbe_image:Dockerfile",
+#         "//devinfra/rbe_image:dockerd_wrapper.sh",
+#     ],
+#     tags = ["requires-docker", "no-sandbox"],
+# )
+
+# ============================================================================
+# Approach 2: genrule wrapper (no extra Bazel module needed)
+# ============================================================================
+#
+# This is the pragmatic approach: a shell script that calls docker build
+# and exports the result as an OCI tarball.
+#
+# The genrule tracks Dockerfile + context files as srcs, so Bazel knows
+# when to rebuild. The output is a tarball that oci_image can consume.
+
+# genrule(
+#     name = "rbe_image_tar",
+#     srcs = [
+#         "//devinfra/rbe_image:Dockerfile",
+#         "//devinfra/rbe_image:dockerd_wrapper.sh",
+#     ],
+#     outs = ["rbe_image.tar"],
+#     cmd = """
+#         # Build the image
+#         docker build -t rbe-worker-bazel:latest \
+#             -f $(location //devinfra/rbe_image:Dockerfile) \
+#             $$(dirname $(location //devinfra/rbe_image:Dockerfile))
+#
+#         # Export as OCI tarball
+#         docker save rbe-worker-bazel:latest -o $@
+#
+#         # Clean up
+#         docker rmi rbe-worker-bazel:latest || true
+#     """,
+#     tags = [
+#         "requires-docker",
+#         "no-sandbox",
+#         "no-remote",  # Cannot run on RBE
+#         "local",      # Must run locally (needs Docker daemon)
+#     ],
+#     # Disable sandbox — needs Docker socket
+#     local = True,
+# )
+
+# ============================================================================
+# Consuming the built image in rules_oci
+# ============================================================================
+#
+# Once you have the tarball (from either approach), you can use it as a
+# base for further layering or push it directly.
+#
+# oci_image(
+#     name = "rbe_image_with_extras",
+#     base = ":rbe_image_tar",
+#     # Add more layers on top if needed
+#     tars = [":extra_tools_layer"],
+# )
+#
+# oci_push(
+#     name = "push_rbe_image",
+#     image = ":rbe_image_with_extras",
+#     repository = "ghcr.io/agentydragon/rbe-worker",
+#     remote_tags = ["latest"],
+# )
+
+# Placeholder target so the BUILD file is valid
+filegroup(
+    name = "buildx_spike",
+    srcs = [
+        "MODULE.bazel.snippet",
+        "README.md",
+    ],
+)

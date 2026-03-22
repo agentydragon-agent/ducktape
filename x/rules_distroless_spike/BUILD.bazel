@@ -1,0 +1,206 @@
+# rules_distroless spike — demonstrates replacing Dockerfiles with Bazel-native
+# distroless container image builds.
+#
+# STATUS: Spike / proof-of-concept. These targets are syntactically valid but
+# cannot build until the MODULE.bazel snippet is integrated and lock files are
+# generated.
+
+load("@rules_distroless//distroless:defs.bzl", "cacerts", "group", "passwd")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "tar")
+
+# =============================================================================
+# Shared distroless primitives
+# =============================================================================
+
+passwd(
+    name = "passwd_root_nonroot",
+    entries = [
+        {
+            "uid": 0,
+            "gid": 0,
+            "home": "/root",
+            "shell": "/bin/bash",
+            "username": "root",
+        },
+        {
+            "uid": 65532,
+            "gid": 65532,
+            "home": "/nonexistent",
+            "shell": "/usr/sbin/nologin",
+            "username": "nonroot",
+        },
+    ],
+)
+
+group(
+    name = "group_root_nonroot",
+    entries = [
+        {
+            "name": "root",
+            "gid": 0,
+        },
+        {
+            "name": "nonroot",
+            "gid": 65532,
+        },
+    ],
+)
+
+# /bin/sh -> /bin/bash symlink (many packages assume sh exists)
+tar(
+    name = "sh_symlink",
+    mtree = [
+        "./bin/sh type=link link=/bin/bash",
+    ],
+)
+
+# =============================================================================
+# Example 1: E2E test container (replaces container_e2e/Dockerfile)
+#
+# Original: FROM python:3.13-slim + apt-get install default-jdk-headless git
+# =============================================================================
+
+# CA certificates from the resolved apt packages
+# NOTE: This requires the lock file to exist. Until then, this target will fail.
+cacerts(
+    name = "e2e_cacerts",
+    package = "@bookworm_e2e//ca-certificates:data",
+    tags = ["manual"],  # Don't build in //... until lock files exist
+)
+
+oci_image(
+    name = "e2e_container_distroless",
+    architecture = "amd64",
+    env = {
+        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+    },
+    os = "linux",
+    tags = ["manual"],
+    tars = [
+        # All resolved apt packages as a single flat tar
+        "@bookworm_e2e//:flat",
+        ":sh_symlink",
+        ":passwd_root_nonroot",
+        ":group_root_nonroot",
+        ":e2e_cacerts",
+    ],
+)
+
+oci_load(
+    name = "e2e_container_distroless_load",
+    image = ":e2e_container_distroless",
+    repo_tags = ["e2e-container-distroless:latest"],
+    tags = ["manual"],
+)
+
+# =============================================================================
+# Example 2: Minimal Python app container (replaces webhook_inbox, ember, etc.)
+#
+# Original: FROM python:3.11-slim + apt-get install curl jq git
+# This shows how to compose apt packages with py_image_layer from aspect_rules_py.
+# =============================================================================
+
+cacerts(
+    name = "pyapp_cacerts",
+    package = "@bookworm_pyapp//ca-certificates:data",
+    tags = ["manual"],
+)
+
+oci_image(
+    name = "pyapp_base_distroless",
+    architecture = "amd64",
+    env = {
+        "PYTHONUNBUFFERED": "1",
+        "SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
+    },
+    os = "linux",
+    tags = ["manual"],
+    tars = [
+        # System packages (curl, jq, git, ca-certs, libpq, build-essential)
+        "@bookworm_pyapp//:flat",
+        ":sh_symlink",
+        ":passwd_root_nonroot",
+        ":group_root_nonroot",
+        ":pyapp_cacerts",
+    ],
+    # In production, you would layer the Python interpreter and application
+    # on top of this base:
+    #
+    #   py_image_layer(
+    #       name = "app_layers",
+    #       binary = ":server_bin",
+    #   )
+    #
+    #   oci_image(
+    #       name = "app_image",
+    #       base = ":pyapp_base_distroless",
+    #       tars = [":app_layers"],
+    #       entrypoint = [...],
+    #   )
+)
+
+oci_load(
+    name = "pyapp_base_distroless_load",
+    image = ":pyapp_base_distroless",
+    repo_tags = ["pyapp-base-distroless:latest"],
+    tags = ["manual"],
+)
+
+# =============================================================================
+# Example 3: RBE worker overlay packages
+#
+# NOTE: The RBE image is special — it extends BuildBuddy's rbe-ubuntu24-04
+# base which is NOT built with rules_distroless. We can only replace the
+# additional apt-get install layer with a distroless package tar.
+#
+# In practice, this would be used as:
+#   oci_image(
+#       base = "@rbe_ubuntu24_04",  # BuildBuddy's base (pulled via oci.pull)
+#       tars = ["@noble_rbe//:flat", ":dockerd_wrapper_layer", ...],
+#   )
+#
+# However, the base image postinst scripts (locale-gen, ldconfig, etc.) that
+# run during `docker build` would NOT run. This is the main challenge with
+# replacing the RBE Dockerfile.
+# =============================================================================
+
+# This is what the flat tar of RBE packages would look like as a target.
+# We can't actually build it without the lock file.
+#
+# oci_image(
+#     name = "rbe_overlay_distroless",
+#     base = "@rbe_base_image",  # Would need to add oci.pull for this
+#     tars = [
+#         "@noble_rbe//:flat",
+#         ":rbe_dockerd_wrapper",  # Custom layer for dockerd wrapper
+#     ],
+# )
+
+# =============================================================================
+# Per-package access example
+#
+# rules_distroless resolves transitive deps and creates per-package repos.
+# You can reference individual packages for fine-grained layering:
+#
+#   @bookworm_e2e//git:data         — just the git package files
+#   @bookworm_e2e//git:control      — package metadata
+#   @bookworm_e2e//:flat            — ALL packages as a single tar
+#
+# Fine-grained layering example (NOT using :flat):
+#
+#   oci_image(
+#       name = "layered_image",
+#       tars = [
+#           "@bookworm_e2e//base-files:data",   # Layer 1: base
+#           "@bookworm_e2e//libc6:data",         # Layer 2: glibc
+#           "@bookworm_e2e//git:data",           # Layer 3: git
+#           ":app_layer",                         # Layer 4: application
+#       ],
+#   )
+#
+# Trade-offs:
+#   :flat   — simple, one layer, rebuilds everything on any package change
+#   per-pkg — more layers, better cache reuse, but more targets to manage
+#             and OCI layer count limits apply (~128 layers max)
+# =============================================================================

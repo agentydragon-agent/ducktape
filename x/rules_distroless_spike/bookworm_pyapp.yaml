@@ -1,0 +1,37 @@
+# Minimal Python application container packages — Debian 12 (Bookworm).
+#
+# Replaces the common pattern seen in multiple Dockerfiles:
+#   FROM python:3.xx-slim
+#   RUN apt-get install -y curl jq git ...
+#
+# Covers: ember, llm/html, webhook_inbox, rspcache, gatelet
+#
+# Anytime this file is changed, regenerate the lock file:
+#   bazel run @bookworm_pyapp//:lock
+version: 1
+
+sources:
+  - channel: bookworm main
+    url: https://snapshot.debian.org/archive/debian/20250301T000000Z
+  - channel: bookworm-security main
+    url: https://snapshot.debian.org/archive/debian-security/20250301T000000Z
+  - channel: bookworm-updates main
+    url: https://snapshot.debian.org/archive/debian/20250301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  # Common across most Python app Dockerfiles
+  - "ca-certificates"
+  - "curl"
+
+  # Used by ember/Dockerfile and others
+  - "jq"
+  - "git"
+
+  # Used by gatelet (PostgreSQL client + dev headers for psycopg2)
+  - "libpq-dev"
+
+  # Used by rspcache (C compiler for native extensions)
+  - "build-essential"

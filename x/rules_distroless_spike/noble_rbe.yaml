@@ -1,0 +1,70 @@
+# RBE worker image packages — Ubuntu 24.04 (Noble Numbat).
+#
+# This replaces devinfra/rbe_image/Dockerfile's apt-get install layer.
+# Based on BuildBuddy's rbe-ubuntu24-04 which already provides:
+#   build-essential, python3, git, curl, file, zip, Docker CE,
+#   iptables-legacy, and a non-root "buildbuddy" user with passwordless sudo.
+#
+# We only list the ADDITIONAL packages our Dockerfile installs on top.
+#
+# Anytime this file is changed, regenerate the lock file:
+#   bazel run @noble_rbe//:lock
+version: 1
+
+sources:
+  # Pin to a snapshot for reproducibility. Update the timestamp when you
+  # want to pick up security patches.
+  # NOTE: snapshot.ubuntu.com may have availability issues. If the snapshot
+  # date is too old, packages may be removed. Use a recent date.
+  - channel: noble main universe
+    url: https://snapshot.ubuntu.com/ubuntu/20250301T000000Z
+  - channel: noble-security main universe
+    url: https://snapshot.ubuntu.com/ubuntu/20250301T000000Z
+  - channel: noble-updates main universe
+    url: https://snapshot.ubuntu.com/ubuntu/20250301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  # --- Rust toolchain deps ---
+  - "libssl-dev"
+  - "pkg-config"
+
+  # --- C compiler for pip wheel builds (lru-dict etc.) ---
+  - "clang"
+
+  # --- D-Bus for tests that spawn a private session ---
+  - "dbus-daemon"
+
+  # --- Native dev headers for pip wheel builds ---
+  - "libgirepository-2.0-dev"
+  - "libcairo2-dev"
+  - "libdbus-1-dev"
+
+  # --- initramfs for QEMU-based tests ---
+  - "cpio"
+
+  # --- FAT CIDATA volumes for Talos nocloud ---
+  - "dosfstools"
+  - "mtools"
+
+  # --- QEMU emulator for integration tests ---
+  - "qemu-system-x86"
+
+  # --- Chromium headless shell shared library dependencies ---
+  - "libasound2t64"
+  - "libatk-bridge2.0-0t64"
+  - "libatk1.0-0t64"
+  - "libcups2t64"
+  - "libdrm2"
+  - "libgbm1"
+  - "libnspr4"
+  - "libnss3"
+  - "libpango-1.0-0"
+  - "libxcomposite1"
+  - "libxdamage1"
+  - "libxkbcommon0"
+  - "libxrandr2"
+  - "libxfixes3"
+  - "libxshmfence1"

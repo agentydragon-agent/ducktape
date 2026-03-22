@@ -1,0 +1,43 @@
+# apko config for the container E2E test image.
+#
+# Replaces: devinfra/claude/testing/container_e2e/Dockerfile
+#   FROM python:3.13-slim
+#   RUN apt-get install -y default-jdk-headless git
+#
+# This is an ideal candidate for apko — simple image, few packages, all
+# available in Wolfi.
+
+contents:
+  repositories:
+    - https://packages.wolfi.dev/os
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  packages:
+    # Python 3.13 runtime
+    - python-3.13
+    - python-3.13-default
+
+    # JDK headless (for keytool)
+    - openjdk-21-default-jvm
+
+    # Git
+    - git
+
+    # CA certs
+    - ca-certificates-bundle
+
+    # Shell for scripts
+    - busybox
+
+accounts:
+  groups:
+    - groupname: test
+      gid: 1000
+  users:
+    - username: test
+      uid: 1000
+      gid: 1000
+  run-as: 0  # Tests often need root
+
+environment:
+  JAVA_HOME: /usr/lib/jvm/java-21-openjdk

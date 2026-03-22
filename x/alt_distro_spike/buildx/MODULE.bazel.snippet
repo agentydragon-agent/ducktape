@@ -1,0 +1,19 @@
+# Add to root MODULE.bazel to enable rules_buildx.
+#
+# NOTE: rules_buildx is not yet in the Bazel Central Registry (BCR) as of
+# 2026-03. You'd need a git_override or archive_override.
+
+# Option A: If/when it's in BCR
+# bazel_dep(name = "rules_buildx", version = "0.1.0")
+
+# Option B: git_override (current state)
+# bazel_dep(name = "rules_buildx", version = "0.0.0")
+# git_override(
+#     module_name = "rules_buildx",
+#     remote = "https://github.com/nicholasgasior/rules_buildx.git",
+#     commit = "<pin-to-specific-commit>",
+# )
+
+# Option C: Skip rules_buildx entirely, use a genrule wrapper.
+# This is simpler and avoids the external dependency. See BUILD.bazel
+# for the genrule approach.

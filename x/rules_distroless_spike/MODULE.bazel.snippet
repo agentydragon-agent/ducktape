@@ -1,0 +1,49 @@
+# rules_distroless MODULE.bazel snippet
+#
+# Add these lines to the root MODULE.bazel to enable rules_distroless.
+# rules_distroless v0.6.2 requires: bazel_lib, tar.bzl, yq.bzl (pulled transitively).
+# It already depends on rules_oci, which we already have.
+
+# --- Add this bazel_dep near the other container-related deps ---
+
+bazel_dep(name = "rules_distroless", version = "0.6.2")
+
+# tar.bzl is a transitive dep of rules_distroless but we may need it directly
+# for custom tar layers (sh symlinks, config files, etc.)
+bazel_dep(name = "tar.bzl", version = "0.6.0")
+
+# --- Add the apt extension ---
+
+apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
+
+# RBE worker image packages (Ubuntu 24.04 Noble)
+apt.install(
+    name = "noble_rbe",
+    lock = "//x/rules_distroless_spike:noble_rbe.lock.json",
+    manifest = "//x/rules_distroless_spike:noble_rbe.yaml",
+)
+
+# E2E test container packages (Debian Bookworm, matching python:3.13-slim)
+apt.install(
+    name = "bookworm_e2e",
+    lock = "//x/rules_distroless_spike:bookworm_e2e.lock.json",
+    manifest = "//x/rules_distroless_spike:bookworm_e2e.yaml",
+)
+
+# Minimal Python app container packages (Debian Bookworm slim)
+apt.install(
+    name = "bookworm_pyapp",
+    lock = "//x/rules_distroless_spike:bookworm_pyapp.lock.json",
+    manifest = "//x/rules_distroless_spike:bookworm_pyapp.yaml",
+)
+
+use_repo(apt, "noble_rbe", "bookworm_e2e", "bookworm_pyapp")
+
+# --- Lock file generation ---
+# After adding the above, generate lock files by running:
+#   bazel run @noble_rbe//:lock
+#   bazel run @bookworm_e2e//:lock
+#   bazel run @bookworm_pyapp//:lock
+#
+# Lock files pin exact package versions + SHA256 hashes for hermetic builds.
+# Re-run :lock whenever a manifest YAML changes.

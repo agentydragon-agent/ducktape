@@ -1,0 +1,86 @@
+# apko config attempting the RBE worker image.
+#
+# STATUS: INCOMPLETE — several packages are unavailable in Wolfi/Alpine.
+# This file documents what IS possible and where the gaps are.
+#
+# The RBE worker is the hardest image to replicate in apko because it needs:
+# 1. BuildBuddy's base image assumptions (Ubuntu layout, goinit, dockerd)
+# 2. QEMU (not in Wolfi)
+# 3. libtinfo5 (legacy ncurses for GHC)
+# 4. Docker CE (not in Wolfi)
+#
+# Verdict: apko is NOT suitable for the RBE worker image.
+
+contents:
+  repositories:
+    - https://packages.wolfi.dev/os
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  packages:
+    # Build essentials
+    - build-base
+    - gcc
+    - g++
+    - make
+
+    # Rust toolchain dependencies
+    - openssl-dev
+    - pkgconf
+
+    # C compiler for pip wheel builds
+    - clang-18
+
+    # D-Bus for tests
+    - dbus
+
+    # Native dev headers for Python extensions
+    - gobject-introspection-dev
+    - cairo-dev
+    - dbus-dev
+
+    # Initramfs/FAT tools
+    - cpio
+    - dosfstools
+    # mtools: NOT in Wolfi, only in Alpine community
+
+    # Chromium headless shell shared libraries
+    - alsa-lib
+    - at-spi2-core
+    - cups-libs
+    - libdrm
+    - mesa-gbm
+    - nspr
+    - nss
+    - pango
+    - libxcomposite
+    - libxdamage
+    - libxkbcommon
+    - libxrandr
+    - libxfixes
+    - libxshmfence
+
+    # Utilities
+    - git
+    - curl
+    - file
+    - zip
+    - busybox
+    - ca-certificates-bundle
+    - python-3.13
+
+    # === GAPS (packages NOT available) ===
+    # - qemu-system-x86_64: NOT in Wolfi
+    # - docker-ce / dockerd: NOT in Wolfi
+    # - libtinfo5: legacy ncurses split, NOT in Wolfi
+    # - mtools: NOT in Wolfi (Alpine community only)
+    # - iptables-legacy: NOT in Wolfi (needed for Firecracker)
+
+accounts:
+  groups:
+    - groupname: buildbuddy
+      gid: 1000
+  users:
+    - username: buildbuddy
+      uid: 1000
+      gid: 1000
+  run-as: 1000

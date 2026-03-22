@@ -1,0 +1,57 @@
+# apko config for a simple Python application image (Ember-like).
+#
+# This replaces:
+#   FROM python:3.11-slim
+#   RUN apt-get install -y curl jq git
+#
+# Build:
+#   apko build python_app.apko.yaml python-app:latest python-app.tar
+#
+# Lock:
+#   apko lock python_app.apko.yaml
+#   (generates python_app.apko.lock.json with pinned versions/hashes)
+
+contents:
+  repositories:
+    - https://packages.wolfi.dev/os
+  keyring:
+    - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+  packages:
+    # Python runtime
+    - python-3.13
+    - python-3.13-default
+    - py3-pip
+
+    # System utilities needed by the app
+    - curl
+    - jq
+    - git
+
+    # CA certificates for HTTPS
+    - ca-certificates-bundle
+
+    # Minimal shell for entrypoint scripts
+    - busybox
+
+accounts:
+  groups:
+    - groupname: app
+      gid: 1000
+  users:
+    - username: app
+      uid: 1000
+      gid: 1000
+  run-as: 1000
+
+entrypoint:
+  command: /usr/bin/python3
+
+# Work directory
+work-dir: /opt/app
+
+# Environment variables
+environment:
+  PYTHONUNBUFFERED: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_CACHE_DIR: "1"

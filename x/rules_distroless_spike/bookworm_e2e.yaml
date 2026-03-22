@@ -1,0 +1,28 @@
+# E2E test container packages — Debian 12 (Bookworm).
+#
+# Replaces devinfra/claude/testing/container_e2e/Dockerfile which installs:
+#   default-jdk-headless, git
+# on top of python:3.13-slim (Debian Bookworm).
+#
+# Anytime this file is changed, regenerate the lock file:
+#   bazel run @bookworm_e2e//:lock
+version: 1
+
+sources:
+  - channel: bookworm main
+    url: https://snapshot.debian.org/archive/debian/20250301T000000Z
+  - channel: bookworm-security main
+    url: https://snapshot.debian.org/archive/debian-security/20250301T000000Z
+  - channel: bookworm-updates main
+    url: https://snapshot.debian.org/archive/debian/20250301T000000Z
+
+archs:
+  - "amd64"
+
+packages:
+  # JDK for keytool (Java truststore creation)
+  - "default-jdk-headless"
+  # Git for hook tests
+  - "git"
+  # CA certificates
+  - "ca-certificates"
