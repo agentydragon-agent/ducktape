@@ -110,6 +110,10 @@ spec:
             gnetId: 16715 # Flux Control Plane — controller CPU/memory/queue metrics
             revision: 1
             datasource: Prometheus
+          harbor:
+            gnetId: 14075 # Harbor — core request rates, quotas, artifacts
+            revision: 2
+            datasource: Prometheus
 
       # CRITICAL: Use Recreate strategy for RWO volumes
       # Grafana uses RWO persistent volume for dashboards, plugins, and session data (10Gi).
