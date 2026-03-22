@@ -98,6 +98,7 @@ bazel_dep(name = "aspect_rules_py", version = "1.8.4")
 
 # Container images (rules_oci)
 bazel_dep(name = "rules_oci", version = "2.2.7")
+bazel_dep(name = "rules_distroless", version = "0.6.2")
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 # Helm chart packaging (rules_helm)
@@ -205,25 +206,13 @@ oci.pull(
     tag = "v1.13.0-alpha.2",
 )
 
-# Test infrastructure: Python base image for container e2e tests (wheel install + hook exercise)
+# Base image for container E2E tests. rules_distroless layers git + JDK on top.
 oci.pull(
     name = "python_3_13_slim",
     digest = "sha256:7d8999b140f22939451e00b79c0fd86f13d0bc0577b369f8212fce063101fb2a",
     image = "docker.io/library/python",
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
-)
-
-# Container E2E test image: python:3.13-slim + git + JDK (keytool).
-# Built and pushed by .github/workflows/e2e-container-image.yml.
-# To update: docker manifest inspect --verbose ghcr.io/agentydragon/e2e-container:<commit-sha> \
-#   | python3 -c "import sys,json; print(json.load(sys.stdin)['Descriptor']['digest'])"
-oci.pull(
-    name = "e2e_container",
-    digest = "sha256:4316440032a7985420eb5859ba9898717dcfd0b89f09aa2371dae919be9e62e6",
-    image = "ghcr.io/agentydragon/e2e-container",
-    platforms = ["linux/amd64"],
-    tag = "b9b1b5d543f5185ad46645a364696f1fdc96eb04",
 )
 oci.pull(
     name = "mitmproxy",
@@ -232,7 +221,19 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "11",
 )
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "e2e_container", "e2e_container_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+
+# Hermetic deb packages for container images (rules_distroless).
+# Replaces Dockerfile apt-get with lockfile-pinned deb extraction.
+apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
+
+# E2E test container: git + JDK layered on python:3.13-slim base.
+apt.install(
+    name = "bookworm_e2e",
+    lock = "//devinfra/claude/testing/container_e2e:bookworm_e2e.lock.json",
+    manifest = "//devinfra/claude/testing/container_e2e:bookworm_e2e.yaml",
+)
+use_repo(apt, "bookworm_e2e")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")

@@ -1,10 +1,38 @@
-load("@rules_oci//oci:defs.bzl", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("//devinfra/testing:defs.bzl", "py_test")
+
+# Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
+exports_files([
+    "bookworm_e2e.yaml",
+    "bookworm_e2e.lock.json",
+])
+
+# E2E test container: python:3.13-slim base + git + JDK from rules_distroless.
+#
+# Built entirely in Bazel — no CI workflow or image pin bumps needed.
+# The Dockerfile is superseded; see bookworm_e2e.yaml for the deb manifest.
+#
+# TODO: Eventually switch the base to the Claude Code web container RE
+# (reverse-engineered container snapshot) so the E2E test exercises a
+# realistic environment.
+oci_image(
+    name = "e2e_container",
+    testonly = True,
+    base = "@python_3_13_slim_linux_amd64",
+    # JDK update-alternatives postinst doesn't run in rules_distroless, so
+    # /usr/bin/keytool won't exist. Extend PATH to include JDK bin directly.
+    env = {
+        "PATH": "/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin:/usr/lib/jvm/java-17-openjdk-amd64/bin",
+    },
+    tars = [
+        "@bookworm_e2e//:flat",
+    ],
+)
 
 oci_load(
     name = "e2e_container_load",
     testonly = True,
-    image = "@e2e_container_linux_amd64",
+    image = ":e2e_container",
     repo_tags = ["e2e-container:pinned"],
 )
 
