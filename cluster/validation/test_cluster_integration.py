@@ -75,6 +75,19 @@ def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:
     assert not orphaned, "Orphaned files not referenced by any kustomization:\n" + "\n".join(f"  {f}" for f in orphaned)
 
 
+def test_no_unwired_flux_kustomizations(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    """Every flux-kustomization.yaml on disk must be referenced in the root kustomization."""
+    on_disk = {f.resolve() for f in k8s_dir.rglob("flux-kustomization.yaml") if "flux-system" not in f.parts}
+
+    root_kust = cluster.kustomize_files[k8s_dir / "kustomization.yaml"]
+    referenced = {r for r in root_kust.resources if r.name == "flux-kustomization.yaml"}
+
+    unwired = sorted(f.relative_to(k8s_dir) for f in on_disk - referenced)
+    assert not unwired, "flux-kustomization.yaml files not listed in root kustomization.yaml:\n" + "\n".join(
+        f"  {f}" for f in unwired
+    )
+
+
 def test_blueprint_completeness(k8s_dir: Path) -> None:
     """All authentik blueprint YAML files must be listed in configMapGenerator."""
     authentik_kust = k8s_dir / "authentik" / "kustomization.yaml"
