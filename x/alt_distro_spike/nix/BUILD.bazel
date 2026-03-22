@@ -1,0 +1,88 @@
+# Nix-built container images consumed by Bazel.
+#
+# The recommended pattern is:
+# 1. CI builds images with `nix build .#<image>` and pushes to registry
+# 2. Bazel pulls by digest via oci.pull() in MODULE.bazel
+# 3. Application layers are added via rules_oci as usual
+#
+# This BUILD file shows both:
+# - How to consume Nix-built images already in a registry
+# - How to invoke nix build from a genrule (not recommended for production)
+
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+
+# ============================================================================
+# Recommended: Pull Nix-built image by digest from registry
+# ============================================================================
+#
+# In MODULE.bazel, add:
+#
+#   oci.pull(
+#       name = "nix_rbe_worker",
+#       digest = "sha256:<digest-after-push>",
+#       image = "ghcr.io/agentydragon/nix-rbe-worker",
+#       platforms = ["linux/amd64"],
+#   )
+#
+# Then use it as a base:
+#
+#   oci_image(
+#       name = "rbe_worker_with_extras",
+#       base = "@nix_rbe_worker",
+#       tars = [":dockerd_wrapper_layer"],
+#   )
+#
+# CI workflow (GitHub Actions):
+#
+#   - name: Build RBE worker image
+#     run: nix build .#rbe-worker-image
+#
+#   - name: Push to GHCR
+#     run: |
+#       skopeo copy \
+#         nix:./result \
+#         docker://ghcr.io/agentydragon/nix-rbe-worker:latest
+#
+#   - name: Get digest
+#     run: |
+#       skopeo inspect docker://ghcr.io/agentydragon/nix-rbe-worker:latest \
+#         | jq -r '.Digest'
+
+# ============================================================================
+# Alternative: genrule calling nix build (not recommended for production)
+# ============================================================================
+#
+# This bypasses Bazel's sandboxing and has no declared Nix inputs, so Bazel
+# doesn't know when to rebuild. Only useful for local development.
+#
+# genrule(
+#     name = "nix_python_app_image",
+#     srcs = [
+#         "flake.nix",
+#         "flake.lock",
+#         "rbe-worker.nix",
+#     ],
+#     outs = ["python-app-image.tar.gz"],
+#     cmd = """
+#         cd $$(dirname $(location flake.nix))
+#         nix build .#python-app-image --out-link $$TMPDIR/result
+#         cp $$TMPDIR/result $@
+#     """,
+#     tags = [
+#         "no-sandbox",
+#         "local",
+#         "no-remote",
+#         "requires-nix",
+#     ],
+#     local = True,
+# )
+
+# Placeholder target so the BUILD file is valid
+filegroup(
+    name = "nix_spike",
+    srcs = [
+        "README.md",
+        "flake.nix",
+        "rbe-worker.nix",
+    ],
+)

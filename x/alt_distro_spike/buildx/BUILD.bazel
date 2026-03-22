@@ -7,8 +7,6 @@
 # NOTE: These targets require Docker daemon access and network.
 # Run with: bazel build --spawn_strategy=local //x/alt_distro_spike/buildx:...
 
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-
 # ============================================================================
 # Approach 1: rules_buildx (if the module is added)
 # ============================================================================
