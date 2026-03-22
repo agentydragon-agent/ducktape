@@ -167,12 +167,15 @@ py_package(
         "devinfra.claude.claude_api",
         "devinfra.claude.hook_daemon.session_start",
         "devinfra.claude.supervisor",
+        "devinfra.precommit",
+        "devinfra.precommit.enforce_bazel_tests",
         "util",
         "util.bazel",
     ],
     deps = [
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
         "//devinfra/claude/statusline:statusline_lib",
+        "//devinfra/precommit:ducktape_precommit",
     ],
 )
 
@@ -262,7 +265,6 @@ py_wheel(
             "gmail-archiver = gmail_archiver.main:app",
             "hetzner-vnc-screenshot = skills.hetzner_vnc_screenshot.vnc_screenshot:app",
             "vm-interact = skills.proxmox_vm.vm_interact:app",
-            "ducktape-precommit = devinfra.precommit.ducktape_precommit:main",
         ],
     },
     python_requires = ">=3.13",
