@@ -25,7 +25,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: capacitor
-          image: ghcr.io/gimlet-io/capacitor:v0.14.0
+          image: ghcr.io/gimlet-io/capacitor-next:next-v0.6.5
           ports:
             - containerPort: 8080
               name: http
