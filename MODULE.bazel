@@ -243,11 +243,11 @@ apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
 # E2E test container: git + JDK layered on python:3.13-slim base.
 apt.install(
-    name = "bookworm_e2e",
-    lock = "//devinfra/claude/testing/container_e2e:bookworm_e2e.lock.json",
-    manifest = "//devinfra/claude/testing/container_e2e:bookworm_e2e.yaml",
+    name = "trixie_e2e",
+    lock = "//devinfra/claude/testing/container_e2e:trixie_e2e.lock.json",
+    manifest = "//devinfra/claude/testing/container_e2e:trixie_e2e.yaml",
 )
-use_repo(apt, "bookworm_e2e")
+use_repo(apt, "trixie_e2e")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
