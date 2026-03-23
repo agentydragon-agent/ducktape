@@ -27,7 +27,7 @@ spec:
         storageClassName: longhorn
         resources:
           requests:
-            storage: 10Gi
+            storage: 2Gi
 
   volumeMounts:
     - name: vault-raft
