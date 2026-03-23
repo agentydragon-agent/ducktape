@@ -16,6 +16,19 @@ parameters:
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
+  name: longhorn-2r
+provisioner: driver.longhorn.io
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+parameters:
+  numberOfReplicas: "2"
+  staleReplicaTimeout: "30"
+  fsType: "ext4"
+  dataEngine: "v1"
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
   name: proxmox-longhorn
 provisioner: driver.longhorn.io
 reclaimPolicy: Retain
