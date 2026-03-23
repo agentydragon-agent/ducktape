@@ -658,7 +658,6 @@ in
     enable = true;
     extensions = [
       { package = pkgs.gnomeExtensions.panel-date-format; }
-      { package = pkgs.gnomeExtensions.vertical-workspaces; }
       { package = pkgs.gnomeExtensions.cronomix; }
       { package = pkgs.gnomeExtensions.pop-shell; }
     ]
