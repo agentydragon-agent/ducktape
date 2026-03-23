@@ -52,7 +52,7 @@
 
     # CI-released skills tarball — updated by release.yml update-downstream job.
     skills-tar = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/skills-1b3375b3/skills.tar";
+      url = "https://github.com/agentydragon/ducktape/releases/download/skills-94588488/skills.tar";
       flake = false;
     };
 
