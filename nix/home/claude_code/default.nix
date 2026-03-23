@@ -285,7 +285,14 @@ let
   ) (lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".md" name) commandFiles);
 
   # Shared skill files — generates home.file entries for ~/.claude/skills/
-  mkSkills = import ../skills/skills.nix { inherit lib pkgs siderolabs-docs skills-tar; };
+  mkSkills = import ../skills/skills.nix {
+    inherit
+      lib
+      pkgs
+      siderolabs-docs
+      skills-tar
+      ;
+  };
   skillFiles = mkSkills ".claude";
 
   # Parse "name@marketplace" plugin specs into { name, marketplace } attrsets

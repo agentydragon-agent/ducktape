@@ -81,4 +81,3 @@ py_binary(
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//aw_client"],
 )
-

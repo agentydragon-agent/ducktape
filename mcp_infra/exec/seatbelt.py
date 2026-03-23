@@ -11,7 +11,6 @@ import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
-from mcp_infra.flat_tool import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import (
     BaseExecResult,
@@ -22,6 +21,7 @@ from mcp_infra.exec.models import (
     render_raw_to_result,
 )
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.seatbelt.model import EnvPassthroughMode, SBPLPolicy
 from mcp_infra.seatbelt.runner import apopen, collect_unified_sandbox_denies
 

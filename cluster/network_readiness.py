@@ -19,11 +19,7 @@ from tenacity import Retrying, retry_if_result, stop_after_delay, wait_fixed
 logger = logging.getLogger(__name__)
 
 
-def wait_for_cilium_health(
-    v1: client.CoreV1Api,
-    timeout: int = 600,
-    interval: int = 15,
-) -> None:
+def wait_for_cilium_health(v1: client.CoreV1Api, timeout: int = 600, interval: int = 15) -> None:
     """Wait for Cilium health mesh to converge.
 
     Deploying webhook-based services (kyverno) before cross-node networking
@@ -36,9 +32,7 @@ def wait_for_cilium_health(
     logger.info("Waiting for Cilium health mesh to converge...")
 
     Retrying(
-        stop=stop_after_delay(timeout),
-        wait=wait_fixed(interval),
-        retry=retry_if_result(lambda healthy: not healthy),
+        stop=stop_after_delay(timeout), wait=wait_fixed(interval), retry=retry_if_result(lambda healthy: not healthy)
     )(_check_cilium_health, v1)
 
     logger.info("Cilium health mesh converged")

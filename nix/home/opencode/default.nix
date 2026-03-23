@@ -364,5 +364,14 @@ in
   };
 
   # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
-  home.file = (import ../skills/skills.nix { inherit lib pkgs siderolabs-docs skills-tar; }) ".config/opencode";
+  home.file =
+    (import ../skills/skills.nix {
+      inherit
+        lib
+        pkgs
+        siderolabs-docs
+        skills-tar
+        ;
+    })
+      ".config/opencode";
 }

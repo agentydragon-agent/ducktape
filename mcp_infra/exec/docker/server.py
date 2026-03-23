@@ -16,7 +16,6 @@ import mcp.types as mcp_types
 from fastmcp.server.context import Context
 from pydantic import Field, create_model
 
-from mcp_infra.flat_tool import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.container_session import (
     ContainerOptions,
@@ -28,6 +27,7 @@ from mcp_infra.exec.docker.container_session import (
 from mcp_infra.exec.docker.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
 from mcp_infra.exec.models import BaseExecResult, EnvVar, ExecInput, TimeoutMs, async_timer
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 

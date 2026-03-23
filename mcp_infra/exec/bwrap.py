@@ -9,11 +9,11 @@ import mcp.types as mcp_types
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
-from mcp_infra.flat_tool import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.models import BaseExecResult, ExecArgsBase, ExecOutcome, render_outcome_to_result
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
 from mcp_infra.exec.subprocess import run_proc
+from mcp_infra.flat_tool import FlatTool
 
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"

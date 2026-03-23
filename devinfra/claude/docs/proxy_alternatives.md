@@ -16,7 +16,7 @@ timing problem**. Bazel has two proxy-dependent subsystems:
    `ProxySelector.getDefault()` (reads `-Dhttps.proxyHost`/`-Dhttps.proxyPort`) and
    calls `Authenticator.requestPasswordAuthentication()`. But `ProxyHelper` only
    installs the `Authenticator` when a repository rule downloads something — which
-   may happen *after* the gRPC channel is already created.
+   may happen _after_ the gRPC channel is already created.
 
 The local auth proxy decouples the auth timing: gRPC connects to unauthenticated
 `localhost:18081` immediately; the proxy handles credentials when forwarding.
