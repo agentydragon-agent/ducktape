@@ -1,13 +1,13 @@
 # serializer version: 1
 # name: test_render_api_billing
-  'Opus 4.6 (1M context) ~/code/ducktape $2.41 ctx:7%'
+  'Opus 4.6 (1M context) ~/code/ducktape $2.41 \x1b[32mctx:7%\x1b[0m'
 # ---
 # name: test_render_minimal
   'unknown  $0.00'
 # ---
 # name: test_render_subscription
-  'Opus 4.6 (1M context) ~/code/ducktape ctx:7% 7d:30% rst 4d02h'
+  'Opus 4.6 (1M context) ~/code/ducktape \x1b[32mctx:7%\x1b[0m \x1b[2m7d:30% rst 4d02h\x1b[0m'
 # ---
 # name: test_render_subscription_high_usage
-  'Opus 4.6 (1M context) ~/code/ducktape ctx:7% 5h:85% 7d:80% rst 2d00h dry 1d06h'
+  'Opus 4.6 (1M context) ~/code/ducktape \x1b[32mctx:7%\x1b[0m \x1b[2m5h:85% 7d:80% rst 2d00h dry 1d06h\x1b[0m'
 # ---

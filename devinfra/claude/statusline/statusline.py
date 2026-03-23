@@ -120,7 +120,7 @@ def render(
     if quota_text is not None:
         segments.append(quota_text)
 
-    console = Console(highlight=False, file=None, force_terminal=False)
+    console = Console(highlight=False, file=None, force_terminal=True)
     with console.capture() as capture:
         console.print(_SEP.join(segments), end="")
     return capture.get()
