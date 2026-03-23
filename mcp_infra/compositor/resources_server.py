@@ -12,7 +12,7 @@ from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_infra.compositor.server import BaseCompositor
-from mcp_infra.enhanced.flat_mixin import FlatTool
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.mount_types import MountEvent

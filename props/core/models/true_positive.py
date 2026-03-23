@@ -5,8 +5,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from props.core.models.types import SnapshotRelativePath
-
 
 class LineRange(BaseModel):
     start_line: int = Field(ge=1, description="1-based start line number")
@@ -70,17 +68,6 @@ class Occurrence(BaseModel):
             "do not repeat issue-level rationale here."
         )
     )
-
-    @classmethod
-    def from_files_dict(
-        cls, files: dict[SnapshotRelativePath, list[LineRange] | None], note: str | None = None
-    ) -> Occurrence:
-        """Create Occurrence from dict-based files (migration helper)."""
-        return cls(files=[FileOccurrence(path=path, ranges=ranges) for path, ranges in files.items()], note=note)
-
-    def files_dict(self) -> dict[Path, list[LineRange] | None]:
-        """Convert files list to dict (for backward compatibility)."""
-        return {fo.path: fo.ranges for fo in self.files}
 
     model_config = ConfigDict(extra="forbid")
 

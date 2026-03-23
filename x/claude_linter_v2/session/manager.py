@@ -43,9 +43,6 @@ class SessionData(BaseModel):
     notification_id: int | None = None
 
 
-# Type alias for backwards compatibility
-SessionInfo = SessionData
-
 logger = logging.getLogger(__name__)
 
 

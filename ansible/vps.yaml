@@ -129,6 +129,8 @@
           - "adgn.link"
           - "www.adgn.link"
 
+    # CLEANUP(2026-03-22): Remove this block once headscale has been confirmed absent
+    #   from the VPS across several deployments (headscale moved to Nebula/cluster).
     - name: Uninstall headscale server
       tags: [headscale]
       block:
@@ -211,6 +213,8 @@
           notify:
             - Reload nginx
 
+    # CLEANUP(2026-03-22): Remove once legacy nginx stream directories are confirmed
+    #   absent from VPS across several deployments.
     - name: Remove legacy nginx stream configs (test cluster)
       tags: [nginx]
       block:

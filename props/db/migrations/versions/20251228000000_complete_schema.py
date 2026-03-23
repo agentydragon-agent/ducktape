@@ -68,21 +68,14 @@ def upgrade() -> None:
         )
     """)
 
-    # Note: 'clustering' value kept for backward compatibility but is deprecated/unused
     op.execute("""
         CREATE TYPE agent_type_enum AS ENUM (
             'critic',
             'grader',
             'critic_dev_optimize',
-            'clustering',
             'freeform',
             'critic_dev_improve'
         )
-    """)
-
-    op.execute("""
-        COMMENT ON TYPE agent_type_enum IS
-        'Agent types. Note: clustering value is deprecated and unused.'
     """)
 
     op.execute("""
@@ -751,7 +744,6 @@ Requires caller to be a whole-repo mode agent (critic_dev_optimize or critic_dev
                 "critic",
                 "grader",
                 "critic_dev_optimize",
-                "clustering",
                 "freeform",
                 "critic_dev_improve",
                 name="agent_type_enum",

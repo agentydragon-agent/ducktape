@@ -13,9 +13,6 @@ from agent_core.pydantic_utils import format_validation_error
 from mcp_infra.flat_tool import FlatTool, _EmptyModel
 from openai_utils.json_schema import openai_json_schema
 
-# Re-export for backwards compatibility
-__all__ = ["FlatModelMixin", "FlatTool"]
-
 logger = logging.getLogger(__name__)
 
 

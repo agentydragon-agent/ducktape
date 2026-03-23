@@ -16,7 +16,7 @@ import mcp.types as mcp_types
 from fastmcp.server.context import Context
 from pydantic import Field, create_model
 
-from mcp_infra.enhanced.flat_mixin import FlatTool
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.container_session import (
     ContainerOptions,
