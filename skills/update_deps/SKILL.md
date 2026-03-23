@@ -4,7 +4,6 @@ description: >
   Automated dependency updates — reads Renovate dashboard, applies safe updates,
   produces a single CI-passing PR from the agent's fork. Reuses existing PR if one
   exists. Use on a schedule or manually to keep dependencies current.
-allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, Agent, Task
 ---
 
 # Automated Dependency Updates
@@ -190,54 +189,88 @@ PREOF
 )"
 ```
 
-### Update existing PR
-
-```bash
-gh pr edit <NUMBER> \
-  --repo agentydragon/ducktape \
-  --title "deps: automated dependency updates ($(date +%Y-%m-%d))" \
-  --body "$(cat <<'PREOF'
-<PR body — see format below>
-PREOF
-)"
-```
-
 ## PR Description Format
 
-The PR description is both human-readable AND the state your next instance reads.
-Keep it structured and machine-parseable.
+The PR description serves two audiences:
 
-### Applied Updates
+1. **Human reviewer** — sees a concise summary at the top: what was updated (minor+),
+   what's blocked, what needs attention
+2. **Next agent instance** — reads verbose details inside `<details>` blocks:
+   exact versions, digests, error messages, blockers, changelog excerpts
 
-Table of everything updated in this PR, with old and new versions:
-
-```markdown
-| Package   | Old    | New    | Ecosystem    | Notes                           |
-| --------- | ------ | ------ | ------------ | ------------------------------- |
-| pydantic  | 2.12.0 | 2.12.5 | python       | patch bump, no breaking changes |
-| rules_oci | 2.2.7  | 2.3.0  | bazel-module | minor bump                      |
-```
-
-### Not Updated
-
-Table of deps that are outdated but NOT updated, with clear reasons. This is
-critical — your future instance uses this to decide whether to retry:
+### Example structure
 
 ```markdown
-| Package         | Current    | Available | Reason                                             | Last checked |
-| --------------- | ---------- | --------- | -------------------------------------------------- | ------------ |
-| protobuf        | 34.0.bcr.1 | 34.1      | blocked: UPB GCC warnings, see TODO.md             | 2025-03-22   |
-| aspect_rules_js | 2.9.2      | 3.0.3     | major: breaking API changes in v3, needs migration | 2025-03-22   |
-| reqwest         | 0.12.28    | 0.13.2    | major: async runtime changes, needs investigation  | 2025-03-22   |
-```
+## Summary
+
+**X** dependencies updated, **Y** blocked, **Z** not tracked by Renovate.
+
+### Notable Updates
+
+| Package   | Old    | New    | Notes                             |
+| --------- | ------ | ------ | --------------------------------- |
+| pydantic  | 2.12.0 | 2.12.5 |                                   |
+| rules_oci | 2.2.7  | 2.3.0  | new `foo` attribute in `oci.pull` |
+
+### Blocked Updates (need human attention)
+
+| Package         | Current    | Available | Why                            |
+| --------------- | ---------- | --------- | ------------------------------ |
+| protobuf        | 34.0.bcr.1 | 34.1      | UPB GCC warnings, see TODO.md  |
+| aspect_rules_js | 2.9.2      | 3.0.3     | major: v3 breaking API changes |
 
 ### Not Tracked by Renovate
 
-Findings from manual checks of deps Renovate doesn't cover:
+| Dependency | Current | Latest | Status                              |
+| ---------- | ------- | ------ | ----------------------------------- |
+| OpenTofu   | 1.11.2  | 1.12.0 | available, not applied (infra risk) |
 
-```markdown
-| Dependency | Location                 | Current | Latest | Status                              |
-| ---------- | ------------------------ | ------- | ------ | ----------------------------------- |
-| OpenTofu   | MODULE.bazel tf.download | 1.11.2  | 1.12.0 | available, not applied (infra risk) |
-| tflint     | MODULE.bazel tf.download | 0.53.0  | 0.54.0 | available, applied                  |
+---
+
+<details><summary>Full details for next agent run</summary>
+
+### All Applied Updates (including patch/digest-only)
+
+| Package     | Old              | New              | Ecosystem    | Digest/Details |
+| ----------- | ---------------- | ---------------- | ------------ | -------------- |
+| pydantic    | 2.12.0           | 2.12.5           | python       | patch bump     |
+| rules_oci   | 2.2.7            | 2.3.0            | bazel-module |                |
+| debian_slim | sha256:6458e6... | sha256:8af0e5... | oci          | digest-only    |
+| postgres_18 | sha256:9b5bd9... | sha256:a9abf4... | oci          | digest-only    |
+
+### Blocked Updates — Detailed
+
+#### protobuf 34.0.bcr.1 → 34.1
+
+- **Attempted**: 2025-03-22
+- **Error**: `bazel build //...` fails with `-Wmaybe-uninitialized` in
+  `external/protobuf+/upb/wire/decode.c` lines 281, 732, 1089
+- **Upstream**: https://github.com/protocolbuffers/protobuf/issues/17052
+- **Retry when**: upstream fixes GCC warnings or we pin GCC version
+
+#### aspect_rules_js 2.9.2 → 3.0.3
+
+- **Attempted**: 2025-03-22
+- **Error**: `pnpm_lock_import` removed in v3, all JS targets fail to resolve
+- **Migration guide**: https://github.com/aspect-build/rules_js/releases/tag/v3.0.0
+- **Scope**: need to rewrite all `npm_package`/`js_library` targets
+- **Retry when**: someone does the migration manually
+
+#### reqwest 0.12.28 → 0.13.2
+
+- **Attempted**: 2025-03-22
+- **Error**: `reqwest::Client::new()` signature changed, 12 call sites affected
+- **Changelog**: https://github.com/seanmonstar/reqwest/blob/master/CHANGELOG.md
+- **Retry when**: someone updates call sites
+
+### Not Tracked by Renovate — Detailed
+
+| Dependency            | Location                                    | Current   | Latest    | Checked    | Notes                                                 |
+| --------------------- | ------------------------------------------- | --------- | --------- | ---------- | ----------------------------------------------------- |
+| OpenTofu              | MODULE.bazel `tf.download` `version`        | 1.11.2    | 1.12.0    | 2025-03-22 | not applied: infra risk, may change state file format |
+| tflint                | MODULE.bazel `tf.download` `tflint_version` | 0.53.0    | 0.54.0    | 2025-03-22 | applied                                               |
+| tfdoc                 | MODULE.bazel `tf.download` `tfdoc_version`  | 0.19.0    | 0.19.0    | 2025-03-22 | up to date                                            |
+| tf provider authentik | MODULE.bazel `tf.download` mirror           | 2025.12.1 | 2025.12.2 | 2025-03-22 | applied                                               |
+
+</details>
 ```
