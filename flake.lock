@@ -19,13 +19,13 @@
     "bbapi-binary": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-yrZOIahlQSjgTLb96z+9q8kX1WH0yb+T1DgLClQ29AU=",
+        "narHash": "sha256-YkT44HtRqjPm6Ftwcn9+ypfBt+mbnwhdSXyB0dLE8bk=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-b3ba1da0/bbapi"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-eb0b44fb/bbapi"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-b3ba1da0/bbapi"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-eb0b44fb/bbapi"
       }
     },
     "claude-code-router": {
@@ -279,13 +279,13 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-o7PFV7/6LAGjLlOgP0Gr1vvmIhMBOZKJ7DgurZZXI2I=",
+        "narHash": "sha256-+53OuPuH2RX0d9zdKOfutSBKzIh6pLJs08bvm1PvPW0=",
         "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-ca31f013/skills.tar"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-eb0b44fb/skills.tar"
       },
       "original": {
         "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-ca31f013/skills.tar"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-eb0b44fb/skills.tar"
       }
     },
     "sops-nix": {
