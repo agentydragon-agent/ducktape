@@ -157,6 +157,31 @@ go_deps.module(
     version = "v0.33.0",
 )
 go_deps.module(
+    path = "github.com/google/uuid",
+    sum = "h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=",
+    version = "v1.6.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel",
+    sum = "h1:8yPrr/S0ND9QEfTfdP9V+SiwT4E0G7Y5MO7p85nis48=",
+    version = "v1.39.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/metric",
+    sum = "h1:d1UzonvEZriVfpNKEVmHXbdf909uGTOQjA0HF0Ls5Q0=",
+    version = "v1.39.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/sdk",
+    sum = "h1:nMLYcjVsvdui1B/4FRkwjzoRVsMK8uL/cj0OyhKzt18=",
+    version = "v1.39.0",
+)
+go_deps.module(
+    path = "go.opentelemetry.io/otel/trace",
+    sum = "h1:2d2vfpEDmCJ5zVYz7ijaJdOF59xLomrvj7bjt6/qCJI=",
+    version = "v1.39.0",
+)
+go_deps.module(
     path = "google.golang.org/genproto/googleapis/api",
     sum = "h1:fCvbg86sFXwdrl5LgVcTEvNC+2txB5mgROGmRL5mrls=",
     version = "v0.0.0-20251202230838-ff82c1b0f217",
@@ -193,6 +218,7 @@ use_repo(
     "com_github_fsouza_go_dockerclient",
     "com_github_go_git_go_git_v5",
     "com_github_google_renameio_v2",
+    "com_github_google_uuid",
     "com_github_gorilla_websocket",
     "com_github_grpc_ecosystem_grpc_gateway_v2",
     "com_github_inconshreveable_mousetrap",
@@ -204,12 +230,16 @@ use_repo(
     "com_github_spf13_pflag",
     "com_github_stretchr_testify",
     "io_opentelemetry_go_contrib_bridges_otelslog",
+    "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_exporters_otlp_otlplog_otlploghttp",
     "io_opentelemetry_go_otel_exporters_otlp_otlpmetric_otlpmetrichttp",
     "io_opentelemetry_go_otel_exporters_stdout_stdoutmetric",
     "io_opentelemetry_go_otel_log",
+    "io_opentelemetry_go_otel_metric",
+    "io_opentelemetry_go_otel_sdk",
     "io_opentelemetry_go_otel_sdk_log",
     "io_opentelemetry_go_otel_sdk_metric",
+    "io_opentelemetry_go_otel_trace",
     "io_opentelemetry_go_proto_otlp",
     "org_golang_google_genproto_googleapis_api",
     "org_golang_google_genproto_googleapis_rpc",

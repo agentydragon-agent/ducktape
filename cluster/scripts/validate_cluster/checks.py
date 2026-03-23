@@ -82,10 +82,13 @@ def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
             if resource.kind != "Namespace":
                 continue
             labels = resource.metadata.labels
-            if "goldilocks.fairwinds.com/vpa-update-mode" in labels and labels.get("goldilocks.fairwinds.com/enabled") != "true":
+            if (
+                "goldilocks.fairwinds.com/vpa-update-mode" in labels
+                and labels.get("goldilocks.fairwinds.com/enabled") != "true"
+            ):
                 errors.append(
                     f"{file_path}: namespace '{resource.name}' has goldilocks.fairwinds.com/vpa-update-mode "
-                    f"but is missing goldilocks.fairwinds.com/enabled=\"true\""
+                    f'but is missing goldilocks.fairwinds.com/enabled="true"'
                 )
     return errors
 

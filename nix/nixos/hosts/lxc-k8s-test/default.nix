@@ -40,8 +40,16 @@
   time.timeZone = "America/Los_Angeles";
 
   # K8s worker — credentials placed manually after boot
+  # TODO: Set up sops-nix (add age key to .sops.yaml, create lxc-k8s-test-nebula.yaml)
+  #       to provide Nebula + K8s credentials via secrets instead of static paths.
+  ducktape.nebulaMesh.caCertPath = "/etc/nebula/ca.crt";
+  ducktape.nebulaMesh.hostCertPath = "/etc/nebula/host.crt";
+  ducktape.nebulaMesh.hostKeyPath = "/etc/nebula/host.key";
+
   ducktape.k8sWorker = {
     enable = true;
+    caCertPath = "/etc/kubernetes/pki/ca.crt";
+    bootstrapTokenPath = "/etc/kubernetes/bootstrap-token";
     nodeLabels = {
       "topology.kubernetes.io/region" = "proxmox";
       "topology.kubernetes.io/zone" = "atlas";

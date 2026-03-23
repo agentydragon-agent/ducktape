@@ -3,5 +3,5 @@ dependencies:
   # petermosmans.customize-gnome moved to legacy_without_home_manager/gui role
   # Fonts managed by Nix home-manager
   # gnome-terminal-solarized moved to legacy_without_home_manager/gui role
-  - role: timekpr
+  # timekpr role removed (not in ansible/roles/)
   # - role: google_drive_client  # Temporarily disabled for wyrm

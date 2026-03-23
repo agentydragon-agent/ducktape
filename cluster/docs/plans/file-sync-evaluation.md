@@ -14,6 +14,7 @@ and offline capability.
 other (or via relay servers when NAT prevents direct connections).
 
 **Selective sync**:
+
 - At the **folder** level: each device chooses which shared folders to sync.
 - Within a folder: `.stignore` files with glob patterns. Per-device (not synced).
 - No UI for selective sync — must manually craft `.stignore` patterns.
@@ -47,11 +48,13 @@ to deploy (StatefulSet + PVC). Already deployed in the old VPS via Ansible.
 cron, potentially Collabora/OnlyOffice for editing). WebDAV-based sync protocol.
 
 **Selective sync**:
+
 - **Folder-level**: Desktop client allows selecting which top-level folders to sync.
 - **Virtual Files mode**: All files visible, downloaded on demand. Per-file granularity.
 - Can right-click → "Always keep on this device" (pin) or "Free up space" (unpin).
 
 **Lazy fetch / on-demand**:
+
 - **Windows**: Full VFS support via Windows Cloud Files API. Transparent placeholders.
   Files appear normally in Explorer, downloaded on first access.
 - **macOS**: VFS via File Provider API (client 4.0+, Oct 2025). Separate client version.
@@ -84,10 +87,12 @@ Microservice architecture internally. Supports POSIX, S3, or NFS storage backend
 Much lighter than Nextcloud.
 
 **Selective sync**:
+
 - Desktop client supports traditional folder-level selective sync.
 - VFS mode: all files visible as placeholders, per-file pinning.
 
 **Lazy fetch / on-demand**:
+
 - **Windows**: Full VFS support via Windows Cloud Files API. Files appear as
   placeholders, downloaded on access. Windows Storage Sense can auto-evict cached
   files when disk space is low.
@@ -117,10 +122,12 @@ poor on Linux). The Go-based architecture is a plus. Helm chart is immature.
 **Architecture**: Client-server. Python/C server with its own sync protocol (not
 WebDAV). More efficient than Nextcloud for pure file sync — uses content-defined
 chunking and deduplication. Two client types:
+
 - **Seafile Client**: Traditional full sync (like Syncthing per-folder).
 - **SeaDrive**: Virtual drive with on-demand download (the VFS option).
 
 **Selective sync**:
+
 - **Seafile Client**: Folder-level selective sync (choose which libraries to sync).
 - **SeaDrive**: All libraries visible as a virtual drive. Per-file/folder pinning
   via right-click → "Always keep on this device" or "Free up space".
@@ -129,6 +136,7 @@ chunking and deduplication. Two client types:
   down to 70% of limit. Pinned files exempt from eviction.
 
 **Lazy fetch / on-demand**:
+
 - **Windows**: Virtual drive via Dokany (user-mode filesystem driver). Files appear
   as placeholders with cloud status icons. Downloaded on first access.
   SeaDrive 3.0 uses Windows Cloud Files API for deeper OS integration.
@@ -174,6 +182,7 @@ mount to limit visibility. No per-file pinning or selective sync UI. Would need
 manual `rclone sync` commands to pre-populate cache for specific directories.
 
 **Lazy fetch / on-demand**:
+
 - VFS cache mode `full`: on-demand partial file caching. Files fetched from remote
   on first access. Sparse file caching — only accessed byte ranges stored locally.
 - Cache size configurable (`--vfs-cache-max-size`, `--vfs-cache-max-age`).
@@ -200,20 +209,20 @@ no sync. Best used in combination with another solution.
 
 ## Comparison Summary
 
-| Feature              | Syncthing | Nextcloud       | oCIS            | Seafile (SeaDrive) | rclone mount   |
-| -------------------- | --------- | --------------- | --------------- | ------------------ | -------------- |
-| **Architecture**     | P2P       | Client-server   | Client-server   | Client-server      | FUSE → backend |
-| **Linux lazy fetch** | No        | No (`.nc` hack) | No (`.oc` hack) | **Yes (FUSE)**     | Yes (FUSE)     |
-| **Win/Mac lazy fetch**| No       | Yes             | Yes             | Yes                | Yes (FUSE)     |
-| **Selective sync**   | `.stignore` | Folder + VFS  | Folder + VFS    | Library + per-file | Filters only   |
-| **Pin granularity**  | N/A       | Per-file        | Per-file        | Per-file/folder    | N/A            |
-| **Offline edits**    | Full      | Pinned only     | Pinned only     | Cached files       | No             |
-| **Offline startup**  | Yes       | Yes             | Yes             | Yes                | **No**         |
-| **Conflict handling**| Copy      | Copy + versions | Copy + versions | Copy + lock + ver  | None           |
-| **Server weight**    | None      | Heavy           | Medium          | Medium             | None (BYO)     |
-| **K8s Helm chart**   | Trivial   | Official        | Experimental    | **Official (CE/Pro)** | N/A         |
-| **Protocol**         | BEP       | WebDAV          | WebDAV/oCIS     | Custom (efficient) | Various        |
-| **License**          | MPL-2.0   | AGPL-3.0        | Apache-2.0      | AGPL-3.0 (CE)      | MIT            |
+| Feature                | Syncthing   | Nextcloud       | oCIS            | Seafile (SeaDrive)    | rclone mount   |
+| ---------------------- | ----------- | --------------- | --------------- | --------------------- | -------------- |
+| **Architecture**       | P2P         | Client-server   | Client-server   | Client-server         | FUSE → backend |
+| **Linux lazy fetch**   | No          | No (`.nc` hack) | No (`.oc` hack) | **Yes (FUSE)**        | Yes (FUSE)     |
+| **Win/Mac lazy fetch** | No          | Yes             | Yes             | Yes                   | Yes (FUSE)     |
+| **Selective sync**     | `.stignore` | Folder + VFS    | Folder + VFS    | Library + per-file    | Filters only   |
+| **Pin granularity**    | N/A         | Per-file        | Per-file        | Per-file/folder       | N/A            |
+| **Offline edits**      | Full        | Pinned only     | Pinned only     | Cached files          | No             |
+| **Offline startup**    | Yes         | Yes             | Yes             | Yes                   | **No**         |
+| **Conflict handling**  | Copy        | Copy + versions | Copy + versions | Copy + lock + ver     | None           |
+| **Server weight**      | None        | Heavy           | Medium          | Medium                | None (BYO)     |
+| **K8s Helm chart**     | Trivial     | Official        | Experimental    | **Official (CE/Pro)** | N/A            |
+| **Protocol**           | BEP         | WebDAV          | WebDAV/oCIS     | Custom (efficient)    | Various        |
+| **License**            | MPL-2.0     | AGPL-3.0        | Apache-2.0      | AGPL-3.0 (CE)         | MIT            |
 
 ## Recommendation
 

@@ -1,3 +1,5 @@
+"""Macros for packaging skills for deployment."""
+
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 

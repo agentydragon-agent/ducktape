@@ -120,6 +120,15 @@ in
     ) cfg.policies;
 
     # Deploy skills to ~/.gemini/skills/ (local + external, shared with Claude Code)
-    home.file = (import ../skills/skills.nix { inherit lib pkgs siderolabs-docs skills-tar; }) ".gemini";
+    home.file =
+      (import ../skills/skills.nix {
+        inherit
+          lib
+          pkgs
+          siderolabs-docs
+          skills-tar
+          ;
+      })
+        ".gemini";
   };
 }
