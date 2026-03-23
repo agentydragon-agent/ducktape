@@ -224,13 +224,6 @@ py_package(
     name = "ducktape_pkg",
     packages = [
         "agent_core",
-        "devinfra",
-        "devinfra.claude",
-        "devinfra.claude.auth_proxy",
-        "devinfra.claude.claude_api",
-        "devinfra.claude.supervisor",
-        "devinfra.precommit",
-        "devinfra.precommit.enforce_bazel_tests",
         "difftree",
         "git_commit_ai",
         "gmail_archiver",
@@ -250,8 +243,6 @@ py_package(
         "//git_commit_ai:git_commit_ai_lib",
         "//skills/hetzner_vnc_screenshot:vnc_screenshot",
         "//skills/proxmox_vm:vm_interact",
-        # Pre-commit entry point
-        "//devinfra/precommit:ducktape_precommit",
     ],
 )
 
