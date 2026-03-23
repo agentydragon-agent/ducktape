@@ -125,7 +125,34 @@ Compare the full list of available updates against the existing PR description:
 
 Use your judgment. There is no fixed categorization of what's "trivial" vs "hard" —
 read changelogs, check what changed, assess risk. Your goal is to produce a PR that
-passes `bazel build //... && bazel test //...`.
+the maintainer will be happy to merge as-is, with followups tracked separately.
+
+### Changelog review
+
+For each update (especially minor+ bumps), read the changelog, release notes, or
+commit history between the old and new version. Look for:
+
+- **Deprecations**: is something we use being deprecated? If so, note it in the
+  commit message and add a TODO if the migration is non-trivial.
+- **New APIs/features**: could our code benefit from a new API? If the change is
+  small (a few lines), make it in this PR. If it's larger, add a TODO and mention
+  it in the commit message (e.g., "pydantic 2.13 adds `model_validate_strings()`
+  which could simplify our config parsing — see TODO").
+- **New lint rules/checks**: if a linter bump introduces new findings, mention
+  which ones and whether we should enable them. Don't enable them in this PR
+  unless it's trivial.
+- **Behavioral changes**: anything that changes runtime behavior even without API
+  changes (e.g., stricter validation, changed defaults, performance characteristics).
+
+Summarize findings in commit messages so the maintainer knows what's relevant
+without having to read changelogs themselves. Examples:
+
+- "bump ruff 0.8→0.9: adds `RUF060` (mutable-default-in-dataclass), 3 new
+  findings in our code — suggest enabling in a followup"
+- "bump fastapi 0.115→0.116: `Depends()` now supports async generators natively,
+  we can drop our `async_depends` wrapper — added TODO"
+- "bump rules_oci 2.2.7→2.3.0: new `reproducible` attr on `oci_image`, no
+  action needed for now"
 
 ### Lockfile regeneration by ecosystem
 
@@ -167,6 +194,11 @@ Commit the updated `.ambr` files.
 
 Make clean, descriptive commits. You can structure commits however makes sense —
 one per update, grouped by ecosystem, or whatever is clearest.
+
+Commit messages should include anything the maintainer should know about the
+update: new features relevant to our code, deprecations, behavioral changes,
+suggested followups. The maintainer should be able to review the PR by reading
+commit messages without having to look up changelogs.
 
 ```bash
 # Force-push to your fork (expected — this is your branch)
