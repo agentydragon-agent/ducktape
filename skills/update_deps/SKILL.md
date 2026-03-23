@@ -251,6 +251,26 @@ The PR description serves two audiences:
 | protobuf        | 34.0.bcr.1 | 34.1      | UPB GCC warnings, see TODO.md  |
 | aspect_rules_js | 2.9.2      | 3.0.3     | major: v3 breaking API changes |
 
+### Changelog Highlights
+
+Things the maintainer should know about these updates:
+
+- **ruff 0.8→0.9**: adds `RUF060` (mutable-default-in-dataclass), 3 new findings
+  in our code — suggest enabling in a followup
+- **fastapi 0.115→0.116**: `Depends()` now supports async generators natively, we
+  can drop our `async_depends` wrapper — added TODO in `x/agent_server/TODO.md`
+- **pydantic 2.12→2.13**: `model_validate_strings()` added, could simplify config
+  parsing — added TODO
+- **sqlalchemy 2.0.44→2.0.48**: fixes `asyncpg` connection pool leak under high
+  concurrency (we hit this in props)
+
+### Suggested Followups
+
+TODOs added by this PR (grep for them in the diff):
+
+- `x/agent_server/TODO.md`: drop `async_depends` wrapper after fastapi 0.116
+- `TODO.md`: evaluate new ruff rules from 0.9
+
 ### Not Tracked by Renovate
 
 | Dependency | Current | Latest | Status                              |
