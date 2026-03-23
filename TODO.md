@@ -29,6 +29,7 @@
 
 ## Build System
 
+- [ ] [#787](https://github.com/agentydragon/ducktape/issues/787): Fork PRs (from `agentydragon-agent`) don't receive `BUILDBUDDY_API_KEY`, so `bazel-check`/`bazel-test` are skipped on fork PRs. Fix by converting `BUILDBUDDY_API_KEY` to a repo variable (available to forks) or adding `agentydragon-agent` as a collaborator. Once fixed: remove `fork_skip: true` from `bazel-check`/`bazel-test` in `devinfra/ci/workflows.yaml`, regenerate `ci.yml`, and remove the Known Limitations note from `skills/buildbuddy_api/SKILL.md`.
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests, flat structure like `git_commit_ai/`)
 - [ ] Re-enable `bazel coverage` in CI once compatible with remote execution (RBE). Currently disabled because the Java-based `remote_coverage_tools` can't locate its runfiles on BuildBuddy workers, causing all tests to be marked as failed. See `bazel-test.yml`.
 - [ ] Set up BuildBuddy [remote runner features](https://www.buildbuddy.io/docs/remote-runner-features) for artifacts / extra test outputs

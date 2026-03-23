@@ -54,3 +54,12 @@ Proto definitions for request/response schemas:
 
 - <https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/buildbuddy_service.proto> (internal, ~70 RPCs)
 - <https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/api/v1/service.proto> (public, 9 endpoints)
+
+## Known Limitations
+
+**Fork PRs don't have BuildBuddy invocations.** GitHub Actions does not pass
+`BUILDBUDDY_API_KEY` to workflows triggered by fork pull requests (head repo !=
+base repo). As a result, `bazel-check` and `bazel-test` are skipped entirely on
+fork PRs (see [#787](https://github.com/agentydragon/ducktape/issues/787)).
+When investigating a failed fork PR, BuildBuddy has no record of the run — check
+GitHub Actions logs directly instead.
