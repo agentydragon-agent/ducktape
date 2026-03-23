@@ -279,13 +279,13 @@
       "flake": false,
       "locked": {
         "lastModified": 946684800,
-        "narHash": "sha256-+53OuPuH2RX0d9zdKOfutSBKzIh6pLJs08bvm1PvPW0=",
+        "narHash": "sha256-DcUDj/morYoS3IgeaCSxRYz3+DP+d4U3Rz4bBjdqy0o=",
         "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-eb0b44fb/skills.tar"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-8d0283f2/skills.tar"
       },
       "original": {
         "type": "tarball",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-eb0b44fb/skills.tar"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/skills-8d0283f2/skills.tar"
       }
     },
     "sops-nix": {
