@@ -18,7 +18,7 @@ spec:
       topology.kubernetes.io/region: proxmox
 
   storage:
-    storageClass: proxmox-csi-retain
+    storageClass: longhorn
     size: 2Gi
 
   monitoring:
