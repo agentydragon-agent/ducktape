@@ -10,6 +10,11 @@ from pathlib import Path
 from platformdirs import user_cache_dir, user_config_dir
 
 
+def default_cache_dir() -> Path:
+    """Resolve the claude-hooks cache directory (respects XDG_CACHE_HOME)."""
+    return Path(user_cache_dir(appname="claude-hooks"))
+
+
 @dataclass(frozen=True)
 class SessionPaths:
     """All session-scoped paths, derived from session_id + resolved home/cache roots."""

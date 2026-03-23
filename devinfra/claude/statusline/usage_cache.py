@@ -5,17 +5,16 @@ Results are cached to disk so the statusline stays fast on repeated invocations.
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pydantic import BaseModel
 
-from devinfra.claude.claude_api.credentials import read_access_token
 from devinfra.claude.claude_api.usage import UsageResponse, fetch_usage
 
 logger = logging.getLogger(__name__)
 
-CACHE_PATH = Path.home() / ".cache" / "claude-hooks" / "usage_cache.json"
 CACHE_TTL = timedelta(seconds=120)
 
 
@@ -24,39 +23,40 @@ class CachedUsage(BaseModel):
     usage: UsageResponse
 
 
-def _read_cache() -> CachedUsage | None:
-    try:
-        return CachedUsage.model_validate_json(CACHE_PATH.read_text())
-    except (OSError, ValueError):
-        return None
+@dataclass
+class UsageCache:
+    path: Path
 
+    def read(self) -> CachedUsage | None:
+        try:
+            return CachedUsage.model_validate_json(self.path.read_text())
+        except (OSError, ValueError):
+            return None
 
-def _write_cache(usage: UsageResponse) -> CachedUsage:
-    now = datetime.now(UTC)
-    cached = CachedUsage(fetched_at=now, usage=usage)
-    try:
-        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CACHE_PATH.write_text(cached.model_dump_json())
-    except OSError:
-        logger.debug("Could not write usage cache to %s", CACHE_PATH)
-    return cached
-
-
-def get_cached_usage() -> CachedUsage | None:
-    """Return subscription usage, using cache when fresh enough."""
-    cached = _read_cache()
-
-    if cached is not None and datetime.now(UTC) - cached.fetched_at < CACHE_TTL:
+    def write(self, usage: UsageResponse) -> CachedUsage:
+        now = datetime.now(UTC)
+        cached = CachedUsage(fetched_at=now, usage=usage)
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(cached.model_dump_json())
+        except OSError:
+            logger.debug("Could not write usage cache to %s", self.path)
         return cached
 
-    token = read_access_token()
-    if token is None:
-        return cached
+    def get(self, access_token: str | None) -> CachedUsage | None:
+        """Return subscription usage, using cache when fresh enough."""
+        cached = self.read()
 
-    try:
-        fresh = fetch_usage(token)
-    except Exception:
-        logger.debug("Usage API fetch failed, using stale cache", exc_info=True)
-        return cached
+        if cached is not None and datetime.now(UTC) - cached.fetched_at < CACHE_TTL:
+            return cached
 
-    return _write_cache(fresh)
+        if access_token is None:
+            return cached
+
+        try:
+            fresh = fetch_usage(access_token)
+        except Exception:
+            logger.debug("Usage API fetch failed, using stale cache", exc_info=True)
+            return cached
+
+        return self.write(fresh)

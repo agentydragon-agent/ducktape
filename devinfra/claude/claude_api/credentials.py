@@ -40,11 +40,17 @@ class Credentials(BaseModel):
     mcp_oauth: dict[str, McpOAuthEntry] | None = Field(default=None, alias="mcpOAuth")
 
 
-def read_access_token() -> str | None:
-    """Read OAuth access token from Claude credentials file."""
+def read_credentials() -> OAuthCredentials | None:
+    """Read OAuth credentials from Claude credentials file."""
     try:
         creds = Credentials.model_validate_json(CREDENTIALS_PATH.read_text())
-        return creds.claude_ai_oauth.access_token if creds.claude_ai_oauth else None
+        return creds.claude_ai_oauth
     except (OSError, ValueError):
-        logger.debug("Could not read Claude OAuth token from %s", CREDENTIALS_PATH)
+        logger.debug("Could not read Claude credentials from %s", CREDENTIALS_PATH)
         return None
+
+
+def read_access_token() -> str | None:
+    """Read OAuth access token from Claude credentials file."""
+    oauth = read_credentials()
+    return oauth.access_token if oauth else None

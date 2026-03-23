@@ -7,7 +7,6 @@ py_library(
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:usage",
         "@pypi//pydantic",
     ],
@@ -20,8 +19,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":usage_cache",
+        "//devinfra/claude:session_paths",
+        "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",
-        "//devinfra/claude/claude_api:usage",
         "@pypi//rich",
     ],
 )
@@ -37,14 +37,15 @@ py_binary(
 py_test(
     name = "test_statusline",
     srcs = ["test_statusline.py"],
+    data = ["__snapshots__/test_statusline.ambr"],
     imports = ["../../.."],
     deps = [
         ":statusline_lib",
         ":usage_cache",
-        "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api:credentials",
         "//devinfra/claude/claude_api:statusline",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//syrupy",
     ],
 )
