@@ -15,9 +15,7 @@ in
     ../home.nix
   ];
 
-  # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   home.packages = [
-    pkgs.gnomeExtensions.appindicator
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
     bebas-neue-font
@@ -30,10 +28,13 @@ in
     pkgs.tuxguitar
     tana
   ];
+
+  # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
+  programs.gnome-shell.extensions = [
+    { package = pkgs.gnomeExtensions.appindicator; }
+  ];
+
   dconf.settings = {
-    "org/gnome/shell".enabled-extensions = [
-      "appindicatorsupport@rgcjonas.gmail.com"
-    ];
     # Disable screensaver and screen blanking (headless VM)
     "org/gnome/desktop/screensaver" = {
       idle-activation-enabled = false;

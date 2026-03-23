@@ -40,9 +40,6 @@ in
     ++ [
       set_light_theme
       set_dark_theme
-    ]
-    ++ lib.optionals enableGui [
-      gnomeExtensions.night-theme-switcher # ID 2236: Night Theme Switcher
     ];
 
   # Bat theme environment variables for light/dark mode switching
@@ -258,19 +255,16 @@ in
     };
   };
 
+  # Night Theme Switcher extension — package and enabled-extensions via programs.gnome-shell
+  programs.gnome-shell.extensions = lib.mkIf enableGui [
+    { package = pkgs.gnomeExtensions.night-theme-switcher; }
+  ];
+
   dconf.settings = lib.mkIf enableGui {
     # Set default terminal
     "org/gnome/desktop/applications/terminal" = {
       exec = "gnome-terminal.wrapper";
       exec-arg = lib.hm.gvariant.mkNothing lib.hm.gvariant.type.string; # Unset the argument
-    };
-
-    # GNOME Shell extension management
-    "org/gnome/shell" = {
-      # Enable night-theme-switcher extension
-      enabled-extensions = [
-        "nightthemeswitcher@romainvigier.fr" # Night Theme Switcher
-      ];
     };
 
     # Night Theme Switcher extension settings

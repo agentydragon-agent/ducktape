@@ -475,7 +475,6 @@ in
       oh-my-posh # Cross-shell prompt with proper powerline support
       zsh-powerlevel10k # Powerlevel10k theme for zsh
 
-      # vertical-workspaces managed by gnome-workspace-shortcuts module
     ]
     ++ lib.optionals enableGui [
       # Fonts - using modern individual nerd-fonts packages (covers ansible nerd_fonts role)
@@ -497,23 +496,8 @@ in
       # Additional fonts
       roboto
 
-      # GNOME Shell Extensions (migrated from Ansible role petermosmans.customize-gnome):
-      # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
-      gnomeExtensions.panel-date-format # ID 1462: Panel Date Format ✓
-      # night-theme-switcher managed by solarized module
-      gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (Vertical Workspaces) ✓
-      gnomeExtensions.cronomix # ID 6003: Cronomix ✓
-
-      # Tiling window manager extension (on Pop!_OS this is pre-installed as a system extension)
-      # Other GNOME tiling options to consider:
-      #   - gnomeExtensions.forge: tree-based auto-tiling (i3-style), good keybinding customization
-      #   - gnomeExtensions.tiling-assistant: lighter touch, extends GNOME's built-in half/quarter snapping
-      #   - gnomeExtensions.gtile: grid-based manual tiling (pick zones)
-      #   - gnomeExtensions.tiling-shell: newer, customizable drag-and-drop zone layouts
-      # Non-GNOME alternatives: hyprland (best NixOS integration), sway (i3 for Wayland), niri (scrollable tiling)
-      gnomeExtensions.pop-shell
-
-      # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
+      # GNOME Shell extensions are managed via programs.gnome-shell.extensions (see below).
+      # Packages and enabled-extensions dconf are handled by that module.
     ]
     ++ lib.optionals enableGui [
       # GUI applications (migrated from Ansible)
@@ -646,35 +630,43 @@ in
         default-show-menubar = false;
       };
 
+      # Extension enabling is handled by programs.gnome-shell.extensions.
+      # Only disabled-extensions and extension-specific settings remain here.
       "org/gnome/shell" = {
-        # Enable user extensions
-        disable-user-extensions = false;
-
-        enabled-extensions =
-          # Extensions shared across all hosts
-          [
-            "panel-date-format@keiii.github.com" # Panel Date Format
-            # nightthemeswitcher managed by solarized module
-            "vertical-workspaces@G-dH.github.com" # V-Shell (replaces cosmic-workspaces)
-            "cronomix@zagortenay333" # Cronomix
-            "pop-shell@system76.com" # Pop Shell (tiling)
-          ]
-          # Pop!_OS system extensions (only on Pop!_OS hosts)
-          ++ lib.optionals isPopOS [
-            "ding@rastersoft.com" # Desktop Icons NG (DING)
-            "pop-cosmic@system76.com" # Pop COSMIC
-            "system76-power@system76.com" # System76 Power
-            "ubuntu-appindicators@ubuntu.com" # Ubuntu AppIndicators (system tray)
-            "cosmic-dock@system76.com" # COSMIC Dock
-          ];
-
-        # Disable problematic Pop!_OS extensions
         disabled-extensions = lib.optionals isPopOS [
           "cosmic-workspaces@system76.com"
           "popx11gestures@system76.com"
+          "pop-cosmic@system76.com"
         ];
       };
     };
+  };
+
+  # GNOME Shell extensions — managed via programs.gnome-shell module.
+  # This sets dconf enabled-extensions and installs packages automatically.
+  # Night-theme-switcher is added by solarized module.
+  # Appindicator is added by NixOS host files (rugged, wyrm2).
+  #
+  # Tiling window manager extension (on Pop!_OS this is pre-installed as a system extension)
+  # Other GNOME tiling options to consider:
+  #   - gnomeExtensions.forge: tree-based auto-tiling (i3-style), good keybinding customization
+  #   - gnomeExtensions.tiling-assistant: lighter touch, extends GNOME's built-in half/quarter snapping
+  #   - gnomeExtensions.gtile: grid-based manual tiling (pick zones)
+  #   - gnomeExtensions.tiling-shell: newer, customizable drag-and-drop zone layouts
+  # Non-GNOME alternatives: hyprland (best NixOS integration), sway (i3 for Wayland), niri (scrollable tiling)
+  programs.gnome-shell = lib.mkIf enableGui {
+    enable = true;
+    extensions = [
+      { package = pkgs.gnomeExtensions.panel-date-format; }
+      { package = pkgs.gnomeExtensions.vertical-workspaces; }
+      { package = pkgs.gnomeExtensions.cronomix; }
+      { package = pkgs.gnomeExtensions.pop-shell; }
+    ]
+    ++ lib.optionals isPopOS [
+      { package = pkgs.gnomeExtensions.ding; }
+      { package = pkgs.gnomeExtensions.system76-power; }
+      { package = pkgs.gnomeExtensions.cosmic-dock; }
+    ];
   };
 
   # Common shell configuration

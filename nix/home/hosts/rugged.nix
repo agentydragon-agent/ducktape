@@ -20,14 +20,14 @@ in
     ../home.nix
   ];
 
-  # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   home.packages = [
-    pkgs.gnomeExtensions.appindicator
     pkgs.lightburn
     tana
   ];
-  dconf.settings."org/gnome/shell".enabled-extensions = [
-    "appindicatorsupport@rgcjonas.gmail.com"
+
+  # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
+  programs.gnome-shell.extensions = [
+    { package = pkgs.gnomeExtensions.appindicator; }
   ];
 
   home.stateVersion = "25.11";
