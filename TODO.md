@@ -7,10 +7,6 @@
 - [ ] Add ESLint to pre-commit for local JS/TS linting (currently only runs in CI via Bazel)
 - [ ] Consider adding mypy to pre-commit for local type checking (currently only runs in CI via Bazel)
 
-## Dotfiles
-
-- [ ] Migrate remaining dotfiles (`profile`, `config/*`, `local/bin/*`) to Nix home-manager
-
 ## System Configuration
 
 - [ ] Add to small laptop installation: nmap, other hacking tools

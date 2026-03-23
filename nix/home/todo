@@ -15,10 +15,8 @@
   - Future option: use `programs.neovim.plugins` and disable lazy bootstrap
 - [ ] Learn ranger + consider HM-managed config
   - Maybe port ranger rc/colors over to `nix/home/config/ranger/`
-  - Would replace the ad-hoc setup in dotfiles
 - [ ] Fold readline/inputrc tweaks into Home Manager
   - Right now `programs.readline` only sets `show-all-if-ambiguous`
-  - Need to mirror other readline customizations from dotfiles
 - [ ] Investigate bringing git-worktree-switcher under HM
   - Understand current workflow (scripts? aliases?) and migrate settings
   - Learn the tool well enough to document best practices
@@ -43,7 +41,6 @@
 - zsh as login shell
 - ~/Downloads ~/Pictures etc. should be empty or absent
 - ducktape cloned
-- migrate remaining dotfiles to home-manager
 - Rust tools (build deps?) s cli : Install build dependencies for Rust tools	TAGS: []
 - cli : Create ~/.local/share directory for gitstatus	TAGS: [dev-tools, gitstatus]
      why were we doing this?

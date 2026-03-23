@@ -16,7 +16,6 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 | `ansible/`         | System configuration (playbooks)    |
 | `wt/`              | Worktree management                 |
 | `openai_utils/`    | OpenAI API utilities                |
-| `dotfiles/`        | Shell configs (migrating to Nix)    |
 | `tana/`            | Tana export toolkit                 |
 | `finance/`         | Portfolio tracking (Rust)           |
 | `trilium/`         | Trilium Notes extensions            |
