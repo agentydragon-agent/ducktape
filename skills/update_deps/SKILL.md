@@ -9,9 +9,44 @@ allowed-tools: Bash, Read, Grep, Glob, Edit, Write, WebFetch, Agent, Task
 
 # Automated Dependency Updates
 
-Read the Renovate dependency dashboard, check for outdated dependencies (including
-ones Renovate doesn't cover), and produce a single PR that applies whatever updates
-you can while keeping CI green.
+## Your Purpose
+
+You maintain a single, always-up-to-date dependency update PR for this monorepo.
+
+**Invariant**: there is exactly one open PR (`agentydragon-agent:deps/auto-update` →
+`agentydragon:devel`) that:
+
+1. Applies every dependency update that can be applied without significant manual
+   migration work
+2. Passes CI (`bazel build //... && bazel test //...`)
+3. Documents every dependency that IS outdated but NOT updated in the PR, with a
+   clear reason why (breaking API change, complex migration, blocked by upstream
+   issue, etc.)
+
+You address ALL outdated dependencies — both those listed on the Renovate dependency
+dashboard AND those Renovate doesn't track. Every outdated dep is either updated in
+the PR or explained in the PR description.
+
+## State Passing Between Runs
+
+You are a stateless agent. Each run is a fresh session. Your state lives in the PR:
+
+- **PR description**: structured tables of what was updated, what wasn't, and why.
+  Your future instance reads this first to understand what the previous run already
+  tried and decided.
+- **Commit history**: shows what changes were applied.
+- **Branch**: carries the accumulated work.
+
+**On every run, start by reading the existing PR description** (if one exists). Use
+it to understand:
+
+- Which updates were already applied (don't redo work)
+- Which updates were previously blocked and why (re-check if the blocker is resolved,
+  e.g., new upstream release fixing a breaking change)
+- Which deps were previously skipped as too complex (don't retry unless something
+  changed)
+
+Then diff that against the current Renovate dashboard to find what's new.
 
 ## Fork & Branch Setup
 
@@ -38,12 +73,17 @@ git fetch upstream devel
 
 ```bash
 # Find existing PR
-gh pr list --repo agentydragon/ducktape --head agentydragon-agent:deps/auto-update --state open --json number,url
+gh pr list --repo agentydragon/ducktape --head agentydragon-agent:deps/auto-update --state open --json number,url,body
 
-# If found: check out the branch, rebase onto upstream/devel
+# Read the PR description — this is your state from the previous run
+gh pr view <NUMBER> --repo agentydragon/ducktape --json body -q '.body'
+
+# Check out the branch, rebase onto upstream/devel
+git fetch fork deps/auto-update
 git checkout deps/auto-update
 git rebase upstream/devel
 # If rebase conflicts: git rebase --abort, then reset to upstream/devel and start fresh
+# (previous updates will be re-applied from scratch in that case)
 ```
 
 ### If no PR exists
@@ -71,6 +111,16 @@ Also check for updates Renovate doesn't track:
   against current versions on the Terraform registry
 - `tfdoc_version`, `tflint_version`, OpenTofu `version` in `MODULE.bazel`
 - Anything else you notice is outdated
+
+### Diff against previous state
+
+Compare the full list of available updates against the existing PR description:
+
+- **New updates** (not in previous PR): attempt to apply
+- **Previously applied**: verify still present in branch after rebase
+- **Previously blocked**: re-check — has a new upstream release resolved the issue?
+- **Previously skipped as complex**: don't retry unless you have reason to believe
+  something changed
 
 ## Step 2: Apply Updates
 
@@ -135,21 +185,7 @@ gh pr create \
   --base devel \
   --title "deps: automated dependency updates ($(date +%Y-%m-%d))" \
   --body "$(cat <<'PREOF'
-## Applied Updates
-
-| Package | Old | New | Ecosystem |
-|---------|-----|-----|-----------|
-| ... | ... | ... | ... |
-
-## Not Updated
-
-| Package | Available | Reason |
-|---------|-----------|--------|
-| ... | ... | ... |
-
-## Notes
-
-- ...
+<PR body — see format below>
 PREOF
 )"
 ```
@@ -157,39 +193,51 @@ PREOF
 ### Update existing PR
 
 ```bash
-# Update PR title and body
 gh pr edit <NUMBER> \
   --repo agentydragon/ducktape \
   --title "deps: automated dependency updates ($(date +%Y-%m-%d))" \
   --body "$(cat <<'PREOF'
-...updated body...
+<PR body — see format below>
 PREOF
 )"
 ```
 
-## PR Description Content
+## PR Description Format
 
-The PR body should include:
+The PR description is both human-readable AND the state your next instance reads.
+Keep it structured and machine-parseable.
 
 ### Applied Updates
 
-Table of everything you successfully updated, with old and new versions.
+Table of everything updated in this PR, with old and new versions:
+
+```markdown
+| Package   | Old    | New    | Ecosystem    | Notes                           |
+| --------- | ------ | ------ | ------------ | ------------------------------- |
+| pydantic  | 2.12.0 | 2.12.5 | python       | patch bump, no breaking changes |
+| rules_oci | 2.2.7  | 2.3.0  | bazel-module | minor bump                      |
+```
 
 ### Not Updated
 
-Table of updates you attempted but couldn't apply, with:
+Table of deps that are outdated but NOT updated, with clear reasons. This is
+critical — your future instance uses this to decide whether to retry:
 
-- What version was available
-- What went wrong (build error, test failure, breaking API change)
-- Whether it's a breaking change that needs manual attention
+```markdown
+| Package         | Current    | Available | Reason                                             | Last checked |
+| --------------- | ---------- | --------- | -------------------------------------------------- | ------------ |
+| protobuf        | 34.0.bcr.1 | 34.1      | blocked: UPB GCC warnings, see TODO.md             | 2025-03-22   |
+| aspect_rules_js | 2.9.2      | 3.0.3     | major: breaking API changes in v3, needs migration | 2025-03-22   |
+| reqwest         | 0.12.28    | 0.13.2    | major: async runtime changes, needs investigation  | 2025-03-22   |
+```
 
-### Not Checked
+### Not Tracked by Renovate
 
-List of dependency categories outside Renovate's coverage that you checked
-manually, with findings.
+Findings from manual checks of deps Renovate doesn't cover:
 
-### Recommendations
-
-Any updates that are available but would benefit from human review before
-applying (e.g., major version bumps with significant breaking changes,
-infrastructure-affecting changes like Terraform provider upgrades).
+```markdown
+| Dependency | Location                 | Current | Latest | Status                              |
+| ---------- | ------------------------ | ------- | ------ | ----------------------------------- |
+| OpenTofu   | MODULE.bazel tf.download | 1.11.2  | 1.12.0 | available, not applied (infra risk) |
+| tflint     | MODULE.bazel tf.download | 0.53.0  | 0.54.0 | available, applied                  |
+```
