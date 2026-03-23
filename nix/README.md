@@ -51,11 +51,11 @@ Note: `--impure` is required for nixGL (GPU driver detection).
 
 ### Home-Manager Configs (`homeConfigurations`)
 
-| Host           | OS       | Description           |
-| -------------- | -------- | --------------------- |
-| `agentydragon` | Pop!\_OS | ThinkPad X1 Extreme   |
-| `gpd`          | Pop!\_OS | GPD Win Max 2         |
-| `nixos-vm`     | NixOS    | NixOS VM (wyrm2)      |
+| Host           | OS       | Description         |
+| -------------- | -------- | ------------------- |
+| `agentydragon` | Pop!\_OS | ThinkPad X1 Extreme |
+| `gpd`          | Pop!\_OS | GPD Win Max 2       |
+| `nixos-vm`     | NixOS    | NixOS VM (wyrm2)    |
 
 ## Common Commands
 
