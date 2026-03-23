@@ -80,6 +80,8 @@ resources:
   - matrix-namespace/flux-kustomization.yaml
   - applications/matrix/flux-kustomization.yaml
   - applications/matrix-secrets/flux-kustomization.yaml
+  - nix-cache-namespace/flux-kustomization.yaml
+  - attic-db/flux-kustomization.yaml
   - applications/nix-cache/flux-kustomization.yaml
   - atuin-namespace/flux-kustomization.yaml
   - atuin-secrets/flux-kustomization.yaml

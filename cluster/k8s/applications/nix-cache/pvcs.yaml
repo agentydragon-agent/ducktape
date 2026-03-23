@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: attic-data
+  namespace: nix-cache
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: proxmox-csi-retain
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: attic-cache
+  namespace: nix-cache
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: proxmox-csi-retain

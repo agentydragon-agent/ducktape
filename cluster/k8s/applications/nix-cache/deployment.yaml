@@ -1,32 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "attic.fullname" . }}
-  labels:
-    {{- include "attic.labels" . | nindent 4 }}
+  name: attic
+  namespace: nix-cache
+  annotations:
+    reloader.stakater.com/auto: "true"
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: 1
   strategy:
-    type: {{ .Values.strategy.type }}
+    type: Recreate # CRITICAL: RWO volume deadlock prevention
   selector:
     matchLabels:
-      {{- include "attic.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/name: attic
   template:
     metadata:
-      annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       labels:
-        {{- include "attic.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/name: attic
     spec:
       securityContext:
         fsGroup: 1000
       containers:
         - name: attic
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: ghcr.io/zhaofengli/attic:latest
+          imagePullPolicy: Always
           securityContext:
             runAsUser: 1000
             runAsGroup: 1000
@@ -37,6 +33,17 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
+          env:
+            - name: ATTIC_SERVER_DATABASE__URL
+              valueFrom:
+                secretKeyRef:
+                  name: attic-db-app
+                  key: uri
+            - name: ATTIC_SERVER_JWT__SIGNING__TOKEN_HS256_SECRET_BASE64
+              valueFrom:
+                secretKeyRef:
+                  name: attic-jwt-token
+                  key: jwt-token
           args:
             - "-f"
             - "/config/server.toml"
@@ -56,13 +63,16 @@ spec:
               mountPath: /cache
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.signingKey.secretName }}
             - name: signing-key
-              mountPath: {{ .Values.signingKey.mountPath | default "/var/lib/secrets" }}
+              mountPath: /var/lib/secrets
               readOnly: true
-            {{- end }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            requests:
+              memory: 32Mi
+              cpu: 100m
+            limits:
+              memory: 1Gi
+              cpu: 1000m
           livenessProbe:
             httpGet:
               path: /
@@ -80,25 +90,15 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ include "attic.fullname" . }}-config
+            name: attic-config
         - name: data
-          {{- if .Values.persistence.data.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "attic.fullname" . }}-data
-          {{- else }}
-          emptyDir: {}
-          {{- end }}
+            claimName: attic-data
         - name: cache
-          {{- if .Values.persistence.cache.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "attic.fullname" . }}-cache
-          {{- else }}
-          emptyDir: {}
-          {{- end }}
+            claimName: attic-cache
         - name: tmp
           emptyDir: {}
-        {{- if .Values.signingKey.secretName }}
         - name: signing-key
           secret:
-            secretName: {{ .Values.signingKey.secretName }}
-        {{- end }}
+            secretName: nix-cache-signing-key
