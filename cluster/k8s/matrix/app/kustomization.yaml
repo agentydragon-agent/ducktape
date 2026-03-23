@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmrelease.yaml
+  - element-web.yaml
+  - element-httproute.yaml
+  - synapse-httproute.yaml
+# Matrix OIDC/SSO: native Authentik blueprint (k8s/authentik/app/blueprints/) + ESO (k8s/authentik/blueprints/matrix-secret/)

@@ -24,8 +24,8 @@ _ASYNC_HEALTH_CHECK_KINDS = {
 
 def _has_async_health_checks(cluster: ParsedCluster, name: str) -> bool:
     """Check if a kustomization has health checks for async resource kinds."""
-    flux_kust = cluster.flux_kustomizations[name]
-    return any(hc.kind in _ASYNC_HEALTH_CHECK_KINDS for hc in flux_kust.spec.health_checks)
+    spec = cluster.flux_kustomizations[name]
+    return any(hc.kind in _ASYNC_HEALTH_CHECK_KINDS for hc in spec.health_checks)
 
 
 def kust_deploys_kind(kind: str, kust: KustomizeFile, source_resources: dict[Path, list[K8sResource]]) -> bool:
@@ -37,37 +37,31 @@ def kust_deploys_kind(kind: str, kust: KustomizeFile, source_resources: dict[Pat
     )
 
 
-def check_controller_health_checks(cluster: ParsedCluster, k8s_dir: Path, workspace: Path) -> list[str]:
+def check_controller_health_checks(cluster: ParsedCluster, workspace: Path) -> list[str]:
     return [
         f"{name}: deploys a {kind} but has no healthChecks for it. "
-        f"Add healthChecks with kind: {kind} to {flux_kust.file_path.relative_to(k8s_dir)}."
-        for name, flux_kust in cluster.flux_kustomizations.items()
-        if flux_kust.spec.path
-        if (kust_dir := (workspace / flux_kust.spec.path.removeprefix("./")))
+        f"Add healthChecks with kind: {kind} to {spec.path}/flux-kustomization.yaml."
+        for name, spec in cluster.flux_kustomizations.items()
+        if spec.path
+        if (kust_dir := (workspace / spec.path.removeprefix("./")))
         if (kust := cluster.kustomize_files.get(kust_dir / "kustomization.yaml"))
         for kind in HEALTH_CHECK_REQUIRED_KINDS
         if kust_deploys_kind(kind, kust, cluster.source_resources)
-        if not any(hc.kind == kind for hc in flux_kust.spec.health_checks)
+        if not any(hc.kind == kind for hc in spec.health_checks)
     ]
 
 
-def check_retry_policy(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    """Enforce retryInterval on async Flux Kustomizations.
-
-    spec.retries does not exist in the Flux Kustomization CRD (v2.7.5+).
-    Only spec.retryInterval is valid — require it on kustomizations with async
-    health checks or wait: true.
-    """
+def check_retry_policy(cluster: ParsedCluster) -> None:
+    """Enforce retryInterval on async Flux Kustomizations."""
     errors: list[str] = []
-    for name, flux_kust in cluster.flux_kustomizations.items():
-        needs_retry = _has_async_health_checks(cluster, name) or flux_kust.spec.wait
+    for name, spec in cluster.flux_kustomizations.items():
+        needs_retry = _has_async_health_checks(cluster, name) or spec.wait
         if not needs_retry:
             continue
-        if not flux_kust.spec.retry_interval:
-            rel_path = flux_kust.file_path.relative_to(k8s_dir)
+        if not spec.retry_interval:
             errors.append(
                 f"{name}: has async health checks or wait: true but no retryInterval. "
-                f"Set retryInterval (e.g. 1m) in {rel_path}."
+                f"Set retryInterval (e.g. 1m) in {spec.path}/flux-kustomization.yaml."
             )
 
     assert not errors, "Retry policy violations:\n" + "\n".join(f"  {e}" for e in errors)

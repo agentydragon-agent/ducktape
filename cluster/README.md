@@ -103,13 +103,13 @@ See <docs/plan.md> for the full invariant definition, compliance tracking, and f
 ## SSO (Authentik)
 
 All applications use Authentik for SSO via native blueprints — idempotent YAML in
-`k8s/authentik/sso-blueprints.yaml` (ConfigMap mounted into the worker, re-applied every
+`k8s/authentik/app/blueprints/` (ConfigMap mounted into the worker, re-applied every
 60 min). No Terraform state for Authentik resources.
 
 - **Secret flow**: `terraform/gitops/sso-secrets/` generates OAuth2 client secrets →
   Vault → ESO `authentik-sso-client-secrets` in authentik namespace → worker `envFrom` →
   blueprint `!Env` tags
-- **App-side secrets**: ESO in `k8s/authentik-blueprint/{app}-secret/` reads from
+- **App-side secrets**: ESO in `k8s/authentik/blueprints/{app}-secret/` reads from
   the same Vault path
 - **Remaining Terraform**: `harbor-oidc-config/` (Harbor API), `vault-oidc-auth/`
   (Vault OIDC auth backend) — configure non-Authentik systems
@@ -159,7 +159,7 @@ cluster/
 ## Let's Encrypt Rate Limits
 
 5 duplicate certs/week per domain (rolling 7-day window). Each destroy→bootstrap cycle
-requests fresh certificates. Controlled by `k8s/cert-manager-issuer-config/configmap.yaml`.
+requests fresh certificates. Controlled by `k8s/cert-manager/issuer-config/configmap.yaml`.
 
 **Note:** The legacy VPS at `agentydragon.com` is separate infrastructure not involved in
 this cluster (see <docs/plan.md>).

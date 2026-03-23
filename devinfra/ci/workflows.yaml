@@ -159,7 +159,7 @@ releases:
 # The bazel-harbor-images workflow (generated from this config) builds and
 # pushes all images in a single job, sharing Bazel setup and registry login.
 harbor_images:
-  - bazel_target: //cluster/k8s/applications/inventree-token-provisioner:load
+  - bazel_target: //cluster/k8s/inventree/token-provisioner:load
     local_tag: inventree-token-provisioner:latest
     remote_path: ducktape/token-provisioner
 

@@ -36,7 +36,7 @@ Terraform reads token, configures Gitea OAuth with Authentik
 
 ### Implementation
 
-Job manifest: `k8s/applications/gitea/admin-token-job.yaml`
+Job manifest: `k8s/gitea/admin-token/admin-token-job.yaml`
 
 Required token scopes: `write:admin`, `write:repository`, `write:user`, `write:organization`
 

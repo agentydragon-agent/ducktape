@@ -1,0 +1,21 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring-namespace
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  path: ./cluster/k8s/monitoring/namespace
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  wait: true
+  # Health check ensures monitoring namespace exists before dependents deploy
+  healthChecks:
+    - apiVersion: v1
+      kind: Namespace
+      name: monitoring
+  dependsOn:
+    - name: longhorn

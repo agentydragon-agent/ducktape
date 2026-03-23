@@ -9,7 +9,6 @@ import yaml
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering as _check_crd_layering_raises
-from cluster.validation.health_checks import check_controller_health_checks
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
@@ -69,11 +68,6 @@ def check_crd_layering(result: KustomizeBuildResult) -> list[str]:
     return []
 
 
-def check_controller_resource_health_checks(cluster: ParsedCluster, k8s_dir: Path, repo_root: Path) -> list[str]:
-    """Check that flux kustomizations deploying controller resources have healthChecks."""
-    return check_controller_health_checks(cluster, k8s_dir, repo_root)
-
-
 def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
     """Check that namespaces with a goldilocks vpa-update-mode label also have goldilocks enabled."""
     errors = []
@@ -95,8 +89,8 @@ def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
 
 def check_blueprint_completeness(k8s_dir: Path) -> list[str]:
     """Check that all blueprint YAML files are listed in the authentik configMapGenerator."""
-    authentik_kust = k8s_dir / "authentik" / "kustomization.yaml"
-    blueprints_dir = k8s_dir / "authentik" / "blueprints"
+    authentik_kust = k8s_dir / "authentik" / "app" / "kustomization.yaml"
+    blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
 
     if not authentik_kust.exists() or not blueprints_dir.exists():
         return []
@@ -117,7 +111,7 @@ def check_blueprint_completeness(k8s_dir: Path) -> list[str]:
         return [
             f"Authentik blueprint not listed in configMapGenerator: {name}. "
             f"Add 'blueprints/{name}' to the authentik-sso-blueprints files list "
-            f"in k8s/authentik/kustomization.yaml."
+            f"in k8s/authentik/app/kustomization.yaml."
             for name in unlisted
         ]
 

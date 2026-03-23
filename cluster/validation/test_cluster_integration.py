@@ -48,13 +48,13 @@ def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path, workspace: Path) -> None:
-    errors = check_controller_health_checks(cluster, k8s_dir, workspace)
+def test_controller_resources_have_health_checks(cluster: ParsedCluster, workspace: Path) -> None:
+    errors = check_controller_health_checks(cluster, workspace)
     assert not errors, "\n".join(errors)
 
 
-def test_retry_policy(cluster: ParsedCluster, k8s_dir: Path) -> None:
-    check_retry_policy(cluster, k8s_dir)
+def test_retry_policy(cluster: ParsedCluster) -> None:
+    check_retry_policy(cluster)
 
 
 @pytest.mark.xfail(reason="Pre-existing orphaned files (config.yaml referenced via configMapGenerator, not resources)")
@@ -97,8 +97,8 @@ def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:
 
 def test_blueprint_completeness(k8s_dir: Path) -> None:
     """All authentik blueprint YAML files must be listed in configMapGenerator."""
-    authentik_kust = k8s_dir / "authentik" / "kustomization.yaml"
-    blueprints_dir = k8s_dir / "authentik" / "blueprints"
+    authentik_kust = k8s_dir / "authentik" / "app" / "kustomization.yaml"
+    blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
 
     if not authentik_kust.exists() or not blueprints_dir.exists():
         pytest.skip("Authentik kustomization or blueprints dir not found")

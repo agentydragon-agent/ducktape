@@ -29,7 +29,7 @@ class HealthCheck(BaseModel):
 
 
 class FluxKustomizationSpec(BaseModel):
-    """Spec portion of a Flux Kustomization CR."""
+    """Parsed spec from a Flux Kustomization CR."""
 
     model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
 
@@ -40,29 +40,35 @@ class FluxKustomizationSpec(BaseModel):
     wait: bool = False
 
 
-class FluxKustomization(BaseModel):
-    """Parsed flux-kustomization.yaml Kustomization CR."""
+class _ObjectMeta(BaseModel):
+    model_config = ConfigDict(extra="ignore")
 
     name: str
-    file_path: Path
+
+
+class _FluxKustomizationDoc(BaseModel):
+    """Top-level structure of a Flux Kustomization YAML document."""
+
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
+
+    api_version: str
+    kind: str
+    metadata: _ObjectMeta
     spec: FluxKustomizationSpec = FluxKustomizationSpec()
 
 
-def parse_flux_kustomization(flux_file: Path) -> list[FluxKustomization]:
-    """Parse a flux-kustomization.yaml file (may contain multiple documents)."""
-    results = []
+def parse_flux_kustomizations(flux_file: Path) -> dict[str, FluxKustomizationSpec]:
+    """Parse a flux-kustomization.yaml file, returning {name: spec} for each document."""
+    results: dict[str, FluxKustomizationSpec] = {}
     with flux_file.open() as f:
         for doc in yaml.safe_load_all(f):
-            if not doc:
+            if not isinstance(doc, dict):
                 continue
             if doc.get("kind") != "Kustomization":
                 continue
-            if not doc.get("apiVersion", "").startswith("kustomize.toolkit.fluxcd.io"):
+            if not (doc.get("apiVersion") or "").startswith("kustomize.toolkit.fluxcd.io"):
                 continue
-            if not (name := (doc.get("metadata") or {}).get("name")):
-                continue
-
-            spec = FluxKustomizationSpec.model_validate(doc.get("spec") or {})
-            results.append(FluxKustomization(name=name, file_path=flux_file, spec=spec))
+            parsed = _FluxKustomizationDoc.model_validate(doc)
+            results[parsed.metadata.name] = parsed.spec
 
     return results

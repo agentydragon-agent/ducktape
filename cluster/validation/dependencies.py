@@ -7,7 +7,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from cluster.validation.cluster import ParsedCluster
+from cluster.validation.cluster import _K8S_SUBPATH, ParsedCluster
 from cluster.validation.crd_layering import CRD_TO_OPERATOR
 
 
@@ -63,10 +63,35 @@ def check_required_dependencies(cluster: ParsedCluster) -> list[str]:
     return errors
 
 
-def _kust_name_for_file(file_path: Path, k8s_dir: Path) -> str | None:
-    """Return the top-level kustomization directory name for a source file."""
-    relative = file_path.relative_to(k8s_dir)
-    return relative.parts[0] if relative.parts else None
+def _build_dir_to_kust_map(cluster: ParsedCluster, k8s_dir: Path) -> dict[str, str]:
+    """Build a mapping from relative directory paths (under k8s_dir) to Flux kustomization names.
+
+    Each Flux kustomization has a spec.path like './cluster/k8s/gitea/servicemonitor'.
+    We strip the common prefix to get the relative path within k8s_dir (e.g. 'gitea/servicemonitor').
+    """
+    k8s_prefix = str(_K8S_SUBPATH) + "/"  # "cluster/k8s/"
+    dir_to_kust: dict[str, str] = {}
+    for name, spec in cluster.flux_kustomizations.items():
+        path = spec.path.removeprefix("./")
+        if path.startswith(k8s_prefix):
+            rel = path[len(k8s_prefix) :]
+            dir_to_kust[rel] = name
+    return dir_to_kust
+
+
+def _kust_name_for_file(file_path: Path, k8s_dir: Path, dir_to_kust: dict[str, str]) -> str | None:
+    """Return the Flux kustomization name that owns the given source file."""
+    try:
+        relative = file_path.parent.relative_to(k8s_dir)
+    except ValueError:
+        return None
+    # Walk up from the file's directory to find the owning kustomization.
+    parts = relative.parts
+    for i in range(len(parts), 0, -1):
+        candidate = "/".join(parts[:i])
+        if candidate in dir_to_kust:
+            return dir_to_kust[candidate]
+    return None
 
 
 def validate_operator_dependencies(
@@ -80,6 +105,7 @@ def validate_operator_dependencies(
     if crd_to_operator is None:
         crd_to_operator = CRD_TO_OPERATOR
 
+    dir_to_kust = _build_dir_to_kust_map(cluster, k8s_dir)
     errors = []
     g = cluster.graph
     # Track (kust, operator) pairs already reported to avoid duplicate errors per file.
@@ -90,7 +116,7 @@ def validate_operator_dependencies(
             operator = crd_to_operator.get(resource.kind)
             if operator is None:
                 continue
-            service = _kust_name_for_file(file_path, k8s_dir)
+            service = _kust_name_for_file(file_path, k8s_dir, dir_to_kust)
             if not service or service not in cluster.flux_kustomizations:
                 continue
             key = (service, operator)

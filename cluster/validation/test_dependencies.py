@@ -14,12 +14,13 @@ from cluster.validation.dependencies import (
     check_required_dependencies,
     validate_operator_dependencies,
 )
-from cluster.validation.flux import DependsOn, FluxKustomization, FluxKustomizationSpec
+from cluster.validation.flux import DependsOn, FluxKustomizationSpec
 from cluster.validation.k8s import K8sResource
 
 
 def _cluster(
-    flux_kustomizations: dict[str, FluxKustomization], source_resources: dict[Path, list[tuple[str, str]]] | None = None
+    flux_kustomizations: dict[str, FluxKustomizationSpec],
+    source_resources: dict[Path, list[tuple[str, str]]] | None = None,
 ) -> ParsedCluster:
     return ParsedCluster(
         flux_kustomizations=flux_kustomizations,
@@ -37,17 +38,9 @@ class TestDependencyGraph:
         """Builds correct directed graph: edges run from dependent -> prerequisite."""
         cluster = _cluster(
             {
-                "app-a": FluxKustomization(
-                    name="app-a",
-                    file_path=Path("./k8s/app-a"),
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="core")]),
-                ),
-                "app-b": FluxKustomization(
-                    name="app-b",
-                    file_path=Path("./k8s/app-b"),
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="core"), DependsOn(name="app-a")]),
-                ),
-                "core": FluxKustomization(name="core", file_path=Path("./k8s/core")),
+                "app-a": FluxKustomizationSpec(depends_on=[DependsOn(name="core")]),
+                "app-b": FluxKustomizationSpec(depends_on=[DependsOn(name="core"), DependsOn(name="app-a")]),
+                "core": FluxKustomizationSpec(),
             }
         )
 
@@ -58,12 +51,8 @@ class TestDependencyGraph:
         """Detects circular dependencies."""
         cluster = _cluster(
             {
-                "a": FluxKustomization(
-                    name="a", file_path=Path("./k8s/a"), spec=FluxKustomizationSpec(depends_on=[DependsOn(name="b")])
-                ),
-                "b": FluxKustomization(
-                    name="b", file_path=Path("./k8s/b"), spec=FluxKustomizationSpec(depends_on=[DependsOn(name="a")])
-                ),
+                "a": FluxKustomizationSpec(depends_on=[DependsOn(name="b")]),
+                "b": FluxKustomizationSpec(depends_on=[DependsOn(name="a")]),
             }
         )
         with pytest.raises(CyclicDependencyError, match="a"):
@@ -73,17 +62,9 @@ class TestDependencyGraph:
         """No false positives for valid DAGs."""
         cluster = _cluster(
             {
-                "core": FluxKustomization(name="core", file_path=Path("./k8s/core")),
-                "app-a": FluxKustomization(
-                    name="app-a",
-                    file_path=Path("./k8s/app-a"),
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="core")]),
-                ),
-                "app-b": FluxKustomization(
-                    name="app-b",
-                    file_path=Path("./k8s/app-b"),
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="core"), DependsOn(name="app-a")]),
-                ),
+                "core": FluxKustomizationSpec(),
+                "app-a": FluxKustomizationSpec(depends_on=[DependsOn(name="core")]),
+                "app-b": FluxKustomizationSpec(depends_on=[DependsOn(name="core"), DependsOn(name="app-a")]),
             }
         )
         assert_no_cycles(cluster.graph)  # should not raise
@@ -96,13 +77,9 @@ class TestRequiredDependencies:
         """Detects when authentik is missing cert-manager dependency."""
         cluster = _cluster(
             {
-                "authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik")),
-                "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager")),
-                "gateway": FluxKustomization(
-                    name="gateway",
-                    file_path=Path("./k8s/gateway"),
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="cert-manager")]),
-                ),
+                "authentik": FluxKustomizationSpec(),
+                "cert-manager": FluxKustomizationSpec(),
+                "gateway": FluxKustomizationSpec(depends_on=[DependsOn(name="cert-manager")]),
             }
         )
         errors = check_required_dependencies(cluster)
@@ -112,17 +89,11 @@ class TestRequiredDependencies:
         """No errors when required dependencies are present."""
         cluster = _cluster(
             {
-                "authentik": FluxKustomization(
-                    name="authentik",
-                    file_path=Path("./k8s/authentik"),
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="gateway"), DependsOn(name="cert-manager")]),
+                "authentik": FluxKustomizationSpec(
+                    depends_on=[DependsOn(name="gateway"), DependsOn(name="cert-manager")]
                 ),
-                "gateway": FluxKustomization(
-                    name="gateway",
-                    file_path=Path("./k8s/gateway"),
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="cert-manager")]),
-                ),
-                "cert-manager": FluxKustomization(name="cert-manager", file_path=Path("./k8s/cert-manager")),
+                "gateway": FluxKustomizationSpec(depends_on=[DependsOn(name="cert-manager")]),
+                "cert-manager": FluxKustomizationSpec(),
             }
         )
         errors = check_required_dependencies(cluster)
@@ -130,7 +101,7 @@ class TestRequiredDependencies:
 
     def test_raises_on_unknown_prerequisite(self) -> None:
         """Raises ValueError when a rule references a kustomization not in the cluster."""
-        cluster = _cluster({"authentik": FluxKustomization(name="authentik", file_path=Path("./k8s/authentik"))})
+        cluster = _cluster({"authentik": FluxKustomizationSpec()})
         with pytest.raises(ValueError, match="unknown kustomization: cert-manager"):
             check_required_dependencies(cluster)
 
@@ -143,12 +114,10 @@ class TestValidateOperatorDependencies:
         k8s_dir = tmp_path / "k8s"
         cluster = _cluster(
             {
-                "my-app": FluxKustomization(
-                    name="my-app",
-                    file_path=k8s_dir / "my-app",
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="some-operator")]),
+                "my-app": FluxKustomizationSpec(
+                    path="./cluster/k8s/my-app", depends_on=[DependsOn(name="some-operator")]
                 ),
-                "some-operator": FluxKustomization(name="some-operator", file_path=k8s_dir / "some-operator"),
+                "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
             },
             {k8s_dir / "my-app" / "resource.yaml": [("MyCRD", "example.com/v1")]},
         )
@@ -159,17 +128,11 @@ class TestValidateOperatorDependencies:
         k8s_dir = tmp_path / "k8s"
         cluster = _cluster(
             {
-                "my-app": FluxKustomization(
-                    name="my-app",
-                    file_path=k8s_dir / "my-app",
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="middle")]),
+                "my-app": FluxKustomizationSpec(path="./cluster/k8s/my-app", depends_on=[DependsOn(name="middle")]),
+                "middle": FluxKustomizationSpec(
+                    path="./cluster/k8s/middle", depends_on=[DependsOn(name="some-operator")]
                 ),
-                "middle": FluxKustomization(
-                    name="middle",
-                    file_path=k8s_dir / "middle",
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="some-operator")]),
-                ),
-                "some-operator": FluxKustomization(name="some-operator", file_path=k8s_dir / "some-operator"),
+                "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
             },
             {k8s_dir / "my-app" / "resource.yaml": [("MyCRD", "example.com/v1")]},
         )
@@ -181,13 +144,9 @@ class TestValidateOperatorDependencies:
         k8s_dir = tmp_path / "k8s"
         cluster = _cluster(
             {
-                "my-app": FluxKustomization(
-                    name="my-app",
-                    file_path=k8s_dir / "my-app",
-                    spec=FluxKustomizationSpec(depends_on=[DependsOn(name="unrelated")]),
-                ),
-                "some-operator": FluxKustomization(name="some-operator", file_path=k8s_dir / "some-operator"),
-                "unrelated": FluxKustomization(name="unrelated", file_path=k8s_dir / "unrelated"),
+                "my-app": FluxKustomizationSpec(path="./cluster/k8s/my-app", depends_on=[DependsOn(name="unrelated")]),
+                "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
+                "unrelated": FluxKustomizationSpec(path="./cluster/k8s/unrelated"),
             },
             {k8s_dir / "my-app" / "resource.yaml": [("MyCRD", "example.com/v1")]},
         )

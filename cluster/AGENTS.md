@@ -73,12 +73,12 @@ Delegate complex diagnostics and independent workstreams to subagents via the Ta
 
 ## SSO Integration
 
-Native blueprints in `k8s/authentik/sso-blueprints.yaml` (ConfigMap, re-applied every 60 min).
+Native blueprints in `k8s/authentik/app/blueprints/` (ConfigMap, re-applied every 60 min).
 
 **Secret flow**: `terraform/gitops/sso-secrets/` -> Vault -> ESO `authentik-sso-client-secrets`
 in authentik namespace -> worker `envFrom` -> blueprint `!Env` tags.
 
-**App-side secrets**: ESO in `k8s/authentik-blueprint/{app}-secret/` reads from same Vault path.
+**App-side secrets**: ESO in `k8s/authentik/blueprints/{app}-secret/` reads from same Vault path.
 
 **Proxy-mode NetworkPolicy (required)**: When a service is behind the shared proxy outpost,
 add a `networkpolicy.yaml` restricting ingress to the outpost pod. Without this, any pod can

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from cluster.validation.flux import FluxKustomization, parse_flux_kustomization
+from cluster.validation.flux import FluxKustomizationSpec, parse_flux_kustomizations
 from cluster.validation.k8s import K8sResource, parse_k8s_resource_file
 from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, parse_kustomize_file
 
@@ -21,21 +21,20 @@ class ParsedCluster:
     """All parsed data from the cluster directory - parsed once, used everywhere."""
 
     kustomize_files: dict[Path, KustomizeFile] = field(default_factory=dict)
-    flux_kustomizations: dict[str, FluxKustomization] = field(default_factory=dict)  # keyed by name
+    flux_kustomizations: dict[str, FluxKustomizationSpec] = field(default_factory=dict)
     all_yaml_files: set[Path] = field(default_factory=set)
     source_resources: dict[Path, list[K8sResource]] = field(default_factory=dict)
     build_results: list[KustomizeBuildResult] = field(default_factory=list)
 
     # Directed graph of Flux kustomization dependencies.
     # Edge A->B means kustomization A depends on B (A must start after B is ready).
-    # Computed from flux_kustomizations in __post_init__; do not set manually.
     graph: nx.DiGraph = field(init=False)
 
     def __post_init__(self) -> None:
         g: nx.DiGraph = nx.DiGraph()
         g.add_nodes_from(self.flux_kustomizations)
-        for name, kust in self.flux_kustomizations.items():
-            for dep in kust.spec.depends_on:
+        for name, spec in self.flux_kustomizations.items():
+            for dep in spec.depends_on:
                 g.add_edge(name, dep.name)
         self.graph = g
 
@@ -43,7 +42,7 @@ class ParsedCluster:
 def parse_cluster(k8s_dir: Path) -> ParsedCluster:
     """Parse all files in the cluster directory once."""
     kustomize_files: dict[Path, KustomizeFile] = {}
-    flux_kustomizations: dict[str, FluxKustomization] = {}
+    flux_kustomizations: dict[str, FluxKustomizationSpec] = {}
     all_yaml_files: set[Path] = set()
     source_resources: dict[Path, list[K8sResource]] = {}
 
@@ -68,8 +67,7 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
                 kustomize_files[yaml_file] = kust
 
         elif yaml_file.name == "flux-kustomization.yaml":
-            for flux_kust in parse_flux_kustomization(yaml_file):
-                flux_kustomizations[flux_kust.name] = flux_kust
+            flux_kustomizations.update(parse_flux_kustomizations(yaml_file))
 
         else:
             resources = parse_k8s_resource_file(yaml_file)

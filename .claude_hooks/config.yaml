@@ -2,7 +2,7 @@
 otel:
   endpoint: https://alloy-otlp.allegedly.works/v1/traces
   # bearer_token: populated from k8s_secrets.otel_bearer_token below.
-  # Authentik service account token — see cluster/k8s/authentik/blueprints/alloy-otlp-sso.yaml.
+  # Authentik service account token — see cluster/k8s/authentik/app/blueprints/alloy-otlp-sso.yaml.
 k8s:
   server: https://api.allegedly.works:16443
   service_account: claude-code-web

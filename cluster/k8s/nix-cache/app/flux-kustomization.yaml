@@ -1,0 +1,31 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: nix-cache
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/nix-cache/app
+  prune: true
+  wait: true
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: attic
+      namespace: nix-cache
+  dependsOn:
+    - name: attic-db
+      namespace: flux-system
+    - name: sealed-secrets
+      namespace: flux-system
+    - name: gateway
+      namespace: flux-system
+    - name: cert-manager
+      namespace: flux-system
+    - name: external-dns
+      namespace: flux-system

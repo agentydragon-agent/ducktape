@@ -42,7 +42,7 @@ jobs:
       - name: Build and push inventree-token-provisioner
         run: |-
           .github/scripts/harbor_push.sh \
-            //cluster/k8s/applications/inventree-token-provisioner:load \
+            //cluster/k8s/inventree/token-provisioner:load \
             inventree-token-provisioner:latest \
             registry.allegedly.works/ducktape/token-provisioner
       - name: Build and push props-backend

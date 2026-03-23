@@ -29,7 +29,6 @@ from pathlib import Path
 
 from cluster.scripts.validate_cluster.checks import (
     check_blueprint_completeness,
-    check_controller_resource_health_checks,
     check_crd_layering,
     check_duplicate_external_secrets,
     check_goldilocks_namespace_labels,
@@ -40,6 +39,7 @@ from cluster.scripts.validate_cluster.helm_templates import validate_helm_templa
 from cluster.scripts.validate_cluster.kustomize import KustomizeBuildError, run_kustomize_build
 from cluster.validation.cluster import _K8S_SUBPATH, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
+from cluster.validation.health_checks import check_controller_health_checks
 from cluster.validation.kustomize import KustomizeBuildResult
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -114,7 +114,7 @@ async def main() -> int:
         global_errors.extend(validate_dependencies(cluster, root))
 
     # Validate controller resource healthChecks (HelmRelease, Terraform)
-    global_errors.extend(check_controller_resource_health_checks(cluster, root, workspace))
+    global_errors.extend(check_controller_health_checks(cluster, workspace))
 
     # Validate flux build
     if not args.skip_flux_build:

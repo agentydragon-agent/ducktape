@@ -1,20 +1,17 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
+  # --- flux ---
   - flux-system/
   - flux-webhook/flux-kustomization.yaml
   - flux-grafana-secrets/flux-kustomization.yaml
-  - kyverno/flux-kustomization.yaml
+  - flux-image-automation/flux-kustomization.yaml
+
+  # --- core infrastructure (standalone) ---
   - sealed-secrets/flux-kustomization.yaml
   - tofu-controller/flux-kustomization.yaml
   - reloader/flux-kustomization.yaml
-  - agent-shared-rbac/flux-kustomization.yaml
-  - agent-shared-secrets/flux-kustomization.yaml
-  - claude-rbac/flux-kustomization.yaml
-  - claude-sandbox-secrets/flux-kustomization.yaml
-  - kube-api-proxy/flux-kustomization.yaml
   - coredns-custom/flux-kustomization.yaml
-  - kyverno-policies/flux-kustomization.yaml
   - proxmox-csi/flux-kustomization.yaml
   - hcloud-csi/flux-kustomization.yaml
   - talos-cloud-controller-manager/flux-kustomization.yaml
@@ -24,137 +21,210 @@ resources:
   - vpa/flux-kustomization.yaml
   - goldilocks/flux-kustomization.yaml
   - descheduler/flux-kustomization.yaml
-  - monitoring-namespace/flux-kustomization.yaml
-  - monitoring-stack/flux-kustomization.yaml
-  - monitoring-stack-secrets/flux-kustomization.yaml
-  - monitoring-rules/flux-kustomization.yaml
-  - loki/flux-kustomization.yaml
-  - alloy/flux-kustomization.yaml
-  - alloy-otlp-bearer-token-tf/flux-kustomization.yaml
-  - tempo/flux-kustomization.yaml
-  - cert-manager-issuer-config/flux-kustomization.yaml
-  - cert-manager/flux-kustomization.yaml
-  - cert-manager-servicemonitor/flux-kustomization.yaml
-  - cert-manager-trust/flux-kustomization.yaml
-  - cert-manager-environment/flux-kustomization.yaml
-  - gateway-namespace/flux-kustomization.yaml
-  - gateway/flux-kustomization.yaml
-  - dns-system-namespace/flux-kustomization.yaml
   - cnpg/flux-kustomization.yaml
-  - powerdns-db/flux-kustomization.yaml
-  - powerdns/flux-kustomization.yaml
-  - powerdns-secrets/flux-kustomization.yaml
-  - powerdns-operator/flux-kustomization.yaml
-  - powerdns-zones/flux-kustomization.yaml
-  - vault-operator/flux-kustomization.yaml
-  - vault/flux-kustomization.yaml
-  - vault-servicemonitor/flux-kustomization.yaml
-  - vault-ingress/flux-kustomization.yaml
-  - vault-oidc-auth/flux-kustomization.yaml
-  - external-secrets-crds/gitrepository.yaml
-  - external-secrets-crds/flux-kustomization.yaml
-  - external-secrets-operator/flux-kustomization.yaml
-  - external-secrets/flux-kustomization.yaml
   - reflector/flux-kustomization.yaml
-  - external-dns/flux-kustomization.yaml
-  - authentik-namespace/flux-kustomization.yaml
-  - authentik-db/flux-kustomization.yaml
-  - authentik/flux-kustomization.yaml
-  - authentik-servicemonitor/flux-kustomization.yaml
-  - authentik-secrets/flux-kustomization.yaml
-  - authentik-token/flux-kustomization.yaml
-  - harbor-namespace/flux-kustomization.yaml
-  - applications/harbor/flux-kustomization.yaml
-  - applications/harbor-secrets/flux-kustomization.yaml
-  - harbor-proxy-cache/flux-kustomization.yaml
-  - harbor-ci/flux-kustomization.yaml
-  - harbor-props/flux-kustomization.yaml
-  - harbor-pull-secret/flux-kustomization.yaml
-  - harbor-webhook/flux-kustomization.yaml
-  - gitea-namespace/flux-kustomization.yaml
-  - applications/gitea/flux-kustomization.yaml
-  - applications/gitea-servicemonitor/flux-kustomization.yaml
-  - applications/gitea-admin-token/flux-kustomization.yaml
-  - applications/gitea-secrets/flux-kustomization.yaml
-  - matrix-namespace/flux-kustomization.yaml
-  - applications/matrix/flux-kustomization.yaml
-  - applications/matrix-secrets/flux-kustomization.yaml
-  - nix-cache-namespace/flux-kustomization.yaml
-  - attic-db/flux-kustomization.yaml
-  - applications/nix-cache/flux-kustomization.yaml
-  - atuin-namespace/flux-kustomization.yaml
-  - atuin-secrets/flux-kustomization.yaml
-  - atuin-db/flux-kustomization.yaml
-  - applications/atuin/flux-kustomization.yaml
-  - applications/atuin-user-provisioner/flux-kustomization.yaml
-  - proxmox-proxy-namespace/flux-kustomization.yaml
-  - proxmox-proxy/flux-kustomization.yaml
-  - grocy-namespace/flux-kustomization.yaml
-  - applications/grocy/flux-kustomization.yaml
-  - activitywatch-namespace/flux-kustomization.yaml
-  - applications/activitywatch/flux-kustomization.yaml
-  - google-workspace-mcp/flux-kustomization.yaml
-  - scanner-namespace/flux-kustomization.yaml
-  - scanner/flux-kustomization.yaml
-  - applications/website/flux-kustomization.yaml
-  - applications/buildbuddy-executor/flux-kustomization.yaml
   - node-feature-discovery/flux-kustomization.yaml
   - nvidia-device-plugin/flux-kustomization.yaml
   - hubble-ui/flux-kustomization.yaml
-  - gatus-namespace/flux-kustomization.yaml
-  - gatus-secrets/flux-kustomization.yaml
-  - gatus/flux-kustomization.yaml
-  - headlamp-namespace/flux-kustomization.yaml
-  - authentik-blueprint/headlamp-secret/flux-kustomization.yaml
-  - headlamp/flux-kustomization.yaml
-  - ollama-namespace/flux-kustomization.yaml
-  - ollama-secrets/flux-kustomization.yaml
-  - ollama/flux-kustomization.yaml
-  - litellm-namespace/flux-kustomization.yaml
-  - litellm-secrets/flux-kustomization.yaml
-  - litellm/flux-kustomization.yaml
-  - langfuse-namespace/flux-kustomization.yaml
-  - langfuse-secrets/flux-kustomization.yaml
-  - langfuse-db/flux-kustomization.yaml
-  - langfuse/flux-kustomization.yaml
-  - flux-image-automation/flux-kustomization.yaml
-  - tofu-state-namespace/flux-kustomization.yaml
-  - tofu-state-db/flux-kustomization.yaml
-  - tofu-state-backup/flux-kustomization.yaml
-  - props-namespace/flux-kustomization.yaml
-  - props-db/flux-kustomization.yaml
-  - props-secrets/flux-kustomization.yaml
-  - props/flux-kustomization.yaml
-  - kagent-namespace/flux-kustomization.yaml
-  - kagent/flux-kustomization.yaml
-  - kagent-secrets/flux-kustomization.yaml
-  - openclaw-operator/flux-kustomization.yaml
-  - openclaw-gateway-namespace/flux-kustomization.yaml
-  - openclaw-mitmproxy-namespace/flux-kustomization.yaml
-  - openclaw-mitmproxy/flux-kustomization.yaml
-  - openclaw-gateway-secrets/flux-kustomization.yaml
-  - openclaw-gateway/flux-kustomization.yaml
-  - openclaw-sandbox/flux-kustomization.yaml
-  - openclaw-sandbox-secrets/flux-kustomization.yaml
   - airlock/flux-kustomization.yaml
-  - authentik-blueprint/sso-secrets/flux-kustomization.yaml
-  - authentik-sso-secrets/flux-kustomization.yaml
-  - authentik-blueprint/gitea-secret/flux-kustomization.yaml
-  - authentik-blueprint/grafana-secret/flux-kustomization.yaml
-  - authentik-blueprint/harbor-secret/flux-kustomization.yaml
-  - authentik-blueprint/matrix-secret/flux-kustomization.yaml
-  - authentik-blueprint/vault-secret/flux-kustomization.yaml
-  - authentik-blueprint/inventree-secret/flux-kustomization.yaml
-  - inventree-namespace/flux-kustomization.yaml
-  - applications/inventree-secrets/flux-kustomization.yaml
-  - applications/inventree/flux-kustomization.yaml
-  - applications/inventree-token-provisioner/flux-kustomization.yaml
-  - authentik-proxy-routes/flux-kustomization.yaml
-  - harbor-oidc-config/flux-kustomization.yaml
-  - user-agentydragon-namespace/flux-kustomization.yaml
-  - user-agentydragon/flux-kustomization.yaml
-  - homeassistant-proxy-namespace/flux-kustomization.yaml
-  - homeassistant-proxy/flux-kustomization.yaml
-  - tana-mcp-namespace/flux-kustomization.yaml
-  - tana-mcp/flux-kustomization.yaml
+  - google-workspace-mcp/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml
+
+  # --- agent infrastructure (standalone) ---
+  - agent-shared-rbac/flux-kustomization.yaml
+  - agent-shared-secrets/flux-kustomization.yaml
+  - claude-rbac/flux-kustomization.yaml
+  - claude-sandbox-secrets/flux-kustomization.yaml
+  - kube-api-proxy/flux-kustomization.yaml
+
+  # --- kyverno ---
+  - kyverno/app/flux-kustomization.yaml
+  - kyverno/policies/flux-kustomization.yaml
+
+  # --- external-secrets ---
+  - external-secrets/crds/gitrepository.yaml
+  - external-secrets/crds/flux-kustomization.yaml
+  - external-secrets/operator/flux-kustomization.yaml
+  - external-secrets/config/flux-kustomization.yaml
+
+  # --- external-dns ---
+  - external-dns/flux-kustomization.yaml
+
+  # --- cert-manager ---
+  - cert-manager/issuer-config/flux-kustomization.yaml
+  - cert-manager/app/flux-kustomization.yaml
+  - cert-manager/servicemonitor/flux-kustomization.yaml
+  - cert-manager/trust/flux-kustomization.yaml
+  - cert-manager/environment/flux-kustomization.yaml
+
+  # --- gateway ---
+  - gateway/namespace/flux-kustomization.yaml
+  - gateway/app/flux-kustomization.yaml
+
+  # --- monitoring ---
+  - monitoring/namespace/flux-kustomization.yaml
+  - monitoring/stack/flux-kustomization.yaml
+  - monitoring/stack-secrets/flux-kustomization.yaml
+  - monitoring/rules/flux-kustomization.yaml
+  - monitoring/loki/flux-kustomization.yaml
+  - monitoring/alloy/flux-kustomization.yaml
+  - monitoring/alloy-otlp-bearer-token-tf/flux-kustomization.yaml
+  - monitoring/tempo/flux-kustomization.yaml
+
+  # --- powerdns ---
+  - powerdns/namespace/flux-kustomization.yaml
+  - powerdns/db/flux-kustomization.yaml
+  - powerdns/app/flux-kustomization.yaml
+  - powerdns/secrets/flux-kustomization.yaml
+  - powerdns/operator/flux-kustomization.yaml
+  - powerdns/zones/flux-kustomization.yaml
+
+  # --- vault ---
+  - vault/operator/flux-kustomization.yaml
+  - vault/app/flux-kustomization.yaml
+  - vault/servicemonitor/flux-kustomization.yaml
+  - vault/ingress/flux-kustomization.yaml
+  - vault/oidc-auth/flux-kustomization.yaml
+
+  # --- authentik ---
+  - authentik/namespace/flux-kustomization.yaml
+  - authentik/db/flux-kustomization.yaml
+  - authentik/app/flux-kustomization.yaml
+  - authentik/servicemonitor/flux-kustomization.yaml
+  - authentik/secrets/flux-kustomization.yaml
+  - authentik/token/flux-kustomization.yaml
+  - authentik/sso-secrets/flux-kustomization.yaml
+  - authentik/proxy-routes/flux-kustomization.yaml
+  - authentik/blueprints/sso-secrets/flux-kustomization.yaml
+  - authentik/blueprints/gitea-secret/flux-kustomization.yaml
+  - authentik/blueprints/grafana-secret/flux-kustomization.yaml
+  - authentik/blueprints/harbor-secret/flux-kustomization.yaml
+  - authentik/blueprints/headlamp-secret/flux-kustomization.yaml
+  - authentik/blueprints/matrix-secret/flux-kustomization.yaml
+  - authentik/blueprints/vault-secret/flux-kustomization.yaml
+  - authentik/blueprints/inventree-secret/flux-kustomization.yaml
+
+  # --- harbor ---
+  - harbor/namespace/flux-kustomization.yaml
+  - harbor/app/flux-kustomization.yaml
+  - harbor/secrets/flux-kustomization.yaml
+  - harbor/proxy-cache/flux-kustomization.yaml
+  - harbor/ci/flux-kustomization.yaml
+  - harbor/props/flux-kustomization.yaml
+  - harbor/pull-secret/flux-kustomization.yaml
+  - harbor/webhook/flux-kustomization.yaml
+  - harbor/oidc-config/flux-kustomization.yaml
+
+  # --- gitea ---
+  - gitea/namespace/flux-kustomization.yaml
+  - gitea/db/flux-kustomization.yaml
+  - gitea/app/flux-kustomization.yaml
+  - gitea/servicemonitor/flux-kustomization.yaml
+  - gitea/admin-token/flux-kustomization.yaml
+  - gitea/secrets/flux-kustomization.yaml
+
+  # --- matrix ---
+  - matrix/namespace/flux-kustomization.yaml
+  - matrix/app/flux-kustomization.yaml
+  - matrix/secrets/flux-kustomization.yaml
+
+  # --- nix-cache ---
+  - nix-cache/namespace/flux-kustomization.yaml
+  - nix-cache/db/flux-kustomization.yaml
+  - nix-cache/app/flux-kustomization.yaml
+
+  # --- atuin ---
+  - atuin/namespace/flux-kustomization.yaml
+  - atuin/secrets/flux-kustomization.yaml
+  - atuin/db/flux-kustomization.yaml
+  - atuin/app/flux-kustomization.yaml
+  - atuin/user-provisioner/flux-kustomization.yaml
+
+  # --- inventree ---
+  - inventree/namespace/flux-kustomization.yaml
+  - inventree/secrets/flux-kustomization.yaml
+  - inventree/app/flux-kustomization.yaml
+  - inventree/token-provisioner/flux-kustomization.yaml
+
+  # --- props ---
+  - props/namespace/flux-kustomization.yaml
+  - props/db/flux-kustomization.yaml
+  - props/secrets/flux-kustomization.yaml
+  - props/app/flux-kustomization.yaml
+
+  # --- langfuse ---
+  - langfuse/namespace/flux-kustomization.yaml
+  - langfuse/secrets/flux-kustomization.yaml
+  - langfuse/db/flux-kustomization.yaml
+  - langfuse/app/flux-kustomization.yaml
+
+  # --- tofu-state ---
+  - tofu-state/namespace/flux-kustomization.yaml
+  - tofu-state/db/flux-kustomization.yaml
+  - tofu-state/backup/flux-kustomization.yaml
+
+  # --- openclaw ---
+  - openclaw/operator/flux-kustomization.yaml
+  - openclaw/gateway-namespace/flux-kustomization.yaml
+  - openclaw/mitmproxy-namespace/flux-kustomization.yaml
+  - openclaw/mitmproxy/flux-kustomization.yaml
+  - openclaw/gateway-secrets/flux-kustomization.yaml
+  - openclaw/gateway/flux-kustomization.yaml
+  - openclaw/sandbox/flux-kustomization.yaml
+  - openclaw/sandbox-secrets/flux-kustomization.yaml
+
+  # --- gatus ---
+  - gatus/namespace/flux-kustomization.yaml
+  - gatus/secrets/flux-kustomization.yaml
+  - gatus/app/flux-kustomization.yaml
+
+  # --- ollama ---
+  - ollama/namespace/flux-kustomization.yaml
+  - ollama/secrets/flux-kustomization.yaml
+  - ollama/app/flux-kustomization.yaml
+
+  # --- litellm ---
+  - litellm/namespace/flux-kustomization.yaml
+  - litellm/secrets/flux-kustomization.yaml
+  - litellm/app/flux-kustomization.yaml
+
+  # --- headlamp ---
+  - headlamp/namespace/flux-kustomization.yaml
+  - headlamp/app/flux-kustomization.yaml
+
+  # --- kagent ---
+  - kagent/namespace/flux-kustomization.yaml
+  - kagent/secrets/flux-kustomization.yaml
+  - kagent/app/flux-kustomization.yaml
+
+  # --- scanner ---
+  - scanner/namespace/flux-kustomization.yaml
+  - scanner/app/flux-kustomization.yaml
+
+  # --- activitywatch ---
+  - activitywatch/namespace/flux-kustomization.yaml
+  - activitywatch/app/flux-kustomization.yaml
+
+  # --- grocy ---
+  - grocy/namespace/flux-kustomization.yaml
+  - grocy/app/flux-kustomization.yaml
+
+  # --- proxmox-proxy ---
+  - proxmox-proxy/namespace/flux-kustomization.yaml
+  - proxmox-proxy/app/flux-kustomization.yaml
+
+  # --- homeassistant-proxy ---
+  - homeassistant-proxy/namespace/flux-kustomization.yaml
+  - homeassistant-proxy/app/flux-kustomization.yaml
+
+  # --- tana-mcp ---
+  - tana-mcp/namespace/flux-kustomization.yaml
+  - tana-mcp/app/flux-kustomization.yaml
+
+  # --- user-agentydragon ---
+  - user-agentydragon/namespace/flux-kustomization.yaml
+  - user-agentydragon/app/flux-kustomization.yaml
+
+  # --- standalone applications ---
+  - buildbuddy-executor/flux-kustomization.yaml
+  - website/flux-kustomization.yaml

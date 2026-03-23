@@ -246,13 +246,12 @@ repos:
             # kustomize config files (kustomize.config.k8s.io/v1beta1) — not K8s resources
             cluster/k8s/.*/kustomization\.yaml|
             # Authentik blueprints are not K8s manifests, skip validation
-            cluster/k8s/authentik/blueprints/.*|
+            cluster/k8s/authentik/app/blueprints/.*|
             # Application config files, not K8s manifests
-            cluster/k8s/gatus/config\.yaml|
-            cluster/k8s/applications/headscale/config\.yaml|
+            cluster/k8s/gatus/app/config\.yaml|
             cluster/k8s/airlock/config\.yaml|
-            cluster/k8s/homeassistant-proxy/config\.yaml|
-            cluster/k8s/litellm/proxy-config\.yaml|
+            cluster/k8s/homeassistant-proxy/app/config\.yaml|
+            cluster/k8s/litellm/app/proxy-config\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
             cluster/k8s/.*/ccm-values\.yaml
           )$

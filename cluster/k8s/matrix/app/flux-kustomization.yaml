@@ -1,0 +1,30 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: matrix
+  namespace: flux-system
+spec:
+  retryInterval: 1m
+  interval: 10m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./cluster/k8s/matrix/app
+  prune: true
+  wait: true
+  # Health check ensures Matrix Synapse is ready with SSO
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: matrix-synapse
+      namespace: matrix
+  dependsOn:
+    - name: matrix-namespace
+    - name: gateway
+    - name: cert-manager
+    - name: authentik # Wait for Authentik worker to apply SSO blueprints
+    - name: external-dns # OIDC discovery uses external URL (auth.allegedly.works)
+    - name: matrix-secrets
+# Note: Matrix Synapse needs OIDC discovery endpoint at startup (from provider),
+# but oauth-client-secret (from matrix-secret) is only needed for OAuth login flows later
