@@ -4,7 +4,7 @@ from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer, StdioMCPServer
 from pydantic import Field
 
 from mcp_infra.compositor.compositor import Compositor
-from mcp_infra.enhanced.flat_mixin import FlatTool
+from mcp_infra.flat_tool import FlatTool
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.mcp_types import SimpleOk
 from mcp_infra.prefix import MCPMountPrefix

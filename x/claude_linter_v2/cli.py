@@ -24,7 +24,7 @@ from x.claude_linter_v2.checker import FileChecker
 from x.claude_linter_v2.config.models import AutofixCategory
 from x.claude_linter_v2.hooks.exceptions import HookBugError
 from x.claude_linter_v2.hooks.handler import HOOK_REQUEST_TYPES, HookHandler
-from x.claude_linter_v2.session.manager import RuleAction, SessionInfo, SessionManager
+from x.claude_linter_v2.session.manager import RuleAction, SessionData, SessionManager
 
 __version__ = "2.0.0a1"
 
@@ -296,7 +296,7 @@ def session_list(all: bool) -> None:
     current_dir = Path.cwd()
 
     # Group by directory
-    by_dir: dict[Path, list[SessionInfo]] = {}
+    by_dir: dict[Path, list[SessionData]] = {}
     for session_info in sessions:
         dir_path = session_info.directory
         if dir_path and dir_path not in by_dir:
@@ -320,7 +320,7 @@ def session_list(all: bool) -> None:
                 _display_session(session_info)
 
 
-def _display_session(session_info: SessionInfo) -> None:
+def _display_session(session_info: SessionData) -> None:
     """Display a single session's information."""
     ago = humanize.naturaltime(session_info.last_seen) if session_info.last_seen else "unknown"
     session_id_str = str(session_info.id)

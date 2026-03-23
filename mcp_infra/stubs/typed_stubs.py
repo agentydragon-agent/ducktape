@@ -8,7 +8,7 @@ from fastmcp.client.client import CallToolResult as FastMCPCallToolResult
 from fastmcp.server import FastMCP
 from pydantic import BaseModel, TypeAdapter
 
-from mcp_infra.enhanced.flat_mixin import FlatTool
+from mcp_infra.flat_tool import FlatTool
 
 
 def _structured_content(result: FastMCPCallToolResult, *, tool_name: str) -> dict[str, Any]:

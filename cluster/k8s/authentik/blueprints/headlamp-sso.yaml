@@ -5,7 +5,8 @@ metadata:
     blueprints.goauthentik.io/description: "Headlamp OAuth2 OIDC provider and application"
 
 entries:
-  # Remove old proxy provider (replaced by oauth2 provider for direct OIDC login)
+  # CLEANUP(2026-03-22): Remove once confirmed absent in Authentik (proxy provider replaced
+  #   by native OAuth2 OIDC for direct login).
   - model: authentik_providers_proxy.proxyprovider
     state: absent
     identifiers:
