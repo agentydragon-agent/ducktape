@@ -7,33 +7,10 @@ import (
 	"os"
 	"strings"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	"github.com/spf13/cobra"
+	"google.golang.org/protobuf/encoding/protojson"
 )
-
-// BES event stream types (subset for test output artifacts).
-// See build_event_stream.proto in github.com/bazelbuild/bazel.
-
-type besEvent struct {
-	ID         *besEventID    `json:"id,omitempty"`
-	TestResult *besTestResult `json:"testResult,omitempty"`
-}
-
-type besEventID struct {
-	TestResult *besTestResultID `json:"testResult,omitempty"`
-}
-
-type besTestResultID struct {
-	Label string `json:"label,omitempty"`
-}
-
-type besTestResult struct {
-	TestActionOutput []besFile `json:"testActionOutput,omitempty"`
-}
-
-type besFile struct {
-	Name string `json:"name,omitempty"`
-	URI  string `json:"uri,omitempty"`
-}
 
 type artifact struct {
 	Label string `json:"label"`
@@ -132,21 +109,28 @@ func listArtifacts(c *client, invocationID string) ([]artifact, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch BES event stream: %w", err)
 	}
-	var events []besEvent
-	if err := json.Unmarshal(data, &events); err != nil {
+	// The raw_json endpoint returns a JSON array of BuildEvent protos.
+	// protojson doesn't handle arrays, so decode element-by-element.
+	var rawEvents []json.RawMessage
+	if err := json.Unmarshal(data, &rawEvents); err != nil {
 		return nil, fmt.Errorf("parse BES event stream: %w", err)
 	}
 	var result []artifact
-	for _, ev := range events {
-		if ev.TestResult == nil {
+	for _, raw := range rawEvents {
+		var ev bespb.BuildEvent
+		if err := protojson.Unmarshal(raw, &ev); err != nil {
+			return nil, fmt.Errorf("parse BES event: %w", err)
+		}
+		tr := ev.GetTestResult()
+		if tr == nil {
 			continue
 		}
 		label := ""
-		if ev.ID != nil && ev.ID.TestResult != nil {
-			label = ev.ID.TestResult.Label
+		if tid := ev.GetId().GetTestResult(); tid != nil {
+			label = tid.GetLabel()
 		}
-		for _, f := range ev.TestResult.TestActionOutput {
-			result = append(result, artifact{Label: label, Name: f.Name, URI: f.URI})
+		for _, f := range tr.GetTestActionOutput() {
+			result = append(result, artifact{Label: label, Name: f.GetName(), URI: f.GetUri()})
 		}
 	}
 	return result, nil

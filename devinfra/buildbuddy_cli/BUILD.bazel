@@ -10,6 +10,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/devinfra/buildbuddy_cli",
     deps = [
+        "@buildbuddy_protos//:build_event_stream_go_proto",
         "@buildbuddy_protos//:cache_go_proto",
         "@buildbuddy_protos//:eventlog_go_proto",
         "@buildbuddy_protos//:execution_stats_go_proto",
