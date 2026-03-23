@@ -2,7 +2,7 @@
 name: update_deps
 description: >
   Automated dependency updates — reads Renovate dashboard, applies safe updates,
-  produces CI-passing PRs from the agent's fork. One bulk PR for trivial bumps,
+  produces tested PRs from the agent's fork. One bulk PR for trivial bumps,
   separate PRs for non-trivial migrations. Use on a schedule or manually.
 ---
 
@@ -24,7 +24,8 @@ Two PR categories:
 
 You are **NOT done** until:
 
-- CI passes on every open PR
+- `bazel test //...` passes on RBE for every open PR (verify via BuildBuddy
+  invocation link — CI on GitHub does not run for fork PRs, see [#787](https://github.com/agentydragon/ducktape/issues/787))
 - Every available update is either in a PR or has a documented blocker with
   specific evidence (see Evidence Requirements)
 
@@ -294,30 +295,32 @@ PREOF
 )"
 ```
 
-## CI Polling
+## Verifying Tests
 
-After pushing a commit intended as "final" on any PR, you **MUST** poll CI
-until completion:
+After pushing a commit intended as "final" on any PR, you **MUST** verify
+tests pass on RBE. GitHub Actions CI does not run for fork PRs (no
+`BUILDBUDDY_API_KEY` — see [#787](https://github.com/agentydragon/ducktape/issues/787)),
+so verify via BuildBuddy directly:
 
 ```bash
-# Wait for checks (with timeout)
-gh pr checks <NUMBER> --repo agentydragon/ducktape --watch --fail-fast
+# Run tests and get a BuildBuddy invocation link
+bazel test //... --build_metadata=ROLE=ci
 
-# Or poll manually
-gh pr checks <NUMBER> --repo agentydragon/ducktape
+# Check the last invocation for this branch
+bbapi invocations --count 1
 ```
 
-If CI fails:
+If tests fail:
 
-1. Download and read the failure logs
+1. Read the failure logs (`bbapi log <invocation-id>`)
 2. Diagnose the root cause
 3. Fix the issue (code change, revert a problematic update, etc.)
-4. Push again
-5. Poll again
+4. Push again and re-run
 
-**You are NOT done until CI passes on all PRs.** This may require multiple
-fix-push-poll cycles. If a test failure is clearly pre-existing (also failing
-on `devel`), document it in the PR description but do not let it block you.
+**You are NOT done until `bazel test //...` passes on RBE for all PRs.** This
+may require multiple fix-push cycles. If a test failure is clearly pre-existing
+(also failing on `devel`), document it in the PR description but do not let it
+block you.
 
 ## Bulk PR Description Format
 
@@ -400,7 +403,7 @@ All non-trivial PRs: [list with PR numbers]
 
 ### Verification
 
-- CI: [passing](link)
+- Tests: passing on RBE — [BuildBuddy invocation](link)
 - Related bulk PR: #980
 
 ### Changelog excerpt
@@ -420,8 +423,8 @@ Before declaring done, verify ALL of the following:
       without an actual build/test attempt
 - [ ] No update is blocked by a TODO.md reference unless the TODO explicitly
       says "do not upgrade"
-- [ ] CI passes on the bulk trivial PR
-- [ ] CI passes on every non-trivial PR
+- [ ] `bazel test //...` passes on RBE for the bulk trivial PR (BuildBuddy link in PR)
+- [ ] `bazel test //...` passes on RBE for every non-trivial PR (BuildBuddy link in PR)
 - [ ] Package names are in backticks in all PR description tables
 - [ ] Each non-trivial PR has its own description with migration notes
 - [ ] The bulk PR links to all non-trivial PRs
