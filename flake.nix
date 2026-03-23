@@ -362,15 +362,6 @@
           enableHeavyPackages = false;
         };
 
-        # Dell Rugged 12 tablet
-        rugged = mkHome {
-          hostname = "rugged";
-          enableGui = true;
-          enableKube = false;
-          isNixOS = true;
-          enableHeavyPackages = true;
-        };
-
         # Atlas Proxmox VE host
         atlas = mkHome {
           hostname = "atlas";
@@ -398,8 +389,13 @@
         rugged = mkNixos {
           hostname = "rugged";
           username = "agentydragon";
-          homeManagerHost = "rugged";
           # Physical machine - hardware config is in hosts/rugged/
+          inlineHomeManager = {
+            enableGui = true;
+            enableKube = false;
+            enableHeavyPackages = true;
+            module = ./nix/home/hosts/rugged.nix;
+          };
         };
 
         k8s-worker-test = mkNixos {

@@ -55,7 +55,6 @@ Note: `--impure` is required for nixGL (GPU driver detection).
 | -------------- | -------- | --------------------- |
 | `agentydragon` | Pop!\_OS | ThinkPad X1 Extreme   |
 | `gpd`          | Pop!\_OS | GPD Win Max 2         |
-| `rugged`       | NixOS    | Dell Rugged 12 tablet |
 | `nixos-vm`     | NixOS    | NixOS VM (wyrm2)      |
 
 ## Common Commands
