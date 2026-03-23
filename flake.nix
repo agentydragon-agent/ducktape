@@ -46,7 +46,7 @@
 
     # CI-released bbapi binary — updated by release.yml update-downstream job.
     bbapi-binary = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/bbapi-11038987/bbapi";
+      url = "https://github.com/agentydragon/ducktape/releases/download/bbapi-b3ba1da0/bbapi";
       flake = false;
     };
 

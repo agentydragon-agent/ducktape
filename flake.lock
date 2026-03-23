@@ -19,13 +19,13 @@
     "bbapi-binary": {
       "flake": false,
       "locked": {
-        "narHash": "sha256-QYdLUizeM5qR3rVSFT/Iv6XuV4R/I9o/1/M/DlYSB3c=",
+        "narHash": "sha256-yrZOIahlQSjgTLb96z+9q8kX1WH0yb+T1DgLClQ29AU=",
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-11038987/bbapi"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-b3ba1da0/bbapi"
       },
       "original": {
         "type": "file",
-        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-11038987/bbapi"
+        "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-b3ba1da0/bbapi"
       }
     },
     "claude-code-router": {
