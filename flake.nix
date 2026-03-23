@@ -32,27 +32,27 @@
     # CI-released artifacts — pinned to tagged releases, updated by release.yml.
     # URLs are rewritten by the update-downstream job after each release.
     ducktape-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-0d3c6b83/ducktape-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/ducktape-1b3375b3/ducktape-0.1.0-py3-none-any.whl";
       flake = false;
     };
     claude-hooks-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-2815120f/claude_hooks-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-1b3375b3/claude_hooks-0.1.0-py3-none-any.whl";
       flake = false;
     };
     gterm-theme-wheel = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-11038987/gterm_theme-0.1.0-py3-none-any.whl";
+      url = "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-1b3375b3/gterm_theme-0.1.0-py3-none-any.whl";
       flake = false;
     };
 
     # CI-released bbapi binary — updated by release.yml update-downstream job.
     bbapi-binary = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/bbapi-eb0b44fb/bbapi";
+      url = "https://github.com/agentydragon/ducktape/releases/download/bbapi-1b3375b3/bbapi";
       flake = false;
     };
 
     # CI-released skills tarball — updated by release.yml update-downstream job.
     skills-tar = {
-      url = "https://github.com/agentydragon/ducktape/releases/download/skills-738a15e3/skills.tar";
+      url = "https://github.com/agentydragon/ducktape/releases/download/skills-1b3375b3/skills.tar";
       flake = false;
     };
 
