@@ -189,7 +189,6 @@ in
     package = pkgs.git.override { withLibsecret = true; };
     lfs.enable = true;
 
-    # Global gitignore file (migrated from dotfiles/config/git/ignore)
     ignores = [
       ".aider*"
       "__pycache__"
@@ -306,7 +305,6 @@ in
   # SSH Agent - holds decrypted SSH keys in memory
   services.ssh-agent.enable = true;
 
-  # Readline configuration (migrated from dotfiles/inputrc)
   programs.readline = {
     enable = true;
     variables = {
@@ -315,10 +313,8 @@ in
     };
   };
 
-  # Dircolors configuration (migrated from dotfiles/dir_colors/dircolors)
   programs.dircolors.enable = true;
 
-  # AppImageLauncher configuration (migrated from dotfiles/config/appimagelauncher.cfg)
   xdg.configFile."appimagelauncher.cfg".text = ''
     [AppImageLauncher]
     %23%20%23%20additional_directories_to_watch=~/otherApplications:/even/more/applications
@@ -328,7 +324,7 @@ in
     enable_daemon=true
   '';
 
-  # Neovim configuration (sync entire dotfiles directory)
+  # Neovim configuration
   xdg.configFile."nvim" = {
     source = ./config/nvim;
     recursive = true;
@@ -828,7 +824,6 @@ in
     ];
   };
 
-  # Tmux configuration with plugins (migrated from dotfiles/tmux.conf)
   programs.tmux = {
     enable = true;
     sensibleOnTop = true;

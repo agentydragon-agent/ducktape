@@ -1,3 +1,0 @@
-DOTFILES_DIRS="$HOME/code/ducktape/dotfiles"
-TAGS=""
-EXCLUDES="README.md"

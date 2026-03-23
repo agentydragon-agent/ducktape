@@ -40,7 +40,6 @@ home-manager switch --flake ~/code/ducktape#<hostname>
 - Legacy VPN uninstall (removes old Tailscale/WireGuard)
 - udev rules (GPD trackpoint quirk)
 - System-level services
-- Remaining dotfiles (`.profile`, application configs not yet in Nix) — migrating to home-manager
 
 ## Remaining Work
 

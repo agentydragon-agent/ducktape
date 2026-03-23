@@ -1,6 +1,4 @@
 # User utility scripts installed to ~/.local/bin via home.packages
-#
-# These are migrated from dotfiles/local/bin/
 {
   config,
   pkgs,

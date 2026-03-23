@@ -43,7 +43,7 @@ repos:
         exclude: "ansible/host_vars/.*\\.yml$|cluster/k8s/|cluster/charts/|props/helm/templates/"
       - id: check-toml
 
-      # TODO: disabled - should NOT fix within dotfiles e.g. OrcaSlicer
+      # TODO: enable check-json
       # - id: check-json
 
       # TODO: maybe:
