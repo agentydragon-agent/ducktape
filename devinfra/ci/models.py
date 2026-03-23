@@ -62,10 +62,6 @@ class WorkflowConfig(BaseModel):
     secrets: Literal["inherit"] | None = None
     rbe: bool = True
     events: frozenset[str] = frozenset({"push", "pull_request", "workflow_dispatch"})
-    fork_skip: bool = Field(
-        default=False,
-        description="Skip this job on fork PRs (head repo != base repo). Use when the job requires secrets unavailable to forks.",
-    )
 
 
 class ExtraJobStep(BaseModel):

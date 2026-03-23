@@ -136,15 +136,6 @@ def build_workflow_job(name: str, config: WorkflowConfig, *, has_rbe_image_job: 
         )
         with_args["rbe_image"] = f"${{{{ needs.{RBE_IMAGE_JOB}.outputs.rbe_image }}}}"
 
-    # Fork PRs don't receive secrets, so jobs that need secrets (e.g. BUILDBUDDY_API_KEY
-    # for RBE) will silently run without them and may fail due to missing remote execution.
-    # Skip such jobs on fork PRs entirely until the upstream issue is resolved.
-    if config.fork_skip:
-        fork_cond = (
-            "github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository"
-        )
-        if_cond = f"({if_cond}) && ({fork_cond})"
-
     return Job(
         needs=needs,
         if_cond=if_cond,

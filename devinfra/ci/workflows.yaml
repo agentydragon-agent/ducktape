@@ -18,15 +18,10 @@
 workflows:
   # Core Bazel workflows
   # Build + all quality checks (ruff, ESLint, mypy, clippy, rustfmt; run by default)
-  #
-  # fork_skip: fork PRs don't receive BUILDBUDDY_API_KEY, so RBE is unavailable and
-  # builds may fail (disk/timeout). Skip these jobs on fork PRs until resolved.
-  # TODO(#787): Remove fork_skip once fork PRs receive BUILDBUDDY_API_KEY.
   bazel-check:
     trigger: { kind: bazel_query, query: "$targets" }
     targets: true
     secrets: inherit
-    fork_skip: true
 
   bazel-test:
     # Java (keytool) is provided hermetically via //third_party/jdk.
@@ -36,7 +31,6 @@ workflows:
     trigger: { kind: bazel_query, query: 'kind(".*_test rule", $targets) except attr(tags, "manual", $targets)' }
     targets: true
     secrets: inherit
-    fork_skip: true
 
   # Image builds
   rbe-image:
