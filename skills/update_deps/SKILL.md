@@ -154,6 +154,19 @@ without having to read changelogs themselves. Examples:
 - "bump rules_oci 2.2.7→2.3.0: new `reproducible` attr on `oci_image`, no
   action needed for now"
 
+### Batching strategy
+
+Do NOT apply all updates at once and then run a single build. If many things break
+simultaneously, it's nearly impossible to isolate which update caused which failure.
+
+Work incrementally: apply a small batch, build and test, commit what works, then
+move to the next batch. How you batch is up to you — by ecosystem, by risk level,
+or one-at-a-time for risky updates. The key rule: never let the tree get into a
+state where you have dozens of untested changes stacked up.
+
+If you're resuming an existing PR that already has passing updates, start from that
+known-good state and add new updates incrementally on top.
+
 ### Lockfile regeneration by ecosystem
 
 After editing version pins, regenerate lockfiles:
