@@ -358,14 +358,23 @@ def _make_usage(
 
 
 def test_render_subscription(full_input: Input, snapshot: SnapshotAssertion):
-    """Subscription user: no cost, with quota — resembles real statusline output."""
-    result = render(full_input, is_subscription=True, cached_usage=_make_usage(), home=Path("/home/user"), now=_NOW)
+    """Subscription user: no cost, with quota, daemon healthy."""
+    result = render(
+        full_input,
+        is_subscription=True,
+        cached_usage=_make_usage(),
+        home=Path("/home/user"),
+        now=_NOW,
+        daemon_healthy=True,
+    )
     assert result == snapshot
 
 
 def test_render_api_billing(full_input: Input, snapshot: SnapshotAssertion):
-    """API billing user: shows dollar cost, no quota."""
-    result = render(full_input, is_subscription=False, cached_usage=None, home=Path("/home/user"), now=_NOW)
+    """API billing user: shows dollar cost, no quota, daemon down."""
+    result = render(
+        full_input, is_subscription=False, cached_usage=None, home=Path("/home/user"), now=_NOW, daemon_healthy=False
+    )
     assert result == snapshot
 
 
@@ -377,6 +386,7 @@ def test_render_subscription_high_usage(full_input: Input, snapshot: SnapshotAss
         cached_usage=_make_usage(seven_day_util=80.0, seven_day_resets_in=timedelta(days=2), five_hour_util=85.0),
         home=Path("/home/user"),
         now=_NOW,
+        daemon_healthy=True,
     )
     assert result == snapshot
 
@@ -384,7 +394,7 @@ def test_render_subscription_high_usage(full_input: Input, snapshot: SnapshotAss
 def test_render_minimal(snapshot: SnapshotAssertion):
     """Minimal input — no model, no cost, no context."""
     data = Input.model_validate_json("{}")
-    result = render(data, is_subscription=False, cached_usage=None, home=None, now=_NOW)
+    result = render(data, is_subscription=False, cached_usage=None, home=None, now=_NOW, daemon_healthy=False)
     assert result == snapshot
 
 

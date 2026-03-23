@@ -44,6 +44,19 @@ class DaemonStartError(RuntimeError):
     """Raised when the hook daemon fails to start or crashes during startup."""
 
 
+def check_health(sock_path: Path, timeout: float = 0.5) -> bool:
+    """Check if the daemon is healthy by hitting GET /health. Returns False on any failure."""
+    try:
+        conn = _UDSConnection(sock_path)
+        conn.timeout = timeout
+        conn.request("GET", "/health")
+        response = conn.getresponse()
+        conn.close()
+        return response.status == 200
+    except (ConnectionRefusedError, FileNotFoundError, OSError, http.client.HTTPException):
+        return False
+
+
 def call_daemon(hook_input: AnyHookInput, env: dict[str, str], paths: SessionPaths) -> HookResponse | None:
     """POST to daemon over UDS. If unreachable, start daemon and retry.
 

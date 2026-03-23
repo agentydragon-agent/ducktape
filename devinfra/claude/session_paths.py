@@ -15,6 +15,11 @@ def default_cache_dir() -> Path:
     return Path(user_cache_dir(appname="claude-hooks"))
 
 
+def hook_daemon_sock(session_id: str) -> Path:
+    """UDS path for the hook daemon, derived from session_id alone."""
+    return Path("/tmp/claude-hd") / session_id / "d.sock"
+
+
 @dataclass(frozen=True)
 class SessionPaths:
     """All session-scoped paths, derived from session_id + resolved home/cache roots."""
@@ -158,7 +163,7 @@ class SessionPaths:
         Uses a short path under /tmp to stay within the 108-byte AF_UNIX limit.
         The parent directory is created by ensure_dirs(), not on every access.
         """
-        return Path("/tmp/claude-hd") / self.session_id / "d.sock"
+        return hook_daemon_sock(self.session_id)
 
     def ensure_dirs(self) -> None:
         """Create all directories that must exist before use (socket dir, session dir, etc.)."""

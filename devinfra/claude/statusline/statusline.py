@@ -16,7 +16,8 @@ from rich.text import Text
 
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
-from devinfra.claude.session_paths import default_cache_dir
+from devinfra.claude.hook_daemon.client import check_health
+from devinfra.claude.session_paths import default_cache_dir, hook_daemon_sock
 from devinfra.claude.statusline.usage_cache import CachedUsage, UsageCache
 
 _STALE_THRESHOLD = timedelta(seconds=10)
@@ -86,8 +87,20 @@ def _format_context(ctx: ContextWindow | None) -> Text | None:
     return Text(f"ctx:{pct:.0f}%", style=style)
 
 
+def _format_daemon(healthy: bool) -> Text:
+    if healthy:
+        return Text("daemon ✓", style="green")
+    return Text("daemon ✗", style="red")
+
+
 def render(
-    data: Input, *, is_subscription: bool, cached_usage: CachedUsage | None, home: Path | None, now: datetime
+    data: Input,
+    *,
+    is_subscription: bool,
+    cached_usage: CachedUsage | None,
+    home: Path | None,
+    now: datetime,
+    daemon_healthy: bool,
 ) -> str:
     """Render the statusline as a plain string."""
     model_name = (data.model.display_name or data.model.id) if data.model else "unknown"
@@ -120,7 +133,9 @@ def render(
     if quota_text is not None:
         segments.append(quota_text)
 
-    console = Console(highlight=False, file=None, force_terminal=True)
+    segments.append(_format_daemon(daemon_healthy))
+
+    console = Console(highlight=False, file=None, force_terminal=True, width=500)
     with console.capture() as capture:
         console.print(_SEP.join(segments), end="")
     return capture.get()
@@ -151,6 +166,7 @@ def main() -> None:
         cached_usage=usage_cache.get(access_token),
         home=Path(home_env) if home_env else None,
         now=datetime.now(UTC),
+        daemon_healthy=check_health(hook_daemon_sock(data.session_id)),
     )
     sys.stdout.write(output)
 
