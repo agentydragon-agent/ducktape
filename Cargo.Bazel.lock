@@ -1,5 +1,5 @@
 {
-  "checksum": "1e5868ec528932e6cf676f3469c606065b80c7583f5340089253dcd5a1a028b1",
+  "checksum": "73942cd89e63ac163dc6483f18fc1864b2b09f0b73bf9f9b12ea727023bfae24",
   "crates": {
     "ahash 0.7.8": {
       "name": "ahash",
@@ -4324,7 +4324,7 @@
               "target": "rusty_money"
             },
             {
-              "id": "scraper 0.25.0",
+              "id": "scraper 0.26.0",
               "target": "scraper"
             },
             {
@@ -4360,7 +4360,7 @@
               "target": "tokio"
             },
             {
-              "id": "tokio-tungstenite 0.28.0",
+              "id": "tokio-tungstenite 0.29.0",
               "target": "tokio_tungstenite"
             },
             {
@@ -4441,14 +4441,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "ego-tree 0.10.0": {
+    "ego-tree 0.11.0": {
       "name": "ego-tree",
-      "version": "0.10.0",
+      "version": "0.11.0",
       "package_url": "https://github.com/rust-scraper/ego-tree",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/ego-tree/0.10.0/download",
-          "sha256": "b2972feb8dffe7bc8c5463b1dacda1b0dfbed3710e50f977d965429692d74cd8"
+          "url": "https://static.crates.io/crates/ego-tree/0.11.0/download",
+          "sha256": "b04dc5a38e4f151a79d9f2451ae6037fb6eaf5cba34771f44781f80e508498e3"
         }
       },
       "targets": [
@@ -4471,7 +4471,7 @@
           "**"
         ],
         "edition": "2021",
-        "version": "0.10.0"
+        "version": "0.11.0"
       },
       "license": "ISC",
       "license_ids": [
@@ -5233,58 +5233,6 @@
         "MIT"
       ],
       "license_file": "LICENSE.txt"
-    },
-    "futf 0.1.5": {
-      "name": "futf",
-      "version": "0.1.5",
-      "package_url": "https://github.com/servo/futf",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/futf/0.1.5/download",
-          "sha256": "df420e2e84819663797d1ec6544b13c5be84629e7bb00dc960d6917db2987843"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "futf",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "futf",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "mac 0.1.1",
-              "target": "mac"
-            },
-            {
-              "id": "new_debug_unreachable 1.0.6",
-              "target": "debug_unreachable"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2015",
-        "version": "0.1.5"
-      },
-      "license": "MIT / Apache-2.0",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": "LICENSE-APACHE"
     },
     "futures 0.3.31": {
       "name": "futures",
@@ -6839,14 +6787,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "html5ever 0.36.1": {
+    "html5ever 0.39.0": {
       "name": "html5ever",
-      "version": "0.36.1",
+      "version": "0.39.0",
       "package_url": "https://github.com/servo/html5ever",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/html5ever/0.36.1/download",
-          "sha256": "6452c4751a24e1b99c3260d505eaeee76a050573e61f30ac2c924ddc7236f01e"
+          "url": "https://static.crates.io/crates/html5ever/0.39.0/download",
+          "sha256": "46a1761807faccc9a19e86944bbf40610014066306f96edcdedc2fb714bcb7b8"
         }
       },
       "targets": [
@@ -6875,14 +6823,14 @@
               "target": "log"
             },
             {
-              "id": "markup5ever 0.36.1",
+              "id": "markup5ever 0.39.0",
               "target": "markup5ever"
             }
           ],
           "selects": {}
         },
         "edition": "2021",
-        "version": "0.36.1"
+        "version": "0.39.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -9791,53 +9739,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "mac 0.1.1": {
-      "name": "mac",
-      "version": "0.1.1",
-      "package_url": "https://github.com/reem/rust-mac.git",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/mac/0.1.1/download",
-          "sha256": "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "mac",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "mac",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "edition": "2015",
-        "version": "0.1.1"
-      },
-      "license": "MIT/Apache-2.0",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": null
-    },
-    "markup5ever 0.36.1": {
+    "markup5ever 0.39.0": {
       "name": "markup5ever",
-      "version": "0.36.1",
+      "version": "0.39.0",
       "package_url": "https://github.com/servo/html5ever",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/markup5ever/0.36.1/download",
-          "sha256": "6c3294c4d74d0742910f8c7b466f44dda9eb2d5742c1e430138df290a1e8451c"
+          "url": "https://static.crates.io/crates/markup5ever/0.39.0/download",
+          "sha256": "7122d987ec5f704ee56f6e5b41a7d93722e9aae27ae07cafa4036c4d3f9757de"
         }
       },
       "targets": [
@@ -9866,18 +9775,18 @@
               "target": "log"
             },
             {
-              "id": "tendril 0.4.3",
+              "id": "tendril 0.5.0",
               "target": "tendril"
             },
             {
-              "id": "web_atoms 0.2.1",
+              "id": "web_atoms 0.2.3",
               "target": "web_atoms"
             }
           ],
           "selects": {}
         },
         "edition": "2021",
-        "version": "0.36.1"
+        "version": "0.39.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -16931,14 +16840,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "scraper 0.25.0": {
+    "scraper 0.26.0": {
       "name": "scraper",
-      "version": "0.25.0",
+      "version": "0.26.0",
       "package_url": "https://github.com/rust-scraper/scraper",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/scraper/0.25.0/download",
-          "sha256": "93cecd86d6259499c844440546d02f55f3e17bd286e529e48d1f9f67e92315cb"
+          "url": "https://static.crates.io/crates/scraper/0.26.0/download",
+          "sha256": "f0f5297102b8b62b4454ee8561601b2d551b4913148feb4241ca9d1a04bf4526"
         }
       },
       "targets": [
@@ -16976,7 +16885,7 @@
               "target": "cssparser"
             },
             {
-              "id": "ego-tree 0.10.0",
+              "id": "ego-tree 0.11.0",
               "target": "ego_tree"
             },
             {
@@ -16984,7 +16893,7 @@
               "target": "getopts"
             },
             {
-              "id": "html5ever 0.36.1",
+              "id": "html5ever 0.39.0",
               "target": "html5ever"
             },
             {
@@ -16992,18 +16901,18 @@
               "target": "precomputed_hash"
             },
             {
-              "id": "selectors 0.33.0",
+              "id": "selectors 0.36.1",
               "target": "selectors"
             },
             {
-              "id": "tendril 0.4.3",
+              "id": "tendril 0.5.0",
               "target": "tendril"
             }
           ],
           "selects": {}
         },
-        "edition": "2021",
-        "version": "0.25.0"
+        "edition": "2024",
+        "version": "0.26.0"
       },
       "license": "ISC",
       "license_ids": [
@@ -17186,14 +17095,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "selectors 0.33.0": {
+    "selectors 0.36.1": {
       "name": "selectors",
-      "version": "0.33.0",
+      "version": "0.36.1",
       "package_url": "https://github.com/servo/stylo",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/selectors/0.33.0/download",
-          "sha256": "feef350c36147532e1b79ea5c1f3791373e61cbd9a6a2615413b3807bb164fb7"
+          "url": "https://static.crates.io/crates/selectors/0.36.1/download",
+          "sha256": "c5d9c0c92a92d33f08817311cf3f2c29a3538a8240e94a6a3c622ce652d7e00c"
         }
       },
       "targets": [
@@ -17262,7 +17171,7 @@
               "target": "rustc_hash"
             },
             {
-              "id": "selectors 0.33.0",
+              "id": "selectors 0.36.1",
               "target": "build_script_build"
             },
             {
@@ -17277,7 +17186,7 @@
           "selects": {}
         },
         "edition": "2021",
-        "version": "0.33.0"
+        "version": "0.36.1"
       },
       "build_script_attrs": {
         "compile_data_glob": [
@@ -19592,14 +19501,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "tendril 0.4.3": {
+    "tendril 0.5.0": {
       "name": "tendril",
-      "version": "0.4.3",
-      "package_url": "https://github.com/servo/tendril",
+      "version": "0.5.0",
+      "package_url": "https://github.com/servo/html5ever",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/tendril/0.4.3/download",
-          "sha256": "d24a120c5fc464a3458240ee02c299ebcb9d67b5249c8848b09d639dca8d7bb0"
+          "url": "https://static.crates.io/crates/tendril/0.5.0/download",
+          "sha256": "c4790fc369d5a530f4b544b094e31388b9b3a37c0f4652ade4505945f5660d24"
         }
       },
       "targets": [
@@ -19624,12 +19533,8 @@
         "deps": {
           "common": [
             {
-              "id": "futf 0.1.5",
-              "target": "futf"
-            },
-            {
-              "id": "mac 0.1.1",
-              "target": "mac"
+              "id": "new_debug_unreachable 1.0.6",
+              "target": "debug_unreachable"
             },
             {
               "id": "utf-8 0.7.6",
@@ -19638,10 +19543,10 @@
           ],
           "selects": {}
         },
-        "edition": "2015",
-        "version": "0.4.3"
+        "edition": "2021",
+        "version": "0.5.0"
       },
-      "license": "MIT/Apache-2.0",
+      "license": "MIT OR Apache-2.0",
       "license_ids": [
         "Apache-2.0",
         "MIT"
@@ -20584,14 +20489,14 @@
       ],
       "license_file": "LICENSE"
     },
-    "tokio-tungstenite 0.28.0": {
+    "tokio-tungstenite 0.29.0": {
       "name": "tokio-tungstenite",
-      "version": "0.28.0",
+      "version": "0.29.0",
       "package_url": "https://github.com/snapview/tokio-tungstenite",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/tokio-tungstenite/0.28.0/download",
-          "sha256": "d25a406cddcc431a75d3d9afc6a7c0f7428d4891dd973e4d54c56b46127bf857"
+          "url": "https://static.crates.io/crates/tokio-tungstenite/0.29.0/download",
+          "sha256": "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
         }
       },
       "targets": [
@@ -20637,14 +20542,14 @@
               "target": "tokio"
             },
             {
-              "id": "tungstenite 0.28.0",
+              "id": "tungstenite 0.29.0",
               "target": "tungstenite"
             }
           ],
           "selects": {}
         },
         "edition": "2018",
-        "version": "0.28.0"
+        "version": "0.29.0"
       },
       "license": "MIT",
       "license_ids": [
@@ -21642,14 +21547,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "tungstenite 0.28.0": {
+    "tungstenite 0.29.0": {
       "name": "tungstenite",
-      "version": "0.28.0",
+      "version": "0.29.0",
       "package_url": "https://github.com/snapview/tungstenite-rs",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/tungstenite/0.28.0/download",
-          "sha256": "8628dcc84e5a09eb3d8423d6cb682965dea9133204e8fb3efee74c2a0c259442"
+          "url": "https://static.crates.io/crates/tungstenite/0.29.0/download",
+          "sha256": "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
         }
       },
       "targets": [
@@ -21714,16 +21619,12 @@
             {
               "id": "thiserror 2.0.17",
               "target": "thiserror"
-            },
-            {
-              "id": "utf-8 0.7.6",
-              "target": "utf8"
             }
           ],
           "selects": {}
         },
         "edition": "2021",
-        "version": "0.28.0"
+        "version": "0.29.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -23365,14 +23266,14 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "web_atoms 0.2.1": {
+    "web_atoms 0.2.3": {
       "name": "web_atoms",
-      "version": "0.2.1",
+      "version": "0.2.3",
       "package_url": "https://github.com/servo/html5ever",
       "repository": {
         "Http": {
-          "url": "https://static.crates.io/crates/web_atoms/0.2.1/download",
-          "sha256": "30e588f10c7bc3465f5fc1ab087fc97877ec1064a7ec89fb685ac4ee998dac4a"
+          "url": "https://static.crates.io/crates/web_atoms/0.2.3/download",
+          "sha256": "57a9779e9f04d2ac1ce317aee707aa2f6b773afba7b931222bff6983843b1576"
         }
       },
       "targets": [
@@ -23417,14 +23318,14 @@
               "target": "string_cache"
             },
             {
-              "id": "web_atoms 0.2.1",
+              "id": "web_atoms 0.2.3",
               "target": "build_script_build"
             }
           ],
           "selects": {}
         },
         "edition": "2021",
-        "version": "0.2.1"
+        "version": "0.2.3"
       },
       "build_script_attrs": {
         "compile_data_glob": [
@@ -27565,7 +27466,7 @@
     "rust_decimal 1.40.0",
     "rust_decimal_macros 1.40.0",
     "rusty-money 0.4.2",
-    "scraper 0.25.0",
+    "scraper 0.26.0",
     "serde 1.0.228",
     "serde-xml-rs 0.8.2",
     "serde_json 1.0.149",
@@ -27574,7 +27475,7 @@
     "structopt 0.3.26",
     "term-table 1.4.0",
     "tokio 1.49.0",
-    "tokio-tungstenite 0.28.0",
+    "tokio-tungstenite 0.29.0",
     "url 2.5.8",
     "uuid 1.19.0",
     "warp 0.4.2",
