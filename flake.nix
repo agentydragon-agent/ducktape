@@ -362,15 +362,6 @@
           enableHeavyPackages = false;
         };
 
-        # VPS server (minimal, no GUI)
-        vps = mkHome {
-          hostname = "vps";
-          enableGui = false;
-          enableKube = false;
-          isNixOS = false;
-          enableHeavyPackages = false;
-        };
-
         # Dell Rugged 12 tablet
         rugged = mkHome {
           hostname = "rugged";

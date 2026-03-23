@@ -30,7 +30,7 @@ sudo nixos-rebuild switch --flake ~/code/ducktape#<hostname>
 home-manager switch --flake ~/code/ducktape#<hostname> --impure
 ```
 
-### Non-NixOS Machines (agentydragon, gpd, vps)
+### Non-NixOS Machines (agentydragon, gpd)
 
 Only home-manager (user config):
 
@@ -57,7 +57,6 @@ Note: `--impure` is required for nixGL (GPU driver detection).
 | `gpd`          | Pop!\_OS | GPD Win Max 2         |
 | `rugged`       | NixOS    | Dell Rugged 12 tablet |
 | `nixos-vm`     | NixOS    | NixOS VM (wyrm2)      |
-| `vps`          | Debian   | VPS server (no GUI)   |
 
 ## Common Commands
 

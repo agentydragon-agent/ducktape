@@ -13,13 +13,12 @@ home-manager switch --flake ~/code/ducktape#<hostname>
 
 ### Per-Host Status
 
-| Host             | Nix                | Ansible roles                                                                        | Notes                                              |
-| ---------------- | ------------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Host             | Nix                | Ansible roles                                                              | Notes                                              |
+| ---------------- | ------------------ | -------------------------------------------------------------------------- | -------------------------------------------------- |
 | **agentydragon** | Full               | `nix`, `docker`, `system_inspection_nopasswd`, `legacy_vpn_uninstall`      | `cli`/`gui` commented out — Nix handles everything |
-| **wyrm**         | Full               | (NixOS-managed, no Ansible playbook)                                        | Fully NixOS                                        |
-| **atlas**        | Full               | `cli`, `nix`, `system_inspection_nopasswd`, `nebula`                        | Minimal Proxmox host                               |
+| **wyrm**         | Full               | (NixOS-managed, no Ansible playbook)                                       | Fully NixOS                                        |
+| **atlas**        | Full               | `cli`, `nix`, `system_inspection_nopasswd`, `nebula`                       | Minimal Proxmox host                               |
 | **gpd**          | Flake entry exists | `cli`, `legacy_cli`, `gui`, `legacy_gui`, `laptop`, `legacy_vpn_uninstall` | Still uses legacy roles — last holdout             |
-| **vps**          | Flake entry exists | `common`, `system_inspection_nopasswd`                                               | Server, no GUI/dev tools                           |
 
 ### What Nix Manages
 
