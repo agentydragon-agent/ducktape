@@ -221,7 +221,7 @@ dependencies = [
     "asgi-lifespan>=2.1",
     "syrupy>=4.0",
     "PyHamcrest>=2.1",
-    "mypy==1.18.2",
+    "mypy==1.19.1",
     "invoke",
 
     # Type stubs for mypy

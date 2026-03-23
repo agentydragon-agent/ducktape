@@ -5,8 +5,8 @@ module(
 
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
-bazel_dep(name = "rules_python", version = "1.8.3")
-bazel_dep(name = "rules_python_gazelle_plugin", version = "1.8.3")
+bazel_dep(name = "rules_python", version = "1.9.0")
+bazel_dep(name = "rules_python_gazelle_plugin", version = "1.9.0")
 bazel_dep(name = "gazelle", version = "0.47.0", repo_name = "bazel_gazelle")
 bazel_dep(name = "rules_go", version = "0.60.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "protobuf", version = "34.0.bcr.1")
@@ -14,8 +14,8 @@ bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "googleapis", version = "0.0.0-20260223-edfe7983")
 bazel_dep(name = "googleapis-go", version = "1.0.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")  # Required by buildifier_prebuilt
-bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.2")
-bazel_dep(name = "aspect_rules_lint", version = "2.0.0")
+bazel_dep(name = "buildifier_prebuilt", version = "8.5.1")
+bazel_dep(name = "aspect_rules_lint", version = "2.3.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")  # Required by format_multirun
 bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "rules_mypy", version = "0.40.0")
@@ -29,7 +29,7 @@ bazel_dep(name = "rules_mypy", version = "0.40.0")
 # TODO: Propose these changes upstream and switch back to BCR version if accepted
 git_override(
     module_name = "rules_mypy",
-    commit = "2417b972cbde24a66d6c5b10fab5737dcb1d9858",
+    commit = "355ae265ccef0e5928a440f2f1a2a9796298ec62",
     remote = "https://github.com/agentydragon/rules_mypy.git",
 )
 
@@ -97,10 +97,10 @@ use_repo(tf, "tf_toolchains")
 register_toolchains("@tf_toolchains//:all")
 
 # Python OCI image layering (aspect_rules_py)
-bazel_dep(name = "aspect_rules_py", version = "1.8.4")
+bazel_dep(name = "aspect_rules_py", version = "1.10.0")
 
 # Container images (rules_oci)
-bazel_dep(name = "rules_oci", version = "2.2.7")
+bazel_dep(name = "rules_oci", version = "2.3.0")
 bazel_dep(name = "rules_distroless", version = "0.6.2")
 
 # Fix filegroup circular deps in apt packages (e.g. libc6 <-> libgcc-s1).
@@ -119,14 +119,11 @@ single_version_override(
 bazel_dep(name = "rules_pkg", version = "1.2.0")
 
 # Helm chart packaging (rules_helm)
-bazel_dep(name = "rules_helm", version = "0.21.0")
+bazel_dep(name = "rules_helm", version = "0.23.0")
 
 helm = use_extension("@rules_helm//helm:extensions.bzl", "helm")
-helm.toolchain(
-    name = "helm_toolchains",
-    version = "3.14.4",
-)
-use_repo(helm, "helm_toolchains")
+helm.host_tools()
+use_repo(helm, "helm", "helm_toolchains")
 
 register_toolchains("@helm_toolchains//:all")
 
@@ -142,7 +139,7 @@ oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
 # The hermetic Python toolchain is bundled in the interpreter layer.
 oci.pull(
     name = "debian_slim",
-    digest = "sha256:6458e6ce2b6448e31bfdced4be7d8aa88d389e6694ab09f5a718a694abe147f4",
+    digest = "sha256:f06537653ac770703bc45b4b113475bd402f451e85223f0f2837acbf89ab020a",
     image = "docker.io/library/debian",
     platforms = ["linux/amd64"],
     tag = "bookworm-slim",
@@ -151,7 +148,7 @@ oci.pull(
 # Test infrastructure: PostgreSQL for Testcontainers (match production version)
 oci.pull(
     name = "postgres_18",
-    digest = "sha256:9b5bd946f3a507db72c55959700e517463e8d5dbb6f7eb30d920d5bcf6951431",
+    digest = "sha256:a9abf4275f9e99bff8e6aed712b3b7dfec9cac1341bba01c1ffdfce9ff9fc34a",
     image = "docker.io/library/postgres",
     platforms = ["linux/amd64"],
     tag = "18",
@@ -169,7 +166,7 @@ oci.pull(
 # Test infrastructure: Testcontainers Ryuk reaper (container cleanup)
 oci.pull(
     name = "ryuk",
-    digest = "sha256:ce323122ac8fe22e87a63651903286d478c857c44961aa3a484c2596c53cd1d0",
+    digest = "sha256:bf3f74a47dee0acda89aba4b2fc9c7fdcf994a084db02a2d06566f07baae022e",
     image = "docker.io/testcontainers/ryuk",
     platforms = ["linux/amd64"],
     tag = "0.8.1",
@@ -195,7 +192,7 @@ oci.pull(
 #   python3 -c "import sys,json; [print(m['digest']) for m in json.load(sys.stdin)['manifests'] if m['platform']['architecture']=='amd64']"
 oci.pull(
     name = "distroless_cc_debian13",
-    digest = "sha256:a7597527ac0daeb207427bc2b1d4b83a0fd4b4e00063488a2a89531e0241601d",
+    digest = "sha256:e1cc90d06703f5dc30ae869fbfce78fce688f21a97efecd226375233a882e62f",
     image = "gcr.io/distroless/cc-debian13",
     platforms = ["linux/amd64"],
     tag = "latest",
@@ -205,7 +202,7 @@ oci.pull(
 # To update: docker manifest inspect inventree/inventree:stable | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
 oci.pull(
     name = "inventree_stable",
-    digest = "sha256:874bfdc56d524c545c38667b98873749bc5daf68130d47fc372fd32322288699",
+    digest = "sha256:56adc4e50a7300daeb0ba5d6246f8c252b8bf2f43903e48808e097a2e730c9b1",
     image = "docker.io/inventree/inventree",
     platforms = ["linux/amd64"],
     tag = "stable",
@@ -226,14 +223,14 @@ oci.pull(
 # Base image for container E2E tests. rules_distroless layers git + JDK on top.
 oci.pull(
     name = "python_3_13_slim",
-    digest = "sha256:7d8999b140f22939451e00b79c0fd86f13d0bc0577b369f8212fce063101fb2a",
+    digest = "sha256:739e7213785e88c0f702dcdc12c0973afcbd606dbf021a589cab77d6b00b579d",
     image = "docker.io/library/python",
     platforms = ["linux/amd64"],
     tag = "3.13-slim",
 )
 oci.pull(
     name = "mitmproxy",
-    digest = "sha256:7c62332e7bcf6173369e4e7412540d22bcb335c466ea54c9f3b26203adb2e5d8",
+    digest = "sha256:e0deb0df7edf9f909053f274a067cd1cacb90f5c17d74459e1693179c0b98d8f",
     image = "docker.io/mitmproxy/mitmproxy",
     platforms = ["linux/amd64"],
     tag = "11",
@@ -253,9 +250,9 @@ apt.install(
 use_repo(apt, "trixie_e2e")
 
 # JavaScript/TypeScript (Node.js frontends)
-bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
+bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
 bazel_dep(name = "aspect_rules_js", version = "2.9.2")
-bazel_dep(name = "aspect_rules_ts", version = "3.8.3")
+bazel_dep(name = "aspect_rules_ts", version = "3.8.7")
 bazel_dep(name = "rules_nodejs", version = "6.7.3")
 
 # Browser testing (provides hermetic Chromium for Puppeteer/Playwright tests)
@@ -538,7 +535,7 @@ bazel_dep(name = "rules_haskell", version = "1.0")
 # Master (post-PR #2348) vendors get_cpu_value locally.
 git_override(
     module_name = "rules_haskell",
-    commit = "e70f8bce1f8fbd715f30017b01fda3c29ec3f066",
+    commit = "60d787cad638370663758b37f880e56a8249786f",
     remote = "https://github.com/tweag/rules_haskell.git",
 )
 
