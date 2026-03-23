@@ -66,13 +66,6 @@ spec:
             - name: signing-key
               mountPath: /var/lib/secrets
               readOnly: true
-          resources:
-            requests:
-              memory: 32Mi
-              cpu: 100m
-            limits:
-              memory: 1Gi
-              cpu: 1000m
           livenessProbe:
             httpGet:
               path: /
