@@ -30,9 +30,17 @@ sandbox = false
 EOF
 
 echo "Installing Nix..."
+# Ensure $USER is set — the installer's nix.sh (sourced below) is a no-op
+# when $USER is empty, which means PATH never gets ~/.nix-profile/bin.
+# The container runs as root but may not have $USER in the environment.
+_saved_user="${USER:-}"
+export USER="${USER:-$(id -u -n)}"
 curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon
 # shellcheck disable=SC1091
 . ~/.nix-profile/etc/profile.d/nix.sh
+# Restore $USER to its original state so we don't leak a side-effect.
+if [ -z "$_saved_user" ]; then unset USER; else USER="$_saved_user"; fi
+unset _saved_user
 
 # --- Step 2: Lock down Nix for gVisor ---
 # max-jobs=0: all real builds come from binary cache, gVisor can't build locally.
