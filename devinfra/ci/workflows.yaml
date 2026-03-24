@@ -37,12 +37,9 @@ workflows:
     events: [push]
     secrets: inherit
 
-  # Single workflow that builds and pushes all Bazel-built Harbor images.
-  # The list of images is defined in harbor_images below.
-  bazel-harbor-images:
-    trigger: { kind: always }
-    events: [push]
-    secrets: inherit
+  # Harbor images are now pushed via BuildBuddy Workflows (buildbuddy.yaml
+  # "Push Harbor Images" action) using oci_push targets. The GHA workflow
+  # bazel-harbor-images.yml has been removed.
 
   openclaw-image:
     trigger: { kind: path, pattern: "^(openclaw/|airlock/openclaw/)" }
@@ -63,47 +60,3 @@ workflows:
 
 # Release definitions removed — release.yml is now manually maintained.
 # See .github/workflows/release.yml for the single build-and-push job.
-
-# List of Bazel-built images pushed to Harbor (registry.allegedly.works).
-# The bazel-harbor-images workflow (generated from this config) builds and
-# pushes all images in a single job, sharing Bazel setup and registry login.
-harbor_images:
-  - bazel_target: //cluster/k8s/inventree/token-provisioner:load
-    local_tag: inventree-token-provisioner:latest
-    remote_path: ducktape/token-provisioner
-
-  - bazel_target: //props/backend:load
-    local_tag: props-backend:latest
-    remote_path: ducktape/props-backend
-
-  - bazel_target: //airlock:load
-    local_tag: airlock:latest
-    remote_path: ducktape/airlock
-
-  - bazel_target: //airlock/auth_proxy:load
-    local_tag: airlock-auth-proxy:latest
-    remote_path: ducktape/auth-proxy
-
-  - bazel_target: //mcp_infra/exec:direct_load
-    local_tag: exec-backend:latest
-    remote_path: ducktape/exec-backend
-
-  - bazel_target: //openclaw/exec:load
-    local_tag: openclaw-exec:latest
-    remote_path: ducktape/openclaw-exec
-
-  - bazel_target: //homeassistant/proxy:load
-    local_tag: homeassistant-proxy:latest
-    remote_path: ducktape/homeassistant-proxy
-
-  - bazel_target: //inventree_utils/rai_plugin:load
-    local_tag: inventree-custom:latest
-    remote_path: ducktape/inventree
-
-  - bazel_target: //tana/token_broker:load
-    local_tag: tana-token-broker:latest
-    remote_path: ducktape/tana-token-broker
-
-  - bazel_target: //third_party/activitywatch:load
-    local_tag: aw-server:latest
-    remote_path: ducktape/aw-server

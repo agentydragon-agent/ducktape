@@ -7,7 +7,7 @@ spec:
   imageRepositoryRef:
     name: activitywatch
   filterTags:
-    # Tags pushed by CI: devel-YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
+    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
     pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
     alphabetical:

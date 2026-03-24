@@ -89,8 +89,11 @@ actions:
           sudo apt-get update -qq && sudo apt-get install -y gh
       - run: devinfra/ci/bb_release.sh
 
-  # Build container images (OCI images built with Bazel)
-  - name: "Build Container Images"
+  # Push Harbor container images (OCI images built with Bazel).
+  # Uses oci_push (crane-based, no Docker daemon needed).
+  # The CI action's `bazel build //...` populates the remote cache;
+  # bazel run here fetches built images from cache and pushes via crane.
+  - name: "Push Harbor Images"
     triggers:
       push:
         branches:
@@ -98,15 +101,50 @@ actions:
           - devel
       workflow_dispatch: {}
 
-    # Same as CI action - BuildBuddy Workflows doesn't support custom images
     container_image: "ubuntu-24.04"
     resource_requests:
       disk: "50GB"
 
-    bazel_commands:
-      # Build OCI images for potential release
-      # These are built but not pushed to GHCR (GitHub Actions handles pushing)
-      - >
-        build --config=rbe
-        //props/backend:image
-        //x/agent_server:image
+    steps:
+      - run: |
+          # Authenticate crane to Harbor registry.
+          # oci_push reads ~/.docker/config.json for credentials.
+          mkdir -p ~/.docker
+          AUTH=$(echo -n "${HARBOR_ROBOT_USERNAME}:${HARBOR_ROBOT_TOKEN}" | base64 -w0)
+          cat > ~/.docker/config.json <<ENDJSON
+          {"auths":{"registry.allegedly.works":{"auth":"${AUTH}"}}}
+          ENDJSON
+      - run: |
+          # Install crane for tagging images after push.
+          CRANE_VERSION=0.20.3
+          curl -fsSL "https://github.com/google/go-containerregistry/releases/download/v${CRANE_VERSION}/go-containerregistry_Linux_x86_64.tar.gz" \
+            | tar -xzf - -C /usr/local/bin crane
+      - run: |
+          # Push images sequentially. bazel run builds (hitting RBE cache
+          # from the CI action) then executes crane push with :latest.
+          # After each push, crane tags with {branch}-YYYYMMDDHHMMSS-{sha7}
+          # so Flux ImagePolicy can track deployable versions.
+          set -e
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          TS=$(date -u +%Y%m%d%H%M%S)
+          SHA=$(git rev-parse --short=7 HEAD)
+          PINNED_TAG="${BRANCH}-${TS}-${SHA}"
+
+          push_and_tag() {
+            local target="$1" repo="$2"
+            echo "Pushing $target"
+            bazel run --config=rbe --remote_download_toplevel "$target"
+            echo "Tagging ${repo}:latest -> ${repo}:${PINNED_TAG}"
+            crane tag "${repo}:latest" "${PINNED_TAG}"
+          }
+
+          push_and_tag //cluster/k8s/inventree/token-provisioner:push registry.allegedly.works/ducktape/token-provisioner
+          push_and_tag //props/backend:push registry.allegedly.works/ducktape/props-backend
+          push_and_tag //airlock:push registry.allegedly.works/ducktape/airlock
+          push_and_tag //airlock/auth_proxy:push registry.allegedly.works/ducktape/auth-proxy
+          push_and_tag //mcp_infra/exec:direct_push registry.allegedly.works/ducktape/exec-backend
+          push_and_tag //openclaw/exec:push registry.allegedly.works/ducktape/openclaw-exec
+          push_and_tag //homeassistant/proxy:push registry.allegedly.works/ducktape/homeassistant-proxy
+          push_and_tag //inventree_utils/rai_plugin:push registry.allegedly.works/ducktape/inventree
+          push_and_tag //tana/token_broker:push registry.allegedly.works/ducktape/tana-token-broker
+          push_and_tag //third_party/activitywatch:push registry.allegedly.works/ducktape/aw-server

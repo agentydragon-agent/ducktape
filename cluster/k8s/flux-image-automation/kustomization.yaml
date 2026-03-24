@@ -18,3 +18,5 @@ resources:
   - homeassistant-proxy-image-policy.yaml
   - tana-mcp-image-repository.yaml
   - tana-mcp-image-policy.yaml
+  - tana-token-broker-image-repository.yaml
+  - tana-token-broker-image-policy.yaml

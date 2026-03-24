@@ -99,24 +99,11 @@ class ReleaseConfig(BaseModel):
         return f"bazel-bin/{label.package}" if label.package.parts else "bazel-bin"
 
 
-class HarborImageConfig(BaseModel):
-    """Configuration for a Bazel-built image pushed to Harbor.
-
-    remote_path is the registry-relative path (e.g. ``oauth-broker/oauth-broker``).
-    The registry host is defined once in generate_ci.py (HARBOR_REGISTRY).
-    """
-
-    bazel_target: str
-    local_tag: str
-    remote_path: str
-
-
 class WorkflowManifest(BaseModel):
     """Collection of all workflow configurations."""
 
     workflows: dict[str, WorkflowConfig]
     releases: dict[str, ReleaseConfig] = Field(default_factory=dict)
-    harbor_images: list[HarborImageConfig] = Field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: Path) -> WorkflowManifest:
