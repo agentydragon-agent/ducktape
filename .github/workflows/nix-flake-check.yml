@@ -28,23 +28,17 @@ jobs:
       - name: Configure Attic cache
         run: attic login ducktape https://cache.allegedly.works "${{ secrets.ATTIC_TOKEN }}"
 
-      - name: Build and push NixOS configurations
+      - name: Build and push all configurations
         run: |
-          nixos_drvs=()
+          drvs=()
           for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-            nixos_drvs+=(".#nixosConfigurations.$host.config.system.build.toplevel")
+            drvs+=(".#nixosConfigurations.$host.config.system.build.toplevel")
           done
-          echo "Building ${#nixos_drvs[@]} NixOS configurations in parallel..."
-          nix build "${nixos_drvs[@]}" --no-link --print-out-paths | xargs attic push main
-
-      - name: Build and push home-manager configurations
-        run: |
-          hm_drvs=()
           for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-            hm_drvs+=(".#homeConfigurations.$host.activationPackage")
+            drvs+=(".#homeConfigurations.$host.activationPackage")
           done
-          echo "Building ${#hm_drvs[@]} home-manager configurations in parallel..."
-          nix build --impure "${hm_drvs[@]}" --no-link --print-out-paths | xargs attic push main
+          echo "Building ${#drvs[@]} configurations in parallel..."
+          nix build --impure "${drvs[@]}" --no-link --print-out-paths | xargs attic push main
 
       - name: Generate summary
         if: always()
