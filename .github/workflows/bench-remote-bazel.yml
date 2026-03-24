@@ -14,8 +14,7 @@ jobs:
 
       - name: Install bb CLI
         run: |
-          curl -fsSL https://www.buildbuddy.io/cli/latest/bb-linux-amd64 -o /usr/local/bin/bb
-          chmod +x /usr/local/bin/bb
+          curl -fsSL https://install.buildbuddy.io | bash
           bb version
 
       - name: bb remote build -k //...
