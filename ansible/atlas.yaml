@@ -276,6 +276,20 @@
         reload: true
       tags: [swap, zram]
 
+    - name: Mask CUPS services (spams dmesg)
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: false
+        masked: true
+      loop:
+        - cups.service
+        - cups.socket
+        - cups.path
+        - cups-browsed.service
+      failed_when: false
+      tags: [cups, services]
+
     # TODO: WiFi Configuration - MediaTek MT7927 (14c3:7927)
     # The atlas host has a MediaTek MT7927 WiFi 7 card. MT7927 support was added
     # to the mt76 driver in Linux 6.12. Upgrade to Proxmox VE 9 (kernel 6.12+)
