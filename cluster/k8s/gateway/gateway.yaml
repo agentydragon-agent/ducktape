@@ -38,8 +38,11 @@ spec:
         namespaces:
           from: All
     - name: postgres-tfstate
+      hostname: tfstate.allegedly.works
       port: 5432
-      protocol: TCP
+      protocol: TLS
+      tls:
+        mode: Passthrough
       allowedRoutes:
         namespaces:
           from: Selector

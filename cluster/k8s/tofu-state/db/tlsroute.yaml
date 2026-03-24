@@ -1,5 +1,5 @@
 apiVersion: gateway.networking.k8s.io/v1alpha2
-kind: TCPRoute
+kind: TLSRoute
 metadata:
   name: tofu-state-db
   namespace: tofu-state
@@ -8,6 +8,8 @@ spec:
     - name: cluster-gateway
       namespace: gateway-system
       sectionName: postgres-tfstate
+  hostnames:
+    - tfstate.allegedly.works
   rules:
     - backendRefs:
         - name: tofu-state-db-rw
