@@ -1,0 +1,17 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: arc
+  namespace: flux-system
+spec:
+  interval: 10m
+  path: ./cluster/k8s/arc/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  timeout: 5m
+  dependsOn:
+    - name: arc-namespace
+    - name: arc-secrets
+    - name: gateway
