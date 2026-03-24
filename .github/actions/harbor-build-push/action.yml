@@ -36,8 +36,7 @@ runs:
       run: |
         SHA="${{ github.sha }}"
         TS="$(date -u +%Y%m%d%H%M%S)"
-        BRANCH="${GITHUB_REF_NAME}"
-        PINNED_TAG="${BRANCH}-${TS}-${SHA:0:7}"
+        PINNED_TAG="${GITHUB_REF_NAME}-${TS}-${SHA:0:7}"
         TAGS="${{ inputs.image }}:$SHA,${{ inputs.image }}:$PINNED_TAG"
         if [[ "${{ github.event_name }}" != "workflow_call" ]]; then
           TAGS="$TAGS,${{ inputs.image }}:latest"
