@@ -24,10 +24,12 @@ spec:
           # TODO: Pin to a versioned tag once attic publishes semver releases.
           image: ghcr.io/zhaofengli/attic:latest
           imagePullPolicy: Always
+          # runAsUser/runAsGroup removed: containerd UserFromFS reads
+          # /etc/passwd via os.DirFS which rejects NixOS absolute symlinks
+          # on Go 1.24+ (containerd #12683, fix not in v2.2.2).
+          # Attic image runs as uid 0 by default; fsGroup 1000 on pod
+          # securityContext still applies to volume ownership.
           securityContext:
-            runAsUser: 1000
-            runAsGroup: 1000
-            runAsNonRoot: true
             allowPrivilegeEscalation: false
             capabilities:
               drop:
