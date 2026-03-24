@@ -263,14 +263,6 @@ resource "hcloud_firewall" "talos" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
-  # PostgreSQL — OpenTofu state backend (TLS passthrough to CNPG)
-  rule {
-    direction  = "in"
-    protocol   = "tcp"
-    port       = "5432"
-    source_ips = ["0.0.0.0/0", "::/0"]
-  }
-
   # ICMP (ping)
   rule {
     direction  = "in"

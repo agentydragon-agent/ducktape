@@ -37,15 +37,3 @@ spec:
       allowedRoutes:
         namespaces:
           from: All
-    - name: postgres-tfstate
-      hostname: tfstate.allegedly.works
-      port: 5432
-      protocol: TLS
-      tls:
-        mode: Passthrough
-      allowedRoutes:
-        namespaces:
-          from: Selector
-          selector:
-            matchLabels:
-              kubernetes.io/metadata.name: tofu-state
