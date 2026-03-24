@@ -99,6 +99,15 @@ resource "powerdns_record" "api" {
   records = [for k, v in local.vps_nodes : v.ip]
 }
 
+# OpenTofu state PG endpoint (TLS passthrough to CNPG tofu-state-db)
+resource "powerdns_record" "tfstate" {
+  zone    = "${local.domain}."
+  name    = "tfstate.${local.domain}."
+  type    = "A"
+  ttl     = 300
+  records = [for k, v in local.vps_nodes : v.ip]
+}
+
 # Import: domain registration persists across cluster lifecycles.
 # Declarative import is idempotent — no-op when already in state.
 import {
