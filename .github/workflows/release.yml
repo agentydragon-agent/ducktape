@@ -30,7 +30,10 @@ jobs:
           extra_nix_config: experimental-features = nix-command flakes
 
       - name: Install npins and attic-client
-        run: nix profile install nixpkgs#npins nixpkgs#attic-client
+        run: |
+          # Pin npins to our flake's locked nixpkgs to match the sources.json format version.
+          NIXPKGS="github:NixOS/nixpkgs/$(nix flake metadata --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["locks"]["nodes"]["nixpkgs"]["locked"]["rev"])')"
+          nix profile install "$NIXPKGS#npins" nixpkgs#attic-client
 
       - name: Update artifact pins and push Nix packages to attic
         env:
