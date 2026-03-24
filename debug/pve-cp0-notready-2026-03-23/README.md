@@ -100,6 +100,20 @@ ever transmitted again.
   one without). vCPU scheduling across CCDs during cache-heavy workloads could trigger
   timing anomalies that manifest as unexpected NMIs.
 
+### Host logging situation
+
+- **journald**: Persists to disk, 1.2GB, oldest entry 2026-02-03. The 05:50-06:10 UTC
+  window is present — but contains only cupsd apparmor spam. No kernel NMI/MCE entries
+  because the NMI was guest-internal (KVM vNMI injection, no host kernel involvement).
+- **dmesg ring buffer**: Volatile (RAM-only), default ~1MB. Rotated out by cupsd apparmor
+  spam within hours. Even if the host kernel had logged something, it would be gone.
+- **mcelog**: Not installed on Proxmox.
+
+The fundamental limitation: KVM vNMI injects NMIs directly into the guest vCPU without
+host kernel involvement. The host has no record of guest-internal NMIs. Host-side logging
+improvements won't help for this class of issue — we'd need KVM tracepoints
+(`/sys/kernel/debug/kvm/`) or `perf kvm` recording.
+
 ### What we can't determine (evidence lost)
 
 - Exact process that page-faulted (RIP 0x4864eb — Go binary, but which one?)
@@ -133,6 +147,27 @@ After `qm stop` + `qm start`:
 This may be a separate issue (XFS quota init on a large/dirty EPHEMERAL partition)
 or the post-crash filesystem state is blocking boot.
 
+## Talos capabilities for future diagnostics
+
+Checked Talos v1.12 docs for relevant features:
+
+- **Kernel crash dumps (kdump)**: Not supported. No pstore/ramoops either.
+- **`talosctl dmesg` persistence**: RAM-only ring buffer, does NOT survive reboots.
+- **Remote log forwarding**: Supported via machine config — can forward kernel logs to
+  a remote syslog/Loki in real-time. This is the main way to preserve pre-crash logs.
+- **Hardware watchdog**: Supported. Talos can configure `/sys/class/watchdog/watchdog0`
+  via `WatchdogTimerConfig` resource. Talos pets the timer; if the system freezes, the
+  hardware resets it. Proxmox/QEMU supports `i6300esb` watchdog.
+- **Kernel args**: Customizable via `.machine.install.extraKernelArgs` (GRUB) or
+  machine config patches. Can set `nmi_watchdog=0`, `unknown_nmi_panic=0`, etc.
+- **perf/PMU tools**: Not available in Talos (no shell, minimal userspace).
+
+**Actionable for this class of issue:**
+
+1. Configure remote kernel log forwarding to Loki — captures NMI messages before reboot.
+2. Enable hardware watchdog — auto-resets the VM if the kernel hangs after NMI.
+3. Neither helps with post-mortem (no kdump), but at least we get the logs and auto-recovery.
+
 ## Prevention recommendations
 
 ### Immediate
@@ -147,26 +182,56 @@ or the post-crash filesystem state is blocking boot.
    # Or: ssh root@atlas "qm set 10000 -cpu 'host,pmu=off'"
    ```
 
-2. **Fix host dmesg rotation**: The cupsd apparmor spam rotated out the evidence.
-   Increase dmesg buffer or fix the cupsd apparmor profile:
+2. **Remove cupsd from atlas**: cupsd apparmor spam fills the host dmesg ring buffer
+   within hours, hiding real hardware events. cupsd has no purpose on a headless Proxmox
+   server.
 
    ```bash
-   # /etc/sysctl.d/99-dmesg.conf
-   kernel.dmesg_restrict = 0
-   kernel.printk_devkmsg = on
-   # Or just fix cupsd: aa-complain /usr/sbin/cupsd
+   ssh root@atlas "apt purge cups cups-daemon"
    ```
 
 3. **Alert on node NotReady**: Prometheus alerting rule for
    `kube_node_status_condition{condition="Ready",status="true"} == 0 for 5m`.
 
+### Medium-term
+
+4. **Enable Talos hardware watchdog**: Configure `WatchdogTimerConfig` for the
+   `i6300esb` QEMU watchdog. Add watchdog device to VM config:
+
+   ```bash
+   ssh root@atlas "qm set 10000 -watchdog model=i6300esb,action=reset"
+   ```
+
+   Then configure Talos to pet it via machine config patch.
+
+5. **Configure remote kernel log forwarding**: Forward Talos kernel logs to Loki
+   in real-time so NMI messages are preserved even if the node crashes.
+
+   ```yaml
+   machine:
+     logging:
+       destinations:
+         - endpoint: "tcp://loki.monitoring.svc.cluster.local:3100"
+           format: json_lines
+   ```
+
+   Chicken-and-egg: Loki runs in-cluster, so forwarding only works after Nebula is up.
+   For Proxmox nodes, could forward to a host-local syslog instead.
+
 ### Long-term
 
-4. **QEMU watchdog**: Add `-watchdog i6300esb -watchdog-action reset` to auto-reboot
-   on kernel hangs. Talos would need to pet the watchdog (not sure if supported).
+6. **Investigate KVM vNMI on Zen 5**: Check for known issues with `kvm_amd.vnmi=Y`
+   on Ryzen 9000 series. Consider `kvm_amd.vnmi=0` as a workaround if NMIs recur.
 
-5. **Investigate KVM vNMI on Zen 5**: Check for known issues with `kvm_amd.vnmi=Y`
-   on Ryzen 9000 series. Consider `kvm_amd.vnmi=0` as a workaround.
-
-6. **Investigate boot hang**: The post-reboot CRI registration hang needs separate
+7. **Investigate boot hang**: The post-reboot CRI registration hang needs separate
    investigation — may be a Talos v1.12.3 bug or filesystem corruption from the NMI crash.
+
+## TODOs
+
+- [ ] Apply `pmu=off` to talos-pve-cp-0 CPU config in `proxmox-nodes.tf`
+- [ ] Remove cupsd from atlas (`apt purge cups cups-daemon`)
+- [ ] Add Prometheus alert for node NotReady
+- [ ] Configure QEMU watchdog (`i6300esb`) + Talos `WatchdogTimerConfig`
+- [ ] Configure Talos remote kernel log forwarding
+- [ ] Investigate and resolve the post-reboot boot hang (CRI not registering)
+- [ ] If NMIs recur after `pmu=off`: try `kvm_amd.vnmi=0` on the host
