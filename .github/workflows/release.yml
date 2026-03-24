@@ -50,7 +50,7 @@ jobs:
           store_paths=()
           read -ra changed_pkgs <<< "${{ inputs.changed }}"
           for pkg in "${changed_pkgs[@]}"; do
-            npins update "$pkg" --url "${urls[$pkg]}"
+            npins add tarball "${urls[$pkg]}" --name "$pkg"
             store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$pkg"))
           done
 

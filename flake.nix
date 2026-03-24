@@ -64,9 +64,28 @@
     let
       system = "x86_64-linux";
 
-      # CI-released artifact pins — managed by npins, updated by release.yml.
-      # Bootstrap: run `nix run nixpkgs#npins -- update` to populate real hashes.
-      artifacts = import ./npins;
+      # CI-released artifact pins — managed by npins (sources.json), updated by release.yml.
+      # fetchurl keeps files as-is (wheels, binaries); fetchTarball unpacks (skills tar).
+      # Bootstrap: run release pipeline once to populate real hashes.
+      artifacts =
+        let
+          data = builtins.fromJSON (builtins.readFile ./npins/sources.json);
+          # skills is a tar that consumers expect unpacked; everything else is a file.
+          unpackNames = [ "skills" ];
+          fetch =
+            name: spec:
+            if builtins.elem name unpackNames then
+              builtins.fetchTarball {
+                url = spec.url;
+                sha256 = spec.hash;
+              }
+            else
+              builtins.fetchurl {
+                url = spec.url;
+                sha256 = spec.hash;
+              };
+        in
+        builtins.mapAttrs fetch data.pins;
 
       # Multi-system support for devShells
       systems = [
