@@ -23,7 +23,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       containers:
         - name: grocy
-          image: lscr.io/linuxserver/grocy:latest
+          image: lscr.io/linuxserver/grocy:v4.6.0-ls318
           ports:
             - containerPort: 80
               name: http

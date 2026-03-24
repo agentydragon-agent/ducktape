@@ -24,7 +24,7 @@ spec:
       containers:
         - name: token-generator
           # Using bitnami/kubectl image which includes curl
-          image: bitnami/kubectl:latest
+          image: bitnami/kubectl:1.35
           command: ["/bin/bash", "-c"]
           args:
             - |

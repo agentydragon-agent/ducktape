@@ -42,7 +42,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: powerdns
-          image: powerdns/pdns-auth-49:latest
+          image: powerdns/pdns-auth-49:4.9.4
           imagePullPolicy: IfNotPresent
           # The official pdns-auth-49 image does NOT support PDNS_* env vars
           # (that's a community Docker image convention). Override the entrypoint

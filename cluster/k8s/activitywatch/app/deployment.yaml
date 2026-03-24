@@ -83,7 +83,7 @@ spec:
             initialDelaySeconds: 2
             periodSeconds: 10
         - name: nebula
-          image: ghcr.io/slackhq/nebula:latest
+          image: ghcr.io/slackhq/nebula:v1.10.0
           command: ["nebula", "-config", "/etc/nebula/config.yaml"]
           securityContext:
             capabilities:

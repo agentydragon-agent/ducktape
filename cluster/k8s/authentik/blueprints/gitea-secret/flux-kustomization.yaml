@@ -20,5 +20,6 @@ spec:
       name: gitea-oauth-client-secret
       namespace: gitea
   dependsOn:
+    - name: gitea-namespace
     - name: authentik-blueprint-sso-secrets # Vault data exists
     - name: external-secrets-config # Ensure ClusterSecretStore exists

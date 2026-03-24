@@ -21,5 +21,6 @@ spec:
       name: inventree-oauth-client-secret
       namespace: inventree
   dependsOn:
+    - name: inventree-namespace
     - name: authentik-blueprint-sso-secrets # Vault data exists
     - name: external-secrets-config # Ensure ClusterSecretStore exists

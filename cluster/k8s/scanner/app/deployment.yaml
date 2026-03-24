@@ -34,7 +34,7 @@ spec:
             - name: data
               mountPath: /data
         - name: configure-auth
-          image: filebrowser/filebrowser:latest
+          image: filebrowser/filebrowser:v2.62.1
           command:
             - sh
             - -c
@@ -78,7 +78,7 @@ spec:
               cpu: 500m
               memory: 256Mi
         - name: filebrowser
-          image: filebrowser/filebrowser:latest
+          image: filebrowser/filebrowser:v2.62.1
           ports:
             - containerPort: 8080
               name: http

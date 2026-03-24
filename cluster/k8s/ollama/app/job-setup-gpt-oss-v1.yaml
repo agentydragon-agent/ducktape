@@ -17,7 +17,7 @@ spec:
             defaultMode: 0755
       containers:
         - name: setup
-          image: ollama/ollama:latest
+          image: ollama/ollama:0.18.0
           command:
             - /scripts/setup-gpt-oss-v1.sh
           env:
