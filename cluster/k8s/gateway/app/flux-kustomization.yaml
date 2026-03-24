@@ -16,7 +16,6 @@ spec:
   dependsOn:
     - name: cert-manager
     - name: kyverno
-    - name: gateway-namespace
   postBuild:
     substituteFrom:
       - kind: ConfigMap

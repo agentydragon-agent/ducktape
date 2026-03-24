@@ -4,3 +4,5 @@ metadata:
   name: external-dns
   labels:
     name: external-dns
+    goldilocks.fairwinds.com/enabled: "true"
+    goldilocks.fairwinds.com/vpa-update-mode: "auto"

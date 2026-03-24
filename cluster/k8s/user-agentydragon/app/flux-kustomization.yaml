@@ -18,7 +18,6 @@ spec:
       namespace: flux-system
   timeout: 10m
   dependsOn:
-    - name: user-agentydragon-namespace
     - name: external-secrets-config
     - name: tofu-controller
     - name: vault

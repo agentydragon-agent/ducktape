@@ -14,6 +14,5 @@ spec:
   prune: true
   wait: true
   dependsOn:
-    - name: scanner-namespace
     - name: proxmox-csi
     - name: sealed-secrets

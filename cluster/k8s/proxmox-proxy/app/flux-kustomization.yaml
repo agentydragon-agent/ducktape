@@ -14,5 +14,4 @@ spec:
   prune: true
   wait: true
   dependsOn:
-    - name: proxmox-proxy-namespace
     - name: gateway
