@@ -2,7 +2,8 @@
 
 Tests that parse the cluster kustomization tree and check structural invariants
 (no orphaned files, valid dependencies, health checks on controller resources,
-blueprint completeness).
+blueprint completeness). All kustomizations are built with kustomize to validate
+they render correctly and to provide build results for resource-level checks.
 
 TODO: These checks duplicate validate_cluster (run via pre-commit). Consolidate by
 enforcing affected bazel tests pass before commit (PR #819 WIP), then remove the
@@ -11,6 +12,7 @@ validate_cluster pre-commit hook and use this test as the single source of truth
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -22,9 +24,11 @@ from cluster.scripts.validate_cluster.checks import (
     check_goldilocks_namespace_labels,
     find_orphaned_files,
 )
-from cluster.validation.cluster import ParsedCluster, parse_cluster
+from cluster.scripts.validate_cluster.kustomize import run_kustomize_build
+from cluster.validation.cluster import _K8S_PREFIX, ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
+from cluster.validation.kustomize import KustomizeBuildResult
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
@@ -35,15 +39,41 @@ def k8s_dir() -> Path:
     return get_required_path(_K8S_ROOT_KUSTOMIZATION).parent
 
 
-@pytest.fixture(scope="session")
-def workspace(k8s_dir: Path) -> Path:
-    """Repo root within runfiles (parent of cluster/k8s)."""
-    return k8s_dir.parent.parent
+def _local_flux_kust_names(parsed: ParsedCluster) -> set[str]:
+    """Flux kustomization names whose spec.path points into the local cluster/k8s tree."""
+    return {
+        name
+        for name, spec in parsed.flux_kustomizations.items()
+        if spec.path.removeprefix("./").startswith(_K8S_PREFIX)
+    }
 
 
 @pytest.fixture(scope="session")
 def cluster(k8s_dir: Path) -> ParsedCluster:
-    return parse_cluster(k8s_dir)
+    """Parse cluster and build flux-referenced kustomizations (hard failure on any build error)."""
+    parsed = parse_cluster(k8s_dir)
+
+    # Only build kustomizations that a flux kustomization points to.
+    local_dirs = {
+        (k8s_dir / spec.path.removeprefix("./")[len(_K8S_PREFIX) :]).resolve()
+        for spec in parsed.flux_kustomizations.values()
+        if spec.path.removeprefix("./").startswith(_K8S_PREFIX)
+    }
+    kust_files = [k for k in parsed.kustomize_files if k.parent.resolve() in local_dirs]
+
+    async def _build_all() -> list[KustomizeBuildResult]:
+        return list(await asyncio.gather(*[run_kustomize_build(k) for k in kust_files]))
+
+    parsed.build_results = asyncio.run(_build_all())
+    return parsed
+
+
+def test_all_local_flux_kustomizations_have_build_results(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    """Every flux kustomization pointing to a local path must have a build result."""
+    covered = set(cluster.flux_kust_resources(k8s_dir))
+    expected = _local_flux_kust_names(cluster)
+    missing = sorted(expected - covered)
+    assert not missing, "Flux kustomizations with no build result:\n" + "\n".join(f"  {m}" for m in missing)
 
 
 def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
@@ -52,8 +82,8 @@ def test_no_dependency_errors(cluster: ParsedCluster, k8s_dir: Path) -> None:
     assert not errors, "\n".join(errors)
 
 
-def test_controller_resources_have_health_checks(cluster: ParsedCluster, workspace: Path) -> None:
-    errors = check_controller_health_checks(cluster, workspace)
+def test_controller_resources_have_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> None:
+    errors = check_controller_health_checks(cluster, k8s_dir)
     assert not errors, "\n".join(errors)
 
 

@@ -11,7 +11,7 @@ from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec, HealthCheck
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
 from cluster.validation.k8s import K8sResource
-from cluster.validation.kustomize import KustomizeFile
+from cluster.validation.kustomize import KustomizeBuildResult
 
 
 def _make_cluster(
@@ -22,11 +22,9 @@ def _make_cluster(
     health_check_kind: str | None = None,
 ) -> ParsedCluster:
     """Build a minimal ParsedCluster with one resource and optional healthCheck."""
-    resource_file = k8s_dir / "test-app" / "resource.yaml"
     kust_file = k8s_dir / "test-app" / "kustomization.yaml"
 
     return ParsedCluster(
-        kustomize_files={kust_file: KustomizeFile(path=kust_file, resources=[resource_file])},
         flux_kustomizations={
             "test-app": FluxKustomizationSpec(
                 path="./cluster/k8s/test-app",
@@ -35,19 +33,21 @@ def _make_cluster(
                 else [],
             )
         },
-        source_resources={resource_file: [K8sResource(kind=resource_kind, apiVersion=resource_api_version)]},
+        build_results=[
+            KustomizeBuildResult(
+                kustomization_path=kust_file,
+                resources=[K8sResource(kind=resource_kind, apiVersion=resource_api_version)],
+            )
+        ],
     )
 
 
 class TestControllerResourceHealthChecks:
     @pytest.fixture
-    def repo_root(self, tmp_path: Path) -> Path:
-        (tmp_path / "cluster" / "k8s").mkdir(parents=True)
-        return tmp_path
-
-    @pytest.fixture
-    def k8s_dir(self, repo_root: Path) -> Path:
-        return repo_root / "cluster" / "k8s"
+    def k8s_dir(self, tmp_path: Path) -> Path:
+        k8s_dir = tmp_path / "cluster" / "k8s"
+        k8s_dir.mkdir(parents=True)
+        return k8s_dir
 
     @pytest.mark.parametrize(
         ("resource_kind", "resource_api_version", "health_check_kind"),
@@ -57,7 +57,7 @@ class TestControllerResourceHealthChecks:
         ],
     )
     def test_no_error_with_matching_healthcheck(
-        self, k8s_dir: Path, repo_root: Path, resource_kind: str, resource_api_version: str, health_check_kind: str
+        self, k8s_dir: Path, resource_kind: str, resource_api_version: str, health_check_kind: str
     ) -> None:
         cluster = _make_cluster(
             k8s_dir,
@@ -65,23 +65,21 @@ class TestControllerResourceHealthChecks:
             resource_api_version=resource_api_version,
             health_check_kind=health_check_kind,
         )
-        assert check_controller_health_checks(cluster, repo_root) == []
+        assert check_controller_health_checks(cluster, k8s_dir) == []
 
     @pytest.mark.parametrize(
         ("resource_kind", "resource_api_version"),
         [("HelmRelease", "helm.toolkit.fluxcd.io/v2"), ("Terraform", "infra.contrib.fluxcd.io/v1alpha2")],
     )
-    def test_error_without_healthcheck(
-        self, k8s_dir: Path, repo_root: Path, resource_kind: str, resource_api_version: str
-    ) -> None:
+    def test_error_without_healthcheck(self, k8s_dir: Path, resource_kind: str, resource_api_version: str) -> None:
         cluster = _make_cluster(k8s_dir, resource_kind=resource_kind, resource_api_version=resource_api_version)
-        errors = check_controller_health_checks(cluster, repo_root)
+        errors = check_controller_health_checks(cluster, k8s_dir)
         assert len(errors) == 1
         assert resource_kind in errors[0]
 
-    def test_no_error_for_plain_resources(self, k8s_dir: Path, repo_root: Path) -> None:
+    def test_no_error_for_plain_resources(self, k8s_dir: Path) -> None:
         cluster = _make_cluster(k8s_dir, resource_kind="ConfigMap", resource_api_version="v1")
-        assert check_controller_health_checks(cluster, repo_root) == []
+        assert check_controller_health_checks(cluster, k8s_dir) == []
 
 
 class TestRetryPolicy:
@@ -89,7 +87,6 @@ class TestRetryPolicy:
         self, *, health_check_kind: str = "HelmRelease", retry_interval: str | None = None, wait: bool = False
     ) -> ParsedCluster:
         return ParsedCluster(
-            kustomize_files={},
             flux_kustomizations={
                 "test-app": FluxKustomizationSpec(
                     path="./cluster/k8s/test-app",
@@ -97,8 +94,7 @@ class TestRetryPolicy:
                     retry_interval=retry_interval,
                     wait=wait,
                 )
-            },
-            source_resources={},
+            }
         )
 
     def test_async_health_check_with_retry_interval_passes(self) -> None:

@@ -15,6 +15,8 @@ from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, pa
 # k8s_dir sits at this subpath within the repo.
 _K8S_SUBPATH = Path("cluster/k8s")
 
+_K8S_PREFIX = str(_K8S_SUBPATH) + "/"
+
 
 @dataclass
 class ParsedCluster:
@@ -37,6 +39,21 @@ class ParsedCluster:
             for dep in spec.depends_on:
                 g.add_edge(name, dep.name)
         self.graph = g
+
+    def flux_kust_resources(self, k8s_dir: Path) -> dict[str, list[K8sResource]]:
+        """Map flux kustomization name -> built resources from build_results."""
+        build_by_dir: dict[Path, list[K8sResource]] = {
+            r.kustomization_path.parent.resolve(): r.resources for r in self.build_results
+        }
+        result: dict[str, list[K8sResource]] = {}
+        for name, spec in self.flux_kustomizations.items():
+            path = spec.path.removeprefix("./")
+            if not path.startswith(_K8S_PREFIX):
+                continue
+            kust_dir = (k8s_dir / path[len(_K8S_PREFIX) :]).resolve()
+            if kust_dir in build_by_dir:
+                result[name] = build_by_dir[kust_dir]
+        return result
 
 
 def parse_cluster(k8s_dir: Path) -> ParsedCluster:

@@ -60,7 +60,6 @@ py_library(
     deps = [
         ":cluster",
         ":crd_layering",
-        ":flux",
         "@pypi//networkx",
         "@pypi//numpy",
         "@pypi//types_networkx",
@@ -71,11 +70,7 @@ py_library(
     name = "health_checks",
     srcs = ["health_checks.py"],
     imports = ["../.."],
-    deps = [
-        ":cluster",
-        ":k8s",
-        ":kustomize",
-    ],
+    deps = [":cluster"],
 )
 
 py_library(
@@ -160,6 +155,7 @@ py_test(
         ":dependencies",
         ":flux",
         ":k8s",
+        ":kustomize",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -199,13 +195,18 @@ py_test(
 py_test(
     name = "test_cluster_integration",
     srcs = ["test_cluster_integration.py"],
-    data = ["//cluster/k8s:cluster_yaml_files"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "@multitool//tools/kustomize",
+    ],
     imports = ["../.."],
     deps = [
         ":cluster",
         ":dependencies",
         ":health_checks",
+        ":kustomize",
         "//cluster/scripts/validate_cluster:checks",
+        "//cluster/scripts/validate_cluster:kustomize",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

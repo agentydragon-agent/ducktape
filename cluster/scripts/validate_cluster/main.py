@@ -69,8 +69,7 @@ async def main() -> int:
     parser.add_argument("--skip-dependencies", action="store_true", help="Skip dependency graph validation")
     args = parser.parse_args()
 
-    workspace = get_build_workspace_directory()
-    root = args.root or (workspace / _K8S_SUBPATH)
+    root = args.root or (get_build_workspace_directory() / _K8S_SUBPATH)
 
     # Parse all files once
     cluster = parse_cluster(root)
@@ -119,7 +118,7 @@ async def main() -> int:
         global_errors.extend(validate_dependencies(cluster, root))
 
     # Validate controller resource healthChecks (HelmRelease, Terraform)
-    global_errors.extend(check_controller_health_checks(cluster, workspace))
+    global_errors.extend(check_controller_health_checks(cluster, root))
 
     # Validate flux build
     if not args.skip_flux_build:

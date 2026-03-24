@@ -6,3 +6,12 @@ filegroup(
     ),
     visibility = ["//cluster:__subpackages__"],
 )
+
+filegroup(
+    name = "cluster_all_files",
+    srcs = glob(
+        ["**"],
+        exclude = ["flux-system/**"],
+    ),
+    visibility = ["//cluster:__subpackages__"],
+)

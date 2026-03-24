@@ -16,19 +16,21 @@ from cluster.validation.dependencies import (
 )
 from cluster.validation.flux import DependsOn, FluxKustomizationSpec
 from cluster.validation.k8s import K8sResource
+from cluster.validation.kustomize import KustomizeBuildResult
+
+
+def _build_result(k8s_dir: Path, subdir: str, resources: list[tuple[str, str]]) -> KustomizeBuildResult:
+    """Build a KustomizeBuildResult for a kustomization at k8s_dir/subdir/."""
+    return KustomizeBuildResult(
+        kustomization_path=k8s_dir / subdir / "kustomization.yaml",
+        resources=[K8sResource(kind=kind, apiVersion=api) for kind, api in resources],
+    )
 
 
 def _cluster(
-    flux_kustomizations: dict[str, FluxKustomizationSpec],
-    source_resources: dict[Path, list[tuple[str, str]]] | None = None,
+    flux_kustomizations: dict[str, FluxKustomizationSpec], build_results: list[KustomizeBuildResult] | None = None
 ) -> ParsedCluster:
-    return ParsedCluster(
-        flux_kustomizations=flux_kustomizations,
-        source_resources={
-            p: [K8sResource(kind=kind, apiVersion=api) for kind, api in rs]
-            for p, rs in (source_resources or {}).items()
-        },
-    )
+    return ParsedCluster(flux_kustomizations=flux_kustomizations, build_results=build_results or [])
 
 
 class TestDependencyGraph:
@@ -119,7 +121,7 @@ class TestValidateOperatorDependencies:
                 ),
                 "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
             },
-            {k8s_dir / "my-app" / "resource.yaml": [("MyCRD", "example.com/v1")]},
+            build_results=[_build_result(k8s_dir, "my-app", [("MyCRD", "example.com/v1")])],
         )
         assert validate_operator_dependencies(cluster, k8s_dir, {"MyCRD": "some-operator"}) == []
 
@@ -134,7 +136,7 @@ class TestValidateOperatorDependencies:
                 ),
                 "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
             },
-            {k8s_dir / "my-app" / "resource.yaml": [("MyCRD", "example.com/v1")]},
+            build_results=[_build_result(k8s_dir, "my-app", [("MyCRD", "example.com/v1")])],
         )
         errors = validate_operator_dependencies(cluster, k8s_dir, {"MyCRD": "some-operator"})
         assert errors == [], f"Unexpected errors for transitive dep: {errors}"
@@ -148,7 +150,7 @@ class TestValidateOperatorDependencies:
                 "some-operator": FluxKustomizationSpec(path="./cluster/k8s/some-operator"),
                 "unrelated": FluxKustomizationSpec(path="./cluster/k8s/unrelated"),
             },
-            {k8s_dir / "my-app" / "resource.yaml": [("MyCRD", "example.com/v1")]},
+            build_results=[_build_result(k8s_dir, "my-app", [("MyCRD", "example.com/v1")])],
         )
         errors = validate_operator_dependencies(cluster, k8s_dir, {"MyCRD": "some-operator"})
         assert any("my-app" in e and "some-operator" in e for e in errors)

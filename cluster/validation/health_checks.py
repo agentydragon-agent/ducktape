@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.k8s import K8sResource
-from cluster.validation.kustomize import KustomizeFile
 
 HEALTH_CHECK_REQUIRED_KINDS = ["HelmRelease", "Terraform"]
 
@@ -28,25 +26,16 @@ def _has_async_health_checks(cluster: ParsedCluster, name: str) -> bool:
     return any(hc.kind in _ASYNC_HEALTH_CHECK_KINDS for hc in spec.health_checks)
 
 
-def kust_deploys_kind(kind: str, kust: KustomizeFile, source_resources: dict[Path, list[K8sResource]]) -> bool:
-    return any(
-        resource.kind == kind
-        for resource_path in kust.resolved_resources
-        if resource_path in source_resources
-        for resource in source_resources[resource_path]
-    )
-
-
-def check_controller_health_checks(cluster: ParsedCluster, workspace: Path) -> list[str]:
+def check_controller_health_checks(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
+    """Check that flux kustomizations deploying controller resources have health checks."""
+    flux_resources = cluster.flux_kust_resources(k8s_dir)
     return [
         f"{name}: deploys a {kind} but has no healthChecks for it. "
         f"Add healthChecks with kind: {kind} to {spec.path}/flux-kustomization.yaml."
         for name, spec in cluster.flux_kustomizations.items()
-        if spec.path
-        if (kust_dir := (workspace / spec.path.removeprefix("./")))
-        if (kust := cluster.kustomize_files.get(kust_dir / "kustomization.yaml"))
+        if name in flux_resources
         for kind in HEALTH_CHECK_REQUIRED_KINDS
-        if kust_deploys_kind(kind, kust, cluster.source_resources)
+        if any(r.kind == kind for r in flux_resources[name])
         if not any(hc.kind == kind for hc in spec.health_checks)
     ]
 
