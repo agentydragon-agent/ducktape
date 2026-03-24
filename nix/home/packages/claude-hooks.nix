@@ -41,8 +41,9 @@ pkgs.python3Packages.buildPythonApplication {
     # injection, or left to the environment (home.nix) instead of propagated here.
     ++ [ pkgs.pre-commit ];
 
-  # Disable checks - wheel is tested in CI
+  # Wheel is already tested in CI via Bazel.
   doCheck = false;
+  dontUsePytestCheck = true;
 
   meta = {
     description = "Claude Code session hooks (statusline, session-start, auth proxy)";

@@ -31,8 +31,8 @@ pkgs.python3Packages.buildPythonApplication {
     pygobject3
   ];
 
-  # Disable checks - wheel is tested in CI
   doCheck = false;
+  dontUsePytestCheck = true;
 
   meta = {
     description = "GNOME Terminal theme follower";

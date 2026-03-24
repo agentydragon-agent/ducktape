@@ -56,8 +56,8 @@ pkgs.python3Packages.buildPythonApplication {
     compact-json
   ];
 
-  # Disable checks - wheel is tested in CI
   doCheck = false;
+  dontUsePytestCheck = true;
 
   meta = {
     description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
