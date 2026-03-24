@@ -21,6 +21,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: attic
+          # TODO: Pin to a versioned tag once attic publishes semver releases.
           image: ghcr.io/zhaofengli/attic:latest
           imagePullPolicy: Always
           securityContext:
