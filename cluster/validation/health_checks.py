@@ -31,7 +31,7 @@ def _has_async_health_checks(cluster: ParsedCluster, name: str) -> bool:
 def kust_deploys_kind(kind: str, kust: KustomizeFile, source_resources: dict[Path, list[K8sResource]]) -> bool:
     return any(
         resource.kind == kind
-        for resource_path in kust.resources
+        for resource_path in kust.resolved_resources
         if resource_path in source_resources
         for resource in source_resources[resource_path]
     )

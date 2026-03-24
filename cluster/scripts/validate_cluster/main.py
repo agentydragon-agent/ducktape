@@ -13,6 +13,7 @@ Checks:
    must have healthChecks for them
 8. Helm template rendering: Cilium values files render without errors
 9. Blueprint completeness: All authentik blueprint files must be listed in configMapGenerator
+10. Goldilocks explicit decision: Namespaces with workloads must explicitly set goldilocks enabled label
 
 See AGENTS.md section "Flux Kustomization Layering" for CRD layering details.
 
@@ -31,6 +32,7 @@ from cluster.scripts.validate_cluster.checks import (
     check_blueprint_completeness,
     check_crd_layering,
     check_duplicate_external_secrets,
+    check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
     find_orphaned_files,
 )
@@ -108,6 +110,9 @@ async def main() -> int:
 
     # Check goldilocks namespace labels
     global_errors.extend(check_goldilocks_namespace_labels(cluster))
+
+    # Check goldilocks explicit decision on workload namespaces
+    global_errors.extend(check_goldilocks_explicit_decision(cluster))
 
     # Validate dependencies
     if not args.skip_dependencies:

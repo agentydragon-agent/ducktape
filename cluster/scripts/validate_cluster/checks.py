@@ -19,10 +19,8 @@ def find_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> list[str]:
     # Build set of all referenced files
     referenced: set[Path] = set()
     for kust in cluster.kustomize_files.values():
-        referenced.update(kust.resources)
-        referenced.update(kust.patches)
-        # If resource is a directory, also mark its kustomization.yaml
-        for resource in kust.resources:
+        referenced.update(kust.all_referenced_files)
+        for resource in kust.resolved_resources:
             if resource.is_dir():
                 referenced.add(resource / "kustomization.yaml")
 
@@ -84,6 +82,41 @@ def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:
                     f"{file_path}: namespace '{resource.name}' has goldilocks.fairwinds.com/vpa-update-mode "
                     f'but is missing goldilocks.fairwinds.com/enabled="true"'
                 )
+    return errors
+
+
+_WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet"}
+_GOLDILOCKS_ENABLED_LABEL = "goldilocks.fairwinds.com/enabled"
+
+
+def check_goldilocks_explicit_decision(cluster: ParsedCluster) -> list[str]:
+    """Every namespace with workloads must explicitly set goldilocks enabled label."""
+    errors = []
+
+    workload_namespaces: set[str] = set()
+    for result in cluster.build_results:
+        for resource in result.resources:
+            if resource.kind in _WORKLOAD_KINDS and resource.namespace:
+                workload_namespaces.add(resource.namespace)
+    for resources in cluster.source_resources.values():
+        for resource in resources:
+            if resource.kind in _WORKLOAD_KINDS and resource.namespace:
+                workload_namespaces.add(resource.namespace)
+
+    namespace_goldilocks: dict[str, str | None] = {}
+    for resources in cluster.source_resources.values():
+        for resource in resources:
+            if resource.kind == "Namespace":
+                namespace_goldilocks[resource.name] = resource.metadata.labels.get(_GOLDILOCKS_ENABLED_LABEL)
+
+    for ns in sorted(workload_namespaces):
+        if ns not in namespace_goldilocks:
+            continue
+        if namespace_goldilocks[ns] is None:
+            errors.append(
+                f"Namespace '{ns}' has workloads but is missing explicit "
+                f'{_GOLDILOCKS_ENABLED_LABEL} label (set to "true" or "false")'
+            )
     return errors
 
 

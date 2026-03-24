@@ -17,7 +17,11 @@ import pytest
 import pytest_bazel
 import yaml
 
-from cluster.scripts.validate_cluster.checks import check_goldilocks_namespace_labels
+from cluster.scripts.validate_cluster.checks import (
+    check_goldilocks_explicit_decision,
+    check_goldilocks_namespace_labels,
+    find_orphaned_files,
+)
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
@@ -57,23 +61,10 @@ def test_retry_policy(cluster: ParsedCluster) -> None:
     check_retry_policy(cluster)
 
 
-@pytest.mark.xfail(reason="Pre-existing orphaned files (config.yaml referenced via configMapGenerator, not resources)")
 def test_no_orphaned_files(cluster: ParsedCluster, k8s_dir: Path) -> None:
     """All YAML files must be referenced by a kustomization.yaml."""
-    referenced: set[Path] = set()
-    for kust in cluster.kustomize_files.values():
-        referenced.update(kust.resources)
-        referenced.update(kust.patches)
-        for resource in kust.resources:
-            if resource.is_dir():
-                referenced.add(resource / "kustomization.yaml")
-
-    orphaned = sorted(
-        yaml_file.relative_to(k8s_dir)
-        for yaml_file in cluster.all_yaml_files
-        if yaml_file.name != "kustomization.yaml" and yaml_file not in referenced
-    )
-    assert not orphaned, "Orphaned files not referenced by any kustomization:\n" + "\n".join(f"  {f}" for f in orphaned)
+    errors = find_orphaned_files(cluster, k8s_dir)
+    assert not errors, "\n".join(errors)
 
 
 def test_no_unwired_flux_kustomizations(cluster: ParsedCluster, k8s_dir: Path) -> None:
@@ -81,7 +72,7 @@ def test_no_unwired_flux_kustomizations(cluster: ParsedCluster, k8s_dir: Path) -
     on_disk = {f.resolve() for f in k8s_dir.rglob("flux-kustomization.yaml") if "flux-system" not in f.parts}
 
     root_kust = cluster.kustomize_files[k8s_dir / "kustomization.yaml"]
-    referenced = {r for r in root_kust.resources if r.name == "flux-kustomization.yaml"}
+    referenced = {r for r in root_kust.resolved_resources if r.name == "flux-kustomization.yaml"}
 
     unwired = sorted(f.relative_to(k8s_dir) for f in on_disk - referenced)
     assert not unwired, "flux-kustomization.yaml files not listed in root kustomization.yaml:\n" + "\n".join(
@@ -95,13 +86,16 @@ def test_goldilocks_namespace_labels(cluster: ParsedCluster) -> None:
     assert not errors, "\n".join(errors)
 
 
+def test_goldilocks_explicit_decision(cluster: ParsedCluster) -> None:
+    """Namespaces with workloads must explicitly set goldilocks enabled label."""
+    errors = check_goldilocks_explicit_decision(cluster)
+    assert not errors, "\n".join(errors)
+
+
 def test_blueprint_completeness(k8s_dir: Path) -> None:
     """All authentik blueprint YAML files must be listed in configMapGenerator."""
     authentik_kust = k8s_dir / "authentik" / "app" / "kustomization.yaml"
     blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
-
-    if not authentik_kust.exists() or not blueprints_dir.exists():
-        pytest.skip("Authentik kustomization or blueprints dir not found")
 
     with authentik_kust.open() as f:
         doc = yaml.safe_load(f)

@@ -5,17 +5,63 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
 
 from cluster.validation.k8s import K8sResource
 
 
-class KustomizeFile(BaseModel):
-    """Parsed kustomization.yaml file."""
+class _CamelCaseModel(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
-    path: Path
-    resources: list[Path] = []  # Resolved absolute paths
-    patches: list[Path] = []  # Resolved absolute paths
+
+class GeneratorOptions(_CamelCaseModel):
+    disable_name_suffix_hash: bool = False
+
+
+class ConfigMapGeneratorEntry(_CamelCaseModel):
+    name: str
+    namespace: str = ""
+    files: list[Path] = []
+    options: GeneratorOptions = Field(default_factory=GeneratorOptions)
+
+
+class PatchEntry(_CamelCaseModel):
+    path: Path | None = None
+
+
+class KustomizeFile(_CamelCaseModel):
+    """Parsed kustomization.yaml — Pydantic coerces YAML string paths to Path objects."""
+
+    path: Path = Field(description="Absolute path to the kustomization.yaml file itself (injected by parser)")
+    namespace: str = ""
+    resources: list[Path] = []
+    patches: list[PatchEntry] = []
+    config_map_generator: list[ConfigMapGeneratorEntry] = []
+    generator_options: GeneratorOptions = Field(default_factory=GeneratorOptions)
+
+    def _resolve(self, rel: Path) -> Path:
+        return (self.path.parent / rel).resolve()
+
+    @property
+    def resolved_resources(self) -> list[Path]:
+        return [self._resolve(r) for r in self.resources]
+
+    @property
+    def resolved_patches(self) -> list[Path]:
+        return [self._resolve(p.path) for p in self.patches if p.path]
+
+    @property
+    def resolved_generator_files(self) -> list[Path]:
+        return [self._resolve(f) for entry in self.config_map_generator for f in entry.files]
+
+    @property
+    def all_referenced_files(self) -> set[Path]:
+        result: set[Path] = set()
+        result.update(self.resolved_resources)
+        result.update(self.resolved_patches)
+        result.update(self.resolved_generator_files)
+        return result
 
 
 class KustomizeBuildResult(BaseModel):
@@ -32,24 +78,10 @@ def parse_kustomize_file(kust_file: Path) -> KustomizeFile | None:
         if not doc:
             return None
 
-        resources: list[Path] = []
-        patches: list[Path] = []
+    if "patchesStrategicMerge" in doc:
+        raise ValueError(
+            f"{kust_file}: uses deprecated 'patchesStrategicMerge'. "
+            "Convert to 'patches' format (list of {{path: ...}} objects)."
+        )
 
-        # Parse resources:
-        for resource in doc.get("resources", []):
-            resource_path = (kust_file.parent / resource).resolve()
-            resources.append(resource_path)
-
-        # Parse patches: (new format with path key)
-        for patch in doc.get("patches", []):
-            if isinstance(patch, dict) and "path" in patch:
-                patch_path = (kust_file.parent / patch["path"]).resolve()
-                patches.append(patch_path)
-
-        if "patchesStrategicMerge" in doc:
-            raise ValueError(
-                f"{kust_file}: uses deprecated 'patchesStrategicMerge'. "
-                "Convert to 'patches' format (list of {{path: ...}} objects)."
-            )
-
-        return KustomizeFile(path=kust_file, resources=resources, patches=patches)
+    return KustomizeFile.model_validate(doc | {"path": kust_file})
