@@ -36,7 +36,7 @@ spec:
           topology.kubernetes.io/region: proxmox
         containers:
           - name: runner
-            image: ghcr.io/actions/runner:latest
+            image: ghcr.io/actions/actions-runner:latest
             resources:
               requests:
                 memory: 8Gi
