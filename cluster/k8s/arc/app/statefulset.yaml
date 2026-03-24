@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: github-runner
+  namespace: arc-runners
+spec:
+  serviceName: github-runner
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-runner
+  template:
+    metadata:
+      labels:
+        app: github-runner
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: runner
+          image: ghcr.io/actions/actions-runner:latest
+          command: ["/bin/bash", "/scripts/startup.sh"]
+          resources:
+            requests:
+              memory: 8Gi
+              cpu: "2"
+            limits:
+              memory: 8Gi
+              cpu: "8"
+          env:
+            - name: RUNNER_ALLOW_RUNASROOT
+              value: "1"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: github-app
+              mountPath: /etc/github-app
+              readOnly: true
+            - name: work
+              mountPath: /home/runner/_work
+            - name: bazel-cache
+              mountPath: /home/runner/.cache/bazel
+      volumes:
+        - name: scripts
+          configMap:
+            name: runner-startup
+            defaultMode: 0755
+        - name: github-app
+          secret:
+            secretName: github-app
+        - name: work
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: bazel-cache
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 50Gi

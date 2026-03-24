@@ -14,4 +14,3 @@ spec:
   dependsOn:
     - name: arc-namespace
     - name: arc-secrets
-    - name: gateway
