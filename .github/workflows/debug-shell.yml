@@ -28,7 +28,7 @@ jobs:
         if: always()
         run: |
           START=$SECONDS
-          bazel test -k //... 2>&1 | tee /tmp/test.log
+          bazel test -k //... --test_tag_filters=-live_openai_api 2>&1 | tee /tmp/test.log
           echo "elapsed=$((SECONDS - START))" >> "$GITHUB_OUTPUT"
 
       - name: Write results
