@@ -51,8 +51,9 @@ actions:
         --build_metadata=TAGS=check
         //...
 
-  # Separate action for manual/release builds that build wheels
-  - name: "Build Wheels"
+  # Release action: test, build all artifacts, upload to GitHub Releases, dispatch GHA nix-pin.
+  # Only triggers on push to main/devel (not PRs).
+  - name: "Release"
     triggers:
       push:
         branches:
@@ -60,18 +61,60 @@ actions:
           - devel
       workflow_dispatch: {}
 
-    # Same as CI action - BuildBuddy Workflows doesn't support custom images
     container_image: "ubuntu-24.04"
     resource_requests:
       disk: "50GB"
 
-    bazel_commands:
-      # Build all wheel targets for potential release
-      # These are built but not published (GitHub Actions handles publishing)
-      # Note: gterm_theme:wheel excluded (requires system deps: libdbus-1-dev, libgirepository1.0-dev)
-      - >
-        build --config=rbe
-        //:wheel
+    env:
+      GH_TOKEN: $GH_RELEASE_PAT
+
+    steps:
+      - run: |
+          bazel test --keep_going --config=rbe \
+            --build_metadata=ROLE=ci \
+            --test_tag_filters=-live_openai_api \
+            --test_env=CI=true \
+            //...
+      - run: |
+          sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
+          bazel build --config=rbe --remote_download_toplevel \
+            //:wheel \
+            //:claude_hooks_wheel \
+            //gterm_theme:wheel \
+            //skills:all_skills_tar \
+            //devinfra/buildbuddy_cli:bbapi
+      - run: |
+          mkdir -p dist
+          cp bazel-bin/claude_hooks-*.whl dist/
+          cp bazel-bin/ducktape-*.whl dist/
+          cp bazel-bin/gterm_theme/gterm_theme-*.whl dist/
+          cp bazel-bin/skills/all_skills_tar.tar dist/skills.tar
+          cp bazel-bin/devinfra/buildbuddy_cli/bbapi_/bbapi dist/
+
+          upload_latest() {
+            local tag="$1" title="$2" body="$3"; shift 3
+            gh release create "$tag" --title "$title" --notes "$body" \
+              --latest=false "$@" 2>/dev/null \
+            || gh release upload "$tag" "$@" --clobber
+          }
+          upload_latest claude-hooks-latest \
+            "claude-hooks (latest)" "claude-hooks wheel for Claude Code integration." \
+            dist/claude_hooks-*.whl
+          upload_latest ducktape-latest \
+            "ducktape (latest)" "ducktape wheel containing CLI tools." \
+            dist/ducktape-*.whl
+          upload_latest gterm-theme-latest \
+            "gterm-theme (latest)" "gterm-theme wheel (GNOME Terminal theme follower)." \
+            dist/gterm_theme-*.whl
+          upload_latest skills-latest \
+            "skills (latest)" "Skills tarball for AI agent deployment." \
+            dist/skills.tar
+          upload_latest bbapi-latest \
+            "bbapi (latest)" "bbapi — BuildBuddy API CLI (Linux x86_64)." \
+            dist/bbapi
+
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+          gh workflow run release.yml --ref "$BRANCH"
 
   # Build container images (OCI images built with Bazel)
   - name: "Build Container Images"

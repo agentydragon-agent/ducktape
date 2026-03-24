@@ -73,6 +73,7 @@ class ExtraJobStep(BaseModel):
     run: str | None = None
     if_cond: str | None = Field(None, alias="if")
     with_args: dict[str, str] | None = Field(None, alias="with")
+    env: dict[str, str] | None = None
 
     model_config = {"populate_by_name": True}
 

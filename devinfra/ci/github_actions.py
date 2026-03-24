@@ -80,6 +80,7 @@ class Step(BaseModel):
     run: str | None = None
     if_cond: str | None = Field(None, alias="if", serialization_alias="if")
     with_args: dict[str, Any] | None = Field(None, alias="with", serialization_alias="with")
+    env: dict[str, str] | None = None
 
     model_config = {"populate_by_name": True}
 

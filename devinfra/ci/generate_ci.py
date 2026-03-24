@@ -307,7 +307,15 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
             extra_steps: list[Step] = []
             for s in extra_config.steps:
                 extra_steps.append(
-                    Step(name=s.name, id=s.id, uses=s.uses, run=s.run, if_cond=s.if_cond, with_args=s.with_args)
+                    Step(
+                        name=s.name,
+                        id=s.id,
+                        uses=s.uses,
+                        run=s.run,
+                        if_cond=s.if_cond,
+                        with_args=s.with_args,
+                        env=s.env,
+                    )
                 )
             jobs[extra_name] = Job(
                 name=extra_name,
