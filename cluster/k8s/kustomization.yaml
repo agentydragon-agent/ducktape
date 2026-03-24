@@ -26,16 +26,31 @@ resources:
   - node-feature-discovery/flux-kustomization.yaml
   - nvidia-device-plugin/flux-kustomization.yaml
   - hubble-ui/flux-kustomization.yaml
-  - airlock/flux-kustomization.yaml
-  - google-workspace-mcp/flux-kustomization.yaml
   - dns-automation/flux-kustomization.yaml
-
-  # --- agent infrastructure (standalone) ---
-  - agent-shared-rbac/flux-kustomization.yaml
-  - agent-shared-secrets/flux-kustomization.yaml
-  - claude-rbac/flux-kustomization.yaml
-  - claude-sandbox-secrets/flux-kustomization.yaml
   - kube-api-proxy/flux-kustomization.yaml
+
+  # --- agents ---
+  - agents/shared-rbac/flux-kustomization.yaml
+  - agents/shared-secrets/flux-kustomization.yaml
+  - agents/claude-rbac/flux-kustomization.yaml
+  - agents/claude-sandbox-secrets/flux-kustomization.yaml
+  - agents/airlock/flux-kustomization.yaml
+  - agents/google-workspace-mcp/flux-kustomization.yaml
+  - agents/tana-mcp/namespace/flux-kustomization.yaml
+  - agents/tana-mcp/app/flux-kustomization.yaml
+  - agents/kagent/namespace/flux-kustomization.yaml
+  - agents/kagent/secrets/flux-kustomization.yaml
+  - agents/kagent/app/flux-kustomization.yaml
+  - agents/homeassistant-proxy/namespace/flux-kustomization.yaml
+  - agents/homeassistant-proxy/app/flux-kustomization.yaml
+  - agents/openclaw/operator/flux-kustomization.yaml
+  - agents/openclaw/gateway-namespace/flux-kustomization.yaml
+  - agents/openclaw/mitmproxy-namespace/flux-kustomization.yaml
+  - agents/openclaw/mitmproxy/flux-kustomization.yaml
+  - agents/openclaw/gateway-secrets/flux-kustomization.yaml
+  - agents/openclaw/gateway/flux-kustomization.yaml
+  - agents/openclaw/sandbox/flux-kustomization.yaml
+  - agents/openclaw/sandbox-secrets/flux-kustomization.yaml
 
   # --- kyverno ---
   - kyverno/app/flux-kustomization.yaml
@@ -163,16 +178,6 @@ resources:
   - tofu-state/db/flux-kustomization.yaml
   - tofu-state/backup/flux-kustomization.yaml
 
-  # --- openclaw ---
-  - openclaw/operator/flux-kustomization.yaml
-  - openclaw/gateway-namespace/flux-kustomization.yaml
-  - openclaw/mitmproxy-namespace/flux-kustomization.yaml
-  - openclaw/mitmproxy/flux-kustomization.yaml
-  - openclaw/gateway-secrets/flux-kustomization.yaml
-  - openclaw/gateway/flux-kustomization.yaml
-  - openclaw/sandbox/flux-kustomization.yaml
-  - openclaw/sandbox-secrets/flux-kustomization.yaml
-
   # --- gatus ---
   - gatus/namespace/flux-kustomization.yaml
   - gatus/secrets/flux-kustomization.yaml
@@ -192,11 +197,6 @@ resources:
   - headlamp/namespace/flux-kustomization.yaml
   - headlamp/app/flux-kustomization.yaml
 
-  # --- kagent ---
-  - kagent/namespace/flux-kustomization.yaml
-  - kagent/secrets/flux-kustomization.yaml
-  - kagent/app/flux-kustomization.yaml
-
   # --- scanner ---
   - scanner/namespace/flux-kustomization.yaml
   - scanner/app/flux-kustomization.yaml
@@ -212,14 +212,6 @@ resources:
   # --- proxmox-proxy ---
   - proxmox-proxy/namespace/flux-kustomization.yaml
   - proxmox-proxy/app/flux-kustomization.yaml
-
-  # --- homeassistant-proxy ---
-  - homeassistant-proxy/namespace/flux-kustomization.yaml
-  - homeassistant-proxy/app/flux-kustomization.yaml
-
-  # --- tana-mcp ---
-  - tana-mcp/namespace/flux-kustomization.yaml
-  - tana-mcp/app/flux-kustomization.yaml
 
   # --- user-agentydragon ---
   - user-agentydragon/namespace/flux-kustomization.yaml

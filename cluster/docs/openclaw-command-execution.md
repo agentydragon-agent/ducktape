@@ -360,5 +360,5 @@ Node identity and connection details persist in `~/.openclaw/node.json`.
 - [OpenClaw Node CLI Reference](https://docs.openclaw.ai/cli/node)
 - [OpenClaw Remote Gateway Access](https://docs.openclaw.ai/gateway/remote)
 - [OpenClaw K8s Operator](https://github.com/OpenClaw-rocks/k8s-operator)
-- Our instance config: <../k8s/openclaw/openclawinstance.yaml>
-- Sandbox RBAC: <../k8s/openclaw-sandbox/role-sandbox.yaml>
+- Our instance config: <../k8s/agents/openclaw/gateway/openclawinstance.yaml>
+- Sandbox RBAC: <../k8s/agents/openclaw/sandbox/role-sandbox.yaml>
