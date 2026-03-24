@@ -303,7 +303,7 @@
             bbapi-binary = artifacts.bbapi;
           };
           # Skills data: $out/share/claude-hooks/skills/ — deployed to ~/.claude/skills/.
-          # Pushed to attic by CI; web_setup.sh installs via nix build and copies files.
+          # Bundled into web-session; home-manager uses this via skills.nix module.
           skills = pkgs.runCommand "claude-hooks-skills" { } ''
             mkdir -p $out/share/claude-hooks/skills
             cp -r ${artifacts.skills}/. $out/share/claude-hooks/skills/
@@ -316,6 +316,7 @@
             paths = [
               claude-hooks
               bbapi
+              skills
               pkgs.gh
             ];
           };
