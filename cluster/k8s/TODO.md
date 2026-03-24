@@ -30,12 +30,6 @@ Explicit `securityContext` on Deployments is defense-in-depth. Low urgency.
 Missing securityContext: litellm, ollama, scanner (samba), devbot, grocy,
 proxmox-proxy, tana-mcp, openclaw/mitmproxy, props, activitywatch, atuin.
 
-## Inconsistent namespace placement
-
-14+ standalone directories inline `namespace.yaml` instead of using the
-`namespace/` subdirectory pattern. Not worth fixing unless the service
-gains siblings that need grouping.
-
 ## `ghcr.io/servercontainers/samba:latest`
 
 No semver tags published. Keep `:latest` until upstream adopts versioned releases.

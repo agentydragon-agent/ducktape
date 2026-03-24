@@ -148,10 +148,17 @@ cluster/
 ├── shell.nix, .envrc      # direnv (KUBECONFIG, TALOSCONFIG, CLI tools)
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
-│   ├── main/                  # Single TF root (PG backend, all resources)
-│   └── gitops/                # tofu-controller managed (DNS, SSO, secrets)
-├── k8s/                       # Flux-managed manifests (apps, services, config)
-└── flux-system/               # Flux controllers (auto-generated)
+│   ├── main/               # Single TF root (PG backend, all resources)
+│   └── gitops/             # tofu-controller managed (DNS, SSO, secrets)
+├── k8s/                    # Flux-managed manifests
+│   ├── agents/             # Agent infra (openclaw, airlock, claude-rbac, tana-mcp, ...)
+│   ├── authentik/          # SSO (app, blueprints, db, secrets, proxy-routes, ...)
+│   ├── monitoring/         # Observability (stack, loki, alloy, tempo, ...)
+│   ├── harbor/             # Registry (app, secrets, ci, webhook, ...)
+│   ├── <service>/          # Grouped: subdirs per flux-kustomization (namespace, secrets, app, db)
+│   ├── <service>/          # Flat: single flux-kustomization, all manifests at root
+│   └── flux-system/        # Flux controllers (auto-generated)
+└── validation/             # Structural validation tests
 ```
 
 ## Let's Encrypt Rate Limits

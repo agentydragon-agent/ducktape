@@ -147,7 +147,7 @@ All in `terraform/main/`:
 
 Add `metadata.annotations.description` to any resource where name + namespace doesn't
 make the purpose obvious. Skip for obvious cases (sole deployment under a named
-kustomization, SSO client secrets under `authentik-blueprint/`).
+kustomization, SSO client secrets under `authentik/blueprints/`).
 
 ## Troubleshooting
 
@@ -171,13 +171,33 @@ to the old path (old `ImageRepository` still finds tags).
 
 **Never mix HelmReleases with CRD instances in the same Kustomization.**
 
-Layer 1 (CRD operators) -> Layer 2 (`{app}-secrets/` with ESO) -> Layer 3 (`{app}/` with
+Layer 1 (CRD operators) -> Layer 2 (secrets with ESO) -> Layer 3 (app with
 HelmRelease). Each layer's `flux-kustomization.yaml` has `dependsOn` on previous.
 Violations detected by pre-commit (`validate_kustomizations.py`).
 
+### k8s/ Directory Structure
+
+**Flat** (single flux-kustomization): all manifests including `namespace.yaml`
+live directly in the service directory. Example: `scanner/`, `gateway/`.
+
+**Grouped** (multiple flux-kustomizations): subdirectories for each layer.
+Example: `langfuse/{namespace,secrets,db,app}/`. A separate `namespace/`
+subdir is needed only when multiple sibling kustomizations depend on the
+namespace existing first.
+
+**Agent infrastructure** lives under `agents/` (openclaw, airlock, claude-rbac,
+tana-mcp, etc.).
+
 ### When Adding New Applications
 
-1. Create `{app}-secrets/` for ESO resources (`dependsOn: external-secrets-operator`)
-2. Create `{app}/` for HelmRelease only (`dependsOn: {app}-secrets`)
-3. Add cert-manager issuer toggle only if the app's own manifests reference
+**Simple service** (one flux-kustomization): create `k8s/{app}/` with all
+manifests flat (namespace.yaml, deployment.yaml, service.yaml, etc.) and one
+`flux-kustomization.yaml`.
+
+**Service with secrets or database** (multiple flux-kustomizations):
+
+1. Create `k8s/{app}/namespace/` with `namespace.yaml` + `flux-kustomization.yaml`
+2. Create `k8s/{app}/secrets/` for ESO resources (`dependsOn: {app}-namespace, external-secrets-config`)
+3. Create `k8s/{app}/app/` for workload (`dependsOn: {app}-namespace, {app}-secrets`)
+4. Add cert-manager issuer toggle only if the app's own manifests reference
    `${LETSENCRYPT_ISSUER}` (not needed when TLS is handled by the gateway)
