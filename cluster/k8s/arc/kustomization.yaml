@@ -7,12 +7,4 @@ resources:
   - runners.yaml
   - webhook-httproute.yaml
   - webhook-networkpolicy.yaml
-  # github-app-sealed.yaml: add here after sealing (required for runners to register).
-  # See cluster/docs/secrets.md for sealing instructions:
-  #   kubectl create secret generic github-app \
-  #     --namespace arc-runners \
-  #     --from-literal=github_app_id=<APP_ID> \
-  #     --from-literal=github_app_installation_id=<INSTALL_ID> \
-  #     --from-literal=github_app_private_key="$(cat key.pem)" \
-  #     --dry-run=client -o yaml \
-  #   | ./scripts/seal-secret.sh /dev/stdin cluster/k8s/arc/github-app-sealed.yaml
+  - github-app-sealed.yaml
