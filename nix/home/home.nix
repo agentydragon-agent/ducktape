@@ -365,6 +365,7 @@ in
 
       ansible
       ast-grep
+      attic-client
       awscli2
       bazelisk
       # bazelisk is the real binary; this wrapper makes it available as "bazel" too.

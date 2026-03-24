@@ -38,6 +38,9 @@
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
+  # Attic cache push token
+  sops.secrets.attic_token.sopsFile = ../../../../secrets/rugged-attic.yaml;
+
   # K8s worker (Nebula mesh) — credentials via sops-nix
   sops.secrets.nebula_ca_cert.sopsFile = ../../../../secrets/k8s-worker.yaml;
   sops.secrets.k8s_ca_cert.sopsFile = ../../../../secrets/k8s-worker.yaml;
