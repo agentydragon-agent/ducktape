@@ -76,7 +76,7 @@ actions:
             --test_env=CI=true \
             //...
       - run: |
-          sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
+          sudo apt-get update -qq && sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
           bazel build --config=rbe --remote_download_toplevel \
             //:wheel \
             //:claude_hooks_wheel \
