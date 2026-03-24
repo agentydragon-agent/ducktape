@@ -65,9 +65,6 @@ actions:
     resource_requests:
       disk: "50GB"
 
-    env:
-      GH_TOKEN: $GH_RELEASE_PAT
-
     steps:
       - run: |
           bazel test --keep_going --config=rbe \
@@ -91,6 +88,7 @@ actions:
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/gh.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
           sudo apt-get update -qq && sudo apt-get install -y gh
       - run: |
+          export GH_TOKEN="$GH_RELEASE_PAT"
           mkdir -p dist
           cp bazel-bin/claude_hooks-*.whl dist/
           cp bazel-bin/ducktape-*.whl dist/
