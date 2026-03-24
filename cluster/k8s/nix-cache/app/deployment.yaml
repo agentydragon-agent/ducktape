@@ -17,6 +17,19 @@ spec:
       labels:
         app.kubernetes.io/name: attic
     spec:
+      # CLEANUP(2026-03-23): Remove affinity once containerd 2.2.3+ (with
+      # PR #12732 fix) ships in NixOS. NixOS nodes (wyrm2, rugged) run
+      # containerd 2.2.x compiled with Go 1.24 which rejects NixOS images'
+      # absolute /etc/passwd symlink. Talos nodes have containerd 2.1.6.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: feature.node.kubernetes.io/system-os_release.ID
+                    operator: NotIn
+                    values:
+                      - nixos
       securityContext:
         fsGroup: 1000
       containers:
@@ -24,12 +37,10 @@ spec:
           # TODO: Pin to a versioned tag once attic publishes semver releases.
           image: ghcr.io/zhaofengli/attic:latest
           imagePullPolicy: Always
-          # runAsUser/runAsGroup removed: containerd UserFromFS reads
-          # /etc/passwd via os.DirFS which rejects NixOS absolute symlinks
-          # on Go 1.24+ (containerd #12683, fix not in v2.2.2).
-          # Attic image runs as uid 0 by default; fsGroup 1000 on pod
-          # securityContext still applies to volume ownership.
           securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
             allowPrivilegeEscalation: false
             capabilities:
               drop:
