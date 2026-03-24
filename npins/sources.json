@@ -2,28 +2,28 @@
   "pins": {
     "bbapi": {
       "fetch": "file",
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-latest/bbapi",
-      "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-4476fe7/bbapi",
+      "hash": "sha256-pnRxTMUjqkPlE96u1srJaJXT3tgSSb6Vh6X0hY30EFM="
     },
     "claude-hooks": {
       "fetch": "file",
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-latest/claude_hooks-0.1.0-py3-none-any.whl",
-      "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-4476fe7/claude_hooks-0.1.0-py3-none-any.whl",
+      "hash": "sha256-ORlmUiSPlj8ooH92xdJAAwGd4BIimSD0cLBNlw5ZUR0="
     },
     "ducktape": {
       "fetch": "file",
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-latest/ducktape-0.1.0-py3-none-any.whl",
-      "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-4476fe7/ducktape-0.1.0-py3-none-any.whl",
+      "hash": "sha256-htheP5FTHLQyR+UZsM85TF4yBAr9DNANq9YnCOmtxeU="
     },
     "gterm-theme": {
       "fetch": "file",
-      "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-latest/gterm_theme-0.1.0-py3-none-any.whl",
-      "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/gterm-theme-4476fe7/gterm_theme-0.1.0-py3-none-any.whl",
+      "hash": "sha256-Bg6ZLAWoqnD7d/gKGhybzQ7E5CShdegeHq6ymTkadEA="
     },
     "skills": {
       "fetch": "unpack",
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-latest/skills.tar",
-      "hash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-4476fe7/skills.tar",
+      "hash": "sha256-04+dpBYF0u+WOWPAuFgpgER37LRDFnKJDWujWQXCHV4="
     }
   }
 }
