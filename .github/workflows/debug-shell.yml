@@ -6,7 +6,7 @@ on:
 jobs:
   bench:
     name: Benchmark
-    runs-on: ubuntu-latest
+    runs-on: ducktape-runners
     timeout-minutes: 180
     steps:
       - name: Check out code

@@ -210,5 +210,6 @@ resources:
   - user-agentydragon/flux-kustomization.yaml
 
   # --- standalone applications ---
+  - arc/flux-kustomization.yaml
   - buildbuddy-executor/flux-kustomization.yaml
   - website/flux-kustomization.yaml
