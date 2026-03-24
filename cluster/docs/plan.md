@@ -164,19 +164,21 @@ cluster — tofu-controller creates the DNS record, Flux deploys the proxy.
 
 All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
 PG backend (CNPG `tofu-state-db`, schema `main`, 2 replicas on VPS `local-path`). Backup
-CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every 6 hours. Access via
-`kubectl port-forward` + `PG_CONN_STR` env var (set by `cluster/.envrc`).
+CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every 6 hours.
 
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
 resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies
 (`-target`) instead of separate directories. Single `proxmox` provider using
 `PROXMOX_VE_API_TOKEN` env var (`root@pam`).
 
+**Access**: From k8s workers (wyrm2, rugged), `.envrc` auto-detects ClusterIP and connects
+directly — no port-forward. From non-workers, fall back to `kubectl port-forward`.
+
 **Future**:
 
-- Eliminate port-forward requirement: add Hetzner firewall rule for port 5432, then
-  expose via Gateway API TCPRoute. Needs DNS record (no wildcard for TCP) and
-  `--source=gateway-tcproute` in external-dns (or manual record).
+- [ ] Eliminate port-forward for non-workers. Cilium Gateway API does not support TCPRoute
+      ([cilium#21929](https://github.com/cilium/cilium/issues/21929)). Options when available:
+      TCPRoute + NodePort, or dedicated nginx TCP proxy (like `kube-api-proxy` pattern).
 
 ### GitHub Webhook Reconciliation
 
