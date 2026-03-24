@@ -15,14 +15,12 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 
 FLAKE="github:agentydragon/ducktape"
 
-echo "Installing Nix..."
-curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon
-# shellcheck disable=SC1091
-. ~/.nix-profile/etc/profile.d/nix.sh
-
-echo "Configuring Nix for gVisor (no local builds, attic cache)..."
+# Configure Nix BEFORE installation — the installer runs `nix-env -i` internally,
+# which fails if build-users-group is set to the default 'nixbld' (group doesn't
+# exist in Claude Code web containers).
+echo "Pre-configuring Nix for gVisor (no local builds, attic cache)..."
 mkdir -p ~/.config/nix
-cat >>~/.config/nix/nix.conf <<'EOF'
+cat >~/.config/nix/nix.conf <<'EOF'
 build-users-group =
 experimental-features = nix-command flakes
 sandbox = false
@@ -31,6 +29,11 @@ system-features =
 substituters = https://cache.nixos.org https://cache.allegedly.works/main
 trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA=
 EOF
+
+echo "Installing Nix..."
+curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon
+# shellcheck disable=SC1091
+. ~/.nix-profile/etc/profile.d/nix.sh
 
 echo "Installing web session tools (attic cache hit)..."
 nix profile install "${FLAKE}#web-session"
