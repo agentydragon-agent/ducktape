@@ -59,10 +59,6 @@ The zstd snapshot and binary cache approaches were prototyped but discarded in f
 official installer: the installer requires no hosted artifact, and ~21s is acceptable for a
 one-time web session setup. The main cost is disk I/O (unpacking), not network (~1s download).
 
-The runtime closure (`claude-hooks-cache.tar.zst`) is still shipped as a release artifact
-and imported via `nix copy --from file://...` — this is what's slow to _build_, not to
-import. The installer just provides `nix` itself.
-
 ## Nix Profile Location
 
 ```

@@ -435,7 +435,6 @@ in
       claude-hooks # Claude Code hooks/statusline
       bbapi # BuildBuddy API CLI
       gterm-theme # GNOME Terminal theme follower
-      bbapi # BuildBuddy API CLI
     ]
     ++ lib.optionals enableKube [
       kubectl
