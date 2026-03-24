@@ -169,7 +169,7 @@ actions:
           # Authenticate crane to Harbor registry.
           # oci_push reads ~/.docker/config.json for credentials.
           mkdir -p ~/.docker
-          AUTH=$(echo -n "${HARBOR_ROBOT_USERNAME}:${HARBOR_ROBOT_TOKEN}" | base64)
+          AUTH=$(echo -n "${HARBOR_ROBOT_USERNAME}:${HARBOR_ROBOT_TOKEN}" | base64 -w0)
           cat > ~/.docker/config.json <<ENDJSON
           {"auths":{"registry.allegedly.works":{"auth":"${AUTH}"}}}
           ENDJSON
