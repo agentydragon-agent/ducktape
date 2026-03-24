@@ -104,7 +104,7 @@ jobs:
           path: ~/.cache/pre-commit
           # lockfile.json: nixfmt binary is cached under ~/.cache/pre-commit/nixfmt-bin
           # by devinfra/precommit/run_nixfmt.sh; bust cache when version changes.
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', 'devinfra/multitool/lockfile.json') }}
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', 'devinfra/lockfile.json') }}
           restore-keys: |
             pre-commit-${{ runner.os }}-
 

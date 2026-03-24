@@ -107,7 +107,7 @@ finance/worthy/worthy/graph.js
 # JSON config/example files
 agent_cli/example.mcp.json
 devinfra/claude/web_env/diff-report.json
-devinfra/multitool/lockfile.json
+devinfra/lockfile.json
 
 # Props docker compose (infra config, not Bazelized)
 props/compose.yaml

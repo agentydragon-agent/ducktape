@@ -10,6 +10,8 @@ load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//devinfra:filter_wheels.bzl", "filter_system_packages")
 load(":build_info.bzl", "build_info")
 
+exports_files(["lockfile.json"])
+
 # Copy workspace status file for Python to parse at runtime
 # Stamping is enabled globally in .bazelrc
 build_info(

@@ -25,7 +25,7 @@ Run `bazel run //devinfra/orphans:find_orphans` to list orphaned files. The chec
 ### Lower Priority
 
 - **Package consolidation**: Small experimental packages could move into `hack/` monolith. Keep packages separate when they have different deployment targets or dependency sets.
-- **Ruff version alignment**: 0.14.0 in `devinfra/multitool/lockfile.json` vs 0.14.6 in `.pre-commit-config.yaml`.
+- **Ruff version alignment**: 0.14.0 in `devinfra/lockfile.json` vs 0.14.6 in `.pre-commit-config.yaml`.
 - **Remove `check-ast` pre-commit hook**: Redundant with `bazel build`.
 
 ### Intentionally Not Bazelized
@@ -71,7 +71,7 @@ bazel run //devinfra/lint:buildifier       # Format BUILD files
 | yamllint     | `.yamllint.yaml`               | `bazel test //ansible:yamllint_test`            |
 | nixfmt       | N/A                            | Pre-commit hook only                            |
 
-Ruff uses a custom `rules_multitool` lockfile (`devinfra/multitool/lockfile.json`) to override the older version bundled in `aspect_rules_lint`. Mypy uses `rules_mypy` v0.40.0 with `follow_imports = silent` and `ignore_missing_imports = True`.
+Ruff uses a custom `rules_multitool` lockfile (`devinfra/lockfile.json`) to override the older version bundled in `aspect_rules_lint`. Mypy uses `rules_mypy` v0.40.0 with `follow_imports = silent` and `ignore_missing_imports = True`.
 
 ### Hook Lifecycle
 

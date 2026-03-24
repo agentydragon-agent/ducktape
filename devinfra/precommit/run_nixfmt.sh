@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Pre-commit hook wrapper for nixfmt using a static binary from GitHub releases.
 # Downloads the binary on first use and caches it in the pre-commit environment.
-# Version and checksum are read from devinfra/multitool/lockfile.json.
+# Version and checksum are read from devinfra/lockfile.json.
 # TODO: Support non-Linux platforms (macOS/aarch64) — currently only ships linux-x86_64.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOCKFILE="${SCRIPT_DIR}/../multitool/lockfile.json"
+LOCKFILE="${SCRIPT_DIR}/../lockfile.json"
 
 NIXFMT_URL="$(jq -r '.nixfmt.binaries[] | select(.os == "linux" and .cpu == "x86_64") | .url' "$LOCKFILE")"
 NIXFMT_SHA256="$(jq -r '.nixfmt.binaries[] | select(.os == "linux" and .cpu == "x86_64") | .sha256' "$LOCKFILE")"
