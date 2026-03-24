@@ -36,11 +36,11 @@ resources:
   - agents/claude-sandbox-secrets/flux-kustomization.yaml
   - agents/airlock/flux-kustomization.yaml
   - agents/google-workspace-mcp/flux-kustomization.yaml
-  - agents/tana-mcp/app/flux-kustomization.yaml
+  - agents/tana-mcp/flux-kustomization.yaml
   - agents/kagent/namespace/flux-kustomization.yaml
   - agents/kagent/secrets/flux-kustomization.yaml
   - agents/kagent/app/flux-kustomization.yaml
-  - agents/homeassistant-proxy/app/flux-kustomization.yaml
+  - agents/homeassistant-proxy/flux-kustomization.yaml
   - agents/openclaw/operator/flux-kustomization.yaml
   - agents/openclaw/gateway-namespace/flux-kustomization.yaml
   - agents/openclaw/mitmproxy-namespace/flux-kustomization.yaml
@@ -71,7 +71,7 @@ resources:
   - cert-manager/environment/flux-kustomization.yaml
 
   # --- gateway ---
-  - gateway/app/flux-kustomization.yaml
+  - gateway/flux-kustomization.yaml
 
   # --- monitoring ---
   - monitoring/namespace/flux-kustomization.yaml
@@ -195,19 +195,19 @@ resources:
   - headlamp/app/flux-kustomization.yaml
 
   # --- scanner ---
-  - scanner/app/flux-kustomization.yaml
+  - scanner/flux-kustomization.yaml
 
   # --- activitywatch ---
-  - activitywatch/app/flux-kustomization.yaml
+  - activitywatch/flux-kustomization.yaml
 
   # --- grocy ---
-  - grocy/app/flux-kustomization.yaml
+  - grocy/flux-kustomization.yaml
 
   # --- proxmox-proxy ---
-  - proxmox-proxy/app/flux-kustomization.yaml
+  - proxmox-proxy/flux-kustomization.yaml
 
   # --- user-agentydragon ---
-  - user-agentydragon/app/flux-kustomization.yaml
+  - user-agentydragon/flux-kustomization.yaml
 
   # --- standalone applications ---
   - buildbuddy-executor/flux-kustomization.yaml

@@ -10,7 +10,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./cluster/k8s/agents/homeassistant-proxy/app
+  path: ./cluster/k8s/agents/homeassistant-proxy
   prune: true
   wait: true
   healthChecks:

@@ -1,7 +1,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: activitywatch
+  name: scanner
   namespace: flux-system
 spec:
   retryInterval: 1m
@@ -10,10 +10,9 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
-  path: ./cluster/k8s/activitywatch/app
+  path: ./cluster/k8s/scanner
   prune: true
   wait: true
   dependsOn:
-    - name: harbor-pull-secret
     - name: proxmox-csi
-    - name: harbor # Image hosted on registry.allegedly.works
+    - name: sealed-secrets
