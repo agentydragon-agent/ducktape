@@ -37,12 +37,9 @@ workflows:
     events: [push]
     secrets: inherit
 
-  # Single workflow that builds and pushes all Bazel-built Harbor images.
-  # The list of images is defined in harbor_images below.
-  bazel-harbor-images:
-    trigger: { kind: always }
-    events: [push]
-    secrets: inherit
+  # Harbor images are now pushed via BuildBuddy Workflows (buildbuddy.yaml
+  # "Push Harbor Images" action) using oci_push targets. The GHA workflow
+  # bazel-harbor-images.yml has been removed.
 
   openclaw-image:
     trigger: { kind: path, pattern: "^(openclaw/|airlock/openclaw/)" }
@@ -65,8 +62,8 @@ workflows:
 # See .github/workflows/release.yml for the single build-and-push job.
 
 # List of Bazel-built images pushed to Harbor (registry.allegedly.works).
-# The bazel-harbor-images workflow (generated from this config) builds and
-# pushes all images in a single job, sharing Bazel setup and registry login.
+# Pushed via BuildBuddy Workflows (buildbuddy.yaml "Push Harbor Images" action)
+# using oci_push targets (crane-based, no Docker daemon).
 harbor_images:
   - bazel_target: //cluster/k8s/inventree/token-provisioner:load
     local_tag: inventree-token-provisioner:latest

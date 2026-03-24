@@ -14,7 +14,7 @@ from pathlib import Path
 import yaml
 
 from devinfra.ci.github_actions import Job, Step, Workflow
-from devinfra.ci.models import HarborImageConfig, ReleaseConfig, WorkflowConfig, WorkflowManifest
+from devinfra.ci.models import ReleaseConfig, WorkflowConfig, WorkflowManifest
 from devinfra.prettier import prettier_format_in_place
 from util.bazel.workspace import BazelLabel, get_build_workspace_directory
 
@@ -535,76 +535,6 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
     )
 
 
-HARBOR_REGISTRY = "registry.allegedly.works"
-
-
-def generate_harbor_images_config(images: list[HarborImageConfig]) -> Workflow:
-    """Generate the bazel-harbor-images.yml workflow.
-
-    Produces a single workflow that checks out, sets up Bazel, logs in to
-    Harbor once, then builds and pushes each image in sequence.
-    """
-    steps: list[Step] = [
-        Step(uses="actions/checkout@v6"),
-        Step(
-            uses="./.github/actions/setup-bazel",
-            with_args={
-                "buildbuddy_api_key": "${{ secrets.BUILDBUDDY_API_KEY }}",
-                "rbe_image": "${{ inputs.rbe_image }}",
-            },
-        ),
-        Step(
-            name="Login to Harbor",
-            uses="docker/login-action@v3",
-            with_args={
-                "registry": HARBOR_REGISTRY,
-                "username": "${{ secrets.HARBOR_ROBOT_USERNAME }}",
-                "password": "${{ secrets.HARBOR_ROBOT_TOKEN }}",
-            },
-        ),
-    ]
-    for img in images:
-        image_name = img.local_tag.split(":")[0]
-        steps.append(
-            Step(
-                name=f"Build and push {image_name}",
-                run=(
-                    f".github/scripts/harbor_push.sh \\\n"
-                    f"  {img.bazel_target} \\\n"
-                    f"  {img.local_tag} \\\n"
-                    f"  {HARBOR_REGISTRY}/{img.remote_path}"
-                ),
-            )
-        )
-
-    job = Job(name="Build and Push", runs_on="ubuntu-latest", timeout_minutes=60, steps=steps)
-
-    return Workflow(
-        name="Bazel Harbor Images",
-        on={
-            "workflow_dispatch": None,
-            "workflow_call": {
-                "inputs": {
-                    "rbe_image": {
-                        "description": "Override RBE container image (optional)",
-                        "required": False,
-                        "type": "string",
-                        "default": "",
-                    }
-                },
-                "secrets": {
-                    "BUILDBUDDY_API_KEY": {"required": False},
-                    "HARBOR_ROBOT_USERNAME": {"required": True},
-                    "HARBOR_ROBOT_TOKEN": {"required": True},
-                },
-            },
-        },
-        concurrency={"group": "bazel-harbor-images-${{ github.ref }}", "cancel-in-progress": True},
-        permissions={"contents": "read"},
-        jobs={"build-and-push": job},
-    )
-
-
 def write_workflow(path: Path, workflow: Workflow) -> None:
     """Write a workflow file and run prettier to match pre-commit formatting."""
     path.write_text(generate_ci_yml(workflow))
@@ -618,7 +548,6 @@ def main() -> None:
 
     out_dir = get_build_workspace_directory() / ".github" / "workflows"
     write_workflow(out_dir / "ci.yml", generate_ci_config(manifest))
-    write_workflow(out_dir / "bazel-harbor-images.yml", generate_harbor_images_config(manifest.harbor_images))
     if manifest.releases:
         write_workflow(out_dir / "release.yml", generate_consolidated_release(manifest.releases))
 

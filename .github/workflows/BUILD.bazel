@@ -1,7 +1,6 @@
 # Generated CI workflow files — exported for test_generate_ci_check
 exports_files(
     [
-        "bazel-harbor-images.yml",
         "ci.yml",
         "release.yml",
     ],

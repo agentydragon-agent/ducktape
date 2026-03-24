@@ -148,8 +148,9 @@ actions:
             --field short_sha="$SHORT_SHA" \
             --field "changed=${changed[*]}"
 
-  # Build container images (OCI images built with Bazel)
-  - name: "Build Container Images"
+  # Push Harbor container images (OCI images built with Bazel).
+  # Uses oci_push (crane-based, no Docker daemon needed).
+  - name: "Push Harbor Images"
     triggers:
       push:
         branches:
@@ -157,15 +158,46 @@ actions:
           - devel
       workflow_dispatch: {}
 
-    # Same as CI action - BuildBuddy Workflows doesn't support custom images
     container_image: "ubuntu-24.04"
     resource_requests:
       disk: "50GB"
 
-    bazel_commands:
-      # Build OCI images for potential release
-      # These are built but not pushed to GHCR (GitHub Actions handles pushing)
-      - >
-        build --config=rbe
-        //props/backend:image
-        //x/agent_server:image
+    steps:
+      - run: |
+          # Authenticate crane to Harbor registry.
+          # oci_push reads ~/.docker/config.json for credentials.
+          mkdir -p ~/.docker
+          AUTH=$(echo -n "${HARBOR_ROBOT_USERNAME}:${HARBOR_ROBOT_TOKEN}" | base64)
+          cat > ~/.docker/config.json <<ENDJSON
+          {"auths":{"registry.allegedly.works":{"auth":"${AUTH}"}}}
+          ENDJSON
+      - run: |
+          # Build all push targets with RBE to maximize cache sharing.
+          bazel build --config=rbe \
+            //cluster/k8s/inventree/token-provisioner:push \
+            //props/backend:push \
+            //airlock:push \
+            //airlock/auth_proxy:push \
+            //mcp_infra/exec:direct_push \
+            //openclaw/exec:push \
+            //homeassistant/proxy:push \
+            //inventree_utils/rai_plugin:push \
+            //tana/token_broker:push \
+            //third_party/activitywatch:push
+      - run: |
+          # Push images sequentially. bazel run executes crane push.
+          set -e
+          for target in \
+            //cluster/k8s/inventree/token-provisioner:push \
+            //props/backend:push \
+            //airlock:push \
+            //airlock/auth_proxy:push \
+            //mcp_infra/exec:direct_push \
+            //openclaw/exec:push \
+            //homeassistant/proxy:push \
+            //inventree_utils/rai_plugin:push \
+            //tana/token_broker:push \
+            //third_party/activitywatch:push; do
+            echo "Pushing $target"
+            bazel run --remote_download_toplevel "$target"
+          done

@@ -43,15 +43,6 @@ jobs:
     with:
       rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
     secrets: inherit
-  bazel-harbor-images:
-    needs:
-      - compute-targets
-      - rbe-image
-    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-harbor-images')
-    uses: ./.github/workflows/bazel-harbor-images.yml
-    with:
-      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
-    secrets: inherit
   openclaw-image:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-image')

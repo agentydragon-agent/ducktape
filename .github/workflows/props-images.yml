@@ -1,6 +1,6 @@
 # Build and push all props agent images to the props registry.
 #
-# The props backend image is now pushed via bazel-harbor-images.yml.
+# The props backend image is now pushed via BuildBuddy Workflows (buildbuddy.yaml).
 #
 # Triggers:
 #   - workflow_call (from ci.yml)

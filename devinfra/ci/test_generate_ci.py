@@ -9,7 +9,6 @@ from devinfra.ci.generate_ci import (
     Workflow,
     generate_ci_config,
     generate_consolidated_release,
-    generate_harbor_images_config,
 )
 from devinfra.ci.models import WorkflowManifest
 
@@ -32,13 +31,6 @@ def test_ci_yml_up_to_date() -> None:
     expected = generate_ci_config(manifest)
     ci_yml = WORKFLOWS_DIR / "ci.yml"
     check_workflow(ci_yml, expected)
-
-
-def test_harbor_images_yml_up_to_date() -> None:
-    manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
-    expected = generate_harbor_images_config(manifest.harbor_images)
-    path = WORKFLOWS_DIR / "bazel-harbor-images.yml"
-    check_workflow(path, expected)
 
 
 def test_release_yml_up_to_date() -> None:
