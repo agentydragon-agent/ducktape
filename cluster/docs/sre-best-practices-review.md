@@ -23,35 +23,20 @@ priority.
 
 ---
 
-## 2. Terraform State: Single Point of Failure
+## 2. Terraform State: ~~Single Point of Failure~~ — Resolved
 
-**Risk**: Medium (partially mitigated)
+**Risk**: Low (mitigated)
 
-`nixos-dev-env` state migrated to `pg` backend (CNPG `tofu-state-db`, 2 replicas on
-VPS `local-path`). Backup CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every
-6 hours. Access via `kubectl port-forward`.
+All TF roots consolidated into a single root at `cluster/terraform/main/` with PG backend
+(CNPG `tofu-state-db`, schema `main`, 2 replicas on VPS `local-path`). Backup CronJob
+writes `pg_dump` to `proxmox-csi-retain` PVC every 6 hours. Persistent-auth resources have
+`lifecycle { prevent_destroy = true }` in the merged root.
 
-`persistent-auth/terraform.tfstate` remains local-only, no backup. This file is the SSOT
-for the sealed-secrets keypair, Proxmox CSI tokens, Nix signing key, and Flux deploy key.
-Losing it means:
-
-- All SealedSecrets in git become undecryptable (5 sealed secrets)
-- CSI storage tokens desynchronize with Proxmox
-- Full secret re-generation and git commit churn required
-
-### Recommendation
-
-Migrate `persistent-auth` state to a remote backend (S3 with encryption + versioning,
-or rclone to encrypted cloud as minimum viable). The `pg` backend used by `nixos-dev-env`
-is not suitable for `persistent-auth` since it bootstraps the cluster the pg backend
-lives in.
-
-OpenTofu now supports [native state encryption](https://opentofu.org/docs/language/state/encryption/)
-— encrypt at rest without relying on the storage layer. This is an OpenTofu-exclusive
-feature not available in Terraform.
-
-**Note**: The infrastructure and flux layers are ephemeral (destroyed per bootstrap
-cycle), so remote state matters less for them. `persistent-auth` is the critical one.
+**Remaining consideration**: The PG backend lives in the cluster that the state bootstraps.
+If the cluster is completely lost and the PG backup PVC is also lost, state would need to be
+reconstructed. The backup CronJob mitigates this for normal operations. For catastrophic
+recovery, consider additional off-cluster backup (rclone to encrypted cloud, S3 with
+OpenTofu [native state encryption](https://opentofu.org/docs/language/state/encryption/)).
 
 ---
 
@@ -65,7 +50,7 @@ cycle), so remote state matters less for them. `persistent-auth` is the critical
 | Data                                 | Current Backup  | Risk                                |
 | ------------------------------------ | --------------- | ----------------------------------- |
 | etcd (cluster state)                 | None            | Full cluster loss on 2/3 CP failure |
-| Terraform state (persistent-auth)    | None            | Secret re-generation                |
+| Terraform state (persistent-auth)    | PG + pg_dump    | PG backup CronJob every 6h          |
 | PVCs (Harbor, Gitea, Loki, Postgres) | None            | Data loss                           |
 | Git repo                             | GitHub + GitLab | Adequate                            |
 
@@ -366,10 +351,10 @@ For the current scale (62 modules, single operator), the pragmatic path is:
 
 ### P0 — Do Now (Blocking/Urgent)
 
-| #   | Item                                                | Risk                      | Effort   |
-| --- | --------------------------------------------------- | ------------------------- | -------- |
-| 1   | ~~**Migrate off ingress-nginx**~~ (DONE 2026-02-16) | ~~Service disruption~~    | ~~Done~~ |
-| 2   | **Back up persistent-auth tofu state**              | Unrecoverable secret loss | Small    |
+| #   | Item                                                                             | Risk                          | Effort   |
+| --- | -------------------------------------------------------------------------------- | ----------------------------- | -------- |
+| 1   | ~~**Migrate off ingress-nginx**~~ (DONE 2026-02-16)                              | ~~Service disruption~~        | ~~Done~~ |
+| 2   | ~~**Back up persistent-auth tofu state**~~ (DONE — PG backend + pg_dump CronJob) | ~~Unrecoverable secret loss~~ | ~~Done~~ |
 
 ### P1 — Do Soon (High Value)
 

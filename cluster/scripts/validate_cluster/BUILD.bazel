@@ -78,7 +78,7 @@ py_library(
 py_binary(
     name = "validate_cluster",
     data = [
-        "//cluster/terraform/bootstrap/infrastructure:cilium-values.yaml",
+        "//cluster/terraform/main:cilium-values.yaml",
         "@multitool//tools/flux",
         "@multitool//tools/helm",
         "@multitool//tools/kustomize",

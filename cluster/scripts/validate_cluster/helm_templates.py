@@ -10,7 +10,7 @@ from pathlib import Path
 
 from util.bazel.runfiles import get_required_path
 
-_CILIUM_VALUES_RLOCATIONS = ["_main/cluster/terraform/bootstrap/infrastructure/cilium-values.yaml"]
+_CILIUM_VALUES_RLOCATIONS = ["_main/cluster/terraform/main/cilium-values.yaml"]
 
 
 def _helm_bin() -> Path:

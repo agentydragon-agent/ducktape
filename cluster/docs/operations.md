@@ -20,7 +20,7 @@ kubeseal --fetch-cert
 ### Controller Node
 
 ```bash
-cd /home/agentydragon/code/ducktape/cluster/terraform/bootstrap/infrastructure
+cd /home/agentydragon/code/ducktape/cluster/terraform/main
 
 # Add new node to the `proxmox_nodes` or `hetzner_nodes` locals map
 # Apply changes

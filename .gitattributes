@@ -29,7 +29,7 @@ devinfra/claude/web_env/reference/** rules-lint-ignored=true
 devinfra/claude/web_env/live-dpkg-versions.txt rules-lint-ignored=true
 
 # Terraform/k8s - kebab-case is conventional in HCL and k8s manifests
-# TODO: Consider renaming cluster/terraform/01-infrastructure/ and terraform/nixos-dev-env/
+# kebab-case filenames are conventional in HCL and k8s manifests
 cluster/** filename-conventions-ignored=true
 terraform/** filename-conventions-ignored=true
 

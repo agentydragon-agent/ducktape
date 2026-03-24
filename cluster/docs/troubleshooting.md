@@ -211,8 +211,8 @@ full procedure.
 **Fix**:
 
 ```bash
-cd terraform/bootstrap/persistent-auth && tofu apply
-git add ../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
+cd terraform/main && tofu apply
+git add ../../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
 ```
 
 **Offline validation** (no cluster needed):
@@ -260,7 +260,7 @@ kubectl get secret proxmox-csi-plugin -n csi-proxmox -o jsonpath='{.data.config\
 kubectl logs deployment/proxmox-csi-plugin-controller -n csi-proxmox
 ```
 
-If SealedSecret decryption fails, regenerate with `tofu output` from `persistent-auth` and
+If SealedSecret decryption fails, regenerate with `tofu output` from `terraform/main` and
 re-seal. Check `tofu state show 'proxmox_virtual_environment_user_token.persistent["csi"]'`.
 
 ### DNS & cert-manager
@@ -296,7 +296,7 @@ Grafana also has Loki as a datasource for interactive log exploration.
 
 ```bash
 # Verify signing key
-cd terraform/bootstrap/persistent-auth && tofu output nix_signing_public_key && cd -
+cd terraform/main && tofu output nix_signing_public_key && cd -
 
 # In-cluster connectivity
 kubectl run -it --rm debug --image=curlimages/curl:latest --restart=Never -- \

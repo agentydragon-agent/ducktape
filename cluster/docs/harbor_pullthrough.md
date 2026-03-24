@@ -5,7 +5,7 @@ avoiding rate limits and speeding up image pulls.
 
 ## How It Works
 
-1. **Talos registry mirrors** in `terraform/bootstrap/infrastructure/talos.tf` redirect containerd
+1. **Talos registry mirrors** in `terraform/main/talos.tf` redirect containerd
    image pulls through Harbor proxy cache projects, with upstream as fallback.
 2. **Harbor proxy cache projects** (public, anonymous pull) are created by tofu-controller
    via `terraform/gitops/harbor-proxy-cache/`. Each project maps to an upstream registry endpoint.

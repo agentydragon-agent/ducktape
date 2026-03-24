@@ -162,23 +162,21 @@ cluster — tofu-controller creates the DNS record, Flux deploys the proxy.
 
 ### OpenTofu State Backend
 
-`nixos-dev-env` state migrated to `pg` backend (CNPG `tofu-state-db` in k8s, 2 replicas
-on VPS `local-path`). Backup CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every
-6 hours. Access via `kubectl port-forward` + `PG_CONN_STR` env var.
+All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
+PG backend (CNPG `tofu-state-db`, schema `main`, 2 replicas on VPS `local-path`). Backup
+CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every 6 hours. Access via
+`kubectl port-forward` + `PG_CONN_STR` env var (set by `cluster/.envrc`).
+
+Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
+resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies
+(`-target`) instead of separate directories. Single `proxmox` provider using
+`PROXMOX_VE_API_TOKEN` env var (`root@pam`).
 
 **Future**:
 
-- Consider migrating `bootstrap/infrastructure` and `bootstrap/flux` state to
-  the same pg backend. Low priority — these are ephemeral (destroyed and recreated by
-  `bazel run //cluster:bootstrap`). If `terraform/` is consolidated into `cluster/`, all
-  non-persistent-auth state could share the pg backend.
 - Eliminate port-forward requirement: add Hetzner firewall rule for port 5432, then
   expose via Gateway API TCPRoute. Needs DNS record (no wildcard for TCP) and
   `--source=gateway-tcproute` in external-dns (or manual record).
-
-`persistent-auth/terraform.tfstate` must stay local — it's the root of trust that
-bootstraps the cluster. Minimum: rclone to encrypted cloud. Better: S3 backend with
-OpenTofu state encryption + versioning.
 
 ### GitHub Webhook Reconciliation
 

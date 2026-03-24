@@ -2,23 +2,24 @@
 
 ## TL;DR
 
-- **SSOT**: OpenTofu state in `terraform/bootstrap/persistent-auth/terraform.tfstate` (local, gitignored)
+- **SSOT**: OpenTofu state in PG backend (CNPG `tofu-state-db`, schema `main`)
 - **Bootstrap secrets**: SealedSecrets (encrypted in git, decrypted by controller using stable keypair)
 - **Runtime secrets**: External Secrets Operator reading from Vault
-- **Keypair flow**: tofu state → infrastructure deploys to cluster → controller uses it
+- **Keypair flow**: tofu state → apply deploys to cluster → controller uses it
 
 ## Architecture Overview
 
 ### Three-Layer Model
 
-**Layer 0 — Persistent Auth** (`terraform/bootstrap/persistent-auth/`)
+**Layer 0 — Persistent Auth** (`terraform/main/persistent-auth.tf`)
 
 - Sealed secrets keypair (RSA 4096, 10-year validity)
 - Proxmox API tokens (CSI, OpenTofu)
 - Nebula mesh PKI (CA cert + per-node certs/keys)
 - Nix cache signing key, Flux deploy key
-- Storage: local `terraform.tfstate` (gitignored)
-- Note: Talos machine secrets are in Layer 1 (ephemeral — fresh `cluster.id` per lifecycle)
+- Storage: PG backend (CNPG `tofu-state-db`, schema `main`)
+- Resources have `lifecycle { prevent_destroy = true }`
+- Note: Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle)
 
 ↓
 
@@ -41,24 +42,23 @@
 
 ### Bootstrap Flow (tofu apply)
 
-1. `persistent-auth` generates/uses keypair from tofu state
-2. `persistent-auth` uses bpg/proxmox provider to manage Proxmox users, roles, and API
-   tokens (authenticated via `root@pam!tofu` token from GNOME keyring / direnv)
-3. `persistent-auth` runs `kubeseal` to create SealedSecrets (writes to k8s/\*.yaml)
+1. Targeted apply creates/uses keypair from tofu state (PG backend)
+2. `proxmox` provider manages Proxmox users, roles, and API tokens
+   (authenticated via `PROXMOX_VE_API_TOKEN` env var, `root@pam`)
+3. `kubeseal` creates SealedSecrets (writes to k8s/\*.yaml)
 4. User commits SealedSecrets to git manually
-5. `infrastructure` reads keypair via `terraform_remote_state`
-6. `infrastructure` deploys keypair as `kubernetes_secret` to cluster
-7. Flux deploys SealedSecrets from git
-8. Controller decrypts using deployed keypair → creates regular Secrets
+5. Full apply deploys keypair as `kubernetes_secret` to cluster (direct references, same root)
+6. Flux deploys SealedSecrets from git
+7. Controller decrypts using deployed keypair → creates regular Secrets
 
 ### Keypair Locations
 
-| Location                                                | Purpose                                    |
-| ------------------------------------------------------- | ------------------------------------------ |
-| `terraform/bootstrap/persistent-auth/terraform.tfstate` | SSOT (gitignored)                          |
-| `k8s/sealed-secrets/sealed-secrets-cert.pem`            | Public cert committed to repo (TF-managed) |
-| `kube-system/sealed-secrets-key`                        | Full keypair deployed to cluster           |
-| Git SealedSecrets                                       | Encrypted with public cert                 |
+| Location                                     | Purpose                                    |
+| -------------------------------------------- | ------------------------------------------ |
+| PG backend (`tofu-state-db`, schema `main`)  | SSOT (tofu state)                          |
+| `k8s/sealed-secrets/sealed-secrets-cert.pem` | Public cert committed to repo (TF-managed) |
+| `kube-system/sealed-secrets-key`             | Full keypair deployed to cluster           |
+| Git SealedSecrets                            | Encrypted with public cert                 |
 
 The public certificate at `k8s/sealed-secrets/sealed-secrets-cert.pem` is managed by a
 `local_file` resource in `persistent-auth` terraform. It contains only the public half
@@ -82,7 +82,7 @@ existing ones). `seal-secret.sh` reads this file directly.
 
 **Cause**: SealedSecret in git was sealed with a different keypair than what's in tofu state
 
-**Fix**: Re-run `tofu apply` in `bootstrap/persistent-auth` to re-seal with correct keypair
+**Fix**: Re-run `tofu apply` in `terraform/main` to re-seal with correct keypair
 
 ### OpenTofu State Lost
 
@@ -90,8 +90,8 @@ existing ones). `seal-secret.sh` reads this file directly.
 
 **Prevention**:
 
-- Backup terraform.tfstate to secure location
-- Never delete persistent-auth state unless intentional full reset
+- PG backend with backup CronJob (`pg_dump` every 6 hours to `proxmox-csi-retain` PVC)
+- Never drop the `main` schema in `tofu-state-db` unless intentional full reset
 
 ## Validation
 
@@ -120,16 +120,11 @@ bazel run //cluster/scripts/validate_cluster:validate_sealed_secrets
 
 ## Keypair Verification
 
-Compare serial numbers (all three should match):
+Compare serial numbers (committed cert and cluster should match):
 
 ```bash
 # Committed cert:
 openssl x509 -noout -serial < k8s/sealed-secrets/sealed-secrets-cert.pem
-
-# OpenTofu state:
-cat terraform/bootstrap/persistent-auth/terraform.tfstate | \
-  jq -r '.resources[] | select(.type == "tls_self_signed_cert") | .instances[0].attributes.cert_pem' | \
-  openssl x509 -noout -serial
 
 # Cluster:
 kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.crt}' | \
@@ -141,7 +136,7 @@ kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.cr
 If keypair mismatch occurs:
 
 ```bash
-cd terraform/bootstrap/persistent-auth && tofu apply
+cd terraform/main && tofu apply
 git add k8s/proxmox-csi/proxmox-csi-sealed.yaml
 git commit -m "chore: re-seal secrets with current keypair"
 git push

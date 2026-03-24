@@ -11,13 +11,13 @@ documentation. Fetch it with WebFetch to discover available doc pages.
 
 "Bootstrap/tear down/recreate the cluster" means:
 
-- **Default scope**: `tofu destroy` in `terraform/bootstrap/infrastructure/` then `bazel run //cluster:bootstrap`
-- **Excluded by default**: `terraform/bootstrap/persistent-auth/` (keypairs, CSI tokens, signing keys)
-- Only destroy persistent-auth when user explicitly says "including persistent auth" or "from scratch"
+- **Default scope**: `bazel run //cluster:bootstrap` (single TF root at `terraform/main/`, uses targeted applies)
+- **Persistent-auth resources** (keypairs, CSI tokens, signing keys) have `lifecycle { prevent_destroy = true }` in the merged root and are preserved across bootstrap cycles
+- Only destroy persistent-auth resources when user explicitly says "including persistent auth" or "from scratch" (requires removing `prevent_destroy` lifecycle rules first)
 
 ## CRITICAL: Persistent Auth Protection
 
-**NEVER destroy `bootstrap/persistent-auth` without explicit user authorization.**
+**NEVER remove `prevent_destroy` lifecycle rules on persistent-auth resources without explicit user authorization.**
 
 ## CRITICAL: Commit Before Reconcile
 
@@ -42,9 +42,9 @@ or Proxmox-pinned nodes. See <docs/plan.md> "VPS-Only Resilience Invariants".
 **Goal**: `bazel run //cluster:bootstrap` from committed repo state produces a working cluster.
 
 1. NO imperative patches -- all fixes must be committed configuration
-2. Dev loop: `tofu destroy` -> `bazel run //cluster:bootstrap` -> verify
+2. Dev loop: `bazel run //cluster:bootstrap` -> verify (single TF root with targeted applies)
 3. Debug freely, but solutions MUST be declarative
-4. Done = destroy->bootstrap->verify passes
+4. Done = bootstrap->verify passes
 5. SSO required for all in-scope applications
 
 @docs/plan.md
@@ -59,8 +59,9 @@ before consumer.
 
 **Only supported method**: `bazel run //cluster:bootstrap`
 
-Handles preflight validation, layered deployment (Talos -> Cilium -> Flux), sealed secrets.
-Requires `dangerouslyDisableSandbox: true` and `timeout: 600000` (10 min). Takes ~15-20 min.
+Handles preflight validation, targeted applies against `terraform/main/` (persistent-auth ->
+infrastructure -> full apply), sealed secrets. Requires `dangerouslyDisableSandbox: true`
+and `timeout: 600000` (10 min). Takes ~15-20 min.
 
 ## Testing
 
@@ -127,13 +128,16 @@ the entries after a few reconcile cycles once confirmed clean.
 
 ## Key Files
 
-| File                       | Purpose                              |
-| -------------------------- | ------------------------------------ |
-| `hetzner-nodes.tf`         | VPS definitions                      |
-| `proxmox-nodes.tf`         | Proxmox VM definitions               |
-| `talos-machine-secrets.tf` | Machine secrets (ephemeral)          |
-| `cilium.tf`                | CNI configuration                    |
-| `main.tf`                  | Providers, firewall, Talos bootstrap |
+All in `terraform/main/`:
+
+| File                       | Purpose                                        |
+| -------------------------- | ---------------------------------------------- |
+| `hetzner-nodes.tf`         | VPS definitions                                |
+| `proxmox-nodes.tf`         | Proxmox VM definitions                         |
+| `talos-machine-secrets.tf` | Machine secrets (ephemeral)                    |
+| `cilium.tf`                | CNI configuration                              |
+| `main.tf`                  | Providers, firewall, Talos bootstrap           |
+| `persistent-auth.tf`       | Keypairs, tokens (`prevent_destroy` lifecycle) |
 
 ## Secrets
 

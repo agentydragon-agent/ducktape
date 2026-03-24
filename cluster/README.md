@@ -125,7 +125,7 @@ No built-in auth; Nebula mesh membership is the trust boundary.
 - **Server**: `aw-server-rust` on Proxmox, SQLite on `proxmox-csi-retain` (1Gi PVC)
 - **Sidecar**: Nebula container joins the mesh (`10.42.0.40`, cert name `activitywatch`)
 - **Image**: `registry.allegedly.works/ducktape/aw-server`, CI at `.github/workflows/bazel-harbor-images.yml`
-- **Certs**: SealedSecret from `persistent-auth/nebula-activitywatch-sealed.tf`
+- **Certs**: SealedSecret from `terraform/main/nebula-activitywatch-sealed.tf`
 - **Read-only proxy**: nginx sidecar on port 5601 (Service `activitywatch-readonly`),
   allows GET + POST `/api/0/query` only. `openclaw-sandbox` and `claude-sandbox` namespaces
   have CiliumNetworkPolicy access to this port.
@@ -147,10 +147,7 @@ cluster/
 ├── shell.nix, .envrc      # direnv (KUBECONFIG, TALOSCONFIG, CLI tools)
 ├── docs/                   # bootstrap, plan, troubleshooting, operations, secrets
 ├── terraform/
-│   ├── bootstrap/
-│   │   ├── persistent-auth/   # Keypairs, tokens (survives cluster rebuild)
-│   │   ├── infrastructure/    # VMs, Talos, Cilium CNI
-│   │   └── flux/              # Flux bootstrap, core services, applications
+│   ├── main/                  # Single TF root (PG backend, all resources)
 │   └── gitops/                # tofu-controller managed (DNS, SSO, secrets)
 ├── k8s/                       # Flux-managed manifests (apps, services, config)
 └── flux-system/               # Flux controllers (auto-generated)

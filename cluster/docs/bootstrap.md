@@ -8,7 +8,7 @@ See <../README.md> for architecture overview, node topology, and networking deta
 ### Required Credentials
 
 1. **Hetzner Cloud API Token** (`HCLOUD_TOKEN` env var)
-2. **Proxmox API Token** (managed in persistent-auth layer, user `terraform@pve`)
+2. **Proxmox API Token** (`PROXMOX_VE_API_TOKEN` env var, `root@pam`)
 3. **GitHub CLI** (`gh auth login`) for Flux GitOps bootstrap
 
 ### Required Access
@@ -16,17 +16,12 @@ See <../README.md> for architecture overview, node topology, and networking deta
 - SSH to `root@atlas` (Proxmox host)
 - `direnv` configured in cluster directory
 
-### Persistent Auth Layer
+### Persistent Auth Resources
 
-Run once per environment (survives cluster destroy/recreate):
-
-```bash
-cd terraform/bootstrap/persistent-auth
-tofu init && tofu apply
-```
-
-Creates: Proxmox API tokens, sealed secrets keypair, Nix signing key, Flux deploy key.
-Talos machine secrets are in the infrastructure layer (fresh per lifecycle).
+Persistent-auth resources (Proxmox API tokens, sealed secrets keypair, Nix signing key,
+Flux deploy key) live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = true }`.
+They are created on the first `tofu apply` and preserved across bootstrap cycles.
+Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle).
 
 ## Cold-Start Deployment
 
@@ -35,7 +30,8 @@ export HCLOUD_TOKEN="your-hetzner-api-token"
 bazel run //cluster:bootstrap
 ```
 
-The bootstrap script executes a 3-phase layered deployment:
+The bootstrap script executes a multi-phase deployment against a single TF root
+(`terraform/main/`, PG backend via CNPG `tofu-state-db`):
 
 ### Phase 0: Preflight Validation
 
@@ -43,14 +39,19 @@ The bootstrap script executes a 3-phase layered deployment:
 - Pre-commit validation (security, linting)
 - OpenTofu configuration validation
 
-### Phase 1: Infrastructure (`terraform/bootstrap/infrastructure`)
+### Phase 1: Persistent Auth (`tofu apply -target=<persistent-auth resources>`)
+
+- Proxmox API tokens, sealed secrets keypair, Nix signing key, Flux deploy key
+- Resources have `lifecycle { prevent_destroy = true }` — preserved across cycles
+
+### Phase 2: Infrastructure (`tofu apply -target=<infra resources>` + health checks)
 
 - Hetzner API → 2x VPS with Talos ISO
 - Proxmox API → 1x VM with cloud-init for static IP
 - Talos API → Bootstraps cluster, generates kubeconfig
 - Kubernetes API → Installs Cilium CNI, deploys sealed secrets keypair
 
-### Phase 2: Flux (`terraform/bootstrap/flux`)
+### Phase 3: Full Apply (`tofu apply`)
 
 - Flux Bootstrap → GitOps engine with GitHub
 - Core Services → cert-manager, Cilium Gateway API

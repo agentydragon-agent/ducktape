@@ -14,8 +14,8 @@ config for one node, applying, verifying, then repeating for the second.
 
 ## Files to Modify
 
-- `terraform/bootstrap/infrastructure/main.tf` (lines 31-32) — server_type values
-- `terraform/bootstrap/infrastructure/hetzner-nodes.tf` (line 2) — comment
+- `terraform/main/main.tf` (lines 31-32) — server_type values
+- `terraform/main/hetzner-nodes.tf` (line 2) — comment
 
 ## Plan: Rolling Terraform Apply
 
@@ -31,7 +31,7 @@ vps1 = { name = "talos-vps-cp-1", server_type = "cpx41" }  # changed
 Then:
 
 1. `kubectl drain talos-vps-cp-1 --ignore-daemonsets --delete-emptydir-data`
-2. `tofu apply` in `terraform/bootstrap/infrastructure/` (powers off, rescales, powers on)
+2. `tofu apply` in `terraform/main/` (powers off, rescales, powers on)
 3. Wait for node Ready: `kubectl get node talos-vps-cp-1 --watch`
 4. `kubectl uncordon talos-vps-cp-1`
 5. Verify: `talosctl -n 5.78.43.147 service etcd status`

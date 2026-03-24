@@ -24,7 +24,7 @@ Key files:
 - `nix/nixos/hosts/rugged/default.nix` — host config
 - `nix/nixos/modules/k8s-worker.nix` — k8s worker module
 - `nix/nixos/modules/nebula-mesh.nix` — Nebula mesh module
-- `cluster/terraform/bootstrap/persistent-auth/nebula.tf` — PKI
+- `cluster/terraform/main/nebula.tf` — PKI
 
 ## Networking
 

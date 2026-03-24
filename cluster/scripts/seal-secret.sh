@@ -18,7 +18,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CERT_FILE="$REPO_ROOT/k8s/sealed-secrets/sealed-secrets-cert.pem"
-TF_DIR="$REPO_ROOT/terraform/bootstrap/persistent-auth"
+TF_DIR="$REPO_ROOT/terraform/main"
 
 INPUT_FILE="${1:-}"
 OUTPUT_FILE="${2:-}"
@@ -39,12 +39,12 @@ else
   echo "⚠️  Cert file not found at $CERT_FILE, falling back to terraform state"
   if [[ ! -f "$TF_DIR/terraform.tfstate" ]]; then
     echo "❌ No terraform state found at $TF_DIR/terraform.tfstate"
-    echo "   Run 'cd terraform/bootstrap/persistent-auth && tofu apply' first"
+    echo "   Run 'cd terraform/main && tofu apply' first"
     exit 1
   fi
   CERT=$(cd "$TF_DIR" && terraform output -raw sealed_secrets_cert_pem 2>/dev/null) || {
     echo "❌ Could not read sealed_secrets_cert_pem from terraform state"
-    echo "   Run 'cd terraform/bootstrap/persistent-auth && tofu apply' first"
+    echo "   Run 'cd terraform/main && tofu apply' first"
     exit 1
   }
   CERT_ARG=<(echo "$CERT")
