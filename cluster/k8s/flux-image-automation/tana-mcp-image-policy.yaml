@@ -7,8 +7,8 @@ spec:
   imageRepositoryRef:
     name: tana-mcp
   filterTags:
-    # Tags pushed by CI: YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
-    pattern: '^\d{14}-[0-9a-f]{7}$'
+    # Tags pushed by CI: {branch}-YYYYMMDDHHMMSS-{sha7} — alphabetical order == chronological
+    pattern: '^devel-\d{14}-[0-9a-f]{7}$'
   policy:
     alphabetical:
       order: asc
