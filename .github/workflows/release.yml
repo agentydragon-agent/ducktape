@@ -43,11 +43,8 @@ jobs:
         with:
           extra_nix_config: experimental-features = nix-command flakes
 
-      - name: Install npins and attic-client
-        run: |
-          # Pin npins to our flake's locked nixpkgs to match the sources.json format version.
-          NIXPKGS="github:NixOS/nixpkgs/$(nix flake metadata --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["locks"]["nodes"]["nixpkgs"]["locked"]["rev"])')"
-          nix profile install "$NIXPKGS#npins" nixpkgs#attic-client
+      - name: Install attic-client
+        run: nix profile install nixpkgs#attic-client
 
       - name: Update artifact pins and push Nix packages to attic
         env:
@@ -67,12 +64,21 @@ jobs:
           store_paths=()
           read -ra changed_pkgs <<< "${{ inputs.changed }}"
           for pkg in "${changed_pkgs[@]}"; do
-            npins add tarball "${urls[$pkg]}" --name "$pkg"
+            url="${urls[$pkg]}"
+            fetch=$(jq -r ".pins[\"$pkg\"].fetch" npins/sources.json)
+            if [ "$fetch" = "unpack" ]; then
+              hash=$(nix-prefetch-url --unpack "$url" 2>/dev/null)
+            else
+              hash=$(nix-prefetch-url "$url" 2>/dev/null)
+            fi
+            sri=$(nix hash convert --to sri "sha256:$hash")
+            jq --arg url "$url" --arg hash "$sri" \
+              ".pins[\"$pkg\"].url = \$url | .pins[\"$pkg\"].hash = \$hash" \
+              npins/sources.json > npins/sources.json.tmp && mv npins/sources.json.tmp npins/sources.json
             store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$pkg"))
           done
 
-          # web-session (symlinkJoin of claude-hooks + bbapi + gh) is not an npins
-          # artifact but bundles them; rebuild and push so web_setup.sh is a cache hit.
+          # web-session bundles claude-hooks + bbapi + gh; push so web_setup.sh is a cache hit.
           store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.web-session"))
 
           attic login main https://cache.allegedly.works "$ATTIC_TOKEN"

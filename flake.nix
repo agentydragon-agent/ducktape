@@ -64,17 +64,14 @@
     let
       system = "x86_64-linux";
 
-      # CI-released artifact pins — managed by npins (sources.json), updated by release.yml.
-      # fetchurl keeps files as-is (wheels, binaries); fetchTarball unpacks (skills tar).
-      # Bootstrap: run release pipeline once to populate real hashes.
+      # CI-released artifact pins (npins/sources.json), updated by release.yml.
+      # "file" → fetchurl (wheels, binaries); "unpack" → fetchTarball (skills tar).
       artifacts =
         let
           data = builtins.fromJSON (builtins.readFile ./npins/sources.json);
-          # skills is a tar that consumers expect unpacked; everything else is a file.
-          unpackNames = [ "skills" ];
           fetch =
-            name: spec:
-            if builtins.elem name unpackNames then
+            _name: spec:
+            if spec.fetch == "unpack" then
               builtins.fetchTarball {
                 url = spec.url;
                 sha256 = spec.hash;

@@ -88,11 +88,6 @@ actions:
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/gh.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
           sudo apt-get update -qq && sudo apt-get install -y gh
       - run: |
-          if [ -z "$GH_RELEASE_PAT" ]; then
-            echo "ERROR: GH_RELEASE_PAT is empty"
-            exit 1
-          fi
-          echo "GH_RELEASE_PAT is set (${#GH_RELEASE_PAT} chars, prefix=${GH_RELEASE_PAT:0:8}...)"
           export GH_TOKEN="$GH_RELEASE_PAT"
           mkdir -p dist
           cp bazel-bin/claude_hooks-*.whl dist/
