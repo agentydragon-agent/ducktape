@@ -177,10 +177,12 @@ in
     substituters = [
       "https://cache.nixos.org/"
       "https://nix-community.cachix.org"
+      "https://cache.allegedly.works/main"
     ];
     trusted-public-keys = [
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
       "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+      "cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA="
     ];
   };
 
