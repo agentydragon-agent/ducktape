@@ -30,7 +30,7 @@ home-manager switch --flake ~/code/ducktape#<hostname>
 - Git, readline, tmux, dircolors config
 - Bazel user config (`.bazelrc`)
 - SSH/GPG agent services
-- Claude Code MCP server configuration (via claude-code-router module)
+- Claude Code MCP server configuration
 - 2 critical MIME associations via `home.activation.fixMimeApps`
 
 ### What Ansible Still Manages

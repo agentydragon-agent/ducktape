@@ -27,8 +27,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    claude-code-router.url = "github:agentydragon/claude-code-router/2b7c2ca764f74fd80a6c8b85495df7793282758d";
-
     # Claude Code plugin marketplaces
     claude-plugins-official = {
       url = "github:anthropics/claude-plugins-official";
@@ -55,7 +53,6 @@
       nixpkgs-unstable,
       home-manager,
       nix-colors,
-      claude-code-router,
       nixGL,
       claude-plugins-official,
       siderolabs-docs,
@@ -126,7 +123,6 @@
           inherit pkgs;
 
           modules = [
-            claude-code-router.homeManagerModules.claude-code-router
             ./nix/home/hosts/${hostname}.nix
             {
               _module.args = {
@@ -233,9 +229,6 @@
                   home-manager.useGlobalPkgs = true;
                   home-manager.useUserPackages = true;
                   home-manager.extraSpecialArgs = hmExtraSpecialArgs;
-                  home-manager.sharedModules = [
-                    claude-code-router.homeManagerModules.claude-code-router
-                  ];
                   home-manager.users.${username} = inlineHomeManager.module;
                 }
               else
