@@ -63,6 +63,13 @@ jobs:
             exit 0
           fi
           git commit -m "chore: bump release artifacts [skip ci]"
+          # Debug: show what nix build left behind.
+          echo "=== Dirty files after nix build ==="
+          git status --short
+          echo "==="
+          # Clean so git pull --rebase succeeds.
+          git checkout -- .
+          git clean -fd
           git pull --rebase origin "${{ github.ref_name }}"
           git push origin "HEAD:${{ github.ref_name }}"
 
