@@ -17,6 +17,13 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       terminationGracePeriodSeconds: 120
+      initContainers:
+        - name: fix-perms
+          image: ghcr.io/actions/actions-runner:latest
+          command: ["chown", "-R", "1001:1001", "/home/runner/.cache"]
+          volumeMounts:
+            - name: cache
+              mountPath: /home/runner/.cache
       containers:
         - name: runner
           image: ghcr.io/actions/actions-runner:latest
@@ -40,8 +47,8 @@ spec:
               readOnly: true
             - name: work
               mountPath: /home/runner/_work
-            - name: bazel-cache
-              mountPath: /home/runner/.cache/bazel
+            - name: cache
+              mountPath: /home/runner/.cache
       volumes:
         - name: scripts
           configMap:
@@ -54,7 +61,7 @@ spec:
           emptyDir: {}
   volumeClaimTemplates:
     - metadata:
-        name: bazel-cache
+        name: cache
       spec:
         accessModes: ["ReadWriteOnce"]
         storageClassName: local-path
