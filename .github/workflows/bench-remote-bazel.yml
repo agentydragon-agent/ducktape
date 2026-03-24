@@ -23,7 +23,7 @@ jobs:
           BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
         run: |
           START=$SECONDS
-          bb remote build -k //... 2>&1 | tee /tmp/build.log
+          bb remote --runner_exec_properties=EstimatedFreeDiskBytes=50GB build -k //... 2>&1 | tee /tmp/build.log
           echo "elapsed=$((SECONDS - START))" >> "$GITHUB_OUTPUT"
 
       - name: bb remote test -k //...
@@ -33,7 +33,7 @@ jobs:
           BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
         run: |
           START=$SECONDS
-          bb remote test -k //... --test_tag_filters=-live_openai_api 2>&1 | tee /tmp/test.log
+          bb remote --runner_exec_properties=EstimatedFreeDiskBytes=50GB test -k //... --test_tag_filters=-live_openai_api 2>&1 | tee /tmp/test.log
           echo "elapsed=$((SECONDS - START))" >> "$GITHUB_OUTPUT"
 
       - name: Write results
