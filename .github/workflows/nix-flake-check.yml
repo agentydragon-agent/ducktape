@@ -1,6 +1,6 @@
-# Nix flake evaluation reusable workflow
+# Nix flake evaluation and cache push reusable workflow
 #
-# Verify NixOS and home-manager configurations evaluate
+# Build NixOS and home-manager configurations, push closures to Attic cache.
 name: Nix flake evaluation
 
 on:
@@ -8,9 +8,9 @@ on:
 
 jobs:
   nix-flake-check:
-    name: Nix flake evaluation
+    name: Nix flake build & cache
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - name: Check out code
         uses: actions/checkout@v6
@@ -21,29 +21,35 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Evaluate NixOS configurations
+      - name: Configure Attic cache
         run: |
-          # Auto-discover all hosts from flake using nix eval (more reliable than flake show)
+          nix run nixpkgs#attic-client -- login ducktape \
+            https://cache.allegedly.works "${{ secrets.ATTIC_TOKEN }}"
+
+      - name: Build and push NixOS configurations
+        run: |
           for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-            echo "Checking nixosConfigurations.$host..."
-            nix eval .#nixosConfigurations.$host.config.system.build.toplevel
+            echo "::group::Building nixosConfigurations.$host"
+            nix build ".#nixosConfigurations.$host.config.system.build.toplevel" --no-link --print-out-paths | \
+              xargs nix run nixpkgs#attic-client -- push main
+            echo "::endgroup::"
           done
 
-      - name: Evaluate home-manager configurations
+      - name: Build and push home-manager configurations
         run: |
-          # Auto-discover all hosts from flake (--impure needed for nixGL)
-          # Use nix eval instead of flake show (flake show doesn't enumerate impure configs properly)
           for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-            echo "Checking homeConfigurations.$host..."
-            nix eval --impure .#homeConfigurations.$host.activationPackage
+            echo "::group::Building homeConfigurations.$host"
+            nix build --impure ".#homeConfigurations.$host.activationPackage" --no-link --print-out-paths | \
+              xargs nix run nixpkgs#attic-client -- push main
+            echo "::endgroup::"
           done
 
       - name: Generate summary
         if: always()
         run: |
-          echo "### Nix Flake Evaluation Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Nix Flake Results" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ All NixOS and home-manager configurations evaluate successfully" >> $GITHUB_STEP_SUMMARY
+            echo "✅ All configurations built and pushed to cache" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Some Nix configurations failed to evaluate" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Some configurations failed" >> $GITHUB_STEP_SUMMARY
           fi
