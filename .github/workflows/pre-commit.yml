@@ -22,6 +22,15 @@ jobs:
 
       - uses: ./.github/actions/setup-python-env
 
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+
+      # Install claude-hooks via flake — provides ducktape-precommit for the
+      # enforce-bazel-tests pre-commit hook (language: system, needs binary on PATH).
+      - name: Install ducktape-precommit
+        run: nix profile install .#claude-hooks
+
       # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
       - uses: ./.github/actions/bazel-repo-cache
         id: bazel-cache
