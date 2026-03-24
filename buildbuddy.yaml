@@ -150,6 +150,8 @@ actions:
 
   # Push Harbor container images (OCI images built with Bazel).
   # Uses oci_push (crane-based, no Docker daemon needed).
+  # The CI action's `bazel build //...` populates the remote cache;
+  # bazel run here fetches built images from cache and pushes via crane.
   - name: "Push Harbor Images"
     triggers:
       push:
@@ -172,20 +174,8 @@ actions:
           {"auths":{"registry.allegedly.works":{"auth":"${AUTH}"}}}
           ENDJSON
       - run: |
-          # Build all push targets with RBE to maximize cache sharing.
-          bazel build --config=rbe \
-            //cluster/k8s/inventree/token-provisioner:push \
-            //props/backend:push \
-            //airlock:push \
-            //airlock/auth_proxy:push \
-            //mcp_infra/exec:direct_push \
-            //openclaw/exec:push \
-            //homeassistant/proxy:push \
-            //inventree_utils/rai_plugin:push \
-            //tana/token_broker:push \
-            //third_party/activitywatch:push
-      - run: |
-          # Push images sequentially. bazel run executes crane push.
+          # Push images sequentially. bazel run builds (hitting RBE cache
+          # from the CI action) then executes crane push.
           set -e
           for target in \
             //cluster/k8s/inventree/token-provisioner:push \
@@ -199,5 +189,5 @@ actions:
             //tana/token_broker:push \
             //third_party/activitywatch:push; do
             echo "Pushing $target"
-            bazel run --remote_download_toplevel "$target"
+            bazel run --config=rbe --remote_download_toplevel "$target"
           done
