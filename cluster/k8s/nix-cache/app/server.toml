@@ -4,7 +4,9 @@ listen = "[::]:8080"
 type = "local"
 path = "/cache"
 
-# database.url injected via ATTIC_SERVER_DATABASE__URL from attic-db-app secret
+[database]
+# url overridden by ATTIC_SERVER_DATABASE__URL env var
+url = "postgresql:///placeholder"
 
 [compression]
 type = "zstd"
@@ -18,5 +20,6 @@ max-size = 262144
 [garbage-collection]
 interval = "12 hours"
 
-# jwt.signing.token-hs256-secret-base64 injected via
-# ATTIC_SERVER_JWT__SIGNING__TOKEN_HS256_SECRET_BASE64 from attic-jwt-token secret
+[jwt.signing]
+# token-hs256-secret-base64 overridden by ATTIC_SERVER_JWT__SIGNING__TOKEN_HS256_SECRET_BASE64 env var
+token-hs256-secret-base64 = "placeholder"
