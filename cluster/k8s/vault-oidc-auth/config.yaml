@@ -37,11 +37,6 @@ spec:
   # Get secrets from Kubernetes
   varsFrom:
     - kind: Secret
-      name: vault-token
-      varsKeys:
-        - vault_token
-      optional: false
-    - kind: Secret
       name: vault-oauth-client-secret
       varsKeys:
         - client_secret:vault_client_secret

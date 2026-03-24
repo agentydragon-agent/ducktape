@@ -19,9 +19,12 @@ terraform {
 }
 
 provider "vault" {
-  address         = var.vault_address
-  token           = var.vault_token
-  skip_tls_verify = true # Self-signed internal CA
+  address = var.vault_address
+  auth_login_jwt {
+    mount = "kubernetes"
+    role  = "tf-runner"
+    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
+  }
 }
 
 # --- Client Secret Generation ---

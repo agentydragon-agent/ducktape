@@ -21,4 +21,4 @@ spec:
     - name: user-agentydragon-namespace
     - name: external-secrets-config
     - name: tofu-controller
-    - name: vault-token
+    - name: vault

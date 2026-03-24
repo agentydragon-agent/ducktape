@@ -22,5 +22,5 @@ spec:
     - name: sealed-secrets
     - name: external-secrets-config
     - name: tofu-controller
-    - name: vault-token
+    - name: vault
     - name: ollama-secrets

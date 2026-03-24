@@ -25,7 +25,11 @@ provider "harbor" {
 
 provider "vault" {
   address = var.vault_address
-  token   = var.vault_token
+  auth_login_jwt {
+    mount = "kubernetes"
+    role  = "tf-runner"
+    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
+  }
 }
 
 # Orphan old per-service projects — they still exist in Harbor (with images) but

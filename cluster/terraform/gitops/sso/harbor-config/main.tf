@@ -23,9 +23,12 @@ terraform {
 }
 
 provider "vault" {
-  address         = var.vault_address
-  token           = var.vault_token
-  skip_tls_verify = true
+  address = var.vault_address
+  auth_login_jwt {
+    mount = "kubernetes"
+    role  = "tf-runner"
+    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
+  }
 }
 
 # Harbor admin password from ESO-synced K8s secret

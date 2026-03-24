@@ -20,7 +20,11 @@ terraform {
 
 provider "vault" {
   address = var.vault_address
-  token   = var.vault_token
+  auth_login_jwt {
+    mount = "kubernetes"
+    role  = "tf-runner"
+    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
+  }
 }
 
 resource "random_password" "api_key" {

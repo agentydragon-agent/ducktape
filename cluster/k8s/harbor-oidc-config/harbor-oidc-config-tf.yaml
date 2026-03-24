@@ -28,10 +28,3 @@ spec:
       value: "http://harbor-core.harbor:80"
     - name: vault_address
       value: "http://instance.vault.svc.cluster.local:8200"
-
-  varsFrom:
-    - kind: Secret
-      name: vault-token
-      varsKeys:
-        - vault_token
-      optional: false

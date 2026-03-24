@@ -3,12 +3,6 @@ variable "vault_address" {
   type        = string
 }
 
-variable "vault_token" {
-  description = "Vault authentication token"
-  type        = string
-  sensitive   = true
-}
-
 variable "grafana_url" {
   description = "Grafana base URL"
   type        = string

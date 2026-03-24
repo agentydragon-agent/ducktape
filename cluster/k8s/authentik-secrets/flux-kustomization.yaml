@@ -21,5 +21,4 @@ spec:
     - name: external-secrets-config
     - name: vault
     - name: tofu-controller
-    - name: vault-token
     - name: authentik-token

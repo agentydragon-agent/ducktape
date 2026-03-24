@@ -20,8 +20,5 @@ spec:
       namespace: flux-system
   dependsOn:
     - name: tofu-controller
-      namespace: flux-system
-    - name: vault-token # Vault auth for Terraform
-      namespace: flux-system
+    - name: vault
     - name: external-secrets-config
-      namespace: flux-system

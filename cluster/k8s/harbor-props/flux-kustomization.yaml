@@ -22,4 +22,4 @@ spec:
   dependsOn:
     - name: harbor
     - name: tofu-controller
-    - name: vault-token
+    - name: vault

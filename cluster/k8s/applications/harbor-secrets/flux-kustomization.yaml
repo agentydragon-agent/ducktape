@@ -21,4 +21,4 @@ spec:
     - name: external-secrets-config
     - name: cert-manager
     - name: tofu-controller
-    - name: vault-token # Vault auth for Terraform
+    - name: vault

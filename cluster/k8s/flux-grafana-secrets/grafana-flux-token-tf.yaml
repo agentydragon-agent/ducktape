@@ -23,9 +23,3 @@ spec:
       value: "http://instance.vault.svc.cluster.local:8200"
     - name: grafana_url
       value: "https://grafana.allegedly.works"
-  varsFrom:
-    - kind: Secret
-      name: vault-token
-      varsKeys:
-        - vault_token
-      optional: false

@@ -22,4 +22,4 @@ spec:
     - name: dns-system-namespace
     - name: external-secrets-config
     - name: tofu-controller
-    - name: vault-token # Vault auth for Terraform
+    - name: vault

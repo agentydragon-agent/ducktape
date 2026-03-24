@@ -3,12 +3,6 @@ variable "vault_address" {
   type        = string
 }
 
-variable "vault_token" {
-  description = "Vault authentication token"
-  type        = string
-  sensitive   = true
-}
-
 variable "rotation_version" {
   description = "Bump to trigger secret rotation for all OAuth2 client secrets"
   type        = string
