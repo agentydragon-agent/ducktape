@@ -2,8 +2,37 @@
 # BB Release step: build dist, create GitHub releases for changed artifacts,
 # dispatch GHA release.yml to update pins.
 #
-# Expects: GH_RELEASE_PAT env var, bazel-bin/ populated by prior build step.
+# Expects: GH_RELEASE_PAT env var.
 set -euo pipefail
+
+# Honor [skip ci] — BuildBuddy Workflows doesn't natively support it.
+if git log -1 --format='%s' | grep -qF '[skip ci]'; then
+  echo "Commit message contains [skip ci], skipping release."
+  exit 0
+fi
+
+# Validate required secrets.
+if [[ -z "${GH_RELEASE_PAT:-}" ]]; then
+  echo "ERROR: Missing required env var: GH_RELEASE_PAT" >&2
+  echo "Configure this as a BuildBuddy Workflow secret." >&2
+  exit 1
+fi
+
+# Install system deps for wheel builds (cairo, dbus, etc.) and gh CLI.
+sudo apt-get update -qq && sudo apt-get install -y \
+  libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev pkg-config
+sudo mkdir -p -m 755 /etc/apt/keyrings
+curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/gh.gpg >/dev/null
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/gh.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list >/dev/null
+sudo apt-get update -qq && sudo apt-get install -y gh
+
+# Build all release artifacts.
+bazel build --config=rbe --remote_download_toplevel \
+  //:wheel \
+  //:claude_hooks_wheel \
+  //gterm_theme:wheel \
+  //skills:all_skills_tar \
+  //devinfra/buildbuddy_cli:bbapi
 
 export GH_TOKEN="$GH_RELEASE_PAT"
 mkdir -p dist

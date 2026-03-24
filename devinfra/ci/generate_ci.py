@@ -205,7 +205,6 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                         f"bazel test --keep_going \\\n"
                         f"  --test_output=all \\\n"
                         f"  --nocache_test_results \\\n"
-                        f"  --test_env=CI=true \\\n"
                         f"  {config.test_targets}"
                     ),
                 ),
@@ -224,8 +223,6 @@ def generate_consolidated_release(releases: dict[str, ReleaseConfig]) -> Workflo
                         f"  --test_output=all \\\n"
                         f"  --nocache_test_results \\\n"
                         f"  --test_tag_filters=-e2e \\\n"
-                        f"  --test_env=CI=true \\\n"
-                        f"  --test_env=GITHUB_ACTIONS=true \\\n"
                         f"  {config.test_targets}"
                     ),
                 )

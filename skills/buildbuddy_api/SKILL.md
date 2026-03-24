@@ -22,23 +22,38 @@ All commands require `BUILDBUDDY_API_KEY` to be set (session hook exports it aut
 If `bbapi` is in PATH, prefer it over raw API calls:
 
 ```bash
+# Show invocation details
+bbapi invocation <invocation-id>
+
 # List recent invocations (auto-detects repo from git remote)
-bbapi invocations [--repo URL] [--count N]
+bbapi invocation list [--repo URL] [--count N]
 
 # Print build log
-bbapi log <invocation-id> [--lines N]
+bbapi invocation log <invocation-id>
 
 # List remote executions for an invocation
-bbapi executions <invocation-id>
+bbapi execution <invocation-id>
+
+# Search remote executions across invocations
+bbapi execution search <query>
 
 # Show cache scorecard (per-action hit/miss)
 bbapi cache <invocation-id>
 
-# List test output artifacts (label + filename)
-bbapi artifacts ls <invocation-id>
+# Get metadata for a cached artifact by digest
+bbapi cache metadata <digest>
 
-# Download an artifact by name match (prints to stdout)
-bbapi artifacts get <invocation-id> <name-substring>
+# List artifacts, or download one by name match
+bbapi artifact <invocation-id> [name-substring]
+
+# List targets in an invocation
+bbapi target <invocation-id> [--filter SUBSTR] [--label LABEL]
+
+# Show pass/fail/flake history for targets
+bbapi target history <target-label>
+
+# Show build performance trends
+bbapi trend [--days N] [--repo URL]
 ```
 
 All commands support `--json` for raw JSON output.

@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# BB Push Harbor Images step: authenticate, push OCI images, tag for Flux.
+#
+# Expects: HARBOR_ROBOT_USERNAME, HARBOR_ROBOT_TOKEN env vars.
+set -euo pipefail
+
+# Honor [skip ci] — BuildBuddy Workflows doesn't natively support it.
+if git log -1 --format='%s' | grep -qF '[skip ci]'; then
+  echo "Commit message contains [skip ci], skipping image push."
+  exit 0
+fi
+
+# Validate required secrets.
+missing=()
+[[ -z "${HARBOR_ROBOT_USERNAME:-}" ]] && missing+=(HARBOR_ROBOT_USERNAME)
+[[ -z "${HARBOR_ROBOT_TOKEN:-}" ]] && missing+=(HARBOR_ROBOT_TOKEN)
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "ERROR: Missing required env vars: ${missing[*]}" >&2
+  echo "Configure these as BuildBuddy Workflow secrets." >&2
+  exit 1
+fi
+
+# Authenticate crane to Harbor registry.
+# oci_push reads ~/.docker/config.json for credentials.
+mkdir -p ~/.docker
+AUTH=$(echo -n "${HARBOR_ROBOT_USERNAME}:${HARBOR_ROBOT_TOKEN}" | base64 -w0)
+cat >~/.docker/config.json <<ENDJSON
+{"auths":{"registry.allegedly.works":{"auth":"${AUTH}"}}}
+ENDJSON
+
+# Build crane from Bazel cache (already cached from CI action).
+bazel build --config=rbe --remote_download_toplevel @crane
+CRANE=$(bazel cquery --output=files @crane 2>/dev/null)
+
+# Push images sequentially. bazel run builds (hitting RBE cache
+# from the CI action) then executes crane push with :latest.
+# After each push, crane tags with {branch}-YYYYMMDDHHMMSS-{sha7}
+# so Flux ImagePolicy can track deployable versions.
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+TS=$(date -u +%Y%m%d%H%M%S)
+SHA=$(git rev-parse --short=7 HEAD)
+PINNED_TAG="${BRANCH}-${TS}-${SHA}"
+
+push_and_tag() {
+  local target="$1" repo="$2"
+  echo "Pushing $target"
+  bazel run --config=rbe --remote_download_toplevel "$target"
+  echo "Tagging ${repo}:latest -> ${repo}:${PINNED_TAG}"
+  $CRANE tag "${repo}:latest" "${PINNED_TAG}"
+}
+
+push_and_tag //cluster/k8s/inventree/token-provisioner:push registry.allegedly.works/ducktape/token-provisioner
+push_and_tag //props/backend:push registry.allegedly.works/ducktape/props-backend
+push_and_tag //airlock:push registry.allegedly.works/ducktape/airlock
+push_and_tag //airlock/auth_proxy:push registry.allegedly.works/ducktape/auth-proxy
+push_and_tag //mcp_infra/exec:direct_push registry.allegedly.works/ducktape/exec-backend
+push_and_tag //openclaw/exec:push registry.allegedly.works/ducktape/openclaw-exec
+push_and_tag //homeassistant/proxy:push registry.allegedly.works/ducktape/homeassistant-proxy
+push_and_tag //inventree_utils/rai_plugin:push registry.allegedly.works/ducktape/inventree
+push_and_tag //tana/token_broker:push registry.allegedly.works/ducktape/tana-token-broker
+push_and_tag //third_party/activitywatch:push registry.allegedly.works/ducktape/aw-server
