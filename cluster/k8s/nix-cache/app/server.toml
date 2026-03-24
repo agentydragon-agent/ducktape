@@ -5,8 +5,7 @@ type = "local"
 path = "/cache"
 
 [database]
-# url overridden by ATTIC_SERVER_DATABASE__URL env var
-url = "postgresql:///placeholder"
+# url read from ATTIC_SERVER_DATABASE_URL env var (serde default)
 
 [compression]
 type = "zstd"
@@ -20,6 +19,5 @@ max-size = 262144
 [garbage-collection]
 interval = "12 hours"
 
-[jwt.signing]
-# token-hs256-secret-base64 overridden by ATTIC_SERVER_JWT__SIGNING__TOKEN_HS256_SECRET_BASE64 env var
-token-hs256-secret-base64 = "placeholder"
+# [jwt.signing] intentionally omitted — read from
+# ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64 env var (serde default)

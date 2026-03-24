@@ -48,12 +48,12 @@ spec:
             seccompProfile:
               type: RuntimeDefault
           env:
-            - name: ATTIC_SERVER_DATABASE__URL
+            - name: ATTIC_SERVER_DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: attic-db-app
                   key: uri
-            - name: ATTIC_SERVER_JWT__SIGNING__TOKEN_HS256_SECRET_BASE64
+            - name: ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64
               valueFrom:
                 secretKeyRef:
                   name: attic-jwt-token
