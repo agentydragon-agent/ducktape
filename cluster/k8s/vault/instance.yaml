@@ -84,6 +84,15 @@ spec:
           path "kv/*" {
             capabilities = ["create", "read", "update", "delete", "list"]
           }
+          path "auth/token/create" {
+            capabilities = ["create", "update"]
+          }
+          path "sys/auth/*" {
+            capabilities = ["create", "read", "update", "delete", "list", "sudo"]
+          }
+          path "auth/oidc/*" {
+            capabilities = ["create", "read", "update", "delete", "list"]
+          }
 
     auth:
       - type: kubernetes
