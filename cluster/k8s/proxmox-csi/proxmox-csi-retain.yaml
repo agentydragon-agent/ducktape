@@ -39,7 +39,7 @@ spec:
           cache: "directsync"
           ssd: "true"
         annotations:
-          storageclass.kubernetes.io/is-default-class: "true"
+          storageclass.kubernetes.io/is-default-class: "false"
 
     # Controller Deployment must run on Proxmox nodes to reach Proxmox API at 10.2.0.2:8006.
     # Note: top-level nodeSelector (not controller.nodeSelector) — chart uses top-level for the controller pod.

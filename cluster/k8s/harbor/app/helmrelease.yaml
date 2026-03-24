@@ -59,11 +59,11 @@ spec:
     # Persistence configuration
     persistence:
       enabled: true
-      # Use default storage class
       resourcePolicy: "keep"
       persistentVolumeClaim:
         registry:
-          size: 300Gi
+          storageClass: longhorn
+          size: 50Gi
         jobservice:
           storageClass: longhorn
           size: 1Gi

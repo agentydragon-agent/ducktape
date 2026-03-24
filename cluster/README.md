@@ -52,11 +52,12 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 
 ## Storage
 
-| Provisioner          | Location | Default | Notes                                   |
-| -------------------- | -------- | ------- | --------------------------------------- |
-| `proxmox-csi-retain` | Proxmox  | Yes     | Storage-heavy: Harbor, Gitea, Loki, Nix |
-| `hcloud-volumes`     | Hetzner  | No      | (none active)                           |
-| `local-path`         | Any node | No      | CNPG: Authentik, PowerDNS; Vault Raft   |
+| Provisioner          | Location | Default | Notes                                 |
+| -------------------- | -------- | ------- | ------------------------------------- |
+| `longhorn`           | Any node | Yes     | Default; replicated across nodes      |
+| `proxmox-csi-retain` | Proxmox  | No      | Storage-heavy: Gitea, Loki, Nix       |
+| `hcloud-volumes`     | Hetzner  | No      | (none active)                         |
+| `local-path`         | Any node | No      | CNPG: Authentik, PowerDNS; Vault Raft |
 
 Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) — needs VLAN access to API.
 

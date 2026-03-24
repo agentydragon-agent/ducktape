@@ -64,7 +64,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 kubectl get nodes -o wide              # All nodes Ready
 flux get all                           # Flux status
 kubectl get pods -A | grep -v Running  # Non-running pods
-kubectl get storageclass               # hcloud-volumes + proxmox-csi
+kubectl get storageclass               # longhorn (default), proxmox-csi-retain, etc.
 ```
 
 ## Dependency Chain
