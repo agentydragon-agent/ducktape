@@ -104,8 +104,6 @@ let
     gterm-theme-wheel = renameWheel "gterm_theme-0.1.0-py3-none-any.whl" gterm-theme-wheel;
   };
 
-  # bbapi - BuildBuddy API CLI
-  bbapi = pkgs.callPackage ./packages/bbapi.nix { inherit bbapi-binary; };
 in
 {
   imports = [
