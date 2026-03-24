@@ -15,6 +15,7 @@ concurrency:
   cancel-in-progress: false
 permissions:
   contents: write
+  statuses: write
 jobs:
   pin-and-push:
     name: Update flake pins and push
@@ -25,6 +26,19 @@ jobs:
         with:
           ref: ${{ github.ref_name }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post pending status on triggering commit
+        run: |
+          FULL_SHA=$(git rev-parse "${{ inputs.short_sha }}")
+          echo "RELEASE_COMMIT_SHA=$FULL_SHA" >> "$GITHUB_ENV"
+          gh api "repos/${{ github.repository }}/statuses/$FULL_SHA" \
+            -f state=pending \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f description="Updating npins and pushing to attic" \
+            -f context="release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: cachix/install-nix-action@v30
         with:
           extra_nix_config: experimental-features = nix-command flakes
@@ -76,3 +90,25 @@ jobs:
           git commit -m "chore: bump release artifacts [skip ci]"
           git pull --rebase origin "${{ github.ref_name }}"
           git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: Post success status
+        if: success()
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/$RELEASE_COMMIT_SHA" \
+            -f state=success \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f description="Release complete" \
+            -f context="release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post failure status
+        if: failure()
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/$RELEASE_COMMIT_SHA" \
+            -f state=failure \
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f description="Release failed" \
+            -f context="release"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
