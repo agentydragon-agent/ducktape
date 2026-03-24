@@ -1,18 +1,24 @@
 version: 1
 metadata:
-  name: Cleanup - Headscale
+  name: Cleanup - Decommissioned Services
   labels:
     blueprints.goauthentik.io/description: >-
-      Remove headscale SSO registration (headscale decommissioned).
+      Remove SSO registrations for decommissioned services.
 
 entries:
-  # CLEANUP(2026-03-22): Remove once confirmed absent in Authentik (headscale decommissioned).
+  # CLEANUP(2026-03-23): Remove once confirmed absent (headscale decommissioned).
   - model: authentik_providers_oauth2.oauth2provider
     state: absent
     identifiers:
-      name: headscale
+      name: headscale-oauth2
 
   - model: authentik_core.application
     state: absent
     identifiers:
       slug: headscale
+
+  # CLEANUP(2026-03-23): Remove once confirmed absent (Capacitor dropped — proprietary license).
+  - model: authentik_providers_proxy.proxyprovider
+    state: absent
+    identifiers:
+      name: capacitor
