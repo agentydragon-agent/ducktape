@@ -133,7 +133,7 @@ during early debugging.
 | `52e7c39`   | Remove `build_info` stamping from wheel               | Fixes spurious pin bumps (wheel hash now stable)             |
 | `842b26c`   | `max-jobs=auto`, revert to `nix profile install`      | Merged to devel; CDN still served old script for many sessions |
 | `e9f4a33`   | Add `--max-jobs auto` CLI flag, nix.conf debug dump   | Pin setup URL to this SHA → bypasses CDN → setup succeeds ✓  |
-| `154ce3e`   | Symlink all `~/.nix-profile/bin/*` into `/usr/local/bin` | Fixes `claude-hook: not found`; also makes `bb`, `gh`, etc. available |
+| `680d789`   | Symlink all `~/.nix-profile/bin/*` into `/usr/local/bin` | Fixes `claude-hook: not found`; also makes `bb`, `gh`, etc. available |
 
 **Re `8e1eea6e7`**: This commit used `nix profile install` with `max-jobs=auto`.
 It still failed and was diagnosed as "gVisor can't run build operations". Later
@@ -144,7 +144,7 @@ fact that `sandbox=false` wasn't set at that point).
 
 ## Fix Summary
 
-All fixes are in place as of `154ce3e`:
+All fixes are in place as of `680d789`:
 
 - `max-jobs=auto` in nix.conf allows nix to build `symlinkJoin` / `buildEnv` locally
 - `--max-jobs auto` on the `nix profile install` command line overrides any stale nix.conf
@@ -155,7 +155,7 @@ All fixes are in place as of `154ce3e`:
 
 **Setup URL** (use this in the Claude Code web UI):
 ```
-curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/154ce3ea6dfb5075cafbcbb3c89f86c707782b35/devinfra/claude/web_setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/680d78946bf72e5e3601cdb69299546b495cab1b/devinfra/claude/web_setup.sh | bash
 ```
 
 ## Key Lessons

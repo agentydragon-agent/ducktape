@@ -325,7 +325,7 @@ To use this repository with Claude Code on the web, configure the following setu
 
 ```bash
 #!/bin/bash
-curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/154ce3ea6dfb5075cafbcbb3c89f86c707782b35/devinfra/claude/web_setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/680d78946bf72e5e3601cdb69299546b495cab1b/devinfra/claude/web_setup.sh | bash
 ```
 
 **Note**: Use a pinned commit SHA, not the `devel` branch ref — Anthropic caches
