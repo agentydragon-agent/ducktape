@@ -7,8 +7,8 @@
     },
     "claude-hooks": {
       "fetch": "file",
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-b20dd14/claude_hooks-0.1.0-py3-none-any.whl",
-      "hash": "sha256-WmyqW6XzF5BrpUAztUxDLPInpBTQXT7y/M6r4HYKwkA="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-8e1eea6/claude_hooks-0.1.0-py3-none-any.whl",
+      "hash": "sha256-dSUgHHfDSzNN2WGxXQOrpzlVa6FPHdb3s82jJtmGJWE="
     },
     "ducktape": {
       "fetch": "file",
@@ -22,7 +22,7 @@
     },
     "skills": {
       "fetch": "unpack",
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-b20dd14/skills.tar",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-8e1eea6/skills.tar",
       "hash": "sha256-0hiWv3UQV079muE2ROB3AnqfIteVJZplHo+Mbz0OqCk="
     }
   }
