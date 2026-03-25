@@ -311,6 +311,10 @@
           # Web session tools: single package installed by web_setup.sh.
           # Add tools here to make them available in Claude Code web sessions;
           # release.yml pushes this to attic so installs are cache hits.
+          # TODO: disable NLS on pre-commit's gitMinimal to drop ~31 MiB of
+          # gettext + locale data. Blocked on slow rebuild (gitMinimal override
+          # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
+          # See devinfra/claude/docs/web-session-closure-size.md for details.
           web-session = pkgs.symlinkJoin {
             name = "claude-web-session";
             paths = [

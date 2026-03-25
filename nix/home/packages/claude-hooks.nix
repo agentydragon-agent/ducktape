@@ -4,7 +4,6 @@
   lib,
   pkgs,
   claude-hooks-wheel,
-  pre-commit ? pkgs.pre-commit,
 }:
 pkgs.python3Packages.buildPythonApplication {
   pname = "claude-hooks";
@@ -38,7 +37,7 @@ pkgs.python3Packages.buildPythonApplication {
       uvicorn
     ])
     # pre-commit is imported as a Python library (pre_commit.*), not just a CLI tool.
-    ++ [ pre-commit ];
+    ++ [ pkgs.pre-commit ];
 
   # Wheel is already tested in CI via Bazel.
   doCheck = false;
