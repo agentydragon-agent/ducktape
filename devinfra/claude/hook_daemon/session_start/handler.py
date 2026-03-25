@@ -106,7 +106,6 @@ class PlatformSetup:
     proxy_port: int | None = None
     truststore_path: Path | None = None
     truststore_password: str | None = None
-    local_proxy: str | None = None
     combined_ca_path: Path | None = None
     bazel_cache_dir: Path | None = None
 
@@ -455,7 +454,6 @@ async def _setup_web(
         proxy_port=auth_proxy_result.port,
         truststore_path=paths.auth_proxy_truststore,
         truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
-        local_proxy=auth_proxy_result.proxy_url,
         combined_ca_path=combined_ca,
         bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
         # EnvVars
@@ -557,7 +555,6 @@ async def run_session(
             proxy_port=setup.proxy_port,
             truststore_path=setup.truststore_path,
             truststore_password=setup.truststore_password,
-            local_proxy=setup.local_proxy,
             combined_ca_path=setup.combined_ca_path,
             buildbuddy_configured=setup.buildbuddy_configured,
             buildbuddy_bazelrc=buildbuddy.BUILDBUDDY_BAZELRC,
