@@ -53,6 +53,7 @@ def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> str:
     sock_path = paths.hook_daemon_sock
     payload = json.dumps({"https_proxy": https_proxy}).encode()
     conn = _UDSConnection(sock_path)
+    conn.timeout = 5.0
     conn.request("POST", "/update-proxy-creds", body=payload, headers={"Content-Type": "application/json"})
     response = conn.getresponse()
     body = response.read()
