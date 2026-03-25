@@ -53,12 +53,21 @@ sandbox = false
 EOF
 
 echo "Installing Nix..."
+# Pinned to nix-2.28.3 (version-specific URL, not mutable nixos.org/nix/install).
+# Anthropic's egress proxy caches responses; using a pinned version-specific URL
+# avoids serving a stale tarball whose hash no longer matches the installer's expectation.
+# Installer script hash verified before execution.
+NIX_VERSION="2.28.3"
+NIX_INSTALLER_URL="https://releases.nixos.org/nix/nix-${NIX_VERSION}/install"
+NIX_INSTALLER_SHA256="46b8d7165dceb471f4346366b3a93f1009407b99729b843b8664918f4cc800a0"
 # Ensure $USER is set — the installer's nix.sh (sourced below) is a no-op
 # when $USER is empty, which means PATH never gets ~/.nix-profile/bin.
 # The container runs as root but may not have $USER in the environment.
 _saved_user="${USER:-}"
 export USER="${USER:-$(id -u -n)}"
-curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon
+curl -fsSL "$NIX_INSTALLER_URL" -o /tmp/nix-install.sh
+echo "${NIX_INSTALLER_SHA256}  /tmp/nix-install.sh" | sha256sum -c
+sh /tmp/nix-install.sh --no-daemon
 # shellcheck disable=SC1091
 . ~/.nix-profile/etc/profile.d/nix.sh
 # Restore $USER to its original state so we don't leak a side-effect.
