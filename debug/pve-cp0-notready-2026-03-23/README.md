@@ -1,11 +1,12 @@
-# talos-pve-cp-0 NotReady — 2026-03-23
+# talos-pve-cp-0 NMI incidents
 
-## Status: Investigating
+## Status: Investigating (recurring)
 
-Boot after reboot is stuck (XFS quota init / CRI not registering — see below).
-NMI root cause analysis in progress.
+Two incidents observed. NMI root cause analysis in progress.
 
-## Timeline
+## Incident 1 — 2026-03-23
+
+### Timeline
 
 - **2026-03-23 ~05:57 UTC**: Kernel NMI on CPU 1 + `asm_exc_page_fault` (visible in
   console screenshot). Kernel prints "Dazed and confused, but trying to continue."
@@ -21,6 +22,28 @@ NMI root cause analysis in progress.
 
 The NMI at 05:57 preceded network death by ~30 minutes. Kubelet continued heartbeating
 until 06:31, then stopped. This suggests progressive degradation, not instant failure.
+
+NMI reason code: `unknown reason 10`.
+
+## Incident 2 — 2026-03-25
+
+### Timeline
+
+- **2026-03-25 ~16:37 UTC**: Kernel NMI on CPU 1 + `asm_exc_page_fault` (same pattern).
+  "NMI received for unknown reason 30 on CPU 1." Stack trace identical to incident 1.
+- Health checks briefly failed (`context deadline exceeded`), then recovered.
+- Node stayed up — `READY: False` but services (kubelet, apiserver, controller-manager,
+  scheduler) all show healthy. Less severe than incident 1 (no TX path wedge this time).
+- VM uptime at time of screenshot: 6h3m20s.
+
+NMI reason code: `unknown reason 30` (different from incident 1's `10`).
+
+### Key differences from incident 1
+
+- Node did **not** lose network — recovered on its own after brief health check failures.
+- Different NMI "reason" code (30 vs 10) — these are the ISR status port values, both
+  meaning "unknown source". The different values may indicate different perf counter
+  overflow conditions.
 
 ## NMI investigation
 
@@ -51,8 +74,9 @@ kern: warning: clocksource: Long readout interval, skipping watchdog check
   apparmor/cupsd noise. No MCE, no NMI, no KVM errors. The NMI was entirely guest-internal.
 - No MCE log (`mcelog` not available).
 - Host CPU: **AMD Ryzen 9 9950X3D** (Zen 5, 3D V-Cache).
-- Host NMI counts asymmetric across cores: core 24 has 10116 NMIs vs core 22 has 2747.
-  Consistent with perf monitoring PMI distribution, not a single hardware event.
+- Host NMI counts high across all cores (checked 2026-03-25, uptime 3d14h):
+  6K-20K per core, cores 24-25 highest at ~20K. Source: `nmi_watchdog=1` (Linux default).
+  The host NMI watchdog programs a perf counter on every core for soft lockup detection.
 
 **KVM configuration (host):**
 
@@ -73,26 +97,41 @@ kern: warning: clocksource: Long readout interval, skipping watchdog check
 
 ### NMI source hypothesis
 
-The NMI was a **Performance Monitoring Interrupt (PMI)** delivered via KVM's vNMI.
+**Revised 2026-03-25**: The most likely source is the **host kernel NMI watchdog**
+leaking PMIs into the guest via KVM vNMI.
+
+**Key finding**: `nmi_watchdog=1` on atlas (Linux default, not Proxmox-specific). The
+host kernel's NMI watchdog programs a perf hardware counter on every CPU that generates
+periodic PMIs to detect soft lockups. Host `/proc/interrupts` shows 6K-20K NMIs across
+all 32 cores — consistent with continuous watchdog ticking, not a single hardware event.
+
+With `vnmi=Y` (AMD hardware vNMI), KVM can inject these host-originated PMIs as virtual
+NMIs into guest vCPUs. The guest kernel doesn't recognize them because it didn't program
+the counter ("unknown reason").
 
 Evidence:
 
-1. No host-side NMI/MCE — rules out hardware platform NMI.
-2. `cpu: host` exposes all AMD perf counters to the guest.
-3. Guest perf subsystem (or containerd/kubelet profiling) may have programmed a
-   performance counter that overflowed, generating a PMI.
-4. KVM delivers PMIs as NMIs to the guest via the vNMI mechanism.
-5. The guest kernel couldn't identify the NMI source ("unknown reason 10") because
-   the perf subsystem handler didn't claim it (possible race or bug in Talos kernel
-   6.18.8 PMI handling on Zen 5).
+1. No host-side NMI/MCE in journald — rules out hardware platform NMI.
+2. Host `nmi_watchdog=1` — generates continuous PMIs on all cores via perf counters.
+3. Host NMI counts: 6K-20K per core (cores 24-25 highest at ~20K), distributed across
+   all CPUs. This is the watchdog, not a one-off event.
+4. KVM `vnmi=Y` — AMD hardware feature that injects NMIs into guest vCPUs.
+5. `cpu: host` with no `pmu=off` — guest sees host perf counters.
+6. Guest kernel can't identify the NMI source because it didn't program the counter.
+7. `perf_event_paranoid=4` on host — but the watchdog runs in kernel space, bypassing this.
 
-The **consequence** (TX path wedge) is the real damage: the NMI likely interrupted a
-critical section in the virtio-net driver or network softirq, leaving a spinlock held
-or a TX queue stuck. Userspace and the kernel scheduler continued, but no frames were
-ever transmitted again.
+**Previous hypothesis** (guest-initiated PMI from containerd/kubelet profiling) is less
+likely given that the host watchdog is the obvious continuous source of PMIs.
+
+**Consequence** (incident 1): The NMI likely interrupted a critical section in the
+virtio-net driver or network softirq, leaving a spinlock held or a TX queue stuck.
+Userspace and the kernel scheduler continued, but no frames were ever transmitted again.
+Incident 2 was less severe — brief health check failures, then recovery.
 
 ### Alternative hypotheses
 
+- **Guest-initiated PMI**: Guest perf subsystem (or Go runtime profiling) programmed a
+  counter that overflowed. Less likely given the host watchdog is already generating PMIs.
 - **Spurious vNMI from KVM AMD**: The `vnmi` implementation on Zen 5 may have a bug
   that generates spurious NMIs under certain conditions (e.g., vCPU migration between
   physical cores during V-Cache scheduling).
@@ -173,7 +212,9 @@ Checked Talos v1.12 docs for relevant features:
 ### Immediate
 
 1. **Disable guest PMU**: Change VM CPU config to `cpu: host,pmu=off`. This prevents
-   the guest from programming performance counters, eliminating PMI-as-NMI entirely.
+   the guest from seeing/programming performance counters. However, if the NMI source
+   is the host watchdog (see revised hypothesis), this alone may not help — the host
+   PMIs may still be injected via vNMI regardless of guest PMU state.
    Trade-off: no `perf` profiling inside the VM.
 
    ```bash
@@ -181,6 +222,19 @@ Checked Talos v1.12 docs for relevant features:
    cpu { type = "host"; flags = ["-pmu"] }
    # Or: ssh root@atlas "qm set 10000 -cpu 'host,pmu=off'"
    ```
+
+1b. **Disable host NMI watchdog**: Set `nmi_watchdog=0` on atlas. This stops the host
+kernel from programming perf counters for soft lockup detection, eliminating the
+continuous PMI source. Proxmox docs recommend this for VM performance.
+Trade-off: lose host soft-lockup detection (can still detect via other means).
+**Status**: Not yet applied. Need to understand whether this actually prevents
+vNMI injection into guests, or whether the vNMI path is independent.
+
+```bash
+# Immediate (non-persistent):
+ssh root@atlas "echo 0 > /proc/sys/kernel/nmi_watchdog"
+# Persistent: add nmi_watchdog=0 to kernel cmdline
+```
 
 2. **Remove cupsd from atlas**: cupsd apparmor spam fills the host dmesg ring buffer
    within hours, hiding real hardware events. cupsd has no purpose on a headless Proxmox
@@ -228,10 +282,12 @@ Checked Talos v1.12 docs for relevant features:
 
 ## TODOs
 
+- [ ] Understand whether `pmu=off` and/or `nmi_watchdog=0` actually prevents vNMI
+      injection into guests (read KVM source or test empirically)
 - [ ] Apply `pmu=off` to talos-pve-cp-0 CPU config in `proxmox-nodes.tf`
+- [ ] Consider `nmi_watchdog=0` on atlas (host kernel cmdline)
 - [ ] Remove cupsd from atlas (`apt purge cups cups-daemon`)
 - [ ] Add Prometheus alert for node NotReady
 - [ ] Configure QEMU watchdog (`i6300esb`) + Talos `WatchdogTimerConfig`
 - [ ] Configure Talos remote kernel log forwarding
-- [ ] Investigate and resolve the post-reboot boot hang (CRI not registering)
 - [ ] If NMIs recur after `pmu=off`: try `kvm_amd.vnmi=0` on the host
