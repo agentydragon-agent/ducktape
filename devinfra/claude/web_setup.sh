@@ -52,7 +52,7 @@ cat >~/.config/nix/nix.conf <<'EOF'
 build-users-group =
 experimental-features = nix-command flakes
 sandbox = false
-max-jobs = auto
+max-jobs = 0
 system-features =
 substituters = https://cache.allegedly.works/main https://cache.nixos.org
 trusted-public-keys = cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
@@ -68,8 +68,24 @@ if ! curl -fsSL --max-time 10 https://cache.allegedly.works/main/nix-cache-info;
   echo "ERROR: cannot reach cache.allegedly.works through proxy"
   exit 1
 fi
-echo "Installing web session tools..."
-nix profile install "${FLAKE}#web-session"
+# Use nix copy instead of nix profile install to avoid building the
+# profile wrapper derivation (buildEnv), which needs patchelf and other
+# build-time tools that can't be built on gVisor (max-jobs=0).
+echo "Fetching web session tools..."
+store_path=$(nix build --no-link --print-out-paths "${FLAKE}#web-session")
+echo "Linking $store_path into PATH..."
+# Symlink the store path's bin/ contents into ~/.nix-profile/bin/
+# (which is already on PATH from nix.sh)
+mkdir -p ~/.nix-profile/bin ~/.nix-profile/share
+for f in "$store_path"/bin/*; do
+  ln -sfn "$f" ~/.nix-profile/bin/
+done
+# Also link share/ for skills data
+if [ -d "$store_path/share" ]; then
+  for d in "$store_path"/share/*/; do
+    ln -sfn "$d" ~/.nix-profile/share/"$(basename "$d")"
+  done
+fi
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
