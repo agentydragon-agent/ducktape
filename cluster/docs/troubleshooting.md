@@ -59,6 +59,29 @@ See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>.
 
 See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>.
 
+### XFS Quotacheck Stuck After Unclean Shutdown (Boot Hangs)
+
+**Symptoms**: Node stuck at `STAGE: Booting`, `READY: False`. All K8s components `n/a`.
+`ext-nebula` and `ext-iscsid` waiting for `cri`. Nebula IP unreachable, VLAN IP reachable.
+dmesg: `XFS (sda5): Quotacheck needed: Please wait.` with no completion.
+
+**Cause**: Unclean shutdown (e.g., `qm stop` instead of `qm shutdown`) triggers XFS
+quotacheck on EPHEMERAL. On large filesystems with many inodes (container images), the
+quotacheck can hang indefinitely, blocking the boot sequencer at phase 5/9.
+
+**Fix**: Wipe EPHEMERAL and hard-reset the VM. etcd replicates from healthy peers.
+
+```bash
+talosctl -n <vlan-ip> -e <vlan-ip> --talosconfig terraform/main/talosconfig.yml \
+  reset --system-labels-to-wipe EPHEMERAL --reboot --graceful=false
+# If GPT drop fails (device busy), hard-reset from Proxmox:
+ssh root@atlas "qm reset <vmid>"
+```
+
+**Prevention**: Never use `qm stop` for Talos VMs — always `qm shutdown` (ACPI).
+
+See <lessons_learned/2026-03-24-xfs-quotacheck-stuck-boot.md>.
+
 ## Cilium Issues
 
 ### Gateway Controller Dies After Talos Machine Config Apply
@@ -305,7 +328,8 @@ kubectl run -it --rm debug --image=curlimages/curl:latest --restart=Never -- \
 
 ## Quick Reference
 
-| Issue                                     | Fix                                                  |
-| ----------------------------------------- | ---------------------------------------------------- |
-| Flux "no matches for kind"                | Restart kustomize-controller (usually auto-resolves) |
-| Node stuck NotReady "InvalidDiskCapacity" | Usually auto-resolves; restart VM if not             |
+| Issue                                     | Fix                                                           |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| Flux "no matches for kind"                | Restart kustomize-controller (usually auto-resolves)          |
+| Node stuck NotReady "InvalidDiskCapacity" | Usually auto-resolves; restart VM if not                      |
+| Node stuck Booting, quotacheck on sda5    | Wipe EPHEMERAL via `talosctl reset`, then `qm reset` from PVE |
