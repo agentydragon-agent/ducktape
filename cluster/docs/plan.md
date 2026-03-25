@@ -25,6 +25,13 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 
 ## Next Actions
 
+- [ ] Consider migrating cluster secrets from SealedSecrets to SOPS. Flux has native SOPS
+      support (`decryption.provider: sops` in Kustomization + `sops-age` Secret in
+      `flux-system`). The bootstrap key would be a Terraform-managed age key (generated from
+      a `random_bytes` seed, derived deterministically, stored in PG state with
+      `prevent_destroy`). Good candidates for early migration: `buildbuddy-api-key`,
+      Nebula certs. SealedSecrets would remain as the fallback for anything not yet migrated.
+
 - [ ] Consolidate tofu plan prerequisites — currently requires assembling credentials from
       multiple scattered sources before `tofu plan/apply` works: - `PG_CONN_STR`: read from k8s secret (`tofu-state-db-app`) via kubectl, not auto-set
       outside of cluster-networked machines - `TF_VAR_hcloud_token`: stored in system keyring on wyrm2 (`secret-tool lookup service hcloud account default`) - `PROXMOX_VE_API_TOKEN`: stored in system keyring on wyrm2 (`secret-tool lookup service proxmox ...`) - `kubeconfig`: written to `terraform/main/kubeconfig` only after `tofu apply`; must be
