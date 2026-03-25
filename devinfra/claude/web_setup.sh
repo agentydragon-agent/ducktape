@@ -66,16 +66,18 @@ EOF
 echo "Checking binary cache for web-session closure..."
 dry_run_output=$(nix build --no-link --dry-run "${FLAKE}#web-session" 2>&1)
 if echo "$dry_run_output" | grep -q 'will be built'; then
-  echo "ERROR: web-session closure is not fully cached."
-  echo "Some derivations would need to be built locally, but local builds"
-  echo "are disabled (max-jobs=0) in this gVisor environment."
+  # Extract only the "will be built" derivations (not the "will be fetched" paths).
+  # The UI truncates to the tail, so put actionable info last.
+  needs_build=$(echo "$dry_run_output" | sed -n '/will be built/,/^$/p')
+  echo "--- nix dry-run: derivations not in cache ---"
+  echo "$needs_build"
+  echo "---"
   echo ""
-  echo "Dry-run output:"
-  echo "$dry_run_output"
+  echo "ERROR: web-session closure is not fully in the binary cache."
+  echo "Local builds are disabled (max-jobs=0) in this gVisor environment."
   echo ""
   echo "Fix: on a machine with build capability, run:"
   echo "  nix build .#web-session --no-link --print-out-paths | xargs attic push main"
-  echo ""
   echo "Then start a new session."
   exit 1
 fi
