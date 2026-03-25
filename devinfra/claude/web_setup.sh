@@ -60,6 +60,25 @@ EOF
 
 # --- Step 3: Install web session tools (cache hit) ---
 # web-session bundles: claude-hooks, bbapi, gh, skills.
+# Pre-flight: verify the closure is fully in the binary cache before installing.
+# Without this, cache misses with max-jobs=0 cause cascading build failures that
+# trigger a Nix 2.34 crash (assertion in Goal::amDone, exit 134).
+echo "Checking binary cache for web-session closure..."
+dry_run_output=$(nix build --no-link --dry-run "${FLAKE}#web-session" 2>&1)
+if echo "$dry_run_output" | grep -q 'will be built'; then
+  echo "ERROR: web-session closure is not fully cached."
+  echo "Some derivations would need to be built locally, but local builds"
+  echo "are disabled (max-jobs=0) in this gVisor environment."
+  echo ""
+  echo "Dry-run output:"
+  echo "$dry_run_output"
+  echo ""
+  echo "Fix: on a machine with build capability, run:"
+  echo "  nix build .#web-session --no-link --print-out-paths | xargs attic push main"
+  echo ""
+  echo "Then start a new session."
+  exit 1
+fi
 echo "Installing web session tools..."
 nix profile install "${FLAKE}#web-session"
 
