@@ -6,12 +6,35 @@
 #   2. web-session — claude-hooks, bbapi, gh, skills; from flake via attic binary cache
 #   3. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
 #
+# IMPORTANT: This script always exits 0 so the session starts even if setup
+# fails. Failures are logged to /tmp/web-setup.log and uploaded to ix.io.
+#
 # Usage (Claude Code web UI setup command):
-#   curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/main/devinfra/claude/web_setup.sh | bash
-set -euo pipefail
+#   curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/devel/devinfra/claude/web_setup.sh | bash
 
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
+
+# Always exit 0 — upload log on failure so we can debug from inside the session.
+on_exit() {
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo ""
+    echo "=== SETUP FAILED (exit $rc) ==="
+    echo "Log saved to: $LOG_FILE"
+    # Upload full log to ix.io for debugging (UI truncates output).
+    local url
+    if url=$(curl -fsSL -F 'f:1=@'"$LOG_FILE" ix.io 2>/dev/null); then
+      echo "Full log: $url"
+    else
+      echo "(ix.io upload failed)"
+    fi
+  fi
+  exit 0
+}
+trap on_exit EXIT
+
+set -euo pipefail
 
 FLAKE="github:agentydragon/ducktape"
 
@@ -42,11 +65,9 @@ curl -fsSL https://nixos.org/nix/install | sh -s -- --no-daemon
 if [ -z "$_saved_user" ]; then unset USER; else USER="$_saved_user"; fi
 unset _saved_user
 
-# --- Step 2: Lock down Nix for gVisor ---
-# max-jobs=0: all real builds come from binary cache, gVisor can't build locally.
-# sandbox=false: gVisor already provides isolation; Nix sandboxing would fail.
-# Only our attic cache — cache.nixos.org is redundant since CI pre-pushes
-# all closures to attic, and the extra cache lookups just slow things down.
+# --- Step 2: Configure Nix for gVisor ---
+# max-jobs=0: gVisor can't run Nix builds (missing syscalls).
+# sandbox=false: gVisor already provides isolation.
 echo "Configuring Nix for gVisor..."
 cat >~/.config/nix/nix.conf <<'EOF'
 build-users-group =
@@ -58,29 +79,25 @@ substituters = https://cache.allegedly.works/main https://cache.nixos.org
 trusted-public-keys = cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
 EOF
 
-# --- Step 3: Install web session tools (cache hit) ---
-# web-session bundles: claude-hooks, bbapi, gh, skills.
-# Debug: verify proxy config and connectivity before Nix operations.
-# No DNS in the container — all HTTPS goes through CONNECT proxy.
+# --- Step 3: Install web session tools ---
+# Debug: dump environment for proxy/cert diagnostics.
+echo "--- environment ---"
 env | sed 's/^\(DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN=\).*/\1<redacted>/' | sort
+echo "---"
+
 echo "Connectivity check (cache.allegedly.works)..."
-if ! curl -fsSL --max-time 10 https://cache.allegedly.works/main/nix-cache-info; then
-  echo "ERROR: cannot reach cache.allegedly.works through proxy"
-  exit 1
-fi
-# Use nix copy instead of nix profile install to avoid building the
-# profile wrapper derivation (buildEnv), which needs patchelf and other
-# build-time tools that can't be built on gVisor (max-jobs=0).
+curl -fsSL --max-time 10 https://cache.allegedly.works/main/nix-cache-info
+
+# Use nix build + manual symlinks instead of nix profile install.
+# nix profile install creates a buildEnv wrapper that needs patchelf and
+# other build-time tools that can't be built on gVisor.
 echo "Fetching web session tools..."
 store_path=$(nix build --no-link --print-out-paths "${FLAKE}#web-session")
 echo "Linking $store_path into PATH..."
-# Symlink the store path's bin/ contents into ~/.nix-profile/bin/
-# (which is already on PATH from nix.sh)
 mkdir -p ~/.nix-profile/bin ~/.nix-profile/share
 for f in "$store_path"/bin/*; do
   ln -sfn "$f" ~/.nix-profile/bin/
 done
-# Also link share/ for skills data
 if [ -d "$store_path/share" ]; then
   for d in "$store_path"/share/*/; do
     ln -sfn "$d" ~/.nix-profile/share/"$(basename "$d")"
