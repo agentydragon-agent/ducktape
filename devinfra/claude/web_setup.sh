@@ -60,32 +60,16 @@ EOF
 
 # --- Step 3: Install web session tools (cache hit) ---
 # web-session bundles: claude-hooks, bbapi, gh, skills.
-# Pre-flight: verify the closure is fully in the binary cache before installing.
-# Without this, cache misses with max-jobs=0 cause cascading build failures that
-# trigger a Nix 2.34 crash (assertion in Goal::amDone, exit 134).
-# Run dry-run first to diagnose cache misses. Allow failure (|| true)
-# because set -e would kill the script before we can report what's wrong.
-echo "Checking binary cache for web-session closure..."
-dry_run_output=$(nix build --no-link --dry-run "${FLAKE}#web-session" 2>&1) || true
-if echo "$dry_run_output" | grep -q 'will be built'; then
-  echo ""
-  echo "WARNING: some derivations are not in the binary cache:"
-  echo "$dry_run_output" | grep -A9999 'will be built' | grep '\.drv'
-  echo ""
-  echo "Attempting install anyway (may fail with max-jobs=0)..."
-fi
-echo "Installing web session tools..."
-if ! nix profile install "${FLAKE}#web-session" 2>&1; then
-  echo ""
-  echo "ERROR: nix profile install failed."
-  echo "nix build --dry-run output was:"
-  echo "$dry_run_output"
-  echo ""
-  echo "Fix: on a machine with build capability, run:"
-  echo "  nix build .#web-session --no-link --print-out-paths | xargs attic push main"
-  echo "Then start a new session."
+# Debug: verify proxy config and connectivity before Nix operations.
+# No DNS in the container — all HTTPS goes through CONNECT proxy.
+echo "Proxy: HTTPS_PROXY=${HTTPS_PROXY:-<unset>} HTTP_PROXY=${HTTP_PROXY:-<unset>}"
+echo "Connectivity check (cache.allegedly.works)..."
+if ! curl -fsSL --max-time 10 https://cache.allegedly.works/main/nix-cache-info; then
+  echo "ERROR: cannot reach cache.allegedly.works through proxy"
   exit 1
 fi
+echo "Installing web session tools..."
+nix profile install "${FLAKE}#web-session"
 
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
