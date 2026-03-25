@@ -31,14 +31,14 @@ async def wait_for_service_socket(
     while True:
         info = await supervisor.get_process_info(service_name)
 
-        if socket_path.exists() and info.statename == ProcessState.RUNNING:
+        if socket_path.exists() and info.statename == ProcessState.RUNNING:  # noqa: ASYNC240
             return
 
         # Terminal failure states — no point waiting
         if info.statename in (ProcessState.FATAL, ProcessState.BACKOFF, ProcessState.EXITED):
             on_failure(info)
             raise TimeoutError(
-                f"{service_name} service entered {info.statename} (socket_exists={socket_path.exists()}). "
+                f"{service_name} service entered {info.statename} (socket_exists={socket_path.exists()}). "  # noqa: ASYNC240
                 f"Check logs for details."
             )
 
