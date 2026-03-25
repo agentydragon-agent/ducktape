@@ -18,7 +18,7 @@ spec:
       topology.kubernetes.io/region: proxmox
 
   storage:
-    storageClass: proxmox-longhorn
+    storageClass: local-path
     size: 10Gi
 
   monitoring:

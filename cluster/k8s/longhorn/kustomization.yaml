@@ -5,7 +5,6 @@ resources:
   - helmrepository.yaml
   - helmrelease.yaml
   - sc-hetzner-longhorn-rwx.yaml
-  - sc-longhorn-2r.yaml
   - sc-proxmox-longhorn.yaml
   - longhorn-disk-config-policy.yaml
   - longhorn-nixos-path-policy.yaml

@@ -22,7 +22,7 @@ spec:
       topology.kubernetes.io/region: hetzner
 
   storage:
-    storageClass: longhorn
+    storageClass: local-path
     size: 2Gi
 
   monitoring:

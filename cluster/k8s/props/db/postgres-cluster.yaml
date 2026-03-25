@@ -14,7 +14,7 @@ spec:
         enabled: false
 
   storage:
-    storageClass: longhorn
+    storageClass: local-path
     size: 10Gi
 
   monitoring:
