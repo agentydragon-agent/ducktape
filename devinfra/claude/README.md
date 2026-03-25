@@ -325,8 +325,13 @@ To use this repository with Claude Code on the web, configure the following setu
 
 ```bash
 #!/bin/bash
-curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/devel/devinfra/claude/web_setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/e9f4a33faab99c094930a6abf0b67e87202292a0/devinfra/claude/web_setup.sh | bash
 ```
+
+**Note**: Use a pinned commit SHA, not the `devel` branch ref — GitHub CDN caches
+branch-ref `raw.githubusercontent.com` URLs aggressively. SHA-addressed URLs are
+served from the immutable object store and are always fresh. Update the SHA when
+`web_setup.sh` changes (see <docs/web-setup-debug.md> for history).
 
 This runs <web_setup.sh> which installs:
 

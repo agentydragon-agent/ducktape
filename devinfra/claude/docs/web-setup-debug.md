@@ -4,7 +4,7 @@ Investigation into `web_setup.sh` failures in Claude Code web sessions.
 
 ## Current Status — RESOLVED
 
-**Root cause identified and fixed.** Two independent problems combined:
+**Root cause identified and fixed.** Three independent problems combined:
 
 1. **`max-jobs=0` in nix config** blocked all local builds, including trivial
    `symlinkJoin` derivations. Changing to `max-jobs=auto` fixes this — gVisor
@@ -16,7 +16,17 @@ Investigation into `web_setup.sh` failures in Claude Code web sessions.
    attic cache miss. Fixed by removing `devinfra.build_info` from the wheel's
    dependency tree (`52e7c39`).
 
-With both fixes, `nix profile install` works reliably on gVisor.
+3. **GitHub CDN caches branch-ref `raw.githubusercontent.com` URLs
+   aggressively.** After merging `max-jobs=auto` fixes (#994, #995), sessions
+   continued failing because `curl https://raw.githubusercontent.com/.../devel/...`
+   was still serving the pre-fix script. Fixed by pinning the setup script URL
+   to a specific commit SHA (`e9f4a33`) — SHA-addressed URLs are served from
+   the immutable object store, not the CDN branch cache. Also added
+   `--max-jobs auto` to the `nix profile install` command line (`e9f4a33`) so
+   even stale CDN content cannot re-introduce `max-jobs=0`.
+
+With all three fixes applied, `nix profile install` works reliably on gVisor.
+The setup script URL in the Claude Code web UI should use the pinned SHA form.
 
 ### Correction: gVisor CAN run nix builds
 
@@ -119,6 +129,8 @@ during early debugging.
 | `8e1eea6e7` | `max-jobs=auto` (allow local builds)                  | Still crashed — **misdiagnosed as gVisor issue** (see below) |
 | `8688fc17f` | `nix build` + manual symlinks, `max-jobs=0`           | Failed — `max-jobs=0` blocked `claude-web-session.drv`       |
 | `52e7c39`   | Remove `build_info` stamping from wheel               | Fixes spurious pin bumps (wheel hash now stable)             |
+| `842b26c`   | `max-jobs=auto`, revert to `nix profile install`      | Merged to devel; CDN still served old script for many sessions |
+| `e9f4a33`   | Add `--max-jobs auto` CLI flag, nix.conf debug dump   | Pin setup URL to this SHA → bypasses CDN → setup succeeds ✓  |
 
 **Re `8e1eea6e7`**: This commit used `nix profile install` with `max-jobs=auto`.
 It still failed and was diagnosed as "gVisor can't run build operations". Later
@@ -127,14 +139,19 @@ install` works fine on gVisor with `max-jobs=auto` and `sandbox=false`. The
 `8e1eea6e7` failure was likely a different issue (Nix crash, network, or the
 fact that `sandbox=false` wasn't set at that point).
 
-## Remaining Fix
+## Fix Summary
 
-Change `max-jobs = 0` to `max-jobs = auto` in `web_setup.sh`. Combined with
-the build_info removal (`52e7c39`), this should make web setup work reliably:
+All fixes are in place as of `e9f4a33`:
 
-- `max-jobs=auto` allows nix to build `symlinkJoin` / `buildEnv` locally
-- Stable wheel hash eliminates spurious pin bumps and cache invalidation
-- Even if a cache miss occurs, the local build succeeds
+- `max-jobs=auto` in nix.conf allows nix to build `symlinkJoin` / `buildEnv` locally
+- `--max-jobs auto` on the `nix profile install` command line overrides any stale nix.conf
+- Stable wheel hash (build_info removed) eliminates spurious pin bumps and cache invalidation
+- Setup URL pinned to `e9f4a33` SHA bypasses GitHub CDN branch-ref caching
+
+**Setup URL** (use this in the Claude Code web UI):
+```
+curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/e9f4a33faab99c094930a6abf0b67e87202292a0/devinfra/claude/web_setup.sh | bash
+```
 
 ## Key Lessons
 
@@ -165,6 +182,14 @@ the build_info removal (`52e7c39`), this should make web setup work reliably:
 8. **CI pin-bump race**: pushing to attic from a local machine doesn't help
    if CI pushes a pin-bump commit before the web session starts, changing
    the derivation hash. Fixed by making wheel hash deterministic.
+
+9. **GitHub CDN caches `raw.githubusercontent.com` branch refs aggressively.**
+   After merging fixes to `devel`, sessions continued to receive the stale script
+   for many more sessions. SHA-addressed URLs (`/blob/<sha>/...`) are served from
+   the immutable object store and are not subject to this caching. For setup
+   scripts that must be fresh, pin to a specific commit SHA rather than a branch
+   name. Belt-and-suspenders: also pass critical flags (like `--max-jobs`) on the
+   command line so stale script content can't reintroduce broken defaults.
 
 ## Container Environment (from RE docs)
 
