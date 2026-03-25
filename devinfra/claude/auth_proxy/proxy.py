@@ -113,11 +113,7 @@ class AuthForwardingProxy:
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
-        logger.info(
-            "Auth proxy started on 127.0.0.1:%d (max_workers: %d)",
-            self.listen_port,
-            self.max_workers,
-        )
+        logger.info("Auth proxy started on 127.0.0.1:%d (max_workers: %d)", self.listen_port, self.max_workers)
 
     def stop(self) -> None:
         """Stop the proxy server."""

@@ -129,8 +129,7 @@ def _refresh_proxy_creds(paths: SessionPaths) -> str:
         return update_proxy_creds(https_proxy, paths)
     except OSError as e:
         raise AuthProxyError(
-            f"Auth proxy RPC failed: {e}. "
-            "The hook daemon may not be running. Try restarting your Claude Code session."
+            f"Auth proxy RPC failed: {e}. The hook daemon may not be running. Try restarting your Claude Code session."
         ) from e
 
 

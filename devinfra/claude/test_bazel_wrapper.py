@@ -10,9 +10,7 @@ from devinfra.claude.errors import AuthProxyError
 from devinfra.claude.session_paths import SessionPaths
 
 
-def test_sends_creds_via_rpc(
-    session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_sends_creds_via_rpc(session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch) -> None:
     """When RPC succeeds, proxy URL is returned and no error is raised."""
     monkeypatch.setenv("HTTPS_PROXY", "http://user:pass@proxy.example.com:8080")
 
@@ -23,9 +21,7 @@ def test_sends_creds_via_rpc(
         assert result == "http://localhost:12345"
 
 
-def test_raises_when_no_proxy_env(
-    session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_raises_when_no_proxy_env(session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch) -> None:
     """When HTTPS_PROXY is not set, raises AuthProxyError."""
     monkeypatch.delenv("HTTPS_PROXY", raising=False)
     monkeypatch.delenv("https_proxy", raising=False)
@@ -34,17 +30,12 @@ def test_raises_when_no_proxy_env(
         _refresh_proxy_creds(session_paths)
 
 
-def test_raises_when_rpc_fails(
-    session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_raises_when_rpc_fails(session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch) -> None:
     """When the RPC call fails with OSError, raises AuthProxyError with restart guidance."""
     monkeypatch.setenv("HTTPS_PROXY", "http://user:pass@proxy.example.com:8080")
 
     with (
-        patch(
-            "devinfra.claude.bazel_wrapper.update_proxy_creds",
-            side_effect=OSError("connection refused"),
-        ),
+        patch("devinfra.claude.bazel_wrapper.update_proxy_creds", side_effect=OSError("connection refused")),
         pytest.raises(AuthProxyError, match="Auth proxy RPC failed"),
     ):
         _refresh_proxy_creds(session_paths)

@@ -245,7 +245,6 @@ async def _create_java_truststore(paths: SessionPaths) -> None:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 
-
 async def _wait_for_proxy_port(port: int) -> None:
     """Wait for the proxy port to become available.
 
