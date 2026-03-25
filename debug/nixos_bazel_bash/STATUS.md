@@ -39,7 +39,7 @@ common --repo_env=NIX_LD
 common --repo_env=NIX_LD_LIBRARY_PATH
 ```
 
-Managed by `nix/home/modules/nixos-bazel.nix` via home-manager.
+Managed by `nix/nixos/modules/bazel-nixos/` — installed to `/etc/bazel.bazelrc` via NixOS system config.
 
 ### Env var scoping
 
@@ -132,14 +132,14 @@ Neither flag can be scoped per-platform. `--action_env` applies to all actions (
 
 ## Files
 
-| File                                  | Purpose                                   |
-| ------------------------------------- | ----------------------------------------- |
-| `nix/home/modules/nixos-bazel.nix`    | Home-manager module for user `~/.bazelrc` |
-| `nix/nixos/modules/bazel-dev.nix`     | NixOS module: nix-ld + dev packages       |
-| `flake.nix` (bazel-test config)       | NixOS container config in flake           |
-| `devinfra/nixos_bazel_test/image.nix` | Docker image from NixOS system config     |
-| `devinfra/nixos_bazel_test/run.sh`    | Build + run script                        |
-| `debug/nixos_bazel_bash/README.md`    | Original investigation notes              |
+| File                                  | Purpose                               |
+| ------------------------------------- | ------------------------------------- |
+| `nix/nixos/modules/bazel-nixos/`      | System-level `/etc/bazel.bazelrc`     |
+| `nix/nixos/modules/bazel-dev.nix`     | NixOS module: nix-ld + dev packages   |
+| `flake.nix` (bazel-test config)       | NixOS container config in flake       |
+| `devinfra/nixos_bazel_test/image.nix` | Docker image from NixOS system config |
+| `devinfra/nixos_bazel_test/run.sh`    | Build + run script                    |
+| `debug/nixos_bazel_bash/README.md`    | Original investigation notes          |
 
 ## Known Gap: Genrules with non-trivial shell commands
 

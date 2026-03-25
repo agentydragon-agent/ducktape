@@ -46,7 +46,6 @@
   home-manager.useGlobalPkgs = true;
   home-manager.useUserPackages = true;
   home-manager.users.root = {
-    imports = [ ../../../home/modules/nixos-bazel.nix ];
     programs.direnv = {
       enable = true;
       enableBashIntegration = true;

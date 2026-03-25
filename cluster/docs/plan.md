@@ -25,6 +25,13 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 
 ## Next Actions
 
+- [ ] Consolidate tofu plan prerequisites — currently requires assembling credentials from
+      multiple scattered sources before `tofu plan/apply` works: - `PG_CONN_STR`: read from k8s secret (`tofu-state-db-app`) via kubectl, not auto-set
+      outside of cluster-networked machines - `TF_VAR_hcloud_token`: stored in system keyring on wyrm2 (`secret-tool lookup service hcloud account default`) - `PROXMOX_VE_API_TOKEN`: stored in system keyring on wyrm2 (`secret-tool lookup service proxmox ...`) - `kubeconfig`: written to `terraform/main/kubeconfig` only after `tofu apply`; must be
+      manually copied or regenerated before the kubernetes provider can plan - `talosconfig.yml`: similarly written by `tofu apply`; empty stub in checkout, real copy
+      lives in `terraform/main/` on wyrm2 after bootstrap
+      Goal: make `direnv` in `cluster/` or a helper script reliably assemble all of these so
+      `tofu plan` works from any machine with kubectl + SSH access to wyrm2.
 - [ ] Authentik blueprint secret rotation: Authentik blueprints use file content hash to
       decide whether to re-apply. `!Env` tags are resolved _after_ the hash check, so rotating
       secrets in Vault (via Terraform `sso-secrets/`) updates the K8s secret and pod env vars,

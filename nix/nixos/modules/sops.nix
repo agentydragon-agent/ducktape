@@ -10,6 +10,7 @@
 let
   user = config.users.users.${username};
   bazelrcDir = "${user.home}/.config/bazel";
+  atticDir = "${user.home}/.config/attic";
 in
 {
   imports = [ inputs.sops-nix.nixosModules.sops ];
@@ -36,12 +37,21 @@ in
     '';
   };
 
-  # Configure attic client for pushing to the binary cache.
+  # Write ~/.config/attic/config.toml directly (no `su` needed).
   system.activationScripts.attic-config = {
     deps = [ "setupSecrets" ];
     text = ''
+      mkdir -p ${atticDir}
       token=$(cat ${config.sops.secrets.attic_token.path})
-      su ${username} -c '${pkgs.attic-client}/bin/attic login main https://cache.allegedly.works "'"$token"'"'
+      cat > ${atticDir}/config.toml <<EOF
+      default-server = "main"
+
+      [servers.main]
+      endpoint = "https://cache.allegedly.works"
+      token = "$token"
+      EOF
+      chown -R ${username}:users ${atticDir}
+      chmod 600 ${atticDir}/config.toml
     '';
   };
 }

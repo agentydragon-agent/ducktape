@@ -18,7 +18,6 @@ in
 {
   imports = [
     ../home.nix
-    ../modules/nixos-bazel.nix
   ];
 
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it

@@ -52,6 +52,7 @@ jobs:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')
     uses: ./.github/workflows/nix-flake-check.yml
+    secrets: inherit
   ansible-lint:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'ansible-lint')
