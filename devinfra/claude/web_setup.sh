@@ -62,7 +62,7 @@ EOF
 # web-session bundles: claude-hooks, bbapi, gh, skills.
 # Debug: verify proxy config and connectivity before Nix operations.
 # No DNS in the container — all HTTPS goes through CONNECT proxy.
-env | grep -iE '^(https?_proxy|no_proxy|ssl_cert|nix_ssl|curl_ca)' | sort || echo "(no proxy/cert env vars set)"
+env | sed 's/^\(DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN=\).*/\1<redacted>/' | sort
 echo "Connectivity check (cache.allegedly.works)..."
 if ! curl -fsSL --max-time 10 https://cache.allegedly.works/main/nix-cache-info; then
   echo "ERROR: cannot reach cache.allegedly.works through proxy"
