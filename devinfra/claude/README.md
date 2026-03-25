@@ -328,9 +328,9 @@ To use this repository with Claude Code on the web, configure the following setu
 curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/154ce3ea6dfb5075cafbcbb3c89f86c707782b35/devinfra/claude/web_setup.sh | bash
 ```
 
-**Note**: Use a pinned commit SHA, not the `devel` branch ref — GitHub CDN caches
-branch-ref `raw.githubusercontent.com` URLs aggressively. SHA-addressed URLs are
-served from the immutable object store and are always fresh. Update the SHA when
+**Note**: Use a pinned commit SHA, not the `devel` branch ref — Anthropic caches
+the setup script at configuration time (when saved in the web UI). Changing the
+URL triggers a re-fetch; updating `devel` alone does not. Update the SHA when
 `web_setup.sh` changes (see <docs/web-setup-debug.md> for history).
 
 This runs <web_setup.sh> which installs:

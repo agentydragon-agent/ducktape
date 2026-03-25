@@ -16,14 +16,16 @@ Investigation into `web_setup.sh` failures in Claude Code web sessions.
    attic cache miss. Fixed by removing `devinfra.build_info` from the wheel's
    dependency tree (`52e7c39`).
 
-3. **GitHub CDN caches branch-ref `raw.githubusercontent.com` URLs
-   aggressively.** After merging `max-jobs=auto` fixes (#994, #995), sessions
-   continued failing because `curl https://raw.githubusercontent.com/.../devel/...`
-   was still serving the pre-fix script. Fixed by pinning the setup script URL
-   to a specific commit SHA (`e9f4a33`) — SHA-addressed URLs are served from
-   the immutable object store, not the CDN branch cache. Also added
-   `--max-jobs auto` to the `nix profile install` command line (`e9f4a33`) so
-   even stale CDN content cannot re-introduce `max-jobs=0`.
+3. **Anthropic caches the setup script URL at configuration time.** After
+   merging `max-jobs=auto` fixes (#994, #995), sessions continued failing
+   because Anthropic had fetched and cached the script when the branch-ref URL
+   was first configured in the web UI — new sessions received the cached
+   pre-fix script, not the updated one from GitHub. Fixed by pinning to a
+   specific commit SHA (`e9f4a33`) and reconfiguring the web UI with the new
+   URL — Anthropic re-fetches on URL change, so SHA-pinned URLs guarantee a
+   fresh fetch. Also added `--max-jobs auto` to the `nix profile install`
+   command line (`e9f4a33`) so even a stale cached script cannot re-introduce
+   `max-jobs=0`.
 
 With all three fixes applied, `nix profile install` works reliably on gVisor.
 The setup script URL in the Claude Code web UI should use the pinned SHA form.
@@ -186,13 +188,14 @@ curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/154ce3ea6dfb5
    if CI pushes a pin-bump commit before the web session starts, changing
    the derivation hash. Fixed by making wheel hash deterministic.
 
-9. **GitHub CDN caches `raw.githubusercontent.com` branch refs aggressively.**
-   After merging fixes to `devel`, sessions continued to receive the stale script
-   for many more sessions. SHA-addressed URLs (`/blob/<sha>/...`) are served from
-   the immutable object store and are not subject to this caching. For setup
-   scripts that must be fresh, pin to a specific commit SHA rather than a branch
-   name. Belt-and-suspenders: also pass critical flags (like `--max-jobs`) on the
-   command line so stale script content can't reintroduce broken defaults.
+9. **Anthropic caches the setup script at configuration time, not per-session.**
+   After merging fixes to `devel`, sessions continued to receive the stale script.
+   The cache is on Anthropic's side — they fetch the URL when it's saved in the
+   web UI and serve that cached copy to new sessions. Changing the URL (e.g. to a
+   new SHA) triggers a fresh fetch. For setup scripts that must be fresh: pin to a
+   specific commit SHA and update the URL in the web UI when the script changes.
+   Belt-and-suspenders: also pass critical flags (like `--max-jobs`) on the
+   command line so a stale cached script can't reintroduce broken defaults.
 
 ## Container Environment (from RE docs)
 
