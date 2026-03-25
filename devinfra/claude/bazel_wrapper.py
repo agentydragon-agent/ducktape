@@ -12,7 +12,6 @@ _BAZEL_WRAPPER_NAME from basename($0).
 Reads configuration from environment variables set by session_start.py.
 """
 
-import asyncio
 import logging
 import os
 import sys
@@ -22,12 +21,11 @@ from pathlib import Path
 from devinfra.claude.auth_proxy.credentials import check_credential_expiry
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS, get_upstream_proxy_url
 from devinfra.claude.debug import log_entrypoint_debug
-from devinfra.claude.env_file import ENV_AUTH_PROXY_URL, ENV_BAZELISK_PATH
+from devinfra.claude.env_file import ENV_BAZELISK_PATH
 from devinfra.claude.errors import AuthProxyError
+from devinfra.claude.hook_daemon.client import update_proxy_creds
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import ENV_SESSION_DIR, HookSettings, is_web_mode
-from util.env import get_required_env
-from util.net import async_wait_for_port
+from devinfra.claude.settings import ENV_SESSION_DIR, is_web_mode
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +39,13 @@ def _invocation_name() -> str:
     return os.environ.get(_WRAPPER_NAME_ENV, "bazel")
 
 
-def warn_if_credentials_expiring(paths: SessionPaths) -> None:
-    """Check JWT expiry and log warning if concerning."""
-    creds_file = paths.auth_proxy_creds_file
-    if not creds_file.exists():
+def warn_if_credentials_expiring() -> None:
+    """Check JWT expiry from current HTTPS_PROXY env var and log warning if concerning."""
+    upstream_url = get_upstream_proxy_url()
+    if not upstream_url:
         return
 
-    status = check_credential_expiry(creds_file.read_text().strip())
+    status = check_credential_expiry(upstream_url)
 
     if status.expiry is None:
         return
@@ -119,39 +117,26 @@ def _resolve_real_binary() -> str:
     raise FileNotFoundError(f"No {invoked_as} found on PATH")
 
 
-async def _ensure_proxy_creds_fresh(paths: SessionPaths, settings: HookSettings) -> None:
-    """Write fresh credentials and verify the in-process auth proxy is listening.
+def _refresh_proxy_creds(paths: SessionPaths) -> str:
+    """Send fresh JWT credentials to the hook daemon's in-process auth proxy via RPC.
 
-    The auth proxy runs in the hook daemon process and reads its creds file
-    on each connection. This function writes the current upstream proxy URL
-    (which may have a refreshed JWT) to the daemon's creds file.
+    Returns the local proxy URL (e.g. http://localhost:<port>).
     """
     https_proxy = get_upstream_proxy_url()
     if not https_proxy:
         raise AuthProxyError("No HTTPS_PROXY environment variable set")
-
-    creds_file = paths.auth_proxy_creds_file
-    creds_file.parent.mkdir(parents=True, exist_ok=True)
-    creds_file.write_text(https_proxy)
-    logger.debug("Wrote fresh proxy credentials to %s", creds_file)
-
-    # Verify proxy is listening
     try:
-        await async_wait_for_port("127.0.0.1", settings.auth_proxy_port, timeout_secs=5.0)
-    except TimeoutError as e:
+        return update_proxy_creds(https_proxy, paths)
+    except OSError as e:
         raise AuthProxyError(
-            f"Auth proxy not listening on port {settings.auth_proxy_port}. "
-            "The hook daemon may not be running. Try restarting your Claude Code session."
+            f"Auth proxy RPC failed: {e}. The hook daemon may not be running. Try restarting your Claude Code session."
         ) from e
 
 
-async def _async_main(paths: SessionPaths, settings: HookSettings) -> None:
-    """Async entry point — all async work happens here."""
+def _run(paths: SessionPaths) -> None:
     if is_web_mode():
-        await _ensure_proxy_creds_fresh(paths, settings)
-        warn_if_credentials_expiring(paths)
-
-        local_proxy = get_required_env(ENV_AUTH_PROXY_URL)
+        local_proxy = _refresh_proxy_creds(paths)
+        warn_if_credentials_expiring()
         for var in PROXY_ENV_VARS:
             os.environ[var] = local_proxy
 
@@ -168,13 +153,12 @@ def main() -> None:
         raise RuntimeError(f"{ENV_SESSION_DIR} environment variable is required")
     session_id = Path(session_dir_str).name
     paths = SessionPaths.from_env(session_id, dict(os.environ))
-    settings = HookSettings()
 
     _setup_logging(paths)
     log_entrypoint_debug("bazel_wrapper")
 
     try:
-        asyncio.run(_async_main(paths, settings))
+        _run(paths)
     except AuthProxyError as e:
         logger.error("%s", e)
         logger.info("The hook daemon may need restarting — start a new session or re-trigger hooks")

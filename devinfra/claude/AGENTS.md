@@ -17,8 +17,8 @@
 # Check hook daemon log (includes session start output)
 tail -100 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/hook-daemon/daemon.log"
 
-# Verify auth proxy connectivity
-curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1
+# Verify auth proxy connectivity (AUTH_PROXY_URL is set in the session env file)
+curl -s --max-time 5 -x "$AUTH_PROXY_URL" https://bcr.bazel.build/ | head -1
 
 # Check session bazelrc
 cat "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/bazelrc"

@@ -119,20 +119,20 @@ during early debugging.
 
 ## Timeline of Debugging Iterations
 
-| Commit      | Attempt                                               | Outcome                                                      |
-| ----------- | ----------------------------------------------------- | ------------------------------------------------------------ |
-| `5a8a19c29` | Add `--dry-run` pre-flight cache check                | `set -e` killed script before check ran                      |
-| `64df12ede` | Put error message at tail (UI truncates to tail)      | Same — `set -e` still killed it                              |
-| `b20dd1498` | Add ix.io log upload on failure                       | Trap didn't fire (set -e killed before trap)                 |
-| `f45a3adb6` | `\|\| true` on dry-run, graceful install failure      | CDN served latest, but dry-run hung (fetching nixpkgs ~50MB) |
-| `7a0457485` | Drop dry-run, add proxy env dump + connectivity check | Got past check, confirmed proxy works                        |
-| `7db50886d` | Dump full env (redact k8s token)                      | Confirmed env vars present                                   |
-| `581f2e847` | Add `cache.nixos.org` back to substituters            | Still crashed (SIGABRT from `max-jobs=0`)                    |
-| `8e1eea6e7` | `max-jobs=auto` (allow local builds)                  | Still crashed — **misdiagnosed as gVisor issue** (see below) |
-| `8688fc17f` | `nix build` + manual symlinks, `max-jobs=0`           | Failed — `max-jobs=0` blocked `claude-web-session.drv`       |
-| `52e7c39`   | Remove `build_info` stamping from wheel               | Fixes spurious pin bumps (wheel hash now stable)             |
-| `842b26c`   | `max-jobs=auto`, revert to `nix profile install`      | Merged to devel; CDN still served old script for many sessions |
-| `e9f4a33`   | Add `--max-jobs auto` CLI flag, nix.conf debug dump   | Pin setup URL to this SHA → bypasses CDN → setup succeeds ✓  |
+| Commit      | Attempt                                                  | Outcome                                                               |
+| ----------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
+| `5a8a19c29` | Add `--dry-run` pre-flight cache check                   | `set -e` killed script before check ran                               |
+| `64df12ede` | Put error message at tail (UI truncates to tail)         | Same — `set -e` still killed it                                       |
+| `b20dd1498` | Add ix.io log upload on failure                          | Trap didn't fire (set -e killed before trap)                          |
+| `f45a3adb6` | `\|\| true` on dry-run, graceful install failure         | CDN served latest, but dry-run hung (fetching nixpkgs ~50MB)          |
+| `7a0457485` | Drop dry-run, add proxy env dump + connectivity check    | Got past check, confirmed proxy works                                 |
+| `7db50886d` | Dump full env (redact k8s token)                         | Confirmed env vars present                                            |
+| `581f2e847` | Add `cache.nixos.org` back to substituters               | Still crashed (SIGABRT from `max-jobs=0`)                             |
+| `8e1eea6e7` | `max-jobs=auto` (allow local builds)                     | Still crashed — **misdiagnosed as gVisor issue** (see below)          |
+| `8688fc17f` | `nix build` + manual symlinks, `max-jobs=0`              | Failed — `max-jobs=0` blocked `claude-web-session.drv`                |
+| `52e7c39`   | Remove `build_info` stamping from wheel                  | Fixes spurious pin bumps (wheel hash now stable)                      |
+| `842b26c`   | `max-jobs=auto`, revert to `nix profile install`         | Merged to devel; CDN still served old script for many sessions        |
+| `e9f4a33`   | Add `--max-jobs auto` CLI flag, nix.conf debug dump      | Pin setup URL to this SHA → bypasses CDN → setup succeeds ✓           |
 | `680d789`   | Symlink all `~/.nix-profile/bin/*` into `/usr/local/bin` | Fixes `claude-hook: not found`; also makes `bb`, `gh`, etc. available |
 
 **Re `8e1eea6e7`**: This commit used `nix profile install` with `max-jobs=auto`.
@@ -154,6 +154,7 @@ All fixes are in place as of `680d789`:
   and makes all Nix-installed tools (`bb`, `gh`, etc.) available to hooks and BashTool
 
 **Setup URL** (use this in the Claude Code web UI):
+
 ```
 curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/680d78946bf72e5e3601cdb69299546b495cab1b/devinfra/claude/web_setup.sh | bash
 ```

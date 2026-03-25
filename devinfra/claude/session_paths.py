@@ -71,11 +71,6 @@ class SessionPaths:
         return self.auth_proxy_dir / "combined_ca.pem"
 
     @property
-    def auth_proxy_creds_file(self) -> Path:
-        """Upstream proxy credentials file (lives in hook daemon dir, read by in-process proxy)."""
-        return self.hook_daemon_dir / "upstream_proxy"
-
-    @property
     def auth_proxy_ca_file(self) -> Path:
         """Extracted Anthropic CA file."""
         return self.auth_proxy_dir / "anthropic_ca.pem"

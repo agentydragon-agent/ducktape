@@ -57,12 +57,12 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Proxy Setup (via `proxy_setup.py`)
 
-1. Auth proxy starts in-process in the hook daemon at daemon startup (daemon threads, port `127.0.0.1:18081`)
-2. Session start writes credentials to the daemon's creds file
+1. Auth proxy starts in-process in the hook daemon (daemon threads, OS-assigned port) on the first `SessionStart`
+2. Session start sets credentials on the in-process proxy via `proxy.set_creds()`
 3. Loads the TLS inspection CA from the pre-installed filesystem path (`/usr/local/share/ca-certificates/swp-ca-production.crt`)
 4. Creates a Java truststore with the CA using keytool
 5. Creates combined CA bundle (system CAs + proxy CA)
-6. Writes bazelrc to `<session_dir>/auth-proxy/bazelrc`
+6. Writes bazelrc to `<session_dir>/bazelrc`
 
 ### Bazel Setup (via `hook_daemon/session_start/bazelisk.py`)
 
@@ -101,28 +101,19 @@ Example (from daemon traces):
 
 **Why this matters — session-local vs session-global state:**
 
-The hook daemon is keyed by session ID: each session ID gets its own socket path, daemon
-directory, and auth proxy creds file. When `Setup` starts a daemon for the new ID, and
-`SessionStart` arrives for the old ID, the client finds no socket for the old ID and tries
-to start a _second_ daemon. The second daemon crashes because the auth proxy port (18081)
-is already bound by the first.
+The hook daemon is keyed by session ID: each session ID gets its own socket path and daemon
+directory. When `Setup` starts a daemon for the new ID, and `SessionStart` arrives for the
+old ID, the client finds no socket for the old ID and tries to start a _second_ daemon.
 
 **Consequences:**
 
 - **`Setup` hook**: Do NOT register it in `.claude/settings.json`. It would start a daemon
-  for the new session ID, grab port 18081, and block the real `SessionStart` daemon.
-  The `Setup` hook handler is a noop anyway (the daemon returns `{}` immediately).
-- **Session-local files** (socket, creds file, wrapper dir, session bazelrc): always
-  keyed by `SessionStart`'s session ID, which may be the _old_ ID after a compaction.
+  for the new session ID. The `Setup` hook handler is a noop anyway (the daemon returns
+  `{}` immediately).
+- **Session-local files** (socket, wrapper dir, session bazelrc): always keyed by
+  `SessionStart`'s session ID, which may be the _old_ ID after a compaction.
 - **Session-global files** (bazelisk binary at `~/.cache/claude-hooks/bazelisk`): shared
   across all session IDs, safe for concurrent daemons.
-- **Auth proxy port** (18081): a single fixed port shared by all daemons in the same
-  container. The daemon now handles `EADDRINUSE` gracefully (warning + skip) rather
-  than crashing, as belt-and-suspenders. Note that the **auth proxy creds file is still
-  session-local** (`<session_dir>/hook-daemon/upstream_proxy`), so if another session's
-  daemon already owns port 18081, this session's daemon cannot update the creds used by
-  the running proxy. In that case, skipping proxy startup only avoids a crash; it does
-  **not** guarantee a functional auth proxy for the current session.
 
 # Auth Proxy
 
@@ -144,11 +135,11 @@ Bazel's Java HTTP layer _can_ authenticate with the egress proxy: `ProxyHelper` 
 
 The auth proxy decouples authentication from this timing problem:
 
-- Runs on `localhost:18081`, accepts **unauthenticated** CONNECT requests
-- Bazel's JVM is configured with `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=18081`
+- Runs on `localhost:<port>` (OS-assigned), accepts **unauthenticated** CONNECT requests
+- Bazel's JVM is configured with `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=<port>`
 - gRPC-Java's `ProxyDetectorImpl` sees the proxy via `ProxySelector` and connects without needing credentials
 - The auth proxy injects `Proxy-Authorization: Basic` credentials when forwarding to the egress proxy
-- Reads credentials from a file on each connection, enabling JWT hot-reload without restart
+- Credentials are held in-memory; `bazel_wrapper` updates them via RPC before each invocation
 
 ## References
 
@@ -192,26 +183,26 @@ Most tools (curl, pip, npm, etc.)
 Bazel/Bazelisk
     └──► bazel wrapper
            ├── 1. Reads HTTPS_PROXY (fresh JWT from Anthropic)
-           ├── 2. Writes to creds file (<session_dir>/hook-daemon/upstream_proxy)
-           ├── 3. Sets HTTPS_PROXY=localhost:18081 for subprocess only
+           ├── 2. RPC to hook daemon: POST /update-proxy-creds → in-memory update
+           ├── 3. Sets HTTPS_PROXY=localhost:<port> for subprocess only
            └── 4. Execs bazelisk
-                   └──► Auth proxy (localhost:18081)
-                          ├── Reads creds file on each connection
+                   └──► Auth proxy (localhost:<port>)
+                          ├── Reads in-memory credentials (set via RPC)
                           ├── Adds Proxy-Authorization header
                           └──► Anthropic's proxy ──► Internet
 ```
 
 The auth proxy runs in-process within the hook daemon (daemon threads, FastAPI on UDS).
-Starts automatically when the daemon starts (if `HTTPS_PROXY` is set), stops on daemon
-shutdown. Creds file: `~/.claude/session-env/<session_id>/hook-daemon/upstream_proxy`.
+Credentials are held in-memory on the proxy object and updated via RPC before each bazel
+invocation. Proxy is started lazily on `SessionStart`, stopped on daemon shutdown.
 
 ## Verification
 
 After session start:
 
 ```bash
-# Proxy should be accessible
-curl -s --max-time 5 -x http://127.0.0.1:18081 https://bcr.bazel.build/ | head -1
+# Proxy should be accessible (AUTH_PROXY_URL is set in the session env file)
+curl -s --max-time 5 -x "$AUTH_PROXY_URL" https://bcr.bazel.build/ | head -1
 
 # Bazel should be able to access BCR
 bazel info
@@ -233,7 +224,6 @@ Note: Supervisor listens on TCP `127.0.0.1:19001` (no Unix socket file).
 
 Hook daemon files (in `<session_dir>/hook-daemon/`):
 
-- `upstream_proxy` - Auth proxy credentials (read by in-process proxy on each connection)
 - `daemon.sock` - UDS for hook RPC
 - `daemon.pid` - Daemon pidfile
 - `daemon.log` - Daemon and session start logs

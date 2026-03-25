@@ -322,6 +322,8 @@
               bbapi
               skills
               pkgs.gh
+              pkgs.kubectl
+              pkgs.fluxcd
             ];
           };
           # NixOS container tarball for docker import.

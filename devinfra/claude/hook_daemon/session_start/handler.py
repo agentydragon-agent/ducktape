@@ -38,7 +38,7 @@ from devinfra.claude.hook_daemon.session_start import apt
 from devinfra.claude.hook_daemon.session_start import bazel_warmup
 from devinfra.claude.hook_daemon.session_start import bazelisk
 from devinfra.claude.hook_daemon.session_start import buildbuddy
-from devinfra.claude.hook_daemon.session_start import cli_tools
+
 from devinfra.claude.hook_daemon.session_start import container_runtime
 from devinfra.claude.hook_daemon.session_start import fork_remote
 from devinfra.claude.hook_daemon.session_start import k8s_secrets
@@ -334,19 +334,6 @@ async def _setup_web(
     async def traced_precommit():
         return await run_in_thread(precommit.install_precommit, project_dir)
 
-    @tracer.start_as_current_span("install_cli_tools", context=root_ctx)
-    async def traced_cli_tools():
-        skip_tools = {
-            name
-            for name, enabled in [
-                ("gh", settings.install_gh),
-                ("kubectl", settings.install_kubectl),
-                ("flux", settings.install_flux),
-            ]
-            if not enabled
-        }
-        return await run_in_thread(lambda: cli_tools.install_cli_tools(paths.wrapper_dir, http, skip=skip_tools))
-
     results = await asyncio.gather(
         proxy_task,
         setup_container_runtime_task(),
@@ -354,7 +341,6 @@ async def _setup_web(
         run_in_thread(install_bazelisk_wrapper),
         setup_bazel_on_tmpfs(),
         mkcert_append_bundle(),
-        traced_cli_tools(),
         apt_task,
         return_exceptions=True,
     )
@@ -365,8 +351,7 @@ async def _setup_web(
     bazelisk_result: bazelisk.BazeliskSetup | BaseException = results[3]
     tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[4]
     mkcert_result: mkcert.MkcertSetup | BaseException = results[5]
-    cli_tools_result: list[str] | BaseException = results[6]
-    apt_result: apt.AptSetup | BaseException = results[7]
+    apt_result: apt.AptSetup | BaseException = results[6]
 
     # Log non-critical failures
     if isinstance(precommit_result, BaseException):
@@ -379,8 +364,6 @@ async def _setup_web(
         logger.info("mkcert setup skipped: %s", mkcert_result)
     elif isinstance(mkcert_result, BaseException):
         logger.warning("Failed to set up mkcert: %s", mkcert_result)
-    if isinstance(cli_tools_result, BaseException):
-        logger.warning("Failed to install CLI tools: %s", cli_tools_result)
     if isinstance(apt_result, BaseException):
         logger.warning("Failed to install system packages: %s", apt_result)
 

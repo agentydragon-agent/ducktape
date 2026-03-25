@@ -245,16 +245,6 @@ async def _create_java_truststore(paths: SessionPaths) -> None:
         raise TruststoreError(f"Failed to create truststore: {e}") from e
 
 
-def _write_creds_file(creds_file: Path, https_proxy: str) -> None:
-    """Write the upstream proxy URL to the credentials file.
-
-    The proxy reads this file on each connection for hot-reload.
-    """
-    creds_file.parent.mkdir(parents=True, exist_ok=True)
-    creds_file.write_text(https_proxy)
-    logger.debug("Wrote proxy credentials to %s", creds_file)
-
-
 async def _wait_for_proxy_port(port: int) -> None:
     """Wait for the proxy port to become available.
 
@@ -320,12 +310,12 @@ async def setup_auth_proxy(paths: SessionPaths, settings: HookSettings, proxy: A
     # Ensure proxy dir exists
     paths.auth_proxy_dir.mkdir(parents=True, exist_ok=True)
 
-    # Write credentials to the proxy's creds file
+    # Set credentials on the in-process proxy
     https_proxy = get_upstream_proxy_url()
     if not https_proxy:
         raise ProxyServiceError("No https_proxy environment variable set")
 
-    _write_creds_file(proxy.creds_file, https_proxy)
+    proxy.set_creds(https_proxy)
 
     # Verify proxy is listening
     with tracer.start_as_current_span("proxy_wait_socket"):

@@ -17,3 +17,7 @@ class HookResponse(BaseModel):
     """RPC response from hook daemon."""
 
     output: AnyHookOutput | None = Field(default=None, description="Typed hook output. None for noops.")
+
+
+class UpdateProxyCredsResponse(BaseModel):
+    proxy_url: str
