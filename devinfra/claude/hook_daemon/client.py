@@ -7,6 +7,7 @@ hot path to avoid importing httpx.
 
 import contextlib
 import http.client
+import json
 import logging
 import os
 import signal
@@ -17,7 +18,7 @@ import time
 from pathlib import Path
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
+from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, UpdateProxyCredsResponse
 from devinfra.claude.session_paths import SessionPaths
 from util.bazel.subprocess import python_env
 
@@ -42,6 +43,28 @@ class _UDSConnection(http.client.HTTPConnection):
 
 class DaemonStartError(RuntimeError):
     """Raised when the hook daemon fails to start or crashes during startup."""
+
+
+def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> str:
+    """Send fresh proxy credentials to the daemon. Returns the local proxy URL.
+
+    Raises OSError if the daemon is unreachable.
+    """
+    sock_path = paths.hook_daemon_sock
+    payload = json.dumps({"https_proxy": https_proxy}).encode()
+    conn = _UDSConnection(sock_path)
+    conn.request(
+        "POST",
+        "/update-proxy-creds",
+        body=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    response = conn.getresponse()
+    body = response.read()
+    conn.close()
+    if response.status != 200:
+        raise OSError(f"Daemon returned HTTP {response.status} for update-proxy-creds: {body.decode()}")
+    return UpdateProxyCredsResponse.model_validate_json(body).proxy_url
 
 
 def check_health(sock_path: Path, timeout: float = 0.5) -> bool:

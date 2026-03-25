@@ -16,8 +16,9 @@ import signal
 import time
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from opentelemetry import trace
+from pydantic import BaseModel
 
 from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
@@ -25,7 +26,7 @@ from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
+from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, UpdateProxyCredsResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session_start.handler import handle as handle_session_start
@@ -66,9 +67,7 @@ async def _start_session_proxy() -> None:
     if not get_upstream_proxy_url():
         return
 
-    daemon_dir: Path = app.state.daemon_dir
-    creds_file = daemon_dir / "upstream_proxy"
-    proxy = AuthForwardingProxy(listen_port=0, creds_file=creds_file)
+    proxy = AuthForwardingProxy(listen_port=0)
     proxy.start()  # OS assigns a free port; proxy.listen_port is updated after bind
     app.state.proxy = proxy
     logger.info("Auth proxy started in-process on port %d (dynamic)", proxy.listen_port)
@@ -131,6 +130,21 @@ async def handle_hook(req: HookRequest) -> HookResponse:
         logger.info("hook %s → %s", hook_name, resp_json)
 
         return resp
+
+
+class _UpdateProxyCredsRequest(BaseModel):
+    https_proxy: str
+
+
+@app.post("/update-proxy-creds")
+async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> UpdateProxyCredsResponse:
+    """Update in-process auth proxy credentials. Called by bazel_wrapper on each invocation."""
+    proxy: AuthForwardingProxy | None = app.state.proxy
+    if proxy is None:
+        raise HTTPException(status_code=503, detail="Auth proxy not running")
+    proxy.set_creds(req.https_proxy)
+    logger.debug("Updated proxy credentials via RPC")
+    return UpdateProxyCredsResponse(proxy_url=f"http://localhost:{proxy.listen_port}")
 
 
 @app.get("/health")

@@ -42,14 +42,11 @@ def hook_settings(
 @pytest.fixture
 async def auth_proxy(session_paths: SessionPaths, hook_settings: HookSettings):
     """Start an in-process auth proxy and clean up after test."""
-    creds_file = session_paths.auth_proxy_creds_file
-    creds_file.parent.mkdir(parents=True, exist_ok=True)
-    # Write initial creds from upstream proxy URL
     https_proxy = get_upstream_proxy_url()
     assert https_proxy, "HTTPS_PROXY must be set"
-    creds_file.write_text(https_proxy)
 
-    proxy = AuthForwardingProxy(listen_port=hook_settings.auth_proxy_port, creds_file=creds_file)
+    proxy = AuthForwardingProxy(listen_port=hook_settings.auth_proxy_port)
+    proxy.set_creds(https_proxy)
     proxy.start()
     await async_wait_for_port("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5)
     try:
@@ -89,19 +86,17 @@ async def test_credential_rotation(
     mitmproxy_proxy: MitmproxyFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test that credential changes are written to the proxy's creds file (hot-reload)."""
-    creds_file = auth_proxy.creds_file
-    assert creds_file.exists(), "Creds file should exist"
-    assert "proxy_user" in creds_file.read_text(), "Initial creds should have original credentials"
+    """Test that credential rotation updates the proxy's in-memory credentials."""
+    assert "proxy_user" in (auth_proxy._upstream_url or ""), "Initial creds should have original credentials"
 
-    # Simulate credential rotation (URL just needs different credentials; port doesn't matter)
+    # Simulate credential rotation
     new_proxy_url = "http://newuser:newpass@127.0.0.1:1"
     monkeypatch.setenv("HTTPS_PROXY", new_proxy_url)
 
-    # Re-run setup — should update creds file
+    # Re-run setup — should update in-memory credentials
     result = await proxy_setup.setup_auth_proxy(session_paths, hook_settings, proxy=auth_proxy)
 
-    assert "newuser" in creds_file.read_text(), "Creds file should have new credentials"
+    assert "newuser" in (auth_proxy._upstream_url or ""), "In-memory creds should have new credentials"
     assert auth_proxy._running, "Proxy should still be running"
     assert result.status.startswith("running"), f"Expected running status, got: {result.status}"
 

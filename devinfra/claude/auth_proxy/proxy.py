@@ -25,7 +25,6 @@ import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from pathlib import Path
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -74,10 +73,11 @@ class AuthForwardingProxy:
     Reads upstream proxy URL from creds_file on each connection for hot-reload.
     """
 
-    def __init__(self, listen_port: int, creds_file: Path, max_workers: int = 100):
+    def __init__(self, listen_port: int, max_workers: int = 100):
         self.listen_port = listen_port
-        self.creds_file = creds_file
         self.max_workers = max_workers
+        self._upstream_url: str | None = None
+        self._creds_lock = threading.Lock()
         self.server_socket: socket.socket | None = None
         self._running = False
         self._thread: threading.Thread | None = None
@@ -86,9 +86,16 @@ class AuthForwardingProxy:
         self._conn_counter = 0
         self._conn_lock = threading.Lock()
 
+    def set_creds(self, upstream_url: str) -> None:
+        """Update upstream proxy credentials (thread-safe)."""
+        with self._creds_lock:
+            self._upstream_url = upstream_url
+
     def _get_upstream_config(self) -> UpstreamConfig:
-        """Read upstream config from creds file."""
-        url = self.creds_file.read_text().strip()
+        with self._creds_lock:
+            url = self._upstream_url
+        if url is None:
+            raise ValueError("Proxy credentials not set")
         return parse_upstream_url(url)
 
     def start(self) -> None:
@@ -107,9 +114,8 @@ class AuthForwardingProxy:
         self._thread.start()
 
         logger.info(
-            "Auth proxy started on 127.0.0.1:%d (creds: %s, max_workers: %d)",
+            "Auth proxy started on 127.0.0.1:%d (max_workers: %d)",
             self.listen_port,
-            self.creds_file,
             self.max_workers,
         )
 

@@ -53,18 +53,6 @@ py_library(
 )
 
 py_library(
-    name = "cli_tools",
-    srcs = ["cli_tools.py"],
-    imports = ["../../../.."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":http_client",
-        ":platform_utils",
-        "@pypi//httpx",
-    ],
-)
-
-py_library(
     name = "container_runtime",
     srcs = ["container_runtime.py"],
     imports = ["../../../.."],
@@ -143,7 +131,6 @@ py_library(
         ":bazel_warmup",
         ":bazelisk",
         ":buildbuddy",
-        ":cli_tools",
         ":container_runtime",
         ":fork_remote",
         ":k8s_secrets",
