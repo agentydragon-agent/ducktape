@@ -39,7 +39,7 @@ ADMIN_TOKEN=$(kubectl exec -n nix-cache deployment/attic -- \
 curl -s -X POST "https://cache.allegedly.works/_api/v1/cache-config/main" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"keypair":"Generate","is_public":true,"store_dir":"/nix/store","priority":40,"upstream_cache_key_names":["cache.nixos.org-1"]}'
+  -d '{"keypair":"Generate","is_public":true,"store_dir":"/nix/store","priority":40}'
 
 # 3. Update keypair to match the committed signing key
 SIGNING_SEC=$(kubectl get secret nix-cache-signing-key -n nix-cache \
