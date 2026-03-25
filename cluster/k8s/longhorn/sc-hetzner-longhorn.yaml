@@ -9,6 +9,5 @@ parameters:
   numberOfReplicas: "2"
   staleReplicaTimeout: "30"
   nodeSelector: "topology.kubernetes.io/region=hetzner"
-  diskSelector: "hetzner-ephemeral"
   fsType: "ext4"
   dataEngine: "v1"
