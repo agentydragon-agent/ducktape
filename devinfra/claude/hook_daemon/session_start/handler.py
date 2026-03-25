@@ -226,7 +226,7 @@ async def _setup_web(
 
     async def mount_tmpfs_at(path: Path) -> bool:
         """Mount a tmpfs at the given path. Returns True on success, False on failure."""
-        path.mkdir(parents=True, exist_ok=True)  # noqa: ASYNC240
+        path.mkdir(parents=True, exist_ok=True)
         try:
             await run_in_thread(tmpfs.ensure_tmpfs_mounted, path)
             return True

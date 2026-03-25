@@ -217,7 +217,6 @@
         </div>
       {/if}
     </main>
-
   </div>
 
   <RunTriggerModal open={showRunModal} onClose={handleCloseRunModal} prefill={modalPrefill} />
