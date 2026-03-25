@@ -96,6 +96,8 @@ class AuthForwardingProxy:
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind(("127.0.0.1", self.listen_port))
+        # Update listen_port to the OS-assigned port (relevant when listen_port=0).
+        self.listen_port = self.server_socket.getsockname()[1]
         self.server_socket.listen(50)  # Increased backlog for concurrent connections
         self.server_socket.settimeout(0.5)
 

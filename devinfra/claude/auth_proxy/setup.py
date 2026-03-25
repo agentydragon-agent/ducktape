@@ -300,11 +300,11 @@ def _create_combined_ca_bundle(paths: SessionPaths) -> None:
 async def setup_auth_proxy(paths: SessionPaths, settings: HookSettings, proxy: AuthForwardingProxy) -> ProxySetup:
     """Set up the auth proxy environment for TLS-inspecting proxies.
 
-    The proxy is expected to already be running in-process (started by the
-    hook daemon server at startup). This function writes credentials and
-    configures the CA/truststore environment.
+    The proxy is expected to already be running in-process (started by
+    _start_session_proxy in server.py). This function writes credentials
+    and configures the CA/truststore environment.
     """
-    port = settings.auth_proxy_port
+    port = proxy.listen_port  # Actual port (OS-assigned when started with listen_port=0)
     combined_ca = paths.auth_proxy_combined_ca
 
     if not get_upstream_proxy_url():

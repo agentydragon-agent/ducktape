@@ -411,7 +411,7 @@ async def _setup_web(
                 session_dir=paths.session_dir,
                 combined_ca_path=combined_ca,
                 config=hook_config,
-                proxy=f"http://localhost:{settings.auth_proxy_port}",
+                proxy=f"http://localhost:{auth_proxy_result.port}",
             )
 
     # Configure BuildBuddy now that k8s secrets (with API key) are available.
@@ -452,10 +452,10 @@ async def _setup_web(
 
     return PlatformSetup(
         # Bazelrc rendering
-        proxy_port=settings.auth_proxy_port,
+        proxy_port=auth_proxy_result.port,
         truststore_path=paths.auth_proxy_truststore,
         truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
-        local_proxy=f"http://localhost:{settings.auth_proxy_port}",
+        local_proxy=f"http://localhost:{auth_proxy_result.port}",
         combined_ca_path=combined_ca,
         bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
         # EnvVars

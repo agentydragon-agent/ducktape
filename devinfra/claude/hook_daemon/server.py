@@ -3,12 +3,13 @@
 Handles all Claude Code hook types over UDS. Imports expensive modules once at
 startup (pydantic, opentelemetry, session_start) so individual hook calls are fast.
 
-The auth proxy runs in-process as daemon threads, started at server startup.
-Session start writes credentials; the proxy reads them on each connection.
+The auth proxy runs in-process as daemon threads, started on the first SessionStart
+hook (not at daemon startup). This ensures each session owns its proxy lifecycle and
+avoids port conflicts during daemon startup when a previous session's proxy is still
+running on the same port.
 """
 
 import asyncio
-import errno
 import json
 import logging
 import signal
@@ -31,7 +32,7 @@ from devinfra.claude.hook_daemon.session_start.handler import handle as handle_s
 from devinfra.claude.hook_daemon.session_start.http_client import build_http_client
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import HookSettings
+from devinfra.claude.settings import HookSettings, is_web_mode
 
 logger = logging.getLogger(__name__)
 
@@ -49,40 +50,28 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     app.state.last_request_time = time.monotonic()
     app.state.proxy = None
     app.state.background_tasks = set[asyncio.Task[object]]()
+    # Proxy is started lazily on the first SessionStart hook, not here.
 
-    # Start auth proxy in-process if upstream proxy is configured.
-    # The proxy binds the port immediately; credentials are written later
-    # by session_start (proxy reads creds file on each connection).
-    #
-    # Port conflict (EADDRINUSE): Claude Code may send Setup and SessionStart hooks
-    # with *different* session IDs (e.g. Setup for the new session after compaction,
-    # SessionStart for the old/compacting session). This causes two daemon instances
-    # to start concurrently, both trying to bind the auth proxy port. The second
-    # daemon logs a warning and skips starting its own proxy — the first daemon's
-    # proxy is already serving on that port.
-    if get_upstream_proxy_url():
-        settings: HookSettings = app.state.settings
-        creds_file = daemon_dir / "upstream_proxy"
-        proxy = AuthForwardingProxy(listen_port=settings.auth_proxy_port, creds_file=creds_file)
-        try:
-            proxy.start()
-            app.state.proxy = proxy
-            logger.info("Auth proxy started in-process on port %d", settings.auth_proxy_port)
-        except OSError as e:
-            if e.errno == errno.EADDRINUSE:
-                logger.warning(
-                    "Auth proxy port %d already in use — another daemon instance has it. "
-                    "Skipping proxy start for this daemon.",
-                    settings.auth_proxy_port,
-                )
-                # Running without a proxy would leave app.state.proxy as None, but
-                # SessionStart handling asserts that a proxy is available. Fail fast
-                # instead of starting a partially-broken daemon.
-                raise RuntimeError(
-                    f"Auth proxy port {settings.auth_proxy_port} already in use; "
-                    "this daemon cannot start its auth proxy and will exit."
-                ) from e
-            raise
+
+async def _start_session_proxy() -> None:
+    """Start the auth proxy for the current session.
+
+    Called at the start of SessionStart handling — not at daemon startup. Using
+    listen_port=0 lets the OS assign a free port, so concurrent sessions (each
+    with their own daemon) never collide. Idempotent: no-op if the proxy is
+    already running or no upstream proxy is configured.
+    """
+    if app.state.proxy is not None:
+        return
+    if not get_upstream_proxy_url():
+        return
+
+    daemon_dir: Path = app.state.daemon_dir
+    creds_file = daemon_dir / "upstream_proxy"
+    proxy = AuthForwardingProxy(listen_port=0, creds_file=creds_file)
+    proxy.start()  # OS assigns a free port; proxy.listen_port is updated after bind
+    app.state.proxy = proxy
+    logger.info("Auth proxy started in-process on port %d (dynamic)", proxy.listen_port)
 
 
 def _save_session_env(env: dict[str, str]) -> None:
@@ -115,6 +104,7 @@ async def handle_hook(req: HookRequest) -> HookResponse:
         output: AnyHookOutput | None = None
         match req.hook:
             case SessionStartHookInput():
+                await _start_session_proxy()
                 paths = SessionPaths.from_env(req.hook.session_id, req.env)
                 with build_http_client(req.env) as http:
                     output = await handle_session_start(
@@ -162,6 +152,11 @@ async def _idle_watchdog() -> None:
 
 @app.on_event("startup")
 async def _start_idle_watchdog() -> None:
+    if is_web_mode():
+        # Web sessions are managed by Anthropic's environment manager — don't
+        # self-terminate. The container is torn down externally when the session ends.
+        logger.info("Web mode: idle watchdog disabled")
+        return
     app.state.watchdog_task = asyncio.create_task(_idle_watchdog())
 
 
