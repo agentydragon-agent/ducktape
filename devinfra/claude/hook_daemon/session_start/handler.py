@@ -593,6 +593,7 @@ async def run_session(
             mkcert_key=setup.mkcert_key,
             secrets_env_vars=setup.secrets_env_vars,
             with_direnv=setup.with_direnv,
+            extra_env_script=hook_config.extra_env_script if hook_config else None,
         )
         env_file.write_env_file(ctx.env_file_path, env_vars)
     logger.info("Wrote environment to %s", ctx.env_file_path)

@@ -3,6 +3,9 @@ keys:
   - &wyrm2 age1tzq86mfj30su8hvw9e0y5zw9mg254frtk5s2mp48580uky8fdppsju42pp
   - &rugged age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
   - &atlas age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
+  # Sealed-secrets RSA keypair reused as age ssh-rsa recipient for Flux SOPS decryption.
+  # TODO: consider migrating to a dedicated age key when fully replacing SealedSecrets.
+  - &sealed-secrets-key "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDGgQrmVAvHPJkmH813nVDmYOeay5DlgkT4zRHxZawIA7aH/vlaTmpsLKciQQ+kJZbr4HyZuN9lBS355WsngvF5Hy9zV6EDR4x6xTNVSpp7JyQwT3mnXigpgrgMhjQDcibk+T1lQpGdb4N0GsBkEHcqIGG9Ka5SEHf9cRQkeHdr8/PFkDZTHUnCWRJkSjCWXq2YCulwyMQwDBI9pO04MUfYC5/cfjmpV5rMnnQEWNqs59LIkgHhkgASTU3AHEOcgPoaPkqH8VUhiKvyFV/wuQDyF61212E4Lta3MHwFbrPtdmfi2wsvPXf5IupsX/zndUl4A1K6wL9SXgp7vqW6LYmIPeg525NMxdTuK1POKgtHhqiZMWfMbeqiWGH+0nEZ55sEyATAfPpc5Y63fcrWzvmeJF8+rzNTt6MGgEyBTqYl1pNdaMVEWKbYtHHS05M8AcKekb4BaBa03CcEz7fwOwPP3WmzqzE38crSt5egZxFwq5oZplmn0CyeftK9Alexo7m7NY6UKhhtHGdwsPocKWArn6x79CYtSk978M5xkaet0cxhHbYbgQ1gp3xl3Ah8ZeXrQAa4N2WxNETuUDKtvQp3VK1XZbLf45ggaHMYK9U0zSczxS8+mC8K/fAJ6PNfjiSVX0i/EmmcIPXZdAa3/2jOIcDpfR7OqB8TrAOM9VOYxQ== sealed-secrets-key"
 creation_rules:
   # Per-host secrets (only the host + admin can decrypt)
   - path_regex: secrets/wyrm2-.*\.yaml$
@@ -35,3 +38,8 @@ creation_rules:
           - *wyrm2
           - *rugged
           - *atlas
+  # k8s Secret manifests for Flux SOPS decryption (ssh-rsa recipient = sealed-secrets keypair)
+  - path_regex: cluster/k8s/.*\.sops\.yaml$
+    key_groups:
+      - age:
+          - *sealed-secrets-key

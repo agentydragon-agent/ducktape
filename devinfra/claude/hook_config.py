@@ -90,6 +90,9 @@ class HookConfig(BaseModel):
     k8s_secrets: K8sSecretsConfig | None = None
     otel: OtelConfig | None = None
     pre_commit: PreCommitConfig | None = None
+    extra_env_script: str | None = Field(
+        default=None, description="Extra shell script content appended verbatim to the session env file."
+    )
 
     @classmethod
     def load(cls, config_path: Path) -> HookConfig:

@@ -20,6 +20,11 @@ pre_commit:
     - trailing-whitespace
     - end-of-file-fixer
 
+extra_env_script: |
+  # Enforce-bazel-tests requires a warm Bazel workspace (bazel-ducktape symlink).
+  # Disabled in Claude Code sessions; CI enforces this instead.
+  export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=0
+
 k8s_secrets:
   namespace: claude-sandbox
   secrets:

@@ -83,6 +83,9 @@ class EnvVars:
     # CLI mode: include direnv eval for .envrc propagation
     with_direnv: bool = False
 
+    # Extra shell script content from config.yaml (appended verbatim)
+    extra_env_script: str | None = None
+
 
 def write_env_file(env_file: Path, vars: EnvVars) -> None:
     """Write environment variables to file.
@@ -159,12 +162,12 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
     exports.extend(["", "# Ansible (pre-commit sandbox compatibility)"])
     exports.append('export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/ansible-tmp"')
 
-    # Enable enforce-bazel-tests pre-commit check (verifies affected tests are cached/passing)
-    exports.extend(["", "# Pre-commit: enforce affected Bazel tests are passing"])
-    exports.extend(exports_from_dict({"DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS": "1"}))
-
     if vars.with_direnv and shutil.which("direnv"):
         exports.append('eval "$(direnv export bash 2>/dev/null)"')
+
+    if vars.extra_env_script:
+        exports.extend(["", "# Extra env script from config.yaml"])
+        exports.append(vars.extra_env_script.rstrip())
 
     content = "\n".join(exports) + "\n"
     write_config(env_file, content, "session environment")
