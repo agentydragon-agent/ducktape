@@ -13,6 +13,15 @@ set -euo pipefail
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
+# Upload full log to ix.io on failure so we can debug truncated UI output.
+upload_log() {
+  local url
+  if url=$(curl -fsSL -F 'f:1=@'"$LOG_FILE" ix.io 2>/dev/null); then
+    echo "Full log uploaded to: $url"
+  fi
+}
+trap upload_log EXIT
+
 FLAKE="github:agentydragon/ducktape"
 
 # --- Step 1: Install Nix ---
