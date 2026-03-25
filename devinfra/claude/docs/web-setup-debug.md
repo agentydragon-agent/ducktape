@@ -4,7 +4,7 @@ Investigation into `web_setup.sh` failures in Claude Code web sessions.
 
 ## Current Status — RESOLVED
 
-**Root cause identified and fixed.** Two independent problems combined:
+**Root cause identified and fixed.** Three independent problems combined:
 
 1. **`max-jobs=0` in nix config** blocked all local builds, including trivial
    `symlinkJoin` derivations. Changing to `max-jobs=auto` fixes this — gVisor
@@ -16,7 +16,19 @@ Investigation into `web_setup.sh` failures in Claude Code web sessions.
    attic cache miss. Fixed by removing `devinfra.build_info` from the wheel's
    dependency tree (`52e7c39`).
 
-With both fixes, `nix profile install` works reliably on gVisor.
+3. **Anthropic caches the setup script URL at configuration time.** After
+   merging `max-jobs=auto` fixes (#994, #995), sessions continued failing
+   because Anthropic had fetched and cached the script when the branch-ref URL
+   was first configured in the web UI — new sessions received the cached
+   pre-fix script, not the updated one from GitHub. Fixed by pinning to a
+   specific commit SHA (`e9f4a33`) and reconfiguring the web UI with the new
+   URL — Anthropic re-fetches on URL change, so SHA-pinned URLs guarantee a
+   fresh fetch. Also added `--max-jobs auto` to the `nix profile install`
+   command line (`e9f4a33`) so even a stale cached script cannot re-introduce
+   `max-jobs=0`.
+
+With all three fixes applied, `nix profile install` works reliably on gVisor.
+The setup script URL in the Claude Code web UI should use the pinned SHA form.
 
 ### Correction: gVisor CAN run nix builds
 
@@ -119,6 +131,9 @@ during early debugging.
 | `8e1eea6e7` | `max-jobs=auto` (allow local builds)                  | Still crashed — **misdiagnosed as gVisor issue** (see below) |
 | `8688fc17f` | `nix build` + manual symlinks, `max-jobs=0`           | Failed — `max-jobs=0` blocked `claude-web-session.drv`       |
 | `52e7c39`   | Remove `build_info` stamping from wheel               | Fixes spurious pin bumps (wheel hash now stable)             |
+| `842b26c`   | `max-jobs=auto`, revert to `nix profile install`      | Merged to devel; CDN still served old script for many sessions |
+| `e9f4a33`   | Add `--max-jobs auto` CLI flag, nix.conf debug dump   | Pin setup URL to this SHA → bypasses CDN → setup succeeds ✓  |
+| `154ce3e`   | Symlink all `~/.nix-profile/bin/*` into `/usr/local/bin` | Fixes `claude-hook: not found`; also makes `bb`, `gh`, etc. available |
 
 **Re `8e1eea6e7`**: This commit used `nix profile install` with `max-jobs=auto`.
 It still failed and was diagnosed as "gVisor can't run build operations". Later
@@ -127,14 +142,21 @@ install` works fine on gVisor with `max-jobs=auto` and `sandbox=false`. The
 `8e1eea6e7` failure was likely a different issue (Nix crash, network, or the
 fact that `sandbox=false` wasn't set at that point).
 
-## Remaining Fix
+## Fix Summary
 
-Change `max-jobs = 0` to `max-jobs = auto` in `web_setup.sh`. Combined with
-the build_info removal (`52e7c39`), this should make web setup work reliably:
+All fixes are in place as of `154ce3e`:
 
-- `max-jobs=auto` allows nix to build `symlinkJoin` / `buildEnv` locally
-- Stable wheel hash eliminates spurious pin bumps and cache invalidation
-- Even if a cache miss occurs, the local build succeeds
+- `max-jobs=auto` in nix.conf allows nix to build `symlinkJoin` / `buildEnv` locally
+- `--max-jobs auto` on the `nix profile install` command line overrides any stale nix.conf
+- Stable wheel hash (build_info removed) eliminates spurious pin bumps and cache invalidation
+- Setup URL pinned to SHA bypasses Anthropic-side caching of setup script URL
+- All `~/.nix-profile/bin/*` symlinked into `/usr/local/bin` — fixes `claude-hook: not found`
+  and makes all Nix-installed tools (`bb`, `gh`, etc.) available to hooks and BashTool
+
+**Setup URL** (use this in the Claude Code web UI):
+```
+curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/154ce3ea6dfb5075cafbcbb3c89f86c707782b35/devinfra/claude/web_setup.sh | bash
+```
 
 ## Key Lessons
 
@@ -165,6 +187,15 @@ the build_info removal (`52e7c39`), this should make web setup work reliably:
 8. **CI pin-bump race**: pushing to attic from a local machine doesn't help
    if CI pushes a pin-bump commit before the web session starts, changing
    the derivation hash. Fixed by making wheel hash deterministic.
+
+9. **Anthropic caches the setup script at configuration time, not per-session.**
+   After merging fixes to `devel`, sessions continued to receive the stale script.
+   The cache is on Anthropic's side — they fetch the URL when it's saved in the
+   web UI and serve that cached copy to new sessions. Changing the URL (e.g. to a
+   new SHA) triggers a fresh fetch. For setup scripts that must be fresh: pin to a
+   specific commit SHA and update the URL in the web UI when the script changes.
+   Belt-and-suspenders: also pass critical flags (like `--max-jobs`) on the
+   command line so a stale cached script can't reintroduce broken defaults.
 
 ## Container Environment (from RE docs)
 

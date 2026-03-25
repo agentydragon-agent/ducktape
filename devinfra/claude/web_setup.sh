@@ -100,6 +100,13 @@ echo "Installing web session tools..."
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
 nix profile install --max-jobs auto "${FLAKE}#web-session"
 
+# Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.
+# Claude Code is launched directly (not via login shell), so ~/.nix-profile/bin
+# is not in PATH when hooks run. /usr/local/bin is always in PATH.
+for bin in ~/.nix-profile/bin/*; do
+  ln -sfn "$bin" /usr/local/bin/"$(basename "$bin")"
+done
+
 # --- Step 4: Symlink skills into ~/.claude/skills/ ---
 # Per-skill symlinks instead of replacing the directory, so Anthropic's
 # pre-landed default skills are preserved.
