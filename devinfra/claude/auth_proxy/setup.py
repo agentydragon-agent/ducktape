@@ -97,6 +97,10 @@ class ProxySetup:
     status: str
     ca_status: str
 
+    @property
+    def proxy_url(self) -> str:
+        return f"http://localhost:{self.port}"
+
 
 def _find_system_file(candidates: list[Path], description: str) -> Path:
     """Find first existing file from candidates, raise if none found."""
