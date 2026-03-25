@@ -19,6 +19,8 @@ spec:
             annotations:
               node.longhorn.io/default-disks-config: >-
                 [{"path":"/var/mnt/longhorn","allowScheduling":true,"tags":["proxmox-ssd"]}]
+              node.longhorn.io/default-node-tags: >-
+                ["proxmox"]
     - name: hetzner-longhorn-disk
       match:
         any:
@@ -34,3 +36,5 @@ spec:
             annotations:
               node.longhorn.io/default-disks-config: >-
                 [{"path":"/var/lib/longhorn","allowScheduling":true,"tags":["hetzner-ephemeral"]}]
+              node.longhorn.io/default-node-tags: >-
+                ["hetzner"]
