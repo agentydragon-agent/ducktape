@@ -52,7 +52,7 @@ cat >~/.config/nix/nix.conf <<'EOF'
 build-users-group =
 experimental-features = nix-command flakes
 sandbox = false
-max-jobs = 0
+max-jobs = auto
 system-features =
 substituters = https://cache.allegedly.works/main https://cache.nixos.org
 trusted-public-keys = cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
