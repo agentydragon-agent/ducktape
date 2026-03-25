@@ -52,6 +52,11 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       loss caused `sso-secrets` to regenerate all `random_password` resources. Fix by
       force re-applying all SSO blueprints (clear `last_applied_hash` via `ak shell`) so
       the DB picks up the current env var values.
+- [ ] Longhorn node tags: Kyverno mutate policy sets `node.longhorn.io/default-node-tags`
+      annotation, but only fires at Node admission time — nodes created before Kyverno is
+      deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
+      patch in `bootstrap.py` after Longhorn is up, or use a Longhorn `NodeLabel` feature
+      if one is added upstream. Affects `hetzner-longhorn` and `proxmox-longhorn` SCs.
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
 - [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)

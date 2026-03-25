@@ -13,5 +13,5 @@ all:
       # ansible_host: 10.0.167.15
       # ansible_user: agentydragon
     atlas:
-      ansible_host: atlas.tailnet.allegedly.works # on tailnet
+      ansible_host: atlas
       ansible_user: root
