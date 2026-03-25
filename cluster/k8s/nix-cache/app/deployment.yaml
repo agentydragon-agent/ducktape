@@ -17,10 +17,11 @@ spec:
       labels:
         app.kubernetes.io/name: attic
     spec:
-      # CLEANUP(2026-03-23): Remove affinity once containerd 2.2.3+ (with
-      # PR #12732 fix) ships in NixOS. NixOS nodes (wyrm2, rugged) run
-      # containerd 2.2.x compiled with Go 1.24 which rejects NixOS images'
-      # absolute /etc/passwd symlink. Talos nodes have containerd 2.1.6.
+      # TODO: Move attic pod to wyrm2/proxmox once containerd 2.2.3+ (with
+      # PR #12732 fix) ships in NixOS nixpkgs (currently 2.2.1). NixOS nodes
+      # reject NixOS images' absolute /etc/passwd symlink. Until then, pin to
+      # VPS so pod + DB + cache PVC are co-located. See also:
+      # cluster/k8s/nix-cache/db/postgres-cluster.yaml (DB pinned to VPS too).
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:

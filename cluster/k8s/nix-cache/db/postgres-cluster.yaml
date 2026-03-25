@@ -4,7 +4,9 @@ metadata:
   name: attic-db
   namespace: nix-cache
 spec:
-  instances: 1
+  # Migration step 1: 2 instances to create VPS replica before switchover.
+  # After switchover + verification, set back to 1 and pin to hetzner.
+  instances: 2
 
   # CNPG 1.27+ kills isolated primaries by default (liveness probe).
   # Disable to prevent false positives from transient network blips.
@@ -13,9 +15,8 @@ spec:
       isolationCheck:
         enabled: false
 
-  affinity:
-    nodeSelector:
-      topology.kubernetes.io/region: proxmox
+  # Temporarily allow both regions so replica can be created on VPS
+  # while primary is still on proxmox.
 
   storage:
     storageClass: longhorn
