@@ -4,6 +4,7 @@
   lib,
   pkgs,
   claude-hooks-wheel,
+  pre-commit ? pkgs.pre-commit,
 }:
 pkgs.python3Packages.buildPythonApplication {
   pname = "claude-hooks";
@@ -36,10 +37,8 @@ pkgs.python3Packages.buildPythonApplication {
       tenacity
       uvicorn
     ])
-    # TODO: pkgs.pre-commit is a system package dep rather than a Python dep;
-    # consider whether it should be a native build input, a wrapper script PATH
-    # injection, or left to the environment (home.nix) instead of propagated here.
-    ++ [ pkgs.pre-commit ];
+    # pre-commit is imported as a Python library (pre_commit.*), not just a CLI tool.
+    ++ [ pre-commit ];
 
   # Wheel is already tested in CI via Bazel.
   doCheck = false;
