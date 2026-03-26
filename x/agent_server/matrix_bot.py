@@ -17,9 +17,10 @@ from agent_core.mcp_provider import MCPToolProvider
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.config_loader import build_mcp_config
+from mcp_infra.constants import WORKING_DIR
 from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.docker.container_session import ContainerOptions
+from mcp_infra.exec.docker.container_session import ContainerOptions, DefaultValue
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import NetworkMode
 from mcp_infra.exec.models import BaseExecResult, make_exec_input
@@ -67,6 +68,7 @@ class MatrixBotCompositor(Compositor):
                     environment=self._environment,
                     labels={"adgn.project": "matrix-bot", "adgn.role": "runtime"},
                 ),
+                cwd_policy=DefaultValue(value=WORKING_DIR),
             ),
             pinned=True,
         )

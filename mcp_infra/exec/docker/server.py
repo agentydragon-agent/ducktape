@@ -18,7 +18,11 @@ from pydantic import Field, create_model
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.container_session import (
+    AlwaysSetTo,
     ContainerOptions,
+    CwdPolicy,
+    DefaultValue,
+    ModelChooses,
     make_container_lifespan,
     render_container_result,
     run_session_container,
@@ -36,11 +40,29 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 FILE_RESOURCE_URI_TEMPLATE = "file://{path*}"
 
 
-def _make_exec_input_model(*, allow_user: bool, allow_env: bool) -> type:
+def resolve_cwd(policy: CwdPolicy, tool_input: Any) -> str | None:
+    """Resolve the effective cwd from the policy and the tool input model.
+
+    The tool input model may or may not have a ``cwd`` field depending on the policy.
+    """
+    match policy:
+        case AlwaysSetTo(value=v):
+            return str(v)
+        case DefaultValue(value=v):
+            model_cwd: str | None = tool_input.cwd
+            return model_cwd if model_cwd is not None else str(v)
+        case ModelChooses():
+            return tool_input.cwd
+        case _:
+            raise TypeError(f"Unknown CwdPolicy: {policy!r}")
+
+
+def _make_exec_input_model(*, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy) -> type:
     """Dynamically create an ExecInput-compatible Pydantic model for the exec tool.
 
     When allow_user=False or allow_env=False, the corresponding field is omitted from
     the schema so the LLM cannot set it (the handler substitutes None for disabled fields).
+    cwd_policy controls how the cwd field appears in the schema.
     """
     fields: dict[str, Any] = {
         "cmd": (
@@ -55,12 +77,18 @@ def _make_exec_input_model(*, allow_user: bool, allow_env: bool) -> type:
                 )
             ),
         ),
-        "cwd": (str | None, Field(description="Working directory inside container (None = container default)")),
         "timeout_ms": (
             TimeoutMs,
             Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)"),
         ),
     }
+    if isinstance(cwd_policy, ModelChooses):
+        fields["cwd"] = (str, Field(description="Working directory inside container"))
+    elif isinstance(cwd_policy, DefaultValue):
+        fields["cwd"] = (
+            str | None,
+            Field(default=None, description=f"Working directory inside container (None = {cwd_policy.value!s})"),
+        )
     if allow_env:
         fields["env"] = (
             list[EnvVar] | None,
@@ -104,6 +132,7 @@ class ContainerExecServer(EnhancedFastMCP):
         *,
         allow_user_field: bool = True,
         allow_env_field: bool = True,
+        cwd_policy: CwdPolicy,
     ):
         """Create a generic per-session container exec FastMCP server.
 
@@ -114,6 +143,7 @@ class ContainerExecServer(EnhancedFastMCP):
                 prevent the LLM from switching Unix users inside the container.
             allow_env_field: Expose ``env`` in the exec tool schema. Set False to
                 prevent the LLM from injecting arbitrary environment variables.
+            cwd_policy: Controls how the ``cwd`` field appears in the exec tool schema.
 
         Note:
             The caller must create and manage the docker_client lifecycle. The server
@@ -169,33 +199,43 @@ class ContainerExecServer(EnhancedFastMCP):
         )(container_info_json)
 
         # Register exec tool - name derived from function name.
-        # Input model is created dynamically based on allow_user_field / allow_env_field;
+        # Input model is created dynamically based on allow_user_field / allow_env_field / cwd_policy;
         # annotation is set after definition so FastMCP sees the correct schema.
-        exec_input_type = _make_exec_input_model(allow_user=allow_user_field, allow_env=allow_env_field)
+        exec_input_type = _make_exec_input_model(
+            allow_user=allow_user_field, allow_env=allow_env_field, cwd_policy=cwd_policy
+        )
+
+        _exec_doc_lines = [
+            "Run a command inside the per-session Docker container.",
+            "",
+            "The cmd array is passed directly to Docker exec (execve-style, no shell).",
+            "No shell interpretation - arguments are passed as-is to the executable.",
+            "",
+            "Usage patterns:",
+            '- Simple command: {"cmd": ["python", "--version"]}',
+            '- With arguments: {"cmd": ["nl", "-ba", "/workspace/file.py"]}',
+            '- Shell features (pipes, redirection): {"cmd": ["sh", "-c", "grep pattern | head"]}',
+        ]
+        if not isinstance(cwd_policy, AlwaysSetTo):
+            _exec_doc_lines.append('- Working directory: {"cmd": ["ls"], "cwd": "/snapshots"}')
+        _exec_doc_lines += [
+            "",
+            "Common mistakes:",
+            """- DON'T: {"cmd": ["python '- << 'PY'"]} (shell syntax without sh -c)""",
+            """- DON'T: {"cmd": ["grep", "'pattern'"]} (quotes in string)""",
+            '- DO: {"cmd": ["sh", "-c", "cat > file.txt"], "stdin_text": "content"}',
+        ]
+
+        if isinstance(cwd_policy, AlwaysSetTo):
+            _exec_doc_lines.append(f"\nCommands always run in {cwd_policy.value}.")
+        _exec_description = "\n".join(_exec_doc_lines)
 
         async def exec(input, context: Context) -> BaseExecResult:
-            """Run a command inside the per-session Docker container.
-
-            The cmd array is passed directly to Docker exec (execve-style, no shell).
-            No shell interpretation - arguments are passed as-is to the executable.
-
-            Usage patterns:
-            - Simple command: {"cmd": ["python", "--version"]}
-            - With arguments: {"cmd": ["nl", "-ba", "/workspace/file.py"]}
-            - Shell features (pipes, redirection): {"cmd": ["sh", "-c", "grep pattern | head"]}
-            - Working directory: {"cmd": ["ls"], "cwd": "/snapshots"}
-
-            Common mistakes:
-            - DON'T: {"cmd": ["python '- << 'PY'"]} (shell syntax without sh -c)
-            - DON'T: {"cmd": ["grep", "'pattern'"]} (quotes in string)
-            - DO: {"cmd": ["sh", "-c", "cat > file.txt"], "stdin_text": "content"}
-            """
             async with async_timer() as get_duration_ms:
                 s = session_state_from_ctx(context)
-                # Build a full ExecInput for run_session_container; disabled fields become None.
                 effective = ExecInput(
                     cmd=input.cmd,
-                    cwd=input.cwd,
+                    cwd=resolve_cwd(cwd_policy, input),
                     timeout_ms=input.timeout_ms,
                     env=input.env if allow_env_field else None,
                     user=input.user if allow_user_field else None,
@@ -207,7 +247,7 @@ class ContainerExecServer(EnhancedFastMCP):
                 return render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)
 
         exec.__annotations__["input"] = exec_input_type
-        self.exec_tool = self.flat_model()(exec)
+        self.exec_tool = self.flat_model(description=_exec_description)(exec)
 
         # Register file:// resource template for reading files from container
         async def read_container_file(path: str, ctx: Context) -> str:
