@@ -9,13 +9,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import aiodocker
+import anyio
 from fastmcp.server.auth import StaticTokenVerifier
 
 from editor_agent.host.submit_server import EditorSubmitServer
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.resources_server import ResourcesServer
 from mcp_infra.constants import WORKING_DIR
-from mcp_infra.exec.docker.container_session import ContainerOptions
+from mcp_infra.exec.docker.container_session import ContainerOptions, DefaultValue
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mounted import Mounted
 from util.docker import get_docker_network_gateway_async
@@ -62,7 +63,7 @@ async def editor_docker_session(
     - Starts submit MCP server reachable from the container via streamable HTTP.
     - Container runs the editor agent image (with /init baked in).
     """
-    original_content = file_path.read_text(encoding="utf-8")
+    original_content = await anyio.Path(file_path).read_text(encoding="utf-8")
     filename = file_path.name
 
     # Create submit server with bearer token auth
@@ -90,7 +91,7 @@ async def editor_docker_session(
     await compositor.__aenter__()
     resources_mount = compositor.resources
 
-    container_server = ContainerExecServer(docker_client, opts)
+    container_server = ContainerExecServer(docker_client, opts, cwd_policy=DefaultValue(value=WORKING_DIR))
     runtime_mount = await compositor.mount_inproc(
         ContainerExecServer.DOCKER_MOUNT_PREFIX, container_server, pinned=True
     )

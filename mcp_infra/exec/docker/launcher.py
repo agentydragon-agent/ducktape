@@ -12,7 +12,7 @@ import aiodocker
 import typer
 from typer_di import TyperDI
 
-from mcp_infra.exec.docker.container_session import BindMount, ContainerOptions
+from mcp_infra.exec.docker.container_session import BindMount, ContainerOptions, DefaultValue
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import NetworkMode
 from util.typer import async_run
@@ -65,7 +65,7 @@ async def main(
             labels=labels_dict,
         )
 
-        server = ContainerExecServer(docker_client, opts)
+        server = ContainerExecServer(docker_client, opts, cwd_policy=DefaultValue(value=Path(working_dir)))
         await server.run_stdio_async()
     finally:
         await docker_client.close()

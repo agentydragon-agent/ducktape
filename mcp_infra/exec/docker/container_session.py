@@ -140,6 +140,31 @@ class ContainerOptions:
         }
 
 
+# -- CwdPolicy: controls how the `cwd` field is exposed in the exec tool schema --
+
+
+@dataclass(frozen=True)
+class ModelChooses:
+    """Model picks the cwd via a required tool input field."""
+
+
+@dataclass(frozen=True)
+class DefaultValue:
+    """cwd is optional in schema; falls back to this value when omitted."""
+
+    value: Path
+
+
+@dataclass(frozen=True)
+class AlwaysSetTo:
+    """cwd is hidden from model; always uses this value."""
+
+    value: Path
+
+
+CwdPolicy = ModelChooses | DefaultValue | AlwaysSetTo
+
+
 def session_state_from_ctx(ctx: Any) -> ContainerSessionState:
     return cast(ContainerSessionState, ctx.request_context.lifespan_context)
 

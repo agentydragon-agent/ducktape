@@ -4,6 +4,8 @@ import pytest
 import pytest_bazel
 from fastmcp.resources.template import match_uri_template
 
+from mcp_infra.constants import WORKING_DIR
+from mcp_infra.exec.docker.container_session import DefaultValue
 from mcp_infra.exec.docker.server import FILE_RESOURCE_URI_TEMPLATE, ContainerExecServer
 from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
 from mcp_infra.testing.fixtures import make_container_opts
@@ -12,7 +14,9 @@ from mcp_infra.testing.fixtures import make_container_opts
 @pytest.fixture
 def exec_server(async_docker_client, debian_slim_image):
     """Container exec server for docker exec tests."""
-    return ContainerExecServer(async_docker_client, make_container_opts(debian_slim_image))
+    return ContainerExecServer(
+        async_docker_client, make_container_opts(debian_slim_image), cwd_policy=DefaultValue(value=WORKING_DIR)
+    )
 
 
 @pytest.fixture

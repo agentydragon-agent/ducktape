@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_infra.constants import WORKING_DIR
+from mcp_infra.exec.docker.container_session import DefaultValue
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.testing.fixtures import make_container_opts
 
@@ -16,4 +18,4 @@ from mcp_infra.testing.fixtures import make_container_opts
 async def docker_exec_server(async_docker_client, debian_slim_image):
     """Canonical Docker exec server using debian-slim image."""
     opts = make_container_opts(debian_slim_image)
-    return ContainerExecServer(async_docker_client, opts)
+    return ContainerExecServer(async_docker_client, opts, cwd_policy=DefaultValue(value=WORKING_DIR))
