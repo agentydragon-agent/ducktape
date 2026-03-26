@@ -40,14 +40,21 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 FILE_RESOURCE_URI_TEMPLATE = "file://{path*}"
 
 
-def resolve_cwd(policy: CwdPolicy, model_input_cwd: str | None) -> str | None:
-    """Resolve the effective cwd from the policy and optional model input."""
-    if isinstance(policy, AlwaysSetTo):
-        return str(policy.value)
-    if isinstance(policy, DefaultValue):
-        return model_input_cwd if model_input_cwd is not None else str(policy.value)
-    # ModelChooses
-    return model_input_cwd
+def resolve_cwd(policy: CwdPolicy, tool_input: Any) -> str | None:
+    """Resolve the effective cwd from the policy and the tool input model.
+
+    The tool input model may or may not have a ``cwd`` field depending on the policy.
+    """
+    match policy:
+        case AlwaysSetTo(value=v):
+            return str(v)
+        case DefaultValue(value=v):
+            model_cwd: str | None = tool_input.cwd
+            return model_cwd if model_cwd is not None else str(v)
+        case ModelChooses():
+            return tool_input.cwd
+        case _:
+            raise TypeError(f"Unknown CwdPolicy: {policy!r}")
 
 
 def _make_exec_input_model(*, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy) -> type:
@@ -220,7 +227,7 @@ class ContainerExecServer(EnhancedFastMCP):
                 # Build a full ExecInput for run_session_container; disabled fields become None.
                 effective = ExecInput(
                     cmd=input.cmd,
-                    cwd=resolve_cwd(cwd_policy, getattr(input, "cwd", None)),
+                    cwd=resolve_cwd(cwd_policy, input),
                     timeout_ms=input.timeout_ms,
                     env=input.env if allow_env_field else None,
                     user=input.user if allow_user_field else None,

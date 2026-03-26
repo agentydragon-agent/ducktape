@@ -7,14 +7,11 @@ The server registers an `exec` tool and manages container lifecycle via its life
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-import aiodocker
 from fastmcp.client import Client
 
 from agent_core.mcp_provider import MCPToolProvider
-from mcp_infra.exec.docker.container_session import AlwaysSetTo, ContainerOptions
-from mcp_infra.exec.docker.server import ContainerExecServer
+from skills.info_gathering.evals.twenty_questions.x.shared.docker_exec import scratch_exec_server
 from third_party.debian_slim.rlocations import IMAGE_TAG, TARBALL
 from util.oci import load_image
 
@@ -28,19 +25,10 @@ async def scratch_container(image: str) -> AsyncGenerator[MCPToolProvider]:
     Container is created by ContainerExecServer's lifespan on Client entry and
     destroyed on exit. Network mode defaults to "none" (isolated).
     """
-    opts = ContainerOptions(image=image)  # network_mode defaults to "none"
-    async with aiodocker.Docker() as docker_client:
-        server = ContainerExecServer(
-            docker_client,
-            opts,
-            allow_user_field=False,
-            allow_env_field=False,
-            cwd_policy=AlwaysSetTo(value=Path("/tmp")),
-        )
-        async with Client(server) as mcp_client:
-            logger.info("Scratch container started (image=%s)", image)
-            yield MCPToolProvider(mcp_client)
-        logger.info("Scratch container stopped")
+    async with scratch_exec_server(image) as server, Client(server) as mcp_client:
+        logger.info("Scratch container started (image=%s)", image)
+        yield MCPToolProvider(mcp_client)
+    logger.info("Scratch container stopped")
 
 
 def load_scratch_image() -> str:
