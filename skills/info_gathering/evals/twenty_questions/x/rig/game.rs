@@ -1,12 +1,11 @@
 //! Core game loop for Twenty Questions using Rig.
 //!
-//! The guesser agent produces text questions/guesses. The simulator agent
-//! responds exclusively via tool calls (`answer` or `correct_answer`).
+//! The guesser agent has `tool_choice=Required` and three tools:
+//! `ask_yes_no_question`, `guess_answer`, and `exec` (scratch computation).
 //!
-//! For the guesser, Rig's agent loop auto-executes the exec tool. For the
-//! simulator, we use the lower-level `Completion` trait to issue a single
-//! completion request and extract the tool call from the response, avoiding
-//! the MaxTurnError that occurs with `Chat` + `tool_choice=Required`.
+//! The game tools (`ask_yes_no_question`, `guess_answer`) internally invoke the
+//! simulator (a single LLM call with `answer`/`correct_answer`/`invalid_input`
+//! tools) and return the result string to the guesser.
 //!
 //! The guesser also has access to a scratch container exec tool, backed by
 //! a Docker container created before the game starts and cleaned up after.
@@ -107,7 +106,7 @@ pub struct LogEntry {
     pub content: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum GameResult {
     #[serde(rename = "correct")]
@@ -123,18 +122,50 @@ pub struct RunSummary {
     pub model: String,
     pub api: String,
     pub turns: u32,
+    pub invalid_input_count: u32,
     pub result: GameResult,
 }
 
 // ---------------------------------------------------------------------------
-// Simulator tool types
+// Shared game state
 // ---------------------------------------------------------------------------
 
-/// Shared state for capturing which tool the simulator invoked.
+/// Mutable game state shared between guesser tools and the game loop.
+struct GameState {
+    turns: u32,
+    turn_limit: u32,
+    invalid_input_count: u32,
+    game_over: bool,
+    result: GameResult,
+    sim_history: Vec<Message>,
+    log_entries: Vec<LogEntry>,
+}
+
+impl GameState {
+    fn new(turn_limit: u32) -> Self {
+        Self {
+            turns: 0,
+            turn_limit,
+            invalid_input_count: 0,
+            game_over: false,
+            result: GameResult::Timeout { limit: turn_limit },
+            sim_history: Vec::new(),
+            log_entries: Vec::new(),
+        }
+    }
+}
+
+type SharedGameState = Arc<Mutex<GameState>>;
+
+// ---------------------------------------------------------------------------
+// Simulator tool types and single-turn invocation
+// ---------------------------------------------------------------------------
+
 #[derive(Clone, Debug)]
 enum SimAction {
     Answer(String),
     CorrectAnswer,
+    InvalidInput(String),
 }
 
 type SharedAction = Arc<Mutex<Option<SimAction>>>;
@@ -150,18 +181,18 @@ impl fmt::Display for ToolCallError {
 
 impl std::error::Error for ToolCallError {}
 
-// -- answer tool --
+// -- simulator answer tool --
 
 #[derive(Deserialize)]
 struct AnswerArgs {
     response: String,
 }
 
-struct AnswerTool {
+struct SimAnswerTool {
     action: SharedAction,
 }
 
-impl Tool for AnswerTool {
+impl Tool for SimAnswerTool {
     const NAME: &'static str = "answer";
     type Error = ToolCallError;
     type Args = AnswerArgs;
@@ -197,16 +228,16 @@ impl Tool for AnswerTool {
     }
 }
 
-// -- correct_answer tool --
+// -- simulator correct_answer tool --
 
 #[derive(Deserialize)]
 struct CorrectAnswerArgs {}
 
-struct CorrectAnswerTool {
+struct SimCorrectAnswerTool {
     action: SharedAction,
 }
 
-impl Tool for CorrectAnswerTool {
+impl Tool for SimCorrectAnswerTool {
     const NAME: &'static str = "correct_answer";
     type Error = ToolCallError;
     type Args = CorrectAnswerArgs;
@@ -230,6 +261,257 @@ impl Tool for CorrectAnswerTool {
             .map_err(|e| ToolCallError(e.to_string()))?;
         *guard = Some(SimAction::CorrectAnswer);
         Ok("correct".to_string())
+    }
+}
+
+// -- simulator invalid_input tool --
+
+#[derive(Deserialize)]
+struct InvalidInputArgs {
+    reason: String,
+}
+
+struct SimInvalidInputTool {
+    action: SharedAction,
+}
+
+impl Tool for SimInvalidInputTool {
+    const NAME: &'static str = "invalid_input";
+    type Error = ToolCallError;
+    type Args = InvalidInputArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "invalid_input".to_string(),
+            description: "The player's input is not a valid yes/no question or guess. Does NOT consume a turn.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Brief explanation of why the input is invalid"
+                    }
+                },
+                "required": ["reason"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        let reason = args.reason.clone();
+        let mut guard = self
+            .action
+            .lock()
+            .map_err(|e| ToolCallError(e.to_string()))?;
+        *guard = Some(SimAction::InvalidInput(args.reason));
+        Ok(reason)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Simulator: single-completion approach
+// ---------------------------------------------------------------------------
+
+/// Issue a single completion request to the simulator agent and extract the
+/// tool call from the response.
+async fn sim_single_turn<M: CompletionModel>(
+    sim: &impl Completion<M>,
+    prompt: &str,
+    history: Vec<Message>,
+    sim_action: &SharedAction,
+) -> anyhow::Result<()> {
+    {
+        let mut guard = sim_action.lock().unwrap();
+        *guard = None;
+    }
+
+    let response: CompletionResponse<M::Response> = sim
+        .completion(prompt, history)
+        .await
+        .map_err(|e| anyhow::anyhow!("Simulator completion build error: {e}"))?
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Simulator completion send error: {e}"))?;
+
+    for content in response.choice.iter() {
+        match content {
+            AssistantContent::ToolCall(tc) => {
+                let name = &tc.function.name;
+                let args = &tc.function.arguments;
+                match name.as_str() {
+                    "answer" => {
+                        let parsed: AnswerArgs = serde_json::from_value(args.clone())
+                            .map_err(|e| anyhow::anyhow!("Failed to parse answer args: {e}"))?;
+                        let mut guard = sim_action.lock().unwrap();
+                        *guard = Some(SimAction::Answer(parsed.response));
+                    }
+                    "correct_answer" => {
+                        let mut guard = sim_action.lock().unwrap();
+                        *guard = Some(SimAction::CorrectAnswer);
+                    }
+                    "invalid_input" => {
+                        let parsed: InvalidInputArgs = serde_json::from_value(args.clone())
+                            .map_err(|e| {
+                                anyhow::anyhow!("Failed to parse invalid_input args: {e}")
+                            })?;
+                        let mut guard = sim_action.lock().unwrap();
+                        *guard = Some(SimAction::InvalidInput(parsed.reason));
+                    }
+                    other => {
+                        log::warn!("Simulator called unknown tool: {other}");
+                    }
+                }
+                break;
+            }
+            _ => continue,
+        }
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Guesser game tools: ask_yes_no_question and guess_answer
+// ---------------------------------------------------------------------------
+
+// Because Rig's Tool trait requires a concrete type for the simulator
+// completion, we cannot use `impl Completion<M>` inside the tool struct.
+// Instead, we use a closure-based approach: the game loop creates a callback
+// that captures the simulator, and the tools invoke it through an Arc.
+
+type SimCallback = Arc<dyn Fn(&str) -> SimCallbackFuture + Send + Sync>;
+type SimCallbackFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, ToolCallError>> + Send>>;
+
+// -- ask_yes_no_question tool --
+
+#[derive(Deserialize)]
+struct AskYesNoQuestionArgs {
+    question: String,
+}
+
+struct AskYesNoQuestionTool {
+    game_state: SharedGameState,
+    invoke_sim: SimCallback,
+}
+
+impl Tool for AskYesNoQuestionTool {
+    const NAME: &'static str = "ask_yes_no_question";
+    type Error = ToolCallError;
+    type Args = AskYesNoQuestionArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "ask_yes_no_question".to_string(),
+            description: "Ask a yes/no question to narrow down the answer. Uses one turn."
+                .to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "A yes/no question about the secret"
+                    }
+                },
+                "required": ["question"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        {
+            let gs = self
+                .game_state
+                .lock()
+                .map_err(|e| ToolCallError(e.to_string()))?;
+            if gs.game_over {
+                return Err(ToolCallError("game is already over".into()));
+            }
+        }
+
+        // Log the guesser's question.
+        {
+            let mut gs = self
+                .game_state
+                .lock()
+                .map_err(|e| ToolCallError(e.to_string()))?;
+            gs.log_entries.push(LogEntry {
+                timestamp: Utc::now(),
+                player: Player::Guesser,
+                content: args.question.clone(),
+            });
+        }
+        log::info!("Guesser asks: {}", args.question);
+
+        (self.invoke_sim)(&args.question).await
+    }
+}
+
+// -- guess_answer tool --
+
+#[derive(Deserialize)]
+struct GuessAnswerArgs {
+    answer: String,
+}
+
+struct GuessAnswerTool {
+    game_state: SharedGameState,
+    invoke_sim: SimCallback,
+}
+
+impl Tool for GuessAnswerTool {
+    const NAME: &'static str = "guess_answer";
+    type Error = ToolCallError;
+    type Args = GuessAnswerArgs;
+    type Output = String;
+
+    async fn definition(&self, _prompt: String) -> ToolDefinition {
+        ToolDefinition {
+            name: "guess_answer".to_string(),
+            description: "Make a guess at the answer. Uses one turn.".to_string(),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "answer": {
+                        "type": "string",
+                        "description": "Your guess for the secret"
+                    }
+                },
+                "required": ["answer"]
+            }),
+        }
+    }
+
+    async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+        {
+            let gs = self
+                .game_state
+                .lock()
+                .map_err(|e| ToolCallError(e.to_string()))?;
+            if gs.game_over {
+                return Err(ToolCallError("game is already over".into()));
+            }
+        }
+
+        let guess_msg = format!("My answer is: {}", args.answer);
+
+        // Log the guesser's guess.
+        {
+            let mut gs = self
+                .game_state
+                .lock()
+                .map_err(|e| ToolCallError(e.to_string()))?;
+            gs.log_entries.push(LogEntry {
+                timestamp: Utc::now(),
+                player: Player::Guesser,
+                content: guess_msg.clone(),
+            });
+        }
+        log::info!("Guesser guesses: {}", args.answer);
+
+        (self.invoke_sim)(&guess_msg).await
     }
 }
 
@@ -266,7 +548,7 @@ impl Tool for ExecTool {
         ToolDefinition {
             name: "exec".to_string(),
             description: "Execute a command in a scratch container. Use this to run code, \
-                test hypotheses, or compute things during the game."
+                test hypotheses, or compute things during the game. Does NOT use a turn."
                 .to_string(),
             parameters: json!({
                 "type": "object",
@@ -341,66 +623,6 @@ struct GameConfig<'a> {
 }
 
 // ---------------------------------------------------------------------------
-// Simulator: single-completion approach
-// ---------------------------------------------------------------------------
-
-/// Issue a single completion request to the simulator agent and extract the
-/// tool call from the response. This avoids the MaxTurnError that occurs when
-/// using `Chat` with `tool_choice=Required`, because we never enter the
-/// agent's internal tool-execution loop.
-async fn sim_single_turn<M: CompletionModel>(
-    sim: &impl Completion<M>,
-    prompt: &str,
-    history: Vec<Message>,
-    sim_action: &SharedAction,
-) -> anyhow::Result<()> {
-    // Clear previous action.
-    {
-        let mut guard = sim_action.lock().unwrap();
-        *guard = None;
-    }
-
-    // Use the Completion trait to build and send a single request.
-    let response: CompletionResponse<M::Response> = sim
-        .completion(prompt, history)
-        .await
-        .map_err(|e| anyhow::anyhow!("Simulator completion build error: {e}"))?
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("Simulator completion send error: {e}"))?;
-
-    // Extract tool calls from the response and execute them manually.
-    for content in response.choice.iter() {
-        match content {
-            AssistantContent::ToolCall(tc) => {
-                let name = &tc.function.name;
-                let args = &tc.function.arguments;
-                match name.as_str() {
-                    "answer" => {
-                        let parsed: AnswerArgs = serde_json::from_value(args.clone())
-                            .map_err(|e| anyhow::anyhow!("Failed to parse answer args: {e}"))?;
-                        let mut guard = sim_action.lock().unwrap();
-                        *guard = Some(SimAction::Answer(parsed.response));
-                    }
-                    "correct_answer" => {
-                        let mut guard = sim_action.lock().unwrap();
-                        *guard = Some(SimAction::CorrectAnswer);
-                    }
-                    other => {
-                        log::warn!("Simulator called unknown tool: {other}");
-                    }
-                }
-                // Only process the first tool call.
-                break;
-            }
-            _ => continue,
-        }
-    }
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // Game loop
 // ---------------------------------------------------------------------------
 
@@ -426,16 +648,13 @@ pub async fn run_game(
     let scratch_note = load_scratch_system_note(&r);
     let guesser_system = format!(
         "You are playing 20 Questions as the guesser. Ask strategic yes/no \
-         questions to narrow down the answer. When confident, state: \
-         'My answer is: [X]'.\n\n{scratch_note}"
+         questions to narrow down the answer. When confident, use the \
+         guess_answer tool.\n\n{scratch_note}"
     );
 
     let sim_system = load_sim_prompt(&r, variant.turn_limit, variant.secret);
 
     let first_message = load_first_user_message(&r, variant.domain_description, variant.turn_limit);
-
-    // Shared state for capturing simulator tool calls.
-    let sim_action: SharedAction = Arc::new(Mutex::new(None));
 
     // Create the scratch container for the guesser's exec tool.
     log::info!("Creating scratch container ({SCRATCH_IMAGE})...");
@@ -452,7 +671,6 @@ pub async fn run_game(
         summary_path: &summary_path,
     };
 
-    // Build agents based on provider selection and run the game loop.
     let result = match api {
         "openai" => {
             let client = rig::providers::openai::Client::from_env();
@@ -461,7 +679,6 @@ pub async fn run_game(
                 model_name,
                 &guesser_system,
                 &sim_system,
-                &sim_action,
                 &scratch,
                 &config,
             )
@@ -474,7 +691,6 @@ pub async fn run_game(
                 model_name,
                 &guesser_system,
                 &sim_system,
-                &sim_action,
                 &scratch,
                 &config,
             )
@@ -498,127 +714,182 @@ async fn run_with_client<C: CompletionClient>(
     model_name: &str,
     guesser_system: &str,
     sim_system: &str,
-    sim_action: &SharedAction,
     scratch: &Arc<ScratchContainer>,
     config: &GameConfig<'_>,
 ) -> anyhow::Result<RunSummary> {
-    let guesser = client
-        .agent(model_name)
-        .preamble(guesser_system)
-        .default_max_turns(20)
-        .tool(ExecTool {
-            scratch: scratch.clone(),
-        })
-        .build();
+    // Shared state for capturing simulator tool calls.
+    let sim_action: SharedAction = Arc::new(Mutex::new(None));
 
-    // The simulator agent uses tool_choice=Required and is called via the
-    // Completion trait (single request, no agent loop), so default_max_turns
-    // is irrelevant here.
+    // Shared game state for turn tracking.
+    let game_state: SharedGameState = Arc::new(Mutex::new(GameState::new(config.turn_limit)));
+
+    // Build the simulator agent (used internally by game tools).
     let sim = client
         .agent(model_name)
         .preamble(sim_system)
-        .tool(AnswerTool {
+        .tool(SimAnswerTool {
             action: sim_action.clone(),
         })
-        .tool(CorrectAnswerTool {
+        .tool(SimCorrectAnswerTool {
+            action: sim_action.clone(),
+        })
+        .tool(SimInvalidInputTool {
             action: sim_action.clone(),
         })
         .tool_choice(ToolChoice::Required)
         .build();
 
-    run_game_loop(&guesser, &sim, sim_action, config).await
+    // Create the simulator callback that the guesser tools will invoke.
+    // We wrap the simulator in an Arc so the closure can capture it.
+    let sim = Arc::new(sim);
+    let invoke_sim: SimCallback = {
+        let sim = sim.clone();
+        let game_state = game_state.clone();
+        let sim_action = sim_action.clone();
+        Arc::new(move |player_message: &str| {
+            let sim = sim.clone();
+            let game_state = game_state.clone();
+            let sim_action = sim_action.clone();
+            let msg = player_message.to_string();
+            Box::pin(
+                async move { invoke_simulator_erased(&*sim, &game_state, &sim_action, &msg).await },
+            )
+        })
+    };
+
+    // Build the guesser agent with game tools and exec tool.
+    // tool_choice=Required forces the guesser to always use a tool.
+    let guesser = client
+        .agent(model_name)
+        .preamble(guesser_system)
+        .default_max_turns(100)
+        .tool(AskYesNoQuestionTool {
+            game_state: game_state.clone(),
+            invoke_sim: invoke_sim.clone(),
+        })
+        .tool(GuessAnswerTool {
+            game_state: game_state.clone(),
+            invoke_sim: invoke_sim.clone(),
+        })
+        .tool(ExecTool {
+            scratch: scratch.clone(),
+        })
+        .tool_choice(ToolChoice::Required)
+        .build();
+
+    run_game_loop(&guesser, &game_state, config).await
+}
+
+/// Type-erased simulator invocation so the closure doesn't need M as a parameter.
+/// This works because the agent built by `client.agent(...).build()` implements
+/// `Completion<M>` for its specific M, and we call it through the concrete type.
+async fn invoke_simulator_erased<M: CompletionModel>(
+    sim: &impl Completion<M>,
+    game_state: &SharedGameState,
+    sim_action: &SharedAction,
+    player_message: &str,
+) -> Result<String, ToolCallError> {
+    let sim_history = {
+        let gs = game_state
+            .lock()
+            .map_err(|e| ToolCallError(e.to_string()))?;
+        gs.sim_history.clone()
+    };
+
+    sim_single_turn::<M>(sim, player_message, sim_history, sim_action)
+        .await
+        .map_err(|e| ToolCallError(format!("simulator error: {e}")))?;
+
+    let action = {
+        let guard = sim_action
+            .lock()
+            .map_err(|e| ToolCallError(e.to_string()))?;
+        guard.clone()
+    };
+
+    let mut gs = game_state
+        .lock()
+        .map_err(|e| ToolCallError(e.to_string()))?;
+    gs.sim_history.push(Message::user(player_message));
+
+    match action {
+        Some(SimAction::CorrectAnswer) => {
+            gs.turns += 1;
+            gs.game_over = true;
+            gs.result = GameResult::Correct { turns: gs.turns };
+            gs.sim_history.push(Message::assistant("correct_answer"));
+            gs.log_entries.push(LogEntry {
+                timestamp: Utc::now(),
+                player: Player::Simulator,
+                content: "correct_answer".into(),
+            });
+            log::info!("Simulator: correct_answer on turn {}", gs.turns);
+            Ok("Correct! You guessed it!".to_string())
+        }
+        Some(SimAction::Answer(ref response)) => {
+            gs.turns += 1;
+            if gs.turns >= gs.turn_limit {
+                gs.game_over = true;
+            }
+            gs.sim_history.push(Message::assistant(response));
+            gs.log_entries.push(LogEntry {
+                timestamp: Utc::now(),
+                player: Player::Simulator,
+                content: response.clone(),
+            });
+            log::info!("Simulator: {response} (turn {})", gs.turns);
+            Ok(response.clone())
+        }
+        Some(SimAction::InvalidInput(ref reason)) => {
+            gs.invalid_input_count += 1;
+            let msg = format!("Invalid input: {reason}");
+            gs.sim_history.push(Message::assistant(&msg));
+            gs.log_entries.push(LogEntry {
+                timestamp: Utc::now(),
+                player: Player::Simulator,
+                content: msg.clone(),
+            });
+            log::info!("Simulator: invalid_input ({reason}), turn not consumed");
+            Ok(msg)
+        }
+        None => {
+            gs.game_over = true;
+            gs.log_entries.push(LogEntry {
+                timestamp: Utc::now(),
+                player: Player::Simulator,
+                content: "(no tool action)".into(),
+            });
+            log::warn!("Simulator produced no tool action");
+            Err(ToolCallError("simulator produced no tool action".into()))
+        }
+    }
 }
 
 /// Provider-agnostic game loop.
 ///
-/// The guesser uses `Chat` (Rig's agent loop handles exec tool calls).
-/// The simulator uses `Completion` (single request, manual tool dispatch).
-async fn run_game_loop<M: CompletionModel>(
+/// The guesser uses `Chat` with `tool_choice=Required`. Rig's agent loop
+/// auto-executes tools (ask_yes_no_question, guess_answer, exec). The game
+/// tools internally invoke the simulator and update shared game state.
+async fn run_game_loop(
     guesser: &(impl Chat + Sync),
-    sim: &impl Completion<M>,
-    sim_action: &SharedAction,
+    game_state: &SharedGameState,
     config: &GameConfig<'_>,
 ) -> anyhow::Result<RunSummary> {
+    // Send the first message to the guesser. The guesser's Chat loop will
+    // auto-execute tool calls until it produces a text response or hits
+    // max_turns. Each game tool call internally runs a simulator turn.
+    let _guesser_response = guesser
+        .chat(config.first_message, Vec::new())
+        .await
+        .map_err(|e| anyhow::anyhow!("Guesser error: {e}"))?;
+
+    // Extract final state.
+    let gs = game_state.lock().unwrap();
+
+    // Write call log.
     let mut calls_file = fs::File::create(config.calls_path)?;
-    let mut result = GameResult::Timeout {
-        limit: config.turn_limit,
-    };
-    let mut turns: u32 = 0;
-
-    let mut guesser_history: Vec<Message> = Vec::new();
-    let mut sim_history: Vec<Message> = Vec::new();
-
-    let mut guesser_input = config.first_message.to_string();
-
-    for turn in 1..=config.turn_limit {
-        turns = turn;
-        log::info!("Turn {turn}/{}", config.turn_limit);
-
-        // --- Guesser turn ---
-        let guesser_response = guesser
-            .chat(&guesser_input, guesser_history.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("Guesser LLM error on turn {turn}: {e}"))?;
-
-        guesser_history.push(Message::user(&guesser_input));
-        guesser_history.push(Message::assistant(&guesser_response));
-
-        log::info!("Guesser: {guesser_response}");
-
-        let guesser_entry = LogEntry {
-            timestamp: Utc::now(),
-            player: Player::Guesser,
-            content: guesser_response.clone(),
-        };
-        writeln!(calls_file, "{}", serde_json::to_string(&guesser_entry)?)?;
-
-        // --- Simulator turn ---
-        sim_single_turn::<M>(sim, &guesser_response, sim_history.clone(), sim_action).await?;
-
-        sim_history.push(Message::user(&guesser_response));
-
-        // Read the action captured by manual tool dispatch.
-        let action = {
-            let guard = sim_action.lock().unwrap();
-            guard.clone()
-        };
-
-        match action {
-            Some(SimAction::CorrectAnswer) => {
-                log::info!("Simulator: correct_answer on turn {turn}");
-                sim_history.push(Message::assistant("correct_answer"));
-                let sim_entry = LogEntry {
-                    timestamp: Utc::now(),
-                    player: Player::Simulator,
-                    content: "correct_answer".into(),
-                };
-                writeln!(calls_file, "{}", serde_json::to_string(&sim_entry)?)?;
-                result = GameResult::Correct { turns: turn };
-                break;
-            }
-            Some(SimAction::Answer(ref response)) => {
-                log::info!("Simulator: {response}");
-                sim_history.push(Message::assistant(response));
-                let sim_entry = LogEntry {
-                    timestamp: Utc::now(),
-                    player: Player::Simulator,
-                    content: response.clone(),
-                };
-                writeln!(calls_file, "{}", serde_json::to_string(&sim_entry)?)?;
-                guesser_input = response.clone();
-            }
-            None => {
-                log::warn!("Simulator produced no tool action on turn {turn}, treating as timeout");
-                sim_history.push(Message::assistant("(no tool action)"));
-                let sim_entry = LogEntry {
-                    timestamp: Utc::now(),
-                    player: Player::Simulator,
-                    content: "(no tool action)".into(),
-                };
-                writeln!(calls_file, "{}", serde_json::to_string(&sim_entry)?)?;
-                break;
-            }
-        }
+    for entry in &gs.log_entries {
+        writeln!(calls_file, "{}", serde_json::to_string(entry)?)?;
     }
 
     let summary = RunSummary {
@@ -626,8 +897,9 @@ async fn run_game_loop<M: CompletionModel>(
         framework: "rig".into(),
         model: config.model_name.into(),
         api: config.api.into(),
-        turns,
-        result,
+        turns: gs.turns,
+        invalid_input_count: gs.invalid_input_count,
+        result: gs.result.clone(),
     };
 
     fs::write(config.summary_path, serde_json::to_string_pretty(&summary)?)?;

@@ -1,1 +1,3 @@
-You have access to an `exec` tool — a private Docker container for scratch computation. Use it freely: run code, track hypothesis spaces, write notes, organize your reasoning. Calling this tool does NOT use up one of your question turns.
+You have access to an `exec` tool — a private Docker container (Python 3.13, Debian-based, with internet access) for scratch computation. Use it freely: run Python code, track hypothesis spaces, write notes, organize your reasoning. Calling `exec` does NOT use up one of your turns.
+
+To play the game, use `ask_yes_no_question` to ask a yes/no question, or `guess_answer` to make your guess. Each of these DOES use a turn.

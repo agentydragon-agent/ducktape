@@ -15,6 +15,6 @@ VARIANTS: dict[str, Variant] = {
     "wide": Variant(
         domain_description="a thing — could be anything: object, place, concept, activity, anything",
         secret="a sourdough starter",
-        turn_limit=25,
+        turn_limit=40,
     ),
 }

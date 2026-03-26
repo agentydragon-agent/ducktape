@@ -30,7 +30,7 @@ class LogEntry(BaseModel):
 
 
 class RunSummary(_BaseRunSummary[Result]):
-    pass
+    invalid_input_count: int = 0
 
 
 __all__ = ["Correct", "LogEntry", "Result", "RunSummary", "Timeout"]
