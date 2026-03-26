@@ -35,6 +35,9 @@ pkgs.python3Packages.buildPythonApplication {
     fastmcp
     mcp
 
+    # vm-interact deps
+    pillow
+
     # Testing dependencies (used at runtime for matchers)
     pyhamcrest
 
