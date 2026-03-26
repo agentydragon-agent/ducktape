@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Update artifact pins in npins/sources.json and push Nix packages to attic.
+# Update artifact pins in npins/sources.json.
 #
 # Usage: update_pins.sh <short_sha> <changed_pkgs...>
-# Expects: ATTIC_TOKEN env var, Nix with flakes enabled.
+# Expects: Nix with flakes enabled.
 set -euo pipefail
 
 SHA="$1"
@@ -17,7 +17,6 @@ declare -A urls=(
   ["skills"]="$BASE/skills-$SHA/skills.tar"
 )
 
-store_paths=()
 for pkg in "$@"; do
   url="${urls[$pkg]}"
   fetch=$(jq -r ".pins[\"$pkg\"].fetch" npins/sources.json)
@@ -31,11 +30,4 @@ for pkg in "$@"; do
     ".pins[\"$pkg\"].url = \$url | .pins[\"$pkg\"].hash = \$hash" \
     npins/sources.json >npins/sources.json.tmp && mv npins/sources.json.tmp npins/sources.json
   echo "$pkg: $sri"
-  store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.$pkg"))
 done
-
-# web-session bundles claude-hooks + bbapi + gh; push so web_setup.sh is a cache hit.
-store_paths+=($(nix build --no-link --print-out-paths ".#packages.x86_64-linux.web-session"))
-
-attic login main https://cache.allegedly.works "$ATTIC_TOKEN"
-attic push main "${store_paths[@]}"

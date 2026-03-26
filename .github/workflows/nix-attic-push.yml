@@ -1,14 +1,15 @@
-# Nix flake evaluation and cache push reusable workflow
+# Build all Nix flake outputs and push closures to Attic binary cache.
 #
-# Build NixOS and home-manager configurations, push closures to Attic cache.
-name: Nix flake evaluation
+# Runs on every push to devel. attic push deduplicates — unchanged outputs
+# are a cheap no-op (evaluate flake + check store paths against server).
+name: Nix Attic push
 
 on:
   workflow_call:
 
 jobs:
-  nix-flake-check:
-    name: Nix flake build & cache
+  nix-attic-push:
+    name: Build & push to Attic
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -28,7 +29,7 @@ jobs:
       - name: Configure Attic cache
         run: attic login ducktape https://cache.allegedly.works "${{ secrets.ATTIC_TOKEN }}"
 
-      - name: Build and push all configurations
+      - name: Build and push all flake outputs
         run: |
           drvs=()
           for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
@@ -37,15 +38,16 @@ jobs:
           for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames | jq -r '.[]'); do
             drvs+=(".#homeConfigurations.$host.activationPackage")
           done
-          echo "Building ${#drvs[@]} configurations in parallel..."
+          drvs+=(".#packages.x86_64-linux.web-session")
+          echo "Building ${#drvs[@]} outputs..."
           nix build --impure "${drvs[@]}" --no-link --print-out-paths | xargs attic push main
 
       - name: Generate summary
         if: always()
         run: |
-          echo "### Nix Flake Results" >> $GITHUB_STEP_SUMMARY
+          echo "### Nix Attic Push" >> $GITHUB_STEP_SUMMARY
           if [ "${{ job.status }}" = "success" ]; then
-            echo "✅ All configurations built and pushed to cache" >> $GITHUB_STEP_SUMMARY
+            echo "All flake outputs built and pushed to cache" >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Some configurations failed" >> $GITHUB_STEP_SUMMARY
+            echo "Some outputs failed to build" >> $GITHUB_STEP_SUMMARY
           fi

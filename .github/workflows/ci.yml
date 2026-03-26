@@ -48,10 +48,10 @@ jobs:
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'openclaw-image')
     uses: ./.github/workflows/openclaw-image.yml
     secrets: inherit
-  nix-flake-check:
+  nix-attic-push:
     needs: compute-targets
-    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-flake-check')
-    uses: ./.github/workflows/nix-flake-check.yml
+    if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'nix-attic-push')
+    uses: ./.github/workflows/nix-attic-push.yml
     secrets: inherit
   ansible-lint:
     needs: compute-targets
