@@ -205,23 +205,29 @@ class ContainerExecServer(EnhancedFastMCP):
             allow_user=allow_user_field, allow_env=allow_env_field, cwd_policy=cwd_policy
         )
 
+        _exec_doc_lines = [
+            "Run a command inside the per-session Docker container.",
+            "",
+            "The cmd array is passed directly to Docker exec (execve-style, no shell).",
+            "No shell interpretation - arguments are passed as-is to the executable.",
+            "",
+            "Usage patterns:",
+            '- Simple command: {"cmd": ["python", "--version"]}',
+            '- With arguments: {"cmd": ["nl", "-ba", "/workspace/file.py"]}',
+            '- Shell features (pipes, redirection): {"cmd": ["sh", "-c", "grep pattern | head"]}',
+        ]
+        if not isinstance(cwd_policy, AlwaysSetTo):
+            _exec_doc_lines.append('- Working directory: {"cmd": ["ls"], "cwd": "/snapshots"}')
+        _exec_doc_lines += [
+            "",
+            "Common mistakes:",
+            """- DON'T: {"cmd": ["python '- << 'PY'"]} (shell syntax without sh -c)""",
+            """- DON'T: {"cmd": ["grep", "'pattern'"]} (quotes in string)""",
+            '- DO: {"cmd": ["sh", "-c", "cat > file.txt"], "stdin_text": "content"}',
+        ]
+
         async def exec(input, context: Context) -> BaseExecResult:
-            """Run a command inside the per-session Docker container.
-
-            The cmd array is passed directly to Docker exec (execve-style, no shell).
-            No shell interpretation - arguments are passed as-is to the executable.
-
-            Usage patterns:
-            - Simple command: {"cmd": ["python", "--version"]}
-            - With arguments: {"cmd": ["nl", "-ba", "/workspace/file.py"]}
-            - Shell features (pipes, redirection): {"cmd": ["sh", "-c", "grep pattern | head"]}
-            - Working directory: {"cmd": ["ls"], "cwd": "/snapshots"}
-
-            Common mistakes:
-            - DON'T: {"cmd": ["python '- << 'PY'"]} (shell syntax without sh -c)
-            - DON'T: {"cmd": ["grep", "'pattern'"]} (quotes in string)
-            - DO: {"cmd": ["sh", "-c", "cat > file.txt"], "stdin_text": "content"}
-            """
+            """Placeholder docstring — replaced below."""
             async with async_timer() as get_duration_ms:
                 s = session_state_from_ctx(context)
                 # Build a full ExecInput for run_session_container; disabled fields become None.
@@ -239,9 +245,9 @@ class ContainerExecServer(EnhancedFastMCP):
                 return render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)
 
         exec.__annotations__["input"] = exec_input_type
-        # Surface the fixed cwd in the tool description so the model knows where commands run.
         if isinstance(cwd_policy, AlwaysSetTo):
-            exec.__doc__ = (exec.__doc__ or "") + f"\n\nCommands always run in {cwd_policy.value}."
+            _exec_doc_lines.append(f"\nCommands always run in {cwd_policy.value}.")
+        exec.__doc__ = "\n".join(_exec_doc_lines)
         self.exec_tool = self.flat_model()(exec)
 
         # Register file:// resource template for reading files from container
