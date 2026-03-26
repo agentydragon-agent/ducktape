@@ -57,9 +57,9 @@ echo "Installing Nix..."
 # Anthropic's egress proxy caches responses; using a pinned version-specific URL
 # avoids serving a stale tarball whose hash no longer matches the installer's expectation.
 # Installer script hash verified before execution.
-NIX_VERSION="2.28.3"
+NIX_VERSION="2.34.4"
 NIX_INSTALLER_URL="https://releases.nixos.org/nix/nix-${NIX_VERSION}/install"
-NIX_INSTALLER_SHA256="46b8d7165dceb471f4346366b3a93f1009407b99729b843b8664918f4cc800a0"
+NIX_INSTALLER_SHA256="e0c3ae05ded52aa8f05e2e2e41d25ca1320fcce1fe2e3829b77acef2e94376e3"
 # Ensure $USER is set — the installer's nix.sh (sourced below) is a no-op
 # when $USER is empty, which means PATH never gets ~/.nix-profile/bin.
 # The container runs as root but may not have $USER in the environment.
