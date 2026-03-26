@@ -7,21 +7,23 @@ PID 1 duties (orphan adoption, zombie reaping).
 
 ## Target Binary
 
-| Property           | Value                                              |
-| ------------------ | -------------------------------------------------- |
-| **ELF Build ID**   | `e409c31a846219e05541706c43daf1756365f486`         |
-| **Reference file** | `devinfra/claude/web_env/reference/process_api.gz` |
-| **Language**       | Rust                                               |
-| **Stripped**       | Yes (no debug info, no symbol table)               |
-| **Linking**        | Static-pie (was dynamically linked)                |
-| **Binary size**    | 3.2 MB uncompressed, ~1.5 MB gzipped               |
+| Property           | Value                                               |
+| ------------------ | --------------------------------------------------- |
+| **ELF Build ID**   | `91c789ff2a9e647bf7b1914e351f67b89713c4ef`          |
+| **Release**        | `process_api_2026-03-23-22-49`                      |
+| **Reference file** | `devinfra/claude/web_env/reference/process_api.gz`  |
+| **Language**       | Rust                                                |
+| **Stripped**       | Yes (no debug info, no symbol table)                |
+| **Linking**        | Static-pie                                          |
+| **Binary size**    | 3.3 MB uncompressed, ~1.5 MB gzipped                |
+| **Rust toolchain** | `1aa9bab4ecbce4859eaad53000f78158ebe2be2c` (stable) |
 
-Reconstructed source lives under `e409c31a/` (Build ID prefix).
+Reconstructed source lives under `91c789ff/` (Build ID prefix).
 
 ## Build
 
 ```bash
-bazel build //devinfra/claude/web_env/re/process_api/e409c31a:process_api_re
+bazel build //devinfra/claude/web_env/re/process_api/91c789ff:process_api_re
 ```
 
 ## Approach
@@ -236,15 +238,20 @@ Reattach to a previously detached process, or query its state.
 {
   "process_id": "/bin/bash",
   "reattach": true,
-  "expected_container_name": "my-container"
+  "expected_container_name": "my-container",
+  "want_trace_events": true
 }
 ```
 
-| Field                     | Type      | Default | Description                            |
-| ------------------------- | --------- | ------- | -------------------------------------- |
-| `process_id`              | `string`  | —       | ID of process to reconnect to          |
-| `reattach`                | `bool?`   | `true`  | Actually reattach (false = just query) |
-| `expected_container_name` | `string?` | —       | Validate container identity            |
+| Field                     | Type      | Default | Description                                           |
+| ------------------------- | --------- | ------- | ----------------------------------------------------- |
+| `process_id`              | `string`  | —       | ID of process to reconnect to                         |
+| `reattach`                | `bool?`   | `true`  | Actually reattach (false = just query)                |
+| `expected_container_name` | `string?` | —       | Validate container identity                           |
+| `want_trace_events`       | `bool?`   | `false` | Request `TraceEvent` stream (new in 91c789ff)         |
+
+Evidence: `struct ProcessConnection with 4 elements` in 91c789ff (was 3 in e409c31a).
+New field `want_trace_events` confirmed from serde field name strings.
 
 If `expected_container_name` is set and doesn't match the container's current
 name, the server responds with `InfraError` and closes.
@@ -272,27 +279,51 @@ Supported signals: `SIGHUP`, `SIGINT`, `SIGQUIT`, `SIGKILL`, `SIGTERM`,
 
 All responses are tagged JSON text messages (`{"type": "...", ...}`):
 
-| Message                  | Fields                           | Description                            |
-| ------------------------ | -------------------------------- | -------------------------------------- |
-| `ProcessCreated`         | `process_id`, `pid`              | Process spawned successfully           |
-| `AttachedToProcess`      | `process_id`, `pid`              | Reattached to detached process         |
-| `ProcessNotRunning`      | `process_id`                     | Process not found or already exited    |
-| `ProcessAlreadyAttached` | `process_id`                     | Another WS is attached to this process |
-| `FailedToStartProcess`   | `error`                          | Spawn failed                           |
-| `WithSameIdRunning`      | `process_id`                     | Duplicate ID (and reuse disallowed)    |
-| `InfraError`             | `error`                          | Infrastructure error (name mismatch)   |
-| `ExpectStdOut`           | —                                | Next binary frame is stdout data       |
-| `StdOutEOF`              | —                                | Stdout pipe closed                     |
-| `ExpectStdErr`           | —                                | Next binary frame is stderr data       |
-| `StdErrEOF`              | —                                | Stderr pipe closed                     |
-| `ProcessExited`          | `status: i32`, `details: string` | Normal exit or signal death            |
-| `ProcessTimedOut`        | `timeout_secs`, `details`        | Killed after timeout exceeded          |
-| `ProcessOutOfMemory`     | `limit_bytes`, `details`         | Per-process memory limit exceeded      |
-| `ContainerOutOfMemory`   | `limit_bytes`, `details`         | Container-level OOM kill               |
-| `InvalidSignal`          | `signal`                         | Unrecognized signal name/number        |
-| `FailedToSendSignal`     | `error`                          | Signal delivery failed                 |
-| `SignalSent`             | `signal`                         | Signal delivered successfully          |
-| `ShuttingDown`           | —                                | Server is shutting down                |
+| Message                  | Fields                               | Description                                               |
+| ------------------------ | ------------------------------------ | --------------------------------------------------------- |
+| `ProcessCreated`         | `process_id`, `pid`                  | Process spawned successfully                              |
+| `AttachedToProcess`      | `process_id`, `pid`                  | Reattached to detached process                            |
+| `AttachedToProcessV2`    | `process_id`, `pid`, `capabilities` | Reattached with capability negotiation (new in 91c789ff)  |
+| `ProcessNotRunning`      | `process_id`                         | Process not found or already exited                       |
+| `ProcessAlreadyAttached` | `process_id`                         | Another WS is attached to this process                    |
+| `FailedToStartProcess`   | `error`                              | Spawn failed                                              |
+| `WithSameIdRunning`      | `process_id`                         | Duplicate ID (and reuse disallowed)                       |
+| `InfraError`             | `error`                              | Infrastructure error (name mismatch)                      |
+| `ExpectStdOut`           | —                                    | Next binary frame is stdout data                          |
+| `StdOutEOF`              | —                                    | Stdout pipe closed                                        |
+| `ExpectStdErr`           | —                                    | Next binary frame is stderr data                          |
+| `StdErrEOF`              | —                                    | Stderr pipe closed                                        |
+| `ProcessExited`          | `status: i32`, `details: string`     | Normal exit or signal death                               |
+| `ProcessTimedOut`        | `timeout_secs`, `details`            | Killed after timeout exceeded                             |
+| `ProcessOutOfMemory`     | `limit_bytes`, `details`             | Per-process memory limit exceeded                         |
+| `ContainerOutOfMemory`   | `limit_bytes`, `details`             | Container-level OOM kill                                  |
+| `TraceEvent`             | `TraceEventMsg` fields               | Trace event (new in 91c789ff; sent when want_trace_events)|
+| `InvalidSignal`          | `signal`                             | Unrecognized signal name/number                           |
+| `FailedToSendSignal`     | `error`                              | Signal delivery failed                                    |
+| `SignalSent`             | `signal`                             | Signal delivered successfully                             |
+| `ShuttingDown`           | —                                    | Server is shutting down                                   |
+
+#### `ConnectionCapabilities` (new in 91c789ff)
+
+Sent as part of `AttachedToProcessV2`. Evidence: `struct ConnectionCapabilities`
+string in binary with `supports_trace` field.
+
+```json
+{"supports_trace": true}
+```
+
+#### `TraceEventMsg` (new in 91c789ff)
+
+5-element serde struct. Evidence: `struct TraceEventMsg with 5 elements`.
+Fields inferred from serde field name strings: `process_id`, `pid`, `event_type`,
+`data`, `timestamp` (approximate — exact field names not extracted).
+
+Sent as `TraceEvent` WS messages when `want_trace_events=true` in
+`ProcessConnection`.
+
+> **Note**: The `process_id` field in `ProcessConnection` cannot contain the
+> string `##TRACE##` (validated at server side). This string is used as an
+> internal trace marker.
 
 ### I/O Forwarding Sequence
 
@@ -325,14 +356,18 @@ Binary frames are read in 64 KB chunks. Each chunk is preceded by an
 When `--control-server-addr` is set, the SIGINT handler is disabled and
 shutdown is driven exclusively through HTTP.
 
-| Method | Path              | Request body      | Response                           |
-| ------ | ----------------- | ----------------- | ---------------------------------- |
-| `POST` | `/shutdown`       | —                 | `200 "Shutdown initiated\n"`       |
-| `POST` | `/container_name` | UTF-8 name string | `200 "Container name set to: X\n"` |
-| `GET`  | `/health`         | —                 | `200 "OK\n"`                       |
-| `GET`  | `/healthcheck`    | —                 | `200` diagnostic text (see below)  |
-| `GET`  | `/container_name` | —                 | `200 "X\n"` or `"not set\n"`       |
-| `*`    | `*`               | —                 | `404 "Not Found\n"`                |
+| Method | Path                           | Request body      | Response                                |
+| ------ | ------------------------------ | ----------------- | --------------------------------------- |
+| `POST` | `/shutdown`                    | —                 | `200 "Shutdown initiated\n"`            |
+| `POST` | `/container_name`              | UTF-8 name string | `200 "Container name set to: X\n"`      |
+| `POST` | `/auth_public_key/write_etc_files` | JSON body     | `200` or `400` (Ed25519 key + etc setup)|
+| `POST` | `/mount_root`                  | JSON config       | `200` or `500` (Firecracker snapstart)  |
+| `POST` | `/fs_free`                     | —                 | `200` (freeze filesystem)               |
+| `POST` | `/fs_thaw`                     | —                 | `200` (thaw filesystem)                 |
+| `GET`  | `/health`                      | —                 | `200 "OK\n"`                            |
+| `GET`  | `/healthcheck`                 | —                 | `200` diagnostic text (see below)       |
+| `GET`  | `/container_name`              | —                 | `200 "X\n"` or `"not set\n"`            |
+| `*`    | `*`                            | —                 | `404 "Not Found\n"`                     |
 
 **`POST /shutdown`** performs `sync(1)` before sending the broadcast shutdown
 signal. All tracked processes are then killed.
@@ -510,7 +545,7 @@ Tracked zombies log their age when finally reaped.
 
 1. Initialize `env_logger`
 2. Parse CLI arguments
-3. Log version: `[INFO] process_api release: process_api_2026-02-02-04-57`
+3. Log version: `[INFO] process_api release: process_api_2026-03-23-22-49`
 4. Set up cgroup hierarchy (with retry loop on failure, 10s backoff)
 5. Set CPU shares if configured
 6. Detect container name from `/container_info.json`
@@ -522,7 +557,7 @@ Tracked zombies log their age when finally reaped.
 
 ## Container Integration
 
-In the live Claude Code web container (as of 2026-03-16), `process_api` is invoked as:
+In the live Claude Code web container (as of 2026-03-26), `process_api` is invoked as:
 
 ```
 /process_api --firecracker-init \
@@ -564,6 +599,9 @@ claude` process tree.
 | `bytes`                | Byte buffer utilities                    |
 | `log` + `env_logger`   | Logging                                  |
 
+**Removed in 91c789ff:** `jsonwebtoken 9.3.1` — JWT authentication removed entirely.
+`tokio-vsock 0.7.2` — vsock support removed (both WS and control server).
+
 ### Dependency Version Drift
 
 The reconstructed binary uses newer crate versions than the original:
@@ -579,13 +617,18 @@ strings) but have no behavioral impact.
 
 ## Verification Status
 
-See <e409c31a/PLAN.md> for detailed status.
+See <91c789ff/PLAN.md> for detailed status.
 
 - [x] Binary analysis, decompilation, translation, build
 - [x] String differential analysis + remediation
 - [x] String coverage diff passes (application-level strings)
 - [x] Every function annotated with `Decompiled from 0x...`
 - [x] Structural type enrichment
-- [x] Firecracker init module (new in e409c31a)
+- [x] Firecracker init module
+- [x] `/fs_free` + `/fs_thaw` endpoints (replaced `/fs_sync`)
+- [x] `/auth_public_key/write_etc_files` endpoint (replaces `/auth_public_key`)
+- [x] DNS/network setup in init (`/etc/hostname`, `/etc/hosts`, resolv.conf)
+- [x] Removed JWT auth (`TokenClaims`, jsonwebtoken crate gone)
+- [x] Removed `/container_info.json` container name persistence
 - [ ] Behavioral test harness
 - [ ] Behavioral tests pass against both binaries

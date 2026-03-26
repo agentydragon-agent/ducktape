@@ -1,6 +1,16 @@
 # Claude Code Web Environment Discovery
 
-Documented from a live session on 2026-03-16.
+Documented from a live session on 2026-03-26.
+
+## Binary Versions
+
+| Binary                | Build ID   | Release / Version              |
+| --------------------- | ---------- | ------------------------------ |
+| `process_api` (PID 1) | `91c789ff` | `process_api_2026-03-23-22-49` |
+| `environment-manager` | `64bc4dc1` | `release-9f4ec76fbc-ext`       |
+
+> `environment-manager` is now garble-obfuscated (staging → release channel;
+> 27MB → 49MB). DWARF/symbol extraction no longer possible.
 
 ## Table of Contents
 

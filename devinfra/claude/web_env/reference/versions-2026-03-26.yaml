@@ -1,0 +1,28 @@
+# Claude Code Web Container Versions
+# Captured: 2026-03-26T00:30:00.000000+00:00
+# Manually captured (capture_versions tool unavailable - session auth proxy down)
+
+os:
+  release: Ubuntu 24.04.3 LTS
+  kernel: 6.18.5
+  arch: x86_64
+environment_manager:
+  version: environment-runner version release-9f4ec76fbc-ext
+  build_id: 64bc4dc1a5a3a38ce5732655f7fdfbeb62b8598d
+  binary_size_mb: 49.8
+  obfuscated: true
+  subcommands: completion, help, orchestrator, poll, print-sandbox-settings, setup, task-run
+process_api:
+  version: process_api_2026-03-23-22-49
+  build_id: 91c789ff2a9e647bf7b1914e351f67b89713c4ef
+  binary_size_mb: 3.3
+node:
+  node_default: v22.22.0
+go:
+  go: go1.24.7
+rust:
+  rustc: rustc 1.93.1 (01f6ddf75 2026-02-11)
+bun:
+  version: 1.3.9
+python:
+  python3: Python 3.11.14

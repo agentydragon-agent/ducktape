@@ -1,5 +1,12 @@
 # Current Plan
 
+## Binary Versions (2026-03-26)
+
+| Binary              | Build ID   | Version/Release              | Change from previous         |
+| ------------------- | ---------- | ---------------------------- | ---------------------------- |
+| `process_api`       | `91c789ff` | `process_api_2026-03-23-22-49` | +135KB; JWT removed; fs_free/thaw; DNS setup |
+| `environment-manager` | `64bc4dc1` | `release-9f4ec76fbc-ext`  | **Doubled** 27→49MB; garble-obfuscated; staging→release |
+
 ## Build Status
 
 **Diff Summary**: 4 real differences (build v20, 2026-03-16)

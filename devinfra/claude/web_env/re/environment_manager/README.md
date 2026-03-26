@@ -2,24 +2,27 @@
 
 Analysis and reconstruction of Anthropic's `environment-manager` binary — the
 Go-based orchestration service that manages Claude Code web container sessions.
-Unlike `process_api` (stripped Rust), this binary ships **with full debug info
-and symbols**, making reconstruction significantly more tractable.
+
+> **Current binary is garble-obfuscated.** The previous (`a6f96673`, staging)
+> had full DWARF + symbols. The current (`64bc4dc1`, release) uses
+> [garble](https://github.com/burrowers/garble) — symbol names are randomized,
+> `go version -m` returns "unknown", DWARF extraction is not possible. RE now
+> relies on runtime behavior and string analysis only.
 
 ## Target Binary
 
 | Property           | Value                                                      |
 | ------------------ | ---------------------------------------------------------- |
-| **ELF Build ID**   | `a6f96673c2497a946dc0797780b5c6df47c0946e`                 |
+| **ELF Build ID**   | `64bc4dc1a5a3a38ce5732655f7fdfbeb62b8598d`                 |
 | **Reference file** | `devinfra/claude/web_env/reference/environment-manager.gz` |
-| **Language**       | Go 1.25.7                                                  |
-| **Version string** | `staging-68f0dff496` (via `-ldflags -X main.Version`)      |
-| **Compiler**       | `gc` (standard Go compiler), CGO enabled                   |
-| **Stripped**       | No (full DWARF debug info, symbol table)                   |
-| **Binary size**    | 27.3 MB (uncompressed), 13 MB (gzipped)                    |
+| **Language**       | Go                                                         |
+| **Version string** | `release-9f4ec76fbc-ext`                                   |
+| **Channel**        | Release (was staging)                                      |
+| **Obfuscation**    | garble (all symbol names randomized)                       |
+| **Binary size**    | 49.8 MB (uncompressed), 19 MB (gzipped)                    |
 | **Binary path**    | `/opt/env-runner/environment-manager`                      |
 | **Dynamic deps**   | Only `libc.so.6`                                           |
-| **Functions**      | 949 Anthropic functions                                    |
-| **RE directory**   | `a6f96673/`                                                |
+| **RE directory**   | `64bc4dc1/`                                                |
 
 ## Binary Name vs CLI Name
 
@@ -29,8 +32,10 @@ is `environment-runner`. All CLI examples in strings use `environment-runner`.
 ## Source Tree
 
 The original Go module lives at
-`github.com/anthropics/anthropic/api-go/environment-manager`. Full source tree
-extracted from DWARF debug info (78 files):
+`github.com/anthropics/anthropic/api-go/environment-manager`. Source tree
+was extracted from `a6f96673` DWARF debug info (78 files) and carried forward
+to `64bc4dc1` since the package structure is stable across the garble-obfuscated
+version:
 
 ```
 main.go                                         # Entry point: Cobra root command + Version
@@ -463,42 +468,47 @@ Extracted from strings and function analysis:
 
 ## Artifacts
 
-Original extraction artifacts (source tree, function lists, build info, log
-messages, embedded scripts) were removed — all reproducible from the reference
-binary. Embedded scripts live in the reconstructed source
-(`src/internal/envtype/anthropic/install_scripts/scripts.go`).
+The `64bc4dc1` binary is garble-obfuscated — Go tooling cannot extract module
+info, symbols, or DWARF. Runtime probing and string analysis are the only
+available RE methods:
 
 ```bash
+# Runtime behavior (still works despite obfuscation)
+/usr/local/bin/environment-manager --version
+/usr/local/bin/environment-manager --help
+/usr/local/bin/environment-manager setup --help
+/usr/local/bin/environment-manager task-run --help
+/usr/local/bin/environment-manager orchestrator --help
+/usr/local/bin/environment-manager print-sandbox-settings
+
+# String analysis
 gunzip -k devinfra/claude/web_env/reference/environment-manager.gz
-BIN=devinfra/claude/web_env/reference/environment-manager
+strings devinfra/claude/web_env/reference/environment-manager | sort -u
 
-# Build info (module deps, build flags)
-go version -m "$BIN"
-
-# Source file paths from DWARF
-go tool objdump "$BIN" 2>/dev/null | grep -oP '(?<=TEXT )\S+' | sort -u
-
-# Application functions with addresses
-go tool nm "$BIN" | grep -E '^0x[0-9a-f]+ T (cmd\.|internal/)' | sort
-
-# Application string literals
-strings "$BIN" | grep -vE '^(runtime\.|go\.|reflect\.|sync\.)' | sort -u
+# Go tooling returns "unknown" or empty for obfuscated binary:
+# go version -m "$BIN"     → "unknown"
+# go tool nm "$BIN"         → (empty)
+# go tool objdump "$BIN"    → (no annotated source lines)
 ```
 
 ## Key Differences from process_api RE
 
-| Aspect       | process_api           | environment-manager                  |
-| ------------ | --------------------- | ------------------------------------ |
-| Language     | Rust                  | Go                                   |
-| Debug info   | Stripped              | Full DWARF + symbols                 |
-| Functions    | 29 application        | 949 Anthropic                        |
-| Source files | 10 files (decompiled) | 78 files (DWARF-extracted)           |
-| Complexity   | ~4,600 LoC            | ~17,800 LoC (79 files reconstructed) |
-| RE approach  | Ghidra decompilation  | Symbol analysis + DWARF + Go tooling |
-| Build system | Bazel rust_binary     | TBD (Bazel go_binary or native Go)   |
+| Aspect       | process_api           | environment-manager                    |
+| ------------ | --------------------- | -------------------------------------- |
+| Language     | Rust                  | Go                                     |
+| Debug info   | Stripped              | garble-obfuscated (no DWARF, no syms)  |
+| Functions    | ~30 application       | Unknown (symbols randomized)           |
+| Source files | 10 files (decompiled) | 78 files (from previous DWARF version) |
+| Complexity   | ~4,600 LoC            | ~17,800 LoC (reconstructed from a6f96673) |
+| RE approach  | Ghidra decompilation  | Runtime behavior + string analysis     |
+| Build system | Bazel rust_binary     | Bazel go_binary                        |
 
 ## Reconstruction Status
 
-**79 Go source files** reconstructed across **27 packages** totaling
-**~17,800 lines** of annotated Go code. Source lives under `a6f96673/src/`.
-See `a6f96673/PLAN.md` for detailed status.
+Source under `64bc4dc1/src/` was derived from the `a6f96673` DWARF-extracted
+reconstruction. Since `64bc4dc1` is garble-obfuscated, only runtime-verifiable
+changes (new CLI flags, updated subcommand help, sandbox settings) can be
+confirmed against the binary. Package structure and non-CLI logic are carried
+forward from `a6f96673`.
+
+See `64bc4dc1/PLAN.md` for detailed status.
