@@ -112,8 +112,7 @@ py_library(
         ":settings",
         "//devinfra/claude/auth_proxy:credentials",
         "//devinfra/claude/auth_proxy:vars",
-        "//util:env",
-        "//util:net",
+        "//devinfra/claude/hook_daemon:client",
     ],
 )
 
