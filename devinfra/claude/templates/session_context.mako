@@ -66,7 +66,11 @@ Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download und
 ## Warnings
 % for record in log_entries:
 % if record.levelno >= WARNING:
-- ${record.levelname}: ${record.getMessage()}
+<%
+    msg = record.getMessage()
+    display_msg = msg[:200] + " [truncated — see log]" if len(msg) > 200 else msg
+%>\
+- ${record.levelname}: ${display_msg}
 % endif
 % endfor
 % endif
