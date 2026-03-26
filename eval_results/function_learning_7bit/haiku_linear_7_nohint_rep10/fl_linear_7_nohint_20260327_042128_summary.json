@@ -1,0 +1,18 @@
+{
+  "eval_name": "linear_7_nohint",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 30,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 7104,
+    "per_turn_losses": [
+      256, 256, 256, 256, 256, 256, 256, 256, 256, 248, 248, 248, 248, 248, 248, 248, 248, 232, 222, 222, 220, 218, 216,
+      214, 214, 214, 214, 212, 210, 208
+    ]
+  },
+  "function_name": "linear_7",
+  "n_bits": 7,
+  "m_bits": 4
+}

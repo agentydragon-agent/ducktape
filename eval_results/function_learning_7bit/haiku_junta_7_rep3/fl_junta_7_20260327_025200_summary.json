@@ -1,0 +1,17 @@
+{
+  "eval_name": "junta_7",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 30,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 3146,
+    "per_turn_losses": [
+      272, 270, 268, 265, 263, 261, 259, 257, 255, 253, 260, 259, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0
+    ]
+  },
+  "function_name": "junta_7",
+  "n_bits": 7,
+  "m_bits": 4
+}

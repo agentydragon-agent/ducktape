@@ -1,0 +1,15 @@
+{
+  "eval_name": "junta_3",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 12,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 5847,
+    "per_turn_losses": [552, 480, 480, 480, 481, 483, 484, 480, 480, 487, 480, 480]
+  },
+  "function_name": "junta_3",
+  "n_bits": 8,
+  "m_bits": 4
+}

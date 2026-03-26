@@ -1,0 +1,32 @@
+You are playing the function-learning game.
+
+**Secret function:** f: {{0,1}}^{n_bits} -> {{0,1}}^{m_bits}
+**Function class:** {function_description}
+**Turns:** {turn_limit}
+**Scoring:** Each turn, your program is evaluated against ALL {n_inputs} possible inputs. Hamming loss = total bit disagreements across all inputs and output bits. Your total score is the sum of Hamming losses across all {turn_limit} turns. Lower is better.
+
+**Your tool:** `play_turn(query, program)`
+- `query`: a binary string of length {n_bits} (e.g. `"01001011"`) — you choose which input to query
+- `program`: a Python 3 program (source code as a string) that will be run as `echo '<input>' | python3 -c '<your program>'` for each of the {n_inputs} possible inputs
+
+**Program I/O contract:**
+- Your program receives exactly one line on stdin: a string of {n_bits} characters, each '0' or '1'
+- Your program must print exactly one line to stdout: a string of {m_bits} characters, each '0' or '1'
+- Use `input()` to read stdin and `print()` to write stdout
+- Your program has a 1-second time limit per input. If it exceeds this, that input counts as maximum loss.
+- No filesystem access, no network, no imports beyond the standard library
+
+**Example program:** `x = input(); print('0' * {m_bits})`
+(This trivially outputs all zeros regardless of input — a bad but valid baseline.)
+
+**What you get back each turn:**
+- The exact output of f on your queried input: f(query)
+- Your Hamming loss for this turn (summed over all {n_inputs} inputs)
+- Up to 5 error details if your program crashed on specific inputs
+
+**Rules:**
+- Your program must work for ANY {n_bits}-bit input string, not just the one you queried
+- Each call to `play_turn` counts as one turn, even if your program errors on some inputs
+- You should use each query strategically to learn the structure of f, then write increasingly accurate programs
+
+Begin! You have {turn_limit} turns.

@@ -1,0 +1,90 @@
+{"timestamp": "2026-03-27T04:33:26.568010+00:00", "player": "agent", "content": "Turn 1: query=0000000"}
+{"timestamp": "2026-03-27T04:33:26.730129+00:00", "player": "scaffold", "content": "Turn 1: hamming_loss=256 (eval 0.2s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:30.388385+00:00", "player": "agent", "content": "Turn 2: query=1000000"}
+{"timestamp": "2026-03-27T04:33:30.470665+00:00", "player": "scaffold", "content": "Turn 2: hamming_loss=256 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:31.164681+00:00", "player": "agent", "content": "Turn 3: query=0100000"}
+{"timestamp": "2026-03-27T04:33:31.249337+00:00", "player": "scaffold", "content": "Turn 3: hamming_loss=256 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:32.145122+00:00", "player": "agent", "content": "Turn 4: query=0010000"}
+{"timestamp": "2026-03-27T04:33:32.238270+00:00", "player": "scaffold", "content": "Turn 4: hamming_loss=256 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:33.005394+00:00", "player": "agent", "content": "Turn 5: query=0001000"}
+{"timestamp": "2026-03-27T04:33:33.094375+00:00", "player": "scaffold", "content": "Turn 5: hamming_loss=256 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:34.027982+00:00", "player": "agent", "content": "Turn 6: query=0000100"}
+{"timestamp": "2026-03-27T04:33:34.093003+00:00", "player": "scaffold", "content": "Turn 6: hamming_loss=256 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:34.718493+00:00", "player": "agent", "content": "Turn 7: query=0000010"}
+{"timestamp": "2026-03-27T04:33:34.792160+00:00", "player": "scaffold", "content": "Turn 7: hamming_loss=256 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:35.589203+00:00", "player": "agent", "content": "Turn 8: query=0000001"}
+{"timestamp": "2026-03-27T04:33:35.660727+00:00", "player": "scaffold", "content": "Turn 8: hamming_loss=256 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:41.317450+00:00", "player": "agent", "content": "Turn 9: query=1100000"}
+{"timestamp": "2026-03-27T04:33:41.391997+00:00", "player": "scaffold", "content": "Turn 9: hamming_loss=512 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:48.886658+00:00", "player": "agent", "content": "Turn 10: query=1100000"}
+{"timestamp": "2026-03-27T04:33:48.968189+00:00", "player": "scaffold", "content": "Turn 10: hamming_loss=96 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:54.945648+00:00", "player": "agent", "content": "Turn 11: query=1100000"}
+{"timestamp": "2026-03-27T04:33:55.016011+00:00", "player": "scaffold", "content": "Turn 11: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:58.503716+00:00", "player": "agent", "content": "Turn 12: query=1111111"}
+{"timestamp": "2026-03-27T04:33:58.585797+00:00", "player": "scaffold", "content": "Turn 12: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:33:59.659973+00:00", "player": "agent", "content": "Turn 13: query=0101010"}
+{"timestamp": "2026-03-27T04:33:59.752233+00:00", "player": "scaffold", "content": "Turn 13: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:00.612375+00:00", "player": "agent", "content": "Turn 14: query=1010101"}
+{"timestamp": "2026-03-27T04:34:00.695650+00:00", "player": "scaffold", "content": "Turn 14: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:04.814852+00:00", "player": "agent", "content": "Turn 15: query=1110000"}
+{"timestamp": "2026-03-27T04:34:04.903996+00:00", "player": "scaffold", "content": "Turn 15: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:05.909945+00:00", "player": "agent", "content": "Turn 16: query=0011000"}
+{"timestamp": "2026-03-27T04:34:06.002746+00:00", "player": "scaffold", "content": "Turn 16: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:06.918173+00:00", "player": "agent", "content": "Turn 17: query=0000110"}
+{"timestamp": "2026-03-27T04:34:07.001528+00:00", "player": "scaffold", "content": "Turn 17: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:07.909037+00:00", "player": "agent", "content": "Turn 18: query=0000011"}
+{"timestamp": "2026-03-27T04:34:07.992533+00:00", "player": "scaffold", "content": "Turn 18: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:08.945845+00:00", "player": "agent", "content": "Turn 19: query=1000001"}
+{"timestamp": "2026-03-27T04:34:09.038727+00:00", "player": "scaffold", "content": "Turn 19: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:09.962251+00:00", "player": "agent", "content": "Turn 20: query=0111110"}
+{"timestamp": "2026-03-27T04:34:10.040840+00:00", "player": "scaffold", "content": "Turn 20: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:11.150447+00:00", "player": "agent", "content": "Turn 21: query=1001001"}
+{"timestamp": "2026-03-27T04:34:11.241635+00:00", "player": "scaffold", "content": "Turn 21: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:12.147554+00:00", "player": "agent", "content": "Turn 22: query=0110110"}
+{"timestamp": "2026-03-27T04:34:12.232279+00:00", "player": "scaffold", "content": "Turn 22: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:13.201365+00:00", "player": "agent", "content": "Turn 23: query=1111110"}
+{"timestamp": "2026-03-27T04:34:13.329655+00:00", "player": "scaffold", "content": "Turn 23: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:14.293532+00:00", "player": "agent", "content": "Turn 24: query=0000000"}
+{"timestamp": "2026-03-27T04:34:14.375055+00:00", "player": "scaffold", "content": "Turn 24: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:15.241241+00:00", "player": "agent", "content": "Turn 25: query=1000010"}
+{"timestamp": "2026-03-27T04:34:15.323573+00:00", "player": "scaffold", "content": "Turn 25: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:16.205741+00:00", "player": "agent", "content": "Turn 26: query=0100101"}
+{"timestamp": "2026-03-27T04:34:16.296614+00:00", "player": "scaffold", "content": "Turn 26: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:17.325509+00:00", "player": "agent", "content": "Turn 27: query=1010010"}
+{"timestamp": "2026-03-27T04:34:17.412041+00:00", "player": "scaffold", "content": "Turn 27: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:18.527683+00:00", "player": "agent", "content": "Turn 28: query=0101101"}
+{"timestamp": "2026-03-27T04:34:18.607875+00:00", "player": "scaffold", "content": "Turn 28: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:19.536358+00:00", "player": "agent", "content": "Turn 29: query=1100011"}
+{"timestamp": "2026-03-27T04:34:19.624341+00:00", "player": "scaffold", "content": "Turn 29: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"timestamp": "2026-03-27T04:34:20.539985+00:00", "player": "agent", "content": "Turn 30: query=0011110"}
+{"timestamp": "2026-03-27T04:34:20.635990+00:00", "player": "scaffold", "content": "Turn 30: hamming_loss=0 (eval 0.1s, 0ms/input)"}
+{"turn":1,"query":"0000000","query_result":"0000","hamming_loss":256,"errors":[]}
+{"turn":2,"query":"1000000","query_result":"1000","hamming_loss":256,"errors":[]}
+{"turn":3,"query":"0100000","query_result":"1000","hamming_loss":256,"errors":[]}
+{"turn":4,"query":"0010000","query_result":"0100","hamming_loss":256,"errors":[]}
+{"turn":5,"query":"0001000","query_result":"0100","hamming_loss":256,"errors":[]}
+{"turn":6,"query":"0000100","query_result":"0010","hamming_loss":256,"errors":[]}
+{"turn":7,"query":"0000010","query_result":"0010","hamming_loss":256,"errors":[]}
+{"turn":8,"query":"0000001","query_result":"0001","hamming_loss":256,"errors":[]}
+{"turn":9,"query":"1100000","query_result":"0000","hamming_loss":512,"errors":[{"input":"0000000","error":"string index out of range"},{"input":"0000001","error":"string index out of range"},{"input":"0000010","error":"string index out of range"},{"input":"0000011","error":"string index out of range"},{"input":"0000100","error":"string index out of range"}]}
+{"turn":10,"query":"1100000","query_result":"0000","hamming_loss":96,"errors":[]}
+{"turn":11,"query":"1100000","query_result":"0000","hamming_loss":0,"errors":[]}
+{"turn":12,"query":"1111111","query_result":"0001","hamming_loss":0,"errors":[]}
+{"turn":13,"query":"0101010","query_result":"1110","hamming_loss":0,"errors":[]}
+{"turn":14,"query":"1010101","query_result":"1111","hamming_loss":0,"errors":[]}
+{"turn":15,"query":"1110000","query_result":"0100","hamming_loss":0,"errors":[]}
+{"turn":16,"query":"0011000","query_result":"0000","hamming_loss":0,"errors":[]}
+{"turn":17,"query":"0000110","query_result":"0000","hamming_loss":0,"errors":[]}
+{"turn":18,"query":"0000011","query_result":"0011","hamming_loss":0,"errors":[]}
+{"turn":19,"query":"1000001","query_result":"1001","hamming_loss":0,"errors":[]}
+{"turn":20,"query":"0111110","query_result":"1000","hamming_loss":0,"errors":[]}
+{"turn":21,"query":"1001001","query_result":"1101","hamming_loss":0,"errors":[]}
+{"turn":22,"query":"0110110","query_result":"1100","hamming_loss":0,"errors":[]}
+{"turn":23,"query":"1111110","query_result":"0000","hamming_loss":0,"errors":[]}
+{"turn":24,"query":"0000000","query_result":"0000","hamming_loss":0,"errors":[]}
+{"turn":25,"query":"1000010","query_result":"1010","hamming_loss":0,"errors":[]}
+{"turn":26,"query":"0100101","query_result":"1011","hamming_loss":0,"errors":[]}
+{"turn":27,"query":"1010010","query_result":"1110","hamming_loss":0,"errors":[]}
+{"turn":28,"query":"0101101","query_result":"1111","hamming_loss":0,"errors":[]}
+{"turn":29,"query":"1100011","query_result":"0011","hamming_loss":0,"errors":[]}
+{"turn":30,"query":"0011110","query_result":"0000","hamming_loss":0,"errors":[]}

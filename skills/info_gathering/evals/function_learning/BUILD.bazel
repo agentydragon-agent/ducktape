@@ -1,0 +1,101 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "functions",
+    srcs = ["functions.py"],
+    imports = ["../../../.."],
+)
+
+py_library(
+    name = "result_types",
+    srcs = ["result_types.py"],
+    imports = ["../../../.."],
+    deps = [
+        "//skills/info_gathering/evals:harness",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "prompts",
+    srcs = ["prompts.py"],
+    data = [
+        "first_user_message.txt",
+        "//skills/info_gathering:SKILL.md",
+    ],
+    imports = ["../../../.."],
+    deps = [
+        ":functions",
+        "//skills/info_gathering/evals/twenty_questions:prompts",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_library(
+    name = "scoring",
+    srcs = ["scoring.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":functions",
+        ":result_types",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_library(
+    name = "function_learning",
+    srcs = ["function_learning.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":functions",
+        ":prompts",
+        ":result_types",
+        ":scoring",
+        "//skills/info_gathering/evals:docker_exec",
+        "//skills/info_gathering/evals/twenty_questions:prompts",
+        "//skills/info_gathering/evals/twenty_questions/x/shared:output",
+        "@pypi//autogen_core",
+        "@pypi//autogen_ext",
+        "@pypi//fastmcp",
+    ],
+)
+
+py_binary(
+    name = "function_learning_bin",
+    imports = ["../../../.."],
+    main_module = "skills.info_gathering.evals.function_learning.function_learning",
+    deps = [":function_learning"],
+)
+
+py_test(
+    name = "test_functions",
+    srcs = ["test_functions.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":functions",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_function_learning",
+    srcs = [
+        "conftest.py",
+        "test_function_learning.py",
+    ],
+    imports = ["../../../.."],
+    deps = [
+        ":function_learning",
+        ":functions",
+        ":result_types",
+        "//skills/info_gathering/evals:docker_exec",
+        "@pypi//aiodocker",
+        "@pypi//autogen_core",
+        "@pypi//autogen_ext",
+        "@pypi//fastmcp",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)

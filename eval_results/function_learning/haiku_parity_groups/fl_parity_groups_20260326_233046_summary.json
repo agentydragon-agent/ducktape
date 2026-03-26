@@ -1,0 +1,15 @@
+{
+  "eval_name": "parity_groups",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 12,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 2326,
+    "per_turn_losses": [522, 520, 512, 388, 256, 128, 0, 0, 0, 0, 0, 0]
+  },
+  "function_name": "parity_groups",
+  "n_bits": 8,
+  "m_bits": 4
+}

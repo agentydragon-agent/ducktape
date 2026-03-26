@@ -1,0 +1,15 @@
+{
+  "eval_name": "linear_simple",
+  "framework": "autogen",
+  "model": "claude-haiku-4-5-20251001",
+  "api": "anthropic",
+  "turns": 12,
+  "result": {
+    "kind": "completed",
+    "total_hamming_loss": 6202,
+    "per_turn_losses": [561, 515, 506, 512, 513, 512, 513, 512, 512, 512, 512, 522]
+  },
+  "function_name": "linear_simple",
+  "n_bits": 8,
+  "m_bits": 4
+}
