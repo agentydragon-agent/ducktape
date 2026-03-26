@@ -52,7 +52,7 @@ build-users-group =
 sandbox = false
 EOF
 
-echo "Installing Nix..."
+echo "[$(date -Iseconds)] Installing Nix..."
 # Pinned to nix-2.28.3 (version-specific URL, not mutable nixos.org/nix/install).
 # Anthropic's egress proxy caches responses; using a pinned version-specific URL
 # avoids serving a stale tarball whose hash no longer matches the installer's expectation.
@@ -83,6 +83,7 @@ sh /tmp/nix-install.sh --no-daemon
 # Restore $USER to its original state so we don't leak a side-effect.
 if [ -z "$_saved_user" ]; then unset USER; else USER="$_saved_user"; fi
 unset _saved_user
+echo "[$(date -Iseconds)] Nix installation complete."
 
 # --- Step 2: Configure Nix for gVisor ---
 # sandbox=false: gVisor already provides isolation; Nix's own sandbox needs
@@ -115,9 +116,10 @@ echo "--- nix show-config ---"
 nix show-config 2>/dev/null | grep -E "max-jobs|sandbox|build-users" || true
 echo "---"
 
-echo "Installing web session tools..."
+echo "[$(date -Iseconds)] Installing web session tools..."
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
 nix profile install --max-jobs auto "${FLAKE}#web-session"
+echo "[$(date -Iseconds)] Web session tools installed."
 
 # Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.
 # Claude Code is launched directly (not via login shell), so ~/.nix-profile/bin
@@ -135,4 +137,4 @@ for skill in ~/.nix-profile/share/claude-hooks/skills/*/; do
   ln -sfn "$skill" ~/.claude/skills/"$(basename "$skill")"
 done
 
-echo "Setup complete. Log: ${LOG_FILE}"
+echo "[$(date -Iseconds)] Setup complete. Log: ${LOG_FILE}"
