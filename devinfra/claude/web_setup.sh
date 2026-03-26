@@ -67,6 +67,16 @@ _saved_user="${USER:-}"
 export USER="${USER:-$(id -u -n)}"
 curl -fsSL "$NIX_INSTALLER_URL" -o /tmp/nix-install.sh
 echo "${NIX_INSTALLER_SHA256}  /tmp/nix-install.sh" | sha256sum -c
+# Pre-download the tarball and save it for post-mortem inspection.
+# The installer re-downloads it internally, but saves to a temp dir that gets cleaned up.
+# This copy persists in /tmp for the session so we can inspect what the proxy served.
+NIX_TARBALL="nix-${NIX_VERSION}-x86_64-linux.tar.xz"
+NIX_TARBALL_URL="https://releases.nixos.org/nix/nix-${NIX_VERSION}/${NIX_TARBALL}"
+NIX_TARBALL_SAVE="/tmp/${NIX_TARBALL}"
+echo "Pre-downloading Nix tarball for inspection: ${NIX_TARBALL_URL}"
+curl -fsSL "$NIX_TARBALL_URL" -o "$NIX_TARBALL_SAVE"
+echo "Nix tarball saved to: ${NIX_TARBALL_SAVE}"
+echo "Nix tarball SHA256: $(sha256sum "$NIX_TARBALL_SAVE")"
 sh /tmp/nix-install.sh --no-daemon
 # shellcheck disable=SC1091
 . ~/.nix-profile/etc/profile.d/nix.sh
