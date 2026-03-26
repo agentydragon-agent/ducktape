@@ -125,12 +125,13 @@ type GameResult struct {
 
 // RunSummary captures the full result of a game run.
 type RunSummary struct {
-	EvalName  string     `json:"eval_name"`
-	Framework string     `json:"framework"`
-	Model     string     `json:"model"`
-	API       string     `json:"api"`
-	Turns     int        `json:"turns"`
-	Result    GameResult `json:"result"`
+	EvalName          string     `json:"eval_name"`
+	Framework         string     `json:"framework"`
+	Model             string     `json:"model"`
+	API               string     `json:"api"`
+	Turns             int        `json:"turns"`
+	InvalidInputCount int        `json:"invalid_input_count"`
+	Result            GameResult `json:"result"`
 }
 
 // genkitModelName returns the Genkit-format model name (provider/model).
@@ -207,18 +208,19 @@ func runGame(modelName, api string, v Variant, outputDir string, scratchEnabled 
 	agentSystem := buildAgentSystem(v, scratchEnabled)
 
 	// Run the game loop.
-	result, turns, err := runGameLoop(ctx, g, fullModelName, v, simSystem, agentSystem, callsFile, scratch)
+	result, turns, invalidInputCount, err := runGameLoop(ctx, g, fullModelName, v, simSystem, agentSystem, callsFile, scratch)
 	if err != nil {
 		return nil, err
 	}
 
 	summary := &RunSummary{
-		EvalName:  evalName,
-		Framework: "genkit",
-		Model:     modelName,
-		API:       api,
-		Turns:     turns,
-		Result:    result,
+		EvalName:          evalName,
+		Framework:         "genkit",
+		Model:             modelName,
+		API:               api,
+		Turns:             turns,
+		InvalidInputCount: invalidInputCount,
+		Result:            result,
 	}
 
 	if err := os.WriteFile(summaryPath, mustJSONIndent(summary), 0o644); err != nil {
@@ -272,8 +274,7 @@ func buildAgentSystem(_ Variant, scratchEnabled bool) string {
 	base := "You are playing 20 Questions as the guesser. " +
 		"Ask strategic yes/no questions to narrow down the answer. " +
 		"Think about what categories and properties can efficiently divide " +
-		"the remaining possibilities. When you are confident, state your " +
-		"answer clearly as: 'My answer is: [X]'."
+		"the remaining possibilities. When confident, use the guess_answer tool."
 	if scratchEnabled {
 		return base + "\n\n" + loadScratchSystemNote()
 	}

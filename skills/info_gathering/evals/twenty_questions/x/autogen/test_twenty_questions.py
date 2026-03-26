@@ -1,7 +1,9 @@
-"""Tests for Twenty Questions AutoGen v0.4 core runtime implementation.
+"""Tests for Twenty Questions AutoGen implementation with structured guesser tools.
 
-Uses ReplayChatCompletionClient to run real agents with scripted model
-responses through the autogen_core runtime.
+Uses ReplayChatCompletionClient to run games with scripted model responses.
+The guesser calls ask_yes_no_question/guess_answer tools (which invoke the
+simulator inline), so the replay sequence is:
+  guesser_tool_call, simulator_tool_call, guesser_tool_call, simulator_tool_call, ...
 """
 
 import json
@@ -20,13 +22,8 @@ from skills.info_gathering.evals.twenty_questions.x.autogen.twenty_questions imp
 _ZERO_USAGE = RequestUsage(prompt_tokens=0, completion_tokens=0)
 
 
-def _text_reply(text: str) -> CreateResult:
-    """Build a CreateResult that returns plain text (for the guesser)."""
-    return CreateResult(finish_reason="stop", content=text, usage=_ZERO_USAGE, cached=False)
-
-
 def _tool_call_reply(name: str, arguments: dict[str, object]) -> CreateResult:
-    """Build a CreateResult with a single function call (for the simulator)."""
+    """Build a CreateResult with a single function call."""
     return CreateResult(
         finish_reason="function_calls",
         content=[FunctionCall(id="call_1", name=name, arguments=json.dumps(arguments))],
@@ -35,12 +32,29 @@ def _tool_call_reply(name: str, arguments: dict[str, object]) -> CreateResult:
     )
 
 
-def _answer_reply(response: str) -> CreateResult:
+def _guesser_ask(question: str) -> CreateResult:
+    """Guesser calls ask_yes_no_question."""
+    return _tool_call_reply("ask_yes_no_question", {"question": question})
+
+
+def _guesser_guess(answer: str) -> CreateResult:
+    """Guesser calls guess_answer."""
+    return _tool_call_reply("guess_answer", {"answer": answer})
+
+
+def _sim_answer(response: str) -> CreateResult:
+    """Simulator calls answer."""
     return _tool_call_reply("answer", {"response": response})
 
 
-def _correct_reply() -> CreateResult:
+def _sim_correct() -> CreateResult:
+    """Simulator calls correct_answer."""
     return _tool_call_reply("correct_answer", {})
+
+
+def _sim_invalid(reason: str) -> CreateResult:
+    """Simulator calls invalid_input."""
+    return _tool_call_reply("invalid_input", {"reason": reason})
 
 
 @pytest.fixture
@@ -58,10 +72,10 @@ def _patch_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
 async def _run_with_replay(
     *, completions: list[CreateResult], tmp_path: Path, variant_name: str = "states"
 ) -> RunSummary:
-    """Run a game with a ReplayChatCompletionClient providing scripted responses.
+    """Run a game with scripted responses.
 
-    The completions list should interleave guesser and simulator responses:
-    [guesser_1, simulator_1, guesser_2, simulator_2, ...]
+    Completions interleave guesser and simulator:
+    [guesser_tool_call_1, simulator_tool_call_1, guesser_tool_call_2, simulator_tool_call_2, ...]
     """
     client = ReplayChatCompletionClient(
         chat_completions=completions,
@@ -80,14 +94,9 @@ async def _run_with_replay(
 
 @pytest.mark.usefixtures("_patch_prompts")
 async def test_correct_guess(tmp_path: Path) -> None:
-    """Guesser guesses correctly on turn 2."""
+    """Guesser asks a question then guesses correctly on turn 2."""
     summary = await _run_with_replay(
-        completions=[
-            _text_reply("Is it a place?"),
-            _answer_reply("yes"),
-            _text_reply("My answer is: New Mexico"),
-            _correct_reply(),
-        ],
+        completions=[_guesser_ask("Is it a place?"), _sim_answer("yes"), _guesser_guess("New Mexico"), _sim_correct()],
         tmp_path=tmp_path,
     )
 
@@ -102,8 +111,8 @@ async def test_timeout(tmp_path: Path) -> None:
     """Guesser never guesses correctly and hits the turn limit."""
     completions: list[CreateResult] = []
     for i in range(1, 21):
-        completions.append(_text_reply(f"Question {i}?"))
-        completions.append(_answer_reply("no"))
+        completions.append(_guesser_ask(f"Question {i}?"))
+        completions.append(_sim_answer("no"))
 
     summary = await _run_with_replay(completions=completions, tmp_path=tmp_path)
 
@@ -115,9 +124,7 @@ async def test_timeout(tmp_path: Path) -> None:
 @pytest.mark.usefixtures("_patch_prompts")
 async def test_correct_on_first_turn(tmp_path: Path) -> None:
     """Guesser guesses correctly immediately on turn 1."""
-    summary = await _run_with_replay(
-        completions=[_text_reply("My answer is: New Mexico"), _correct_reply()], tmp_path=tmp_path
-    )
+    summary = await _run_with_replay(completions=[_guesser_guess("New Mexico"), _sim_correct()], tmp_path=tmp_path)
 
     assert summary.result.kind == "correct"
     assert summary.result.turns == 1
@@ -128,12 +135,7 @@ async def test_correct_on_first_turn(tmp_path: Path) -> None:
 async def test_sort_of_response(tmp_path: Path) -> None:
     """Simulator responds with sort_of, game continues."""
     summary = await _run_with_replay(
-        completions=[
-            _text_reply("Is it hot?"),
-            _answer_reply("sort_of"),
-            _text_reply("My answer is: New Mexico"),
-            _correct_reply(),
-        ],
+        completions=[_guesser_ask("Is it hot?"), _sim_answer("sort_of"), _guesser_guess("New Mexico"), _sim_correct()],
         tmp_path=tmp_path,
     )
 
@@ -142,22 +144,45 @@ async def test_sort_of_response(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("_patch_prompts")
-async def test_log_files_written(tmp_path: Path) -> None:
-    """JSONL and summary files are written with correct content."""
-    await _run_with_replay(completions=[_text_reply("My answer is: New Mexico"), _correct_reply()], tmp_path=tmp_path)
+async def test_invalid_input_does_not_consume_turn(tmp_path: Path) -> None:
+    """Simulator returns invalid_input, turn is refunded."""
+    summary = await _run_with_replay(
+        completions=[
+            _guesser_ask("Tell me about the state"),  # Not a yes/no question
+            _sim_invalid("Not a yes/no question"),
+            _guesser_ask("Is it west of the Mississippi?"),
+            _sim_answer("yes"),
+            _guesser_guess("New Mexico"),
+            _sim_correct(),
+        ],
+        tmp_path=tmp_path,
+    )
 
+    assert summary.result.kind == "correct"
+    assert summary.result.turns == 2  # Invalid input didn't count
+    assert summary.invalid_input_count == 1
+
+
+def _check_output_files(tmp_path: Path) -> None:
+    """Verify JSONL and summary files are written with correct content (sync helper)."""
     jsonl_files = list(tmp_path.glob("*_calls.jsonl"))
     summary_files = list(tmp_path.glob("*_summary.json"))
     assert len(jsonl_files) == 1
     assert len(summary_files) == 1
 
-    # JSONL has at least one guesser + one simulator entry.
     lines = jsonl_files[0].read_text().strip().split("\n")
     assert len(lines) >= 2
 
     summary_data = json.loads(summary_files[0].read_text())
     assert summary_data["framework"] == "autogen"
     assert summary_data["result"]["kind"] == "correct"
+
+
+@pytest.mark.usefixtures("_patch_prompts")
+async def test_log_files_written(tmp_path: Path) -> None:
+    """JSONL and summary files are written with correct content."""
+    await _run_with_replay(completions=[_guesser_guess("New Mexico"), _sim_correct()], tmp_path=tmp_path)
+    _check_output_files(tmp_path)
 
 
 if __name__ == "__main__":

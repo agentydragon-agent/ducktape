@@ -7,6 +7,7 @@ or via fastmcp.Client for others).
 """
 
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,14 +20,24 @@ from mcp_infra.exec.docker.server import ContainerExecServer
 logger = logging.getLogger(__name__)
 
 
+def _proxy_env() -> dict[str, str]:
+    """Collect HTTP(S) proxy env vars for container networking."""
+    env: dict[str, str] = {}
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "NO_PROXY", "no_proxy"):
+        if val := os.environ.get(var):
+            env[var] = val
+    return env
+
+
 @asynccontextmanager
-async def scratch_exec_server(image: str = "alpine:latest") -> AsyncGenerator[ContainerExecServer]:
+async def scratch_exec_server(image: str = "python:3.13-slim") -> AsyncGenerator[ContainerExecServer]:
     """Create a scratch container with an MCP exec tool server.
 
     The server exposes an `exec` tool with cmd (list[str]) and timeout_ms (int).
     cwd is fixed to /tmp (hidden from the model). User and env fields are disabled.
+    Uses host networking and proxy env vars for internet access.
     """
-    opts = ContainerOptions(image=image)
+    opts = ContainerOptions(image=image, network_mode="host", environment=_proxy_env())
     async with aiodocker.Docker() as docker_client:
         server = ContainerExecServer(
             docker_client,
@@ -35,5 +46,5 @@ async def scratch_exec_server(image: str = "alpine:latest") -> AsyncGenerator[Co
             allow_env_field=False,
             cwd_policy=AlwaysSetTo(value=Path("/tmp")),
         )
-        logger.info("Scratch exec server created (image=%s)", image)
+        logger.info("Scratch exec server created (image=%s, network=host)", image)
         yield server

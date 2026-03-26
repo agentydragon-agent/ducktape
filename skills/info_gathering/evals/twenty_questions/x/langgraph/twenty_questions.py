@@ -1,4 +1,13 @@
-"""Twenty Questions eval using LangGraph.
+"""Twenty Questions eval using LangGraph with structured guesser tools.
+
+The guesser LLM uses tool_choice=required and has three tools:
+  - ask_yes_no_question: poses a question, simulator answers yes/no/sort_of
+  - guess_answer: makes a guess, simulator confirms or denies
+  - exec: optional scratch computation via container
+
+Game tools internally invoke the simulator (a single LLM call) and return the
+result string. The game loop calls the guesser repeatedly until a result is set
+or the turn limit is reached.
 
 Usage:
   bazel run //skills/info_gathering/evals/twenty_questions/x/langgraph:twenty_questions_bin -- \
@@ -9,25 +18,18 @@ import argparse
 import asyncio
 import contextlib
 import logging
-import operator
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal, TypedDict
+from typing import Literal
 
 from fastmcp.client import Client
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_core.tools import (
-    BaseTool,
-    tool as langchain_tool,  # renamed to avoid collision with local tool definitions
-)
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.tools import BaseTool, StructuredTool, tool as langchain_tool
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from mcp_infra.exec.docker.server import ContainerExecServer
@@ -50,150 +52,259 @@ from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIA
 logger = logging.getLogger(__name__)
 
 
-# -- Tools for the simulator LLM --
+# -- Simulator tool schemas --
 
 
 class AnswerInput(BaseModel):
     response: Literal["yes", "no", "sort_of"] = Field(description="Answer to the player's yes/no question")
 
 
-@langchain_tool(args_schema=AnswerInput)
-def answer(response: str) -> str:
-    """Answer the player's yes/no question."""
-    return response
+class InvalidInputInput(BaseModel):
+    reason: str = Field(description="Why the input is not a valid yes/no question or guess")
 
 
-@langchain_tool
-def correct_answer() -> str:
-    """The player correctly guessed the secret."""
-    return "correct"
+# Simulator tools are defined as plain functions; we build LangChain tool objects
+# for binding to the simulator model.
+
+SIM_TOOL_SCHEMAS: list[dict[str, object]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "answer",
+            "description": "Answer the player's yes/no question.",
+            "parameters": {
+                "type": "object",
+                "properties": {"response": {"type": "string", "enum": ["yes", "no", "sort_of"]}},
+                "required": ["response"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "correct_answer",
+            "description": "The player correctly guessed the secret.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "invalid_input",
+            "description": "The player's input is not a valid yes/no question or guess.",
+            "parameters": {"type": "object", "properties": {"reason": {"type": "string"}}, "required": ["reason"]},
+        },
+    },
+]
 
 
-SIM_TOOLS = [answer, correct_answer]
+# -- Guesser tool schemas --
 
 
-# -- State --
+class AskYesNoQuestionInput(BaseModel):
+    question: str = Field(description="A yes/no question to ask about the secret")
 
 
-class GameState(TypedDict):
-    """Shared state flowing through the Twenty Questions graph.
+class GuessAnswerInput(BaseModel):
+    answer: str = Field(description="Your guess for the secret answer")
 
-    Message lists use the add_messages reducer so nodes can append without
-    manually copying the full list. log_entries uses operator.add to
-    accumulate entries from both players. Scalar fields (turn, result,
-    last_question) use default overwrite semantics.
+
+# -- Game state (mutable, shared across tool invocations) --
+
+
+@dataclass
+class GameContext:
+    """Mutable game state shared between guesser tool implementations."""
+
+    simulator_model: BaseChatModel
+    simulator_messages: list[BaseMessage]
+    turn: int = 1
+    turn_limit: int = 20
+    result: Result | None = None
+    invalid_input_count: int = 0
+    log_entries: list[LogEntry] = field(default_factory=list)
+
+
+# -- Simulator invocation --
+
+
+async def _invoke_simulator(game: GameContext, player_text: str) -> tuple[str, str]:
+    """Send player_text to the simulator LLM and parse the tool call response.
+
+    Returns (tool_name, result_string). Updates game.simulator_messages.
     """
+    question_msg = HumanMessage(content=player_text)
+    messages = [*game.simulator_messages, question_msg]
+    response: AIMessage = await game.simulator_model.ainvoke(messages)
 
-    guesser_messages: Annotated[list[BaseMessage], add_messages]
-    simulator_messages: Annotated[list[BaseMessage], add_messages]
-    turn: int
-    turn_limit: int
-    result: Result | None
-    last_question: str | None
-    log_entries: Annotated[list[LogEntry], operator.add]
+    # Persist the exchange in simulator history.
+    game.simulator_messages.extend([question_msg, response])
+
+    tool_calls = response.tool_calls or []
+    if not tool_calls:
+        logger.warning("Simulator returned no tool calls; treating as invalid_input")
+        return "invalid_input", "Simulator failed to use a tool"
+
+    tc = tool_calls[0]
+    name = tc["name"]
+    args = tc["args"]
+
+    if name == "correct_answer":
+        return "correct_answer", "correct"
+    if name == "invalid_input":
+        return "invalid_input", str(args.get("reason", "invalid input"))
+    if name == "answer":
+        return "answer", str(args.get("response", ""))
+
+    logger.warning("Simulator called unknown tool %r", name)
+    return "invalid_input", f"Unknown simulator tool: {name}"
 
 
-# -- Helpers --
+# -- Game tool implementations --
+
+
+async def _ask_yes_no_question(game: GameContext, question: str) -> str:
+    """Handle the guesser's ask_yes_no_question tool call."""
+    guesser_entry = LogEntry(timestamp=datetime.now(UTC), player="guesser", content=question)
+    game.log_entries.append(guesser_entry)
+
+    tool_name, result_text = await _invoke_simulator(game, question)
+
+    if tool_name == "invalid_input":
+        game.invalid_input_count += 1
+        sim_entry = LogEntry(
+            timestamp=datetime.now(UTC),
+            player="simulator",
+            content=result_text,
+            tool_calls=[{"name": "invalid_input", "args": {"reason": result_text}}],
+        )
+        game.log_entries.append(sim_entry)
+        return result_text
+
+    if tool_name == "correct_answer":
+        game.result = Correct(turns=game.turn)
+        sim_entry = LogEntry(
+            timestamp=datetime.now(UTC),
+            player="simulator",
+            content="correct",
+            tool_calls=[{"name": "correct_answer", "args": {}}],
+        )
+        game.log_entries.append(sim_entry)
+        return "The simulator says that's correct!"
+
+    # Normal answer — consume a turn.
+    sim_entry = LogEntry(
+        timestamp=datetime.now(UTC),
+        player="simulator",
+        content=result_text,
+        tool_calls=[{"name": "answer", "args": {"response": result_text}}],
+    )
+    game.log_entries.append(sim_entry)
+    game.turn += 1
+
+    if game.turn > game.turn_limit:
+        game.result = Timeout(limit=game.turn_limit)
+
+    return result_text
+
+
+async def _guess_answer(game: GameContext, answer: str) -> str:
+    """Handle the guesser's guess_answer tool call."""
+    guesser_entry = LogEntry(timestamp=datetime.now(UTC), player="guesser", content=f"Guess: {answer}")
+    game.log_entries.append(guesser_entry)
+
+    tool_name, result_text = await _invoke_simulator(game, f"My guess is: {answer}")
+
+    if tool_name == "correct_answer":
+        game.result = Correct(turns=game.turn)
+        sim_entry = LogEntry(
+            timestamp=datetime.now(UTC),
+            player="simulator",
+            content="correct",
+            tool_calls=[{"name": "correct_answer", "args": {}}],
+        )
+        game.log_entries.append(sim_entry)
+        return "Correct! You guessed it!"
+
+    if tool_name == "invalid_input":
+        game.invalid_input_count += 1
+        sim_entry = LogEntry(
+            timestamp=datetime.now(UTC),
+            player="simulator",
+            content=result_text,
+            tool_calls=[{"name": "invalid_input", "args": {"reason": result_text}}],
+        )
+        game.log_entries.append(sim_entry)
+        return result_text
+
+    # Wrong guess — consume a turn.
+    sim_entry = LogEntry(
+        timestamp=datetime.now(UTC),
+        player="simulator",
+        content=result_text,
+        tool_calls=[{"name": "answer", "args": {"response": result_text}}],
+    )
+    game.log_entries.append(sim_entry)
+    game.turn += 1
+
+    if game.turn > game.turn_limit:
+        game.result = Timeout(limit=game.turn_limit)
+
+    return f"Not correct. The answer was: {result_text}"
+
+
+# -- Building tools and running the game --
 
 
 def _make_chat_model(api: str, model: str) -> BaseChatModel:
-    # Conditional imports: only load the provider package actually requested,
-    # avoiding heavyweight transitive deps from the unused provider.
     if api == "openai":
         return ChatOpenAI(model=model)
     return ChatAnthropic(model=model)
 
 
-# -- Graph construction --
+def _build_game_tools(game: GameContext) -> list[BaseTool]:
+    """Build LangChain tools that close over the mutable game context."""
+
+    async def ask_yes_no_question(question: str) -> str:
+        return await _ask_yes_no_question(game, question)
+
+    async def guess_answer(answer: str) -> str:
+        return await _guess_answer(game, answer)
+
+    ask_tool = StructuredTool.from_function(
+        coroutine=ask_yes_no_question,
+        name="ask_yes_no_question",
+        description="Ask a yes/no question about the secret.",
+        args_schema=AskYesNoQuestionInput,
+    )
+    guess_tool = StructuredTool.from_function(
+        coroutine=guess_answer,
+        name="guess_answer",
+        description="Guess the secret answer.",
+        args_schema=GuessAnswerInput,
+    )
+    return [ask_tool, guess_tool]
 
 
-def build_graph(
-    *, guesser_model: BaseChatModel, simulator_model: BaseChatModel, exec_tool: BaseTool | None = None
-) -> StateGraph[GameState, None, GameState, GameState]:
-    """Build the LangGraph state graph for Twenty Questions."""
-    sim_with_tools = simulator_model.bind_tools(SIM_TOOLS, tool_choice="required")
+def _bind_simulator_tools(model: BaseChatModel) -> BaseChatModel:
+    """Bind simulator tool schemas so the model always responds with a tool call."""
 
-    # Bind exec tool to guesser if provided, so it can run commands before asking.
-    effective_guesser = guesser_model.bind_tools([exec_tool]) if exec_tool else guesser_model
+    @langchain_tool(args_schema=AnswerInput)
+    def answer(response: str) -> str:
+        """Answer the player's yes/no question."""
+        return response
 
-    async def guesser_node(state: GameState) -> Command[Literal["exec_tools", "simulator_llm"]]:
-        response: AIMessage = await effective_guesser.ainvoke(state["guesser_messages"])
-        text = str(response.text).strip()
+    @langchain_tool
+    def correct_answer() -> str:
+        """The player correctly guessed the secret."""
+        return "correct"
 
-        # If the model made tool calls, route to exec_tools node.
-        # The exec tool is the only tool bound to the guesser.
-        tool_calls = response.tool_calls or []
-        if tool_calls:
-            return Command(update={"guesser_messages": [response]}, goto="exec_tools")
+    @langchain_tool(args_schema=InvalidInputInput)
+    def invalid_input(reason: str) -> str:
+        """The player's input is not a valid yes/no question or guess."""
+        return reason
 
-        entry = LogEntry(timestamp=datetime.now(UTC), player="guesser", content=text)
-        return Command(
-            update={"guesser_messages": [response], "last_question": text, "log_entries": [entry]}, goto="simulator_llm"
-        )
-
-    async def simulator_llm_node(state: GameState) -> dict[str, list[BaseMessage]]:
-        """Invoke the simulator LLM and append the question + response."""
-        question = state["last_question"] or ""
-        question_msg = HumanMessage(content=question)
-        response: AIMessage = await sim_with_tools.ainvoke(state["simulator_messages"] + [question_msg])
-        return {"simulator_messages": [question_msg, response]}
-
-    # ToolNode executes simulator tools (answer / correct_answer) and appends
-    # proper ToolMessages to simulator_messages.
-    sim_tool_node = ToolNode(SIM_TOOLS, messages_key="simulator_messages")
-
-    async def simulator_route_node(state: GameState) -> Command[Literal["guesser", "__end__"]]:
-        """Inspect simulator tool calls and determine game outcome."""
-        # Find the most recent AIMessage with tool calls — the structured
-        # decision is in the call arguments, not in the ToolMessage results.
-        last_ai: AIMessage | None = None
-        for msg in reversed(state["simulator_messages"]):
-            if isinstance(msg, AIMessage) and msg.tool_calls:
-                last_ai = msg
-                break
-        tool_calls = last_ai.tool_calls if last_ai else []
-        tool_call_dicts = [{"name": tc["name"], "args": tc["args"]} for tc in tool_calls]
-
-        result: Result | None = None
-        sim_reply = ""
-        for tc in tool_calls:
-            if tc["name"] == "correct_answer":
-                result = Correct(turns=state["turn"])
-                break
-            if tc["name"] == "answer":
-                sim_reply = tc["args"]["response"]
-
-        new_turn = state["turn"] + 1
-        if result is None and new_turn > state["turn_limit"]:
-            result = Timeout(limit=state["turn_limit"])
-
-        entry = LogEntry(timestamp=datetime.now(UTC), player="simulator", content=sim_reply, tool_calls=tool_call_dicts)
-
-        guesser_feedback: list[BaseMessage] = []
-        if result is None and sim_reply:
-            guesser_feedback = [HumanMessage(content=sim_reply)]
-
-        game_over = result is not None
-        return Command(
-            update={"turn": new_turn, "result": result, "log_entries": [entry], "guesser_messages": guesser_feedback},
-            goto=END if game_over else "guesser",  # type: ignore[arg-type]
-        )
-
-    exec_tools_list = [exec_tool] if exec_tool else []
-    exec_tool_node = ToolNode(exec_tools_list, messages_key="guesser_messages")
-
-    graph = StateGraph(GameState, input_schema=GameState, output_schema=GameState)
-    graph.add_node("guesser", guesser_node)
-    graph.add_node("exec_tools", exec_tool_node)
-    graph.add_node("simulator_llm", simulator_llm_node)
-    graph.add_node("simulator_tools", sim_tool_node)
-    graph.add_node("simulator_route", simulator_route_node)
-    graph.add_edge(START, "guesser")
-    graph.add_edge("exec_tools", "guesser")
-    graph.add_edge("simulator_llm", "simulator_tools")
-    graph.add_edge("simulator_tools", "simulator_route")
-
-    return graph
+    return model.bind_tools([answer, correct_answer, invalid_input], tool_choice="required")
 
 
 async def run_twenty_questions_langgraph(
@@ -208,44 +319,80 @@ async def run_twenty_questions_langgraph(
     output_dir: Path,
     exec_server: ContainerExecServer | None = None,
 ) -> RunSummary:
-    """Run a full Twenty Questions game with LangGraph and return a summary."""
+    """Run a full Twenty Questions game and return a summary."""
     calls_path, summary_path = run_output_paths(name, output_dir)
 
     guesser_model = _make_chat_model(api, model_name)
-    simulator_model = _make_chat_model(api, model_name)
+    simulator_model = _bind_simulator_tools(_make_chat_model(api, model_name))
+
+    game = GameContext(
+        simulator_model=simulator_model,
+        simulator_messages=[SystemMessage(content=sim_system)],
+        turn=1,
+        turn_limit=turn_limit,
+    )
 
     async with contextlib.AsyncExitStack() as stack:
-        exec_tool: BaseTool | None = None
+        # Build game tools (ask/guess) that close over game state.
+        game_tools: list[BaseTool] = _build_game_tools(game)
+
+        # Optionally add exec tool from container MCP server.
         if exec_server is not None:
             mcp_client = await stack.enter_async_context(Client(exec_server))
             tools = await load_mcp_tools(mcp_client.session)
             exec_tool = next(t for t in tools if t.name == "exec")
+            game_tools.append(exec_tool)
 
-        graph = build_graph(guesser_model=guesser_model, simulator_model=simulator_model, exec_tool=exec_tool)
-        app = graph.compile()
+        guesser_with_tools = guesser_model.bind_tools(game_tools, tool_choice="required")
 
-        initial_state: GameState = {
-            "guesser_messages": [SystemMessage(content=guesser_system), HumanMessage(content=first_message)],
-            "simulator_messages": [SystemMessage(content=sim_system)],
-            "turn": 1,
-            "turn_limit": turn_limit,
-            "result": None,
-            "last_question": None,
-            "log_entries": [],
-        }
+        guesser_messages: list[BaseMessage] = [
+            SystemMessage(content=guesser_system),
+            HumanMessage(content=first_message),
+        ]
 
-        final_state = await app.ainvoke(initial_state)
+        # Game loop: call guesser, execute its tool, feed result back, repeat.
+        max_iterations = turn_limit * 3  # Safety bound (accounts for invalid inputs + exec calls).
+        for _ in range(max_iterations):
+            response: AIMessage = await guesser_with_tools.ainvoke(guesser_messages)
+            guesser_messages.append(response)
 
-    result: Result = final_state["result"]
-    assert result is not None, "Graph terminated without setting result"
-    log_entries: list[LogEntry] = final_state["log_entries"]
-    turns = final_state["turn"] - 1
+            tool_calls = response.tool_calls or []
+            if not tool_calls:
+                logger.warning("Guesser returned no tool calls despite tool_choice=required")
+                break
+
+            for tc in tool_calls:
+                # Find the matching tool and invoke it.
+                matching_tool = next((t for t in game_tools if t.name == tc["name"]), None)
+                if matching_tool is None:
+                    logger.warning("Guesser called unknown tool %r", tc["name"])
+                    continue
+
+                result_str = await matching_tool.ainvoke(tc["args"])
+
+                # Add tool result as a message back to the guesser.
+                guesser_messages.append(ToolMessage(content=str(result_str), tool_call_id=tc["id"]))
+
+            if game.result is not None:
+                break
+
+    assert game.result is not None, "Game loop terminated without setting result"
+
+    turns = game.turn - 1 if isinstance(game.result, Timeout) else game.turn
 
     with calls_path.open("w") as f:
-        for entry in log_entries:
+        for entry in game.log_entries:
             f.write(entry.model_dump_json() + "\n")
 
-    summary = RunSummary(eval_name=name, framework="langgraph", model=model_name, api=api, turns=turns, result=result)
+    summary = RunSummary(
+        eval_name=name,
+        framework="langgraph",
+        model=model_name,
+        api=api,
+        turns=turns,
+        result=game.result,
+        invalid_input_count=game.invalid_input_count,
+    )
     save_summary(summary=summary, summary_path=summary_path)
     return summary
 
@@ -254,8 +401,7 @@ async def _async_main(args: argparse.Namespace) -> None:
     v = VARIANTS[args.variant]
     name = f"20q_{args.variant}"
 
-    skill_text = load_skill_prompt()
-    guesser_system = build_guesser_system(skill_text)
+    guesser_system = build_guesser_system(skill=load_skill_prompt(), has_scratch=True)
     sim_system = load_sim_prompt(secret=v.secret, turn_limit=v.turn_limit)
     first_msg = first_user_message(v.domain_description, v.turn_limit)
     output_dir = output_dir_from_args(args)
