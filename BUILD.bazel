@@ -165,6 +165,8 @@ py_package(
         "devinfra.claude",
         "devinfra.claude.auth_proxy",
         "devinfra.claude.claude_api",
+        "devinfra.claude.claude_api.hooks",
+        "devinfra.claude.hook_daemon",
         "devinfra.claude.hook_daemon.session_start",
         "devinfra.claude.supervisor",
         "devinfra.precommit",
@@ -174,6 +176,7 @@ py_package(
     ],
     deps = [
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
+        "//devinfra/claude/hook_daemon:main_lib",
         "//devinfra/claude/statusline:statusline_lib",
         "//devinfra/precommit:ducktape_precommit",
     ],
