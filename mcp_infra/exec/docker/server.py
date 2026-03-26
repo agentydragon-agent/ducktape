@@ -226,11 +226,13 @@ class ContainerExecServer(EnhancedFastMCP):
             '- DO: {"cmd": ["sh", "-c", "cat > file.txt"], "stdin_text": "content"}',
         ]
 
+        if isinstance(cwd_policy, AlwaysSetTo):
+            _exec_doc_lines.append(f"\nCommands always run in {cwd_policy.value}.")
+        _exec_description = "\n".join(_exec_doc_lines)
+
         async def exec(input, context: Context) -> BaseExecResult:
-            """Placeholder docstring — replaced below."""
             async with async_timer() as get_duration_ms:
                 s = session_state_from_ctx(context)
-                # Build a full ExecInput for run_session_container; disabled fields become None.
                 effective = ExecInput(
                     cmd=input.cmd,
                     cwd=resolve_cwd(cwd_policy, input),
@@ -245,10 +247,7 @@ class ContainerExecServer(EnhancedFastMCP):
                 return render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)
 
         exec.__annotations__["input"] = exec_input_type
-        if isinstance(cwd_policy, AlwaysSetTo):
-            _exec_doc_lines.append(f"\nCommands always run in {cwd_policy.value}.")
-        exec.__doc__ = "\n".join(_exec_doc_lines)
-        self.exec_tool = self.flat_model()(exec)
+        self.exec_tool = self.flat_model(description=_exec_description)(exec)
 
         # Register file:// resource template for reading files from container
         async def read_container_file(path: str, ctx: Context) -> str:

@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 async def scratch_exec_server(image: str = "alpine:latest") -> AsyncGenerator[ContainerExecServer]:
     """Create a scratch container with an MCP exec tool server.
 
-    The server exposes an `exec` tool with schema: cmd (list[str]), cwd (str|None),
-    timeout_ms (int). User and env fields are disabled for safety.
+    The server exposes an `exec` tool with cmd (list[str]) and timeout_ms (int).
+    cwd is fixed to /tmp (hidden from the model). User and env fields are disabled.
     """
     opts = ContainerOptions(image=image)
     async with aiodocker.Docker() as docker_client:
