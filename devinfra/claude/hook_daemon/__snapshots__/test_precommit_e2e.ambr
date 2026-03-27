@@ -1,24 +1,24 @@
 # serializer version: 1
+# name: test_binary_file_no_diff
+  '''
+  test.bin:
+    Not auto-applied (would also edit): binfixer
+  '''
+# ---
 # name: test_fixer_modifies_checker_fails
   '''
-  2 hooks failed on test.py:
-    fixer (foo->bar) (modified file)
-    checker (no BANNED) (exit 1)
-      test.py: contains BANNED keyword
-  Changes pre-commit would make:
-  --- 
-  +++ 
-  @@ -1 +1 @@
-  -foo = 1  # BANNED
-  +bar = 1  # BANNED
+  test.py:
+    Not auto-applied (would also edit): fixer
+    Failed (not applied):
+      checker (exit 1)
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
 # name: test_only_checker_fails
   '''
-  1 hook failed on test.py:
-    checker (no BANNED) (exit 1)
-      test.py: contains BANNED keyword
+  test.py:
+    Failed (not applied):
+      checker (exit 1)
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---

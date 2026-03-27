@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import pygit2
 from mako.template import Template
 
 from devinfra.claude.claude_api.hooks.post_tool_use import (
@@ -18,8 +19,14 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.hook_config import HookConfig
-from devinfra.claude.hook_daemon.precommit_runner import RunResult, run_on_file
+from devinfra.claude.hook_config import HookConfig, PreCommitConfig
+from devinfra.claude.hook_daemon.precommit_runner import (
+    HookAutoApplied,
+    HookFailedNotApplied,
+    HookWouldEdit,
+    RunResult,
+    run_on_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,24 +42,9 @@ def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
     return Path(file_path)
 
 
-def _find_git_root(start: Path) -> Path | None:
-    current = start if start.is_dir() else start.parent
-    while current != current.parent:
-        if (current / ".git").exists():
-            return current
-        current = current.parent
-    return None
-
-
-def _format_check_result(result: RunResult, file_path: Path) -> str:
+def _format_check_result(result: RunResult, file_path: Path, pre_commit: PreCommitConfig) -> str:
     template = Template((_TEMPLATES_DIR / "post_tool_use.mako").read_text())
-    output: str = template.render(
-        auto_applied=result.auto_applied_results,
-        failed=result.failed_hooks,
-        diff_lines=result.report_only_diff,
-        file_name=file_path.name,
-        file_path=file_path,
-    )
+    output: str = template.render(result=result, file_path=file_path, pre_commit=pre_commit)
     return output.strip()
 
 
@@ -64,35 +56,36 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
     if file_path is None or not file_path.exists():
         return PostToolUseOutput()
 
-    project_dir = _find_git_root(file_path)
-    if project_dir is None:
+    search_dir = str(file_path.parent if file_path.is_file() else file_path)
+    git_path = pygit2.discover_repository(search_dir)
+    if git_path is None:
         return PostToolUseOutput()
+    project_dir = Path(pygit2.Repository(git_path).workdir).resolve()
 
     config = HookConfig.load_from_repo(project_dir)
-    auto_apply_hooks = frozenset(config.pre_commit.auto_apply_hooks) if config and config.pre_commit else frozenset()
+    if not config or not config.pre_commit:
+        return PostToolUseOutput()
 
-    run_result = run_on_file(file_path, project_dir, auto_apply_hooks=auto_apply_hooks)
+    pre_commit = config.pre_commit
+    run_result = run_on_file(file_path, project_dir, auto_apply_hooks=pre_commit.auto_apply_hooks)
 
-    for hr in run_result.hooks:
-        if hr.auto_applied:
-            logger.info("hook %s auto-applied on %s", hr.hook_name, file_path.name)
-        elif hr.passed:
-            logger.debug("hook %s passed on %s", hr.hook_name, file_path.name)
-        else:
+    for hook_id, hr in run_result.hooks.items():
+        if isinstance(hr, HookAutoApplied):
+            logger.info("hook %s auto-applied on %s (rerun exit %d)", hook_id, file_path.name, hr.rerun_exit_code)
+        elif isinstance(hr, (HookWouldEdit, HookFailedNotApplied)):
             logger.info(
-                "hook %s failed on %s (exit_code=%d, files_modified=%s):\n%s",
-                hr.hook_name,
+                "hook %s on %s (exit_code=%d):\n%s",
+                hook_id,
                 file_path.name,
                 hr.exit_code,
-                hr.files_modified,
                 hr.output.decode(errors="replace"),
             )
 
-    if run_result.all_passed and not run_result.auto_applied_results:
+    if not run_result.has_issues:
         return PostToolUseOutput()
 
     return PostToolUseOutput(
         hook_specific_output=PostToolUseHookSpecificOutput(
-            additional_context=_format_check_result(run_result, file_path)
+            additional_context=_format_check_result(run_result, file_path, pre_commit)
         )
     )

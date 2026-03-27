@@ -74,12 +74,19 @@ class K8sConfig(BaseModel):
     namespace: str = Field(description="Default namespace for kubectl operations")
 
 
-class PreCommitConfig(BaseModel):
+class PreCommitConfig(BaseModel, frozen=True):
     """Pre-commit hook behavior configuration."""
 
-    auto_apply_hooks: set[str] = Field(
+    auto_apply_hooks: frozenset[str] = Field(
+        default_factory=frozenset,
         description="Hook IDs whose file modifications are kept (not reverted). "
-        "All other hooks' modifications are reverted and reported as diffs."
+        "All other hooks' modifications are reverted and reported as diffs.",
+    )
+    show_report_diffs: bool = Field(
+        default=False, description="Show unified diffs from report-only hooks in the PostToolUse output."
+    )
+    show_hook_output: bool = Field(
+        default=False, description="Show stdout/stderr from failing hooks in the PostToolUse output."
     )
 
 

@@ -10,14 +10,14 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
-import pygit2
 import pytest
 import pytest_bazel
-import yaml
 from syrupy.assertion import SnapshotAssertion
 
+from devinfra.claude.hook_config import PreCommitConfig
+from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result
-from devinfra.claude.hook_daemon.precommit_runner import run_on_file
+from devinfra.claude.hook_daemon.precommit_runner import HookFailedNotApplied, HookPassed, HookWouldEdit, run_on_file
 
 # Relative path used in _format_check_result to keep snapshots stable
 # (avoids embedding tmp dir absolute paths).
@@ -36,10 +36,6 @@ def precommit_repo(tmp_path: Path) -> Path:
     """Git repo with three local hooks: fixer, checker, passthrough."""
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
-
-    repo = pygit2.init_repository(str(repo_path))
-    repo.config["user.name"] = "Test"
-    repo.config["user.email"] = "test@test.com"
 
     # Hook 1: replaces 'foo' with 'bar', exits 1 on change
     _make_script(
@@ -87,44 +83,34 @@ def precommit_repo(tmp_path: Path) -> Path:
         """,
     )
 
-    config = {
-        "repos": [
+    write_precommit_config(
+        repo_path,
+        [
             {
-                "repo": "local",
-                "hooks": [
-                    {
-                        "id": "fixer",
-                        "name": "fixer (foo->bar)",
-                        "entry": f"{sys.executable} {repo_path / 'fixer.py'}",
-                        "language": "system",
-                        "pass_filenames": True,
-                    },
-                    {
-                        "id": "checker",
-                        "name": "checker (no BANNED)",
-                        "entry": f"{sys.executable} {repo_path / 'checker.py'}",
-                        "language": "system",
-                        "pass_filenames": True,
-                    },
-                    {
-                        "id": "passthrough",
-                        "name": "passthrough",
-                        "entry": f"{sys.executable} {repo_path / 'passthrough.py'}",
-                        "language": "system",
-                        "pass_filenames": True,
-                    },
-                ],
-            }
-        ]
-    }
+                "id": "fixer",
+                "name": "fixer (foo->bar)",
+                "entry": f"{sys.executable} {repo_path / 'fixer.py'}",
+                "language": "system",
+                "pass_filenames": True,
+            },
+            {
+                "id": "checker",
+                "name": "checker (no BANNED)",
+                "entry": f"{sys.executable} {repo_path / 'checker.py'}",
+                "language": "system",
+                "pass_filenames": True,
+            },
+            {
+                "id": "passthrough",
+                "name": "passthrough",
+                "entry": f"{sys.executable} {repo_path / 'passthrough.py'}",
+                "language": "system",
+                "pass_filenames": True,
+            },
+        ],
+    )
 
-    (repo_path / ".pre-commit-config.yaml").write_text(yaml.dump(config))
-
-    repo.index.add_all()
-    repo.index.write()
-    tree = repo.index.write_tree()
-    sig = pygit2.Signature("Test", "test@test.com")
-    repo.create_commit("HEAD", sig, sig, "init", tree, [])
+    init_git_repo(repo_path)
 
     return repo_path
 
@@ -136,14 +122,11 @@ def test_fixer_modifies_checker_fails(precommit_repo: Path, snapshot: SnapshotAs
 
     result = run_on_file(test_file, precommit_repo)
 
-    hooks = {h.hook_id: h for h in result.hooks}
-    assert hooks["fixer"].files_modified is True
-    assert hooks["fixer"].passed is False
-    assert hooks["checker"].files_modified is False
-    assert hooks["checker"].passed is False
-    assert hooks["passthrough"].passed is True
+    assert isinstance(result.hooks["fixer"], HookWouldEdit)
+    assert isinstance(result.hooks["checker"], HookFailedNotApplied)
+    assert isinstance(result.hooks["passthrough"], HookPassed)
 
-    output = _format_check_result(result, _TEST_FILE)
+    output = _format_check_result(result, _TEST_FILE, PreCommitConfig())
     assert output == snapshot
 
 
@@ -154,13 +137,11 @@ def test_only_checker_fails(precommit_repo: Path, snapshot: SnapshotAssertion) -
 
     result = run_on_file(test_file, precommit_repo)
 
-    hooks = {h.hook_id: h for h in result.hooks}
-    assert hooks["fixer"].passed is True
-    assert hooks["checker"].files_modified is False
-    assert hooks["checker"].passed is False
-    assert hooks["passthrough"].passed is True
+    assert isinstance(result.hooks["fixer"], HookPassed)
+    assert isinstance(result.hooks["checker"], HookFailedNotApplied)
+    assert isinstance(result.hooks["passthrough"], HookPassed)
 
-    output = _format_check_result(result, _TEST_FILE)
+    output = _format_check_result(result, _TEST_FILE, PreCommitConfig())
     assert output == snapshot
 
 
@@ -170,7 +151,60 @@ def test_all_pass(precommit_repo: Path) -> None:
     test_file.write_text("clean = 1\n")
 
     result = run_on_file(test_file, precommit_repo)
-    assert result.all_passed
+    assert not result.has_issues
+
+
+def test_binary_file_no_diff(tmp_path: Path, snapshot: SnapshotAssertion) -> None:
+    """Binary files that hooks modify should not produce a diff."""
+    repo_path = tmp_path / "binrepo"
+    repo_path.mkdir()
+
+    # Binary-safe fixer: replaces 0xAA with 0xBB using raw bytes
+    _make_script(
+        repo_path,
+        "binfixer.py",
+        """\
+        import sys
+        from pathlib import Path
+
+        changed = False
+        for f in sys.argv[1:]:
+            p = Path(f)
+            content = p.read_bytes()
+            new = content.replace(b"\\xaa", b"\\xbb")
+            if new != content:
+                p.write_bytes(new)
+                changed = True
+        sys.exit(1 if changed else 0)
+        """,
+    )
+
+    write_precommit_config(
+        repo_path,
+        [
+            {
+                "id": "binfixer",
+                "name": "binfixer",
+                "entry": f"{sys.executable} {repo_path / 'binfixer.py'}",
+                "language": "system",
+                "pass_filenames": True,
+            }
+        ],
+    )
+    init_git_repo(repo_path)
+
+    test_file = repo_path / "test.bin"
+    test_file.write_bytes(b"\x00\xaa\xff\xfe")
+
+    result = run_on_file(test_file, repo_path)
+
+    assert isinstance(result.hooks["binfixer"], HookWouldEdit)
+    assert result.report_only_diff == []
+    # File should be restored to original
+    assert test_file.read_bytes() == b"\x00\xaa\xff\xfe"
+
+    output = _format_check_result(result, Path("test.bin"), PreCommitConfig())
+    assert output == snapshot
 
 
 def test_file_restored_after_run(precommit_repo: Path) -> None:
@@ -182,7 +216,7 @@ def test_file_restored_after_run(precommit_repo: Path) -> None:
     result = run_on_file(test_file, precommit_repo)
 
     # Fixer should have changed foo->bar, but file is restored
-    assert not result.all_passed
+    assert result.has_issues
     assert test_file.read_text() == original
 
 

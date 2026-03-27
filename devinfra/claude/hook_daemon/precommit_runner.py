@@ -11,7 +11,7 @@ import contextlib
 import difflib
 import logging
 import os
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -36,43 +36,65 @@ def _chdir(path: Path) -> Generator[None]:
         os.chdir(saved)
 
 
-@dataclass
-class HookResult:
-    hook_id: str
-    hook_name: str
-    output: bytes
-    files_modified: bool
-    exit_code: int
-    auto_applied: bool = False
+@dataclass(frozen=True)
+class HookPassed:
+    """Hook ran clean — exit 0, no file modifications."""
 
-    @property
-    def passed(self) -> bool:
-        return self.exit_code == 0 and not self.files_modified
+
+@dataclass(frozen=True)
+class HookAutoApplied:
+    """Hook modified the file; changes kept on disk. Re-run verified satisfaction."""
+
+    exit_code: int
+    output: bytes
+    rerun_exit_code: int
+
+
+@dataclass(frozen=True)
+class HookWouldEdit:
+    """Report-only hook that would modify the file (changes reverted)."""
+
+    exit_code: int
+    output: bytes
+
+
+@dataclass(frozen=True)
+class HookFailedNotApplied:
+    """Report-only hook that exited non-zero without modifying the file."""
+
+    exit_code: int
+    output: bytes
+
+
+HookOutcome = HookPassed | HookAutoApplied | HookWouldEdit | HookFailedNotApplied
 
 
 @dataclass
 class RunResult:
-    hooks: list[HookResult] = field(default_factory=list)
+    hooks: dict[str, HookOutcome] = field(default_factory=dict)
     report_only_diff: list[str] = field(default_factory=list)
 
     @property
-    def failed_hooks(self) -> list[HookResult]:
-        """Hooks that failed and were NOT auto-applied."""
-        return [h for h in self.hooks if not h.passed and not h.auto_applied]
+    def auto_applied(self) -> dict[str, HookAutoApplied]:
+        return {k: h for k, h in self.hooks.items() if isinstance(h, HookAutoApplied)}
 
     @property
-    def auto_applied_results(self) -> list[HookResult]:
-        return [h for h in self.hooks if h.auto_applied]
+    def would_edit(self) -> dict[str, HookWouldEdit]:
+        return {k: h for k, h in self.hooks.items() if isinstance(h, HookWouldEdit)}
 
     @property
-    def all_passed(self) -> bool:
-        """True when all hooks either passed or were auto-applied."""
-        return all(h.passed or h.auto_applied for h in self.hooks)
+    def failed_not_applied(self) -> dict[str, HookFailedNotApplied]:
+        return {k: h for k, h in self.hooks.items() if isinstance(h, HookFailedNotApplied)}
+
+    @property
+    def has_issues(self) -> bool:
+        """True when any hook has something to report (auto-applied, would-edit, or failed)."""
+        return bool(self.auto_applied or self.would_edit or self.failed_not_applied)
 
 
 def _run_hooks(
-    file_path: Path, project_dir: Path, auto_apply_hooks: frozenset[str] = frozenset()
-) -> tuple[list[HookResult], list[str]]:
+    file_path: Path, project_dir: Path, auto_apply_hooks: Iterable[str] = ()
+) -> tuple[list[HookOutcome], list[str]]:
     """Run all applicable pre-commit hooks on a single file.
 
     Two-phase execution:
@@ -82,6 +104,7 @@ def _run_hooks(
 
     Returns (hook_results, report_only_diff_lines).
     """
+    auto_apply = set(auto_apply_hooks)
     config_path = project_dir / CONFIG_FILE
 
     store = Store()
@@ -102,19 +125,16 @@ def _run_hooks(
         filenames = tuple(classifier.filenames_for_hook(hook))
         if not filenames and not hook.always_run:
             continue
-        if hook.id in auto_apply_hooks:
+        if hook.id in auto_apply:
             auto_hooks.append((hook, filenames))
         else:
             report_hooks.append((hook, filenames))
 
-    results: list[HookResult] = []
-
-    # Phase 1: auto-apply hooks — keep their changes.
-    for hook, filenames in auto_hooks:
-        content_before = file_path.read_bytes()
+    def run_hook(hook, filenames) -> tuple[int, bytes]:
+        """Run a single pre-commit hook, returning (exit_code, output)."""
         language = languages[hook.language]
         with language.in_env(hook.prefix, hook.language_version):
-            retcode, out = language.run_hook(
+            return language.run_hook(
                 hook.prefix,
                 hook.entry,
                 hook.args,
@@ -123,53 +143,61 @@ def _run_hooks(
                 require_serial=hook.require_serial,
                 color=False,
             )
+
+    def classify_report_only(retcode: int, out: bytes, *, modified: bool) -> HookOutcome:
+        if modified:
+            return HookWouldEdit(exit_code=retcode, output=out)
+        if retcode == 0:
+            return HookPassed()
+        return HookFailedNotApplied(exit_code=retcode, output=out)
+
+    results: dict[str, HookOutcome] = {}
+
+    # Phase 1: auto-apply hooks — keep their changes, re-run to verify satisfaction.
+    for hook, filenames in auto_hooks:
+        content_before = file_path.read_bytes()
+        retcode, out = run_hook(hook, filenames)
         current = file_path.read_bytes()
         modified = current != content_before
-        results.append(
-            HookResult(
-                hook_id=hook.id,
-                hook_name=hook.name,
-                output=out,
-                files_modified=modified,
-                exit_code=retcode,
-                auto_applied=modified,
-            )
-        )
+
+        assert hook.id not in results, f"Duplicate hook ID: {hook.id}"
+        if modified:
+            rerun_retcode, _ = run_hook(hook, filenames)
+            rerun_content = file_path.read_bytes()
+            if rerun_content != current:
+                file_path.write_bytes(current)
+            results[hook.id] = HookAutoApplied(exit_code=retcode, output=out, rerun_exit_code=rerun_retcode)
+        else:
+            results[hook.id] = classify_report_only(retcode, out, modified=False)
 
     # Phase 2: report-only hooks — capture diff, then revert.
     baseline = file_path.read_bytes()
     for hook, filenames in report_hooks:
+        assert hook.id not in results, f"Duplicate hook ID: {hook.id}"
         content_before = file_path.read_bytes()
-        language = languages[hook.language]
-        with language.in_env(hook.prefix, hook.language_version):
-            retcode, out = language.run_hook(
-                hook.prefix,
-                hook.entry,
-                hook.args,
-                filenames if hook.pass_filenames else (),
-                is_local=hook.src == "local",
-                require_serial=hook.require_serial,
-                color=False,
-            )
+        retcode, out = run_hook(hook, filenames)
         current = file_path.read_bytes()
-        modified = current != content_before
-        results.append(
-            HookResult(hook_id=hook.id, hook_name=hook.name, output=out, files_modified=modified, exit_code=retcode)
-        )
+        results[hook.id] = classify_report_only(retcode, out, modified=current != content_before)
 
     # Compute diff of what report-only hooks would change, then revert.
     after_all = file_path.read_bytes()
     diff_lines: list[str] = []
     if after_all != baseline:
-        baseline_lines = baseline.decode(errors="replace").splitlines(keepends=True)
-        after_lines = after_all.decode(errors="replace").splitlines(keepends=True)
-        diff_lines = list(difflib.unified_diff(baseline_lines, after_lines))
+        # Skip diff for binary files (non-UTF-8).
+        try:
+            baseline_text = baseline.decode()
+            after_text = after_all.decode()
+            diff_lines = list(
+                difflib.unified_diff(baseline_text.splitlines(keepends=True), after_text.splitlines(keepends=True))
+            )
+        except UnicodeDecodeError:
+            pass
         file_path.write_bytes(baseline)
 
     return results, diff_lines
 
 
-def run_on_file(file_path: Path, project_dir: Path, auto_apply_hooks: frozenset[str] = frozenset()) -> RunResult:
+def run_on_file(file_path: Path, project_dir: Path, auto_apply_hooks: Iterable[str] = ()) -> RunResult:
     """Run pre-commit hooks on a single file using the Python API.
 
     Auto-apply hooks keep their modifications on disk. All other hooks'

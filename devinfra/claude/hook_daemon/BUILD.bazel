@@ -56,6 +56,7 @@ py_library(
         "//devinfra/claude:hook_config",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//mako",
+        "@pypi//pygit2",
     ],
 )
 
@@ -167,7 +168,9 @@ py_library(
     imports = ["../../.."],
     deps = [
         "//devinfra/claude:session_paths",
+        "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -222,12 +225,15 @@ py_test(
     data = ["__snapshots__/test_post_tool_use.ambr"],
     imports = ["../../.."],
     deps = [
+        ":hook_daemon_conftest",
         ":post_tool_use_lib",
         ":precommit_runner",
         "//devinfra/claude:conftest",
+        "//devinfra/claude:hook_config",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@pypi//syrupy",
     ],
 )
@@ -238,13 +244,35 @@ py_test(
     data = ["__snapshots__/test_precommit_e2e.ambr"],
     imports = ["../../.."],
     deps = [
+        ":hook_daemon_conftest",
         ":post_tool_use_lib",
         ":precommit_runner",
         "//devinfra/claude:conftest",
-        "@pypi//pygit2",
+        "//devinfra/claude:hook_config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//syrupy",
+    ],
+)
+
+py_test(
+    name = "test_post_tool_use_ruff_e2e",
+    srcs = ["test_post_tool_use_ruff_e2e.py"],
+    data = [
+        "testdata/ruff_repo/.claude_hooks/config.yaml",
+        "testdata/ruff_repo/ruff.toml",
+        "@multitool//tools/ruff",
+    ],
+    imports = ["../../.."],
+    deps = [
+        ":hook_daemon_conftest",
+        ":post_tool_use_lib",
+        ":precommit_runner",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
