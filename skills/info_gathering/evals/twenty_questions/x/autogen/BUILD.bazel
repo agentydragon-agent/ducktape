@@ -6,6 +6,7 @@ py_library(
     imports = ["../../../../../.."],
     deps = [
         "//skills/info_gathering/evals:docker_exec",
+        "//skills/info_gathering/evals:prompt_caching",
         "//skills/info_gathering/evals/twenty_questions:prompts",
         "//skills/info_gathering/evals/twenty_questions:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
