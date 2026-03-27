@@ -154,11 +154,10 @@ class TestHooks:
         assert output.get("continue") is True
 
     @pytest.mark.parametrize("use_git", [False, True], ids=["no_git", "git"])
-    def test_pre_hook_block(
+    def test_pre_hook_noop(
         self, runner, chdir_tmp_path, chdir_tmp_path_git_repo, pre_commit_config_non_fixing, use_git
     ):
-        """Test that pre-hook blocks files with non-fixable errors."""
-        # Use the appropriate fixture based on git/no-git
+        """Test that pre-hook returns noop (pre-commit runner removed)."""
         tmp_path = chdir_tmp_path_git_repo if use_git else chdir_tmp_path
 
         test_file = tmp_path / "test.py"
@@ -170,15 +169,11 @@ class TestHooks:
 
         assert result.exit_code == 0
         output = json.loads(result.stdout)
-        assert output.get("decision") == "block"
         assert output.get("continue") is True
 
     @pytest.mark.parametrize("use_git", [False, True], ids=["no_git", "git"])
-    def test_post_hook_with_change(
-        self, runner, chdir_tmp_path, chdir_tmp_path_git_repo, pre_commit_config_fixing, use_git
-    ):
-        """Test that post-hook reports when fixes are applied."""
-        # Use the appropriate fixture based on git/no-git
+    def test_post_hook_noop(self, runner, chdir_tmp_path, chdir_tmp_path_git_repo, pre_commit_config_fixing, use_git):
+        """Test that post-hook returns noop (pre-commit runner removed)."""
         tmp_path = chdir_tmp_path_git_repo if use_git else chdir_tmp_path
 
         test_file = tmp_path / "test.py"
@@ -191,10 +186,7 @@ class TestHooks:
 
         assert result.exit_code == 0
         output = json.loads(result.stdout)
-        # After fix, the hook should allow continuing
         assert output.get("continue") is True
-        # Check that the file was actually fixed
-        assert test_file.read_text() == "fixed"
 
 
 class TestRemoteHooks:

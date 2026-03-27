@@ -1,5 +1,5 @@
 # gazelle:ignore
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 
 # =============================================================================
@@ -57,43 +57,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "precommit_autofix",
-    srcs = ["precommit_autofix.py"],
-    imports = [".."],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":actions",
-        ":base",
-        ":config",
-        ":inputs",
-        ":logging_context",
-        ":tool_models",
-        "//util/bazel:subprocess",
-        "@pypi//platformdirs",
-        "@pypi//pre_commit",
-        "@pypi//pygit2",
-    ],
-)
-
-py_binary(
-    name = "claude_autofixer",
-    srcs = ["precommit_autofix.py"],
-    imports = [".."],
-    main = "precommit_autofix.py",
-    deps = [
-        ":actions",
-        ":base",
-        ":config",
-        ":inputs",
-        ":logging_context",
-        ":tool_models",
-        "//util/bazel:subprocess",
-        "@pypi//platformdirs",
-        "@pypi//pygit2",
-    ],
-)
-
 # =============================================================================
 # Test support
 # =============================================================================
@@ -115,7 +78,6 @@ py_library(
     deps = [
         ":config",
         ":inputs",
-        ":precommit_autofix",
         ":tool_models",
         "@pypi//pygit2",
         "@pypi//pytest",
@@ -127,22 +89,6 @@ py_library(
 # =============================================================================
 # Tests (per-file)
 # =============================================================================
-
-py_test(
-    name = "test_autofixer",
-    srcs = ["test_autofixer.py"],
-    imports = [".."],
-    deps = [
-        ":actions",
-        ":config",
-        ":conftest",
-        ":precommit_autofix",
-        ":tool_models",
-        "@pypi//pyhamcrest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
 
 py_test(
     name = "test_helpers_test",
@@ -170,21 +116,6 @@ py_test(
 )
 
 py_test(
-    name = "test_integration",
-    srcs = ["test_integration.py"],
-    imports = [".."],
-    deps = [
-        ":actions",
-        ":conftest",
-        ":precommit_autofix",
-        "//util/bazel:subprocess",
-        "@pypi//pre_commit",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_models",
     srcs = ["test_models.py"],
     imports = [".."],
@@ -195,36 +126,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_precommit_integration",
-    srcs = ["test_precommit_integration.py"],
-    imports = [".."],
-    deps = [
-        ":actions",
-        ":conftest",
-        ":inputs",
-        ":precommit_autofix",
-        ":tool_models",
-        "@pypi//pre_commit",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_precommit_syntax_check",
-    srcs = ["test_precommit_syntax_check.py"],
-    imports = [".."],
-    deps = [
-        ":actions",
-        ":conftest",
-        ":inputs",
-        ":precommit_autofix",
-        ":tool_models",
         "@pypi//pytest_bazel",
     ],
 )

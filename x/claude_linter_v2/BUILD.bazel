@@ -2,34 +2,6 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 
 py_library(
-    name = "check_python",
-    srcs = ["check_python.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":pattern_matcher",
-        "//x/claude_linter_v2/config:clean_models",
-        "//x/claude_linter_v2/config:models",
-        "//x/claude_linter_v2/linters:python_ast",
-        "//x/claude_linter_v2/linters:python_ruff",
-    ],
-)
-
-py_library(
-    name = "checker",
-    srcs = ["checker.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//x/claude_linter_v2/config:loader",
-        "//x/claude_linter_v2/config:models",
-        "//x/claude_linter_v2/linters:python_ast",
-        "//x/claude_linter_v2/linters:python_formatter",
-        "//x/claude_linter_v2/linters:python_ruff",
-    ],
-)
-
-py_library(
     name = "checkers_v2",
     srcs = ["checkers_v2.py"],
     imports = ["../.."],
@@ -47,9 +19,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":checker",
         "//llm:claude_code_api",
-        "//x/claude_linter_v2/config:models",
         "//x/claude_linter_v2/hooks:exceptions",
         "//x/claude_linter_v2/hooks:handler",
         "//x/claude_linter_v2/session:manager",
@@ -119,31 +89,13 @@ py_binary(
     imports = ["../.."],
     main = "cli.py",
     deps = [
-        ":checker",
         ":cli",
         "//llm:claude_code_api",
-        "//x/claude_linter_v2/config:models",
         "//x/claude_linter_v2/hooks:exceptions",
         "//x/claude_linter_v2/hooks:handler",
         "//x/claude_linter_v2/session:manager",
         "@pypi//click",
         "@pypi//humanize",
-    ],
-)
-
-py_test(
-    name = "test_cl2_check",
-    srcs = ["test_cl2_check.py"],
-    data = ["@multitool//tools/ruff"],
-    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = ["../.."],
-    deps = [
-        ":cli",
-        ":conftest",
-        "@pypi//click",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -238,46 +190,6 @@ py_test(
 )
 
 py_test(
-    name = "test_python_ast",
-    srcs = ["test_python_ast.py"],
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        "//x/claude_linter_v2/linters:python_ast",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_python_formatter",
-    srcs = ["test_python_formatter.py"],
-    data = ["@multitool//tools/ruff"],
-    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        "//x/claude_linter_v2/config:models",
-        "//x/claude_linter_v2/linters:python_formatter",
-        "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
-    ],
-)
-
-py_test(
-    name = "test_python_ruff",
-    srcs = ["test_python_ruff.py"],
-    data = ["@multitool//tools/ruff"],
-    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        "//x/claude_linter_v2/linters:python_ruff",
-        "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
-    ],
-)
-
-py_test(
     name = "test_stop_hook_fresh_scan",
     srcs = ["test_stop_hook_fresh_scan.py"],
     data = ["@multitool//tools/ruff"],
@@ -290,22 +202,6 @@ py_test(
         "//x/claude_linter_v2/hooks:handler",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
-    ],
-)
-
-py_test(
-    name = "test_stop_hook_gitignore",
-    srcs = ["test_stop_hook_gitignore.py"],
-    data = ["@multitool//tools/ruff"],
-    env = {"RUFF_BIN": "$(rlocationpath @multitool//tools/ruff)"},
-    imports = ["../.."],
-    deps = [
-        ":conftest",
-        "//llm:claude_code_api",
-        "//x/claude_linter_v2/config:models",
-        "//x/claude_linter_v2/hooks:handler",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],

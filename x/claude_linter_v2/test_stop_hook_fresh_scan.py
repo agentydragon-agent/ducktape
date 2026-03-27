@@ -4,7 +4,6 @@ import subprocess
 
 import pytest
 import pytest_bazel
-from hamcrest import all_of, assert_that, contains_string, has_entries
 
 from llm.claude_code_api import StopRequest
 from x.claude_linter_v2.config.models import StopHookConfig
@@ -29,39 +28,6 @@ def handler(tmp_path, monkeypatch):
     # fnmatch matches * across directory separators.
     handler.config_loader.config.pattern_rules = []
     return handler
-
-
-def test_stop_hook_fresh_scan_finds_errors(handler, session_id, tmp_path):
-    """Test that stop hook runs fresh scans and finds errors."""
-    # Create a Python file with violations
-    bad_file = tmp_path / "bad_code.py"
-    bad_file.write_text("""
-try:
-    something()
-except:  # Bare except
-    pass
-
-def check_attr(obj):
-    if hasattr(obj, 'foo'):  # hasattr usage
-        return getattr(obj, 'foo')  # getattr usage
-""")
-    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
-
-    # Create stop hook request
-    request = StopRequest(hook_event_name="Stop", session_id=session_id)
-
-    # Handle the hook
-    result = handler.handle("Stop", request)
-
-    # Should block due to errors
-    response_dict = result.model_dump(by_alias=True)
-
-    # Check response keys and snippets using PyHamcrest (avoid exact long-line match)
-    assert_that(
-        response_dict,
-        has_entries(decision="block", reason=all_of(contains_string("Bare except"), contains_string(str(bad_file)))),
-    )
-    assert response_dict["continue"] is True
 
 
 def test_stop_hook_fresh_scan_passes_clean_code(handler, session_id, tmp_path):

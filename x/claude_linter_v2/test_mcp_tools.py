@@ -152,28 +152,6 @@ class TestMCPTools:
             outcome = handler._handle_pre_hook(request, session_id)
             assert isinstance(outcome, PreToolApprove)
 
-    @pytest.mark.parametrize(
-        ("tool_name", "input_fields", "should_check_python"),
-        [
-            # MCP tools - never checked for Python (only WriteToolCall is)
-            ("mcp_memory_create", {"name": "test", "content": "data"}, False),
-            ("mcp_browser_click", {"selector": "#button"}, False),
-            ("mcp_fs_write", {"file_path": "test.py", "content": "print('hi')"}, False),
-            ("mcp_editor_format", {"file_path": "app.py", "content": "x=1"}, False),
-            ("mcp_tool", {"file_path": "test.js", "content": "console.log()"}, False),
-            ("mcp_tool", {"file_path": None, "content": "print('hi')"}, False),
-        ],
-    )
-    def test_mcp_tool_python_detection(self, handler, session_id, tool_name, input_fields, should_check_python):
-        """Test that MCP tools are never detected as Python files (only WriteToolCall is checked)."""
-        tool_input_dict = {"file_path": None, "content": None, **input_fields}
-
-        request = make_pre_tool_request(session_id=session_id, tool_name=tool_name, tool_input=dict(**tool_input_dict))
-
-        # MCP tools are never checked for Python - only WriteToolCall is
-        is_python = handler._is_python_file(request)
-        assert is_python == should_check_python
-
     def test_mcp_tool_session_tracking(self, handler, session_id):
         """Test that MCP tools properly track sessions."""
         request = make_pre_tool_request(
@@ -339,7 +317,6 @@ class TestMCPToolLogging:
         assert "DECISION:" in content
         assert "pre_hook_start" in content
         assert "access_control" in content
-        assert "file_type_check" in content
 
 
 if __name__ == "__main__":
