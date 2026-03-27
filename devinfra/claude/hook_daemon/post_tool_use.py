@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import pygit2
 from mako.template import Template
 
 from devinfra.claude.claude_api.hooks.post_tool_use import (
@@ -35,15 +36,6 @@ def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
     return Path(file_path)
 
 
-def _find_git_root(start: Path) -> Path | None:
-    current = start if start.is_dir() else start.parent
-    while current != current.parent:
-        if (current / ".git").exists():
-            return current
-        current = current.parent
-    return None
-
-
 def _format_check_result(result: RunResult, file_path: Path, pre_commit: PreCommitConfig) -> str:
     template = Template((_TEMPLATES_DIR / "post_tool_use.mako").read_text())
     output: str = template.render(result=result, file_path=file_path, pre_commit=pre_commit)
@@ -58,9 +50,11 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
     if file_path is None or not file_path.exists():
         return PostToolUseOutput()
 
-    project_dir = _find_git_root(file_path)
-    if project_dir is None:
+    search_dir = str(file_path.parent if file_path.is_file() else file_path)
+    git_path = pygit2.discover_repository(search_dir)
+    if git_path is None:
         return PostToolUseOutput()
+    project_dir = Path(pygit2.Repository(git_path).workdir).resolve()
 
     config = HookConfig.load_from_repo(project_dir)
     if not config or not config.pre_commit:

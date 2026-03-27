@@ -56,6 +56,7 @@ py_library(
         "//devinfra/claude:hook_config",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//mako",
+        "@pypi//pygit2",
     ],
 )
 
@@ -223,6 +224,7 @@ py_test(
     data = ["__snapshots__/test_post_tool_use.ambr"],
     imports = ["../../.."],
     deps = [
+        ":hook_daemon_conftest",
         ":post_tool_use_lib",
         ":precommit_runner",
         "//devinfra/claude:conftest",
@@ -230,6 +232,7 @@ py_test(
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
         "@pypi//syrupy",
     ],
 )

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 import pytest_bazel
+import yaml
 from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.claude_api.hooks.post_tool_use import (
@@ -12,8 +13,9 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.hook_config import PreCommitConfig
-from devinfra.claude.hook_daemon.post_tool_use import _find_git_root, _format_check_result, evaluate
+from devinfra.claude.hook_config import HookConfig, PreCommitConfig
+from devinfra.claude.hook_daemon.conftest import init_git_repo
+from devinfra.claude.hook_daemon.post_tool_use import _format_check_result, evaluate
 from devinfra.claude.hook_daemon.precommit_runner import HookResult, RunResult
 
 _COMMON = {
@@ -32,13 +34,16 @@ _DEFAULT_PRE_COMMIT = PreCommitConfig(auto_apply_hooks=set())
 @pytest.fixture
 def git_project(tmp_path: Path) -> tuple[Path, Path]:
     """Create a tmp git project with .claude_hooks config and a test file."""
-    (tmp_path / ".git").mkdir()
-    hooks_dir = tmp_path / ".claude_hooks"
+    repo_path = tmp_path / "repo"
+    repo_path.mkdir()
+    config = HookConfig(pre_commit=PreCommitConfig(auto_apply_hooks=set()))
+    hooks_dir = repo_path / ".claude_hooks"
     hooks_dir.mkdir()
-    (hooks_dir / "config.yaml").write_text("pre_commit:\n  auto_apply_hooks: []\n")
-    test_file = tmp_path / "test.py"
+    (hooks_dir / "config.yaml").write_text(yaml.dump(config.model_dump(exclude_none=True)))
+    test_file = repo_path / "test.py"
     test_file.write_bytes(b"x=1\n")
-    return tmp_path, test_file
+    init_git_repo(repo_path)
+    return repo_path, test_file
 
 
 # === Guard tests ===
@@ -60,20 +65,6 @@ def test_nonexistent_file_returns_default() -> None:
     inp = PostToolUseInput(**_COMMON, tool_name="Edit", tool_input={"file_path": "/nonexistent/file.py"})
     result = evaluate(inp)
     assert result.hook_specific_output is None
-
-
-# === Git root tests ===
-
-
-def test_find_git_root(tmp_path: Path) -> None:
-    (tmp_path / ".git").mkdir()
-    subdir = tmp_path / "a" / "b"
-    subdir.mkdir(parents=True)
-    assert _find_git_root(subdir / "file.py") == tmp_path
-
-
-def test_find_git_root_no_git(tmp_path: Path) -> None:
-    assert _find_git_root(tmp_path / "file.py") is None
 
 
 # === Serialization tests ===
