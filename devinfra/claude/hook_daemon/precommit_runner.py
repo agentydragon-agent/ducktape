@@ -139,51 +139,11 @@ def _run_hooks(
         else:
             report_hooks.append((hook, filenames))
 
-    results: list[HookOutcome] = []
-
-    # Phase 1: auto-apply hooks — keep their changes, re-run to verify satisfaction.
-    for hook, filenames in auto_hooks:
-        content_before = file_path.read_bytes()
-        language = languages[hook.language]
-        run_kwargs = {
-            "prefix": hook.prefix,
-            "entry": hook.entry,
-            "args": hook.args,
-            "file_args": filenames if hook.pass_filenames else (),
-            "is_local": hook.src == "local",
-            "require_serial": hook.require_serial,
-            "color": False,
-        }
-        with language.in_env(hook.prefix, hook.language_version):
-            retcode, out = language.run_hook(**run_kwargs)
-        current = file_path.read_bytes()
-        modified = current != content_before
-
-        if modified:
-            # Re-run to check if the hook is now satisfied after auto-apply.
-            with language.in_env(hook.prefix, hook.language_version):
-                rerun_retcode, _ = language.run_hook(**run_kwargs)
-            rerun_content = file_path.read_bytes()
-            if rerun_content != current:
-                file_path.write_bytes(current)
-            results.append(
-                HookAutoApplied(
-                    hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out, rerun_exit_code=rerun_retcode
-                )
-            )
-        elif retcode == 0:
-            results.append(HookPassed(hook_id=hook.id, hook_name=hook.name))
-        else:
-            # Auto-apply hook failed without modifying — treat as failed-not-applied.
-            results.append(HookFailedNotApplied(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out))
-
-    # Phase 2: report-only hooks — capture diff, then revert.
-    baseline = file_path.read_bytes()
-    for hook, filenames in report_hooks:
-        content_before = file_path.read_bytes()
+    def run_hook(hook, filenames) -> tuple[int, bytes]:
+        """Run a single pre-commit hook, returning (exit_code, output)."""
         language = languages[hook.language]
         with language.in_env(hook.prefix, hook.language_version):
-            retcode, out = language.run_hook(
+            return language.run_hook(
                 hook.prefix,
                 hook.entry,
                 hook.args,
@@ -192,23 +152,57 @@ def _run_hooks(
                 require_serial=hook.require_serial,
                 color=False,
             )
+
+    def classify_report_only(hook, retcode: int, out: bytes, modified: bool) -> HookOutcome:
+        if modified:
+            return HookWouldEdit(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out)
+        if retcode == 0:
+            return HookPassed(hook_id=hook.id, hook_name=hook.name)
+        return HookFailedNotApplied(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out)
+
+    results: list[HookOutcome] = []
+
+    # Phase 1: auto-apply hooks — keep their changes, re-run to verify satisfaction.
+    for hook, filenames in auto_hooks:
+        content_before = file_path.read_bytes()
+        retcode, out = run_hook(hook, filenames)
         current = file_path.read_bytes()
         modified = current != content_before
 
         if modified:
-            results.append(HookWouldEdit(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out))
-        elif retcode == 0:
-            results.append(HookPassed(hook_id=hook.id, hook_name=hook.name))
+            rerun_retcode, _ = run_hook(hook, filenames)
+            rerun_content = file_path.read_bytes()
+            if rerun_content != current:
+                file_path.write_bytes(current)
+            results.append(
+                HookAutoApplied(
+                    hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out, rerun_exit_code=rerun_retcode
+                )
+            )
         else:
-            results.append(HookFailedNotApplied(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out))
+            results.append(classify_report_only(hook, retcode, out, modified=False))
+
+    # Phase 2: report-only hooks — capture diff, then revert.
+    baseline = file_path.read_bytes()
+    for hook, filenames in report_hooks:
+        content_before = file_path.read_bytes()
+        retcode, out = run_hook(hook, filenames)
+        current = file_path.read_bytes()
+        results.append(classify_report_only(hook, retcode, out, modified=current != content_before))
 
     # Compute diff of what report-only hooks would change, then revert.
     after_all = file_path.read_bytes()
     diff_lines: list[str] = []
     if after_all != baseline:
-        baseline_lines = baseline.decode(errors="replace").splitlines(keepends=True)
-        after_lines = after_all.decode(errors="replace").splitlines(keepends=True)
-        diff_lines = list(difflib.unified_diff(baseline_lines, after_lines))
+        # Skip diff for binary files (non-UTF-8).
+        try:
+            baseline_text = baseline.decode()
+            after_text = after_all.decode()
+            diff_lines = list(
+                difflib.unified_diff(baseline_text.splitlines(keepends=True), after_text.splitlines(keepends=True))
+            )
+        except UnicodeDecodeError:
+            pass
         file_path.write_bytes(baseline)
 
     return results, diff_lines

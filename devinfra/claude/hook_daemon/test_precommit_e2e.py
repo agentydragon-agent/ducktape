@@ -167,6 +167,59 @@ def test_all_pass(precommit_repo: Path) -> None:
     assert not result.has_issues
 
 
+def test_binary_file_no_diff(tmp_path: Path, snapshot: SnapshotAssertion) -> None:
+    """Binary files that hooks modify should not produce a diff."""
+    repo_path = tmp_path / "binrepo"
+    repo_path.mkdir()
+
+    # Binary-safe fixer: replaces 0xAA with 0xBB using raw bytes
+    _make_script(
+        repo_path,
+        "binfixer.py",
+        """\
+        import sys
+        from pathlib import Path
+
+        changed = False
+        for f in sys.argv[1:]:
+            p = Path(f)
+            content = p.read_bytes()
+            new = content.replace(b"\\xaa", b"\\xbb")
+            if new != content:
+                p.write_bytes(new)
+                changed = True
+        sys.exit(1 if changed else 0)
+        """,
+    )
+
+    write_precommit_config(
+        repo_path,
+        [
+            {
+                "id": "binfixer",
+                "name": "binfixer",
+                "entry": f"{sys.executable} {repo_path / 'binfixer.py'}",
+                "language": "system",
+                "pass_filenames": True,
+            }
+        ],
+    )
+    init_git_repo(repo_path)
+
+    test_file = repo_path / "test.bin"
+    test_file.write_bytes(b"\x00\xaa\xff\xfe")
+
+    result = run_on_file(test_file, repo_path)
+
+    assert isinstance(_hook_by_id(result, "binfixer"), HookWouldEdit)
+    assert result.report_only_diff == []
+    # File should be restored to original
+    assert test_file.read_bytes() == b"\x00\xaa\xff\xfe"
+
+    output = _format_check_result(result, Path("test.bin"), PreCommitConfig())
+    assert output == snapshot
+
+
 def test_file_restored_after_run(precommit_repo: Path) -> None:
     """Original file content is restored after run_on_file returns."""
     test_file = precommit_repo / "test.py"
