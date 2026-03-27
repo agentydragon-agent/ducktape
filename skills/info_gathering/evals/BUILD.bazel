@@ -5,7 +5,7 @@ py_library(
     srcs = ["prompt_caching.py"],
     imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
-    deps = ["@pypi//autogen_core"],
+    deps = ["@pypi//autogen_ext"],
 )
 
 py_library(

@@ -25,13 +25,12 @@ from autogen_core.models import (
     UserMessage,
 )
 from autogen_core.tools import FunctionTool
-from autogen_ext.models.anthropic import AnthropicChatCompletionClient
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from fastmcp.client import Client
 from mcp.types import TextContent
 
 from skills.info_gathering.evals.docker_exec import scratch_exec_server
-from skills.info_gathering.evals.prompt_caching import enable_prompt_caching
+from skills.info_gathering.evals.prompt_caching import CachedAnthropicClient
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -221,19 +220,7 @@ def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
     if api == "openai":
         return OpenAIChatCompletionClient(model=model)
     if api == "anthropic":
-        client = AnthropicChatCompletionClient(
-            model=model,
-            model_info={
-                "vision": True,
-                "function_calling": True,
-                "json_output": True,
-                "family": "unknown",
-                "structured_output": True,
-                "multiple_system_messages": False,
-            },
-        )
-        enable_prompt_caching(client)
-        return client
+        return CachedAnthropicClient(model=model)
     raise ValueError(f"Unsupported API: {api!r}")
 
 
