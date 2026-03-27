@@ -11,10 +11,9 @@ from textwrap import dedent
 
 import pytest
 import pytest_bazel
-import yaml
 
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
-from devinfra.claude.hook_daemon.conftest import init_git_repo
+from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import evaluate
 
 _COMMON_INPUT = {
@@ -34,43 +33,32 @@ _TESTDATA = Path(__file__).resolve().parent / "testdata" / "ruff_repo"
 def ruff_repo(tmp_path: Path) -> Path:
     """Git repo with real ruff hooks and .claude_hooks config from testdata."""
     repo_path = tmp_path / "repo"
-    repo_path.mkdir()
+    shutil.copytree(_TESTDATA, repo_path)
 
     ruff_path = shutil.which("ruff")
     assert ruff_path is not None, "ruff binary not found on PATH (expected via @multitool//tools/ruff data dep)"
 
-    # Copy static config files from testdata
-    shutil.copytree(_TESTDATA / ".claude_hooks", repo_path / ".claude_hooks")
-    shutil.copy2(_TESTDATA / "ruff.toml", repo_path / "ruff.toml")
-
-    # Pre-commit config needs dynamic ruff path
-    precommit_config = {
-        "repos": [
+    write_precommit_config(
+        repo_path,
+        [
             {
-                "repo": "local",
-                "hooks": [
-                    {
-                        "id": "ruff-check",
-                        "name": "ruff-check",
-                        "entry": f"{ruff_path} check --fix --config ruff.toml",
-                        "language": "system",
-                        "files": r"\.py$",
-                    },
-                    {
-                        "id": "ruff-format",
-                        "name": "ruff-format",
-                        "entry": f"{ruff_path} format --config ruff.toml",
-                        "language": "system",
-                        "files": r"\.py$",
-                    },
-                ],
-            }
-        ]
-    }
-    (repo_path / ".pre-commit-config.yaml").write_text(yaml.dump(precommit_config))
+                "id": "ruff-check",
+                "name": "ruff-check",
+                "entry": f"{ruff_path} check --fix --config ruff.toml",
+                "language": "system",
+                "files": r"\.py$",
+            },
+            {
+                "id": "ruff-format",
+                "name": "ruff-format",
+                "entry": f"{ruff_path} format --config ruff.toml",
+                "language": "system",
+                "files": r"\.py$",
+            },
+        ],
+    )
 
     init_git_repo(repo_path)
-
     return repo_path
 
 

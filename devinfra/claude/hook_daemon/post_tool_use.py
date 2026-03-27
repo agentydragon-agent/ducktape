@@ -61,7 +61,7 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
         return PostToolUseOutput()
 
     pre_commit = config.pre_commit
-    run_result = run_on_file(file_path, project_dir, auto_apply_hooks=frozenset(pre_commit.auto_apply_hooks))
+    run_result = run_on_file(file_path, project_dir, auto_apply_hooks=pre_commit.auto_apply_hooks)
 
     for hr in run_result.hooks:
         if hr.auto_applied:

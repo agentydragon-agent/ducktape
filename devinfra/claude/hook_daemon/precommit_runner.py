@@ -11,7 +11,7 @@ import contextlib
 import difflib
 import logging
 import os
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -71,7 +71,7 @@ class RunResult:
 
 
 def _run_hooks(
-    file_path: Path, project_dir: Path, auto_apply_hooks: frozenset[str] = frozenset()
+    file_path: Path, project_dir: Path, auto_apply_hooks: Iterable[str] = ()
 ) -> tuple[list[HookResult], list[str]]:
     """Run all applicable pre-commit hooks on a single file.
 
@@ -82,6 +82,7 @@ def _run_hooks(
 
     Returns (hook_results, report_only_diff_lines).
     """
+    auto_apply = set(auto_apply_hooks)
     config_path = project_dir / CONFIG_FILE
 
     store = Store()
@@ -102,7 +103,7 @@ def _run_hooks(
         filenames = tuple(classifier.filenames_for_hook(hook))
         if not filenames and not hook.always_run:
             continue
-        if hook.id in auto_apply_hooks:
+        if hook.id in auto_apply:
             auto_hooks.append((hook, filenames))
         else:
             report_hooks.append((hook, filenames))
@@ -169,7 +170,7 @@ def _run_hooks(
     return results, diff_lines
 
 
-def run_on_file(file_path: Path, project_dir: Path, auto_apply_hooks: frozenset[str] = frozenset()) -> RunResult:
+def run_on_file(file_path: Path, project_dir: Path, auto_apply_hooks: Iterable[str] = ()) -> RunResult:
     """Run pre-commit hooks on a single file using the Python API.
 
     Auto-apply hooks keep their modifications on disk. All other hooks'

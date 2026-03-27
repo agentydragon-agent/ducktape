@@ -170,6 +170,7 @@ py_library(
         "//devinfra/claude:session_paths",
         "@pypi//pygit2",
         "@pypi//pytest",
+        "@pypi//pyyaml",
     ],
 )
 

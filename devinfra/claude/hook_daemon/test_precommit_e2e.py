@@ -12,18 +12,16 @@ from textwrap import dedent
 
 import pytest
 import pytest_bazel
-import yaml
 from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.hook_config import PreCommitConfig
-from devinfra.claude.hook_daemon.conftest import init_git_repo
+from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result
 from devinfra.claude.hook_daemon.precommit_runner import run_on_file
 
 # Relative path used in _format_check_result to keep snapshots stable
 # (avoids embedding tmp dir absolute paths).
 _TEST_FILE = Path("test.py")
-_DEFAULT_PRE_COMMIT = PreCommitConfig(auto_apply_hooks=set())
 
 
 def _make_script(repo: Path, name: str, body: str) -> Path:
@@ -85,38 +83,32 @@ def precommit_repo(tmp_path: Path) -> Path:
         """,
     )
 
-    config = {
-        "repos": [
+    write_precommit_config(
+        repo_path,
+        [
             {
-                "repo": "local",
-                "hooks": [
-                    {
-                        "id": "fixer",
-                        "name": "fixer (foo->bar)",
-                        "entry": f"{sys.executable} {repo_path / 'fixer.py'}",
-                        "language": "system",
-                        "pass_filenames": True,
-                    },
-                    {
-                        "id": "checker",
-                        "name": "checker (no BANNED)",
-                        "entry": f"{sys.executable} {repo_path / 'checker.py'}",
-                        "language": "system",
-                        "pass_filenames": True,
-                    },
-                    {
-                        "id": "passthrough",
-                        "name": "passthrough",
-                        "entry": f"{sys.executable} {repo_path / 'passthrough.py'}",
-                        "language": "system",
-                        "pass_filenames": True,
-                    },
-                ],
-            }
-        ]
-    }
-
-    (repo_path / ".pre-commit-config.yaml").write_text(yaml.dump(config))
+                "id": "fixer",
+                "name": "fixer (foo->bar)",
+                "entry": f"{sys.executable} {repo_path / 'fixer.py'}",
+                "language": "system",
+                "pass_filenames": True,
+            },
+            {
+                "id": "checker",
+                "name": "checker (no BANNED)",
+                "entry": f"{sys.executable} {repo_path / 'checker.py'}",
+                "language": "system",
+                "pass_filenames": True,
+            },
+            {
+                "id": "passthrough",
+                "name": "passthrough",
+                "entry": f"{sys.executable} {repo_path / 'passthrough.py'}",
+                "language": "system",
+                "pass_filenames": True,
+            },
+        ],
+    )
 
     init_git_repo(repo_path)
 
@@ -137,7 +129,7 @@ def test_fixer_modifies_checker_fails(precommit_repo: Path, snapshot: SnapshotAs
     assert hooks["checker"].passed is False
     assert hooks["passthrough"].passed is True
 
-    output = _format_check_result(result, _TEST_FILE, _DEFAULT_PRE_COMMIT)
+    output = _format_check_result(result, _TEST_FILE, PreCommitConfig())
     assert output == snapshot
 
 
@@ -154,7 +146,7 @@ def test_only_checker_fails(precommit_repo: Path, snapshot: SnapshotAssertion) -
     assert hooks["checker"].passed is False
     assert hooks["passthrough"].passed is True
 
-    output = _format_check_result(result, _TEST_FILE, _DEFAULT_PRE_COMMIT)
+    output = _format_check_result(result, _TEST_FILE, PreCommitConfig())
     assert output == snapshot
 
 

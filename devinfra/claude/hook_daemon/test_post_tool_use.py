@@ -28,18 +28,16 @@ _COMMON = {
     "tool_response": "",
 }
 
-_DEFAULT_PRE_COMMIT = PreCommitConfig(auto_apply_hooks=set())
-
 
 @pytest.fixture
 def git_project(tmp_path: Path) -> tuple[Path, Path]:
     """Create a tmp git project with .claude_hooks config and a test file."""
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
-    config = HookConfig(pre_commit=PreCommitConfig(auto_apply_hooks=set()))
+    config = HookConfig(pre_commit=PreCommitConfig())
     hooks_dir = repo_path / ".claude_hooks"
     hooks_dir.mkdir()
-    (hooks_dir / "config.yaml").write_text(yaml.dump(config.model_dump(exclude_none=True)))
+    (hooks_dir / "config.yaml").write_text(yaml.dump(config.model_dump(mode="json", exclude_none=True)))
     test_file = repo_path / "test.py"
     test_file.write_bytes(b"x=1\n")
     init_git_repo(repo_path)
@@ -98,14 +96,14 @@ def test_format_report_only_failure(snapshot: SnapshotAssertion) -> None:
             HookResult(hook_id="ruff", hook_name="ruff-format", output=b"bad indent", files_modified=True, exit_code=1)
         ]
     )
-    assert _format_check_result(result, Path("test.py"), _DEFAULT_PRE_COMMIT) == snapshot
+    assert _format_check_result(result, Path("test.py"), PreCommitConfig()) == snapshot
 
 
 def test_format_non_zero_exit(snapshot: SnapshotAssertion) -> None:
     result = RunResult(
         hooks=[HookResult(hook_id="mypy", hook_name="mypy", output=b"type error", files_modified=False, exit_code=1)]
     )
-    assert _format_check_result(result, Path("test.py"), _DEFAULT_PRE_COMMIT) == snapshot
+    assert _format_check_result(result, Path("test.py"), PreCommitConfig()) == snapshot
 
 
 def test_format_auto_applied_only(snapshot: SnapshotAssertion) -> None:
@@ -121,7 +119,7 @@ def test_format_auto_applied_only(snapshot: SnapshotAssertion) -> None:
             )
         ]
     )
-    assert _format_check_result(result, Path("test.py"), _DEFAULT_PRE_COMMIT) == snapshot
+    assert _format_check_result(result, Path("test.py"), PreCommitConfig()) == snapshot
 
 
 def test_format_mixed_auto_apply_and_report(snapshot: SnapshotAssertion) -> None:
@@ -144,7 +142,7 @@ def test_format_mixed_auto_apply_and_report(snapshot: SnapshotAssertion) -> None
             ),
         ]
     )
-    assert _format_check_result(result, Path("test.py"), _DEFAULT_PRE_COMMIT) == snapshot
+    assert _format_check_result(result, Path("test.py"), PreCommitConfig()) == snapshot
 
 
 def test_format_with_diff(snapshot: SnapshotAssertion) -> None:
