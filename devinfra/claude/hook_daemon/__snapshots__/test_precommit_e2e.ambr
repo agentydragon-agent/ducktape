@@ -3,14 +3,16 @@
   '''
   test.py:
     Not auto-applied (would also edit): fixer (foo->bar)
-    checker (no BANNED) (exit 1)
+    Failed (not applied):
+      checker (no BANNED) (exit 1)
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
 # name: test_only_checker_fails
   '''
   test.py:
-    checker (no BANNED) (exit 1)
+    Failed (not applied):
+      checker (no BANNED) (exit 1)
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---

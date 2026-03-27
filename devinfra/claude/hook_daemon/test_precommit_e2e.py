@@ -12,12 +12,20 @@ from textwrap import dedent
 
 import pytest
 import pytest_bazel
+from more_itertools import one
 from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.hook_config import PreCommitConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result
-from devinfra.claude.hook_daemon.precommit_runner import run_on_file
+from devinfra.claude.hook_daemon.precommit_runner import (
+    HookFailedNotApplied,
+    HookOutcome,
+    HookPassed,
+    HookWouldEdit,
+    RunResult,
+    run_on_file,
+)
 
 # Relative path used in _format_check_result to keep snapshots stable
 # (avoids embedding tmp dir absolute paths).
@@ -115,6 +123,11 @@ def precommit_repo(tmp_path: Path) -> Path:
     return repo_path
 
 
+def _hook_by_id(result: RunResult, hook_id: str) -> HookOutcome:
+    """Find a hook outcome by ID."""
+    return one(h for h in result.hooks if h.hook_id == hook_id)
+
+
 def test_fixer_modifies_checker_fails(precommit_repo: Path, snapshot: SnapshotAssertion) -> None:
     """Fixer modifies file, checker fails without modifying — correct labels."""
     test_file = precommit_repo / "test.py"
@@ -122,12 +135,9 @@ def test_fixer_modifies_checker_fails(precommit_repo: Path, snapshot: SnapshotAs
 
     result = run_on_file(test_file, precommit_repo)
 
-    hooks = {h.hook_id: h for h in result.hooks}
-    assert hooks["fixer"].files_modified is True
-    assert hooks["fixer"].passed is False
-    assert hooks["checker"].files_modified is False
-    assert hooks["checker"].passed is False
-    assert hooks["passthrough"].passed is True
+    assert isinstance(_hook_by_id(result, "fixer"), HookWouldEdit)
+    assert isinstance(_hook_by_id(result, "checker"), HookFailedNotApplied)
+    assert isinstance(_hook_by_id(result, "passthrough"), HookPassed)
 
     output = _format_check_result(result, _TEST_FILE, PreCommitConfig())
     assert output == snapshot
@@ -140,11 +150,9 @@ def test_only_checker_fails(precommit_repo: Path, snapshot: SnapshotAssertion) -
 
     result = run_on_file(test_file, precommit_repo)
 
-    hooks = {h.hook_id: h for h in result.hooks}
-    assert hooks["fixer"].passed is True
-    assert hooks["checker"].files_modified is False
-    assert hooks["checker"].passed is False
-    assert hooks["passthrough"].passed is True
+    assert isinstance(_hook_by_id(result, "fixer"), HookPassed)
+    assert isinstance(_hook_by_id(result, "checker"), HookFailedNotApplied)
+    assert isinstance(_hook_by_id(result, "passthrough"), HookPassed)
 
     output = _format_check_result(result, _TEST_FILE, PreCommitConfig())
     assert output == snapshot
@@ -156,7 +164,7 @@ def test_all_pass(precommit_repo: Path) -> None:
     test_file.write_text("clean = 1\n")
 
     result = run_on_file(test_file, precommit_repo)
-    assert result.all_passed
+    assert not result.has_issues
 
 
 def test_file_restored_after_run(precommit_repo: Path) -> None:
@@ -168,7 +176,7 @@ def test_file_restored_after_run(precommit_repo: Path) -> None:
     result = run_on_file(test_file, precommit_repo)
 
     # Fixer should have changed foo->bar, but file is restored
-    assert not result.all_passed
+    assert result.has_issues
     assert test_file.read_text() == original
 
 

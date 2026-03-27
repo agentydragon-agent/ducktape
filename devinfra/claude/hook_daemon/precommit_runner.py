@@ -36,44 +36,74 @@ def _chdir(path: Path) -> Generator[None]:
         os.chdir(saved)
 
 
-@dataclass
-class HookResult:
+@dataclass(frozen=True)
+class HookPassed:
+    """Hook ran clean — exit 0, no file modifications."""
+
     hook_id: str
     hook_name: str
-    output: bytes
-    files_modified: bool
-    exit_code: int
-    auto_applied: bool = False
-    rerun_exit_code: int | None = None
 
-    @property
-    def passed(self) -> bool:
-        return self.exit_code == 0 and not self.files_modified
+
+@dataclass(frozen=True)
+class HookAutoApplied:
+    """Hook modified the file; changes kept on disk. Re-run verified satisfaction."""
+
+    hook_id: str
+    hook_name: str
+    exit_code: int
+    output: bytes
+    rerun_exit_code: int
+
+
+@dataclass(frozen=True)
+class HookWouldEdit:
+    """Report-only hook that would modify the file (changes reverted)."""
+
+    hook_id: str
+    hook_name: str
+    exit_code: int
+    output: bytes
+
+
+@dataclass(frozen=True)
+class HookFailedNotApplied:
+    """Report-only hook that exited non-zero without modifying the file."""
+
+    hook_id: str
+    hook_name: str
+    exit_code: int
+    output: bytes
+
+
+HookOutcome = HookPassed | HookAutoApplied | HookWouldEdit | HookFailedNotApplied
 
 
 @dataclass
 class RunResult:
-    hooks: list[HookResult] = field(default_factory=list)
+    hooks: list[HookOutcome] = field(default_factory=list)
     report_only_diff: list[str] = field(default_factory=list)
 
     @property
-    def failed_hooks(self) -> list[HookResult]:
-        """Hooks that failed and were NOT auto-applied."""
-        return [h for h in self.hooks if not h.passed and not h.auto_applied]
+    def auto_applied(self) -> list[HookAutoApplied]:
+        return [h for h in self.hooks if isinstance(h, HookAutoApplied)]
 
     @property
-    def auto_applied_results(self) -> list[HookResult]:
-        return [h for h in self.hooks if h.auto_applied]
+    def would_edit(self) -> list[HookWouldEdit]:
+        return [h for h in self.hooks if isinstance(h, HookWouldEdit)]
 
     @property
-    def all_passed(self) -> bool:
-        """True when all hooks either passed or were auto-applied."""
-        return all(h.passed or h.auto_applied for h in self.hooks)
+    def failed_not_applied(self) -> list[HookFailedNotApplied]:
+        return [h for h in self.hooks if isinstance(h, HookFailedNotApplied)]
+
+    @property
+    def has_issues(self) -> bool:
+        """True when any hook has something to report (auto-applied, would-edit, or failed)."""
+        return bool(self.auto_applied or self.would_edit or self.failed_not_applied)
 
 
 def _run_hooks(
     file_path: Path, project_dir: Path, auto_apply_hooks: Iterable[str] = ()
-) -> tuple[list[HookResult], list[str]]:
+) -> tuple[list[HookOutcome], list[str]]:
     """Run all applicable pre-commit hooks on a single file.
 
     Two-phase execution:
@@ -109,7 +139,7 @@ def _run_hooks(
         else:
             report_hooks.append((hook, filenames))
 
-    results: list[HookResult] = []
+    results: list[HookOutcome] = []
 
     # Phase 1: auto-apply hooks — keep their changes, re-run to verify satisfaction.
     for hook, filenames in auto_hooks:
@@ -129,25 +159,23 @@ def _run_hooks(
         current = file_path.read_bytes()
         modified = current != content_before
 
-        # Re-run to check if the hook is now satisfied after auto-apply.
-        rerun_retcode = None
         if modified:
+            # Re-run to check if the hook is now satisfied after auto-apply.
             with language.in_env(hook.prefix, hook.language_version):
                 rerun_retcode, _ = language.run_hook(**run_kwargs)
             rerun_content = file_path.read_bytes()
             if rerun_content != current:
                 file_path.write_bytes(current)
-        results.append(
-            HookResult(
-                hook_id=hook.id,
-                hook_name=hook.name,
-                output=out,
-                files_modified=modified,
-                exit_code=retcode,
-                auto_applied=modified,
-                rerun_exit_code=rerun_retcode if modified else None,
+            results.append(
+                HookAutoApplied(
+                    hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out, rerun_exit_code=rerun_retcode
+                )
             )
-        )
+        elif retcode == 0:
+            results.append(HookPassed(hook_id=hook.id, hook_name=hook.name))
+        else:
+            # Auto-apply hook failed without modifying — treat as failed-not-applied.
+            results.append(HookFailedNotApplied(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out))
 
     # Phase 2: report-only hooks — capture diff, then revert.
     baseline = file_path.read_bytes()
@@ -166,9 +194,13 @@ def _run_hooks(
             )
         current = file_path.read_bytes()
         modified = current != content_before
-        results.append(
-            HookResult(hook_id=hook.id, hook_name=hook.name, output=out, files_modified=modified, exit_code=retcode)
-        )
+
+        if modified:
+            results.append(HookWouldEdit(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out))
+        elif retcode == 0:
+            results.append(HookPassed(hook_id=hook.id, hook_name=hook.name))
+        else:
+            results.append(HookFailedNotApplied(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out))
 
     # Compute diff of what report-only hooks would change, then revert.
     after_all = file_path.read_bytes()

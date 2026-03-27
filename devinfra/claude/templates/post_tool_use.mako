@@ -2,39 +2,38 @@
 MAX_DIFF_LINES = 20
 MAX_ISSUES_SHOWN = 3
 MAX_OUTPUT_CHARS = 500
-would_fix = [h for h in result.failed_hooks if h.files_modified]
-errors = [h for h in result.failed_hooks if not h.files_modified]
 %>\
 ${file_path.name}:
-% if result.auto_applied_results:
+% if result.auto_applied:
   Auto-applied:\
-% for hr in result.auto_applied_results:
+% for hr in result.auto_applied:
 <%
-    if hr.rerun_exit_code is not None and hr.rerun_exit_code == 0:
-        status = "now clean"
-    elif hr.rerun_exit_code is not None:
-        status = f"not fully fixed, still exit {hr.rerun_exit_code}"
-    else:
-        status = f"exit {hr.exit_code}"
+    status = "now clean" if hr.rerun_exit_code == 0 else f"not fully fixed, still exit {hr.rerun_exit_code}"
 %>
     ${hr.hook_name} (${status})\
 % endfor
 
 % endif
-% if would_fix:
-  Not auto-applied (would also edit): ${", ".join(h.hook_name for h in would_fix)}
+% if result.would_edit:
+  Not auto-applied (would also edit): ${", ".join(h.hook_name for h in result.would_edit)}
 % endif
-% for hr in errors:
-  ${hr.hook_name} (exit ${hr.exit_code})
+% if result.failed_not_applied:
+  Failed (not applied):\
+% for hr in result.failed_not_applied:
+
+    ${hr.hook_name} (exit ${hr.exit_code})\
 % if pre_commit.show_hook_output:
 <%
     output_text = hr.output.decode(errors="replace").strip()[:MAX_OUTPUT_CHARS]
 %>\
 % for line in output_text.splitlines()[:MAX_ISSUES_SHOWN]:
-    ${line}
+
+      ${line}\
 % endfor
 % endif
 % endfor
+
+% endif
 % if pre_commit.show_report_diffs and result.report_only_diff:
 Changes pre-commit would make:
 % for line in result.report_only_diff[:MAX_DIFF_LINES]:
@@ -44,6 +43,6 @@ ${line}\
 ... (diff truncated, ${len(result.report_only_diff) - MAX_DIFF_LINES} more lines)
 % endif
 % endif
-% if errors:
+% if result.failed_not_applied:
 Run `pre-commit run --files ${file_path}` to apply fixes.
 % endif

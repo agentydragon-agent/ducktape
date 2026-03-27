@@ -20,7 +20,13 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseOutput,
 )
 from devinfra.claude.hook_config import HookConfig, PreCommitConfig
-from devinfra.claude.hook_daemon.precommit_runner import RunResult, run_on_file
+from devinfra.claude.hook_daemon.precommit_runner import (
+    HookAutoApplied,
+    HookFailedNotApplied,
+    HookWouldEdit,
+    RunResult,
+    run_on_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,21 +70,18 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
     run_result = run_on_file(file_path, project_dir, auto_apply_hooks=pre_commit.auto_apply_hooks)
 
     for hr in run_result.hooks:
-        if hr.auto_applied:
-            logger.info("hook %s auto-applied on %s", hr.hook_name, file_path.name)
-        elif hr.passed:
-            logger.debug("hook %s passed on %s", hr.hook_name, file_path.name)
-        else:
+        if isinstance(hr, HookAutoApplied):
+            logger.info("hook %s auto-applied on %s (rerun exit %d)", hr.hook_name, file_path.name, hr.rerun_exit_code)
+        elif isinstance(hr, (HookWouldEdit, HookFailedNotApplied)):
             logger.info(
-                "hook %s failed on %s (exit_code=%d, files_modified=%s):\n%s",
+                "hook %s on %s (exit_code=%d):\n%s",
                 hr.hook_name,
                 file_path.name,
                 hr.exit_code,
-                hr.files_modified,
                 hr.output.decode(errors="replace"),
             )
 
-    if run_result.all_passed and not run_result.auto_applied_results:
+    if not run_result.has_issues:
         return PostToolUseOutput()
 
     return PostToolUseOutput(

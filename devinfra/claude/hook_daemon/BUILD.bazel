@@ -249,6 +249,7 @@ py_test(
         ":precommit_runner",
         "//devinfra/claude:conftest",
         "//devinfra/claude:hook_config",
+        "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

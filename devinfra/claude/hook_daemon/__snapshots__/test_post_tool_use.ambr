@@ -3,22 +3,24 @@
   '''
   test.py:
     Auto-applied:
-      ruff-format (exit 0)
+      ruff-format (now clean)
   '''
 # ---
 # name: test_format_mixed_auto_apply_and_report
   '''
   test.py:
     Auto-applied:
-      ruff-format (exit 0)
-    ruff-check (exit 1)
+      ruff-format (now clean)
+    Failed (not applied):
+      ruff-check (exit 1)
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
 # name: test_format_non_zero_exit
   '''
   test.py:
-    mypy (exit 1)
+    Failed (not applied):
+      mypy (exit 1)
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
