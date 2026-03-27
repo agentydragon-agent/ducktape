@@ -84,6 +84,9 @@ class PreCommitConfig(BaseModel):
     show_report_diffs: bool = Field(
         default=False, description="Show unified diffs from report-only hooks in the PostToolUse output."
     )
+    show_hook_output: bool = Field(
+        default=False, description="Show stdout/stderr from failing hooks in the PostToolUse output."
+    )
 
 
 class HookConfig(BaseModel):

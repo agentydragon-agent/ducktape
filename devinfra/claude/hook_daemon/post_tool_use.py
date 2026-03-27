@@ -44,12 +44,15 @@ def _find_git_root(start: Path) -> Path | None:
     return None
 
 
-def _format_check_result(result: RunResult, file_path: Path, *, show_report_diffs: bool = False) -> str:
+def _format_check_result(
+    result: RunResult, file_path: Path, *, show_report_diffs: bool = False, show_hook_output: bool = False
+) -> str:
     template = Template((_TEMPLATES_DIR / "post_tool_use.mako").read_text())
     output: str = template.render(
         auto_applied=result.auto_applied_results,
         failed=result.failed_hooks,
         diff_lines=result.report_only_diff if show_report_diffs else [],
+        show_hook_output=show_hook_output,
         file_name=file_path.name,
         file_path=file_path,
     )
@@ -72,6 +75,7 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
     pre_commit = config.pre_commit if config else None
     auto_apply_hooks = frozenset(pre_commit.auto_apply_hooks) if pre_commit else frozenset()
     show_report_diffs = pre_commit.show_report_diffs if pre_commit else False
+    show_hook_output = pre_commit.show_hook_output if pre_commit else False
 
     run_result = run_on_file(file_path, project_dir, auto_apply_hooks=auto_apply_hooks)
 
@@ -95,6 +99,8 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
 
     return PostToolUseOutput(
         hook_specific_output=PostToolUseHookSpecificOutput(
-            additional_context=_format_check_result(run_result, file_path, show_report_diffs=show_report_diffs)
+            additional_context=_format_check_result(
+                run_result, file_path, show_report_diffs=show_report_diffs, show_hook_output=show_hook_output
+            )
         )
     )

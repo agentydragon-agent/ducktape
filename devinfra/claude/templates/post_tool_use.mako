@@ -13,13 +13,15 @@ ${file_name}:
   Not auto-applied (would also edit): ${", ".join(h.hook_name for h in would_fix)}
 % endif
 % for hr in errors:
+  ${hr.hook_name} (exit ${hr.exit_code})
+% if show_hook_output:
 <%
     output_text = hr.output.decode(errors="replace").strip()[:MAX_OUTPUT_CHARS]
 %>\
-  ${hr.hook_name} (exit ${hr.exit_code})
 % for line in output_text.splitlines()[:MAX_ISSUES_SHOWN]:
     ${line}
 % endfor
+% endif
 % endfor
 % if diff_lines:
 Changes pre-commit would make:

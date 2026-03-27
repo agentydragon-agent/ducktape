@@ -4,7 +4,6 @@
   test.py:
     Not auto-applied (would also edit): fixer (foo->bar)
     checker (no BANNED) (exit 1)
-      test.py: contains BANNED keyword
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
@@ -12,7 +11,6 @@
   '''
   test.py:
     checker (no BANNED) (exit 1)
-      test.py: contains BANNED keyword
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
