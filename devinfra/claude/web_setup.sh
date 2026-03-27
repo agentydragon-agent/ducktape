@@ -10,7 +10,7 @@
 # fails. Failures are logged to /tmp/web-setup.log and uploaded to ix.io.
 #
 # Usage (Claude Code web UI setup command):
-#   curl -fsSL https://raw.githubusercontent.com/agentydragon/ducktape/devel/devinfra/claude/web_setup.sh | bash
+#   bash ducktape/devinfra/claude/web_setup.sh
 
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -36,7 +36,7 @@ trap on_exit EXIT
 
 set -euo pipefail
 
-FLAKE="path:$(pwd)"
+FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # --- Step 1: Install Nix ---
 # Write nix.conf BEFORE the installer runs. The installer internally runs
@@ -121,6 +121,11 @@ nix show-config 2>/dev/null | grep -E "max-jobs|sandbox|build-users" || true
 echo "---"
 
 echo "[$(date -Iseconds)] Installing web session tools..."
+echo "  FLAKE=${FLAKE}"
+echo "  pwd=$(pwd)"
+echo "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
+echo "  ls pwd:"
+ls -la
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
 nix profile install --max-jobs auto "${FLAKE}#web-session"
 echo "[$(date -Iseconds)] Web session tools installed."
