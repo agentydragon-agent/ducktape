@@ -221,7 +221,8 @@ def test_precommit_report_only_failure(git_project: tuple[Path, Path]) -> None:
     assert result.hook_specific_output is not None
     ctx = result.hook_specific_output.additional_context
     assert ctx is not None
-    assert "ruff-format (modified file)" in ctx
+    assert "Would also edit" in ctx
+    assert "ruff-format" in ctx
 
 
 def test_precommit_passes(git_project: tuple[Path, Path]) -> None:

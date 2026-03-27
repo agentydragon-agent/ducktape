@@ -20,22 +20,8 @@
   '''
 # ---
 # name: test_format_report_only_failure
-  '''
-  1 hook failed on test.py:
-    ruff-format (modified file)
-      bad indent
-  Run `pre-commit run --files test.py` to apply fixes.
-  '''
+  'Would also edit test.py: ruff-format'
 # ---
 # name: test_format_with_diff
-  '''
-  1 hook failed on test.py:
-    fixer (modified file)
-      fixed
-  Changes pre-commit would make:
-  @@ -1 +1 @@
-  -x=1
-  +x = 1
-  Run `pre-commit run --files test.py` to apply fixes.
-  '''
+  'Would also edit test.py: fixer'
 # ---

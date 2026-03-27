@@ -1,8 +1,8 @@
 # serializer version: 1
 # name: test_fixer_modifies_checker_fails
   '''
-  2 hooks failed on test.py:
-    fixer (foo->bar) (modified file)
+  Would also edit test.py: fixer (foo->bar)
+  1 hook failed on test.py:
     checker (no BANNED) (exit 1)
       test.py: contains BANNED keyword
   Changes pre-commit would make:
