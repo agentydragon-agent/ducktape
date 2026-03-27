@@ -7,10 +7,8 @@ Docker-based program evaluation (no mocking of evaluate_program).
 import json
 import uuid
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import aiodocker
-import pytest
 import pytest_bazel
 from autogen_core import FunctionCall
 from autogen_core.models import CreateResult, RequestUsage
@@ -32,18 +30,6 @@ def _play_turn_call(query: int, program: str) -> CreateResult:
         ],
         usage=_ZERO_USAGE,
         cached=False,
-    )
-
-
-@pytest.fixture
-def _patch_prompts(monkeypatch):
-    monkeypatch.setattr(
-        "skills.info_gathering.evals.function_learning.function_learning.load_skill_prompt",
-        MagicMock(return_value="You are skilled."),
-    )
-    monkeypatch.setattr(
-        "skills.info_gathering.evals.function_learning.prompts.load_scratch_system_note",
-        MagicMock(return_value="You have a scratch container."),
     )
 
 
@@ -85,7 +71,6 @@ async def _run_with_replay(
             await container.delete(force=True)
 
 
-@pytest.mark.usefixtures("_patch_prompts")
 async def test_basic_game_completes(tmp_path: Path) -> None:
     """Model plays 3 turns with a trivial all-zeros program, game completes."""
     completions = [_play_turn_call(i, "x = int(input()); print(0)") for i in range(_TEST_TURNS)]
@@ -99,7 +84,6 @@ async def test_basic_game_completes(tmp_path: Path) -> None:
     assert summary.result.total_hamming_loss > 0
 
 
-@pytest.mark.usefixtures("_patch_prompts")
 async def test_perfect_program_zero_loss(tmp_path: Path) -> None:
     """A program implementing the correct parity function gets 0 loss."""
     # Reads decimal, extracts bits, computes XOR of pairs, prints decimal result.
@@ -115,7 +99,6 @@ async def test_perfect_program_zero_loss(tmp_path: Path) -> None:
     assert all(loss == 0 for loss in summary.result.per_turn_losses)
 
 
-@pytest.mark.usefixtures("_patch_prompts")
 async def test_improving_programs(tmp_path: Path) -> None:
     """Loss should decrease as the program improves turn over turn."""
     programs = [
@@ -139,7 +122,6 @@ async def test_improving_programs(tmp_path: Path) -> None:
     assert losses[2] == 0
 
 
-@pytest.mark.usefixtures("_patch_prompts")
 async def test_erroring_program_max_loss(tmp_path: Path) -> None:
     """A program that raises an exception gets maximum loss per errored input."""
     completions = [_play_turn_call(0, "raise ValueError('broken')")]
@@ -162,7 +144,6 @@ def _check_output_files(tmp_path: Path) -> None:
     assert summary_data["result"]["kind"] == "completed"
 
 
-@pytest.mark.usefixtures("_patch_prompts")
 async def test_output_files_written(tmp_path: Path) -> None:
     completions = [_play_turn_call(0, "x = int(input()); print(0)") for _ in range(_TEST_TURNS)]
     await _run_with_replay(completions=completions, tmp_path=tmp_path)
