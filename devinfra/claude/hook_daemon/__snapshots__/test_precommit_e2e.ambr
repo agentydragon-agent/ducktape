@@ -1,10 +1,16 @@
 # serializer version: 1
+# name: test_binary_file_no_diff
+  '''
+  test.bin:
+    Not auto-applied (would also edit): binfixer
+  '''
+# ---
 # name: test_fixer_modifies_checker_fails
   '''
   test.py:
-    Not auto-applied (would also edit): fixer (foo->bar)
+    Not auto-applied (would also edit): fixer
     Failed (not applied):
-      checker (no BANNED) (exit 1)
+      checker (exit 1)
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
@@ -12,13 +18,7 @@
   '''
   test.py:
     Failed (not applied):
-      checker (no BANNED) (exit 1)
+      checker (exit 1)
   Run `pre-commit run --files test.py` to apply fixes.
-  '''
-# ---
-# name: test_binary_file_no_diff
-  '''
-  test.bin:
-    Not auto-applied (would also edit): binfixer
   '''
 # ---

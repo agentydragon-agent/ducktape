@@ -91,83 +91,62 @@ def test_stop_reason_with_continue_false() -> None:
 
 
 def test_format_report_only_failure(snapshot: SnapshotAssertion) -> None:
-    result = RunResult(
-        hooks=[HookWouldEdit(hook_id="ruff", hook_name="ruff-format", output=b"bad indent", exit_code=1)]
-    )
+    result = RunResult(hooks={"ruff": HookWouldEdit(output=b"bad indent", exit_code=1)})
     assert _format_check_result(result, Path("test.py"), PreCommitConfig()) == snapshot
 
 
 def test_format_non_zero_exit(snapshot: SnapshotAssertion) -> None:
-    result = RunResult(
-        hooks=[HookFailedNotApplied(hook_id="mypy", hook_name="mypy", output=b"type error", exit_code=1)]
-    )
+    result = RunResult(hooks={"mypy": HookFailedNotApplied(output=b"type error", exit_code=1)})
     assert _format_check_result(result, Path("test.py"), PreCommitConfig()) == snapshot
 
 
 def test_format_auto_applied_only(snapshot: SnapshotAssertion) -> None:
     result = RunResult(
-        hooks=[
-            HookAutoApplied(
-                hook_id="ruff-format",
-                hook_name="ruff-format",
-                output=b"1 file reformatted",
-                exit_code=0,
-                rerun_exit_code=0,
-            )
-        ]
+        hooks={"ruff-format": HookAutoApplied(output=b"1 file reformatted", exit_code=0, rerun_exit_code=0)}
     )
     assert _format_check_result(result, Path("test.py"), PreCommitConfig()) == snapshot
 
 
 def test_format_mixed_auto_apply_and_report(snapshot: SnapshotAssertion) -> None:
     result = RunResult(
-        hooks=[
-            HookAutoApplied(
-                hook_id="ruff-format", hook_name="ruff-format", output=b"reformatted", exit_code=0, rerun_exit_code=0
-            ),
-            HookFailedNotApplied(
-                hook_id="ruff-check", hook_name="ruff-check", output=b"F401 unused import", exit_code=1
-            ),
-        ]
+        hooks={
+            "ruff-format": HookAutoApplied(output=b"reformatted", exit_code=0, rerun_exit_code=0),
+            "ruff-check": HookFailedNotApplied(output=b"F401 unused import", exit_code=1),
+        }
     )
     assert _format_check_result(result, Path("test.py"), PreCommitConfig()) == snapshot
 
 
 def test_format_with_diff(snapshot: SnapshotAssertion) -> None:
     result = RunResult(
-        hooks=[HookWouldEdit(hook_id="fixer", hook_name="fixer", output=b"fixed", exit_code=1)],
+        hooks={"fixer": HookWouldEdit(output=b"fixed", exit_code=1)},
         report_only_diff=["@@ -1 +1 @@\n", "-x=1\n", "+x = 1\n"],
     )
-    pre_commit = PreCommitConfig(show_report_diffs=True)
-    assert _format_check_result(result, Path("test.py"), pre_commit) == snapshot
+    assert _format_check_result(result, Path("test.py"), PreCommitConfig(show_report_diffs=True)) == snapshot
 
 
 # === RunResult property tests ===
 
 
 def test_run_result_has_issues_false_when_all_passed() -> None:
-    result = RunResult(hooks=[])
+    result = RunResult(hooks={})
     assert not result.has_issues
 
 
 def test_run_result_has_issues_with_auto_applied() -> None:
-    result = RunResult(
-        hooks=[
-            HookAutoApplied(hook_id="ruff-format", hook_name="ruff-format", output=b"", exit_code=0, rerun_exit_code=0)
-        ]
-    )
+    result = RunResult(hooks={"ruff-format": HookAutoApplied(output=b"", exit_code=0, rerun_exit_code=0)})
     assert result.has_issues
 
 
 def test_run_result_failed_not_applied_excludes_auto_applied() -> None:
     result = RunResult(
-        hooks=[
-            HookAutoApplied(hook_id="ruff-format", hook_name="ruff-format", output=b"", exit_code=0, rerun_exit_code=0),
-            HookFailedNotApplied(hook_id="ruff-check", hook_name="ruff-check", output=b"err", exit_code=1),
-        ]
+        hooks={
+            "ruff-format": HookAutoApplied(output=b"", exit_code=0, rerun_exit_code=0),
+            "ruff-check": HookFailedNotApplied(output=b"err", exit_code=1),
+        }
     )
     assert len(result.failed_not_applied) == 1
-    assert result.failed_not_applied[0].hook_id == "ruff-check"
+    assert "ruff-check" in result.failed_not_applied
 
 
 # === Integration tests (mocked run_on_file) ===
@@ -176,9 +155,7 @@ def test_run_result_failed_not_applied_excludes_auto_applied() -> None:
 def test_precommit_report_only_failure(git_project: tuple[Path, Path]) -> None:
     _, test_file = git_project
 
-    fake_result = RunResult(
-        hooks=[HookWouldEdit(hook_id="ruff-format", hook_name="ruff-format", output=b"modified", exit_code=0)]
-    )
+    fake_result = RunResult(hooks={"ruff-format": HookWouldEdit(output=b"modified", exit_code=0)})
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
@@ -194,9 +171,7 @@ def test_precommit_report_only_failure(git_project: tuple[Path, Path]) -> None:
 def test_precommit_passes(git_project: tuple[Path, Path]) -> None:
     _, test_file = git_project
 
-    fake_result = RunResult(hooks=[])
-
-    with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):
+    with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=RunResult()):
         inp = PostToolUseInput(**_COMMON, tool_name="Write", tool_input={"file_path": str(test_file)})
         result = evaluate(inp)
 
@@ -217,15 +192,7 @@ def test_auto_applied_only_returns_context(git_project: tuple[Path, Path]) -> No
     _, test_file = git_project
 
     fake_result = RunResult(
-        hooks=[
-            HookAutoApplied(
-                hook_id="ruff-format",
-                hook_name="ruff-format",
-                output=b"1 file reformatted",
-                exit_code=0,
-                rerun_exit_code=0,
-            )
-        ]
+        hooks={"ruff-format": HookAutoApplied(output=b"1 file reformatted", exit_code=0, rerun_exit_code=0)}
     )
 
     with patch("devinfra.claude.hook_daemon.post_tool_use.run_on_file", return_value=fake_result):

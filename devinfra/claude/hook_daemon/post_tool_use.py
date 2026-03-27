@@ -69,13 +69,13 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
     pre_commit = config.pre_commit
     run_result = run_on_file(file_path, project_dir, auto_apply_hooks=pre_commit.auto_apply_hooks)
 
-    for hr in run_result.hooks:
+    for hook_id, hr in run_result.hooks.items():
         if isinstance(hr, HookAutoApplied):
-            logger.info("hook %s auto-applied on %s (rerun exit %d)", hr.hook_name, file_path.name, hr.rerun_exit_code)
+            logger.info("hook %s auto-applied on %s (rerun exit %d)", hook_id, file_path.name, hr.rerun_exit_code)
         elif isinstance(hr, (HookWouldEdit, HookFailedNotApplied)):
             logger.info(
                 "hook %s on %s (exit_code=%d):\n%s",
-                hr.hook_name,
+                hook_id,
                 file_path.name,
                 hr.exit_code,
                 hr.output.decode(errors="replace"),

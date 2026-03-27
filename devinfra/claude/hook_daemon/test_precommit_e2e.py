@@ -12,20 +12,12 @@ from textwrap import dedent
 
 import pytest
 import pytest_bazel
-from more_itertools import one
 from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.hook_config import PreCommitConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result
-from devinfra.claude.hook_daemon.precommit_runner import (
-    HookFailedNotApplied,
-    HookOutcome,
-    HookPassed,
-    HookWouldEdit,
-    RunResult,
-    run_on_file,
-)
+from devinfra.claude.hook_daemon.precommit_runner import HookFailedNotApplied, HookPassed, HookWouldEdit, run_on_file
 
 # Relative path used in _format_check_result to keep snapshots stable
 # (avoids embedding tmp dir absolute paths).
@@ -123,11 +115,6 @@ def precommit_repo(tmp_path: Path) -> Path:
     return repo_path
 
 
-def _hook_by_id(result: RunResult, hook_id: str) -> HookOutcome:
-    """Find a hook outcome by ID."""
-    return one(h for h in result.hooks if h.hook_id == hook_id)
-
-
 def test_fixer_modifies_checker_fails(precommit_repo: Path, snapshot: SnapshotAssertion) -> None:
     """Fixer modifies file, checker fails without modifying — correct labels."""
     test_file = precommit_repo / "test.py"
@@ -135,9 +122,9 @@ def test_fixer_modifies_checker_fails(precommit_repo: Path, snapshot: SnapshotAs
 
     result = run_on_file(test_file, precommit_repo)
 
-    assert isinstance(_hook_by_id(result, "fixer"), HookWouldEdit)
-    assert isinstance(_hook_by_id(result, "checker"), HookFailedNotApplied)
-    assert isinstance(_hook_by_id(result, "passthrough"), HookPassed)
+    assert isinstance(result.hooks["fixer"], HookWouldEdit)
+    assert isinstance(result.hooks["checker"], HookFailedNotApplied)
+    assert isinstance(result.hooks["passthrough"], HookPassed)
 
     output = _format_check_result(result, _TEST_FILE, PreCommitConfig())
     assert output == snapshot
@@ -150,9 +137,9 @@ def test_only_checker_fails(precommit_repo: Path, snapshot: SnapshotAssertion) -
 
     result = run_on_file(test_file, precommit_repo)
 
-    assert isinstance(_hook_by_id(result, "fixer"), HookPassed)
-    assert isinstance(_hook_by_id(result, "checker"), HookFailedNotApplied)
-    assert isinstance(_hook_by_id(result, "passthrough"), HookPassed)
+    assert isinstance(result.hooks["fixer"], HookPassed)
+    assert isinstance(result.hooks["checker"], HookFailedNotApplied)
+    assert isinstance(result.hooks["passthrough"], HookPassed)
 
     output = _format_check_result(result, _TEST_FILE, PreCommitConfig())
     assert output == snapshot
@@ -211,7 +198,7 @@ def test_binary_file_no_diff(tmp_path: Path, snapshot: SnapshotAssertion) -> Non
 
     result = run_on_file(test_file, repo_path)
 
-    assert isinstance(_hook_by_id(result, "binfixer"), HookWouldEdit)
+    assert isinstance(result.hooks["binfixer"], HookWouldEdit)
     assert result.report_only_diff == []
     # File should be restored to original
     assert test_file.read_bytes() == b"\x00\xaa\xff\xfe"

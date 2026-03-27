@@ -27,7 +27,7 @@
 # name: test_format_report_only_failure
   '''
   test.py:
-    Not auto-applied (would also edit): ruff-format
+    Not auto-applied (would also edit): ruff
   '''
 # ---
 # name: test_format_with_diff

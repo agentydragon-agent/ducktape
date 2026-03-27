@@ -6,22 +6,22 @@ MAX_OUTPUT_CHARS = 500
 ${file_path.name}:
 % if result.auto_applied:
   Auto-applied:\
-% for hr in result.auto_applied:
+% for hook_id, hr in result.auto_applied.items():
 <%
     status = "now clean" if hr.rerun_exit_code == 0 else f"not fully fixed, still exit {hr.rerun_exit_code}"
 %>
-    ${hr.hook_name} (${status})\
+    ${hook_id} (${status})\
 % endfor
 
 % endif
 % if result.would_edit:
-  Not auto-applied (would also edit): ${", ".join(h.hook_name for h in result.would_edit)}
+  Not auto-applied (would also edit): ${", ".join(result.would_edit)}
 % endif
 % if result.failed_not_applied:
   Failed (not applied):\
-% for hr in result.failed_not_applied:
+% for hook_id, hr in result.failed_not_applied.items():
 
-    ${hr.hook_name} (exit ${hr.exit_code})\
+    ${hook_id} (exit ${hr.exit_code})\
 % if pre_commit.show_hook_output:
 <%
     output_text = hr.output.decode(errors="replace").strip()[:MAX_OUTPUT_CHARS]

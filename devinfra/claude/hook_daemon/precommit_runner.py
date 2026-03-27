@@ -40,16 +40,11 @@ def _chdir(path: Path) -> Generator[None]:
 class HookPassed:
     """Hook ran clean — exit 0, no file modifications."""
 
-    hook_id: str
-    hook_name: str
-
 
 @dataclass(frozen=True)
 class HookAutoApplied:
     """Hook modified the file; changes kept on disk. Re-run verified satisfaction."""
 
-    hook_id: str
-    hook_name: str
     exit_code: int
     output: bytes
     rerun_exit_code: int
@@ -59,8 +54,6 @@ class HookAutoApplied:
 class HookWouldEdit:
     """Report-only hook that would modify the file (changes reverted)."""
 
-    hook_id: str
-    hook_name: str
     exit_code: int
     output: bytes
 
@@ -69,8 +62,6 @@ class HookWouldEdit:
 class HookFailedNotApplied:
     """Report-only hook that exited non-zero without modifying the file."""
 
-    hook_id: str
-    hook_name: str
     exit_code: int
     output: bytes
 
@@ -80,20 +71,20 @@ HookOutcome = HookPassed | HookAutoApplied | HookWouldEdit | HookFailedNotApplie
 
 @dataclass
 class RunResult:
-    hooks: list[HookOutcome] = field(default_factory=list)
+    hooks: dict[str, HookOutcome] = field(default_factory=dict)
     report_only_diff: list[str] = field(default_factory=list)
 
     @property
-    def auto_applied(self) -> list[HookAutoApplied]:
-        return [h for h in self.hooks if isinstance(h, HookAutoApplied)]
+    def auto_applied(self) -> dict[str, HookAutoApplied]:
+        return {k: h for k, h in self.hooks.items() if isinstance(h, HookAutoApplied)}
 
     @property
-    def would_edit(self) -> list[HookWouldEdit]:
-        return [h for h in self.hooks if isinstance(h, HookWouldEdit)]
+    def would_edit(self) -> dict[str, HookWouldEdit]:
+        return {k: h for k, h in self.hooks.items() if isinstance(h, HookWouldEdit)}
 
     @property
-    def failed_not_applied(self) -> list[HookFailedNotApplied]:
-        return [h for h in self.hooks if isinstance(h, HookFailedNotApplied)]
+    def failed_not_applied(self) -> dict[str, HookFailedNotApplied]:
+        return {k: h for k, h in self.hooks.items() if isinstance(h, HookFailedNotApplied)}
 
     @property
     def has_issues(self) -> bool:
@@ -153,14 +144,14 @@ def _run_hooks(
                 color=False,
             )
 
-    def classify_report_only(hook, retcode: int, out: bytes, modified: bool) -> HookOutcome:
+    def classify_report_only(retcode: int, out: bytes, *, modified: bool) -> HookOutcome:
         if modified:
-            return HookWouldEdit(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out)
+            return HookWouldEdit(exit_code=retcode, output=out)
         if retcode == 0:
-            return HookPassed(hook_id=hook.id, hook_name=hook.name)
-        return HookFailedNotApplied(hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out)
+            return HookPassed()
+        return HookFailedNotApplied(exit_code=retcode, output=out)
 
-    results: list[HookOutcome] = []
+    results: dict[str, HookOutcome] = {}
 
     # Phase 1: auto-apply hooks — keep their changes, re-run to verify satisfaction.
     for hook, filenames in auto_hooks:
@@ -169,26 +160,24 @@ def _run_hooks(
         current = file_path.read_bytes()
         modified = current != content_before
 
+        assert hook.id not in results, f"Duplicate hook ID: {hook.id}"
         if modified:
             rerun_retcode, _ = run_hook(hook, filenames)
             rerun_content = file_path.read_bytes()
             if rerun_content != current:
                 file_path.write_bytes(current)
-            results.append(
-                HookAutoApplied(
-                    hook_id=hook.id, hook_name=hook.name, exit_code=retcode, output=out, rerun_exit_code=rerun_retcode
-                )
-            )
+            results[hook.id] = HookAutoApplied(exit_code=retcode, output=out, rerun_exit_code=rerun_retcode)
         else:
-            results.append(classify_report_only(hook, retcode, out, modified=False))
+            results[hook.id] = classify_report_only(retcode, out, modified=False)
 
     # Phase 2: report-only hooks — capture diff, then revert.
     baseline = file_path.read_bytes()
     for hook, filenames in report_hooks:
+        assert hook.id not in results, f"Duplicate hook ID: {hook.id}"
         content_before = file_path.read_bytes()
         retcode, out = run_hook(hook, filenames)
         current = file_path.read_bytes()
-        results.append(classify_report_only(hook, retcode, out, modified=current != content_before))
+        results[hook.id] = classify_report_only(retcode, out, modified=current != content_before)
 
     # Compute diff of what report-only hooks would change, then revert.
     after_all = file_path.read_bytes()
