@@ -31,6 +31,7 @@ from fastmcp.client import Client
 from mcp.types import TextContent
 
 from skills.info_gathering.evals.docker_exec import scratch_exec_server
+from skills.info_gathering.evals.prompt_caching import enable_prompt_caching
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -220,8 +221,7 @@ def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
     if api == "openai":
         return OpenAIChatCompletionClient(model=model)
     if api == "anthropic":
-        # Explicitly pass model_info for models not yet in autogen_ext's built-in registry.
-        return AnthropicChatCompletionClient(
+        client = AnthropicChatCompletionClient(
             model=model,
             model_info={
                 "vision": True,
@@ -232,6 +232,8 @@ def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
                 "multiple_system_messages": False,
             },
         )
+        enable_prompt_caching(client)
+        return client
     raise ValueError(f"Unsupported API: {api!r}")
 
 
