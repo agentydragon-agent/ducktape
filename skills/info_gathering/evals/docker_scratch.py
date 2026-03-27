@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastmcp.client import Client
 
 from agent_core.mcp_provider import MCPToolProvider
-from skills.info_gathering.evals.twenty_questions.x.shared.docker_exec import scratch_exec_server
+from skills.info_gathering.evals.docker_exec import scratch_exec_server
 from third_party.debian_slim.rlocations import IMAGE_TAG, TARBALL
 from util.oci import load_image
 

@@ -27,7 +27,7 @@ py_library(
         "//skills/info_gathering:SKILL.md",
     ],
     imports = ["../../../.."],
-    visibility = ["//skills/info_gathering/evals/twenty_questions:__subpackages__"],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = ["//util/bazel:runfiles"],
 )
 

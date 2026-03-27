@@ -11,7 +11,7 @@ py_library(
     name = "output",
     srcs = ["output.py"],
     imports = ["../../../../../.."],
-    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = ["//skills/info_gathering/evals/twenty_questions:result_types"],
 )
 
@@ -20,17 +20,6 @@ py_library(
     srcs = ["cli.py"],
     imports = ["../../../../../.."],
     visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
-)
-
-py_library(
-    name = "docker_exec",
-    srcs = ["docker_exec.py"],
-    imports = ["../../../../../.."],
-    visibility = ["//skills/info_gathering/evals/twenty_questions/x:__subpackages__"],
-    deps = [
-        "//mcp_infra/exec:docker",
-        "@pypi//aiodocker",
-    ],
 )
 
 py_library(

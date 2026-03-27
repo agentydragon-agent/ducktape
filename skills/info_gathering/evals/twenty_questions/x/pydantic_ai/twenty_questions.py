@@ -17,12 +17,12 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.result import RunContext
-from pydantic_ai.settings import ModelSettings
 from pydantic_ai.toolsets import AbstractToolset
 from pydantic_ai.toolsets.fastmcp import FastMCPToolset
 from pydantic_ai.toolsets.function import FunctionToolset
 
 from mcp_infra.exec.docker.server import ContainerExecServer
+from skills.info_gathering.evals.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -35,7 +35,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     output_dir_from_args,
     resolve_args,
 )
-from skills.info_gathering.evals.twenty_questions.x.shared.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 
@@ -206,7 +205,9 @@ async def run_game_loop(
             message_history=guesser_history,
             instructions=guesser_instructions,
             toolsets=all_toolsets,
-            model_settings=ModelSettings(tool_choice="required"),  # type: ignore[typeddict-unknown-key]
+            # No tool_choice=required — PydanticAI's run() needs the model to
+            # produce text output to terminate. The game tools are regular tools
+            # that the model calls voluntarily.
         )
         guesser_history = guesser_run.all_messages()
 

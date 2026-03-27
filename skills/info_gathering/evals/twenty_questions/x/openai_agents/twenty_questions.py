@@ -28,6 +28,7 @@ from fastmcp.client import Client
 from mcp.types import TextContent
 
 from mcp_infra.exec.docker.server import ContainerExecServer
+from skills.info_gathering.evals.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -40,7 +41,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     output_dir_from_args,
     resolve_args,
 )
-from skills.info_gathering.evals.twenty_questions.x.shared.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 
