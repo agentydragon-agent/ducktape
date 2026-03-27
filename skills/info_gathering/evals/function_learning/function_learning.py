@@ -25,7 +25,6 @@ from autogen_core.models import (
     UserMessage,
 )
 from autogen_core.tools import FunctionTool
-from autogen_ext.models.anthropic import AnthropicChatCompletionClient
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from fastmcp.client import Client
 from mcp.types import TextContent
@@ -40,7 +39,7 @@ from skills.info_gathering.evals.function_learning.result_types import (
     TurnResult,
 )
 from skills.info_gathering.evals.function_learning.scoring import evaluate_program
-from skills.info_gathering.evals.prompt_caching import enable_prompt_caching
+from skills.info_gathering.evals.prompt_caching import CachedAnthropicClient
 from skills.info_gathering.evals.twenty_questions.prompts import load_skill_prompt
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 
@@ -154,20 +153,7 @@ def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
     if api == "openai":
         return OpenAIChatCompletionClient(model=model)
     if api == "anthropic":
-        client = AnthropicChatCompletionClient(
-            model=model,
-            model_info={
-                "vision": True,
-                "function_calling": True,
-                "json_output": True,
-                "family": "unknown",
-                "structured_output": True,
-                "multiple_system_messages": False,
-            },
-        )
-
-        enable_prompt_caching(client)
-        return client
+        return CachedAnthropicClient(model=model)
     raise ValueError(f"Unsupported API: {api!r}")
 
 

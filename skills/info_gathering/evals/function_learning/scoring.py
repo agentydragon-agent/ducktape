@@ -1,26 +1,28 @@
 """Program evaluation for the function learning eval.
 
 Evaluates the model's program against all 2^N inputs in a single Docker exec
-call using a wrapper script. Uses aiodocker directly (no MCP layer) for clean
+call using eval_wrapper.py. Uses aiodocker directly (no MCP layer) for clean
 stdout access.
 """
 
 import asyncio
 import json
 import logging
-import textwrap
 from dataclasses import dataclass
 
 import aiodocker
 
 from skills.info_gathering.evals.function_learning.functions import SecretFunction
 from skills.info_gathering.evals.function_learning.result_types import ProgramError
+from util.bazel.runfiles import get_required_path
 
 logger = logging.getLogger(__name__)
 
 _MAX_REPORTED_ERRORS = 5
 _EVAL_TIMEOUT_S = 30
 _PER_INPUT_TIMEOUT_S = 1
+
+_EVAL_WRAPPER_RLOCATION = "_main/skills/info_gathering/evals/function_learning/eval_wrapper.py"
 
 
 def _hamming_distance(a: str, b: str) -> int:
@@ -36,52 +38,6 @@ class ScoringResult:
     total_eval_s: float
     mean_per_input_s: float
     max_per_input_s: float
-
-
-def _build_eval_wrapper(program: str, all_inputs: list[str], per_input_timeout_s: int) -> str:
-    """Build a Python script that evaluates the model's program on all inputs."""
-    inputs_json = json.dumps(all_inputs)
-    return textwrap.dedent(f"""\
-        import io, json, signal, sys, time
-
-        PROGRAM = {program!r}
-        ALL_INPUTS = {inputs_json}
-        TIMEOUT = {per_input_timeout_s}
-
-        class _Timeout(Exception):
-            pass
-
-        def _handler(signum, frame):
-            raise _Timeout()
-
-        results = {{}}
-        errors = {{}}
-        timings = {{}}
-        for inp in ALL_INPUTS:
-            t0 = time.monotonic()
-            signal.signal(signal.SIGALRM, _handler)
-            signal.alarm(TIMEOUT)
-            try:
-                sys.stdin = io.StringIO(inp + "\\n")
-                capture = io.StringIO()
-                sys.stdout = capture
-                exec(compile(PROGRAM, "<program>", "exec"), {{"__builtins__": __builtins__}})
-                sys.stdout = sys.__stdout__
-                sys.stdin = sys.__stdin__
-                signal.alarm(0)
-                results[inp] = capture.getvalue().strip()
-            except _Timeout:
-                sys.stdout = sys.__stdout__
-                sys.stdin = sys.__stdin__
-                errors[inp] = "timeout"
-            except Exception as e:
-                sys.stdout = sys.__stdout__
-                sys.stdin = sys.__stdin__
-                signal.alarm(0)
-                errors[inp] = str(e)[:200]
-            timings[inp] = time.monotonic() - t0
-        print(json.dumps({{"results": results, "errors": errors, "timings": timings}}))
-    """)
 
 
 async def _docker_exec(container: aiodocker.docker.DockerContainer, cmd: list[str], timeout_s: int) -> str:
@@ -103,11 +59,12 @@ async def evaluate_program(
 ) -> ScoringResult:
     """Evaluate program against all inputs in a single Docker exec call."""
     all_inputs = secret_fn.all_inputs()
-    wrapper = _build_eval_wrapper(program, all_inputs, _PER_INPUT_TIMEOUT_S)
+    wrapper_source = get_required_path(_EVAL_WRAPPER_RLOCATION).read_text()
+    config = json.dumps({"program": program, "all_inputs": all_inputs, "timeout": _PER_INPUT_TIMEOUT_S})
     loop = asyncio.get_running_loop()
     t0 = loop.time()
 
-    raw = await _docker_exec(container, ["python3", "-c", wrapper], _EVAL_TIMEOUT_S)
+    raw = await _docker_exec(container, ["python3", "-c", wrapper_source, config], _EVAL_TIMEOUT_S)
     total_eval_s = loop.time() - t0
 
     # Parse JSON output — it's raw stdout, no MCP wrapping.
