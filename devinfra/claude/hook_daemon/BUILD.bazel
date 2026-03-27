@@ -248,3 +248,21 @@ py_test(
         "@pypi//syrupy",
     ],
 )
+
+py_test(
+    name = "test_post_tool_use_ruff_e2e",
+    srcs = ["test_post_tool_use_ruff_e2e.py"],
+    data = ["@multitool//tools/ruff"],
+    imports = ["../../.."],
+    deps = [
+        ":post_tool_use_lib",
+        ":precommit_runner",
+        "//devinfra/claude:conftest",
+        "//devinfra/claude:hook_config",
+        "//devinfra/claude/claude_api/hooks:post_tool_use",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
