@@ -35,6 +35,7 @@ from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
 from mcp_infra.exec.docker.server import ContainerExecServer
+from skills.info_gathering.evals.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -47,7 +48,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     output_dir_from_args,
     resolve_args,
 )
-from skills.info_gathering.evals.twenty_questions.x.shared.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 
@@ -83,7 +83,10 @@ def build_graph(
     async def guesser_node(state: GameState) -> dict:
         response: AIMessage = await guesser_model.ainvoke(state["guesser_messages"])
         new_messages = [*state["guesser_messages"], response]
-        return {"guesser_messages": new_messages, "last_question": None}
+        # Extract question text for the simulator (route_guesser can't mutate state).
+        content = response.content if isinstance(response.content, str) else str(response.content)
+        last_q = content if content.strip() else None
+        return {"guesser_messages": new_messages, "last_question": last_q}
 
     async def simulator_node(state: GameState) -> dict:
         question_text = state["last_question"] or ""
@@ -168,10 +171,7 @@ def build_graph(
             tc = last_msg.tool_calls[0]
             if tc["name"] == "exec" and exec_tool is not None:
                 return "exec"
-        # Text response -> extract question and go to simulator
-        if isinstance(last_msg, AIMessage):
-            content = last_msg.content if isinstance(last_msg.content, str) else str(last_msg.content)
-            state["last_question"] = content
+        # Text response -> go to simulator (question already extracted in guesser_node).
         return "simulator"
 
     def route_simulator(state: GameState) -> str:

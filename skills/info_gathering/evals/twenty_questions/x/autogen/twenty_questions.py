@@ -30,6 +30,7 @@ from autogen_ext.models.openai import OpenAIChatCompletionClient
 from fastmcp.client import Client
 from mcp.types import TextContent
 
+from skills.info_gathering.evals.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -42,7 +43,6 @@ from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
     output_dir_from_args,
     resolve_args,
 )
-from skills.info_gathering.evals.twenty_questions.x.shared.docker_exec import scratch_exec_server
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 
@@ -202,9 +202,9 @@ def _make_game_tools(
 def _make_exec_tool(mcp_client: Client) -> FunctionTool:
     """Create a FunctionTool that delegates to the MCP exec tool via fastmcp.Client."""
 
-    async def exec(cmd: list[str], cwd: str = "/tmp", timeout_ms: int = 30000) -> str:
+    async def exec(cmd: list[str], timeout_ms: int = 30000) -> str:
         """Run a command in a scratch container. cmd is a list of strings (no shell)."""
-        arguments: dict[str, object] = {"cmd": cmd, "timeout_ms": timeout_ms, "cwd": cwd}
+        arguments: dict[str, object] = {"cmd": cmd, "timeout_ms": timeout_ms}
         result = await mcp_client.call_tool("exec", arguments)
         return "\n".join(block.text for block in result.content if isinstance(block, TextContent))
 

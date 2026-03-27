@@ -27,16 +27,26 @@ py_library(
 )
 
 py_library(
+    name = "docker_exec",
+    srcs = ["docker_exec.py"],
+    imports = ["../../.."],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
+    deps = [
+        "//mcp_infra/exec:docker",
+        "@pypi//aiodocker",
+    ],
+)
+
+py_library(
     name = "docker_scratch",
     srcs = ["docker_scratch.py"],
     imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
+        ":docker_exec",
         "//agent_core:mcp_provider",
-        "//mcp_infra/exec:docker",
         "//third_party/debian_slim:rlocations",
         "//util:oci",
-        "@pypi//aiodocker",
         "@pypi//fastmcp",
     ],
 )
