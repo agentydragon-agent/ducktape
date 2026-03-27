@@ -155,7 +155,7 @@ def test_format_with_diff(snapshot: SnapshotAssertion) -> None:
         hooks=[HookResult(hook_id="fixer", hook_name="fixer", output=b"fixed", files_modified=True, exit_code=1)],
         report_only_diff=["@@ -1 +1 @@\n", "-x=1\n", "+x = 1\n"],
     )
-    assert _format_check_result(result, Path("test.py")) == snapshot
+    assert _format_check_result(result, Path("test.py"), show_report_diffs=True) == snapshot
 
 
 # === RunResult property tests ===
@@ -221,7 +221,7 @@ def test_precommit_report_only_failure(git_project: tuple[Path, Path]) -> None:
     assert result.hook_specific_output is not None
     ctx = result.hook_specific_output.additional_context
     assert ctx is not None
-    assert "Would also edit" in ctx
+    assert "Not auto-applied" in ctx
     assert "ruff-format" in ctx
 
 

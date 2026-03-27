@@ -81,6 +81,9 @@ class PreCommitConfig(BaseModel):
         description="Hook IDs whose file modifications are kept (not reverted). "
         "All other hooks' modifications are reverted and reported as diffs."
     )
+    show_report_diffs: bool = Field(
+        default=False, description="Show unified diffs from report-only hooks in the PostToolUse output."
+    )
 
 
 class HookConfig(BaseModel):

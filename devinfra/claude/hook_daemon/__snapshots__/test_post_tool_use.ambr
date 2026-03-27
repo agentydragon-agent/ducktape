@@ -1,11 +1,14 @@
 # serializer version: 1
 # name: test_format_auto_applied_only
-  'Auto-applied: ruff-format'
+  '''
+  test.py:
+    Auto-applied: ruff-format
+  '''
 # ---
 # name: test_format_mixed_auto_apply_and_report
   '''
-  Auto-applied: ruff-format
-  1 hook failed on test.py:
+  test.py:
+    Auto-applied: ruff-format
     ruff-check (exit 1)
       F401 unused import
   Run `pre-commit run --files test.py` to apply fixes.
@@ -13,15 +16,25 @@
 # ---
 # name: test_format_non_zero_exit
   '''
-  1 hook failed on test.py:
+  test.py:
     mypy (exit 1)
       type error
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
 # name: test_format_report_only_failure
-  'Would also edit test.py: ruff-format'
+  '''
+  test.py:
+    Not auto-applied (would also edit): ruff-format
+  '''
 # ---
 # name: test_format_with_diff
-  'Would also edit test.py: fixer'
+  '''
+  test.py:
+    Not auto-applied (would also edit): fixer
+  Changes pre-commit would make:
+  @@ -1 +1 @@
+  -x=1
+  +x = 1
+  '''
 # ---

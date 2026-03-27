@@ -1,22 +1,16 @@
 # serializer version: 1
 # name: test_fixer_modifies_checker_fails
   '''
-  Would also edit test.py: fixer (foo->bar)
-  1 hook failed on test.py:
+  test.py:
+    Not auto-applied (would also edit): fixer (foo->bar)
     checker (no BANNED) (exit 1)
       test.py: contains BANNED keyword
-  Changes pre-commit would make:
-  --- 
-  +++ 
-  @@ -1 +1 @@
-  -foo = 1  # BANNED
-  +bar = 1  # BANNED
   Run `pre-commit run --files test.py` to apply fixes.
   '''
 # ---
 # name: test_only_checker_fails
   '''
-  1 hook failed on test.py:
+  test.py:
     checker (no BANNED) (exit 1)
       test.py: contains BANNED keyword
   Run `pre-commit run --files test.py` to apply fixes.
