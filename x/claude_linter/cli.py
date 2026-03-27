@@ -1,17 +1,13 @@
 import datetime
 import json
 import sys
-import tempfile
 from pathlib import Path
 
 import click
 import platformdirs
 from pydantic import ValidationError
 
-from llm.claude_code_api import EditToolCall, MultiEditToolCall, WriteToolCall
-from x.claude_linter.config import get_merged_config
 from x.claude_linter.models import HookRequest, LinterHookResponse
-from x.claude_linter.precommit_runner import PreCommitRunner
 
 
 def get_cache_dir() -> Path:
@@ -23,117 +19,17 @@ def get_cache_dir() -> Path:
 
 
 def evaluate_pre(req: HookRequest) -> LinterHookResponse:
-    # Pre-write hook evaluation - early bailout
-    if not isinstance(req.tool_call, WriteToolCall):
-        # Return empty response to let normal permission flow continue
-        return LinterHookResponse()
-
-    tool_call = req.tool_call
-    if tool_call.content is None:
-        # Return empty response to let normal permission flow continue
-        return LinterHookResponse()
-
-    # Run hooks on temp file
-    with tempfile.NamedTemporaryFile("w", delete=False, suffix=tool_call.file_path.suffix) as tmp:
-        tmp.write(tool_call.content)
-        tmp_path = tmp.name
-
-    try:
-        # Get config for fixing
-        config = get_merged_config([str(tool_call.file_path.parent)], fix=True)
-        runner = PreCommitRunner(config)
-
-        # First run: with fixes to see if issues are fixable
-        original_content = Path(tmp_path).read_text()
-        ret1, out1, err1 = runner.run([tmp_path], cwd=tool_call.file_path.parent)
-        fixed_content = Path(tmp_path).read_text()
-
-        # If content didn't change
-        if original_content == fixed_content:
-            if ret1 != 0:
-                # Had violations but none were fixable
-                return _block_with_reason(out1, err1)
-            # No violations at all - let normal permission flow continue
-            return LinterHookResponse()
-
-        # Content changed, check if pre-commit is satisfied with the fixed version
-        _ret2, out2, err2 = runner.run([tmp_path], cwd=tool_call.file_path.parent)
-        fixed_again_content = Path(tmp_path).read_text()
-
-        if fixed_content == fixed_again_content:
-            # All violations were fixable - let normal permission flow continue
-            return LinterHookResponse()
-        # Pre-commit keeps changing things - non-fixable violations found
-        return _block_with_reason(out2, err2)
-
-    finally:
-        Path(tmp_path).unlink()
-
-
-def _block_with_reason(stdout: str, stderr: str) -> LinterHookResponse:
-    """Create a block response with formatted error output."""
-    reason = f"Pre-write check failed with non-fixable errors:\nOutput:\n{stdout}\nError:\n{stderr}"
-    return LinterHookResponse(decision="block", reason=reason)
+    return LinterHookResponse()
 
 
 def evaluate_post(req: HookRequest) -> LinterHookResponse:
-    # Post-write hook evaluation
-    if not isinstance(req.tool_call, (WriteToolCall, EditToolCall, MultiEditToolCall)):
-        return LinterHookResponse()
-    file_path = req.tool_call.file_path
-    if not file_path.exists():
-        return LinterHookResponse()
-
-    original = file_path.read_text()
-
-    # For Edit/MultiEdit, only check violations without fixing
-    if isinstance(req.tool_call, (EditToolCall, MultiEditToolCall)):
-        # Get config without fix flag for Edit/MultiEdit
-        config = get_merged_config([file_path], fix=False)
-        runner = PreCommitRunner(config)
-
-        # Run check-only (no fixes)
-        ret, out, _err = runner.run([file_path], cwd=file_path.parent)
-
-        if ret != 0:
-            # There are violations - report them
-            return LinterHookResponse(
-                decision="block",
-                reason=(
-                    f"FYI: Your edit was applied successfully, but the file now has linting violations:\n{out}\n\n"
-                    "This is just a notification - your changes have been saved."
-                ),
-            )
-        # No violations
-        return LinterHookResponse()
-    # Write tool - keep original behavior with autofixes
-    config = get_merged_config([file_path], fix=True)
-    runner = PreCommitRunner(config)
-
-    # First run: apply autofixes
-    _ret1, _out1, _err1 = runner.run([file_path], cwd=file_path.parent)
-    content_after_fixes = file_path.read_text()
-
-    if content_after_fixes == original:
-        return LinterHookResponse()
-    return LinterHookResponse(decision="block", reason="FYI: Auto-fixes were applied")
+    return LinterHookResponse()
 
 
 @click.group()
 @click.version_option()
 def cli() -> None:
     """Claude Linter CLI."""
-
-
-@cli.command("check")
-@click.option("--files", "-f", multiple=True, type=click.Path(exists=True))
-def check(files: tuple[str, ...]) -> None:
-    """Run checks on given files or all in current directory."""
-    paths = list(files) if files else [str(Path.cwd())]
-    config = get_merged_config(paths)
-    runner = PreCommitRunner(config)
-    runner.run(paths)
-    sys.exit(0)
 
 
 # Hook commands have been removed - use claude-linter-v2 instead

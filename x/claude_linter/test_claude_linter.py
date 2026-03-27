@@ -45,48 +45,7 @@ class TestUnifiedLinter:
 
         assert result.exit_code == 0
         assert "hook" in result.output
-        assert "check" in result.output
         assert "clean" in result.output
-
-    def test_debug_logs_not_created_by_default(self, tmp_path, monkeypatch):
-        """Test that debug logs are not created by default."""
-        # XDG_CACHE_HOME is set by the autouse fixture isolate_test_environment
-        cache_dir = tmp_path / "claude-linter"
-
-        # Ensure CLAUDE_LINTER_DEBUG is not set
-        monkeypatch.delenv("CLAUDE_LINTER_DEBUG", raising=False)
-
-        # Create a simple Python file to lint
-        test_file = tmp_path / "test.py"
-        test_file.write_text("x=1")  # This will trigger formatting issues
-
-        # Run the check command
-        run_claude_linter(["check", "--files", str(test_file)])
-
-        # Check that no debug logs were created
-        if cache_dir.exists():
-            debug_logs = list(cache_dir.glob("debug-*.log"))
-            assert len(debug_logs) == 0, f"Found unexpected debug logs: {debug_logs}"
-
-    def test_debug_logs_created_when_enabled(self, tmp_path, monkeypatch):
-        """Test that debug logs ARE created when CLAUDE_LINTER_DEBUG is set."""
-        # XDG_CACHE_HOME is set by the autouse fixture isolate_test_environment
-        cache_dir = tmp_path / "claude-linter"
-
-        # Enable debug logging
-        monkeypatch.setenv("CLAUDE_LINTER_DEBUG", "true")
-
-        # Create a simple Python file to lint
-        test_file = tmp_path / "test.py"
-        test_file.write_text("x=1")  # This will trigger formatting issues
-
-        # Run the check command
-        run_claude_linter(["check", "--files", str(test_file)])
-
-        # Check that debug logs WERE created
-        assert cache_dir.exists(), "Cache directory should exist"
-        debug_logs = list(cache_dir.glob("debug-*.log"))
-        assert len(debug_logs) > 0, "Should have created at least one debug log"
 
 
 if __name__ == "__main__":

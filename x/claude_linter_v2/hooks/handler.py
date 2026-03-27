@@ -32,36 +32,22 @@ from llm.claude_outcomes import (
     PreToolApprove,
     PreToolDeny,
     StopAllow,
-    StopPrevent,
     SubagentStopAllow,
 )
 from x.claude_linter_v2.access.context import PredicateContext
 from x.claude_linter_v2.access.rule_engine import RuleEngine
-from x.claude_linter_v2.check_python import check_python_file
 from x.claude_linter_v2.checkers_v2 import filter_violations
-from x.claude_linter_v2.config.clean_models import ModularConfig
 from x.claude_linter_v2.config.loader import ConfigLoader
-from x.claude_linter_v2.config.models import (
-    AutofixCategory,
-    NotificationHookConfig,
-    PostToolHookConfig,
-    RuleAction,
-    StopHookConfig,
-    Violation,
-)
-from x.claude_linter_v2.diff.categorizer import ViolationCategory
-from x.claude_linter_v2.diff.intelligence import DiffIntelligence
+from x.claude_linter_v2.config.models import NotificationHookConfig, PostToolHookConfig, RuleAction
 from x.claude_linter_v2.hooks.exceptions import HookBugError
 from x.claude_linter_v2.hooks.formatting import format_access_denial, format_llm_message
 from x.claude_linter_v2.hooks.validation import validate_hook_outcome
-from x.claude_linter_v2.linters.python_formatter import PythonFormatter
 from x.claude_linter_v2.llm_analyzer import LLMAnalyzer
 from x.claude_linter_v2.notifications import close_desktop_notification, send_desktop_notification
 from x.claude_linter_v2.pattern_matcher import PatternMatcher
 from x.claude_linter_v2.session.manager import SessionManager
 from x.claude_linter_v2.session.violations import ViolationTracker
 from x.claude_linter_v2.types import SessionID
-from x.claude_linter_v2.utils.gitignore import get_git_tracked_files
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +73,6 @@ class HookHandler:
         self.config_loader = ConfigLoader()
         self._warnings: dict[SessionID, str] = {}  # Store warnings per session
         self.violation_tracker = ViolationTracker(self.session_manager)
-        self.diff_intelligence = DiffIntelligence(context_distance=3)
 
         # Initialize these once instead of lazy init
         config = self.config_loader.config
@@ -277,25 +262,6 @@ class HookHandler:
         if action == RuleAction.WARN and message:
             self._warnings[session_id] = message
 
-        # Python violations check - early bailout
-        is_python = self._is_python_file(request)
-        self._log_decision(
-            session_id, "file_type_check", {"is_python": is_python, "file_path": str(file_path) if file_path else None}
-        )
-
-        if not is_python:
-            return PreToolApprove()
-
-        violations = self._check_python_violations(request, config)
-        self._log_decision(
-            session_id,
-            "python_violations",
-            {
-                "count": len(violations),
-                "violations": [v.model_dump() for v in violations[:3]],  # All violations are Pydantic models
-            },
-        )
-
         # Check for LLM analysis if enabled and applicable
         llm_violations = []
         if (
@@ -317,11 +283,8 @@ class HookHandler:
                 {"ok": llm_ok, "message": llm_message, "violations_count": len(llm_violations_found)},
             )
 
-        # Combine all violations
-        all_violations = violations + llm_violations
-
         # Filter to only blocking violations
-        blocking_violations = filter_violations(all_violations, config, "pre")
+        blocking_violations = filter_violations(llm_violations, config, "pre")
 
         if not blocking_violations:
             return PreToolApprove()
@@ -347,10 +310,10 @@ class HookHandler:
         )
 
         # Track all violations (not just blocking ones) for the Stop hook
-        if all_violations and file_path:
+        if llm_violations and file_path:
             self.violation_tracker.add_violations(
                 session_id=session_id,
-                violations=all_violations,
+                violations=llm_violations,
                 file_path=file_path,
                 severity="mixed",  # Contains both blocking and non-blocking
             )
@@ -381,14 +344,6 @@ class HookHandler:
             },
         )
 
-        # Apply autofix if configured
-        autofix_msg = self._try_autofix(request, config)
-        self._log_decision(
-            session_id, "autofix_attempt", {"attempted": autofix_msg is not None, "message": autofix_msg}
-        )
-        if autofix_msg:
-            messages.append(autofix_msg)
-
         # Add any warnings from pre-hook
         if session_id in self._warnings:
             warning = self._warnings.pop(session_id)
@@ -400,10 +355,6 @@ class HookHandler:
             if perms:
                 messages.append(perms)
 
-        # Check remaining violations
-        if self._is_python_file(request) and file_path:
-            self._update_violation_tracking(request, session_id)
-
         # Log final decision
         self._log_decision(
             session_id,
@@ -411,7 +362,6 @@ class HookHandler:
             {
                 "has_messages": bool(messages),
                 "messages": messages,
-                "has_autofix": bool(autofix_msg),
                 "has_important_info": (self._has_important_info(messages) if messages else False),
             },
         )
@@ -420,109 +370,14 @@ class HookHandler:
         if not messages:
             return PostToolSuccess()
 
-        # Determine if this needs LLM attention
-        if autofix_msg:
-            return PostToolNotifyLLM(llm_message=f"Autofix: {' | '.join(messages)}")
         if self._has_important_info(messages):
             return PostToolNotifyLLM(llm_message=f"Violations: {' | '.join(messages)}")
         return PostToolSuccess()
 
     def _handle_stop_hook(self, request: StopRequest, session_id: SessionID) -> HookOutcome:
-        """
-        Handle Stop hook (Claude ending its turn).
-
-        Note: This fires when Claude wants to end its response to the user,
-        NOT when a session ends. Sessions persist across multiple turns.
-        """
-        config = self.config_loader.config
-
+        """Handle Stop hook (Claude ending its turn)."""
         logger.info(f"Stop hook for session {session_id}")
-
-        stop_hook_config = config.hooks.get("stop")
-        if isinstance(stop_hook_config, StopHookConfig) and not stop_hook_config.quality_gate:
-            return StopAllow()
-
-        # TODO: Read transcript to find only files touched since last Stop
-        # For now, scan all Python files in working directory
-
-        # Get the working directory
-        # TODO: Track directory per session
-        working_dir = Path.cwd()
-
-        # IMPORTANT: Run a fresh scan - DO NOT use stale violation tracking
-        all_violations = []
-        files_with_errors: dict[str, list] = {}
-
-        # Find all Python files in the working directory that are tracked by git
-        # This respects .gitignore and won't scan node_modules, venv, etc.
-        python_files = get_git_tracked_files(working_dir, "*.py")
-        logger.info(f"Stop hook: Found {len(python_files)} git-tracked Python files in {working_dir}")
-
-        for py_file in python_files:
-            if not py_file.exists():
-                continue
-
-            try:
-                file_content = py_file.read_text()
-            except (OSError, UnicodeDecodeError) as e:
-                logger.debug(f"Could not read {py_file}: {e}")
-                continue
-
-            # Use the pure function to check for violations
-            violations = check_python_file(
-                file_path=py_file,
-                content=file_content,
-                config=config,
-                critical_only=False,  # Stop hook checks all violations
-            )
-
-            logger.info(f"Stop hook: Checked {py_file}, found {len(violations)} violations")
-            if violations:
-                for v in violations:
-                    logger.info(f"  - Violation: {v.rule} at line {v.line}: {v.message}")
-
-            if violations:
-                # Only track violations that block stop hooks for quality gate
-                blocking_violations = filter_violations(violations, config, "stop")
-                logger.info(f"Stop hook: {len(blocking_violations)} are blocking violations")
-                if blocking_violations:
-                    files_with_errors[str(py_file)] = blocking_violations
-                    all_violations.extend(blocking_violations)
-
-        logger.info(f"Stop hook: Total error violations: {len(all_violations)}")
-        # If no errors found, allow stop
-        if not all_violations:
-            return StopAllow()
-
-        # Build detailed error message
-        error_parts = [f"Code has {len(all_violations)} errors that must be fixed:"]
-
-        # Get configured limits
-        max_files = stop_hook_config.max_files_to_show if isinstance(stop_hook_config, StopHookConfig) else 5
-        max_per_file = stop_hook_config.max_violations_per_file if isinstance(stop_hook_config, StopHookConfig) else 3
-
-        # Show up to max_files files with their violations
-        for file_path, file_violations in list(files_with_errors.items())[:max_files]:
-            error_parts.append(f"\n{file_path}:")
-            # Show up to max_per_file violations per file
-            for v in file_violations[:max_per_file]:
-                # v.rule is an optional field in Violation model
-                if v.rule:
-                    error_parts.append(f"  Line {v.line}: {v.message} [{v.rule}]")
-                else:
-                    error_parts.append(f"  Line {v.line}: {v.message}")
-            if len(file_violations) > max_per_file:
-                error_parts.append(f"  ... and {len(file_violations) - max_per_file} more")
-
-        if len(files_with_errors) > max_files:
-            error_parts.append(f"\n... and {len(files_with_errors) - max_files} more files")
-
-        # Add single command to check all files with violations
-        error_parts.append("\n\nCommand to check all violations:")
-        all_files = list(files_with_errors.keys())
-        error_parts.append(f"  cl2 check {' '.join(all_files)}")
-
-        return StopPrevent(llm_message="".join(error_parts))
+        return StopAllow()
 
     def _handle_subagent_stop(self, request: SubagentStopRequest, session_id: SessionID) -> HookOutcome:
         """Handle SubagentStop."""
@@ -605,131 +460,6 @@ class HookHandler:
         context = PredicateContext(tool=tool_call.tool_name, args=args, session_id=session_id, timestamp=datetime.now())
 
         return self.rule_engine.evaluate_access(context, session_id)
-
-    def _is_python_file(self, request: PreToolUseRequest | PostToolUseRequest) -> bool:
-        """Check if request is for a Python file with content."""
-        tool_call = request.tool_call
-        if not isinstance(tool_call, WriteToolCall):
-            return False
-        return tool_call.file_path.suffix == ".py"
-
-    def _check_python_violations(self, request: PreToolUseRequest, config: ModularConfig) -> list[Violation]:
-        """Check for Python AST and ruff violations."""
-        tool_call = request.tool_call
-        if not isinstance(tool_call, WriteToolCall):
-            return []
-
-        return check_python_file(
-            file_path=tool_call.file_path,
-            content=tool_call.content,
-            config=config,
-            critical_only=True,  # Pre-hook only checks critical violations
-        )
-
-    def _try_autofix(self, request: PostToolUseRequest, config: ModularConfig) -> str | None:
-        """Try to apply autofix and return message if successful."""
-
-        hook_config = config.hooks.get("post")
-
-        # Type check instead of hasattr - only PostToolHookConfig has auto_fix
-        if not isinstance(hook_config, PostToolHookConfig):
-            self._log_decision(request.session_id, "autofix_skip", {"reason": "not_post_tool_hook_config"})
-            return None
-
-        tool_call = request.tool_call
-        # Autofix only applies to WriteToolCall (has file_path and content)
-        if not isinstance(tool_call, WriteToolCall):
-            return None
-
-        is_python = tool_call.file_path.suffix == ".py"
-
-        # Log autofix decision details
-        self._log_decision(
-            request.session_id,
-            "autofix_check",
-            {
-                "auto_fix_enabled": hook_config.auto_fix,
-                "file_path": str(tool_call.file_path),
-                "is_python": is_python,
-                "has_content": True,
-                "tool_name": tool_call.tool_name,
-            },
-        )
-
-        if not hook_config.auto_fix or not is_python:
-            return None
-
-        categories = hook_config.autofix_categories or [AutofixCategory.ALL]
-
-        # Format the code
-        formatter = PythonFormatter(config.python_tools)
-        formatted_code, changes = formatter.format_code(tool_call.content, tool_call.file_path, categories)
-
-        if not changes or formatted_code == tool_call.content:
-            return None
-
-        try:
-            tool_call.file_path.write_text(formatted_code)
-            logger.info(f"Applied autofix to {tool_call.file_path}: {changes}")
-            return f"Autofix applied: {', '.join(changes)}"
-        except (OSError, PermissionError, UnicodeDecodeError) as e:
-            logger.exception("Failed to apply autofix")
-            return f"Autofix failed: {e}"
-
-    def _update_violation_tracking(self, request: PostToolUseRequest, session_id: SessionID) -> None:
-        """Update violation tracking after tool execution."""
-        tool_call = request.tool_call
-        if not isinstance(tool_call, FilePathToolCall):
-            return
-        file_path = tool_call.file_path
-        if not file_path.exists():
-            return
-
-        config = self.config_loader.config
-        file_content = file_path.read_text()
-
-        # Use the pure function to check all violations
-        all_violations = check_python_file(
-            file_path=file_path,
-            content=file_content,
-            config=config,
-            critical_only=False,  # Post-hook tracks all violations
-        )
-
-        if all_violations:
-            # Only use diff intelligence for Edit/MultiEdit tools with tool_response
-            tool_response = request.tool_response if request.tool_response is not None else request.tool_result
-            if isinstance(tool_call, EditToolCall | MultiEditToolCall) and tool_response:
-                # Use diff intelligence to categorize violations
-                categorized_groups = self.diff_intelligence.analyze(
-                    tool_call=tool_call, tool_response=tool_response, violations=all_violations
-                )
-
-                # Only track in-diff and near-diff violations as important
-                important_violations = (
-                    categorized_groups[ViolationCategory.IN_DIFF] + categorized_groups[ViolationCategory.NEAR_DIFF]
-                )
-
-                if important_violations:
-                    # Convert back to plain violations for tracker
-                    violations_to_track = [cv.violation for cv in important_violations]
-                    self.violation_tracker.add_violations(
-                        session_id=session_id,
-                        violations=violations_to_track,
-                        file_path=file_path,
-                        severity="mixed",  # Let the Stop hook decide what blocks
-                    )
-                else:
-                    # Only out-of-diff violations remain - mark file as effectively fixed
-                    self.violation_tracker.mark_file_fixed(session_id, file_path)
-            # For other tools (Write, etc), or when tool_response is missing, track all violations
-            else:
-                self.violation_tracker.add_violations(
-                    session_id=session_id, violations=all_violations, file_path=file_path, severity="mixed"
-                )
-        else:
-            # File is completely clean - mark as fixed
-            self.violation_tracker.mark_file_fixed(session_id, file_path)
 
     def _has_important_info(self, messages: list[str]) -> bool:
         """Check if messages contain important info that Claude should see."""

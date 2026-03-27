@@ -18,8 +18,6 @@ import humanize
 from pytimeparse import parse as parse_duration
 
 from llm.claude_code_api import SessionID
-from x.claude_linter_v2.checker import FileChecker
-from x.claude_linter_v2.config.models import AutofixCategory
 from x.claude_linter_v2.hooks.exceptions import HookBugError
 from x.claude_linter_v2.hooks.handler import HOOK_REQUEST_TYPES, HookHandler
 from x.claude_linter_v2.session.manager import RuleAction, SessionData, SessionManager
@@ -352,111 +350,6 @@ def profile_list() -> None:
     click.echo("Available profiles:")
     click.echo("  refactoring - Edit Python files, run git and tests")
     click.echo("  debugging - Full read access, limited write")
-
-
-@cli.command()
-@click.argument("paths", nargs=-1, type=Path)
-@click.option("--fix", is_flag=True, help="Auto-fix issues where possible")
-@click.option("--categories", multiple=True, help="Categories to check/fix")
-@click.option("--json", "output_json", is_flag=True, help="Output results as JSON")
-@click.option("--verbose", "-v", is_flag=True, help="Show detailed output")
-def check(paths: tuple[Path, ...], fix: bool, categories: tuple[str, ...], output_json: bool, verbose: bool) -> None:
-    """Check files for linting issues (direct usage).
-
-    Examples:
-        cl2 check file.py
-        cl2 check src/ tests/ --fix
-        cl2 check --fix --categories formatting,imports
-        cl2 check src/**/*.py --json
-    """
-
-    # Default to current directory if no paths given
-    if not paths:
-        paths = (Path.cwd(),)
-
-    # Parse categories
-    autofix_categories = []
-    if categories:
-        for cat in categories:
-            try:
-                autofix_categories.append(AutofixCategory(cat))
-            except ValueError:
-                click.echo(f"❌ Unknown category: {cat}", err=True)
-                click.echo(f"Valid categories: {', '.join(c.value for c in AutofixCategory)}", err=True)
-                sys.exit(1)
-    elif fix:
-        # Default to all categories if --fix is given without specific categories
-        autofix_categories = list(AutofixCategory)
-
-    # Create checker
-    checker = FileChecker(fix=fix, categories=autofix_categories, verbose=verbose)
-
-    # Collect all files
-    all_files = []
-    for path in paths:
-        if path.is_file():
-            all_files.append(path)
-        elif path.is_dir():
-            # Find all Python files
-            all_files.extend(path.rglob("*.py"))
-        elif "*" in str(path):
-            # Glob pattern - use Path.glob for pathlib compliance
-            parent_path = Path(str(path).split("*")[0]).parent if "*" in str(path) else Path.cwd()
-            pattern = str(path).replace(str(parent_path) + "/", "")
-            all_files.extend(parent_path.rglob(pattern))
-        else:
-            # Not a glob, treat as regular path
-            all_files.append(path)
-
-    if not all_files:
-        click.echo("⚠️  No files found to check")
-        sys.exit(0)
-
-    # Check files
-    total_violations = 0
-    results = {}
-
-    for file_path in sorted(all_files):
-        if verbose:
-            click.echo(f"Checking {file_path}...")
-
-        violations = checker.check_file(file_path)
-        if violations:
-            total_violations += len(violations)
-            results[str(file_path)] = [v.model_dump() for v in violations]
-
-            if not output_json:
-                click.echo(f"\n{file_path}:")
-                for v in violations:
-                    icon = "🔧" if v.fixable and fix else "❌"
-                    click.echo(f"  {icon} Line {v.line}: {v.message} [{v.rule}]")
-
-    # Output results
-    if output_json:
-        output = {"total_violations": total_violations, "files_checked": len(all_files), "results": results}
-        click.echo(json.dumps(output, indent=2))
-    else:
-        # Summary
-        click.echo(f"\n{'─' * 40}")
-        if total_violations == 0:
-            click.echo("✅ No issues found!")
-        else:
-            if fix:
-                click.echo("🔧 Fixed issues where possible")
-            click.echo(f"{'❌' if not fix else '⚠️ '} Found {total_violations} issue(s) in {len(results)} file(s)")
-
-    # Exit with error code if violations found
-    sys.exit(1 if total_violations > 0 and not fix else 0)
-
-
-@cli.command()
-@click.argument("paths", nargs=-1, type=Path, required=True)
-@click.option("--categories", multiple=True, help="Categories to fix")
-def fix(paths: tuple[Path, ...], categories: tuple[str, ...]) -> None:
-    """Fix linting issues in files."""
-    # Delegate to check with --fix
-    ctx = click.get_current_context()
-    ctx.invoke(check, paths=paths, fix=True, categories=categories)
 
 
 @cli.command()

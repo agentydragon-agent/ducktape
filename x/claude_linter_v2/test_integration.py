@@ -3,7 +3,6 @@
 import json
 import subprocess
 
-import pytest
 import pytest_bazel
 
 from util.bazel.subprocess import run_python_module
@@ -25,61 +24,6 @@ def _run_cli(*args: str, **kwargs) -> subprocess.CompletedProcess:
 
 class TestCLIIntegration:
     """Test the full CLI integration."""
-
-    def test_pre_hook_bare_except(self):
-        """Test that pre-hook blocks bare except.
-
-        Uses a path without "test_" anywhere to avoid triggering the default
-        pattern rule that relaxes python.bare_except for test files. pytest's
-        tmp_path includes the test function name (which starts with test_) in
-        the directory, and fnmatch matches * across directory separators.
-        """
-        request_data = {
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Write",
-            "tool_input": {
-                "file_path": "/tmp/cl2_check/bare_except_example.py",
-                "content": """
-try:
-    x = 1/0
-except:
-    pass
-""",
-            },
-            "session_id": "12345678-1234-5678-1234-567812345678",
-        }
-
-        result = _run_cli("hook", input=json.dumps(request_data))
-
-        assert result.returncode == 0  # CLI always exits 0, check JSON response
-        response = json.loads(result.stdout)
-        assert response["decision"] == "block"
-        assert "bare except" in response["reason"].lower()
-        assert "Line 4:" in response["reason"]
-
-    def test_pre_hook_hasattr(self, tmp_path):
-        """Test that pre-hook blocks hasattr usage."""
-        request_data = {
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Write",
-            "tool_input": {
-                "file_path": str(tmp_path / "test_hasattr.py"),
-                "content": """
-obj = object()
-if hasattr(obj, 'foo'):
-    print("has foo")
-""",
-            },
-            "session_id": "12345678-1234-5678-1234-567812345679",
-        }
-
-        result = _run_cli("hook", input=json.dumps(request_data))
-
-        assert result.returncode == 0
-        response = json.loads(result.stdout)
-        assert response["decision"] == "block"
-        assert "hasattr" in response["reason"]
-        assert "Line 3:" in response["reason"]
 
     def test_pre_hook_clean_code(self, tmp_path):
         """Test that pre-hook passes clean code."""
@@ -106,60 +50,6 @@ def hello():
         assert response["continue"] is True
         # Clean code should not be blocked
         assert response.get("decision") != "block"
-
-    @pytest.mark.skipif(not _has_ruff(), reason="ruff not available")
-    def test_pre_hook_ruff_violation(self, tmp_path):
-        """Test that pre-hook blocks ruff violations."""
-        request_data = {
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Write",
-            "tool_input": {
-                "file_path": str(tmp_path / "test_mutable_default.py"),
-                "content": """
-import os
-
-def get_data():
-    # Mutable default argument
-    def process(items=[]):
-        items.append(1)
-        return items
-""",
-            },
-            "session_id": "12345678-1234-5678-1234-567812345681",
-        }
-
-        result = _run_cli("hook", input=json.dumps(request_data))
-
-        assert result.returncode == 0
-        response = json.loads(result.stdout)
-        assert response["decision"] == "block"
-        assert "mutable" in response["reason"].lower()
-        assert "Line 6:" in response["reason"]
-
-    def test_pre_hook_barrel_init(self, tmp_path):
-        """Test that pre-hook blocks barrel __init__.py."""
-        request_data = {
-            "hook_event_name": "PreToolUse",
-            "tool_name": "Write",
-            "tool_input": {
-                "file_path": str(tmp_path / "__init__.py"),
-                "content": """
-from .module1 import *
-from .module2 import Class1, Class2
-import pytest_bazel
-
-__all__ = ['Class1', 'Class2']
-""",
-            },
-            "session_id": "12345678-1234-5678-1234-567812345682",
-        }
-
-        result = _run_cli("hook", input=json.dumps(request_data))
-
-        assert result.returncode == 0
-        response = json.loads(result.stdout)
-        assert response["decision"] == "block"
-        assert "barrel" in response["reason"].lower()
 
     def test_pre_hook_invalid_json(self):
         """Test that pre-hook handles invalid JSON gracefully."""

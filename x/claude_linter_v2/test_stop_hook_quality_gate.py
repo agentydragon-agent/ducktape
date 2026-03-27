@@ -26,43 +26,6 @@ def handler(tmp_path, monkeypatch):
     return handler
 
 
-def test_stop_hook_blocks_with_unfixed_errors(handler, session_id, tmp_path):
-    """Test that stop hook blocks when there are unfixed errors."""
-    # Create files with violations
-    file_py = tmp_path / "file.py"
-    file_py.write_text("""
-try:
-    something()
-except:  # Line 4: bare except
-    pass
-
-def check(obj):
-    if hasattr(obj, 'foo'):  # Line 8: hasattr
-        pass
-""")
-    other_py = tmp_path / "other.py"
-    other_py.write_text("x = 1\n")
-
-    # Add files to git
-    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
-
-    # Create stop hook request
-    request = StopRequest(hook_event_name="Stop", session_id=session_id)
-
-    # Handle the hook
-    result = handler.handle("Stop", request)
-
-    # Should block due to errors
-    response_dict = result.model_dump()
-    assert response_dict.get("continue_") is True  # Always True for hook responses
-    assert response_dict.get("decision") == "block"  # StopPrevent sets decision=block
-    assert response_dict.get("reason") is not None
-    reason = response_dict["reason"]
-    assert "errors that must be fixed" in reason
-    assert "file.py" in reason
-    assert "cl2 check" in reason  # Should include check command
-
-
 def test_stop_hook_allows_with_clean_code(handler, session_id, tmp_path):
     """Test that stop hook allows proceeding with clean code."""
     # Create clean file

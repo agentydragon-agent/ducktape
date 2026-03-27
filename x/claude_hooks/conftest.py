@@ -10,9 +10,7 @@ import pygit2
 import pytest
 import yaml
 
-from claude_hooks.config import AutofixerConfig
 from claude_hooks.inputs import HookContext, PostToolInput
-from claude_hooks.precommit_autofix import PreCommitAutoFixerHook
 from claude_hooks.tool_models import EditInput, WriteInput
 
 # Core Infrastructure Fixtures
@@ -101,33 +99,11 @@ def claude_config_dir(tmp_path: Path) -> Path:
     hooks_config_dir = claude_dir / "adgn-claude-hooks"
     hooks_config_dir.mkdir(parents=True)
 
-    # Hook configuration in YAML format
-    hooks_config_yaml = """
-precommit_autofix:
-  enabled: true
-  timeout_seconds: 10  # Shorter timeout for tests
-  tools:
-    - Edit
-    - MultiEdit
-    - Write
-  dry_run: false
-"""
-
-    (hooks_config_dir / "settings.yaml").write_text(hooks_config_yaml.strip())
+    # Minimal hook configuration
+    (hooks_config_dir / "settings.yaml").write_text("{}")
 
     # Claude settings JSON
-    claude_settings = {
-        "hooks": {
-            "PostToolUse": [
-                {
-                    "matcher": "Edit|MultiEdit|Write",
-                    "hooks": [
-                        {"type": "command", "command": "python -m claude_hooks.precommit_autofix", "timeout": 10}
-                    ],
-                }
-            ]
-        }
-    }
+    claude_settings: dict[str, object] = {"hooks": {}}
     (claude_dir / "settings.json").write_text(json.dumps(claude_settings, indent=2))
 
     return claude_dir
@@ -148,36 +124,6 @@ def xdg_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
         monkeypatch.setenv(key, str(path))
 
     return xdg_dirs
-
-
-@pytest.fixture
-def autofixer_hook():
-    """Create configured PreCommitAutoFixerHook instance."""
-    hook = PreCommitAutoFixerHook()
-    hook.autofixer_config = AutofixerConfig(
-        enabled=True, timeout_seconds=30, tools=["Edit", "MultiEdit", "Write"], dry_run=False
-    )
-    return hook
-
-
-@pytest.fixture
-def hook_context(precommit_repo: Path) -> HookContext:
-    """Create HookContext for precommit integration tests."""
-    return HookContext(
-        hook_name="precommit_autofix",
-        hook_event="PostToolUse",
-        session_id=UUID("87491c5b-6b3d-46fc-b081-bfc0be6f1d33"),
-        cwd=precommit_repo,
-    )
-
-
-@pytest.fixture
-def configured_hook():
-    """Create configured PreCommitAutoFixerHook for testing."""
-    hook = PreCommitAutoFixerHook()
-    hook.autofixer_config.enabled = True
-    hook.autofixer_config.tools = ["Write"]
-    return hook
 
 
 def create_write_hook_input(file_path: Path, content: str, cwd: Path) -> PostToolInput:
