@@ -18,7 +18,7 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.hook_config import HookConfig
+from devinfra.claude.hook_config import HookConfig, PreCommitConfig
 from devinfra.claude.hook_daemon.precommit_runner import RunResult, run_on_file
 
 logger = logging.getLogger(__name__)
@@ -44,18 +44,9 @@ def _find_git_root(start: Path) -> Path | None:
     return None
 
 
-def _format_check_result(
-    result: RunResult, file_path: Path, *, show_report_diffs: bool = False, show_hook_output: bool = False
-) -> str:
+def _format_check_result(result: RunResult, file_path: Path, pre_commit: PreCommitConfig) -> str:
     template = Template((_TEMPLATES_DIR / "post_tool_use.mako").read_text())
-    output: str = template.render(
-        auto_applied=result.auto_applied_results,
-        failed=result.failed_hooks,
-        diff_lines=result.report_only_diff if show_report_diffs else [],
-        show_hook_output=show_hook_output,
-        file_name=file_path.name,
-        file_path=file_path,
-    )
+    output: str = template.render(result=result, file_path=file_path, pre_commit=pre_commit)
     return output.strip()
 
 
@@ -72,12 +63,11 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
         return PostToolUseOutput()
 
     config = HookConfig.load_from_repo(project_dir)
-    pre_commit = config.pre_commit if config else None
-    auto_apply_hooks = frozenset(pre_commit.auto_apply_hooks) if pre_commit else frozenset()
-    show_report_diffs = pre_commit.show_report_diffs if pre_commit else False
-    show_hook_output = pre_commit.show_hook_output if pre_commit else False
+    if not config or not config.pre_commit:
+        return PostToolUseOutput()
 
-    run_result = run_on_file(file_path, project_dir, auto_apply_hooks=auto_apply_hooks)
+    pre_commit = config.pre_commit
+    run_result = run_on_file(file_path, project_dir, auto_apply_hooks=frozenset(pre_commit.auto_apply_hooks))
 
     for hr in run_result.hooks:
         if hr.auto_applied:
@@ -99,8 +89,6 @@ def evaluate(hook_input: PostToolUseInput) -> PostToolUseOutput:
 
     return PostToolUseOutput(
         hook_specific_output=PostToolUseHookSpecificOutput(
-            additional_context=_format_check_result(
-                run_result, file_path, show_report_diffs=show_report_diffs, show_hook_output=show_hook_output
-            )
+            additional_context=_format_check_result(run_result, file_path, pre_commit)
         )
     )

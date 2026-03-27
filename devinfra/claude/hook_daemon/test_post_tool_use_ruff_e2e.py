@@ -9,12 +9,12 @@ import shutil
 from pathlib import Path
 from textwrap import dedent
 
-import pygit2
 import pytest
 import pytest_bazel
 import yaml
 
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
+from devinfra.claude.hook_daemon.conftest import init_git_repo
 from devinfra.claude.hook_daemon.post_tool_use import evaluate
 
 _COMMON_INPUT = {
@@ -27,26 +27,23 @@ _COMMON_INPUT = {
     "tool_response": "",
 }
 
+_TESTDATA = Path(__file__).resolve().parent / "testdata" / "ruff_repo"
+
 
 @pytest.fixture
 def ruff_repo(tmp_path: Path) -> Path:
-    """Git repo with real ruff hooks and .claude_hooks config."""
+    """Git repo with real ruff hooks and .claude_hooks config from testdata."""
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
 
     ruff_path = shutil.which("ruff")
-    if ruff_path is None:
-        pytest.skip("ruff not found on PATH")
+    assert ruff_path is not None, "ruff binary not found on PATH (expected via @multitool//tools/ruff data dep)"
 
-    # Minimal ruff config enabling F401 (unused imports)
-    (repo_path / "ruff.toml").write_text(
-        dedent("""\
-        [lint]
-        select = ["F401"]
-    """)
-    )
+    # Copy static config files from testdata
+    shutil.copytree(_TESTDATA / ".claude_hooks", repo_path / ".claude_hooks")
+    shutil.copy2(_TESTDATA / "ruff.toml", repo_path / "ruff.toml")
 
-    # Pre-commit config with ruff-check (--fix) and ruff-format
+    # Pre-commit config needs dynamic ruff path
     precommit_config = {
         "repos": [
             {
@@ -72,25 +69,7 @@ def ruff_repo(tmp_path: Path) -> Path:
     }
     (repo_path / ".pre-commit-config.yaml").write_text(yaml.dump(precommit_config))
 
-    # Hook config: ruff-format is auto-applied, ruff-check is report-only
-    hooks_dir = repo_path / ".claude_hooks"
-    hooks_dir.mkdir()
-    (hooks_dir / "config.yaml").write_text(
-        dedent("""\
-        pre_commit:
-          auto_apply_hooks:
-            - ruff-format
-    """)
-    )
-
-    repo = pygit2.init_repository(str(repo_path))
-    repo.config["user.name"] = "Test"
-    repo.config["user.email"] = "test@test.com"
-    repo.index.add_all()
-    repo.index.write()
-    tree = repo.index.write_tree()
-    sig = pygit2.Signature("Test", "test@test.com")
-    repo.create_commit("HEAD", sig, sig, "init", tree, [])
+    init_git_repo(repo_path)
 
     return repo_path
 
@@ -103,12 +82,13 @@ def test_unused_import_preserved_after_hook(ruff_repo: Path) -> None:
     "modified file" (since the modification was reverted).
     """
     test_file = ruff_repo / "test.py"
-    original_content = dedent("""\
+    test_file.write_text(
+        dedent("""\
         import os
 
         x = 1
     """)
-    test_file.write_text(original_content)
+    )
 
     inp = PostToolUseInput(**_COMMON_INPUT, tool_name="Edit", tool_input={"file_path": str(test_file)})
     result = evaluate(inp)

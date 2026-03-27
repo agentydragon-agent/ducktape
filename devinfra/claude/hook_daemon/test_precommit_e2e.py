@@ -10,18 +10,20 @@ import sys
 from pathlib import Path
 from textwrap import dedent
 
-import pygit2
 import pytest
 import pytest_bazel
 import yaml
 from syrupy.assertion import SnapshotAssertion
 
+from devinfra.claude.hook_config import PreCommitConfig
+from devinfra.claude.hook_daemon.conftest import init_git_repo
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result
 from devinfra.claude.hook_daemon.precommit_runner import run_on_file
 
 # Relative path used in _format_check_result to keep snapshots stable
 # (avoids embedding tmp dir absolute paths).
 _TEST_FILE = Path("test.py")
+_DEFAULT_PRE_COMMIT = PreCommitConfig(auto_apply_hooks=set())
 
 
 def _make_script(repo: Path, name: str, body: str) -> Path:
@@ -36,10 +38,6 @@ def precommit_repo(tmp_path: Path) -> Path:
     """Git repo with three local hooks: fixer, checker, passthrough."""
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
-
-    repo = pygit2.init_repository(str(repo_path))
-    repo.config["user.name"] = "Test"
-    repo.config["user.email"] = "test@test.com"
 
     # Hook 1: replaces 'foo' with 'bar', exits 1 on change
     _make_script(
@@ -120,11 +118,7 @@ def precommit_repo(tmp_path: Path) -> Path:
 
     (repo_path / ".pre-commit-config.yaml").write_text(yaml.dump(config))
 
-    repo.index.add_all()
-    repo.index.write()
-    tree = repo.index.write_tree()
-    sig = pygit2.Signature("Test", "test@test.com")
-    repo.create_commit("HEAD", sig, sig, "init", tree, [])
+    init_git_repo(repo_path)
 
     return repo_path
 
@@ -143,7 +137,7 @@ def test_fixer_modifies_checker_fails(precommit_repo: Path, snapshot: SnapshotAs
     assert hooks["checker"].passed is False
     assert hooks["passthrough"].passed is True
 
-    output = _format_check_result(result, _TEST_FILE)
+    output = _format_check_result(result, _TEST_FILE, _DEFAULT_PRE_COMMIT)
     assert output == snapshot
 
 
@@ -160,7 +154,7 @@ def test_only_checker_fails(precommit_repo: Path, snapshot: SnapshotAssertion) -
     assert hooks["checker"].passed is False
     assert hooks["passthrough"].passed is True
 
-    output = _format_check_result(result, _TEST_FILE)
+    output = _format_check_result(result, _TEST_FILE, _DEFAULT_PRE_COMMIT)
     assert output == snapshot
 
 

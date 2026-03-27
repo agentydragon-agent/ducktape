@@ -5,9 +5,22 @@ import uuid
 from collections.abc import Generator
 from pathlib import Path
 
+import pygit2
 import pytest
 
 from devinfra.claude.session_paths import SessionPaths
+
+
+def init_git_repo(repo_path: Path) -> None:
+    """Initialize a git repo at repo_path with all files committed."""
+    repo = pygit2.init_repository(str(repo_path))
+    repo.config["user.name"] = "Test"
+    repo.config["user.email"] = "test@test.com"
+    repo.index.add_all()
+    repo.index.write()
+    tree = repo.index.write_tree()
+    sig = pygit2.Signature("Test", "test@test.com")
+    repo.create_commit("HEAD", sig, sig, "init", tree, [])
 
 
 @pytest.fixture
