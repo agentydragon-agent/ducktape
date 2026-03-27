@@ -88,7 +88,7 @@ async def _docker_exec(container: aiodocker.docker.DockerContainer, cmd: list[st
 
 
 def _max_loss(secret_fn: SecretFunction) -> int:
-    return secret_fn.num_inputs * secret_fn.m
+    return (secret_fn.max_input + 1) * secret_fn.m
 
 
 def _fail_result(error_msg: str, secret_fn: SecretFunction, total_eval_s: float) -> ScoringResult:

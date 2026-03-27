@@ -32,7 +32,7 @@ def first_user_message(fn: SecretFunction, turn_limit: int, function_description
     return template.format(
         max_input=fn.max_input,
         max_output=fn.max_output,
-        n_inputs=fn.num_inputs,
+        n_inputs=fn.max_input + 1,
         turn_limit=turn_limit,
         function_description=function_description,
     )

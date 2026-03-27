@@ -2,13 +2,7 @@
 
 import pytest_bazel
 
-from skills.info_gathering.evals.function_learning.functions import (
-    JUNTA_3,
-    LINEAR_SIMPLE,
-    PARITY_GROUPS,
-    _bits_to_int,
-    _int_to_bits,
-)
+from skills.info_gathering.evals.function_learning.functions import JUNTA_3, LINEAR_SIMPLE, PARITY_GROUPS
 
 
 def test_linear_evaluates_in_range() -> None:
@@ -34,7 +28,6 @@ def test_junta_depends_on_relevant_bits() -> None:
     irrelevant = [i for i in range(JUNTA_3.n) if i not in [1, 4, 7]]
     base_out = JUNTA_3.evaluate(0)
     for bit in irrelevant:
-        # Flip bit (MSB-first: bit 0 is the highest bit).
         flipped = 1 << (JUNTA_3.n - 1 - bit)
         assert JUNTA_3.evaluate(flipped) == base_out, f"Output changed when flipping irrelevant bit {bit}"
 
@@ -70,12 +63,6 @@ def test_all_functions_have_correct_dimensions() -> None:
         for x in fn.all_inputs():
             out = fn.evaluate(x)
             assert 0 <= out <= fn.max_output, f"{fn.name}: output {out} out of range for input {x}"
-
-
-def test_int_bits_roundtrip() -> None:
-    for n in [7, 8]:
-        for x in range(2**n):
-            assert _bits_to_int(_int_to_bits(x, n)) == x
 
 
 if __name__ == "__main__":

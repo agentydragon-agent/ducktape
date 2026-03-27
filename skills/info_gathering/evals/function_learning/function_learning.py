@@ -117,7 +117,7 @@ def _make_play_turn_tool(
             "turns_remaining": game.turn_limit - game.turn,
             "query_result": f"f({query}) = {query_result}",
             "hamming_loss": scoring.hamming_loss,
-            "total_possible_loss": secret_fn.num_inputs * secret_fn.m,
+            "total_possible_loss": (secret_fn.max_input + 1) * secret_fn.m,
         }
         if scoring.errors:
             response["errors"] = [{"input": e.input, "error": e.error} for e in scoring.errors]
