@@ -1,6 +1,14 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
 py_library(
+    name = "prompt_caching",
+    srcs = ["prompt_caching.py"],
+    imports = ["../../.."],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
+    deps = ["@pypi//autogen_core"],
+)
+
+py_library(
     name = "litellm_tool_provider",
     srcs = ["litellm_tool_provider.py"],
     imports = ["../../.."],
