@@ -23,6 +23,8 @@ _ANTHROPIC_MODEL_INFO: dict[str, Any] = {
     "multiple_system_messages": False,
 }
 
+_CACHE_CONTROL = {"type": "ephemeral"}
+
 
 class CachedAnthropicClient(AnthropicChatCompletionClient):
     """AnthropicChatCompletionClient with prompt caching enabled.
@@ -44,29 +46,39 @@ class CachedAnthropicClient(AnthropicChatCompletionClient):
             return
         original_create = raw_client.messages.create
 
-        async def cached_create(**kwargs: object) -> object:
-            _inject_cache_control(kwargs)
-            return await original_create(**kwargs)
+        async def cached_create(
+            *, model: str, messages: list[dict], max_tokens: int, system: Any = None, **rest: Any
+        ) -> object:
+            return await original_create(
+                model=model,
+                messages=_add_cache_to_last_message(messages),
+                max_tokens=max_tokens,
+                system=_add_cache_to_system(system),
+                **rest,
+            )
 
         raw_client.messages.create = cached_create
 
 
-def _inject_cache_control(kwargs: dict[str, Any]) -> None:
-    """Inject cache_control markers into Anthropic API kwargs."""
-    # Convert system string to content block with cache_control.
-    system = kwargs.get("system")
+def _add_cache_to_system(system: Any) -> Any:
+    """Convert system string to content block with cache_control."""
     if isinstance(system, str):
-        kwargs["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+        return [{"type": "text", "text": system, "cache_control": _CACHE_CONTROL}]
+    return system
 
-    # Place cache_control on the last message in the conversation.
-    messages = kwargs.get("messages")
-    if isinstance(messages, list) and messages:
-        last_msg = messages[-1]
-        if isinstance(last_msg, dict):
-            content = last_msg.get("content")
-            if isinstance(content, list) and content:
-                last_block = content[-1]
-                if isinstance(last_block, dict) and "cache_control" not in last_block:
-                    last_block["cache_control"] = {"type": "ephemeral"}
-            elif isinstance(content, str):
-                last_msg["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+
+def _add_cache_to_last_message(messages: list[dict]) -> list[dict]:
+    """Place cache_control on the last content block of the last message."""
+    if not messages:
+        return messages
+    last_msg = messages[-1]
+    if not isinstance(last_msg, dict):
+        return messages
+    content = last_msg.get("content")
+    if isinstance(content, list) and content:
+        last_block = content[-1]
+        if isinstance(last_block, dict) and "cache_control" not in last_block:
+            last_block["cache_control"] = _CACHE_CONTROL
+    elif isinstance(content, str):
+        last_msg["content"] = [{"type": "text", "text": content, "cache_control": _CACHE_CONTROL}]
+    return messages

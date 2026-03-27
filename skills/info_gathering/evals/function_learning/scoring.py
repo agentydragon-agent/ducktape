@@ -1,6 +1,6 @@
 """Program evaluation for the function learning eval.
 
-Evaluates the model's program against all 2^N inputs in a single Docker exec
+Evaluates the model's program against all inputs in a single Docker exec
 call using eval_wrapper.py. Uses aiodocker directly (no MCP layer) for clean
 stdout access.
 """
@@ -25,8 +25,9 @@ _PER_INPUT_TIMEOUT_S = 1
 _EVAL_WRAPPER_RLOCATION = "_main/skills/info_gathering/evals/function_learning/eval_wrapper.py"
 
 
-def _hamming_distance(a: str, b: str) -> int:
-    return sum(x != y for x, y in zip(a, b, strict=True))
+def _hamming_distance(a: int, b: int) -> int:
+    """Number of differing bits between two integers."""
+    return (a ^ b).bit_count()
 
 
 @dataclass
@@ -38,6 +39,38 @@ class ScoringResult:
     total_eval_s: float
     mean_per_input_s: float
     max_per_input_s: float
+
+
+@dataclass
+class _WrapperOutput:
+    """Parsed output from eval_wrapper.py."""
+
+    results: dict[str, str]
+    errors: dict[str, str]
+    timings: dict[str, float]
+
+
+def _parse_wrapper_output(raw: str) -> _WrapperOutput:
+    """Parse JSON output from the eval wrapper, raising on failure."""
+    data = json.loads(raw.strip())
+    return _WrapperOutput(
+        results=data.get("results", {}), errors=data.get("errors", {}), timings=data.get("timings", {})
+    )
+
+
+def _score_input(inp: int, expected: int, wrapper: _WrapperOutput, m: int, errors: list[ProgramError]) -> int:
+    """Score a single input, returning its hamming loss contribution."""
+    inp_str = str(inp)
+    if inp_str in wrapper.errors:
+        if len(errors) < _MAX_REPORTED_ERRORS:
+            errors.append(ProgramError(input=inp_str, error=wrapper.errors[inp_str]))
+        return m
+    if inp_str not in wrapper.results:
+        if len(errors) < _MAX_REPORTED_ERRORS:
+            errors.append(ProgramError(input=inp_str, error="Missing from results"))
+        return m
+    got = int(wrapper.results[inp_str])
+    return _hamming_distance(expected, got)
 
 
 async def _docker_exec(container: aiodocker.docker.DockerContainer, cmd: list[str], timeout_s: int) -> str:
@@ -54,80 +87,52 @@ async def _docker_exec(container: aiodocker.docker.DockerContainer, cmd: list[st
     return b"".join(chunks).decode("utf-8", errors="replace")
 
 
+def _max_loss(secret_fn: SecretFunction) -> int:
+    return secret_fn.num_inputs * secret_fn.m
+
+
+def _fail_result(error_msg: str, secret_fn: SecretFunction, total_eval_s: float) -> ScoringResult:
+    return ScoringResult(
+        hamming_loss=_max_loss(secret_fn),
+        errors=[ProgramError(input="*", error=error_msg)],
+        total_eval_s=total_eval_s,
+        mean_per_input_s=0,
+        max_per_input_s=0,
+    )
+
+
 async def evaluate_program(
     container: aiodocker.docker.DockerContainer, program: str, secret_fn: SecretFunction
 ) -> ScoringResult:
     """Evaluate program against all inputs in a single Docker exec call."""
     all_inputs = secret_fn.all_inputs()
     wrapper_source = get_required_path(_EVAL_WRAPPER_RLOCATION).read_text()
-    config = json.dumps({"program": program, "all_inputs": all_inputs, "timeout": _PER_INPUT_TIMEOUT_S})
+    config = json.dumps(
+        {
+            "program": program,
+            "all_inputs": all_inputs,
+            "timeout": _PER_INPUT_TIMEOUT_S,
+            "max_output": secret_fn.max_output,
+        }
+    )
     loop = asyncio.get_running_loop()
     t0 = loop.time()
 
     raw = await _docker_exec(container, ["python3", "-c", wrapper_source, config], _EVAL_TIMEOUT_S)
     total_eval_s = loop.time() - t0
 
-    # Parse JSON output — it's raw stdout, no MCP wrapping.
-    data: dict = {}
     try:
-        for line in raw.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("{") and "results" in stripped:
-                data = json.loads(stripped)
-                break
-    except json.JSONDecodeError as e:
+        wrapper = _parse_wrapper_output(raw)
+    except (json.JSONDecodeError, KeyError) as e:
         logger.warning("Failed to parse scoring output: %s (raw: %s)", e, raw[:300])
-        max_loss = len(all_inputs) * secret_fn.m
-        return ScoringResult(
-            hamming_loss=max_loss,
-            errors=[ProgramError(input="*", error=f"JSON parse error: {e}")],
-            total_eval_s=total_eval_s,
-            mean_per_input_s=0,
-            max_per_input_s=0,
-        )
+        return _fail_result(f"Parse error: {e}", secret_fn, total_eval_s)
 
-    if not data:
-        logger.warning("No JSON found in scoring output: %s", raw[:500])
-        max_loss = len(all_inputs) * secret_fn.m
-        return ScoringResult(
-            hamming_loss=max_loss,
-            errors=[ProgramError(input="*", error=f"No output from wrapper: {raw[:200]}")],
-            total_eval_s=total_eval_s,
-            mean_per_input_s=0,
-            max_per_input_s=0,
-        )
-
-    results: dict[str, str] = data.get("results", {})
-    raw_errors: dict[str, str] = data.get("errors", {})
-    timings: dict[str, float] = data.get("timings", {})
-
-    hamming_loss = 0
     program_errors: list[ProgramError] = []
-    elapsed_times = list(timings.values()) if timings else []
+    hamming_loss = sum(
+        _score_input(inp, secret_fn.evaluate(inp), wrapper, secret_fn.m, program_errors) for inp in all_inputs
+    )
 
-    for inp in all_inputs:
-        expected = secret_fn.evaluate(inp)
-        if inp in raw_errors:
-            hamming_loss += secret_fn.m
-            if len(program_errors) < _MAX_REPORTED_ERRORS:
-                program_errors.append(ProgramError(input=inp, error=raw_errors[inp]))
-        elif inp in results:
-            got = results[inp]
-            if len(got) != secret_fn.m or not all(c in "01" for c in got):
-                hamming_loss += secret_fn.m
-                if len(program_errors) < _MAX_REPORTED_ERRORS:
-                    if len(got) != secret_fn.m:
-                        msg = f"Wrong length: expected {secret_fn.m} chars, got {len(got)} ({got[:50]!r})"
-                    else:
-                        msg = f"Non-binary characters in output: {got!r}"
-                    program_errors.append(ProgramError(input=inp, error=msg))
-            else:
-                hamming_loss += _hamming_distance(expected, got)
-        else:
-            hamming_loss += secret_fn.m
-            if len(program_errors) < _MAX_REPORTED_ERRORS:
-                program_errors.append(ProgramError(input=inp, error="Missing from results"))
-
+    elapsed_times = list(wrapper.timings.values())
     return ScoringResult(
         hamming_loss=hamming_loss,
         errors=program_errors,

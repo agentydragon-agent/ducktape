@@ -52,13 +52,16 @@ _MAX_STEPS = 200
 class GameContext:
     turn_limit: int
     turn: int = 0
-    finished: bool = False
     turn_results: list[TurnResult] = field(default_factory=list)
     log_entries: list[dict[str, object]] = field(default_factory=list)
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cache_read_tokens: int = 0
     total_cache_creation_tokens: int = 0
+
+    @property
+    def finished(self) -> bool:
+        return self.turn >= self.turn_limit
 
     def record(self, player: Literal["agent", "scaffold"], content: str) -> None:
         self.log_entries.append({"timestamp": datetime.now(UTC).isoformat(), "player": player, "content": content})
@@ -67,36 +70,34 @@ class GameContext:
 def _make_play_turn_tool(
     game: GameContext, secret_fn: SecretFunction, scoring_container: aiodocker.docker.DockerContainer
 ) -> FunctionTool:
-    async def play_turn(query: str, program: str) -> str:
+    async def play_turn(query: int, program: str) -> str:
         """Query the secret function on one input and submit a program guess.
 
         Args:
-            query: Binary string of length N to evaluate f on.
-            program: Python program that reads an N-bit string from stdin
-                     (via input()) and prints an M-bit string to stdout.
+            query: Integer in [0, max_input] to evaluate f on.
+            program: Python program that reads a decimal integer from stdin
+                     (via input()) and prints a decimal integer to stdout.
         """
-        # Validate query.
-        if len(query) != secret_fn.n or not all(c in "01" for c in query):
-            return json.dumps({"error": f"query must be a binary string of length {secret_fn.n}, got {query!r}"})
+        if not (0 <= query <= secret_fn.max_input):
+            return json.dumps({"error": f"query must be in [0, {secret_fn.max_input}], got {query}"})
 
         game.turn += 1
         game.record("agent", f"Turn {game.turn}: query={query}")
 
-        # Evaluate query.
         query_result = secret_fn.evaluate(query)
-        logger.info("Turn %d: query=%s -> %s", game.turn, query, query_result)
+        logger.info("Turn %d: query=%d -> %d", game.turn, query, query_result)
 
-        # Score program in Docker.
         scoring = await evaluate_program(scoring_container, program, secret_fn)
 
-        turn_result = TurnResult(
-            turn=game.turn,
-            query=query,
-            query_result=query_result,
-            hamming_loss=scoring.hamming_loss,
-            errors=scoring.errors,
+        game.turn_results.append(
+            TurnResult(
+                turn=game.turn,
+                query=query,
+                query_result=query_result,
+                hamming_loss=scoring.hamming_loss,
+                errors=scoring.errors,
+            )
         )
-        game.turn_results.append(turn_result)
         game.record(
             "scaffold",
             f"Turn {game.turn}: hamming_loss={scoring.hamming_loss} "
@@ -111,15 +112,12 @@ def _make_play_turn_tool(
             scoring.max_per_input_s * 1000,
         )
 
-        if game.turn >= game.turn_limit:
-            game.finished = True
-
         response: dict[str, object] = {
             "turn": game.turn,
             "turns_remaining": game.turn_limit - game.turn,
             "query_result": f"f({query}) = {query_result}",
             "hamming_loss": scoring.hamming_loss,
-            "total_possible_loss": 2**secret_fn.n * secret_fn.m,
+            "total_possible_loss": secret_fn.num_inputs * secret_fn.m,
         }
         if scoring.errors:
             response["errors"] = [{"input": e.input, "error": e.error} for e in scoring.errors]

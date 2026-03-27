@@ -14,8 +14,8 @@ class ProgramError(BaseModel):
 
 class TurnResult(BaseModel):
     turn: int
-    query: str
-    query_result: str
+    query: int
+    query_result: int
     hamming_loss: int
     errors: list[ProgramError] = Field(default_factory=list)
 

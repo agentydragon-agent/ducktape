@@ -24,7 +24,7 @@ _ZERO_USAGE = RequestUsage(prompt_tokens=0, completion_tokens=0)
 _TEST_TURNS = 3
 
 
-def _play_turn_call(query: str, program: str) -> CreateResult:
+def _play_turn_call(query: int, program: str) -> CreateResult:
     return CreateResult(
         finish_reason="function_calls",
         content=[
@@ -88,7 +88,7 @@ async def _run_with_replay(
 @pytest.mark.usefixtures("_patch_prompts")
 async def test_basic_game_completes(tmp_path: Path) -> None:
     """Model plays 3 turns with a trivial all-zeros program, game completes."""
-    completions = [_play_turn_call(f"{i:08b}", "x = input(); print('0000')") for i in range(_TEST_TURNS)]
+    completions = [_play_turn_call(i, "x = int(input()); print(0)") for i in range(_TEST_TURNS)]
 
     summary = await _run_with_replay(completions=completions, tmp_path=tmp_path)
 
@@ -102,9 +102,12 @@ async def test_basic_game_completes(tmp_path: Path) -> None:
 @pytest.mark.usefixtures("_patch_prompts")
 async def test_perfect_program_zero_loss(tmp_path: Path) -> None:
     """A program implementing the correct parity function gets 0 loss."""
-    # This program correctly computes XOR of pairs (0,1), (2,3), (4,5), (6,7).
-    perfect_program = "x = input(); print(''.join(str(int(x[i]) ^ int(x[i+1])) for i in range(0, 8, 2)))"
-    completions = [_play_turn_call(f"{i:08b}", perfect_program) for i in range(_TEST_TURNS)]
+    # Reads decimal, extracts bits, computes XOR of pairs, prints decimal result.
+    perfect_program = (
+        "x = int(input()); bits = [(x >> (7 - i)) & 1 for i in range(8)]; "
+        "r = sum((bits[i] ^ bits[i+1]) << (3 - i//2) for i in range(0, 8, 2)); print(r)"
+    )
+    completions = [_play_turn_call(i, perfect_program) for i in range(_TEST_TURNS)]
 
     summary = await _run_with_replay(completions=completions, tmp_path=tmp_path)
 
@@ -115,28 +118,31 @@ async def test_perfect_program_zero_loss(tmp_path: Path) -> None:
 @pytest.mark.usefixtures("_patch_prompts")
 async def test_improving_programs(tmp_path: Path) -> None:
     """Loss should decrease as the program improves turn over turn."""
-    # Turn 1: all zeros (bad)
-    # Turn 2: gets first pair right
-    # Turn 3: gets all pairs right (perfect)
     programs = [
-        "x = input(); print('0000')",
-        "x = input(); print(str(int(x[0]) ^ int(x[1])) + '000')",
-        "x = input(); print(''.join(str(int(x[i]) ^ int(x[i+1])) for i in range(0, 8, 2)))",
+        # Turn 1: always output 0 (bad)
+        "x = int(input()); print(0)",
+        # Turn 2: gets first pair right, rest zeros
+        "x = int(input()); b0 = (x >> 7) & 1; b1 = (x >> 6) & 1; print((b0 ^ b1) << 3)",
+        # Turn 3: gets all pairs right (perfect)
+        (
+            "x = int(input()); bits = [(x >> (7 - i)) & 1 for i in range(8)]; "
+            "r = sum((bits[i] ^ bits[i+1]) << (3 - i//2) for i in range(0, 8, 2)); print(r)"
+        ),
     ]
-    completions = [_play_turn_call(f"{i:08b}", programs[i]) for i in range(_TEST_TURNS)]
+    completions = [_play_turn_call(i, programs[i]) for i in range(_TEST_TURNS)]
 
     summary = await _run_with_replay(completions=completions, tmp_path=tmp_path)
 
     losses = summary.result.per_turn_losses
     assert len(losses) == 3
     assert losses[0] > losses[1] > losses[2]
-    assert losses[2] == 0  # Perfect on turn 3.
+    assert losses[2] == 0
 
 
 @pytest.mark.usefixtures("_patch_prompts")
 async def test_erroring_program_max_loss(tmp_path: Path) -> None:
     """A program that raises an exception gets maximum loss per errored input."""
-    completions = [_play_turn_call("00000000", "raise ValueError('broken')")]
+    completions = [_play_turn_call(0, "raise ValueError('broken')")]
 
     summary = await _run_with_replay(completions=completions, tmp_path=tmp_path, turn_limit=1)
 
@@ -158,7 +164,7 @@ def _check_output_files(tmp_path: Path) -> None:
 
 @pytest.mark.usefixtures("_patch_prompts")
 async def test_output_files_written(tmp_path: Path) -> None:
-    completions = [_play_turn_call("00000000", "x = input(); print('0000')") for _ in range(_TEST_TURNS)]
+    completions = [_play_turn_call(0, "x = int(input()); print(0)") for _ in range(_TEST_TURNS)]
     await _run_with_replay(completions=completions, tmp_path=tmp_path)
     _check_output_files(tmp_path)
 

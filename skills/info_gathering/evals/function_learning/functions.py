@@ -1,8 +1,8 @@
-"""Secret boolean functions for the function learning eval.
+"""Secret functions for the function learning eval.
 
-Each function is a concrete, hand-coded f: {0,1}^N → {0,1}^M with known
-structure that an optimal learner can exploit. No randomization — fully
-reproducible across runs.
+Each function is a concrete, hand-coded f: [0, max_input] → [0, max_output]
+with known structure that an optimal learner can exploit. No randomization —
+fully reproducible across runs.
 """
 
 from abc import ABC, abstractmethod
@@ -11,7 +11,7 @@ from typing import ClassVar
 
 
 class SecretFunction(ABC):
-    """A secret boolean function f: {0,1}^N → {0,1}^M."""
+    """A secret function f: [0, max_input] → [0, max_output]."""
 
     @property
     @abstractmethod
@@ -25,29 +25,58 @@ class SecretFunction(ABC):
 
     @property
     @abstractmethod
-    def n(self) -> int: ...
+    def n(self) -> int:
+        """Number of input bits. Inputs are integers in [0, 2^n - 1]."""
+        ...
 
     @property
     @abstractmethod
-    def m(self) -> int: ...
-
-    @abstractmethod
-    def evaluate(self, input_bits: str) -> str:
-        """Compute f(input_bits). input_bits is a string of '0'/'1' of length n."""
+    def m(self) -> int:
+        """Number of output bits. Outputs are integers in [0, 2^m - 1]."""
         ...
 
-    def all_inputs(self) -> list[str]:
-        return [format(i, f"0{self.n}b") for i in range(2**self.n)]
+    @property
+    def max_input(self) -> int:
+        return 2**self.n - 1
+
+    @property
+    def max_output(self) -> int:
+        return 2**self.m - 1
+
+    @property
+    def num_inputs(self) -> int:
+        return 2**self.n
+
+    @abstractmethod
+    def evaluate(self, x: int) -> int:
+        """Compute f(x) where x is in [0, max_input]."""
+        ...
+
+    def all_inputs(self) -> list[int]:
+        return list(range(self.num_inputs))
 
 
 # -- Linear function over GF(2): f(x) = Ax ⊕ b --
 
 
+def _int_to_bits(x: int, n: int) -> list[int]:
+    """Convert integer to list of bits (MSB first)."""
+    return [(x >> (n - 1 - i)) & 1 for i in range(n)]
+
+
+def _bits_to_int(bits: list[int]) -> int:
+    """Convert list of bits (MSB first) to integer."""
+    result = 0
+    for b in bits:
+        result = (result << 1) | b
+    return result
+
+
 class LinearSimple(SecretFunction):
     """8→4 linear function over GF(2) with a fixed matrix A and bias b.
 
-    Optimal strategy: query the zero vector (gives b) and the 8 standard basis
-    vectors (each gives a column of A ⊕ b). 9 queries to fully determine f.
+    Optimal strategy: query 0 (gives b) and the 8 powers of 2
+    (each gives a column of A ⊕ b). 9 queries to fully determine f.
     """
 
     name = "linear_simple"
@@ -64,15 +93,15 @@ class LinearSimple(SecretFunction):
     ]
     _b: ClassVar[list[int]] = [1, 0, 1, 1]
 
-    def evaluate(self, input_bits: str) -> str:
-        x = [int(c) for c in input_bits]
+    def evaluate(self, x: int) -> int:
+        bits = _int_to_bits(x, self.n)
         result = []
         for row_idx in range(self.m):
             val = self._b[row_idx]
             for col_idx in range(self.n):
-                val ^= self._A[row_idx][col_idx] * x[col_idx]
-            result.append(str(val))
-        return "".join(result)
+                val ^= self._A[row_idx][col_idx] * bits[col_idx]
+            result.append(val)
+        return _bits_to_int(result)
 
 
 # -- k-junta: depends on only k of n input bits --
@@ -91,21 +120,24 @@ class Junta3(SecretFunction):
     m = 4
 
     _relevant_bits: ClassVar[list[int]] = [1, 4, 7]
-    # Fixed truth table on the 3 relevant bits (8 entries, 4-bit outputs).
-    _sub_table: ClassVar[dict[str, str]] = {
-        "000": "1010",
-        "001": "0110",
-        "010": "1100",
-        "011": "0001",
-        "100": "0111",
-        "101": "1001",
-        "110": "0010",
-        "111": "1111",
+    # Fixed truth table on the 3 relevant bits (8 entries, 4-bit outputs as ints).
+    _sub_table: ClassVar[dict[int, int]] = {
+        0b000: 0b1010,
+        0b001: 0b0110,
+        0b010: 0b1100,
+        0b011: 0b0001,
+        0b100: 0b0111,
+        0b101: 0b1001,
+        0b110: 0b0010,
+        0b111: 0b1111,
     }
 
-    def evaluate(self, input_bits: str) -> str:
-        sub_input = "".join(input_bits[i] for i in self._relevant_bits)
-        return self._sub_table[sub_input]
+    def evaluate(self, x: int) -> int:
+        bits = _int_to_bits(x, self.n)
+        sub_val = 0
+        for bit_idx in self._relevant_bits:
+            sub_val = (sub_val << 1) | bits[bit_idx]
+        return self._sub_table[sub_val]
 
 
 # -- Parity groups: each output bit is XOR of a disjoint pair --
@@ -128,11 +160,12 @@ class ParityGroups(SecretFunction):
 
     _groups: ClassVar[list[tuple[int, int]]] = [(0, 1), (2, 3), (4, 5), (6, 7)]
 
-    def evaluate(self, input_bits: str) -> str:
+    def evaluate(self, x: int) -> int:
+        bits = _int_to_bits(x, self.n)
         result = []
         for a, b in self._groups:
-            result.append(str(int(input_bits[a]) ^ int(input_bits[b])))
-        return "".join(result)
+            result.append(bits[a] ^ bits[b])
+        return _bits_to_int(result)
 
 
 # -- Variant registry --
@@ -179,15 +212,15 @@ class Linear7(SecretFunction):
     ]
     _b: ClassVar[list[int]] = [1, 0, 1, 1]
 
-    def evaluate(self, input_bits: str) -> str:
-        x = [int(c) for c in input_bits]
+    def evaluate(self, x: int) -> int:
+        bits = _int_to_bits(x, self.n)
         result = []
         for row_idx in range(self.m):
             val = self._b[row_idx]
             for col_idx in range(self.n):
-                val ^= self._A[row_idx][col_idx] * x[col_idx]
-            result.append(str(val))
-        return "".join(result)
+                val ^= self._A[row_idx][col_idx] * bits[col_idx]
+            result.append(val)
+        return _bits_to_int(result)
 
 
 class Junta7(SecretFunction):
@@ -199,20 +232,23 @@ class Junta7(SecretFunction):
     m = 4
 
     _relevant_bits: ClassVar[list[int]] = [1, 4, 6]
-    _sub_table: ClassVar[dict[str, str]] = {
-        "000": "1010",
-        "001": "0110",
-        "010": "1100",
-        "011": "0001",
-        "100": "0111",
-        "101": "1001",
-        "110": "0010",
-        "111": "1111",
+    _sub_table: ClassVar[dict[int, int]] = {
+        0b000: 0b1010,
+        0b001: 0b0110,
+        0b010: 0b1100,
+        0b011: 0b0001,
+        0b100: 0b0111,
+        0b101: 0b1001,
+        0b110: 0b0010,
+        0b111: 0b1111,
     }
 
-    def evaluate(self, input_bits: str) -> str:
-        sub_input = "".join(input_bits[i] for i in self._relevant_bits)
-        return self._sub_table[sub_input]
+    def evaluate(self, x: int) -> int:
+        bits = _int_to_bits(x, self.n)
+        sub_val = 0
+        for bit_idx in self._relevant_bits:
+            sub_val = (sub_val << 1) | bits[bit_idx]
+        return self._sub_table[sub_val]
 
 
 class Parity7(SecretFunction):
@@ -228,14 +264,15 @@ class Parity7(SecretFunction):
 
     _groups: ClassVar[list[tuple[int, ...]]] = [(0, 1), (2, 3), (4, 5), (6,)]
 
-    def evaluate(self, input_bits: str) -> str:
+    def evaluate(self, x: int) -> int:
+        bits = _int_to_bits(x, self.n)
         result = []
         for group in self._groups:
             val = 0
             for idx in group:
-                val ^= int(input_bits[idx])
-            result.append(str(val))
-        return "".join(result)
+                val ^= bits[idx]
+            result.append(val)
+        return _bits_to_int(result)
 
 
 LINEAR_7 = Linear7()
