@@ -270,7 +270,8 @@ def test_auto_applied_only_returns_context(git_project: tuple[Path, Path]) -> No
     assert result.hook_specific_output is not None
     ctx = result.hook_specific_output.additional_context
     assert ctx is not None
-    assert "Auto-applied: ruff-format" in ctx
+    assert "Auto-applied:" in ctx
+    assert "ruff-format" in ctx
 
 
 if __name__ == "__main__":

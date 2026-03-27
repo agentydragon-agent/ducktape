@@ -7,7 +7,19 @@ errors = [h for h in result.failed_hooks if not h.files_modified]
 %>\
 ${file_path.name}:
 % if result.auto_applied_results:
-  Auto-applied: ${", ".join(h.hook_name for h in result.auto_applied_results)}
+  Auto-applied:\
+% for hr in result.auto_applied_results:
+<%
+    if hr.rerun_exit_code is not None and hr.rerun_exit_code == 0:
+        status = "now clean"
+    elif hr.rerun_exit_code is not None:
+        status = f"not fully fixed, still exit {hr.rerun_exit_code}"
+    else:
+        status = f"exit {hr.exit_code}"
+%>
+    ${hr.hook_name} (${status})\
+% endfor
+
 % endif
 % if would_fix:
   Not auto-applied (would also edit): ${", ".join(h.hook_name for h in would_fix)}

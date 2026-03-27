@@ -44,6 +44,7 @@ class HookResult:
     files_modified: bool
     exit_code: int
     auto_applied: bool = False
+    rerun_exit_code: int | None = None
 
     @property
     def passed(self) -> bool:
@@ -110,22 +111,32 @@ def _run_hooks(
 
     results: list[HookResult] = []
 
-    # Phase 1: auto-apply hooks — keep their changes.
+    # Phase 1: auto-apply hooks — keep their changes, re-run to verify satisfaction.
     for hook, filenames in auto_hooks:
         content_before = file_path.read_bytes()
         language = languages[hook.language]
+        run_kwargs = {
+            "prefix": hook.prefix,
+            "entry": hook.entry,
+            "args": hook.args,
+            "file_args": filenames if hook.pass_filenames else (),
+            "is_local": hook.src == "local",
+            "require_serial": hook.require_serial,
+            "color": False,
+        }
         with language.in_env(hook.prefix, hook.language_version):
-            retcode, out = language.run_hook(
-                hook.prefix,
-                hook.entry,
-                hook.args,
-                filenames if hook.pass_filenames else (),
-                is_local=hook.src == "local",
-                require_serial=hook.require_serial,
-                color=False,
-            )
+            retcode, out = language.run_hook(**run_kwargs)
         current = file_path.read_bytes()
         modified = current != content_before
+
+        # Re-run to check if the hook is now satisfied after auto-apply.
+        rerun_retcode = None
+        if modified:
+            with language.in_env(hook.prefix, hook.language_version):
+                rerun_retcode, _ = language.run_hook(**run_kwargs)
+            rerun_content = file_path.read_bytes()
+            if rerun_content != current:
+                file_path.write_bytes(current)
         results.append(
             HookResult(
                 hook_id=hook.id,
@@ -134,6 +145,7 @@ def _run_hooks(
                 files_modified=modified,
                 exit_code=retcode,
                 auto_applied=modified,
+                rerun_exit_code=rerun_retcode if modified else None,
             )
         )
 
