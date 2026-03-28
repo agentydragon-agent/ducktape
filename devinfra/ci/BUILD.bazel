@@ -9,7 +9,6 @@ filegroup(
     name = "generated_workflows",
     srcs = [
         "//.github/workflows:ci.yml",
-        "//.github/workflows:release.yml",
     ],
 )
 

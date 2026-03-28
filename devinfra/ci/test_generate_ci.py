@@ -3,13 +3,7 @@
 import pytest_bazel
 import yaml
 
-from devinfra.ci.generate_ci import (
-    WORKFLOWS_DIR,
-    WORKFLOWS_YAML,
-    Workflow,
-    generate_ci_config,
-    generate_consolidated_release,
-)
+from devinfra.ci.generate_ci import WORKFLOWS_DIR, WORKFLOWS_YAML, Workflow, generate_ci_config
 from devinfra.ci.models import WorkflowManifest
 
 
@@ -31,18 +25,6 @@ def test_ci_yml_up_to_date() -> None:
     expected = generate_ci_config(manifest)
     ci_yml = WORKFLOWS_DIR / "ci.yml"
     check_workflow(ci_yml, expected)
-
-
-def test_release_yml_up_to_date() -> None:
-    manifest = WorkflowManifest.from_yaml(WORKFLOWS_YAML)
-    if not manifest.releases:
-        return
-    expected = generate_consolidated_release(manifest.releases)
-    path = WORKFLOWS_DIR / "release.yml"
-    try:
-        check_workflow(path, expected)
-    except (FileNotFoundError, OutOfDateError) as exc:
-        raise AssertionError("release.yml is out of date") from exc
 
 
 if __name__ == "__main__":

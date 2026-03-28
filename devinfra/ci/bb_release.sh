@@ -89,9 +89,5 @@ if [ ${#changed[@]} -eq 0 ]; then
   exit 0
 fi
 
-# --ref must be a branch name (GitHub rejects bare SHAs for workflow_dispatch).
-# Pass the exact commit SHA as an input so release.yml checks out the right commit.
-gh workflow run release.yml \
-  --ref devel \
-  --field "sha=$FULL_SHA" \
-  --field "changed=${changed[*]}"
+echo "Released: ${changed[*]}"
+echo "Pins will be updated by the sync-pins workflow."
