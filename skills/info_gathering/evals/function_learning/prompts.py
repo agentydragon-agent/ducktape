@@ -9,8 +9,9 @@ _FIRST_USER_MSG_RLOCATION = "_main/skills/info_gathering/evals/function_learning
 _BASE_PREAMBLE = (
     "You are playing a function-learning game. There is a secret function "
     "f: [0, max_input] → [0, max_output]. Each turn, you query one input and submit a Python program "
-    "that implements your current best guess for f. Your goal is to minimize total "
-    "Hamming loss (sum of bit disagreements across all possible inputs) summed over all turns."
+    "that prints your best guess for f(0), f(1), ..., f(max_input) — one value per line, no input. "
+    "Your goal is to minimize total Hamming loss (sum of bit disagreements across all possible inputs) "
+    "summed over all turns."
 )
 
 
@@ -27,7 +28,7 @@ def build_system_prompt(*, skill: str, has_scratch: bool) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def first_user_message(fn: SecretFunction, turn_limit: int, function_description: str) -> str:
+def first_user_message(fn: SecretFunction, turn_limit: int, function_description: str, eval_timeout_s: int) -> str:
     template = get_required_path(_FIRST_USER_MSG_RLOCATION).read_text().strip()
     return template.format(
         max_input=fn.max_input,
@@ -35,4 +36,5 @@ def first_user_message(fn: SecretFunction, turn_limit: int, function_description
         n_inputs=fn.max_input + 1,
         turn_limit=turn_limit,
         function_description=function_description,
+        eval_timeout_s=eval_timeout_s,
     )

@@ -39,7 +39,7 @@ from skills.info_gathering.evals.function_learning.result_types import (
     TokenUsage,
     TurnResult,
 )
-from skills.info_gathering.evals.function_learning.scoring import evaluate_program
+from skills.info_gathering.evals.function_learning.scoring import EVAL_TIMEOUT_S, evaluate_program
 from skills.info_gathering.evals.prompt_caching import CachedAnthropicClient
 from skills.info_gathering.evals.twenty_questions.prompts import load_skill_prompt
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths
@@ -76,8 +76,8 @@ def _make_play_turn_tool(
 
         Args:
             query: Integer in [0, max_input] to evaluate f on.
-            program: Python program that reads a decimal integer from stdin
-                     (via input()) and prints a decimal integer to stdout.
+            program: Python program that takes no input and prints one line per
+                     input (0 to max_input), each a decimal integer in [0, max_output].
         """
         if not (0 <= query <= secret_fn.max_input):
             return json.dumps({"error": f"query must be in [0, {secret_fn.max_input}], got {query}"})
@@ -96,22 +96,13 @@ def _make_play_turn_tool(
                 query=query,
                 query_result=query_result,
                 hamming_loss=scoring.hamming_loss,
-                errors=scoring.errors,
+                error_summary=scoring.error_summary,
             )
         )
         game.record(
-            "scaffold",
-            f"Turn {game.turn}: hamming_loss={scoring.hamming_loss} "
-            f"(eval {scoring.total_eval_s:.1f}s, {scoring.mean_per_input_s * 1000:.0f}ms/input)",
+            "scaffold", f"Turn {game.turn}: hamming_loss={scoring.hamming_loss} (eval {scoring.total_eval_s:.1f}s)"
         )
-        logger.info(
-            "Turn %d: hamming_loss=%d (eval %.1fs, %.0fms/input avg, %.0fms/input max)",
-            game.turn,
-            scoring.hamming_loss,
-            scoring.total_eval_s,
-            scoring.mean_per_input_s * 1000,
-            scoring.max_per_input_s * 1000,
-        )
+        logger.info("Turn %d: hamming_loss=%d (eval %.1fs)", game.turn, scoring.hamming_loss, scoring.total_eval_s)
 
         response: dict[str, object] = {
             "turn": game.turn,
@@ -120,9 +111,15 @@ def _make_play_turn_tool(
             "hamming_loss": scoring.hamming_loss,
             "total_possible_loss": (secret_fn.max_input + 1) * secret_fn.m,
         }
-        if scoring.errors:
-            response["errors"] = [{"input": e.input, "error": e.error} for e in scoring.errors]
-            response["total_errors"] = len(scoring.errors)
+        es = scoring.error_summary
+        if es.parse_errors or es.out_of_range or es.missing_lines:
+            response["error_summary"] = {
+                "parse_errors": es.parse_errors,
+                "out_of_range": es.out_of_range,
+                "missing_lines": es.missing_lines,
+            }
+        if es.examples:
+            response["error_examples"] = [{"line": e.line, "error": e.error} for e in es.examples]
 
         return json.dumps(response, indent=2)
 
@@ -131,7 +128,7 @@ def _make_play_turn_tool(
         name="play_turn",
         description=(
             "Query the secret function on one input and submit your program guess. "
-            "Both query and program submission happen each turn."
+            "The program takes no input and prints one output per line for inputs 0..max_input."
         ),
     )
 
@@ -174,7 +171,9 @@ async def run_game(
     effective_turn_limit = turn_limit if turn_limit is not None else variant.turn_limit
 
     system = build_system_prompt(skill="" if no_skill else load_skill_prompt(), has_scratch=exec_tool is not None)
-    opening = first_user_message(secret_fn, effective_turn_limit, variant.function_description)
+    opening = first_user_message(
+        secret_fn, effective_turn_limit, variant.function_description, eval_timeout_s=EVAL_TIMEOUT_S
+    )
 
     owns_client = model_client is None
     if model_client is None:
