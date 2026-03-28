@@ -177,12 +177,12 @@ in
     # Add self-hosted attic binary cache for CI-built closures.
     substituters = [
       "https://cache.allegedly.works/main"
-      # "https://cache.nixos.org/"
+      "https://cache.nixos.org/"
       # "https://nix-community.cachix.org"
     ];
     trusted-public-keys = [
       "cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA="
-      # "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
       # "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
     ];
   };
