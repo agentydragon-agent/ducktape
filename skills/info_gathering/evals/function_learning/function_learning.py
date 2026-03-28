@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import IO, Literal
 
 import aiodocker
 from autogen_core import CancellationToken
@@ -29,9 +29,10 @@ from autogen_core.tools import FunctionTool
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from fastmcp.client import Client
 from mcp.types import TextContent
+from pydantic import BaseModel
 
 from skills.info_gathering.evals.docker_exec import scratch_exec_server
-from skills.info_gathering.evals.function_learning.functions import VARIANTS, SecretFunction
+from skills.info_gathering.evals.function_learning.functions import FUNCTIONS, SecretFunction
 from skills.info_gathering.evals.function_learning.prompts import build_system_prompt, first_user_message
 from skills.info_gathering.evals.function_learning.result_types import (
     FunctionLearningResult,
@@ -49,12 +50,64 @@ logger = logging.getLogger(__name__)
 _MAX_STEPS = 200
 
 
+# --- Structured log entry types (written to calls.jsonl) ---
+
+
+class GameStartLog(BaseModel):
+    kind: Literal["game_start"] = "game_start"
+    timestamp: str
+    function_name: str
+    n_bits: int
+    m_bits: int
+    no_skill: bool
+    system_prompt: str
+    opening_message: str
+
+
+class FunctionCallLog(BaseModel):
+    id: str
+    name: str
+    arguments: str  # raw JSON string as returned by the model
+
+
+class LlmResponseLog(BaseModel):
+    kind: Literal["llm_response"] = "llm_response"
+    timestamp: str
+    text: str | None
+    tool_calls: list[FunctionCallLog] | None
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_creation_tokens: int
+
+
+class ToolResultLog(BaseModel):
+    kind: Literal["tool_result"] = "tool_result"
+    timestamp: str
+    tool_name: str
+    call_id: str
+    arguments: dict
+    result: str
+
+
+class GameEndLog(BaseModel):
+    kind: Literal["game_end"] = "game_end"
+    timestamp: str
+    turns: int
+    solved_at_turn: int | None
+    total_hamming_loss: int
+
+
+# --- Game state ---
+
+
 @dataclass
 class GameContext:
     turn_limit: int
+    log_file: IO[str]
     turn: int = 0
+    solved: bool = False
     turn_results: list[TurnResult] = field(default_factory=list)
-    log_entries: list[dict[str, object]] = field(default_factory=list)
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cache_read_tokens: int = 0
@@ -62,10 +115,15 @@ class GameContext:
 
     @property
     def finished(self) -> bool:
-        return self.turn >= self.turn_limit
+        return self.turn >= self.turn_limit or self.solved
 
-    def record(self, player: Literal["agent", "scaffold"], content: str) -> None:
-        self.log_entries.append({"timestamp": datetime.now(UTC).isoformat(), "player": player, "content": content})
+    def log(self, entry: BaseModel) -> None:
+        self.log_file.write(entry.model_dump_json() + "\n")
+        self.log_file.flush()
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 def _make_play_turn_tool(
@@ -83,18 +141,16 @@ def _make_play_turn_tool(
             return json.dumps({"error": f"query must be in [0, {secret_fn.max_input}], got {query}"})
 
         game.turn += 1
-        game.record("agent", f"Turn {game.turn}: query={query}")
-
         query_result = secret_fn.evaluate(query)
         logger.info("Turn %d: query=%d -> %d", game.turn, query, query_result)
 
         scoring = await evaluate_program(scoring_container, program, secret_fn)
         score = scoring.score
 
+        if score.hamming_loss == 0:
+            game.solved = True
+
         game.turn_results.append(TurnResult(turn=game.turn, query=query, query_result=query_result, score=score))
-        game.record(
-            "scaffold", f"Turn {game.turn}: hamming_loss={score.hamming_loss} (eval {scoring.total_eval_s:.1f}s)"
-        )
         logger.info("Turn %d: hamming_loss=%d (eval %.1fs)", game.turn, score.hamming_loss, scoring.total_eval_s)
 
         response: dict[str, object] = {
@@ -104,6 +160,8 @@ def _make_play_turn_tool(
             "hamming_loss": score.hamming_loss,
             "total_possible_loss": (secret_fn.max_input + 1) * secret_fn.m,
         }
+        if game.solved:
+            response["game_over"] = "Solved! Your program is correct for all inputs."
         if score.has_errors:
             response["error_summary"] = {
                 "parse_errors": score.parse_errors,
@@ -125,7 +183,7 @@ def _make_play_turn_tool(
     )
 
 
-def _make_exec_tool(mcp_client: Client) -> FunctionTool:
+def make_exec_tool(mcp_client: Client) -> FunctionTool:
     async def exec(cmd: list[str], timeout_ms: int = 30000) -> str:
         """Run a command in a scratch container for computation."""
         arguments: dict[str, object] = {"cmd": cmd, "timeout_ms": timeout_ms}
@@ -145,98 +203,142 @@ def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
     raise ValueError(f"Unsupported API: {api!r}")
 
 
+_NO_HINT = "The function class is unknown. You must discover its structure from queries alone."
+
+
 async def run_game(
     *,
-    variant_name: str,
+    function_name: str,
+    hint: bool,
+    turn_limit: int,
     model: str,
     api: str,
     output_dir: Path,
-    exec_tool: FunctionTool | None = None,
+    exec_tool: FunctionTool,
     scoring_container: aiodocker.docker.DockerContainer,
     model_client: ChatCompletionClient | None = None,
     no_skill: bool = False,
-    turn_limit: int | None = None,
 ) -> RunSummary:
     """Execute one function learning game and persist results."""
-    variant = VARIANTS[variant_name]
-    secret_fn = variant.function
-    effective_turn_limit = turn_limit if turn_limit is not None else variant.turn_limit
+    secret_fn = FUNCTIONS[function_name]
+    description = secret_fn.description if hint else _NO_HINT
 
-    system = build_system_prompt(skill="" if no_skill else load_skill_prompt(), has_scratch=exec_tool is not None)
-    opening = first_user_message(
-        secret_fn, effective_turn_limit, variant.function_description, eval_timeout_s=EVAL_TIMEOUT_S
-    )
+    system = build_system_prompt(skill="" if no_skill else load_skill_prompt(), has_scratch=True)
+    opening = first_user_message(secret_fn, turn_limit, description, eval_timeout_s=EVAL_TIMEOUT_S)
 
     owns_client = model_client is None
     if model_client is None:
         model_client = _build_model_client(api=api, model=model)
 
-    game = GameContext(turn_limit=effective_turn_limit)
+    calls_path, summary_path = run_output_paths(f"fl_{function_name}_{'hint' if hint else 'nohint'}", output_dir)
 
-    # Tools: play_turn (game) + optional exec (scratch).
-    play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
-    all_tools: list[FunctionTool] = [play_turn_tool]
-    if exec_tool:
-        all_tools.append(exec_tool)
-    tool_schemas = [t.schema for t in all_tools]
-    tool_map = {t.name: t for t in all_tools}
+    with calls_path.open("w") as log_f:
+        game = GameContext(turn_limit=turn_limit, log_file=log_f)
+        play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
+        all_tools = [play_turn_tool, exec_tool]
+        tool_schemas = [t.schema for t in all_tools]
+        tool_map = {t.name: t for t in all_tools}
+        game.log(
+            GameStartLog(
+                timestamp=_now(),
+                function_name=function_name,
+                n_bits=secret_fn.n,
+                m_bits=secret_fn.m,
+                no_skill=no_skill,
+                system_prompt=system,
+                opening_message=opening,
+            )
+        )
 
-    history: list[SystemMessage | UserMessage | AssistantMessage | FunctionExecutionResultMessage] = [
-        SystemMessage(content=system),
-        UserMessage(content=opening, source="user"),
-    ]
+        history: list[SystemMessage | UserMessage | AssistantMessage | FunctionExecutionResultMessage] = [
+            SystemMessage(content=system),
+            UserMessage(content=opening, source="user"),
+        ]
 
-    for _ in range(_MAX_STEPS):
-        if game.finished:
-            break
+        for _ in range(_MAX_STEPS):
+            if game.finished:
+                break
 
-        result = await model_client.create(history, tools=tool_schemas, tool_choice="required")
+            result = await model_client.create(history, tools=tool_schemas, tool_choice="required")
 
-        # Track token usage (including cache metrics when available).
-        game.total_input_tokens += result.usage.prompt_tokens
-        game.total_output_tokens += result.usage.completion_tokens
-        game.total_cache_read_tokens += getattr(result.usage, "cache_read_tokens", 0)
-        game.total_cache_creation_tokens += getattr(result.usage, "cache_creation_tokens", 0)
+            cache_read = getattr(result, "cache_read_tokens", 0)
+            cache_creation = getattr(result, "cache_creation_tokens", 0)
+            game.total_input_tokens += result.usage.prompt_tokens
+            game.total_output_tokens += result.usage.completion_tokens
+            game.total_cache_read_tokens += cache_read
+            game.total_cache_creation_tokens += cache_creation
 
-        if isinstance(result.content, str):
-            history.append(AssistantMessage(content=result.content, source="agent"))
-            continue
-
-        function_calls = result.content
-        history.append(AssistantMessage(content=function_calls, source="agent"))
-
-        exec_results: list[FunctionExecutionResult] = []
-        for fc in function_calls:
-            tool = tool_map.get(fc.name)
-            if tool is None:
-                content = f"Error: unknown tool '{fc.name}'"
-                logger.warning("Unknown tool name: %s", fc.name)
-                exec_results.append(FunctionExecutionResult(call_id=fc.id, content=content, name=fc.name))
+            if isinstance(result.content, str):
+                game.log(
+                    LlmResponseLog(
+                        timestamp=_now(),
+                        text=result.content,
+                        tool_calls=None,
+                        input_tokens=result.usage.prompt_tokens,
+                        output_tokens=result.usage.completion_tokens,
+                        cache_read_tokens=cache_read,
+                        cache_creation_tokens=cache_creation,
+                    )
+                )
+                history.append(AssistantMessage(content=result.content, source="agent"))
                 continue
-            args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else fc.arguments
-            try:
-                tool_result = await tool.run_json(args, CancellationToken())
-                content = tool.return_value_as_string(tool_result)
-            except Exception as e:
-                content = f"Error: {e}"
-                logger.warning("Tool %s error: %s", fc.name, e)
-            exec_results.append(FunctionExecutionResult(call_id=fc.id, content=content, name=fc.name))
-        history.append(FunctionExecutionResultMessage(content=exec_results))
 
-    # Build result.
-    per_turn = [tr.score.hamming_loss for tr in game.turn_results]
-    total_hamming = sum(per_turn)
-    fl_result = FunctionLearningResult(total_hamming_loss=total_hamming, per_turn_losses=per_turn)
+            function_calls = result.content
+            assert len(function_calls) == 1, f"expected 1 tool call, got {len(function_calls)}"
+            game.log(
+                LlmResponseLog(
+                    timestamp=_now(),
+                    text=None,
+                    tool_calls=[
+                        FunctionCallLog(id=fc.id, name=fc.name, arguments=fc.arguments) for fc in function_calls
+                    ],
+                    input_tokens=result.usage.prompt_tokens,
+                    output_tokens=result.usage.completion_tokens,
+                    cache_read_tokens=cache_read,
+                    cache_creation_tokens=cache_creation,
+                )
+            )
+            history.append(AssistantMessage(content=function_calls, source="agent"))
 
-    calls_path, summary_path = run_output_paths(f"fl_{variant_name}", output_dir)
-    with calls_path.open("w") as f:
-        for entry in game.log_entries:
-            f.write(json.dumps(entry) + "\n")
-        for tr in game.turn_results:
-            f.write(tr.model_dump_json() + "\n")
+            exec_results: list[FunctionExecutionResult] = []
+            for fc in function_calls:
+                tool = tool_map.get(fc.name)
+                args = json.loads(fc.arguments)
+                if tool is None:
+                    content = f"Error: unknown tool '{fc.name}'"
+                    logger.warning("Unknown tool name: %s", fc.name)
+                else:
+                    try:
+                        tool_result = await tool.run_json(args, CancellationToken())
+                        content = tool.return_value_as_string(tool_result)
+                    except Exception as e:
+                        content = f"Error: {e}"
+                        logger.warning("Tool %s error: %s", fc.name, e)
+                game.log(
+                    ToolResultLog(timestamp=_now(), tool_name=fc.name, call_id=fc.id, arguments=args, result=content)
+                )
+                exec_results.append(FunctionExecutionResult(call_id=fc.id, content=content, name=fc.name))
+            history.append(FunctionExecutionResultMessage(content=exec_results))
+
+        per_turn = [tr.score.hamming_loss for tr in game.turn_results]
+        per_turn += [0] * (turn_limit - len(per_turn))
+        total_hamming = sum(per_turn)
+
+        game.log(
+            GameEndLog(
+                timestamp=_now(),
+                turns=game.turn,
+                solved_at_turn=game.turn if game.solved else None,
+                total_hamming_loss=total_hamming,
+            )
+        )
+
+    fl_result = FunctionLearningResult(
+        total_hamming_loss=total_hamming, per_turn_losses=per_turn, solved_at_turn=game.turn if game.solved else None
+    )
 
     summary = RunSummary(
-        eval_name=variant_name,
+        eval_name=function_name,
         framework="autogen",
         model=model,
         api=api,
@@ -265,9 +367,8 @@ async def _async_main(args: argparse.Namespace) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     async with scratch_exec_server() as scratch_server, Client(scratch_server) as scratch_client:
-        exec_tool = _make_exec_tool(scratch_client)
+        exec_tool = make_exec_tool(scratch_client)
 
-        # Scoring container: plain aiodocker, no MCP.
         container_name = f"fl-scoring-{uuid.uuid4().hex[:8]}"
         async with aiodocker.Docker() as docker:
             container = await docker.containers.run(
@@ -275,7 +376,8 @@ async def _async_main(args: argparse.Namespace) -> None:
             )
             try:
                 summary = await run_game(
-                    variant_name=args.variant,
+                    function_name=args.function,
+                    hint=not args.no_hint,
                     model=args.model,
                     api=args.api,
                     output_dir=output_dir,
@@ -292,12 +394,13 @@ async def _async_main(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Function Learning Eval — AutoGen")
-    parser.add_argument("--variant", choices=list(VARIANTS), required=True)
+    parser.add_argument("--function", choices=list(FUNCTIONS), required=True)
+    parser.add_argument("--no-hint", action="store_true")
     parser.add_argument("--model", required=True)
     parser.add_argument("--api", choices=["openai", "anthropic"], default="anthropic")
     parser.add_argument("--output-dir", default=None)
     parser.add_argument("--no-skill", action="store_true")
-    parser.add_argument("--turn-limit", type=int, default=None, help="Override variant turn limit")
+    parser.add_argument("--turn-limit", type=int, required=True)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

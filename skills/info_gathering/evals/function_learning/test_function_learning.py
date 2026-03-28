@@ -12,6 +12,7 @@ import aiodocker
 import pytest_bazel
 from autogen_core import FunctionCall
 from autogen_core.models import CreateResult, RequestUsage
+from autogen_core.tools import FunctionTool
 from autogen_ext.models.replay import ReplayChatCompletionClient
 
 from skills.info_gathering.evals.function_learning.function_learning import run_game
@@ -20,6 +21,15 @@ from skills.info_gathering.evals.function_learning.result_types import RunSummar
 
 _ZERO_USAGE = RequestUsage(prompt_tokens=0, completion_tokens=0)
 _TEST_TURNS = 3
+
+
+def _dummy_exec_tool() -> FunctionTool:
+    """Exec tool that is never called — replay client only issues play_turn calls."""
+
+    async def exec(cmd: list[str], timeout_ms: int = 30000) -> str:
+        raise RuntimeError("exec should not be called in replay tests")
+
+    return FunctionTool(exec, name="exec", description="dummy")
 
 
 def _play_turn_call(query: int, program: str) -> CreateResult:
@@ -37,7 +47,8 @@ async def _run_with_replay(
     *,
     completions: list[CreateResult],
     tmp_path: Path,
-    variant_name: str = "parity_groups",
+    function_name: str = "parity_groups",
+    hint: bool = True,
     turn_limit: int = _TEST_TURNS,
 ) -> RunSummary:
     client = ReplayChatCompletionClient(
@@ -57,10 +68,12 @@ async def _run_with_replay(
         )
         try:
             return await run_game(
-                variant_name=variant_name,
+                function_name=function_name,
+                hint=hint,
                 model="test-model",
                 api="openai",
                 output_dir=tmp_path,
+                exec_tool=_dummy_exec_tool(),
                 model_client=client,
                 scoring_container=container,
                 turn_limit=turn_limit,
@@ -162,6 +175,26 @@ async def test_output_files_written(tmp_path: Path) -> None:
     completions = [_play_turn_call(0, "for i in range(256): print(0)") for _ in range(_TEST_TURNS)]
     await _run_with_replay(completions=completions, tmp_path=tmp_path)
     _check_output_files(tmp_path)
+
+
+async def test_early_termination_on_zero_loss(tmp_path: Path) -> None:
+    """Game ends after turn 1 when 0 loss is achieved; remaining turns are imputed as 0."""
+    perfect_program = (
+        "for x in range(256):\n"
+        "    bits = [(x >> (7 - i)) & 1 for i in range(8)]\n"
+        "    r = sum((bits[i] ^ bits[i+1]) << (3 - i//2) for i in range(0, 8, 2))\n"
+        "    print(r)"
+    )
+    # Supply more completions than should be consumed — game should stop after turn 1.
+    completions = [_play_turn_call(0, perfect_program)] * _TEST_TURNS
+
+    summary = await _run_with_replay(completions=completions, tmp_path=tmp_path, turn_limit=_TEST_TURNS)
+
+    assert summary.turns == 1, "Game should have stopped after solving on turn 1"
+    assert summary.result.solved_at_turn == 1
+    assert len(summary.result.per_turn_losses) == _TEST_TURNS, "per_turn_losses padded to turn_limit"
+    assert summary.result.per_turn_losses == [0, 0, 0]
+    assert summary.result.total_hamming_loss == 0
 
 
 if __name__ == "__main__":

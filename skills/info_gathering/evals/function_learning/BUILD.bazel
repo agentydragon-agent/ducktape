@@ -59,6 +59,7 @@ py_library(
         "@pypi//autogen_core",
         "@pypi//autogen_ext",
         "@pypi//fastmcp",
+        "@pypi//pydantic",
     ],
 )
 
@@ -67,6 +68,44 @@ py_binary(
     imports = ["../../../.."],
     main_module = "skills.info_gathering.evals.function_learning.function_learning",
     deps = [":function_learning"],
+)
+
+py_library(
+    name = "run_all_evals_lib",
+    srcs = ["run_all_evals.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":function_learning",
+        "@pypi//aiodocker",
+        "@pypi//anyio",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "run_all_evals",
+    imports = ["../../../.."],
+    main_module = "skills.info_gathering.evals.function_learning.run_all_evals",
+    deps = [":run_all_evals_lib"],
+)
+
+py_library(
+    name = "analyze_lib",
+    srcs = ["analyze.py"],
+    imports = ["../../../.."],
+    deps = [
+        ":functions",
+        ":run_all_evals_lib",
+        "@pypi//numpy",
+    ],
+)
+
+py_binary(
+    name = "analyze",
+    imports = ["../../../.."],
+    main_module = "skills.info_gathering.evals.function_learning.analyze",
+    deps = [":analyze_lib"],
 )
 
 py_test(

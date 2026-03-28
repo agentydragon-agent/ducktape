@@ -1,9 +1,3 @@
-#!/usr/bin/env -S uv run
-# /// script
-# requires-python = ">=3.12"
-# dependencies = ["pydantic", "PyGithub"]
-# ///
-# Run standalone: uv run --project . devinfra/ci/sync_pins.py
 """Sync npins/sources.json with the latest GitHub Release for each package.
 
 For each pinned package, finds the latest release tag, compares the URL
@@ -13,10 +7,6 @@ Expects: GH_TOKEN env var.
 """
 
 import os
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from github import Auth, Github
 
@@ -42,15 +32,16 @@ def main() -> None:
             continue
 
         url = f"{BASE}/{tag}/{artifact.filename}"
-        if url == sources.pins[artifact.pkg].url:
+        pin = sources.pins[artifact.pkg]
+        if url == pin.url:
             print(f"{artifact.pkg}: up to date ({tag})")
             continue
 
         print(f"{artifact.pkg}: updating to {tag}")
-        sha256 = url_sha256(url)
-        sources.pins[artifact.pkg].url = url
-        sources.pins[artifact.pkg].sha256 = sha256
-        print(f"{artifact.pkg}: {sha256}")
+        new_hash = url_sha256(url)
+        pin.url = url
+        pin.sha256 = new_hash
+        print(f"{artifact.pkg}: {new_hash}")
         updated.append(artifact.pkg)
 
     if not updated:
