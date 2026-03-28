@@ -51,7 +51,6 @@ async def _run_with_replay(
         },
     )
 
-    # Real Docker-based scoring — no mocking of evaluate_program.
     async with aiodocker.Docker() as docker:
         container = await docker.containers.run(
             config={"Image": "python:3.13-slim", "Cmd": ["sleep", "300"]}, name=f"fl-test-{uuid.uuid4().hex[:8]}"
@@ -73,7 +72,7 @@ async def _run_with_replay(
 
 async def test_basic_game_completes(tmp_path: Path) -> None:
     """Model plays 3 turns with a trivial all-zeros program, game completes."""
-    completions = [_play_turn_call(i, "x = int(input()); print(0)") for i in range(_TEST_TURNS)]
+    completions = [_play_turn_call(i, "for i in range(256): print(0)") for i in range(_TEST_TURNS)]
 
     summary = await _run_with_replay(completions=completions, tmp_path=tmp_path)
 
@@ -86,10 +85,11 @@ async def test_basic_game_completes(tmp_path: Path) -> None:
 
 async def test_perfect_program_zero_loss(tmp_path: Path) -> None:
     """A program implementing the correct parity function gets 0 loss."""
-    # Reads decimal, extracts bits, computes XOR of pairs, prints decimal result.
     perfect_program = (
-        "x = int(input()); bits = [(x >> (7 - i)) & 1 for i in range(8)]; "
-        "r = sum((bits[i] ^ bits[i+1]) << (3 - i//2) for i in range(0, 8, 2)); print(r)"
+        "for x in range(256):\n"
+        "    bits = [(x >> (7 - i)) & 1 for i in range(8)]\n"
+        "    r = sum((bits[i] ^ bits[i+1]) << (3 - i//2) for i in range(0, 8, 2))\n"
+        "    print(r)"
     )
     completions = [_play_turn_call(i, perfect_program) for i in range(_TEST_TURNS)]
 
@@ -103,13 +103,15 @@ async def test_improving_programs(tmp_path: Path) -> None:
     """Loss should decrease as the program improves turn over turn."""
     programs = [
         # Turn 1: always output 0 (bad)
-        "x = int(input()); print(0)",
+        "for i in range(256): print(0)",
         # Turn 2: gets first pair right, rest zeros
-        "x = int(input()); b0 = (x >> 7) & 1; b1 = (x >> 6) & 1; print((b0 ^ b1) << 3)",
+        ("for x in range(256):\n    b0 = (x >> 7) & 1; b1 = (x >> 6) & 1\n    print((b0 ^ b1) << 3)"),
         # Turn 3: gets all pairs right (perfect)
         (
-            "x = int(input()); bits = [(x >> (7 - i)) & 1 for i in range(8)]; "
-            "r = sum((bits[i] ^ bits[i+1]) << (3 - i//2) for i in range(0, 8, 2)); print(r)"
+            "for x in range(256):\n"
+            "    bits = [(x >> (7 - i)) & 1 for i in range(8)]\n"
+            "    r = sum((bits[i] ^ bits[i+1]) << (3 - i//2) for i in range(0, 8, 2))\n"
+            "    print(r)"
         ),
     ]
     completions = [_play_turn_call(i, programs[i]) for i in range(_TEST_TURNS)]
@@ -128,8 +130,20 @@ async def test_erroring_program_max_loss(tmp_path: Path) -> None:
 
     summary = await _run_with_replay(completions=completions, tmp_path=tmp_path, turn_limit=1)
 
-    # Every input errors: max loss = 256 inputs x 4 bits = 1024.
+    # No output lines: all 256 inputs missing, max loss = 256 * 4 = 1024.
     assert summary.result.per_turn_losses[0] == 256 * PARITY_GROUPS.m
+
+
+async def test_error_summary_reported(tmp_path: Path) -> None:
+    """Error summary counts are populated for a program that produces no output."""
+    completions = [_play_turn_call(0, "raise ValueError('broken')")]
+
+    summary = await _run_with_replay(completions=completions, tmp_path=tmp_path, turn_limit=1)
+
+    turn = summary.result.per_turn_losses
+    assert len(turn) == 1
+    # The turn result is in the JSONL, but we can check via the summary that loss is max.
+    assert summary.result.total_hamming_loss == 256 * PARITY_GROUPS.m
 
 
 def _check_output_files(tmp_path: Path) -> None:
@@ -145,7 +159,7 @@ def _check_output_files(tmp_path: Path) -> None:
 
 
 async def test_output_files_written(tmp_path: Path) -> None:
-    completions = [_play_turn_call(0, "x = int(input()); print(0)") for _ in range(_TEST_TURNS)]
+    completions = [_play_turn_call(0, "for i in range(256): print(0)") for _ in range(_TEST_TURNS)]
     await _run_with_replay(completions=completions, tmp_path=tmp_path)
     _check_output_files(tmp_path)
 

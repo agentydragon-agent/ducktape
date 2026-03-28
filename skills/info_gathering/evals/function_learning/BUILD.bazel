@@ -34,12 +34,10 @@ py_library(
 py_library(
     name = "scoring",
     srcs = ["scoring.py"],
-    data = ["eval_wrapper.py"],
     imports = ["../../../.."],
     deps = [
         ":functions",
         ":result_types",
-        "//util/bazel:runfiles",
         "@pypi//aiodocker",
     ],
 )

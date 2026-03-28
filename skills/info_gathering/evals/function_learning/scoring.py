@@ -1,90 +1,40 @@
 """Program evaluation for the function learning eval.
 
-Evaluates the model's program against all inputs in a single Docker exec
-call using eval_wrapper.py. Uses aiodocker directly (no MCP layer) for clean
-stdout access.
+Runs the model's program in a Docker container and compares its stdout lines
+against the secret function's outputs. The program takes no input and prints
+2^n lines — one per input from 0 to 2^n - 1.
 """
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
 
 import aiodocker
 
 from skills.info_gathering.evals.function_learning.functions import SecretFunction
-from skills.info_gathering.evals.function_learning.result_types import ProgramError
-from util.bazel.runfiles import get_required_path
+from skills.info_gathering.evals.function_learning.result_types import ProgramError, ProgramScore
 
 logger = logging.getLogger(__name__)
 
+EVAL_TIMEOUT_S = 30
 _MAX_REPORTED_ERRORS = 5
-_EVAL_TIMEOUT_S = 30
-_PER_INPUT_TIMEOUT_S = 1
-
-_EVAL_WRAPPER_RLOCATION = "_main/skills/info_gathering/evals/function_learning/eval_wrapper.py"
 
 
 def _hamming_distance(a: int, b: int) -> int:
-    """Number of differing bits between two integers."""
     return (a ^ b).bit_count()
+
+
+def _max_output_bytes(secret_fn: SecretFunction) -> int:
+    """Upper bound on expected stdout size, with 2x safety margin."""
+    digits = len(str(secret_fn.max_output))
+    n_lines = secret_fn.max_input + 1
+    return (digits + 1) * n_lines * 2
 
 
 @dataclass
 class ScoringResult:
-    """Result of evaluating a program against all inputs."""
-
-    hamming_loss: int
-    errors: list[ProgramError]
+    score: ProgramScore
     total_eval_s: float
-    mean_per_input_s: float
-    max_per_input_s: float
-
-
-@dataclass
-class _WrapperOutput:
-    """Parsed output from eval_wrapper.py."""
-
-    results: dict[str, str]
-    errors: dict[str, str]
-    timings: dict[str, float]
-
-
-def _parse_wrapper_output(raw: str) -> _WrapperOutput:
-    """Parse JSON output from the eval wrapper, raising on failure."""
-    data = json.loads(raw.strip())
-    return _WrapperOutput(
-        results=data.get("results", {}), errors=data.get("errors", {}), timings=data.get("timings", {})
-    )
-
-
-def _score_input(inp: int, expected: int, wrapper: _WrapperOutput, m: int, errors: list[ProgramError]) -> int:
-    """Score a single input, returning its hamming loss contribution."""
-    inp_str = str(inp)
-    if inp_str in wrapper.errors:
-        if len(errors) < _MAX_REPORTED_ERRORS:
-            errors.append(ProgramError(input=inp_str, error=wrapper.errors[inp_str]))
-        return m
-    if inp_str not in wrapper.results:
-        if len(errors) < _MAX_REPORTED_ERRORS:
-            errors.append(ProgramError(input=inp_str, error="Missing from results"))
-        return m
-    got = int(wrapper.results[inp_str])
-    return _hamming_distance(expected, got)
-
-
-async def _docker_exec(container: aiodocker.docker.DockerContainer, cmd: list[str], timeout_s: int) -> str:
-    """Run a command in a container and return stdout."""
-    exec_obj = await container.exec(cmd, stdout=True, stderr=True, stdin=False, tty=False)
-    stream = exec_obj.start()
-    chunks: list[bytes] = []
-    try:
-        async with asyncio.timeout(timeout_s):
-            while msg := await stream.read_out():
-                chunks.append(msg.data)
-    except TimeoutError:
-        chunks.append(b"\n[TIMEOUT]\n")
-    return b"".join(chunks).decode("utf-8", errors="replace")
 
 
 def _max_loss(secret_fn: SecretFunction) -> int:
@@ -93,50 +43,93 @@ def _max_loss(secret_fn: SecretFunction) -> int:
 
 def _fail_result(error_msg: str, secret_fn: SecretFunction, total_eval_s: float) -> ScoringResult:
     return ScoringResult(
-        hamming_loss=_max_loss(secret_fn),
-        errors=[ProgramError(input="*", error=error_msg)],
+        score=ProgramScore(
+            hamming_loss=_max_loss(secret_fn),
+            missing_lines=secret_fn.max_input + 1,
+            examples=[ProgramError(line=0, error=error_msg)],
+        ),
         total_eval_s=total_eval_s,
-        mean_per_input_s=0,
-        max_per_input_s=0,
+    )
+
+
+async def _docker_exec(
+    container: aiodocker.docker.DockerContainer, cmd: list[str], timeout_s: int, max_bytes: int
+) -> tuple[str, bool]:
+    """Run a command in a container and return (stdout, timed_out)."""
+    exec_obj = await container.exec(cmd, stdout=True, stderr=True, stdin=False, tty=False)
+    stream = exec_obj.start()
+    chunks: list[bytes] = []
+    total = 0
+    timed_out = False
+    try:
+        async with asyncio.timeout(timeout_s):
+            while msg := await stream.read_out():
+                chunks.append(msg.data)
+                total += len(msg.data)
+                if total >= max_bytes:
+                    break
+    except TimeoutError:
+        timed_out = True
+    return b"".join(chunks).decode("utf-8", errors="replace"), timed_out
+
+
+def _score_lines(lines: list[str], secret_fn: SecretFunction) -> ProgramScore:
+    """Score output lines against the secret function."""
+    n_inputs = secret_fn.max_input + 1
+    m = secret_fn.m
+    max_output = secret_fn.max_output
+
+    hamming_loss = 0
+    parse_errors = 0
+    out_of_range = 0
+    missing_lines = max(0, n_inputs - len(lines))
+    examples: list[ProgramError] = []
+
+    for i in range(n_inputs):
+        expected = secret_fn.evaluate(i)
+        if i >= len(lines):
+            hamming_loss += m
+            continue
+        raw = lines[i].strip()
+        try:
+            val = int(raw)
+        except ValueError:
+            parse_errors += 1
+            hamming_loss += m
+            if len(examples) < _MAX_REPORTED_ERRORS:
+                examples.append(ProgramError(line=i, error=f"Not an integer: {raw!r}"))
+            continue
+        if val < 0 or val > max_output:
+            out_of_range += 1
+            hamming_loss += m
+            if len(examples) < _MAX_REPORTED_ERRORS:
+                examples.append(ProgramError(line=i, error=f"Out of range [0, {max_output}]: {val}"))
+            continue
+        hamming_loss += _hamming_distance(expected, val)
+
+    return ProgramScore(
+        hamming_loss=hamming_loss,
+        parse_errors=parse_errors,
+        out_of_range=out_of_range,
+        missing_lines=missing_lines,
+        examples=examples,
     )
 
 
 async def evaluate_program(
     container: aiodocker.docker.DockerContainer, program: str, secret_fn: SecretFunction
 ) -> ScoringResult:
-    """Evaluate program against all inputs in a single Docker exec call."""
-    all_inputs = secret_fn.all_inputs()
-    wrapper_source = get_required_path(_EVAL_WRAPPER_RLOCATION).read_text()
-    config = json.dumps(
-        {
-            "program": program,
-            "all_inputs": all_inputs,
-            "timeout": _PER_INPUT_TIMEOUT_S,
-            "max_output": secret_fn.max_output,
-        }
-    )
+    """Evaluate program against all inputs by comparing stdout lines."""
+    max_bytes = _max_output_bytes(secret_fn)
     loop = asyncio.get_running_loop()
     t0 = loop.time()
 
-    raw = await _docker_exec(container, ["python3", "-c", wrapper_source, config], _EVAL_TIMEOUT_S)
+    raw, timed_out = await _docker_exec(container, ["python3", "-c", program], EVAL_TIMEOUT_S, max_bytes)
     total_eval_s = loop.time() - t0
 
-    try:
-        wrapper = _parse_wrapper_output(raw)
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.warning("Failed to parse scoring output: %s (raw: %s)", e, raw[:300])
-        return _fail_result(f"Parse error: {e}", secret_fn, total_eval_s)
+    if timed_out and not raw.strip():
+        return _fail_result("Program timed out with no output", secret_fn, total_eval_s)
 
-    program_errors: list[ProgramError] = []
-    hamming_loss = sum(
-        _score_input(inp, secret_fn.evaluate(inp), wrapper, secret_fn.m, program_errors) for inp in all_inputs
-    )
-
-    elapsed_times = list(wrapper.timings.values())
-    return ScoringResult(
-        hamming_loss=hamming_loss,
-        errors=program_errors,
-        total_eval_s=total_eval_s,
-        mean_per_input_s=sum(elapsed_times) / len(elapsed_times) if elapsed_times else 0,
-        max_per_input_s=max(elapsed_times) if elapsed_times else 0,
-    )
+    lines = raw.splitlines()
+    score = _score_lines(lines, secret_fn)
+    return ScoringResult(score=score, total_eval_s=total_eval_s)

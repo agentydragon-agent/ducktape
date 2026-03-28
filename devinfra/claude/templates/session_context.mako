@@ -41,6 +41,21 @@ ${len(secrets.env_vars)} env var(s) loaded from k8s cluster secrets.
 % if secrets.kubeconfig_path:
 `kubectl` access available: `cluster/k8s/{claude,agent-shared}-rbac/` includes admin in `claude-sandbox` namespace, read-only in `props`.
 % endif
+% else:
+
+## Secrets — UNAVAILABLE
+K8s secrets could not be fetched. This means:
+- `GITHUB_TOKEN` is not set — `gh` CLI and authenticated git operations will fail
+- `BUILDBUDDY_API_KEY` is not set — Bazel remote cache/execution (RBE) is unavailable
+- `KUBECONFIG` is not set — `kubectl` will not work
+
+**Recovery steps:**
+1. Check the daemon log for the root cause: `tail -50 ${log_file}`
+2. Common cause: proxy tunnel returned 403 (k8s token expired or proxy auth failed)
+3. Look for a previous working session's env file under `~/.claude/session-env/*/sessionstart-hook-0.sh` and copy `GITHUB_TOKEN` and `BUILDBUDDY_API_KEY` values
+4. Export them manually: `export GITHUB_TOKEN=... BUILDBUDDY_API_KEY=...`
+
+**Notify the user** that secrets are unavailable and Bazel RBE / GitHub operations will not work until resolved.
 % endif
 % if buildbuddy_configured:
 

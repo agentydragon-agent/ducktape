@@ -98,34 +98,22 @@ class CallerContext:
 class PlatformSetup:
     """Results of platform-specific setup (web or CLI).
 
-    Carries everything from the platform-specific setup phase to the shared
-    downstream steps (bazelrc render, env file write, session context emit).
+    Carries actual setup results — not copies of fields derivable from
+    paths, settings, or the result objects themselves.
     """
 
-    # Bazelrc rendering params
-    proxy_port: int | None = None
-    remote_proxy_sock: Path | None = None
-    truststore_path: Path | None = None
-    truststore_password: str | None = None
-    combined_ca_path: Path | None = None
-    bazel_cache_dir: Path | None = None
-
-    # EnvVars params
-    session_dir: Path | None = None
-    supervisor_port: int | None = None
-    bazelisk_path: Path | None = None
-    docker_env: dict[str, str] | None = None
-    mkcert_cert: Path | None = None
-    mkcert_key: Path | None = None
-    secrets_env_vars: dict[str, str] | None = None
-    with_direnv: bool = False
-
-    # Session context params
+    # Platform-specific results
     auth_proxy: proxy_setup.ProxySetup | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
     precommit_result: precommit.PrecommitSetup | None = None
-    secrets: k8s_secrets.K8sSecretsResult | None = None
     mkcert_result: mkcert.MkcertSetup | None = None
+    bazelisk_path: Path | None = None
+    docker_env: dict[str, str] | None = None
+    bazel_cache_dir: Path | None = None
+    with_direnv: bool = False
+
+    # Shared-step results (populated by run_session, not platform setup)
+    secrets: k8s_secrets.K8sSecretsResult | None = None
     fork_result: fork_remote.ForkRemoteSetup | None = None
     buildbuddy_configured: bool = False
 
@@ -207,13 +195,12 @@ async def _setup_web(
     project_dir: Path,
     tracer: trace.Tracer,
     root_ctx: trace.Context,
-    hook_config: k8s_secrets.HookConfig | None,
     proxy: AuthForwardingProxy | None,
 ) -> PlatformSetup:
-    """Web mode: supervisor, proxy, containers, secrets, parallel installs.
+    """Web mode: supervisor, proxy, containers, parallel installs.
 
-    Returns a fully populated PlatformSetup with all results needed by the
-    shared downstream steps.
+    Returns a PlatformSetup with platform-specific results. K8s secrets,
+    BuildBuddy, and fork remote are handled in the unified run_session() path.
     """
     logger.info("Setting up dev environment...")
 
@@ -356,67 +343,19 @@ async def _setup_web(
         logger.error("Proxy setup failed: %s", auth_proxy_result)
         raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
 
-    combined_ca = paths.auth_proxy_combined_ca
-
-    # Read k8s secrets now that combined CA is available for TLS.
-    # Route through the auth proxy so the upstream egress proxy gets credentials.
-    secrets: k8s_secrets.K8sSecretsResult | None = None
-    if settings.k8s_token and hook_config:
-        with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
-            secrets = k8s_secrets.setup_k8s_secrets(
-                token=settings.k8s_token,
-                session_dir=paths.session_dir,
-                combined_ca_path=combined_ca,
-                config=hook_config,
-                proxy=auth_proxy_result.proxy_url,
-            )
-
-    # Configure BuildBuddy now that k8s secrets (with API key) are available.
-    buildbuddy_api_key = secrets.buildbuddy_api_key if secrets else None
-    with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
-        buildbuddy_result = await run_in_thread(lambda: buildbuddy.setup_buildbuddy(api_key=buildbuddy_api_key))
-    buildbuddy_configured = isinstance(buildbuddy_result, buildbuddy.BuildbuddySetup) and buildbuddy_result.configured
-    if isinstance(buildbuddy_result, BaseException):
-        logger.warning("Failed to configure BuildBuddy: %s", buildbuddy_result)
-
-    # Ensure 'fork' git remote when GITHUB_TOKEN is available.
-    fork_result: fork_remote.ForkRemoteSetup | None = None
-    if secrets and "GITHUB_TOKEN" in secrets.env_vars:
-        try:
-            with tracer.start_as_current_span("setup_fork_remote", context=root_ctx):
-                fork_result = fork_remote.ensure_fork_remote(secrets.env_vars["GITHUB_TOKEN"], project_dir)
-        except Exception as e:
-            logger.warning("Fork remote setup failed: %s", e)
-
     logger.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_path, auth_proxy_result.status, auth_proxy_result.ca_status
     )
     logger.info("Container: %s", container_result)
 
     return PlatformSetup(
-        # Bazelrc rendering
-        proxy_port=auth_proxy_result.port,
-        remote_proxy_sock=paths.remote_proxy_sock,
-        truststore_path=paths.auth_proxy_truststore,
-        truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
-        combined_ca_path=combined_ca,
-        bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
-        # EnvVars
-        session_dir=paths.session_dir,
-        supervisor_port=settings.supervisor_port,
-        bazelisk_path=bazelisk_path,
-        docker_env=docker_env,
-        mkcert_cert=mkcert_result.cert_path if isinstance(mkcert_result, mkcert.MkcertSetup) else None,
-        mkcert_key=mkcert_result.key_path if isinstance(mkcert_result, mkcert.MkcertSetup) else None,
-        secrets_env_vars=secrets.env_vars if secrets else None,
-        # Session context
         auth_proxy=auth_proxy_result,
         container=None if isinstance(container_result, BaseException) else container_result,
         precommit_result=None if isinstance(precommit_result, BaseException) else precommit_result,
-        secrets=secrets,
         mkcert_result=None if isinstance(mkcert_result, BaseException) else mkcert_result,
-        fork_result=fork_result,
-        buildbuddy_configured=buildbuddy_configured,
+        bazelisk_path=bazelisk_path,
+        docker_env=docker_env,
+        bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
     )
 
 
@@ -461,24 +400,49 @@ async def run_session(
     # Load hook config (general config file, not gated on k8s_token).
     hook_config = HookConfig.load_from_repo(project_dir)
 
-    # K8s secrets are read after platform setup (proxy must be up for web mode TLS).
-    secrets: k8s_secrets.K8sSecretsResult | None = None
-
-    # Platform-specific setup
+    # Platform-specific setup (proxy, containers, certs, etc.)
     if ctx.web_mode:
-        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, hook_config, proxy=proxy)
+        setup = await _setup_web(paths, settings, project_dir, tracer, root_ctx, proxy=proxy)
     else:
-        # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
-        if settings.k8s_token and hook_config:
-            secrets = k8s_secrets.setup_k8s_secrets(
-                token=settings.k8s_token, session_dir=paths.session_dir, combined_ca_path=None, config=hook_config
+        setup = PlatformSetup(with_direnv=True)
+
+    # -- Shared steps: k8s secrets, BuildBuddy, fork remote --
+    # These run in both web and CLI modes. Web mode provides auth_proxy (with
+    # proxy_url and combined_ca); CLI mode has auth_proxy=None.
+    combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
+    if settings.k8s_token and hook_config:
+        try:
+            with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
+                setup.secrets = k8s_secrets.setup_k8s_secrets(
+                    token=settings.k8s_token,
+                    session_dir=paths.session_dir,
+                    combined_ca_path=combined_ca,
+                    config=hook_config,
+                    proxy=setup.auth_proxy.proxy_url if setup.auth_proxy else None,
+                )
+        except Exception as e:
+            logger.warning("K8s secrets fetch failed (non-fatal, continuing without secrets): %s", e)
+
+    # Configure BuildBuddy now that k8s secrets (with API key) are available.
+    buildbuddy_api_key = setup.secrets.buildbuddy_api_key if setup.secrets else None
+    with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
+        if ctx.web_mode or buildbuddy_api_key:
+            buildbuddy_result = await run_in_thread(lambda: buildbuddy.setup_buildbuddy(api_key=buildbuddy_api_key))
+            setup.buildbuddy_configured = (
+                isinstance(buildbuddy_result, buildbuddy.BuildbuddySetup) and buildbuddy_result.configured
             )
-        setup = PlatformSetup(
-            buildbuddy_configured=buildbuddy.is_buildbuddy_configured(),
-            with_direnv=True,
-            secrets=secrets,
-            secrets_env_vars=secrets.env_vars if secrets else None,
-        )
+            if isinstance(buildbuddy_result, BaseException):
+                logger.warning("Failed to configure BuildBuddy: %s", buildbuddy_result)
+        else:
+            setup.buildbuddy_configured = buildbuddy.is_buildbuddy_configured()
+
+    # Ensure 'fork' git remote when GITHUB_TOKEN is available.
+    if setup.secrets and "GITHUB_TOKEN" in setup.secrets.env_vars:
+        try:
+            with tracer.start_as_current_span("setup_fork_remote", context=root_ctx):
+                setup.fork_result = fork_remote.ensure_fork_remote(setup.secrets.env_vars["GITHUB_TOKEN"], project_dir)
+        except Exception as e:
+            logger.warning("Fork remote setup failed: %s", e)
 
     # Configure OTLP now that k8s secrets (with bearer token) are available.
     # Bearer token from k8s overrides config file / env var. Idempotent across sessions.
@@ -497,11 +461,11 @@ async def run_session(
         bazelrc_content: str = bazelrc_template.render(
             web_proxy=ctx.web_mode,
             use_tcp_proxy=settings.proxy_mode == ProxyMode.TCP,
-            proxy_port=setup.proxy_port,
-            remote_proxy_sock=setup.remote_proxy_sock,
-            truststore_path=setup.truststore_path,
-            truststore_password=setup.truststore_password,
-            combined_ca_path=setup.combined_ca_path,
+            proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
+            remote_proxy_sock=paths.remote_proxy_sock,
+            truststore_path=paths.auth_proxy_truststore,
+            truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
+            combined_ca_path=combined_ca,
             buildbuddy_configured=setup.buildbuddy_configured,
             buildbuddy_bazelrc=buildbuddy.BUILDBUDDY_BAZELRC,
             bazel_cache_dir=setup.bazel_cache_dir,
@@ -524,16 +488,16 @@ async def run_session(
         env_vars = env_file.EnvVars(
             bazel_wrapper_dir=paths.wrapper_dir,
             session_bazelrc=session_bazelrc,
-            session_dir=setup.session_dir,
-            proxy_port=setup.proxy_port,
-            supervisor_port=setup.supervisor_port,
-            combined_ca=setup.combined_ca_path,
+            session_dir=paths.session_dir,
+            proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
+            supervisor_port=settings.supervisor_port,
+            combined_ca=combined_ca,
             bazelisk_path=setup.bazelisk_path,
             docker_env=setup.docker_env,
             hook_timestamp=hook_timestamp,
-            mkcert_cert=setup.mkcert_cert,
-            mkcert_key=setup.mkcert_key,
-            secrets_env_vars=setup.secrets_env_vars,
+            mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,
+            mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
+            secrets_env_vars=setup.secrets.env_vars if setup.secrets else None,
             with_direnv=setup.with_direnv,
             extra_env_script=hook_config.extra_env_script if hook_config else None,
         )

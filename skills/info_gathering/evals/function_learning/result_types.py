@@ -8,16 +8,29 @@ from skills.info_gathering.evals.harness import RunSummary as _BaseRunSummary
 
 
 class ProgramError(BaseModel):
-    input: str
+    line: int = Field(description="0-based line index (= input value)")
     error: str
+
+
+class ProgramScore(BaseModel):
+    """Full scoring breakdown for one program submission."""
+
+    hamming_loss: int = Field(description="Total bit disagreements across all inputs")
+    parse_errors: int = Field(default=0, description="Lines that didn't parse as an integer")
+    out_of_range: int = Field(default=0, description="Lines that parsed but were outside [0, max_output]")
+    missing_lines: int = Field(default=0, description="Lines missing (program produced too few lines)")
+    examples: list[ProgramError] = Field(default_factory=list, description="Up to 5 example errors")
+
+    @property
+    def has_errors(self) -> bool:
+        return self.parse_errors > 0 or self.out_of_range > 0 or self.missing_lines > 0
 
 
 class TurnResult(BaseModel):
     turn: int
     query: int
     query_result: int
-    hamming_loss: int
-    errors: list[ProgramError] = Field(default_factory=list)
+    score: ProgramScore
 
 
 class FunctionLearningResult(BaseModel):
