@@ -2,8 +2,8 @@
 # Sync npins/sources.json with the latest GitHub Release for each package.
 #
 # For each pinned package, finds the latest release tag, compares the URL
-# against the current pin, and updates if stale. Produces at most one commit
-# regardless of how many packages changed.
+# against the current pin, and updates npins/sources.json in the working tree
+# if the pin is stale.
 #
 # Expects: Nix with flakes enabled, gh CLI authenticated.
 set -euo pipefail

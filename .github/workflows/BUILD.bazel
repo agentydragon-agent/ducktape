@@ -2,7 +2,6 @@
 exports_files(
     [
         "ci.yml",
-        "release.yml",
     ],
     visibility = ["//devinfra/ci:__pkg__"],
 )

@@ -61,5 +61,5 @@ workflows:
   pre-commit:
     trigger: { kind: always }
 
-# Release definitions removed — release.yml is now manually maintained.
-# See .github/workflows/release.yml for the single build-and-push job.
+# Release: bb_release.sh creates GitHub Releases; sync-pins.yml (periodic)
+# updates npins/sources.json. No GHA workflow dispatch needed.
