@@ -65,6 +65,19 @@ class K8sSecretsConfig(BaseModel):
         return self
 
 
+class SopsSecretFile(BaseModel):
+    """A SOPS-encrypted file with a mapping from decrypted keys to env var names."""
+
+    path: str = Field(description="Repo-relative path to the SOPS-encrypted YAML file")
+    mapping: dict[str, str] = Field(description="Decrypted YAML key -> env var name")
+
+
+class SopsSecretsConfig(BaseModel):
+    """Config for reading secrets from SOPS-encrypted files."""
+
+    files: list[SopsSecretFile]
+
+
 class K8sConfig(BaseModel):
     """K8s cluster connection config."""
 
@@ -95,6 +108,7 @@ class HookConfig(BaseModel):
 
     k8s: K8sConfig | None = None
     k8s_secrets: K8sSecretsConfig | None = None
+    sops_secrets: SopsSecretsConfig | None = None
     otel: OtelConfig | None = None
     pre_commit: PreCommitConfig | None = None
     extra_env_script: str | None = Field(

@@ -1,0 +1,15 @@
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  name: claude-web-age-key
+  namespace: claude-sandbox
+  annotations:
+    description: Age private key for SOPS decryption in Claude Code web sessions
+spec:
+  encryptedData:
+    age-key: AgCr3JZqj6Zv2Hpj2xVRHADvEZ1NG8nyizQZOSmWAmPnJAB8wb4oAUsgZFp0qfBeIRoYssrIWzzmtdwThukUxBeY7JX2C1DgYZcoxcLdjOCilAaZdPNzsiXG2XrXRMhb8ERjCXP0rBjXOjha0RTcaQkqfhnjudzgvJVvT/T3lGEx48w3fbSsot7g0bRc0Oc/kC0RUjH0qMiSmYEpoe9ztM+d090x9ZeJawhMwEppQIryCLjvHcgJa9zqRA8CbU7VWJWZnt4mHwCmFSKR17833862YMXZGhkApm2bwg+Nj93Tw1EJoqktik5tEO8SiLiGw/RX9bqH/zBXgCDFKP33iuzp8rDRf6bUnVjb7B5EmBFN8DkzbbWxrR7sBE+Gm5KuHugp/AJ8SIC32pHcRQGjb09zAgO4fA9hw6GZP5KWcsMF/YxGb2aLGXrE2XugL/AFutsJkrx6Stkcf0EL8MwycNUQrUiyWWfSxDs5LLTmvy321QUdbntrksCERwUhG3UXKnsh0AxaauY+J6scNdQZRQvfUAAgUkYY4DQUORLe0WbLSwi9rBx0YblbdeyNSsBibQurBWpTSNOMfwhIr4t2N8P6gBHvZe0ME0z8jHSEyfsApU8EGWWxzaNsaO/Ly8X86myo3N92x2CCmuOymYbO4VR9/AmEY8AMSyadq6Dr+htexd67dILwHWdo5NafcEJHz9cVI5iGuF17I4BuO414ITXh8UkxDfWyvJMwg8+k0k+j8sFV68h3H5JcA5PeP/AUBIGFH4Os9Jty6RJ6jqe7V1LRy4J8hpcg/zeQSQ==
+  template:
+    metadata:
+      name: claude-web-age-key
+      namespace: claude-sandbox
+    type: Opaque

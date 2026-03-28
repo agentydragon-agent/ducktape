@@ -137,6 +137,7 @@ py_library(
         "//devinfra/claude:managed_files",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
+        "//devinfra/claude:sops_decrypt",
         "//devinfra/claude/auth_proxy:proxy",
         "//devinfra/claude/auth_proxy:setup",
         "//devinfra/claude/auth_proxy:vars",

@@ -156,6 +156,7 @@ dependencies = [
     "kubernetes-asyncio>=26.1",
 
     # claude_hooks
+    "pyrage>=1.0.0",
     "typing-extensions",
 
     # claude_hooks

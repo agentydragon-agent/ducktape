@@ -7,6 +7,8 @@ keys:
   # User keys (derived from ~/.ssh/id_ed25519 via ssh-to-age)
   - &user-wyrm2 age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
   - &user-rugged age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
+  # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
+  - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
 creation_rules:
   # Per-host secrets (only the host + admin can decrypt)
   - path_regex: secrets/wyrm2-.*\.yaml$
@@ -42,7 +44,7 @@ creation_rules:
           - *admin
           - *wyrm2
           - *rugged
-  # Shared secrets (all hosts)
+  # Shared secrets (all hosts + claude-web agent)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:
       - age:
@@ -50,3 +52,4 @@ creation_rules:
           - *wyrm2
           - *rugged
           - *atlas
+          - *claude-web

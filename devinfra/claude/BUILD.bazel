@@ -75,6 +75,18 @@ py_library(
     ],
 )
 
+py_library(
+    name = "sops_decrypt",
+    srcs = ["sops_decrypt.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//cryptography",
+        "@pypi//pyrage",
+        "@pypi//pyyaml",
+    ],
+)
+
 # === Modules with internal deps ===
 
 py_library(
@@ -173,6 +185,20 @@ py_test(
         "//devinfra/claude/claude_api/hooks:session_start",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_sops_decrypt",
+    srcs = ["test_sops_decrypt.py"],
+    imports = ["../.."],
+    deps = [
+        ":sops_decrypt",
+        "@pypi//cryptography",
+        "@pypi//pyrage",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 
