@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import aiodocker
 
 from skills.info_gathering.evals.function_learning.functions import SecretFunction
-from skills.info_gathering.evals.function_learning.result_types import ErrorSummary, ProgramError
+from skills.info_gathering.evals.function_learning.result_types import ProgramError, ProgramScore
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +33,7 @@ def _max_output_bytes(secret_fn: SecretFunction) -> int:
 
 @dataclass
 class ScoringResult:
-    hamming_loss: int
-    error_summary: ErrorSummary
+    score: ProgramScore
     total_eval_s: float
 
 
@@ -44,10 +43,8 @@ def _max_loss(secret_fn: SecretFunction) -> int:
 
 def _fail_result(error_msg: str, secret_fn: SecretFunction, total_eval_s: float) -> ScoringResult:
     return ScoringResult(
-        hamming_loss=_max_loss(secret_fn),
-        error_summary=ErrorSummary(
-            parse_errors=0,
-            out_of_range=0,
+        score=ProgramScore(
+            hamming_loss=_max_loss(secret_fn),
             missing_lines=secret_fn.max_input + 1,
             examples=[ProgramError(line=0, error=error_msg)],
         ),
@@ -76,8 +73,8 @@ async def _docker_exec(
     return b"".join(chunks).decode("utf-8", errors="replace"), timed_out
 
 
-def _score_lines(lines: list[str], secret_fn: SecretFunction) -> tuple[int, ErrorSummary]:
-    """Score output lines against the secret function. Returns (hamming_loss, error_summary)."""
+def _score_lines(lines: list[str], secret_fn: SecretFunction) -> ProgramScore:
+    """Score output lines against the secret function."""
     n_inputs = secret_fn.max_input + 1
     m = secret_fn.m
     max_output = secret_fn.max_output
@@ -110,10 +107,13 @@ def _score_lines(lines: list[str], secret_fn: SecretFunction) -> tuple[int, Erro
             continue
         hamming_loss += _hamming_distance(expected, val)
 
-    summary = ErrorSummary(
-        parse_errors=parse_errors, out_of_range=out_of_range, missing_lines=missing_lines, examples=examples
+    return ProgramScore(
+        hamming_loss=hamming_loss,
+        parse_errors=parse_errors,
+        out_of_range=out_of_range,
+        missing_lines=missing_lines,
+        examples=examples,
     )
-    return hamming_loss, summary
 
 
 async def evaluate_program(
@@ -131,5 +131,5 @@ async def evaluate_program(
         return _fail_result("Program timed out with no output", secret_fn, total_eval_s)
 
     lines = raw.splitlines()
-    hamming_loss, summary = _score_lines(lines, secret_fn)
-    return ScoringResult(hamming_loss=hamming_loss, error_summary=summary, total_eval_s=total_eval_s)
+    score = _score_lines(lines, secret_fn)
+    return ScoringResult(score=score, total_eval_s=total_eval_s)

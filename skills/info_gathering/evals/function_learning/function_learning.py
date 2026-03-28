@@ -89,37 +89,29 @@ def _make_play_turn_tool(
         logger.info("Turn %d: query=%d -> %d", game.turn, query, query_result)
 
         scoring = await evaluate_program(scoring_container, program, secret_fn)
+        score = scoring.score
 
-        game.turn_results.append(
-            TurnResult(
-                turn=game.turn,
-                query=query,
-                query_result=query_result,
-                hamming_loss=scoring.hamming_loss,
-                error_summary=scoring.error_summary,
-            )
-        )
+        game.turn_results.append(TurnResult(turn=game.turn, query=query, query_result=query_result, score=score))
         game.record(
-            "scaffold", f"Turn {game.turn}: hamming_loss={scoring.hamming_loss} (eval {scoring.total_eval_s:.1f}s)"
+            "scaffold", f"Turn {game.turn}: hamming_loss={score.hamming_loss} (eval {scoring.total_eval_s:.1f}s)"
         )
-        logger.info("Turn %d: hamming_loss=%d (eval %.1fs)", game.turn, scoring.hamming_loss, scoring.total_eval_s)
+        logger.info("Turn %d: hamming_loss=%d (eval %.1fs)", game.turn, score.hamming_loss, scoring.total_eval_s)
 
         response: dict[str, object] = {
             "turn": game.turn,
             "turns_remaining": game.turn_limit - game.turn,
             "query_result": f"f({query}) = {query_result}",
-            "hamming_loss": scoring.hamming_loss,
+            "hamming_loss": score.hamming_loss,
             "total_possible_loss": (secret_fn.max_input + 1) * secret_fn.m,
         }
-        es = scoring.error_summary
-        if es.parse_errors or es.out_of_range or es.missing_lines:
+        if score.has_errors:
             response["error_summary"] = {
-                "parse_errors": es.parse_errors,
-                "out_of_range": es.out_of_range,
-                "missing_lines": es.missing_lines,
+                "parse_errors": score.parse_errors,
+                "out_of_range": score.out_of_range,
+                "missing_lines": score.missing_lines,
             }
-        if es.examples:
-            response["error_examples"] = [{"line": e.line, "error": e.error} for e in es.examples]
+        if score.examples:
+            response["error_examples"] = [{"line": e.line, "error": e.error} for e in score.examples]
 
         return json.dumps(response, indent=2)
 
@@ -232,7 +224,7 @@ async def run_game(
         history.append(FunctionExecutionResultMessage(content=exec_results))
 
     # Build result.
-    per_turn = [tr.hamming_loss for tr in game.turn_results]
+    per_turn = [tr.score.hamming_loss for tr in game.turn_results]
     total_hamming = sum(per_turn)
     fl_result = FunctionLearningResult(total_hamming_loss=total_hamming, per_turn_losses=per_turn)
 

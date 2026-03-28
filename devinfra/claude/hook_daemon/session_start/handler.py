@@ -362,14 +362,17 @@ async def _setup_web(
     # Route through the auth proxy so the upstream egress proxy gets credentials.
     secrets: k8s_secrets.K8sSecretsResult | None = None
     if settings.k8s_token and hook_config:
-        with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
-            secrets = k8s_secrets.setup_k8s_secrets(
-                token=settings.k8s_token,
-                session_dir=paths.session_dir,
-                combined_ca_path=combined_ca,
-                config=hook_config,
-                proxy=auth_proxy_result.proxy_url,
-            )
+        try:
+            with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
+                secrets = k8s_secrets.setup_k8s_secrets(
+                    token=settings.k8s_token,
+                    session_dir=paths.session_dir,
+                    combined_ca_path=combined_ca,
+                    config=hook_config,
+                    proxy=auth_proxy_result.proxy_url,
+                )
+        except Exception as e:
+            logger.warning("K8s secrets fetch failed (non-fatal, continuing without secrets): %s", e)
 
     # Configure BuildBuddy now that k8s secrets (with API key) are available.
     buildbuddy_api_key = secrets.buildbuddy_api_key if secrets else None
@@ -470,9 +473,12 @@ async def run_session(
     else:
         # CLI mode: read k8s secrets (no proxy needed, combined_ca_path=None).
         if settings.k8s_token and hook_config:
-            secrets = k8s_secrets.setup_k8s_secrets(
-                token=settings.k8s_token, session_dir=paths.session_dir, combined_ca_path=None, config=hook_config
-            )
+            try:
+                secrets = k8s_secrets.setup_k8s_secrets(
+                    token=settings.k8s_token, session_dir=paths.session_dir, combined_ca_path=None, config=hook_config
+                )
+            except Exception as e:
+                logger.warning("K8s secrets fetch failed (non-fatal, continuing without secrets): %s", e)
         setup = PlatformSetup(
             buildbuddy_configured=buildbuddy.is_buildbuddy_configured(),
             with_direnv=True,
