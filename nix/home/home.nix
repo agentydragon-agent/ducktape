@@ -120,7 +120,7 @@ in
     ./programs/gemini-cli.nix # Our local module with policies support
     ./gemini_cli.nix # Configuration using the local module
     ./shell/oh-my-posh.nix
-    ./modules/gnome-workspace-shortcuts.nix
+    ./modules/gnome-shell-keybindings.nix
     ./modules/gnome-custom-keybindings.nix
     ./modules/flameshot-screenshots.nix
     ./modules/datetime-format.nix

@@ -96,14 +96,60 @@ dconf reset -f /org/gnome/shell/extensions/pop-shell/
 dconf reset -f /org/gnome/shell/extensions/dash-to-dock/
 ```
 
-## Verification Plan
+## Results (2026-03-28)
 
-After switch + re-login:
+Deployed with `sudo nixos-rebuild switch --flake '.#rugged'`, tested via
+`dbus-run-session gnome-shell --devkit --wayland`.
 
-1. Check workspace layout is horizontal (overview should show workspaces side-by-side)
-2. Test `Ctrl+Alt+Left/Right` for workspace switching
-3. Test `Super+Left/Right/Up/Down` for Pop Shell focus
-4. Test `Super+Return` for tiling mode entry
-5. Test `Super+h` — expect minimize (GNOME wins), not focus-left
-6. Test `Super+l` — expect lock screen (GNOME wins), not focus-right
-7. Check Pop Shell `Super+Shift+Up/Down` workspace shortcuts are active again
+**Scenario A confirmed**: `dconf read .../switch-to-workspace-left` returned
+empty (schema default), not `@as []`. Home-manager resets removed keys.
+
+**Observed:**
+
+- Workspace layout: horizontal (side-by-side in overview) — correct
+- `Ctrl+Alt+Left/Right`: switches workspaces on the **outer** session, not devkit
+- `Super+Left/Right`: moves windows on the **outer** session
+- `Super+h`: minimizes the devkit window (outer GNOME intercepts)
+- `Super+s`: stacking toggle on outer session
+
+**Devkit limitation discovered**: the outer Wayland compositor grabs
+keybindings at the compositor level before they reach the nested instance.
+Devkit is useful for visual/extension testing but **cannot test keyboard
+shortcuts** — all Super/Ctrl+Alt combos are intercepted by the host mutter.
+
+**Viable testing approaches for shortcuts:**
+
+1. Test on real session (log out/in after `home-manager switch`)
+2. Reason from dconf state + schema knowledge (sufficient for conflict analysis)
+3. Separate VT (`Ctrl+Alt+F3`, full GNOME session on separate display)
+
+## configure.sh Replication (2026-03-28)
+
+Deployed `gnome-shell-keybindings.nix` (replaces `gnome-workspace-shortcuts.nix`).
+All dconf values verified correct:
+
+| dconf key                                      | Expected                                        | Actual  |
+| ---------------------------------------------- | ----------------------------------------------- | ------- |
+| `wm/keybindings/minimize`                      | `['<Super>comma']`                              | correct |
+| `wm/keybindings/maximize`                      | `@as []`                                        | correct |
+| `wm/keybindings/unmaximize`                    | `@as []`                                        | correct |
+| `wm/keybindings/toggle-maximized`              | `['<Super>m']`                                  | correct |
+| `wm/keybindings/switch-to-workspace-left`      | `@as []`                                        | correct |
+| `wm/keybindings/switch-to-workspace-right`     | `@as []`                                        | correct |
+| `wm/keybindings/switch-to-workspace-up`        | `['<Primary><Super>Up', '<Primary><Super>k']`   | correct |
+| `wm/keybindings/switch-to-workspace-down`      | `['<Primary><Super>Down', '<Primary><Super>j']` | correct |
+| `wm/keybindings/move-to-monitor-left`          | `@as []`                                        | correct |
+| `wm/keybindings/move-to-workspace-up`          | `@as []`                                        | correct |
+| `wm/keybindings/close`                         | `['<Super>q', '<Alt>F4']`                       | correct |
+| `mutter/keybindings/toggle-tiled-left`         | `@as []`                                        | correct |
+| `mutter/keybindings/toggle-tiled-right`        | `@as []`                                        | correct |
+| `mutter/wayland/keybindings/restore-shortcuts` | `@as []`                                        | correct |
+| `mutter/workspaces-only-on-primary`            | `false`                                         | correct |
+| `shell/keybindings/toggle-overview`            | `@as []`                                        | correct |
+| `shell/keybindings/open-application-menu`      | `@as []`                                        | correct |
+| `shell/keybindings/toggle-message-tray`        | `['<Super>v']`                                  | correct |
+| `media-keys/screensaver`                       | `['<Super>Escape']`                             | correct |
+| `media-keys/terminal`                          | `['<Super>t']`                                  | correct |
+| `media-keys/rotate-video-lock-static`          | `@as []`                                        | correct |
+
+**Status**: dconf state matches plan. Live shortcut testing pending.
