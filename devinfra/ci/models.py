@@ -12,9 +12,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, BeforeValidator, Discriminator, Field, Tag
-
-from util.bazel.workspace import BazelLabel
+from pydantic import BaseModel, Discriminator, Field, Tag
 
 
 class AlwaysTrigger(BaseModel):
@@ -45,65 +43,10 @@ class WorkflowConfig(BaseModel):
     events: frozenset[str] = frozenset({"push", "pull_request", "workflow_dispatch"})
 
 
-class ExtraJobStep(BaseModel):
-    """A step in an extra job, matching GitHub Actions step schema."""
-
-    name: str | None = None
-    id: str | None = None
-    uses: str | None = None
-    run: str | None = None
-    if_cond: str | None = Field(None, alias="if")
-    with_args: dict[str, str] | None = Field(None, alias="with")
-
-    model_config = {"populate_by_name": True}
-
-
-class ExtraJobConfig(BaseModel):
-    """An extra job to splice into the release workflow."""
-
-    needs: list[str] = Field(default_factory=list)
-    runs_on: str = Field("ubuntu-latest", alias="runs-on")
-    timeout_minutes: int = Field(30, alias="timeout-minutes")
-    steps: list[ExtraJobStep] = Field(default_factory=list)
-
-    model_config = {"populate_by_name": True}
-
-
-class ReleaseTarget(BaseModel):
-    """A build target in a release, with optional Nix flake input for downstream updates."""
-
-    bazel_target: Annotated[BazelLabel, BeforeValidator(BazelLabel.parse)]
-    flake_input: str | None = None
-
-
-class ReleaseConfig(BaseModel):
-    """Configuration for a package release in the consolidated release workflow.
-
-    wheel_path is derived from the primary target's package path.
-    wheel_name and latest_release_tag are computed from the manifest key.
-    """
-
-    targets: list[ReleaseTarget]
-    release_body: str
-    artifact_type: Literal["wheel", "binary", "tarball"] = "wheel"
-    test_targets: str | None = None
-    update_claude_settings: bool = False
-    apt_packages: list[str] = Field(default_factory=list)
-    extra_jobs: dict[str, ExtraJobConfig] = Field(default_factory=dict)
-    release_needs: list[str] = Field(default_factory=list)
-    wheel_name: str | None = None
-
-    @property
-    def wheel_path(self) -> str:
-        label = self.targets[0].bazel_target
-        return f"bazel-bin/{label.package}" if label.package.parts else "bazel-bin"
-
-
 class WorkflowManifest(BaseModel):
     """Collection of all workflow configurations."""
 
     workflows: dict[str, WorkflowConfig]
-    releases: dict[str, ReleaseConfig] = Field(default_factory=dict)
 
     @classmethod
     def from_yaml(cls, path: Path) -> WorkflowManifest:
