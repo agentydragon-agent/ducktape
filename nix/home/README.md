@@ -7,7 +7,7 @@ Home-manager user configurations for multiple machines.
 ```
 nix/home/
 ├── programs/              # Generic home-manager-style modules (could be upstreamed)
-├── modules/               # Custom modules (solarized, gnome-workspace-shortcuts, etc.)
+├── modules/               # Custom modules (solarized, gnome-shell-keybindings, etc.)
 ├── skills/                # Shared skills for Claude Code and Gemini CLI
 ├── tests/                 # Nix tests for modules and integrations
 ├── allowed-commands.nix   # Personal SSOT: allowed bash commands
