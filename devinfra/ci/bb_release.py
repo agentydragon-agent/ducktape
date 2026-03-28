@@ -1,6 +1,6 @@
 #!/usr/bin/env -S uv run
 # /// script
-# requires-python = ">=3.13"
+# requires-python = ">=3.12"
 # dependencies = ["pydantic", "PyGithub"]
 # ///
 # Run standalone: uv run --project . devinfra/ci/bb_release.py
