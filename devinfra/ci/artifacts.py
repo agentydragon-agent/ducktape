@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,17 +75,18 @@ ARTIFACTS = [
 ]
 
 
-def file_sha256(path: Path) -> str:
+def _sha256_of_chunks(chunks: Iterable[bytes]) -> str:
     h = hashlib.sha256()
-    with path.open("rb") as f:
-        while chunk := f.read(65536):
-            h.update(chunk)
+    for chunk in chunks:
+        h.update(chunk)
     return base64.b64encode(h.digest()).decode()
+
+
+def file_sha256(path: Path) -> str:
+    with path.open("rb") as f:
+        return _sha256_of_chunks(iter(lambda: f.read(65536), b""))
 
 
 def url_sha256(url: str) -> str:
-    h = hashlib.sha256()
     with urllib.request.urlopen(url) as response:
-        while chunk := response.read(65536):
-            h.update(chunk)
-    return base64.b64encode(h.digest()).decode()
+        return _sha256_of_chunks(iter(lambda: response.read(65536), b""))

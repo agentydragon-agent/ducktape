@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["pydantic", "PyGithub"]
+# dependencies = ["pydantic", "PyGithub", "pygit2"]
 # ///
 # Run standalone: uv run --project . devinfra/ci/bb_release.py
 """BB Release step: build dist, create GitHub releases for changed artifacts.
@@ -14,6 +14,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import pygit2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -64,9 +66,7 @@ def main() -> None:
 
     gh_token = os.environ.get("GH_RELEASE_PAT")
     if not gh_token:
-        print("ERROR: Missing required env var: GH_RELEASE_PAT", file=sys.stderr)
-        print("Configure this as a BuildBuddy Workflow secret.", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError("Missing required env var: GH_RELEASE_PAT (configure as a BuildBuddy Workflow secret)")
 
     install_deps()
 
@@ -74,9 +74,8 @@ def main() -> None:
 
     Path("dist").mkdir(exist_ok=True)
 
-    short_sha = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
-    ).stdout.strip()
+    repo_obj = pygit2.Repository(".")
+    short_sha = str(repo_obj.head.target)[:7]
 
     sources = Sources.model_validate_json(SOURCES_PATH.read_text())
     repo = Github(auth=Auth.Token(gh_token)).get_repo(REPO)
