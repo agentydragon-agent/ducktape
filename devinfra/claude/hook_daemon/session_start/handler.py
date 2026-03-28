@@ -259,13 +259,6 @@ async def _setup_web(
             await mount_tmpfs_at(bazel_cache_dir)
             return tmpfs.setup_bazel_cache(bazel_cache_dir)
 
-    @tracer.start_as_current_span("install_bazel_wrapper", context=root_ctx)
-    def install_bazel_wrapper() -> bazelisk.BazeliskSetup:
-        """Install bazel wrapper (bazelisk binary provided by Nix web-session)."""
-        wrapper_path = bazelisk.install_wrapper(paths)
-        bazelisk_path = bazelisk.resolve_bazelisk()
-        return bazelisk.BazeliskSetup(bazelisk_path=bazelisk_path, wrapper_path=wrapper_path)
-
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
     #   apt_task (no deps — runs immediately)
@@ -274,6 +267,8 @@ async def _setup_web(
     #                      (mounts its own tmpfs internally)
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
+    # Resolve bazelisk path early (fast shutil.which — wrapper installed later in run_session).
+    bazelisk_path = bazelisk.resolve_bazelisk()
 
     apt_packages: list[str] = []
     if settings.install_apt_packages:
@@ -322,7 +317,6 @@ async def _setup_web(
         proxy_task,
         setup_container_runtime_task(),
         traced_precommit(),
-        run_in_thread(install_bazel_wrapper),
         setup_bazel_on_tmpfs(),
         mkcert_append_bundle(),
         apt_task,
@@ -332,18 +326,13 @@ async def _setup_web(
     auth_proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
     container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
     precommit_result: precommit.PrecommitSetup | BaseException = results[2]
-    bazelisk_result: bazelisk.BazeliskSetup | BaseException = results[3]
-    tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[4]
-    mkcert_result: mkcert.MkcertSetup | BaseException = results[5]
-    apt_result: apt.AptSetup | BaseException = results[6]
+    tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[3]
+    mkcert_result: mkcert.MkcertSetup | BaseException = results[4]
+    apt_result: apt.AptSetup | BaseException = results[5]
 
     # Log non-critical failures
     if isinstance(precommit_result, BaseException):
         logger.warning("Failed to install git pre-commit: %s", precommit_result)
-    if isinstance(bazelisk_result, BaseException):
-        raise RuntimeError(
-            "Bazel wrapper setup failed (is bazelisk on PATH from Nix web-session?)"
-        ) from bazelisk_result
     if isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
     if isinstance(mkcert_result, SkipError):
@@ -399,12 +388,8 @@ async def _setup_web(
         except Exception as e:
             logger.warning("Fork remote setup failed: %s", e)
 
-    # bazelisk_result is guaranteed to be BazeliskSetup (failure raises above)
-    assert isinstance(bazelisk_result, bazelisk.BazeliskSetup)
-    bazelisk_path = bazelisk_result.bazelisk_path
-
     logger.info(
-        "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_result, auth_proxy_result.status, auth_proxy_result.ca_status
+        "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_path, auth_proxy_result.status, auth_proxy_result.ca_status
     )
     logger.info("Container: %s", container_result)
 
@@ -524,7 +509,7 @@ async def run_session(
         session_bazelrc = paths.session_dir / "bazelrc"
         write_config(session_bazelrc, bazelrc_content, "session bazelrc")
 
-    # Install bazel wrapper (web mode already downloaded bazelisk in parallel)
+    # Install bazel wrapper (single canonical install for both web and CLI modes).
     with tracer.start_as_current_span("install_bazel_wrappers", context=root_ctx):
         bazelisk.install_wrapper(paths)
 
