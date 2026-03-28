@@ -85,10 +85,12 @@ in
       ];
     };
 
-    # No longer need to clear toggle-tiled-left/right — Super+Left/Right is
-    # now workspace switching (not Pop Shell focus), and mutter tiling doesn't
-    # conflict with workspace switching.
-    # Keep mutter/keybindings at schema defaults.
+    # Mutter tiling defaults to Super+Left/Right, which conflicts with our
+    # workspace switching. Clear them.
+    "org/gnome/mutter/keybindings" = {
+      toggle-tiled-left = emptyStrArray;
+      toggle-tiled-right = emptyStrArray;
+    };
 
     # Frees Super+Escape for lock screen (reassigned below in media-keys).
     "org/gnome/mutter/wayland/keybindings" = {

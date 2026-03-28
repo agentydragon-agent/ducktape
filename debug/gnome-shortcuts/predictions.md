@@ -152,4 +152,16 @@ All dconf values verified correct:
 | `media-keys/terminal`                          | `['<Super>t']`                                  | correct |
 | `media-keys/rotate-video-lock-static`          | `@as []`                                        | correct |
 
-**Status**: dconf state matches plan. Live shortcut testing pending.
+**Status**: dconf state matches plan.
+
+## Live Testing Round 2 (2026-03-28)
+
+After fixing horizontal workspace navigation and mutter tiling conflicts:
+
+- `Super+Left/Right`: switches workspaces left/right — **working**
+- `Super+Shift+Left/Right`: moves window between workspaces — **working**
+- `Ctrl+Alt+Left/Right`: switches workspaces — **working**
+- `Super+hjkl`: focuses windows — **working**
+- `Super+m`: toggle maximized — **working**
+
+All target shortcuts confirmed working.
