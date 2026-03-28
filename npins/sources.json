@@ -22,7 +22,7 @@
     },
     "skills": {
       "fetch": "unpack",
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-9dcfdda/skills.tar",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-e53893e/skills.tar",
       "hash": "sha256-Ov87XGJCotszB0V9jChr5oBbLD9z6OVeJ3dW5x+lAA0="
     }
   }
