@@ -69,7 +69,7 @@ actions:
             --build_metadata=ROLE=ci \
             --test_tag_filters=-live_openai_api \
             //...
-      - run: pip install uv --break-system-packages && uv run devinfra/ci/bb_release.py
+      - run: curl -LsSf https://astral.sh/uv/install.sh | sh && ~/.local/bin/uv run devinfra/ci/bb_release.py
 
   # Push Harbor container images (OCI images built with Bazel).
   # Uses oci_push (crane-based, no Docker daemon needed).
