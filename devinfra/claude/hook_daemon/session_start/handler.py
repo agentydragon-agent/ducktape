@@ -16,12 +16,14 @@ from pathlib import Path
 
 import anyio
 import httpx
+import requests
 from mako.template import Template
 from opentelemetry import trace
 
 from devinfra.claude import env_file
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
+from devinfra.claude.auth_proxy.vars import get_proxy_url
 from devinfra.claude.claude_api.hooks.session_start import (
     SessionStartHookInput,
     SessionStartHookSpecificOutput,
@@ -69,6 +71,7 @@ class CallerContext:
     env_file_path: Path
     web_mode: bool
     project_dir: Path
+    caller_env: dict[str, str]
 
     @property
     def mode_label(self) -> str:
@@ -86,6 +89,7 @@ class CallerContext:
             env_file_path=Path(env_file_str),
             web_mode=env.get("CLAUDE_CODE_REMOTE") == "true",
             project_dir=Path(project_dir_str),
+            caller_env=env,
         )
 
 
@@ -137,6 +141,20 @@ def _render_extra_context(
     template = Template(extra_template_path.read_text())
     result: str = template.render(secrets=secrets, fork_result=fork_result, web_mode=web_mode)
     return result.rstrip("\n")
+
+
+def _build_otlp_session(proxy_url: str | None, ca_path: Path | None) -> requests.Session:
+    """Build a requests.Session for OTLP.
+
+    requests derives Proxy-Authorization from embedded proxy URL credentials automatically,
+    unlike raw urllib3 which requires explicit headers on HTTPS CONNECT tunnels.
+    """
+    session = requests.Session()
+    if proxy_url:
+        session.proxies = {"https": proxy_url, "http": proxy_url}
+    if ca_path and ca_path.exists():
+        session.verify = str(ca_path)
+    return session
 
 
 class LogCollector(logging.handlers.MemoryHandler):
@@ -410,6 +428,7 @@ async def run_session(
     # These run in both web and CLI modes. Web mode provides auth_proxy (with
     # proxy_url and combined_ca); CLI mode has auth_proxy=None.
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
+    proxy_url = (setup.auth_proxy.proxy_url if setup.auth_proxy else None) or get_proxy_url(ctx.caller_env)
     if settings.k8s_token and hook_config:
         try:
             with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
@@ -418,7 +437,7 @@ async def run_session(
                     session_dir=paths.session_dir,
                     combined_ca_path=combined_ca,
                     config=hook_config,
-                    proxy=setup.auth_proxy.proxy_url if setup.auth_proxy else None,
+                    proxy=proxy_url,
                 )
         except Exception as e:
             logger.warning("K8s secrets fetch failed (non-fatal, continuing without secrets): %s", e)
@@ -451,7 +470,8 @@ async def run_session(
         otel_token = setup.secrets.otel_bearer_token if setup.secrets else None
         if otel_token:
             otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=otel_token)
-        otlp_exporter.configure(otel_config)
+        otlp_session = _build_otlp_session(proxy_url, combined_ca)
+        otlp_exporter.configure(otel_config, session=otlp_session)
 
     # Render session bazelrc
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
