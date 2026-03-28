@@ -59,7 +59,8 @@ def copy_artifact_to_dist(src_glob: str, dest: str) -> Path:
 
 
 def main() -> None:
-    subject = subprocess.run(["git", "log", "-1", "--format=%s"], capture_output=True, text=True, check=True).stdout
+    repo_obj = pygit2.Repository(".")
+    subject = repo_obj.head.peel(pygit2.Commit).message.splitlines()[0]
     if "[skip ci]" in subject:
         print("Commit message contains [skip ci], skipping release.")
         return
@@ -74,7 +75,6 @@ def main() -> None:
 
     Path("dist").mkdir(exist_ok=True)
 
-    repo_obj = pygit2.Repository(".")
     short_sha = str(repo_obj.head.target)[:7]
 
     sources = Sources.model_validate_json(SOURCES_PATH.read_text())
