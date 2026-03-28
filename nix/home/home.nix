@@ -114,7 +114,6 @@ in
     ./codex
     ./crush
     ./modules/solarized.nix
-    ./scripts
     ./terminals
     ./claude_code
     ./programs/gemini-cli.nix # Our local module with policies support
