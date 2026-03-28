@@ -7,8 +7,9 @@ name: Release
 # not a bare SHA). The exact triggering commit is passed as inputs.sha so we check
 # out the right code regardless of how far devel has advanced since the BB run.
 #
-# Concurrency: serialized on a single group so concurrent releases don't race
-# on `git push` to devel (both update npins/sources.json → rebase conflict).
+# Concurrency: serialized so concurrent releases don't race on git push to devel.
+# Each run pins different packages (inputs.changed) from different SHAs, so we
+# can't cancel earlier runs — every run must complete.
 "on":
   workflow_dispatch:
     inputs:
@@ -65,8 +66,21 @@ jobs:
             exit 0
           fi
           git commit -m "chore: bump release artifacts (${{ inputs.changed }})"
-          git pull --rebase origin devel
-          git push origin "HEAD:devel"
+          # Retry rebase+push up to 3 times in case a concurrent release
+          # pushed between our commit and our push attempt.
+          for attempt in 1 2 3; do
+            if git pull --rebase origin devel && git push origin "HEAD:devel"; then
+              exit 0
+            fi
+            echo "Push attempt $attempt failed, retrying in ${attempt}s..."
+            sleep "$attempt"
+            git rebase --abort 2>/dev/null || true
+            # Re-apply our change on top of fresh devel
+            git fetch origin devel
+            git rebase origin/devel
+          done
+          echo "Failed to push after 3 attempts"
+          exit 1
 
       - name: Post success status
         if: success()
