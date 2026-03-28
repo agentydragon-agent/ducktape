@@ -98,36 +98,22 @@ class CallerContext:
 class PlatformSetup:
     """Results of platform-specific setup (web or CLI).
 
-    Carries everything from the platform-specific setup phase to the shared
-    downstream steps (k8s secrets, BuildBuddy, bazelrc render, env file write,
-    session context emit).
+    Carries actual setup results — not copies of fields derivable from
+    paths, settings, or the result objects themselves.
     """
 
-    # Bazelrc rendering params
-    proxy_port: int | None = None
-    proxy_url: str | None = None
-    remote_proxy_sock: Path | None = None
-    truststore_path: Path | None = None
-    truststore_password: str | None = None
-    combined_ca_path: Path | None = None
-    bazel_cache_dir: Path | None = None
-
-    # EnvVars params
-    session_dir: Path | None = None
-    supervisor_port: int | None = None
-    bazelisk_path: Path | None = None
-    docker_env: dict[str, str] | None = None
-    mkcert_cert: Path | None = None
-    mkcert_key: Path | None = None
-    secrets_env_vars: dict[str, str] | None = None
-    with_direnv: bool = False
-
-    # Session context params
+    # Platform-specific results
     auth_proxy: proxy_setup.ProxySetup | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
     precommit_result: precommit.PrecommitSetup | None = None
-    secrets: k8s_secrets.K8sSecretsResult | None = None
     mkcert_result: mkcert.MkcertSetup | None = None
+    bazelisk_path: Path | None = None
+    docker_env: dict[str, str] | None = None
+    bazel_cache_dir: Path | None = None
+    with_direnv: bool = False
+
+    # Shared-step results (populated by run_session, not platform setup)
+    secrets: k8s_secrets.K8sSecretsResult | None = None
     fork_result: fork_remote.ForkRemoteSetup | None = None
     buildbuddy_configured: bool = False
 
@@ -357,34 +343,19 @@ async def _setup_web(
         logger.error("Proxy setup failed: %s", auth_proxy_result)
         raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
 
-    combined_ca = paths.auth_proxy_combined_ca
-
     logger.info(
         "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_path, auth_proxy_result.status, auth_proxy_result.ca_status
     )
     logger.info("Container: %s", container_result)
 
     return PlatformSetup(
-        # Bazelrc rendering
-        proxy_port=auth_proxy_result.port,
-        proxy_url=auth_proxy_result.proxy_url,
-        remote_proxy_sock=paths.remote_proxy_sock,
-        truststore_path=paths.auth_proxy_truststore,
-        truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
-        combined_ca_path=combined_ca,
-        bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
-        # EnvVars
-        session_dir=paths.session_dir,
-        supervisor_port=settings.supervisor_port,
-        bazelisk_path=bazelisk_path,
-        docker_env=docker_env,
-        mkcert_cert=mkcert_result.cert_path if isinstance(mkcert_result, mkcert.MkcertSetup) else None,
-        mkcert_key=mkcert_result.key_path if isinstance(mkcert_result, mkcert.MkcertSetup) else None,
-        # Session context
         auth_proxy=auth_proxy_result,
         container=None if isinstance(container_result, BaseException) else container_result,
         precommit_result=None if isinstance(precommit_result, BaseException) else precommit_result,
         mkcert_result=None if isinstance(mkcert_result, BaseException) else mkcert_result,
+        bazelisk_path=bazelisk_path,
+        docker_env=docker_env,
+        bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
     )
 
 
@@ -436,19 +407,19 @@ async def run_session(
         setup = PlatformSetup(with_direnv=True)
 
     # -- Shared steps: k8s secrets, BuildBuddy, fork remote --
-    # These run in both web and CLI modes. Web mode provides proxy_url and
-    # combined_ca_path via PlatformSetup; CLI mode leaves them as None.
+    # These run in both web and CLI modes. Web mode provides auth_proxy (with
+    # proxy_url and combined_ca); CLI mode has auth_proxy=None.
+    combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
     if settings.k8s_token and hook_config:
         try:
             with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
                 setup.secrets = k8s_secrets.setup_k8s_secrets(
                     token=settings.k8s_token,
                     session_dir=paths.session_dir,
-                    combined_ca_path=setup.combined_ca_path,
+                    combined_ca_path=combined_ca,
                     config=hook_config,
-                    proxy=setup.proxy_url,
+                    proxy=setup.auth_proxy.proxy_url if setup.auth_proxy else None,
                 )
-                setup.secrets_env_vars = setup.secrets.env_vars
         except Exception as e:
             logger.warning("K8s secrets fetch failed (non-fatal, continuing without secrets): %s", e)
 
@@ -490,11 +461,11 @@ async def run_session(
         bazelrc_content: str = bazelrc_template.render(
             web_proxy=ctx.web_mode,
             use_tcp_proxy=settings.proxy_mode == ProxyMode.TCP,
-            proxy_port=setup.proxy_port,
-            remote_proxy_sock=setup.remote_proxy_sock,
-            truststore_path=setup.truststore_path,
-            truststore_password=setup.truststore_password,
-            combined_ca_path=setup.combined_ca_path,
+            proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
+            remote_proxy_sock=paths.remote_proxy_sock,
+            truststore_path=paths.auth_proxy_truststore,
+            truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
+            combined_ca_path=combined_ca,
             buildbuddy_configured=setup.buildbuddy_configured,
             buildbuddy_bazelrc=buildbuddy.BUILDBUDDY_BAZELRC,
             bazel_cache_dir=setup.bazel_cache_dir,
@@ -517,16 +488,16 @@ async def run_session(
         env_vars = env_file.EnvVars(
             bazel_wrapper_dir=paths.wrapper_dir,
             session_bazelrc=session_bazelrc,
-            session_dir=setup.session_dir,
-            proxy_port=setup.proxy_port,
-            supervisor_port=setup.supervisor_port,
-            combined_ca=setup.combined_ca_path,
+            session_dir=paths.session_dir,
+            proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
+            supervisor_port=settings.supervisor_port,
+            combined_ca=combined_ca,
             bazelisk_path=setup.bazelisk_path,
             docker_env=setup.docker_env,
             hook_timestamp=hook_timestamp,
-            mkcert_cert=setup.mkcert_cert,
-            mkcert_key=setup.mkcert_key,
-            secrets_env_vars=setup.secrets_env_vars,
+            mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,
+            mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
+            secrets_env_vars=setup.secrets.env_vars if setup.secrets else None,
             with_direnv=setup.with_direnv,
             extra_env_script=hook_config.extra_env_script if hook_config else None,
         )
