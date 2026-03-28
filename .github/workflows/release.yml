@@ -6,6 +6,9 @@ name: Release
 # Dispatched with --ref devel (GitHub workflow_dispatch requires a branch/tag name,
 # not a bare SHA). The exact triggering commit is passed as inputs.sha so we check
 # out the right code regardless of how far devel has advanced since the BB run.
+#
+# Concurrency: serialized on a single group so concurrent releases don't race
+# on `git push` to devel (both update npins/sources.json → rebase conflict).
 "on":
   workflow_dispatch:
     inputs:
@@ -16,7 +19,7 @@ name: Release
         description: Space-separated packages with new releases (e.g. "claude-hooks bbapi")
         required: true
 concurrency:
-  group: release-${{ inputs.sha }}
+  group: release-devel
   cancel-in-progress: false
 permissions:
   contents: write
