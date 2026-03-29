@@ -35,8 +35,9 @@ from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig, Se
 from devinfra.claude.sops_decrypt import load_age_identities
 
 # isort: off
-# Bazel's auto-generated __init__.py doesn't support `from pkg import submodule`.
-# Use `import ... as` to force Python to resolve the full module path.
+# Bazel subpackage imports must use `from pkg import module` form (not
+# `from pkg.module import symbol`) due to auto-generated __init__.py stubs.
+# isort would merge these into the block above, breaking the pattern.
 from devinfra.claude.hook_daemon.session_start import apt
 from devinfra.claude.hook_daemon.session_start import bazel_warmup
 from devinfra.claude.hook_daemon.session_start import bazelisk

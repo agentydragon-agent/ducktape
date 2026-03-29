@@ -99,6 +99,10 @@ export default [
     },
     rules: {
       ...coreRules,
+      // eslint-plugin-import's import/order crashes on .svelte files with
+      // "The 'path' argument must be of type string. Received null" because
+      // the plugin can't resolve Svelte file paths through svelte-eslint-parser.
+      "import/order": "off",
       "svelte/no-unused-svelte-ignore": "warn",
     },
   },

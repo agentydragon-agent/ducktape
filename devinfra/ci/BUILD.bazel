@@ -116,7 +116,7 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
-        "@pypi//more-itertools",
+        "@pypi//more_itertools",
         "@pypi//pygit2",
         "@pypi//pygithub",
     ],

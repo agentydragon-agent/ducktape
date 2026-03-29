@@ -29,6 +29,7 @@
     ./hardware-configuration.nix
     ../../modules/gui.nix
     ../../modules/dev-workstation.nix
+    ../../modules/bazel-dev.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/ipu7-camera.nix
@@ -138,6 +139,7 @@
     vlc
     xdg-terminal-exec # Used by custom Ctrl+Alt+T keybinding; configure via xdg-terminals.list
     zoom-us
+    gimp
   ];
 
   # Local file sharing across devices (LAN)
@@ -151,9 +153,6 @@
 
   # Zsh as default shell
   programs.zsh.enable = true;
-
-  # Run dynamically linked binaries (Bazel downloads Python, Rust toolchains, etc.)
-  programs.nix-ld.enable = true;
 
   # User configuration
   users.users.${username} = {
