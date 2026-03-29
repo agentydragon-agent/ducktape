@@ -19,7 +19,7 @@ from pathlib import Path
 
 import yaml
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from pyrage import decrypt, x25519
+from pyrage import decrypt, x25519  # type: ignore[attr-defined]  # PyO3 extension, no stubs
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,8 @@ def _decrypt_data_key(sops_metadata: dict, identities: list) -> bytes:
             continue
         enc_bytes = enc_blob if isinstance(enc_blob, bytes) else enc_blob.encode()
         try:
-            return decrypt(enc_bytes, identities)
+            result: bytes = decrypt(enc_bytes, identities)
+            return result
         except Exception as e:
             errors.append(f"recipient {entry.get('recipient', '?')}: {e}")
 
