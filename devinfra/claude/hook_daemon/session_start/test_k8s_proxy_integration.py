@@ -1,6 +1,6 @@
 """Integration test: k8s secrets via egress proxy in UDS mode (no TCP auth proxy).
 
-Verifies that setup_k8s_secrets() works when no local TCP auth proxy exists. The
+Verifies that read_k8s_secret() works when no local TCP auth proxy exists. The
 egress proxy URL (with embedded credentials) is passed directly. This exercises
 normalize_proxy_url() extracting credentials into an explicit Proxy-Authorization
 header, required for urllib3 v2 on HTTPS CONNECT tunnels.
@@ -20,8 +20,8 @@ import pytest
 import pytest_bazel
 import yaml
 
-from devinfra.claude.hook_config import HookConfig, K8sConfig, K8sSecretMapping, K8sSecretsConfig
-from devinfra.claude.hook_daemon.session_start.k8s_secrets import setup_k8s_secrets
+from devinfra.claude.hook_config import K8sConfig
+from devinfra.claude.hook_daemon.session_start.secret_sources import read_k8s_secret, setup_k8s_client, write_kubeconfig
 from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
 from devinfra.claude.testing.proxy_ca import generate_server_cert
 from util.docker import get_docker_network_gateway
@@ -97,37 +97,35 @@ def ca_file(tmp_path: Path, mitmproxy_proxy: MitmproxyFixture) -> Path:
 def test_k8s_secrets_via_egress_proxy_uds_mode(
     tmp_path: Path, ca_file: Path, mitmproxy_proxy: MitmproxyFixture, mock_k8s_server: MockK8sServer
 ) -> None:
-    """setup_k8s_secrets succeeds through the egress proxy without a TCP auth proxy.
+    """read_k8s_secret succeeds through the egress proxy without a TCP auth proxy.
 
     In UDS mode there is no local TCP proxy — the egress proxy URL with embedded
     credentials is passed directly. normalize_proxy_url() must extract the credentials
     as an explicit Proxy-Authorization header so that urllib3 v2 sends them on the
     HTTPS CONNECT tunnel; without this the proxy returns 403.
     """
-    config = HookConfig(
-        k8s=K8sConfig(
-            server=mock_k8s_server.url,
-            service_account="test-sa",
-            service_account_namespace="test-ns",
-            namespace="test-ns",
-        ),
-        k8s_secrets=K8sSecretsConfig(
-            namespace="test-ns", secrets=[K8sSecretMapping(name="github-token", data={"token": "GITHUB_TOKEN"})]
-        ),
+    k8s_cfg = K8sConfig(
+        server=mock_k8s_server.url, service_account="test-sa", service_account_namespace="test-ns", namespace="test-ns"
     )
-
-    result = setup_k8s_secrets(
+    api = setup_k8s_client(
         token="test-service-account-token",
-        session_dir=tmp_path,
+        k8s_cfg=k8s_cfg,
         combined_ca_path=ca_file,
-        config=config,
         proxy=mitmproxy_proxy.url,  # egress proxy URL with embedded credentials (UDS mode)
     )
 
-    assert result.env_vars.get("GITHUB_TOKEN") == "fake-github-token"
+    token = read_k8s_secret(api, "test-ns", "github-token", "token")
+    assert token == "fake-github-token"
+
     # Kubeconfig retains the full proxy URL with credentials (kubectl needs them)
-    assert result.kubeconfig_path is not None
-    kubeconfig = yaml.safe_load(result.kubeconfig_path.read_text())
+    kubeconfig_path = write_kubeconfig(
+        token="test-service-account-token",
+        k8s_cfg=k8s_cfg,
+        session_dir=tmp_path,
+        combined_ca_path=ca_file,
+        proxy_url=mitmproxy_proxy.url,
+    )
+    kubeconfig = yaml.safe_load(kubeconfig_path.read_text())
     assert kubeconfig["clusters"][0]["cluster"]["proxy-url"] == mitmproxy_proxy.url
 
 

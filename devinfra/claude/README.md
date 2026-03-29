@@ -301,7 +301,7 @@ Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
 Terraform → Vault → ESO → k8s secrets → `otel.py`.
 
 Configured in `.claude_hooks/config.yaml` (`otel.endpoint`). Bearer token
-loaded from k8s secret (`k8s_secrets.otel_bearer_token`).
+loaded from k8s secret (`secrets.otel_bearer_token`).
 
 Key files: TF module in `cluster/terraform/gitops/alloy-otlp-bearer-token/`,
 Authentik blueprint in `cluster/k8s/authentik/app/blueprints/alloy-otlp-sso.yaml`.

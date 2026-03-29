@@ -31,8 +31,8 @@ from devinfra.claude.claude_api.hooks.session_start import (
 )
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
-from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig
-from devinfra.claude.sops_decrypt import decrypt_sops_yaml, load_age_identities
+from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig, SecretSource
+from devinfra.claude.sops_decrypt import load_age_identities
 
 # isort: off
 # Bazel's auto-generated __init__.py doesn't support `from pkg import submodule`.
@@ -44,9 +44,9 @@ from devinfra.claude.hook_daemon.session_start import buildbuddy
 
 from devinfra.claude.hook_daemon.session_start import container_runtime
 from devinfra.claude.hook_daemon.session_start import fork_remote
-from devinfra.claude.hook_daemon.session_start import k8s_secrets
 from devinfra.claude.hook_daemon.session_start import mkcert
 from devinfra.claude.hook_daemon.session_start import precommit
+from devinfra.claude.hook_daemon.session_start import secret_sources
 from devinfra.claude.hook_daemon.session_start import tmpfs
 
 # isort: on
@@ -59,6 +59,20 @@ from devinfra.claude.supervisor import setup as supervisor_setup
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
+
+
+def _build_secrets_env_vars(secrets: secret_sources.SecretsResult | None) -> dict[str, str] | None:
+    """Build env var dict from SecretsResult for the session env file."""
+    if not secrets:
+        return None
+    env_vars: dict[str, str] = {}
+    if secrets.buildbuddy_api_key:
+        env_vars["BUILDBUDDY_API_KEY"] = secrets.buildbuddy_api_key
+    if secrets.github_token:
+        env_vars["GITHUB_TOKEN"] = secrets.github_token
+    if secrets.kubeconfig_path:
+        env_vars["KUBECONFIG"] = str(secrets.kubeconfig_path)
+    return env_vars or None
 
 
 @dataclass(frozen=True)
@@ -118,7 +132,7 @@ class PlatformSetup:
     with_direnv: bool = False
 
     # Shared-step results (populated by run_session, not platform setup)
-    secrets: k8s_secrets.K8sSecretsResult | None = None
+    secrets: secret_sources.SecretsResult | None = None
     fork_result: fork_remote.ForkRemoteSetup | None = None
     buildbuddy_configured: bool = False
 
@@ -130,7 +144,7 @@ class PlatformSetup:
 
 def _render_extra_context(
     project_dir: Path,
-    secrets: k8s_secrets.K8sSecretsResult | None,
+    secrets: secret_sources.SecretsResult | None,
     fork_result: fork_remote.ForkRemoteSetup | None = None,
     *,
     web_mode: bool = False,
@@ -425,65 +439,54 @@ async def run_session(
     else:
         setup = PlatformSetup(with_direnv=True)
 
-    # -- Shared steps: SOPS secrets, k8s secrets, BuildBuddy, fork remote --
-    # SOPS decryption runs first (local, no network). K8s secrets fill gaps
-    # (GITHUB_TOKEN, OTEL token, kubeconfig). If SOPS provides a secret,
-    # K8s won't overwrite it.
+    # -- Shared steps: secrets, BuildBuddy, fork remote --
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
     proxy_url = (setup.auth_proxy.proxy_url if setup.auth_proxy else None) or get_proxy_url(ctx.caller_env)
 
-    # Try SOPS decryption first (local, no network dependency).
-    if settings.age_key and hook_config and hook_config.sops_secrets:
-        try:
-            with tracer.start_as_current_span("setup_sops_secrets", context=root_ctx):
-                identities = load_age_identities(settings.age_key)
-                sops_env: dict[str, str] = {}
-                sops_buildbuddy_key: str | None = None
-                for sops_file in hook_config.sops_secrets.files:
-                    sops_path = project_dir / sops_file.path
-                    decrypted = decrypt_sops_yaml(sops_path, identities)
-                    for yaml_key, env_var in sops_file.mapping.items():
-                        if yaml_key in decrypted:
-                            sops_env[env_var] = decrypted[yaml_key]
-                            logger.info("SOPS: %s -> %s", yaml_key, env_var)
-                        else:
-                            logger.warning("SOPS: key %r not found in %s", yaml_key, sops_file.path)
-                if "BUILDBUDDY_API_KEY" in sops_env:
-                    sops_buildbuddy_key = sops_env["BUILDBUDDY_API_KEY"]
-                setup.secrets = k8s_secrets.K8sSecretsResult(env_vars=sops_env, buildbuddy_api_key=sops_buildbuddy_key)
-                logger.info("SOPS decryption provided %d env vars", len(sops_env))
-        except Exception as e:
-            logger.warning("SOPS decryption failed (non-fatal, falling back to k8s): %s", e)
-
-    # K8s secrets fill any gaps (GITHUB_TOKEN, OTEL token, kubeconfig).
-    if settings.k8s_token and hook_config:
-        try:
-            with tracer.start_as_current_span("setup_k8s_secrets", context=root_ctx):
-                k8s_result = k8s_secrets.setup_k8s_secrets(
-                    token=settings.k8s_token,
-                    session_dir=paths.session_dir,
-                    combined_ca_path=combined_ca,
-                    config=hook_config,
-                    proxy=proxy_url,
+    # Resolve secrets from tagged-union config (each field resolved independently).
+    with tracer.start_as_current_span("resolve_secrets", context=root_ctx):
+        secrets_cfg = hook_config.secrets if hook_config else None
+        age_identities = load_age_identities(settings.age_key) if settings.age_key else None
+        k8s_api = None
+        k8s_namespace = hook_config.k8s.namespace if hook_config and hook_config.k8s else None
+        if settings.k8s_token and hook_config and hook_config.k8s:
+            try:
+                k8s_api = secret_sources.setup_k8s_client(
+                    token=settings.k8s_token, k8s_cfg=hook_config.k8s, combined_ca_path=combined_ca, proxy=proxy_url
                 )
-                if setup.secrets:
-                    # Merge: SOPS wins for env vars it already provided.
-                    for key, value in k8s_result.env_vars.items():
-                        if key not in setup.secrets.env_vars:
-                            setup.secrets.env_vars[key] = value
-                    if not setup.secrets.kubeconfig_path:
-                        setup.secrets.kubeconfig_path = k8s_result.kubeconfig_path
-                    if not setup.secrets.buildbuddy_api_key:
-                        setup.secrets.buildbuddy_api_key = k8s_result.buildbuddy_api_key
-                    if not setup.secrets.otel_bearer_token:
-                        setup.secrets.otel_bearer_token = k8s_result.otel_bearer_token
-                else:
-                    setup.secrets = k8s_result
-        except Exception as e:
-            logger.warning("K8s secrets fetch failed (non-fatal, continuing without secrets): %s", e)
+            except Exception as e:
+                logger.warning("K8s client setup failed: %s", e)
 
-    # Configure BuildBuddy now that k8s secrets (with API key) are available.
-    buildbuddy_api_key = setup.secrets.buildbuddy_api_key if setup.secrets else None
+        def resolve(source: SecretSource) -> str | None:
+            return secret_sources.resolve_secret(
+                source,
+                project_dir=project_dir,
+                age_identities=age_identities,
+                k8s_api=k8s_api,
+                k8s_namespace=k8s_namespace,
+            )
+
+        setup.secrets = secret_sources.SecretsResult()
+        if secrets_cfg:
+            if secrets_cfg.buildbuddy_api_key:
+                setup.secrets.buildbuddy_api_key = resolve(secrets_cfg.buildbuddy_api_key)
+            if secrets_cfg.github_token:
+                setup.secrets.github_token = resolve(secrets_cfg.github_token)
+            if secrets_cfg.otel_bearer_token:
+                setup.secrets.otel_bearer_token = resolve(secrets_cfg.otel_bearer_token)
+
+        # Write kubeconfig when k8s client is available.
+        if k8s_api and settings.k8s_token and hook_config and hook_config.k8s:
+            setup.secrets.kubeconfig_path = secret_sources.write_kubeconfig(
+                token=settings.k8s_token,
+                k8s_cfg=hook_config.k8s,
+                session_dir=paths.session_dir,
+                combined_ca_path=combined_ca,
+                proxy_url=proxy_url,
+            )
+
+    # Configure BuildBuddy now that secrets are available.
+    buildbuddy_api_key = setup.secrets.buildbuddy_api_key
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
         if ctx.web_mode or buildbuddy_api_key:
             buildbuddy_result = await run_in_thread(lambda: buildbuddy.setup_buildbuddy(api_key=buildbuddy_api_key))
@@ -496,15 +499,15 @@ async def run_session(
             setup.buildbuddy_configured = buildbuddy.is_buildbuddy_configured()
 
     # Ensure 'fork' git remote when GITHUB_TOKEN is available.
-    if setup.secrets and "GITHUB_TOKEN" in setup.secrets.env_vars:
+    if setup.secrets.github_token:
         try:
             with tracer.start_as_current_span("setup_fork_remote", context=root_ctx):
-                setup.fork_result = fork_remote.ensure_fork_remote(setup.secrets.env_vars["GITHUB_TOKEN"], project_dir)
+                setup.fork_result = fork_remote.ensure_fork_remote(setup.secrets.github_token, project_dir)
         except Exception as e:
             logger.warning("Fork remote setup failed: %s", e)
 
-    # Configure OTLP now that k8s secrets (with bearer token) are available.
-    # Bearer token from k8s overrides config file / env var. Idempotent across sessions.
+    # Configure OTLP now that secrets (with bearer token) are available.
+    # Bearer token overrides config file / env var. Idempotent across sessions.
     if hook_config and hook_config.otel:
         otel_config = hook_config.otel.with_env_overrides()
         otel_token = setup.secrets.otel_bearer_token if setup.secrets else None
@@ -557,7 +560,7 @@ async def run_session(
             hook_timestamp=hook_timestamp,
             mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,
             mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
-            secrets_env_vars=setup.secrets.env_vars if setup.secrets else None,
+            secrets_env_vars=_build_secrets_env_vars(setup.secrets),
             with_direnv=setup.with_direnv,
             extra_env_script=hook_config.extra_env_script if hook_config else None,
         )

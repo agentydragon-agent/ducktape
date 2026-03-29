@@ -34,17 +34,20 @@ Hook environments installing in background. First `git commit` may block briefly
 ## pre-commit
 **Warning**: pre-commit hook installation failed. Git hooks may not run. Check daemon log for details.
 % endif
-% if secrets:
+<%
+    has_any_secret = secrets and (secrets.buildbuddy_api_key or secrets.github_token or secrets.otel_bearer_token)
+%>\
+% if has_any_secret:
 
 ## Secrets
-${len(secrets.env_vars)} env var(s) loaded from k8s cluster secrets.
+Secrets loaded (buildbuddy=${"yes" if secrets.buildbuddy_api_key else "no"}, github=${"yes" if secrets.github_token else "no"}).
 % if secrets.kubeconfig_path:
 `kubectl` access available: `cluster/k8s/{claude,agent-shared}-rbac/` includes admin in `claude-sandbox` namespace, read-only in `props`.
 % endif
 % else:
 
 ## Secrets — UNAVAILABLE
-K8s secrets could not be fetched. This means:
+Secrets could not be fetched. This means:
 - `GITHUB_TOKEN` is not set — `gh` CLI and authenticated git operations will fail
 - `BUILDBUDDY_API_KEY` is not set — Bazel remote cache/execution (RBE) is unavailable
 - `KUBECONFIG` is not set — `kubectl` will not work

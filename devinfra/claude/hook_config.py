@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Annotated, Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 HOOKS_DOTDIR = ".claude_hooks"
 
@@ -32,50 +33,31 @@ class OtelConfig(BaseModel):
         )
 
 
-class K8sSecretMapping(BaseModel):
-    """Maps a single k8s Secret's data keys to env var names."""
+class SopsSecretSource(BaseModel):
+    """Fetch a secret by decrypting a SOPS-encrypted YAML file."""
 
-    name: str
-    data: dict[str, str] = Field(description="Secret data key → env var name")
+    kind: Literal["sops"]
+    sops_file: str = Field(description="Repo-relative path to SOPS-encrypted YAML")
+    key: str = Field(description="Key within the decrypted YAML")
 
 
-class K8sSecretRef(BaseModel):
-    """Reference to a single key in a k8s Secret."""
+class K8sSecretSource(BaseModel):
+    """Fetch a secret from a Kubernetes Secret object."""
 
+    kind: Literal["k8s"]
     secret_name: str
-    data_key: str
+    key: str
 
 
-class K8sSecretsConfig(BaseModel):
-    """Config for reading secrets from k8s."""
-
-    namespace: str
-    secrets: list[K8sSecretMapping]
-    buildbuddy_api_key: K8sSecretRef | None = None
-    otel_bearer_token: K8sSecretRef | None = None
-
-    @model_validator(mode="after")
-    def _validate_no_duplicate_env_vars(self) -> K8sSecretsConfig:
-        seen: dict[str, str] = {}
-        for entry in self.secrets:
-            for env_var in entry.data.values():
-                if env_var in seen:
-                    raise ValueError(f"Duplicate env var {env_var!r} in secrets {seen[env_var]!r} and {entry.name!r}")
-                seen[env_var] = entry.name
-        return self
+SecretSource = Annotated[SopsSecretSource | K8sSecretSource, Field(discriminator="kind")]
 
 
-class SopsSecretFile(BaseModel):
-    """A SOPS-encrypted file with a mapping from decrypted keys to env var names."""
+class SecretsConfig(BaseModel):
+    """Named secrets with tagged-union sources describing how to fetch each one."""
 
-    path: str = Field(description="Repo-relative path to the SOPS-encrypted YAML file")
-    mapping: dict[str, str] = Field(description="Decrypted YAML key -> env var name")
-
-
-class SopsSecretsConfig(BaseModel):
-    """Config for reading secrets from SOPS-encrypted files."""
-
-    files: list[SopsSecretFile]
+    buildbuddy_api_key: SecretSource | None = None
+    github_token: SecretSource | None = None
+    otel_bearer_token: SecretSource | None = None
 
 
 class K8sConfig(BaseModel):
@@ -107,8 +89,7 @@ class HookConfig(BaseModel):
     """Top-level hook config file (.claude_hooks/config.yaml)."""
 
     k8s: K8sConfig | None = None
-    k8s_secrets: K8sSecretsConfig | None = None
-    sops_secrets: SopsSecretsConfig | None = None
+    secrets: SecretsConfig | None = None
     otel: OtelConfig | None = None
     pre_commit: PreCommitConfig | None = None
     extra_env_script: str | None = Field(

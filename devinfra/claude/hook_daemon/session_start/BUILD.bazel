@@ -69,12 +69,13 @@ py_library(
 )
 
 py_library(
-    name = "k8s_secrets",
-    srcs = ["k8s_secrets.py"],
+    name = "secret_sources",
+    srcs = ["secret_sources.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//devinfra/claude:hook_config",
+        "//devinfra/claude:sops_decrypt",
         "//devinfra/claude/auth_proxy:vars",
         "@pypi//kubernetes",
         "@pypi//pyyaml",
@@ -125,9 +126,9 @@ py_library(
         ":buildbuddy",
         ":container_runtime",
         ":fork_remote",
-        ":k8s_secrets",
         ":mkcert",
         ":precommit",
+        ":secret_sources",
         ":tmpfs",
         "//devinfra/claude:bazel_wrapper_lib",
         "//devinfra/claude:debug",
@@ -163,7 +164,7 @@ py_test(
         "external",
     ],
     deps = [
-        ":k8s_secrets",
+        ":secret_sources",
         "//devinfra/claude:hook_config",
         "//devinfra/claude/testing:mitmproxy_fixture",
         "//util:docker",
@@ -194,8 +195,7 @@ py_test(
     srcs = ["test_k8s_secrets.py"],
     imports = ["../../../.."],
     deps = [
-        ":k8s_secrets",
-        "//devinfra/claude:conftest",
+        ":secret_sources",
         "//devinfra/claude:hook_config",
         "//devinfra/claude/auth_proxy:vars",
         "@pypi//kubernetes",

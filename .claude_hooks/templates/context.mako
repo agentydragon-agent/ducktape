@@ -2,7 +2,7 @@
 ## Repo-specific context for ducktape
 ## Rendered by session_start hook if .claude_hooks/templates/context.mako exists.
 % if secrets:
-% if "GITHUB_TOKEN" in secrets.env_vars:
+% if secrets.github_token:
 `GITHUB_TOKEN`: GitHub PAT for the `agentydragon-agent` bot account. Used by `gh` CLI automatically.
   **PR workflow** (`origin` pushes to `agentydragon/ducktape` via proxy, but bot is NOT a collaborator so PRs must come from a fork):
 % if fork_result and fork_result.fork_exists:
@@ -34,7 +34,7 @@ LLM inference (2x RTX 5090, Apache 2.0 `gpt-oss` models):
 % if secrets.buildbuddy_api_key:
 API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> for undocumented endpoints (profile download, invocation search, cache scorecard).
 % endif
-% if "KUBECONFIG" in secrets.env_vars:
+% if secrets.kubeconfig_path:
 `KUBECONFIG`: Points to decoded kubeconfig for the `cluster/` Talos k8s cluster. ServiceAccount `claude-code-web` with access to the `claude-sandbox` namespace (pods, services, secrets, exec). Resource limits: 4 CPU, 8Gi memory, 10 pods. Use `kubectl` for `cluster/` operations (deploy, inspect, debug).
 % endif
 % endif
