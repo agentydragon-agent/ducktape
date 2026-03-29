@@ -5,6 +5,9 @@
   pkgs,
   claude-hooks-wheel,
 }:
+let
+  pyrage = pkgs.callPackage ./pyrage.nix { };
+in
 pkgs.python3Packages.buildPythonApplication {
   pname = "claude-hooks";
   version = "latest";
@@ -37,7 +40,11 @@ pkgs.python3Packages.buildPythonApplication {
       uvicorn
     ])
     # pre-commit is imported as a Python library (pre_commit.*), not just a CLI tool.
-    ++ [ pkgs.pre-commit ];
+    # pyrage is not in nixpkgs; packaged locally from PyPI wheel.
+    ++ [
+      pkgs.pre-commit
+      pyrage
+    ];
 
   # Wheel is already tested in CI via Bazel.
   doCheck = false;

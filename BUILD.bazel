@@ -209,6 +209,7 @@ py_wheel(
         "pydantic>=2.0",
         "pydantic-settings",
         "pygit2>=1.14",
+        "pyrage>=1.0.0",
         "pyjwt",
         "pyyaml",
         "rich",
