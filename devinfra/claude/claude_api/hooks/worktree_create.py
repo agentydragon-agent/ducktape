@@ -3,7 +3,9 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookOutputBase
 
 
 class WorktreeCreateInput(BaseModel):
@@ -14,3 +16,12 @@ class WorktreeCreateInput(BaseModel):
     cwd: Path
     hook_event_name: Literal["WorktreeCreate"] = "WorktreeCreate"
     name: str
+
+
+class WorktreeCreateHookSpecificOutput(CamelModel):
+    hook_event_name: Literal["WorktreeCreate"] = "WorktreeCreate"
+    worktree_path: str = Field(description="Absolute path to the created worktree directory")
+
+
+class WorktreeCreateOutput(HookOutputBase):
+    hook_specific_output: WorktreeCreateHookSpecificOutput | None = None

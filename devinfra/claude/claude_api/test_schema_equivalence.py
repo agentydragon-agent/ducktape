@@ -32,6 +32,7 @@ from devinfra.claude.claude_api.hooks.stop import StopOutput
 from devinfra.claude.claude_api.hooks.subagent_start import SubagentStartOutput
 from devinfra.claude.claude_api.hooks.subagent_stop import SubagentStopOutput
 from devinfra.claude.claude_api.hooks.user_prompt_submit import UserPromptSubmitOutput
+from devinfra.claude.claude_api.hooks.worktree_create import WorktreeCreateOutput
 from util.bazel.runfiles import get_required_path
 from util.json_schema import inline_refs
 
@@ -54,6 +55,7 @@ _ALL_OUTPUT_MODELS: list[tuple[str, type, str | None]] = [
     ("ConfigChange", ConfigChangeOutput, None),
     ("CwdChanged", CwdChangedOutput, "CwdChanged"),
     ("FileChanged", FileChangedOutput, "FileChanged"),
+    ("WorktreeCreate", WorktreeCreateOutput, "WorktreeCreate"),
 ]
 
 
