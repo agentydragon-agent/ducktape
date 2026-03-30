@@ -16,7 +16,7 @@ spec:
       topology.kubernetes.io/region: proxmox
 
   storage:
-    storageClass: proxmox-csi-retain
+    storageClass: local-path
     size: 5Gi
 
   monitoring:
