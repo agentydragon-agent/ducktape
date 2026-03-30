@@ -16,9 +16,6 @@ class PermissionMode(StrEnum):
     ACCEPT_EDITS = "acceptEdits"
     DONT_ASK = "dontAsk"
     AUTO = "auto"
-    # CLEANUP(2026-03-30): bypassPermissions removed from v2.1.87 Zod schema
-    # but kept for backwards compat with older versions.
-    BYPASS_PERMISSIONS = "bypassPermissions"
 
 
 class CamelModel(BaseModel):

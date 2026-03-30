@@ -18,7 +18,9 @@ import pytest_bazel
 from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hooks.config_change import ConfigChangeOutput
+from devinfra.claude.claude_api.hooks.cwd_changed import CwdChangedOutput
 from devinfra.claude.claude_api.hooks.elicitation import ElicitationOutput, ElicitationResultOutput
+from devinfra.claude.claude_api.hooks.file_changed import FileChangedOutput
 from devinfra.claude.claude_api.hooks.notification import NotificationOutput
 from devinfra.claude.claude_api.hooks.permission_request import PermissionRequestOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseOutput
@@ -50,12 +52,14 @@ _ALL_OUTPUT_MODELS: list[tuple[str, type, str | None]] = [
     ("Stop", StopOutput, None),
     ("SubagentStop", SubagentStopOutput, None),
     ("ConfigChange", ConfigChangeOutput, None),
+    ("CwdChanged", CwdChangedOutput, "CwdChanged"),
+    ("FileChanged", FileChangedOutput, "FileChanged"),
 ]
 
 
 def _load_zod_json_schema() -> dict[str, Any]:
     """Load the Zod-derived JSON Schema for hookOutput from runfiles."""
-    path = get_required_path("_main/devinfra/claude/claude_api/hooks/schemas/2.1.76/hook_output.json")
+    path = get_required_path("_main/devinfra/claude/claude_api/hooks/schemas/2.1.87/hook_output.json")
     return json.loads(path.read_text())  # type: ignore[no-any-return]
 
 

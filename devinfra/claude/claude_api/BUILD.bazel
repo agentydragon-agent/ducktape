@@ -40,13 +40,15 @@ py_test(
     name = "test_schema_equivalence",
     srcs = ["test_schema_equivalence.py"],
     data = [
-        "//devinfra/claude/claude_api/hooks/schemas/2.1.76:hook_schemas",
+        "//devinfra/claude/claude_api/hooks/schemas/2.1.87:hook_schemas",
     ],
     imports = ["../../.."],
     deps = [
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:config_change",
+        "//devinfra/claude/claude_api/hooks:cwd_changed",
         "//devinfra/claude/claude_api/hooks:elicitation",
+        "//devinfra/claude/claude_api/hooks:file_changed",
         "//devinfra/claude/claude_api/hooks:notification",
         "//devinfra/claude/claude_api/hooks:permission_request",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
