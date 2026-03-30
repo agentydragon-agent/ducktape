@@ -26,12 +26,13 @@ class SessionStartHookInput(HookInputBase):
     model: str | None = Field(default=None, description="Not always sent by Claude Code")
     hook_event_name: Literal["SessionStart"] = "SessionStart"
     source: HookSource
-    agent_type: str | None = Field(default=None, description="Present only when started with --agent")
 
 
 class SessionStartHookSpecificOutput(CamelModel):
     hook_event_name: Literal["SessionStart"] = "SessionStart"
     additional_context: str | None = Field(default=None, description="Context added to Claude's system prompt")
+    initial_user_message: str | None = Field(default=None, description="Inject an initial user message")
+    watch_paths: list[str] | None = Field(default=None, description="Register paths to watch for FileChanged events")
 
 
 class SessionStartOutput(HookOutputBase):
