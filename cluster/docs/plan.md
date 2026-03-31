@@ -23,6 +23,8 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - **InvenTree**: `inventree`, `inventree-namespace`, `inventree-secrets`,
   `inventree-token-provisioner`, `authentik-blueprint-inventree-secret` — VPS memory pressure.
 - **Firecrawl**: `firecrawl`, `firecrawl-namespace`, `firecrawl-db`
+- **Langfuse**: `langfuse`, `langfuse-namespace`, `langfuse-secrets`, `langfuse-db` —
+  suspended 2026-03-31, degraded Longhorn volumes on wyrm2.
 
 ## Next Actions
 
