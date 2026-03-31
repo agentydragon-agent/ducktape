@@ -44,69 +44,51 @@ locals {
     inbound  = [{ port = "any", proto = "any", host = "any" }]
   }
 
-  # Per-node Nebula daemon configurations
+  # Fields shared by all nebula nodes — merged with per-node overrides below
+  nebula_common = {
+    pki             = local.nebula_pki
+    static_host_map = local.nebula_static_host_map
+    listen          = { host = "0.0.0.0", port = 4242 }
+    punchy          = { punch = true, respond = true }
+    tun             = { dev = "nebula1" }
+    logging         = { level = "info", format = "json" }
+    timers = {
+      connection_alive_interval = 5
+      pending_deletion_interval = 10
+    }
+    firewall = local.nebula_firewall
+  }
+
+  # Per-node Nebula daemon configurations (common fields + per-node overrides)
   nebula_configs = {
     # VPS lighthouses: am_lighthouse + am_relay (relay required for NAT'd home nodes)
-    vps0 = {
-      pki             = local.nebula_pki
-      static_host_map = local.nebula_static_host_map
+    vps0 = merge(local.nebula_common, {
       lighthouse = {
         am_lighthouse = true
         serve_dns     = true
         interval      = 10
         dns           = { host = "10.42.0.1", port = 53 }
       }
-      relay    = { am_relay = true }
-      listen   = { host = "0.0.0.0", port = 4242 }
-      punchy   = { punch = true, respond = true }
-      tun      = { dev = "nebula1" }
-      logging  = { level = "info", format = "json" }
-      timers = {
-        connection_alive_interval = 5
-        pending_deletion_interval = 10
-      }
-      firewall = local.nebula_firewall
-    }
-    vps1 = {
-      pki             = local.nebula_pki
-      static_host_map = local.nebula_static_host_map
+      relay = { am_relay = true }
+    })
+    vps1 = merge(local.nebula_common, {
       lighthouse = {
         am_lighthouse = true
         serve_dns     = true
         interval      = 10
         dns           = { host = "10.42.0.2", port = 53 }
       }
-      relay    = { am_relay = true }
-      listen   = { host = "0.0.0.0", port = 4242 }
-      punchy   = { punch = true, respond = true }
-      tun      = { dev = "nebula1" }
-      logging  = { level = "info", format = "json" }
-      timers = {
-        connection_alive_interval = 5
-        pending_deletion_interval = 10
-      }
-      firewall = local.nebula_firewall
-    }
+      relay = { am_relay = true }
+    })
     # Proxmox home node: not a lighthouse, uses VPS relays for NAT traversal
-    pve_cp0 = {
-      pki             = local.nebula_pki
-      static_host_map = local.nebula_static_host_map
+    pve_cp0 = merge(local.nebula_common, {
       lighthouse = {
         am_lighthouse = false
         interval      = 10
         hosts         = local.nebula_lighthouse_ips
       }
-      relay    = { relays = local.nebula_lighthouse_ips, use_relays = true }
-      listen   = { host = "0.0.0.0", port = 4242 }
-      punchy   = { punch = true, respond = true }
-      tun      = { dev = "nebula1" }
-      logging  = { level = "info", format = "json" }
-      timers = {
-        connection_alive_interval = 5
-        pending_deletion_interval = 10
-      }
-      firewall = local.nebula_firewall
-    }
+      relay = { relays = local.nebula_lighthouse_ips, use_relays = true }
+    })
   }
 
   # Per-node ExtensionServiceConfig documents (apiVersion: v1alpha1 /
