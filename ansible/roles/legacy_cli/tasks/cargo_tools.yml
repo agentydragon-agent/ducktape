@@ -11,8 +11,3 @@
     creates: "~/.cargo/bin/sccache"
     executable: /bin/bash
   # Note: Cargo is configured to use sccache via ~/.cargo/config.toml dotfile
-
-- name: Install atuin via cargo
-  ansible.builtin.command: cargo install atuin --locked
-  args:
-    creates: "~/.cargo/bin/atuin"
