@@ -40,6 +40,14 @@ ARTIFACTS = [
         filename="claude_hooks-0.1.0-py3-none-any.whl",
     ),
     Artifact(
+        pkg="ducktape-util",
+        bazel_target="//util:wheel",
+        src_glob="bazel-bin/util/ducktape_util-*.whl",
+        dest="dist/",
+        notes="ducktape-util shared utility wheel.",
+        filename="ducktape_util-0.1.0-py3-none-any.whl",
+    ),
+    Artifact(
         pkg="ducktape",
         bazel_target="//:wheel",
         src_glob="bazel-bin/ducktape-*.whl",

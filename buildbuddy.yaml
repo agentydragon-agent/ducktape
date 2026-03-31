@@ -80,6 +80,7 @@ actions:
           bazel build --config=rbe --remote_download_toplevel \
             //:wheel \
             //:claude_hooks_wheel \
+            //util:wheel \
             //gterm_theme:wheel \
             //skills:all_skills_tar \
             //devinfra/buildbuddy_cli:bbapi
