@@ -1,18 +1,16 @@
 # talos-pve-cp-0 NMI incidents
 
-## Status: Root cause identified — Talos v1.12 (kernel 6.18) KVM regression
+## Status: Root cause identified — AMD Idle HLT Intercept bug in host kvm_amd
 
-Three incidents observed on the old VM, plus identical stalls on a **fresh VM**. vCPU 1
-repeatedly stalls — manifests as NMI (incidents 1-2) or RCU stall (incident 3). Ruled
-out: QXL, balloon, NMI watchdog, resource pressure, instance-specific state, etcd data.
+**Full investigation**: <debug/kernel-6.18-amd-kvm-stall.md>
 
-**Root cause**: Talos v1.12 ships kernel 6.18 which has KVM-guest regressions.
-siderolabs/talos#12735 reports OpenStack VMs (KVM/QEMU) cannot boot v1.12 at all but
-work fine on v1.11.6. Multiple BPF/Cilium regressions also affect v1.12 (#12726, #12984).
-VPS nodes on Hetzner (Intel KVM) are unaffected — the regression may be AMD-specific or
-manifest differently on AMD Zen 5.
+**Root cause**: AMD Idle HLT Intercept feature (merged kernel 6.15, `X86_FEATURE_IDLE_HLT`
+= CPUID bit 510). The host's kvm_amd on Zen 5 uses `INTERCEPT_IDLE_HLT` instead of
+`INTERCEPT_HLT`, causing guest vCPU stalls and spurious NMI injection. Interaction between
+host kvm_amd (6.17) and guest kernel 6.18.
 
-**Fix**: Downgrade to Talos v1.11.6 (kernel 6.12.62), or try latest v1.12.6 (6.18.18).
+**Fix**: `clearcpuid=510` on host kernel cmdline (disables the feature). Applied in
+`ansible/atlas.yaml`. Pending atlas reboot.
 
 ## Incident 1 — 2026-03-23
 

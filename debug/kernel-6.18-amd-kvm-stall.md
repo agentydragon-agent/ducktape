@@ -205,19 +205,10 @@ Cascading failure on 2026-03-30: removing pve-cp-0 during debugging left 2-membe
 VPS nodes (no `NoSchedule` taint) absorbed workload pods → OOM → nebula tunnel broke →
 etcd no leader → full cluster outage. See <debug/wyrm2-chrome-network-changed.md>.
 
-## Options
+## Current Fix: `clearcpuid=510` on host (pending reboot)
 
-1. **Run 2-member etcd (no Proxmox CP)**: Simple but zero fault tolerance.
-2. **Tolerate the stalls**: v1.12.3 stalls but recovers. Provides 3rd etcd member.
-3. **Downgrade entire cluster K8s to ~1.32**: Allows Talos v1.11.6 everywhere. Very
-   disruptive.
-4. **Custom Talos image with kernel 6.12**: Build via `siderolabs/pkgs`. Complex but
-   preserves K8s 1.35.1.
-5. **Wait for upstream fix**: Monitor Red Hat Bugzilla #2448303 and kernel changelogs.
-6. **Run etcd outside Talos**: On wyrm2 NixOS. Unconventional.
-
-**Recommended**: Option 2 (tolerate) + Option 5 (wait). Add `NoSchedule` taints to VPS
-nodes to prevent OOM cascade.
+Applied in `ansible/atlas.yaml` kernel cmdline + `halt_poll_ns=0` in modprobe.d.
+Requires atlas reboot to take effect. After reboot, VMs should start clean.
 
 ## Investigation timeline
 
@@ -233,57 +224,46 @@ nodes to prevent OOM cascade.
 - **2026-03-30**: **Bisect confirmed**: kernel 6.18 stalls in `pv_native_safe_halt`
   within 38s on idle VM. Kernel 6.12 fine.
 
-## Next investigation steps
+## After Reboot Checklist
 
-### High priority (can run in parallel, ~5 min each)
+1. **Verify `clearcpuid=510` took effect**:
 
-1. **LKML search with precise keyword**: Now that we know the exact function, search
-   `pv_native_safe_halt AMD 6.18 regression` on lore.kernel.org. Much more targeted
-   than previous searches. May find the exact commit or an existing fix.
-
-2. **Parallel kernel version bisect**: Spin up 6 VMs simultaneously on atlas, one per
-   kernel minor version (6.13, 6.14, 6.15, 6.16, 6.17, 6.18). The stall appears in
-   <60 seconds, so one round of screenshots after 2 minutes identifies exactly which
-   minor version introduced the regression. Use Talos Image Factory or generic distro
-   ISOs. This narrows the search from "somewhere in 6.13-6.18" to a single version,
-   making `git bisect` on the kernel source feasible.
-
-3. **Host-side KVM parameter tests**: Toggle `kvm_amd` module parameters on atlas that
-   affect the halt path. Each is a quick `echo` to `/sys/module/kvm_amd/parameters/`
-   or module reload, then boot a test VM:
-   - `halt_poll_ns=0` — disable halt polling (most likely to help)
-   - `avic=0` — disable AMD virtual interrupt controller
-   - `npt=0` — disable nested page tables
-     If one of these fixes it, we have an immediate workaround.
-
-### Medium priority
-
-4. **Read kernel source diff**: `pv_native_safe_halt` is tiny. Read the diff between
-   6.12 and 6.18 for the halt path and its callers:
-
-   ```
-   git log v6.12..v6.18 -- arch/x86/kernel/paravirt.c arch/x86/kvm/
+   ```bash
+   cat /proc/cmdline | grep clearcpuid
+   dmesg | grep -i idle_hlt  # should show nothing (feature disabled)
    ```
 
-   The bug is probably in something that changed around the function (the `do_idle`
-   caller, KVM halt polling, or the AMD-specific halt exit handler).
+2. **Verify `halt_poll_ns=0` persisted** (from modprobe.d):
 
-5. **Test non-Talos kernel 6.18**: Boot a generic distro live ISO (Fedora, Arch) with
-   kernel 6.18 as a KVM guest on atlas. If it also stalls → pure kernel bug. If stable
-   → something in Talos's kernel config triggers it (e.g., specific `CONFIG_PARAVIRT`
-   options, `init_on_alloc=1`, KSPP hardening flags).
+   ```bash
+   cat /sys/module/kvm/parameters/halt_poll_ns  # should be 0
+   ```
 
-6. **Test `idle=poll` kernel arg**: If we can boot a non-Talos kernel 6.18 with
-   `idle=poll` (bypasses `pv_native_safe_halt` entirely) and it doesn't stall, that
-   confirms the halt path is the sole issue and `idle=poll` is a workaround (at the
-   cost of 100% CPU on idle cores).
+3. **Quick idle test**: Boot a throwaway v1.12.3 VM (9901), wait 2 min, screenshot.
+   Should be clean (no stalls, no NMIs).
 
-### Cluster TODOs
+4. **Load test**: If idle test passes, check pve-cp-0 (VM 10000) — it should boot,
+   join etcd, and reach Ready without stalling.
 
-- [ ] Add `NoSchedule` taints to VPS control plane nodes
-- [ ] Decide: tolerate stalls (option 2) or run 2-member etcd (option 1)
-- [ ] File upstream Talos issue linking bisect results + Bugzilla #2448303
+5. **Uncordon VPS nodes** once pve-cp-0 is Ready and etcd has 3 members:
+
+   ```bash
+   kubectl uncordon talos-vps-cp-0
+   kubectl uncordon talos-vps-cp-1
+   ```
+
+6. **If `clearcpuid=510` doesn't fix load stalls**: Try also adding `kvm_amd.vnmi=0`
+   to the kernel cmdline (disables vNMI entirely). Or fall back to host kernel
+   6.8.12-18-pve (already installed, select at boot).
+
+## TODOs
+
+- [ ] Add `NoSchedule` taints to VPS control plane nodes (prevent OOM cascade)
+- [ ] File upstream bug on `kvm@vger.kernel.org` with bisect data + `clearcpuid=510`
+      finding, CC Manali Shukla and Sean Christopherson
+- [ ] File Talos issue linking to the upstream bug
 - [ ] Monitor Red Hat Bugzilla #2448303 for upstream fix
+- [ ] Remove `clearcpuid=510` and `halt_poll_ns=0` workarounds once fix lands
 
 ## Related
 
