@@ -12,11 +12,7 @@
   solarizedLight,
   solarizedDark,
   terminalFont,
-  ducktape-wheel,
-  claude-hooks-wheel,
-  gterm-theme-wheel,
-  ducktape-util-wheel,
-  bbapi-binary,
+  ducktape-artifacts,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -79,32 +75,27 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
-  ducktapePackages = import ../ducktape {
-    inherit
-      lib
-      pkgs
-      ducktape-wheel
-      claude-hooks-wheel
-      gterm-theme-wheel
-      ducktape-util-wheel
-      ;
+  ducktapePackages = import ../packages {
+    inherit lib pkgs;
+    artifacts = ducktape-artifacts;
   };
   inherit (ducktapePackages)
-    ducktape-util
     ducktape
     claude-hooks
     gterm-theme
+    bbapi
     ;
-
-  # bbapi - BuildBuddy API CLI
-  bbapi = pkgs.callPackage ./packages/bbapi.nix { inherit bbapi-binary; };
 in
 {
+  # Expose the full package set so host configs can use per-host packages
+  # (e.g., tana, bebas-neue-font) without re-importing nix/packages/.
+  _module.args.ducktapePackages = ducktapePackages;
+
   imports = [
 
     # TODO: Re-enable google-drive-service once the git repo is accessible
     # Disabled during 25.11 migration due to 504 error from https://git.k3s.agentydragon.com/agentydragon/google-drive
-    # ./packages/google-drive-service.nix
+    # ../packages/google-drive-service.nix
     ./codex
     ./crush
     ./modules/solarized.nix
@@ -119,11 +110,6 @@ in
     ./modules/datetime-format.nix
     ./services/activitywatch.nix
   ];
-  # TODO: Remove this — incompatible with home-manager.useGlobalPkgs.
-  # NixOS hosts set useGlobalPkgs=true, so pkgs comes from the NixOS config
-  # and per-user nixpkgs.config is ignored. Move allowUnfree to the NixOS-level
-  # nixpkgs.config or ensure the global pkgs already has allowUnfree=true.
-  nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
   home.homeDirectory = "/home/agentydragon";
@@ -344,13 +330,7 @@ in
       # Python development environment
       (python3.withPackages (
         ps: with ps; [
-          autopep8
           pydeps
-          black
-          isort
-          # pandas
-          # torch
-          # numpy
         ]
       ))
 
@@ -423,11 +403,11 @@ in
       stylua # Lua formatter
 
       # Custom packages from ducktape repo
-      ducktape-util # shared util library
       ducktape # git-commit-ai, difftree, gmail-archiver
       claude-hooks # Claude Code hooks/statusline
       bbapi # BuildBuddy API CLI
       gterm-theme # GNOME Terminal theme follower
+      ducktapePackages.tana # Knowledge graph / note-taking
     ]
     ++ lib.optionals enableKube [
       kubectl

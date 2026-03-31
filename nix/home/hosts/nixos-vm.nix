@@ -13,26 +13,11 @@
   lib,
   ...
 }:
-let
-  tana = pkgs.callPackage ../packages/tana.nix { };
-in
 {
   imports = [
     ../home.nix
+    ../modules/no-screensaver.nix
   ];
 
-  # VM-specific configuration (GUI enabled, no special customizations)
   home.stateVersion = "24.05";
-
-  home.packages = [ tana ];
-
-  # Disable screensaver and screen blanking (for VM)
-  dconf.settings = {
-    "org/gnome/desktop/session" = {
-      idle-delay = lib.hm.gvariant.mkUint32 0;
-    }; # 0 = never
-    "org/gnome/desktop/screensaver" = {
-      lock-enabled = false;
-    };
-  };
 }

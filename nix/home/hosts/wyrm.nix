@@ -8,36 +8,20 @@
   lib,
   ...
 }:
-let
-  tana = pkgs.callPackage ../packages/tana.nix { };
-in
 {
   imports = [
     ../home.nix
     ../opencode
     ../codex
     ../modules/popos-bazel.nix
+    ../modules/no-screensaver.nix
   ];
 
-  # Wyrm-specific configuration (VM/desktop with full GUI)
   home.stateVersion = "24.05";
 
   home.packages = [
-    tana
     pkgs.gemini-cli
   ];
-  # TODO: Re-enable once k3s cluster is back up
-  # services.google-drive.enable = true;
-
-  # Disable screensaver and screen blanking (for VM/wyrm)
-  dconf.settings = {
-    "org/gnome/desktop/session" = {
-      idle-delay = lib.hm.gvariant.mkUint32 0;
-    }; # 0 = never
-    "org/gnome/desktop/screensaver" = {
-      lock-enabled = false;
-    };
-  };
 
   # Wyrm-specific pip configuration for tankshare storage
   # This creates ~/.config/pip/pip.conf to use shared cache

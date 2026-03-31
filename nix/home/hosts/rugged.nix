@@ -12,9 +12,6 @@
   lib,
   ...
 }:
-let
-  tana = pkgs.callPackage ../packages/tana.nix { };
-in
 {
   imports = [
     ../home.nix
@@ -22,7 +19,6 @@ in
 
   home.packages = [
     pkgs.lightburn
-    tana
   ];
 
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it

@@ -4,21 +4,19 @@
   config,
   pkgs,
   lib,
+  ducktapePackages,
   ...
 }:
-let
-  bebas-neue-font = pkgs.callPackage ../packages/bebas-neue-font.nix { };
-  tana = pkgs.callPackage ../packages/tana.nix { };
-in
 {
   imports = [
     ../home.nix
+    ../modules/no-screensaver.nix
   ];
 
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
-    bebas-neue-font
+    ducktapePackages.bebas-neue-font
     pkgs.kicad
     pkgs.openscad
     # TODO: Add a GUI system monitor with graphs (psensor not in nixpkgs;
@@ -26,29 +24,12 @@ in
     pkgs.telegram-desktop
     pkgs.tor-browser
     pkgs.tuxguitar
-    tana
   ];
 
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it
   programs.gnome-shell.extensions = [
     { package = pkgs.gnomeExtensions.appindicator; }
   ];
-
-  dconf.settings = {
-    # Disable screensaver and screen blanking (headless VM)
-    "org/gnome/desktop/screensaver" = {
-      idle-activation-enabled = false;
-      lock-enabled = false;
-    };
-    "org/gnome/desktop/session" = {
-      idle-delay = lib.hm.gvariant.mkUint32 0;
-    };
-    "org/gnome/settings-daemon/plugins/power" = {
-      idle-dim = false;
-      sleep-inactive-ac-type = "nothing";
-      sleep-inactive-battery-type = "nothing";
-    };
-  };
 
   home.stateVersion = "25.11";
 }

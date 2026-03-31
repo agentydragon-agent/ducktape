@@ -1,26 +1,23 @@
-# Ducktape wheel packages — built from CI-released wheels via flake inputs.
+# Ducktape packages — built from CI-released artifacts (npins/sources.json).
 {
   lib,
   pkgs,
-  ducktape-wheel,
-  claude-hooks-wheel,
-  gterm-theme-wheel,
-  ducktape-util-wheel,
+  artifacts,
 }:
 let
-  # Flake inputs with flake=false produce store paths named "source" (no .whl
-  # extension). pypaInstallPhase globs *.whl, so we rename to restore it.
+  # CI wheels land in the nix store as "source" (no .whl extension).
+  # pypaInstallPhase globs *.whl, so we restore the original filename.
   renameWheel =
     name: input:
     pkgs.runCommand name { } ''
       cp ${input} $out
     '';
 
-  mkDucktapeWheel =
+  # All ducktape wheels follow the same pattern: pname maps to an npins
+  # artifact, wheel filename is <pname_underscored>-0.1.0-py3-none-any.whl.
+  mkWheel =
     {
       pname,
-      wheel,
-      wheelFilename,
       description,
       propagatedBuildInputs ? [ ],
       nativeBuildInputs ? [ ],
@@ -31,7 +28,9 @@ let
       inherit pname;
       version = "latest";
       format = "wheel";
-      src = renameWheel wheelFilename wheel;
+      src = renameWheel "${
+        builtins.replaceStrings [ "-" ] [ "_" ] pname
+      }-0.1.0-py3-none-any.whl" artifacts.${pname};
       inherit
         propagatedBuildInputs
         nativeBuildInputs
@@ -47,24 +46,15 @@ let
       // lib.optionalAttrs (mainProgram != null) { inherit mainProgram; };
     };
 
+  # Python packages not in nixpkgs (used as propagatedBuildInputs)
   compact-json = pkgs.callPackage ./compact-json.nix { };
   pyrage = pkgs.callPackage ./pyrage.nix { };
   keysymdef = pkgs.callPackage ./keysymdef.nix { };
   asyncvnc = pkgs.callPackage ./asyncvnc.nix { inherit keysymdef; };
 in
 {
-  ducktape-util = mkDucktapeWheel {
-    pname = "ducktape-util";
-    wheel = ducktape-util-wheel;
-    wheelFilename = "ducktape_util-0.1.0-py3-none-any.whl";
-    description = "Shared utility library for ducktape wheels";
-    propagatedBuildInputs = with pkgs.python3Packages; [ tenacity ];
-  };
-
-  ducktape = mkDucktapeWheel {
+  ducktape = mkWheel {
     pname = "ducktape";
-    wheel = ducktape-wheel;
-    wheelFilename = "ducktape-0.1.0-py3-none-any.whl";
     description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
     mainProgram = "git-commit-ai";
     propagatedBuildInputs = with pkgs.python3Packages; [
@@ -98,14 +88,11 @@ in
       pillow
       websockets
       asyncvnc
-      ducktape-util
     ];
   };
 
-  claude-hooks = mkDucktapeWheel {
+  claude-hooks = mkWheel {
     pname = "claude-hooks";
-    wheel = claude-hooks-wheel;
-    wheelFilename = "claude_hooks-0.1.0-py3-none-any.whl";
     description = "Claude Code session hooks (statusline, session-start, auth proxy)";
     mainProgram = "claude-hook";
     propagatedBuildInputs =
@@ -136,14 +123,11 @@ in
       ++ [
         pkgs.pre-commit
         pyrage
-        ducktape-util
       ];
   };
 
-  gterm-theme = mkDucktapeWheel {
+  gterm-theme = mkWheel {
     pname = "gterm-theme";
-    wheel = gterm-theme-wheel;
-    wheelFilename = "gterm_theme-0.1.0-py3-none-any.whl";
     description = "GNOME Terminal theme follower";
     mainProgram = "gterm-theme";
     nativeBuildInputs = with pkgs; [
@@ -163,4 +147,35 @@ in
       pygobject3
     ];
   };
+
+  # Standalone packages (not wheels)
+
+  tana = pkgs.callPackage ./tana.nix { };
+  gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
+  bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
+
+  bbapi = pkgs.stdenv.mkDerivation {
+    pname = "bbapi";
+    version = "latest";
+    src = artifacts.bbapi;
+    dontUnpack = true;
+    installPhase = ''
+      mkdir -p $out/bin
+      cp $src $out/bin/bbapi
+      chmod +x $out/bin/bbapi
+    '';
+    meta = {
+      description = "BuildBuddy API CLI";
+      homepage = "https://github.com/agentydragon/ducktape";
+      license = lib.licenses.agpl3Only;
+      mainProgram = "bbapi";
+      platforms = [ "x86_64-linux" ];
+    };
+  };
+
+  # Skills data: $out/share/claude-hooks/skills/
+  skills = pkgs.runCommand "claude-hooks-skills" { } ''
+    mkdir -p $out/share/claude-hooks/skills
+    tar xf ${artifacts.skills} -C $out/share/claude-hooks/skills
+  '';
 }
