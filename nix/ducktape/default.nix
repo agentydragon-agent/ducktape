@@ -98,6 +98,7 @@ in
       pillow
       websockets
       asyncvnc
+      ducktape-util
     ];
   };
 
@@ -135,6 +136,7 @@ in
       ++ [
         pkgs.pre-commit
         pyrage
+        ducktape-util
       ];
   };
 
