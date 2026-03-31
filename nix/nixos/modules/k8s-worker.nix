@@ -197,6 +197,17 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Hide Longhorn iSCSI CSI volumes from UDisks2 so it doesn't offer
+    # to manage them. Note: this alone does NOT fix the
+    # gvfs-udisks2-volume-monitor CPU burn (~18% on wyrm2). The real
+    # cause is GVFS polling /proc/self/mountinfo on every mount event,
+    # which is huge on k8s workers (hundreds of containerd overlays).
+    # GVFS has no path-based filter for mountinfo. To fix the CPU burn,
+    # mask the monitor: systemctl --user mask gvfs-udisks2-volume-monitor
+    services.udev.extraRules = ''
+      SUBSYSTEM=="block", ENV{ID_VENDOR}=="IET", ENV{ID_MODEL}=="VIRTUAL-DISK", ENV{UDISKS_IGNORE}="1"
+    '';
+
     # iSCSI — required by Longhorn (iscsiadm on host)
     services.openiscsi = {
       enable = true;
