@@ -78,7 +78,7 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
 - [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
-- [ ] Nix cache: initialize Attic cache (`attic cache create main` + configure)
+- [x] ~~Nix cache: initialize Attic cache~~ — done (moved to wyrm2, `local-path`)
 - [ ] Proxy outpost HA: shared session storage (1 replica limit, sessions in `/dev/shm`)
 - [ ] Airlock OAuth: upgrade Google scopes (needs approval flow) — `calendar`, `gmail.send`,
       `gmail.compose`, `drive`, `spreadsheets`

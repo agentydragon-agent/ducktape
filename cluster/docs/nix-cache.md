@@ -1,13 +1,13 @@
 # Nix Binary Cache (Attic)
 
 Attic server at `cache.allegedly.works`, backed by PostgreSQL (CNPG) and local
-storage on a `longhorn` PVC. Manifests in `k8s/nix-cache/`.
+storage on a `local-path` PVC. Manifests in `k8s/nix-cache/`.
 
 ## Architecture
 
 - **Server**: `ghcr.io/zhaofengli/attic:latest` (NixOS-based image)
-- **Database**: CNPG cluster `attic-db` (2 instances, `longhorn`)
-- **Cache storage**: 30Gi `longhorn-2r` PVC at `/cache`
+- **Database**: CNPG cluster `attic-db` (1 instance, Proxmox-single, `local-path`)
+- **Cache storage**: 30Gi `local-path` PVC at `/cache`
 - **Cache name**: `main` (public, priority 40)
 - **Signing public key**: `cache.allegedly.works-1:OX/cis8G1W13DALkGvhdUZ1OY3yGATbXw8+tIc8J7oA=`
 
@@ -39,7 +39,7 @@ ADMIN_TOKEN=$(kubectl exec -n nix-cache deployment/attic -- \
 curl -s -X POST "https://cache.allegedly.works/_api/v1/cache-config/main" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"keypair":"Generate","is_public":true,"store_dir":"/nix/store","priority":40}'
+  -d '{"keypair":"Generate","is_public":true,"store_dir":"/nix/store","priority":40,"upstream_cache_key_names":[]}'
 
 # 3. Update keypair to match the committed signing key
 SIGNING_SEC=$(kubectl get secret nix-cache-signing-key -n nix-cache \
@@ -95,7 +95,7 @@ Attic uses serde defaults for env var fallback — values must be **absent** fro
 
 ## Known Issues
 
-The Attic image is NixOS-based and triggers a containerd bug on nodes with
-containerd 2.2.x + Go 1.24 (absolute `/etc/passwd` symlink rejection). The
-deployment has a `nodeAffinity` excluding NixOS nodes (which run containerd
-2.2.x). See <lessons_learned/> and `debug/attic-containerd-symlink.md`.
+The Attic image is NixOS-based and previously triggered a containerd bug on
+nodes with containerd 2.2.x + Go 1.24 (absolute `/etc/passwd` symlink
+rejection). Fixed by overlaying containerd on wyrm2 with the cherry-pick of
+`containerd/containerd#12732`. See `debug/attic-containerd-symlink.md`.
