@@ -34,7 +34,7 @@
 
           # QEMU guest
           services.qemuGuest.enable = true;
-          services.spice-vdagentd.enable = true;
+          # Skip spice-vdagentd — pulls in GTK/libcanberra which has build issues
 
           # Root filesystem
           fileSystems."/" = lib.mkDefault {
@@ -139,8 +139,11 @@
     {
       nixosConfigurations = variants;
 
+      # Use raw-efi instead of qemu-efi to avoid QEMU build dependency
+      # (qemu-host-cpu-only has GTK/libcanberra build issues in nixpkgs-25.11).
+      # Proxmox can import raw images directly.
       packages.${system} = builtins.mapAttrs (
-        name: config: config.config.system.build.images.qemu-efi
+        name: config: config.config.system.build.images.raw-efi
       ) variants;
     };
 }

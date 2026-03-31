@@ -15,6 +15,24 @@ let
   ];
 in
 {
+  # CLEANUP(2026-03-31): Remove overlay once nixpkgs containerd >= 2.2.3.
+  # Fixes absolute symlink handling in NixOS-based container images (Go 1.24
+  # regression). Cherry-pick of containerd/containerd#12732 to release/2.2
+  # (PR #13015, merged 2026-03-12). Needed to run attic pod on wyrm2.
+  nixpkgs.overlays = [
+    (final: prev: {
+      containerd = prev.containerd.overrideAttrs (old: {
+        version = "2.2.2-pre-20260326";
+        src = final.fetchFromGitHub {
+          owner = "containerd";
+          repo = "containerd";
+          rev = "59b2c55f2684c34aba5cde8a5382e93b31850610";
+          hash = "sha256-aAXuPHmkC5tFclrBOXD70m1juLPeUc6EC7CscWP3SZA=";
+        };
+      });
+    })
+  ];
+
   imports = [
     ../../modules/gui.nix
     ../../modules/dev-workstation.nix
