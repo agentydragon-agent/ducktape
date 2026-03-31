@@ -82,6 +82,8 @@
           - ydotoold # ydotool daemon
           - gstreamer1.0-pipewire # For GNOME screencast recording
           - gstreamer1.0-plugins-good # For GNOME screencast recording
+          - gnome-shell-extension-gsconnect # KDE Connect protocol for GNOME
+          # TODO: Enable GSConnect via ansible (dconf) or home-manager after install
         state: present
         install_recommends: false
       tags: [packages, desktop, virtualization]
