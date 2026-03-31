@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "requests>=2.32"]
+# ///
 """Sync npins/sources.json with the latest GitHub Release for each package.
 
 For each pinned package, finds the latest release tag, compares the URL
@@ -7,6 +11,13 @@ Expects: GH_TOKEN env var.
 """
 
 import os
+import sys
+from pathlib import Path
+
+# Add repo root to path for devinfra.ci imports when running via uv
+_REPO_ROOT = Path(__file__).parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from github import Auth, Github
 
