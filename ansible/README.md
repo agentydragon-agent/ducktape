@@ -1,23 +1,3 @@
-## Per-host setup for deployment
-
-Grab `VAULT_KEY`. Save in keyring:
-
-```bash
-echo -n "$VAULT_KEY" | \
-  secret-tool store --label='ansible-vault ducktape' \
-    service ansible-vault account ducktape
-```
-
-## Generating secrets
-
-To generate and encrypt a secret in one go:
-
-```bash
-# Generate a 32-character password and encrypt it
-python3 -c "import secrets; print(secrets.token_urlsafe(32))" | \
-  ansible-vault encrypt_string --stdin-name 'vault_variable_name'
-```
-
 ## To update requirements
 
 ```bash

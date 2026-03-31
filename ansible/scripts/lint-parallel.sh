@@ -13,7 +13,6 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Performance optimizations
-export ANSIBLE_LINT_SKIP_VAULT=1
 export ANSIBLE_LINT_SKIP_SCHEMA_UPDATE=1
 
 # Determine number of parallel jobs (default: CPU count)

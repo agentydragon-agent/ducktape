@@ -13,9 +13,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Change to ansible directory (parent of scripts)
 cd "$SCRIPT_DIR/.."
 
-# Export SKIP_VAULT to avoid password prompts
-export ANSIBLE_LINT_SKIP_VAULT=1
-
 # Syntax check each playbook passed by pre-commit.
 # Pre-commit passes paths like "ansible/agentydragon.yaml" — strip prefix.
 exit_code=0

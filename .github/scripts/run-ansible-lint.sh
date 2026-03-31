@@ -7,8 +7,6 @@ ANSIBLE_DIR="${REPO_ROOT}/ansible"
 
 # Full thorough check - no NODEPS, no --offline
 # This validates module parameters, dependencies, etc.
-export ANSIBLE_LINT_SKIP_VAULT=1
-
 # List all playbooks to lint
 playbooks=$(find "$ANSIBLE_DIR" -maxdepth 1 -name "*.yaml" -type f ! -name "galaxy.yaml")
 
