@@ -6,7 +6,7 @@ metadata:
 spec:
   image:
     repository: registry.allegedly.works/ducktape/openclaw-matrix
-    tag: "20260310055628-b5ffdd2" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
+    tag: "devel-20260330192817-497d7f9" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
     pullSecrets:
       - name: harbor-pull-robot
