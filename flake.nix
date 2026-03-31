@@ -238,22 +238,16 @@
           inherit (pkgs) lib;
         in
         rec {
-          tana = pkgs.callPackage ./nix/packages/tana.nix { };
-          gmail-mcp = pkgs.callPackage ./nix/packages/gmail-mcp.nix { };
-
-          # Ducktape packages — centralized in nix/packages/
+          # All custom packages — centralized in nix/packages/
           inherit (import ./nix/packages { inherit lib pkgs artifacts; })
+            tana
+            gmail-mcp
             ducktape
             claude-hooks
             gterm-theme
             bbapi
+            skills
             ;
-          # Skills data: $out/share/claude-hooks/skills/ — deployed to ~/.claude/skills/.
-          # Bundled into web-session; home-manager uses this via skills.nix module.
-          skills = pkgs.runCommand "claude-hooks-skills" { } ''
-            mkdir -p $out/share/claude-hooks/skills
-            tar xf ${artifacts.skills} -C $out/share/claude-hooks/skills
-          '';
           # Shared dev tools — installed by web_setup.sh and used by the devShell.
           # Add tools here to make them available in both Claude Code web sessions
           # and local development (via direnv `use flake`).

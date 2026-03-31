@@ -148,7 +148,11 @@ in
     ];
   };
 
-  # bbapi — Go binary, not a wheel
+  # Standalone packages (not wheels)
+
+  tana = pkgs.callPackage ./tana.nix { };
+  gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
+
   bbapi = pkgs.stdenv.mkDerivation {
     pname = "bbapi";
     version = "latest";
@@ -167,4 +171,10 @@ in
       platforms = [ "x86_64-linux" ];
     };
   };
+
+  # Skills data: $out/share/claude-hooks/skills/
+  skills = pkgs.runCommand "claude-hooks-skills" { } ''
+    mkdir -p $out/share/claude-hooks/skills
+    tar xf ${artifacts.skills} -C $out/share/claude-hooks/skills
+  '';
 }
