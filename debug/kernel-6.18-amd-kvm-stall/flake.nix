@@ -24,6 +24,14 @@
           # Boot
           boot.loader.systemd-boot.enable = true;
           boot.loader.efi.canTouchEfiVariables = true;
+          boot.consoleLogLevel = 7;
+          boot.kernelParams = lib.mkDefault [
+            "console=ttyS0,115200"
+            "console=tty0"
+          ];
+
+          # Serial console for qm terminal access
+          systemd.services."serial-getty@ttyS0".enable = true;
           boot.initrd.availableKernelModules = [
             "ahci"
             "xhci_pci"
@@ -66,12 +74,29 @@
           # Test tools
           environment.systemPackages = [ pkgs.stress-ng ];
 
+          # Size reduction — strip everything not needed for diagnosis
+          nix.enable = false;
+          documentation.enable = false;
+          programs.command-not-found.enable = false;
+          services.udev.hwdb.enable = false;
+          systemd.coredump.enable = false;
+          systemd.oomd.enable = false;
+          fonts.fontconfig.enable = false;
+          boot.supportedFilesystems = lib.mkForce [
+            "ext4"
+            "vfat"
+          ];
+          boot.initrd.includeDefaultModules = false;
+
           # Console auto-login for screenshot debugging
           services.getty.autologinUser = "test";
 
+          # Use simple interface names (eth0) instead of predictable names
+          networking.usePredictableInterfaceNames = false;
+
           # Networking defaults (overridden per variant)
           networking.useDHCP = lib.mkDefault false;
-          networking.interfaces.ens18.ipv4.addresses = lib.mkDefault [
+          networking.interfaces.eth0.ipv4.addresses = lib.mkDefault [
             {
               address = "10.0.200.1";
               prefixLength = 16;
@@ -100,7 +125,7 @@
               networking.hostName = hostname;
               boot.kernelPackages = kernelPackages;
               boot.kernelParams = extraKernelParams;
-              networking.interfaces.ens18.ipv4.addresses = [
+              networking.interfaces.eth0.ipv4.addresses = [
                 {
                   address = ip;
                   prefixLength = 16;
@@ -139,11 +164,8 @@
     {
       nixosConfigurations = variants;
 
-      # Use raw-efi instead of qemu-efi to avoid QEMU build dependency
-      # (qemu-host-cpu-only has GTK/libcanberra build issues in nixpkgs-25.11).
-      # Proxmox can import raw images directly.
       packages.${system} = builtins.mapAttrs (
-        name: config: config.config.system.build.images.raw-efi
+        name: config: config.config.system.build.images.qemu-efi
       ) variants;
     };
 }
