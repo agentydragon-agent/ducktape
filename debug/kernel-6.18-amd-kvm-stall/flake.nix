@@ -59,11 +59,12 @@
             enable = true;
             settings = {
               PasswordAuthentication = false;
-              PermitRootLogin = "no";
+              PermitRootLogin = "yes";
             };
           };
 
-          # Test user
+          # Users — both root and test user get SSH access
+          users.users.root.openssh.authorizedKeys.keys = [ sshKey ];
           users.users.test = {
             isNormalUser = true;
             extraGroups = [ "wheel" ];
