@@ -274,11 +274,39 @@ be running when the CPU came out of the broken halt.
 | Resource pressure       | 43% RAM, <1% steal, 20% CPU           | Not the cause |
 | Fedora `migratable=off` | `cpu: x86-64-v3` doesn't pass through | Still stalls  |
 
-## What works
+## Test Results
 
-- Same Talos v1.12.3 on Hetzner Intel KVM — fine
-- NixOS kernel 6.12 on same AMD host (wyrm2, 32 vCPUs) — fine
-- Talos v1.11.6 (kernel 6.12) on same AMD host — fine (bisect confirmed)
+| Guest                   | Kernel | Host kernel | halt_poll_ns | Workload   | Stalls?        | Verified?                         |
+| ----------------------- | ------ | ----------- | ------------ | ---------- | -------------- | --------------------------------- |
+| Talos v1.12.3           | 6.18.8 | 6.17.13-pve | 200000       | idle       | **YES (38s)**  | Talos console (stack traces)      |
+| Talos v1.12.3           | 6.18.8 | 6.17.13-pve | 0            | idle       | No (2min)      | Talos console (clean)             |
+| Talos v1.12.3           | 6.18.8 | 6.17.13-pve | 0            | etcd+k8s   | **YES (4min)** | Talos console (NMI + stack trace) |
+| Talos v1.11.6           | 6.12   | 6.17.13-pve | 200000       | idle       | No (2min)      | Talos console (clean)             |
+| wyrm2 NixOS             | 6.12   | 6.17.13-pve | 200000       | k8s worker | No (7 days)    | **dmesg verified** (zero NMIs)    |
+| Talos v1.12.3 (Hetzner) | 6.18.8 | Intel       | default      | etcd+k8s   | No (weeks)     | Production (healthy)              |
+| Fedora 42               | 6.14   | 6.17.13-pve | 0            | idle       | No (60s)       | Console only (**NOT dmesg**)      |
+| Arch Linux              | 6.19.8 | 6.17.13-pve | 0            | idle       | No (5min)      | Console only (**NOT dmesg**)      |
+
+**Key gap**: Non-Talos VMs (Fedora, Arch) couldn't be verified via dmesg — no login
+access configured. Need cloud-init with SSH keys for proper verification.
+
+### Planned test matrix
+
+Need a proper scaffold: cloud-init with SSH keys, `stress-ng` for load, automated
+dmesg/NMI collection after N minutes. Variables to test:
+
+| Variable                  | Values to test                                       |
+| ------------------------- | ---------------------------------------------------- |
+| Guest kernel              | 6.12, 6.14, 6.15, 6.17, 6.18, 6.19                   |
+| `halt_poll_ns` (host)     | 0, 200000                                            |
+| `clearcpuid=510` (host)   | yes, no                                              |
+| `tsa=off` (guest)         | yes, no (only testable on non-Talos guests)          |
+| `mitigations=off` (guest) | yes, no                                              |
+| Workload                  | idle, `stress-ng --cpu 4`                            |
+| Distro                    | Talos, Fedora, Arch (to isolate Talos kernel config) |
+
+**Data to collect per test**: `cat /proc/interrupts | grep NMI`, `dmesg | grep -c rcu`,
+`dmesg | grep -c nmi`, uptime, CPU usage. Automated via SSH after 5-minute soak.
 
 ## Impact on cluster
 
