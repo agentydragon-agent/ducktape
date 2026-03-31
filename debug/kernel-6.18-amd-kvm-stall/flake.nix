@@ -21,15 +21,9 @@
         {
           system.stateVersion = "25.11";
 
-          # Boot — GRUB with efiInstallAsRemovable so OVMF finds bootloader
-          # without needing NVRAM boot entries (which Proxmox efidisk doesn't have)
-          boot.loader.systemd-boot.enable = lib.mkForce false;
-          boot.loader.grub = {
-            enable = true;
-            efiSupport = true;
-            efiInstallAsRemovable = true;
-            device = "nodev";
-          };
+          # Boot — use defaults from disk-image.nix (systemd-boot + EFI).
+          # VM must be created WITHOUT a separate efidisk so OVMF finds
+          # the ESP on the NixOS image's own disk.
           boot.consoleLogLevel = 7;
           boot.plymouth.enable = false;
           boot.kernelParams = lib.mkDefault [
@@ -45,6 +39,7 @@
             "virtio_pci"
             "sr_mod"
             "virtio_blk"
+            "virtio_scsi"
           ];
 
           # QEMU guest
@@ -65,6 +60,7 @@
 
           # Users — both root and test user get SSH access
           users.users.root.openssh.authorizedKeys.keys = [ sshKey ];
+          users.users.root.initialPassword = "test"; # for emergency console access
           users.users.test = {
             isNormalUser = true;
             extraGroups = [ "wheel" ];
