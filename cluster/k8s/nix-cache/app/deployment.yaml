@@ -17,20 +17,8 @@ spec:
       labels:
         app.kubernetes.io/name: attic
     spec:
-      # TODO: Move attic pod to wyrm2/proxmox once containerd 2.2.3+ (with
-      # PR #12732 fix) ships in NixOS nixpkgs (currently 2.2.1). NixOS nodes
-      # reject NixOS images' absolute /etc/passwd symlink. Until then, pin to
-      # VPS so pod + DB + cache PVC are co-located. See also:
-      # cluster/k8s/nix-cache/db/postgres-cluster.yaml (DB pinned to VPS too).
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-              - matchExpressions:
-                  - key: feature.node.kubernetes.io/system-os_release.ID
-                    operator: NotIn
-                    values:
-                      - nixos
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
       securityContext:
         fsGroup: 1000
       containers:

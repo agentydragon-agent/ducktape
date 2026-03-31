@@ -13,13 +13,9 @@ spec:
       isolationCheck:
         enabled: false
 
-  # TODO: Move DB to wyrm2/proxmox once attic pod can run there (blocked on
-  # containerd 2.2.3+ in NixOS nixpkgs, currently 2.2.1). Pinned to VPS so
-  # pod + DB + cache PVC are co-located. See also:
-  # cluster/k8s/nix-cache/app/deployment.yaml (pod pinned to VPS too).
   affinity:
     nodeSelector:
-      topology.kubernetes.io/region: hetzner
+      topology.kubernetes.io/region: proxmox
 
   storage:
     storageClass: local-path
