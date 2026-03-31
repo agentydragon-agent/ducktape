@@ -217,25 +217,25 @@ def test_container_e2e(
         logger.info("Network isolation verified: container cannot reach internet directly")
 
         # Install claude_hooks wheel (baked into image at /wheel/).
-        # --find-links resolves ducktape-util locally; other deps fetched from PyPI via proxy.
+        # Install local wheels by path to avoid PyPI name collision (a public
+        # "claude-hooks" package exists on PyPI). Transitive deps are fetched
+        # from PyPI via proxy.
         # TODO(container-e2e): Install via uv by reading .claude/settings.json
         # hook definition and piping the JSON into sh, instead of raw pip.
         logger.info("Installing wheel")
         _exec(container, ["ls", "-la", _WHEEL_DIR])
         _exec(
-            container, ["pip", "install", "-v", "--break-system-packages", "--find-links", _WHEEL_DIR, "claude-hooks"]
-        )
-        _exec(
-            container, ["bash", "-c", "which claude-hook && claude-hook --help || echo 'claude-hook NOT FOUND on PATH'"]
-        )
-        _exec(
             container,
             [
-                "bash",
-                "-c",
-                "echo PATH=$PATH && ls -la /usr/local/bin/claude* 2>/dev/null || echo 'no claude* in /usr/local/bin'",
+                "pip",
+                "install",
+                "-v",
+                "--break-system-packages",
+                f"{_WHEEL_DIR}/ducktape_util-0.1.0-py3-none-any.whl",
+                f"{_WHEEL_DIR}/claude_hooks-0.1.0-py3-none-any.whl",
             ],
         )
+        _exec(container, ["which", "claude-hook"])
 
         # Run session start hook
         logger.info("Running claude-hook (session start)")
