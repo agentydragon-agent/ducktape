@@ -1,10 +1,5 @@
-syncthing_user: syncthing
-# syncthing_graph_path: /srv/logseq   # where the repo lives
-syncthing_graph_path: /srv/syncthing
-syncthing_open_ports: true
-
 # ACME account e-mail address.  Only set this if you want Ansible to register
-# a new Let’s Encrypt account with that address.  If the host already has an
+# a new Let's Encrypt account with that address.  If the host already has an
 # account (from a previous manual run of `certbot` or from older playbooks),
 # you can leave this **undefined** and the existing account will be reused.
 #

@@ -1,4 +1,2 @@
 ---
-dependencies:
-  - role: legacy_claude_mcp
-    tags: [claude, mcp]
+dependencies: []
