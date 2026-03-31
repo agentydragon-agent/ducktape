@@ -40,9 +40,3 @@
 - name: Install CLI utilities for non-Nix systems
   ansible.builtin.include_tasks: cli_utils.yml
   tags: [cli_utils]
-
-# Claude MCP configuration (legacy setup)
-- name: Apply Claude MCP role
-  ansible.builtin.import_role:
-    name: legacy_claude_mcp
-  tags: [claude, mcp]

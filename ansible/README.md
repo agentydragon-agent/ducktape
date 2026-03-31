@@ -75,7 +75,7 @@ When provisioning a new VM or remote machine:
 
    ```bash
    cd ansible
-   ansible-playbook wyrm.yaml --ask-become-pass
+   ansible-playbook <hostname>.yaml --ask-become-pass
    ```
 
    When prompted for the BECOME password, enter the sudo password for the agentydragon user on the VM.

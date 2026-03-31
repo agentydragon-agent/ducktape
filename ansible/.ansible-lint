@@ -6,7 +6,5 @@
 # Also exclude non-Ansible YAML files (Helm templates, k8s manifests)
 exclude_paths:
   - roles/legacy_cli/**
-  - roles/legacy_claude_mcp/**
   - roles/legacy_gui/**
-  - roles/legacy_nerd_fonts/**
   - ../k8s/**                   # Kubernetes/Helm files with Go templating and custom YAML tags

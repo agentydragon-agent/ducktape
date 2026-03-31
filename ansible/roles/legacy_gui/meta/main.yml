@@ -22,5 +22,3 @@ dependencies:
 
   # Fonts managed by Nix home-manager
   # gnome-terminal-solarized now managed by Nix: nix/home/modules/solarized.nix
-  - role: timekpr
-  # - role: google_drive_client  # Temporarily disabled for wyrm

@@ -16,11 +16,6 @@
   remote_user: root
   vars_files:
     - vars/common_vars.yml
-    - group_vars/all.yml
-
-  vars:
-    # Disable heavy dev packages on VPS
-    include_heavy_dev_packages: false
 
   roles:
     - role: common
@@ -276,14 +271,6 @@
       become: true
       tags: [dns]
 
-    - name: Restart systemd-networkd
-      ansible.builtin.systemd:
-        name: systemd-networkd
-        state: restarted
-        daemon_reload: true
-      become: true
-      tags: [dns]
-
     # Only triggers if nginx config files changed.
     - name: Reload nginx
       ansible.builtin.systemd:
@@ -298,23 +285,3 @@
         daemon_reload: true
       become: true
       tags: [headscale]
-
-    - name: Restart fail2ban
-      tags: [fail2ban]
-      block:
-        - name: Validate fail2ban configuration
-          ansible.builtin.command:
-            cmd: fail2ban-client -d
-          register: fail2ban_config_check
-          failed_when: false
-          changed_when: false
-
-        - name: Fail if fail2ban configuration is invalid
-          ansible.builtin.fail:
-            msg: "fail2ban configuration validation failed: {{ fail2ban_config_check.stderr }}"
-          when: fail2ban_config_check.rc != 0
-
-        - name: Restart fail2ban service
-          ansible.builtin.systemd:
-            name: fail2ban
-            state: restarted

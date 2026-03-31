@@ -6,8 +6,6 @@
     - vars/common_vars.yml
   vars:
     docker_state: absent # Proxmox host doesn't need Docker
-    skip_ubuntu_ppas: true # Debian-based Proxmox can't use Ubuntu PPAs
-    include_heavy_dev_packages: false
     nebula_sops_secrets_file: "{{ playbook_dir }}/../secrets/atlas-nebula.yaml"
   remote_user: root
 
