@@ -103,4 +103,4 @@ actions:
       disk: "50GB"
 
     steps:
-      - run: devinfra/ci/bb_push_images.sh
+      - run: bazel run --config=rbe //devinfra/ci:bb_push_images_bin
