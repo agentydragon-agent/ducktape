@@ -96,6 +96,35 @@ flush stack trace (`flush_tlb_mm_range` → `do_wp_page` → `__handle_mm_fault`
 CPU 3. This is yet another arbitrary kernel path, confirming the stall mechanism is
 CPU-level, not subsystem-specific.
 
+## Host Kernel Data (2026-03-31)
+
+**Current host kernel**: `6.17.13-1-pve` (Proxmox)
+**Available boot entries**: `6.17.13-1-pve`, `6.17.9-1-pve`, `6.8.12-18-pve`
+**Upgradable**: `proxmox-kernel-6.17` → `6.17.13-2`, `proxmox-kernel-6.8` → `6.8.12-20`
+
+**Key code path** (from svm.c source analysis):
+
+```c
+if (!kvm_hlt_in_guest(vcpu->kvm)) {
+    if (cpu_feature_enabled(X86_FEATURE_IDLE_HLT))
+        svm_set_intercept(svm, INTERCEPT_IDLE_HLT);   // ← NEW path on Zen 5
+    else
+        svm_set_intercept(svm, INTERCEPT_HLT);         // ← old path
+}
+```
+
+AMD Zen 5 (9950X3D) advertises `X86_FEATURE_IDLE_HLT`, so the host's kvm_amd uses
+`INTERCEPT_IDLE_HLT` instead of the traditional `INTERCEPT_HLT`. No module parameter
+exists to disable this — it's keyed off CPU feature detection.
+
+**Critical test available**: Reboot atlas into kernel **6.8.12-18-pve** (pre-6.15, before
+Idle HLT Intercept was merged). If guest stalls disappear on host kernel 6.8, it confirms
+the bug is in the **host's** kvm_amd, not the guest kernel. The guest kernel 6.18 merely
+triggers the host-side bug; an older host avoids it entirely.
+
+This would also confirm the `X86_FEATURE_IDLE_HLT` / `INTERCEPT_IDLE_HLT` code path as
+the root cause, since it doesn't exist in kernel 6.8.
+
 ## Bisect (2026-03-30)
 
 Two throwaway VMs on atlas, identical config (4 cores, 4 GiB, `cpu: host`, virtio-gpu,
