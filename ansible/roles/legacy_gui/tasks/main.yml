@@ -6,12 +6,8 @@
   ansible.builtin.include_tasks: gnome_preferences.yml
 - name: Configure GNOME Terminal
   ansible.builtin.include_tasks: gnome_terminal.yml
-- name: Configure night theme switcher for GNOME Terminal
-  ansible.builtin.include_tasks: night_theme_switcher_gnome_terminal.yml
 - name: Configure GNOME panel ISO8601 date format
   ansible.builtin.include_tasks: gnome_panel_iso8601.yml
-- name: Apply Pop Shell extension bug workaround
-  ansible.builtin.include_tasks: pop_extension_bug_workaround.yml
 
 # Autostart entries (only the autostart part, not package installation)
 - name: Configure Discord minimized autostart

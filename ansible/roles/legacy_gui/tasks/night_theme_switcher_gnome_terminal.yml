@@ -1,9 +1,0 @@
-- name: Set Night Theme Switcher to also switch gnome-terminal & nvim colors
-  # TODO: dedupe
-  community.general.dconf:
-    key: "/org/gnome/shell/extensions/nightthemeswitcher/commands/{{ item.suffix }}"
-    value: "{{ item.value }}"
-  loop:
-    - { suffix: "enabled", value: "true" }
-    - { suffix: "sunrise", value: "'set_light_theme'" }
-    - { suffix: "sunset", value: "'set_dark_theme'" }
