@@ -162,7 +162,7 @@ kustomization, SSO client secrets under `authentik/blueprints/`).
 ## Container Images
 
 Ducktape project images are published to GHCR at `ghcr.io/agentydragon/<image>`.
-CI pushes via BuildBuddy Workflows (`devinfra/ci/bb_push_images.sh`) and GitHub
+CI pushes via BuildBuddy Workflows (`devinfra/ci/bb_push_images.py`) and GitHub
 Actions (openclaw-image, tana-mcp-image workflows). GHCR packages are public (no
 pull credentials needed).
 

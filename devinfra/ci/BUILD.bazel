@@ -132,6 +132,13 @@ py_library(
     ],
 )
 
+py_library(
+    name = "bb_push_images",
+    srcs = ["bb_push_images.py"],
+    imports = ["../.."],
+    visibility = ["//:__subpackages__"],
+)
+
 # === Binaries ===
 
 py_binary(
@@ -167,6 +174,13 @@ py_binary(
     imports = ["../.."],
     main_module = "devinfra.ci.generate_ci",
     deps = [":generate_ci"],
+)
+
+py_binary(
+    name = "bb_push_images_bin",
+    imports = ["../.."],
+    main_module = "devinfra.ci.bb_push_images",
+    deps = [":bb_push_images"],
 )
 
 # === Tests ===
