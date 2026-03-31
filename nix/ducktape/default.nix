@@ -51,8 +51,6 @@ let
   pyrage = pkgs.callPackage ./pyrage.nix { };
   keysymdef = pkgs.callPackage ./keysymdef.nix { };
   asyncvnc = pkgs.callPackage ./asyncvnc.nix { inherit keysymdef; };
-in
-{
   ducktape-util = mkDucktapeWheel {
     pname = "ducktape-util";
     wheel = ducktape-util-wheel;
@@ -60,6 +58,9 @@ in
     description = "Shared utility library for ducktape wheels";
     propagatedBuildInputs = with pkgs.python3Packages; [ tenacity ];
   };
+in
+{
+  inherit ducktape-util;
 
   ducktape = mkDucktapeWheel {
     pname = "ducktape";
