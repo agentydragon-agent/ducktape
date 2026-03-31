@@ -21,4 +21,3 @@ build_ignore:
   - tools
   - docs
   - tasker
-  - workspace_kb_shortcuts
