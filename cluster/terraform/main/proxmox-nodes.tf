@@ -25,7 +25,7 @@ resource "talos_image_factory_schematic" "proxmox" {
 # Get download URL for shared schematic
 data "talos_image_factory_urls" "proxmox" {
   schematic_id  = talos_image_factory_schematic.proxmox.id
-  talos_version = var.talos_version
+  talos_version = var.proxmox_talos_version
   platform      = "nocloud" # nocloud platform reads cloud-init from cidata ISO
   architecture  = "amd64"
 }
@@ -181,7 +181,7 @@ data "talos_machine_configuration" "proxmox" {
   cluster_endpoint   = local.cluster_endpoint
   machine_secrets    = local.machine_secrets
   machine_type       = each.value.type
-  talos_version      = var.talos_version
+  talos_version      = var.proxmox_talos_version
   kubernetes_version = var.kubernetes_version
   examples           = false
   docs               = false
