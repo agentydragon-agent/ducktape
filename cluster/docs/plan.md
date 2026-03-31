@@ -22,6 +22,7 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
 - **InvenTree**: `inventree`, `inventree-namespace`, `inventree-secrets`,
   `inventree-token-provisioner`, `authentik-blueprint-inventree-secret` — VPS memory pressure.
+- **Firecrawl**: `firecrawl`, `firecrawl-namespace`, `firecrawl-db`
 
 ## Next Actions
 

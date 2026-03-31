@@ -60,7 +60,6 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | gitea-db      | Proxmox-single | Yes       |                                                                            |
 | props-db      | Proxmox-single | Yes       |                                                                            |
 | matrix-db     | Proxmox-single | Yes       |                                                                            |
-| firecrawl-db  | Proxmox-single | Yes       |                                                                            |
 | attic-db      | —              | **No**    | 1 instance on Hetzner (documented exception: blocked on containerd 2.2.3+) |
 
 ## TODO
