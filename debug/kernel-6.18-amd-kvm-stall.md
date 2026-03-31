@@ -125,6 +125,31 @@ triggers the host-side bug; an older host avoids it entirely.
 This would also confirm the `X86_FEATURE_IDLE_HLT` / `INTERCEPT_IDLE_HLT` code path as
 the root cause, since it doesn't exist in kernel 6.8.
 
+## Targeted Fix: `clearcpuid=510` (2026-03-31)
+
+LKML/source research found: `X86_FEATURE_IDLE_HLT` = bit 510 (word 15, bit 30). The
+feature is auto-enabled by CPU feature detection (`cpu_feature_enabled()`), with **no
+module parameter** to disable it. But the kernel supports `clearcpuid=N` boot parameter
+to mask individual CPUID bits.
+
+**`clearcpuid=510`** on the **host** kernel cmdline forces the old `INTERCEPT_HLT` path
+instead of `INTERCEPT_IDLE_HLT`. This is the most targeted possible fix — disables only
+the Idle HLT Intercept while keeping everything else on kernel 6.17.
+
+The two bugs may be coupled via the V_NMI interaction:
+
+- Idle HLT Intercept suppresses VMEXITs when `V_NMI_PENDING` is set
+- If V_NMI pending state is incorrect, spurious NMIs are delivered to the guest
+- This explains both: idle stalls (HLT exit suppressed) and load NMIs (spurious NMI
+  injection from incorrectly pending V_NMI)
+
+**Alternative**: `kvm_amd.vnmi=0` would disable vNMI entirely (requires module reload).
+Could fix the "unknown reason 30" NMIs independently. But `clearcpuid=510` is cleaner
+since it targets the root feature.
+
+**Test**: Add `clearcpuid=510` to atlas kernel cmdline, reboot, verify both idle and
+load stalls are gone.
+
 ## Bisect (2026-03-30)
 
 Two throwaway VMs on atlas, identical config (4 cores, 4 GiB, `cpu: host`, virtio-gpu,
