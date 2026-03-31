@@ -110,11 +110,6 @@ in
     ./modules/datetime-format.nix
     ./services/activitywatch.nix
   ];
-  # TODO: Remove this — incompatible with home-manager.useGlobalPkgs.
-  # NixOS hosts set useGlobalPkgs=true, so pkgs comes from the NixOS config
-  # and per-user nixpkgs.config is ignored. Move allowUnfree to the NixOS-level
-  # nixpkgs.config or ensure the global pkgs already has allowUnfree=true.
-  nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
   home.homeDirectory = "/home/agentydragon";
@@ -335,13 +330,7 @@ in
       # Python development environment
       (python3.withPackages (
         ps: with ps; [
-          autopep8
           pydeps
-          black
-          isort
-          # pandas
-          # torch
-          # numpy
         ]
       ))
 
@@ -418,6 +407,7 @@ in
       claude-hooks # Claude Code hooks/statusline
       bbapi # BuildBuddy API CLI
       gterm-theme # GNOME Terminal theme follower
+      ducktapePackages.tana # Knowledge graph / note-taking
     ]
     ++ lib.optionals enableKube [
       kubectl

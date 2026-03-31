@@ -116,12 +116,6 @@
           enableHeavyPackages ? true,
           extraModules ? [ ],
         }:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
-        in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
 
@@ -217,37 +211,18 @@
     in
     {
       # Development shell — same tools as web-session, usable via `direnv` (`use flake` in .envrc).
-      devShells.${system}.default =
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
-        in
-        pkgs.mkShell {
-          packages = [ self.packages.${system}.web-session ];
-        };
+      devShells.${system}.default = pkgs.mkShell {
+        packages = [ self.packages.${system}.web-session ];
+      };
 
       # Packages exposed for nix-update and direct builds
       packages.${system} =
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
           inherit (pkgs) lib;
+          ducktapePkgs = import ./nix/packages { inherit lib pkgs artifacts; };
         in
-        rec {
-          # All custom packages — centralized in nix/packages/
-          inherit (import ./nix/packages { inherit lib pkgs artifacts; })
-            tana
-            gmail-mcp
-            ducktape
-            claude-hooks
-            gterm-theme
-            bbapi
-            skills
-            ;
+        ducktapePkgs
+        // {
           # Shared dev tools — installed by web_setup.sh and used by the devShell.
           # Add tools here to make them available in both Claude Code web sessions
           # and local development (via direnv `use flake`).
@@ -260,9 +235,9 @@
             name = "claude-web-session";
             paths = [
               # Repo-specific tools
-              claude-hooks
-              bbapi
-              skills
+              ducktapePkgs.claude-hooks
+              ducktapePkgs.bbapi
+              ducktapePkgs.skills
               # Dev tools (also provided by .envrc via `use flake`)
               pkgs.pre-commit
               pkgs.bazelisk # TODO: ensure binary name matches what session start hook expects (no unconventional symlinks/aliases)

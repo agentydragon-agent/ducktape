@@ -10,7 +10,6 @@
   config,
   pkgs,
   lib,
-  ducktapePackages,
   ...
 }:
 {
@@ -20,7 +19,6 @@
 
   home.packages = [
     pkgs.lightburn
-    ducktapePackages.tana
   ];
 
   # NixOS doesn't have Pop!_OS's built-in ubuntu-appindicators, so install it

@@ -6,7 +6,6 @@
   config,
   pkgs,
   lib,
-  ducktapePackages,
   ...
 }:
 {
@@ -14,10 +13,5 @@
     ../home.nix
   ];
 
-  # GPD-specific configuration (laptop with full GUI)
   home.stateVersion = "24.05";
-
-  home.packages = [ ducktapePackages.tana ];
-  # TODO: Re-enable when google-drive-service module is fixed (see home.nix imports)
-  # services.google-drive.enable = true;
 }
