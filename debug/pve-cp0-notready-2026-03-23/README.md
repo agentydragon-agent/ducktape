@@ -1,8 +1,18 @@
 # talos-pve-cp-0 NMI incidents
 
-## Status: Investigating (recurring)
+## Status: Root cause identified — Talos v1.12 (kernel 6.18) KVM regression
 
-Two incidents observed. NMI root cause analysis in progress.
+Three incidents observed on the old VM, plus identical stalls on a **fresh VM**. vCPU 1
+repeatedly stalls — manifests as NMI (incidents 1-2) or RCU stall (incident 3). Ruled
+out: QXL, balloon, NMI watchdog, resource pressure, instance-specific state, etcd data.
+
+**Root cause**: Talos v1.12 ships kernel 6.18 which has KVM-guest regressions.
+siderolabs/talos#12735 reports OpenStack VMs (KVM/QEMU) cannot boot v1.12 at all but
+work fine on v1.11.6. Multiple BPF/Cilium regressions also affect v1.12 (#12726, #12984).
+VPS nodes on Hetzner (Intel KVM) are unaffected — the regression may be AMD-specific or
+manifest differently on AMD Zen 5.
+
+**Fix**: Downgrade to Talos v1.11.6 (kernel 6.12.62), or try latest v1.12.6 (6.18.18).
 
 ## Incident 1 — 2026-03-23
 
@@ -279,6 +289,37 @@ ssh root@atlas "echo 0 > /proc/sys/kernel/nmi_watchdog"
 
 7. **Investigate boot hang**: The post-reboot CRI registration hang needs separate
    investigation — may be a Talos v1.12.3 bug or filesystem corruption from the NMI crash.
+
+## Incident 3 — 2026-03-26 (RCU stall, no NMI)
+
+### Timeline
+
+- **2026-03-26 03:18 UTC**: VM restarted after applying `nmi_watchdog=0` on atlas.
+- **2026-03-26 03:19 UTC**: Boot completed, node `Ready`. etcd rejoined (3/3 members).
+- **2026-03-26 04:15 UTC**: Health check `DeadlineExceeded` for kubelet and containerd.
+- **2026-03-26 04:16:21 UTC**: **RCU stall on CPU 1** — `rcu_sched detected stalls`,
+  zero ticks, softirq stuck at 72283/72283. No NMI this time.
+- **2026-03-26 ~06:20 UTC**: Node `NotReady`. Talos API unreachable (both nebula and VLAN).
+
+### Key observations
+
+- **No NMI** — `nmi_watchdog=0` was active on host, but the NMI wasn't the failure mode
+  this time. Instead, a **hard RCU stall on CPU 1**.
+- Same CPU (1) as both NMI incidents.
+- wyrm2 (32 vCPUs, same host) has **zero NMIs** and no RCU stalls. Key config differences:
+  wyrm2 uses `vga: virtio` (not QXL) and `balloon: 0` (not enabled).
+- `ostype: l26` vs `other` investigated — no NMI/PMU/KVM differences.
+- Talos kernel has `CONFIG_HARDLOCKUP_DETECTOR` not set, no `nmi_watchdog`.
+  Go runtime uses SIGPROF, not PMU. Neither guest kernel nor Go programs are generating
+  perf NMIs.
+- Could not get full RCU stall stack trace — Talos API unreachable when stalled.
+
+### Remediation applied
+
+- **2026-03-26 06:32 UTC**: Changed VM 10000 config:
+  - `vga: qxl` → `vga: virtio,memory=64` (QXL has known TTM stall bugs)
+  - Added `balloon: 0` (balloon driver can cause memory management stalls)
+- VM restarted. Monitoring for recurrence.
 
 ## TODOs
 
