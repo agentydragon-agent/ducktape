@@ -10,7 +10,7 @@
 resource "talos_image_factory_schematic" "proxmox" {
   schematic = yamlencode({
     customization = {
-      extraKernelArgs = ["net.ifnames=0"]
+      extraKernelArgs = ["net.ifnames=0", "console=ttyS0,115200"]
       systemExtensions = {
         officialExtensions = [
           "siderolabs/qemu-guest-agent",
@@ -107,6 +107,8 @@ resource "proxmox_virtual_environment_vm" "talos" {
     dedicated = 8 * 1024 # 8GB (pure control plane, no workloads)
     floating  = 0        # Disable balloon — OOM kills kube-apiserver when ballooned down
   }
+
+  serial_device {}
 
   vga {
     type = "qxl"
