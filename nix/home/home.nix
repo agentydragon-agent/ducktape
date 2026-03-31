@@ -12,11 +12,7 @@
   solarizedLight,
   solarizedDark,
   terminalFont,
-  ducktape-wheel,
-  claude-hooks-wheel,
-  gterm-theme-wheel,
-  ducktape-util-wheel,
-  bbapi-binary,
+  ducktape-artifacts,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -79,25 +75,16 @@ let
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.zsh;
 
-  ducktapePackages = import ../ducktape {
-    inherit
-      lib
-      pkgs
-      ducktape-wheel
-      claude-hooks-wheel
-      gterm-theme-wheel
-      ducktape-util-wheel
-      ;
+  ducktapePackages = import ../packages {
+    inherit lib pkgs;
+    artifacts = ducktape-artifacts;
   };
   inherit (ducktapePackages)
-    ducktape-util
     ducktape
     claude-hooks
     gterm-theme
+    bbapi
     ;
-
-  # bbapi - BuildBuddy API CLI
-  bbapi = pkgs.callPackage ./packages/bbapi.nix { inherit bbapi-binary; };
 in
 {
   imports = [
@@ -423,7 +410,6 @@ in
       stylua # Lua formatter
 
       # Custom packages from ducktape repo
-      ducktape-util # shared util library
       ducktape # git-commit-ai, difftree, gmail-archiver
       claude-hooks # Claude Code hooks/statusline
       bbapi # BuildBuddy API CLI

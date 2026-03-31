@@ -82,6 +82,30 @@
       # skills.tar unpacked into a flat directory of skill subdirs.
       skillsUnpacked = pkgs.runCommand "skills" { } "mkdir $out && tar xf ${artifacts.skills} -C $out";
 
+      pkgsUnstable = import nixpkgs-unstable {
+        inherit system;
+        config.allowUnfree = true;
+      };
+
+      # Shared home-manager args passed to every HM configuration.
+      hmCommonArgs = {
+        inherit
+          nix-colors
+          pkgsUnstable
+          claude-plugins-official
+          siderolabs-docs
+          ;
+        solarizedLight = nix-colors.colorSchemes.solarized-light;
+        solarizedDark = nix-colors.colorSchemes.solarized-dark;
+        terminalFont = {
+          family = "JetBrainsMono Nerd Font";
+          size = 11;
+        };
+        nixGLPackages = nixGL.packages.${system};
+        ducktape-artifacts = artifacts;
+        skills-tar = skillsUnpacked;
+      };
+
       mkHome =
         {
           hostname,
@@ -97,19 +121,6 @@
             inherit system;
             config.allowUnfree = true;
           };
-
-          pkgsUnstable = import nixpkgs-unstable {
-            inherit system;
-            config.allowUnfree = true;
-          };
-
-          solarizedLight = nix-colors.colorSchemes.solarized-light;
-          solarizedDark = nix-colors.colorSchemes.solarized-dark;
-
-          terminalFont = {
-            family = "JetBrainsMono Nerd Font";
-            size = 11;
-          };
         in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
@@ -117,29 +128,13 @@
           modules = [
             ./nix/home/hosts/${hostname}.nix
             {
-              _module.args = {
+              _module.args = hmCommonArgs // {
                 inherit
                   enableGui
                   enableKube
                   isNixOS
                   isPopOS
                   enableHeavyPackages
-                  nix-colors
-                  solarizedLight
-                  solarizedDark
-                  terminalFont
-                  pkgsUnstable
-                  ;
-                nixGLPackages = nixGL.packages.${system};
-                ducktape-wheel = artifacts.ducktape;
-                claude-hooks-wheel = artifacts.claude-hooks;
-                gterm-theme-wheel = artifacts.gterm-theme;
-                ducktape-util-wheel = artifacts.ducktape-util;
-                bbapi-binary = artifacts.bbapi;
-                skills-tar = skillsUnpacked;
-                inherit
-                  claude-plugins-official
-                  siderolabs-docs
                   ;
               };
             }
@@ -160,45 +155,15 @@
           inlineHomeManager ? null,
         }:
         let
-          # HM dependencies — only evaluated when inlineHomeManager is used
-          # (Nix is lazy, so these won't be computed if not referenced)
-          pkgsUnstable = import nixpkgs-unstable {
-            inherit system;
-            config.allowUnfree = true;
-          };
-
-          solarizedLight = nix-colors.colorSchemes.solarized-light;
-          solarizedDark = nix-colors.colorSchemes.solarized-dark;
-
           hmExtraSpecialArgs =
             if inlineHomeManager != null then
-              {
+              hmCommonArgs
+              // {
                 enableGui = inlineHomeManager.enableGui or true;
                 enableKube = inlineHomeManager.enableKube or false;
                 isNixOS = true;
                 isPopOS = false;
                 enableHeavyPackages = inlineHomeManager.enableHeavyPackages or false;
-                inherit
-                  nix-colors
-                  solarizedLight
-                  solarizedDark
-                  pkgsUnstable
-                  ;
-                nixGLPackages = nixGL.packages.${system};
-                terminalFont = {
-                  family = "JetBrainsMono Nerd Font";
-                  size = 11;
-                };
-                ducktape-wheel = artifacts.ducktape;
-                claude-hooks-wheel = artifacts.claude-hooks;
-                gterm-theme-wheel = artifacts.gterm-theme;
-                ducktape-util-wheel = artifacts.ducktape-util;
-                bbapi-binary = artifacts.bbapi;
-                skills-tar = skillsUnpacked;
-                inherit
-                  claude-plugins-official
-                  siderolabs-docs
-                  ;
               }
             else
               { };
@@ -276,24 +241,13 @@
           tana = pkgs.callPackage ./nix/home/packages/tana.nix { };
           gmail-mcp = pkgs.callPackage ./nix/home/packages/gmail-mcp.nix { };
 
-          # Ducktape wheels — centralized in nix/ducktape/
-          inherit
-            (import ./nix/ducktape {
-              inherit lib pkgs;
-              ducktape-wheel = artifacts.ducktape;
-              claude-hooks-wheel = artifacts.claude-hooks;
-              gterm-theme-wheel = artifacts.gterm-theme;
-              ducktape-util-wheel = artifacts.ducktape-util;
-            })
-            ducktape-util
+          # Ducktape packages — centralized in nix/packages/
+          inherit (import ./nix/packages { inherit lib pkgs artifacts; })
             ducktape
             claude-hooks
             gterm-theme
+            bbapi
             ;
-
-          bbapi = pkgs.callPackage ./nix/home/packages/bbapi.nix {
-            bbapi-binary = artifacts.bbapi;
-          };
           # Skills data: $out/share/claude-hooks/skills/ — deployed to ~/.claude/skills/.
           # Bundled into web-session; home-manager uses this via skills.nix module.
           skills = pkgs.runCommand "claude-hooks-skills" { } ''
