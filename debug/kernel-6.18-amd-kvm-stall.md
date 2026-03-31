@@ -71,6 +71,31 @@ around the HLT exit, sidestepping the buggy conditional intercept path.
 should stall). File on `kvm@vger.kernel.org` with bisect data + CC Manali Shukla and
 Sean Christopherson.
 
+## Host vs Guest Interaction (2026-03-31)
+
+**Host kernel**: 6.17.13-1-pve (Proxmox). Has the Idle HLT Intercept feature (merged
+6.15) in its kvm_amd module.
+
+**Key observation**: v1.11.6 guest (kernel 6.12) runs clean on this host — zero NMIs,
+zero stalls after 5+ minutes in maintenance mode. Same host, same kvm_amd module,
+same `halt_poll_ns=0`. v1.12.3 guest (kernel 6.18) stalls within minutes.
+
+**Conclusion**: The bug is an **interaction** between the guest kernel 6.18 and the
+host's kvm_amd, not purely a host-side or guest-side bug. The guest kernel 6.18 does
+something differently (new paravirt halt mechanism, different HLT usage pattern, or
+different interrupt handling) that triggers the buggy host-side code path. Kernel 6.12
+guests avoid the buggy path.
+
+**kvm_amd parameters investigated**: No `idle_hlt_intercept` parameter exists. `vnmi=Y`
+(read-only, can't test without module reload). `npt=Y` (read-only). Only
+`dump_invalid_vmcb` is writable at runtime. Testing `vnmi=N` or `npt=N` requires
+stopping all VMs and reloading kvm_amd — disruptive since wyrm2 runs on the same host.
+
+**Load stall under `halt_poll_ns=0`**: VM 10000 (v1.12.3) stalled at 2m3s with a TLB
+flush stack trace (`flush_tlb_mm_range` → `do_wp_page` → `__handle_mm_fault`). NMI on
+CPU 3. This is yet another arbitrary kernel path, confirming the stall mechanism is
+CPU-level, not subsystem-specific.
+
 ## Bisect (2026-03-30)
 
 Two throwaway VMs on atlas, identical config (4 cores, 4 GiB, `cpu: host`, virtio-gpu,
