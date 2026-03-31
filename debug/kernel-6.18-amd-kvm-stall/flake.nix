@@ -86,22 +86,19 @@
           # Console auto-login for screenshot debugging
           services.getty.autologinUser = "test";
 
-          # Use simple interface names (eth0) instead of predictable names
-          networking.usePredictableInterfaceNames = false;
-
-          # Networking defaults (overridden per variant)
-          networking.useDHCP = lib.mkDefault false;
-          networking.interfaces.eth0.ipv4.addresses = lib.mkDefault [
-            {
-              address = "10.0.200.1";
-              prefixLength = 16;
-            }
-          ];
-          networking.defaultGateway = lib.mkDefault "10.0.0.1";
-          networking.nameservers = lib.mkDefault [
-            "1.1.1.1"
-            "8.8.8.8"
-          ];
+          # Networking — use systemd-networkd with a wildcard match so we don't
+          # depend on a specific interface name. Matches any en* or eth* interface.
+          networking.useDHCP = false;
+          networking.useNetworkd = true;
+          systemd.network.networks."10-lan" = {
+            matchConfig.Name = "en* eth*";
+            address = [ "10.0.200.1/16" ];
+            gateway = [ "10.0.0.1" ];
+            dns = [
+              "1.1.1.1"
+              "8.8.8.8"
+            ];
+          };
         };
 
       # Helper to create a test VM NixOS configuration
@@ -120,12 +117,7 @@
               networking.hostName = hostname;
               boot.kernelPackages = kernelPackages;
               boot.kernelParams = extraKernelParams;
-              networking.interfaces.eth0.ipv4.addresses = [
-                {
-                  address = ip;
-                  prefixLength = 16;
-                }
-              ];
+              systemd.network.networks."10-lan".address = [ "${ip}/16" ];
             }
           ];
         };

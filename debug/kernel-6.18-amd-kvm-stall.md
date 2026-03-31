@@ -274,6 +274,23 @@ be running when the CPU came out of the broken halt.
 | Resource pressure       | 43% RAM, <1% steal, 20% CPU           | Not the cause |
 | Fedora `migratable=off` | `cpu: x86-64-v3` doesn't pass through | Still stalls  |
 
+## CRITICAL UPDATE (2026-03-31): Kernel 6.12 ALSO Stalls Under Load
+
+NixOS kernel 6.12.78 guest on same host (atlas, kvm_amd 6.17, `halt_poll_ns=0`, no
+`clearcpuid=510`) shows **identical stall pattern** during boot: RCU preempt stall,
+NMIs sent to debug stalled CPUs, page fault in `folio_alloc_mpol_noprof` →
+`do_anonymous_page`. Stall at ~711s into boot.
+
+This means:
+
+- **The bug is NOT kernel 6.18 guest-specific** — 6.12 guests stall too under load
+- **TSA VERW hypothesis was wrong** (6.12 has no TSA mitigation)
+- The bug is purely **host-side** (`INTERCEPT_IDLE_HLT` in kvm_amd 6.17)
+- wyrm2 (also 6.12, same host) is stable — difference is 32 cores / 96GB vs 4 cores / 2GB
+- **`clearcpuid=510`** on the host remains the correct fix (disables `INTERCEPT_IDLE_HLT`)
+- The earlier bisect showing "6.12 clean, 6.18 stalls" was misleading — idle VMs
+  don't trigger the bug, only VMs under load
+
 ## Test Results
 
 | Guest                   | Kernel | Host kernel | halt_poll_ns | Workload   | Stalls?        | Verified?                         |
