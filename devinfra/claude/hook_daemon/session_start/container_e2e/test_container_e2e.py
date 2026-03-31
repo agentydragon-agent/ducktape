@@ -106,11 +106,11 @@ def _exec(
     stdout = output[0] or b""
     stderr = output[1] or b""
 
-    logger.info("exec %s -> rc=%d, stdout=%d bytes, stderr=%d bytes", cmd, exit_code, len(stdout), len(stderr))
+    logger.warning("exec %s -> rc=%d, stdout=%d bytes, stderr=%d bytes", cmd, exit_code, len(stdout), len(stderr))
     if stdout:
-        logger.info("stdout: %s", stdout.decode(errors="replace"))
+        logger.warning("stdout: %s", stdout.decode(errors="replace"))
     if stderr:
-        logger.info("stderr: %s", stderr.decode(errors="replace"))
+        logger.warning("stderr: %s", stderr.decode(errors="replace"))
 
     if check and exit_code != 0:
         raise AssertionError(
@@ -221,7 +221,21 @@ def test_container_e2e(
         # TODO(container-e2e): Install via uv by reading .claude/settings.json
         # hook definition and piping the JSON into sh, instead of raw pip.
         logger.info("Installing wheel")
-        _exec(container, ["pip", "install", "--break-system-packages", "--find-links", _WHEEL_DIR, "claude-hooks"])
+        _exec(container, ["ls", "-la", _WHEEL_DIR])
+        _exec(
+            container, ["pip", "install", "-v", "--break-system-packages", "--find-links", _WHEEL_DIR, "claude-hooks"]
+        )
+        _exec(
+            container, ["bash", "-c", "which claude-hook && claude-hook --help || echo 'claude-hook NOT FOUND on PATH'"]
+        )
+        _exec(
+            container,
+            [
+                "bash",
+                "-c",
+                "echo PATH=$PATH && ls -la /usr/local/bin/claude* 2>/dev/null || echo 'no claude* in /usr/local/bin'",
+            ],
+        )
 
         # Run session start hook
         logger.info("Running claude-hook (session start)")
