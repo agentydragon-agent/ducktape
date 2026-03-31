@@ -7,7 +7,7 @@
   ...
 }:
 let
-  bebas-neue-font = pkgs.callPackage ../packages/bebas-neue-font.nix { };
+  bebas-neue-font = pkgs.callPackage ../../packages/bebas-neue-font.nix { };
   tana = pkgs.callPackage ../packages/tana.nix { };
 in
 {

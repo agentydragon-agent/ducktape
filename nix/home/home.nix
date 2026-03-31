@@ -91,7 +91,7 @@ in
 
     # TODO: Re-enable google-drive-service once the git repo is accessible
     # Disabled during 25.11 migration due to 504 error from https://git.k3s.agentydragon.com/agentydragon/google-drive
-    # ./packages/google-drive-service.nix
+    # ../packages/google-drive-service.nix
     ./codex
     ./crush
     ./modules/solarized.nix

@@ -430,7 +430,7 @@ in
       };
 
       # Gmail integration via MCP
-      # Setup: See nix/home/packages/gmail-mcp.nix for full instructions
+      # Setup: See nix/packages/gmail-mcp.nix for full instructions
       # Quick start: gmail-mcp-auth (after configuring Google Cloud OAuth)
       gmail = {
         type = "stdio";

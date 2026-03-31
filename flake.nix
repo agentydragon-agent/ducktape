@@ -238,8 +238,8 @@
           inherit (pkgs) lib;
         in
         rec {
-          tana = pkgs.callPackage ./nix/home/packages/tana.nix { };
-          gmail-mcp = pkgs.callPackage ./nix/home/packages/gmail-mcp.nix { };
+          tana = pkgs.callPackage ./nix/packages/tana.nix { };
+          gmail-mcp = pkgs.callPackage ./nix/packages/gmail-mcp.nix { };
 
           # Ducktape packages — centralized in nix/packages/
           inherit (import ./nix/packages { inherit lib pkgs artifacts; })
