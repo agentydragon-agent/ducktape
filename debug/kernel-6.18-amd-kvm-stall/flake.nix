@@ -21,10 +21,17 @@
         {
           system.stateVersion = "25.11";
 
-          # Boot
-          boot.loader.systemd-boot.enable = true;
-          boot.loader.efi.canTouchEfiVariables = true;
+          # Boot — GRUB with efiInstallAsRemovable so OVMF finds bootloader
+          # without needing NVRAM boot entries (which Proxmox efidisk doesn't have)
+          boot.loader.systemd-boot.enable = lib.mkForce false;
+          boot.loader.grub = {
+            enable = true;
+            efiSupport = true;
+            efiInstallAsRemovable = true;
+            device = "nodev";
+          };
           boot.consoleLogLevel = 7;
+          boot.plymouth.enable = false;
           boot.kernelParams = lib.mkDefault [
             "console=ttyS0,115200"
             "console=tty0"
@@ -44,15 +51,8 @@
           services.qemuGuest.enable = true;
           # Skip spice-vdagentd — pulls in GTK/libcanberra which has build issues
 
-          # Root filesystem
-          fileSystems."/" = lib.mkDefault {
-            device = "/dev/disk/by-label/nixos";
-            fsType = "ext4";
-          };
-          fileSystems."/boot" = lib.mkDefault {
-            device = "/dev/disk/by-label/ESP";
-            fsType = "vfat";
-          };
+          # Root filesystem — don't specify device; the image builder sets up
+          # the correct labels/UUIDs and the initrd finds the root automatically.
 
           # SSH
           services.openssh = {
@@ -79,7 +79,7 @@
           nix.enable = false;
           documentation.enable = false;
           programs.command-not-found.enable = false;
-          services.udev.hwdb.enable = false;
+          # services.udev.hwdb.enable not available in this nixpkgs
           systemd.coredump.enable = false;
           systemd.oomd.enable = false;
           fonts.fontconfig.enable = false;
@@ -87,8 +87,6 @@
             "ext4"
             "vfat"
           ];
-          boot.initrd.includeDefaultModules = false;
-
           # Console auto-login for screenshot debugging
           services.getty.autologinUser = "test";
 
