@@ -3,19 +3,15 @@
 {
   lib,
   python3Packages,
-  fetchPypi,
+  fetchurl,
 }:
 python3Packages.buildPythonPackage rec {
   pname = "keysymdef";
   version = "1.2.0";
   format = "wheel";
 
-  src = fetchPypi {
-    inherit pname version;
-    format = "wheel";
-    python = "py3";
-    abi = "none";
-    platform = "any";
+  src = fetchurl {
+    url = "https://files.pythonhosted.org/packages/42/d3/c3db0b92a0ff39c3e08f168cd382c24bf021d4a96fc89b47a3e55294f883/keysymdef-1.2.0-py2.py3-none-any.whl";
     hash = "sha256-GaXCJjqGHz/4hKH1jitPfvoxn/ydEfm6jiASm6vDGp4=";
   };
 

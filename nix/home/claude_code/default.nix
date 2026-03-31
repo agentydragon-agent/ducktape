@@ -219,7 +219,7 @@ let
   cfg = config.programs.claude-code;
 
   # Gmail MCP Server - pinned to specific commit for security
-  gmail-mcp-server = import ../packages/gmail-mcp.nix { inherit pkgs lib; };
+  gmail-mcp-server = import ../../packages/gmail-mcp.nix { inherit pkgs lib; };
 
   # Helper to generate Read/Grep/Glob permissions for directories
   # Allows recursive access to all files in specified directories

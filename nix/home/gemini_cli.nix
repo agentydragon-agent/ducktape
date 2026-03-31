@@ -14,7 +14,7 @@ let
   allowed = import ./allowed-commands.nix;
 
   # Reuse existing gmail-mcp-server package
-  gmail-mcp-server = import ./packages/gmail-mcp.nix { inherit pkgs lib; };
+  gmail-mcp-server = import ../packages/gmail-mcp.nix { inherit pkgs lib; };
 
   # Transform simple { type, cmd } → Gemini policy rule
   # Input: priority (int), entry ({ type = "prefix"|"exact"; cmd = "command string"; })
