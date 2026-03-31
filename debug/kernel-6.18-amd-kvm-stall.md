@@ -48,7 +48,48 @@ echo "options kvm halt_poll_ns=0" > /etc/modprobe.d/kvm-halt-poll.conf
 idle periods (microseconds). In practice, the impact is negligible for server workloads.
 The default 200μs polling window is an optimization, not a requirement.
 
-## Probable upstream cause: AMD Idle HLT Intercept (kernel 6.15)
+## Guest-Side Root Cause: TSA Mitigation (kernel ~6.17+, AMD-only)
+
+Source code analysis (2026-03-31) found the guest-side change that makes kernel 6.18
+different from 6.12 on AMD KVM:
+
+**TSA (Transient Scheduler Attack) mitigation**. All AMD Zen KVM guests get
+`X86_BUG_TSA` forced on (for live migration safety). This enables `cpu_buf_idle_clear`,
+which executes a **VERW instruction** (microcode buffer flush) before every `sti; hlt`
+in the idle loop (`native_safe_halt()`).
+
+```
+v6.12 AMD guest idle:  sti; hlt                    (no VERW)
+v6.18 AMD guest idle:  VERW [mem]; sti; hlt        (VERW before every HLT)
+```
+
+The VERW triggers a microcode-assisted CPU buffer flush. This is the **only behavioral
+difference** in the idle path between 6.12 and 6.18 on AMD. On Intel, `mds_idle_clear`
+was already enabled in 6.12 (for MDS/MMIO), so Intel guests already had VERW before
+HLT — explaining why Intel KVM hosts are unaffected.
+
+**Interaction with host's INTERCEPT_IDLE_HLT**: The VERW + HLT sequence may cause the
+host's new `INTERCEPT_IDLE_HLT` code path to mishandle the exit. Or the VERW itself may
+cause a VMEXIT that confuses the subsequent HLT intercept logic.
+
+**Guest-side workaround**: `tsa=off` kernel parameter would disable the VERW. But Talos
+uses SDBoot/UKI, so kernel params can't be overridden without a custom image.
+
+## NMI "Unknown Reason 30" — Explained
+
+The "unknown reason 30" NMIs are **harmless and expected** on KVM. KVM injects NMIs via
+V_NMI_PENDING (or direct VMCB event injection), delivering interrupt vector 2 to the
+guest. The guest reads port 0x61 to identify the NMI source, but:
+
+- Port 0x61 is QEMU's PC speaker emulation — never sets NMI reason bits (6-7)
+- "Reason 30" = `0x30` = PIT channel 2 output + refresh toggle (idle PIT state)
+- With `nmi_watchdog=0` in the guest, no NMI_LOCAL handler claims the NMI
+- KVM provides no paravirt mechanism to communicate NMI source to the guest
+
+The NMI is legitimately injected by the hypervisor. The "unknown reason" message is
+cosmetic, not indicative of a bug in the NMI path itself.
+
+## Host-Side Factor: AMD Idle HLT Intercept (kernel 6.15)
 
 LKML search found a **new AMD KVM feature** merged in kernel 6.15 that changes how
 KVM handles guest HLT instructions on AMD:
