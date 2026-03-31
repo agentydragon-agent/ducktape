@@ -11,11 +11,9 @@
   config,
   pkgs,
   lib,
+  ducktapePackages,
   ...
 }:
-let
-  tana = pkgs.callPackage ../packages/tana.nix { };
-in
 {
   imports = [
     ../home.nix
@@ -24,7 +22,7 @@ in
   # VM-specific configuration (GUI enabled, no special customizations)
   home.stateVersion = "24.05";
 
-  home.packages = [ tana ];
+  home.packages = [ ducktapePackages.tana ];
 
   # Disable screensaver and screen blanking (for VM)
   dconf.settings = {

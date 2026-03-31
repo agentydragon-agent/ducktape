@@ -87,6 +87,10 @@ let
     ;
 in
 {
+  # Expose the full package set so host configs can use per-host packages
+  # (e.g., tana, bebas-neue-font) without re-importing nix/packages/.
+  _module.args.ducktapePackages = ducktapePackages;
+
   imports = [
 
     # TODO: Re-enable google-drive-service once the git repo is accessible

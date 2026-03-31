@@ -6,11 +6,9 @@
   config,
   pkgs,
   lib,
+  ducktapePackages,
   ...
 }:
-let
-  tana = pkgs.callPackage ../packages/tana.nix { };
-in
 {
   imports = [
     ../home.nix
@@ -23,7 +21,7 @@ in
   home.stateVersion = "24.05";
 
   home.packages = [
-    tana
+    ducktapePackages.tana
     pkgs.gemini-cli
   ];
   # TODO: Re-enable once k3s cluster is back up

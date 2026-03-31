@@ -152,6 +152,7 @@ in
 
   tana = pkgs.callPackage ./tana.nix { };
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
+  bebas-neue-font = pkgs.callPackage ./bebas-neue-font.nix { };
 
   bbapi = pkgs.stdenv.mkDerivation {
     pname = "bbapi";
