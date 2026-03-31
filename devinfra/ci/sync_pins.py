@@ -21,7 +21,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from github import Auth, Github
 
-from devinfra.ci.artifacts import ARTIFACTS, Sources, sources_path, url_sha256
+from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, sources_path, url_sha256
 
 REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
@@ -43,15 +43,18 @@ def main() -> None:
             continue
 
         url = f"{BASE}/{tag}/{artifact.filename}"
-        pin = sources.pins[artifact.pkg]
-        if url == pin.url:
+        pin = sources.pins.get(artifact.pkg)
+        if pin and url == pin.url:
             print(f"{artifact.pkg}: up to date ({tag})")
             continue
 
         print(f"{artifact.pkg}: updating to {tag}")
         new_hash = url_sha256(url)
-        pin.url = url
-        pin.sha256 = new_hash
+        if pin is None:
+            sources.pins[artifact.pkg] = Pin(url=url, sha256=new_hash)
+        else:
+            pin.url = url
+            pin.sha256 = new_hash
         print(f"{artifact.pkg}: {new_hash}")
         updated.append(artifact.pkg)
 

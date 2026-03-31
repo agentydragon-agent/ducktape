@@ -51,8 +51,17 @@ let
   pyrage = pkgs.callPackage ./pyrage.nix { };
   keysymdef = pkgs.callPackage ./keysymdef.nix { };
   asyncvnc = pkgs.callPackage ./asyncvnc.nix { inherit keysymdef; };
+  ducktape-util = mkWheel {
+    pname = "ducktape-util";
+    description = "Shared utility library (util.bazel, util.fs, etc.)";
+    propagatedBuildInputs = with pkgs.python3Packages; [
+      tenacity
+    ];
+  };
 in
 {
+  inherit ducktape-util;
+
   ducktape = mkWheel {
     pname = "ducktape";
     description = "CLI tools (git-commit-ai, difftree, gmail-archiver)";
@@ -88,6 +97,7 @@ in
       pillow
       websockets
       asyncvnc
+      ducktape-util
     ];
   };
 
@@ -121,6 +131,7 @@ in
         uvicorn
       ]
       ++ [
+        ducktape-util
         pkgs.pre-commit
         pyrage
       ];
