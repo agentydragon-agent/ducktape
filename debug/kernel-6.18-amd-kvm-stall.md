@@ -1,6 +1,6 @@
 # Kernel 6.18 `pv_native_safe_halt` Stall on AMD KVM
 
-## Status: WORKAROUND FOUND — `halt_poll_ns=0` on host
+## Status: PARTIAL WORKAROUND — `halt_poll_ns=0` fixes idle stalls only
 
 Linux kernel 6.18 has a bug in the KVM paravirtualized idle halt path
 (`pv_native_safe_halt`) that causes periodic CPU stalls on AMD hosts. Reproduces on a
@@ -13,16 +13,26 @@ completely idle VM within 38 seconds of boot. Kernel 6.12 is unaffected on the s
 
 ## Workaround: Disable KVM Halt Polling (2026-03-30)
 
-Setting `halt_poll_ns=0` on the host **completely eliminates the stalls**.
+Setting `halt_poll_ns=0` on the host **eliminates idle stalls** (idle VM stable for 2+
+minutes). However, **stalls still occur under real workload** (etcd, kubelet, apiserver
+booting). There are likely multiple bug paths in the 6.18 AMD KVM code.
 
-**Test**: Talos v1.12.3 (kernel 6.18.8) VM with `halt_poll_ns=0` on atlas:
+**Idle test**: Talos v1.12.3 (kernel 6.18.8) VM with `halt_poll_ns=0` on atlas:
 1m55s uptime, CPU 0.3%, zero stalls, clean boot. Same kernel with default
 `halt_poll_ns=200000` stalls within 38 seconds.
 
-**Root cause**: KVM halt polling on AMD Zen 5. When a vCPU executes HLT (idle), the
-host KVM module "polls" briefly (spinning in host kernel) before actually halting the
-vCPU, hoping it wakes up quickly. The polling implementation in kernel 6.18 has a bug
-on AMD that causes the vCPU to get stuck, triggering guest RCU stalls and NMIs.
+**Real workload test**: Same VM with `halt_poll_ns=0`, configured to join the cluster
+(etcd + kubelet + apiserver). Stalled at 4m1s — NMI "unknown reason 30 on CPU 3" in
+a `seq_read_iter` / `ufs_read` path. CPU 98.3%. The halt polling workaround is
+insufficient when the VM is under load.
+
+**Conclusion**: `halt_poll_ns=0` fixes one stall path (`pv_native_safe_halt` idle loop)
+but there's at least one more bug in kernel 6.18 on AMD KVM that triggers under load.
+The workaround alone is not sufficient for production use.
+
+**Root cause (partial)**: KVM halt polling on AMD Zen 5. When a vCPU executes HLT
+(idle), the host KVM module "polls" briefly before halting the vCPU. The polling
+implementation in kernel 6.18 has a bug on AMD that causes the vCPU to get stuck.
 
 **Apply**:
 

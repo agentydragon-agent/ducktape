@@ -212,7 +212,9 @@
     # Disable KVM halt polling — kernel 6.18 has a bug in the AMD Idle HLT
     # Intercept feature (merged 6.15) that causes guest vCPU stalls in
     # pv_native_safe_halt when halt polling is enabled. halt_poll_ns=0
-    # sidesteps the buggy path. See debug/kernel-6.18-amd-kvm-stall.md.
+    # fixes idle stalls but does NOT fully fix stalls under load — there
+    # are likely multiple bug paths. Still worth applying as a partial
+    # mitigation. See debug/kernel-6.18-amd-kvm-stall.md.
     # CLEANUP(2026-03-30): Remove once the upstream fix lands (Red Hat
     # Bugzilla #2448303, AMD Idle HLT Intercept).
     - name: Disable KVM halt polling (kernel 6.18 AMD stall workaround)
