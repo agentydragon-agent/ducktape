@@ -184,6 +184,20 @@ in
 
     enableNvidiaRuntime = lib.mkEnableOption "NVIDIA GPU support via CDI (Container Device Interface)";
 
+    # TODO: Enable on wyrm2 and verify CSI volumes still attach correctly.
+    #   Test: enable, reboot, check pods schedule, CSI volumes mount,
+    #   `wc -l /proc/self/mountinfo` drops, gvfs-udisks2-volume-monitor
+    #   CPU drops to ~0%. If a CSI driver uses MountPropagation:Bidirectional
+    #   to create host-visible mounts (not just block devices), this will break.
+    isolateMountNamespace = lib.mkEnableOption ''
+      mount namespace isolation for kubelet/containerd.
+      Runs containerd in a slave mount namespace and has kubelet join it,
+      so container overlay/snapshot/shm/netns mounts don't appear in the
+      host's /proc/self/mountinfo. Fixes gvfs-udisks2-volume-monitor
+      burning CPU on desktop workers by eliminating mount event churn.
+      Host mounts (iSCSI devices, etc.) still propagate into the namespace.
+    '';
+
     controlPlaneEndpoints = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
@@ -300,10 +314,15 @@ in
     };
 
     # Ensure CDI specs are generated before containerd starts
-    systemd.services.containerd = lib.mkIf cfg.enableNvidiaRuntime {
-      after = [ "nvidia-container-toolkit-cdi-generator.service" ];
-      wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
-    };
+    systemd.services.containerd = lib.mkMerge [
+      (lib.mkIf cfg.enableNvidiaRuntime {
+        after = [ "nvidia-container-toolkit-cdi-generator.service" ];
+        wants = [ "nvidia-container-toolkit-cdi-generator.service" ];
+      })
+      (lib.mkIf cfg.isolateMountNamespace {
+        serviceConfig.MountFlags = "slave";
+      })
+    ];
 
     # Cilium DaemonSet installs cilium-cni + loopback into /opt/cni/bin at runtime.
     # We just need the directory to exist.
@@ -393,6 +412,9 @@ in
         '';
         Restart = "always";
         RestartSec = "10";
+      }
+      // lib.optionalAttrs cfg.isolateMountNamespace {
+        JoinsNamespacesOf = "containerd.service";
       };
     };
 
