@@ -89,6 +89,52 @@ guest. The guest reads port 0x61 to identify the NMI source, but:
 The NMI is legitimately injected by the hypervisor. The "unknown reason" message is
 cosmetic, not indicative of a bug in the NMI path itself.
 
+## Host-Side Factor: INTERCEPT_IDLE_HLT Missing from Fastpath
+
+Source code analysis found a **confirmed code asymmetry**: `SVM_EXIT_IDLE_HLT` is NOT
+in the `svm_exit_handlers_fastpath` switch — only `SVM_EXIT_HLT` is:
+
+```c
+// svm_exit_handlers_fastpath (svm.c ~4240):
+case SVM_EXIT_HLT:              // ← handled in fastpath
+    return handle_fastpath_hlt(vcpu);
+// SVM_EXIT_IDLE_HLT (0xa6) — NOT present, falls to EXIT_FASTPATH_NONE
+```
+
+On Zen 5 with `INTERCEPT_IDLE_HLT`, every HLT exit goes through the **slow path**
+(full `vcpu_run` loop + `svm_invoke_exit_handler`). With `INTERCEPT_HLT`, the fastpath
+can do `EXIT_FASTPATH_REENTER_GUEST` without the full exit. This is likely an oversight
+in the Idle HLT Intercept patches.
+
+### Mechanical explanation of the stall
+
+Two factors combine:
+
+1. **Guest VERW before HLT** (TSA mitigation): The `VERW` microcode buffer flush before
+   `sti; hlt` may cause a VMEXIT itself or change timing such that `V_INTR`/`V_NMI`
+   arrive between VERW and HLT. The hardware's `INTERCEPT_IDLE_HLT` may incorrectly
+   evaluate pending state during this window (Zen 5 microcode race).
+
+2. **Missing fastpath**: Every `SVM_EXIT_IDLE_HLT` takes the slow path, amplifying
+   any timing issue. Under load, the slow path interacts with scheduler preemption
+   and halt polling differently than the fastpath.
+
+### What each workaround fixes
+
+| Workaround        | Idle stalls    | Load stalls | Mechanism                                 |
+| ----------------- | -------------- | ----------- | ----------------------------------------- |
+| `halt_poll_ns=0`  | Yes            | No          | Skips polling loop (stall was in polling) |
+| `clearcpuid=510`  | Yes (expected) | Maybe       | Forces INTERCEPT_HLT + fastpath           |
+| `tsa=off` (guest) | Yes (expected) | Expected    | Removes VERW before HLT                   |
+| Host kernel 6.8   | Yes (expected) | Expected    | No INTERCEPT_IDLE_HLT at all              |
+
+### Confidence assessment
+
+- **High**: `clearcpuid=510` will fix idle stalls (avoids INTERCEPT_IDLE_HLT)
+- **Medium**: `clearcpuid=510` will fix load stalls (fastpath asymmetry is real, but
+  load stalls could also involve VERW independent of halt intercept type)
+- **Fallback**: host kernel 6.8 eliminates all 6.15+ kvm_amd changes (already installed)
+
 ## Host-Side Factor: AMD Idle HLT Intercept (kernel 6.15)
 
 LKML search found a **new AMD KVM feature** merged in kernel 6.15 that changes how
