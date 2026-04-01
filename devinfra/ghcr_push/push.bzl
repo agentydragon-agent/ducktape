@@ -20,13 +20,9 @@ def ghcr_push(name, image, repository, visibility = None):
     main_name = name + "_main"
     pkg = native.package_name()
 
-    # Resolve image label to fully qualified form
-    if image.startswith(":"):
-        image_label = "//{}{}".format(pkg, image)
-    elif image.startswith("//"):
-        image_label = image
-    else:
-        image_label = "//{}:{}".format(pkg, image)
+    # Resolve to fully qualified label for embedding in generated Python.
+    # The image arg is also passed to data= where Bazel resolves it natively.
+    image_label = str(native.package_relative_label(image))
 
     write_file(
         name = main_name,
