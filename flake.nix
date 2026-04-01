@@ -182,6 +182,7 @@
                   home-manager.useGlobalPkgs = true;
                   home-manager.useUserPackages = true;
                   home-manager.extraSpecialArgs = hmExtraSpecialArgs;
+                  home-manager.sharedModules = [ inputs.sops-nix.homeManagerModules.sops ];
                   home-manager.users.${username} = inlineHomeManager.module;
                 }
               else

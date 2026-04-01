@@ -288,6 +288,21 @@ in
   # SSH Agent - holds decrypted SSH keys in memory
   services.ssh-agent.enable = true;
 
+  # sops-nix: decrypt user secrets using ~/.ssh/id_ed25519 at home-manager activation time
+  sops.age.sshKeyPaths = [ "${config.home.homeDirectory}/.ssh/id_ed25519" ];
+
+  programs.ssh = {
+    enable = true;
+    matchBlocks = {
+      homeassistant = {
+        hostname = "10.0.0.3";
+        user = "root";
+        identityFile = "~/.ssh/15leroy";
+        port = 22;
+      };
+    };
+  };
+
   programs.readline = {
     enable = true;
     variables = {

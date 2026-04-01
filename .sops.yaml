@@ -44,6 +44,13 @@ creation_rules:
           - *admin
           - *wyrm2
           - *rugged
+  # 15 Leroy HA SSH key (user-decryptable for home-manager sops deployment)
+  - path_regex: secrets/15leroy-homeassistant-ssh\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *user-wyrm2
+          - *user-rugged
   # Shared secrets (all hosts + claude-web agent)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:

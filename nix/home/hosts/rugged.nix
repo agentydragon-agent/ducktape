@@ -15,6 +15,7 @@
 {
   imports = [
     ../home.nix
+    ../modules/15leroy-ssh.nix
   ];
 
   home.packages = [
