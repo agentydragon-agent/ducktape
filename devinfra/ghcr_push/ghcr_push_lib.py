@@ -1,21 +1,15 @@
-"""Push Bazel-built OCI images to GHCR and tag for Flux.
+"""Push an OCI image to GHCR with conditional tagging.
 
-Uses crane directly (from runfiles) to push, tag, and compare digests. Only
-creates a new pinned tag (branch-YYYYMMDDHHMMSS-sha7) when the image digest
-actually changed, preventing spurious Flux repins.
-
-Image targets must be pre-built (the BuildBuddy workflow builds them in a
-separate bazel step so the API key is available).
+Uses crane to compare local vs remote digests before pushing. Only creates a
+new pinned tag (branch-YYYYMMDDHHMMSS-sha7) when the image digest actually
+changed, preventing spurious Flux repins.
 """
 
-import argparse
 import os
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-
-from more_itertools import one
 
 from util.bazel.workspace import BazelLabel, get_bazel_bin, get_build_workspace_directory
 from util.crane import Crane
@@ -27,20 +21,6 @@ from util.oci import read_oci_layout_digest
 class GhcrImage:
     image_target: str
     repository: str
-
-
-IMAGES = [
-    GhcrImage("//cluster/k8s/inventree/token-provisioner:image", "ghcr.io/agentydragon/token-provisioner"),
-    GhcrImage("//props/backend:image", "ghcr.io/agentydragon/props-backend"),
-    GhcrImage("//airlock:image", "ghcr.io/agentydragon/airlock"),
-    GhcrImage("//airlock/auth_proxy:image", "ghcr.io/agentydragon/auth-proxy"),
-    GhcrImage("//mcp_infra/exec:direct_image", "ghcr.io/agentydragon/exec-backend"),
-    GhcrImage("//openclaw/exec:image", "ghcr.io/agentydragon/openclaw-exec"),
-    GhcrImage("//homeassistant/proxy:image", "ghcr.io/agentydragon/homeassistant-proxy"),
-    GhcrImage("//inventree_utils/rai_plugin:image", "ghcr.io/agentydragon/inventree"),
-    GhcrImage("//tana/token_broker:image", "ghcr.io/agentydragon/tana-token-broker"),
-    GhcrImage("//third_party/activitywatch:image", "ghcr.io/agentydragon/aw-server"),
-]
 
 
 def _git(*args: str) -> str:
@@ -83,21 +63,15 @@ class ImagePusher:
         self.crane.tag(ref, self.pinned_tag)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Push OCI images to GHCR")
-    parser.add_argument("--image", help="Push only the image with this Bazel target label")
-    args = parser.parse_args()
-
+def push_main(image_target: str, repository: str) -> None:
+    """Push a single OCI image to GHCR if its digest changed."""
     os.chdir(get_build_workspace_directory())
 
     if "[skip ci]" in _git("log", "-1", "--format=%s"):
         print("Commit message contains [skip ci], skipping image push.")
         return
 
-    images = [one(img for img in IMAGES if img.image_target == args.image)] if args.image else list(IMAGES)
-
     bazel_bin = get_bazel_bin()
-
     branch = _git("rev-parse", "--abbrev-ref", "HEAD")
     ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     sha = _git("rev-parse", "--short=7", "HEAD")
@@ -110,9 +84,4 @@ def main() -> None:
         branch=branch,
         pinned_tag=f"{branch}-{ts}-{sha}",
     )
-    for img in images:
-        pusher.push_and_tag(img)
-
-
-if __name__ == "__main__":
-    main()
+    pusher.push_and_tag(GhcrImage(image_target=image_target, repository=repository))

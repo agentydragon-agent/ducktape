@@ -1,4 +1,4 @@
-"""Generate buildbuddy.yaml from the IMAGES list in bb_push_images.
+"""Generate buildbuddy.yaml from the list of ghcr_push targets.
 
 Per-image push actions give independent failure isolation — a broken image
 build doesn't block other images from pushing.
@@ -14,9 +14,8 @@ from typing import Any
 
 import yaml
 
-from devinfra.ci.bb_push_images import IMAGES
 from devinfra.prettier import prettier_format_in_place
-from util.bazel.workspace import get_build_workspace_directory
+from util.bazel.workspace import BazelLabel, get_build_workspace_directory
 
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
@@ -28,6 +27,22 @@ HEADER = """\
 #
 # BuildBuddy docs: https://www.buildbuddy.io/docs/workflows-config/
 """
+
+# ghcr_push targets declared in BUILD files across the repo. Each creates a
+# `bazel run`-able binary that pushes to GHCR with conditional tagging.
+# Keep sorted. Validated by test_generate_buildbuddy.
+PUSH_TARGETS = [
+    BazelLabel.parse("//airlock:push_ghcr"),
+    BazelLabel.parse("//airlock/auth_proxy:push_ghcr"),
+    BazelLabel.parse("//cluster/k8s/inventree/token-provisioner:push_ghcr"),
+    BazelLabel.parse("//homeassistant/proxy:push_ghcr"),
+    BazelLabel.parse("//inventree_utils/rai_plugin:push_ghcr"),
+    BazelLabel.parse("//mcp_infra/exec:push_ghcr"),
+    BazelLabel.parse("//openclaw/exec:push_ghcr"),
+    BazelLabel.parse("//props/backend:push_ghcr"),
+    BazelLabel.parse("//tana/token_broker:push_ghcr"),
+    BazelLabel.parse("//third_party/activitywatch:push_ghcr"),
+]
 
 
 def generate_buildbuddy_config() -> dict[str, Any]:
@@ -91,14 +106,11 @@ def generate_buildbuddy_config() -> dict[str, Any]:
         },
     ]
 
-    for img in IMAGES:
-        repo_name = img.repository.rsplit("/", 1)[-1]
-        # Build image + push binary in a SINGLE `bazel build` so tree artifact
-        # contents are downloaded together. Then invoke the binary directly —
-        # separate `bazel run` doesn't see tree artifacts from a prior build.
+    for target in PUSH_TARGETS:
+        target_str = str(target)
         actions.append(
             {
-                "name": f"Push {repo_name}",
+                "name": f"Push {target_str}",
                 "triggers": push_triggers,
                 "container_image": "ubuntu-24.04",
                 "resource_requests": push_resources,
@@ -106,10 +118,9 @@ def generate_buildbuddy_config() -> dict[str, Any]:
                     {
                         "run": (
                             f"bazel build --config=rbe --remote_download_toplevel"
-                            f" {img.image_target} //devinfra/ci:bb_push_images_bin\n"
+                            f" {target_str}\n"
                             f'BUILD_WORKSPACE_DIRECTORY="$PWD"'
-                            f" ./bazel-bin/devinfra/ci/bb_push_images_bin"
-                            f" --image {img.image_target}\n"
+                            f" ./bazel-bin/{target.package}/{target.name}\n"
                         )
                     }
                 ],
