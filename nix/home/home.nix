@@ -293,6 +293,7 @@ in
 
   programs.ssh = {
     enable = true;
+    enableDefaultConfig = false;
     matchBlocks = {
       homeassistant = {
         hostname = "10.0.0.3";

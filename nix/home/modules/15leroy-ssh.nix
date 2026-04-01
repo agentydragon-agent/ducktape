@@ -3,7 +3,7 @@
 { config, ... }:
 {
   sops.secrets.ha_15leroy_ssh_key = {
-    sopsFile = ../../../../secrets/15leroy-homeassistant-ssh.yaml;
+    sopsFile = ../../../secrets/15leroy-homeassistant-ssh.yaml;
     key = "ssh_private_key";
     path = "${config.home.homeDirectory}/.ssh/15leroy";
     mode = "0600";
