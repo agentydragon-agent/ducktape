@@ -95,7 +95,7 @@ spec:
         # OAuth token broker: performs OAuth 2.1 + PKCE flow against Tana's
         # MCP server and writes tokens to a K8s secret
         - name: token-broker
-          image: registry.allegedly.works/ducktape/tana-token-broker:latest # {"$imagepolicy": "flux-system:tana-token-broker"}
+          image: ghcr.io/agentydragon/tana-token-broker:devel-20260401040549-df942a4 # {"$imagepolicy": "flux-system:tana-token-broker"}
           resources:
             requests:
               cpu: 10m
