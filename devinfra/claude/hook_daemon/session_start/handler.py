@@ -626,6 +626,7 @@ async def run_session(
             extra_context=extra_context,
             log_file=log_file,
             buildbuddy_configured=setup.buildbuddy_configured,
+            platform=setup.platform,
         )
         output = SessionStartOutput(
             hook_specific_output=SessionStartHookSpecificOutput(additional_context=context_output.rstrip("\n"))

@@ -67,6 +67,15 @@ Bazel builds and tests by default execute remotely via BuildBuddy.
 Use BuildBuddy API (key in `~/.config/bazel/buildbuddy.bazelrc`) to download undeclared test outputs, profiles, search invocations.
 % endif
 
+% if platform.nixpkgs_available:
+
+## Nix
+Nix is available with nixpkgs. When a tool you need isn't installed, use `nix-shell -p <pkg> --run <cmd>` (one-shot) or `nix shell nixpkgs#<pkg>` (Nix flakes) rather than installing permanently.
+% elif platform.nix_installed:
+
+## Nix
+Nix is installed but nixpkgs channels are not configured. You can set up nixpkgs with `nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && nix-channel --update` to enable `nix-shell -p <pkg>`.
+% endif
 % if any(r.levelno >= WARNING for r in log_entries):
 
 ## Warnings

@@ -177,6 +177,29 @@ py_test(
 )
 
 py_test(
+    name = "test_session_context",
+    srcs = ["test_session_context.py"],
+    data = [
+        "__snapshots__/test_session_context.ambr",
+        ":templates/session_context.mako",
+    ],
+    imports = ["../.."],
+    deps = [
+        ":conftest",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/hook_daemon/session_start:container_runtime",
+        "//devinfra/claude/hook_daemon/session_start:mkcert",
+        "//devinfra/claude/hook_daemon/session_start:platform_detect",
+        "//devinfra/claude/hook_daemon/session_start:precommit",
+        "//devinfra/claude/hook_daemon/session_start:secret_sources",
+        "@pypi//mako",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//syrupy",
+    ],
+)
+
+py_test(
     name = "test_session_start_input",
     srcs = ["test_session_start_input.py"],
     imports = ["../.."],

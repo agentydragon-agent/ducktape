@@ -16,7 +16,9 @@ environment specification and IO benchmarks.
 
 import enum
 import logging
+import os
 import platform
+import shutil
 import socket
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +49,8 @@ class PlatformInfo:
     init_cmdline: list[str]
     kernel_version: str
     platform: WebPlatform
+    nix_installed: bool
+    nixpkgs_available: bool
 
     @property
     def is_firecracker(self) -> bool:
@@ -85,6 +89,31 @@ def _classify_platform(hostname: str, root_fstype: str, init_cmdline: list[str])
     return WebPlatform.UNKNOWN
 
 
+def _detect_nix() -> bool:
+    """Return True if Nix is installed (/nix/store exists or nix binary on PATH)."""
+    return Path("/nix/store").exists() or shutil.which("nix") is not None
+
+
+def _detect_nixpkgs() -> bool:
+    """Return True if the nixpkgs channel or registry entry is configured.
+
+    Checks common channel locations and NIX_PATH. A True result means
+    `nix-shell -p <pkg>` and `nix shell nixpkgs#<pkg>` are likely to work.
+    """
+    nix_path = os.environ.get("NIX_PATH", "")
+    if "nixpkgs" in nix_path:
+        return True
+    # Nix 2 channel locations
+    for candidate in [
+        Path.home() / ".nix-defexpr/channels/nixpkgs",
+        Path("/nix/var/nix/profiles/per-user/root/channels/nixpkgs"),
+        Path("/run/current-system/sw/lib/nixpkgs"),  # NixOS system channel
+    ]:
+        if candidate.exists():
+            return True
+    return False
+
+
 def detect() -> PlatformInfo:
     """Probe the runtime environment and return platform info.
 
@@ -95,6 +124,8 @@ def detect() -> PlatformInfo:
     init_cmdline = _read_init_cmdline()
     kernel_version = _read_kernel_version()
     platform = _classify_platform(hostname, root_fstype, init_cmdline)
+    nix_installed = _detect_nix()
+    nixpkgs_available = nix_installed and _detect_nixpkgs()
 
     info = PlatformInfo(
         hostname=hostname,
@@ -102,10 +133,18 @@ def detect() -> PlatformInfo:
         init_cmdline=init_cmdline,
         kernel_version=kernel_version,
         platform=platform,
+        nix_installed=nix_installed,
+        nixpkgs_available=nixpkgs_available,
     )
 
     logger.info(
-        "Platform: %s hostname=%s root_fstype=%s kernel=%s", platform.value, hostname, root_fstype, kernel_version
+        "Platform: %s hostname=%s root_fstype=%s kernel=%s nix=%s nixpkgs=%s",
+        platform.value,
+        hostname,
+        root_fstype,
+        kernel_version,
+        nix_installed,
+        nixpkgs_available,
     )
 
     if platform == WebPlatform.UNKNOWN:
