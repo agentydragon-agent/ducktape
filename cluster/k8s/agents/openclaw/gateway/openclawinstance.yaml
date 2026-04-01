@@ -321,7 +321,7 @@ spec:
           cpu: 200m
           memory: 128Mi
     - name: exec-server
-      image: registry.allegedly.works/ducktape/openclaw-exec:devel-20260314070056-c0e55a6 # {"$imagepolicy": "flux-system:openclaw-exec"}
+      image: ghcr.io/agentydragon/openclaw-exec:devel-20260401040551-df942a4 # {"$imagepolicy": "flux-system:openclaw-exec"}
       # DirectExecServer entrypoint is baked into the base image.
       # Listen on 127.0.0.1 only — the gateway plugin connects pod-locally.
       args: ["--host", "127.0.0.1", "--port", "8766"]
