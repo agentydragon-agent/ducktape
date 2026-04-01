@@ -11,12 +11,14 @@
   imports = [
     ../home.nix
     ../modules/no-screensaver.nix
+    ../modules/15leroy-ssh.nix
   ];
 
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
     ducktapePackages.bebas-neue-font
+    pkgs.inkscape
     pkgs.kicad
     pkgs.openscad
     # TODO: Add a GUI system monitor with graphs (psensor not in nixpkgs;

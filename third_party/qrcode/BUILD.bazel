@@ -1,0 +1,8 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "qrcode",
+    main_module = "qrcode.console_scripts",
+    visibility = ["//:__subpackages__"],
+    deps = ["@pypi//qrcode"],
+)
