@@ -135,26 +135,11 @@ py_library(
 )
 
 py_library(
-    name = "bb_push_images",
-    srcs = ["bb_push_images.py"],
-    imports = ["../.."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//util:crane",
-        "//util:env",
-        "//util:oci",
-        "//util/bazel:workspace",
-        "@pypi//more_itertools",
-    ],
-)
-
-py_library(
     name = "generate_buildbuddy",
     srcs = ["generate_buildbuddy.py"],
     imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":bb_push_images",
         "//devinfra:prettier",
         "//util/bazel:workspace",
         "@pypi//pyyaml",
@@ -205,13 +190,6 @@ py_binary(
     deps = [":generate_buildbuddy"],
 )
 
-py_binary(
-    name = "bb_push_images_bin",
-    imports = ["../.."],
-    main_module = "devinfra.ci.bb_push_images",
-    deps = [":bb_push_images"],
-)
-
 # === Tests ===
 
 py_test(
@@ -221,6 +199,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":generate_buildbuddy",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
