@@ -1,6 +1,6 @@
 # Kernel 6.18 `pv_native_safe_halt` Stall on AMD KVM
 
-## Status: PARTIAL WORKAROUND — `halt_poll_ns=0` fixes idle stalls only
+## Status: FIXED — `clearcpuid=510` on host eliminates all stalls
 
 Linux kernel 6.18 has a bug in the KVM paravirtualized idle halt path
 (`pv_native_safe_halt`) that causes periodic CPU stalls on AMD hosts. Reproduces on a
