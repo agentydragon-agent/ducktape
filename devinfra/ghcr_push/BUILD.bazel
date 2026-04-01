@@ -9,6 +9,7 @@ py_library(
         "//util:crane",
         "//util:env",
         "//util:oci",
+        "//util/bazel:runfiles",
         "//util/bazel:workspace",
     ],
 )

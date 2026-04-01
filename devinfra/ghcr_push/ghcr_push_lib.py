@@ -5,13 +5,15 @@ new pinned tag (branch-YYYYMMDDHHMMSS-sha7) when the image digest actually
 changed, preventing spurious Flux repins.
 """
 
+import argparse
 import os
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from util.bazel.workspace import BazelLabel, get_bazel_bin, get_build_workspace_directory
+from util.bazel.runfiles import get_required_path
+from util.bazel.workspace import BazelLabel, get_build_workspace_directory
 from util.crane import Crane
 from util.env import get_required_env
 from util.oci import read_oci_layout_digest
@@ -27,16 +29,17 @@ def _git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
 
 
+def _image_runfiles_dir(image_target: str) -> Path:
+    """Resolve the OCI layout directory from runfiles."""
+    label = BazelLabel.parse(image_target)
+    return get_required_path(f"_main/{label.package}/{label.name}")
+
+
 class ImagePusher:
-    def __init__(self, crane: Crane, bazel_bin: Path, branch: str, pinned_tag: str) -> None:
+    def __init__(self, crane: Crane, branch: str, pinned_tag: str) -> None:
         self.crane = crane
-        self.bazel_bin = bazel_bin
         self.branch = branch
         self.pinned_tag = pinned_tag
-
-    def _image_output_dir(self, image_target: str) -> Path:
-        label = BazelLabel.parse(image_target)
-        return self.bazel_bin / label.package / label.name
 
     def _latest_pinned_tag(self, repo: str) -> str | None:
         try:
@@ -47,7 +50,7 @@ class ImagePusher:
         return branch_tags[-1] if branch_tags else None
 
     def push_and_tag(self, img: GhcrImage) -> None:
-        image_dir = self._image_output_dir(img.image_target)
+        image_dir = _image_runfiles_dir(img.image_target)
         local_digest = read_oci_layout_digest(image_dir)
         ref = f"{img.repository}@{local_digest}"
 
@@ -63,15 +66,19 @@ class ImagePusher:
         self.crane.tag(ref, self.pinned_tag)
 
 
-def push_main(image_target: str, repository: str) -> None:
+def main() -> None:
     """Push a single OCI image to GHCR if its digest changed."""
+    parser = argparse.ArgumentParser(description="Push OCI image to GHCR")
+    parser.add_argument("--image-target", required=True)
+    parser.add_argument("--repository", required=True)
+    args = parser.parse_args()
+
     os.chdir(get_build_workspace_directory())
 
     if "[skip ci]" in _git("log", "-1", "--format=%s"):
         print("Commit message contains [skip ci], skipping image push.")
         return
 
-    bazel_bin = get_bazel_bin()
     branch = _git("rev-parse", "--abbrev-ref", "HEAD")
     ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     sha = _git("rev-parse", "--short=7", "HEAD")
@@ -80,8 +87,11 @@ def push_main(image_target: str, repository: str) -> None:
         crane=Crane(
             registry="ghcr.io", username=get_required_env("GHCR_USERNAME"), password=get_required_env("GHCR_TOKEN")
         ),
-        bazel_bin=bazel_bin,
         branch=branch,
         pinned_tag=f"{branch}-{ts}-{sha}",
     )
-    pusher.push_and_tag(GhcrImage(image_target=image_target, repository=repository))
+    pusher.push_and_tag(GhcrImage(image_target=args.image_target, repository=args.repository))
+
+
+if __name__ == "__main__":
+    main()
