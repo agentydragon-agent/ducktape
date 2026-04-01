@@ -300,59 +300,99 @@ Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
 
 ## Migration Checklist
 
-### Phase 1: Foundation (no workload disruption)
+Phases are ordered by dependencies. Tracks within a phase run in
+parallel where noted.
 
-1. Remove default StorageClass annotation from `longhorn`
-2. Create `local-path-hetzner` and `local-path-proxmox` StorageClasses
-3. Update `cnpg-conventions.md` for region-explicit storage classes
-4. Update existing CNPG clusters to use `local-path-{region}`
+```text
+Phase 1: [1a] [1b] [1c] [1d]       all parallel, no risk
+              |
+Phase 2: [2a]→[2b]→[2c]            sequential (etcd quorum)
+              |
+Phase 3: [3a] [3b] [3c]→[3d]       parallel, start when workers exist
+              |         |
+Phase 4: [SSO track]  [Monitoring track]    parallel tracks
+         [4a→4b→4c→4d→4e]
+         [4f→4g→4h→4i]
+              |
+Phase 5: [MinIO track] [Ceph track]         parallel, independent
+         [5a→5b→5c]    [5d]
+              →[5e→5f]                       decide + migrate
+              |
+Phase 6: [cleanup]
+```
 
-### Phase 2: VPS Node Restructure
+### Phase 1: Foundation (all parallel, no workload disruption)
 
-5. Provision 2x CCX13 VPS workers in Hetzner (Terraform)
-6. Provision 2x CCX13 VPS CPs in Hetzner (Terraform)
-7. Join new workers + CPs, rolling etcd membership
-8. Migrate workloads off old CPX31 CPs (drain, cordon)
-9. Remove old CPX31 CPs from etcd, tear down
+- **1a**: Remove default StorageClass annotation from `longhorn`
+- **1b**: Create `local-path-hetzner` and `local-path-proxmox`
+  StorageClasses with `nodeAffinity`
+- **1c**: Set up SOPS + age infrastructure (create age key, configure
+  Flux decryption, test with one dummy secret)
+- **1d**: Update `cnpg-conventions.md` for region-explicit storage
+  class names
 
-### Phase 3: Workload Placement
+### Phase 2: VPS Node Restructure (sequential, maintain etcd quorum)
 
-10. Pin Proxmox workloads with hard `nodeSelector`
-11. Pin VPS-critical workloads
-12. Move Authentik + Flux controllers to VPS workers
-13. Deploy PriorityClasses
-14. Verify VPS CPs are near-pure
+- **2a**: Provision 2x CCX13 VPS workers via Terraform. Join to cluster.
+- **2b**: Provision 2x CCX13 VPS CPs via Terraform. Join one at a time,
+  add to etcd. Maintain quorum (3/3 → 4/4 → 5/5 with new + old).
+- **2c**: Drain + cordon old CPX31 CPs one at a time. Remove from etcd.
+  Tear down. Verify etcd health.
 
-### Phase 4: SSO Migration (Authentik → Authelia)
+### Phase 3: Workload Placement + SSO Start (parallel, depends on 2a)
 
-See <sso.md> for detailed migration strategy.
+Can start as soon as VPS workers exist. Overlaps with 2b/2c.
 
-15. Deploy Authelia alongside Authentik
-16. Set up SOPS + age for secrets
-17. Migrate apps one by one (OIDC → proxy-mode → service accounts)
-18. Suspend Authentik, Vault, ESO
-19. After validation: delete Authentik, Vault, ESO code
+- **3a**: Pin Proxmox workloads with hard `nodeSelector` (Gitea, Harbor,
+  nix-cache, Atuin, Props, Matrix, OpenClaw, Ollama, LiteLLM, Scanner,
+  Proxmox-proxy, Inventree, Grocy). Deploy PriorityClasses.
+- **3b**: Move Authentik + Flux controllers to VPS workers (off CPs).
+  Pin VPS-critical workloads (PowerDNS, Gateway, Website).
+- **3c**: Deploy Authelia alongside Authentik (tiny, no disruption)
+- **3d**: Migrate first low-risk OIDC app to Authelia (Headlamp or
+  Gatus) to validate the approach
 
-### Phase 5: Monitoring Migration (Prometheus → VictoriaMetrics)
+### Phase 4: SSO + Monitoring (two parallel tracks, depends on 3c/3d)
 
-20. Deploy VictoriaMetrics cluster
-21. Configure dual remote-write
-22. Verify + switch Grafana datasource
-23. Remove Prometheus
+SSO track (sequential within track):
 
-### Phase 6: Storage (evaluate and migrate)
+- **4a**: Migrate remaining native OIDC apps to Authelia one by one
+- **4b**: Migrate proxy-mode apps (rewire HTTPRoutes to Authelia
+  ExtAuthz)
+- **4c**: Migrate service accounts (OpenClaw Agent, Alloy OTLP)
+- **4d**: Suspend Authentik + Vault + ESO
+- **4e**: Migrate 29 TF secret resources to SOPS
 
-See <storage.md> for validation plans.
+Monitoring track (sequential within track, parallel with SSO):
 
-24. Evaluate MinIO site replication + HAProxy
-25. Evaluate Loki/Tempo on MinIO
-26. Evaluate JuiceFS OR Rook/Ceph
-27. Migrate remaining Longhorn PVCs
-28. Decommission Longhorn
+- **4f**: Deploy VictoriaMetrics cluster (2x vmstorage on VPS workers)
+- **4g**: Configure dual remote-write (Alloy → both Prometheus and VM)
+- **4h**: Verify Grafana dashboards, switch datasource to vmselect
+- **4i**: Remove Prometheus
 
-### Phase 7: Cleanup
+### Phase 5: Storage (parallel tracks, depends on 2a)
 
-29. Remove Longhorn operator and CRDs
-30. Remove Vault, ESO, tofu-controller secret resources
-31. Remove Authentik namespace
-32. Update cluster docs
+Can start as early as Phase 2 completes. Independent of Phase 4.
+
+MinIO track:
+
+- **5a**: Deploy MinIO on Proxmox + VPS, test site replication
+- **5b**: Deploy HAProxy DaemonSet, test failover
+- **5c**: If MinIO works: migrate Loki + Tempo to MinIO S3 backend
+
+Ceph track (independent, can start anytime):
+
+- **5d**: Test Rook/Ceph in disposable cluster (resource measurement)
+
+Decision + migrate:
+
+- **5e**: Based on 5a-5d results, decide: Ceph, JuiceFS+MinIO, or
+  per-site CSI only
+- **5f**: Migrate remaining Longhorn PVCs. Decommission Longhorn.
+
+### Phase 6: Cleanup (depends on all above)
+
+- Remove Longhorn operator and CRDs
+- Remove Vault, ESO, tofu-controller secret resources
+- Remove Authentik namespace and all related resources
+- Update cluster docs (README, AGENTS.md, plan.md, cnpg-conventions)
