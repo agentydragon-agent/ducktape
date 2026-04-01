@@ -4,7 +4,7 @@ Runtime context for the Claude Code web environment. The reproducible container
 definition lives in the [Dockerfile](../Dockerfile); this file documents the
 parts that aren't captured there.
 
-**Captured**: 2026-03-30.
+**Captured**: 2026-03-30 (storage details updated 2026-04-01).
 
 ## Runtime Environment
 
@@ -24,15 +24,49 @@ parts that aren't captured there.
 
 ### Storage Layout
 
-| Mountpoint         | Source     | FS Type  | Size  | Purpose                  |
-| ------------------ | ---------- | -------- | ----- | ------------------------ |
-| `/`                | `/dev/vda` | ext4     | 252G  | Root filesystem          |
-| `/opt/claude-code` | `/dev/vdb` | squashfs | 60.8M | Claude Code binary (ro)  |
-| `/opt/env-runner`  | `/dev/vdc` | squashfs | 17.5M | Environment manager (ro) |
-| `/dev/shm`         | tmpfs      | tmpfs    | 7.9G  | Shared memory            |
+| Mountpoint         | Source     | FS Type  | Size  | Usable | Purpose                  |
+| ------------------ | ---------- | -------- | ----- | ------ | ------------------------ |
+| `/`                | `/dev/vda` | ext4     | 256G  | ~235G  | Root filesystem          |
+| `/opt/claude-code` | `/dev/vdb` | squashfs | 60.8M | —      | Claude Code binary (ro)  |
+| `/opt/env-runner`  | `/dev/vdc` | squashfs | 17.5M | —      | Environment manager (ro) |
+| `/dev/shm`         | tmpfs      | tmpfs    | 7.9G  | 7.9G   | Shared memory            |
+
+#### Reserved blocks workaround
+
+The root ext4 filesystem ships with **84% of blocks reserved** (56.3M of 67.1M
+blocks reserved for UID/GID 65534 — `nobody:nogroup`). Since the container runs
+as root (UID 0), these reserved blocks are inaccessible, leaving only ~41 GiB of
+the 256 GiB disk usable by default.
+
+**Fix**: `tune2fs -m 1 /dev/vda` reduces the reservation to 1%, freeing ~194 GiB.
+This is safe — the reservation is for `nobody:nogroup` which no process in the
+container uses. Verified: a 50 GiB sequential write to `/tmp` succeeded after
+the change, and `df` correctly reports ~235 GiB available.
+
+The session start hook should run this on startup. The change is persistent for
+the lifetime of the VM (survives across sessions on the same container, but not
+container recreation).
 
 The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4
 root disk. There are **no tmpfs mounts** for Bazel cache or container storage.
+
+### Typical Disk Usage (observed 2026-04-01)
+
+| Path                         | Size | Notes                          |
+| ---------------------------- | ---- | ------------------------------ |
+| `/root/.claude/session-env/` | 16G  | Bazel caches across sessions   |
+| `/tmp/`                      | 7.6G | Benchmark data (reclaimable)   |
+| `/root/.cache/`              | 4.7G | Bazel install, playwright, pip |
+| `/usr/`                      | 3.6G | System packages                |
+| `/nix/`                      | 2.9G | Nix store                      |
+| `/root/.rustup/`             | 601M | Rust toolchains                |
+| `/root/.npm/`                | 316M | npm cache                      |
+| `/home/user/ducktape/`       | 264M | Repo checkout                  |
+| **Total used**               | ~38G | Out of ~235G usable            |
+
+### Inode Budget
+
+16.8M inodes total, ~1M used (6%). Inodes are not a constraint.
 
 ### IO Benchmarks (2026-03-30)
 
