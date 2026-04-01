@@ -47,8 +47,7 @@ _INFRA_GLOBS = ("devinfra/bazel*",)
 # so they don't require rebuilding the Nix package, and/or auto-detect packages
 # whose repo rules fail at fetch time and skip them gracefully.
 _EXCLUDED_PACKAGES = {
-    "x/cotrl",  # gymnasium — not in requirements
-    "gterm_theme",  # pycairo — requires dbus-1 system library not available everywhere
+    "gterm_theme"  # pycairo — requires dbus-1 system library not available everywhere
 }
 
 _PREFIX = "enforce-bazel-tests"
@@ -98,7 +97,7 @@ def build_universe(repo_root: Path) -> list[str]:
 
     dirs: list[str] = []
     for entry in sorted(repo_root.iterdir()):
-        if not entry.is_dir() or entry.name.startswith("."):
+        if not entry.is_dir() or entry.name.startswith((".", "bazel-")):
             continue
         if entry.name in top_level_excluded:
             continue
