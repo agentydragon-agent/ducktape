@@ -1,4 +1,5 @@
 FROM ubuntu:24.04
+LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99

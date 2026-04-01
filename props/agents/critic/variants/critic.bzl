@@ -42,7 +42,10 @@ def critic_variant(name, prompt_md):
         env = py_image_env(extra_env = {
             "PROMPT_TEMPLATE_PATH": prompt_runfiles_path,
         }),
-        labels = {"org.opencontainers.image.title": "critic-" + name},
+        labels = {
+            "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
+            "org.opencontainers.image.title": "critic-" + name,
+        },
         tars = [
             "//props/agents/critic:layers",
         ],

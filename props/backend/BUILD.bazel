@@ -280,6 +280,7 @@ oci_image(
         "/frontend",
     ],
     env = py_image_env(),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":layers",
         ":frontend_assets",

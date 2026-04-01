@@ -51,6 +51,7 @@ oci_image(
         "/data/db.sqlite3",
     ],
     exposed_ports = ["5600/tcp"],
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":aw_server_layer"],
 )
 

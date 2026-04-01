@@ -10,6 +10,7 @@
 # Unlike `plugins install` (which uses --ignore-scripts for security), we allow
 # postinstall scripts so the crypto native binary downloads automatically.
 FROM ghcr.io/openclaw/openclaw:2026.2.24
+LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
 USER root
 

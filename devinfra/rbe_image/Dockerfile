@@ -9,6 +9,7 @@
 # toolchain), and Chromium shared libraries (headless_shell from
 # rules_playwright for visual regression tests).
 FROM gcr.io/flame-public/rbe-ubuntu24-04:latest
+LABEL org.opencontainers.image.source=https://github.com/agentydragon/ducktape
 
 # Enable universe repo and install additional dependencies.
 RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.list.d/ubuntu.sources \

@@ -63,6 +63,7 @@ oci_image(
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("token_broker_bin"),
     env = py_image_env(binary_name = "token_broker_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":layers"],
     user = "1000:1000",
 )

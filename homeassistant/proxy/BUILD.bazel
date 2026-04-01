@@ -77,6 +77,7 @@ oci_image(
     base = "@debian_slim_linux_amd64",
     entrypoint = py_image_entrypoint("homeassistant_proxy_bin"),
     env = py_image_env(binary_name = "homeassistant_proxy_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":layers"],
     user = "1000:1000",
 )
