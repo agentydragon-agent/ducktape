@@ -93,9 +93,9 @@ def generate_buildbuddy_config() -> dict[str, Any]:
 
     for img in IMAGES:
         repo_name = img.repository.rsplit("/", 1)[-1]
-        # Single shell step: build + push in the same shell so (1) BuildBuddy's
-        # bazel wrapper injects the API key for both commands and (2) the image
-        # tree artifacts from `bazel build` persist for `bazel run`.
+        # Build image + push binary in a SINGLE `bazel build` so tree artifact
+        # contents are downloaded together. Then invoke the binary directly —
+        # separate `bazel run` doesn't see tree artifacts from a prior build.
         actions.append(
             {
                 "name": f"Push {repo_name}",
@@ -105,8 +105,11 @@ def generate_buildbuddy_config() -> dict[str, Any]:
                 "steps": [
                     {
                         "run": (
-                            f"bazel build --config=rbe --remote_download_toplevel {img.image_target}\n"
-                            f"bazel run --config=rbe //devinfra/ci:bb_push_images_bin -- --image {img.image_target}\n"
+                            f"bazel build --config=rbe --remote_download_toplevel"
+                            f" {img.image_target} //devinfra/ci:bb_push_images_bin\n"
+                            f'BUILD_WORKSPACE_DIRECTORY="$PWD"'
+                            f" ./bazel-bin/devinfra/ci/bb_push_images_bin"
+                            f" --image {img.image_target}\n"
                         )
                     }
                 ],
