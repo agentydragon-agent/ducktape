@@ -6,157 +6,127 @@ allowed-tools: Bash, Read, Grep, Glob, Agent
 
 # Cluster Health Check
 
-Comprehensive cluster health scan. Run all checks, collect results, then produce a single
-structured report with an actionable fix plan.
+Comprehensive cluster health scan. Run all checks via `kubectl`, collect results,
+then produce a single structured report with an actionable fix plan.
 
-## Prerequisites
+Run `kubectl` commands outside the sandbox (`dangerouslyDisableSandbox: true`).
 
-`kubectl` must be configured and working. Run all `kubectl` commands outside the sandbox
-(`dangerouslyDisableSandbox: true`) since they need network access.
+## What to Check
 
-## Check Sequence
+Run checks in parallel where possible.
 
-Run these checks in parallel where possible (groups 1-4 are independent).
+### Flux GitOps
 
-### Group 1: Flux GitOps Health
+- All Flux Kustomizations — ready status, suspended, stalled
+- HelmReleases — ready status, failed upgrades
+- Terraform resources (tofu-controller) — ready and applied status
+- Identify suspended kustomizations and cross-reference with `cluster/docs/plan.md`
+  "Suspended Kustomizations" to distinguish expected vs unexpected suspensions
 
-```bash
-# All Flux kustomizations — look for False/Unknown ready status
-kubectl get kustomizations.kustomize.toolkit.fluxcd.io -A \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason,MSG:.status.conditions[?(@.type=="Ready")].message' \
-  --sort-by='.metadata.name'
+### Pod & Workload Health
 
-# HelmReleases
-kubectl get helmreleases.helm.toolkit.fluxcd.io -A \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,REASON:.status.conditions[?(@.type=="Ready")].reason'
+- Non-running pods (Pending, CrashLoopBackOff, ImagePullBackOff, Error, etc.)
+- Flapping pods — containers with high restart counts (>3)
+- Recent OOMKill and Eviction events
+- Failed jobs
 
-# Suspended kustomizations (expected — cross-reference with plan.md "Suspended Kustomizations")
-kubectl get kustomizations.kustomize.toolkit.fluxcd.io -A \
-  -o json | python3 -c "
-import json, sys
-for k in json.load(sys.stdin)['items']:
-    if k.get('spec', {}).get('suspend'):
-        print(f\"{k['metadata']['namespace']}/{k['metadata']['name']}: suspended\")
-"
+### Node Health
 
-# Terraform resources (tofu-controller)
-kubectl get terraforms.infra.contrib.fluxcd.io -A \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,APPLIED:.status.conditions[?(@.type=="Apply")].status'
-```
+- Node conditions: Ready, MemoryPressure, DiskPressure, PIDPressure
+- Resource usage (`kubectl top nodes`)
+- **If any node is under pressure or >80% memory/disk usage**: break down the top
+  pod consumers on that node to identify what's causing the pressure
+- Active taints on all nodes (cordoned, NoSchedule, NoExecute, etc.)
+- Longhorn node and volume health (degraded/faulted volumes, map PVCs to namespaces)
 
-### Group 2: Pod & Workload Health
+### Databases & Certificates
 
-```bash
-# Non-running pods (CrashLoopBackOff, ImagePullBackOff, Error, Pending, etc.)
-kubectl get pods -A --field-selector 'status.phase!=Running,status.phase!=Succeeded' \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,STATUS:.status.phase,REASON:.status.containerStatuses[0].state.waiting.reason'
+- CNPG cluster health — instance count vs ready count, phase
+- cert-manager certificates — ready status, approaching expiry
+- Stuck ACME challenges
 
-# Pods with high restart counts (flapping) — threshold: >3 restarts
-kubectl get pods -A -o json | python3 -c "
-import json, sys
-pods = json.load(sys.stdin)['items']
-for p in pods:
-    ns = p['metadata']['namespace']
-    name = p['metadata']['name']
-    for cs in p.get('status', {}).get('containerStatuses', []):
-        restarts = cs.get('restartCount', 0)
-        if restarts > 3:
-            ready = cs.get('ready', False)
-            print(f'{ns}/{name} container={cs[\"name\"]} restarts={restarts} ready={ready}')
-"
+### Warning Events
 
-# Recent pod evictions/OOMKills
-kubectl get events -A --field-selector reason=OOMKilling --sort-by='.lastTimestamp' 2>/dev/null | tail -20
-kubectl get events -A --field-selector reason=Evicted --sort-by='.lastTimestamp' 2>/dev/null | tail -20
+- Recent Warning-type events, focusing on recurring patterns (high event counts)
 
-# Failed jobs
-kubectl get jobs -A --field-selector status.successful=0 \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,COMPLETIONS:.status.succeeded,FAILED:.status.failed'
-```
+## Investigation
 
-### Group 3: Node Health
+When any check reveals an error (unhealthy CNPG cluster, CrashLoopBackOff pod,
+failed HelmRelease, stuck Terraform, etc.), don't just report the status — dig into
+the cause before moving on:
 
-```bash
-# Node conditions — look for NotReady, MemoryPressure, DiskPressure, PIDPressure
-kubectl get nodes -o custom-columns='NAME:.metadata.name,STATUS:.status.conditions[?(@.type=="Ready")].status,MEM_PRESS:.status.conditions[?(@.type=="MemoryPressure")].status,DISK_PRESS:.status.conditions[?(@.type=="DiskPressure")].status,PID_PRESS:.status.conditions[?(@.type=="PIDPressure")].status,VERSION:.status.nodeInfo.kubeletVersion'
+- Pod failures: check logs (`kubectl logs`), previous container logs (`--previous`),
+  describe output (events, conditions, scheduling failures)
+- CNPG issues: check operator logs in `cnpg-system`, individual instance logs, cluster
+  events
+- Flux/Helm failures: check the controller logs, the kustomization/helmrelease events
+- Node problems: check `kubectl describe node`, kubelet conditions, recent events on
+  the node
+- Image pull failures: check if the registry (Harbor) is up, if the image tag exists,
+  if pull secrets are configured
 
-# Node resource usage (if metrics-server is available)
-kubectl top nodes 2>/dev/null
+Include the root cause (or best hypothesis) in the report, not just "pod is failing."
 
-# Longhorn node/volume health
-kubectl get nodes.longhorn.io -n longhorn-system \
-  -o custom-columns='NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,SCHEDULABLE:.status.conditions[?(@.type=="Schedulable")].status' 2>/dev/null
-kubectl get volumes.longhorn.io -n longhorn-system \
-  -o custom-columns='NAME:.metadata.name,STATE:.status.state,ROBUSTNESS:.status.robustness' 2>/dev/null
-```
+### Image Pull Failures
 
-### Group 4: Database & Certificate Health
+When images fail to pull, trace the full pipeline:
 
-```bash
-# CNPG cluster health
-kubectl get clusters.postgresql.cnpg.io -A \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,INSTANCES:.spec.instances,READY:.status.readyInstances,PHASE:.status.phase'
+- Check if the image exists in Harbor (`registry.allegedly.works`)
+- Check if the CI build that produces the image succeeded — look at GitHub Actions
+  workflows (`gh run list`), BuildBuddy invocations, or the relevant `buildbuddy.yaml`
+  / `.github/workflows/` pipeline
+- Check if the image push step succeeded (GitHub Actions logs, Harbor push events)
+- Report where the pipeline broke (build failed, push failed, tag missing, auth issue)
 
-# Certificate expiry (cert-manager)
-kubectl get certificates.cert-manager.io -A \
-  -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,EXPIRY:.status.notAfter,RENEWAL:.status.renewalTime'
+### Anomaly Detection
 
-# Challenges stuck (cert-manager)
-kubectl get challenges.acme.cert-manager.io -A 2>/dev/null
-```
+Flag anything that looks out of place:
 
-### Group 5: Warning Events (last hour)
-
-```bash
-# Recent warning events — look for recurring patterns
-kubectl get events -A --field-selector type=Warning --sort-by='.lastTimestamp' \
-  -o custom-columns='NS:.metadata.namespace,OBJECT:.involvedObject.name,REASON:.reason,MSG:.message,COUNT:.count,LAST:.lastTimestamp' | tail -40
-```
+- Pods running in namespaces that should be empty (suspended services with leftover
+  workloads not cleaned up)
+- Stale errored/completed objects: failed Jobs not cleaned up, old ReplicaSets with
+  no pods, orphaned PVCs for deleted workloads
+- Resources that exist in the cluster but have no corresponding Flux kustomization
+  managing them (drift from GitOps)
+- Pods/deployments with no owner (not managed by a Deployment/StatefulSet/DaemonSet/Job)
 
 ## Report Format
 
-After collecting all data, produce a structured report:
+After collecting all data, produce:
 
 ```markdown
 # Cluster Health Report — <date>
 
 ## Summary
 
-<one-line overall assessment: healthy / degraded / critical>
+<one-line assessment: healthy / degraded / critical>
 <count of issues by severity>
 
 ## Critical Issues
 
-<issues requiring immediate attention — broken kustomizations, CrashLoopBackOff pods,
-node NotReady, CNPG clusters not healthy, expired certificates>
-
-For each issue:
-
-- **What**: description
-- **Impact**: what's affected
-- **Evidence**: kubectl output snippet
-- **Fix**: specific remediation command or config change
+<broken kustomizations, CrashLoopBackOff pods, NotReady nodes, unhealthy CNPG
+clusters, expired certificates — each with: what, impact, evidence, fix>
 
 ## Warnings
 
-<non-critical but noteworthy — high restart counts, degraded Longhorn volumes,
-suspended kustomizations not in plan.md, resource pressure approaching limits>
+<high restart counts, degraded Longhorn volumes, unexpected suspensions,
+resource pressure approaching limits>
 
 ## Expected / Known
 
-<issues that are intentional — suspended kustomizations listed in plan.md,
-scaled-to-zero deployments, maintenance windows>
+<intentional suspensions per plan.md, scaled-to-zero deployments, offline
+roaming nodes>
 
 ## Fix Plan
 
-<ordered list of actions to resolve critical issues and warnings,
-prioritized by impact and dependency order>
+<ordered actions to resolve critical + warnings, prioritized by impact and
+dependency order>
 ```
 
 ## Cross-Reference
 
-Check findings against known context:
+Check findings against:
 
 - `cluster/docs/plan.md` "Suspended Kustomizations" — don't flag expected suspensions
-- `cluster/docs/plan.md` "Next Actions" — note if any findings match known TODOs
+- `cluster/docs/plan.md` "Next Actions" — note if findings match known TODOs
 - `cluster/docs/troubleshooting.md` — reference known fix procedures for matching symptoms
