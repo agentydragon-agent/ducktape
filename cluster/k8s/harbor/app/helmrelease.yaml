@@ -70,8 +70,7 @@ spec:
         redis:
           storageClass: longhorn
           size: 1Gi
-        trivy:
-          size: 5Gi
+        # trivy PVC removed — trivy disabled below
 
     # Admin password from Password generator (bootstrap phase)
     # TODO: Migrate to Vault-backed harbor-secrets once SSO is configured
@@ -141,17 +140,11 @@ spec:
             memory: 512Mi
             cpu: 200m
 
+    # Trivy is Harbor's built-in container image vulnerability scanner
+    # (CVE database download + on-push scanning). Disabled — we don't
+    # consume scan results and it wastes 5Gi storage + ~1Gi memory limit.
     trivy:
-      enabled: true
-      nodeSelector:
-        topology.kubernetes.io/region: proxmox
-      resources:
-        requests:
-          cpu: 20m
-          memory: 64Mi
-        limits:
-          cpu: 1000m
-          memory: 1Gi
+      enabled: false
 
     # Notary (optional)
     notary:
