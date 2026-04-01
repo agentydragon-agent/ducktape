@@ -337,10 +337,12 @@ Cascading failure on 2026-03-30: removing pve-cp-0 during debugging left 2-membe
 VPS nodes (no `NoSchedule` taint) absorbed workload pods → OOM → nebula tunnel broke →
 etcd no leader → full cluster outage. See <debug/wyrm2-chrome-network-changed.md>.
 
-## Current Fix: `clearcpuid=510` on host (pending reboot)
+## Fix Applied: `clearcpuid=510` on host (2026-03-31)
 
 Applied in `ansible/atlas.yaml` kernel cmdline + `halt_poll_ns=0` in modprobe.d.
-Requires atlas reboot to take effect. After reboot, VMs should start clean.
+Atlas rebooted 2026-03-31. **Confirmed working**: NixOS 6.12 test VM boots in <90s
+with 0 NMIs (previously stalled for 12+ min). talos-pve-cp-0 reached `Ready` for
+the first time in days. Cluster fully recovered with 3 etcd members.
 
 ## Investigation timeline
 
@@ -356,37 +358,16 @@ Requires atlas reboot to take effect. After reboot, VMs should start clean.
 - **2026-03-30**: **Bisect confirmed**: kernel 6.18 stalls in `pv_native_safe_halt`
   within 38s on idle VM. Kernel 6.12 fine.
 
-## After Reboot Checklist
+## After Reboot Checklist — COMPLETED 2026-03-31
 
-1. **Verify `clearcpuid=510` took effect**:
+All items verified:
 
-   ```bash
-   cat /proc/cmdline | grep clearcpuid
-   dmesg | grep -i idle_hlt  # should show nothing (feature disabled)
-   ```
-
-2. **Verify `halt_poll_ns=0` persisted** (from modprobe.d):
-
-   ```bash
-   cat /sys/module/kvm/parameters/halt_poll_ns  # should be 0
-   ```
-
-3. **Quick idle test**: Boot a throwaway v1.12.3 VM (9901), wait 2 min, screenshot.
-   Should be clean (no stalls, no NMIs).
-
-4. **Load test**: If idle test passes, check pve-cp-0 (VM 10000) — it should boot,
-   join etcd, and reach Ready without stalling.
-
-5. **Uncordon VPS nodes** once pve-cp-0 is Ready and etcd has 3 members:
-
-   ```bash
-   kubectl uncordon talos-vps-cp-0
-   kubectl uncordon talos-vps-cp-1
-   ```
-
-6. **If `clearcpuid=510` doesn't fix load stalls**: Try also adding `kvm_amd.vnmi=0`
-   to the kernel cmdline (disables vNMI entirely). Or fall back to host kernel
-   6.8.12-18-pve (already installed, select at boot).
+1. ✅ `clearcpuid=510` in `/proc/cmdline`
+2. ✅ `halt_poll_ns=0` persisted from modprobe.d
+3. ✅ NixOS 6.12 test VM: boots in <90s, 0 NMIs, SSH works
+4. ✅ talos-pve-cp-0: `Ready`, etcd healthy
+5. ✅ VPS nodes uncordoned
+6. N/A — `clearcpuid=510` fixed everything, no fallback needed
 
 ## TODOs
 

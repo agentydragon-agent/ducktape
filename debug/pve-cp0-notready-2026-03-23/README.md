@@ -10,7 +10,7 @@
 host kvm_amd (6.17) and guest kernel 6.18.
 
 **Fix**: `clearcpuid=510` on host kernel cmdline (disables the feature). Applied in
-`ansible/atlas.yaml`. Pending atlas reboot.
+`ansible/atlas.yaml`. Applied and rebooted 2026-03-31. **Fix confirmed working.**
 
 ## Incident 1 — 2026-03-23
 
