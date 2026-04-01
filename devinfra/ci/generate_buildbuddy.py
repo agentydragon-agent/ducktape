@@ -9,17 +9,12 @@ Usage:
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import yaml
 
 from devinfra.prettier import prettier_format_in_place
 from util.bazel.workspace import BazelLabel, get_build_workspace_directory
-
-SCRIPT_DIR = Path(__file__).parent
-REPO_ROOT = SCRIPT_DIR.parent.parent
-BUILDBUDDY_YAML = REPO_ROOT / "buildbuddy.yaml"
 
 HEADER = """\
 # AUTO-GENERATED from devinfra/ci/generate_buildbuddy.py - DO NOT EDIT DIRECTLY
@@ -114,16 +109,7 @@ def generate_buildbuddy_config() -> dict[str, Any]:
                 "triggers": push_triggers,
                 "container_image": "ubuntu-24.04",
                 "resource_requests": push_resources,
-                "steps": [
-                    {
-                        "run": (
-                            f"bazel build --config=rbe --remote_download_toplevel"
-                            f" {target_str}\n"
-                            f'BUILD_WORKSPACE_DIRECTORY="$PWD"'
-                            f" ./bazel-bin/{target.package}/{target.name}\n"
-                        )
-                    }
-                ],
+                "steps": [{"run": (f"bazel run --config=rbe --remote_download_toplevel {target_str}\n")}],
             }
         )
 

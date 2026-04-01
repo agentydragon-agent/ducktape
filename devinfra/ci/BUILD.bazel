@@ -199,6 +199,7 @@ py_test(
     imports = ["../.."],
     deps = [
         ":generate_buildbuddy",
+        "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
