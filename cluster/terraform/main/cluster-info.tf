@@ -17,14 +17,21 @@ resource "kubernetes_config_map" "cluster_info" {
 
   data = merge(
     {
-      # JSON structure for easy parsing: {"vps0": {"ip": "...", "name": "..."}, ...}
+      # CP nodes only — used by dns-records for NS glue, API endpoint, nameserver registration
+      vps_cp_nodes = jsonencode({
+        for k, v in hcloud_server.vps : k => {
+          ip   = v.ipv4_address
+          name = v.name
+        } if local.vps_nodes[k].role == "controlplane"
+      })
+      # All VPS nodes — used by dns-records for Nebula lighthouse DNS
       vps_nodes = jsonencode({
         for k, v in hcloud_server.vps : k => {
           ip   = v.ipv4_address
           name = v.name
         }
       })
-      # JSON list of VPS IPs
+      # JSON list of all VPS IPs
       vps_ips = jsonencode([for k, v in hcloud_server.vps : v.ipv4_address])
       # Comma-separated for Flux postBuild substitution (Gateway target annotation)
       vps_ips_csv = join(",", [for k, v in hcloud_server.vps : v.ipv4_address])

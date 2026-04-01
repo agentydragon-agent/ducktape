@@ -194,14 +194,16 @@ locals {
 
   # All Nebula mesh nodes — add new nodes here when expanding the mesh.
   nebula_nodes = {
-    "talos-vps-cp-0"  = { ip = "10.42.0.1/16", groups = "lighthouse,controlplane,vps" }
-    "talos-vps-cp-1"  = { ip = "10.42.0.2/16", groups = "lighthouse,controlplane,vps" }
-    "talos-pve-cp-0"  = { ip = "10.42.0.10/16", groups = "controlplane,proxmox" }
-    "wyrm2"           = { ip = "10.42.0.20/16", groups = "worker,proxmox,gpu" }
-    "rugged"          = { ip = "10.42.0.30/16", groups = "worker,roaming" }
-    "k8s-worker-test" = { ip = "10.42.0.99/16", groups = "worker,test" }
-    "atlas"           = { ip = "10.42.0.5/16", groups = "hypervisor,proxmox" }
-    "activitywatch"   = { ip = "10.42.0.40/16", groups = "service" }
+    "talos-vps-cp-0"     = { ip = "10.42.0.1/16", groups = "lighthouse,controlplane,vps" }
+    "talos-vps-cp-1"     = { ip = "10.42.0.2/16", groups = "lighthouse,controlplane,vps" }
+    "talos-pve-cp-0"     = { ip = "10.42.0.10/16", groups = "controlplane,proxmox" }
+    "talos-vps-worker-0" = { ip = "10.42.0.11/16", groups = "lighthouse,worker,vps" }
+    "talos-vps-worker-1" = { ip = "10.42.0.12/16", groups = "lighthouse,worker,vps" }
+    "wyrm2"              = { ip = "10.42.0.20/16", groups = "worker,proxmox,gpu" }
+    "rugged"             = { ip = "10.42.0.30/16", groups = "worker,roaming" }
+    "k8s-worker-test"    = { ip = "10.42.0.99/16", groups = "worker,test" }
+    "atlas"              = { ip = "10.42.0.5/16", groups = "hypervisor,proxmox" }
+    "activitywatch"      = { ip = "10.42.0.40/16", groups = "service" }
   }
 }
 

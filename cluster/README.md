@@ -24,7 +24,7 @@ See <docs/bootstrap.md> for full setup.
 - Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4)
   - 10.2.0.2: Atlas (Proxmox host) — **only reachable from Proxmox VLAN**
   - 10.2.1.x: Control plane (Proxmox), 10.2.2.x: Workers (Proxmox)
-- Nodes: 2x Hetzner CPX31 (VPS, public IPs) + talos-pve-cp-0 (10.2.1.1) + wyrm2 (NixOS GPU worker, 2x RTX 5090)
+- Nodes: 2x Hetzner CPX31 CP + 2x Hetzner CPX31 worker (VPS, public IPs) + talos-pve-cp-0 (10.2.1.1) + wyrm2 (NixOS GPU worker, 2x RTX 5090)
 - Domain: `*.allegedly.works` (PowerDNS in-cluster, DNS-01 challenges, dual LE issuers)
 - HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
 - Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on VPS nodes)
@@ -52,12 +52,13 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 
 ## Storage
 
-| Provisioner          | Location | Default | Notes                                 |
-| -------------------- | -------- | ------- | ------------------------------------- |
-| `longhorn`           | Any node | Yes     | Default; replicated across nodes      |
-| `proxmox-csi-retain` | Proxmox  | No      | Storage-heavy: Gitea, Loki, Nix       |
-| `hcloud-volumes`     | Hetzner  | No      | (none active)                         |
-| `local-path`         | Any node | No      | CNPG: Authentik, PowerDNS; Vault Raft |
+| Provisioner          | Location | Default | Notes                                    |
+| -------------------- | -------- | ------- | ---------------------------------------- |
+| `longhorn`           | Hetzner  | No      | Legacy SC, migrate to `hetzner-longhorn` |
+| `hetzner-longhorn`   | Hetzner  | No      | Replicated across Hetzner VPS nodes      |
+| `proxmox-csi-retain` | Proxmox  | No      | Storage-heavy: Gitea, Loki, Nix          |
+| `hcloud-volumes`     | Hetzner  | No      | (none active)                            |
+| `local-path`         | Any node | No      | CNPG: Authentik, PowerDNS; Vault Raft    |
 
 Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) — needs VLAN access to API.
 

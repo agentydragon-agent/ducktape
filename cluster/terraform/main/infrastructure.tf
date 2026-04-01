@@ -14,11 +14,17 @@ locals {
   # Cluster configuration
   cluster_endpoint = "https://localhost:7445" # KubePrism - avoids circular dependency
 
-  # Node topology - VPS nodes (controlplane + schedulable)
+  # Node topology - VPS nodes
   vps_nodes = {
-    vps0 = { name = "talos-vps-cp-0", server_type = "cpx31" }
-    vps1 = { name = "talos-vps-cp-1", server_type = "cpx31" }
+    vps0        = { name = "talos-vps-cp-0", server_type = "cpx31", role = "controlplane" }
+    vps1        = { name = "talos-vps-cp-1", server_type = "cpx31", role = "controlplane" }
+    vps_worker0 = { name = "talos-vps-worker-0", server_type = "cpx31", role = "worker" }
+    vps_worker1 = { name = "talos-vps-worker-1", server_type = "cpx31", role = "worker" }
   }
+
+  # Derived: split by role for machine config generation
+  vps_cp_nodes     = { for k, v in local.vps_nodes : k => v if v.role == "controlplane" }
+  vps_worker_nodes = { for k, v in local.vps_nodes : k => v if v.role == "worker" }
 
   # Node topology - Proxmox nodes
   # Using VM IDs 10000+ to avoid conflicts with existing cluster (1500-2002)
@@ -35,9 +41,9 @@ locals {
   # Total expected node count (for health checks)
   expected_node_count = length(local.vps_nodes) + length(local.proxmox_nodes)
 
-  # All controlplane endpoints (for talosconfig) - VPS IPs + Proxmox controlplane IPs
+  # All controlplane endpoints (for talosconfig) - VPS CP IPs + Proxmox controlplane IPs
   all_controlplane_ips = concat(
-    [for k, v in hcloud_server.vps : v.ipv4_address],
+    [for k, v in hcloud_server.vps : v.ipv4_address if local.vps_nodes[k].role == "controlplane"],
     [for k, v in local.proxmox_nodes : v.ip if v.type == "controlplane"]
   )
 

@@ -28,20 +28,19 @@ placement to prevent this.
 
 ### VPS Sizing
 
-**Decision**: 2x CCX13 CP + 2x CCX13 worker (all dedicated, uniform fleet).
+**Decision (updated)**: Keep 2x CPX31 CPs + add 2x CPX31 workers.
+CPX31 is more cost-effective than CCX13 ($24.99 vs $19.99 for fewer
+cores). CP migration to dedicated cores deferred.
 
-| Role        | Type  | Cores       | RAM   | Disk   | EUR/mo    |
-| ----------- | ----- | ----------- | ----- | ------ | --------- |
-| CP (x2)     | CCX13 | 2 dedicated | 8 GB  | 80 GB  | 13.59     |
-| Worker (x2) | CCX13 | 2 dedicated | 8 GB  | 80 GB  | 13.59     |
-| **Total**   |       | 8 dedicated | 32 GB | 320 GB | **54.36** |
+| Role        | Type  | Cores    | RAM  | Disk   | USD/mo    |
+| ----------- | ----- | -------- | ---- | ------ | --------- |
+| CP (x2)     | CPX31 | 4 shared | 8 GB | 160 GB | 24.99     |
+| Worker (x2) | CPX31 | 4 shared | 8 GB | 160 GB | 24.99     |
+| **Total**   |       | 16       | 32GB | 640 GB | **99.96** |
 
-vs current 2x CPX31 at EUR 33.18 = **+64% (+EUR 21.18/mo)**.
-
-Benefits: dedicated cores protect etcd from starvation. Uniform fleet
-simplifies operations. 2 workers provide Authentik HA (anti-affinity)
-and graceful failover. 16 GB total worker RAM is comfortable for all
-VPS workloads.
+Benefits: 2 workers provide workload capacity, Authentik HA (anti-affinity),
+and graceful failover. Workers are also Nebula lighthouses + relays for
+mesh redundancy.
 
 Note: existing CPX31 nodes are grandfathered — CPX31 is no longer
 available at HIL for new provisioning.
@@ -302,18 +301,24 @@ Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
 
 ### Phase 1: Foundation (no workload disruption)
 
-1. Remove default StorageClass annotation from `longhorn`
-2. Create `local-path-hetzner` and `local-path-proxmox` StorageClasses
-3. Update `cnpg-conventions.md` for region-explicit storage classes
-4. Update existing CNPG clusters to use `local-path-{region}`
+1. ~~Remove default StorageClass annotation from `longhorn`~~ — deferred; bare
+   `longhorn` SC still in use by monitoring/vault. TODO: migrate each to
+   `hetzner-longhorn` or `local-path`, then disable default SC creation.
+2. ~~Restrict Longhorn to Hetzner only~~ — **done**. Removed `proxmox-longhorn`
+   SC, Kyverno proxmox rule, NixOS PATH policy. Longhorn manager/driver
+   pinned to `topology.kubernetes.io/region: hetzner`.
+3. Create `local-path-hetzner` and `local-path-proxmox` StorageClasses
+4. Update `cnpg-conventions.md` for region-explicit storage classes
+5. Update existing CNPG clusters to use `local-path-{region}`
 
 ### Phase 2: VPS Node Restructure
 
-5. Provision 2x CCX13 VPS workers in Hetzner (Terraform)
-6. Provision 2x CCX13 VPS CPs in Hetzner (Terraform)
-7. Join new workers + CPs, rolling etcd membership
-8. Migrate workloads off old CPX31 CPs (drain, cordon)
-9. Remove old CPX31 CPs from etcd, tear down
+6. ~~Provision 2x CPX31 VPS workers in Hetzner (Terraform)~~ — **done**.
+   Workers are Nebula lighthouses + relays. Nebula IPs: 10.42.0.11, 10.42.0.12.
+7. Provision dedicated VPS CPs in Hetzner (Terraform)
+8. Join new CPs, rolling etcd membership
+9. Migrate workloads off old CPX31 CPs (drain, cordon)
+10. Remove old CPX31 CPs from etcd, tear down
 
 ### Phase 3: Workload Placement
 

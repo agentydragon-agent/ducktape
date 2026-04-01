@@ -4,23 +4,6 @@ metadata:
   name: longhorn-disk-config
 spec:
   rules:
-    - name: proxmox-longhorn-disk
-      match:
-        any:
-          - resources:
-              kinds:
-                - Node
-              selector:
-                matchLabels:
-                  topology.kubernetes.io/region: proxmox
-      mutate:
-        patchStrategicMerge:
-          metadata:
-            annotations:
-              node.longhorn.io/default-disks-config: >-
-                [{"path":"/var/mnt/longhorn","allowScheduling":true,"tags":["proxmox-ssd"]}]
-              node.longhorn.io/default-node-tags: >-
-                ["proxmox"]
     - name: hetzner-longhorn-disk
       match:
         any:

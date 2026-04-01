@@ -1,5 +1,5 @@
 # Hetzner VPS Nodes
-# 2x CPX31 controlplane+worker nodes in Hillsboro, OR
+# 2x CPX31 controlplane nodes + 2x CPX31 worker nodes in Hillsboro, OR
 #
 # Talos is pre-installed on a Hetzner snapshot (built by Packer via rescue+dd).
 # Servers boot directly from the snapshot — single Talos boot, single identity.
@@ -86,11 +86,11 @@ resource "hcloud_server" "vps" {
   location    = var.hetzner_location
   image       = data.hcloud_image.talos.id
   ssh_keys    = [hcloud_ssh_key.talos.id]
-  user_data   = data.talos_machine_configuration.vps[each.key].machine_configuration
+  user_data   = local.vps_user_data[each.key]
 
   labels = {
     cluster = var.cluster_name
-    role    = "controlplane"
+    role    = each.value.role
     node    = each.key
   }
 
@@ -140,10 +140,12 @@ locals {
   })
 }
 
+# --- Controlplane machine configs ---
+
 # Base config for hcloud_server.user_data — no nebula patches (would create a
 # dependency cycle: hcloud_server.user_data → nebula_patch → hcloud_server.ipv4_address).
 data "talos_machine_configuration" "vps" {
-  for_each = local.vps_nodes
+  for_each = local.vps_cp_nodes
 
   cluster_name       = var.cluster_name
   cluster_endpoint   = local.cluster_endpoint
@@ -160,7 +162,7 @@ data "talos_machine_configuration" "vps" {
 # Full config with nebula + hostname — applied via Talos API after servers exist.
 # Separate data source breaks the dependency cycle (nebula patches reference server IPs).
 data "talos_machine_configuration" "vps_nebula" {
-  for_each = local.vps_nodes
+  for_each = local.vps_cp_nodes
 
   cluster_name       = var.cluster_name
   cluster_endpoint   = local.cluster_endpoint
@@ -188,6 +190,62 @@ data "talos_machine_configuration" "vps_nebula" {
   )
 }
 
+# --- Worker machine configs ---
+
+data "talos_machine_configuration" "vps_worker" {
+  for_each = local.vps_worker_nodes
+
+  cluster_name       = var.cluster_name
+  cluster_endpoint   = local.cluster_endpoint
+  machine_secrets    = local.machine_secrets
+  machine_type       = "worker"
+  talos_version      = var.talos_version
+  kubernetes_version = var.kubernetes_version
+  examples           = false
+  docs               = false
+
+  config_patches = [local.vps_config_patch]
+}
+
+data "talos_machine_configuration" "vps_worker_nebula" {
+  for_each = local.vps_worker_nodes
+
+  cluster_name       = var.cluster_name
+  cluster_endpoint   = local.cluster_endpoint
+  machine_secrets    = local.machine_secrets
+  machine_type       = "worker"
+  talos_version      = var.talos_version
+  kubernetes_version = var.kubernetes_version
+  examples           = false
+  docs               = false
+
+  config_patches = concat(
+    [
+      local.vps_config_patch,
+      yamlencode({
+        apiVersion = "v1alpha1"
+        kind       = "HostnameConfig"
+        auto       = "off"
+        hostname   = each.value.name
+      }),
+    ],
+    local.nebula_machine_patches[each.key],
+  )
+}
+
+# --- Merged config maps for role-agnostic server/apply resources ---
+
+locals {
+  vps_user_data = merge(
+    { for k in keys(local.vps_cp_nodes) : k => data.talos_machine_configuration.vps[k].machine_configuration },
+    { for k in keys(local.vps_worker_nodes) : k => data.talos_machine_configuration.vps_worker[k].machine_configuration },
+  )
+  vps_machine_configs = merge(
+    { for k in keys(local.vps_cp_nodes) : k => data.talos_machine_configuration.vps_nebula[k].machine_configuration },
+    { for k in keys(local.vps_worker_nodes) : k => data.talos_machine_configuration.vps_worker_nebula[k].machine_configuration },
+  )
+}
+
 # ============================================================================
 # MACHINE CONFIGURATION APPLY
 # ============================================================================
@@ -196,7 +254,7 @@ resource "talos_machine_configuration_apply" "vps" {
   for_each = local.vps_nodes
 
   client_configuration        = local.client_configuration
-  machine_configuration_input = data.talos_machine_configuration.vps_nebula[each.key].machine_configuration
+  machine_configuration_input = local.vps_machine_configs[each.key]
   node                        = hcloud_server.vps[each.key].ipv4_address
 
   depends_on = [hcloud_server.vps]

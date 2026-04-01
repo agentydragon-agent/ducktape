@@ -12,9 +12,11 @@ locals {
 
   # Maps TF node keys → persistent-auth node names for cert lookup
   nebula_node_names = {
-    vps0    = "talos-vps-cp-0"
-    vps1    = "talos-vps-cp-1"
-    pve_cp0 = "talos-pve-cp-0"
+    vps0        = "talos-vps-cp-0"
+    vps1        = "talos-vps-cp-1"
+    pve_cp0     = "talos-pve-cp-0"
+    vps_worker0 = "talos-vps-worker-0"
+    vps_worker1 = "talos-vps-worker-1"
   }
 
   nebula_certs = {
@@ -27,8 +29,10 @@ locals {
 
   # VPS public IPs for the static host map — lighthouses must be reachable by IP
   nebula_static_host_map = {
-    "10.42.0.1" = ["${hcloud_server.vps["vps0"].ipv4_address}:4242"]
-    "10.42.0.2" = ["${hcloud_server.vps["vps1"].ipv4_address}:4242"]
+    "10.42.0.1"  = ["${hcloud_server.vps["vps0"].ipv4_address}:4242"]
+    "10.42.0.2"  = ["${hcloud_server.vps["vps1"].ipv4_address}:4242"]
+    "10.42.0.11" = ["${hcloud_server.vps["vps_worker0"].ipv4_address}:4242"]
+    "10.42.0.12" = ["${hcloud_server.vps["vps_worker1"].ipv4_address}:4242"]
   }
 
   # PKI paths — must match mountPath values in extensionServiceConfigs below
@@ -77,6 +81,25 @@ locals {
         serve_dns     = true
         interval      = 10
         dns           = { host = "10.42.0.2", port = 53 }
+      }
+      relay = { am_relay = true }
+    })
+    # VPS workers: lighthouses + relays (public IPs)
+    vps_worker0 = merge(local.nebula_common, {
+      lighthouse = {
+        am_lighthouse = true
+        serve_dns     = true
+        interval      = 10
+        dns           = { host = "10.42.0.11", port = 53 }
+      }
+      relay = { am_relay = true }
+    })
+    vps_worker1 = merge(local.nebula_common, {
+      lighthouse = {
+        am_lighthouse = true
+        serve_dns     = true
+        interval      = 10
+        dns           = { host = "10.42.0.12", port = 53 }
       }
       relay = { am_relay = true }
     })

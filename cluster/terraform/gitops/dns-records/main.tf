@@ -27,13 +27,15 @@ data "kubernetes_config_map" "cluster_info" {
 }
 
 locals {
-  # Parse JSON structure: {"vps0": {"ip": "...", "name": "..."}, "vps1": {...}}
+  # CP nodes — for NS records, API endpoint, nameserver registration
+  vps_cp_nodes = jsondecode(data.kubernetes_config_map.cluster_info.data["vps_cp_nodes"])
+  # All VPS nodes — for Nebula lighthouse DNS
   vps_nodes = jsondecode(data.kubernetes_config_map.cluster_info.data["vps_nodes"])
   domain    = "allegedly.works"
 
-  # Map VPS nodes to nameserver numbers: vps0 -> ns1, vps1 -> ns2, etc.
+  # Map CP nodes to nameserver numbers: vps0 -> ns1, vps1 -> ns2, etc.
   ns_records = {
-    for k, v in local.vps_nodes : k => {
+    for k, v in local.vps_cp_nodes : k => {
       ns_name = "ns${tonumber(substr(k, 3, -1)) + 1}" # vps0 -> ns1, vps1 -> ns2
       ip      = v.ip
     }
@@ -78,25 +80,25 @@ resource "powerdns_record" "ns" {
   records = [each.value.ip]
 }
 
-# Nebula lighthouse DNS records (downstream nodes use these instead of hardcoded IPs)
-# Same pattern as ns1/ns2: per-VPS A records from cluster-info ConfigMap.
+# Nebula lighthouse DNS records — all VPS nodes (CPs + workers) are lighthouses.
+# Uses node names: talos-vps-cp-0.nebula.allegedly.works, talos-vps-worker-0.nebula.allegedly.works
 resource "powerdns_record" "nebula_lighthouse" {
-  for_each = local.ns_records
+  for_each = local.vps_nodes
 
   zone    = "${local.domain}."
-  name    = "lh${tonumber(substr(each.key, 3, -1)) + 1}.nebula.${local.domain}."
+  name    = "${each.value.name}.nebula.${local.domain}."
   type    = "A"
   ttl     = 3600
   records = [each.value.ip]
 }
 
-# Kubernetes API endpoint (round-robin to all VPS control-plane nodes)
+# Kubernetes API endpoint (round-robin to CP nodes only)
 resource "powerdns_record" "api" {
   zone    = "${local.domain}."
   name    = "api.${local.domain}."
   type    = "A"
   ttl     = 300
-  records = [for k, v in local.vps_nodes : v.ip]
+  records = [for k, v in local.vps_cp_nodes : v.ip]
 }
 
 # Import: domain registration persists across cluster lifecycles.
