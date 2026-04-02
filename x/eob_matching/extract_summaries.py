@@ -25,7 +25,7 @@ CACHE_DIR = Path.home() / "downloads" / "eob-cache"
 OUTPUT_PATH = Path.home() / "code" / "ducktape" / "x" / "eob_matching" / "output" / "eob_summaries.json"
 
 OLLAMA_URL = "http://localhost:11434"
-MODEL = "qwen2.5vl:7b"
+MODEL = "qwen2.5vl:32b"
 
 SUMMARY_PROMPT = (
     "This is page 1 of an Anthem Blue Cross EOB (Explanation of Benefits).\n"
