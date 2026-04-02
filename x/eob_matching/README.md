@@ -1,6 +1,11 @@
 # EOB Payment Matching
 
-Match 32 Anthem bank deposits to their constituent medical/pharmacy claims and providers.
+Match Anthem bank deposits to their constituent medical/pharmacy claims and providers.
+
+## Status
+
+Actual matching algorithm is sketched out but mid-WIP. Answer to question that needed answering was
+found just with data extraction from PDFs without needing full matching.
 
 ## Layout
 
@@ -41,15 +46,3 @@ x/eob_matching/
 | EOB PDFs         | `~/downloads/anthem-eobs/*.pdf` — 83 unique (deduped from 98)                                           |
 | Ollama models    | `~/downloads/ollama-models/` — qwen2.5vl:7b                                                             |
 | OCR cache        | `~/downloads/eob-cache/` — cached per-PDF extraction results                                            |
-
-## Current results
-
-- **20 of 32 payments matched** (62.5%, $83k) by DP subset-sum on Plan Paid amounts
-- **12 unmatched** ($285k) — mostly large Numa Psychiatry payments and recurring pharmacy batches
-- Vision model extraction running on all 83 PDFs (ollama-cuda, ~2.5s/page on RTX 5090)
-
-## Next steps
-
-1. Use vision model summaries to improve matching (cross-validate amounts)
-2. Fix remaining 12 unmatched payments (raise DP cap, multi-pass strategy)
-3. Extract claims detail pages for full per-service-line data
