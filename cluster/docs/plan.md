@@ -35,6 +35,11 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       `prevent_destroy`). Good candidates for early migration: `buildbuddy-api-key`,
       Nebula certs. SealedSecrets would remain as the fallback for anything not yet migrated.
 
+- [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
+      any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
+      flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
+      wyrm2 VM config purely via NixOS/Proxmox API (no terraform). See postmortem
+      `cluster/docs/lessons_learned/2026-04-01-cluster-nuke-postmortem.md`.
 - [ ] Move bootstrap-critical components to Talos inline manifests: Cilium, Talos CCM,
       and Flux should be deployed via `cluster.inlineManifests` in the Talos machine config
       instead of terraform `null_resource` (Cilium) and Flux provider. This eliminates the
