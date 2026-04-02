@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authelia
+  namespace: authelia
+  labels:
+    app.kubernetes.io/name: authelia
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authelia
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: authelia
+      annotations:
+        configmap.reloader.stakater.com/reload: authelia-config
+        secret.reloader.stakater.com/reload: authelia-secrets
+    spec:
+      enableServiceLinks: false
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: authelia
+          image: ghcr.io/authelia/authelia:4.39.16
+          ports:
+            - name: http
+              containerPort: 9091
+              protocol: TCP
+          env:
+            - name: AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE
+              value: /secrets/oidc-hmac-secret
+            - name: AUTHELIA_SESSION_SECRET_FILE
+              value: /secrets/session-secret
+            - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
+              value: /secrets/storage-encryption-key
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: secrets
+              mountPath: /secrets
+              readOnly: true
+            - name: jwks
+              mountPath: /jwks
+              readOnly: true
+            - name: data
+              mountPath: /data
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 50Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: authelia-config
+        - name: secrets
+          secret:
+            secretName: authelia-secrets
+        - name: jwks
+          secret:
+            secretName: authelia-jwks
+        - name: data
+          emptyDir: {}

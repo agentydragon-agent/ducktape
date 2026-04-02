@@ -276,6 +276,10 @@ Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
 - Missing `storageClassName` fixed (airlock, gitea)
 - SOPS age keypair infrastructure in tofu (`persistent-auth.tf`)
 - `.sops.yaml` creation rule for `cluster/k8s/` paths
+- Authelia manifests scaffolded (`k8s/authelia/`): Deployment, Service,
+  HTTPRoute (`authelia.allegedly.works`), ConfigMap with OIDC provider
+  config and local user backend. TODO markers for SOPS secrets, JWKS
+  key, user password hash, and OIDC client definitions.
 
 ### Phase 1: Foundation (remaining)
 
@@ -285,23 +289,25 @@ Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
    hand-edited config that references it. No automation connects them — same
    pattern as sealed-secrets-cert.pem, which is tofu-managed but manually
    referenced by `seal-secret.sh`.)
-2. Update `cnpg-conventions.md` for region-explicit storage classes
-3. Migrate CNPG clusters + PVCs from generic `local-path` to `local-path-{region}`
-4. Migrate monitoring/vault off bare `longhorn` SC
+2. Generate Authelia SOPS secrets (`authelia-secrets`, `authelia-jwks`),
+   user password hash, uncomment SOPS resources in kustomization + Flux
+3. Update `cnpg-conventions.md` for region-explicit storage classes
+4. Migrate CNPG clusters + PVCs from generic `local-path` to `local-path-{region}`
+5. Migrate monitoring/vault off bare `longhorn` SC
 
 ### Phase 2: CP Isolation (remaining)
 
-5. Deploy PriorityClasses (`system-critical`, `important`, `batch`)
-6. Pin Proxmox workloads with hard `nodeSelector`
-7. Pin VPS-critical workloads
-8. Move SSO + Flux controllers to VPS workers
-9. Verify VPS CPs are near-pure
+6. Deploy PriorityClasses (`system-critical`, `important`, `batch`)
+7. Pin Proxmox workloads with hard `nodeSelector`
+8. Pin VPS-critical workloads
+9. Move SSO + Flux controllers to VPS workers
+10. Verify VPS CPs are near-pure
 
 ### Phase 3: SSO Migration (Authentik → Authelia)
 
 See <sso.md> for detailed migration strategy.
 
-11. Deploy Authelia alongside Authentik (SOPS age infra already in place)
+11. Add first OIDC client to Authelia config (Headlamp — low risk)
 12. Migrate apps one by one (OIDC → proxy-mode → service accounts)
 13. Suspend Authentik, Vault, ESO
 14. After validation: delete Authentik, Vault, ESO code

@@ -100,6 +100,10 @@ resources:
   - vault/ingress/flux-kustomization.yaml
   - vault/oidc-auth/flux-kustomization.yaml
 
+  # --- authelia ---
+  - authelia/namespace/flux-kustomization.yaml
+  - authelia/app/flux-kustomization.yaml
+
   # --- authentik ---
   - authentik/namespace/flux-kustomization.yaml
   - authentik/db/flux-kustomization.yaml
