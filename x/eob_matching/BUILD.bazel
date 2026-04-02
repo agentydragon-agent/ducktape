@@ -48,8 +48,8 @@ py_library(
 )
 
 py_library(
-    name = "extract_summaries_lib",
-    srcs = ["extract_summaries.py"],
+    name = "extract_pdfs_lib",
+    srcs = ["extract_pdfs.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":models",
@@ -84,10 +84,10 @@ py_binary(
 )
 
 py_binary(
-    name = "extract_summaries",
-    main_module = "x.eob_matching.extract_summaries",
+    name = "extract_pdfs",
+    main_module = "x.eob_matching.extract_pdfs",
     visibility = ["//visibility:public"],
-    deps = [":extract_summaries_lib"],
+    deps = [":extract_pdfs_lib"],
 )
 
 py_library(
@@ -95,7 +95,7 @@ py_library(
     srcs = ["eval_extraction.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":extract_summaries_lib",
+        ":extract_pdfs_lib",
         ":models",
         ":pdf_utils",
         "@pypi//pydantic",

@@ -1,15 +1,19 @@
-"""Extract summary info from EOB PDFs using Qwen2.5-VL via ollama.
+"""Extract structured data from EOB PDFs using Qwen2.5-VL via ollama.
 
-Renders page 1 of each unique PDF, sends to vision model with structured
-JSON schema enforcement. Caches results by PDF content hash.
+For each PDF, extracts:
+- Page 1: financial summary (statement date, amounts)
+- Pages 3+: claims detail (claim numbers, providers, service lines)
+
+Caches complete results per PDF content hash.
 
 Requires:
-- ollama running with qwen2.5vl:7b loaded (with CUDA)
-- poppler-utils (pdftoppm) on PATH
+- ollama running with qwen2.5vl model (with CUDA)
+- poppler-utils (pdftoppm, pdfinfo) on PATH
 """
 
 import base64
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -17,12 +21,12 @@ from pathlib import Path
 import httpx
 from pydantic import BaseModel
 
-from x.eob_matching.models import EOBSummaryExtraction
+from x.eob_matching.models import EOBClaimsPageExtraction, EOBSummaryExtraction, PDFExtraction
 from x.eob_matching.pdf_utils import file_hash, render_pdf_page
 
 EOB_DIR = Path.home() / "downloads" / "anthem-eobs"
 CACHE_DIR = Path.home() / "downloads" / "eob-cache"
-OUTPUT_PATH = Path.home() / "code" / "ducktape" / "x" / "eob_matching" / "output" / "eob_summaries.json"
+OUTPUT_PATH = Path.home() / "code" / "ducktape" / "x" / "eob_matching" / "output" / "eob_extractions.json"
 
 OLLAMA_URL = "http://localhost:11434"
 MODEL = "qwen2.5vl:32b"
@@ -74,7 +78,6 @@ def query_ollama[T: BaseModel](image_path: Path, prompt: str, response_model: ty
     """
     b64 = base64.b64encode(image_path.read_bytes()).decode()
     schema = response_model.model_json_schema()
-
     full_prompt = f"{prompt}\n\nOutput JSON matching this schema:\n{json.dumps(schema, indent=2)}"
 
     resp = httpx.post(
@@ -86,25 +89,50 @@ def query_ollama[T: BaseModel](image_path: Path, prompt: str, response_model: ty
     return response_model.model_validate_json(resp.json()["response"])
 
 
-def process_pdf(pdf_path: Path) -> tuple[str, EOBSummaryExtraction | None, str]:
-    """Process one PDF. Returns (pdf_name, extraction, status)."""
-    pdf_name = pdf_path.name
+def _get_page_count(pdf_path: Path) -> int:
+    result = subprocess.run(["pdfinfo", str(pdf_path)], capture_output=True, text=True, check=True)
+    for line in result.stdout.split("\n"):
+        if "Pages:" in line:
+            return int(line.split(":")[1].strip())
+    raise RuntimeError(f"Could not determine page count for {pdf_path}")
+
+
+def extract_pdf(pdf_path: Path) -> PDFExtraction:
+    """Extract summary + all claims from one PDF."""
+    pages = _get_page_count(pdf_path)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+
+        # Page 1: summary
+        img = render_pdf_page(pdf_path, page=1, tmpdir=tmp)
+        summary = query_ollama(img, SUMMARY_PROMPT, EOBSummaryExtraction)
+
+        # Pages 3+: claims detail (page 2 is year-to-date boilerplate)
+        all_claims = []
+        for page in range(3, pages + 1):
+            img = render_pdf_page(pdf_path, page=page, tmpdir=tmp)
+            page_extraction = query_ollama(img, CLAIMS_PROMPT, EOBClaimsPageExtraction)
+            all_claims.extend(page_extraction.claims)
+
+    return PDFExtraction(pdf=pdf_path.name, summary=summary, claims=all_claims)
+
+
+def process_pdf(pdf_path: Path) -> tuple[PDFExtraction | None, str]:
+    """Extract with caching. Returns (extraction, status)."""
     h = file_hash(pdf_path)
     cache_path = CACHE_DIR / f"{h}.json"
 
     if cache_path.exists():
-        data = json.loads(cache_path.read_text())
-        return pdf_name, EOBSummaryExtraction.model_validate(data), "cached"
+        return PDFExtraction.model_validate_json(cache_path.read_text()), "cached"
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        img = render_pdf_page(pdf_path, page=1, tmpdir=Path(tmpdir))
-        try:
-            extraction = query_ollama(img, SUMMARY_PROMPT, EOBSummaryExtraction)
-        except Exception as e:
-            return pdf_name, None, f"error: {e}"
+    try:
+        extraction = extract_pdf(pdf_path)
+    except Exception as e:
+        return None, f"error: {e}"
 
     cache_path.write_text(extraction.model_dump_json(indent=2))
-    return pdf_name, extraction, "extracted"
+    return extraction, "extracted"
 
 
 def main() -> None:
@@ -123,11 +151,11 @@ def main() -> None:
             unique.append(p)
     print(f"Unique: {len(unique)}", file=sys.stderr)
 
-    results: list[dict] = []
+    results: list[PDFExtraction] = []
     cached = extracted = errors = 0
 
     for i, pdf_path in enumerate(unique):
-        name, extraction, status = process_pdf(pdf_path)
+        extraction, status = process_pdf(pdf_path)
         if status == "cached":
             cached += 1
         elif extraction is not None:
@@ -136,20 +164,19 @@ def main() -> None:
             errors += 1
 
         if extraction is not None:
-            result_dict = extraction.model_dump()
-            result_dict["pdf"] = name
-            results.append(result_dict)
+            results.append(extraction)
+            n_claims = len(extraction.claims)
             print(
-                f"[{i + 1}/{len(unique)}] {name[:35]:>35}  "
-                f"paid={extraction.anthem_blue_cross_paid:>12,.2f}  "
-                f"you_pay={extraction.what_you_pay:>10,.2f}  [{status}]",
+                f"[{i + 1}/{len(unique)}] {extraction.pdf[:35]:>35}  "
+                f"paid={extraction.summary.anthem_blue_cross_paid:>12,.2f}  "
+                f"claims={n_claims}  [{status}]",
                 file=sys.stderr,
             )
         else:
-            print(f"[{i + 1}/{len(unique)}] {name[:35]:>35}  FAILED: {status}", file=sys.stderr)
+            print(f"[{i + 1}/{len(unique)}] {pdf_path.name[:35]:>35}  FAILED: {status}", file=sys.stderr)
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT_PATH.write_text(json.dumps(results, indent=2))
+    OUTPUT_PATH.write_text(json.dumps([r.model_dump(mode="json") for r in results], indent=2))
     print(f"\nDone: {cached} cached, {extracted} extracted, {errors} errors", file=sys.stderr)
     print(f"Wrote {len(results)} to {OUTPUT_PATH}", file=sys.stderr)
 

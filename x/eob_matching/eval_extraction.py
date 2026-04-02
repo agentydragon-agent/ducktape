@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, ValidationError
 
-from x.eob_matching.extract_summaries import CLAIMS_PROMPT, SUMMARY_PROMPT, query_ollama
+from x.eob_matching.extract_pdfs import CLAIMS_PROMPT, SUMMARY_PROMPT, query_ollama
 from x.eob_matching.models import EOBClaimsPageExtraction, EOBSummaryExtraction, ExtractedDate
 from x.eob_matching.pdf_utils import render_pdf_page
 

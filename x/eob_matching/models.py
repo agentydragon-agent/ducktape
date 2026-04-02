@@ -180,6 +180,14 @@ class EOBClaimsPageExtraction(BaseModel):
     claims: list[EOBClaimExtraction] = Field(description="All claim blocks on this page (usually 1-2 per page)")
 
 
+class PDFExtraction(BaseModel):
+    """Complete extraction of one EOB PDF: summary + all claims from detail pages."""
+
+    pdf: str  # filename
+    summary: EOBSummaryExtraction
+    claims: list[EOBClaimExtraction] = []
+
+
 CLAIMS_CSV_DATE_FORMAT = "%b %d, %Y"  # e.g. "Apr 1, 2025"
 
 
