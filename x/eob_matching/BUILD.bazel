@@ -39,13 +39,22 @@ py_library(
 )
 
 py_library(
+    name = "pdf_utils",
+    srcs = ["pdf_utils.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//more_itertools",
+    ],
+)
+
+py_library(
     name = "extract_summaries_lib",
     srcs = ["extract_summaries.py"],
     visibility = ["//:__subpackages__"],
     deps = [
         ":models",
+        ":pdf_utils",
         "@pypi//httpx",
-        "@pypi//more_itertools",
         "@pypi//pydantic",
     ],
 )
@@ -79,4 +88,23 @@ py_binary(
     main_module = "x.eob_matching.extract_summaries",
     visibility = ["//visibility:public"],
     deps = [":extract_summaries_lib"],
+)
+
+py_library(
+    name = "eval_extraction_lib",
+    srcs = ["eval_extraction.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":extract_summaries_lib",
+        ":models",
+        ":pdf_utils",
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "eval_extraction",
+    main_module = "x.eob_matching.eval_extraction",
+    visibility = ["//visibility:public"],
+    deps = [":eval_extraction_lib"],
 )

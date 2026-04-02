@@ -155,9 +155,8 @@ class EOBClaimLineExtraction(BaseModel):
         ge=0, description="Dollar amount from 'Your share of the cost (coinsurance)' column, 0 if none"
     )
     services_not_covered: float = Field(ge=0, description="Dollar amount from 'Services not covered' column, 0 if none")
-    your_total_cost: float = Field(
-        le=0, description="Negative dollar amount from 'Your total cost' column (shown in pink, e.g. -0.00)"
-    )
+    your_total_cost: float = Field(ge=0, description="Dollar amount from 'Your total cost' column (shown in pink)")
+    reason_code: str = Field(default="", description="Reason code column value, empty string if blank")
 
 
 class EOBClaimExtraction(BaseModel):

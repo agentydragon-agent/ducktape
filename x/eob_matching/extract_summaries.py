@@ -9,18 +9,16 @@ Requires:
 """
 
 import base64
-import hashlib
 import json
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 import httpx
-from more_itertools import one
 from pydantic import BaseModel
 
 from x.eob_matching.models import EOBSummaryExtraction
+from x.eob_matching.pdf_utils import file_hash, render_pdf_page
 
 EOB_DIR = Path.home() / "downloads" / "anthem-eobs"
 CACHE_DIR = Path.home() / "downloads" / "eob-cache"
@@ -37,32 +35,25 @@ CLAIMS_PROMPT = (
 )
 
 
-def file_hash(path: Path) -> str:
-    return hashlib.md5(path.read_bytes()).hexdigest()
-
-
-def render_page1(pdf_path: Path, tmpdir: Path) -> Path:
-    """Render page 1 of a PDF to PNG. Returns the single output path."""
-    prefix = tmpdir / "page"
-    subprocess.run(
-        ["pdftoppm", "-png", "-r", "150", "-f", "1", "-l", "1", str(pdf_path), str(prefix)],
-        check=True,
-        capture_output=True,
-    )
-    return one(tmpdir.glob("page-*.png"))
-
-
 def query_ollama[T: BaseModel](image_path: Path, prompt: str, response_model: type[T]) -> T:
-    """Send image to ollama vision model with structured JSON output."""
+    """Send image to ollama vision model with structured JSON output.
+
+    The JSON schema is both:
+    1. Passed to ollama's `format` param for grammar-based structural enforcement
+    2. Included in the prompt text so the model sees field names, descriptions, and constraints
+    """
     b64 = base64.b64encode(image_path.read_bytes()).decode()
+    schema = response_model.model_json_schema()
+
+    full_prompt = f"{prompt}\n\nOutput JSON matching this schema:\n{json.dumps(schema, indent=2)}"
 
     resp = httpx.post(
         f"{OLLAMA_URL}/api/generate",
         json={
             "model": MODEL,
-            "prompt": prompt,
+            "prompt": full_prompt,
             "images": [b64],
-            "format": response_model.model_json_schema(),
+            "format": schema,
             "stream": False,
         },
         timeout=120,
@@ -82,7 +73,7 @@ def process_pdf(pdf_path: Path) -> tuple[str, EOBSummaryExtraction | None, str]:
         return pdf_name, EOBSummaryExtraction.model_validate(data), "cached"
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        img = render_page1(pdf_path, Path(tmpdir))
+        img = render_pdf_page(pdf_path, page=1, tmpdir=Path(tmpdir))
         try:
             extraction = query_ollama(img, SUMMARY_PROMPT, EOBSummaryExtraction)
         except Exception as e:

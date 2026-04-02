@@ -114,7 +114,7 @@ def state_has_resources() -> bool:
     return len(resources) > 0
 
 
-def preflight(root: Path, *, excludes: list[str]) -> None:
+def preflight(root: Path) -> None:
     log.info("Preflight Validation")
 
     repo = pygit2.Repository(root)
@@ -129,7 +129,7 @@ def preflight(root: Path, *, excludes: list[str]) -> None:
     run(["pre-commit", "run", "--files", *files], cwd=root)
 
     log.info("Validating tofu configuration...")
-    tofu("validate", excludes=excludes)
+    tofu("validate", excludes=[])
 
 
 def deploy_persistent_auth(*, excludes: list[str]) -> None:
@@ -228,7 +228,7 @@ def main() -> None:
     if start_phase > 1:
         log.info("Starting from phase: %s", args.start_from)
 
-    preflight(root, excludes=excludes)
+    preflight(root)
 
     if start_phase <= 1:
         deploy_persistent_auth(excludes=excludes)
