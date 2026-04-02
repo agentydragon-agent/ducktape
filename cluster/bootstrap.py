@@ -80,6 +80,7 @@ INFRA_TARGETS = [
     "null_resource.wait_for_nodes_ready",
     "kubernetes_secret.hcloud_csi",
     "kubernetes_secret.sealed_secrets_key",
+    "kubernetes_secret.sops_age_cluster_secrets",
     "kubernetes_config_map.cluster_info",
     "random_string.key_suffix",
 ]

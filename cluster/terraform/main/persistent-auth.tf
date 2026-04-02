@@ -279,6 +279,76 @@ data "local_sensitive_file" "nebula_node_key" {
 }
 
 # ============================================================================
+# SOPS AGE KEYPAIR — cluster k8s secrets
+# ============================================================================
+# Scoped to cluster/ secrets. Additional age keys can be added for other trust
+# boundaries (ansible, props, etc.) with separate creation_rules in .sops.yaml.
+
+locals {
+  sops_cluster_secrets_key_dir = "${path.module}/sops-cluster-secrets-keys"
+}
+
+resource "null_resource" "sops_cluster_secrets_keygen" {
+  triggers = {
+    key_dir = local.sops_cluster_secrets_key_dir
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      mkdir -p ${local.sops_cluster_secrets_key_dir}
+      if [ ! -f ${local.sops_cluster_secrets_key_dir}/age.key ]; then
+        age-keygen 2>${local.sops_cluster_secrets_key_dir}/age.pub \
+          -o ${local.sops_cluster_secrets_key_dir}/age.key
+        echo "Generated new SOPS age keypair for cluster secrets"
+      else
+        echo "SOPS age keypair already exists, skipping"
+      fi
+    EOT
+  }
+}
+
+data "local_sensitive_file" "sops_cluster_secrets_key" {
+  filename   = "${local.sops_cluster_secrets_key_dir}/age.key"
+  depends_on = [null_resource.sops_cluster_secrets_keygen]
+}
+
+data "local_file" "sops_cluster_secrets_pub" {
+  filename   = "${local.sops_cluster_secrets_key_dir}/age.pub"
+  depends_on = [null_resource.sops_cluster_secrets_keygen]
+}
+
+# Public key committed to repo (safe — enables encrypting, not decrypting).
+resource "local_file" "sops_cluster_secrets_public_key" {
+  content  = data.local_file.sops_cluster_secrets_pub.content
+  filename = "${path.module}/../../sops-cluster-secrets-public-key.txt"
+}
+
+output "sops_cluster_secrets_public_key" {
+  value       = trimspace(data.local_file.sops_cluster_secrets_pub.content)
+  description = "Age public key for SOPS-encrypting cluster k8s secrets."
+}
+
+resource "kubernetes_secret" "sops_age_cluster_secrets" {
+  metadata {
+    name      = "sops-age-cluster-secrets"
+    namespace = "flux-system"
+  }
+
+  data = {
+    "age.agekey" = data.local_sensitive_file.sops_cluster_secrets_key.content
+  }
+
+  type = "Opaque"
+
+  depends_on = [
+    local_file.kubeconfig,
+    null_resource.wait_for_k8s_api,
+    null_resource.cilium_bootstrap,
+  ]
+}
+
+# ============================================================================
 # PROXMOX CSI SEALED SECRET
 # ============================================================================
 

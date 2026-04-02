@@ -14,23 +14,20 @@ placement to prevent this.
 
 | Node                  | Role        | Location                      | Specs                      |
 | --------------------- | ----------- | ----------------------------- | -------------------------- |
-| vps0 (talos-vps-cp-0) | CP + worker | Hetzner CPX31 (4 vCPU / 8 GB) | Hillsboro OR               |
-| vps1 (talos-vps-cp-1) | CP + worker | Hetzner CPX31 (4 vCPU / 8 GB) | Hillsboro OR               |
+| vps0 (talos-vps-cp-0) | CP (pure)   | Hetzner CPX31 (4 vCPU / 8 GB) | Hillsboro OR               |
+| vps1 (talos-vps-cp-1) | CP (pure)   | Hetzner CPX31 (4 vCPU / 8 GB) | Hillsboro OR               |
+| talos-vps-worker-0    | Worker      | Hetzner CPX31 (4 vCPU / 8 GB) | Nebula 10.42.0.11          |
+| talos-vps-worker-1    | Worker      | Hetzner CPX31 (4 vCPU / 8 GB) | Nebula 10.42.0.12          |
 | talos-pve-cp-0        | CP + worker | Proxmox (atlas)               | Private 10.2.1.1           |
 | wyrm2                 | Worker      | Proxmox (atlas), NixOS        | 2x RTX 5090, GPU workloads |
 
-## Proposed Node Changes
+VPS workers are also Nebula lighthouses + relays for mesh redundancy.
+All CPX31 nodes are grandfathered — CPX31 is no longer available at HIL.
 
-- **vps0, vps1**: Become **pure (or near-pure) control planes**. Only very
-  light services (PowerDNS, kube-api-proxy, gateway/ingress).
-- **New VPS worker(s)**: 2 Hetzner VPS workers for workloads that need
-  public IP / always-on.
+vps0/vps1 are pure CPs (rebuilt, no workloads). VPS workers handle
+workloads that need public IP / always-on.
 
 ### VPS Sizing
-
-**Decision (updated)**: Keep 2x CPX31 CPs + add 2x CPX31 workers.
-CPX31 is more cost-effective than CCX13 ($24.99 vs $19.99 for fewer
-cores). CP migration to dedicated cores deferred.
 
 | Role        | Type  | Cores    | RAM  | Disk   | USD/mo    |
 | ----------- | ----- | -------- | ---- | ------ | --------- |
@@ -38,68 +35,29 @@ cores). CP migration to dedicated cores deferred.
 | Worker (x2) | CPX31 | 4 shared | 8 GB | 160 GB | 24.99     |
 | **Total**   |       | 16       | 32GB | 640 GB | **99.96** |
 
-Benefits: 2 workers provide workload capacity, Authentik HA (anti-affinity),
-and graceful failover. Workers are also Nebula lighthouses + relays for
-mesh redundancy.
-
-Note: existing CPX31 nodes are grandfathered — CPX31 is no longer
-available at HIL for new provisioning.
-
-#### Current VPS CP Load (cordoned, 2026-04-01)
-
-Both nodes are cordoned (no new workloads scheduled). Actual usage:
+#### VPS CP Load (2026-04-01 snapshot)
 
 | Node | CPU actual | MEM actual    | MEM req | MEM lim |
 | ---- | ---------- | ------------- | ------- | ------- |
 | vps0 | 818m (20%) | 4586 Mi (64%) | 2070 Mi | 6309 Mi |
 | vps1 | 942m (23%) | 5169 Mi (72%) | 1998 Mi | 6842 Mi |
 
-**Memory is the bottleneck**, not CPU. Nodes use 4.5-5 GB actual RAM
-despite only ~2 GB in requests. The gap is etcd, kube-apiserver, and
+**Memory is the bottleneck**, not CPU. Gap is etcd, kube-apiserver, and
 Longhorn sidecars (many pods with no resource requests).
 
-### Hetzner Cloud Pricing
+### Hetzner HIL Availability (checked 2026-04-01)
 
-#### DC Selection
+CPX31/41/51 no longer available at HIL for new provisioning. Existing
+nodes are grandfathered. In-place resize via `hcloud` provider is
+possible (`keep_disk = true`, brief downtime per node).
 
-Only CPX (shared AMD) and CCX (dedicated AMD) are available in the US.
-CAX (ARM) and CX (cost-optimized x86) are EU-only. ASH (US East) has
-the same types as HIL — no reason to use it from California.
-
-| DC   | Location        | Ping from SF | Types available   | Traffic |
-| ---- | --------------- | ------------ | ----------------- | ------- |
-| HIL  | Hillsboro, OR   | ~10-20 ms    | CPX, CCX          | 1-5 TB  |
-| ASH  | Ashburn, VA     | ~60-75 ms    | CPX, CCX          | 1-5 TB  |
-| FSN1 | Falkenstein, DE | ~140-160 ms  | CPX, CCX, CX, CAX | 20 TB   |
-| NBG1 | Nuremberg, DE   | ~140-160 ms  | CPX, CCX, CX, CAX | 20 TB   |
-| HEL1 | Helsinki, FI    | ~170-190 ms  | CPX, CCX, CX, CAX | 20 TB   |
-| SIN  | Singapore       | ~170-200 ms  | CPX, CCX, CX      | 0.5 TB  |
-
-**Decision: Stay in HIL.**
-
-#### HIL Availability (checked 2026-04-01)
-
-CPX31/41/51 are **no longer available** at HIL for new provisioning.
-Gen2 types (CPX32/42) exist but are EU/Singapore only.
-
-| Server    | vCPU | RAM   | Disk   | Type            | EUR/mo | +IPv4 | Available |
-| --------- | ---- | ----- | ------ | --------------- | ------ | ----- | --------- |
-| CPX11     | 2    | 2 GB  | 40 GB  | Shared (AMD)    | 4.49   | 5.09  | Yes       |
-| CPX21     | 3    | 4 GB  | 80 GB  | Shared (AMD)    | 8.99   | 9.59  | Yes       |
-| CPX31     | 4    | 8 GB  | 160 GB | Shared (AMD)    | 15.99  | 16.59 | **No**    |
-| CPX41     | 8    | 16 GB | 240 GB | Shared (AMD)    | 29.99  | 30.59 | **No**    |
-| **CCX13** | 2    | 8 GB  | 80 GB  | Dedicated (AMD) | 12.99  | 13.59 | Yes       |
-| CCX23     | 4    | 16 GB | 160 GB | Dedicated (AMD) | 25.99  | 26.59 | Yes       |
-| CCX33     | 8    | 32 GB | 240 GB | Dedicated (AMD) | 49.99  | 50.59 | Yes       |
-
-### Server Type Change: In-Place Resize
-
-The `hcloud` Terraform provider supports changing `server_type` **without
-replacing the server**. Powers off, resizes, powers on. Same disk, same IPs.
-
-- **`keep_disk = true`**: Important for downgrade flexibility.
-- **Brief downtime** per node. Rolling upgrades to maintain etcd quorum.
-- Existing rolling upgrade plan: <2026-02-22-vps-cpx41-upgrade.md>
+| Server    | vCPU | RAM   | Type            | EUR/mo | Available |
+| --------- | ---- | ----- | --------------- | ------ | --------- |
+| CPX11     | 2    | 2 GB  | Shared (AMD)    | 4.49   | Yes       |
+| CPX21     | 3    | 4 GB  | Shared (AMD)    | 8.99   | Yes       |
+| CPX31     | 4    | 8 GB  | Shared (AMD)    | 15.99  | **No**    |
+| **CCX13** | 2    | 8 GB  | Dedicated (AMD) | 12.99  | Yes       |
+| CCX23     | 4    | 16 GB | Dedicated (AMD) | 25.99  | Yes       |
 
 ## Placement Decisions
 
@@ -270,94 +228,104 @@ Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
 | Langfuse  | Degraded Longhorn on wyrm2 | Keep suspended                                      |
 | Firecrawl | ?                          | Keep suspended                                      |
 
+## Decided
+
+- **Vault**: Drop (replaced by SOPS + age). See <sso.md>.
+- **SSO**: Authentik → Authelia. See <sso.md>.
+- **Prometheus**: Replace with VictoriaMetrics cluster.
+- **Longhorn**: Drop after migrating remaining PVCs. See <storage.md>.
+
 ## Remaining Decisions
 
 ### Tier 1: Blocking
 
-1. **Longhorn: keep or drop?** See <storage.md>.
-2. **Vault: keep or drop?** See <sso.md>.
-3. **SSO provider: Authentik or Authelia?** See <sso.md>.
-4. **Prometheus + Loki long-term placement.** See <storage.md>.
+1. **Prometheus + Loki long-term placement.** See <storage.md>.
 
 ### Tier 2: Should decide
 
-5. **Monitoring stack placement** (Grafana, Alloy, Tempo, AlertManager,
+2. **Monitoring stack placement** (Grafana, Alloy, Tempo, AlertManager,
    Gatus).
-6. **Harbor placement.** Effectively Proxmox-pinned via proxmox-csi.
-7. **tofu-state DB.** Currently VPS-HA CNPG. Stays on VPS workers?
-8. **Light services on CPs.** Candidates: PowerDNS, kube-api-proxy,
+3. **Harbor placement.** Effectively Proxmox-pinned via proxmox-csi.
+4. **tofu-state DB.** Currently VPS-HA CNPG. Stays on VPS workers?
+5. **Light services on CPs.** Candidates: PowerDNS, kube-api-proxy,
    Gateway/Ingress, Kyverno, CoreDNS, system DaemonSets.
-9. **Hcloud CSI.** Remove or use for VPS worker storage?
+6. **Hcloud CSI.** Remove or use for VPS worker storage?
 
 ### Tier 3: Low risk
 
-10. **Stateless core infra** — run anywhere, prefer workers.
-11. **Agent services** — Proxmox-preferred.
-12. **Misc** (Headlamp, Scanner, ActivityWatch, BuildBuddy executor).
-13. **Suspended services** — keep suspended for now.
-14. **CNPG backup strategy.** Standardize pg_dump CronJobs.
+7. **Stateless core infra** — run anywhere, prefer workers.
+8. **Agent services** — Proxmox-preferred.
+9. **Misc** (Headlamp, Scanner, ActivityWatch, BuildBuddy executor).
+10. **Suspended services** — keep suspended for now.
+11. **CNPG backup strategy.** Standardize pg_dump CronJobs.
 
-## Migration Checklist
+## Migration
 
-### Phase 1: Foundation (no workload disruption)
+### Completed
 
-1. ~~Remove default StorageClass annotation from `longhorn`~~ — deferred; bare
-   `longhorn` SC still in use by monitoring/vault. TODO: migrate each to
-   `hetzner-longhorn` or `local-path`, then disable default SC creation.
-2. ~~Restrict Longhorn to Hetzner only~~ — **done**. Removed `proxmox-longhorn`
-   SC, Kyverno proxmox rule, NixOS PATH policy. Longhorn manager/driver
-   pinned to `topology.kubernetes.io/region: hetzner`.
-3. Create `local-path-hetzner` and `local-path-proxmox` StorageClasses
-4. Update `cnpg-conventions.md` for region-explicit storage classes
-5. Update existing CNPG clusters to use `local-path-{region}`
+- Longhorn restricted to Hetzner only (removed `proxmox-longhorn` SC, Kyverno
+  proxmox rule, NixOS PATH policy; manager/driver pinned to
+  `topology.kubernetes.io/region: hetzner`)
+- 2x CPX31 VPS workers provisioned (Nebula lighthouses + relays,
+  IPs 10.42.0.11/10.42.0.12)
+- Descheduler deployed
+- VPS CPs rebuilt as pure control planes (no workloads)
+- `local-path-hetzner` and `local-path-proxmox` StorageClasses created
+- Longhorn default SC annotation disabled (`persistence.defaultClass: false`)
+- CLEANUP comments on all `local-path` and `longhorn` storage references
+- Missing `storageClassName` fixed (airlock, gitea)
+- SOPS age keypair infrastructure in tofu (`persistent-auth.tf`)
+- `.sops.yaml` creation rule for `cluster/k8s/` paths
 
-### Phase 2: VPS Node Restructure
+### Phase 1: Foundation (remaining)
 
-6. ~~Provision 2x CPX31 VPS workers in Hetzner (Terraform)~~ — **done**.
-   Workers are Nebula lighthouses + relays. Nebula IPs: 10.42.0.11, 10.42.0.12.
-7. Provision dedicated VPS CPs in Hetzner (Terraform)
-8. Join new CPs, rolling etcd membership
-9. Migrate workloads off old CPX31 CPs (drain, cordon)
-10. Remove old CPX31 CPs from etcd, tear down
+1. Run `tofu apply` to generate age keypair, then manually copy the public key
+   from `cluster/sops-cluster-secrets-public-key.txt` into the `&cluster-secrets`
+   anchor in `.sops.yaml`. (Tofu writes the public key file; `.sops.yaml` is a
+   hand-edited config that references it. No automation connects them — same
+   pattern as sealed-secrets-cert.pem, which is tofu-managed but manually
+   referenced by `seal-secret.sh`.)
+2. Update `cnpg-conventions.md` for region-explicit storage classes
+3. Migrate CNPG clusters + PVCs from generic `local-path` to `local-path-{region}`
+4. Migrate monitoring/vault off bare `longhorn` SC
 
-### Phase 3: Workload Placement
+### Phase 2: CP Isolation (remaining)
 
-10. Pin Proxmox workloads with hard `nodeSelector`
-11. Pin VPS-critical workloads
-12. Move Authentik + Flux controllers to VPS workers
-13. Deploy PriorityClasses
-14. Verify VPS CPs are near-pure
+5. Deploy PriorityClasses (`system-critical`, `important`, `batch`)
+6. Pin Proxmox workloads with hard `nodeSelector`
+7. Pin VPS-critical workloads
+8. Move SSO + Flux controllers to VPS workers
+9. Verify VPS CPs are near-pure
 
-### Phase 4: SSO Migration (Authentik → Authelia)
+### Phase 3: SSO Migration (Authentik → Authelia)
 
 See <sso.md> for detailed migration strategy.
 
-15. Deploy Authelia alongside Authentik
-16. Set up SOPS + age for secrets
-17. Migrate apps one by one (OIDC → proxy-mode → service accounts)
-18. Suspend Authentik, Vault, ESO
-19. After validation: delete Authentik, Vault, ESO code
+11. Deploy Authelia alongside Authentik (SOPS age infra already in place)
+12. Migrate apps one by one (OIDC → proxy-mode → service accounts)
+13. Suspend Authentik, Vault, ESO
+14. After validation: delete Authentik, Vault, ESO code
 
-### Phase 5: Monitoring Migration (Prometheus → VictoriaMetrics)
+### Phase 4: Monitoring Migration (Prometheus → VictoriaMetrics)
 
-20. Deploy VictoriaMetrics cluster
-21. Configure dual remote-write
-22. Verify + switch Grafana datasource
-23. Remove Prometheus
+16. Deploy VictoriaMetrics cluster
+17. Configure dual remote-write
+18. Verify + switch Grafana datasource
+19. Remove Prometheus
 
-### Phase 6: Storage (evaluate and migrate)
+### Phase 5: Storage (evaluate and migrate)
 
 See <storage.md> for validation plans.
 
-24. Evaluate MinIO site replication + HAProxy
-25. Evaluate Loki/Tempo on MinIO
-26. Evaluate JuiceFS OR Rook/Ceph
-27. Migrate remaining Longhorn PVCs
-28. Decommission Longhorn
+20. Evaluate MinIO site replication + HAProxy
+21. Evaluate Loki/Tempo on MinIO
+22. Evaluate JuiceFS OR Rook/Ceph
+23. Migrate remaining Longhorn PVCs
+24. Decommission Longhorn
 
-### Phase 7: Cleanup
+### Phase 6: Cleanup
 
-29. Remove Longhorn operator and CRDs
-30. Remove Vault, ESO, tofu-controller secret resources
-31. Remove Authentik namespace
-32. Update cluster docs
+25. Remove Longhorn operator and CRDs
+26. Remove Vault, ESO, tofu-controller secret resources
+27. Remove Authentik namespace
+28. Update cluster docs
