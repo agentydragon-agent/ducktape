@@ -211,9 +211,6 @@ data "talos_machine_configuration" "proxmox" {
           extraArgs = {
             provider-id            = "proxmox://cluster/${each.value.vm_id}"
             allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
-            # TODO: Make PVE CP mostly unschedulable — only allow core quorum
-            # services (Vault, etc.) that need a third node when a VPS goes down.
-            register-with-taints = "node-role.kubernetes.io/control-plane=:NoSchedule"
           }
         })
       })

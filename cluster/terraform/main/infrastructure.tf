@@ -105,24 +105,29 @@ locals {
     }
   }
 
-  # Controlplane cluster config — includes etcd and apiServer settings that
-  # Talos rejects on worker nodes ("etcd config is only allowed on control
-  # plane machines").
+  # Controlplane cluster config — includes etcd, apiServer, and inline
+  # manifests that Talos rejects on worker nodes.
   common_cluster_config = {
-    allowSchedulingOnControlPlanes = true
+    allowSchedulingOnControlPlanes = false
     apiServer                      = local.api_server_config
     discovery                      = { enabled = true }
     etcd                           = { advertisedSubnets = ["10.42.0.0/16"] }
     network                        = { cni = { name = "none" } }
     proxy                          = { disabled = true }
+    # Bootstrap-critical manifests applied by Talos before any pods schedule.
+    # Talos CCM removes the node.cloudprovider.kubernetes.io/uninitialized
+    # taint from VPS nodes, unblocking Flux scheduling on workers.
+    # Flux HelmRelease takes over CCM management after bootstrap.
+    inlineManifests = [
+      { name = "talos-ccm", contents = file("${path.module}/bootstrap-manifests/talos-ccm.yaml") },
+    ]
   }
 
-  # Worker-safe cluster config — no etcd, no apiServer.
+  # Worker-safe cluster config — no etcd, no apiServer, no inline manifests.
   worker_cluster_config = {
-    allowSchedulingOnControlPlanes = true
-    discovery                      = { enabled = true }
-    network                        = { cni = { name = "none" } }
-    proxy                          = { disabled = true }
+    discovery = { enabled = true }
+    network   = { cni = { name = "none" } }
+    proxy     = { disabled = true }
   }
 
   # Shared machine base — networking and feature flags common to all nodes.
