@@ -40,7 +40,7 @@ gatewayAPI:
     enabled: true
     nodes:
       matchLabels:
-        topology.kubernetes.io/region: hetzner
+        topology.kubernetes.io/region: hil
 
 # Standalone Envoy DaemonSet (separate from cilium-agent) for cleaner lifecycle.
 # NET_ADMIN + SYS_ADMIN required for Cilium datapath integration (BPF).

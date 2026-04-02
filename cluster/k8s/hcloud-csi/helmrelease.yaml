@@ -33,7 +33,7 @@ spec:
         reclaimPolicy: Retain
     controller:
       nodeSelector:
-        topology.kubernetes.io/region: hetzner
+        topology.kubernetes.io/region: hil
     node:
       nodeSelector:
-        topology.kubernetes.io/region: hetzner
+        topology.kubernetes.io/region: hil

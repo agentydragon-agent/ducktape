@@ -82,7 +82,7 @@ spec:
           maxUnavailable: 0
 
       nodeSelector:
-        topology.kubernetes.io/region: hetzner
+        topology.kubernetes.io/region: hil
 
       affinity:
         podAntiAffinity:
@@ -160,7 +160,7 @@ spec:
           maxUnavailable: 0
 
       nodeSelector:
-        topology.kubernetes.io/region: hetzner
+        topology.kubernetes.io/region: hil
 
       affinity:
         podAntiAffinity:
@@ -210,7 +210,7 @@ spec:
       enabled: true
       master:
         nodeSelector:
-          topology.kubernetes.io/region: hetzner
+          topology.kubernetes.io/region: hil
 
     # Service account
     serviceAccount:

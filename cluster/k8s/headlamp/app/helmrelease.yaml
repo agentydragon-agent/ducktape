@@ -56,7 +56,7 @@ spec:
       enabled: false
 
     nodeSelector:
-      topology.kubernetes.io/region: hetzner
+      topology.kubernetes.io/region: hil
     tolerations:
       - key: "node-role.kubernetes.io/control-plane"
         operator: "Exists"

@@ -12,7 +12,7 @@ spec:
                 - Node
               selector:
                 matchLabels:
-                  topology.kubernetes.io/region: hetzner
+                  topology.kubernetes.io/region: hil
       mutate:
         patchStrategicMerge:
           metadata:

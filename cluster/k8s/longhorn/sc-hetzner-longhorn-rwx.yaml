@@ -8,7 +8,7 @@ allowVolumeExpansion: true
 parameters:
   numberOfReplicas: "2"
   staleReplicaTimeout: "30"
-  nodeSelector: "topology.kubernetes.io/region=hetzner"
+  nodeSelector: "topology.kubernetes.io/region=hil"
   diskSelector: "hetzner-ephemeral"
   nfsOptions: "vers=4.1,noresvport"
   accessMode: ReadWriteMany
