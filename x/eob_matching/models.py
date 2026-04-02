@@ -76,17 +76,32 @@ class MatchedItem(BaseModel):
     is_pharmacy_orphan: bool = False
 
 
+class MatchConfidence(StrEnum):
+    EXACT = "exact"  # Only one item has this amount
+    DP_UNIQUE = "dp_unique"  # DP found exactly one valid subset
+
+
 class Matched(BaseModel):
     """Successfully matched to claims."""
 
     items: list[MatchedItem]
     total_claims: int
+    confidence: MatchConfidence
+
+
+class NotMatchedReason(StrEnum):
+    NO_SUBSET = "no_subset"  # DP ran, no valid subset exists
+    AMBIGUOUS = "ambiguous"  # Multiple valid subsets, not safe to commit
+    EXCEEDS_DP_CAP = "exceeds_cap"  # Payment too large for DP
+    NO_CANDIDATES = "no_candidates"  # No eligible items at all
 
 
 class NotMatched(BaseModel):
-    """No matching claim subset found."""
+    """No matching claim subset found or not safe to commit."""
 
-    candidate_count: int = Field(description="Number of candidate items considered")
+    reason: NotMatchedReason
+    candidate_count: int
+    solution_count: int | None = None  # for AMBIGUOUS: how many subsets (capped)
 
 
 MatchingResult = Matched | NotMatched
@@ -97,31 +112,6 @@ class PaymentResult(BaseModel):
 
     payment: BankPayment
     result: MatchingResult
-
-
-class DetailRow(BaseModel):
-    """One row in the detail output CSV."""
-
-    payment_date: str
-    payment_amount: float
-    payment_id: str
-    claim_num: str
-    provider: str
-    service_date: str
-    plan_paid: float | None
-    your_cost: float | None
-
-
-class SummaryRow(BaseModel):
-    """One row in the summary output CSV."""
-
-    payment_date: str
-    payment_amount: float
-    payment_id: str
-    providers: list[str]
-    claim_count: int
-    claim_nums: list[str]
-    matched: bool
 
 
 class ExtractedDate(BaseModel):
