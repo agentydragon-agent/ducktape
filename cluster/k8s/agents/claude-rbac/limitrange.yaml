@@ -7,8 +7,8 @@ spec:
   limits:
     # Default limits for containers without specified limits
     - max:
-        cpu: "2"
-        memory: 4Gi
+        cpu: "4"
+        memory: 8Gi
       min:
         cpu: 10m
         memory: 16Mi
@@ -19,8 +19,7 @@ spec:
         cpu: 100m
         memory: 128Mi
       type: Container
-    # Pod limits
     - max:
-        cpu: "4"
-        memory: 8Gi
+        cpu: "8"
+        memory: 16Gi
       type: Pod
