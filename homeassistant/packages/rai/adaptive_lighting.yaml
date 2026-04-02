@@ -9,6 +9,10 @@ adaptive_lighting:
     initial_transition: 1.0
     interval: 90
     transition: 45.0
+    sunrise_time: "10:00:00" # wake-up time; ramp starts at 9:40 AM
+    brightness_mode: tanh
+    brightness_mode_time_dark: 1200 # 20 min = ramp up 9:40→10:00
+    brightness_mode_time_light: 1200 # 20 min = reach max 10:00→10:20
     sleep_brightness: 1
     sleep_color_temp: 1000
     sleep_rgb_color: [255, 56, 0]
