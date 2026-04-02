@@ -103,12 +103,13 @@ resource "hcloud_server" "vps" {
     ipv6_enabled = true
   }
 
-  # Hetzner treats user_data and image as immutable — any change forces server
-  # replacement. Talos only reads user_data on first boot; ongoing config is
-  # managed via the Talos API (talos_machine_configuration_apply). Image changes
-  # (new schematic) are applied via talosctl upgrade, not server replacement.
+  # Hetzner treats user_data, image, and ssh_keys as immutable — any change
+  # forces server replacement. Talos only reads user_data on first boot; ongoing
+  # config is managed via the Talos API (talos_machine_configuration_apply).
+  # Image changes are applied via talosctl upgrade, not server replacement.
+  # ssh_keys must be ignored to prevent forced replacement on import/state drift.
   lifecycle {
-    ignore_changes = [user_data, image]
+    ignore_changes = [user_data, image, ssh_keys]
   }
 }
 
