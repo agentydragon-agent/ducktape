@@ -66,72 +66,72 @@ metadata:
     app.kubernetes.io/version: "v1.12.0"
     app.kubernetes.io/managed-by: Helm
 rules:
-- apiGroups:
-  - coordination.k8s.io
-  resources:
-  - leases
-  verbs:
-  - get
-  - create
-  - update
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - patch
-  - update
-- apiGroups:
-  - ""
-  resources:
-  - nodes
-  verbs:
-  - get
-  - list
-  - watch
-  - update
-  - patch
-- apiGroups:
-  - ""
-  resources:
-  - nodes/status
-  verbs:
-  - patch
-- apiGroups:
-  - ""
-  resources:
-  - serviceaccounts
-  verbs:
-  - create
-  - get
-- apiGroups:
-  - ""
-  resources:
-  - serviceaccounts/token
-  verbs:
-  - create
-- apiGroups:
-  - certificates.k8s.io
-  resources:
-  - certificatesigningrequests
-  verbs:
-  - list
-  - watch
-- apiGroups:
-  - certificates.k8s.io
-  resources:
-  - certificatesigningrequests/approval
-  verbs:
-  - update
-- apiGroups:
-  - certificates.k8s.io
-  resources:
-  - signers
-  resourceNames:
-  - kubernetes.io/kubelet-serving
-  verbs:
-  - approve
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - nodes
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - nodes/status
+    verbs:
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - create
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts/token
+    verbs:
+      - create
+  - apiGroups:
+      - certificates.k8s.io
+    resources:
+      - certificatesigningrequests
+    verbs:
+      - list
+      - watch
+  - apiGroups:
+      - certificates.k8s.io
+    resources:
+      - certificatesigningrequests/approval
+    verbs:
+      - update
+  - apiGroups:
+      - certificates.k8s.io
+    resources:
+      - signers
+    resourceNames:
+      - kubernetes.io/kubelet-serving
+    verbs:
+      - approve
 ---
 # Source: talos-cloud-controller-manager/templates/rolebinding.yaml
 kind: ClusterRoleBinding
@@ -143,9 +143,9 @@ roleRef:
   kind: ClusterRole
   name: system:talos-ccm-talos-cloud-controller-manager
 subjects:
-- kind: ServiceAccount
-  name: talos-ccm-talos-cloud-controller-manager
-  namespace: kube-system
+  - kind: ServiceAccount
+    name: talos-ccm-talos-cloud-controller-manager
+    namespace: kube-system
 ---
 # Source: talos-cloud-controller-manager/templates/rolebinding.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -183,8 +183,8 @@ spec:
       targetPort: 50258
       protocol: TCP
   selector:
-        app.kubernetes.io/name: talos-cloud-controller-manager
-        app.kubernetes.io/instance: talos-ccm
+    app.kubernetes.io/name: talos-cloud-controller-manager
+    app.kubernetes.io/instance: talos-ccm
 ---
 # Source: talos-cloud-controller-manager/templates/deployment.yaml
 apiVersion: apps/v1
@@ -228,7 +228,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop:
-              - ALL
+                - ALL
             seccompProfile:
               type: RuntimeDefault
           image: "ghcr.io/siderolabs/talos-cloud-controller-manager:v1.12.0"
