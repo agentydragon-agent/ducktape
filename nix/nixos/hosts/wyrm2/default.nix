@@ -91,6 +91,15 @@ in
   };
   hardware.nvidia-container-toolkit.enable = true;
 
+  # Ollama with CUDA for local GPU inference (also used by k8s ollama pod, but
+  # useful standalone when cluster is down or for ad-hoc tasks).
+  # Models stored on Proxmox CSI PVC (200Gi) or ~/downloads/ollama-models/.
+  environment.systemPackages = [
+    pkgs.ollama-cuda
+    pkgs.poppler-utils # pdftoppm, pdftotext — PDF rendering/extraction
+    pkgs.tesseract # OCR
+  ];
+
   # Podman
   virtualisation.podman.enable = true;
 
