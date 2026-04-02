@@ -8,15 +8,6 @@ indoor_aqi:
         pm25: sensor.dangered_s_starkvind_air_purifier_pm25
         voc: sensor.rai_s_room_vocs
 
-rest_command:
-  rai_webhook_inbox:
-    url: http://agentydragon.com:4473/
-    method: POST
-    headers:
-      Content-Type: "application/json"
-    payload: >
-      {{ {"ts": as_timestamp(now()) | int} | combine(payload) | tojson }}
-
 # YAML anchors for Pixel 6 Bluetooth template sensors.
 # Must be in the same file as the template: block below that uses them.
 _tmpl:
