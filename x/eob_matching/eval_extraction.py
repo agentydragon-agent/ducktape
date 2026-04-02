@@ -18,11 +18,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ValidationError
 
 from x.eob_matching.extract_summaries import CLAIMS_PROMPT, SUMMARY_PROMPT, query_ollama
-from x.eob_matching.models import (
-    EOBClaimsPageExtraction,
-    EOBSummaryExtraction,
-    ExtractedDate,
-)
+from x.eob_matching.models import EOBClaimsPageExtraction, EOBSummaryExtraction, ExtractedDate
 from x.eob_matching.pdf_utils import render_pdf_page
 
 EOB_DIR = Path.home() / "downloads" / "anthem-eobs"
@@ -122,10 +118,16 @@ DETAIL_GROUND_TRUTHS = [
                 in_network=False,
                 you_pay_total=360.00,
                 lines=[
-                    ClaimLineGroundTruth(service_date=date(2025, 6, d), service_description="Therapeutic Services", doctor_charges=200.00, anthem_blue_cross_paid=140.00, your_total_cost=60.00)
+                    ClaimLineGroundTruth(
+                        service_date=date(2025, 6, d),
+                        service_description="Therapeutic Services",
+                        doctor_charges=200.00,
+                        anthem_blue_cross_paid=140.00,
+                        your_total_cost=60.00,
+                    )
                     for d in [6, 9, 13, 20, 23, 27]
                 ],
-            ),
+            )
         ],
     ),
     DetailPageGroundTruth(
@@ -139,9 +141,16 @@ DETAIL_GROUND_TRUTHS = [
                 in_network=True,
                 you_pay_total=20.00,
                 lines=[
-                    ClaimLineGroundTruth(service_date=date(2025, 3, 27), service_description="Medical Service", doctor_charges=4401.54, anthem_blue_cross_paid=2007.87, your_total_cost=20.00, reason_code="066"),
+                    ClaimLineGroundTruth(
+                        service_date=date(2025, 3, 27),
+                        service_description="Medical Service",
+                        doctor_charges=4401.54,
+                        anthem_blue_cross_paid=2007.87,
+                        your_total_cost=20.00,
+                        reason_code="066",
+                    )
                 ],
-            ),
+            )
         ],
     ),
     DetailPageGroundTruth(
@@ -155,7 +164,13 @@ DETAIL_GROUND_TRUTHS = [
                 in_network=False,
                 you_pay_total=0.00,
                 lines=[
-                    ClaimLineGroundTruth(service_date=date(2025, 7, 31), service_description="Drug Non-Oral", doctor_charges=14316.10, anthem_blue_cross_paid=14316.10, your_total_cost=0.00),
+                    ClaimLineGroundTruth(
+                        service_date=date(2025, 7, 31),
+                        service_description="Drug Non-Oral",
+                        doctor_charges=14316.10,
+                        anthem_blue_cross_paid=14316.10,
+                        your_total_cost=0.00,
+                    )
                 ],
             ),
             ClaimGroundTruth(
@@ -165,7 +180,13 @@ DETAIL_GROUND_TRUTHS = [
                 in_network=False,
                 you_pay_total=0.00,
                 lines=[
-                    ClaimLineGroundTruth(service_date=date(2025, 8, 7), service_description="Drug Non-Oral", doctor_charges=14316.10, anthem_blue_cross_paid=14316.10, your_total_cost=0.00),
+                    ClaimLineGroundTruth(
+                        service_date=date(2025, 8, 7),
+                        service_description="Drug Non-Oral",
+                        doctor_charges=14316.10,
+                        anthem_blue_cross_paid=14316.10,
+                        your_total_cost=0.00,
+                    )
                 ],
             ),
         ],
@@ -240,12 +261,7 @@ def find_pdf(stem: str) -> Path:
 
 
 def extract_n_times[T: BaseModel](
-    pdf_path: Path,
-    page: int,
-    prompt: str,
-    response_model: type[T],
-    n: int,
-    results: EvalResults,
+    pdf_path: Path, page: int, prompt: str, response_model: type[T], n: int, results: EvalResults
 ) -> list[T]:
     """Run extraction N times, logging results. Returns successful extractions."""
     extractions: list[T] = []
@@ -276,7 +292,14 @@ def eval_summaries(results: EvalResults) -> None:
         pdf_path = find_pdf(gt.pdf_stem)
         print(f"\n  PDF: {pdf_path.name}", file=sys.stderr)
 
-        extractions = extract_n_times(pdf_path, page=1, prompt=SUMMARY_PROMPT, response_model=EOBSummaryExtraction, n=EXTRACTIONS_PER_PDF, results=results)
+        extractions = extract_n_times(
+            pdf_path,
+            page=1,
+            prompt=SUMMARY_PROMPT,
+            response_model=EOBSummaryExtraction,
+            n=EXTRACTIONS_PER_PDF,
+            results=results,
+        )
 
         if not extractions:
             print("    No successful extractions!", file=sys.stderr)
@@ -307,7 +330,14 @@ def eval_details(results: EvalResults) -> None:
         pdf_path = find_pdf(gt.pdf_stem)
         print(f"\n  PDF: {pdf_path.name} page {gt.page}", file=sys.stderr)
 
-        extractions = extract_n_times(pdf_path, page=gt.page, prompt=CLAIMS_PROMPT, response_model=EOBClaimsPageExtraction, n=EXTRACTIONS_PER_PDF, results=results)
+        extractions = extract_n_times(
+            pdf_path,
+            page=gt.page,
+            prompt=CLAIMS_PROMPT,
+            response_model=EOBClaimsPageExtraction,
+            n=EXTRACTIONS_PER_PDF,
+            results=results,
+        )
 
         if not extractions:
             print("    No successful extractions!", file=sys.stderr)
@@ -351,7 +381,10 @@ def main() -> None:
     print(f"  Accuracy:      {results.passed}/{results.total} ({accuracy:.0%})", file=sys.stderr)
     print(f"  Sign errors:   {results.sign_errors}", file=sys.stderr)
     print(f"  Extraction failures: {results.extraction_failures}", file=sys.stderr)
-    print(f"  Consistency:   {results.consistency_checks - results.consistency_mismatches}/{results.consistency_checks} ({consistency:.0%})", file=sys.stderr)
+    print(
+        f"  Consistency:   {results.consistency_checks - results.consistency_mismatches}/{results.consistency_checks} ({consistency:.0%})",
+        file=sys.stderr,
+    )
 
     if results.extraction_failures > 0:
         print(f"\nFAIL: {results.extraction_failures} extraction failures", file=sys.stderr)

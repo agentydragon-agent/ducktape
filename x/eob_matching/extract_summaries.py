@@ -27,11 +27,41 @@ OUTPUT_PATH = Path.home() / "code" / "ducktape" / "x" / "eob_matching" / "output
 OLLAMA_URL = "http://localhost:11434"
 MODEL = "qwen2.5vl:7b"
 
-SUMMARY_PROMPT = "Extract the financial summary from this insurance EOB summary page."
+SUMMARY_PROMPT = (
+    "This is page 1 of an Anthem Blue Cross EOB (Explanation of Benefits).\n"
+    "\n"
+    'The statement date is in the top-right area, under the bold "Health Care Summary" heading, '
+    'above the paragraph starting "Also called an Explanation of Benefits".\n'
+    "\n"
+    'The "Claims summary" is in a box with a light green border in the lower-left of the page. '
+    "It has 4 lines with dollar amounts, stacked vertically:\n"
+    '1. "Doctor/facility charges:" — a positive dollar amount\n'
+    '2. "Your discounts:" — a negative dollar amount (or -0.00)\n'
+    '3. "Due to your doctor/facility (max allowed):" — a positive dollar amount\n'
+    '4. "Anthem Blue Cross paid:" — ALWAYS a negative number. This is the LAST line '
+    'before "What you may pay". It is a DIFFERENT value than '
+    '"Due to your doctor/facility (max allowed)" on the line above it.\n'
+    "\n"
+    'Below the box: "What you may pay:" in a colored banner — a positive dollar amount.\n'
+    "\n"
+    'IMPORTANT: "Anthem Blue Cross paid" and "Due to your doctor/facility (max allowed)" '
+    "are two different lines with different values. "
+    "Read the exact digits on EACH line separately. anthem_blue_cross_paid must be negative or zero."
+)
 
 CLAIMS_PROMPT = (
-    "Extract ALL claims and their service lines from this insurance EOB claims detail page. "
-    "Each claim block starts with a claim number and received date."
+    "This is a claims detail page from an Anthem Blue Cross EOB.\n"
+    "\n"
+    "Each claim block has:\n"
+    '- "Claim Number:" followed by an alphanumeric code (e.g. 2025347KX8291)\n'
+    '- "Received:" followed by a date in MM/DD/YY format (e.g. 08/09/25)\n'
+    '- "Doctor:" followed by the provider name\n'
+    "- A table of service lines with columns: Service date (MM/DD/YY format), Service, "
+    "Reason code, Doctor charges, Your discounts, Due to your doctor (max allowed), "
+    "Anthem Blue Cross paid, Copay, Deductible, Your share of the cost (coinsurance), "
+    "Services not covered, Your total cost\n"
+    "\n"
+    "Extract ALL claims and ALL service lines from this page."
 )
 
 
@@ -49,13 +79,7 @@ def query_ollama[T: BaseModel](image_path: Path, prompt: str, response_model: ty
 
     resp = httpx.post(
         f"{OLLAMA_URL}/api/generate",
-        json={
-            "model": MODEL,
-            "prompt": full_prompt,
-            "images": [b64],
-            "format": schema,
-            "stream": False,
-        },
+        json={"model": MODEL, "prompt": full_prompt, "images": [b64], "format": schema, "stream": False},
         timeout=120,
     )
     resp.raise_for_status()

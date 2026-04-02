@@ -118,8 +118,12 @@ class ExtractedDate(BaseModel):
     """Date as integer components — more reliable than string format for LLM extraction."""
 
     year: int = Field(ge=2020, le=2030, description="4-digit year, e.g. 2025")
-    month: int = Field(ge=1, le=12, description="Month number 1-12")
-    day: int = Field(ge=1, le=31, description="Day of month 1-31")
+    month: int = Field(
+        ge=1,
+        le=12,
+        description="Month 1-12. Dates are US format MM/DD/YY (e.g. 01/30/2020 = January 30). The FIRST number is the month.",
+    )
+    day: int = Field(ge=1, le=31, description="Day of month 1-31. In MM/DD/YY, this is the SECOND number.")
 
     def to_date(self) -> date:
         return date(self.year, self.month, self.day)
