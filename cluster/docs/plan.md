@@ -35,6 +35,11 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       `prevent_destroy`). Good candidates for early migration: `buildbuddy-api-key`,
       Nebula certs. SealedSecrets would remain as the fallback for anything not yet migrated.
 
+- [ ] Nebula cert deployment gap: tofu generates certs to disk, but NixOS workers
+      (wyrm2, rugged) read certs from sops-nix secrets. No automation connects them —
+      after cert rotation, someone must manually copy the new cert content into the sops
+      file and nixos-rebuild. Options: script that reads tofu output and writes sops, or
+      move cert generation entirely to sops-nix (generate on the host, not in tofu).
 - [ ] Decouple wyrm2 from tofu: `module.wyrm2` in the same TF root as the cluster means
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
