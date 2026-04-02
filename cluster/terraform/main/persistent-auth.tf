@@ -193,17 +193,22 @@ locals {
   nebula_cert_dir = "${path.module}/nebula-certs"
 
   # All Nebula mesh nodes — add new nodes here when expanding the mesh.
+  # Cert names use FQDN under nebula.allegedly.works so that systemd-resolved
+  # can route queries via ~nebula.allegedly.works without +DefaultRoute (which
+  # breaks public DNS when cluster nodes are unreachable).
+  # Groups are unused (no nebula firewall rules reference them) but kept
+  # minimal for future use.
   nebula_nodes = {
-    "talos-vps-cp-0"     = { ip = "10.42.0.1/16", groups = "lighthouse,controlplane,vps" }
-    "talos-vps-cp-1"     = { ip = "10.42.0.2/16", groups = "lighthouse,controlplane,vps" }
-    "talos-pve-cp-0"     = { ip = "10.42.0.10/16", groups = "controlplane,proxmox" }
-    "talos-vps-worker-0" = { ip = "10.42.0.11/16", groups = "lighthouse,worker,vps" }
-    "talos-vps-worker-1" = { ip = "10.42.0.12/16", groups = "lighthouse,worker,vps" }
-    "wyrm2"              = { ip = "10.42.0.20/16", groups = "worker,proxmox,gpu" }
-    "rugged"             = { ip = "10.42.0.30/16", groups = "worker,roaming" }
-    "k8s-worker-test"    = { ip = "10.42.0.99/16", groups = "worker,test" }
-    "atlas"              = { ip = "10.42.0.5/16", groups = "hypervisor,proxmox" }
-    "activitywatch"      = { ip = "10.42.0.40/16", groups = "service" }
+    "talos-vps-cp-0.nebula.allegedly.works"      = { ip = "10.42.0.1/16", groups = "lighthouse" }
+    "talos-vps-cp-1.nebula.allegedly.works"      = { ip = "10.42.0.2/16", groups = "lighthouse" }
+    "talos-pve-cp-0.nebula.allegedly.works"      = { ip = "10.42.0.10/16", groups = "" }
+    "talos-vps-worker-0.nebula.allegedly.works"   = { ip = "10.42.0.11/16", groups = "lighthouse" }
+    "talos-vps-worker-1.nebula.allegedly.works"   = { ip = "10.42.0.12/16", groups = "lighthouse" }
+    "wyrm2.nebula.allegedly.works"                = { ip = "10.42.0.20/16", groups = "" }
+    "rugged.nebula.allegedly.works"               = { ip = "10.42.0.30/16", groups = "" }
+    "k8s-worker-test.nebula.allegedly.works"      = { ip = "10.42.0.99/16", groups = "" }
+    "atlas.nebula.allegedly.works"                = { ip = "10.42.0.5/16", groups = "" }
+    "activitywatch.nebula.allegedly.works"        = { ip = "10.42.0.40/16", groups = "" }
   }
 }
 
@@ -427,8 +432,8 @@ CERTEOF
 resource "null_resource" "nebula_activitywatch_sealed_secret" {
   triggers = {
     ca_hash      = sha256(data.local_file.nebula_ca_crt.content)
-    cert_hash    = sha256(data.local_file.nebula_node_crt["activitywatch"].content)
-    key_hash     = sha256(data.local_sensitive_file.nebula_node_key["activitywatch"].content)
+    cert_hash    = sha256(data.local_file.nebula_node_crt["activitywatch.nebula.allegedly.works"].content)
+    key_hash     = sha256(data.local_sensitive_file.nebula_node_key["activitywatch.nebula.allegedly.works"].content)
     keypair_hash = sha256(tls_self_signed_cert.sealed_secrets.cert_pem)
   }
 
@@ -437,8 +442,8 @@ resource "null_resource" "nebula_activitywatch_sealed_secret" {
       set -e
 
       ca_crt='${data.local_file.nebula_ca_crt.content}'
-      host_crt='${data.local_file.nebula_node_crt["activitywatch"].content}'
-      host_key='${data.local_sensitive_file.nebula_node_key["activitywatch"].content}'
+      host_crt='${data.local_file.nebula_node_crt["activitywatch.nebula.allegedly.works"].content}'
+      host_key='${data.local_sensitive_file.nebula_node_key["activitywatch.nebula.allegedly.works"].content}'
 
       cat > /tmp/nebula-activitywatch-secret.yaml <<EOF
 apiVersion: v1

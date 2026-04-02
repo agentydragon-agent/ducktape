@@ -112,16 +112,10 @@ in
     # on nebula1 with source IPs whose reverse path goes via the physical interface).
     networking.firewall.checkReversePath = "loose";
 
-    # systemd-resolved for split DNS — lighthouse DNS resolves bare mesh
-    # hostnames (cert names), normal DNS handles everything else.
-    # ResolveUnicastSingleLabel: by default, resolved does NOT send
-    # single-label names (no dots) to DNS servers — it only tries
-    # mDNS/LLMNR. Nebula cert names are single-label ("rugged", "wyrm2"),
-    # so we must enable this.
-    services.resolved = {
-      enable = true;
-      extraConfig = "ResolveUnicastSingleLabel=yes";
-    };
+    # systemd-resolved for split DNS — lighthouse DNS resolves mesh
+    # hostnames (cert names under nebula.allegedly.works), normal DNS
+    # handles everything else via the routing domain below.
+    services.resolved.enable = true;
 
     # NetworkManager should not touch the Nebula TUN interface.
     networking.networkmanager.unmanaged = [ "nebula1" ];
@@ -145,13 +139,11 @@ in
         Type = "simple";
         ExecStart = "${pkgs.nebula}/bin/nebula -config /etc/nebula/config.yaml";
         # Configure nebula1 link DNS after the TUN interface is up.
-        # Lighthouse DNS resolves bare cert names (e.g., "rugged" → 10.42.0.30).
-        # default-route=true makes nebula1 an additional default DNS route
-        # (not exclusive). systemd-resolved queries both nebula1 and the regular
-        # interface in parallel — first positive reply wins, so lighthouse
-        # NXDOMAIN for regular names doesn't break normal resolution.
-        # (Using ~. routing domain instead would make nebula1 the EXCLUSIVE
-        # handler, breaking regular DNS when lighthouse returns NXDOMAIN.)
+        # Cert names are FQDNs under nebula.allegedly.works. The routing
+        # domain ~nebula.allegedly.works tells resolved to send only
+        # *.nebula.allegedly.works queries to lighthouse DNS. Public DNS
+        # is unaffected even when cluster nodes are down (unlike the old
+        # +DefaultRoute approach which broke all DNS on outage).
         ExecStartPost = pkgs.writeShellScript "nebula-dns-setup" ''
           for i in $(seq 1 30); do
             if ${pkgs.iproute2}/bin/ip link show nebula1 &>/dev/null; then
@@ -160,7 +152,8 @@ in
             sleep 1
           done
           ${pkgs.systemd}/bin/resolvectl dns nebula1 ${lib.concatStringsSep " " cfg.lighthouses}
-          ${pkgs.systemd}/bin/resolvectl default-route nebula1 true
+          ${pkgs.systemd}/bin/resolvectl domain nebula1 ~nebula.allegedly.works
+          ${pkgs.systemd}/bin/resolvectl default-route nebula1 false
         '';
         Restart = "on-failure";
         RestartSec = "5";
