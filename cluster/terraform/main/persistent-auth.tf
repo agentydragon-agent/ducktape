@@ -467,7 +467,7 @@ CERTEOF
 
       kubeseal --cert /tmp/sealed-secrets-cert.pem \
         --format=yaml < /tmp/nebula-activitywatch-secret.yaml \
-        > ${path.module}/../../k8s/applications/activitywatch/nebula-certs-sealed.yaml
+        > ${path.module}/../../k8s/activitywatch/nebula-certs-sealed.yaml
 
       rm -f /tmp/sealed-secrets-cert.pem /tmp/nebula-activitywatch-secret.yaml
 
