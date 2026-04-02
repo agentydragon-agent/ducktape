@@ -19,13 +19,7 @@ from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-from opentelemetry.sdk.trace.export import (
-    BatchSpanProcessor,
-    ConsoleSpanExporter,
-    SimpleSpanProcessor,
-    SpanExporter,
-    SpanExportResult,
-)
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SpanExporter, SpanExportResult
 from opentelemetry.trace import ProxyTracerProvider
 
 from devinfra.claude.hook_config import OtelConfig
@@ -132,7 +126,7 @@ def init_daemon_tracing(trace_dir: Path) -> DeferredOtlpExporter:
     provider = TracerProvider(resource=resource)
 
     file_exporter = ConsoleSpanExporter(out=trace_file.open("a"), formatter=_format_span)
-    provider.add_span_processor(SimpleSpanProcessor(file_exporter))
+    provider.add_span_processor(BatchSpanProcessor(file_exporter))
     logger.info("Tracing: local file → %s", trace_file)
 
     otlp = DeferredOtlpExporter()

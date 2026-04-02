@@ -9,7 +9,7 @@ import uvicorn
 from filelock import FileLock
 
 from devinfra.claude.hook_daemon.server import app, configure
-from devinfra.claude.hook_daemon.tracing import init_daemon_tracing
+from devinfra.claude.hook_daemon.tracing import init_daemon_tracing, shutdown_tracing
 from devinfra.claude.settings import HookSettings
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ def main() -> None:
     configure(daemon_dir, otlp_exporter)
 
     uvicorn.run(app, uds=args.sock, log_level="warning")
+    shutdown_tracing()
 
 
 if __name__ == "__main__":
