@@ -13,5 +13,6 @@ spec:
   timeout: 5m
   dependsOn:
     - name: openclaw-sandbox
+    - name: sealed-secrets # SealedSecret CRDs
     - name: external-secrets-config
     - name: ollama-secrets

@@ -16,6 +16,8 @@ spec:
   dependsOn:
     - name: external-secrets-crds # CRDs must be in kustomize-controller cache first
       namespace: flux-system
+    - name: cert-manager # ESO uses Issuer resources
+      namespace: flux-system
     - name: vault
       namespace: flux-system
   healthChecks:

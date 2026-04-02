@@ -14,6 +14,7 @@ spec:
   dependsOn:
     - name: openclaw-gateway-namespace
     - name: openclaw-sandbox
+    - name: sealed-secrets # SealedSecret CRDs
     - name: external-secrets-config
     - name: matrix-secrets
     - name: reflector
