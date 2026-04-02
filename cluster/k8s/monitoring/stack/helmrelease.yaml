@@ -71,6 +71,7 @@ spec:
             metadata:
               name: db
             spec:
+              # CLEANUP(2026-04-02): Migrate to local-path-hetzner (small, rebuildable)
               storageClassName: longhorn
               accessModes: ["ReadWriteOnce"]
               resources:
@@ -155,6 +156,7 @@ spec:
 
       persistence:
         enabled: true
+        # CLEANUP(2026-04-02): Migrate to local-path-hetzner (rebuildable, stateless-ish)
         storageClassName: longhorn
         accessModes:
           - ReadWriteOnce
@@ -248,6 +250,7 @@ spec:
             metadata:
               name: db
             spec:
+              # CLEANUP(2026-04-02): Replace with VictoriaMetrics (built-in replication)
               storageClassName: longhorn
               accessModes: ["ReadWriteOnce"]
               resources:

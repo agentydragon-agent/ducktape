@@ -28,6 +28,7 @@ spec:
       # Persistence configuration - use Proxmox CSI
       persistence:
         enabled: true
+        # CLEANUP(2026-04-02): Migrate to MinIO or local-path-hetzner
         storageClassName: longhorn
         accessModes:
           - ReadWriteOnce

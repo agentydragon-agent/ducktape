@@ -24,6 +24,7 @@ spec:
       spec:
         accessModes:
           - ReadWriteOnce
+        # CLEANUP(2026-04-02): Goes away when Vault is dropped (Authelia + SOPS migration)
         storageClassName: longhorn
         resources:
           requests:

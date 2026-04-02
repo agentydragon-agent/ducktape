@@ -9,4 +9,5 @@ spec:
   resources:
     requests:
       storage: 30Gi
+  # CLEANUP(2026-04-02): Migrate to local-path-proxmox
   storageClassName: local-path
