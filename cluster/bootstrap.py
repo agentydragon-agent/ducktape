@@ -15,6 +15,7 @@ import argparse
 import json
 import logging
 import os
+import socket
 import subprocess
 from pathlib import Path
 
@@ -95,8 +96,9 @@ def run(
     return subprocess.run(cmd, cwd=cwd, check=check, timeout=timeout, capture_output=capture, text=capture)
 
 
-def tofu(*args: str, timeout: int = 600) -> subprocess.CompletedProcess[str]:
-    return run([_TOFU_BIN, *args], cwd=TF_DIR, timeout=timeout)
+def tofu(*args: str, excludes: list[str], timeout: int = 600) -> subprocess.CompletedProcess[str]:
+    exclude_flags = [f"-exclude={e}" for e in excludes]
+    return run([_TOFU_BIN, *args, *exclude_flags], cwd=TF_DIR, timeout=timeout)
 
 
 def tofu_output(name: str) -> str:
@@ -112,7 +114,7 @@ def state_has_resources() -> bool:
     return len(resources) > 0
 
 
-def preflight(root: Path) -> None:
+def preflight(root: Path, *, excludes: list[str]) -> None:
     log.info("Preflight Validation")
 
     repo = pygit2.Repository(root)
@@ -127,10 +129,10 @@ def preflight(root: Path) -> None:
     run(["pre-commit", "run", "--files", *files], cwd=root)
 
     log.info("Validating tofu configuration...")
-    tofu("validate")
+    tofu("validate", excludes=excludes)
 
 
-def deploy_persistent_auth() -> None:
+def deploy_persistent_auth(*, excludes: list[str]) -> None:
     """Deploy persistent-auth resources (Proxmox users, tokens, keypairs, PKI).
 
     These are idempotent — if they already exist, tofu apply is a no-op.
@@ -139,16 +141,16 @@ def deploy_persistent_auth() -> None:
     log.info("Phase 1: Persistent Auth")
 
     targets = [f"-target={t}" for t in PERSISTENT_AUTH_TARGETS]
-    tofu("apply", "-auto-approve", *targets)
+    tofu("apply", "-auto-approve", *targets, excludes=excludes)
     log.info("Persistent auth ready")
 
 
-def deploy_infrastructure() -> None:
+def deploy_infrastructure(*, excludes: list[str]) -> None:
     """Deploy infrastructure (VMs, Talos, Cilium, k8s secrets)."""
     log.info("Phase 2: Infrastructure Deployment")
 
     targets = [f"-target={t}" for t in INFRA_TARGETS]
-    tofu("apply", "-auto-approve", *targets, timeout=1800)
+    tofu("apply", "-auto-approve", *targets, excludes=excludes, timeout=1800)
 
     kubeconfig = TF_DIR / "kubeconfig"
     os.environ["KUBECONFIG"] = str(kubeconfig)
@@ -170,7 +172,7 @@ def deploy_infrastructure() -> None:
     log.info("Infrastructure ready")
 
 
-def deploy_services() -> None:
+def deploy_services(*, excludes: list[str]) -> None:
     """Deploy everything else (Flux, VMs) via full tofu apply."""
     log.info("Phase 3: Services + VMs")
 
@@ -178,7 +180,7 @@ def deploy_services() -> None:
     os.environ.setdefault("KUBECONFIG", str(kubeconfig))
 
     log.info("Deploying all remaining resources (Flux, VMs)...")
-    tofu("apply", "-auto-approve")
+    tofu("apply", "-auto-approve", excludes=excludes)
 
     log.info("Flux deployed. Monitoring kustomization convergence...")
     config.load_kube_config(str(kubeconfig))
@@ -195,7 +197,25 @@ def main() -> None:
     parser.add_argument(
         "--start-from", choices=["infrastructure", "services"], help="Skip earlier phases, start from specified phase"
     )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        help="Tofu resource address to exclude from all applies (passed as -exclude= to tofu). Can be repeated.",
+    )
     args = parser.parse_args()
+
+    # Safety check: running on wyrm2 without excluding module.wyrm2 will cause
+    # tofu to apply pending VM config changes, rebooting the machine mid-bootstrap.
+    hostname = socket.gethostname()
+    if hostname == "wyrm2" and "module.wyrm2" not in args.exclude:
+        raise SystemExit(
+            "Running on wyrm2 without --exclude=module.wyrm2. "
+            "Tofu will apply pending VM changes and reboot this machine mid-bootstrap. "
+            "Re-run with: --exclude=module.wyrm2"
+        )
+
+    excludes = args.exclude
 
     # Fix pre-commit/pip compatibility with Nix
     os.environ["PIP_USER"] = "false"
@@ -208,15 +228,15 @@ def main() -> None:
     if start_phase > 1:
         log.info("Starting from phase: %s", args.start_from)
 
-    preflight(root)
+    preflight(root, excludes=excludes)
 
     if start_phase <= 1:
-        deploy_persistent_auth()
+        deploy_persistent_auth(excludes=excludes)
 
     if start_phase <= 2:
-        deploy_infrastructure()
+        deploy_infrastructure(excludes=excludes)
 
-    deploy_services()
+    deploy_services(excludes=excludes)
 
 
 if __name__ == "__main__":

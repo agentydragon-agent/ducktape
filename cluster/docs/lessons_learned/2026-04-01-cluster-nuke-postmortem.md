@@ -143,11 +143,26 @@ Import or any state drift on `ssh_keys` forces replacement.
 
 **Fix**: Add `ssh_keys` to `ignore_changes`.
 
+## Incident 2: wyrm2 rebooted during bootstrap recovery
+
+During the bootstrap recovery attempt (same day), the bootstrap script's Phase 2
+targeted apply included `proxmox_virtual_environment_vm.talos["pve_cp0"]`. Although
+`module.wyrm2` was not in the target list, the Proxmox provider applied a pending
+config change (bridge `vmbr0→vmbr4`) to wyrm2 as a side effect, triggering
+`qmshutdown:110:root@pam!tofu` at 21:31.
+
+This is the exact footgun identified in "Architectural Footgun #2" above — tofu
+managing wyrm2 from wyrm2. The fix is to use `-exclude=module.wyrm2` on all tofu
+applies run from wyrm2.
+
 ## Action Items
 
-- [ ] Add `ssh_keys` to `hcloud_server.vps` `ignore_changes` lifecycle
-- [ ] Bootstrap cluster from `errored.tfstate` + temp local PG
+- [x] Add `ssh_keys` to `hcloud_server.vps` `ignore_changes` lifecycle
+- [x] Split `common_cluster_config` into CP and worker variants (workers had CP-only
+      etcd/apiServer/kubernetesTalosAPIAccess settings causing boot loop)
+- [x] Fix Proxmox SSH address to use VLAN IP directly (avoid Nebula DNS chicken-and-egg)
+- [ ] Bootstrap cluster from `errored.tfstate` + temp local PG (in progress)
+- [ ] Always use `-exclude=module.wyrm2` when running tofu from wyrm2
 - [ ] Consider external state backend or automated state backup
-- [ ] Document: never run tofu apply for wyrm2 config from wyrm2
 - [ ] Add AGENTS.md guidance: never use `import {}` blocks without reviewing
       full plan for forced replacements

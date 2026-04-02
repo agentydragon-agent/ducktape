@@ -35,8 +35,11 @@ provider "proxmox" {
     agent    = true
     username = "root"
     node {
-      name    = var.proxmox_node_name
-      address = var.proxmox_node_name
+      name = var.proxmox_node_name
+      # Use VLAN IP directly — hostname "atlas" resolves via Nebula DNS which
+      # this terraform manages, creating a chicken-and-egg problem during
+      # bootstrap (Nebula isn't running yet when tofu needs to SSH to Proxmox).
+      address = var.proxmox_api_host
     }
   }
 }

@@ -105,7 +105,9 @@ locals {
     }
   }
 
-  # Shared cluster config — identical on every node regardless of provider.
+  # Controlplane cluster config — includes etcd and apiServer settings that
+  # Talos rejects on worker nodes ("etcd config is only allowed on control
+  # plane machines").
   common_cluster_config = {
     allowSchedulingOnControlPlanes = true
     apiServer                      = local.api_server_config
@@ -115,8 +117,18 @@ locals {
     proxy                          = { disabled = true }
   }
 
+  # Worker-safe cluster config — no etcd, no apiServer.
+  worker_cluster_config = {
+    allowSchedulingOnControlPlanes = true
+    discovery                      = { enabled = true }
+    network                        = { cni = { name = "none" } }
+    proxy                          = { disabled = true }
+  }
+
   # Shared machine base — networking and feature flags common to all nodes.
   # Does not include nodeLabels or kubelet (those differ per provider/node).
+  # Includes kubernetesTalosAPIAccess which is CP-only — use
+  # worker_machine_base for worker nodes.
   common_machine_base = {
     network = {
       kubespan = {
@@ -134,6 +146,31 @@ locals {
         enabled                     = true
         allowedRoles                = ["os:reader"]
         allowedKubernetesNamespaces = ["kube-system", "claude-sandbox", "openclaw-sandbox"]
+      }
+    }
+    registries = {
+      mirrors = local.registry_mirrors
+    }
+    kubelet = {
+      nodeIP = {
+        validSubnets = ["10.42.0.0/16"]
+      }
+    }
+  }
+
+  # Worker machine base — no kubernetesTalosAPIAccess (Talos rejects it on
+  # workers: "feature Kubernetes Talos API Access can only be enabled on
+  # control plane machines").
+  worker_machine_base = {
+    network = {
+      kubespan = {
+        enabled = false
+      }
+    }
+    features = {
+      kubePrism = {
+        enabled = true
+        port    = 7445
       }
     }
     registries = {

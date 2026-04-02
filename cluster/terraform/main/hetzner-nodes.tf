@@ -117,19 +117,24 @@ resource "hcloud_server" "vps" {
 # TALOS MACHINE CONFIGURATION
 # ============================================================================
 
-# Shared VPS config patch — used by both the user_data data source (no nebula)
-# and the full apply data source (with nebula + hostname).
+# VPS config patches — separate for CP and worker roles.
+# Workers must not include etcd, apiServer, or kubernetesTalosAPIAccess
+# (Talos rejects these on worker nodes).
 locals {
+  # Shared VPS machine settings (labels, install image, kubelet args)
+  vps_machine_overrides = {
+    nodeLabels = {
+      "topology.kubernetes.io/region"        = "hetzner"
+      "topology.kubernetes.io/zone"          = var.hetzner_location
+      "node.longhorn.io/create-default-disk" = "true"
+    }
+    install = {
+      image = "factory.talos.dev/installer/${talos_image_factory_schematic.hcloud.id}:${var.talos_version}"
+    }
+  }
+
   vps_config_patch = yamlencode({
-    machine = merge(local.common_machine_base, {
-      nodeLabels = {
-        "topology.kubernetes.io/region"        = "hetzner"
-        "topology.kubernetes.io/zone"          = var.hetzner_location
-        "node.longhorn.io/create-default-disk" = "true"
-      }
-      install = {
-        image = "factory.talos.dev/installer/${talos_image_factory_schematic.hcloud.id}:${var.talos_version}"
-      }
+    machine = merge(local.common_machine_base, local.vps_machine_overrides, {
       kubelet = merge(local.common_machine_base.kubelet, {
         extraArgs = {
           allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
@@ -138,6 +143,18 @@ locals {
       })
     })
     cluster = local.common_cluster_config
+  })
+
+  vps_worker_config_patch = yamlencode({
+    machine = merge(local.worker_machine_base, local.vps_machine_overrides, {
+      kubelet = merge(local.worker_machine_base.kubelet, {
+        extraArgs = {
+          allowed-unsafe-sysctls = "net.ipv4.tcp_mtu_probing"
+          cloud-provider         = "external"
+        }
+      })
+    })
+    cluster = local.worker_cluster_config
   })
 }
 
@@ -205,7 +222,7 @@ data "talos_machine_configuration" "vps_worker" {
   examples           = false
   docs               = false
 
-  config_patches = [local.vps_config_patch]
+  config_patches = [local.vps_worker_config_patch]
 }
 
 data "talos_machine_configuration" "vps_worker_nebula" {
@@ -222,7 +239,7 @@ data "talos_machine_configuration" "vps_worker_nebula" {
 
   config_patches = concat(
     [
-      local.vps_config_patch,
+      local.vps_worker_config_patch,
       yamlencode({
         apiVersion = "v1alpha1"
         kind       = "HostnameConfig"
