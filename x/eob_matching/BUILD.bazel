@@ -1,0 +1,82 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "loaders",
+    srcs = ["loaders.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+    ],
+)
+
+py_library(
+    name = "matcher",
+    srcs = ["matcher.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+    ],
+)
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":loaders",
+        ":matcher",
+        ":models",
+    ],
+)
+
+py_library(
+    name = "extract_summaries_lib",
+    srcs = ["extract_summaries.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        ":models",
+        "@pypi//httpx",
+        "@pypi//more_itertools",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "parse_eob_listing_lib",
+    srcs = ["parse_eob_listing.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "@pypi//beautifulsoup4",
+        "@pypi//lxml",
+    ],
+)
+
+py_binary(
+    name = "parse_eob_listing",
+    main_module = "x.eob_matching.parse_eob_listing",
+    visibility = ["//visibility:public"],
+    deps = [":parse_eob_listing_lib"],
+)
+
+py_binary(
+    name = "eob_matching",
+    main_module = "x.eob_matching.main",
+    visibility = ["//visibility:public"],
+    deps = [":main_lib"],
+)
+
+py_binary(
+    name = "extract_summaries",
+    main_module = "x.eob_matching.extract_summaries",
+    visibility = ["//visibility:public"],
+    deps = [":extract_summaries_lib"],
+)
