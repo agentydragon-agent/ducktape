@@ -132,25 +132,27 @@ def preflight(root: Path) -> None:
     tofu("validate", excludes=[])
 
 
-def deploy_persistent_auth(*, excludes: list[str]) -> None:
+def deploy_persistent_auth() -> None:
     """Deploy persistent-auth resources (Proxmox users, tokens, keypairs, PKI).
 
     These are idempotent — if they already exist, tofu apply is a no-op.
     On fresh bootstrap, they're created first so infrastructure can use them.
+    Targeted applies don't need -exclude (tofu doesn't allow combining them,
+    and the target lists don't include module.wyrm2).
     """
     log.info("Phase 1: Persistent Auth")
 
     targets = [f"-target={t}" for t in PERSISTENT_AUTH_TARGETS]
-    tofu("apply", "-auto-approve", *targets, excludes=excludes)
+    tofu("apply", "-auto-approve", *targets, excludes=[])
     log.info("Persistent auth ready")
 
 
-def deploy_infrastructure(*, excludes: list[str]) -> None:
+def deploy_infrastructure() -> None:
     """Deploy infrastructure (VMs, Talos, Cilium, k8s secrets)."""
     log.info("Phase 2: Infrastructure Deployment")
 
     targets = [f"-target={t}" for t in INFRA_TARGETS]
-    tofu("apply", "-auto-approve", *targets, excludes=excludes, timeout=1800)
+    tofu("apply", "-auto-approve", *targets, excludes=[], timeout=1800)
 
     kubeconfig = TF_DIR / "kubeconfig"
     os.environ["KUBECONFIG"] = str(kubeconfig)
@@ -231,10 +233,10 @@ def main() -> None:
     preflight(root)
 
     if start_phase <= 1:
-        deploy_persistent_auth(excludes=excludes)
+        deploy_persistent_auth()
 
     if start_phase <= 2:
-        deploy_infrastructure(excludes=excludes)
+        deploy_infrastructure()
 
     deploy_services(excludes=excludes)
 
