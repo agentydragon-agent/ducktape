@@ -18,6 +18,7 @@ resources:
   - hcloud-csi/flux-kustomization.yaml
   - talos-cloud-controller-manager/flux-kustomization.yaml
   - local-path-provisioner/flux-kustomization.yaml
+  - openebs-lvm/flux-kustomization.yaml
   - longhorn/flux-kustomization.yaml
   - metrics-server/flux-kustomization.yaml
   - vpa/flux-kustomization.yaml

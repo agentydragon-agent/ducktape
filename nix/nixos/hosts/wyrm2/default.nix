@@ -131,6 +131,32 @@ in
     autoResize = true;
   };
 
+  # LVM for OpenEBS LVM LocalPV — thin-provisioned volumes with snapshot support.
+  # virtio2 (/dev/vdc) is a dedicated 500GB Proxmox disk for the LVM VG.
+  # OpenEBS node agent runs privileged and uses host LVM tools via nsenter.
+  boot.kernelModules = [ "dm_thin_pool" ];
+  environment.systemPackages = [ pkgs.lvm2 ];
+
+  # Create LVM PV + VG on the OpenEBS disk (idempotent oneshot)
+  systemd.services.openebs-lvm-setup = {
+    description = "Initialize LVM VG for OpenEBS on /dev/vdc";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "kubelet.service" ];
+    after = [ "systemd-udev-settle.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = pkgs.writeShellScript "openebs-lvm-setup" ''
+        if ${pkgs.lvm2}/bin/vgs openebs-lvmvg >/dev/null 2>&1; then
+          echo "VG openebs-lvmvg already exists, skipping"
+          exit 0
+        fi
+        ${pkgs.lvm2}/bin/pvcreate /dev/vdc
+        ${pkgs.lvm2}/bin/vgcreate openebs-lvmvg /dev/vdc
+      '';
+    };
+  };
+
   # TODO: Create /mnt/tankshare/shared/{pip-cache,uv-cache} via systemd.tmpfiles.rules
   # and configure pip/uv to use them as cache directories
 
