@@ -36,11 +36,11 @@ bootstrap.
 
 ## Remaining steps
 
-- [ ] Copy new nebula node certs to NixOS worker SOPS files (`secrets/wyrm2-nebula.yaml`, `secrets/rugged-nebula.yaml`)
-- [ ] Update `secrets/k8s-worker.yaml` with new k8s bootstrap kubeconfig + CA cert
-- [ ] `nixos-rebuild switch` on wyrm2
-- [ ] `nixos-rebuild switch` on rugged (when available)
-- [ ] Verify nebula mesh: `resolvectl query talos-vps-cp-0.nebula.allegedly.works`
+- [x] Copy new nebula node certs to NixOS worker SOPS files
+- [x] Update `secrets/k8s-worker.yaml` with new k8s bootstrap kubeconfig + CA cert
+- [x] `nixos-rebuild switch` on wyrm2 — joined cluster, Ready
+- [x] `nixos-rebuild switch` on rugged — joined cluster, Ready
+- [ ] Verify nebula DNS: `resolvectl query talos-vps-cp-0.nebula.allegedly.works` (pending PowerDNS zone propagation)
 - [x] ~~Authentik SSO resync~~ — not needed, fresh cluster has no stale DB state
 - [ ] Verify: `get-passwords` returns working credentials
 - [x] Migrate tofu state to in-cluster PG — done via `tofu state pull` / `tofu state push` (port-forward to CNPG). Note: `tofu init -migrate-state` doesn't work for PG backend env var changes — use pull/push instead.
