@@ -10,13 +10,9 @@
 # on VPS workers.
 
 locals {
-  # Parse the HelmRelease YAML (second document in the multi-doc file)
-  talos_ccm_docs = [
-    for doc in provider::helm::manifest_decode_multi(
-      file("${path.module}/../../k8s/talos-cloud-controller-manager/helmrelease.yaml")
-    ) : doc if doc.apiVersion == "helm.toolkit.fluxcd.io/v2"
-  ]
-  talos_ccm_helmrelease = local.talos_ccm_docs[0]
+  talos_ccm_helmrelease = yamldecode(
+    file("${path.module}/../../k8s/talos-cloud-controller-manager/helmrelease.yaml")
+  )
 
   talos_ccm_chart   = local.talos_ccm_helmrelease.spec.chart.spec.chart
   talos_ccm_repo    = "oci://ghcr.io/siderolabs/charts"
