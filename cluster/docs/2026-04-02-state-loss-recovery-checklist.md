@@ -43,8 +43,8 @@ bootstrap.
 - [ ] Verify nebula mesh: `resolvectl query talos-vps-cp-0.nebula.allegedly.works`
 - [x] ~~Authentik SSO resync~~ — not needed, fresh cluster has no stale DB state
 - [ ] Verify: `get-passwords` returns working credentials
-- [ ] Migrate tofu state to in-cluster PG — **VERIFY with `tofu state list` BEFORE deleting temp PG**
-- [ ] Clean up temp PG container
+- [x] Migrate tofu state to in-cluster PG — done via `tofu state pull` / `tofu state push` (port-forward to CNPG). Note: `tofu init -migrate-state` doesn't work for PG backend env var changes — use pull/push instead.
+- [x] Clean up temp PG container
 
 ## Lesson learned
 

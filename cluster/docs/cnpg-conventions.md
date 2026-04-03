@@ -40,7 +40,17 @@ No other storage classes. VPS-HA clusters get replication at the CNPG level
 the storage level (ZFS on the Proxmox host). Using `longhorn` or
 `proxmox-csi-retain` for CNPG would add unnecessary complexity.
 
-### R4: Apps must be pinned to the same region as their DB
+### R4: `initdb.secret` must exist before the Cluster resource
+
+CNPG reads `bootstrap.initdb.secret` only at cluster creation time to set
+the database owner password. If the Secret doesn't exist yet, CNPG
+auto-generates a random password and ignores the Secret when it arrives
+later. This makes the SOPS-managed password useless.
+
+In the kustomize `resources` list, always list the credentials Secret
+**before** the Cluster manifest. Kustomize applies in list order.
+
+### R5: Apps must be pinned to the same region as their DB
 
 An app using a CNPG cluster must have its pods pinned to the same region
 (`topology.kubernetes.io/region`) as the database. No floating apps with
