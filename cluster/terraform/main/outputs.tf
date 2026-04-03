@@ -133,16 +133,6 @@ output "instructions" {
 }
 
 # ============================================================================
-# PERSISTENT AUTH
-# ============================================================================
-
-output "flux_deploy_public_key" {
-  description = "Flux deploy key public key (OpenSSH format) - add to GitHub"
-  value       = data.sops_file.flux_deploy_key.data["public_key"]
-  sensitive   = true
-}
-
-# ============================================================================
 # K8S WORKER JOIN CREDENTIALS (consumed by k8s-worker-proxmox / k8s-worker-libvirt)
 # ============================================================================
 
