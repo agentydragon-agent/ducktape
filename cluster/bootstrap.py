@@ -46,7 +46,8 @@ PERSISTENT_AUTH_TARGETS = [
     "proxmox_virtual_environment_role.persistent",
     "proxmox_virtual_environment_user.persistent",
     "proxmox_virtual_environment_user_token.persistent",
-    "null_resource.nebula_ca",
+    "local_file.nebula_ca_crt",
+    "local_sensitive_file.nebula_ca_key",
     "null_resource.nebula_node_cert",
 ]
 

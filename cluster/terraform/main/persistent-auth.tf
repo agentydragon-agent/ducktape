@@ -142,30 +142,19 @@ locals {
 }
 
 # Generate CA cert + key (once, stored on disk + in state).
-resource "null_resource" "nebula_ca" {
-  triggers = {
-    cert_dir = local.nebula_cert_dir
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      mkdir -p ${local.nebula_cert_dir}
-      if [ ! -f ${local.nebula_cert_dir}/ca.crt ]; then
-        nebula-cert ca -name "allegedly.works" -duration 87600h \
-          -out-crt ${local.nebula_cert_dir}/ca.crt \
-          -out-key ${local.nebula_cert_dir}/ca.key
-        echo "Generated new Nebula CA"
-      else
-        echo "Nebula CA already exists, skipping"
-      fi
-    EOT
-  }
+# Nebula CA from SOPS — written to disk so nebula-cert sign can read it.
+data "sops_file" "nebula_ca" {
+  source_file = "${path.module}/../../../secrets/nebula-ca.yaml"
 }
 
-data "local_file" "nebula_ca_crt" {
-  filename   = "${local.nebula_cert_dir}/ca.crt"
-  depends_on = [null_resource.nebula_ca]
+resource "local_sensitive_file" "nebula_ca_key" {
+  content  = data.sops_file.nebula_ca.data["ca_key"]
+  filename = "${local.nebula_cert_dir}/ca.key"
+}
+
+resource "local_file" "nebula_ca_crt" {
+  content  = data.sops_file.nebula_ca.data["ca_crt"]
+  filename = "${local.nebula_cert_dir}/ca.crt"
 }
 
 # Generate per-node certs signed by the CA.
@@ -173,7 +162,7 @@ resource "null_resource" "nebula_node_cert" {
   for_each = local.nebula_nodes
 
   triggers = {
-    ca_hash = data.local_file.nebula_ca_crt.content_sha256
+    ca_hash = sha256(local_file.nebula_ca_crt.content)
     ip      = each.value.ip
     groups  = each.value.groups
   }
@@ -192,7 +181,7 @@ resource "null_resource" "nebula_node_cert" {
     EOT
   }
 
-  depends_on = [null_resource.nebula_ca]
+  depends_on = [local_file.nebula_ca_crt, local_sensitive_file.nebula_ca_key]
 }
 
 data "local_file" "nebula_node_crt" {

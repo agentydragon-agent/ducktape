@@ -69,6 +69,13 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
+  # Nebula mesh CA keypair (tofu derives node certs at apply time)
+  - path_regex: secrets/nebula-ca\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *user-wyrm2
+          - *user-rugged
   # Flux deploy key (ED25519, registered as GitHub deploy key)
   - path_regex: secrets/flux-deploy-key\.yaml$
     key_groups:

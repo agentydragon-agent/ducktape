@@ -4,7 +4,7 @@
 # To add a new node, add it to local.nebula_nodes in persistent-auth.tf.
 
 locals {
-  nebula_ca_cert = data.local_file.nebula_ca_crt.content
+  nebula_ca_cert = local_file.nebula_ca_crt.content
 
   # Lighthouse topology from shared config (single source of truth)
   nebula_mesh_config    = jsondecode(file("${path.module}/../../../nebula-mesh.json"))
