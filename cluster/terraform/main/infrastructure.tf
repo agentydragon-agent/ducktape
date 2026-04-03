@@ -119,7 +119,7 @@ locals {
     # taint from VPS nodes, unblocking Flux scheduling on workers.
     # Flux HelmRelease takes over CCM management after bootstrap.
     inlineManifests = [
-      { name = "talos-ccm", contents = file("${path.module}/bootstrap-manifests/talos-ccm.yaml") },
+      { name = "talos-ccm", contents = data.helm_template.talos_ccm.manifest },
     ]
   }
 
