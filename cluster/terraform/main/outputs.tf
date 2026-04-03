@@ -66,10 +66,6 @@ output "bootstrap_node_ip" {
   value       = hcloud_server.vps[local.bootstrap_node].ipv4_address
 }
 
-output "controlplane_ips" {
-  description = "Public IPs of VPS controlplane nodes (for external API access)"
-  value       = [for k, v in hcloud_server.vps : v.ipv4_address]
-}
 
 output "expected_node_count" {
   description = "Expected number of nodes in the cluster"
