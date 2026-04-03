@@ -41,7 +41,7 @@ bootstrap.
 - [ ] `nixos-rebuild switch` on wyrm2
 - [ ] `nixos-rebuild switch` on rugged (when available)
 - [ ] Verify nebula mesh: `resolvectl query talos-vps-cp-0.nebula.allegedly.works`
-- [ ] Authentik SSO: resync stale OAuth secrets (clear `last_applied_hash` on blueprints)
+- [x] ~~Authentik SSO resync~~ — not needed, fresh cluster has no stale DB state
 - [ ] Verify: `get-passwords` returns working credentials
 - [ ] Migrate tofu state to in-cluster PG — **VERIFY with `tofu state list` BEFORE deleting temp PG**
 - [ ] Clean up temp PG container
