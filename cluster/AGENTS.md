@@ -143,6 +143,15 @@ All in `terraform/main/`:
 
 @docs/secrets.md
 
+### Bootstrap Dependencies
+
+@docs/bootstrap-dependencies.md
+
+**Keep this document up to date.** When adding, removing, or changing secrets,
+SOPS files, tofu resources, or external credential requirements, update
+<docs/bootstrap-dependencies.md> in the same commit. This is the single
+reference for "what do I need to regenerate if X is lost?"
+
 ### Description Annotations
 
 Add `metadata.annotations.description` to any resource where name + namespace doesn't
