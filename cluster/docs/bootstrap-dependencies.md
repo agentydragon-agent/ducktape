@@ -177,8 +177,31 @@ wyrm2 and rugged join the cluster via kubelet TLS bootstrap over Nebula mesh.
 | k8s bootstrap kubeconfig | L3: `kubeconfig` + bootstrap token | Manual copy → `secrets/k8s-worker.yaml` SOPS → `nixos-rebuild switch`    |
 | k8s CA cert              | L3: Talos machine secrets          | Extracted from kubeconfig or tofu output                                 |
 
-**If nebula certs rotate**: Copy new certs from `nebula-certs/` into the
-per-host SOPS files, commit, push, `nixos-rebuild switch` on each host.
+**After fresh bootstrap** (new cluster CA / new machine secrets):
+
+1. Update SOPS files with new certs + bootstrap token:
+   - `secrets/{host}-nebula.yaml` — new nebula cert, key, CA from `nebula-certs/`
+   - `secrets/k8s-worker.yaml` — new `k8s_ca_cert` (PEM from `tofu output -raw k8s_ca_cert | base64 -d`),
+     new `k8s_bootstrap_token` (from `tofu output -raw k8s_bootstrap_token`),
+     new `k8s_bootstrap_kubeconfig` (with updated CA + token + server `https://10.42.0.1:6443`)
+2. `nixos-rebuild switch` on each NixOS worker
+3. Restart nebula, haproxy, kubelet: `sudo systemctl restart nebula haproxy kubelet`
+4. **Delete stale kubelet TLS state** — kubelet caches a kubeconfig with certs
+   issued by the old cluster CA at `/var/lib/kubelet/kubelet.conf` and
+   `/var/lib/kubelet/pki/`. These must be removed so kubelet re-bootstraps
+   with the new CA:
+
+   ```bash
+   sudo rm /var/lib/kubelet/kubelet.conf /var/lib/kubelet/pki/*
+   sudo systemctl restart kubelet
+   ```
+
+   Without this, kubelet fails with `x509: failed to unmarshal elliptic curve
+point` or `certificate signed by unknown authority`.
+
+5. Verify: `kubectl get nodes` should show the worker as `Ready` after ~30s
+
+**If only nebula certs rotate** (same cluster CA): steps 1-3 only, skip step 4.
 
 **Gap**: No automation connects tofu cert generation to sops-nix deployment.
 This is a manual step after every cert rotation.
