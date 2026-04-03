@@ -19,10 +19,11 @@ locals {
 }
 
 data "helm_template" "cilium" {
-  name       = "cilium"
-  namespace  = "kube-system"
-  repository = "https://helm.cilium.io/"
-  chart      = "cilium"
-  version    = local.cilium_version
-  values     = [local.cilium_values]
+  name         = "cilium"
+  namespace    = "kube-system"
+  repository   = "https://helm.cilium.io/"
+  chart        = "cilium"
+  version      = local.cilium_version
+  kube_version = var.kubernetes_version
+  values       = [local.cilium_values]
 }
