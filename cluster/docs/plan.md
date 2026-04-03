@@ -42,13 +42,11 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
       wyrm2 VM config purely via NixOS/Proxmox API (no terraform). See postmortem
       `cluster/docs/lessons_learned/2026-04-01-cluster-nuke-postmortem.md`.
-- [ ] Move remaining bootstrap-critical components to Talos inline manifests: Cilium
-      and Flux should be deployed via `cluster.inlineManifests` (like CCM already is).
-      This would remove `null_resource.cilium_bootstrap`, `null_resource.gateway_api_crds`,
-      `null_resource.wait_for_*`, and `flux_bootstrap_git` from terraform. Note: inline
-      manifests only apply on bootstrap — Flux takes over management afterward via
-      HelmReleases. CCM is already done (rendered from HelmRelease via `helm_template`
-      in `talos-ccm.tf`).
+- [ ] Move Flux to Talos inline/extra manifest (CCM already done via `talos-ccm.tf`).
+      Cilium can't be inlined — its rendered manifest (~82KB) exceeds Hetzner's 32KB
+      `user_data` limit. Cilium stays as `null_resource.cilium_bootstrap` (helm CLI).
+      Gateway API CRDs could move to `extraManifests` (URL fetch) but currently also
+      use `null_resource` for consistency with Cilium.
 - [ ] Consolidate tofu plan prerequisites — currently requires assembling credentials from
       multiple scattered sources before `tofu plan/apply` works: - `PG_CONN_STR`: read from k8s secret (`tofu-state-db-app`) via kubectl, not auto-set
       outside of cluster-networked machines - `TF_VAR_hcloud_token`: stored in system keyring on wyrm2 (`secret-tool lookup service hcloud account default`) - `PROXMOX_VE_API_TOKEN`: stored in system keyring on wyrm2 (`secret-tool lookup service proxmox ...`) - `kubeconfig`: written to `terraform/main/kubeconfig` only after `tofu apply`; must be
