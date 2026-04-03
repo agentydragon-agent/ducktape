@@ -14,4 +14,7 @@ spec:
   dependsOn:
     - name: claude-rbac
     - name: openclaw-sandbox
-    - name: sealed-secrets
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets

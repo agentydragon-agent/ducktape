@@ -13,4 +13,7 @@ spec:
   timeout: 5m
   dependsOn:
     - name: openclaw-mitmproxy-namespace
-    - name: sealed-secrets
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets

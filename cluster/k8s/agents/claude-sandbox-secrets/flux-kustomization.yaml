@@ -11,8 +11,11 @@ spec:
     kind: GitRepository
     name: flux-system
   timeout: 5m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: claude-rbac
-    - name: sealed-secrets # SealedSecret CRDs
     - name: external-secrets-config
     - name: ollama-secrets
