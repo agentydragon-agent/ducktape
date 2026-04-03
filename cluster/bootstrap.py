@@ -46,12 +46,8 @@ PERSISTENT_AUTH_TARGETS = [
     "proxmox_virtual_environment_role.persistent",
     "proxmox_virtual_environment_user.persistent",
     "proxmox_virtual_environment_user_token.persistent",
-    "tls_private_key.sealed_secrets",
-    "tls_self_signed_cert.sealed_secrets",
-    "tls_private_key.flux_deploy",
     "null_resource.nebula_ca",
     "null_resource.nebula_node_cert",
-    "random_password.attic_jwt_token_raw",
 ]
 
 # Infrastructure resources — VMs, Talos config, Cilium, k8s secrets.
@@ -79,10 +75,8 @@ INFRA_TARGETS = [
     "null_resource.cilium_bootstrap",
     "null_resource.wait_for_nodes_ready",
     "kubernetes_secret.hcloud_csi",
-    "kubernetes_secret.sealed_secrets_key",
     "kubernetes_secret.sops_age_cluster_secrets",
     "kubernetes_config_map.cluster_info",
-    "random_string.key_suffix",
 ]
 
 

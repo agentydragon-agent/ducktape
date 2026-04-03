@@ -35,4 +35,5 @@ spec:
     initdb:
       database: tfstate
       owner: tfstate
-      # CNPG auto-generates credentials in secret tofu-state-db-app
+      secret:
+        name: tofu-state-db-credentials

@@ -76,13 +76,6 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
-  # tofu-state-db PG credentials (direnv, tofu plan)
-  - path_regex: secrets/tofu-state-db\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *user-wyrm2
-          - *user-rugged
   # Cluster infrastructure tokens (tofu apply: hcloud, proxmox)
   - path_regex: secrets/cluster-tokens\.yaml$
     key_groups:
