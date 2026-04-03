@@ -138,22 +138,8 @@ data "sops_file" "flux_deploy_key" {
   source_file = "${path.module}/../../../secrets/flux-deploy-key.yaml"
 }
 
-# ============================================================================
-# NIX CACHE SECRETS (signing key + Attic JWT token)
-# ============================================================================
-# Stored in secrets/nix-cache.yaml (SOPS-encrypted).
 
-data "sops_file" "nix_cache" {
-  source_file = "${path.module}/../../../secrets/nix-cache.yaml"
-}
 
-locals {
-  nix_cache_keys = {
-    private_key = data.sops_file.nix_cache.data["signing_private_key"]
-    public_key  = data.sops_file.nix_cache.data["signing_public_key"]
-  }
-  attic_jwt_token_base64 = data.sops_file.nix_cache.data["attic_jwt_token"]
-}
 
 # ============================================================================
 # NEBULA MESH PKI — CA + per-node certificates
@@ -329,92 +315,6 @@ CERTEOF
 # ============================================================================
 # NIX CACHE SIGNING KEY SEALED SECRET
 # ============================================================================
-
-resource "null_resource" "nix_cache_signing_key_sealed_secret" {
-  triggers = {
-    keys_hash    = sha256("${local.nix_cache_keys.private_key}:${local.nix_cache_keys.public_key}")
-    keypair_hash = sha256(local.sealed_secrets_crt)
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      # Get keys from terraform-managed local file
-      private_key='${local.nix_cache_keys.private_key}'
-      public_key='${local.nix_cache_keys.public_key}'
-
-      # Create kubernetes secret YAML
-      cat > /tmp/nix-cache-signing-key.yaml <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: nix-cache-signing-key
-  namespace: nix-cache
-type: Opaque
-stringData:
-  signing-key.sec: |
-    $private_key
-  signing-key.pub: |
-    $public_key
-EOF
-
-      # Seal the secret using terraform-generated keypair
-      cat > /tmp/sealed-secrets-cert.pem <<'CERTEOF'
-${local.sealed_secrets_crt}
-CERTEOF
-      kubeseal --cert /tmp/sealed-secrets-cert.pem \
-        --format=yaml < /tmp/nix-cache-signing-key.yaml > ${path.module}/../../k8s/applications/nix-cache/signing-key-sealed.yaml
-      rm /tmp/sealed-secrets-cert.pem
-
-      # Clean up temporary file
-      rm /tmp/nix-cache-signing-key.yaml
-
-      echo "Generated sealed secret for Nix cache signing key"
-    EOT
-  }
-}
-
-# ============================================================================
-# ATTIC JWT TOKEN SEALED SECRET
-# ============================================================================
-
-resource "null_resource" "attic_jwt_token_sealed_secret" {
-  triggers = {
-    token_hash   = sha256(local.attic_jwt_token_base64)
-    keypair_hash = sha256(local.sealed_secrets_crt)
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      # Get base64-encoded JWT token from terraform
-      jwt_token_base64='${local.attic_jwt_token_base64}'
-
-      # Create kubernetes secret YAML
-      cat > /tmp/attic-jwt-token.yaml <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: attic-jwt-token
-  namespace: nix-cache
-type: Opaque
-stringData:
-  jwt-token: "$jwt_token_base64"
-EOF
-
-      # Seal the secret using terraform-generated keypair
-      cat > /tmp/sealed-secrets-cert.pem <<'CERTEOF'
-${local.sealed_secrets_crt}
-CERTEOF
-      kubeseal --cert /tmp/sealed-secrets-cert.pem \
-        --format=yaml < /tmp/attic-jwt-token.yaml > ${path.module}/../../k8s/applications/nix-cache/jwt-token-sealed.yaml
-      rm /tmp/sealed-secrets-cert.pem
-
-      # Clean up temporary file
-      rm /tmp/attic-jwt-token.yaml
-
-      echo "Generated sealed secret for Attic JWT token (base64-encoded)"
-    EOT
-  }
-}
 
 # ============================================================================
 # NEBULA ACTIVITYWATCH SEALED SECRET

@@ -140,11 +140,6 @@ output "instructions" {
 # PERSISTENT AUTH
 # ============================================================================
 
-output "nix_signing_public_key" {
-  description = "Nix cache signing public key for trusted-public-keys"
-  value       = local.nix_cache_keys.public_key
-}
-
 output "sealed_secrets_cert_pem" {
   description = "Sealed secrets self-signed certificate (PEM format)"
   value       = local.sealed_secrets_crt

@@ -83,13 +83,6 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
-  # Nix cache secrets (signing key + Attic JWT token)
-  - path_regex: secrets/nix-cache\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *user-wyrm2
-          - *user-rugged
   # tofu-state-db PG credentials (direnv, tofu plan)
   - path_regex: secrets/tofu-state-db\.yaml$
     key_groups:
