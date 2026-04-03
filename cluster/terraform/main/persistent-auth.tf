@@ -139,27 +139,20 @@ resource "tls_private_key" "flux_deploy" {
 }
 
 # ============================================================================
-# NIX CACHE SIGNING KEY
-# Generated once via nix-store and cached in local file.
-# File is gitignored, backed up with terraform state to Google Drive.
+# NIX CACHE SECRETS (signing key + Attic JWT token)
 # ============================================================================
+# Stored in secrets/nix-cache.yaml (SOPS-encrypted).
 
-data "external" "nix_cache_key" {
-  program = ["bash", "-c", <<-EOT
-    KEY_FILE="${path.module}/nix-cache-key.json"
-    if [ ! -f "$KEY_FILE" ]; then
-      nix-store --generate-binary-cache-key cache.allegedly.works-1 /tmp/nix-priv.$$ /tmp/nix-pub.$$ 2>/dev/null
-      jq -n --arg priv "$(cat /tmp/nix-priv.$$)" --arg pub "$(cat /tmp/nix-pub.$$)" \
-        '{private_key: $priv, public_key: $pub}' > "$KEY_FILE"
-      rm -f /tmp/nix-priv.$$ /tmp/nix-pub.$$
-    fi
-    cat "$KEY_FILE"
-  EOT
-  ]
+data "sops_file" "nix_cache" {
+  source_file = "${path.module}/../../../secrets/nix-cache.yaml"
 }
 
 locals {
-  nix_cache_keys = data.external.nix_cache_key.result
+  nix_cache_keys = {
+    private_key = data.sops_file.nix_cache.data["signing_private_key"]
+    public_key  = data.sops_file.nix_cache.data["signing_public_key"]
+  }
+  attic_jwt_token_base64 = data.sops_file.nix_cache.data["attic_jwt_token"]
 }
 
 # ============================================================================
@@ -381,17 +374,8 @@ CERTEOF
 }
 
 # ============================================================================
-# ATTIC JWT TOKEN
+# ATTIC JWT TOKEN SEALED SECRET
 # ============================================================================
-
-resource "random_password" "attic_jwt_token_raw" {
-  length  = 48
-  special = false
-}
-
-locals {
-  attic_jwt_token_base64 = base64encode(random_password.attic_jwt_token_raw.result)
-}
 
 resource "null_resource" "attic_jwt_token_sealed_secret" {
   triggers = {

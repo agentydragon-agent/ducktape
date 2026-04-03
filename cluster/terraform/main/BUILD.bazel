@@ -8,7 +8,6 @@ exports_files(
 tf_providers_versions(
     name = "providers",
     providers = {
-        "external": "hashicorp/external:~>2.3.0",
         "proxmox": "bpg/proxmox:~>0.91.0",
         "hcloud": "hetznercloud/hcloud:~>1.45",
         "talos": "siderolabs/talos:~>0.10.0",
@@ -28,7 +27,6 @@ tf_module(
     name = "main",
     data = ["//:nebula-mesh.json"],
     providers = [
-        "external",
         "proxmox",
         "hcloud",
         "talos",
