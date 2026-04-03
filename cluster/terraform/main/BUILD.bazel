@@ -24,7 +24,10 @@ tf_providers_versions(
 
 tf_module(
     name = "main",
-    data = ["//:nebula-mesh.json"],
+    data = [
+        "//:nebula-mesh.json",
+        "//cluster/k8s/talos-cloud-controller-manager:helmrelease.yaml",
+    ],
     providers = [
         "proxmox",
         "hcloud",

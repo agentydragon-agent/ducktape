@@ -11,7 +11,7 @@ resource "kubernetes_secret" "hcloud_csi" {
     token = var.hcloud_token
   }
 
-  depends_on = [null_resource.cilium_bootstrap]
+  depends_on = [null_resource.wait_for_nodes_ready]
 }
 
 
