@@ -139,6 +139,7 @@ output "instructions" {
 output "flux_deploy_public_key" {
   description = "Flux deploy key public key (OpenSSH format) - add to GitHub"
   value       = data.sops_file.flux_deploy_key.data["public_key"]
+  sensitive   = true
 }
 
 # ============================================================================
