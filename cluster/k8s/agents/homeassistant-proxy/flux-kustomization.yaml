@@ -4,6 +4,7 @@ metadata:
   name: homeassistant-proxy
   namespace: flux-system
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -13,11 +14,14 @@ spec:
   path: ./cluster/k8s/agents/homeassistant-proxy
   prune: true
   wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
       name: homeassistant-proxy
       namespace: homeassistant-proxy
   dependsOn:
-    - name: sealed-secrets
     - name: external-secrets-config

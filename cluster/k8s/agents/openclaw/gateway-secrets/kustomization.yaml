@@ -1,9 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - gemini-api-key-sealed.yaml
-  - openai-api-key-sealed.yaml
-  - anthropic-api-key-sealed.yaml
+  - gemini-api-key.sops.yaml
+  - openai-api-key.sops.yaml
+  - anthropic-api-key.sops.yaml
   - sandbox-sa-token-eso.yaml
-  - telegram-bot-token-sealed.yaml
+  - telegram-bot-token.sops.yaml
   - matrix-bot-password-eso.yaml

@@ -69,13 +69,6 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
-  # Sealed secrets RSA keypair (bootstrap deploys to kube-system/sealed-secrets-key)
-  - path_regex: secrets/sealed-secrets-keypair\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *user-wyrm2
-          - *user-rugged
   # Flux deploy key (ED25519, registered as GitHub deploy key)
   - path_regex: secrets/flux-deploy-key\.yaml$
     key_groups:

@@ -4,6 +4,7 @@ metadata:
   name: scanner
   namespace: flux-system
 spec:
+  suspend: true
   retryInterval: 1m
   interval: 10m
   timeout: 5m
@@ -13,6 +14,9 @@ spec:
   path: ./cluster/k8s/scanner
   prune: true
   wait: true
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: proxmox-csi
-    - name: sealed-secrets

@@ -16,6 +16,9 @@ spec:
       kind: Terraform
       name: dns-records
       namespace: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: tofu-controller
-    - name: sealed-secrets # aws-credentials-sealed.yaml

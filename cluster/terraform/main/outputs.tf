@@ -140,12 +140,6 @@ output "instructions" {
 # PERSISTENT AUTH
 # ============================================================================
 
-output "sealed_secrets_cert_pem" {
-  description = "Sealed secrets self-signed certificate (PEM format)"
-  value       = local.sealed_secrets_crt
-  sensitive   = false
-}
-
 output "flux_deploy_public_key" {
   description = "Flux deploy key public key (OpenSSH format) - add to GitHub"
   value       = data.sops_file.flux_deploy_key.data["public_key"]

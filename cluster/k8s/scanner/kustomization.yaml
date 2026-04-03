@@ -3,7 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - pvc.yaml
-  - samba-credentials-sealed.yaml
+  - samba-credentials.sops.yaml
   - filebrowser-config.yaml
   - deployment.yaml
   - service.yaml

@@ -9,7 +9,7 @@ resources:
   - service.yaml
   - cilium-network-policy.yaml
   - nebula-config.yaml
-  - nebula-certs-sealed.yaml
+  - nebula-certs.sops.yaml
 
 configMapGenerator:
   - name: activitywatch-readonly-proxy

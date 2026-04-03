@@ -4,6 +4,7 @@ metadata:
   name: openclaw-sandbox-secrets
   namespace: flux-system
 spec:
+  suspend: true
   interval: 10m
   path: ./cluster/k8s/agents/openclaw/sandbox-secrets
   prune: true
@@ -11,8 +12,11 @@ spec:
     kind: GitRepository
     name: flux-system
   timeout: 5m
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   dependsOn:
     - name: openclaw-sandbox
-    - name: sealed-secrets # SealedSecret CRDs
     - name: external-secrets-config
     - name: ollama-secrets

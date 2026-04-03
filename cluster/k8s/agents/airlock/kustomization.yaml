@@ -4,8 +4,8 @@ resources:
   - namespace.yaml
   - externalsecret.yaml
   - exec-backend-token.yaml
-  - oura-client-credentials-sealed.yaml
-  - google-client-credentials-sealed.yaml
+  - oura-client-credentials.sops.yaml
+  - google-client-credentials.sops.yaml
   - airlock-pvc.yaml
   - airlock-serviceaccount.yaml
   - airlock-rbac.yaml
