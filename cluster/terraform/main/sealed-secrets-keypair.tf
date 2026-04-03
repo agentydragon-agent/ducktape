@@ -1,10 +1,5 @@
 # Sealed Secrets Keypair — deploy to cluster
-# References keypair from persistent-auth.tf (same root).
-
-locals {
-  sealed_secrets_cert_pem = tls_self_signed_cert.sealed_secrets.cert_pem
-  sealed_secrets_key_pem  = tls_private_key.sealed_secrets.private_key_pem
-}
+# Keypair read from SOPS in persistent-auth.tf.
 
 # Apply our stable keypair to the cluster so sealed-secrets controller uses it
 resource "kubernetes_secret" "sealed_secrets_key" {
@@ -18,12 +13,11 @@ resource "kubernetes_secret" "sealed_secrets_key" {
   }
 
   data = {
-    "tls.crt" = local.sealed_secrets_cert_pem
-    "tls.key" = local.sealed_secrets_key_pem
+    "tls.crt" = local.sealed_secrets_crt
+    "tls.key" = local.sealed_secrets_key
   }
 
   type = "kubernetes.io/tls"
-
 }
 
 

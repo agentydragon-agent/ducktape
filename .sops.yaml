@@ -69,6 +69,13 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
+  # Sealed secrets RSA keypair (bootstrap deploys to kube-system/sealed-secrets-key)
+  - path_regex: secrets/sealed-secrets-keypair\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *user-wyrm2
+          - *user-rugged
   # tofu-state-db PG credentials (direnv, tofu plan)
   - path_regex: secrets/tofu-state-db\.yaml$
     key_groups:

@@ -116,39 +116,16 @@ locals {
 # ============================================================================
 # SEALED SECRETS KEYPAIR (RSA 4096-bit, self-signed, 10-year validity)
 # ============================================================================
+# Keypair stored in secrets/sealed-secrets-keypair.yaml (SOPS-encrypted).
+# Public cert committed to k8s/sealed-secrets/sealed-secrets-cert.pem.
 
-resource "tls_private_key" "sealed_secrets" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-
-  lifecycle { prevent_destroy = true }
+data "sops_file" "sealed_secrets_keypair" {
+  source_file = "${path.module}/../../../secrets/sealed-secrets-keypair.yaml"
 }
 
-resource "tls_self_signed_cert" "sealed_secrets" {
-  private_key_pem = tls_private_key.sealed_secrets.private_key_pem
-
-  subject {
-    common_name  = "sealed-secret"
-    organization = "sealed-secrets"
-  }
-
-  validity_period_hours = 87600 # 10 years
-  is_ca_certificate     = true
-
-  allowed_uses = [
-    "key_encipherment",
-    "digital_signature",
-    "cert_signing",
-  ]
-
-  lifecycle { prevent_destroy = true }
-}
-
-# Public certificate committed to repo (safe — only enables encrypting, not decrypting).
-# seal-secret.sh reads this file instead of requiring terraform state access.
-resource "local_file" "sealed_secrets_cert" {
-  content  = tls_self_signed_cert.sealed_secrets.cert_pem
-  filename = "${path.module}/../../k8s/sealed-secrets/sealed-secrets-cert.pem"
+locals {
+  sealed_secrets_key = data.sops_file.sealed_secrets_keypair.data["tls_key"]
+  sealed_secrets_crt = data.sops_file.sealed_secrets_keypair.data["tls_crt"]
 }
 
 # ============================================================================
@@ -315,7 +292,7 @@ resource "kubernetes_secret" "sops_age_cluster_secrets" {
 resource "null_resource" "proxmox_csi_sealed_secret" {
   triggers = {
     csi_config_hash = sha256(jsonencode(local.pve_token_configs["csi"]))
-    keypair_hash    = sha256(tls_self_signed_cert.sealed_secrets.cert_pem)
+    keypair_hash    = sha256(local.sealed_secrets_crt)
   }
 
   provisioner "local-exec" {
@@ -342,7 +319,7 @@ EOF
 
       # Seal the secret using terraform-generated keypair
       cat > /tmp/sealed-secrets-cert.pem <<'CERTEOF'
-${tls_self_signed_cert.sealed_secrets.cert_pem}
+${local.sealed_secrets_crt}
 CERTEOF
       kubeseal --cert /tmp/sealed-secrets-cert.pem \
         --format=yaml < /tmp/proxmox-csi-secret.yaml > ${path.module}/../../k8s/proxmox-csi/secrets/proxmox-csi-sealed.yaml
@@ -363,7 +340,7 @@ CERTEOF
 resource "null_resource" "nix_cache_signing_key_sealed_secret" {
   triggers = {
     keys_hash    = sha256("${local.nix_cache_keys.private_key}:${local.nix_cache_keys.public_key}")
-    keypair_hash = sha256(tls_self_signed_cert.sealed_secrets.cert_pem)
+    keypair_hash = sha256(local.sealed_secrets_crt)
   }
 
   provisioner "local-exec" {
@@ -389,7 +366,7 @@ EOF
 
       # Seal the secret using terraform-generated keypair
       cat > /tmp/sealed-secrets-cert.pem <<'CERTEOF'
-${tls_self_signed_cert.sealed_secrets.cert_pem}
+${local.sealed_secrets_crt}
 CERTEOF
       kubeseal --cert /tmp/sealed-secrets-cert.pem \
         --format=yaml < /tmp/nix-cache-signing-key.yaml > ${path.module}/../../k8s/applications/nix-cache/signing-key-sealed.yaml
@@ -419,7 +396,7 @@ locals {
 resource "null_resource" "attic_jwt_token_sealed_secret" {
   triggers = {
     token_hash   = sha256(local.attic_jwt_token_base64)
-    keypair_hash = sha256(tls_self_signed_cert.sealed_secrets.cert_pem)
+    keypair_hash = sha256(local.sealed_secrets_crt)
   }
 
   provisioner "local-exec" {
@@ -441,7 +418,7 @@ EOF
 
       # Seal the secret using terraform-generated keypair
       cat > /tmp/sealed-secrets-cert.pem <<'CERTEOF'
-${tls_self_signed_cert.sealed_secrets.cert_pem}
+${local.sealed_secrets_crt}
 CERTEOF
       kubeseal --cert /tmp/sealed-secrets-cert.pem \
         --format=yaml < /tmp/attic-jwt-token.yaml > ${path.module}/../../k8s/applications/nix-cache/jwt-token-sealed.yaml
@@ -464,7 +441,7 @@ resource "null_resource" "nebula_activitywatch_sealed_secret" {
     ca_hash      = sha256(data.local_file.nebula_ca_crt.content)
     cert_hash    = sha256(data.local_file.nebula_node_crt["activitywatch.nebula.allegedly.works"].content)
     key_hash     = sha256(data.local_sensitive_file.nebula_node_key["activitywatch.nebula.allegedly.works"].content)
-    keypair_hash = sha256(tls_self_signed_cert.sealed_secrets.cert_pem)
+    keypair_hash = sha256(local.sealed_secrets_crt)
   }
 
   provisioner "local-exec" {
@@ -492,7 +469,7 @@ $(echo "$host_key" | sed 's/^/    /')
 EOF
 
       cat > /tmp/sealed-secrets-cert.pem <<'CERTEOF'
-${tls_self_signed_cert.sealed_secrets.cert_pem}
+${local.sealed_secrets_crt}
 CERTEOF
 
       kubeseal --cert /tmp/sealed-secrets-cert.pem \

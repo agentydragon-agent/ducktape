@@ -147,7 +147,7 @@ output "nix_signing_public_key" {
 
 output "sealed_secrets_cert_pem" {
   description = "Sealed secrets self-signed certificate (PEM format)"
-  value       = tls_self_signed_cert.sealed_secrets.cert_pem
+  value       = local.sealed_secrets_crt
   sensitive   = false
 }
 
