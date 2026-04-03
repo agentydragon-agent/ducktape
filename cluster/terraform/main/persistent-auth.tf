@@ -214,7 +214,8 @@ resource "kubernetes_namespace" "flux_system" {
 
   depends_on = [
     local_file.kubeconfig,
-    null_resource.wait_for_nodes_ready,
+    null_resource.wait_for_k8s_api,
+    null_resource.cilium_bootstrap,
   ]
 }
 

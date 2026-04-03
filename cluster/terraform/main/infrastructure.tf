@@ -107,12 +107,6 @@ locals {
 
   # Controlplane cluster config — includes etcd, apiServer, and inline
   # manifests that Talos rejects on worker nodes.
-  # Gateway API CRDs fetched by Talos on boot (extraManifests).
-  # Must be installed before Cilium so it can register as GatewayClass.
-  cluster_extra_manifests = [
-    "https://github.com/kubernetes-sigs/gateway-api/releases/download/${local.gateway_api_version}/experimental-install.yaml",
-  ]
-
   common_cluster_config = {
     allowSchedulingOnControlPlanes = false
     apiServer                      = local.api_server_config
@@ -120,21 +114,19 @@ locals {
     etcd                           = { advertisedSubnets = ["10.42.0.0/16"] }
     network                        = { cni = { name = "none" } }
     proxy                          = { disabled = true }
-    extraManifests                 = local.cluster_extra_manifests
-    # Bootstrap-critical inline manifests applied by Talos before pods schedule.
+    # Talos CCM as inline manifest — removes cloud-provider taint before Flux.
+    # Cilium is too large (~82KB) for Hetzner's 32KB user_data limit, so it
+    # stays as a null_resource helm install (see cilium.tf).
     inlineManifests = [
-      { name = "cilium", contents = data.helm_template.cilium.manifest },
       { name = "talos-ccm", contents = data.helm_template.talos_ccm.manifest },
     ]
   }
 
   # Worker-safe cluster config — no etcd, no apiServer, no inline manifests.
-  # Still needs extraManifests for Gateway API CRDs (Talos applies on all nodes).
   worker_cluster_config = {
-    discovery      = { enabled = true }
-    network        = { cni = { name = "none" } }
-    proxy          = { disabled = true }
-    extraManifests = local.cluster_extra_manifests
+    discovery = { enabled = true }
+    network   = { cni = { name = "none" } }
+    proxy     = { disabled = true }
   }
 
   # Shared machine base — networking and feature flags common to all nodes.
