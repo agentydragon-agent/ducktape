@@ -8,7 +8,6 @@ resources:
   - flux-image-automation/flux-kustomization.yaml
 
   # --- core infrastructure (standalone) ---
-  - sealed-secrets/flux-kustomization.yaml
   - tofu-controller/flux-kustomization.yaml
   - reloader/flux-kustomization.yaml
   - coredns-custom/flux-kustomization.yaml
