@@ -28,12 +28,9 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 
 ## Next Actions
 
-- [ ] Consider migrating cluster secrets from SealedSecrets to SOPS. Flux has native SOPS
-      support (`decryption.provider: sops` in Kustomization + `sops-age` Secret in
-      `flux-system`). The bootstrap key would be a Terraform-managed age key (generated from
-      a `random_bytes` seed, derived deterministically, stored in PG state with
-      `prevent_destroy`). Good candidates for early migration: `buildbuddy-api-key`,
-      Nebula certs. SealedSecrets would remain as the fallback for anything not yet migrated.
+- [x] ~~Migrate cluster secrets from SealedSecrets to SOPS~~ — done (2026-04-02).
+      All 26 SealedSecret files converted to SOPS. Sealed-secrets controller removed.
+      Nebula CA, Flux deploy key, and cluster age keypair moved to SOPS in `secrets/`.
 
 - [ ] Nebula cert deployment gap: tofu generates certs to disk, but NixOS workers
       (wyrm2, rugged) read certs from sops-nix secrets. No automation connects them —
@@ -161,7 +158,7 @@ Nix cache, Grafana, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ### Secrets: Vault SSOT
 
-Runtime secrets use Terraform -> Vault -> ESO. Bootstrap secrets use SealedSecrets. Zero ESO Password generators remain.
+Runtime secrets use Terraform → Vault → ESO. Bootstrap secrets use SOPS (age-encrypted in git, decrypted by Flux). Zero ESO Password generators remain.
 Stakater Reloader restarts pods on changes. See
 <lessons_learned/2025-11-28-eso-password-generator-desync.md>.
 
@@ -196,8 +193,8 @@ inter-node CIDRs. Keep 80/443/53 public.
 | `~/.kube/config` (wyrm2)      | `localhost:7445`         | Via local haproxy                                     |
 
 `api.allegedly.works` exists (round-robin VPS IPs, `kube-api-proxy` DaemonSet on port 16443
-with LE cert, managed by `dns-records` TF + `k8s/kube-api-proxy/`). Bootstrappable from
-cluster — tofu-controller creates the DNS record, Flux deploys the proxy.
+with LE cert, managed by ClusterRRset CRDs + `k8s/kube-api-proxy/`). Bootstrappable from
+cluster — DNS record is a declarative ClusterRRset, Flux deploys the proxy.
 
 - [ ] Patch TF-generated kubeconfig post-bootstrap to use `api.allegedly.works:16443`
 

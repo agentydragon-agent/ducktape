@@ -13,11 +13,11 @@ storage on a `local-path` PVC. Manifests in `k8s/nix-cache/`.
 
 ## Secrets
 
-| Secret                  | Source                          | Contains                                                   |
-| ----------------------- | ------------------------------- | ---------------------------------------------------------- |
-| `nix-cache-signing-key` | SealedSecret (`terraform/main`) | Nix signing keypair (`signing-key.pub`, `signing-key.sec`) |
-| `attic-jwt-token`       | SealedSecret (`terraform/main`) | JWT HS256 secret for token signing                         |
-| `attic-db-app`          | CNPG-generated                  | PostgreSQL connection URI                                  |
+| Secret                  | Source                                           | Contains                                                   |
+| ----------------------- | ------------------------------------------------ | ---------------------------------------------------------- |
+| `nix-cache-signing-key` | SOPS (`k8s/nix-cache/app/signing-key.sops.yaml`) | Nix signing keypair (`signing-key.pub`, `signing-key.sec`) |
+| `attic-jwt-token`       | SOPS (`k8s/nix-cache/app/jwt-token.sops.yaml`)   | JWT HS256 secret for token signing                         |
+| `attic-db-app`          | CNPG-generated                                   | PostgreSQL connection URI                                  |
 
 Tokens (admin, CI push) are JWTs signed with the `attic-jwt-token` secret.
 They are ephemeral — generate with `atticadm make-token`, store where needed.

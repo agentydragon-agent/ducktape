@@ -18,10 +18,12 @@ See <../README.md> for architecture overview, node topology, and networking deta
 
 ### Persistent Auth Resources
 
-Persistent-auth resources (Proxmox API tokens, sealed secrets keypair, Nix signing key,
-Flux deploy key) live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = true }`.
-They are created on the first `tofu apply` and preserved across bootstrap cycles.
+Persistent-auth resources (Proxmox API tokens, Nebula node certs, SOPS age key
+deployment) live in `terraform/main/persistent-auth.tf` with `lifecycle { prevent_destroy = true }`.
+Core secrets (Nebula CA, Flux deploy key, cluster age keypair) are SOPS-encrypted
+in `secrets/` and read by tofu via the `sops` provider.
 Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle).
+See <bootstrap-dependencies.md> for the full dependency graph.
 
 ## Cold-Start Deployment
 
@@ -41,7 +43,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 
 ### Phase 1: Persistent Auth (`tofu apply -target=<persistent-auth resources>`)
 
-- Proxmox API tokens, sealed secrets keypair, Nix signing key, Flux deploy key
+- Proxmox API tokens, Nebula CA → node certs, SOPS age key deployment
 - Resources have `lifecycle { prevent_destroy = true }` — preserved across cycles
 
 ### Phase 2: Infrastructure (`tofu apply -target=<infra resources>` + health checks)
@@ -49,7 +51,7 @@ The bootstrap script executes a multi-phase deployment against a single TF root
 - Hetzner API → 2x VPS with Talos ISO
 - Proxmox API → 1x VM with cloud-init for static IP
 - Talos API → Bootstraps cluster, generates kubeconfig
-- Kubernetes API → Installs Cilium CNI, deploys sealed secrets keypair
+- Kubernetes API → Installs Cilium CNI, deploys SOPS age key to flux-system
 
 ### Phase 3: Full Apply (`tofu apply`)
 
@@ -70,7 +72,7 @@ kubectl get storageclass               # longhorn (default), proxmox-csi-retain,
 ## Dependency Chain
 
 ```text
-Talos OS → Nebula mesh → K8s API → Cilium CNI → Sealed Secrets → CSI Drivers → Apps
+Talos OS → Nebula mesh → K8s API → Cilium CNI → Flux (SOPS) → CSI Drivers → Apps
 ```
 
 ## Let's Encrypt Issuer Toggle

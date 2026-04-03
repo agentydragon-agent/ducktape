@@ -2,143 +2,91 @@
 
 ## TL;DR
 
-- **SSOT**: OpenTofu state in PG backend (CNPG `tofu-state-db`, schema `main`)
-- **Bootstrap secrets**: SealedSecrets (encrypted in git, decrypted by controller using stable keypair)
-- **Runtime secrets**: External Secrets Operator reading from Vault
-- **Keypair flow**: tofu state → apply deploys to cluster → controller uses it
+- **Bootstrap secrets**: SOPS-encrypted in git (`*.sops.yaml`), decrypted by Flux
+- **Runtime secrets**: Vault → External Secrets Operator → K8s Secrets
+- **Encryption keys**: Age keypairs in `.sops.yaml` (admin + cluster keys)
+- **Full dependency graph**: <bootstrap-dependencies.md>
 
-## Architecture Overview
+## Architecture
 
-### Three-Layer Model
+### Two-Layer Model
 
-**Layer 0 — Persistent Auth** (`terraform/main/persistent-auth.tf`)
+**Layer 1 — SOPS Secrets** (git → Flux → cluster)
 
-- Sealed secrets keypair (RSA 4096, 10-year validity)
-- Proxmox API tokens (CSI, OpenTofu)
-- Nebula mesh PKI (CA cert + per-node certs/keys)
-- Nix cache signing key, Flux deploy key
-- Storage: PG backend (CNPG `tofu-state-db`, schema `main`)
-- Resources have `lifecycle { prevent_destroy = true }`
-- Note: Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle)
+Secrets are age-encrypted YAML files committed to git. Flux decrypts them
+using the cluster age key (`sops-age-cluster-secrets` in `flux-system`).
 
-↓
-
-**Layer 1 — SealedSecrets** (git repo → cluster)
-
-- `k8s/proxmox-csi/secrets/proxmox-csi-sealed.yaml`
-- `k8s/nix-cache/app/signing-key-sealed.yaml`
-- `k8s/nix-cache/app/jwt-token-sealed.yaml`
-- Sealed with keypair from Layer 0, deployed by Flux, decrypted by sealed-secrets controller
-
-↓
+Files in `cluster/k8s/**/*.sops.yaml` (26 files) contain app credentials,
+API keys, and infrastructure tokens. Files in `secrets/*.yaml` contain
+infrastructure secrets (Nebula CA, Flux deploy key, cluster age keypair).
 
 **Layer 2 — Vault + ESO** (runtime secrets)
 
-- External Secrets Operator reads from Vault
-- Creates K8s secrets from Vault KV paths
-- Used for: application passwords, SSO credentials, etc.
+External Secrets Operator reads from Vault KV and creates K8s Secrets.
+Used for: SSO client secrets, database passwords, application credentials.
+Terraform generates passwords → stores in Vault → ESO syncs to K8s.
 
-## Data Flow
+## Age Keys
 
-### Bootstrap Flow (tofu apply)
+Defined in `.sops.yaml` creation rules:
 
-1. Targeted apply creates/uses keypair from tofu state (PG backend)
-2. `proxmox` provider manages Proxmox users, roles, and API tokens
-   (authenticated via `PROXMOX_VE_API_TOKEN` env var, `root@pam`)
-3. `kubeseal` creates SealedSecrets (writes to k8s/\*.yaml)
-4. User commits SealedSecrets to git manually
-5. Full apply deploys keypair as `kubernetes_secret` to cluster (direct references, same root)
-6. Flux deploys SealedSecrets from git
-7. Controller decrypts using deployed keypair → creates regular Secrets
+| Key                              | Purpose                                       | Storage                                                                                 |
+| -------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Admin age key (`age1u858...`)    | Decrypt all secrets locally                   | Derived from `~/.ssh/id_ed25519` via ssh-to-age                                         |
+| Cluster age key (`age1nywe...`)  | Flux decrypts `k8s/**/*.sops.yaml` in-cluster | `secrets/cluster-secrets-age.yaml` → deployed to `flux-system/sops-age-cluster-secrets` |
+| Host keys (wyrm2, rugged, atlas) | Per-host sops-nix secrets                     | Derived from host SSH keys                                                              |
 
-### Keypair Locations
+## Adding New SOPS Secrets
 
-| Location                                     | Purpose                                    |
-| -------------------------------------------- | ------------------------------------------ |
-| PG backend (`tofu-state-db`, schema `main`)  | SSOT (tofu state)                          |
-| `k8s/sealed-secrets/sealed-secrets-cert.pem` | Public cert committed to repo (TF-managed) |
-| `kube-system/sealed-secrets-key`             | Full keypair deployed to cluster           |
-| Git SealedSecrets                            | Encrypted with public cert                 |
+```bash
+# Create a new SOPS-encrypted secret
+sops cluster/k8s/<app>/secrets/my-secret.sops.yaml
+```
 
-The public certificate at `k8s/sealed-secrets/sealed-secrets-cert.pem` is managed by a
-`local_file` resource in `persistent-auth` terraform. It contains only the public half
-of the keypair (safe to commit — enables encrypting new SealedSecrets, not decrypting
-existing ones). `seal-secret.sh` reads this file directly.
+SOPS uses `.sops.yaml` creation rules to determine which age keys encrypt the
+file based on its path. Commit and push — Flux deploys automatically.
 
-## SealedSecrets in Repository
+## Rotating Credentials
 
-| File                                              | Purpose                 | Namespace   |
-| ------------------------------------------------- | ----------------------- | ----------- |
-| `k8s/proxmox-csi/secrets/proxmox-csi-sealed.yaml` | CSI driver credentials  | csi-proxmox |
-| `k8s/nix-cache/app/signing-key-sealed.yaml`       | Nix cache signing       | nix-cache   |
-| `k8s/nix-cache/app/jwt-token-sealed.yaml`         | Attic JWT token         | nix-cache   |
-| `k8s/dns-automation/aws-credentials-sealed.yaml`  | AWS Route 53 API access | flux-system |
+1. Get new credential from external service
+2. `sops cluster/k8s/<path>.sops.yaml` — edit the value
+3. Commit + push; Flux deploys; Stakater Reloader restarts affected pods
+
+## Rotating the Cluster Age Key
+
+1. Generate: `age-keygen -o /dev/stdout`
+2. Update `secrets/cluster-secrets-age.yaml` with new keypair
+3. Update `.sops.yaml` with new public key
+4. Re-encrypt all cluster secrets: `for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done`
+5. `tofu apply` to deploy new k8s secret
+6. Commit + push
 
 ## Common Failure Modes
 
-### Keypair Mismatch
+### SOPS Decryption Failure in Flux
 
-**Symptom**: `no key could decrypt secret` error on SealedSecret
+**Symptom**: Kustomization shows `sops decryption error`
 
-**Cause**: SealedSecret in git was sealed with a different keypair than what's in tofu state
+**Cause**: Cluster age key in `flux-system/sops-age-cluster-secrets` doesn't
+match the key used to encrypt the file.
 
-**Fix**: Re-run `tofu apply` in `terraform/main` to re-seal with correct keypair
+**Fix**: Verify the key matches `.sops.yaml`, re-encrypt if needed with
+`sops updatekeys`, redeploy the k8s secret via `tofu apply`.
 
 ### OpenTofu State Lost
 
-**Symptom**: New keypair generated, all SealedSecrets fail
+**Symptom**: SOPS age secret not deployed to cluster; Flux can't decrypt
 
 **Prevention**:
 
-- PG backend with backup CronJob (`pg_dump` every 6 hours to `proxmox-csi-retain` PVC)
-- Never drop the `main` schema in `tofu-state-db` unless intentional full reset
+- PG backend with backup CronJob (`pg_dump` every 6 hours)
+- Age keypair also stored in `secrets/cluster-secrets-age.yaml` (SOPS-encrypted
+  with admin key) — survives tofu state loss
 
 ## Validation
 
-Pre-commit hook validates all SealedSecrets can be decrypted with tofu keypair:
+Pre-commit validates SOPS files can be decrypted:
 
 ```bash
-# Validation uses kubeseal --recovery-unseal (works offline, no cluster needed)
-# Runs as part of the unified pre-commit hook:
 bazel run //devinfra/precommit
-```
-
-## Adding New SealedSecrets
-
-1. Create secret YAML with `kubectl create secret ... --dry-run=client -o yaml`
-2. Seal with the committed public cert via the helper script:
-
-   ```bash
-   kubectl create secret generic my-secret --from-literal=key=value \
-     --dry-run=client -o yaml | ./scripts/seal-secret.sh /dev/stdin k8s/path/my-sealed.yaml
-   ```
-
-   The script reads `k8s/sealed-secrets/sealed-secrets-cert.pem` (falls back to tofu state
-   if the file is missing).
-
-3. Add to appropriate kustomization.yaml
-4. Commit and push
-
-## Keypair Verification
-
-Compare serial numbers (committed cert and cluster should match):
-
-```bash
-# Committed cert:
-openssl x509 -noout -serial < k8s/sealed-secrets/sealed-secrets-cert.pem
-
-# Cluster:
-kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.crt}' | \
-  base64 -d | openssl x509 -noout -serial
-```
-
-## Re-sealing All Secrets
-
-If keypair mismatch occurs:
-
-```bash
-cd terraform/main && tofu apply
-git add k8s/proxmox-csi/secrets/proxmox-csi-sealed.yaml
-git commit -m "chore: re-seal secrets with current keypair"
-git push
 ```

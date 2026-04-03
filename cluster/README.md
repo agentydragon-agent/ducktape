@@ -6,7 +6,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - VMs: Talos on Proxmox + Hetzner VPS, configured with OpenTofu
 - Ingress: Cilium Gateway API (Envoy hostNetwork on VPS)
 - CNI: Cilium VXLAN (infrastructure-managed, not GitOps)
-- Secrets: SealedSecrets (stable keypair) + Vault/ESO (runtime)
+- Secrets: SOPS (age-encrypted in git, decrypted by Flux) + Vault/ESO (runtime)
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ Small Talos k8s cluster with GitOps and HTTPS.
 - GitHub CLI (`gh auth login`) for Flux
 - direnv configured in cluster directory
 
-`.envrc` auto-exports `KUBECONFIG`/`TALOSCONFIG` and provides CLI tools (kubeseal, talosctl, etc.).
+`.envrc` auto-exports `KUBECONFIG`/`TALOSCONFIG` and provides CLI tools (talosctl, kubectl, etc.).
 
 See <docs/bootstrap.md> for full setup.
 
@@ -127,7 +127,7 @@ No built-in auth; Nebula mesh membership is the trust boundary.
 - **Server**: `aw-server-rust` on Proxmox, SQLite on `proxmox-csi-retain` (1Gi PVC)
 - **Sidecar**: Nebula container joins the mesh (`10.42.0.40`, cert name `activitywatch`)
 - **Image**: `ghcr.io/agentydragon/aw-server`, pushed via BuildBuddy Workflows (`buildbuddy.yaml`)
-- **Certs**: SealedSecret from `terraform/main/nebula-activitywatch-sealed.tf`
+- **Certs**: SOPS secret (`k8s/activitywatch/nebula-certs.sops.yaml`)
 - **Read-only proxy**: nginx sidecar on port 5601 (Service `activitywatch-readonly`),
   allows GET + POST `/api/0/query` only. `openclaw-sandbox` and `claude-sandbox` namespaces
   have CiliumNetworkPolicy access to this port.

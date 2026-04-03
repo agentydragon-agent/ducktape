@@ -2,15 +2,14 @@
 
 Operational procedures for day-to-day cluster management, scaling, maintenance, and troubleshooting.
 
-## Sealed Secrets
+## SOPS Secrets
 
 ```bash
-# Create sealed secret (uses direnv-provided kubeseal)
-kubectl create secret generic my-secret --from-literal=key=value --dry-run=client -o yaml | \
-  kubeseal -o yaml > my-sealed-secret.yaml
+# Edit an existing SOPS secret
+sops cluster/k8s/<app>/secrets/my-secret.sops.yaml
 
-# Verify controller can provide its cert
-kubeseal --fetch-cert
+# Create a new SOPS-encrypted secret (uses .sops.yaml creation rules)
+sops cluster/k8s/<app>/secrets/new-secret.sops.yaml
 ```
 
 ## Node Operations

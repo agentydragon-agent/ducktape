@@ -225,40 +225,30 @@ If it does: suspend Authentik-targeting Terraform resources, delete stale `tfsta
 secrets, clean up Authentik API objects, unsuspend. See the lessons_learned doc for the
 full procedure.
 
-### SealedSecret Keypair Mismatch
+### SOPS Decryption Failure
 
-**Symptoms**: `no key could decrypt secret`; SealedSecrets show decryption error.
+**Symptoms**: Kustomization shows `sops decryption error`; secrets not created.
 
-**Cause**: SealedSecrets sealed with different keypair than current tofu state.
+**Cause**: Cluster age key in `flux-system/sops-age-cluster-secrets` doesn't
+match the key used to encrypt the `*.sops.yaml` files.
 
 **Fix**:
 
 ```bash
-cd terraform/main && tofu apply
-git add ../../k8s/**/*sealed*.yaml && git commit -m "chore: re-seal secrets"
+# Verify the key exists
+kubectl get secret sops-age-cluster-secrets -n flux-system
+
+# Re-encrypt all cluster SOPS files with current keys
+for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done
+
+# Redeploy the age key from tofu state
+cd terraform/main && tofu apply -target=kubernetes_secret.sops_age_cluster_secrets
 ```
 
-**Offline validation** (no cluster needed, runs as part of unified pre-commit):
+**Validation** (runs as part of unified pre-commit):
 
 ```bash
 bazel run //devinfra/precommit
-```
-
-**Keypair verification** (serial numbers should match):
-
-```bash
-# Committed cert
-openssl x509 -noout -serial < k8s/sealed-secrets/sealed-secrets-cert.pem
-# Cluster
-kubectl get secret sealed-secrets-key -n kube-system -o jsonpath='{.data.tls\.crt}' | \
-  base64 -d | openssl x509 -noout -serial
-```
-
-**Creating new SealedSecrets**: Always use the helper script:
-
-```bash
-kubectl create secret generic my-secret --from-literal=key=value \
-  --dry-run=client -o yaml | ./scripts/seal-secret.sh /dev/stdin k8s/path/my-sealed.yaml
 ```
 
 ## Health Checks
@@ -283,8 +273,8 @@ kubectl get secret proxmox-csi-plugin -n csi-proxmox -o jsonpath='{.data.config\
 kubectl logs deployment/proxmox-csi-plugin-controller -n csi-proxmox
 ```
 
-If SealedSecret decryption fails, regenerate with `tofu output` from `terraform/main` and
-re-seal. Check `tofu state show 'proxmox_virtual_environment_user_token.persistent["csi"]'`.
+If the SOPS secret fails to decrypt, check the age key in `flux-system/sops-age-cluster-secrets`.
+To verify the CSI token: `tofu state show 'proxmox_virtual_environment_user_token.persistent["csi"]'`.
 
 ### DNS & cert-manager
 

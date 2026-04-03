@@ -60,7 +60,7 @@ before consumer.
 **Only supported method**: `bazel run //cluster:bootstrap`
 
 Handles preflight validation, targeted applies against `terraform/main/` (persistent-auth ->
-infrastructure -> full apply), sealed secrets. Requires `dangerouslyDisableSandbox: true`
+infrastructure -> full apply), SOPS age key deployment. Requires `dangerouslyDisableSandbox: true`
 and `timeout: 600000` (10 min). Takes ~15-20 min.
 
 ## Testing
