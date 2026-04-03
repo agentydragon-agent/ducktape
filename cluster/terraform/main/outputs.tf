@@ -153,7 +153,7 @@ output "sealed_secrets_cert_pem" {
 
 output "flux_deploy_public_key" {
   description = "Flux deploy key public key (OpenSSH format) - add to GitHub"
-  value       = tls_private_key.flux_deploy.public_key_openssh
+  value       = data.sops_file.flux_deploy_key.data["public_key"]
 }
 
 # ============================================================================

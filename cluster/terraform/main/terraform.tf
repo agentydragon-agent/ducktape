@@ -66,7 +66,7 @@ provider "flux" {
     branch = "devel"
     ssh = {
       username    = "git"
-      private_key = tls_private_key.flux_deploy.private_key_openssh
+      private_key = data.sops_file.flux_deploy_key.data["private_key"]
     }
   }
 }

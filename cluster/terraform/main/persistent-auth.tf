@@ -131,11 +131,11 @@ locals {
 # ============================================================================
 # FLUX DEPLOY KEY (ED25519 for GitHub repository access)
 # ============================================================================
+# Stored in secrets/flux-deploy-key.yaml (SOPS-encrypted).
+# Public key must be registered as a deploy key on the GitHub repo.
 
-resource "tls_private_key" "flux_deploy" {
-  algorithm = "ED25519"
-
-  lifecycle { prevent_destroy = true }
+data "sops_file" "flux_deploy_key" {
+  source_file = "${path.module}/../../../secrets/flux-deploy-key.yaml"
 }
 
 # ============================================================================
