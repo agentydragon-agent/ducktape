@@ -4,6 +4,7 @@ metadata:
   name: authelia
   namespace: flux-system
 spec:
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/authelia/app
   prune: true

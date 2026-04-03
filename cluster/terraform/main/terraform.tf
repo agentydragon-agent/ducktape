@@ -8,6 +8,7 @@ terraform {
   required_providers {
     # From persistent-auth
     external = { source = "hashicorp/external", version = "~> 2.3.0" }
+    sops     = { source = "carlpett/sops", version = "~> 1.4.0" }
     # From infrastructure + persistent-auth + nixos-dev-env
     proxmox = { source = "bpg/proxmox", version = "~> 0.91.0" }
     # From infrastructure

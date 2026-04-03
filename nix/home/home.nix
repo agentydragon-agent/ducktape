@@ -152,11 +152,13 @@ in
       "flakes"
     ];
     download-buffer-size = 268435456; # 256MB (increased from default 64MB)
+    connect-timeout = 5; # Fail fast on unreachable substituters
 
     # Add nix-community cache for home-manager, nixGL, etc.
     # Add self-hosted attic binary cache for CI-built closures.
+    # CLEANUP(2026-04-02): Re-enable cache.allegedly.works when cluster is back up
     substituters = [
-      "https://cache.allegedly.works/main"
+      # "https://cache.allegedly.works/main"
       "https://cache.nixos.org/"
       # "https://nix-community.cachix.org"
     ];

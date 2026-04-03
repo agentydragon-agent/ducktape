@@ -98,6 +98,7 @@ in
     pkgs.ollama-cuda
     pkgs.poppler-utils # pdftoppm, pdftotext — PDF rendering/extraction
     pkgs.tesseract # OCR
+    pkgs.lvm2 # LVM tools for OpenEBS LVM LocalPV
   ];
 
   # Podman
@@ -135,7 +136,6 @@ in
   # virtio2 (/dev/vdc) is a dedicated 500GB Proxmox disk for the LVM VG.
   # OpenEBS node agent runs privileged and uses host LVM tools via nsenter.
   boot.kernelModules = [ "dm_thin_pool" ];
-  environment.systemPackages = [ pkgs.lvm2 ];
 
   # Create LVM PV + VG on the OpenEBS disk (idempotent oneshot)
   systemd.services.openebs-lvm-setup = {

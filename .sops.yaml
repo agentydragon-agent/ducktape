@@ -10,9 +10,9 @@ keys:
   # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
   - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
   # Cluster k8s secrets (Flux decryption, private key in flux-system/sops-age-cluster-secrets)
-  # Public key in cluster/sops-cluster-secrets-public-key.txt (tofu-managed).
-  # Run `tofu apply` in cluster/terraform/main/ to generate; update this anchor afterward.
-  - &cluster-secrets PLACEHOLDER_RUN_TOFU_APPLY_TO_GENERATE
+  # Private key stored in secrets/cluster-secrets-age.yaml (SOPS-encrypted).
+  # Bootstrap deploys it to the cluster as a k8s Secret.
+  - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
   # Cluster k8s secrets (Flux + admin can decrypt)
   - path_regex: cluster/k8s/.*\.sops\.yaml$
@@ -61,6 +61,29 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
+  # Cluster SOPS age private key (bootstrap deploys to flux-system/sops-age-cluster-secrets)
+  # TODO: Consider narrowing to admin-only once bootstrap script is tested.
+  - path_regex: secrets/cluster-secrets-age\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *user-wyrm2
+          - *user-rugged
+  # tofu-state-db PG credentials (direnv, tofu plan)
+  - path_regex: secrets/tofu-state-db\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *user-wyrm2
+          - *user-rugged
+  # Cluster infrastructure tokens (tofu apply: hcloud, proxmox)
+  - path_regex: secrets/cluster-tokens\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *user-wyrm2
+          - *user-rugged
+          - *atlas
   # Shared secrets (all hosts + claude-web agent)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:

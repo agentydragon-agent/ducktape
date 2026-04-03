@@ -199,16 +199,16 @@ locals {
   # Groups are unused (no nebula firewall rules reference them) but kept
   # minimal for future use.
   nebula_nodes = {
-    "talos-vps-cp-0.nebula.allegedly.works"      = { ip = "10.42.0.1/16", groups = "lighthouse" }
-    "talos-vps-cp-1.nebula.allegedly.works"      = { ip = "10.42.0.2/16", groups = "lighthouse" }
-    "talos-pve-cp-0.nebula.allegedly.works"      = { ip = "10.42.0.10/16", groups = "" }
-    "talos-vps-worker-0.nebula.allegedly.works"   = { ip = "10.42.0.11/16", groups = "lighthouse" }
-    "talos-vps-worker-1.nebula.allegedly.works"   = { ip = "10.42.0.12/16", groups = "lighthouse" }
-    "wyrm2.nebula.allegedly.works"                = { ip = "10.42.0.20/16", groups = "" }
-    "rugged.nebula.allegedly.works"               = { ip = "10.42.0.30/16", groups = "" }
-    "k8s-worker-test.nebula.allegedly.works"      = { ip = "10.42.0.99/16", groups = "" }
-    "atlas.nebula.allegedly.works"                = { ip = "10.42.0.5/16", groups = "" }
-    "activitywatch.nebula.allegedly.works"        = { ip = "10.42.0.40/16", groups = "" }
+    "talos-vps-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.1/16", groups = "lighthouse" }
+    "talos-vps-cp-1.nebula.allegedly.works"     = { ip = "10.42.0.2/16", groups = "lighthouse" }
+    "talos-pve-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.10/16", groups = "" }
+    "talos-vps-worker-0.nebula.allegedly.works" = { ip = "10.42.0.11/16", groups = "lighthouse" }
+    "talos-vps-worker-1.nebula.allegedly.works" = { ip = "10.42.0.12/16", groups = "lighthouse" }
+    "wyrm2.nebula.allegedly.works"              = { ip = "10.42.0.20/16", groups = "" }
+    "rugged.nebula.allegedly.works"             = { ip = "10.42.0.30/16", groups = "" }
+    "k8s-worker-test.nebula.allegedly.works"    = { ip = "10.42.0.99/16", groups = "" }
+    "atlas.nebula.allegedly.works"              = { ip = "10.42.0.5/16", groups = "" }
+    "activitywatch.nebula.allegedly.works"      = { ip = "10.42.0.40/16", groups = "" }
   }
 }
 
@@ -281,52 +281,12 @@ data "local_sensitive_file" "nebula_node_key" {
 # ============================================================================
 # SOPS AGE KEYPAIR — cluster k8s secrets
 # ============================================================================
-# Scoped to cluster/ secrets. Additional age keys can be added for other trust
-# boundaries (ansible, props, etc.) with separate creation_rules in .sops.yaml.
+# Keypair stored in secrets/cluster-secrets-age.yaml (SOPS-encrypted to admin +
+# user keys). Public key in .sops.yaml (&cluster-secrets anchor).
+# Tofu decrypts via sops provider and deploys the private key to flux-system.
 
-locals {
-  sops_cluster_secrets_key_dir = "${path.module}/sops-cluster-secrets-keys"
-}
-
-resource "null_resource" "sops_cluster_secrets_keygen" {
-  triggers = {
-    key_dir = local.sops_cluster_secrets_key_dir
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      mkdir -p ${local.sops_cluster_secrets_key_dir}
-      if [ ! -f ${local.sops_cluster_secrets_key_dir}/age.key ]; then
-        age-keygen 2>${local.sops_cluster_secrets_key_dir}/age.pub \
-          -o ${local.sops_cluster_secrets_key_dir}/age.key
-        echo "Generated new SOPS age keypair for cluster secrets"
-      else
-        echo "SOPS age keypair already exists, skipping"
-      fi
-    EOT
-  }
-}
-
-data "local_sensitive_file" "sops_cluster_secrets_key" {
-  filename   = "${local.sops_cluster_secrets_key_dir}/age.key"
-  depends_on = [null_resource.sops_cluster_secrets_keygen]
-}
-
-data "local_file" "sops_cluster_secrets_pub" {
-  filename   = "${local.sops_cluster_secrets_key_dir}/age.pub"
-  depends_on = [null_resource.sops_cluster_secrets_keygen]
-}
-
-# Public key committed to repo (safe — enables encrypting, not decrypting).
-resource "local_file" "sops_cluster_secrets_public_key" {
-  content  = data.local_file.sops_cluster_secrets_pub.content
-  filename = "${path.module}/../../sops-cluster-secrets-public-key.txt"
-}
-
-output "sops_cluster_secrets_public_key" {
-  value       = trimspace(data.local_file.sops_cluster_secrets_pub.content)
-  description = "Age public key for SOPS-encrypting cluster k8s secrets."
+data "sops_file" "cluster_secrets_age" {
+  source_file = "${path.module}/../../../secrets/cluster-secrets-age.yaml"
 }
 
 resource "kubernetes_secret" "sops_age_cluster_secrets" {
@@ -336,7 +296,7 @@ resource "kubernetes_secret" "sops_age_cluster_secrets" {
   }
 
   data = {
-    "age.agekey" = data.local_sensitive_file.sops_cluster_secrets_key.content
+    "age.agekey" = data.sops_file.cluster_secrets_age.data["age_secret_key"]
   }
 
   type = "Opaque"
