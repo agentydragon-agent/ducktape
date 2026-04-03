@@ -312,6 +312,27 @@ See <sso.md> for detailed migration strategy.
 13. Suspend Authentik, Vault, ESO
 14. After validation: delete Authentik, Vault, ESO code
 
+#### User provisioning
+
+Authelia's file backend stores users in `users.yml` (currently in a
+ConfigMap, password argon2id-hashed). This is config-as-code: add/change
+users by editing the file + pushing.
+
+**Decision needed**: Is static `users.yml` in ConfigMap sufficient, or do
+we want runtime self-service (password reset, profile changes)?
+
+- **Static (current plan)**: Users + hashed passwords in ConfigMap.
+  Change password = edit hash, commit, push, Reloader restarts pod.
+  Simple, auditable, no extra state. Fits single-user personal cluster.
+- **Self-service**: Requires writable `users.yml` (PVC or emptyDir seeded
+  from ConfigMap) + SMTP notifier for password reset emails. Adds
+  statefulness — password changes live only in the PVC, not in git.
+  Could drift from declared config. Consider only if MFA device
+  enrollment or frequent password rotation is needed.
+
+For now: stick with static ConfigMap. Revisit if MFA (TOTP/WebAuthn)
+enrollment requires runtime writes.
+
 ### Phase 4: Monitoring Migration (Prometheus → VictoriaMetrics)
 
 16. Deploy VictoriaMetrics cluster
