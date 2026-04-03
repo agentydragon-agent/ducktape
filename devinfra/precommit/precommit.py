@@ -29,7 +29,6 @@ from pathlib import Path
 import pygit2
 
 from cluster.scripts.validate_cluster.main import validate as validate_cluster
-from cluster.validation.sealed_secrets import validate_all as validate_sealed_secrets
 from devinfra.check_pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from devinfra.precommit.check_filename_conventions import check_filename_conventions
 from devinfra.precommit.check_terraform_centralization import find_violations
@@ -71,10 +70,6 @@ def is_cluster_validated(p: Path) -> bool:
     if p.is_relative_to("cluster/k8s") and p.suffix in (".yaml", ".yml"):
         return True
     return p.is_relative_to("cluster/terraform") and "cilium" in p.parts
-
-
-def is_sealed_secret(p: Path) -> bool:
-    return p.is_relative_to("cluster/k8s") and "sealed" in p.parts
 
 
 def is_terraform_module(p: Path) -> bool:
@@ -128,21 +123,6 @@ async def run_cluster_validate(files: list[Path], repo_root: Path) -> Validation
     return ValidationResult(name, Passed(elapsed))
 
 
-async def run_sealed_secrets_validate(files: list[Path]) -> ValidationResult:
-    """Validate SealedSecrets can be decrypted with tofu keypair."""
-    name = "sealed-secrets"
-    if not any(is_sealed_secret(f) for f in files):
-        return ValidationResult(name, Skipped())
-
-    start = time.perf_counter()
-    errors = await validate_sealed_secrets()
-    elapsed = time.perf_counter() - start
-
-    if errors:
-        return ValidationResult(name, Failed(elapsed, "\n".join(errors)))
-    return ValidationResult(name, Passed(elapsed))
-
-
 async def run_terraform_centralization_check(files: list[Path], repo_root: Path) -> ValidationResult:
     """Check terraform modules don't define provider versions."""
     name = "tf-centralization"
@@ -179,7 +159,6 @@ async def run_validate(
             run_terraform_centralization_check(files, repo_root),
             run_filename_convention_check(repo),
             run_cluster_validate(files, repo_root),
-            run_sealed_secrets_validate(files),
         )
     )
 

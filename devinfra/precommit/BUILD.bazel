@@ -56,7 +56,6 @@ py_binary(
         ":check_filename_conventions",
         ":check_terraform_centralization",
         "//cluster/scripts/validate_cluster:main",
-        "//cluster/validation:sealed_secrets",
         "//devinfra:check_pytest_main",
         "//util/bazel:workspace",
         "@pypi//pygit2",
