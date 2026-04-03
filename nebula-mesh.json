@@ -1,10 +1,10 @@
 {
-  "_comment": "Single source of truth for Nebula mesh lighthouse topology. Read by: Nix (nebula-mesh.nix), Ansible (nebula role), Terraform (infrastructure). Downstream nodes use DNS hostnames for static_host_map endpoints. VPS lighthouse Talos configs use dynamic hcloud_server IPs instead.",
+  "_comment": "Single source of truth for Nebula mesh lighthouse topology. Read by: Nix (nebula-mesh.nix), Terraform (infrastructure). Non-lighthouse nodes need public IPs here because DNS (*.nebula.allegedly.works) resolves via lighthouse DNS which isn't reachable before the mesh is up.",
   "lighthouse_ips": ["10.42.0.1", "10.42.0.2", "10.42.0.11", "10.42.0.12"],
   "static_host_map": {
-    "10.42.0.1": ["talos-vps-cp-0.nebula.allegedly.works:4242"],
-    "10.42.0.2": ["talos-vps-cp-1.nebula.allegedly.works:4242"],
-    "10.42.0.11": ["talos-vps-worker-0.nebula.allegedly.works:4242"],
-    "10.42.0.12": ["talos-vps-worker-1.nebula.allegedly.works:4242"]
+    "10.42.0.1": ["5.78.144.197:4242"],
+    "10.42.0.2": ["5.78.142.158:4242"],
+    "10.42.0.11": ["5.78.106.249:4242"],
+    "10.42.0.12": ["5.78.43.147:4242"]
   }
 }
