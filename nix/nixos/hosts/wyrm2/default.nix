@@ -143,18 +143,19 @@ in
     wantedBy = [ "multi-user.target" ];
     before = [ "kubelet.service" ];
     after = [ "systemd-udev-settle.service" ];
+    path = [ pkgs.lvm2 ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
-      ExecStart = pkgs.writeShellScript "openebs-lvm-setup" ''
-        if ${pkgs.lvm2}/bin/vgs openebs-lvmvg >/dev/null 2>&1; then
-          echo "VG openebs-lvmvg already exists, skipping"
-          exit 0
-        fi
-        ${pkgs.lvm2}/bin/pvcreate /dev/vdc
-        ${pkgs.lvm2}/bin/vgcreate openebs-lvmvg /dev/vdc
-      '';
     };
+    script = ''
+      if vgs openebs-lvmvg >/dev/null 2>&1; then
+        echo "VG openebs-lvmvg already exists, skipping"
+        exit 0
+      fi
+      pvcreate /dev/vdc
+      vgcreate openebs-lvmvg /dev/vdc
+    '';
   };
 
   # TODO: Create /mnt/tankshare/shared/{pip-cache,uv-cache} via systemd.tmpfiles.rules

@@ -342,7 +342,11 @@ in
       '';
     };
 
-    # haproxy needs Nebula up to reach CP nodes
+    # haproxy needs Nebula up to reach CP nodes.
+    # TODO: Consider adding partOf = [ "nebula.service" ] so restarting nebula
+    # cascades to haproxy → kubelet. Currently requires manual restart of all
+    # three after cert rotation. Risk: PartOf also propagates stop, which may
+    # be too aggressive if nebula flaps briefly.
     systemd.services.haproxy = {
       after = [ "nebula.service" ];
       requires = [ "nebula.service" ];
