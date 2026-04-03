@@ -76,6 +76,7 @@ INFRA_TARGETS = [
     "null_resource.cilium_bootstrap",
     "null_resource.wait_for_nodes_ready",
     "kubernetes_secret.hcloud_csi",
+    "kubernetes_namespace.flux_system",
     "kubernetes_secret.sops_age_cluster_secrets",
     "kubernetes_config_map.cluster_info",
 ]

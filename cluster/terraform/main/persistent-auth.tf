@@ -207,6 +207,18 @@ data "sops_file" "cluster_secrets_age" {
   source_file = "${path.module}/../../../secrets/cluster-secrets-age.yaml"
 }
 
+resource "kubernetes_namespace" "flux_system" {
+  metadata {
+    name = "flux-system"
+  }
+
+  depends_on = [
+    local_file.kubeconfig,
+    null_resource.wait_for_k8s_api,
+    null_resource.cilium_bootstrap,
+  ]
+}
+
 resource "kubernetes_secret" "sops_age_cluster_secrets" {
   metadata {
     name      = "sops-age-cluster-secrets"
@@ -219,11 +231,7 @@ resource "kubernetes_secret" "sops_age_cluster_secrets" {
 
   type = "Opaque"
 
-  depends_on = [
-    local_file.kubeconfig,
-    null_resource.wait_for_k8s_api,
-    null_resource.cilium_bootstrap,
-  ]
+  depends_on = [kubernetes_namespace.flux_system]
 }
 
 # ============================================================================
