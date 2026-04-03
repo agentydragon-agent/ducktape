@@ -43,6 +43,6 @@ spec:
           - matchExpressions:
               - key: "topology.kubernetes.io/region"
                 operator: In
-                values: ["hetzner"]
+                values: ["hil"]
         features:
           publicIPDiscovery: true

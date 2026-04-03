@@ -123,9 +123,10 @@ resource "hcloud_server" "vps" {
 locals {
   # Shared VPS machine settings (labels, install image, kubelet args)
   vps_machine_overrides = {
+    # topology.kubernetes.io/region and zone are set by Talos CCM from
+    # Hetzner platform metadata (region=hil, zone=hil-dc1). Do not set
+    # them here — kubelet --node-labels would override the CCM values.
     nodeLabels = {
-      "topology.kubernetes.io/region"        = "hetzner"
-      "topology.kubernetes.io/zone"          = var.hetzner_location
       "node.longhorn.io/create-default-disk" = "true"
     }
     install = {
