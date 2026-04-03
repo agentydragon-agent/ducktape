@@ -297,6 +297,12 @@ in
     enable = true;
     enableDefaultConfig = false;
     matchBlocks = {
+      "github.com" = {
+        hostname = "github.com";
+        user = "git";
+        identityFile = "~/.ssh/agentydragon_github_id_ed25519";
+        identitiesOnly = true;
+      };
       homeassistant = {
         hostname = "10.0.0.3";
         user = "root";

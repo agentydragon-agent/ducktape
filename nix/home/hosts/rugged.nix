@@ -16,6 +16,7 @@
   imports = [
     ../home.nix
     ../modules/15leroy-ssh.nix
+    ../modules/github-ssh.nix
   ];
 
   home.packages = [
