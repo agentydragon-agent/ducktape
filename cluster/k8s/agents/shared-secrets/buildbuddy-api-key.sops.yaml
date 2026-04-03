@@ -1,37 +1,37 @@
 apiVersion: ENC[AES256_GCM,data:Sq4=,iv:jvM5bTHyKgN6GBO9zgl45jig262BfNrKxqmXy3jENHg=,tag:0Akw9gLEWrBCYVVjB6h29g==,type:str]
 kind: ENC[AES256_GCM,data:Mu23zsn9,iv:QqWU3NIlv5oa0aI/Qu2hE7hv1Hp+ia71HkB/Bw6t19k=,tag:rQTXJGh4JP7DgLyp8l/k0w==,type:str]
 metadata:
-    name: ENC[AES256_GCM,data:vaCD2jtY01JBqhyVIFbNLMpL,iv:8juLVX/btta1H+PNJ0gxM8xvDg1gj6S7avnUhkCKOXM=,tag:+/R/AvOSHH9l4RVEAX2otw==,type:str]
-    namespace: ENC[AES256_GCM,data:48zsPnbK+Vx3KZ0HsoQ=,iv:x6OpkuVXGuc21YMqcq5eAKEaYXE24JHbUG6Y53PkzFw=,tag:pQW6lbej4sOZfZJ05c+qOA==,type:str]
-    annotations:
-        reflector.v1.k8s.emberstack.com/reflection-allowed: ENC[AES256_GCM,data:YizkbQ==,iv:ylwQi1F8IBqnZl7DgAHUuFQtuD1s7ovqyCVTVAZu30I=,tag:lDwRLJbLD+XOQAWig3S4gg==,type:str]
-        reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: ENC[AES256_GCM,data:bKUUMpzTphIViUUtPRyAxw==,iv:7BpkqQWpvsLeFSsz7zuf+J/wQKJP4yY8dWlv0oJEcK8=,tag:fcVl8i7h3xuHD8C9Lt5oSg==,type:str]
-        reflector.v1.k8s.emberstack.com/reflection-auto-enabled: ENC[AES256_GCM,data:++ujRQ==,iv:Ryq0dbDrBVpGKiGDDBSd+sFEEVrA06Fc5PoSKJbKv9s=,tag:icIjPJiiqzML8aiRoMmCWA==,type:str]
-        reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: ENC[AES256_GCM,data:v8/uEMWK/9kllBVz9gRd3Q==,iv:DTFtqMDt84ue/LhZtrMPd+LxocgpUKX8L7uJao8DX5E=,tag:qjbFjFDB7kouh8Fnmj6GrQ==,type:str]
+  name: ENC[AES256_GCM,data:vaCD2jtY01JBqhyVIFbNLMpL,iv:8juLVX/btta1H+PNJ0gxM8xvDg1gj6S7avnUhkCKOXM=,tag:+/R/AvOSHH9l4RVEAX2otw==,type:str]
+  namespace: ENC[AES256_GCM,data:48zsPnbK+Vx3KZ0HsoQ=,iv:x6OpkuVXGuc21YMqcq5eAKEaYXE24JHbUG6Y53PkzFw=,tag:pQW6lbej4sOZfZJ05c+qOA==,type:str]
+  annotations:
+    reflector.v1.k8s.emberstack.com/reflection-allowed: ENC[AES256_GCM,data:YizkbQ==,iv:ylwQi1F8IBqnZl7DgAHUuFQtuD1s7ovqyCVTVAZu30I=,tag:lDwRLJbLD+XOQAWig3S4gg==,type:str]
+    reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces: ENC[AES256_GCM,data:bKUUMpzTphIViUUtPRyAxw==,iv:7BpkqQWpvsLeFSsz7zuf+J/wQKJP4yY8dWlv0oJEcK8=,tag:fcVl8i7h3xuHD8C9Lt5oSg==,type:str]
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: ENC[AES256_GCM,data:++ujRQ==,iv:Ryq0dbDrBVpGKiGDDBSd+sFEEVrA06Fc5PoSKJbKv9s=,tag:icIjPJiiqzML8aiRoMmCWA==,type:str]
+    reflector.v1.k8s.emberstack.com/reflection-auto-namespaces: ENC[AES256_GCM,data:v8/uEMWK/9kllBVz9gRd3Q==,iv:DTFtqMDt84ue/LhZtrMPd+LxocgpUKX8L7uJao8DX5E=,tag:qjbFjFDB7kouh8Fnmj6GrQ==,type:str]
 type: ENC[AES256_GCM,data:EE1ZfUM3,iv:atpxiLoCx/2nyIn39KsjIz4u86LMbOM2F/r/b4HC7rA=,tag:eURIY8nDh/e6WUQ9U80rtw==,type:str]
 stringData:
-    api-key: ENC[AES256_GCM,data:f+G/SJbv9YGC9GVycMXzCfa/m3Q=,iv:Ga+bTKKdklyPb7SiSnqBhKKJd3h5x7dtTXiFJNTbDLI=,tag:xypLB1WPZJ/5gyYF0cnF7w==,type:str]
+  api-key: ENC[AES256_GCM,data:f+G/SJbv9YGC9GVycMXzCfa/m3Q=,iv:Ga+bTKKdklyPb7SiSnqBhKKJd3h5x7dtTXiFJNTbDLI=,tag:xypLB1WPZJ/5gyYF0cnF7w==,type:str]
 sops:
-    age:
-        - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
-          enc: |
-            -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxRi8vVGhWZEtvMEpGUWlx
-            VHBlRUJqZ3A1MUNCMncrdDU2WXdKUkRua1ZzCnJVYjI4NVM2cUsrc0JrYzQrQUlD
-            Znd2TXZVY3VDZFdCUWVNcjREOWR3OXcKLS0tIFlpSGpsVjJZTXluNGRWanVMT21w
-            dHM4ZVBzRXdzN3JrVlNVSGI3ZVVvQmcK3lUrm7jSZ/cyUXXXM+4SYjdAu4PsBoQG
-            febTdlPJzv+E30KsXLNMgpz/FwBvMcCG94r7xg3PCEleqhI64G8YeA==
-            -----END AGE ENCRYPTED FILE-----
-        - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
-          enc: |
-            -----BEGIN AGE ENCRYPTED FILE-----
-            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAwaExieUozalNaQWxGN1JD
-            QzR2c0lxWE0ra2N3QlBxODR5MHltTDBjTjFjClVvaVJVaXlUczFuNC9IUHJVNTBo
-            RURmbnBjd0RuNmZkZnVxMXF1a2V3dVUKLS0tIGhuWHo5Tzk4dmU1WjIvVTRhbGhU
-            cWJsSTJ5bFFwYXZoSldETDBaLytoWUEKCwvLjMFprEnYs8Io7EqKdmPQ4GThRiyU
-            8KPAhy50eHv24D4UspBnmmUbmX66Oh5wHQ3SLjajHCrqZmH24VD4cg==
-            -----END AGE ENCRYPTED FILE-----
-    lastmodified: "2026-04-03T06:55:29Z"
-    mac: ENC[AES256_GCM,data:FsVjB8EpEYDK9FxQtYOsddDu4J9zn1S62QvpUFpB2Uieg7QtDdWCpkhoOvIK4eRhzm0S9WKIINujopYWDVH9LPo3tALGI3iWTMteRh9cG6OMhtkKLEZ5wb7G1UP+Osbc2qYLjg10B8TOjj091qaibjkiAx2l2ojHa3gS4OIwaZ0=,iv:4kKwEPZ+S0V3aCTgLRJPfKPnRUP0aA1Vf/h7GqKi5KQ=,tag:6u9kD12wmebjxr+zHfcbBw==,type:str]
-    unencrypted_suffix: _unencrypted
-    version: 3.12.1
+  age:
+    - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBxRi8vVGhWZEtvMEpGUWlx
+        VHBlRUJqZ3A1MUNCMncrdDU2WXdKUkRua1ZzCnJVYjI4NVM2cUsrc0JrYzQrQUlD
+        Znd2TXZVY3VDZFdCUWVNcjREOWR3OXcKLS0tIFlpSGpsVjJZTXluNGRWanVMT21w
+        dHM4ZVBzRXdzN3JrVlNVSGI3ZVVvQmcK3lUrm7jSZ/cyUXXXM+4SYjdAu4PsBoQG
+        febTdlPJzv+E30KsXLNMgpz/FwBvMcCG94r7xg3PCEleqhI64G8YeA==
+        -----END AGE ENCRYPTED FILE-----
+    - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
+      enc: |
+        -----BEGIN AGE ENCRYPTED FILE-----
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSAwaExieUozalNaQWxGN1JD
+        QzR2c0lxWE0ra2N3QlBxODR5MHltTDBjTjFjClVvaVJVaXlUczFuNC9IUHJVNTBo
+        RURmbnBjd0RuNmZkZnVxMXF1a2V3dVUKLS0tIGhuWHo5Tzk4dmU1WjIvVTRhbGhU
+        cWJsSTJ5bFFwYXZoSldETDBaLytoWUEKCwvLjMFprEnYs8Io7EqKdmPQ4GThRiyU
+        8KPAhy50eHv24D4UspBnmmUbmX66Oh5wHQ3SLjajHCrqZmH24VD4cg==
+        -----END AGE ENCRYPTED FILE-----
+  lastmodified: "2026-04-03T06:55:29Z"
+  mac: ENC[AES256_GCM,data:FsVjB8EpEYDK9FxQtYOsddDu4J9zn1S62QvpUFpB2Uieg7QtDdWCpkhoOvIK4eRhzm0S9WKIINujopYWDVH9LPo3tALGI3iWTMteRh9cG6OMhtkKLEZ5wb7G1UP+Osbc2qYLjg10B8TOjj091qaibjkiAx2l2ojHa3gS4OIwaZ0=,iv:4kKwEPZ+S0V3aCTgLRJPfKPnRUP0aA1Vf/h7GqKi5KQ=,tag:6u9kD12wmebjxr+zHfcbBw==,type:str]
+  unencrypted_suffix: _unencrypted
+  version: 3.12.1
