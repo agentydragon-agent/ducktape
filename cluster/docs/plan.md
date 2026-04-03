@@ -42,15 +42,13 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
       wyrm2 VM config purely via NixOS/Proxmox API (no terraform). See postmortem
       `cluster/docs/lessons_learned/2026-04-01-cluster-nuke-postmortem.md`.
-- [ ] Move bootstrap-critical components to Talos inline manifests: Cilium, Talos CCM,
-      and Flux should be deployed via `cluster.inlineManifests` in the Talos machine config
-      instead of terraform `null_resource` (Cilium) and Flux provider. This eliminates the
-      cloud-provider taint chicken-and-egg (CCM can't schedule because Flux can't schedule
-      because of the taint CCM removes). Inline manifests are applied by Talos during
-      cluster bootstrap before any pods schedule. Note: inline manifests only apply on
-      bootstrap — Flux takes over management afterward via HelmReleases. This would remove
-      `null_resource.cilium_bootstrap`, `null_resource.gateway_api_crds`,
-      `null_resource.wait_for_*`, and `flux_bootstrap_git` from terraform.
+- [ ] Move remaining bootstrap-critical components to Talos inline manifests: Cilium
+      and Flux should be deployed via `cluster.inlineManifests` (like CCM already is).
+      This would remove `null_resource.cilium_bootstrap`, `null_resource.gateway_api_crds`,
+      `null_resource.wait_for_*`, and `flux_bootstrap_git` from terraform. Note: inline
+      manifests only apply on bootstrap — Flux takes over management afterward via
+      HelmReleases. CCM is already done (rendered from HelmRelease via `helm_template`
+      in `talos-ccm.tf`).
 - [ ] Consolidate tofu plan prerequisites — currently requires assembling credentials from
       multiple scattered sources before `tofu plan/apply` works: - `PG_CONN_STR`: read from k8s secret (`tofu-state-db-app`) via kubectl, not auto-set
       outside of cluster-networked machines - `TF_VAR_hcloud_token`: stored in system keyring on wyrm2 (`secret-tool lookup service hcloud account default`) - `PROXMOX_VE_API_TOKEN`: stored in system keyring on wyrm2 (`secret-tool lookup service proxmox ...`) - `kubeconfig`: written to `terraform/main/kubeconfig` only after `tofu apply`; must be
@@ -71,6 +69,14 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       loss caused `sso-secrets` to regenerate all `random_password` resources. Fix by
       force re-applying all SSO blueprints (clear `last_applied_hash` via `ak shell`) so
       the DB picks up the current env var values.
+- [ ] OpenEBS LVM on VPS nodes: Partition each VPS node's 160GB NVMe to carve out
+      ~60GB for an LVM volume group (`openebs-vps-vg`). Use Talos `machine.disks` or
+      `machine.volumes` (1.9+) to create the partition and VG. Expand OpenEBS LVM
+      HelmRelease `lvmNode.nodeSelector` to include VPS nodes (`region: hil`). Add a
+      `lvm-vps` StorageClass. Rolling update: drain + destroy + recreate each VPS node
+      one at a time to repartition. This gives VPS nodes a local non-replicated storage
+      option (faster than Longhorn for single-node workloads like CNPG `local-path`
+      replacements). Pairs well with CPX41 upgrade (240GB → more headroom).
 - [ ] Longhorn node tags: Kyverno mutate policy sets `node.longhorn.io/default-node-tags`
       annotation, but only fires at Node admission time — nodes created before Kyverno is
       deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
