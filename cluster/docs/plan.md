@@ -161,7 +161,8 @@ Nix cache, Grafana, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ### Secrets: Vault SSOT
 
-Runtime secrets use Terraform -> Vault -> ESO. Bootstrap secrets use SealedSecrets. Zero ESO Password generators remain.
+Runtime secrets use Terraform -> Vault -> ESO. Bootstrap secrets use SealedSecrets.
+PowerDNS API key uses an ESO Password generator (`refreshInterval: "0"`, generate-once).
 Stakater Reloader restarts pods on changes. See
 <lessons_learned/2025-11-28-eso-password-generator-desync.md>.
 
