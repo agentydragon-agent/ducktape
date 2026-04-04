@@ -148,17 +148,26 @@ Key steps in the render script:
 
 See <render_fcstd.py> for the full script.
 
-## Export: FCStd → DXF → PNG
+## Export
 
-Two standard tools, no custom rendering.
+Example scripts produce FCStd files. Use `export_page.py` to export to DXF, SVG, and PDF:
 
-**Step 1:** `xvfb-run freecadcmd export_dxf.py input.FCStd output.dxf`
+```bash
+OUTDIR=. xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd parametric_rect.py  # → rect.FCStd
+INPUT=rect.FCStd OUTDIR=. xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd export_page.py  # → rect.{dxf,svg,pdf}
+```
 
-**Step 2:** `python3 render_dxf.py output.dxf output.png`
+Arguments are passed via env vars (`INPUT`, `OUTDIR`) because `freecadcmd` treats CLI args as files to open. See <export_page.py>. Output filenames derive from the input FCStd stem.
 
-Or directly via ezdxf CLI: `python3 -m ezdxf draw --background WHITE --dpi 200 -f -o output.png output.dxf`
+**DXF → PNG rendering:** `python3 render_dxf.py output.dxf output.png`. See <render_dxf.py>.
 
-See <export_dxf.py> for the DXF export script and <render_dxf.py> for the PNG renderer.
+### Format comparison
+
+| Format | API                                       | Strengths                                                       | Limitations                                           |
+| ------ | ----------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------- |
+| DXF    | `TechDraw.writeDXFPage(page, path)`       | CAD-compatible, editable in other CAD tools                     | R12/R14 only, font rendering depends on ezdxf for PNG |
+| SVG    | `TechDrawGui.exportPageAsSvg(page, path)` | Vector, viewable in browsers, preserves template/fonts natively | Hatch patterns not exported (Qt SVG limitation)       |
+| PDF    | `TechDrawGui.exportPageAsPdf(page, path)` | Print-ready, universal viewer support                           | Largest file size                                     |
 
 ### View computation: the processEvents discovery
 

@@ -10,7 +10,7 @@ skill_package(
         "02_techdraw_and_dims.py",
         "SKILL.md",
         "build_cube_with_hole.py",
-        "export_dxf.py",
+        "export_page.py",
         "parametric_rect.py",
         "render_dxf.py",
         "render_fcstd.py",
@@ -33,13 +33,6 @@ py_binary(
     imports = ["../.."],
     main_module = "skills.freecad.render_dxf",
     deps = [":render_dxf"],
-)
-
-py_library(
-    name = "compare_dxf",
-    testonly = True,
-    srcs = ["compare_dxf.py"],
-    imports = ["../.."],
 )
 
 oci_load(
@@ -112,17 +105,20 @@ py_test(
 )
 
 py_test(
-    name = "test_parametric_rect",
+    name = "test_export_formats",
     size = "medium",
-    srcs = ["test_parametric_rect.py"],
+    srcs = ["test_export_formats.py"],
     data = [
+        "export_page.py",
         "golden/rect.dxf",
+        "golden/rect.pdf",
+        "golden/rect.svg",
         "parametric_rect.py",
         ":freecad_test_tarball",
     ],
     requires_docker = True,
     deps = [
-        ":compare_dxf",
+        "//skills/freecad/testing:compare",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
