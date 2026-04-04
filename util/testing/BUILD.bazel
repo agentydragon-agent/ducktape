@@ -26,12 +26,12 @@ py_library(
 py_test(
     name = "test_container_logs",
     srcs = ["test_container_logs.py"],
-    data = ["//third_party/debian_slim:tarball"],
+    data = ["//third_party/containers:debian_slim"],
     requires_docker = True,
     deps = [
         ":container_logs",
         ":undeclared_outputs",
-        "//third_party/debian_slim:rlocations",
+        "//third_party/containers:rlocations",
         "//util:oci",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

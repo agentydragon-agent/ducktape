@@ -6,14 +6,13 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
+from skills.freecad.conftest import FREECAD_TEST
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 from util.bazel.runfiles import get_required_path
-from util.oci import load_image
+from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-_IMAGE_TAG = "freecad-test:pinned"
-_TARBALL = "_main/skills/freecad/freecad_test_load/tarball.tar"
 _PARAMETRIC_RECT = "_main/skills/freecad/parametric_rect.py"
 _EXPORT_PAGE = "_main/skills/freecad/export_page.py"
 _GOLDEN_DXF = "_main/skills/freecad/golden/rect.dxf"
@@ -33,11 +32,11 @@ def _exec(container: LoggedContainer, cmd: str) -> None:
 @pytest.fixture(scope="module")
 def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Run parametric_rect.py then export_page.py and return the output directory."""
-    load_image(_TARBALL)
+    load_oci_image(FREECAD_TEST)
     tmp_path = tmp_path_factory.mktemp("freecad-export")
 
     with LoggedContainer(
-        _IMAGE_TAG,
+        FREECAD_TEST.tag,
         test_name="freecad-export-formats",
         command="sleep infinity",
         volumes=[

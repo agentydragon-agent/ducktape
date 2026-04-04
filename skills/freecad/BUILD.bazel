@@ -41,6 +41,18 @@ oci_layout_rloc(
     image = "@freecad_test_linux_amd64",
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    imports = ["../.."],
+    deps = [
+        "//util:oci",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_container_primitives",
     size = "medium",
@@ -51,6 +63,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         "//third_party/containers:rlocations",
         "//util:oci",
         "//util/bazel:runfiles",
@@ -89,6 +102,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         "//util:oci",
         "//util/bazel:runfiles",
         "//util/testing:container_logs",
@@ -113,6 +127,7 @@ py_test(
     ],
     requires_docker = True,
     deps = [
+        ":conftest",
         "//skills/freecad/testing:compare",
         "//util:oci",
         "//util/bazel:runfiles",
