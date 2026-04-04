@@ -9,9 +9,11 @@ skill_package(
         "01_sketch_and_parts.py",
         "02_techdraw_and_dims.py",
         "SKILL.md",
+        "build_cube_with_hole.py",
         "export_dxf.py",
         "parametric_rect.py",
         "render_dxf.py",
+        "render_fcstd.py",
     ],
 )
 
@@ -83,6 +85,28 @@ py_test(
         ":render_dxf",
         "//util/bazel:runfiles",
         "@pypi//pillow",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_render_3d",
+    size = "medium",
+    srcs = ["test_render_3d.py"],
+    data = [
+        "build_cube_with_hole.py",
+        "golden/cube_with_hole.png",
+        "render_fcstd.py",
+        ":freecad_test_tarball",
+    ],
+    requires_docker = True,
+    deps = [
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pillow",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

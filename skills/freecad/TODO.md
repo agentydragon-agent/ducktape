@@ -15,7 +15,8 @@
 
 ## 3D
 
-- [ ] 3D operations: extrude sketch faces into solids (`Part.extrude`), boolean operations, assemblies.
-- [ ] 3D rendering: FreeCAD's raytracing/render workbench, or export to external renderers. May need POV-Ray or LuxRender.
-- [ ] Colored/textured renders: investigate if TechDraw views can carry color per-face, or if 3D viewport screenshots are possible under xvfb.
+- [x] 3D operations: boolean cut (`Part.makeBox` + `Part.makeCylinder` + `cube.cut(cylinder)`). See `build_cube_with_hole.py`.
+- [x] 3D rendering: FreeCAD GUI viewport under Xvfb with `view.saveImage()`. See `render_fcstd.py`.
+- [ ] Colored/textured renders: `ViewObject.ShapeColor` works but lighting is basic Coin3D shading. Investigate FreeCAD Render workbench for raytraced output.
 - [ ] Multi-view drawings: front/side/top views on one TechDraw page for 3D objects.
+- [ ] Assemblies: multi-part models with positioning.

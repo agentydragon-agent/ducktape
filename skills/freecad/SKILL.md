@@ -86,6 +86,45 @@ page_x = view.X + (sketch_x - scx) * view.Scale
 page_y = view.Y - (sketch_y - scy) * view.Scale
 ```
 
+## 3D Modeling and Rendering
+
+### Building 3D models
+
+Use `Part` primitives and boolean operations for solid geometry:
+
+```python
+import FreeCAD as App
+import Part
+
+cube = Part.makeBox(20, 20, 20, App.Vector(-10, -10, -10))
+cylinder = Part.makeCylinder(5, 22, App.Vector(0, 0, -11), App.Vector(0, 0, 1))
+result = cube.cut(cylinder)
+
+feat = doc.addObject("Part::Feature", "CubeWithHole")
+feat.Shape = result
+```
+
+See <build_cube_with_hole.py> for a complete example.
+
+### Rendering FCStd to PNG
+
+Use FreeCAD's GUI viewport under Xvfb for offscreen 3D rendering with perspective and lighting:
+
+```bash
+INPUT=/work/model.FCStd OUTDIR=/output \
+  xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd render_fcstd.py
+```
+
+Key steps in the render script:
+
+1. `FreeCADGui.showMainWindow()` — initialize offscreen GUI
+2. Open the FCStd, set objects to `Shaded` display mode with `Two side` lighting
+3. `view.viewIsometric()` + `view.fitAll()` for camera setup
+4. `view.saveImage(path, 800, 600, "Current")` to capture
+5. `os._exit(0)` to avoid Qt cleanup segfault
+
+See <render_fcstd.py> for the full script.
+
 ## Export: FCStd → DXF → PNG
 
 Two standard tools, no custom rendering.
