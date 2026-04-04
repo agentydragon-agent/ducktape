@@ -7,6 +7,14 @@
 - [ ] Fonts in the rendered PNG test — currently the test passes because golden and actual both have the same missing-font tofu squares. Once fonts are fixed, regenerate golden.
 - [ ] Call ezdxf drawing API directly instead of shelling out via `subprocess`. The CLI is Python — find the right internal API call (likely in `ezdxf.__main__` or `ezdxf.addons.drawing`) that handles color inversion, viewport fitting, and font setup correctly. Previous attempt using `Frontend` + `MatplotlibBackend` directly rendered invisible output.
 
+## Export formats
+
+SVG and PDF export now work via `TechDrawGui.exportPageAsSvg()` and `TechDrawGui.exportPageAsPdf()`. Both require GUI mode (xvfb), which was already part of the pipeline.
+
+- [x] SVG export: `TechDrawGui.exportPageAsSvg(page, path)` — vector output with template, viewable in browsers.
+- [x] PDF export: `TechDrawGui.exportPageAsPdf(page, path)` — print-ready output via Qt `QPrinter`.
+- [ ] Consider making SVG the primary intermediate format for PNG rendering (avoids ezdxf font discovery issues).
+
 ## FreeCAD scripting
 
 - [ ] Entity-referenced dimensions: `DrawViewDimension.References2D = [(view, 'Edge0')]` should allow dimensions that reference specific projected edges and auto-update when sketch changes. Current working approach uses `makeDistanceDim` with computed points — functional but not entity-bound.
