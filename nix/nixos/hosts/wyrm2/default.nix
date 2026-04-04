@@ -100,6 +100,7 @@ in
     pkgs.tesseract # OCR
     pkgs.lvm2 # LVM tools for OpenEBS LVM LocalPV
     pkgs.freecad
+    pkgs.unzip
   ];
 
   # Podman
