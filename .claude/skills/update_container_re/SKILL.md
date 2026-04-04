@@ -112,23 +112,22 @@ env | grep -E '^(CLAUDE|CODESIGN|MCP_)' | sort \
 
 ---
 
-## Phase 3: Create New RE Directories
+## Phase 3: Update RE Source In-Place
 
-RE directories are named by BuildID prefix (first 8 hex chars of the ELF
-Build ID). This allows multiple binary versions to coexist.
+RE source lives directly under `re/process_api/src/` and
+`re/environment_manager/src/` (flat layout — no BuildID subdirectories).
+The current Build ID is documented in each binary's `README.md` and
+`PLAN.md`, not encoded in directory names.
 
 ```bash
 NEW_EM_BUILDID=$(readelf -n /tmp/env-manager-new | grep 'Build ID' | awk '{print substr($NF,1,8)}')
 NEW_PA_BUILDID=$(readelf -n /tmp/process_api_new | grep 'Build ID' | awk '{print substr($NF,1,8)}')
 
-# Copy old RE as starting point
-OLD_EM_DIR=$(ls devinfra/claude/web_env/re/environment_manager/ | grep -v README)
-OLD_PA_DIR=$(ls devinfra/claude/web_env/re/process_api/ | grep -v README)
+echo "environment-manager: $NEW_EM_BUILDID"
+echo "process_api: $NEW_PA_BUILDID"
 
-cp -r "devinfra/claude/web_env/re/environment_manager/$OLD_EM_DIR" \
-      "devinfra/claude/web_env/re/environment_manager/$NEW_EM_BUILDID"
-cp -r "devinfra/claude/web_env/re/process_api/$OLD_PA_DIR" \
-      "devinfra/claude/web_env/re/process_api/$NEW_PA_BUILDID"
+# Update Build ID references in RE source and documentation
+# (previous versions are preserved in git history)
 ```
 
 ---
@@ -256,8 +255,7 @@ Files to update:
 | `devinfra/claude/web_env/docs/container_spec.md`           | Binary info, new capabilities              |
 | `devinfra/claude/web_env/re/environment_manager/README.md` | Target binary table, source tree, CLI docs |
 | `devinfra/claude/web_env/re/process_api/README.md`         | Target binary, new features                |
-| `devinfra/claude/web_env/re/*/NEW_BUILDID/README.md`       | Per-version details                        |
-| `devinfra/claude/web_env/re/*/NEW_BUILDID/PLAN.md`         | Reconstruction status                      |
+| `devinfra/claude/web_env/re/*/PLAN.md`                     | Reconstruction status                      |
 
 For `environment_discovery.md`, verify:
 
@@ -286,12 +284,15 @@ Commit together:
 - **Parallel subagents** for independent binary RE work.
 - **Verify results** — builds compile, strings match, functions covered.
 - **Delta-focused** — don't rewrite unchanged code, focus on what changed.
-- **BuildID-keyed directories** allow multiple versions to coexist.
+- **Flat RE directories** — source lives under `re/<binary>/src/`, Build ID is
+  documented in README.md/PLAN.md headers, not encoded in directory names.
+  Previous versions are preserved in git history.
+- **Update references only where you edit.** Don't mass-replace Build ID strings
+  across all files. Only update the Build ID marker in files where you actually
+  change the RE source or documentation to match the new binary.
 - **Documentation shows current state only.** READMEs should describe the current
-  binary version without historical change summaries or diff sections. Previous
-  versions are preserved in their own BuildID directories but the parent README
-  reflects current state. Don't accumulate change history in PLAN.md either — keep
-  a single current status.
+  binary version without historical change summaries or diff sections.
+  Don't accumulate change history in PLAN.md — keep a single current status.
 
 See `/reverse_engineer` skill for the detailed binary RE methodology.
 

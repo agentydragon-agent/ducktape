@@ -40,6 +40,7 @@ csv = "^1.4.0"
 scraper = "^0.26.0"
 # process_api RE dependencies
 tokio-tungstenite = "^0.29.0"
+tokio-vsock = "^0.7.2"
 hyper = { version = "^1.8.1", features = ["http1", "server"] }
 hyper-util = { version = "^0.1.19", features = ["tokio"] }
 http = "^1.4.0"
