@@ -2,7 +2,11 @@
 
 ## Rendering pipeline
 
-- [ ] Fix DXF rendering quality: dimension labels overlap each other, corner lines extend beyond intersection points. Investigate whether `parametric_rect.py` produces a correctly constrained sketch or if the TechDraw projection is introducing artifacts.
+- [x] Fix ezdxf font discovery in Bazel sandbox — solved by pointing `ezdxf.options.support_dirs` at matplotlib's bundled DejaVu fonts directory.
+- [x] Fix dimension label overlap — `makeDistanceDim` defaults `X=0, Y=0` (view center); set `dim.X`/`dim.Y` to view-local coords of the dimension line.
+- [ ] Fix DXF rendering quality: corner lines extend beyond intersection points. Investigate whether `parametric_rect.py` produces a correctly constrained sketch or if the TechDraw projection is introducing artifacts.
+- [x] Fonts in the rendered PNG test — golden regenerated with working font rendering.
+- [x] Call ezdxf drawing API directly instead of shelling out via `subprocess` — now uses `Frontend` + `MatplotlibFileOutput` directly with `BackgroundPolicy.WHITE` and `finalize=True`.
 
 ## FreeCAD scripting
 

@@ -119,6 +119,8 @@ cx, cy = (bb.XMin + bb.XMax) / 2, (bb.YMin + bb.YMax) / 2
 d1 = TechDraw.makeDistanceDim(view, "DistanceX", App.Vector(0 - cx, -15 - cy, 0), App.Vector(WIDTH - cx, -15 - cy, 0))
 if d1:
     page.addView(d1)
+    d1.X = 0
+    d1.Y = -15 - cy
 
 # Height dimension (right of right edge)
 d2 = TechDraw.makeDistanceDim(
@@ -126,6 +128,8 @@ d2 = TechDraw.makeDistanceDim(
 )
 if d2:
     page.addView(d2)
+    d2.X = WIDTH + 15 - cx
+    d2.Y = 0
 
 doc.recompute(None, True, True)
 pump(1)
