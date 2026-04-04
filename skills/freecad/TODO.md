@@ -15,7 +15,6 @@
 
 ## 3D
 
-- [ ] 3D operations: extrude sketch faces into solids (`Part.extrude`), boolean operations, assemblies.
-- [ ] 3D rendering: FreeCAD's raytracing/render workbench, or export to external renderers. May need POV-Ray or LuxRender.
-- [ ] Colored/textured renders: investigate if TechDraw views can carry color per-face, or if 3D viewport screenshots are possible under xvfb.
+- [ ] Raytraced renders: Coin3D shading works but is basic. Investigate FreeCAD Render workbench for POV-Ray/LuxRender output.
 - [ ] Multi-view drawings: front/side/top views on one TechDraw page for 3D objects.
+- [ ] Assemblies: multi-part models with positioning.
