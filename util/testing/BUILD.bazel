@@ -1,6 +1,7 @@
 """Testing utility libraries."""
 
 load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
 
 py_library(
     name = "undeclared_outputs",
@@ -19,5 +20,20 @@ py_library(
     deps = [
         ":undeclared_outputs",
         "@pypi//testcontainers",
+    ],
+)
+
+py_test(
+    name = "test_container_logs",
+    srcs = ["test_container_logs.py"],
+    data = ["//third_party/debian_slim:tarball"],
+    requires_docker = True,
+    deps = [
+        ":container_logs",
+        ":undeclared_outputs",
+        "//third_party/debian_slim:rlocations",
+        "//util:oci",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

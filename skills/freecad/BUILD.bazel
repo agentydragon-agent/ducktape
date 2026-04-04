@@ -48,7 +48,6 @@ py_test(
         "//third_party/debian_slim:rlocations",
         "//util:oci",
         "//util/testing:container_logs",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
