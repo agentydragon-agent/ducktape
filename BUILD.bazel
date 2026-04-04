@@ -24,7 +24,7 @@
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
-load("@image_pins//:pins.bzl", "RBE_WORKER_IMAGE", "RBE_WORKER_TAG")
+load("@image_pins//:pins.bzl", "RBE_WORKER_DIGEST", "RBE_WORKER_IMAGE")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
@@ -138,7 +138,7 @@ platform(
         # Custom image layered on BuildBuddy's rbe-ubuntu24-04 with git,
         # ca-certificates, and podman for e2e tests.
         # Built by .github/workflows/rbe-image.yml, pinned in devinfra/image_pins.json.
-        "container-image": "docker://" + RBE_WORKER_IMAGE + ":" + RBE_WORKER_TAG,
+        "container-image": "docker://" + RBE_WORKER_IMAGE + "@" + RBE_WORKER_DIGEST,
         # BuildBuddy Firecracker isolation for all RBE actions (better isolation + runner recycling)
         "workload-isolation-type": "firecracker",
         "recycle-runner": "true",

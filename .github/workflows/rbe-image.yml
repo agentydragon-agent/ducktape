@@ -80,12 +80,14 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
 
-      - name: Pin RBE image tag in image_pins.json
+      - name: Pin RBE image digest in image_pins.json
         if: github.event_name != 'workflow_call'
         run: |
           PIN_TAG="${{ steps.meta.outputs.pin_tag }}"
+          DIGEST=$(docker manifest inspect "ghcr.io/${{ github.repository_owner }}/rbe-worker:${PIN_TAG}" --verbose | \
+            python3 -c "import json,sys; print(json.load(sys.stdin)['Descriptor']['digest'])")
 
-          python3 devinfra/update_image_pin.py rbe_worker --tag "$PIN_TAG"
+          python3 devinfra/update_image_pin.py rbe_worker --digest "$DIGEST"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

@@ -4,9 +4,9 @@ Reads devinfra/image_pins.json and generates @image_pins//:pins.bzl with
 Starlark constants for all pinned images. BUILD files load these constants
 instead of hardcoding image references.
 
-For digest-pinned images, oci.pull() calls remain in MODULE.bazel (rules_oci's
-own extension handles the repo creation). The update_image_pin.py script keeps
-both the JSON and MODULE.bazel in sync.
+Each JSON entry produces NAME_IMAGE and NAME_DIGEST constants.
+oci.pull() calls in MODULE.bazel reference the same digests; the
+update_image_pin.py script keeps both in sync.
 
 Usage in MODULE.bazel:
     image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
@@ -14,7 +14,7 @@ Usage in MODULE.bazel:
     use_repo(image_pins, "image_pins")
 
 In BUILD files:
-    load("@image_pins//:pins.bzl", "RBE_WORKER_IMAGE", "RBE_WORKER_TAG")
+    load("@image_pins//:pins.bzl", "RBE_WORKER_IMAGE", "RBE_WORKER_DIGEST")
 """
 
 _from_file = tag_class(attrs = {
@@ -28,10 +28,7 @@ def _pins_repo_impl(rctx):
     for name, pin in sorted(pins.items()):
         upper = name.upper()
         lines.append('%s_IMAGE = "%s"' % (upper, pin["image"]))
-        if "tag" in pin:
-            lines.append('%s_TAG = "%s"' % (upper, pin["tag"]))
-        if "digest" in pin:
-            lines.append('%s_DIGEST = "%s"' % (upper, pin["digest"]))
+        lines.append('%s_DIGEST = "%s"' % (upper, pin["digest"]))
     rctx.file("pins.bzl", "\n".join(lines) + "\n")
     rctx.file("BUILD.bazel", "")
 
