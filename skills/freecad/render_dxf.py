@@ -6,10 +6,6 @@ Usage: python3 render_dxf.py <input.dxf> <output.png> [--dpi 200]
 Requires: ezdxf[draw] (which pulls in matplotlib + Pillow).
 Uses the ezdxf CLI internally — it handles color inversion, viewport fitting,
 and dimension rendering correctly.
-
-TODO: dimension text renders as tofu (empty squares) because ezdxf can't find
-fonts in the Bazel sandbox. Need to either bundle a font via data dep or point
-ezdxf at matplotlib's bundled DejaVu fonts via EZDXF_FONT_PATH or similar.
 """
 
 import argparse

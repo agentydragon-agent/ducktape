@@ -5,16 +5,6 @@ description: Use this skill for parametric 2D/3D technical drawings using FreeCA
 
 # FreeCAD Sketcher + TechDraw Skill
 
-## TODOs
-
-- [ ] Entity-referenced dimensions: `DrawViewDimension.References2D = [(view, 'Edge0')]` should allow dimensions that reference specific projected edges and auto-update when sketch changes. Current working approach uses `makeDistanceDim` with computed points — functional but not entity-bound.
-- [ ] Annotation anchoring: annotations are absolute-positioned on the page. Investigate if TechDraw has leaders/balloons that anchor to view geometry.
-- [ ] 3D operations: extrude sketch faces into solids (`Part.extrude`), boolean operations, assemblies.
-- [ ] 3D rendering: FreeCAD's raytracing/render workbench, or export to external renderers. May need POV-Ray or LuxRender.
-- [ ] Colored/textured renders: investigate if TechDraw views can carry color per-face, or if 3D viewport screenshots are possible under xvfb.
-- [ ] DXF layer styling: set line colors/weights per DXF layer so `ezdxf draw` renders with visual hierarchy (walls thick/dark, furniture light).
-- [ ] Multi-view drawings: front/side/top views on one TechDraw page for 3D objects.
-
 ## Philosophy
 
 The FCStd is the artifact; images are derived previews. Work iteratively: open, edit, save, export, visually check, repeat. Every dimension is a constraint.
