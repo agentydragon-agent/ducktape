@@ -282,7 +282,9 @@
         };
 
       homeConfigurations = {
-        # Main laptop (ThinkPad X1 Extreme)
+        # Main laptop (ThinkPad X1 Extreme on Pop!_OS)
+        # DEPRECATED: Being migrated to NixOS as "iguana" (nixosConfigurations.iguana)
+        # Kept temporarily for rollback during migration
         agentydragon = mkHome {
           hostname = "agentydragon";
           enableGui = true;
@@ -353,6 +355,19 @@
             enableKube = false;
             enableHeavyPackages = true;
             module = ./nix/home/hosts/rugged.nix;
+          };
+        };
+
+        iguana = mkNixos {
+          hostname = "iguana";
+          username = "agentydragon";
+          # Physical machine (ThinkPad X1 Extreme) - migrated from Pop!_OS (agentydragon)
+          # Hardware config will be generated during installation
+          inlineHomeManager = {
+            enableGui = true;
+            enableKube = true;
+            enableHeavyPackages = false;
+            module = ./nix/home/hosts/iguana.nix;
           };
         };
 
