@@ -59,7 +59,7 @@ py_library(
     name = "mitmproxy_fixture",
     testonly = True,
     srcs = ["mitmproxy_fixture.py"],
-    data = [":mitmproxy_tarball"],
+    data = [":mitmproxy"],
     imports = ["../../.."],
     deps = [
         ":proxy_ca",

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -47,43 +45,40 @@ def read_oci_layout_digest(image_dir: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Image loading via Docker/Podman
+# Image loading via crane
 # ---------------------------------------------------------------------------
-
 
 tracer = trace.get_tracer(__name__)
 
 
-def load_image(tarball_rlocation: str) -> None:
-    """Load a Docker image tarball into the container runtime."""
-    tarball_name = tarball_rlocation.rsplit("/", 1)[-1]
-    with tracer.start_as_current_span(f"load_image({tarball_name})"):
-        with tracer.start_as_current_span("resolve_runfiles_path"):
-            tarball_path = runfiles.get_required_path(tarball_rlocation)
-        _docker_load(tarball_path, tarball_rlocation)
+def load_oci_image(info_rlocation: str) -> str:
+    """Load an OCI image into the container runtime via crane.
+
+    Args:
+        info_rlocation: Runfiles path to the .json file produced by the
+            oci_tarball macro's _oci_image_info rule (e.g.
+            "_main/third_party/containers/postgres_18.json").
+
+    Returns:
+        The repo tag the image was loaded as.
+    """
+    info_path = runfiles.get_required_path(info_rlocation)
+    info = json.loads(info_path.read_text())
+    oci_layout_rlocation: str = info["oci_layout"]
+    tag: str = info["tag"]
+
+    with tracer.start_as_current_span(f"load_oci_image({tag})"):
+        index_path = runfiles.get_required_path(f"{oci_layout_rlocation}/index.json")
+        oci_layout = index_path.parent
+        _crane_push_to_daemon(oci_layout, tag)
+
+    return tag
 
 
-def _docker_load(tarball_path: Path, tarball_rlocation: str) -> None:
-    cmd = shutil.which("docker") or shutil.which("podman")
-    if not cmd:
-        raise RuntimeError("Neither docker nor podman CLI found")
-    result = subprocess.run([cmd, "load", "-i", str(tarball_path)], check=False, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to load image from {tarball_rlocation}: {result.stderr}")
-
-
-def load_bazel_image(load_script_path: str, image_tag: str) -> str:
-    """Load an OCI image from a Bazel oci_load target via the generated load.sh script."""
-    load_script = runfiles.get_required_path(f"_main/{load_script_path}")
-
+def _crane_push_to_daemon(oci_layout: Path, tag: str) -> None:
+    crane = runfiles.get_required_path("crane/crane")
     result = subprocess.run(
-        [load_script],
-        check=False,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "DOCKER_CLI_EXPERIMENTAL": "enabled"},
+        [str(crane), "push", str(oci_layout), f"daemon://{tag}"], check=False, capture_output=True, text=True
     )
     if result.returncode != 0:
-        raise RuntimeError(f"Failed to load image {image_tag}: {result.stderr}")
-
-    return image_tag
+        raise RuntimeError(f"crane push daemon://{tag} failed: {result.stderr}")

@@ -8,11 +8,10 @@ from testcontainers.core.container import DockerContainer
 
 from skills.freecad.compare_dxf import compare_dxf_files
 from util.bazel.runfiles import get_required_path
-from util.oci import load_image
+from util.oci import load_oci_image
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-_IMAGE_TAG = "freecad-test:pinned"
-_TARBALL = "_main/skills/freecad/freecad_test_load/tarball.tar"
+_INFO = "_main/skills/freecad/freecad_test.json"
 _SCRIPT = "_main/skills/freecad/parametric_rect.py"
 _GOLDEN = "_main/skills/freecad/golden/rect.dxf"
 
@@ -26,13 +25,13 @@ def _save_output(name: str, content: str) -> None:
 
 
 def test_parametric_rect(tmp_path: Path) -> None:
-    load_image(_TARBALL)
+    image_tag = load_oci_image(_INFO)
     script = get_required_path(_SCRIPT)
     golden = get_required_path(_GOLDEN)
 
     # bash -c wrapping ensures Xvfb cleanup after freecadcmd's os._exit(0)
     with DockerContainer(
-        _IMAGE_TAG,
+        image_tag,
         command="bash -c 'xvfb-run -a -s \"-screen 0 1024x768x24\" freecadcmd /work/parametric_rect.py'",
         env={"OUTDIR": "/output"},
         volumes=[(str(script), "/work/parametric_rect.py", "ro"), (str(tmp_path), "/output", "rw")],

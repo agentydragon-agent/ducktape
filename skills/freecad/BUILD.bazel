@@ -35,7 +35,7 @@ py_test(
     data = [
         "golden/rect.dxf",
         "parametric_rect.py",
-        ":freecad_test_tarball",
+        ":freecad_test",
     ],
     requires_docker = True,
     deps = [

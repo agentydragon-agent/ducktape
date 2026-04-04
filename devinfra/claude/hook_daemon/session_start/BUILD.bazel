@@ -248,8 +248,8 @@ py_test(
     name = "test_k8s_proxy_integration",
     srcs = ["test_k8s_proxy_integration.py"],
     data = [
-        ":k8s_test_client_tarball",
-        ":mock_k8s_server_tarball",
+        ":k8s_test_client",
+        ":mock_k8s_server",
     ],
     env_inherit = ["DOCKER_HOST"],
     imports = ["../../../.."],

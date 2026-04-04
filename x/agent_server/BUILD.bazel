@@ -2,6 +2,7 @@
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_image_info")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 exports_files(["conftest.py"])
@@ -137,6 +138,13 @@ oci_load(
     name = "load",
     image = ":image",
     repo_tags = ["adgn-runtime:latest"],
+    visibility = ["//x/agent_server:__subpackages__"],
+)
+
+oci_image_info(
+    name = "image_info",
+    image = ":image",
+    tag = "adgn-runtime:latest",
     visibility = ["//x/agent_server:__subpackages__"],
 )
 

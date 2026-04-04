@@ -64,7 +64,7 @@ py_test(
     size = "large",
     srcs = ["test_container_e2e.py"],
     data = [
-        ":e2e_container_tarball",
+        ":e2e_container",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
     ],
     env_inherit = [
