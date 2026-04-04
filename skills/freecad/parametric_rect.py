@@ -119,13 +119,22 @@ cx, cy = (bb.XMin + bb.XMax) / 2, (bb.YMin + bb.YMax) / 2
 d1 = TechDraw.makeDistanceDim(view, "DistanceX", App.Vector(0 - cx, -15 - cy, 0), App.Vector(WIDTH - cx, -15 - cy, 0))
 if d1:
     page.addView(d1)
+    d1.X = 0
+    d1.Y = -15 - cy
 
 # Height dimension (right of right edge)
+DIM_OFFSET = 15  # mm from rectangle edge to dimension line
+TEXT_OFFSET = 10  # mm from dimension line to text center
 d2 = TechDraw.makeDistanceDim(
-    view, "DistanceY", App.Vector(WIDTH + 15 - cx, 0 - cy, 0), App.Vector(WIDTH + 15 - cx, HEIGHT - cy, 0)
+    view,
+    "DistanceY",
+    App.Vector(WIDTH + DIM_OFFSET - cx, 0 - cy, 0),
+    App.Vector(WIDTH + DIM_OFFSET - cx, HEIGHT - cy, 0),
 )
 if d2:
     page.addView(d2)
+    d2.X = WIDTH + DIM_OFFSET + TEXT_OFFSET - cx
+    d2.Y = 0
 
 doc.recompute(None, True, True)
 pump(1)

@@ -1,5 +1,6 @@
 """Golden-file test: parametric rectangle -> TechDraw -> DXF export via FreeCAD in Docker."""
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from skills.freecad.compare_dxf import compare_dxf_files
 from util.bazel.runfiles import get_required_path
 from util.oci import load_image
 from util.testing.container_logs import LoggedContainer
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _IMAGE_TAG = "freecad-test:pinned"
 _TARBALL = "_main/skills/freecad/freecad_test_load/tarball.tar"
@@ -37,6 +39,11 @@ def test_parametric_rect(tmp_path: Path) -> None:
 
     actual_dxf = tmp_path / "rect.dxf"
     assert actual_dxf.exists(), "DXF not generated — check container logs in undeclared outputs"
+
+    # Save actual DXF to undeclared outputs for golden file updates
+    out_dir = undeclared_outputs_dir() / "parametric-rect"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(actual_dxf, out_dir / "rect.dxf")
 
     diff = compare_dxf_files(actual_dxf, golden)
     if diff is not None:
