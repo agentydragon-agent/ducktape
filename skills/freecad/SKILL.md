@@ -100,11 +100,13 @@ page_y = view.Y - (sketch_y - scy) * view.Scale
 
 Two standard tools, no custom rendering.
 
-**Step 1:** `xvfb-run freecadcmd examples/export_dxf.py input.FCStd output.dxf`
+**Step 1:** `xvfb-run freecadcmd export_dxf.py input.FCStd output.dxf`
 
-**Step 2:** `python3 -m ezdxf draw --background WHITE --dpi 200 -f -o output.png output.dxf`
+**Step 2:** `python3 render_dxf.py output.dxf output.png`
 
-See `examples/export_dxf.py` for the export script.
+Or directly via ezdxf CLI: `python3 -m ezdxf draw --background WHITE --dpi 200 -f -o output.png output.dxf`
+
+See <export_dxf.py> for the DXF export script and <render_dxf.py> for the PNG renderer.
 
 ### View computation: the processEvents discovery
 

@@ -1,5 +1,5 @@
 load("@rules_oci//oci:defs.bzl", "oci_load")
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
@@ -11,7 +11,26 @@ skill_package(
         "SKILL.md",
         "export_dxf.py",
         "parametric_rect.py",
+        "render_dxf.py",
     ],
+)
+
+py_library(
+    name = "render_dxf",
+    srcs = ["render_dxf.py"],
+    imports = ["../.."],
+    deps = [
+        "@pypi//ezdxf",
+        "@pypi//matplotlib",
+        "@pypi//pillow",
+    ],
+)
+
+py_binary(
+    name = "render_dxf_bin",
+    imports = ["../.."],
+    main_module = "skills.freecad.render_dxf",
+    deps = [":render_dxf"],
 )
 
 py_library(
@@ -49,6 +68,21 @@ py_test(
         "//util:oci",
         "//util/testing:container_logs",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_render_dxf",
+    srcs = ["test_render_dxf.py"],
+    data = [
+        "golden/rect.dxf",
+        "golden/rect.png",
+    ],
+    deps = [
+        ":render_dxf",
+        "//util/bazel:runfiles",
+        "@pypi//pillow",
         "@pypi//pytest_bazel",
     ],
 )

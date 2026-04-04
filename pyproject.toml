@@ -59,6 +59,9 @@ dependencies = [
     # Firecracker VM pod networking (TAP/IP via netlink)
     "pyroute2>=0.9.0",
 
+    # CAD
+    "ezdxf[draw]>=0.18",
+
     # Data
     "pandas>=2.2.0",
     "PyYAML>=6.0",
