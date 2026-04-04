@@ -209,13 +209,6 @@ oci_load(
     repo_tags = ["mock-k8s-server:pinned"],
 )
 
-filegroup(
-    name = "mock_k8s_server_tarball",
-    testonly = True,
-    srcs = [":mock_k8s_server_load"],
-    output_group = "tarball",
-)
-
 # K8s proxy test client: exercises normalize_proxy_url() through the
 # kubernetes Python client in a container on the Docker bridge network.
 aspect_py_binary(
@@ -248,21 +241,14 @@ oci_load(
     repo_tags = ["k8s-test-client:pinned"],
 )
 
-filegroup(
-    name = "k8s_test_client_tarball",
-    testonly = True,
-    srcs = [":k8s_test_client_load"],
-    output_group = "tarball",
-)
-
 # === Tests ===
 
 py_test(
     name = "test_k8s_proxy_integration",
     srcs = ["test_k8s_proxy_integration.py"],
     data = [
-        ":k8s_test_client_tarball",
-        ":mock_k8s_server_tarball",
+        ":k8s_test_client_load",
+        ":mock_k8s_server_load",
     ],
     env_inherit = ["DOCKER_HOST"],
     imports = ["../../../.."],

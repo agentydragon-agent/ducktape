@@ -23,12 +23,6 @@ oci_load(
     name = "postgres_18_load",
     image = "@postgres_18_linux_amd64",
     repo_tags = ["postgres:18"],
-)
-
-filegroup(
-    name = "postgres_18_tarball",
-    srcs = [":postgres_18_load"],
-    output_group = "tarball",
     visibility = ["//visibility:public"],
 )
 
@@ -36,12 +30,6 @@ oci_load(
     name = "registry_2_load",
     image = "@registry_2_linux_amd64",
     repo_tags = ["registry:2"],
-)
-
-filegroup(
-    name = "registry_2_tarball",
-    srcs = [":registry_2_load"],
-    output_group = "tarball",
     visibility = ["//visibility:public"],
 )
 
@@ -49,12 +37,6 @@ oci_load(
     name = "ryuk_load",
     image = "@ryuk_linux_amd64",
     repo_tags = ["testcontainers/ryuk:0.8.1"],
-)
-
-filegroup(
-    name = "ryuk_tarball",
-    srcs = [":ryuk_load"],
-    output_group = "tarball",
     visibility = ["//visibility:public"],
 )
 
@@ -62,11 +44,5 @@ oci_load(
     name = "python_3_13_slim_load",
     image = "@python_3_13_slim_linux_amd64",
     repo_tags = ["python:3.13-slim"],
-)
-
-filegroup(
-    name = "python_3_13_slim_tarball",
-    srcs = [":python_3_13_slim_load"],
-    output_group = "tarball",
     visibility = ["//visibility:public"],
 )

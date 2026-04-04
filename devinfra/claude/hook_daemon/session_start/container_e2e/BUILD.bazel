@@ -58,19 +58,12 @@ oci_load(
     repo_tags = ["e2e-container:pinned"],
 )
 
-filegroup(
-    name = "e2e_container_tarball",
-    testonly = True,
-    srcs = [":e2e_container_load"],
-    output_group = "tarball",
-)
-
 py_test(
     name = "test_container_e2e",
     size = "large",
     srcs = ["test_container_e2e.py"],
     data = [
-        ":e2e_container_tarball",
+        ":e2e_container_load",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
     ],
     env_inherit = [

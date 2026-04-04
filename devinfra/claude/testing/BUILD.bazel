@@ -55,18 +55,11 @@ oci_load(
     repo_tags = ["mitmproxy:11"],
 )
 
-filegroup(
-    name = "mitmproxy_tarball",
-    testonly = True,
-    srcs = [":mitmproxy_load"],
-    output_group = "tarball",
-)
-
 py_library(
     name = "mitmproxy_fixture",
     testonly = True,
     srcs = ["mitmproxy_fixture.py"],
-    data = [":mitmproxy_tarball"],
+    data = [":mitmproxy_load"],
     imports = ["../../.."],
     deps = [
         ":proxy_ca",
