@@ -7,8 +7,8 @@
 # Usage in BUILD.bazel data deps:
 #     data = ["//third_party/containers:postgres_18_tarball"]
 
-load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_tarball")
 
 package(default_testonly = True)
 
@@ -19,29 +19,29 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-oci_load(
-    name = "postgres_18_load",
+oci_tarball(
+    name = "postgres_18",
     image = "@postgres_18_linux_amd64",
     repo_tags = ["postgres:18"],
     visibility = ["//visibility:public"],
 )
 
-oci_load(
-    name = "registry_2_load",
+oci_tarball(
+    name = "registry_2",
     image = "@registry_2_linux_amd64",
     repo_tags = ["registry:2"],
     visibility = ["//visibility:public"],
 )
 
-oci_load(
-    name = "ryuk_load",
+oci_tarball(
+    name = "ryuk",
     image = "@ryuk_linux_amd64",
     repo_tags = ["testcontainers/ryuk:0.8.1"],
     visibility = ["//visibility:public"],
 )
 
-oci_load(
-    name = "python_3_13_slim_load",
+oci_tarball(
+    name = "python_3_13_slim",
     image = "@python_3_13_slim_linux_amd64",
     repo_tags = ["python:3.13-slim"],
     visibility = ["//visibility:public"],

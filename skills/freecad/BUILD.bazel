@@ -1,5 +1,5 @@
-load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_tarball")
 load("//devinfra/testing:defs.bzl", "py_test")
 load("//skills:defs.bzl", "skill_package")
 
@@ -21,8 +21,8 @@ py_library(
     imports = ["../.."],
 )
 
-oci_load(
-    name = "freecad_test_load",
+oci_tarball(
+    name = "freecad_test",
     testonly = True,
     image = "@freecad_test_linux_amd64",
     repo_tags = ["freecad-test:pinned"],
@@ -35,7 +35,7 @@ py_test(
     data = [
         "golden/rect.dxf",
         "parametric_rect.py",
-        ":freecad_test_load",
+        ":freecad_test_tarball",
     ],
     requires_docker = True,
     deps = [

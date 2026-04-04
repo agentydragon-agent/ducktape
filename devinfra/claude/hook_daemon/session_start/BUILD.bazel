@@ -1,6 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_tarball")
 load("//devinfra/testing:defs.bzl", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
@@ -202,8 +203,8 @@ oci_image(
     tars = [":mock_k8s_server_layers"],
 )
 
-oci_load(
-    name = "mock_k8s_server_load",
+oci_tarball(
+    name = "mock_k8s_server",
     testonly = True,
     image = ":mock_k8s_server_image",
     repo_tags = ["mock-k8s-server:pinned"],
@@ -234,8 +235,8 @@ oci_image(
     tars = [":k8s_test_client_layers"],
 )
 
-oci_load(
-    name = "k8s_test_client_load",
+oci_tarball(
+    name = "k8s_test_client",
     testonly = True,
     image = ":k8s_test_client_image",
     repo_tags = ["k8s-test-client:pinned"],
@@ -247,8 +248,8 @@ py_test(
     name = "test_k8s_proxy_integration",
     srcs = ["test_k8s_proxy_integration.py"],
     data = [
-        ":k8s_test_client_load",
-        ":mock_k8s_server_load",
+        ":k8s_test_client_tarball",
+        ":mock_k8s_server_tarball",
     ],
     env_inherit = ["DOCKER_HOST"],
     imports = ["../../../.."],

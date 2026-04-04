@@ -1,5 +1,5 @@
-load("@rules_oci//oci:defs.bzl", "oci_load")
 load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_tarball")
 
 package(default_visibility = ["//devinfra/claude:__subpackages__"])
 
@@ -48,8 +48,8 @@ py_library(
 # mitmproxy testcontainer
 # =============================================================================
 
-oci_load(
-    name = "mitmproxy_load",
+oci_tarball(
+    name = "mitmproxy",
     testonly = True,
     image = "@mitmproxy_linux_amd64",
     repo_tags = ["mitmproxy:11"],
@@ -59,7 +59,7 @@ py_library(
     name = "mitmproxy_fixture",
     testonly = True,
     srcs = ["mitmproxy_fixture.py"],
-    data = [":mitmproxy_load"],
+    data = [":mitmproxy_tarball"],
     imports = ["../../.."],
     deps = [
         ":proxy_ca",
