@@ -184,9 +184,5 @@ rules:
     resources:
       - externalsecrets
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["bitnami.com"]
-    resources:
-      - sealedsecrets
-    verbs: ["get", "list", "watch"]
 # pods/log and configmaps granted via namespaced Roles in monitoring, kube-system,
 # longhorn-system, flux-system (see role-logs-configmaps-reader.yaml).

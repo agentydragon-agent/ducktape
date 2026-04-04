@@ -108,42 +108,6 @@
       }
     ]
   },
-  "kubeseal": {
-    "binaries": [
-      {
-        "kind": "archive",
-        "url": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-amd64.tar.gz",
-        "file": "kubeseal",
-        "sha256": "27c925635593b347b70c1cee3e9c8f38a374ca0c599b246fbad403539393f467",
-        "os": "linux",
-        "cpu": "x86_64"
-      },
-      {
-        "kind": "archive",
-        "url": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-linux-arm64.tar.gz",
-        "file": "kubeseal",
-        "sha256": "a61a2b31de5eb2c2c943f12d0d8dc8fd61968be6c16078fc9e68ea091b4b05d6",
-        "os": "linux",
-        "cpu": "arm64"
-      },
-      {
-        "kind": "archive",
-        "url": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-darwin-amd64.tar.gz",
-        "file": "kubeseal",
-        "sha256": "33fc3de1088299de9f7de0f351894ddf020f90420a4f8ee708497ca8aedba1e7",
-        "os": "macos",
-        "cpu": "x86_64"
-      },
-      {
-        "kind": "archive",
-        "url": "https://github.com/bitnami-labs/sealed-secrets/releases/download/v0.27.3/kubeseal-0.27.3-darwin-arm64.tar.gz",
-        "file": "kubeseal",
-        "sha256": "c1ed765191ce364e268b380b5e37db97b236a4c8e53dbdf1cc26b40f6b0be898",
-        "os": "macos",
-        "cpu": "arm64"
-      }
-    ]
-  },
   "kustomize": {
     "binaries": [
       {

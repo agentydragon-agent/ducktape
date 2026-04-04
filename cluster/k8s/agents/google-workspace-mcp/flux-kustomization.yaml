@@ -14,6 +14,6 @@ spec:
   prune: true
   wait: true
   dependsOn:
-    - name: airlock # google-client-credentials SealedSecret (Reflector mirrors it here)
+    - name: airlock # google-client-credentials (Reflector mirrors it here)
     - name: proxmox-csi
     - name: reflector

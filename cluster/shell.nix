@@ -3,12 +3,6 @@
     config.allowUnfreePredicate = pkg: builtins.elem (pkg.pname or "") [ "packer" ];
   },
 }:
-let
-  # Pin to nixpkgs-unstable for latest kubeseal
-  unstable =
-    import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz")
-      { };
-in
 pkgs.mkShell {
   buildInputs = [
     pkgs.openssl
@@ -23,7 +17,5 @@ pkgs.mkShell {
     pkgs.awscli2 # AWS CLI for Route 53 management
     pkgs.nebula # Nebula mesh overlay (nebula-cert for PKI management)
     pkgs.sops # SOPS for decrypting secrets (age-encrypted)
-    # Use kubeseal from unstable to get v0.32.2
-    unstable.kubeseal
   ];
 }

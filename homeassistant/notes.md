@@ -6,7 +6,7 @@ Version: 2026.3.4
 ## Access
 
 - **Web UI**: `https://home.e621.co.uk`
-- **API token**: SealedSecret `homeassistant-proxy-ha-token` in `homeassistant-proxy` namespace
+- **API token**: SOPS secret `ha-token.sops.yaml` in `homeassistant-proxy` namespace
   - `kubectl get secret homeassistant-proxy-ha-token -n homeassistant-proxy -o jsonpath='{.data.token}' | base64 -d`
 - **SSH**: `ssh homeassistant` → `root@10.0.0.3:22` (LAN only — Cloudflare blocks TCP/22 externally; use WireGuard when away)
   - Key: `~/.ssh/15leroy` (ED25519), SOPS-encrypted at `secrets/15leroy-homeassistant-ssh.yaml`

@@ -255,7 +255,6 @@
               pkgs.kubectl
               pkgs.fluxcd
               pkgs.kustomize
-              pkgs.kubeseal
               pkgs.kubernetes-helm
               pkgs.kubeconform
               pkgs.opentofu

@@ -244,7 +244,7 @@ repos:
 
       # Kubernetes manifest validation (auto-installed via go install)
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,
-      # external-secrets, sealed-secrets, etc.  Niche CRDs without catalog
+      # external-secrets, etc.  Niche CRDs without catalog
       # schemas (powerdns-operator, kagent) are skipped rather than failing.
       # TODO: Run the datree CRD extractor against the live cluster to get
       # schemas for niche CRDs (ClusterRRset, ClusterZone, Agent, ModelConfig,
@@ -309,7 +309,7 @@ repos:
   # - pytest-main check (ensures test files have pytest_bazel.main() entry points)
   # - terraform-version-centralization (checks terraform modules don't define provider versions)
   # - filename-conventions (enforces underscores not dashes in new .py/.md files)
-  # - cluster validations (kustomize, helm, sealed-secrets)
+  # - cluster validations (kustomize, helm)
   # This avoids Bazel client lock contention and runs validations in parallel.
   #
   # Standard formatting hooks (no longer in bazel-precommit):

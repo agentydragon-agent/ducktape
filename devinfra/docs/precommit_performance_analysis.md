@@ -41,7 +41,7 @@ to Bazel client lock serialization.
 - buildifier-lint
 - pytest-main-check (direct import)
 - terraform-centralization (direct import)
-- kustomize/flux/gitops/helm/sealed-secrets (subprocess)
+- kustomize/flux/gitops/helm (subprocess)
 
 ### 2. Fast File Listing
 

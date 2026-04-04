@@ -3,7 +3,7 @@
 # Blocks: direct external internet access.
 #
 # To add a new sandbox namespace, add it to the namespaces list below
-# and add the corresponding mitmproxy-ca-cert SealedSecret + Kyverno
+# and add the corresponding mitmproxy-ca-cert SOPS secret + Kyverno
 # injection (already handled by inject-mitmproxy-proxy ClusterPolicy).
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy

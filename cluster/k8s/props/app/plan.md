@@ -1,15 +1,5 @@
 # Props cluster deployment — TODOs
 
-- [ ] **Seal evaluator credentials**: `scripts/seal-secret.sh props props-evaluator-credentials password <openssl rand -hex 24>`
-- [ ] **Seal the OpenAI API key**: The SealedSecret at
-      `props-secrets/openai-api-key-sealed.yaml` has a placeholder `REPLACE_ME`
-      value. Seal with:
-      `scripts/seal-secret.sh props props-openai-api-key api-key <your-openai-key>`
-- [ ] **Commit SealedSecrets public key**: Commit the controller's cert to git so secrets can be
-      sealed without cluster access (decryption still requires the in-cluster private key).
-      Export: `kubeseal --fetch-cert --controller-namespace sealed-secrets > cluster/k8s/sealed-secrets/sealed-secrets-cert.pem`
-      Then seal with: `kubeseal --cert cluster/k8s/sealed-secrets/sealed-secrets-cert.pem ...`
-
 ## Langfuse
 
 - [ ] **TODO(reliability): Move PostgreSQL to hcloud-volumes on VPS** —

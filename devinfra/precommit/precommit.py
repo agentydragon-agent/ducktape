@@ -8,7 +8,7 @@ Validations:
 - pytest-main check (ensures test files have pytest_bazel.main() entry points)
 - terraform-version-centralization (checks terraform modules don't define provider versions)
 - filename-conventions (enforces underscores not dashes in new .py/.md files)
-- cluster validations (kustomize, helm, sealed-secrets)
+- cluster validations (kustomize, helm)
 
 Note: formatting moved to standard hooks (buildifier, ruff, shfmt)
 

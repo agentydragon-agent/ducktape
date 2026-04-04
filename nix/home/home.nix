@@ -430,7 +430,6 @@ in
     ++ lib.optionals enableKube [
       kubectl
       kubernetes-helm
-      kubeseal
     ]
     ++ [
       eza # Modern ls

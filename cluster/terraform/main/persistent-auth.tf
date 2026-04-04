@@ -1,7 +1,7 @@
 # PERSISTENT AUTH
 # Persistent authentication credentials that survive VM lifecycle.
-# Includes: CSI tokens, sealed secrets keypair, Flux deploy key, Nebula PKI,
-# Nix cache signing key, Attic JWT token, sealed secrets for k8s.
+# Includes: CSI tokens, Flux deploy key, Nebula PKI,
+# Nix cache signing key, Attic JWT token, SOPS age keypair.
 
 # ============================================================================
 # PROXMOX USERS, ROLES, AND TOKENS
@@ -233,7 +233,3 @@ resource "kubernetes_secret" "sops_age_cluster_secrets" {
 
   depends_on = [kubernetes_namespace.flux_system]
 }
-
-# ============================================================================
-# PROXMOX CSI SEALED SECRET
-# ============================================================================
