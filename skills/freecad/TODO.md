@@ -5,6 +5,7 @@
 - [ ] Fix ezdxf font discovery in Bazel sandbox — dimension text renders as tofu (empty squares) because ezdxf can't find fonts. Need to bundle a font via data dep or point ezdxf at matplotlib's bundled DejaVu fonts via env var.
 - [ ] Fix DXF rendering quality: dimension labels overlap each other, corner lines extend beyond intersection points. Investigate whether `parametric_rect.py` produces a correctly constrained sketch or if the TechDraw projection is introducing artifacts.
 - [ ] Fonts in the rendered PNG test — currently the test passes because golden and actual both have the same missing-font tofu squares. Once fonts are fixed, regenerate golden.
+- [ ] Call ezdxf drawing API directly instead of shelling out via `subprocess`. The CLI is Python — find the right internal API call (likely in `ezdxf.__main__` or `ezdxf.addons.drawing`) that handles color inversion, viewport fitting, and font setup correctly. Previous attempt using `Frontend` + `MatplotlibBackend` directly rendered invisible output.
 
 ## FreeCAD scripting
 
