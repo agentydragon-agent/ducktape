@@ -236,6 +236,7 @@ dependencies = [
     "respx>=0.22",
     "asgi-lifespan>=2.1",
     "syrupy>=4.0",
+    "pypdf>=5.0",
     "PyHamcrest>=2.1",
     "mypy==1.19.1",
     "invoke",

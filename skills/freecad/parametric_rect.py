@@ -88,7 +88,7 @@ feat.Shape = Part.Face(Part.Wire(edges))
 doc.recompute()
 
 # === TechDraw Page ===
-tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "A4_Landscape_blank.svg")  # noqa: PTH118 — FreeCAD API expects str
+tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118 — FreeCAD API expects str
 page = doc.addObject("TechDraw::DrawPage", "Page")
 tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
 tmpl.Template = tmpl_path

@@ -21,6 +21,8 @@ try:
 except ImportError:
     from PySide2 import QtWidgets
 
+from pivy import coin  # noqa: E402 — must import after Gui.showMainWindow(), before getCameraNode()
+
 qapp = QtWidgets.QApplication.instance()
 
 
@@ -73,8 +75,6 @@ if cam_type == "SoOrthographicCamera":
 
 # Set camera to an angle where faces are visibly different
 # (elevated azimuth so top, front-right, and right faces get different lighting)
-from pivy import coin  # noqa: E402 — must import after Gui init
-
 # Position camera at an angle that shows three distinct faces
 # The key is that the camera angle differs from the light direction
 cam.position.setValue(coin.SbVec3f(40, -30, 35))
