@@ -9,3 +9,15 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
 )
+
+py_library(
+    name = "container_logs",
+    testonly = True,
+    srcs = ["container_logs.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":undeclared_outputs",
+        "@pypi//testcontainers",
+    ],
+)
