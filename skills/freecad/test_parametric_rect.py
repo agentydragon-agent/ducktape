@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-import docker
 import pytest
 import pytest_bazel
+from testcontainers.core.container import DockerContainer
 
 from skills.freecad.compare_dxf import compare_dxf_files
 from util.bazel.runfiles import get_required_path
@@ -28,27 +28,20 @@ def test_parametric_rect(tmp_path: Path) -> None:
     script = get_required_path(_SCRIPT)
     golden = get_required_path(_GOLDEN)
 
-    client = docker.from_env()
-    container = client.containers.run(
-        _IMAGE_TAG,
-        # bash -c wrapping ensures Xvfb cleanup after freecadcmd's os._exit(0)
-        command=["bash", "-c", 'xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd /work/parametric_rect.py'],
-        volumes={
-            str(script): {"bind": "/work/parametric_rect.py", "mode": "ro"},
-            str(tmp_path): {"bind": "/output", "mode": "rw"},
-        },
-        environment={"OUTDIR": "/output"},
-        detach=True,
+    # bash -c wrapping ensures Xvfb cleanup after freecadcmd's os._exit(0)
+    container = (
+        DockerContainer(_IMAGE_TAG)
+        .with_volume_mapping(str(script), "/work/parametric_rect.py", "ro")
+        .with_volume_mapping(str(tmp_path), "/output", "rw")
+        .with_env("OUTDIR", "/output")
+        .with_command("bash -c 'xvfb-run -a -s \"-screen 0 1024x768x24\" freecadcmd /work/parametric_rect.py'")
     )
-    try:
-        result = container.wait(timeout=120)
-        stdout = container.logs(stdout=True, stderr=False).decode(errors="replace")
-        stderr = container.logs(stdout=False, stderr=True).decode(errors="replace")
+
+    with container:
+        stdout = container.get_logs()[0].decode(errors="replace")
+        stderr = container.get_logs()[1].decode(errors="replace")
         _save_output("container-stdout.log", stdout)
         _save_output("container-stderr.log", stderr)
-        assert result["StatusCode"] == 0, f"Container failed (exit {result['StatusCode']})"
-    finally:
-        container.remove(force=True)
 
     actual_dxf = tmp_path / "rect.dxf"
     assert actual_dxf.exists(), "DXF not generated — check container logs in undeclared outputs"
