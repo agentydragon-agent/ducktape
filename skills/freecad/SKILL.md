@@ -69,25 +69,27 @@ Open wall segments: make thin (0.3cm) rectangular Face strips. See `examples/01_
 
 `TechDraw.makeDistanceDim(view, dimType, fromPoint, toPoint)` — creates a `DrawViewDimension`. Points are unscaled 2D view-local coordinates (sketch coords minus shape bounding box center). Types: `'Distance'`, `'DistanceX'`, `'DistanceY'`. Values auto-compute from the projected geometry and render as dimension lines with extension lines in the DXF export.
 
-**You MUST set `dim.X` and `dim.Y`** after creating the dimension. These properties control the dimension text position as view-local offsets (mm). They default to `(0, 0)` which maps to the view center — so if you create multiple dimensions without setting X/Y, all text will overlap at the view center. Set them to the view-local coordinates of the dimension line midpoint:
+**You MUST set `dim.X` and `dim.Y`** after creating the dimension. These properties control the dimension text position as view-local offsets (mm). They default to `(0, 0)` which maps to the view center — so if you create multiple dimensions without setting X/Y, all text will overlap at the view center. Set them to the view-local coordinates of the dimension line midpoint, computed from the same `fromPoint`/`toPoint` values passed to `TechDraw.makeDistanceDim`:
 
 ```python
 bb = feat.Shape.BoundBox
 cx, cy = (bb.XMin + bb.XMax) / 2, (bb.YMin + bb.YMax) / 2
 
 # Width dim 15mm below bottom edge
-d1 = TechDraw.makeDistanceDim(view, "DistanceX",
-    App.Vector(0 - cx, -15 - cy, 0), App.Vector(WIDTH - cx, -15 - cy, 0))
+d1_from = App.Vector(0 - cx, -15 - cy, 0)
+d1_to = App.Vector(WIDTH - cx, -15 - cy, 0)
+d1 = TechDraw.makeDistanceDim(view, "DistanceX", d1_from, d1_to)
 page.addView(d1)
-d1.X = 0         # centered on dim line (view-local X)
-d1.Y = -15 - cy  # at the dim line Y position (view-local Y)
+d1.X = (d1_from.x + d1_to.x) / 2
+d1.Y = (d1_from.y + d1_to.y) / 2
 
 # Height dim 15mm right of right edge
-d2 = TechDraw.makeDistanceDim(view, "DistanceY",
-    App.Vector(WIDTH + 15 - cx, 0 - cy, 0), App.Vector(WIDTH + 15 - cx, HEIGHT - cy, 0))
+d2_from = App.Vector(WIDTH + 15 - cx, 0 - cy, 0)
+d2_to = App.Vector(WIDTH + 15 - cx, HEIGHT - cy, 0)
+d2 = TechDraw.makeDistanceDim(view, "DistanceY", d2_from, d2_to)
 page.addView(d2)
-d2.X = WIDTH + 15 - cx  # at the dim line X position
-d2.Y = 0                # centered on dim line (view-local Y)
+d2.X = (d2_from.x + d2_to.x) / 2
+d2.Y = (d2_from.y + d2_to.y) / 2
 ```
 
 See `examples/02_techdraw_and_dims.py`.
