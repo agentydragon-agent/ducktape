@@ -29,8 +29,11 @@ repos:
       - id: no-commit-to-branch
 
       - id: trailing-whitespace
-        exclude: "(__snapshots__/.*\\.ambr|\\.patch)$"
+        # .dxf: FreeCAD TechDraw DXF output has trailing whitespace in geometry lines
+        exclude: "(__snapshots__/.*\\.ambr|\\.patch|\\.dxf)$"
       - id: end-of-file-fixer
+        # .dxf: FreeCAD TechDraw DXF output ends without a trailing newline
+        exclude: "\\.dxf$"
 
       - id: check-merge-conflict
 
