@@ -31,7 +31,8 @@ def test_parametric_rect(tmp_path: Path) -> None:
     client = docker.from_env()
     container = client.containers.run(
         _IMAGE_TAG,
-        command=["xvfb-run", "-a", "-s", "-screen 0 1024x768x24", "freecadcmd", "/work/parametric_rect.py"],
+        # bash -c wrapping ensures Xvfb cleanup after freecadcmd's os._exit(0)
+        command=["bash", "-c", 'xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd /work/parametric_rect.py'],
         volumes={
             str(script): {"bind": "/work/parametric_rect.py", "mode": "ro"},
             str(tmp_path): {"bind": "/output", "mode": "rw"},

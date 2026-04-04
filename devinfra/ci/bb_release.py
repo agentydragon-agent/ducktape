@@ -7,9 +7,10 @@ Expects: GH_RELEASE_PAT env var.
 import os
 import shutil
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from github import Auth, Github
+from github import Auth, Github, GithubException
 from more_itertools import one
 
 from devinfra.ci.artifacts import ARTIFACTS, Sources, file_sha256, sources_path
@@ -26,6 +27,34 @@ def copy_artifact_to_dist(src_glob: str, dest: str) -> Path:
         dest_path = dest_path / match.name
     shutil.copy2(match, dest_path)
     return dest_path
+
+
+def _delete_release_and_tag(gh_repo, release) -> None:
+    tag = release.tag_name
+    release.delete_release()
+    try:
+        gh_repo.get_git_ref(f"tags/{tag}").delete()
+    except GithubException as e:
+        if e.status != 404:
+            raise
+
+
+_RETENTION = timedelta(days=30)
+
+
+def prune_old_releases(gh_repo, pkg: str, keep_tag: str) -> None:
+    """Delete releases for pkg older than _RETENTION, always keeping keep_tag."""
+    prefix = f"{pkg}-"
+    cutoff = datetime.now(UTC) - _RETENTION
+    for release in gh_repo.get_releases():
+        if not release.tag_name.startswith(prefix):
+            continue
+        if release.tag_name == keep_tag:
+            continue
+        if release.created_at >= cutoff:
+            continue
+        print(f"  pruning {release.tag_name} ({release.created_at.date()})")
+        _delete_release_and_tag(gh_repo, release)
 
 
 def main() -> None:
@@ -62,6 +91,7 @@ def main() -> None:
             tag=tag, name=f"{artifact.pkg} ({short_sha})", message=artifact.notes, make_latest="false"
         )
         release.upload_asset(str(dist_path))
+        prune_old_releases(gh_repo, artifact.pkg, keep_tag=tag)
         changed.append(artifact.pkg)
 
     if not changed:
