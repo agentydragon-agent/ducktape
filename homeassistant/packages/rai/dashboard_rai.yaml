@@ -26,6 +26,10 @@ views:
             state_color: true
           - type: entity
             entity: switch.adaptive_lighting_rai_room_lights
+          - type: entity
+            entity: input_boolean.skip_morning_lights
+            name: Skip morning lights
+            state_color: true
       - type: horizontal-stack
         cards:
           - graph: line
