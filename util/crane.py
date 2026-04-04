@@ -119,6 +119,11 @@ def push_to_daemon(oci_layout: Path, tag: str) -> None:
 
     Converts the OCI layout to a Docker-format tarball and pipes it to
     ``docker load``. This is equivalent to what rules_oci's oci_load does.
+
+    TODO: The Docker daemon has no API for loading OCI layouts directly —
+    every path (crane, skopeo, regctl, rules_oci's oci_load) ends up
+    building a Docker-format tarball and piping it to ``docker load``.
+    If Docker ever adds native OCI layout loading, replace this.
     """
     index = json.loads((oci_layout / "index.json").read_text())
     manifest_digest: str = index["manifests"][0]["digest"]
