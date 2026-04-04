@@ -1,0 +1,13 @@
+{
+  "rbe_worker": {
+    "pin_type": "tag",
+    "image": "ghcr.io/agentydragon/rbe-worker",
+    "tag": "devel-20260401040636-df942a4"
+  },
+  "freecad_test": {
+    "pin_type": "digest",
+    "image": "ghcr.io/agentydragon/freecad-test",
+    "digest": "sha256:48504fcca66f4ca2bfeebf1f40523f84b8fce8a3e98758f2090aff7cc36a025c",
+    "platforms": ["linux/amd64"]
+  }
+}

@@ -24,6 +24,7 @@
 
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@bazel_skylib//rules:native_binary.bzl", "native_test")
+load("@image_pins//:pins.bzl", "RBE_WORKER_IMAGE", "RBE_WORKER_TAG")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
@@ -136,10 +137,8 @@ platform(
     exec_properties = {
         # Custom image layered on BuildBuddy's rbe-ubuntu24-04 with git,
         # ca-certificates, and podman for e2e tests.
-        # Built and auto-pinned by .github/workflows/rbe-image.yml
-        # TODO: Consider moving pinned tag to a JSON file (e.g., devinfra/rbe_image/pin.json)
-        # so the workflow can use structured read/write (jq) instead of sed on Starlark.
-        "container-image": "docker://ghcr.io/agentydragon/rbe-worker:devel-20260401040636-df942a4",
+        # Built by .github/workflows/rbe-image.yml, pinned in devinfra/image_pins.json.
+        "container-image": "docker://" + RBE_WORKER_IMAGE + ":" + RBE_WORKER_TAG,
         # BuildBuddy Firecracker isolation for all RBE actions (better isolation + runner recycling)
         "workload-isolation-type": "firecracker",
         "recycle-runner": "true",

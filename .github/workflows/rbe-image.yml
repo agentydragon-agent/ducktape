@@ -80,25 +80,20 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
 
-      - name: Pin RBE image in BUILD.bazel
+      - name: Pin RBE image tag in image_pins.json
         if: github.event_name != 'workflow_call'
         run: |
           PIN_TAG="${{ steps.meta.outputs.pin_tag }}"
 
-          sed -i "s|\"container-image\": \"docker://ghcr.io/agentydragon/rbe-worker:.*\"|\"container-image\": \"docker://ghcr.io/agentydragon/rbe-worker:${PIN_TAG}\"|" BUILD.bazel
-
-          grep -q "rbe-worker:${PIN_TAG}" BUILD.bazel || {
-            echo "::error::Failed to update BUILD.bazel with pin tag $PIN_TAG"
-            exit 1
-          }
+          python3 devinfra/update_image_pin.py rbe_worker --tag "$PIN_TAG"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add BUILD.bazel
+          git add devinfra/image_pins.json
 
           if git diff --cached --quiet; then
-            echo "BUILD.bazel already pinned to $PIN_TAG"
+            echo "image_pins.json already up to date"
             exit 0
           fi
 
