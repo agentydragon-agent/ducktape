@@ -240,10 +240,10 @@ oci.pull(
 
 # FreeCAD test image for skills/freecad golden-file tests (headless FreeCAD + xvfb).
 # Built by .github/workflows/freecad-test-image.yml, pushed to GHCR.
-# To update: docker manifest inspect ghcr.io/agentydragon/freecad-test:latest | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
+# To update: docker manifest inspect ghcr.io/agentydragon/freecad-test:latest --verbose | python3 -c "import json,sys; print(json.load(sys.stdin)['Descriptor']['digest'])"
 oci.pull(
     name = "freecad_test",
-    digest = "sha256:TODO",  # Fill after first CI push of freecad-test-image.yml
+    digest = "sha256:48504fcca66f4ca2bfeebf1f40523f84b8fce8a3e98758f2090aff7cc36a025c",
     image = "ghcr.io/agentydragon/freecad-test",
     platforms = ["linux/amd64"],
     tag = "latest",
