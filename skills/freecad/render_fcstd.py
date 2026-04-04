@@ -42,36 +42,58 @@ Gui.ActiveDocument = Gui.getDocument(doc.Name)
 
 pump(2)
 
-# Ensure all objects are visible with proper display mode
+# Configure Part::Feature view properties for shaded rendering
 for obj in doc.Objects:
-    if hasattr(obj, "ViewObject"):
-        vo = obj.ViewObject
-        vo.Visibility = True
-        if hasattr(vo, "DisplayMode"):
-            vo.DisplayMode = "Shaded"
-        if hasattr(vo, "ShapeColor"):
-            vo.ShapeColor = (0.75, 0.75, 0.80)  # light blue-gray
-        if hasattr(vo, "Lighting"):
-            vo.Lighting = "Two side"
-        if hasattr(vo, "Transparency"):
-            vo.Transparency = 0
+    if not obj.isDerivedFrom("Part::Feature"):
+        continue
+    vo = obj.ViewObject
+    vo.Visibility = True
+    vo.DisplayMode = "Shaded"
+    vo.ShapeColor = (0.75, 0.75, 0.80)  # light blue-gray
+    vo.Lighting = "One side"
+    vo.Transparency = 0
 
 pump(2)
 
 view = Gui.ActiveDocument.ActiveView
 
 # === Configure view ===
-# Set white background before rendering
+# Set white background
 param = App.ParamGet("User parameter:BaseApp/Preferences/View")
 param.SetBool("Gradient", False)
 param.SetUnsigned("BackgroundColor", 0xFFFFFFFF)
 
-view.viewIsometric()
-view.fitAll()
+# Use perspective projection for depth
+cam = view.getCameraNode()
+cam_type = cam.getTypeId().getName()
+if cam_type == "SoOrthographicCamera":
+    Gui.runCommand("Std_PerspectiveCamera", 0)
+    pump(1)
+    cam = view.getCameraNode()
 
-pump(3)
+# Set camera to an angle where faces are visibly different
+# (elevated azimuth so top, front-right, and right faces get different lighting)
+from pivy import coin  # noqa: E402 — must import after Gui init
+
+# Position camera at an angle that shows three distinct faces
+# The key is that the camera angle differs from the light direction
+cam.position.setValue(coin.SbVec3f(40, -30, 35))
+cam.pointAt(coin.SbVec3f(0, 0, 0))
+cam.nearDistance.setValue(1.0)
+cam.farDistance.setValue(200.0)
+
+# Set up a directional light from upper-left to create face contrast
+# FreeCAD's default headlight follows the camera; add a separate light
+root = view.getSceneGraph()
+light = coin.SoDirectionalLight()
+light.direction.setValue(coin.SbVec3f(-0.5, 0.3, -0.8))
+light.intensity.setValue(0.8)
+root.insertChild(light, 0)
+
+pump(2)
 
 view.fitAll()
+pump(1)
 
 # === Save image ===
 output_path = os.path.join(outdir, "cube_with_hole.png")  # noqa: PTH118 — FreeCAD API expects str

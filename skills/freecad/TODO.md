@@ -15,8 +15,6 @@
 
 ## 3D
 
-- [x] 3D operations: boolean cut (`Part.makeBox` + `Part.makeCylinder` + `cube.cut(cylinder)`). See `build_cube_with_hole.py`.
-- [x] 3D rendering: FreeCAD GUI viewport under Xvfb with `view.saveImage()`. See `render_fcstd.py`.
-- [ ] Colored/textured renders: `ViewObject.ShapeColor` works but lighting is basic Coin3D shading. Investigate FreeCAD Render workbench for raytraced output.
+- [ ] Raytraced renders: Coin3D shading works but is basic. Investigate FreeCAD Render workbench for POV-Ray/LuxRender output.
 - [ ] Multi-view drawings: front/side/top views on one TechDraw page for 3D objects.
 - [ ] Assemblies: multi-part models with positioning.
