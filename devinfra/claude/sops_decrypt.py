@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -164,4 +165,36 @@ def load_age_identities(age_key: str) -> list:
     identities = _parse_age_keys(age_key)
     if not identities:
         raise ValueError("No AGE-SECRET-KEY-... lines found in age_key")
+    return identities
+
+
+_DEFAULT_AGE_KEY_FILE = Path.home() / ".config" / "sops" / "age" / "keys.txt"
+
+
+def discover_age_identities() -> list | None:
+    """Discover age identities from environment or standard sops key file.
+
+    Resolution order:
+    1. ``DUCKTAPE_CLAUDE_HOOKS_AGE_KEY`` env var (inline key, web mode)
+    2. ``SOPS_AGE_KEY`` env var (inline key, sops convention)
+    3. ``SOPS_AGE_KEY_FILE`` env var → read that file
+    4. ``~/.config/sops/age/keys.txt`` (standard sops default)
+
+    Returns None if no source provides valid keys.
+    """
+    for env_var in ("DUCKTAPE_CLAUDE_HOOKS_AGE_KEY", "SOPS_AGE_KEY"):
+        if inline_key := os.environ.get(env_var):
+            logger.debug("Loading age identities from %s", env_var)
+            return load_age_identities(inline_key)
+    key_file = Path(os.environ["SOPS_AGE_KEY_FILE"]) if "SOPS_AGE_KEY_FILE" in os.environ else _DEFAULT_AGE_KEY_FILE
+    try:
+        key_text = key_file.read_text()
+    except FileNotFoundError:
+        logger.debug("No age key file at %s", key_file)
+        return None
+    identities = _parse_age_keys(key_text)
+    if not identities:
+        logger.warning("Age key file %s exists but contains no valid keys", key_file)
+        return None
+    logger.debug("Loaded %d age identity(ies) from %s", len(identities), key_file)
     return identities

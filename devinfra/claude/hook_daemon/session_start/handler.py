@@ -32,7 +32,7 @@ from devinfra.claude.claude_api.hooks.session_start import (
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
 from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig, SecretSource
-from devinfra.claude.sops_decrypt import load_age_identities
+from devinfra.claude.sops_decrypt import discover_age_identities
 
 # isort: off
 # Bazel subpackage imports must use `from pkg import module` form (not
@@ -479,7 +479,7 @@ async def run_session(
     # Resolve secrets from tagged-union config (each field resolved independently).
     with tracer.start_as_current_span("resolve_secrets", context=root_ctx):
         secrets_cfg = hook_config.secrets if hook_config else None
-        age_identities = load_age_identities(settings.age_key) if settings.age_key else None
+        age_identities = discover_age_identities()
         k8s_api = None
         k8s_namespace = hook_config.k8s.namespace if hook_config and hook_config.k8s else None
         if settings.k8s_token and hook_config and hook_config.k8s:

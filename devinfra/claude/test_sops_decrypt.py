@@ -10,7 +10,12 @@ import pytest
 import pytest_bazel
 from pyrage import x25519
 
-from devinfra.claude.sops_decrypt import _parse_enc_value, decrypt_sops_yaml, load_age_identities
+from devinfra.claude.sops_decrypt import (
+    _parse_enc_value,
+    decrypt_sops_yaml,
+    discover_age_identities,
+    load_age_identities,
+)
 from util.bazel.runfiles import get_required_path
 
 # Committed testdata encrypted by `sops --encrypt --age <recipient>`.
@@ -86,6 +91,55 @@ def test_roundtrip_with_env_var_key(sops_file: Path):
     identities = load_age_identities(key_text)
     result = decrypt_sops_yaml(sops_file, identities)
     assert result["api_key"] == "test-secret-value"
+
+
+def test_discover_age_identities_from_env_var(monkeypatch: pytest.MonkeyPatch):
+    """DUCKTAPE_CLAUDE_HOOKS_AGE_KEY takes priority."""
+    key_text = get_required_path(_TESTDATA_AGE_KEY).read_text()
+    monkeypatch.setenv("DUCKTAPE_CLAUDE_HOOKS_AGE_KEY", key_text)
+    identities = discover_age_identities()
+    assert identities is not None
+    assert len(identities) == 1
+
+
+def test_discover_age_identities_from_sops_age_key(monkeypatch: pytest.MonkeyPatch):
+    """SOPS_AGE_KEY env var works as inline key."""
+    key_text = get_required_path(_TESTDATA_AGE_KEY).read_text()
+    monkeypatch.delenv("DUCKTAPE_CLAUDE_HOOKS_AGE_KEY", raising=False)
+    monkeypatch.setenv("SOPS_AGE_KEY", key_text)
+    identities = discover_age_identities()
+    assert identities is not None
+    assert len(identities) == 1
+
+
+def test_discover_age_identities_from_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Falls back to key file when no inline env vars set."""
+    key_file = tmp_path / "keys.txt"
+    key_file.write_text(get_required_path(_TESTDATA_AGE_KEY).read_text())
+    monkeypatch.delenv("DUCKTAPE_CLAUDE_HOOKS_AGE_KEY", raising=False)
+    monkeypatch.delenv("SOPS_AGE_KEY", raising=False)
+    monkeypatch.setenv("SOPS_AGE_KEY_FILE", str(key_file))
+    identities = discover_age_identities()
+    assert identities is not None
+    assert len(identities) == 1
+
+
+def test_discover_age_identities_no_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Returns None when no key file exists."""
+    monkeypatch.delenv("DUCKTAPE_CLAUDE_HOOKS_AGE_KEY", raising=False)
+    monkeypatch.delenv("SOPS_AGE_KEY", raising=False)
+    monkeypatch.setenv("SOPS_AGE_KEY_FILE", str(tmp_path / "nonexistent.txt"))
+    assert discover_age_identities() is None
+
+
+def test_discover_age_identities_empty_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Returns None when key file has no valid keys."""
+    key_file = tmp_path / "keys.txt"
+    key_file.write_text("# just a comment\n")
+    monkeypatch.delenv("DUCKTAPE_CLAUDE_HOOKS_AGE_KEY", raising=False)
+    monkeypatch.delenv("SOPS_AGE_KEY", raising=False)
+    monkeypatch.setenv("SOPS_AGE_KEY_FILE", str(key_file))
+    assert discover_age_identities() is None
 
 
 if __name__ == "__main__":
