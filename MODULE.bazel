@@ -18,6 +18,7 @@ bazel_dep(name = "buildifier_prebuilt", version = "8.5.1")
 bazel_dep(name = "aspect_rules_lint", version = "2.3.0")
 bazel_dep(name = "rules_multirun", version = "0.13.0")  # Required by format_multirun
 bazel_dep(name = "rules_multitool", version = "1.11.1")
+bazel_dep(name = "package_metadata", version = "0.0.6")  # Required by image_pins extension (oci_pull repos reference it)
 bazel_dep(name = "rules_mypy", version = "0.40.0")
 
 # Fork with two fixes for CI disk exhaustion during mypy type-checking:
@@ -237,22 +238,15 @@ oci.pull(
     platforms = ["linux/amd64"],
     tag = "11",
 )
-
-# FreeCAD test image — digest managed by devinfra/image_pins.json + update_image_pin.py
-oci.pull(
-    name = "freecad_test",
-    digest = "sha256:e106a489d5038861b1f9bacd5375283868e46aaf44d0f8398612f869e7d4a2e7",
-    image = "ghcr.io/agentydragon/freecad-test",
-    platforms = ["linux/amd64"],
-)
-use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "freecad_test", "freecad_test_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
+use_repo(oci, "debian_slim", "debian_slim_linux_amd64", "distroless_cc_debian12", "distroless_cc_debian12_linux_amd64", "distroless_cc_debian13", "distroless_cc_debian13_linux_amd64", "inventree_stable", "inventree_stable_linux_amd64", "mitmproxy", "mitmproxy_linux_amd64", "postgres_18", "postgres_18_linux_amd64", "python_3_13_slim", "python_3_13_slim_linux_amd64", "registry_2", "registry_2_linux_amd64", "ryuk", "ryuk_linux_amd64", "talos_imager", "talos_imager_linux_amd64")
 
 # Container image pins from devinfra/image_pins.json.
-# Generates @image_pins//:pins.bzl with Starlark constants for all pinned images.
+# - Generates @image_pins//:pins.bzl with NAME_IMAGE / NAME_DIGEST constants
+# - Calls oci_pull for images with "platforms" (creates OCI repos for tests)
 # CI workflows update the JSON via devinfra/update_image_pin.py.
 image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
-use_repo(image_pins, "image_pins")
+use_repo(image_pins, "freecad_test", "freecad_test_linux_amd64", "image_pins")
 
 # Hermetic deb packages for container images (rules_distroless).
 # Replaces Dockerfile apt-get with lockfile-pinned deb extraction.
