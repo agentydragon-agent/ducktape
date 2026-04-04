@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from third_party.debian_slim.rlocations import IMAGE_TAG as DEBIAN_IMAGE_TAG, TARBALL as DEBIAN_TARBALL
-from util.oci import load_image
+from third_party.containers.rlocations import DEBIAN_SLIM
+from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -17,8 +17,8 @@ def _logs_dir(test_name: str) -> Path:
 
 def test_logs_collected_on_success() -> None:
     """Verify LoggedContainer persists main process logs on success."""
-    load_image(DEBIAN_TARBALL)
-    with LoggedContainer(DEBIAN_IMAGE_TAG, test_name="logs-success", command="echo SUCCESS_LOG_LINE"):
+    load_oci_image(DEBIAN_SLIM)
+    with LoggedContainer(DEBIAN_SLIM.tag, test_name="logs-success", command="echo SUCCESS_LOG_LINE"):
         pass  # container exits after echo
 
     stdout = _logs_dir("logs-success") / "stdout.log"
@@ -28,10 +28,10 @@ def test_logs_collected_on_success() -> None:
 
 def test_logs_collected_on_exec_failure() -> None:
     """Verify LoggedContainer persists logs even when an assertion fails inside the with block."""
-    load_image(DEBIAN_TARBALL)
+    load_oci_image(DEBIAN_SLIM)
 
     def _run() -> None:
-        with LoggedContainer(DEBIAN_IMAGE_TAG, test_name="logs-failure", command="sleep infinity") as container:
+        with LoggedContainer(DEBIAN_SLIM.tag, test_name="logs-failure", command="sleep infinity") as container:
             container.exec("echo FAILURE_LOG_LINE")
             raise AssertionError("deliberate failure")
 
@@ -44,8 +44,8 @@ def test_logs_collected_on_exec_failure() -> None:
 
 def test_logs_collected_on_container_error() -> None:
     """Verify LoggedContainer persists logs when the container command fails."""
-    load_image(DEBIAN_TARBALL)
-    with LoggedContainer(DEBIAN_IMAGE_TAG, test_name="logs-error", command="bash -c 'echo ERROR_LINE && exit 1'"):
+    load_oci_image(DEBIAN_SLIM)
+    with LoggedContainer(DEBIAN_SLIM.tag, test_name="logs-error", command="bash -c 'echo ERROR_LINE && exit 1'"):
         pass  # container exits immediately with error
 
     stdout = _logs_dir("logs-error") / "stdout.log"

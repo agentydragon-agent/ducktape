@@ -6,13 +6,12 @@ from pathlib import Path
 import pytest_bazel
 from PIL import Image
 
+from skills.freecad.conftest import FREECAD_TEST
 from util.bazel.runfiles import get_required_path
-from util.oci import load_image
+from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
-_IMAGE_TAG = "freecad-test:pinned"
-_TARBALL = "_main/skills/freecad/freecad_test_load/tarball.tar"
 _BUILD_SCRIPT = "_main/skills/freecad/build_cube_with_hole.py"
 _RENDER_SCRIPT = "_main/skills/freecad/render_fcstd.py"
 _GOLDEN = "_main/skills/freecad/golden/cube_with_hole.png"
@@ -22,13 +21,13 @@ _MAX_DIFF_FRACTION = 0.02
 
 
 def test_render_3d(tmp_path: Path) -> None:
-    load_image(_TARBALL)
+    load_oci_image(FREECAD_TEST)
     build_script = get_required_path(_BUILD_SCRIPT)
     render_script = get_required_path(_RENDER_SCRIPT)
     golden_path = get_required_path(_GOLDEN)
 
     with LoggedContainer(
-        _IMAGE_TAG,
+        FREECAD_TEST.tag,
         test_name="freecad-3d-build",
         command="sleep infinity",
         volumes=[(str(build_script), "/work/build_cube_with_hole.py", "ro"), (str(tmp_path), "/output", "rw")],
@@ -43,7 +42,7 @@ def test_render_3d(tmp_path: Path) -> None:
     assert fcstd.exists(), "FCStd not generated — check container logs"
 
     with LoggedContainer(
-        _IMAGE_TAG,
+        FREECAD_TEST.tag,
         test_name="freecad-3d-render",
         command="sleep infinity",
         volumes=[

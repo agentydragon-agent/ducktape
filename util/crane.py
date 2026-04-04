@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 import logging
 import os
+import shutil
 import subprocess
+import tarfile
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -112,5 +115,39 @@ def _parse_crane_digest(stdout: str, dest: str) -> str:
 
 
 def push_to_daemon(oci_layout: Path, tag: str) -> None:
-    """Push an OCI layout directory into the local Docker daemon via crane."""
-    Crane().push(oci_layout, f"daemon://{tag}")
+    """Load an OCI layout directory into the local Docker daemon.
+
+    Converts the OCI layout to a Docker-format tarball and pipes it to
+    ``docker load``. This is equivalent to what rules_oci's oci_load does.
+    """
+    index = json.loads((oci_layout / "index.json").read_text())
+    manifest_digest: str = index["manifests"][0]["digest"]
+    manifest_blob = oci_layout / "blobs" / manifest_digest.replace(":", "/")
+    manifest = json.loads(manifest_blob.read_text())
+
+    config_digest: str = manifest["config"]["digest"]
+    config_blob_rel = "blobs/" + config_digest.replace(":", "/")
+    layer_rels = ["blobs/" + layer["digest"].replace(":", "/") for layer in manifest["layers"]]
+
+    docker_manifest = [{"Config": config_blob_rel, "RepoTags": [tag], "Layers": layer_rels}]
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        # Add manifest.json
+        manifest_data = json.dumps(docker_manifest).encode()
+        info = tarfile.TarInfo(name="manifest.json")
+        info.size = len(manifest_data)
+        tar.addfile(info, io.BytesIO(manifest_data))
+        # Add config blob
+        tar.add(oci_layout / config_blob_rel, arcname=config_blob_rel)
+        # Add layer blobs
+        for layer_rel in layer_rels:
+            tar.add(oci_layout / layer_rel, arcname=layer_rel)
+
+    docker = shutil.which("docker") or shutil.which("podman")
+    if not docker:
+        raise RuntimeError("Neither docker nor podman CLI found")
+    buf.seek(0)
+    result = subprocess.run([docker, "load"], input=buf.read(), check=False, capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"docker load failed: {result.stderr.decode()}")

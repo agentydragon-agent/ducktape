@@ -12,39 +12,34 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from third_party.debian_slim.rlocations import IMAGE_TAG as DEBIAN_IMAGE_TAG, TARBALL as DEBIAN_TARBALL
-from util.oci import load_image
+from skills.freecad.conftest import FREECAD_TEST
+from third_party.containers.rlocations import DEBIAN_SLIM
+from util.oci import OciImage, load_oci_image
 from util.testing.container_logs import LoggedContainer
 
-_FREECAD_IMAGE_TAG = "freecad-test:pinned"
-_FREECAD_TARBALL = "_main/skills/freecad/freecad_test_load/tarball.tar"
-
-_IMAGES = [
-    pytest.param((DEBIAN_TARBALL, DEBIAN_IMAGE_TAG), id="debian-slim"),
-    pytest.param((_FREECAD_TARBALL, _FREECAD_IMAGE_TAG), id="freecad-test"),
-]
+_IMAGES = [pytest.param(DEBIAN_SLIM, id="debian-slim"), pytest.param(FREECAD_TEST, id="freecad-test")]
 
 
 @pytest.fixture(params=_IMAGES)
-def container_image(request: pytest.FixtureRequest) -> tuple[str, str]:
-    """Load image and return (tarball, tag) for parametrized tests."""
-    tarball, tag = request.param
-    load_image(tarball)
-    return tarball, tag
+def container_image(request: pytest.FixtureRequest) -> OciImage:
+    """Load image and return OciImage for parametrized tests."""
+    image: OciImage = request.param
+    load_oci_image(image)
+    return image
 
 
-def test_exec(container_image: tuple[str, str]) -> None:
+def test_exec(container_image: OciImage) -> None:
     """Verify exec runs a command and returns output."""
-    _, tag = container_image
+    tag = container_image.tag
     with LoggedContainer(tag, test_name=f"exec-{tag}", command="sleep infinity") as container:
         result = container.exec("echo EXEC_OK")
         assert result.exit_code == 0
         assert b"EXEC_OK" in result.output
 
 
-def test_volume_mount_read(container_image: tuple[str, str], tmp_path: Path) -> None:
+def test_volume_mount_read(container_image: OciImage, tmp_path: Path) -> None:
     """Verify container can read a host-mounted file."""
-    _, tag = container_image
+    tag = container_image.tag
     test_file = tmp_path / "input.txt"
     test_file.write_text("MOUNT_READ_OK")
     with LoggedContainer(
@@ -58,9 +53,9 @@ def test_volume_mount_read(container_image: tuple[str, str], tmp_path: Path) -> 
         assert b"MOUNT_READ_OK" in result.output
 
 
-def test_volume_mount_write(container_image: tuple[str, str], tmp_path: Path) -> None:
+def test_volume_mount_write(container_image: OciImage, tmp_path: Path) -> None:
     """Verify container can write a file visible on the host via volume mount."""
-    _, tag = container_image
+    tag = container_image.tag
     with LoggedContainer(
         tag, test_name=f"mount-write-{tag}", command="sleep infinity", volumes=[(str(tmp_path), "/output", "rw")]
     ) as container:
@@ -69,9 +64,9 @@ def test_volume_mount_write(container_image: tuple[str, str], tmp_path: Path) ->
     assert (tmp_path / "test.txt").read_text().strip() == "MOUNT_WRITE_OK"
 
 
-def test_put_archive_and_cat(container_image: tuple[str, str]) -> None:
+def test_put_archive_and_cat(container_image: OciImage) -> None:
     """Verify put_archive copies a file in and cat reads it back."""
-    _, tag = container_image
+    tag = container_image.tag
     with LoggedContainer(tag, test_name=f"put-cat-{tag}", command="sleep infinity") as container:
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w") as tar:
