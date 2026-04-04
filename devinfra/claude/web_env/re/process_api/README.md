@@ -7,23 +7,25 @@ PID 1 duties (orphan adoption, zombie reaping).
 
 ## Target Binary
 
-| Property           | Value                                               |
-| ------------------ | --------------------------------------------------- |
-| **ELF Build ID**   | `91c789ff2a9e647bf7b1914e351f67b89713c4ef`          |
-| **Release**        | `process_api_2026-03-23-22-49`                      |
-| **Reference file** | `devinfra/claude/web_env/reference/process_api.gz`  |
-| **Language**       | Rust                                                |
-| **Stripped**       | Yes (no debug info, no symbol table)                |
-| **Linking**        | Static-pie                                          |
-| **Binary size**    | 3.3 MB uncompressed, ~1.5 MB gzipped                |
-| **Rust toolchain** | `1aa9bab4ecbce4859eaad53000f78158ebe2be2c` (stable) |
+| Property           | Value                                                          |
+| ------------------ | -------------------------------------------------------------- |
+| **ELF Build ID**   | `810fd3a49330ce58ff678d539a91723adfda88a8`                     |
+| **Release**        | `process_api_2026-03-25-20-38`                                 |
+| **MD5**            | `6d69e30fbe636e6534959562e4a6413c`                             |
+| **Reference file** | `devinfra/claude/web_env/reference/process_api.gz`             |
+| **Language**       | Rust                                                           |
+| **Stripped**       | Yes (no debug info, no symbol table)                           |
+| **Linking**        | Static-pie                                                     |
+| **Binary size**    | 3,326,984 bytes uncompressed                                   |
+| **Rust toolchain** | `rustc 1.94.0-nightly (1aa9bab4e 2025-12-05)`                  |
+| **Source path**    | `/root/src/tree/marcus-process-api/sandboxing/.../process_api` |
 
-Reconstructed source lives under `91c789ff/` (Build ID prefix).
+Reconstructed source lives under `src/` in this directory.
 
 ## Build
 
 ```bash
-bazel build //devinfra/claude/web_env/re/process_api/91c789ff:process_api_re
+bazel build //devinfra/claude/web_env/re/process_api:process_api_re
 ```
 
 ## Approach
@@ -97,19 +99,21 @@ Internally it runs several concurrent tasks:
 
 ## Module Breakdown
 
-### Source Files (9 modules)
+### Source Files (11 modules)
 
-| Module              | Lines | Purpose                                 |
-| ------------------- | ----- | --------------------------------------- |
-| `main.rs`           | 389   | CLI, cgroup init, WS listener, shutdown |
-| `io.rs`             | 1063  | WebSocket protocol, process I/O         |
-| `state.rs`          | 164   | Process map state machine               |
-| `proc_handle.rs`    | 413   | Per-process lifecycle, kill/wait        |
-| `cgroup.rs`         | 385   | Cgroup v1/v2 setup, memory/CPU          |
-| `control_server.rs` | 382   | HTTP control API                        |
-| `oom_killer.rs`     | 381   | Container + per-process OOM monitors    |
-| `adopter.rs`        | 225   | Orphan adoption, zombie reaping         |
-| `pid_tree.rs`       | 61    | `/proc` PID tree traversal              |
+| Module                 | Purpose                                                 |
+| ---------------------- | ------------------------------------------------------- |
+| `main.rs`              | CLI, cgroup init, WS/vsock/dial-uds listeners, shutdown |
+| `io.rs`                | WebSocket protocol, process I/O, JWT auth               |
+| `state.rs`             | Process map state machine                               |
+| `proc_handle.rs`       | Per-process lifecycle, kill/wait                        |
+| `cgroup.rs`            | Cgroup v1/v2 setup, memory/CPU                          |
+| `control_server.rs`    | HTTP control API (TCP + vsock)                          |
+| `oom_killer.rs`        | Container + per-process OOM monitors                    |
+| `adopter.rs`           | Orphan adoption, zombie reaping                         |
+| `pid_tree.rs`          | `/proc` PID tree traversal                              |
+| `firecracker_init.rs`  | Firecracker VM init system                              |
+| `platform/unix/mod.rs` | Platform-specific vsock/UDS abstractions                |
 
 ### Function Address Map
 
@@ -147,10 +151,10 @@ Ghidra):
 ## CLI Arguments
 
 ```
-process_api [OPTIONS] --addr <ADDR>
+process_api [OPTIONS]
 
 Options:
-  --addr <ADDR>                    WebSocket listen address (required, e.g., "0.0.0.0:2024")
+  --addr <ADDR>                    WebSocket listen address (e.g., "0.0.0.0:2024")
   --max-ws-buffer-size <SIZE>      WebSocket frame buffer size [default: 32768]
   --memory-limit-bytes <BYTES>     Container-level memory limit (enables OOM monitor)
   --cpu-shares <SHARES>            CPU weight — cgroup v1 cpu.shares or v2 cpu.weight
@@ -159,7 +163,11 @@ Options:
   --control-server-addr <ADDR>     HTTP control server (e.g., "0.0.0.0:2025")
                                    When set, SIGINT handler is disabled
   --block-local-connections        Reject 127.0.0.1, ::1, 0.0.0.0, :: on both servers
-  --firecracker-init               Run as Firecracker VM init (new in e409c31a)
+  --listen-uds <PATH>             Listen on a Unix domain socket instead of TCP
+  --dial-uds <PATH>               Dial out to host-side UDS bridge (gVisor)
+  --listen-vsock-port <PORT>      Listen on vsock port for WebSocket (Firecracker)
+  --control-vsock-port <PORT>     Control server on vsock port (Firecracker)
+  --firecracker-init               Run as Firecracker VM init
 ```
 
 All flags accept corresponding `SCREAMING_SNAKE_CASE` environment variables
@@ -262,14 +270,14 @@ Reattach to a previously detached process, or query its state.
 }
 ```
 
-| Field                     | Type      | Default | Description                                   |
-| ------------------------- | --------- | ------- | --------------------------------------------- |
-| `process_id`              | `string`  | —       | ID of process to reconnect to                 |
-| `reattach`                | `bool?`   | `true`  | Actually reattach (false = just query)        |
-| `expected_container_name` | `string?` | —       | Validate container identity                   |
-| `want_trace_events`       | `bool?`   | `false` | Request `TraceEvent` stream (new in 91c789ff) |
+| Field                     | Type      | Default | Description                                  |
+| ------------------------- | --------- | ------- | -------------------------------------------- |
+| `process_id`              | `string`  | —       | ID of process to reconnect to                |
+| `reattach`                | `bool?`   | `true`  | Actually reattach (false = just query)       |
+| `expected_container_name` | `string?` | —       | Validate container identity                  |
+| `want_trace_events`       | `bool?`   | `false` | Request `TraceEvent` stream (since 91c789ff) |
 
-Evidence: `struct ProcessConnection with 4 elements` in 91c789ff (was 3 in e409c31a).
+Evidence: `struct ProcessConnection with 4 elements` in 91c789ff+.
 New field `want_trace_events` confirmed from serde field name strings.
 
 If `expected_container_name` is set and doesn't match the container's current
@@ -303,7 +311,7 @@ All responses are tagged JSON text messages (`{"type": "...", ...}`):
 | ------------------------ | ----------------------------------- | ---------------------------------------------------------- |
 | `ProcessCreated`         | `process_id`, `pid`                 | Process spawned successfully                               |
 | `AttachedToProcess`      | `process_id`, `pid`                 | Reattached to detached process                             |
-| `AttachedToProcessV2`    | `process_id`, `pid`, `capabilities` | Reattached with capability negotiation (new in 91c789ff)   |
+| `AttachedToProcessV2`    | `process_id`, `pid`, `capabilities` | Reattached with capability negotiation (since 91c789ff)    |
 | `ProcessNotRunning`      | `process_id`                        | Process not found or already exited                        |
 | `ProcessAlreadyAttached` | `process_id`                        | Another WS is attached to this process                     |
 | `FailedToStartProcess`   | `error`                             | Spawn failed                                               |
@@ -329,7 +337,7 @@ All responses are tagged JSON text messages (`{"type": "...", ...}`):
 | `HttpFormatIpSocket`     | —                                   | HTTP-formatted IP socket info                              |
 | `ShuttingDown`           | —                                   | Server is shutting down                                    |
 
-#### `ConnectionCapabilities` (new in 91c789ff)
+#### `ConnectionCapabilities` (since 91c789ff)
 
 Sent as part of `AttachedToProcessV2`. Evidence: `struct ConnectionCapabilities`
 string in binary with `supports_trace` field.
@@ -338,7 +346,7 @@ string in binary with `supports_trace` field.
 { "supports_trace": true }
 ```
 
-#### `TraceEventMsg` (new in 91c789ff)
+#### `TraceEventMsg` (since 91c789ff)
 
 5-element serde struct. Evidence: `struct TraceEventMsg with 5 elements`.
 Fields inferred from serde field name strings: `process_id`, `pid`, `event_type`,
@@ -384,18 +392,18 @@ Binary frames are read in 64 KB chunks. Each chunk is preceded by an
 When `--control-server-addr` is set, the SIGINT handler is disabled and
 shutdown is driven exclusively through HTTP.
 
-| Method | Path                               | Request body      | Response                                 |
-| ------ | ---------------------------------- | ----------------- | ---------------------------------------- |
-| `POST` | `/shutdown`                        | —                 | `200 "Shutdown initiated\n"`             |
-| `POST` | `/container_name`                  | UTF-8 name string | `200 "Container name set to: X\n"`       |
-| `POST` | `/auth_public_key/write_etc_files` | JSON body         | `200` or `400` (Ed25519 key + etc setup) |
-| `POST` | `/mount_root`                      | JSON config       | `200` or `500` (Firecracker snapstart)   |
-| `POST` | `/fs_free`                         | —                 | `200` (freeze filesystem)                |
-| `POST` | `/fs_thaw`                         | —                 | `200` (thaw filesystem)                  |
-| `GET`  | `/health`                          | —                 | `200 "OK\n"`                             |
-| `GET`  | `/healthcheck`                     | —                 | `200` diagnostic text (see below)        |
-| `GET`  | `/container_name`                  | —                 | `200 "X\n"` or `"not set\n"`             |
-| `*`    | `*`                                | —                 | `404 "Not Found\n"`                      |
+| Method | Path                               | Request body      | Response                                   |
+| ------ | ---------------------------------- | ----------------- | ------------------------------------------ |
+| `POST` | `/shutdown`                        | —                 | `200 "Shutdown initiated\n"`               |
+| `POST` | `/container_name`                  | UTF-8 name string | `200 "Container name set to: X\n"`         |
+| `POST` | `/auth_public_key/write_etc_files` | JSON body         | `200` or `400` (Ed25519 key + etc setup)   |
+| `POST` | `/mount_root`                      | JSON config       | `200` or `500` (Firecracker snapstart)     |
+| `POST` | `/fs_freeze`                       | —                 | `200` (FIFREEZE filesystem)                |
+| `POST` | `/fs_thaw`                         | —                 | `200` (FITHAW filesystem)                  |
+| `POST` | `/sync_clock`                      | JSON/integer      | `200` clock synced (810fd3a4: implemented) |
+| `GET`  | `/health`                          | —                 | `200` diagnostic text                      |
+| `GET`  | `/container_name`                  | —                 | `200 "X\n"` or `"not set\n"`               |
+| `*`    | `*`                                | —                 | `404 "Not Found\n"`                        |
 
 **`POST /shutdown`** performs `sync(1)` before sending the broadcast shutdown
 signal. All tracked processes are then killed.
@@ -629,8 +637,7 @@ claude` process tree.
 
 | `jsonwebtoken` | JWT authentication (Ed25519 verify) |
 
-**Missing from RE:** `tokio-vsock` — needed for vsock support (both WS listener and
-control server) but not yet added to `Cargo.toml`. Vsock functions are stubs.
+| `tokio-vsock` | AF_VSOCK socket support (Firecracker) |
 
 ### Dependency Version Drift
 
@@ -647,7 +654,7 @@ strings) but have no behavioral impact.
 
 ## Verification Status
 
-See <91c789ff/PLAN.md> for detailed status and staleness notes.
+See <PLAN.md> for detailed status.
 
 - [x] Binary analysis, decompilation, translation, build
 - [x] String differential analysis + remediation
@@ -655,13 +662,16 @@ See <91c789ff/PLAN.md> for detailed status and staleness notes.
 - [x] Every function annotated with `Decompiled from 0x...`
 - [x] Structural type enrichment
 - [x] Firecracker init module
-- [x] `/fs_free` + `/fs_thaw` endpoints (replaced `/fs_sync`)
-- [x] `/auth_public_key/write_etc_files` endpoint (replaces `/auth_public_key`)
+- [x] `/fs_freeze` + `/fs_thaw` endpoints
+- [x] `/auth_public_key/write_etc_files` endpoint
 - [x] DNS/network setup in init (`/etc/hostname`, `/etc/hosts`, resolv.conf)
 - [x] JWT auth (`TokenClaims`, `ClaimsForValidation`, jsonwebtoken 9.3.1)
 - [x] `/container_info.json` container name persistence
-- [x] `cgroup.rs` / `oom_killer.rs` re-verified against 91c789ff (offsets updated, 18 new strings)
-- [x] `io.rs` re-verified against 91c789ff (JWT flow recovered, offsets updated, new message variants)
-- [ ] Vsock support — **INCOMPLETE**: both WS listener and control server are stubs (requires `tokio-vsock`)
+- [x] `cgroup.rs` / `oom_killer.rs` re-verified (offsets updated, 18 new strings)
+- [x] `io.rs` re-verified (JWT flow recovered, offsets updated, new message variants)
+- [x] Vsock support — real `tokio-vsock 0.7.2` (WS listener + control server)
+- [x] `--dial-uds` — gVisor UDS bridge dial-out mode
+- [x] `POST /sync_clock` — clock_settime implementation
+- [x] `platform/unix/mod.rs` — platform module matching binary layout
 - [ ] Behavioral test harness
 - [ ] Behavioral tests pass against both binaries

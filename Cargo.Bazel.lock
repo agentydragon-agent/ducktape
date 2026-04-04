@@ -1,5 +1,5 @@
 {
-  "checksum": "1e95566259a98fd0bf0c5c6b9df28b4b8287032d0f35e1daccdf5f7d9da83db6",
+  "checksum": "0d382ef8e0fd60fcfd04414c2d3107c113adf991635b965ec50e45c8bb65d4d7",
   "crates": {
     "ahash 0.7.8": {
       "name": "ahash",
@@ -4421,6 +4421,10 @@
             {
               "id": "tokio-tungstenite 0.29.0",
               "target": "tokio_tungstenite"
+            },
+            {
+              "id": "tokio-vsock 0.7.2",
+              "target": "tokio_vsock"
             },
             {
               "id": "url 2.5.8",
@@ -10011,6 +10015,91 @@
       ],
       "license_file": "LICENSE-MIT"
     },
+    "memoffset 0.9.1": {
+      "name": "memoffset",
+      "version": "0.9.1",
+      "package_url": "https://github.com/Gilnaa/memoffset",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/memoffset/0.9.1/download",
+          "sha256": "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "memoffset",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        },
+        {
+          "BuildScript": {
+            "crate_name": "build_script_build",
+            "crate_root": "build.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "memoffset",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "default"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "memoffset 0.9.1",
+              "target": "build_script_build"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2015",
+        "version": "0.9.1"
+      },
+      "build_script_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "compile_data_glob_excludes": [
+          "**/*.rs"
+        ],
+        "data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "autocfg 1.5.0",
+              "target": "autocfg"
+            }
+          ],
+          "selects": {}
+        }
+      },
+      "license": "MIT",
+      "license_ids": [
+        "MIT"
+      ],
+      "license_file": "LICENSE"
+    },
     "mime 0.3.17": {
       "name": "mime",
       "version": "0.3.17",
@@ -10485,6 +10574,110 @@
         "MIT"
       ],
       "license_file": "LICENSE-MIT"
+    },
+    "nix 0.30.1": {
+      "name": "nix",
+      "version": "0.30.1",
+      "package_url": "https://github.com/nix-rust/nix",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/nix/0.30.1/download",
+          "sha256": "74523f3a35e05aba87a1d978330aef40f67b0304ac79c1c00b294c9830543db6"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "nix",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        },
+        {
+          "BuildScript": {
+            "crate_name": "build_script_build",
+            "crate_root": "build.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "nix",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "default",
+            "ioctl",
+            "memoffset",
+            "socket"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "bitflags 2.10.0",
+              "target": "bitflags"
+            },
+            {
+              "id": "cfg-if 1.0.4",
+              "target": "cfg_if"
+            },
+            {
+              "id": "libc 0.2.180",
+              "target": "libc"
+            },
+            {
+              "id": "memoffset 0.9.1",
+              "target": "memoffset"
+            },
+            {
+              "id": "nix 0.30.1",
+              "target": "build_script_build"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2021",
+        "version": "0.30.1"
+      },
+      "build_script_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "compile_data_glob_excludes": [
+          "**/*.rs"
+        ],
+        "data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "cfg_aliases 0.2.1",
+              "target": "cfg_aliases"
+            }
+          ],
+          "selects": {}
+        }
+      },
+      "license": "MIT",
+      "license_ids": [
+        "MIT"
+      ],
+      "license_file": "LICENSE"
     },
     "nix 0.31.1": {
       "name": "nix",
@@ -21283,6 +21476,69 @@
       ],
       "license_file": "LICENSE"
     },
+    "tokio-vsock 0.7.2": {
+      "name": "tokio-vsock",
+      "version": "0.7.2",
+      "package_url": "https://github.com/rust-vsock/tokio-vsock",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/tokio-vsock/0.7.2/download",
+          "sha256": "8b319ef9394889dab2e1b4f0085b45ba11d0c79dc9d1a9d1afc057d009d0f1c7"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "tokio_vsock",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "tokio_vsock",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "bytes 1.11.0",
+              "target": "bytes"
+            },
+            {
+              "id": "futures 0.3.31",
+              "target": "futures"
+            },
+            {
+              "id": "libc 0.2.180",
+              "target": "libc"
+            },
+            {
+              "id": "tokio 1.49.0",
+              "target": "tokio"
+            },
+            {
+              "id": "vsock 0.5.2",
+              "target": "vsock"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2018",
+        "version": "0.7.2"
+      },
+      "license": "Apache-2.0",
+      "license_ids": [
+        "Apache-2.0"
+      ],
+      "license_file": "LICENSE"
+    },
     "toml_datetime 0.6.11": {
       "name": "toml_datetime",
       "version": "0.6.11",
@@ -23050,6 +23306,57 @@
         "MIT"
       ],
       "license_file": "LICENSE-APACHE"
+    },
+    "vsock 0.5.2": {
+      "name": "vsock",
+      "version": "0.5.2",
+      "package_url": "https://github.com/rust-vsock/vsock-rs",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/vsock/0.5.2/download",
+          "sha256": "e2da6e4ac76cd19635dce0f98985378bb62f8044ee2ff80abd2a7334b920ed63"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "vsock",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "vsock",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "libc 0.2.180",
+              "target": "libc"
+            },
+            {
+              "id": "nix 0.30.1",
+              "target": "nix"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2021",
+        "version": "0.5.2"
+      },
+      "license": "Apache-2.0",
+      "license_ids": [
+        "Apache-2.0"
+      ],
+      "license_file": "LICENSE"
     },
     "want 0.3.1": {
       "name": "want",
@@ -28132,6 +28439,7 @@
     "term-table 1.4.0",
     "tokio 1.49.0",
     "tokio-tungstenite 0.29.0",
+    "tokio-vsock 0.7.2",
     "url 2.5.8",
     "uuid 1.19.0",
     "warp 0.4.2",

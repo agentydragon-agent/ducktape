@@ -11,7 +11,7 @@ Reconstructed source provides call-path details.
 
 ## Binary 1: `process_api` (Rust, stripped)
 
-**Build ID**: `91c789ff2a9e647bf7b1914e351f67b89713c4ef`
+**Build ID**: `810fd3a49330ce58ff678d539a91723adfda88a8`
 **Framework**: `clap 4.5.20` (derive macro, `#[derive(Parser)]`)
 **Env var convention**: Each `--flag-name` has a corresponding `SCREAMING_SNAKE`
 env var via `#[arg(env = "...")]`.
@@ -29,12 +29,13 @@ env var via `#[arg(env = "...")]`.
 | `--control-server-addr <ADDR>` | `CONTROL_SERVER_ADDR`     | `Option<String>` | None    | No           | HTTP control server address (e.g., `0.0.0.0:2025`). **Disables SIGINT handler** when set |
 | `--block-local-connections`    | `BLOCK_LOCAL_CONNECTIONS` | `bool`           | `false` | No           | Reject connections from 127.0.0.1, ::1, 0.0.0.0, ::                                      |
 | `--listen-uds <PATH>`          | `LISTEN_UDS`              | `Option<String>` | None    | No           | Unix domain socket path for WebSocket listener                                           |
+| `--dial-uds <PATH>`            | `DIAL_UDS`                | `Option<String>` | None    | No           | Dial out to host-side UDS bridge (gVisor `--host-uds=open`)                              |
 | `--control-vsock-port <PORT>`  | `CONTROL_VSOCK_PORT`      | `Option<u32>`    | None    | No           | Vsock port for control server (Firecracker)                                              |
 | `--listen-vsock-port <PORT>`   | `LISTEN_VSOCK_PORT`       | `Option<u32>`    | None    | No           | Vsock port for WebSocket listener (Firecracker)                                          |
 | `--firecracker-init`           | `FIRECRACKER_INIT`        | `bool`           | `false` | No           | Run as Firecracker VM init (PID 1). Full VM bootstrap before services start              |
 | `-h, --help`                   | —                         | —                | —       | —            | Print help                                                                               |
 
-†`--addr` is required unless `--listen-uds` or `--listen-vsock-port` is provided.
+†`--addr` is required unless `--listen-uds`, `--dial-uds`, or `--listen-vsock-port` is provided.
 
 ### Flag Consumption Call Paths
 
@@ -67,15 +68,16 @@ template mode and signals `SNAPSTART_READY`. The mount config is then supplied v
 Also sets `mount_root_enabled = true` on the control server, enabling the
 `POST /mount_root` endpoint.
 
-#### `--addr` / `--listen-uds` / `--listen-vsock-port`
+#### `--addr` / `--listen-uds` / `--dial-uds` / `--listen-vsock-port`
 
 **When**: After cgroup setup, after control server start.
 **Path**: `main()` → priority resolution:
 
 1. `--listen-vsock-port` → `run_vsock_ws_listener()` (binds `VsockListener`, validates CID==2)
-2. `--listen-uds` → `run_uds_ws_listener()` (binds `UnixListener`, sets `0o777` perms)
-3. `--addr` → `TcpListener::bind()` (standard TCP WebSocket)
-4. None → error: "No listener configured"
+2. `--dial-uds` → `run_dial_uds_ws_listener()` (dials out to host-side UDS bridge)
+3. `--listen-uds` → `run_uds_ws_listener()` (binds `UnixListener`, sets `0o777` perms)
+4. `--addr` → `TcpListener::bind()` (standard TCP WebSocket)
+5. None → error: "No listener configured"
 
 All three paths feed connections into the same `io::handle_ws_connection()`.
 
@@ -291,6 +293,7 @@ All flags double as env vars (clap `env` attribute):
 | `CONTROL_SERVER_ADDR`     | `--control-server-addr`     |
 | `BLOCK_LOCAL_CONNECTIONS` | `--block-local-connections` |
 | `LISTEN_UDS`              | `--listen-uds`              |
+| `DIAL_UDS`                | `--dial-uds`                |
 | `CONTROL_VSOCK_PORT`      | `--control-vsock-port`      |
 | `LISTEN_VSOCK_PORT`       | `--listen-vsock-port`       |
 | `FIRECRACKER_INIT`        | `--firecracker-init`        |
@@ -364,7 +367,7 @@ firecracker → /process_api --firecracker-init --addr 0.0.0.0:2024 ...
   ├─ [async] control_server (if --control-server-addr or --control-vsock-port)
   ├─ [async] adopter::monitor_orphans()
   ├─ [async] oom_killer::container_oom_monitor() (if --memory-limit-bytes)
-  └─ [async] WebSocket accept loop (--addr / --listen-uds / --listen-vsock-port)
+  └─ [async] WebSocket accept loop (--addr / --listen-uds / --dial-uds / --listen-vsock-port)
 ```
 
 ### 2. Environment Manager Launch
@@ -418,7 +421,7 @@ environment-manager task-run --session=<id> --input-format=v1
 ## RE Source vs Binary Discrepancies
 
 All previously identified discrepancies have been resolved. The reconstructed
-source in `495ea204/src/cmd/` now matches the live binary's `--help` output.
+source in `src/cmd/` now matches the live binary's `--help` output.
 
 Previously fixed discrepancies (for historical reference):
 

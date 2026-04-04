@@ -22,7 +22,7 @@ Go-based orchestration service that manages Claude Code web container sessions.
 | **Binary size**    | 51.9 MB (uncompressed), 20 MB (gzipped)                    |
 | **Binary path**    | `/opt/env-runner/environment-manager`                      |
 | **Dynamic deps**   | Only `libc.so.6`                                           |
-| **RE directory**   | `495ea204/`                                                |
+| **RE directory**   | `src/` (flat layout, Build ID in this table)               |
 
 ## Binary Name vs CLI Name
 
@@ -533,7 +533,7 @@ strings devinfra/claude/web_env/reference/environment-manager | sort -u
 
 ## Reconstruction Status
 
-Source under `495ea204/src/` was derived from the `a6f96673` DWARF-extracted
+Source under `src/` was derived from the `a6f96673` DWARF-extracted
 reconstruction. A binary diff between versions revealed significant code
 changes — the source contains dead code that must be removed:
 
@@ -552,5 +552,5 @@ changes — the source contains dead code that must be removed:
 
 **Unchanged:** V0/V1 session context structs, CLI flags, sandbox settings, API endpoints.
 
-See `495ea204/BINDIFF_RESULTS.md` for full analysis and `495ea204/PLAN.md` for
+See `BINDIFF_RESULTS.md` for full analysis and `PLAN.md` for
 detailed status.
