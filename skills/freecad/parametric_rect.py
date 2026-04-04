@@ -123,9 +123,6 @@ if d1:
     d1.Y = -15 - cy
 
 # Height dimension (right of right edge)
-# TODO: Rotate text 90deg once the ezdxf DXF->PNG renderer supports rotated
-# dimension text. Currently it ignores TEXT rotation in dimension blocks, so
-# we keep text horizontal and offset it right of the dimension line.
 DIM_OFFSET = 15  # mm from rectangle edge to dimension line
 TEXT_OFFSET = 10  # mm from dimension line to text center
 d2 = TechDraw.makeDistanceDim(
