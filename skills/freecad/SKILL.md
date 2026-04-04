@@ -69,6 +69,27 @@ Open wall segments: make thin (0.3cm) rectangular Face strips. See `examples/01_
 
 `TechDraw.makeDistanceDim(view, dimType, fromPoint, toPoint)` — creates a `DrawViewDimension`. Points are unscaled 2D view-local coordinates (sketch coords minus shape bounding box center). Types: `'Distance'`, `'DistanceX'`, `'DistanceY'`. Values auto-compute from the projected geometry and render as dimension lines with extension lines in the DXF export.
 
+**You MUST set `dim.X` and `dim.Y`** after creating the dimension. These properties control the dimension text position as view-local offsets (mm). They default to `(0, 0)` which maps to the view center — so if you create multiple dimensions without setting X/Y, all text will overlap at the view center. Set them to the view-local coordinates of the dimension line midpoint:
+
+```python
+bb = feat.Shape.BoundBox
+cx, cy = (bb.XMin + bb.XMax) / 2, (bb.YMin + bb.YMax) / 2
+
+# Width dim 15mm below bottom edge
+d1 = TechDraw.makeDistanceDim(view, "DistanceX",
+    App.Vector(0 - cx, -15 - cy, 0), App.Vector(WIDTH - cx, -15 - cy, 0))
+page.addView(d1)
+d1.X = 0         # centered on dim line (view-local X)
+d1.Y = -15 - cy  # at the dim line Y position (view-local Y)
+
+# Height dim 15mm right of right edge
+d2 = TechDraw.makeDistanceDim(view, "DistanceY",
+    App.Vector(WIDTH + 15 - cx, 0 - cy, 0), App.Vector(WIDTH + 15 - cx, HEIGHT - cy, 0))
+page.addView(d2)
+d2.X = WIDTH + 15 - cx  # at the dim line X position
+d2.Y = 0                # centered on dim line (view-local Y)
+```
+
 See `examples/02_techdraw_and_dims.py`.
 
 **TODO:** Entity-referenced dimensions via `dim.References2D = [(view, 'EdgeN')]` that bind to specific projected edges rather than points. This would survive sketch edits without recomputing point positions in Python.
@@ -167,3 +188,6 @@ The FCStd caches computed view edges when saved during a GUI session. Reloading 
 | Removing geometry             | Shifts indices — use `toggleConstruction` instead                                |
 | DXF Y convention              | CAD Y-up: sketch Y=0 (e.g. window wall) at bottom of render                      |
 | Annotation placement          | Absolute page coords; use bounding box center math to convert from sketch coords |
+| Dim text overlaps at center   | `makeDistanceDim` defaults `X=0, Y=0` (view center) — must set `dim.X`/`dim.Y`   |
+| Duplicate dims in DXF         | `writeDXFPage` may emit each dimension twice — known FreeCAD export artifact     |
+| Dim "larger than page" warns  | Dimension geometry extends beyond template bounds — cosmetic, does not break DXF |
