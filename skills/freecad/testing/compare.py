@@ -3,13 +3,16 @@
 Each comparator normalizes non-deterministic content before comparison:
 - DXF: strips version strings, timestamps, and comment lines
 - SVG: sorts XML attributes (Qt emits them in non-deterministic order)
-- PDF: normalizes /CreationDate timestamp
+- PDF: strips non-deterministic metadata via pypdf before byte comparison
 """
 
 import difflib
+import io
 import re
 from pathlib import Path
 from xml.etree import ElementTree
+
+from pypdf import PdfReader, PdfWriter
 
 # --- DXF ---
 
@@ -103,8 +106,6 @@ def assert_svg_equal(actual_path: Path, golden_path: Path) -> None:
 
 # --- PDF ---
 
-_CREATION_DATE_RE = re.compile(rb"/CreationDate \(D:\d{14}Z?\)")
-_CREATION_DATE_REPLACEMENT = b"/CreationDate (D:00000000000000Z)"
 
 # Font names in embedded PDFs are non-deterministic: subset prefix varies (e.g., QNAAAA+)
 # and the font itself may differ across workers (DejaVuSans vs osifont).
@@ -112,16 +113,27 @@ _FONT_NAME_RE = re.compile(rb"/FontName /[A-Z]{6}\+\S+")
 _FONT_NAME_REPLACEMENT = b"/FontName /AAAAAA+NormalizedFont"
 
 
-def _normalize_pdf(data: bytes) -> bytes:
-    """Replace non-deterministic PDF metadata with fixed values."""
-    data = _CREATION_DATE_RE.sub(_CREATION_DATE_REPLACEMENT, data)
-    return _FONT_NAME_RE.sub(_FONT_NAME_REPLACEMENT, data)
+def _strip_pdf_metadata(pdf_path: Path) -> bytes:
+    """Re-serialize a PDF with all non-deterministic metadata stripped via pypdf."""
+    reader = PdfReader(pdf_path)
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    # Strip document-level metadata (CreationDate, ModDate, Producer, UUIDs, etc.)
+    writer.add_metadata({"/Producer": "", "/Creator": "", "/CreationDate": "", "/ModDate": ""})
+    # Remove XMP metadata stream entirely
+    if "/Metadata" in writer._root_object:
+        del writer._root_object["/Metadata"]
+    buf = io.BytesIO()
+    writer.write(buf)
+    # Normalize non-deterministic font subset prefixes in the raw bytes
+    return _FONT_NAME_RE.sub(_FONT_NAME_REPLACEMENT, buf.getvalue())
 
 
 def assert_pdf_equal(actual_path: Path, golden_path: Path) -> None:
-    """Assert two PDF files match after normalizing /CreationDate."""
-    actual = _normalize_pdf(actual_path.read_bytes())
-    golden = _normalize_pdf(golden_path.read_bytes())
+    """Assert two PDF files match after stripping non-deterministic metadata."""
+    actual = _strip_pdf_metadata(actual_path)
+    golden = _strip_pdf_metadata(golden_path)
     if actual == golden:
         return
     if len(actual) != len(golden):

@@ -1,7 +1,17 @@
 FROM ubuntu:24.04
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    software-properties-common && \
-    add-apt-repository -y ppa:freecad-maintainers/freecad-stable && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    freecad-python3 xvfb && \
+    ca-certificates wget xvfb fontconfig && \
     rm -rf /var/lib/apt/lists/*
+RUN wget -q "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.0/FreeCAD_1.1.0-Linux-x86_64-py311.AppImage" \
+    -O /opt/FreeCAD.AppImage && \
+    chmod +x /opt/FreeCAD.AppImage && \
+    cd /opt && /opt/FreeCAD.AppImage --appimage-extract && \
+    rm /opt/FreeCAD.AppImage
+ENV PREFIX="/opt/squashfs-root/usr"
+ENV PYTHONHOME="/opt/squashfs-root/usr"
+ENV PATH_TO_FREECAD_LIBDIR="/opt/squashfs-root/usr/lib"
+ENV FONTCONFIG_FILE="/etc/fonts/fonts.conf"
+ENV FONTCONFIG_PATH="/etc/fonts"
+ENV QT_QPA_PLATFORM="xcb"
+ENV SSL_CERT_FILE="/opt/squashfs-root/usr/ssl/cacert.pem"
+ENV PATH="/opt/squashfs-root/usr/bin:$PATH"

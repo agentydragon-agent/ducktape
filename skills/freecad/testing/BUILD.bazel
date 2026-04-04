@@ -7,4 +7,7 @@ py_library(
     srcs = ["compare.py"],
     imports = ["../../.."],
     visibility = ["//skills/freecad:__pkg__"],
+    deps = [
+        "@pypi//pypdf",
+    ],
 )

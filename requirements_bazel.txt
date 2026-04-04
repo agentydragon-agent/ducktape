@@ -4905,6 +4905,10 @@ pyparsing==3.3.2 \
     #   ezdxf
     #   httplib2
     #   matplotlib
+pypdf==6.9.2 \
+    --hash=sha256:662cf29bcb419a36a1365232449624ab40b7c2d0cfc28e54f42eeecd1fd7e844 \
+    --hash=sha256:7f850faf2b0d4ab936582c05da32c52214c2b089d61a316627b5bfb5b0dab46c
+    # via ducktape (pyproject.toml)
 pypdfium2==5.6.0 \
     --hash=sha256:258624da8ef45cdc426e11b33e9d83f9fb723c1c201c6e0f4ab5a85966c6b876 \
     --hash=sha256:282dc030e767cd61bd0299f9d581052b91188e2b87561489057a8e7963e7e0cb \
