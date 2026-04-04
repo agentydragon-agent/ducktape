@@ -123,12 +123,20 @@ if d1:
     d1.Y = -15 - cy
 
 # Height dimension (right of right edge)
+# TODO: Rotate text 90deg once the ezdxf DXF->PNG renderer supports rotated
+# dimension text. Currently it ignores TEXT rotation in dimension blocks, so
+# we keep text horizontal and offset it right of the dimension line.
+DIM_OFFSET = 15  # mm from rectangle edge to dimension line
+TEXT_OFFSET = 10  # mm from dimension line to text center
 d2 = TechDraw.makeDistanceDim(
-    view, "DistanceY", App.Vector(WIDTH + 15 - cx, 0 - cy, 0), App.Vector(WIDTH + 15 - cx, HEIGHT - cy, 0)
+    view,
+    "DistanceY",
+    App.Vector(WIDTH + DIM_OFFSET - cx, 0 - cy, 0),
+    App.Vector(WIDTH + DIM_OFFSET - cx, HEIGHT - cy, 0),
 )
 if d2:
     page.addView(d2)
-    d2.X = WIDTH + 15 - cx
+    d2.X = WIDTH + DIM_OFFSET + TEXT_OFFSET - cx
     d2.Y = 0
 
 doc.recompute(None, True, True)

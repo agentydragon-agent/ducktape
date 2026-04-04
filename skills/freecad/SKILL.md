@@ -176,18 +176,28 @@ The FCStd caches computed view edges when saved during a GUI session. Reloading 
 
 ## Gotchas
 
-| Issue                         | Fix                                                                              |
-| ----------------------------- | -------------------------------------------------------------------------------- |
-| TechDraw 0 edges              | Pump Qt events with `processEvents()` loop after recompute                       |
-| Open Wire / loose edges       | Use Faces only — open topology crashes HLR projector                             |
-| Multiple views lose positions | Single compound, single view                                                     |
-| FreeCAD import                | `sys.path.insert(0, '/usr/lib/freecad-python3/lib')`                             |
-| `getConstruction` typo        | Correct API name                                                                 |
-| Property "mm" suffix          | `re.sub(r'\s*mm$', '', str(val))` before numeric use                             |
-| Under-constrained sketch      | Add constraints until `FullyConstrained == True`                                 |
-| Removing geometry             | Shifts indices — use `toggleConstruction` instead                                |
-| DXF Y convention              | CAD Y-up: sketch Y=0 (e.g. window wall) at bottom of render                      |
-| Annotation placement          | Absolute page coords; use bounding box center math to convert from sketch coords |
-| Dim text overlaps at center   | `makeDistanceDim` defaults `X=0, Y=0` (view center) — must set `dim.X`/`dim.Y`   |
-| Duplicate dims in DXF         | `writeDXFPage` may emit each dimension twice — known FreeCAD export artifact     |
-| Dim "larger than page" warns  | Dimension geometry extends beyond template bounds — cosmetic, does not break DXF |
+| Issue                         | Fix                                                                                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| TechDraw 0 edges              | Pump Qt events with `processEvents()` loop after recompute                                                                       |
+| Open Wire / loose edges       | Use Faces only — open topology crashes HLR projector                                                                             |
+| Multiple views lose positions | Single compound, single view                                                                                                     |
+| FreeCAD import                | `sys.path.insert(0, '/usr/lib/freecad-python3/lib')`                                                                             |
+| `getConstruction` typo        | Correct API name                                                                                                                 |
+| Property "mm" suffix          | `re.sub(r'\s*mm$', '', str(val))` before numeric use                                                                             |
+| Under-constrained sketch      | Add constraints until `FullyConstrained == True`                                                                                 |
+| Removing geometry             | Shifts indices — use `toggleConstruction` instead                                                                                |
+| DXF Y convention              | CAD Y-up: sketch Y=0 (e.g. window wall) at bottom of render                                                                      |
+| Annotation placement          | Absolute page coords; use bounding box center math to convert from sketch coords                                                 |
+| Dim text overlaps at center   | `makeDistanceDim` defaults `X=0, Y=0` (view center) — must set `dim.X`/`dim.Y`                                                   |
+| Dim text on dimension line    | Offset `dim.X`/`dim.Y` so text clears the dimension line, especially for vertical dims where horizontal text can sit on the line |
+| Duplicate dims in DXF         | `writeDXFPage` may emit each dimension twice — known FreeCAD export artifact                                                     |
+| Dim "larger than page" warns  | Dimension geometry extends beyond template bounds — cosmetic, does not break DXF                                                 |
+
+### Visual inspection checklist
+
+After generating a TechDraw PNG, visually inspect the output for:
+
+- **Text overlapping geometry** — dimension labels sitting on top of edges or other labels
+- **Text on dimension lines** — especially vertical dimensions where horizontal text can land directly on the arrow line; offset text away from the line
+- **Extension line overshoot** — lines extending well beyond the geometry they reference
+- **Cramped or cut-off labels** — text too close to drawing edges or clipped by the viewport
