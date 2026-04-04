@@ -11,6 +11,7 @@ pkg_tar(
         "//skills/buildbuddy_api:buildbuddy_api_tar",
         "//skills/cluster_health:cluster_health_tar",
         "//skills/forensic_surgeon:forensic_surgeon_tar",
+        "//skills/freecad:freecad_tar",
         "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_tar",
         "//skills/info_gathering:info_gathering_tar",
         "//skills/lint_audit:lint_audit_tar",

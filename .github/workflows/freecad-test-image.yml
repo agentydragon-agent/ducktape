@@ -1,0 +1,26 @@
+name: FreeCAD test image
+
+on:
+  push:
+    branches: [devel]
+    paths:
+      - "skills/freecad/Dockerfile.test"
+      - ".github/workflows/freecad-test-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ghcr-build-push
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/freecad-test
+          context: skills/freecad
+          file: skills/freecad/Dockerfile.test
+          github_token: ${{ secrets.GITHUB_TOKEN }}

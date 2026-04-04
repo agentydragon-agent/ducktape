@@ -1,0 +1,50 @@
+load("@rules_oci//oci:defs.bzl", "oci_load")
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+load("//skills:defs.bzl", "skill_package")
+
+skill_package(
+    name = "freecad",
+    srcs = [
+        "01_sketch_and_parts.py",
+        "02_techdraw_and_dims.py",
+        "SKILL.md",
+        "export_dxf.py",
+        "parametric_rect.py",
+    ],
+)
+
+py_library(
+    name = "compare_dxf",
+    testonly = True,
+    srcs = ["compare_dxf.py"],
+    imports = ["../.."],
+)
+
+oci_load(
+    name = "freecad_test_load",
+    testonly = True,
+    image = "@freecad_test_linux_amd64",
+    repo_tags = ["freecad-test:pinned"],
+)
+
+py_test(
+    name = "test_parametric_rect",
+    size = "medium",
+    srcs = ["test_parametric_rect.py"],
+    data = [
+        "golden/rect.dxf",
+        "parametric_rect.py",
+        ":freecad_test_load",
+    ],
+    requires_docker = True,
+    deps = [
+        ":compare_dxf",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//docker",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

@@ -51,6 +51,9 @@ props/specimens/*/*/code/** rules-lint-ignored=true
 # npins/sources.json - machine-edited by jq in release workflow, not worth formatting
 npins/sources.json rules-lint-ignored=true
 
+# Golden test files - generated artifacts, not source code
+**/golden/*.dxf rules-lint-ignored=true
+
 # OrcaSlicer config - 3D printer slicer settings, not source code
 x/orcaslicer_config/** rules-lint-ignored=true
 
