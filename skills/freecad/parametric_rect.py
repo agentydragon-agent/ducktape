@@ -88,7 +88,8 @@ feat.Shape = Part.Face(Part.Wire(edges))
 doc.recompute()
 
 # === TechDraw Page ===
-tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118 — FreeCAD API expects str
+# A3 landscape (420x297mm) — enough room for the 200mm-tall shape + annotation at scale 1.0
+tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A3_Landscape_blank.svg")  # noqa: PTH118 — FreeCAD API expects str
 page = doc.addObject("TechDraw::DrawPage", "Page")
 tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
 tmpl.Template = tmpl_path
@@ -136,6 +137,17 @@ if d2:
     page.addView(d2)
     d2.X = WIDTH + DIM_OFFSET + TEXT_OFFSET - cx
     d2.Y = 0
+
+# === Annotation ===
+# DrawViewAnnotation: text label positioned via sketch-to-page coordinate conversion.
+ann = doc.addObject("TechDraw::DrawViewAnnotation", "Title")
+page.addView(ann)
+ann.Text = ["Text annotation"]
+ann.TextSize = 5
+# DrawViewAnnotation X/Y are TechDraw page coords (origin bottom-left, Y-up).
+# Shape top = view.Y + HEIGHT/2 = 120 + 100 = 220. Place annotation above.
+ann.X = float(view.X)
+ann.Y = 235.0  # above shape top (220), within A3 landscape height (297)
 
 doc.recompute(None, True, True)
 pump(1)

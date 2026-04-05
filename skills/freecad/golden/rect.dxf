@@ -227,19 +227,19 @@ TABLE
   2
 LAYER
   5
-A34
+A35
 330
 0
 100
 AcDbSymbolTable
  70
-6
+7
   0
 LAYER
   5
-A35
+A36
 330
-A34
+A35
 100
 AcDbSymbolTableRecord
 100
@@ -255,9 +255,9 @@ CONTINUOUS
   0
 LAYER
   5
-A36
+A37
 330
-A34
+A35
 100
 AcDbSymbolTableRecord
 100
@@ -273,27 +273,9 @@ CONTINUOUS
   0
 LAYER
   5
-A37
-330
-A34
-100
-AcDbSymbolTableRecord
-100
-AcDbLayerTableRecord
-  2
-Dimension
- 70
-    0
- 62
-    7
-  6
-CONTINUOUS
-  0
-LAYER
-  5
 A38
 330
-A34
+A35
 100
 AcDbSymbolTableRecord
 100
@@ -311,7 +293,25 @@ LAYER
   5
 A39
 330
-A34
+A35
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+Dimension
+ 70
+    0
+ 62
+    7
+  6
+CONTINUOUS
+  0
+LAYER
+  5
+A3A
+330
+A35
 100
 AcDbSymbolTableRecord
 100
@@ -327,15 +327,33 @@ CONTINUOUS
   0
 LAYER
   5
-A3A
+A3B
 330
-A34
+A35
 100
 AcDbSymbolTableRecord
 100
 AcDbLayerTableRecord
   2
 Dimension001
+ 70
+    0
+ 62
+    7
+  6
+CONTINUOUS
+  0
+LAYER
+  5
+A3C
+330
+A35
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+Title
  70
     0
  62
@@ -1972,6 +1990,40 @@ AcDbAlignedDimension
 90
 100
 AcDbRotatedDimension
+  0
+TEXT
+  5
+A34
+330
+A02
+100
+AcDbEntity
+  8
+Title
+100
+AcDbText
+ 10
+150.000000000
+ 20
+235.000000000
+ 30
+0.000000000
+ 40
+5.000000000
+  1
+Text annotation
+  7
+STANDARD
+ 72
+1
+ 11
+150.000000000
+ 21
+235.000000000
+ 31
+0.000000000
+100
+AcDbText
   0
 ENDSEC
   0

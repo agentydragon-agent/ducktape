@@ -6,9 +6,8 @@ load("//skills:defs.bzl", "skill_package")
 skill_package(
     name = "freecad",
     srcs = [
-        "01_sketch_and_parts.py",
-        "02_techdraw_and_dims.py",
         "SKILL.md",
+        "build_compound.py",
         "build_cube_with_hole.py",
         "export_page.py",
         "parametric_rect.py",
@@ -67,10 +66,7 @@ py_test(
         ":conftest",
         "//third_party/containers:rlocations",
         "//util:oci",
-        "//util/bazel:runfiles",
         "//util/testing:container_logs",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -124,6 +120,31 @@ py_test(
         "golden/bracket.pdf",
         "golden/bracket.svg",
         "parametric_sketch.py",
+        ":freecad_test",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//skills/freecad/testing:compare",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_compound",
+    size = "medium",
+    srcs = ["test_compound.py"],
+    data = [
+        "build_compound.py",
+        "export_page.py",
+        "golden/compound.dxf",
+        "golden/compound.pdf",
+        "golden/compound.svg",
         ":freecad_test",
     ],
     requires_docker = True,
