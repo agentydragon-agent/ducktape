@@ -1,8 +1,12 @@
 # sops-nix secret management for NixOS hosts.
 # Decrypts age-encrypted secrets at activation time using the host's SSH key.
+#
+# Hosts that need attic should declare:
+#   sops.secrets.attic_token.sopsFile = ../../../../secrets/{host}-attic.yaml;
 {
   config,
   inputs,
+  lib,
   pkgs,
   username,
   ...
@@ -11,6 +15,7 @@ let
   user = config.users.users.${username};
   bazelrcDir = "${user.home}/.config/bazel";
   atticDir = "${user.home}/.config/attic";
+  hasAttic = config.sops.secrets ? attic_token;
 in
 {
   imports = [ inputs.sops-nix.nixosModules.sops ];
@@ -19,11 +24,8 @@ in
   sops.defaultSopsFile = ../../../secrets/buildbuddy.yaml;
 
   sops.secrets.buildbuddy_api_key = { };
-  # attic_token: sopsFile set per-host (secrets/{host}-attic.yaml)
-  sops.secrets.attic_token = { };
 
   # Write ~/.config/bazel/buildbuddy.bazelrc from the decrypted secret.
-  # ~/.bazelrc already has try-import for this path (via home-manager home.nix).
   system.activationScripts.buildbuddy-bazelrc = {
     deps = [ "setupSecrets" ];
     text = ''
@@ -37,8 +39,8 @@ in
     '';
   };
 
-  # Write ~/.config/attic/config.toml directly (no `su` needed).
-  system.activationScripts.attic-config = {
+  # Write ~/.config/attic/config.toml if the host declares an attic_token secret.
+  system.activationScripts.attic-config = lib.mkIf hasAttic {
     deps = [ "setupSecrets" ];
     text = ''
       mkdir -p ${atticDir}
