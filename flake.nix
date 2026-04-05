@@ -121,6 +121,7 @@
           inherit pkgs;
 
           modules = [
+            inputs.sops-nix.homeManagerModules.sops
             ./nix/home/hosts/${hostname}.nix
             {
               _module.args = hmCommonArgs // {
