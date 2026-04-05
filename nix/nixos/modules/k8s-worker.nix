@@ -67,11 +67,10 @@ let
       shutdownGracePeriodCriticalPods = "15s";
       # Some nodes (e.g. laptops) have swap enabled; don't fail on it.
       failSwapOn = false;
-      # Disable local storage capacity isolation — btrfs reports 0 inodes via
-      # statfs (dynamic allocation), causing "invalid capacity 0 on image
-      # filesystem" warnings. Safe to disable since we don't use ephemeral
-      # storage limits on pods.
-      featureGates.LocalStorageCapacityIsolation = false;
+      # Known issue: btrfs nodes log "invalid capacity 0 on image filesystem"
+      # at startup because btrfs reports 0 inodes via statfs (dynamic allocation).
+      # Harmless — image GC and eviction still work. Workaround if needed:
+      # featureGates.LocalStorageCapacityIsolation = false;
       # Default is 110; wyrm2 runs 113+ pods with harbor/inventree/ollama/monitoring.
       maxPods = 300;
       # NixOS uses systemd-resolved in stub mode, so /etc/resolv.conf has
