@@ -2,7 +2,6 @@
 
 ## Rendering pipeline
 
-- [ ] Fix DXF rendering quality: corner lines extend beyond intersection points. Investigate whether `parametric_rect.py` produces a correctly constrained sketch or if the TechDraw projection is introducing artifacts.
 - [ ] Rotate vertical dimension text 90deg once the ezdxf DXF->PNG renderer supports rotated TEXT entities in dimension blocks. Currently it ignores rotation, so we keep text horizontal and offset it right of the dimension line.
 
 ## Export formats
