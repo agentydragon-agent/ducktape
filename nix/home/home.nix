@@ -6,7 +6,6 @@
   enableGui,
   enableKube,
   isNixOS,
-  isPopOS,
   isK8sWorker,
   enableHeavyPackages,
   nix-colors,
@@ -623,15 +622,6 @@ in
         default-show-menubar = false;
       };
 
-      # Extension enabling is handled by programs.gnome-shell.extensions.
-      # Only disabled-extensions and extension-specific settings remain here.
-      "org/gnome/shell" = {
-        disabled-extensions = lib.optionals isPopOS [
-          "cosmic-workspaces@system76.com"
-          "popx11gestures@system76.com"
-          "pop-cosmic@system76.com"
-        ];
-      };
     };
   };
 
@@ -640,7 +630,6 @@ in
   # Night-theme-switcher is added by solarized module.
   # Appindicator is added by NixOS host files (rugged, wyrm2).
   #
-  # Tiling window manager extension (on Pop!_OS this is pre-installed as a system extension)
   # Other GNOME tiling options to consider:
   #   - gnomeExtensions.forge: tree-based auto-tiling (i3-style), good keybinding customization
   #   - gnomeExtensions.tiling-assistant: lighter touch, extends GNOME's built-in half/quarter snapping
@@ -653,10 +642,6 @@ in
       { package = pkgs.gnomeExtensions.panel-date-format; }
       { package = pkgs.gnomeExtensions.cronomix; }
       { package = pkgs.gnomeExtensions.pop-shell; }
-    ]
-    ++ lib.optionals isPopOS [
-      { package = pkgs.gnomeExtensions.system76-power; }
-      { package = pkgs.gnomeExtensions.cosmic-dock; }
     ];
   };
 

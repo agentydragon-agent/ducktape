@@ -112,7 +112,6 @@
           enableGui ? true,
           enableKube ? true,
           isNixOS ? false,
-          isPopOS ? false,
           isK8sWorker ? false,
           enableHeavyPackages ? true,
           extraModules ? [ ],
@@ -129,7 +128,6 @@
                   enableGui
                   enableKube
                   isNixOS
-                  isPopOS
                   isK8sWorker
                   enableHeavyPackages
                   ;
@@ -159,7 +157,6 @@
                 enableGui = inlineHomeManager.enableGui or true;
                 enableKube = inlineHomeManager.enableKube or false;
                 isNixOS = true;
-                isPopOS = false;
                 isK8sWorker = inlineHomeManager.isK8sWorker or false;
                 enableHeavyPackages = inlineHomeManager.enableHeavyPackages or false;
               }
@@ -286,28 +283,6 @@
         };
 
       homeConfigurations = {
-        # Main laptop (ThinkPad X1 Extreme on Pop!_OS)
-        # DEPRECATED: Being migrated to NixOS as "iguana" (nixosConfigurations.iguana)
-        # Kept temporarily for rollback during migration
-        agentydragon = mkHome {
-          hostname = "agentydragon";
-          enableGui = true;
-          enableKube = true;
-          isNixOS = false;
-          isPopOS = true;
-          enableHeavyPackages = false;
-        };
-
-        # GPD Win Max 2 laptop
-        gpd = mkHome {
-          hostname = "gpd";
-          enableGui = true;
-          enableKube = true;
-          isNixOS = false;
-          isPopOS = true;
-          enableHeavyPackages = true;
-        };
-
         # Wyrm desktop VM on atlas
         wyrm = mkHome {
           hostname = "wyrm";
