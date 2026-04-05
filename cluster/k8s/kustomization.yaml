@@ -79,6 +79,7 @@ resources:
   - gateway/flux-kustomization.yaml
 
   # --- monitoring ---
+  - monitoring/grafana-helmrepository/flux-kustomization.yaml
   - monitoring/namespace/flux-kustomization.yaml
   - monitoring/stack/flux-kustomization.yaml
   - monitoring/stack-secrets/flux-kustomization.yaml

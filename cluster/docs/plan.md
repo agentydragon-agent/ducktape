@@ -95,7 +95,22 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
       `langfuse/langfuse-s3`, `monitoring/alertmanager-*`, `monitoring/prometheus-*`,
       `monitoring/storage-tempo-0`, `monitoring/kube-prometheus-stack-grafana`,
-      `loki/storage-loki-stack-0`, `harbor/harbor-jobservice`
+      `harbor/harbor-jobservice`
+- [ ] Loki + MinIO migration (replace Longhorn PVC with object storage):
+  - **Phase 1**: Deploy MinIO distributed on Hetzner VPS nodes. 4 drives across
+    2 nodes (2 per node, `local-path`), erasure coded. Provides S3-compatible
+    endpoint with node-loss tolerance.
+  - **Phase 2**: Migrate Loki from `loki-stack` (monolithic, boltdb+filesystem)
+    to `loki` chart (simple scalable mode). Point chunks+index at Hetzner MinIO.
+    Ingester `replication_factor: 3` for in-flight data. Removes `proxmox-csi`
+    dependency from Loki — unblocks the `grafana` HelmRepository (currently
+    bundled in the `loki` kustomization) for Tempo and Alloy.
+  - **Phase 3** (future): Deploy a second MinIO instance on Proxmox (`local-path`,
+    single-node). Set up async replication or scheduled `mc mirror` from the
+    Hetzner instance for off-site backup of log history.
+  - **Phase 4** (future): Split Loki write path by region — Proxmox node logs
+    write to Proxmox MinIO, Hetzner node logs write to Hetzner MinIO. Avoids
+    cross-site traffic for log ingestion. Grafana queries both.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
 - [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
@@ -351,10 +366,11 @@ See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>.
 
 Minimize Hetzner volumes; generous on Proxmox.
 
-| Location | Services                                       | Rationale                         |
-| -------- | ---------------------------------------------- | --------------------------------- |
-| VPS      | Vault, Authentik, Gateway, DNS, cert-mgr       | Always-on, critical path          |
-| Home     | Harbor, Gitea, Loki, Grafana, media, Nix cache | Storage-heavy, tolerates downtime |
+| Location | Services                                 | Rationale                         |
+| -------- | ---------------------------------------- | --------------------------------- |
+| VPS      | Vault, Authentik, Gateway, DNS, cert-mgr | Always-on, critical path          |
+| Home     | Harbor, Gitea, Grafana, media, Nix cache | Storage-heavy, tolerates downtime |
+| MinIO    | Loki (planned), CNPG backups (planned)   | Erasure-coded object storage      |
 
 CNPG: individual clusters per app, all on `local-path`. Two profiles: VPS-HA
 (2 instances, Hetzner) and Proxmox-single (1 instance). See <cnpg-conventions.md>.

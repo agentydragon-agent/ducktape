@@ -18,4 +18,5 @@ spec:
       namespace: loki
   timeout: 10m
   dependsOn:
-    - name: proxmox-csi
+    - name: longhorn
+    - name: grafana-helmrepository
