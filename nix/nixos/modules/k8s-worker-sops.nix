@@ -9,6 +9,7 @@
 let
   cfg = config.ducktape.k8sWorkerSops;
   secretsDir = ../../../../secrets;
+  k8sWorkerFile = secretsDir + "/k8s-worker.yaml";
 in
 {
   options.ducktape.k8sWorkerSops = {
@@ -17,14 +18,18 @@ in
       default = null;
       description = "Host name used to locate sops secret files (secrets/{hostname}-nebula.yaml).";
     };
+    nebulaFile = lib.mkOption {
+      type = lib.types.path;
+      description = "Path to the SOPS-encrypted nebula secret file for this host.";
+    };
   };
 
   config = lib.mkIf (cfg.hostname != null) {
-    sops.secrets.nebula_ca_cert.sopsFile = secretsDir + "/k8s-worker.yaml";
-    sops.secrets.k8s_ca_cert.sopsFile = secretsDir + "/k8s-worker.yaml";
-    sops.secrets.k8s_bootstrap_token.sopsFile = secretsDir + "/k8s-worker.yaml";
-    sops.secrets.nebula_host_cert.sopsFile = secretsDir + "/${cfg.hostname}-nebula.yaml";
-    sops.secrets.nebula_host_key.sopsFile = secretsDir + "/${cfg.hostname}-nebula.yaml";
+    sops.secrets.nebula_ca_cert.sopsFile = k8sWorkerFile;
+    sops.secrets.k8s_ca_cert.sopsFile = k8sWorkerFile;
+    sops.secrets.k8s_bootstrap_token.sopsFile = k8sWorkerFile;
+    sops.secrets.nebula_host_cert.sopsFile = cfg.nebulaFile;
+    sops.secrets.nebula_host_key.sopsFile = cfg.nebulaFile;
 
     ducktape.nebulaMesh = {
       caCertPath = config.sops.secrets.nebula_ca_cert.path;

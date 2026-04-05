@@ -43,7 +43,10 @@
   # sops.secrets.attic_token.sopsFile = ../../../../secrets/iguana-attic.yaml;
 
   # Nebula mesh + k8s worker credentials (wired via k8s-worker-sops module)
-  ducktape.k8sWorkerSops.hostname = "iguana";
+  ducktape.k8sWorkerSops = {
+    hostname = "iguana";
+    nebulaFile = ../../../../secrets/iguana-nebula.yaml;
+  };
   ducktape.k8sWorker = {
     enable = true;
     nodeLabels = {

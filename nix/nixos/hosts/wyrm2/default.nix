@@ -50,7 +50,10 @@ in
   sops.secrets.attic_token.sopsFile = ../../../../secrets/wyrm2-attic.yaml;
 
   # Nebula mesh + k8s worker credentials (wired via k8s-worker-sops module)
-  ducktape.k8sWorkerSops.hostname = "wyrm2";
+  ducktape.k8sWorkerSops = {
+    hostname = "wyrm2";
+    nebulaFile = ../../../../secrets/wyrm2-nebula.yaml;
+  };
   ducktape.k8sWorker = {
     enable = true;
     enableNvidiaRuntime = true;

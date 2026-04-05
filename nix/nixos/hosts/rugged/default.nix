@@ -44,7 +44,10 @@
   sops.secrets.attic_token.sopsFile = ../../../../secrets/rugged-attic.yaml;
 
   # Nebula mesh + k8s worker credentials (wired via k8s-worker-sops module)
-  ducktape.k8sWorkerSops.hostname = "rugged";
+  ducktape.k8sWorkerSops = {
+    hostname = "rugged";
+    nebulaFile = ../../../../secrets/rugged-nebula.yaml;
+  };
   ducktape.k8sWorker = {
     enable = true;
     nodeLabels = {
