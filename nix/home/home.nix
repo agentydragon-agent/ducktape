@@ -655,7 +655,6 @@ in
       { package = pkgs.gnomeExtensions.pop-shell; }
     ]
     ++ lib.optionals isPopOS [
-      { package = pkgs.gnomeExtensions.ding; }
       { package = pkgs.gnomeExtensions.system76-power; }
       { package = pkgs.gnomeExtensions.cosmic-dock; }
     ];
