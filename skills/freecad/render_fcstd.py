@@ -9,6 +9,7 @@ Usage:
 """
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -26,25 +27,35 @@ from pivy import coin  # noqa: E402 — must import after Gui.showMainWindow(), 
 
 qapp = QtWidgets.QApplication.instance()
 
+_t0 = time.monotonic()
+
+
+def log(msg):
+    print(f"[{time.monotonic() - _t0:.3f}] {msg}", file=sys.stderr, flush=True)
+
 
 def pump(seconds=3):
     """Process Qt events to let FreeCAD's background computation run."""
+    t0 = time.monotonic()
     for _ in range(int(seconds * 10)):
         if qapp:
             qapp.processEvents()
         time.sleep(0.1)
+    log(f"pump({seconds}) done in {time.monotonic() - t0:.2f}s")
 
 
 input_path = os.environ.get("INPUT", "cube_with_hole.FCStd")
 outdir = os.environ.get("OUTDIR", ".")
 
-# === Load document ===
+log("loading document")
 doc = App.openDocument(input_path)
 App.setActiveDocument(doc.Name)
 Gui.ActiveDocument = Gui.getDocument(doc.Name)
 
+log("pump for document load")
 pump(2)
 
+log("configuring view properties")
 # Configure Part::Feature view properties for shaded rendering.
 # Use exact TypeId match — many types (Sketcher::SketchObject, etc.) inherit from
 # Part::Feature but don't support Shaded display mode.
@@ -58,6 +69,7 @@ for obj in doc.Objects:
     vo.Lighting = "One side"
     vo.Transparency = 0
 
+log("pump for view properties")
 pump(2)
 
 view = Gui.ActiveDocument.ActiveView
@@ -93,15 +105,18 @@ light.direction.setValue(coin.SbVec3f(-0.5, 0.3, -0.8))
 light.intensity.setValue(0.8)
 root.insertChild(light, 0)
 
+log("pump for camera + lighting")
 pump(2)
 
 view.fitAll()
+log("pump for fitAll")
 pump(1)
 
+log("saving image")
 # === Save image ===
 output_name = Path(input_path).stem + ".png"
 output_path = os.path.join(outdir, output_name)  # noqa: PTH118 — FreeCAD API expects str
 view.saveImage(output_path, 800, 600, "Current")
-print(f"Rendered: {output_path}")
+log(f"rendered: {output_path} — done")
 
 os._exit(0)  # Skip Qt cleanup to avoid potential segfault under xvfb

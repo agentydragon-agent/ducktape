@@ -35,17 +35,34 @@ qapp = QtWidgets.QApplication.instance()
 
 outdir = os.environ.get("OUTDIR", ".")
 
+_t0 = time.monotonic()
+
 
 def log(msg):
-    print(msg, file=sys.stderr, flush=True)
+    print(f"[{time.monotonic() - _t0:.3f}] {msg}", file=sys.stderr, flush=True)
 
 
 def pump(seconds=3):
-    """Process Qt events to let TechDraw background computation run."""
+    """Process Qt events for a fixed duration (use wait_for_view when possible)."""
     for _ in range(int(seconds * 10)):
         if qapp:
             qapp.processEvents()
         time.sleep(0.1)
+
+
+def wait_for_view(view, timeout=15.0, poll_interval=0.05):
+    """Poll until TechDraw view has visible edges, processing Qt events."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
+        if qapp:
+            qapp.processEvents()
+        edges = view.getVisibleEdges()
+        if len(edges) > 0:
+            elapsed = time.monotonic() - t0
+            log(f"TechDraw view ready: {len(edges)} edges after {elapsed:.2f}s")
+            return
+        time.sleep(poll_interval)
+    raise TimeoutError(f"TechDraw view not ready after {timeout}s")
 
 
 # === Document ===
@@ -191,10 +208,11 @@ view.Scale = 1.0
 view.X = 150
 view.Y = 120
 
+log("recompute + wait_for_view (TechDraw HLR)")
 doc.recompute(None, True, True)
-pump(5)
+wait_for_view(view)
 doc.recompute(None, True, True)
-pump(2)
+pump(0.5)
 
 n_edges = len(view.getVisibleEdges())
 log(f"TechDraw view: {n_edges} visible edges")
@@ -333,12 +351,14 @@ ann_material.X = float(view.X)
 ann_material.Y = 33
 ann_material.TextSize = 4
 
+log("recompute after dimensions")
 doc.recompute(None, True, True)
-pump(1)
+pump(0.5)
 
 # === Save ===
+log("saving FCStd")
 fcstd_path = os.path.join(outdir, "bracket.FCStd")  # noqa: PTH118 — FreeCAD API expects str
 doc.saveAs(fcstd_path)
-log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes")
+log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes — done")
 
 os._exit(0)

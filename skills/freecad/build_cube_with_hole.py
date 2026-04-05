@@ -9,12 +9,23 @@ Usage:
 """
 
 import os
+import sys
+import time
 from pathlib import Path
 
 import FreeCAD as App
 import Part
 
 outdir = os.environ.get("OUTDIR", ".")
+
+_t0 = time.monotonic()
+
+
+def log(msg):
+    print(f"[{time.monotonic() - _t0:.3f}] {msg}", file=sys.stderr, flush=True)
+
+
+log("starting build")
 
 # === Parameters ===
 CUBE_SIZE = 20.0  # mm
@@ -40,8 +51,9 @@ feat.Shape = result
 doc.recompute()
 
 # === Export ===
+log("saving FCStd")
 fcstd_path = os.path.join(outdir, "cube_with_hole.FCStd")  # noqa: PTH118 — FreeCAD API expects str
 doc.saveAs(fcstd_path)
-print(f"FCStd: {Path(fcstd_path).stat().st_size} bytes")
+log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes — done")
 
 os._exit(0)

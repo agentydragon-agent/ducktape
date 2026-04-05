@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from opentelemetry import trace
 
 from skills.freecad.conftest import FREECAD_TEST
 from third_party.containers.rlocations import DEBIAN_SLIM
@@ -19,12 +20,15 @@ from util.testing.container_logs import LoggedContainer
 
 _IMAGES = [pytest.param(DEBIAN_SLIM, id="debian-slim"), pytest.param(FREECAD_TEST, id="freecad-test")]
 
+tracer = trace.get_tracer(__name__)
+
 
 @pytest.fixture(params=_IMAGES)
 def container_image(request: pytest.FixtureRequest) -> OciImage:
     """Load image and return OciImage for parametrized tests."""
     image: OciImage = request.param
-    load_oci_image(image)
+    with tracer.start_as_current_span("load_oci_image", attributes={"tag": image.tag}):
+        load_oci_image(image)
     return image
 
 

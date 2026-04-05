@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from opentelemetry import trace
 
 from skills.freecad.conftest import FREECAD_TEST, freecad_exec
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
@@ -20,25 +21,31 @@ _GOLDEN_PDF = "_main/skills/freecad/golden/bracket.pdf"
 
 _XVFB = 'xvfb-run -a -s \\"-screen 0 1024x768x24\\"'
 
+tracer = trace.get_tracer(__name__)
+
 
 @pytest.fixture(scope="module")
 def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Run parametric_sketch.py then export_page.py and return the output directory."""
-    load_oci_image(FREECAD_TEST)
+    with tracer.start_as_current_span("load_oci_image"):
+        load_oci_image(FREECAD_TEST)
     out_dir = undeclared_outputs_dir() / "parametric-sketch"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    with LoggedContainer(
-        FREECAD_TEST.tag,
-        test_name="freecad-parametric-sketch",
-        command="sleep infinity",
-        volumes=[
-            (str(get_required_path(_PARAMETRIC_SKETCH)), "/work/parametric_sketch.py", "ro"),
-            (str(get_required_path(_EXPORT_PAGE)), "/work/export_page.py", "ro"),
-            (str(out_dir), "/output", "rw"),
-        ],
-        docker_client_kw={"timeout": 120},
-    ) as container:
+    with (
+        tracer.start_as_current_span("container_lifecycle"),
+        LoggedContainer(
+            FREECAD_TEST.tag,
+            test_name="freecad-parametric-sketch",
+            command="sleep infinity",
+            volumes=[
+                (str(get_required_path(_PARAMETRIC_SKETCH)), "/work/parametric_sketch.py", "ro"),
+                (str(get_required_path(_EXPORT_PAGE)), "/work/export_page.py", "ro"),
+                (str(out_dir), "/output", "rw"),
+            ],
+            docker_client_kw={"timeout": 120},
+        ) as container,
+    ):
         freecad_exec(container, f'bash -c "OUTDIR=/output {_XVFB} freecadcmd /work/parametric_sketch.py"')
         freecad_exec(
             container, f'bash -c "INPUT=/output/bracket.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/export_page.py"'
@@ -48,21 +55,24 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def test_dxf_golden(export_outputs: Path) -> None:
-    actual = export_outputs / "bracket.dxf"
-    assert actual.exists(), "DXF not generated"
-    assert_dxf_equal(actual, get_required_path(_GOLDEN_DXF))
+    with tracer.start_as_current_span("assert_dxf_equal"):
+        actual = export_outputs / "bracket.dxf"
+        assert actual.exists(), "DXF not generated"
+        assert_dxf_equal(actual, get_required_path(_GOLDEN_DXF))
 
 
 def test_svg_golden(export_outputs: Path) -> None:
-    actual = export_outputs / "bracket.svg"
-    assert actual.exists(), "SVG not generated"
-    assert_svg_equal(actual, get_required_path(_GOLDEN_SVG))
+    with tracer.start_as_current_span("assert_svg_equal"):
+        actual = export_outputs / "bracket.svg"
+        assert actual.exists(), "SVG not generated"
+        assert_svg_equal(actual, get_required_path(_GOLDEN_SVG))
 
 
 def test_pdf_golden(export_outputs: Path) -> None:
-    actual = export_outputs / "bracket.pdf"
-    assert actual.exists(), "PDF not generated"
-    assert_pdf_equal(actual, get_required_path(_GOLDEN_PDF))
+    with tracer.start_as_current_span("assert_pdf_equal"):
+        actual = export_outputs / "bracket.pdf"
+        assert actual.exists(), "PDF not generated"
+        assert_pdf_equal(actual, get_required_path(_GOLDEN_PDF))
 
 
 if __name__ == "__main__":
