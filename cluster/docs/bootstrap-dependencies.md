@@ -44,15 +44,13 @@ L7  NixOS Worker Integration ─────────────────
 
 Not stored in git or tofu state. Must exist before any `tofu apply`.
 
-| Credential                    | Source                                          | Storage                                                                    | Consumed By                    |
-| ----------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------ |
-| Hetzner Cloud API token       | Hetzner console                                 | System keyring: `secret-tool lookup service hcloud account default`        | `TF_VAR_hcloud_token`          |
-| Proxmox `root@pam!tofu` token | Proxmox UI → API Tokens                         | System keyring: `secret-tool lookup service proxmox account root-pam-tofu` | `PROXMOX_VE_API_TOKEN`         |
-| Admin age private key         | Derived from `~/.ssh/id_ed25519` via ssh-to-age | User SSH key                                                               | Decrypt all SOPS files locally |
-| GitHub account SSH access     | GitHub settings → SSH keys                      | `~/.ssh/id_ed25519`                                                        | Flux deploy key registration   |
-| Domain DNS delegation         | Domain registrar                                | NS records for `allegedly.works` → in-cluster PowerDNS                     | External DNS resolution        |
+| Credential                | Source                                          | Storage               | Consumed By                    |
+| ------------------------- | ----------------------------------------------- | --------------------- | ------------------------------ |
+| Admin age private key     | Derived from `~/.ssh/id_ed25519` via ssh-to-age | User SSH key          | Decrypt all SOPS files locally |
+| GitHub account SSH access | GitHub settings → SSH keys                      | `~/.ssh/id_ed25519`   | Flux deploy key registration   |
+| Domain DNS delegation     | Domain registrar                                | NS records → PowerDNS | External DNS resolution        |
 
-**If lost**: Regenerate from the source (Hetzner console, Proxmox UI, etc.).
+**If lost**: Regenerate from the source (GitHub settings, domain registrar).
 No downstream regeneration needed — these are read-only inputs.
 
 ## L1: SOPS Secrets in Git
@@ -68,6 +66,7 @@ secrets that Flux and tofu consume.
 | `secrets/wyrm2-nebula.yaml`             | wyrm2 nebula cert + key + CA       | Admin age key, host age key     | L7: wyrm2 nebula mesh                                            |
 | `secrets/rugged-nebula.yaml`            | rugged nebula cert + key + CA      | Admin age key, host age key     | L7: rugged nebula mesh                                           |
 | `secrets/atlas-nebula.yaml`             | atlas nebula cert + key + CA       | Admin age key, host age key     | Atlas (Proxmox host) nebula mesh                                 |
+| `secrets/cluster-tokens.yaml`           | Hetzner + Proxmox API tokens       | Admin age key + user age keys   | `.envrc` → `TF_VAR_hcloud_token`, `PROXMOX_VE_API_TOKEN`         |
 | `secrets/k8s-worker.yaml`               | k8s bootstrap kubeconfig, CA cert  | Admin age key                   | L7: kubelet TLS bootstrap on NixOS workers                       |
 | `cluster/k8s/**/*.sops.yaml` (26 files) | App credentials (API keys, tokens) | Admin age key + cluster age key | L6: individual services                                          |
 
@@ -83,6 +82,10 @@ the k8s secret via `tofu apply`.
 **If `secrets/flux-deploy-key.yaml` is lost**: Generate new ED25519 key with
 `ssh-keygen -t ed25519`, SOPS-encrypt, commit. Register public key in
 GitHub → repo settings �� deploy keys. Redeploy via `tofu apply`.
+
+**If `secrets/cluster-tokens.yaml` is lost**: Re-enter the Hetzner token
+(Hetzner console) and Proxmox token (Proxmox UI → API Tokens), SOPS-encrypt
+to `secrets/cluster-tokens.yaml`, commit. `.envrc` picks them up automatically.
 
 **If a `k8s/**/\*.sops.yaml` app credential is lost\*\*: Re-enter the credential
 from the external service (see [App Credentials](#app-credentials) below),
@@ -232,7 +235,7 @@ re-enter from the external service and SOPS-encrypt.
 
 ### Full bootstrap from zero
 
-1. Ensure L0 credentials exist (keyring, SSH key, GitHub access)
+1. Ensure L0 credentials exist (SSH key, GitHub access)
 2. Ensure L1 SOPS secrets exist in git (nebula-ca, flux deploy key, cluster age key)
 3. Start temp PG: `podman run -d --name tofu-pg -e POSTGRES_PASSWORD=tofu -e POSTGRES_DB=tfstate -p 15432:5432 docker.io/postgres:16-alpine`
 4. `tofu init -reconfigure` with `PG_CONN_STR` pointing to temp PG

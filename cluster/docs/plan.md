@@ -29,10 +29,6 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 
 ## Next Actions
 
-- [x] ~~Migrate cluster secrets from SealedSecrets to SOPS~~ — done (2026-04-02).
-      All 26 SealedSecret files converted to SOPS. Sealed-secrets controller removed.
-      Nebula CA, Flux deploy key, and cluster age keypair moved to SOPS in `secrets/`.
-
 - [ ] Nebula cert deployment gap: tofu generates certs to disk, but NixOS workers
       (wyrm2, rugged) read certs from sops-nix secrets. No automation connects them —
       after cert rotation, someone must manually copy the new cert content into the sops
@@ -48,13 +44,14 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       `user_data` limit. Cilium stays as `null_resource.cilium_bootstrap` (helm CLI).
       Gateway API CRDs could move to `extraManifests` (URL fetch) but currently also
       use `null_resource` for consistency with Cilium.
-- [ ] Consolidate tofu plan prerequisites — currently requires assembling credentials from
-      multiple scattered sources before `tofu plan/apply` works: - `PG_CONN_STR`: read from k8s secret (`tofu-state-db-app`) via kubectl, not auto-set
-      outside of cluster-networked machines - `TF_VAR_hcloud_token`: stored in system keyring on wyrm2 (`secret-tool lookup service hcloud account default`) - `PROXMOX_VE_API_TOKEN`: stored in system keyring on wyrm2 (`secret-tool lookup service proxmox ...`) - `kubeconfig`: written to `terraform/main/kubeconfig` only after `tofu apply`; must be
-      manually copied or regenerated before the kubernetes provider can plan - `talosconfig.yml`: similarly written by `tofu apply`; empty stub in checkout, real copy
-      lives in `terraform/main/` on wyrm2 after bootstrap
-      Goal: make `direnv` in `cluster/` or a helper script reliably assemble all of these so
-      `tofu plan` works from any machine with kubectl + SSH access to wyrm2.
+- [ ] Consolidate tofu plan prerequisites — credentials are now SOPS-managed
+      (`cluster-tokens.yaml`, `credentials.sops.yaml`) and auto-decrypted by
+      `cluster/.envrc`. Remaining gaps: - `kubeconfig`: written to `terraform/main/kubeconfig` only after
+      `tofu apply`; must be manually copied before the kubernetes provider
+      can plan - `talosconfig.yml`: similarly written by `tofu apply`; empty stub in
+      checkout, real copy lives in `terraform/main/` on wyrm2 after bootstrap - `PG_CONN_STR`: password from SOPS, but ClusterIP lookup needs `kubectl`
+      (falls back to `localhost:15432` port-forward)
+
 - [ ] Authentik blueprint secret rotation: Authentik blueprints use file content hash to
       decide whether to re-apply. `!Env` tags are resolved _after_ the hash check, so rotating
       secrets in Vault (via Terraform `sso-secrets/`) updates the K8s secret and pod env vars,
@@ -87,7 +84,6 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
 - [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)
 - [ ] Prometheus: unpin from wyrm2 (blocked on PriorityClasses + right-sizing + VPS headroom)
-- [x] ~~`talos-pve-cp-0`: evict Longhorn storage (pure CP node, has stopped replicas)~~
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`, `activitywatch`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
@@ -103,7 +99,6 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
 - [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
-- [x] ~~Nix cache: initialize Attic cache~~ — done (moved to wyrm2, `local-path`)
 - [ ] Proxy outpost HA: shared session storage (1 replica limit, sessions in `/dev/shm`)
 - [ ] Airlock OAuth: upgrade Google scopes (needs approval flow) — `calendar`, `gmail.send`,
       `gmail.compose`, `drive`, `spreadsheets`
@@ -127,9 +122,7 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 
 - [ ] Website hosted in cluster, verify accessible
 - [ ] Update `agentydragon.com` DNS to point to cluster
-- [x] ~~Delete `headscale-cleanup-*` GitHub releases~~ — done
 - [ ] Decommission ansible-managed VPS:
-  - [x] ~~Clean up LE certs~~ — deleted unused certs, kept `adgn.link`, `agentydragon.com`, `vps.agentydragon.com`
   - [ ] Clean up remaining: stale nginx sites, stale home dirs, `/tmp` tarball
   - [ ] Verify no remaining services depend on old VPS
   - [ ] Update DNS records, tear down VPS
