@@ -60,6 +60,13 @@ actions:
     steps:
       - run: |
           bazel run --config=rbe --remote_download_toplevel //airlock/auth_proxy:push_ghcr
+  - name: Push //cluster/k8s/agents/claude-token-rotation:push_ghcr
+    triggers: *id001
+    container_image: ubuntu-24.04
+    resource_requests: *id002
+    steps:
+      - run: |
+          bazel run --config=rbe --remote_download_toplevel //cluster/k8s/agents/claude-token-rotation:push_ghcr
   - name: Push //cluster/k8s/inventree/token-provisioner:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04

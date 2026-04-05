@@ -265,7 +265,14 @@ apt.install(
     lock = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.lock.json",
     manifest = "//devinfra/firecracker/vm_pod:bookworm_fc_vm_pod.yaml",
 )
-use_repo(apt, "bookworm_fc_vm_pod", "trixie_e2e")
+
+# Token rotation image: git + bash on debian:bookworm-slim for SOPS token rotation CronJob.
+apt.install(
+    name = "bookworm_token_rotation",
+    lock = "//cluster/k8s/agents/claude-token-rotation:bookworm_token_rotation.lock.json",
+    manifest = "//cluster/k8s/agents/claude-token-rotation:bookworm_token_rotation.yaml",
+)
+use_repo(apt, "bookworm_fc_vm_pod", "bookworm_token_rotation", "trixie_e2e")
 
 # JavaScript/TypeScript (Node.js frontends)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.5")
@@ -694,6 +701,16 @@ http_archive(
     build_file_content = 'exports_files(["gitstatusd-linux-x86_64"])',
     sha256 = "9633816e7832109e530c9e2532b11a1edae08136d63aa7e40246c0339b7db304",
     urls = ["https://github.com/romkatv/gitstatus/releases/download/v1.5.4/gitstatusd-linux-x86_64.tar.gz"],
+)
+
+# sops - Mozilla SOPS binary for age/KMS secret encryption/decryption.
+# Used by the claude-token-rotation CronJob image.
+http_file(
+    name = "sops_linux_amd64",
+    downloaded_file_path = "sops",
+    executable = True,
+    sha256 = "5488e32bc471de7982ad895dd054bbab3ab91c417a118426134551e9626e4e85",
+    urls = ["https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.amd64"],
 )
 
 # Adoptium Temurin JDK 21 — provides keytool and cacerts for claude tests.
