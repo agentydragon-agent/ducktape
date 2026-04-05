@@ -3,7 +3,7 @@ Parametric mounting bracket driven by a Spreadsheet + Sketcher constraints.
 
 Demonstrates: arcs, tangent/perpendicular/angle constraints, radius constraints,
 spreadsheet-driven parameters with aliases and formulas, and TechDraw dimensions
-derived from solved sketch geometry.
+with entity references that update automatically.
 
 Runs inside freecadcmd under xvfb (needs Qt event pump for TechDraw view computation).
 Output directory is read from OUTDIR env var (default: current directory).
@@ -32,7 +32,6 @@ except ImportError:
     from PySide2 import QtWidgets
 
 qapp = QtWidgets.QApplication.instance()
-import TechDraw  # noqa: E402
 
 outdir = os.environ.get("OUTDIR", ".")
 
@@ -202,18 +201,12 @@ log(f"TechDraw view: {n_edges} visible edges")
 assert n_edges > 0, "TechDraw view has 0 edges — Qt event pump may have failed"
 
 # === Dimensions ===
+# All dimensions use TechDraw entity references (Edge/Vertex) so they update
+# automatically when the underlying sketch or spreadsheet parameters change.
 bb = feat.Shape.BoundBox
 cx, cy = (bb.XMin + bb.XMax) / 2, (bb.YMin + bb.YMax) / 2
 
-
-def vpt(sx, sy):
-    """Sketch coord to view-local unscaled coord."""
-    return App.Vector(sx - cx, sy - cy, 0)
-
-
-# Read solved positions from sketch geometry
-bot_r_end = sk.Geometry[bot_right].EndPoint
-top_left_pt = sk.Geometry[top].EndPoint
+# Read solved positions from sketch geometry (used only for dimension label placement)
 hole_ctr = sk.Geometry[hole].Center
 hole_r = sk.Geometry[hole].Radius
 fillet_r = sk.Geometry[arc_tr].Radius
@@ -223,21 +216,8 @@ tab_tip_pt = sk.Geometry[tab_down].EndPoint
 
 DIM_OFF = 18
 
-# 1. Overall width (below the entire shape)
-width_dim_y = bb.YMin - DIM_OFF
-d_w = TechDraw.makeDistanceDim(view, "DistanceX", vpt(0, width_dim_y), vpt(bot_r_end.x, width_dim_y))
-page.addView(d_w)
-d_w.X = bot_r_end.x / 2 - cx
-d_w.Y = width_dim_y - cy
-
-# 2. Overall height (left of left edge)
-d_h = TechDraw.makeDistanceDim(view, "DistanceY", vpt(-DIM_OFF, 0), vpt(-DIM_OFF, top_left_pt.y))
-page.addView(d_h)
-d_h.X = -DIM_OFF - 10 - cx
-d_h.Y = top_left_pt.y / 2 - cy
-
-# 3-6. Entity-referenced dimensions for fillet, hole, and tab angle.
-# Edge indices vary between recomputes — identify edges by geometric properties.
+# Identify TechDraw edges by geometric properties.
+# Edge indices vary between recomputes, so we match by shape characteristics.
 vis_edges = view.getVisibleEdges()
 
 
@@ -259,7 +239,8 @@ def _edge_dy(e):
     return abs(e.Vertexes[1].Point.y - e.Vertexes[0].Point.y)
 
 
-hole_edge = find_edge(
+# Circular edges
+hole_edge_idx = find_edge(
     lambda e: isinstance(e.Curve, Part.Circle) and abs(e.Curve.Radius - hole_r) < 0.1, f"circle R={hole_r}"
 )
 # Two fillets have the same radius; pick the rightmost (top-right corner)
@@ -267,21 +248,49 @@ fillet_matches = [
     (i, e) for i, e in enumerate(vis_edges) if isinstance(e.Curve, Part.Circle) and abs(e.Curve.Radius - fillet_r) < 0.1
 ]
 assert fillet_matches, f"No arc edge matching fillet radius {fillet_r}"
-fillet_edge = max(fillet_matches, key=lambda ie: ie[1].Curve.Center.x)[0]
+fillet_edge_idx = max(fillet_matches, key=lambda ie: ie[1].Curve.Center.x)[0]
 
-bot_left_edge = find_edge(
+# Straight edges
+bot_left_edge_idx = find_edge(
     lambda e: isinstance(e.Curve, Part.Line) and _edge_dy(e) < 1 and e.Vertexes[0].Point.x < -cx + 1,
     "leftmost horizontal line",
 )
-tab_down_edge = find_edge(
+tab_down_edge_idx = find_edge(
     lambda e: isinstance(e.Curve, Part.Line) and _edge_dx(e) > 1 and _edge_dy(e) > 1, "diagonal line (tab)"
 )
+# Vertical edges: left, right, tab_up — pick outermost pair for width measurement
+vert_line_edges = [
+    (i, e) for i, e in enumerate(vis_edges) if isinstance(e.Curve, Part.Line) and _edge_dx(e) < 1 and _edge_dy(e) > 1
+]
+left_edge_idx = min(vert_line_edges, key=lambda ie: ie[1].Vertexes[0].Point.x)[0]
+right_edge_idx = max(vert_line_edges, key=lambda ie: ie[1].Vertexes[0].Point.x)[0]
+# Horizontal edges — pick topmost for height measurement
+horiz_line_edges = [
+    (i, e) for i, e in enumerate(vis_edges) if isinstance(e.Curve, Part.Line) and _edge_dy(e) < 1 and _edge_dx(e) > 1
+]
+top_edge_idx = min(horiz_line_edges, key=lambda ie: ie[1].Vertexes[0].Point.y)[0]
+
+# 1. Overall width (left vertical edge to right vertical edge)
+d_w = doc.addObject("TechDraw::DrawViewDimension", "OverallWidth")
+page.addView(d_w)
+d_w.Type = "DistanceX"
+d_w.References2D = [(view, f"Edge{left_edge_idx}"), (view, f"Edge{right_edge_idx}")]
+d_w.X = 0
+d_w.Y = bb.YMin - DIM_OFF - cy
+
+# 2. Overall height (bottom horizontal edge to top horizontal edge)
+d_h = doc.addObject("TechDraw::DrawViewDimension", "OverallHeight")
+page.addView(d_h)
+d_h.Type = "DistanceY"
+d_h.References2D = [(view, f"Edge{bot_left_edge_idx}"), (view, f"Edge{top_edge_idx}")]
+d_h.X = -DIM_OFF - 10 - cx
+d_h.Y = 0
 
 # 3. Fillet radius
 d_fr = doc.addObject("TechDraw::DrawViewDimension", "FilletRadius")
 page.addView(d_fr)
 d_fr.Type = "Radius"
-d_fr.References2D = [(view, f"Edge{fillet_edge}")]
+d_fr.References2D = [(view, f"Edge{fillet_edge_idx}")]
 d_fr.X = arc_tr_ctr.x - cx + fillet_r + 3
 d_fr.Y = arc_tr_ctr.y - cy + fillet_r + 3
 
@@ -289,23 +298,23 @@ d_fr.Y = arc_tr_ctr.y - cy + fillet_r + 3
 d_hr = doc.addObject("TechDraw::DrawViewDimension", "HoleRadius")
 page.addView(d_hr)
 d_hr.Type = "Radius"
-d_hr.References2D = [(view, f"Edge{hole_edge}")]
+d_hr.References2D = [(view, f"Edge{hole_edge_idx}")]
 d_hr.X = hole_ctr.x - cx + hole_r + 15
 d_hr.Y = hole_ctr.y - cy
 
-# 5. Tab length
-d_tl = TechDraw.makeDistanceDim(view, "Distance", vpt(tab_start_pt.x, tab_start_pt.y), vpt(tab_tip_pt.x, tab_tip_pt.y))
+# 5. Tab length (single-edge distance = edge length)
+d_tl = doc.addObject("TechDraw::DrawViewDimension", "TabLength")
 page.addView(d_tl)
+d_tl.Type = "Distance"
+d_tl.References2D = [(view, f"Edge{tab_down_edge_idx}")]
 d_tl.X = (tab_start_pt.x + tab_tip_pt.x) / 2 - cx + 15
 d_tl.Y = (tab_start_pt.y + tab_tip_pt.y) / 2 - cy - 5
 
-# 6. Tab angle (entity-referenced between bottom edge and angled tab edge)
-assert bot_left_edge is not None, "No horizontal edge found for bot_left"
-assert tab_down_edge is not None, "No diagonal edge found for tab_down"
+# 6. Tab angle (between bottom horizontal edge and diagonal tab edge)
 d_angle = doc.addObject("TechDraw::DrawViewDimension", "TabAngle")
 page.addView(d_angle)
 d_angle.Type = "Angle"
-d_angle.References2D = [(view, f"Edge{bot_left_edge}"), (view, f"Edge{tab_down_edge}")]
+d_angle.References2D = [(view, f"Edge{bot_left_edge_idx}"), (view, f"Edge{tab_down_edge_idx}")]
 d_angle.X = tab_start_pt.x - cx - 12
 d_angle.Y = tab_start_pt.y - cy - 8
 
