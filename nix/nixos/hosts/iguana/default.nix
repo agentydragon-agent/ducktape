@@ -118,25 +118,6 @@
     printing.enable = true;
     openssh.enable = true;
 
-    # Disable power-profiles-daemon (GNOME default) — conflicts with TLP
-    power-profiles-daemon.enable = false;
-
-    # Laptop power management
-    tlp = {
-      enable = true;
-      settings = {
-        CPU_SCALING_GOVERNOR_ON_AC = "performance";
-        CPU_SCALING_GOVERNOR_ON_BAT = "powersave";
-        CPU_ENERGY_PERF_POLICY_ON_AC = "performance";
-        CPU_ENERGY_PERF_POLICY_ON_BAT = "power";
-
-        # NVIDIA power management for Optimus
-        RUNTIME_PM_ON_AC = "auto";
-        RUNTIME_PM_ON_BAT = "auto";
-      };
-    };
-
-    # Thermal management (Intel)
     thermald.enable = true;
 
     # Lid/power button behavior
