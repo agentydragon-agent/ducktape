@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: setup-gpt-oss-v1
+  name: setup-gpt-oss-v2
   namespace: ollama
 spec:
   ttlSecondsAfterFinished: 86400
@@ -19,7 +19,7 @@ spec:
         - name: setup
           image: ollama/ollama:0.18.0
           command:
-            - /scripts/setup-gpt-oss-v1.sh
+            - /scripts/setup-gpt-oss-v2.sh
           env:
             - name: OLLAMA_HOST
               value: "http://ollama.ollama.svc.cluster.local:11434"

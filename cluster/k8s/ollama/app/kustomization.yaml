@@ -7,7 +7,7 @@ resources:
   - service.yaml
   - httproute.yaml
   - clusterrole-ollama-consumer.yaml
-  - job-setup-gpt-oss-v1.yaml
+  - job-setup-gpt-oss-v2.yaml
   - role-ollama-reader.yaml
 
 configMapGenerator:
@@ -15,7 +15,7 @@ configMapGenerator:
     options:
       disableNameSuffixHash: true
     files:
-      - setup-gpt-oss-v1.sh
+      - setup-gpt-oss-v2.sh
   - name: ollama-auth-proxy
     options:
       disableNameSuffixHash: true
