@@ -10,7 +10,6 @@ skill_package(
         "build_compound.py",
         "build_cube_with_hole.py",
         "export_page.py",
-        "parametric_rect.py",
         "parametric_sketch.py",
         "render_dxf.py",
         "render_fcstd.py",
@@ -77,8 +76,8 @@ py_test(
     name = "test_render_dxf",
     srcs = ["test_render_dxf.py"],
     data = [
-        "golden/rect.dxf",
-        "golden/rect.png",
+        "golden/compound.dxf",
+        "golden/compound.png",
     ],
     deps = [
         ":render_dxf",
@@ -158,31 +157,5 @@ py_test(
         "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_export_formats",
-    size = "medium",
-    srcs = ["test_export_formats.py"],
-    data = [
-        "export_page.py",
-        "golden/rect.dxf",
-        "golden/rect.pdf",
-        "golden/rect.svg",
-        "parametric_rect.py",
-        ":freecad_test",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        "//skills/freecad/testing:compare",
-        "//util:oci",
-        "//util/bazel:runfiles",
-        "//util/testing:container_logs",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//testcontainers",
     ],
 )

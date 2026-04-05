@@ -9,6 +9,8 @@ description: Use this skill for parametric 2D/3D technical drawings using FreeCA
 
 The FCStd is the artifact; images are derived previews. Work iteratively: open, edit, save, export, visually check, repeat. Every dimension is a constraint.
 
+**Parametric-first**: Spreadsheet parameters are the single source of truth (SSOT). All sketch constraints must be bound to spreadsheet cells via `setExpression()`. All TechDraw dimensions must reference projected entities (`References2D`) so they auto-update when parameters change. Never use hardcoded coordinates, one-shot Python variables, or point-based `makeDistanceDim` — these create models where changing a parameter does not propagate to the drawing.
+
 ## Setup
 
 ```bash
@@ -109,61 +111,44 @@ All geometry must be closed faces — model walls as closed polygons tracing inn
 
 `DrawPage` + `DrawSVGTemplate` (from `/usr/share/freecad/Mod/TechDraw/Templates/`). One `DrawViewPart` with `Direction = Vector(0,0,1)` for top-down.
 
-### Dimensions (working, point-based)
+### Dimensions (entity-referenced)
 
-`TechDraw.makeDistanceDim(view, dimType, fromPoint, toPoint)` — creates a `DrawViewDimension`. Points are unscaled 2D view-local coordinates (sketch coords minus shape bounding box center). Types: `'Distance'`, `'DistanceX'`, `'DistanceY'`. Values auto-compute from the projected geometry and render as dimension lines with extension lines in the DXF export.
+**Always use entity-referenced `DrawViewDimension`** with `References2D` pointing to projected edges. This is the only approach that produces parametric drawings — dimensions auto-update when sketch geometry or spreadsheet parameters change.
 
-**You MUST set `dim.X` and `dim.Y`** after creating the dimension. These properties control the dimension text position as view-local offsets (mm). They default to `(0, 0)` which maps to the view center — so if you create multiple dimensions without setting X/Y, all text will overlap at the view center. Set them to the view-local coordinates of the dimension line midpoint, computed from the same `fromPoint`/`toPoint` values passed to `TechDraw.makeDistanceDim`:
-
-```python
-bb = feat.Shape.BoundBox
-cx, cy = (bb.XMin + bb.XMax) / 2, (bb.YMin + bb.YMax) / 2
-
-# Width dim 15mm below bottom edge
-d1_from = App.Vector(0 - cx, -15 - cy, 0)
-d1_to = App.Vector(WIDTH - cx, -15 - cy, 0)
-d1 = TechDraw.makeDistanceDim(view, "DistanceX", d1_from, d1_to)
-page.addView(d1)
-d1.X = (d1_from.x + d1_to.x) / 2
-d1.Y = (d1_from.y + d1_to.y) / 2
-
-# Height dim 15mm right of right edge
-d2_from = App.Vector(WIDTH + 15 - cx, 0 - cy, 0)
-d2_to = App.Vector(WIDTH + 15 - cx, HEIGHT - cy, 0)
-d2 = TechDraw.makeDistanceDim(view, "DistanceY", d2_from, d2_to)
-page.addView(d2)
-d2.X = (d2_from.x + d2_to.x) / 2
-d2.Y = (d2_from.y + d2_to.y) / 2
-```
-
-See <parametric_rect.py> for a complete example with dimensions.
-
-### Dimensions (entity-referenced, for radii and edge-bound dims)
-
-For radius/diameter dimensions, use `DrawViewDimension` with `Type = "Radius"` and `References2D` pointing to a projected arc/circle edge. TechDraw automatically renders "R<value>" with a leader line from center to circumference — do NOT manually create text annotations with hardcoded "R12" strings.
+Identify projected edges by geometric properties (radius, slope, position, length). Edge indices vary between recomputes, so **match by geometry, not index**.
 
 ```python
-# Identify projected edges by geometric properties (radius, slope, position).
-# Edge indices vary between recomputes, so match by geometry, not index.
 vis_edges = view.getVisibleEdges()
-fillet_edge: int | None = None
-hole_edge: int | None = None
-for i, e in enumerate(vis_edges):
-    if e.Curve.__class__.__name__ == "Circle":
-        if abs(e.Curve.Radius - fillet_r) < 0.1:
-            fillet_edge = i
-        elif abs(e.Curve.Radius - hole_r) < 0.1:
-            hole_edge = i
 
-# Entity-referenced radius dimension
+def find_edge(predicate, desc):
+    matches = [(i, e) for i, e in enumerate(vis_edges) if predicate(e)]
+    if len(matches) != 1:
+        raise AssertionError(f"Expected 1 edge matching {desc}, got {len(matches)}")
+    return matches[0][0]
+
+# Linear dimension (single edge → measures edge length)
+dim = doc.addObject("TechDraw::DrawViewDimension", "RoomWidth")
+page.addView(dim)
+dim.Type = "DistanceX"
+dim.References2D = [(view, f"Edge{bottom_edge_idx}")]
+dim.X = 0    # view-local text offset
+dim.Y = -10  # below the edge
+
+# Linear dimension between two parallel edges
+dim = doc.addObject("TechDraw::DrawViewDimension", "WallThickness")
+page.addView(dim)
+dim.Type = "DistanceY"
+dim.References2D = [(view, f"Edge{outer_idx}"), (view, f"Edge{inner_idx}")]
+dim.X = -15; dim.Y = 0
+
+# Radius dimension (one circular edge ref)
 dim = doc.addObject("TechDraw::DrawViewDimension", "FilletRadius")
 page.addView(dim)
 dim.Type = "Radius"
 dim.References2D = [(view, f"Edge{fillet_edge}")]
-dim.X = 20  # view-local text offset
-dim.Y = 10
+dim.X = 20; dim.Y = 10
 
-# Entity-referenced angle dimension (between two adjacent lines)
+# Angle dimension (two line edge refs)
 dim = doc.addObject("TechDraw::DrawViewDimension", "TabAngle")
 page.addView(dim)
 dim.Type = "Angle"
@@ -171,13 +156,19 @@ dim.References2D = [(view, f"Edge{bot_edge}"), (view, f"Edge{tab_edge}")]
 dim.X = -12; dim.Y = -8
 ```
 
-Supported `Type` values: `"Distance"`, `"DistanceX"`, `"DistanceY"`, `"Radius"`, `"Diameter"`, `"Angle"`. Radius/Diameter need one circular edge ref; Angle needs two line edge refs.
+Supported `Type` values: `"Distance"`, `"DistanceX"`, `"DistanceY"`, `"Radius"`, `"Diameter"`, `"Angle"`. Radius/Diameter need one circular edge ref; Angle needs two line edge refs. Linear types accept one edge (measures its projected length) or two edges (measures distance between them).
 
-`makeDistanceDim` (point-based) is still appropriate for linear dimensions (width, height, distances) where you control the measurement points. Use entity-referenced `DrawViewDimension` for radii, diameters, and edge-specific dimensions.
+**You MUST set `dim.X` and `dim.Y`** after creating the dimension — they default to `(0, 0)` (view center), so all text overlaps without explicit placement.
+
+See <parametric_sketch.py> for a full example with radius, angle, and linear entity-referenced dimensions. See <build_compound.py> for entity-referenced dimensions on a compound floor plan.
+
+### `makeDistanceDim` — discouraged
+
+**Do not use `TechDraw.makeDistanceDim()`**. It creates point-based dimensions from hardcoded coordinates that are not bound to projected entities. The resulting dimensions do not update when sketch geometry changes, breaking the parametric model. There is no SSOT — the dimension's measurement points are frozen at creation time. Always use `DrawViewDimension` with `References2D` instead, even for simple linear dimensions.
 
 ### Annotations
 
-`DrawViewAnnotation` with `.Text`, `.X`, `.Y` (page mm), `.TextSize`, `.Font`, `.TextColor`, `.Rotation`. Absolute page positioning. See <parametric_rect.py> for an example with annotation placement.
+`DrawViewAnnotation` with `.Text`, `.X`, `.Y` (page mm), `.TextSize`, `.Font`, `.TextColor`, `.Rotation`. Absolute page positioning. See <parametric_sketch.py> for an example with annotation placement.
 
 **Page coordinate system:** Page Y increases upward (Y=0 is bottom of page, Y=210 is top of A4). Sketch Y also increases upward. So the conversion does NOT invert Y:
 
@@ -237,8 +228,8 @@ See <render_fcstd.py> for the full script.
 Example scripts produce FCStd files. Use `export_page.py` to export to DXF, SVG, and PDF:
 
 ```bash
-OUTDIR=. xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd parametric_rect.py  # → rect.FCStd
-INPUT=rect.FCStd OUTDIR=. xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd export_page.py  # → rect.{dxf,svg,pdf}
+OUTDIR=. xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd parametric_sketch.py  # → bracket.FCStd
+INPUT=bracket.FCStd OUTDIR=. xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd export_page.py  # → bracket.{dxf,svg,pdf}
 ```
 
 Arguments are passed via env vars (`INPUT`, `OUTDIR`) because `freecadcmd` treats CLI args as files to open. See <export_page.py>. Output filenames derive from the input FCStd stem.
@@ -271,34 +262,36 @@ The FCStd caches computed view edges when saved during a GUI session. Reloading 
 
 ## Gotchas
 
-| Issue                                | Fix                                                                                                                                                               |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TechDraw 0 edges                     | Pump Qt events with `processEvents()` loop after recompute                                                                                                        |
-| Open Wire / loose edges              | Use Faces only — open topology crashes HLR projector                                                                                                              |
-| Multiple views lose positions        | Single compound, single view                                                                                                                                      |
-| FreeCAD import                       | `sys.path.insert(0, '/usr/lib/freecad-python3/lib')`                                                                                                              |
-| `getConstruction` typo               | Correct API name                                                                                                                                                  |
-| Property "mm" suffix                 | `re.sub(r'\s*mm$', '', str(val))` before numeric use                                                                                                              |
-| Under-constrained sketch             | Add constraints until `FullyConstrained == True`                                                                                                                  |
-| Removing geometry                    | Shifts indices — use `toggleConstruction` instead                                                                                                                 |
-| DXF Y convention                     | CAD Y-up: sketch Y=0 (e.g. window wall) at bottom of render                                                                                                       |
-| Annotation placement                 | Absolute page coords; use bounding box center math to convert from sketch coords                                                                                  |
-| Dim text overlaps at center          | `makeDistanceDim` defaults `X=0, Y=0` (view center) — must set `dim.X`/`dim.Y`                                                                                    |
-| Dim text on dimension line           | Offset `dim.X`/`dim.Y` so text clears the dimension line, especially for vertical dims where horizontal text can sit on the line                                  |
-| Duplicate dims in DXF                | `writeDXFPage` may emit each dimension twice — known FreeCAD export artifact                                                                                      |
-| Dim "larger than page" warns         | Dimension geometry extends beyond template bounds — cosmetic, does not break DXF                                                                                  |
-| Tangent + Coincident overlap         | `Tangent` with point refs (e.g., `line, 2, arc, 1`) implies coincidence — adding a separate `Coincident` at the same points over-constrains the sketch            |
-| Angle constraint on one line         | `Constraint("Angle", line_idx, radians)` constrains angle from X axis. For two-line angles, both lines must share a point                                         |
-| Angle expression needs `deg` unit    | `setExpression("Constraints[N]", "Params.Angle * 1 deg")` — raw radian values without unit annotation are treated as dimensionless, producing wrong angles        |
-| TechDraw edge Y is inverted          | `getVisibleEdges()` returns view-local coords with Y inverted (edge_y = cy - sketch_y). Match edges by geometric properties (slope, radius) not raw coordinates   |
-| `print()` invisible in freecadcmd    | freecadcmd may buffer stdout; use `print(msg, file=sys.stderr, flush=True)` for debug output visible in Docker logs                                               |
-| PDF font subset names                | PDF exports embed fonts with non-deterministic subset prefixes (e.g., `QNAAAA+DejaVuSans`). Golden files must come from the same environment (RBE) as tests       |
-| Annotation Y direction               | Page Y increases **upward** (Y=0 is bottom). Use `view.Y + (sketch_y - cy) * scale`, NOT `view.Y - ...`. The minus formula in old docs is wrong                   |
-| Quantity unit mismatch               | `view.X`, `view.Y`, `view.Scale` return FreeCAD Quantity objects. Cast to `float()` before mixing with plain Python floats in arithmetic                          |
-| Unicode in DXF                       | Unicode chars (e.g., `\u00b0` degree symbol) corrupt in DXF export. Use ASCII alternatives (`"60 deg"`)                                                           |
-| Radius dims as text annotations      | Do NOT manually write "R12" text annotations. Use `DrawViewDimension` with `Type="Radius"` and `References2D=[(view, "EdgeN")]` for proper auto-computed callouts |
-| Redundant constraints confuse solver | Adding `Parallel` between two `Horizontal` lines is redundant and can cause `FullyConstrained=False` despite correct DOF count                                    |
-| Open wires for geometric features    | Features like tabs/gussets must be closed faces integrated into the profile contour, not separate open wires rendered as thin strips                              |
+| Issue                                | Fix                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TechDraw 0 edges                     | Pump Qt events with `processEvents()` loop after recompute                                                                                                                                                                                                                                               |
+| Open Wire / loose edges              | Use Faces only — open topology crashes HLR projector                                                                                                                                                                                                                                                     |
+| Multiple views lose positions        | Single compound, single view                                                                                                                                                                                                                                                                             |
+| FreeCAD import                       | `sys.path.insert(0, '/usr/lib/freecad-python3/lib')`                                                                                                                                                                                                                                                     |
+| `getConstruction` typo               | Correct API name                                                                                                                                                                                                                                                                                         |
+| Property "mm" suffix                 | `re.sub(r'\s*mm$', '', str(val))` before numeric use                                                                                                                                                                                                                                                     |
+| Under-constrained sketch             | Add constraints until `FullyConstrained == True`                                                                                                                                                                                                                                                         |
+| Removing geometry                    | Shifts indices — use `toggleConstruction` instead                                                                                                                                                                                                                                                        |
+| DXF Y convention                     | CAD Y-up: sketch Y=0 (e.g. window wall) at bottom of render                                                                                                                                                                                                                                              |
+| Annotation placement                 | Absolute page coords; use bounding box center math to convert from sketch coords                                                                                                                                                                                                                         |
+| Dim text overlaps at center          | `DrawViewDimension` defaults `X=0, Y=0` (view center) — must set `dim.X`/`dim.Y`                                                                                                                                                                                                                         |
+| Dim text on dimension line           | Offset `dim.X`/`dim.Y` so text clears the dimension line, especially for vertical dims where horizontal text can sit on the line                                                                                                                                                                         |
+| Duplicate dims in DXF                | `writeDXFPage` may emit each dimension twice — known FreeCAD export artifact                                                                                                                                                                                                                             |
+| Dim "larger than page" warns         | Dimension geometry extends beyond template bounds — cosmetic, does not break DXF                                                                                                                                                                                                                         |
+| Tangent + Coincident overlap         | `Tangent` with point refs (e.g., `line, 2, arc, 1`) implies coincidence — adding a separate `Coincident` at the same points over-constrains the sketch                                                                                                                                                   |
+| Angle constraint on one line         | `Constraint("Angle", line_idx, radians)` constrains angle from X axis. For two-line angles, both lines must share a point                                                                                                                                                                                |
+| Angle expression needs `deg` unit    | `setExpression("Constraints[N]", "Params.Angle * 1 deg")` — raw radian values without unit annotation are treated as dimensionless, producing wrong angles                                                                                                                                               |
+| TechDraw edge Y is inverted          | `getVisibleEdges()` returns view-local coords with Y inverted (edge_y = cy - sketch_y). Match edges by geometric properties (slope, radius) not raw coordinates                                                                                                                                          |
+| `print()` invisible in freecadcmd    | freecadcmd may buffer stdout; use `print(msg, file=sys.stderr, flush=True)` for debug output visible in Docker logs                                                                                                                                                                                      |
+| PDF font subset names                | PDF exports embed fonts with non-deterministic subset prefixes (e.g., `QNAAAA+DejaVuSans`). Golden files must come from the same environment (RBE) as tests                                                                                                                                              |
+| Annotation Y direction               | Page Y increases **upward** (Y=0 is bottom). Use `view.Y + (sketch_y - cy) * scale`, NOT `view.Y - ...`. The minus formula in old docs is wrong                                                                                                                                                          |
+| Quantity unit mismatch               | `view.X`, `view.Y`, `view.Scale` return FreeCAD Quantity objects. Cast to `float()` before mixing with plain Python floats in arithmetic                                                                                                                                                                 |
+| Unicode in DXF                       | Unicode chars (e.g., `\u00b0` degree symbol) corrupt in DXF export. Use ASCII alternatives (`"60 deg"`)                                                                                                                                                                                                  |
+| Radius dims as text annotations      | Do NOT manually write "R12" text annotations. Use `DrawViewDimension` with `Type="Radius"` and `References2D=[(view, "EdgeN")]` for proper auto-computed callouts                                                                                                                                        |
+| Redundant constraints confuse solver | Adding `Parallel` between two `Horizontal` lines is redundant and can cause `FullyConstrained=False` despite correct DOF count                                                                                                                                                                           |
+| Open wires for geometric features    | Features like tabs/gussets must be closed faces integrated into the profile contour, not separate open wires rendered as thin strips                                                                                                                                                                     |
+| Edge finding with `getVisibleEdges`  | Match edges by geometric properties (length, slope, position), not index. Use `isinstance(e.Curve, Part.Line)` for straight edges, `Part.Circle` for arcs. Filter horizontal/vertical via `_edge_dx < tol` / `_edge_dy < tol`. Pick by extremes (`min`/`max` on position) when multiple candidates exist |
+| Dim text invisible at large scale    | At `view.Scale=1.0` with large geometry (e.g. 4000mm room), dimension text (~3.5mm) is invisible in DXF→PNG renders. Dimensions are still present in the DXF/SVG/PDF — verify via SVG inspection or PDF viewer. Use a smaller `view.Scale` if visual readability matters                                 |
 
 ### Visual inspection checklist
 
