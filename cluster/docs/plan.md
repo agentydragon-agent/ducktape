@@ -80,6 +80,8 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
       patch in `bootstrap.py` after Longhorn is up, or use a Longhorn `NodeLabel` feature
       if one is added upstream. Affects `hetzner-longhorn` and `proxmox-longhorn` SCs.
+- [ ] Enable systemd watchdog for kubelet on NixOS workers (`WatchdogSec=` in kubelet
+      service unit) — restarts kubelet if it deadlocks
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
 - [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)
