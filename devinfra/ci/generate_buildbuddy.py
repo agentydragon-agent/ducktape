@@ -29,6 +29,7 @@ HEADER = """\
 PUSH_TARGETS = [
     BazelLabel.parse("//airlock:push_ghcr"),
     BazelLabel.parse("//airlock/auth_proxy:push_ghcr"),
+    BazelLabel.parse("//cluster/k8s/agents/claude-token-rotation:push_ghcr"),
     BazelLabel.parse("//cluster/k8s/inventree/token-provisioner:push_ghcr"),
     BazelLabel.parse("//devinfra/firecracker/manager:push_ghcr"),
     BazelLabel.parse("//devinfra/firecracker/vm_pod:push_ghcr"),

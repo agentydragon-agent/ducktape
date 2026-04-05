@@ -13,6 +13,13 @@ from cluster.validation.kustomize import KustomizeBuildResult, KustomizeFile, pa
 
 _K8S_SUBPATH = Path("cluster/k8s")
 
+# Non-K8s YAML files that live under cluster/k8s/ but aren't manifests.
+# Excluded from orphan detection and resource parsing.
+_EXCLUDED_FILES = {
+    # rules_distroless APT manifest for the token rotation image
+    "agents/claude-token-rotation/bookworm_token_rotation.yaml"
+}
+
 
 @dataclass
 class ParsedCluster:
@@ -71,6 +78,14 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
 
         # Skip blueprints directory (Authentik-specific YAML with !Env tags, not K8s resources)
         if "blueprints" in yaml_file.parts:
+            continue
+
+        # Skip explicitly excluded non-K8s files
+        try:
+            rel = yaml_file.relative_to(k8s_dir)
+        except ValueError:
+            rel = None
+        if rel and str(rel) in _EXCLUDED_FILES:
             continue
 
         all_yaml_files.add(yaml_file.resolve())

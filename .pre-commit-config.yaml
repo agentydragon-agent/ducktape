@@ -276,7 +276,9 @@ repos:
             cluster/k8s/agents/claude-sandbox-firecracker/config\.yaml|
             cluster/k8s/litellm/app/proxy-config\.yaml|
             # Helm values files consumed via configMapGenerator, not K8s manifests
-            cluster/k8s/.*/ccm-values\.yaml
+            cluster/k8s/.*/ccm-values\.yaml|
+            # APT manifest for Bazel rules_distroless, not a K8s manifest
+            cluster/k8s/agents/claude-token-rotation/bookworm_token_rotation\.yaml
           )$
         types: [yaml]
 
