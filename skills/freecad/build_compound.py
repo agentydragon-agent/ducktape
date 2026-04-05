@@ -214,7 +214,7 @@ view = doc.addObject("TechDraw::DrawViewPart", "TopView")
 page.addView(view)
 view.Source = [feat]
 view.Direction = App.Vector(0, 0, 1)
-view.Scale = 1.0
+view.Scale = 0.05  # 4000mm room → 200mm on page at 0.05 scale
 view.X = 150
 view.Y = 120
 
@@ -238,8 +238,6 @@ room_h_solved = float(sheet.get("B2"))
 table_w_solved = float(sheet.get("B3"))
 table_h_solved = float(sheet.get("B4"))
 wall_t_solved = float(sheet.get("B7"))
-
-DIM_OFF = 0.8  # view-local offset for dimension lines (in view-scaled mm)
 
 # Identify TechDraw edges by geometric properties.
 vis_edges = view.getVisibleEdges()
@@ -283,11 +281,12 @@ def find_edge(predicate, desc):
     return matches[0][0]
 
 
-# Edge lengths in view-local coords (sketch mm * scale)
-bottom_outer_len = (room_w_solved + wall_t_solved) * scale
-right_outer_len = (room_h_solved + 2 * wall_t_solved) * scale
-table_bot_len = table_w_solved * scale
-table_right_len = table_h_solved * scale
+# Edge lengths in view-local coords (getVisibleEdges returns model coordinates,
+# NOT scaled by view.Scale — so compare against raw sketch dimensions).
+bottom_outer_len = room_w_solved + wall_t_solved
+right_outer_len = room_h_solved + 2 * wall_t_solved
+table_bot_len = table_w_solved
+table_right_len = table_h_solved
 
 # Bottom outer wall (longest horizontal at bottom of view)
 horiz_edges = [
@@ -318,7 +317,7 @@ table_vert = [
 table_right_idx = min(table_vert, key=lambda ie: _edge_minx(ie[1]))[0]
 
 # Wall thickness: find the inner horizontal edge (second-lowest horizontal, length ~ RoomW - t)
-inner_horiz_len = (room_w_solved - wall_t_solved) * scale
+inner_horiz_len = room_w_solved - wall_t_solved
 wall_inner_horiz = [
     (i, e)
     for i, e in enumerate(vis_edges)
@@ -329,37 +328,43 @@ inner_horiz_idx = wall_inner_horiz[0][0] if wall_inner_horiz else None
 # Left wall edge (leftmost vertical, full height of inner wall)
 left_wall_idx = min(vert_edges, key=lambda ie: _edge_midx(ie[1]))[0]
 
+# Dimension label positions use sketch-space coordinates offset from bounding box center,
+# then scaled by view.Scale to get view-local offsets for dim.X/dim.Y.
+DIM_LABEL_OFF = 15  # mm in sketch space — clearance from geometry to dim line
+
 # 1. Room width (bottom outer edge)
 d_w = doc.addObject("TechDraw::DrawViewDimension", "RoomWidth")
 page.addView(d_w)
 d_w.Type = "DistanceX"
 d_w.References2D = [(view, f"Edge{bottom_outer_idx}")]
 d_w.X = 0
-d_w.Y = (bb.YMin - cy) * scale - DIM_OFF
+d_w.Y = (bb.YMin - cy - DIM_LABEL_OFF) * scale
 
 # 2. Room height (right outer edge)
 d_h = doc.addObject("TechDraw::DrawViewDimension", "RoomHeight")
 page.addView(d_h)
 d_h.Type = "DistanceY"
 d_h.References2D = [(view, f"Edge{right_outer_idx}")]
-d_h.X = (bb.XMax - cx) * scale + DIM_OFF + 0.5
+d_h.X = (bb.XMax - cx + DIM_LABEL_OFF) * scale
 d_h.Y = 0
 
-# 3. Table width (table bottom edge)
+# 3. Table width (table bottom edge) — position below table
+table_mid_x = TABLE_X + TABLE_W / 2
 d_tw = doc.addObject("TechDraw::DrawViewDimension", "TableWidth")
 page.addView(d_tw)
 d_tw.Type = "DistanceX"
 d_tw.References2D = [(view, f"Edge{table_bot_idx}")]
-d_tw.X = _edge_midx(vis_edges[table_bot_idx])
-d_tw.Y = _edge_midy(vis_edges[table_bot_idx]) - DIM_OFF * 0.6
+d_tw.X = (table_mid_x - cx) * scale
+d_tw.Y = (TABLE_Y - cy - DIM_LABEL_OFF * 0.5) * scale
 
-# 4. Table height (table right edge)
+# 4. Table height (table right edge) — position right of table
+table_mid_y = TABLE_Y + TABLE_H / 2
 d_th = doc.addObject("TechDraw::DrawViewDimension", "TableHeight")
 page.addView(d_th)
 d_th.Type = "DistanceY"
 d_th.References2D = [(view, f"Edge{table_right_idx}")]
-d_th.X = _edge_midx(vis_edges[table_right_idx]) + DIM_OFF * 0.6
-d_th.Y = _edge_midy(vis_edges[table_right_idx])
+d_th.X = (TABLE_X + TABLE_W + DIM_LABEL_OFF * 0.5 - cx) * scale
+d_th.Y = (table_mid_y - cy) * scale
 
 # 5. Wall thickness (between bottom outer and inner horizontal edges)
 if inner_horiz_idx is not None:
@@ -367,8 +372,8 @@ if inner_horiz_idx is not None:
     page.addView(d_wt)
     d_wt.Type = "DistanceY"
     d_wt.References2D = [(view, f"Edge{bottom_outer_idx}"), (view, f"Edge{inner_horiz_idx}")]
-    d_wt.X = (bb.XMin - cx) * scale - DIM_OFF
-    d_wt.Y = ((bb.YMin + wall_t_solved) - cy) * scale
+    d_wt.X = (bb.XMin - cx - DIM_LABEL_OFF) * scale
+    d_wt.Y = (bb.YMin + wall_t_solved / 2 - cy) * scale
 
 doc.recompute(None, True, True)
 pump(1)
