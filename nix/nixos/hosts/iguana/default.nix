@@ -3,7 +3,9 @@
 # Hardware:
 # - CPU: Intel Core (CometLake-H)
 # - GPU: Intel UHD Graphics (integrated) + NVIDIA GTX 1650 Ti Mobile (discrete, Optimus)
-# - Storage: 954GB NVMe SSD (btrfs on LUKS)
+# - Storage: 954GB NVMe SSD (btrfs on LUKS, no LVM currently)
+#   If OpenEBS LVM provisioner is needed later: shrink btrfs, shrink LUKS,
+#   repartition to carve out an LVM PV, or re-do as LUKS → LVM → btrfs.
 #
 # Manual setup steps:
 # - SSH keygen and copy to GitHub/GitLab
