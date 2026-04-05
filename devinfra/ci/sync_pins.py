@@ -21,7 +21,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from github import Auth, Github
 
-from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, sources_path, url_sha256
+from devinfra.ci.artifacts import ARTIFACTS, Pin, Sources, is_tag_for_pkg, sources_path, url_sha256
 
 REPO = "agentydragon/ducktape"
 BASE = f"https://github.com/{REPO}/releases/download"
@@ -37,7 +37,7 @@ def main() -> None:
 
     updated = []
     for artifact in ARTIFACTS:
-        tag = next((t for t in all_tags if t.startswith(f"{artifact.pkg}-")), None)
+        tag = next((t for t in all_tags if is_tag_for_pkg(t, artifact.pkg)), None)
         if not tag:
             print(f"{artifact.pkg}: no release found, skipping")
             continue

@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import re
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -22,6 +23,14 @@ class Pin(BaseModel):
 
 class Sources(BaseModel):
     pins: dict[str, Pin]
+
+
+_TAG_RE = re.compile(r"-[0-9a-f]{7}$")
+
+
+def is_tag_for_pkg(tag: str, pkg: str) -> bool:
+    """Match `{pkg}-{7hex}` exactly, avoiding prefix collisions like ducktape/ducktape-util."""
+    return tag.startswith(f"{pkg}-") and _TAG_RE.search(tag) is not None and len(tag) == len(pkg) + 8
 
 
 class Artifact(BaseModel, frozen=True):

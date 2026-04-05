@@ -13,7 +13,7 @@ from pathlib import Path
 from github import Auth, Github, GithubException
 from more_itertools import one
 
-from devinfra.ci.artifacts import ARTIFACTS, Sources, file_sha256, sources_path
+from devinfra.ci.artifacts import ARTIFACTS, Sources, file_sha256, is_tag_for_pkg, sources_path
 from util.bazel.workspace import get_build_workspace_directory
 
 REPO = "agentydragon/ducktape"
@@ -44,10 +44,9 @@ _RETENTION = timedelta(days=30)
 
 def prune_old_releases(gh_repo, pkg: str, keep_tag: str) -> None:
     """Delete releases for pkg older than _RETENTION, always keeping keep_tag."""
-    prefix = f"{pkg}-"
     cutoff = datetime.now(UTC) - _RETENTION
     for release in gh_repo.get_releases():
-        if not release.tag_name.startswith(prefix):
+        if not is_tag_for_pkg(release.tag_name, pkg):
             continue
         if release.tag_name == keep_tag:
             continue
