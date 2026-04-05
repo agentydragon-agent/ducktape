@@ -113,6 +113,7 @@
           enableKube ? true,
           isNixOS ? false,
           isPopOS ? false,
+          isK8sWorker ? false,
           enableHeavyPackages ? true,
           extraModules ? [ ],
         }:
@@ -128,6 +129,7 @@
                   enableKube
                   isNixOS
                   isPopOS
+                  isK8sWorker
                   enableHeavyPackages
                   ;
               };
@@ -157,6 +159,7 @@
                 enableKube = inlineHomeManager.enableKube or false;
                 isNixOS = true;
                 isPopOS = false;
+                isK8sWorker = inlineHomeManager.isK8sWorker or false;
                 enableHeavyPackages = inlineHomeManager.enableHeavyPackages or false;
               }
             else
@@ -341,6 +344,7 @@
           inlineHomeManager = {
             enableGui = true;
             enableKube = false;
+            isK8sWorker = true;
             enableHeavyPackages = false;
             module = ./nix/home/hosts/wyrm2.nix;
           };
@@ -353,6 +357,7 @@
           inlineHomeManager = {
             enableGui = true;
             enableKube = false;
+            isK8sWorker = true;
             enableHeavyPackages = true;
             module = ./nix/home/hosts/rugged.nix;
           };
@@ -362,10 +367,10 @@
           hostname = "iguana";
           username = "agentydragon";
           # Physical machine (ThinkPad X1 Extreme) - migrated from Pop!_OS (agentydragon)
-          # Hardware config will be generated during installation
           inlineHomeManager = {
             enableGui = true;
             enableKube = true;
+            isK8sWorker = true;
             enableHeavyPackages = false;
             module = ./nix/home/hosts/iguana.nix;
           };

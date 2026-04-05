@@ -7,6 +7,7 @@
   enableKube,
   isNixOS,
   isPopOS,
+  isK8sWorker,
   enableHeavyPackages,
   nix-colors,
   solarizedLight,
@@ -93,9 +94,7 @@ in
 
   imports = [
 
-    # TODO: Re-enable google-drive-service once the git repo is accessible
-    # Disabled during 25.11 migration due to 504 error from https://git.k3s.agentydragon.com/agentydragon/google-drive
-    # ../packages/google-drive-service.nix
+    ../packages/google-drive-service.nix
     ./codex
     ./crush
     ./modules/solarized.nix
@@ -134,9 +133,7 @@ in
     videos = "$HOME";
   };
 
-  # Google Drive service - disabled by default, enabled per-host
-  # TODO: Re-enable when google-drive-service module is re-enabled (see imports above)
-  # services.google-drive.enable = lib.mkDefault false;
+  services.google-drive.enable = lib.mkDefault false;
 
   nix.package = lib.mkDefault pkgs.nix;
 
@@ -610,6 +607,11 @@ in
       "org/gnome/settings-daemon/plugins/color" = {
         night-light-enabled = true;
         night-light-temperature = lib.hm.gvariant.mkUint32 2414;
+      };
+
+      # K8s workers should not auto-suspend on AC power
+      "org/gnome/settings-daemon/plugins/power" = lib.mkIf isK8sWorker {
+        sleep-inactive-ac-type = "nothing";
       };
 
       # ISO 8601 datetime format in panel, e.g.: "Wed 2023-11-15 22:49"
