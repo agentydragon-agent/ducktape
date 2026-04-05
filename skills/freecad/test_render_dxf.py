@@ -12,17 +12,17 @@ from PIL import Image
 from skills.freecad.render_dxf import render_dxf
 from util.bazel.runfiles import get_required_path
 
-_GOLDEN_DXF = "_main/skills/freecad/golden/rect.dxf"
-_GOLDEN_PNG = "_main/skills/freecad/golden/rect.png"
+_GOLDEN_DXF = "_main/skills/freecad/golden/compound.dxf"
+_GOLDEN_PNG = "_main/skills/freecad/golden/compound.png"
 
 # Maximum fraction of differing pixel channels tolerated.
 _MAX_DIFF_FRACTION = 0.02
 
 
-def test_render_rect(tmp_path: Path) -> None:
+def test_render_compound(tmp_path: Path) -> None:
     golden_dxf = get_required_path(_GOLDEN_DXF)
     golden_png_path = get_required_path(_GOLDEN_PNG)
-    actual_png = tmp_path / "rect.png"
+    actual_png = tmp_path / "compound.png"
 
     render_dxf(golden_dxf, actual_png)
 

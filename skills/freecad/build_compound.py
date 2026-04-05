@@ -2,8 +2,10 @@
 Build a compound shape from a wall shell and a closed rectangle, then export via TechDraw.
 
 Demonstrates:
+- Spreadsheet-driven parameters with aliases and setExpression() bindings
 - Part.makeCompound for grouping multiple faces into a single Part::Feature
 - Wall shell as fully constrained sketch geometry (inner + outer outlines with thickness)
+- Entity-referenced TechDraw dimensions that auto-update when parameters change
 - Single compound, single TechDraw view (preserves relative positions)
 
 Runs inside freecadcmd under xvfb (needs Qt event pump for TechDraw view computation).
@@ -14,6 +16,7 @@ Usage:
 """
 
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -30,18 +33,12 @@ except ImportError:
     from PySide2 import QtWidgets
 
 qapp = QtWidgets.QApplication.instance()
-import TechDraw  # noqa: E402
 
 outdir = os.environ.get("OUTDIR", ".")
 
-# === Parameters (FreeCAD uses mm internally) ===
-ROOM_W = 4000.0  # mm (4 m)
-ROOM_H = 3000.0  # mm (3 m)
-TABLE_W = 1200.0  # mm (1.2 m)
-TABLE_H = 600.0  # mm (0.6 m)
-TABLE_X = 500.0  # mm — table offset from left wall
-TABLE_Y = 500.0  # mm — table offset from bottom wall
-WALL_THICKNESS = 150.0  # mm (15 cm)
+
+def log(msg):
+    print(msg, file=sys.stderr, flush=True)
 
 
 def pump(seconds=3):
@@ -52,8 +49,51 @@ def pump(seconds=3):
         time.sleep(0.1)
 
 
-# === Sketch (fully constrained) ===
+# === Document ===
 doc = App.newDocument("CompoundExample")
+
+# === Spreadsheet Parameters ===
+sheet = doc.addObject("Spreadsheet::Sheet", "Params")
+
+_PARAMS = [
+    (1, "RoomWidth", "4000", "RoomWidth"),
+    (2, "RoomHeight", "3000", "RoomHeight"),
+    (3, "TableWidth", "1200", "TableWidth"),
+    (4, "TableHeight", "600", "TableHeight"),
+    (5, "TableX", "500", "TableX"),
+    (6, "TableY", "500", "TableY"),
+    (7, "WallThickness", "150", "WallThickness"),
+]
+for row, label, value, alias in _PARAMS:
+    sheet.set(f"A{row}", label)
+    sheet.set(f"B{row}", value)
+    sheet.setAlias(f"B{row}", alias)
+
+# Computed intermediates
+_COMPUTED = [
+    (9, "RoomWidthPlusThickness", "=RoomWidth + WallThickness", "RoomWidthPlusThickness"),
+    (10, "RoomHeightPlus2Thickness", "=RoomHeight + 2 * WallThickness", "RoomHeightPlus2Thickness"),
+    (11, "RoomWidthMinusThickness", "=RoomWidth - WallThickness", "RoomWidthMinusThickness"),
+]
+for row, label, formula, alias in _COMPUTED:
+    sheet.set(f"A{row}", label)
+    sheet.set(f"B{row}", formula)
+    sheet.setAlias(f"B{row}", alias)
+
+doc.recompute()
+
+# Read spreadsheet values for initial geometry placement
+ROOM_W = float(sheet.get("B1"))
+ROOM_H = float(sheet.get("B2"))
+TABLE_W = float(sheet.get("B3"))
+TABLE_H = float(sheet.get("B4"))
+TABLE_X = float(sheet.get("B5"))
+TABLE_Y = float(sheet.get("B6"))
+t = float(sheet.get("B7"))
+
+log(f"Params: {ROOM_W=}, {ROOM_H=}, {TABLE_W=}, {TABLE_H=}, {TABLE_X=}, {TABLE_Y=}, {t=}")
+
+# === Sketch (fully constrained) ===
 sk = doc.addObject("Sketcher::SketchObject", "Layout")
 
 # Wall shell: L-shaped closed polygon with 6 vertices tracing inner and outer outlines.
@@ -70,8 +110,6 @@ sk = doc.addObject("Sketcher::SketchObject", "Layout")
 #  s1(0,-t)──────────s2(Rw+t,-t)
 #        bottom wall
 #
-# Points (counterclockwise from bottom-left outer):
-t = WALL_THICKNESS
 pts = [
     App.Vector(0, -t, 0),  # s1: bottom-left outer
     App.Vector(ROOM_W + t, -t, 0),  # s2: bottom-right outer
@@ -80,7 +118,6 @@ pts = [
     App.Vector(ROOM_W - t, t, 0),  # s5: inner L-bend
     App.Vector(0, t, 0),  # s6: bottom-left inner
 ]
-# 6 line segments forming the closed shell
 wall_indices = []
 for i in range(6):
     j = (i + 1) % 6
@@ -99,15 +136,20 @@ for i in [s2, s4, s6]:  # right outer, right inner, left cap
     sk.addConstraint(Sketcher.Constraint("Vertical", i))
 
 # Pin bottom-left outer corner (s1 start) at origin X, below origin Y by thickness
-sk.addConstraint(Sketcher.Constraint("DistanceX", -1, 1, s1, 1, 0.0))
-sk.addConstraint(Sketcher.Constraint("DistanceY", s1, 1, -1, 1, t))
+c_pinx = sk.addConstraint(Sketcher.Constraint("DistanceX", -1, 1, s1, 1, 0.0))
+c_piny = sk.addConstraint(Sketcher.Constraint("DistanceY", s1, 1, -1, 1, t))
+sk.setExpression(f"Constraints[{c_piny}]", "Params.WallThickness")
 
-# Dimensional constraints — all positive values (swap point order for reversed segments)
-# 4 independent lengths (top cap and left cap are implied by the other four)
-sk.addConstraint(Sketcher.Constraint("DistanceX", s1, 1, s1, 2, ROOM_W + t))  # bottom outer →
-sk.addConstraint(Sketcher.Constraint("DistanceY", s2, 1, s2, 2, ROOM_H + 2 * t))  # right outer ↑
-sk.addConstraint(Sketcher.Constraint("DistanceY", s4, 2, s4, 1, ROOM_H))  # inner right ↓ (swapped)
-sk.addConstraint(Sketcher.Constraint("DistanceX", s5, 2, s5, 1, ROOM_W - t))  # inner bottom ← (swapped)
+# Dimensional constraints bound to spreadsheet
+_DIM_BINDINGS = [
+    (Sketcher.Constraint("DistanceX", s1, 1, s1, 2, ROOM_W + t), "Params.RoomWidthPlusThickness"),
+    (Sketcher.Constraint("DistanceY", s2, 1, s2, 2, ROOM_H + 2 * t), "Params.RoomHeightPlus2Thickness"),
+    (Sketcher.Constraint("DistanceY", s4, 2, s4, 1, ROOM_H), "Params.RoomHeight"),
+    (Sketcher.Constraint("DistanceX", s5, 2, s5, 1, ROOM_W - t), "Params.RoomWidthMinusThickness"),
+]
+for constraint, expr in _DIM_BINDINGS:
+    idx = sk.addConstraint(constraint)
+    sk.setExpression(f"Constraints[{idx}]", expr)
 
 # Table: fully constrained rectangle
 x, y, w, h = TABLE_X, TABLE_Y, TABLE_W, TABLE_H
@@ -121,15 +163,22 @@ for i in [t0, t2]:
     sk.addConstraint(Sketcher.Constraint("Horizontal", i))
 for i in [t1, t3]:
     sk.addConstraint(Sketcher.Constraint("Vertical", i))
-sk.addConstraint(Sketcher.Constraint("DistanceX", t0, 1, t0, 2, w))
-sk.addConstraint(Sketcher.Constraint("DistanceY", t1, 1, t1, 2, h))
-sk.addConstraint(Sketcher.Constraint("DistanceX", -1, 1, t0, 1, x))
-sk.addConstraint(Sketcher.Constraint("DistanceY", -1, 1, t0, 1, y))
+
+_TABLE_BINDINGS = [
+    (Sketcher.Constraint("DistanceX", t0, 1, t0, 2, w), "Params.TableWidth"),
+    (Sketcher.Constraint("DistanceY", t1, 1, t1, 2, h), "Params.TableHeight"),
+    (Sketcher.Constraint("DistanceX", -1, 1, t0, 1, x), "Params.TableX"),
+    (Sketcher.Constraint("DistanceY", -1, 1, t0, 1, y), "Params.TableY"),
+]
+for constraint, expr in _TABLE_BINDINGS:
+    idx = sk.addConstraint(constraint)
+    sk.setExpression(f"Constraints[{idx}]", expr)
+
 table_indices = (t0, t1, t2, t3)
 
 doc.recompute()
 assert sk.FullyConstrained, "Sketch not fully constrained!"
-print(f"Sketch: {sk.GeometryCount} geom, {sk.ConstraintCount} constraints")
+log(f"Sketch: {sk.GeometryCount} geom, {sk.ConstraintCount} constraints")
 
 # === Part Features ===
 # Extract solved geometry from sketch → Part faces → compound
@@ -152,7 +201,7 @@ all_faces = [sketch_face(wall_indices), sketch_face(table_indices)]
 feat = doc.addObject("Part::Feature", "AllShapes")
 feat.Shape = Part.makeCompound(all_faces)
 doc.recompute()
-print(f"Compound: {len(all_faces)} faces")
+log(f"Compound: {len(all_faces)} faces")
 
 # === TechDraw Page ===
 tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118 — FreeCAD API expects str
@@ -175,15 +224,158 @@ doc.recompute(None, True, True)
 pump(2)
 
 n_edges = len(view.getVisibleEdges())
-print(f"TechDraw view: {n_edges} visible edges")
+log(f"TechDraw view: {n_edges} visible edges")
 assert n_edges > 0, "TechDraw view has 0 edges — Qt event pump may have failed"
 
-# === Export ===
-dxf_path = os.path.join(outdir, "compound.dxf")  # noqa: PTH118 — FreeCAD API expects str
-TechDraw.writeDXFPage(page, dxf_path)
-print(f"DXF: {Path(dxf_path).stat().st_size} bytes")
+# === Dimensions (entity-referenced) ===
+bb = feat.Shape.BoundBox
+cx, cy = (bb.XMin + bb.XMax) / 2, (bb.YMin + bb.YMax) / 2
+scale = float(view.Scale)
 
+# Read solved geometry for label placement
+room_w_solved = float(sheet.get("B1"))
+room_h_solved = float(sheet.get("B2"))
+table_w_solved = float(sheet.get("B3"))
+table_h_solved = float(sheet.get("B4"))
+wall_t_solved = float(sheet.get("B7"))
+
+DIM_OFF = 0.8  # view-local offset for dimension lines (in view-scaled mm)
+
+# Identify TechDraw edges by geometric properties.
+vis_edges = view.getVisibleEdges()
+
+
+def _edge_dx(e):
+    return abs(e.Vertexes[1].Point.x - e.Vertexes[0].Point.x)
+
+
+def _edge_dy(e):
+    return abs(e.Vertexes[1].Point.y - e.Vertexes[0].Point.y)
+
+
+def _edge_len(e):
+    return ((_edge_dx(e) ** 2) + (_edge_dy(e) ** 2)) ** 0.5
+
+
+def _edge_midx(e):
+    return (e.Vertexes[0].Point.x + e.Vertexes[1].Point.x) / 2
+
+
+def _edge_midy(e):
+    return (e.Vertexes[0].Point.y + e.Vertexes[1].Point.y) / 2
+
+
+def _edge_miny(e):
+    return min(e.Vertexes[0].Point.y, e.Vertexes[1].Point.y)
+
+
+def _edge_minx(e):
+    return min(e.Vertexes[0].Point.x, e.Vertexes[1].Point.x)
+
+
+def find_edge(predicate, desc):
+    """Find the unique edge matching predicate. Raises if zero or multiple match."""
+    matches = [(i, e) for i, e in enumerate(vis_edges) if predicate(e)]
+    if len(matches) == 0:
+        raise AssertionError(f"No edge matching: {desc}")
+    if len(matches) > 1:
+        raise AssertionError(f"Multiple edges matching: {desc} (got {[i for i, _ in matches]})")
+    return matches[0][0]
+
+
+# Edge lengths in view-local coords (sketch mm * scale)
+bottom_outer_len = (room_w_solved + wall_t_solved) * scale
+right_outer_len = (room_h_solved + 2 * wall_t_solved) * scale
+table_bot_len = table_w_solved * scale
+table_right_len = table_h_solved * scale
+
+# Bottom outer wall (longest horizontal at bottom of view)
+horiz_edges = [
+    (i, e) for i, e in enumerate(vis_edges) if isinstance(e.Curve, Part.Line) and _edge_dy(e) < 0.1 and _edge_dx(e) > 1
+]
+bottom_outer_idx = min(horiz_edges, key=lambda ie: _edge_midy(ie[1]))[0]
+
+# Right outer wall (longest vertical at right of view)
+vert_edges = [
+    (i, e) for i, e in enumerate(vis_edges) if isinstance(e.Curve, Part.Line) and _edge_dx(e) < 0.1 and _edge_dy(e) > 1
+]
+right_outer_idx = max(vert_edges, key=lambda ie: _edge_midx(ie[1]))[0]
+
+# Table bottom edge (horizontal, shorter than outer walls, lowest among table edges)
+table_horiz = [
+    (i, e)
+    for i, e in enumerate(vis_edges)
+    if isinstance(e.Curve, Part.Line) and _edge_dy(e) < 0.1 and abs(_edge_dx(e) - table_bot_len) < 1
+]
+table_bot_idx = min(table_horiz, key=lambda ie: _edge_midy(ie[1]))[0]
+
+# Table right edge (vertical, matches table height)
+table_vert = [
+    (i, e)
+    for i, e in enumerate(vis_edges)
+    if isinstance(e.Curve, Part.Line) and _edge_dx(e) < 0.1 and abs(_edge_dy(e) - table_right_len) < 1
+]
+table_right_idx = min(table_vert, key=lambda ie: _edge_minx(ie[1]))[0]
+
+# Wall thickness: find the inner horizontal edge (second-lowest horizontal, length ~ RoomW - t)
+inner_horiz_len = (room_w_solved - wall_t_solved) * scale
+wall_inner_horiz = [
+    (i, e)
+    for i, e in enumerate(vis_edges)
+    if isinstance(e.Curve, Part.Line) and _edge_dy(e) < 0.1 and abs(_edge_dx(e) - inner_horiz_len) < 1
+]
+inner_horiz_idx = wall_inner_horiz[0][0] if wall_inner_horiz else None
+
+# Left wall edge (leftmost vertical, full height of inner wall)
+left_wall_idx = min(vert_edges, key=lambda ie: _edge_midx(ie[1]))[0]
+
+# 1. Room width (bottom outer edge)
+d_w = doc.addObject("TechDraw::DrawViewDimension", "RoomWidth")
+page.addView(d_w)
+d_w.Type = "DistanceX"
+d_w.References2D = [(view, f"Edge{bottom_outer_idx}")]
+d_w.X = 0
+d_w.Y = (bb.YMin - cy) * scale - DIM_OFF
+
+# 2. Room height (right outer edge)
+d_h = doc.addObject("TechDraw::DrawViewDimension", "RoomHeight")
+page.addView(d_h)
+d_h.Type = "DistanceY"
+d_h.References2D = [(view, f"Edge{right_outer_idx}")]
+d_h.X = (bb.XMax - cx) * scale + DIM_OFF + 0.5
+d_h.Y = 0
+
+# 3. Table width (table bottom edge)
+d_tw = doc.addObject("TechDraw::DrawViewDimension", "TableWidth")
+page.addView(d_tw)
+d_tw.Type = "DistanceX"
+d_tw.References2D = [(view, f"Edge{table_bot_idx}")]
+d_tw.X = _edge_midx(vis_edges[table_bot_idx])
+d_tw.Y = _edge_midy(vis_edges[table_bot_idx]) - DIM_OFF * 0.6
+
+# 4. Table height (table right edge)
+d_th = doc.addObject("TechDraw::DrawViewDimension", "TableHeight")
+page.addView(d_th)
+d_th.Type = "DistanceY"
+d_th.References2D = [(view, f"Edge{table_right_idx}")]
+d_th.X = _edge_midx(vis_edges[table_right_idx]) + DIM_OFF * 0.6
+d_th.Y = _edge_midy(vis_edges[table_right_idx])
+
+# 5. Wall thickness (between bottom outer and inner horizontal edges)
+if inner_horiz_idx is not None:
+    d_wt = doc.addObject("TechDraw::DrawViewDimension", "WallThickness")
+    page.addView(d_wt)
+    d_wt.Type = "DistanceY"
+    d_wt.References2D = [(view, f"Edge{bottom_outer_idx}"), (view, f"Edge{inner_horiz_idx}")]
+    d_wt.X = (bb.XMin - cx) * scale - DIM_OFF
+    d_wt.Y = ((bb.YMin + wall_t_solved) - cy) * scale
+
+doc.recompute(None, True, True)
+pump(1)
+
+# === Save ===
 fcstd_path = os.path.join(outdir, "compound.FCStd")  # noqa: PTH118 — FreeCAD API expects str
 doc.saveAs(fcstd_path)
+log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes")
 
 os._exit(0)  # Skip Qt cleanup to avoid potential segfault under xvfb
