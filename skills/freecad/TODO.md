@@ -17,5 +17,4 @@
 ## 3D
 
 - [ ] Raytraced renders: Coin3D shading works but is basic. Investigate FreeCAD Render workbench for POV-Ray/LuxRender output.
-- [ ] Multi-view drawings: front/side/top views on one TechDraw page for 3D objects.
 - [ ] Assemblies: multi-part models with positioning.
