@@ -118,6 +118,9 @@
     printing.enable = true;
     openssh.enable = true;
 
+    # Disable power-profiles-daemon (GNOME default) — conflicts with TLP
+    power-profiles-daemon.enable = false;
+
     # Laptop power management
     tlp = {
       enable = true;
