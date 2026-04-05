@@ -31,7 +31,7 @@
     ../../modules/dev-workstation.nix
     ../../modules/bazel-dev.nix
     ../../modules/system-inspection-sudo.nix
-    ../../modules/sops.nix
+    # ../../modules/sops.nix  # TODO: Enable after first boot (needs host SSH key for age decryption)
     # ../../modules/k8s-worker.nix  # TODO: Uncomment when ready to join cluster
   ];
 
