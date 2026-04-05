@@ -21,7 +21,7 @@ FreeCAD Python: `sys.path.insert(0, '/usr/lib/freecad-python3/lib')`.
 
 ## Sketcher
 
-One `Sketcher::SketchObject` holds all geometry and constraints. For simple examples, define dimensions as Python variables and pass them to constraints. For parametric designs, use a `Spreadsheet::Sheet` to drive constraint values via expressions. See <parametric_sketch.py> for a full example with spreadsheet binding, arcs, tangent constraints, and TechDraw dimensions.
+One `Sketcher::SketchObject` holds all geometry and constraints. For simple examples, define dimensions as Python variables and pass them to constraints. For parametric designs, use a `Spreadsheet::Sheet` to drive constraint values via expressions. See <parametric_sketch.py> for a full example with spreadsheet binding, arcs, tangent constraints, and TechDraw dimensions. See <build_compound.py> for compound shapes with wall shells.
 
 ### Constraints
 
@@ -101,7 +101,7 @@ TechDraw projects `Part::Feature` shapes via HLR. Shape topology rules:
 - `Part.Compound` of Faces: works
 - Open `Part.Wire` or loose-edge Compound: crashes with `NCollection_Array1::Create`
 
-Open wall segments: make thin (0.3cm) rectangular Face strips. See `examples/01_sketch_and_parts.py`.
+All geometry must be closed faces — model walls as closed polygons tracing inner and outer outlines (shell approach). See <build_compound.py> for an L-shaped wall shell.
 
 **Single compound, single view.** Put ALL faces in one `Part.Compound` → one `Part::Feature` → one `TechDraw::DrawViewPart`. Multiple features with multiple views lose relative positions because TechDraw centers each view's bounding box independently.
 
@@ -136,7 +136,7 @@ d2.X = (d2_from.x + d2_to.x) / 2
 d2.Y = (d2_from.y + d2_to.y) / 2
 ```
 
-See `examples/02_techdraw_and_dims.py`.
+See <parametric_rect.py> for a complete example with dimensions.
 
 ### Dimensions (entity-referenced, for radii and edge-bound dims)
 
@@ -177,7 +177,7 @@ Supported `Type` values: `"Distance"`, `"DistanceX"`, `"DistanceY"`, `"Radius"`,
 
 ### Annotations
 
-`DrawViewAnnotation` with `.Text`, `.X`, `.Y` (page mm), `.TextSize`, `.Font`, `.TextColor`, `.Rotation`. Absolute page positioning.
+`DrawViewAnnotation` with `.Text`, `.X`, `.Y` (page mm), `.TextSize`, `.Font`, `.TextColor`, `.Rotation`. Absolute page positioning. See <parametric_rect.py> for an example with annotation placement.
 
 **Page coordinate system:** Page Y increases upward (Y=0 is bottom of page, Y=210 is top of A4). Sketch Y also increases upward. So the conversion does NOT invert Y:
 

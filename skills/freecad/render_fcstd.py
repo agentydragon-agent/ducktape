@@ -10,6 +10,7 @@ Usage:
 
 import os
 import time
+from pathlib import Path
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -44,9 +45,11 @@ Gui.ActiveDocument = Gui.getDocument(doc.Name)
 
 pump(2)
 
-# Configure Part::Feature view properties for shaded rendering
+# Configure Part::Feature view properties for shaded rendering.
+# Use exact TypeId match — many types (Sketcher::SketchObject, etc.) inherit from
+# Part::Feature but don't support Shaded display mode.
 for obj in doc.Objects:
-    if not obj.isDerivedFrom("Part::Feature"):
+    if obj.TypeId != "Part::Feature":
         continue
     vo = obj.ViewObject
     vo.Visibility = True
@@ -96,7 +99,8 @@ view.fitAll()
 pump(1)
 
 # === Save image ===
-output_path = os.path.join(outdir, "cube_with_hole.png")  # noqa: PTH118 — FreeCAD API expects str
+output_name = Path(input_path).stem + ".png"
+output_path = os.path.join(outdir, output_name)  # noqa: PTH118 — FreeCAD API expects str
 view.saveImage(output_path, 800, 600, "Current")
 print(f"Rendered: {output_path}")
 
