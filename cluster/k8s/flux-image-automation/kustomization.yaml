@@ -22,3 +22,5 @@ resources:
   - tana-token-broker-image-policy.yaml
   - token-provisioner-image-repository.yaml
   - token-provisioner-image-policy.yaml
+  - claude-token-rotation-image-repository.yaml
+  - claude-token-rotation-image-policy.yaml
