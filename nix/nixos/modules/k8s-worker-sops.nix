@@ -8,7 +8,7 @@
 }:
 let
   cfg = config.ducktape.k8sWorkerSops;
-  secretsDir = ../../../../secrets;
+  secretsDir = ../../../secrets;
   k8sWorkerFile = secretsDir + "/k8s-worker.yaml";
 in
 {
