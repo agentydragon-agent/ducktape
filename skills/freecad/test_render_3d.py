@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest_bazel
 from opentelemetry import trace
-from PIL import Image
 
-from skills.freecad.conftest import FREECAD_TEST
+from skills.freecad.conftest import FREECAD_HELPERS, FREECAD_TEST
+from skills.freecad.testing.compare import assert_png_equal
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
 from util.testing.container_logs import LoggedContainer
@@ -17,9 +17,6 @@ _BUILD_SCRIPT = "_main/skills/freecad/build_cube_with_hole.py"
 _RENDER_SCRIPT = "_main/skills/freecad/render_fcstd.py"
 _GOLDEN = "_main/skills/freecad/golden/cube_with_hole.png"
 
-# Maximum fraction of differing pixel channels tolerated.
-_MAX_DIFF_FRACTION = 0.02
-
 tracer = trace.get_tracer(__name__)
 
 
@@ -28,6 +25,7 @@ def test_render_3d(tmp_path: Path) -> None:
         load_oci_image(FREECAD_TEST)
     build_script = get_required_path(_BUILD_SCRIPT)
     render_script = get_required_path(_RENDER_SCRIPT)
+    helpers = get_required_path(FREECAD_HELPERS)
     golden_path = get_required_path(_GOLDEN)
 
     with (
@@ -36,7 +34,11 @@ def test_render_3d(tmp_path: Path) -> None:
             FREECAD_TEST.tag,
             test_name="freecad-3d-build",
             command="sleep infinity",
-            volumes=[(str(build_script), "/work/build_cube_with_hole.py", "ro"), (str(tmp_path), "/output", "rw")],
+            volumes=[
+                (str(helpers), "/work/freecad_helpers.py", "ro"),
+                (str(build_script), "/work/build_cube_with_hole.py", "ro"),
+                (str(tmp_path), "/output", "rw"),
+            ],
             docker_client_kw={"timeout": 120},
         ) as container,
     ):
@@ -55,6 +57,7 @@ def test_render_3d(tmp_path: Path) -> None:
             test_name="freecad-3d-render",
             command="sleep infinity",
             volumes=[
+                (str(helpers), "/work/freecad_helpers.py", "ro"),
                 (str(render_script), "/work/render_fcstd.py", "ro"),
                 (str(fcstd), "/work/cube_with_hole.FCStd", "ro"),
                 (str(tmp_path), "/output", "rw"),
@@ -79,17 +82,7 @@ def test_render_3d(tmp_path: Path) -> None:
     shutil.copy(actual_png, out_dir / "actual.png")
 
     with tracer.start_as_current_span("compare_golden_png"):
-        actual = Image.open(actual_png).convert("RGB")
-        golden = Image.open(golden_path).convert("RGB")
-        assert actual.size == golden.size, f"Size mismatch: {actual.size} vs {golden.size}"
-
-        a_data = actual.tobytes()
-        g_data = golden.tobytes()
-        differing = sum(1 for a, g in zip(a_data, g_data, strict=True) if a != g)
-        diff_fraction = differing / len(a_data)
-        assert diff_fraction <= _MAX_DIFF_FRACTION, (
-            f"Rendered PNG differs from golden by {diff_fraction:.1%} (threshold {_MAX_DIFF_FRACTION:.1%})"
-        )
+        assert_png_equal(actual_png, golden_path)
 
 
 if __name__ == "__main__":

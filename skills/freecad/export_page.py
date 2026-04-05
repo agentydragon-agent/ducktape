@@ -12,8 +12,9 @@ where <stem> is the input filename without extension (e.g. rect.FCStd → rect.{
 
 import os
 import sys
-import time
 from pathlib import Path
+
+sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
 
 fcstd_path = os.environ.get("INPUT")
 outdir = os.environ.get("OUTDIR")
@@ -24,44 +25,10 @@ stem = Path(fcstd_path).stem
 
 import FreeCAD as App  # noqa: E402 — must parse args before FreeCAD import
 import FreeCADGui as Gui  # noqa: E402
+from freecad_helpers import init_gui, log, pump, wait_for_view  # noqa: E402
 
 Gui.showMainWindow()
-
-try:
-    from PySide6 import QtWidgets
-except ImportError:
-    from PySide2 import QtWidgets
-
-qapp = QtWidgets.QApplication.instance()
-
-_t0 = time.monotonic()
-
-
-def log(msg):
-    print(f"[{time.monotonic() - _t0:.3f}] {msg}", file=sys.stderr, flush=True)
-
-
-def pump(seconds=3):
-    """Process Qt events for a fixed duration (use wait_for_view when possible)."""
-    for _ in range(int(seconds * 10)):
-        if qapp:
-            qapp.processEvents()
-        time.sleep(0.1)
-
-
-def wait_for_view(view, timeout=15.0, poll_interval=0.05):
-    """Poll until TechDraw view has visible edges, processing Qt events."""
-    t0 = time.monotonic()
-    while time.monotonic() - t0 < timeout:
-        if qapp:
-            qapp.processEvents()
-        edges = view.getVisibleEdges()
-        if len(edges) > 0:
-            elapsed = time.monotonic() - t0
-            log(f"TechDraw view ready: {len(edges)} edges after {elapsed:.2f}s")
-            return
-        time.sleep(poll_interval)
-    raise TimeoutError(f"TechDraw view not ready after {timeout}s")
+qapp = init_gui()
 
 
 import TechDraw  # noqa: E402
@@ -80,11 +47,11 @@ for obj in doc.Objects:
 log("recompute + wait_for_view (TechDraw HLR)")
 doc.recompute(None, True, True)
 if view_part:
-    wait_for_view(view_part)
+    wait_for_view(view_part, qapp)
 else:
-    pump(5)
+    pump(qapp, 5)
 doc.recompute(None, True, True)
-pump(0.5)
+pump(qapp, 0.5)
 
 # Find the TechDraw page
 # TODO: use more_itertools.one() once available in FreeCAD container

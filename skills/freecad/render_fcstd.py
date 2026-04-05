@@ -10,38 +10,18 @@ Usage:
 
 import os
 import sys
-import time
 from pathlib import Path
+
+sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
 
 import FreeCAD as App
 import FreeCADGui as Gui
+from freecad_helpers import init_gui, log, pump
 
 Gui.showMainWindow()
+qapp = init_gui()
 
-try:
-    from PySide6 import QtWidgets
-except ImportError:
-    from PySide2 import QtWidgets
-
-from pivy import coin  # noqa: E402 — must import after Gui.showMainWindow(), before getCameraNode()
-
-qapp = QtWidgets.QApplication.instance()
-
-_t0 = time.monotonic()
-
-
-def log(msg):
-    print(f"[{time.monotonic() - _t0:.3f}] {msg}", file=sys.stderr, flush=True)
-
-
-def pump(seconds=3):
-    """Process Qt events to let FreeCAD's background computation run."""
-    t0 = time.monotonic()
-    for _ in range(int(seconds * 10)):
-        if qapp:
-            qapp.processEvents()
-        time.sleep(0.1)
-    log(f"pump({seconds}) done in {time.monotonic() - t0:.2f}s")
+from pivy import coin  # noqa: E402, I001 — must import after Gui.showMainWindow()
 
 
 input_path = os.environ.get("INPUT", "cube_with_hole.FCStd")
@@ -53,7 +33,7 @@ App.setActiveDocument(doc.Name)
 Gui.ActiveDocument = Gui.getDocument(doc.Name)
 
 log("pump for document load")
-pump(2)
+pump(qapp, 2)
 
 log("configuring view properties")
 # Configure Part::Feature view properties for shaded rendering.
@@ -70,7 +50,7 @@ for obj in doc.Objects:
     vo.Transparency = 0
 
 log("pump for view properties")
-pump(2)
+pump(qapp, 2)
 
 view = Gui.ActiveDocument.ActiveView
 
@@ -85,7 +65,7 @@ cam = view.getCameraNode()
 cam_type = cam.getTypeId().getName()
 if cam_type == "SoOrthographicCamera":
     Gui.runCommand("Std_PerspectiveCamera", 0)
-    pump(1)
+    pump(qapp, 1)
     cam = view.getCameraNode()
 
 # Set camera to an angle where faces are visibly different
@@ -106,11 +86,11 @@ light.intensity.setValue(0.8)
 root.insertChild(light, 0)
 
 log("pump for camera + lighting")
-pump(2)
+pump(qapp, 2)
 
 view.fitAll()
 log("pump for fitAll")
-pump(1)
+pump(qapp, 1)
 
 log("saving image")
 # === Save image ===

@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from opentelemetry import trace
 
-from skills.freecad.conftest import FREECAD_TEST, freecad_exec
+from skills.freecad.conftest import FREECAD_HELPERS, FREECAD_TEST, XVFB_CMD, freecad_exec
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
@@ -18,8 +18,6 @@ _EXPORT_PAGE = "_main/skills/freecad/export_page.py"
 _GOLDEN_DXF = "_main/skills/freecad/golden/bracket.dxf"
 _GOLDEN_SVG = "_main/skills/freecad/golden/bracket.svg"
 _GOLDEN_PDF = "_main/skills/freecad/golden/bracket.pdf"
-
-_XVFB = 'xvfb-run -a -s \\"-screen 0 1024x768x24\\"'
 
 tracer = trace.get_tracer(__name__)
 
@@ -39,6 +37,7 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
             test_name="freecad-parametric-sketch",
             command="sleep infinity",
             volumes=[
+                (str(get_required_path(FREECAD_HELPERS)), "/work/freecad_helpers.py", "ro"),
                 (str(get_required_path(_PARAMETRIC_SKETCH)), "/work/parametric_sketch.py", "ro"),
                 (str(get_required_path(_EXPORT_PAGE)), "/work/export_page.py", "ro"),
                 (str(out_dir), "/output", "rw"),
@@ -46,9 +45,10 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
             docker_client_kw={"timeout": 120},
         ) as container,
     ):
-        freecad_exec(container, f'bash -c "OUTDIR=/output {_XVFB} freecadcmd /work/parametric_sketch.py"')
+        freecad_exec(container, f'bash -c "OUTDIR=/output {XVFB_CMD} freecadcmd /work/parametric_sketch.py"')
         freecad_exec(
-            container, f'bash -c "INPUT=/output/bracket.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/export_page.py"'
+            container,
+            f'bash -c "INPUT=/output/bracket.FCStd OUTDIR=/output {XVFB_CMD} freecadcmd /work/export_page.py"',
         )
 
     return out_dir

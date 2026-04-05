@@ -8,6 +8,7 @@ py_library(
     imports = ["../../.."],
     visibility = ["//skills/freecad:__pkg__"],
     deps = [
+        "@pypi//pillow",
         "@pypi//pypdf",
     ],
 )

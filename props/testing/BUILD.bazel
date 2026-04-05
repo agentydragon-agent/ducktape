@@ -34,9 +34,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
-        "//util/testing:undeclared_outputs",
-        "@pypi//opentelemetry_api",
-        "@pypi//opentelemetry_sdk",
+        "//util/testing:otel_tracing",
     ],
 )
 

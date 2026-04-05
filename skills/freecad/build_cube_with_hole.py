@@ -10,19 +10,15 @@ Usage:
 
 import os
 import sys
-import time
 from pathlib import Path
+
+sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
 
 import FreeCAD as App
 import Part
+from freecad_helpers import log
 
 outdir = os.environ.get("OUTDIR", ".")
-
-_t0 = time.monotonic()
-
-
-def log(msg):
-    print(f"[{time.monotonic() - _t0:.3f}] {msg}", file=sys.stderr, flush=True)
 
 
 log("starting build")

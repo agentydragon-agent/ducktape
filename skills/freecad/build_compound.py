@@ -17,53 +17,20 @@ Usage:
 
 import os
 import sys
-import time
 from pathlib import Path
+
+sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
 
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 import Sketcher
+from freecad_helpers import init_gui, log, pump, wait_for_view
 
 Gui.showMainWindow()
-
-try:
-    from PySide6 import QtWidgets
-except ImportError:
-    from PySide2 import QtWidgets
-
-qapp = QtWidgets.QApplication.instance()
+qapp = init_gui()
 
 outdir = os.environ.get("OUTDIR", ".")
-
-_t0 = time.monotonic()
-
-
-def log(msg):
-    print(f"[{time.monotonic() - _t0:.3f}] {msg}", file=sys.stderr, flush=True)
-
-
-def pump(seconds=3):
-    """Process Qt events for a fixed duration (use wait_for_view when possible)."""
-    for _ in range(int(seconds * 10)):
-        if qapp:
-            qapp.processEvents()
-        time.sleep(0.1)
-
-
-def wait_for_view(view, timeout=15.0, poll_interval=0.05):
-    """Poll until TechDraw view has visible edges, processing Qt events."""
-    t0 = time.monotonic()
-    while time.monotonic() - t0 < timeout:
-        if qapp:
-            qapp.processEvents()
-        edges = view.getVisibleEdges()
-        if len(edges) > 0:
-            elapsed = time.monotonic() - t0
-            log(f"TechDraw view ready: {len(edges)} edges after {elapsed:.2f}s")
-            return
-        time.sleep(poll_interval)
-    raise TimeoutError(f"TechDraw view not ready after {timeout}s")
 
 
 # === Document ===
@@ -237,9 +204,9 @@ view.Y = 120
 
 log("recompute + wait_for_view (TechDraw HLR)")
 doc.recompute(None, True, True)
-wait_for_view(view)
+wait_for_view(view, qapp)
 doc.recompute(None, True, True)
-pump(0.5)
+pump(qapp, 0.5)
 
 n_edges = len(view.getVisibleEdges())
 log(f"TechDraw view: {n_edges} visible edges")
@@ -390,7 +357,7 @@ if inner_horiz_idx is not None:
 
 log("recompute after dimensions")
 doc.recompute(None, True, True)
-pump(0.5)
+pump(qapp, 0.5)
 
 # === Save ===
 log("saving FCStd")

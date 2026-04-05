@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from xml.etree import ElementTree
 
+from PIL import Image
 from pypdf import PdfReader, PdfWriter
 
 # --- DXF ---
@@ -142,3 +143,22 @@ def assert_pdf_equal(actual_path: Path, golden_path: Path) -> None:
         if a != g:
             context = actual[max(0, i - 20) : i + 20]
             raise AssertionError(f"PDF differs at byte {i}: golden=0x{g:02x} actual=0x{a:02x}, context: {context!r}")
+
+
+# --- PNG ---
+
+
+def assert_png_equal(actual_path: Path, golden_path: Path, max_diff_fraction: float = 0.02) -> None:
+    """Assert two PNG images match within a pixel channel diff tolerance."""
+    actual = Image.open(actual_path).convert("RGB")
+    golden = Image.open(golden_path).convert("RGB")
+    if actual.size != golden.size:
+        raise AssertionError(f"Size mismatch: {actual.size} vs {golden.size}")
+    a_data = actual.tobytes()
+    g_data = golden.tobytes()
+    differing = sum(1 for a, g in zip(a_data, g_data, strict=True) if a != g)
+    diff_fraction = differing / len(a_data)
+    if diff_fraction > max_diff_fraction:
+        raise AssertionError(
+            f"Rendered PNG differs from golden by {diff_fraction:.1%} (threshold {max_diff_fraction:.1%})"
+        )
