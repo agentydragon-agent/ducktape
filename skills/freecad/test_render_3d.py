@@ -81,8 +81,7 @@ def test_render_3d(tmp_path: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(actual_png, out_dir / "actual.png")
 
-    with tracer.start_as_current_span("compare_golden_png"):
-        assert_png_equal(actual_png, golden_path)
+    assert_png_equal(actual_png, golden_path)
 
 
 if __name__ == "__main__":

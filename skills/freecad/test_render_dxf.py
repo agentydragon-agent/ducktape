@@ -27,8 +27,7 @@ def test_render_compound(tmp_path: Path) -> None:
     with tracer.start_as_current_span("render_dxf"):
         render_dxf(golden_dxf, actual_png)
 
-    with tracer.start_as_current_span("compare_golden_png"):
-        assert_png_equal(actual_png, golden_png_path)
+    assert_png_equal(actual_png, golden_png_path)
 
 
 if __name__ == "__main__":

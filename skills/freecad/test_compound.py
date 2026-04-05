@@ -62,24 +62,15 @@ def compound_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def test_dxf_golden(compound_outputs: Path) -> None:
-    with tracer.start_as_current_span("assert_dxf_equal"):
-        actual = compound_outputs / "compound.dxf"
-        assert actual.exists(), "DXF not generated"
-        assert_dxf_equal(actual, get_required_path(_GOLDEN_DXF))
+    assert_dxf_equal(compound_outputs / "compound.dxf", get_required_path(_GOLDEN_DXF))
 
 
 def test_svg_golden(compound_outputs: Path) -> None:
-    with tracer.start_as_current_span("assert_svg_equal"):
-        actual = compound_outputs / "compound.svg"
-        assert actual.exists(), "SVG not generated"
-        assert_svg_equal(actual, get_required_path(_GOLDEN_SVG))
+    assert_svg_equal(compound_outputs / "compound.svg", get_required_path(_GOLDEN_SVG))
 
 
 def test_pdf_golden(compound_outputs: Path) -> None:
-    with tracer.start_as_current_span("assert_pdf_equal"):
-        actual = compound_outputs / "compound.pdf"
-        assert actual.exists(), "PDF not generated"
-        assert_pdf_equal(actual, get_required_path(_GOLDEN_PDF))
+    assert_pdf_equal(compound_outputs / "compound.pdf", get_required_path(_GOLDEN_PDF))
 
 
 if __name__ == "__main__":

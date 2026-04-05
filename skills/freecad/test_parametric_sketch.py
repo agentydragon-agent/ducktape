@@ -55,24 +55,15 @@ def export_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def test_dxf_golden(export_outputs: Path) -> None:
-    with tracer.start_as_current_span("assert_dxf_equal"):
-        actual = export_outputs / "bracket.dxf"
-        assert actual.exists(), "DXF not generated"
-        assert_dxf_equal(actual, get_required_path(_GOLDEN_DXF))
+    assert_dxf_equal(export_outputs / "bracket.dxf", get_required_path(_GOLDEN_DXF))
 
 
 def test_svg_golden(export_outputs: Path) -> None:
-    with tracer.start_as_current_span("assert_svg_equal"):
-        actual = export_outputs / "bracket.svg"
-        assert actual.exists(), "SVG not generated"
-        assert_svg_equal(actual, get_required_path(_GOLDEN_SVG))
+    assert_svg_equal(export_outputs / "bracket.svg", get_required_path(_GOLDEN_SVG))
 
 
 def test_pdf_golden(export_outputs: Path) -> None:
-    with tracer.start_as_current_span("assert_pdf_equal"):
-        actual = export_outputs / "bracket.pdf"
-        assert actual.exists(), "PDF not generated"
-        assert_pdf_equal(actual, get_required_path(_GOLDEN_PDF))
+    assert_pdf_equal(export_outputs / "bracket.pdf", get_required_path(_GOLDEN_PDF))
 
 
 if __name__ == "__main__":
