@@ -1,7 +1,5 @@
 """Shared fixtures for FreeCAD tests."""
 
-import logging
-
 import pytest
 import pytest_bazel
 from opentelemetry import trace
@@ -9,8 +7,6 @@ from opentelemetry import trace
 from util.oci import OciImage, load_oci_image
 from util.testing.container_logs import LoggedContainer
 from util.testing.otel_tracing import configure_tracing, export_traces
-
-logger = logging.getLogger(__name__)
 
 FREECAD_TEST = OciImage("_main/skills/freecad/freecad_test.rloc", "freecad-test:pinned")
 FREECAD_HELPERS = "_main/skills/freecad/freecad_helpers.py"
