@@ -23,8 +23,7 @@ spec:
       serviceAccountName: gitea-token-creator
       containers:
         - name: token-generator
-          # Using bitnami/kubectl image which includes curl
-          image: bitnami/kubectl:1.35
+          image: alpine/k8s:1.35.3
           command: ["/bin/bash", "-c"]
           args:
             - |
