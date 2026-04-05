@@ -7,13 +7,18 @@ skill_package(
     name = "freecad",
     srcs = [
         "SKILL.md",
+        "build_bearing_block.py",
+        "build_bearing_block_techdraw.py",
         "build_compound.py",
         "build_cube_with_hole.py",
         "export_page.py",
         "freecad_helpers.py",
         "parametric_sketch.py",
+        "render_debug_edges.py",
+        "render_debug_faces.py",
         "render_dxf.py",
         "render_fcstd.py",
+        "render_multi_angle.py",
     ],
 )
 
@@ -72,23 +77,6 @@ py_test(
         "//util/testing:container_logs",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_render_dxf",
-    srcs = ["test_render_dxf.py"],
-    data = [
-        "golden/compound.dxf",
-        "golden/compound.png",
-    ],
-    deps = [
-        ":conftest",
-        ":render_dxf",
-        "//skills/freecad/testing:compare",
-        "//util/bazel:runfiles",
-        "@pypi//opentelemetry_api",
         "@pypi//pytest_bazel",
     ],
 )
@@ -167,6 +155,67 @@ py_test(
         "//util/testing:container_logs",
         "//util/testing:undeclared_outputs",
         "@pypi//opentelemetry_api",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_bearing_block",
+    size = "medium",
+    srcs = ["test_bearing_block.py"],
+    data = [
+        "build_bearing_block.py",
+        "build_bearing_block_techdraw.py",
+        "export_page.py",
+        "freecad_helpers.py",
+        "golden/bearing_block.dxf",
+        "golden/bearing_block.pdf",
+        "golden/bearing_block.svg",
+        "golden/bearing_block_back_left.png",
+        "golden/bearing_block_front_right.png",
+        "render_multi_angle.py",
+        ":freecad_test",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//skills/freecad/testing:compare",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
+        "@pypi//pillow",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_debug_renderers",
+    size = "medium",
+    srcs = ["test_debug_renderers.py"],
+    data = [
+        "build_bearing_block.py",
+        "build_bearing_block_techdraw.py",
+        "freecad_helpers.py",
+        "golden/FrontView_debug_edges.png",
+        "golden/debug_faces.png",
+        "render_debug_edges.py",
+        "render_debug_faces.py",
+        ":freecad_test",
+    ],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        "//skills/freecad/testing:compare",
+        "//util:oci",
+        "//util/bazel:runfiles",
+        "//util/testing:container_logs",
+        "//util/testing:undeclared_outputs",
+        "@pypi//opentelemetry_api",
+        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

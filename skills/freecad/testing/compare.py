@@ -6,14 +6,13 @@ comparison in an OTel span for profiling.
 """
 
 import difflib
-import io
 import re
 from pathlib import Path
 from xml.etree import ElementTree
 
 from opentelemetry import trace
 from PIL import Image
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader
 
 tracer = trace.get_tracer(__name__)
 
@@ -75,13 +74,26 @@ def assert_dxf_equal(actual_path: Path, golden_path: Path) -> None:
 
 
 def _normalize_svg_element(elem: ElementTree.Element) -> None:
-    """Recursively sort attributes for stable comparison."""
+    """Recursively sort attributes and child elements for stable comparison.
+
+    Qt emits SVG attributes in non-deterministic order, and glyph path elements
+    within text groups can also appear in varying order between runs. Sorting
+    both attributes and child elements produces a canonical form.
+    """
     attribs = sorted(elem.attrib.items())
     elem.attrib.clear()
     for k, v in attribs:
         elem.attrib[k] = v
     for child in elem:
         _normalize_svg_element(child)
+    # Sort child elements by their serialized form for deterministic order
+    children = list(elem)
+    if children:
+        for child in children:
+            elem.remove(child)
+        children.sort(key=lambda c: ElementTree.tostring(c, encoding="unicode"))
+        for child in children:
+            elem.append(child)
 
 
 def _normalize_svg(text: str) -> str:
@@ -120,21 +132,70 @@ _FONT_NAME_RE = re.compile(rb"/FontName /[A-Z]{6}\+\S+")
 _FONT_NAME_REPLACEMENT = b"/FontName /AAAAAA+NormalizedFont"
 
 
+# PDF date strings appear in two formats:
+# 1. PDF Info dict: (D:YYYYMMDDHHmmSS+TZ) — variable-length timezone suffix
+# 2. XMP metadata: ISO 8601 in XML attributes (2026-04-05T04:08:38+00:00)
+_PDF_DATE_RE = re.compile(rb"\(D:\d{14}[^)]*\)")
+_PDF_DATE_REPLACEMENT = b"(D:20000101000000+00'00')"
+_XMP_DATE_RE = re.compile(rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}")
+_XMP_DATE_REPLACEMENT = b"2000-01-01T00:00:00+00:00"
+# UUIDs in XMP metadata (xmpMM:DocumentID, xmpMM:InstanceID)
+_UUID_RE = re.compile(rb"uuid:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_UUID_REPLACEMENT = b"uuid:00000000-0000-0000-0000-000000000000"
+
+
+# Matches floating-point numbers in PDF content streams (e.g., "247.999999", "120.0")
+_PDF_FLOAT_RE = re.compile(rb"-?\d+\.\d+")
+
+
+def _normalize_pdf_float(m: re.Match[bytes]) -> bytes:
+    """Round floats to 4 decimal places and strip trailing zeros."""
+    val = float(m.group())
+    if abs(val) < 1e-6:
+        val = 0.0
+    return f"{val:.4f}".rstrip("0").rstrip(".").encode()
+
+
 def _strip_pdf_metadata(pdf_path: Path) -> bytes:
-    """Re-serialize a PDF with all non-deterministic metadata stripped via pypdf."""
+    """Extract and normalize PDF page content for deterministic comparison.
+
+    FreeCAD TechDraw PDFs have several sources of non-determinism:
+    - /Info dict and /Metadata XMP: timestamps, UUIDs, producer strings
+    - Font subset prefixes: random 6-char prefix (e.g., QNAAAA+osifont)
+    - FlateDecode streams: zlib compression varies between runs
+    - Floating-point precision: e.g., 247.999999 vs 248
+
+    We extract decompressed page content and normalize all non-deterministic
+    tokens for stable comparison across runs.
+    """
     reader = PdfReader(pdf_path)
-    writer = PdfWriter()
+    parts: list[bytes] = []
     for page in reader.pages:
-        writer.add_page(page)
-    # Strip document-level metadata (CreationDate, ModDate, Producer, UUIDs, etc.)
-    writer.add_metadata({"/Producer": "", "/Creator": "", "/CreationDate": "", "/ModDate": ""})
-    # Remove XMP metadata stream entirely
-    if "/Metadata" in writer._root_object:
-        del writer._root_object["/Metadata"]
-    buf = io.BytesIO()
-    writer.write(buf)
-    # Normalize non-deterministic font subset prefixes in the raw bytes
-    return _FONT_NAME_RE.sub(_FONT_NAME_REPLACEMENT, buf.getvalue())
+        # extract_text() loses layout info; instead get the raw content
+        # stream operators after decompression
+        content = page.get_contents()
+        raw = content.get_data() if content is not None else b""
+        # Normalize font subset prefixes
+        raw = _FONT_NAME_RE.sub(_FONT_NAME_REPLACEMENT, raw)
+        # Normalize floating-point precision (247.999999 → 248)
+        raw = _PDF_FLOAT_RE.sub(_normalize_pdf_float, raw)
+        # Sort graphics state blocks (q...Q pairs) for deterministic order.
+        # TechDraw emits drawing operations in non-deterministic order for
+        # text glyphs and view projections — same content, different sequence.
+        lines = raw.split(b"\n")
+        blocks: list[list[bytes]] = [[]]
+        for line in lines:
+            blocks[-1].append(line)
+            if line.strip() == b"Q":
+                blocks.append([])
+        sorted_blocks = sorted(blocks, key=b"".join)
+        raw = b"\n".join(line for block in sorted_blocks for line in block)
+        parts.append(raw)
+    result = b"\n---PAGE---\n".join(parts)
+    # Normalize dates and UUIDs that may appear in any remaining metadata
+    result = _PDF_DATE_RE.sub(_PDF_DATE_REPLACEMENT, result)
+    result = _XMP_DATE_RE.sub(_XMP_DATE_REPLACEMENT, result)
+    return _UUID_RE.sub(_UUID_REPLACEMENT, result)
 
 
 def assert_pdf_equal(actual_path: Path, golden_path: Path) -> None:
@@ -145,14 +206,17 @@ def assert_pdf_equal(actual_path: Path, golden_path: Path) -> None:
         golden = _strip_pdf_metadata(golden_path)
         if actual == golden:
             return
-        if len(actual) != len(golden):
-            raise AssertionError(f"PDF size mismatch: golden={len(golden)} actual={len(actual)}")
-        for i, (a, g) in enumerate(zip(actual, golden, strict=False)):
-            if a != g:
-                context = actual[max(0, i - 20) : i + 20]
+        # Find and report first difference with context
+        for i in range(min(len(actual), len(golden))):
+            if actual[i] != golden[i]:
+                ctx_a = actual[max(0, i - 60) : i + 60]
+                ctx_g = golden[max(0, i - 60) : i + 60]
                 raise AssertionError(
-                    f"PDF differs at byte {i}: golden=0x{g:02x} actual=0x{a:02x}, context: {context!r}"
+                    f"PDF differs at byte {i} (golden={len(golden)}, actual={len(actual)}):\n"
+                    f"  golden: {ctx_g!r}\n"
+                    f"  actual: {ctx_a!r}"
                 )
+        raise AssertionError(f"PDF size mismatch: golden={len(golden)} actual={len(actual)}")
 
 
 # --- PNG ---
