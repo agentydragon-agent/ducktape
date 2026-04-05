@@ -135,6 +135,7 @@ locals {
     "talos-vps-worker-1.nebula.allegedly.works" = { ip = "10.42.0.12/16", groups = "lighthouse" }
     "wyrm2.nebula.allegedly.works"              = { ip = "10.42.0.20/16", groups = "" }
     "rugged.nebula.allegedly.works"             = { ip = "10.42.0.30/16", groups = "" }
+    "iguana.nebula.allegedly.works"             = { ip = "10.42.0.31/16", groups = "" }
     "k8s-worker-test.nebula.allegedly.works"    = { ip = "10.42.0.99/16", groups = "" }
     "atlas.nebula.allegedly.works"              = { ip = "10.42.0.5/16", groups = "" }
     "activitywatch.nebula.allegedly.works"      = { ip = "10.42.0.40/16", groups = "" }

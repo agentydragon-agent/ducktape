@@ -31,38 +31,26 @@
     ../../modules/dev-workstation.nix
     ../../modules/bazel-dev.nix
     ../../modules/system-inspection-sudo.nix
-    # ../../modules/sops.nix  # TODO: Enable after first boot (needs host SSH key for age decryption)
-    # ../../modules/k8s-worker.nix  # TODO: Uncomment when ready to join cluster
+    ../../modules/sops.nix
+    ../../modules/k8s-worker.nix
+    ../../modules/k8s-worker-sops.nix
   ];
 
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
-  # Attic cache push token
-  # TODO: Uncomment after first boot and sops-nix setup (need host SSH key first)
+  # TODO: Generate attic token for iguana and create secrets/iguana-attic.yaml
   # sops.secrets.attic_token.sopsFile = ../../../../secrets/iguana-attic.yaml;
 
-  # TODO: Uncomment when ready to join k8s cluster
-  # Nebula certs and k8s worker credentials will be added out-of-band first
-  # sops.secrets.nebula_ca_cert.sopsFile = ../../../../secrets/k8s-worker.yaml;
-  # sops.secrets.k8s_ca_cert.sopsFile = ../../../../secrets/k8s-worker.yaml;
-  # sops.secrets.k8s_bootstrap_token.sopsFile = ../../../../secrets/k8s-worker.yaml;
-  # sops.secrets.nebula_host_cert.sopsFile = ../../../../secrets/iguana-nebula.yaml;
-  # sops.secrets.nebula_host_key.sopsFile = ../../../../secrets/iguana-nebula.yaml;
-  #
-  # ducktape.nebulaMesh.caCertPath = config.sops.secrets.nebula_ca_cert.path;
-  # ducktape.nebulaMesh.hostCertPath = config.sops.secrets.nebula_host_cert.path;
-  # ducktape.nebulaMesh.hostKeyPath = config.sops.secrets.nebula_host_key.path;
-  #
-  # ducktape.k8sWorker = {
-  #   enable = true;
-  #   caCertPath = config.sops.secrets.k8s_ca_cert.path;
-  #   bootstrapTokenPath = config.sops.secrets.k8s_bootstrap_token.path;
-  #   nodeLabels = {
-  #     "topology.kubernetes.io/region" = "home";
-  #     "node.kubernetes.io/role" = "worker";
-  #   };
-  # };
+  # Nebula mesh + k8s worker credentials (wired via k8s-worker-sops module)
+  ducktape.k8sWorkerSops.hostname = "iguana";
+  ducktape.k8sWorker = {
+    enable = true;
+    nodeLabels = {
+      "topology.kubernetes.io/region" = "home";
+      "node.kubernetes.io/role" = "worker";
+    };
+  };
 
   # Timezone
   time.timeZone = "America/Los_Angeles";

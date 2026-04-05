@@ -4,9 +4,11 @@ keys:
   - &wyrm2 age1tzq86mfj30su8hvw9e0y5zw9mg254frtk5s2mp48580uky8fdppsju42pp
   - &rugged age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
   - &atlas age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
+  - &iguana age1zemurrcedw7sme3hh793cv8u5zu8eeekn637zpkulxwuw8uav58srwcxzv
   # User keys (derived from ~/.ssh/id_ed25519 via ssh-to-age)
   - &user-wyrm2 age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
   - &user-rugged age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
+  - &user-iguana age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
   # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
   - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
   # Cluster k8s secrets (Flux decryption, private key in flux-system/sops-age-cluster-secrets)
@@ -36,6 +38,11 @@ creation_rules:
       - age:
           - *admin
           - *atlas
+  - path_regex: secrets/iguana-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *iguana
   # Per-user home-manager secrets (user SSH key + admin can decrypt)
   - path_regex: secrets/user-wyrm2-.*\.yaml$
     key_groups:
@@ -47,6 +54,11 @@ creation_rules:
       - age:
           - *admin
           - *user-rugged
+  - path_regex: secrets/user-iguana-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *user-iguana
   # K8s worker secrets (k8s workers only)
   - path_regex: secrets/k8s-worker\.yaml$
     key_groups:
@@ -54,6 +66,7 @@ creation_rules:
           - *admin
           - *wyrm2
           - *rugged
+          - *iguana
   # 15 Leroy HA SSH key (user-decryptable for home-manager sops deployment)
   - path_regex: secrets/15leroy-homeassistant-ssh\.yaml$
     key_groups:
@@ -61,6 +74,7 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
+          - *user-iguana
   # Cluster SOPS age private key (bootstrap deploys to flux-system/sops-age-cluster-secrets)
   # TODO: Consider narrowing to admin-only once bootstrap script is tested.
   - path_regex: secrets/cluster-secrets-age\.yaml$
@@ -69,6 +83,7 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
+          - *user-iguana
   # Nebula mesh CA keypair (tofu derives node certs at apply time)
   - path_regex: secrets/nebula-ca\.yaml$
     key_groups:
@@ -76,6 +91,7 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
+          - *user-iguana
   # Flux deploy key (ED25519, registered as GitHub deploy key)
   - path_regex: secrets/flux-deploy-key\.yaml$
     key_groups:
@@ -83,6 +99,7 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
+          - *user-iguana
   # Cluster infrastructure tokens (tofu apply: hcloud, proxmox)
   - path_regex: secrets/cluster-tokens\.yaml$
     key_groups:
@@ -90,6 +107,7 @@ creation_rules:
           - *admin
           - *user-wyrm2
           - *user-rugged
+          - *user-iguana
           - *atlas
   # Shared secrets (all hosts + claude-web agent)
   - path_regex: secrets/buildbuddy\.yaml$
@@ -98,6 +116,7 @@ creation_rules:
           - *admin
           - *wyrm2
           - *rugged
+          - *iguana
           - *atlas
           - *claude-web
   # GitHub PAT for agentydragon-agent machine user (Claude Code, OpenClaw)

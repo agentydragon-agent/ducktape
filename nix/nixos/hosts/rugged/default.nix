@@ -32,6 +32,7 @@
     ../../modules/bazel-dev.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
+    ../../modules/k8s-worker-sops.nix
     ../../modules/ipu7-camera.nix
     ../../modules/sops.nix
   ];
@@ -42,21 +43,10 @@
   # Attic cache push token
   sops.secrets.attic_token.sopsFile = ../../../../secrets/rugged-attic.yaml;
 
-  # K8s worker (Nebula mesh) — credentials via sops-nix
-  sops.secrets.nebula_ca_cert.sopsFile = ../../../../secrets/k8s-worker.yaml;
-  sops.secrets.k8s_ca_cert.sopsFile = ../../../../secrets/k8s-worker.yaml;
-  sops.secrets.k8s_bootstrap_token.sopsFile = ../../../../secrets/k8s-worker.yaml;
-  sops.secrets.nebula_host_cert.sopsFile = ../../../../secrets/rugged-nebula.yaml;
-  sops.secrets.nebula_host_key.sopsFile = ../../../../secrets/rugged-nebula.yaml;
-
-  ducktape.nebulaMesh.caCertPath = config.sops.secrets.nebula_ca_cert.path;
-  ducktape.nebulaMesh.hostCertPath = config.sops.secrets.nebula_host_cert.path;
-  ducktape.nebulaMesh.hostKeyPath = config.sops.secrets.nebula_host_key.path;
-
+  # Nebula mesh + k8s worker credentials (wired via k8s-worker-sops module)
+  ducktape.k8sWorkerSops.hostname = "rugged";
   ducktape.k8sWorker = {
     enable = true;
-    caCertPath = config.sops.secrets.k8s_ca_cert.path;
-    bootstrapTokenPath = config.sops.secrets.k8s_bootstrap_token.path;
     nodeLabels = {
       "topology.kubernetes.io/region" = "roaming";
       "node.kubernetes.io/role" = "roaming";

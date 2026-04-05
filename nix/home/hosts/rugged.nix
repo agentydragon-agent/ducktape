@@ -19,6 +19,8 @@
     ../modules/github-ssh.nix
   ];
 
+  ducktape.githubSsh.sopsFile = ../../../secrets/user-rugged-github-ssh.yaml;
+
   # SSH keys for wyrm and vps, decrypted from SOPS at activation time.
   sops.secrets = builtins.listToAttrs (
     map

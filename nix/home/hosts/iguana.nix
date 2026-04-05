@@ -17,11 +17,10 @@
 {
   imports = [
     ../home.nix
+    ../modules/github-ssh.nix
   ];
 
-  home.stateVersion = "24.11";
+  ducktape.githubSsh.sopsFile = ../../../secrets/user-iguana-github-ssh.yaml;
 
-  # Machine-specific overrides can go here if needed
-  # For now, we inherit all settings from home.nix with the feature flags
-  # set in flake.nix (enableGui, enableKube, etc.)
+  home.stateVersion = "24.11";
 }
