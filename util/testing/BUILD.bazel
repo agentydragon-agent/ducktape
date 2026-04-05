@@ -21,6 +21,7 @@ py_library(
         ":undeclared_outputs",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
+        "@pypi//pytest",
     ],
 )
 

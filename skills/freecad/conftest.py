@@ -8,7 +8,7 @@ from opentelemetry import trace
 
 from util.oci import OciImage, load_oci_image
 from util.testing.container_logs import LoggedContainer
-from util.testing.otel_tracing import tracing
+from util.testing.otel_tracing import configure_tracing, export_traces
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +20,11 @@ tracer = trace.get_tracer(__name__)
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    tracing.configure()
+    configure_tracing(config)
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    tracing.export_to_file()
+    export_traces(session.config)
 
 
 @pytest.fixture(scope="session")
