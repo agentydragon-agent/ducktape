@@ -8,10 +8,14 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key as generate_rsa_key
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
 from pyrage import x25519
 
 from devinfra.claude.sops_decrypt import (
     _parse_enc_value,
+    _ssh_ed25519_to_age_identity,
     decrypt_sops_yaml,
     discover_age_identities,
     load_age_identities,
@@ -21,6 +25,8 @@ from util.bazel.runfiles import get_required_path
 # Committed testdata encrypted by `sops --encrypt --age <recipient>`.
 _TESTDATA_YAML = "_main/devinfra/claude/testdata/sops_test_secrets.yaml"
 _TESTDATA_AGE_KEY = "_main/devinfra/claude/testdata/sops_test_age_key.txt"
+# Passphrase-protected ed25519 key (password: "testpass"), generated via ssh-keygen.
+_TESTDATA_ENCRYPTED_SSH_KEY = "_main/devinfra/claude/testdata/ssh_encrypted_ed25519"
 
 _EXPECTED = {"api_key": "test-secret-value", "another_key": "another-secret"}
 
@@ -124,22 +130,71 @@ def test_discover_age_identities_from_file(tmp_path: Path, monkeypatch: pytest.M
     assert len(identities) == 1
 
 
-def test_discover_age_identities_no_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Returns None when no key file exists."""
+@pytest.fixture
+def no_age_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Clear all age key sources, redirect HOME to tmp_path."""
     monkeypatch.delenv("DUCKTAPE_CLAUDE_HOOKS_AGE_KEY", raising=False)
     monkeypatch.delenv("SOPS_AGE_KEY", raising=False)
     monkeypatch.setenv("SOPS_AGE_KEY_FILE", str(tmp_path / "nonexistent.txt"))
-    assert discover_age_identities() is None
+    monkeypatch.setenv("HOME", str(tmp_path))
+    return tmp_path
 
 
-def test_discover_age_identities_empty_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Returns None when key file has no valid keys."""
+def test_discover_age_identities_no_file(no_age_sources: Path):
+    """Returns empty list when no key file and no SSH key exist."""
+    assert discover_age_identities() == []
+
+
+def test_discover_age_identities_empty_file(no_age_sources: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Returns empty list when key file has no valid keys and no SSH key exists."""
     key_file = tmp_path / "keys.txt"
     key_file.write_text("# just a comment\n")
-    monkeypatch.delenv("DUCKTAPE_CLAUDE_HOOKS_AGE_KEY", raising=False)
-    monkeypatch.delenv("SOPS_AGE_KEY", raising=False)
     monkeypatch.setenv("SOPS_AGE_KEY_FILE", str(key_file))
-    assert discover_age_identities() is None
+    assert discover_age_identities() == []
+
+
+# === SSH ed25519 -> age identity conversion ===
+
+
+def _write_ed25519_key(path: Path) -> Ed25519PrivateKey:
+    """Generate and write an unencrypted ed25519 SSH key to the given path."""
+    key = Ed25519PrivateKey.generate()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.OpenSSH, NoEncryption()))
+    return key
+
+
+def test_ssh_ed25519_to_age_identity_valid(tmp_path: Path):
+    key_path = tmp_path / "id_ed25519"
+    _write_ed25519_key(key_path)
+    identity = _ssh_ed25519_to_age_identity(key_path)
+    assert identity is not None
+    assert str(identity.to_public()).startswith("age1")
+
+
+def test_ssh_ed25519_to_age_identity_missing_file(tmp_path: Path):
+    assert _ssh_ed25519_to_age_identity(tmp_path / "nonexistent") is None
+
+
+def test_ssh_ed25519_to_age_identity_passphrase_protected():
+    """Passphrase-protected keys are skipped (returns None)."""
+    key_path = get_required_path(_TESTDATA_ENCRYPTED_SSH_KEY)
+    assert _ssh_ed25519_to_age_identity(key_path) is None
+
+
+def test_ssh_ed25519_to_age_identity_wrong_key_type(tmp_path: Path):
+    key_path = tmp_path / "id_rsa"
+    rsa_key = generate_rsa_key(public_exponent=65537, key_size=2048)
+    key_path.write_bytes(rsa_key.private_bytes(Encoding.PEM, PrivateFormat.OpenSSH, NoEncryption()))
+    assert _ssh_ed25519_to_age_identity(key_path) is None
+
+
+def test_discover_age_identities_ssh_fallback(no_age_sources: Path):
+    """Falls back to SSH key when no age env vars or key files exist."""
+    ssh_dir = no_age_sources / ".ssh"
+    _write_ed25519_key(ssh_dir / "id_ed25519")
+    identities = discover_age_identities()
+    assert len(identities) == 1
 
 
 if __name__ == "__main__":

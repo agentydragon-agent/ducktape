@@ -13,6 +13,7 @@ spec:
   timeout: 2m
   dependsOn:
     - name: kyverno-policies
+    - name: langfuse-namespace
   healthChecks:
     - apiVersion: v1
       kind: Namespace

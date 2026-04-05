@@ -81,6 +81,7 @@ py_library(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        "//util:bech32",
         "@pypi//cryptography",
         "@pypi//pyrage",
         "@pypi//pyrage_stubs",
@@ -218,11 +219,13 @@ py_test(
     data = [
         "//devinfra/claude/testdata:sops_test_age_key.txt",
         "//devinfra/claude/testdata:sops_test_secrets.yaml",
+        "//devinfra/claude/testdata:ssh_encrypted_ed25519",
     ],
     imports = ["../.."],
     deps = [
         ":sops_decrypt",
         "//util/bazel:runfiles",
+        "@pypi//cryptography",
         "@pypi//pyrage",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
