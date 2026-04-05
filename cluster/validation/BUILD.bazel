@@ -181,6 +181,29 @@ py_test(
     ],
 )
 
+py_library(
+    name = "kyverno",
+    srcs = ["kyverno.py"],
+    imports = ["../.."],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_test(
+    name = "test_kyverno_policies",
+    srcs = ["test_kyverno_policies.py"],
+    data = [
+        "//cluster/k8s:cluster_all_files",
+        "@multitool//tools/kyverno",
+    ] + glob(["testdata/kyverno/**"]),
+    imports = ["../.."],
+    deps = [
+        ":kyverno",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_test(
     name = "test_cluster_integration",
     srcs = ["test_cluster_integration.py"],

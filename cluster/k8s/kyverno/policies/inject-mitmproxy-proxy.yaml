@@ -73,7 +73,7 @@ spec:
         # Only applies when there are init containers
       preconditions:
         any:
-          - key: "{{ request.object.spec.initContainers[] | length(@) }}"
+          - key: "{{ (request.object.spec.initContainers || `[]`) | length(@) }}"
             operator: GreaterThanOrEquals
             value: 1
       mutate:
