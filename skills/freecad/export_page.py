@@ -12,8 +12,9 @@ where <stem> is the input filename without extension (e.g. rect.FCStd → rect.{
 
 import os
 import sys
-import time
 from pathlib import Path
+
+sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
 
 fcstd_path = os.environ.get("INPUT")
 outdir = os.environ.get("OUTDIR")
@@ -24,32 +25,33 @@ stem = Path(fcstd_path).stem
 
 import FreeCAD as App  # noqa: E402 — must parse args before FreeCAD import
 import FreeCADGui as Gui  # noqa: E402
+from freecad_helpers import init_gui, log, pump, wait_for_view  # noqa: E402
 
 Gui.showMainWindow()
-
-try:
-    from PySide6 import QtWidgets
-except ImportError:
-    from PySide2 import QtWidgets
-
-qapp = QtWidgets.QApplication.instance()
-
-
-def pump(seconds=3):
-    for _ in range(int(seconds * 10)):
-        if qapp:
-            qapp.processEvents()
-        time.sleep(0.1)
+qapp = init_gui()
 
 
 import TechDraw  # noqa: E402
 import TechDrawGui  # noqa: E402
 
+log("opening document")
 doc = App.openDocument(fcstd_path)
+
+# Find a DrawViewPart to poll for readiness
+view_part = None
+for obj in doc.Objects:
+    if "DrawViewPart" in obj.TypeId:
+        view_part = obj
+        break
+
+log("recompute + wait_for_view (TechDraw HLR)")
 doc.recompute(None, True, True)
-pump(5)
+if view_part:
+    wait_for_view(view_part, qapp)
+else:
+    pump(qapp, 5)
 doc.recompute(None, True, True)
-pump(2)
+pump(qapp, 0.5)
 
 # Find the TechDraw page
 # TODO: use more_itertools.one() once available in FreeCAD container
@@ -66,19 +68,22 @@ if not page:
 # Report view edge counts
 for obj in doc.Objects:
     if "DrawViewPart" in obj.TypeId:
-        print(f"{obj.Name}: {len(obj.getVisibleEdges())} edges")
+        log(f"{obj.Name}: {len(obj.getVisibleEdges())} edges")
 
 # Export all three formats
+log("exporting DXF")
 dxf_path = os.path.join(outdir, f"{stem}.dxf")  # noqa: PTH118 — FreeCAD API expects str
 TechDraw.writeDXFPage(page, dxf_path)
-print(f"DXF: {Path(dxf_path).stat().st_size} bytes")
+log(f"DXF: {Path(dxf_path).stat().st_size} bytes")
 
+log("exporting SVG")
 svg_path = os.path.join(outdir, f"{stem}.svg")  # noqa: PTH118 — FreeCAD API expects str
 TechDrawGui.exportPageAsSvg(page, svg_path)
-print(f"SVG: {Path(svg_path).stat().st_size} bytes")
+log(f"SVG: {Path(svg_path).stat().st_size} bytes")
 
+log("exporting PDF")
 pdf_path = os.path.join(outdir, f"{stem}.pdf")  # noqa: PTH118 — FreeCAD API expects str
 TechDrawGui.exportPageAsPdf(page, pdf_path)
-print(f"PDF: {Path(pdf_path).stat().st_size} bytes")
+log(f"PDF: {Path(pdf_path).stat().st_size} bytes — done")
 
 os._exit(0)  # Skip Qt cleanup to avoid segfault under xvfb

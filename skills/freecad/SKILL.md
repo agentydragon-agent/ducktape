@@ -244,27 +244,58 @@ Arguments are passed via env vars (`INPUT`, `OUTDIR`) because `freecadcmd` treat
 | SVG    | `TechDrawGui.exportPageAsSvg(page, path)` | Vector, viewable in browsers, preserves template/fonts natively | Hatch patterns not exported (Qt SVG limitation)       |
 | PDF    | `TechDrawGui.exportPageAsPdf(page, path)` | Print-ready, universal viewer support                           | Largest file size                                     |
 
-### View computation: the processEvents discovery
+### View computation: waiting for TechDraw HLR
 
-TechDraw computes views in a background Qt thread/timer. After `doc.recompute()`, you MUST pump Qt events:
+TechDraw runs Hidden Line Removal (HLR) and face extraction asynchronously via
+`QtConcurrent` threads. After `doc.recompute()`, the HLR thread starts but
+`recompute()` returns immediately — the view's geometry is not yet available.
+
+**Why `processEvents()` is required:** The `QFutureWatcher::finished` Qt signal
+dispatches HLR completion back to the main thread. Without calling
+`qapp.processEvents()`, this signal is never delivered and `getVisibleEdges()`
+stays empty forever. A bare `time.sleep()` will NOT work.
+
+**Preferred approach — poll `getVisibleEdges()`:**
 
 ```python
-from PySide2 import QtWidgets
-app = QtWidgets.QApplication.instance()
-for _ in range(50):
-    app.processEvents()
-    time.sleep(0.1)
+def wait_for_view(view, timeout=15.0, poll_interval=0.05):
+    """Poll until TechDraw view has visible edges, processing Qt events."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
+        if qapp:
+            qapp.processEvents()
+        if len(view.getVisibleEdges()) > 0:
+            return
+        time.sleep(poll_interval)
+    raise TimeoutError(f"TechDraw view not ready after {timeout}s")
+
+doc.recompute(None, True, True)
+wait_for_view(view)             # typically completes in <2s
+doc.recompute(None, True, True) # settle dimensions
+pump(0.5)                       # short fixed pump for annotations
 ```
 
-Without this, `time.sleep()` alone does nothing — the Qt event loop is stalled and the background computation never runs. This is the single most important gotcha for headless TechDraw. Views will show 0 edges without event pumping, regardless of how long you sleep.
+This replaces the old fixed-duration `pump(5)` + `pump(2)` pattern (7 seconds
+of sleeping regardless of actual computation time) with polling that completes
+as soon as the HLR thread finishes — typically under 2 seconds.
 
-The FCStd caches computed view edges when saved during a GUI session. Reloading a previously-cached file shows edges immediately. But freshly created views always require event pumping.
+**What's NOT available from Python** (C++ only, not exposed in FreeCAD 1.1.0
+Python bindings): `waitingForHlr()`, `waitingForFaces()`, `waitingForResult()`.
+These are internal `DrawViewPart` state flags. The `getVisibleEdges()` check is
+the best Python-accessible readiness indicator.
+
+**For 3D viewport rendering** (not TechDraw): There is no edge-based readiness
+indicator. Use `pump()` with conservative fixed durations and `processEvents()`.
+
+The FCStd caches computed view edges when saved during a GUI session. Reloading
+a previously-cached file shows edges immediately. But freshly created views
+always require event pumping.
 
 ## Gotchas
 
 | Issue                                | Fix                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| TechDraw 0 edges                     | Pump Qt events with `processEvents()` loop after recompute                                                                                                                                                                                                                                               |
+| TechDraw 0 edges                     | Poll `getVisibleEdges()` with `processEvents()` in a loop (see `wait_for_view()` above)                                                                                                                                                                                                                  |
 | Open Wire / loose edges              | Use Faces only — open topology crashes HLR projector                                                                                                                                                                                                                                                     |
 | Multiple views lose positions        | Single compound, single view                                                                                                                                                                                                                                                                             |
 | FreeCAD import                       | `sys.path.insert(0, '/usr/lib/freecad-python3/lib')`                                                                                                                                                                                                                                                     |

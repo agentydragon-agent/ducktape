@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
+from opentelemetry import trace
 
-from skills.freecad.conftest import FREECAD_TEST
+from skills.freecad.conftest import FREECAD_HELPERS, FREECAD_TEST, XVFB_CMD, freecad_exec
 from skills.freecad.testing.compare import assert_dxf_equal, assert_pdf_equal, assert_svg_equal
 from util.bazel.runfiles import get_required_path
 from util.oci import load_oci_image
@@ -19,36 +20,35 @@ _GOLDEN_DXF = "_main/skills/freecad/golden/compound.dxf"
 _GOLDEN_SVG = "_main/skills/freecad/golden/compound.svg"
 _GOLDEN_PDF = "_main/skills/freecad/golden/compound.pdf"
 
-_XVFB = 'xvfb-run -a -s \\"-screen 0 1024x768x24\\"'
-
-
-def _exec(container: LoggedContainer, cmd: str) -> None:
-    result = container.exec(cmd)
-    output = result.output.decode(errors="replace")
-    print(output)
-    assert result.exit_code == 0, f"Command failed (exit {result.exit_code}): {output[:500]}"
+tracer = trace.get_tracer(__name__)
 
 
 @pytest.fixture(scope="module")
 def compound_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Build compound shape and export all formats."""
-    tag = load_oci_image(FREECAD_TEST)
+    with tracer.start_as_current_span("load_oci_image"):
+        tag = load_oci_image(FREECAD_TEST)
     tmp_path = tmp_path_factory.mktemp("freecad-compound")
 
-    with LoggedContainer(
-        tag,
-        test_name="freecad-compound",
-        command="sleep infinity",
-        volumes=[
-            (str(get_required_path(_BUILD_SCRIPT)), "/work/build_compound.py", "ro"),
-            (str(get_required_path(_EXPORT_SCRIPT)), "/work/export_page.py", "ro"),
-            (str(tmp_path), "/output", "rw"),
-        ],
-        docker_client_kw={"timeout": 120},
-    ) as container:
-        _exec(container, f'bash -c "OUTDIR=/output {_XVFB} freecadcmd /work/build_compound.py"')
-        _exec(
-            container, f'bash -c "INPUT=/output/compound.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/export_page.py"'
+    with (
+        tracer.start_as_current_span("container_lifecycle"),
+        LoggedContainer(
+            tag,
+            test_name="freecad-compound",
+            command="sleep infinity",
+            volumes=[
+                (str(get_required_path(FREECAD_HELPERS)), "/work/freecad_helpers.py", "ro"),
+                (str(get_required_path(_BUILD_SCRIPT)), "/work/build_compound.py", "ro"),
+                (str(get_required_path(_EXPORT_SCRIPT)), "/work/export_page.py", "ro"),
+                (str(tmp_path), "/output", "rw"),
+            ],
+            docker_client_kw={"timeout": 120},
+        ) as container,
+    ):
+        freecad_exec(container, f'bash -c "OUTDIR=/output {XVFB_CMD} freecadcmd /work/build_compound.py"')
+        freecad_exec(
+            container,
+            f'bash -c "INPUT=/output/compound.FCStd OUTDIR=/output {XVFB_CMD} freecadcmd /work/export_page.py"',
         )
 
     out_dir = undeclared_outputs_dir() / "compound"
@@ -62,21 +62,15 @@ def compound_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def test_dxf_golden(compound_outputs: Path) -> None:
-    actual = compound_outputs / "compound.dxf"
-    assert actual.exists(), "DXF not generated"
-    assert_dxf_equal(actual, get_required_path(_GOLDEN_DXF))
+    assert_dxf_equal(compound_outputs / "compound.dxf", get_required_path(_GOLDEN_DXF))
 
 
 def test_svg_golden(compound_outputs: Path) -> None:
-    actual = compound_outputs / "compound.svg"
-    assert actual.exists(), "SVG not generated"
-    assert_svg_equal(actual, get_required_path(_GOLDEN_SVG))
+    assert_svg_equal(compound_outputs / "compound.svg", get_required_path(_GOLDEN_SVG))
 
 
 def test_pdf_golden(compound_outputs: Path) -> None:
-    actual = compound_outputs / "compound.pdf"
-    assert actual.exists(), "PDF not generated"
-    assert_pdf_equal(actual, get_required_path(_GOLDEN_PDF))
+    assert_pdf_equal(compound_outputs / "compound.pdf", get_required_path(_GOLDEN_PDF))
 
 
 if __name__ == "__main__":

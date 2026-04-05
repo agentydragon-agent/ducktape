@@ -9,12 +9,19 @@ Usage:
 """
 
 import os
+import sys
 from pathlib import Path
+
+sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
 
 import FreeCAD as App
 import Part
+from freecad_helpers import log
 
 outdir = os.environ.get("OUTDIR", ".")
+
+
+log("starting build")
 
 # === Parameters ===
 CUBE_SIZE = 20.0  # mm
@@ -40,8 +47,9 @@ feat.Shape = result
 doc.recompute()
 
 # === Export ===
+log("saving FCStd")
 fcstd_path = os.path.join(outdir, "cube_with_hole.FCStd")  # noqa: PTH118 — FreeCAD API expects str
 doc.saveAs(fcstd_path)
-print(f"FCStd: {Path(fcstd_path).stat().st_size} bytes")
+log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes — done")
 
 os._exit(0)

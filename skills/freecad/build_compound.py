@@ -17,36 +17,20 @@ Usage:
 
 import os
 import sys
-import time
 from pathlib import Path
+
+sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
 
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 import Sketcher
+from freecad_helpers import init_gui, log, pump, wait_for_view
 
 Gui.showMainWindow()
-
-try:
-    from PySide6 import QtWidgets
-except ImportError:
-    from PySide2 import QtWidgets
-
-qapp = QtWidgets.QApplication.instance()
+qapp = init_gui()
 
 outdir = os.environ.get("OUTDIR", ".")
-
-
-def log(msg):
-    print(msg, file=sys.stderr, flush=True)
-
-
-def pump(seconds=3):
-    """Process Qt events to let TechDraw background computation run."""
-    for _ in range(int(seconds * 10)):
-        if qapp:
-            qapp.processEvents()
-        time.sleep(0.1)
 
 
 # === Document ===
@@ -218,10 +202,11 @@ view.Scale = 1.0
 view.X = 150
 view.Y = 120
 
+log("recompute + wait_for_view (TechDraw HLR)")
 doc.recompute(None, True, True)
-pump(5)
+wait_for_view(view, qapp)
 doc.recompute(None, True, True)
-pump(2)
+pump(qapp, 0.5)
 
 n_edges = len(view.getVisibleEdges())
 log(f"TechDraw view: {n_edges} visible edges")
@@ -370,12 +355,14 @@ if inner_horiz_idx is not None:
     d_wt.X = (bb.XMin - cx) * scale - DIM_OFF
     d_wt.Y = ((bb.YMin + wall_t_solved) - cy) * scale
 
+log("recompute after dimensions")
 doc.recompute(None, True, True)
-pump(1)
+pump(qapp, 0.5)
 
 # === Save ===
+log("saving FCStd")
 fcstd_path = os.path.join(outdir, "compound.FCStd")  # noqa: PTH118 — FreeCAD API expects str
 doc.saveAs(fcstd_path)
-log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes")
+log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes — done")
 
 os._exit(0)  # Skip Qt cleanup to avoid potential segfault under xvfb

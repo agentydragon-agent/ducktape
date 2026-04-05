@@ -1,9 +1,8 @@
-"""Golden-file comparators for FreeCAD export formats (DXF, SVG, PDF).
+"""Golden-file comparators for FreeCAD export formats (DXF, SVG, PDF, PNG).
 
-Each comparator normalizes non-deterministic content before comparison:
-- DXF: strips version strings, timestamps, and comment lines
-- SVG: sorts XML attributes (Qt emits them in non-deterministic order)
-- PDF: strips non-deterministic metadata via pypdf before byte comparison
+Each comparator normalizes non-deterministic content before comparison.
+All assert functions check that the actual file exists, and wrap the
+comparison in an OTel span for profiling.
 """
 
 import difflib
@@ -12,7 +11,11 @@ import re
 from pathlib import Path
 from xml.etree import ElementTree
 
+from opentelemetry import trace
+from PIL import Image
 from pypdf import PdfReader, PdfWriter
+
+tracer = trace.get_tracer(__name__)
 
 # --- DXF ---
 
@@ -59,11 +62,13 @@ def _normalize_dxf(text: str) -> list[str]:
 
 def assert_dxf_equal(actual_path: Path, golden_path: Path) -> None:
     """Assert two DXF files match after normalizing non-deterministic fields."""
-    actual = _normalize_dxf(actual_path.read_text())
-    golden = _normalize_dxf(golden_path.read_text())
-    if actual != golden:
-        diff = "".join(difflib.unified_diff(golden, actual, fromfile="golden", tofile="actual", n=3))
-        raise AssertionError(f"DXF mismatch:\n{diff[:500]}")
+    with tracer.start_as_current_span("assert_dxf_equal"):
+        assert actual_path.exists(), f"DXF not generated: {actual_path}"
+        actual = _normalize_dxf(actual_path.read_text())
+        golden = _normalize_dxf(golden_path.read_text())
+        if actual != golden:
+            diff = "".join(difflib.unified_diff(golden, actual, fromfile="golden", tofile="actual", n=3))
+            raise AssertionError(f"DXF mismatch:\n{diff[:500]}")
 
 
 # --- SVG ---
@@ -89,19 +94,21 @@ def _normalize_svg(text: str) -> str:
 
 def assert_svg_equal(actual_path: Path, golden_path: Path) -> None:
     """Assert two SVG files match after normalizing XML attribute order."""
-    actual = _normalize_svg(actual_path.read_text())
-    golden = _normalize_svg(golden_path.read_text())
-    if actual != golden:
-        diff = "".join(
-            difflib.unified_diff(
-                golden.splitlines(keepends=True),
-                actual.splitlines(keepends=True),
-                fromfile="golden",
-                tofile="actual",
-                n=3,
+    with tracer.start_as_current_span("assert_svg_equal"):
+        assert actual_path.exists(), f"SVG not generated: {actual_path}"
+        actual = _normalize_svg(actual_path.read_text())
+        golden = _normalize_svg(golden_path.read_text())
+        if actual != golden:
+            diff = "".join(
+                difflib.unified_diff(
+                    golden.splitlines(keepends=True),
+                    actual.splitlines(keepends=True),
+                    fromfile="golden",
+                    tofile="actual",
+                    n=3,
+                )
             )
-        )
-        raise AssertionError(f"SVG mismatch:\n{diff[:500]}")
+            raise AssertionError(f"SVG mismatch:\n{diff[:500]}")
 
 
 # --- PDF ---
@@ -132,13 +139,38 @@ def _strip_pdf_metadata(pdf_path: Path) -> bytes:
 
 def assert_pdf_equal(actual_path: Path, golden_path: Path) -> None:
     """Assert two PDF files match after stripping non-deterministic metadata."""
-    actual = _strip_pdf_metadata(actual_path)
-    golden = _strip_pdf_metadata(golden_path)
-    if actual == golden:
-        return
-    if len(actual) != len(golden):
-        raise AssertionError(f"PDF size mismatch: golden={len(golden)} actual={len(actual)}")
-    for i, (a, g) in enumerate(zip(actual, golden, strict=False)):
-        if a != g:
-            context = actual[max(0, i - 20) : i + 20]
-            raise AssertionError(f"PDF differs at byte {i}: golden=0x{g:02x} actual=0x{a:02x}, context: {context!r}")
+    with tracer.start_as_current_span("assert_pdf_equal"):
+        assert actual_path.exists(), f"PDF not generated: {actual_path}"
+        actual = _strip_pdf_metadata(actual_path)
+        golden = _strip_pdf_metadata(golden_path)
+        if actual == golden:
+            return
+        if len(actual) != len(golden):
+            raise AssertionError(f"PDF size mismatch: golden={len(golden)} actual={len(actual)}")
+        for i, (a, g) in enumerate(zip(actual, golden, strict=False)):
+            if a != g:
+                context = actual[max(0, i - 20) : i + 20]
+                raise AssertionError(
+                    f"PDF differs at byte {i}: golden=0x{g:02x} actual=0x{a:02x}, context: {context!r}"
+                )
+
+
+# --- PNG ---
+
+
+def assert_png_equal(actual_path: Path, golden_path: Path, max_diff_fraction: float = 0.02) -> None:
+    """Assert two PNG images match within a pixel channel diff tolerance."""
+    with tracer.start_as_current_span("assert_png_equal"):
+        assert actual_path.exists(), f"PNG not generated: {actual_path}"
+        actual = Image.open(actual_path).convert("RGB")
+        golden = Image.open(golden_path).convert("RGB")
+        if actual.size != golden.size:
+            raise AssertionError(f"Size mismatch: {actual.size} vs {golden.size}")
+        a_data = actual.tobytes()
+        g_data = golden.tobytes()
+        differing = sum(1 for a, g in zip(a_data, g_data, strict=True) if a != g)
+        diff_fraction = differing / len(a_data)
+        if diff_fraction > max_diff_fraction:
+            raise AssertionError(
+                f"Rendered PNG differs from golden by {diff_fraction:.1%} (threshold {max_diff_fraction:.1%})"
+            )

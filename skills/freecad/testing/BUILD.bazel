@@ -8,6 +8,8 @@ py_library(
     imports = ["../../.."],
     visibility = ["//skills/freecad:__pkg__"],
     deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//pillow",
         "@pypi//pypdf",
     ],
 )

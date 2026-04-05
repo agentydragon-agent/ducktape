@@ -9,42 +9,33 @@ Usage:
 """
 
 import os
-import time
+import sys
 from pathlib import Path
+
+sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
 
 import FreeCAD as App
 import FreeCADGui as Gui
+from freecad_helpers import init_gui, log, pump
 
 Gui.showMainWindow()
+qapp = init_gui()
 
-try:
-    from PySide6 import QtWidgets
-except ImportError:
-    from PySide2 import QtWidgets
-
-from pivy import coin  # noqa: E402 — must import after Gui.showMainWindow(), before getCameraNode()
-
-qapp = QtWidgets.QApplication.instance()
-
-
-def pump(seconds=3):
-    """Process Qt events to let FreeCAD's background computation run."""
-    for _ in range(int(seconds * 10)):
-        if qapp:
-            qapp.processEvents()
-        time.sleep(0.1)
+from pivy import coin  # noqa: E402, I001 — must import after Gui.showMainWindow()
 
 
 input_path = os.environ.get("INPUT", "cube_with_hole.FCStd")
 outdir = os.environ.get("OUTDIR", ".")
 
-# === Load document ===
+log("loading document")
 doc = App.openDocument(input_path)
 App.setActiveDocument(doc.Name)
 Gui.ActiveDocument = Gui.getDocument(doc.Name)
 
-pump(2)
+log("pump for document load")
+pump(qapp, 2)
 
+log("configuring view properties")
 # Configure Part::Feature view properties for shaded rendering.
 # Use exact TypeId match — many types (Sketcher::SketchObject, etc.) inherit from
 # Part::Feature but don't support Shaded display mode.
@@ -58,7 +49,8 @@ for obj in doc.Objects:
     vo.Lighting = "One side"
     vo.Transparency = 0
 
-pump(2)
+log("pump for view properties")
+pump(qapp, 2)
 
 view = Gui.ActiveDocument.ActiveView
 
@@ -73,7 +65,7 @@ cam = view.getCameraNode()
 cam_type = cam.getTypeId().getName()
 if cam_type == "SoOrthographicCamera":
     Gui.runCommand("Std_PerspectiveCamera", 0)
-    pump(1)
+    pump(qapp, 1)
     cam = view.getCameraNode()
 
 # Set camera to an angle where faces are visibly different
@@ -93,15 +85,18 @@ light.direction.setValue(coin.SbVec3f(-0.5, 0.3, -0.8))
 light.intensity.setValue(0.8)
 root.insertChild(light, 0)
 
-pump(2)
+log("pump for camera + lighting")
+pump(qapp, 2)
 
 view.fitAll()
-pump(1)
+log("pump for fitAll")
+pump(qapp, 1)
 
+log("saving image")
 # === Save image ===
 output_name = Path(input_path).stem + ".png"
 output_path = os.path.join(outdir, output_name)  # noqa: PTH118 — FreeCAD API expects str
 view.saveImage(output_path, 800, 600, "Current")
-print(f"Rendered: {output_path}")
+log(f"rendered: {output_path} — done")
 
 os._exit(0)  # Skip Qt cleanup to avoid potential segfault under xvfb
