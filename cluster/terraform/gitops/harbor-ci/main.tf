@@ -140,6 +140,19 @@ resource "vault_kv_secret_v2" "harbor_ci_robot" {
   })
 }
 
+# K8s Secret for consumers that don't need Vault (e.g., github-secrets-sync).
+resource "kubernetes_secret" "harbor_ci_robot" {
+  metadata {
+    name      = "harbor-ci-robot"
+    namespace = "flux-system"
+  }
+
+  data = {
+    username = harbor_robot_account.ci.full_name
+    password = harbor_robot_account.ci.secret
+  }
+}
+
 resource "vault_kv_secret_v2" "harbor_pull_robot" {
   mount = "kv"
   name  = "harbor/pull-robot"
