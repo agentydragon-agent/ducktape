@@ -47,7 +47,7 @@
   ducktape.k8sWorker = {
     enable = true;
     nodeLabels = {
-      "topology.kubernetes.io/region" = "home";
+      "topology.kubernetes.io/region" = "roaming";
       "node.kubernetes.io/role" = "worker";
     };
   };
