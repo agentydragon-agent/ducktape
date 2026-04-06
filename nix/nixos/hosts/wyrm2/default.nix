@@ -46,9 +46,6 @@ in
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
-  # Attic cache push token
-  sops.secrets.attic_token.sopsFile = ../../../../secrets/hosts/wyrm2-attic.yaml;
-
   # Nebula mesh + k8s worker credentials (wired via k8s-worker-sops module)
   ducktape.k8sWorkerSops.hostname = "wyrm2";
   ducktape.k8sWorker = {

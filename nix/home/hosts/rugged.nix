@@ -21,6 +21,11 @@
 
   ducktape.githubSsh.sopsFile = ../../../secrets/home/rugged/github-ssh.yaml;
 
+  ducktape.attic = {
+    enable = true;
+    sopsFile = ../../../secrets/home/rugged/attic.yaml;
+  };
+
   # SSH keys for wyrm and vps, decrypted from SOPS at activation time.
   sops.secrets = builtins.listToAttrs (
     map

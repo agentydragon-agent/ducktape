@@ -105,6 +105,8 @@ in
     ./modules/gnome-shell-keybindings.nix
     ./modules/gnome-custom-keybindings.nix
     ./modules/flameshot-screenshots.nix
+    ./modules/attic.nix
+    ./modules/buildbuddy.nix
     ./modules/datetime-format.nix
     ./services/activitywatch.nix
   ];

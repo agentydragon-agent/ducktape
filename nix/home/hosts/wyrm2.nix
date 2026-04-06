@@ -14,6 +14,11 @@
     ../modules/15leroy-ssh.nix
   ];
 
+  ducktape.attic = {
+    enable = true;
+    sopsFile = ../../../secrets/home/wyrm2/attic.yaml;
+  };
+
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray
