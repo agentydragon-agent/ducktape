@@ -29,7 +29,12 @@ spec:
   values:
     lvmNode:
       nodeSelector:
-        kubernetes.io/hostname: wyrm2
+        topology.kubernetes.io/region: proxmox
+      allowedTopologies:
+        - matchLabelExpressions:
+            - key: topology.kubernetes.io/region
+              values:
+                - proxmox
     lvmController:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
