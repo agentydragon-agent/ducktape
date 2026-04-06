@@ -127,7 +127,10 @@ resource "proxmox_virtual_environment_vm" "vm" {
 
   lifecycle {
     ignore_changes = [
-      disk, # CSI driver attaches PVC disks dynamically; tofu can't distinguish them
+      # TODO: Re-enable disk management if Proxmox CSI is removed from wyrm2,
+      # or if bpg/proxmox adds per-disk ignore support (currently TypeSet, no
+      # stable keys — provider can't distinguish tofu-managed from CSI disks).
+      disk,
     ]
   }
 }
