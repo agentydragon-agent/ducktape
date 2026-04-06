@@ -23,44 +23,78 @@ creation_rules:
       - age:
           - *admin
           - *cluster-secrets
-  # Per-host secrets (only the host + admin can decrypt)
-  - path_regex: secrets/wyrm2-.*\.yaml$
+
+  # --- Nebula private keys (SOPS binary, admin + host) ---
+  - path_regex: secrets/nebula/ca\.sops\.key$
+    store_type: binary
+    key_groups:
+      - age:
+          - *admin
+  - path_regex: secrets/nebula/wyrm2\.sops\.key$
+    store_type: binary
     key_groups:
       - age:
           - *admin
           - *wyrm2
-  - path_regex: secrets/rugged-.*\.yaml$
+  - path_regex: secrets/nebula/rugged\.sops\.key$
+    store_type: binary
     key_groups:
       - age:
           - *admin
           - *rugged
-  - path_regex: secrets/atlas-.*\.yaml$
+  - path_regex: secrets/nebula/atlas\.sops\.key$
+    store_type: binary
     key_groups:
       - age:
           - *admin
           - *atlas
-  - path_regex: secrets/iguana-.*\.yaml$
+  - path_regex: secrets/nebula/iguana\.sops\.key$
+    store_type: binary
     key_groups:
       - age:
           - *admin
           - *iguana
-  # Per-user home-manager secrets (user SSH key + admin can decrypt)
-  - path_regex: secrets/user-wyrm2-.*\.yaml$
+
+  # --- Per-host secrets (admin + host) ---
+  - path_regex: secrets/hosts/wyrm2-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *wyrm2
+  - path_regex: secrets/hosts/rugged-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *rugged
+  - path_regex: secrets/hosts/atlas-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *atlas
+  - path_regex: secrets/hosts/iguana-.*\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *iguana
+
+  # --- Per-user home-manager secrets (admin + user SSH key) ---
+  - path_regex: secrets/home/wyrm2/.*\.yaml$
     key_groups:
       - age:
           - *admin
           - *user-wyrm2
-  - path_regex: secrets/user-rugged-.*\.yaml$
+  - path_regex: secrets/home/rugged/.*\.yaml$
     key_groups:
       - age:
           - *admin
           - *user-rugged
-  - path_regex: secrets/user-iguana-.*\.yaml$
+  - path_regex: secrets/home/iguana/.*\.yaml$
     key_groups:
       - age:
           - *admin
           - *user-iguana
-  # K8s worker secrets (k8s workers only)
+
+  # --- K8s worker secrets (all k8s workers) ---
   - path_regex: secrets/k8s-worker\.yaml$
     key_groups:
       - age:
@@ -79,14 +113,6 @@ creation_rules:
   # Cluster SOPS age private key (bootstrap deploys to flux-system/sops-age-cluster-secrets)
   # TODO: Consider narrowing to admin-only once bootstrap script is tested.
   - path_regex: secrets/cluster-secrets-age\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *user-wyrm2
-          - *user-rugged
-          - *user-iguana
-  # Nebula mesh CA keypair (tofu derives node certs at apply time)
-  - path_regex: secrets/nebula-ca\.yaml$
     key_groups:
       - age:
           - *admin

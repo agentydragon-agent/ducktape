@@ -4,6 +4,7 @@ metadata:
   name: kvm-device-plugin
   namespace: flux-system
 spec:
+  retryInterval: 1m
   interval: 10m
   path: ./cluster/k8s/kvm-device-plugin
   prune: true

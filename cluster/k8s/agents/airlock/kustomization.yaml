@@ -6,15 +6,15 @@ resources:
   - exec-backend-token.yaml
   - oura-client-credentials.sops.yaml
   - google-client-credentials.sops.yaml
-  - airlock-pvc.yaml
-  - airlock-serviceaccount.yaml
-  - airlock-rbac.yaml
+  - pvc.yaml
+  - serviceaccount.yaml
+  - rbac.yaml
   - kubeapi-admin-exec-mcp-deployment.yaml
   - kubeapi-admin-exec-mcp-service.yaml
   - kubeapi-admin-exec-mcp-rbac.yaml
-  - airlock-deployment.yaml
-  - airlock-service.yaml
-  - airlock-httproute.yaml
+  - deployment.yaml
+  - service.yaml
+  - httproute.yaml
   - ciliumnetworkpolicy.yaml
 
 configMapGenerator:

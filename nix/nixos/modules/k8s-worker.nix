@@ -166,6 +166,7 @@ in
 
     bootstrapTokenPath = lib.mkOption {
       type = lib.types.str;
+      default = "/run/secrets/k8s_bootstrap_token";
       description = "Path to the bootstrap token file (sops secret). The module generates the kubeconfig.";
     };
 

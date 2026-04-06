@@ -20,7 +20,7 @@
     ../modules/github-ssh.nix
   ];
 
-  ducktape.githubSsh.sopsFile = ../../../secrets/user-iguana-github-ssh.yaml;
+  ducktape.githubSsh.sopsFile = ../../../secrets/home/iguana/github-ssh.yaml;
 
   home.stateVersion = "24.11";
 }

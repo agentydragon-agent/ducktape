@@ -3,7 +3,7 @@ load("@rules_tf//tf:def.bzl", "tf_module", "tf_providers_versions")
 tf_providers_versions(
     name = "providers",
     providers = {
-        "vault": "hashicorp/vault:~>5.7.0",
+        "kubernetes": "hashicorp/kubernetes:~>2.35",
         "random": "hashicorp/random:~>3.7.0",
     },
     tf_version = "1.9.8",
@@ -12,7 +12,7 @@ tf_providers_versions(
 tf_module(
     name = "alloy-otlp-bearer-token",
     providers = [
-        "vault",
+        "kubernetes",
         "random",
     ],
     providers_versions = ":providers",

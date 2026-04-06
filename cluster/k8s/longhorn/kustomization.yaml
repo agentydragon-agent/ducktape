@@ -6,5 +6,5 @@ resources:
   - helmrelease.yaml
   - sc-hetzner-longhorn.yaml
   - sc-hetzner-longhorn-rwx.yaml
-  - longhorn-disk-config-policy.yaml
+  - disk-config-policy.yaml
   - networkpolicy.yaml

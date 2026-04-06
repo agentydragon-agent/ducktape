@@ -137,24 +137,28 @@ locals {
   }
 
   # Non-Talos nodes (wyrm2, rugged, iguana, atlas, activitywatch, k8s-worker-test)
-  # have certs managed via SOPS (secrets/{host}-nebula.yaml). IPs are embedded
-  # in the certs — use `nebula-cert print` to inspect. See docs/secrets.md
-  # "Nebula Certs for Non-Talos Nodes" for the generation workflow.
+  # have certs in secrets/nebula/ — plaintext .crt + SOPS binary .sops.key.
+  # IPs are embedded in the certs — use `nebula-cert print` to inspect.
+  # See docs/secrets.md "Nebula Certs for Non-Talos Nodes" for the generation workflow.
 }
 
-# Generate CA cert + key (once, stored on disk + in state).
-# Nebula CA from SOPS — written to disk so nebula-cert sign can read it.
-data "sops_file" "nebula_ca" {
-  source_file = "${path.module}/../../../secrets/nebula-ca.yaml"
+# Nebula CA — plaintext cert + SOPS binary key (secrets/nebula/).
+data "local_file" "nebula_ca_crt" {
+  filename = "${path.module}/../../../secrets/nebula/ca.crt"
+}
+
+data "sops_file" "nebula_ca_key" {
+  source_file = "${path.module}/../../../secrets/nebula/ca.sops.key"
+  input_type  = "raw"
 }
 
 resource "local_sensitive_file" "nebula_ca_key" {
-  content  = data.sops_file.nebula_ca.data["ca_key"]
+  content  = data.sops_file.nebula_ca_key.raw
   filename = "${local.nebula_cert_dir}/ca.key"
 }
 
 resource "local_file" "nebula_ca_crt" {
-  content  = data.sops_file.nebula_ca.data["ca_crt"]
+  content  = data.local_file.nebula_ca_crt.content
   filename = "${local.nebula_cert_dir}/ca.crt"
 }
 

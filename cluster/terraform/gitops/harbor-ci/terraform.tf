@@ -10,9 +10,9 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.35"
     }
-    vault = {
-      source  = "hashicorp/vault"
-      version = "~> 5.7.0"
+    github = {
+      source  = "integrations/github"
+      version = "~> 6.6"
     }
     random = {
       source  = "hashicorp/random"

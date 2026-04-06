@@ -22,18 +22,11 @@ provider "harbor" {
   password = data.kubernetes_secret.harbor_admin_password.data["HARBOR_ADMIN_PASSWORD"]
 }
 
-provider "vault" {
-  address = var.vault_address
-  auth_login_jwt {
-    mount = "kubernetes"
-    role  = "tf-runner"
-    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
+data "kubernetes_secret" "harbor_webhook_token" {
+  metadata {
+    name      = "harbor-webhook-token"
+    namespace = "flux-system"
   }
-}
-
-data "vault_kv_secret_v2" "harbor_webhook_token" {
-  mount = "kv"
-  name  = "harbor/webhook-token"
 }
 
 data "harbor_project" "ducktape" {
@@ -41,7 +34,7 @@ data "harbor_project" "ducktape" {
 }
 
 locals {
-  token            = data.vault_kv_secret_v2.harbor_webhook_token.data["token"]
+  token            = data.kubernetes_secret.harbor_webhook_token.data["token"]
   flux_webhook_url = "${var.flux_webhook_base_url}/hook/${sha256(local.token)}"
 }
 

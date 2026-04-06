@@ -11,14 +11,21 @@
 #   - pull robot account with read-only access (imagePullSecrets in app namespaces)
 #   - webhook token for the Flux harbor Receiver
 #   - github webhook token for the Flux github Receiver
+#   - github webhook registration for Flux Receiver
 #
-# Stores all credentials in Vault at kv/harbor/{ci-robot,pull-robot,webhook-token}
-# and kv/flux/github-webhook-token.
+# Stores all credentials as K8s Secrets in flux-system (direct, no Vault).
 
 data "kubernetes_secret" "harbor_admin_password" {
   metadata {
     name      = "harbor-admin-initial"
     namespace = "harbor"
+  }
+}
+
+data "kubernetes_secret" "github_secrets_sync_pat" {
+  metadata {
+    name      = "github-secrets-sync-pat"
+    namespace = "flux-system"
   }
 }
 
@@ -28,13 +35,9 @@ provider "harbor" {
   password = data.kubernetes_secret.harbor_admin_password.data["HARBOR_ADMIN_PASSWORD"]
 }
 
-provider "vault" {
-  address = var.vault_address
-  auth_login_jwt {
-    mount = "kubernetes"
-    role  = "tf-runner"
-    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
-  }
+provider "github" {
+  owner = "agentydragon"
+  token = data.kubernetes_secret.github_secrets_sync_pat.data["token"]
 }
 
 # Orphan old per-service projects — they still exist in Harbor (with images) but
@@ -130,17 +133,8 @@ resource "random_password" "github_webhook_token" {
   special = false
 }
 
-resource "vault_kv_secret_v2" "harbor_ci_robot" {
-  mount = "kv"
-  name  = "harbor/ci-robot"
+# --- K8s Secrets (direct, replacing Vault + ESO) ---
 
-  data_json = jsonencode({
-    username = harbor_robot_account.ci.full_name
-    password = harbor_robot_account.ci.secret
-  })
-}
-
-# K8s Secret for consumers that don't need Vault (e.g., github-secrets-sync).
 resource "kubernetes_secret" "harbor_ci_robot" {
   metadata {
     name      = "harbor-ci-robot"
@@ -153,42 +147,85 @@ resource "kubernetes_secret" "harbor_ci_robot" {
   }
 }
 
-resource "vault_kv_secret_v2" "harbor_pull_robot" {
-  mount = "kv"
-  name  = "harbor/pull-robot"
+resource "kubernetes_secret" "harbor_pull_robot" {
+  metadata {
+    name      = "harbor-pull-robot"
+    namespace = "flux-system"
+    annotations = {
+      "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "tana-mcp,homeassistant-proxy,activitywatch,inventree,props,openclaw-gateway,airlock"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "tana-mcp,homeassistant-proxy,activitywatch,inventree,props,openclaw-gateway,airlock"
+    }
+  }
 
-  data_json = jsonencode({
-    username = harbor_robot_account.pull.full_name
-    password = harbor_robot_account.pull.secret
-  })
+  type = "kubernetes.io/dockerconfigjson"
+
+  data = {
+    ".dockerconfigjson" = jsonencode({
+      auths = {
+        "registry.allegedly.works" = {
+          username = harbor_robot_account.pull.full_name
+          password = harbor_robot_account.pull.secret
+          auth     = base64encode("${harbor_robot_account.pull.full_name}:${harbor_robot_account.pull.secret}")
+        }
+      }
+    })
+  }
 }
 
-resource "vault_kv_secret_v2" "harbor_webhook_token" {
-  mount = "kv"
-  name  = "harbor/webhook-token"
+resource "kubernetes_secret" "harbor_webhook_token" {
+  metadata {
+    name      = "harbor-webhook-token"
+    namespace = "flux-system"
+  }
 
-  data_json = jsonencode({
+  data = {
     token = random_password.harbor_webhook_token.result
-  })
+  }
 
   lifecycle {
     # Don't rotate the token after initial creation — rotating it would require
     # reconfiguring the Harbor webhook notification and the Flux Receiver path.
-    ignore_changes = [data_json]
+    ignore_changes = [data]
   }
 }
 
-resource "vault_kv_secret_v2" "github_webhook_token" {
-  mount = "kv"
-  name  = "flux/github-webhook-token"
+resource "kubernetes_secret" "github_webhook_token" {
+  metadata {
+    name      = "github-webhook-token"
+    namespace = "flux-system"
+  }
 
-  data_json = jsonencode({
+  data = {
     token = random_password.github_webhook_token.result
-  })
+  }
 
   lifecycle {
     # Don't rotate after initial creation — rotating requires reconfiguring the
     # GitHub webhook URL (path changes with the sha256 of the token).
-    ignore_changes = [data_json]
+    ignore_changes = [data]
+  }
+}
+
+# --- GitHub webhook for Flux Receiver ---
+
+resource "github_repository_webhook" "flux_receiver" {
+  repository = "ducktape"
+
+  configuration {
+    url          = "https://flux-webhook.allegedly.works/hook/${sha256(random_password.github_webhook_token.result)}"
+    content_type = "json"
+    secret       = random_password.github_webhook_token.result
+    insecure_ssl = false
+  }
+
+  active = true
+  events = ["push"]
+
+  lifecycle {
+    # Token has ignore_changes on its random_password, so the URL is stable.
+    # Only recreate if the webhook is manually deleted from GitHub.
+    ignore_changes = [configuration]
   }
 }

@@ -2,9 +2,9 @@ terraform {
   required_version = ">= 1.0"
 
   required_providers {
-    vault = {
-      source  = "hashicorp/vault"
-      version = "~> 5.7.0"
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.35"
     }
     random = {
       source  = "hashicorp/random"
@@ -18,30 +18,37 @@ terraform {
   }
 }
 
-provider "vault" {
-  address = var.vault_address
-  auth_login_jwt {
-    mount = "kubernetes"
-    role  = "tf-runner"
-    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
-  }
-}
-
 resource "random_password" "bearer_token" {
   length  = 48
   special = false
-  keepers = { rotation_version = var.rotation_version }
 
   lifecycle {
     ignore_changes = [length, special]
   }
 }
 
-resource "vault_kv_secret_v2" "alloy_otlp_bearer_token" {
-  mount = "kv"
-  name  = "alloy-otlp/bearer-token"
+# K8s secret in claude-sandbox for Claude hooks to send as Bearer token.
+resource "kubernetes_secret" "alloy_otlp_bearer_token_claude" {
+  metadata {
+    name      = "alloy-otlp-bearer-token"
+    namespace = "claude-sandbox"
+  }
 
-  data_json = jsonencode({
+  data = {
     token = random_password.bearer_token.result
-  })
+  }
+}
+
+# K8s secret in authentik namespace for Authentik worker envFrom.
+# The blueprint uses !Env ALLOY_OTLP_BEARER_TOKEN to register the token
+# as an Authentik service account API key.
+resource "kubernetes_secret" "alloy_otlp_bearer_token_authentik" {
+  metadata {
+    name      = "alloy-otlp-bearer-token"
+    namespace = "authentik"
+  }
+
+  data = {
+    ALLOY_OTLP_BEARER_TOKEN = random_password.bearer_token.result
+  }
 }

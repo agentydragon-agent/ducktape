@@ -20,8 +20,8 @@ spec:
             - sh
             - -c
             - |
-              cat /mitmproxy-ca-key/mitmproxy-ca.key /mitmproxy-ca-cert/mitmproxy-ca-cert.pem > /mitmproxy-data/mitmproxy-ca.pem
-              cp /mitmproxy-ca-cert/mitmproxy-ca-cert.pem /mitmproxy-data/mitmproxy-ca-cert.pem
+              cat /mitmproxy-ca-key/mitmproxy-ca.key /mitmproxy-ca-cert/ca-cert.pem > /mitmproxy-data/mitmproxy-ca.pem
+              cp /mitmproxy-ca-cert/ca-cert.pem /mitmproxy-data/mitmproxy-ca-cert.pem
           volumeMounts:
             - name: mitmproxy-ca-cert
               mountPath: /mitmproxy-ca-cert
@@ -63,8 +63,8 @@ spec:
               memory: 512Mi
       volumes:
         - name: mitmproxy-ca-cert
-          secret:
-            secretName: mitmproxy-ca-cert
+          configMap:
+            name: mitmproxy-ca-cert
         - name: mitmproxy-ca-key
           secret:
             secretName: mitmproxy-ca-key

@@ -60,19 +60,22 @@ secrets that Flux and tofu consume.
 
 | File                                    | Contents                           | Depends On                      | Depended On By                                                   |
 | --------------------------------------- | ---------------------------------- | ------------------------------- | ---------------------------------------------------------------- |
-| `secrets/nebula-ca.yaml`                | Nebula CA cert + key               | Admin age key                   | L2: all nebula node certs                                        |
-| `secrets/flux-deploy-key.yaml`          | ED25519 SSH keypair                | Admin age key                   | L5: Flux git sync; GitHub deploy key                             |
+| `secrets/nebula/ca.crt`                 | Nebula CA public cert (plaintext)  | None                            | L2: tofu node cert signing; L7: NixOS workers, ansible           |
+| `secrets/nebula/ca.sops.key`            | Nebula CA private key (SOPS bin)   | Admin age key                   | L2: tofu node cert signing                                       |
+| `secrets/nebula/*.sops.key`             | Nebula host private keys (binary)  | Admin age key + host age key    | L7: NixOS worker nebula mesh, ansible                            |
+| `secrets/nebula/*.crt`                  | Nebula host public certs (plain)   | None                            | L7: NixOS worker nebula mesh, ansible                            |
+| `secrets/flux-deploy-key.yaml`          | ED25519 SSH private key            | Admin age key                   | L5: Flux git sync; GitHub deploy key                             |
+| `secrets/flux-deploy-key.pub`           | ED25519 SSH public key (plain)     | None                            | GitHub deploy key registration                                   |
 | `secrets/cluster-secrets-age.yaml`      | Age keypair (private + public)     | Admin age key                   | L5: Flux SOPS decryption (`sops-age-cluster-secrets` k8s secret) |
-| `secrets/wyrm2-nebula.yaml`             | wyrm2 nebula cert + key + CA       | Admin age key, host age key     | L7: wyrm2 nebula mesh                                            |
-| `secrets/rugged-nebula.yaml`            | rugged nebula cert + key + CA      | Admin age key, host age key     | L7: rugged nebula mesh                                           |
-| `secrets/atlas-nebula.yaml`             | atlas nebula cert + key + CA       | Admin age key, host age key     | Atlas (Proxmox host) nebula mesh                                 |
 | `secrets/cluster-tokens.yaml`           | Hetzner + Proxmox API tokens       | Admin age key + user age keys   | `.envrc` → `TF_VAR_hcloud_token`, `PROXMOX_VE_API_TOKEN`         |
-| `secrets/k8s-worker.yaml`               | k8s bootstrap kubeconfig, CA cert  | Admin age key                   | L7: kubelet TLS bootstrap on NixOS workers                       |
+| `secrets/k8s-ca.crt`                    | K8s cluster CA cert (plaintext)    | None                            | L7: kubelet TLS on NixOS workers                                 |
+| `secrets/k8s-worker.yaml`               | k8s bootstrap token                | Admin age key                   | L7: kubelet TLS bootstrap on NixOS workers                       |
 | `cluster/k8s/**/*.sops.yaml` (26 files) | App credentials (API keys, tokens) | Admin age key + cluster age key | L6: individual services                                          |
 
-**If `secrets/nebula-ca.yaml` is lost**: Generate new CA with `nebula-cert ca`,
-SOPS-encrypt, commit. Then regenerate all node certs (L2) and update all
-NixOS worker sops secrets (L7).
+**If nebula CA is lost**: Generate new CA with `nebula-cert ca`, write cert
+to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`.
+Then regenerate all node certs (L2) and update all NixOS worker nebula
+files (L7).
 
 **If `secrets/cluster-secrets-age.yaml` is lost**: Generate new age key with
 `age-keygen`, SOPS-encrypt, commit. Update `.sops.yaml` with new public key.
@@ -101,7 +104,7 @@ backend. Resources have `lifecycle { prevent_destroy = true }`.
 | `proxmox_virtual_environment_role.persistent`                     | L0: Proxmox token                      | Proxmox roles (CSI, TerraformAdmin)               | L2: Proxmox users                       |
 | `proxmox_virtual_environment_user.persistent`                     | L2: roles                              | Proxmox users (kubernetes-csi@pve, terraform@pve) | L2: tokens                              |
 | `proxmox_virtual_environment_user_token.persistent`               | L2: users                              | API tokens for CSI + terraform                    | L3: Proxmox VM creation; L6: CSI driver |
-| `local_file.nebula_ca_crt` / `local_sensitive_file.nebula_ca_key` | L1: `secrets/nebula-ca.yaml`           | CA cert/key on disk                               | L2: node cert signing                   |
+| `local_file.nebula_ca_crt` / `local_sensitive_file.nebula_ca_key` | L1: `secrets/nebula/ca.{crt,sops.key}` | CA cert/key on disk                               | L2: node cert signing                   |
 | `null_resource.nebula_node_cert` (5 Talos nodes)                  | L2: CA on disk                         | Per-node cert+key at `nebula-certs/`              | L3: Talos machine config (embedded)     |
 | `kubernetes_namespace.flux_system`                                | L3: kubeconfig                         | `flux-system` namespace                           | L2: SOPS age secret; L5: Flux           |
 | `kubernetes_secret.sops_age_cluster_secrets`                      | L1: `secrets/cluster-secrets-age.yaml` | k8s secret in flux-system                         | L5: Flux SOPS decryption                |
@@ -173,20 +176,21 @@ decrypted by Flux. See [App Credentials](#app-credentials) for the full list.
 
 wyrm2 and rugged join the cluster via kubelet TLS bootstrap over Nebula mesh.
 
-| What They Need           | Source                                       | Delivery                                                              |
-| ------------------------ | -------------------------------------------- | --------------------------------------------------------------------- |
-| Nebula cert + key        | Generated via `nebula-cert sign` (see below) | `secrets/{host}-nebula.yaml` SOPS → `nixos-rebuild switch`            |
-| Nebula CA cert           | L1: `secrets/nebula-ca.yaml`                 | Included in per-host nebula SOPS file                                 |
-| k8s bootstrap kubeconfig | L3: `kubeconfig` + bootstrap token           | Manual copy → `secrets/k8s-worker.yaml` SOPS → `nixos-rebuild switch` |
-| k8s CA cert              | L3: Talos machine secrets                    | Extracted from kubeconfig or tofu output                              |
+| What They Need           | Source                                       | Delivery                                                                |
+| ------------------------ | -------------------------------------------- | ----------------------------------------------------------------------- |
+| Nebula host cert         | Generated via `nebula-cert sign` (see below) | `secrets/nebula/{host}.crt` (plaintext) → `nixos-rebuild switch`        |
+| Nebula host key          | Generated via `nebula-cert sign` (see below) | `secrets/nebula/{host}.sops.key` (SOPS binary) → `nixos-rebuild switch` |
+| Nebula CA cert           | L1: `secrets/nebula/ca.crt`                  | Plaintext PEM, deployed via `environment.etc`                           |
+| k8s bootstrap kubeconfig | L3: `kubeconfig` + bootstrap token           | Manual copy → `secrets/k8s-worker.yaml` SOPS → `nixos-rebuild switch`   |
+| k8s CA cert              | L3: Talos machine secrets                    | Extracted from kubeconfig or tofu output                                |
 
 **After fresh bootstrap** (new cluster CA / new machine secrets):
 
-1. Update SOPS files with new certs + bootstrap token:
-   - `secrets/{host}-nebula.yaml` — generate new cert via `nebula-cert sign` (see <secrets.md> "Nebula Certs for Non-Talos Nodes")
-   - `secrets/k8s-worker.yaml` — new `k8s_ca_cert` (PEM from `tofu output -raw k8s_ca_cert | base64 -d`),
-     new `k8s_bootstrap_token` (from `tofu output -raw k8s_bootstrap_token`),
-     new `k8s_bootstrap_kubeconfig` (with updated CA + token + server `https://10.42.0.1:6443`)
+1. Update nebula + k8s secrets:
+   - Generate new nebula cert via `nebula-cert sign` (see <secrets.md> "Nebula Certs for Non-Talos Nodes"),
+     commit `.crt` and `.sops.key` to `secrets/nebula/`
+   - `secrets/k8s-ca.crt` — new CA cert PEM (`tofu output -raw k8s_ca_cert | base64 -d`)
+   - `secrets/k8s-worker.yaml` — new `k8s_bootstrap_token` (from `tofu output -raw k8s_bootstrap_token`)
 2. `nixos-rebuild switch` on each NixOS worker
 3. Restart nebula, haproxy, kubelet: `sudo systemctl restart nebula haproxy kubelet`
 4. **Delete stale kubelet TLS state** — kubelet caches a kubeconfig with certs
@@ -250,10 +254,11 @@ re-enter from the external service and SOPS-encrypt.
 ### Lost Nebula CA
 
 1. Generate new CA: `nebula-cert ca -name "allegedly.works"`
-2. SOPS-encrypt to `secrets/nebula-ca.yaml`
-3. `tofu apply` (persistent-auth targets) — regenerates all node certs
-4. Update NixOS worker SOPS files with new certs, `nixos-rebuild switch`
-5. Talos nodes get new certs via machine config apply (automatic in tofu)
+2. Write cert to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`
+3. `tofu apply` (persistent-auth targets) — regenerates all Talos node certs
+4. Regenerate non-Talos node certs (see <secrets.md> "Generating a new cert")
+5. `nixos-rebuild switch` on NixOS workers; `ansible-playbook atlas.yaml --tags nebula`
+6. Talos nodes get new certs via machine config apply (automatic in tofu)
 
 ### Lost cluster age key
 

@@ -5,7 +5,7 @@ tf_providers_versions(
     providers = {
         "harbor": "goharbor/harbor:~>3.11",
         "kubernetes": "hashicorp/kubernetes:~>2.35",
-        "vault": "hashicorp/vault:~>5.7.0",
+        "github": "integrations/github:~>6.6",
         "random": "hashicorp/random:~>3.7.0",
     },
     tf_version = "1.9.8",
@@ -16,7 +16,7 @@ tf_module(
     providers = [
         "harbor",
         "kubernetes",
-        "vault",
+        "github",
         "random",
     ],
     providers_versions = ":providers",

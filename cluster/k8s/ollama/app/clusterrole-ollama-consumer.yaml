@@ -6,5 +6,6 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     resourceNames:
-      - ollama-api-key
+      - litellm-master-key
+      - ollama-bearer-token
     verbs: ["get"]

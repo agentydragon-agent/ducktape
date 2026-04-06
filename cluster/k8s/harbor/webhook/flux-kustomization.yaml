@@ -23,4 +23,3 @@ spec:
     - name: harbor-ci # props project must exist before webhook can reference it
     - name: harbor
     - name: tofu-controller
-    - name: vault

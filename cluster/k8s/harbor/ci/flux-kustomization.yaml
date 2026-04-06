@@ -22,4 +22,3 @@ spec:
   dependsOn:
     - name: harbor # Harbor API must be available to create projects/robots
     - name: tofu-controller
-    - name: vault

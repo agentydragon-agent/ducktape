@@ -19,7 +19,7 @@
     ../modules/github-ssh.nix
   ];
 
-  ducktape.githubSsh.sopsFile = ../../../secrets/user-rugged-github-ssh.yaml;
+  ducktape.githubSsh.sopsFile = ../../../secrets/home/rugged/github-ssh.yaml;
 
   # SSH keys for wyrm and vps, decrypted from SOPS at activation time.
   sops.secrets = builtins.listToAttrs (
@@ -33,7 +33,7 @@
         {
           inherit name;
           value = {
-            sopsFile = ../../../secrets/${sopsFile};
+            sopsFile = ../../../secrets/home/rugged/${sopsFile};
             key = "ssh_private_key";
             path = "${config.home.homeDirectory}/.ssh/${filename}";
             mode = "0600";
@@ -43,17 +43,17 @@
       [
         {
           name = "wyrm_ssh_key";
-          sopsFile = "user-rugged-wyrm-ssh.yaml";
+          sopsFile = "wyrm-ssh.yaml";
           filename = "wyrm_agentydragon_user_id_ed25519";
         }
         {
           name = "vps_root_ssh_key";
-          sopsFile = "user-rugged-vps-root-ssh.yaml";
+          sopsFile = "vps-root-ssh.yaml";
           filename = "vps_root_id_ed25519";
         }
         {
           name = "vps_user_ssh_key";
-          sopsFile = "user-rugged-vps-user-ssh.yaml";
+          sopsFile = "vps-user-ssh.yaml";
           filename = "vps_agentydragon_user_id_ed25519";
         }
       ]

@@ -121,6 +121,8 @@ spec:
             name: authentik-secret-key
         - secretRef:
             name: authentik-sso-client-secrets
+        - secretRef:
+            name: alloy-otlp-bearer-token
 
       env:
         - name: AUTHENTIK_POSTGRESQL__PASSWORD
@@ -185,6 +187,8 @@ spec:
             name: authentik-secret-key
         - secretRef:
             name: authentik-sso-client-secrets
+        - secretRef:
+            name: alloy-otlp-bearer-token
 
       env:
         - name: AUTHENTIK_POSTGRESQL__PASSWORD

@@ -18,6 +18,4 @@ spec:
       namespace: flux-system
   timeout: 10m
   dependsOn:
-    - name: external-secrets-config
     - name: tofu-controller
-    - name: vault

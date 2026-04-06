@@ -9,8 +9,3 @@ variable "flux_webhook_base_url" {
   type        = string
   default     = "https://flux-webhook.allegedly.works"
 }
-
-variable "vault_address" {
-  description = "Vault address"
-  type        = string
-}

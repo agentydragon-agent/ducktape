@@ -15,7 +15,7 @@ metadata:
       Mutates pods in claude-sandbox and openclaw-sandbox to automatically
       inject mitmproxy proxy env vars (HTTP_PROXY, HTTPS_PROXY, NO_PROXY,
       SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS)
-      and mount the mitmproxy CA cert at /mitmproxy-ca/mitmproxy-ca-cert.pem.
+      and mount the mitmproxy CA cert at /mitmproxy-ca/ca-cert.pem.
 spec:
   mutateExistingOnPolicyUpdate: false
   rules:
@@ -30,8 +30,8 @@ spec:
           spec:
             volumes:
               - name: mitmproxy-ca-cert
-                secret:
-                  secretName: mitmproxy-ca-cert
+                configMap:
+                  name: mitmproxy-ca-cert
 
     - name: add-proxy-env-and-mount-containers
       match:
@@ -52,13 +52,13 @@ spec:
                   - name: NO_PROXY
                     value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
                   - name: SSL_CERT_FILE
-                    value: /mitmproxy-ca/mitmproxy-ca-cert.pem
+                    value: /mitmproxy-ca/ca-cert.pem
                   - name: CURL_CA_BUNDLE
-                    value: /mitmproxy-ca/mitmproxy-ca-cert.pem
+                    value: /mitmproxy-ca/ca-cert.pem
                   - name: REQUESTS_CA_BUNDLE
-                    value: /mitmproxy-ca/mitmproxy-ca-cert.pem
+                    value: /mitmproxy-ca/ca-cert.pem
                   - name: NODE_EXTRA_CA_CERTS
-                    value: /mitmproxy-ca/mitmproxy-ca-cert.pem
+                    value: /mitmproxy-ca/ca-cert.pem
                 volumeMounts:
                   - name: mitmproxy-ca-cert
                     mountPath: /mitmproxy-ca
@@ -89,13 +89,13 @@ spec:
                   - name: NO_PROXY
                     value: "127.0.0.1,localhost,.svc.cluster.local,10.0.0.0/8"
                   - name: SSL_CERT_FILE
-                    value: /mitmproxy-ca/mitmproxy-ca-cert.pem
+                    value: /mitmproxy-ca/ca-cert.pem
                   - name: CURL_CA_BUNDLE
-                    value: /mitmproxy-ca/mitmproxy-ca-cert.pem
+                    value: /mitmproxy-ca/ca-cert.pem
                   - name: REQUESTS_CA_BUNDLE
-                    value: /mitmproxy-ca/mitmproxy-ca-cert.pem
+                    value: /mitmproxy-ca/ca-cert.pem
                   - name: NODE_EXTRA_CA_CERTS
-                    value: /mitmproxy-ca/mitmproxy-ca-cert.pem
+                    value: /mitmproxy-ca/ca-cert.pem
                 volumeMounts:
                   - name: mitmproxy-ca-cert
                     mountPath: /mitmproxy-ca

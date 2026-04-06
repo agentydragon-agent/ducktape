@@ -94,6 +94,6 @@ curl http://localhost:8263/health
 
 | Secret                  | Key                 | Source                               |
 | ----------------------- | ------------------- | ------------------------------------ |
-| `harbor-ci-robot`       | `.dockerconfigjson` | Vault `kv/harbor/ci-robot`           |
+| `harbor-pull-robot`     | `.dockerconfigjson` | harbor-ci TF (Reflector mirror)      |
 | `tana-mcp-oauth-tokens` | `access_token`      | Auto-managed by token-broker sidecar |
 | `tana-mcp-oauth-tokens` | `refresh_token`     | Auto-managed by token-broker sidecar |

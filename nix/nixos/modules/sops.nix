@@ -2,7 +2,7 @@
 # Decrypts age-encrypted secrets at activation time using the host's SSH key.
 #
 # Hosts that need attic should declare:
-#   sops.secrets.attic_token.sopsFile = ../../../../secrets/{host}-attic.yaml;
+#   sops.secrets.attic_token.sopsFile = ../../../../secrets/hosts/{host}-attic.yaml;
 {
   config,
   inputs,
