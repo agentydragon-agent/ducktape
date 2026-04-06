@@ -9,4 +9,4 @@ allowedTopologies:
   - matchLabelExpressions:
       - key: topology.kubernetes.io/region
         values:
-          - hetzner
+          - hil
