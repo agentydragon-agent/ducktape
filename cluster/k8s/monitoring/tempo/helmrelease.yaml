@@ -16,7 +16,6 @@ spec:
       interval: 12h
   values:
     tempo:
-      # OTLP/gRPC receiver (Alloy → Tempo).
       receivers:
         otlp:
           protocols:
@@ -27,15 +26,21 @@ spec:
 
       storage:
         trace:
-          backend: local
-          local:
-            path: /var/tempo/traces
+          backend: s3
+          s3:
+            endpoint: minio.minio.svc.cluster.local:9000
+            bucket: tempo
+            insecure: true
+
+      extraEnvFrom:
+        - secretRef:
+            name: tempo-minio-credentials
 
     persistence:
-      enabled: true
-      # CLEANUP(2026-04-02): Migrate to MinIO backend (native S3 support)
-      storageClassName: longhorn
-      size: 10Gi
+      enabled: false
+
+    nodeSelector:
+      topology.kubernetes.io/region: hil
 
     resources:
       requests:
