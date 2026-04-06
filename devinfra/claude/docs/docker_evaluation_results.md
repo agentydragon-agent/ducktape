@@ -97,14 +97,30 @@ docker build --network=host -t image-name .
 ### 🔍 Needs Investigation (RESOLVED)
 
 1. **~~DNS in build containers~~** - SOLVED
-   - Initial error: `DNS: transient error (try again later)`
-   - Root cause: TLS certificate trust issue, not DNS
-   - The TLS-inspecting egress proxy injects its own certificate
-   - Alpine's apk reports "DNS error" when TLS validation fails (misleading)
-   - Solution: Use `apk --no-check-certificate` for builds
-   - Test: `RUN apk --no-check-certificate add curl` - PASSED
-   - Proxy environment variables work: `http_proxy`, `https_proxy` are respected
-   - For production: Would inject combined CA bundle into base images
+   - Initial error: `DNS: transient error (try again later)` / `Temporary failure resolving 'archive.ubuntu.com'`
+   - Root cause: the TLS-inspecting egress proxy intercepts outbound connections; containers don't have the proxy's CA cert and can't authenticate
+   - Alpine `apk` reports "DNS error" when TLS validation fails (misleading error message)
+   - Ubuntu `apt-get` reports "Temporary failure resolving" for the same reason
+   - **Solution for docker build**: pass proxy env vars as build args — BuildKit forwards them automatically to RUN steps:
+     ```bash
+     docker build --network=host \
+       --build-arg HTTP_PROXY="$HTTP_PROXY" \
+       --build-arg HTTPS_PROXY="$HTTPS_PROXY" \
+       --build-arg http_proxy="$http_proxy" \
+       --build-arg https_proxy="$https_proxy" \
+       -f Dockerfile .
+     ```
+     The Dockerfile does NOT need `ARG HTTP_PROXY` — BuildKit's predefined proxy ARGs are forwarded automatically.
+   - **Solution for docker run**: pass proxy env vars with `-e`:
+     ```bash
+     docker run --rm --network=host \
+       -e http_proxy="$http_proxy" \
+       -e https_proxy="$https_proxy" \
+       ubuntu:24.04 apt-get update
+     ```
+   - Note: `--build-arg` and `-e` work differently. `--build-arg` in docker build sets build-time variables handled by BuildKit. `-e` in docker run sets runtime environment variables. For `docker build`, use `--build-arg`; for `docker run`, use `-e`.
+   - Alpine solution: `apk --no-check-certificate add ...` (skips TLS) — works but bypasses cert validation
+   - Ubuntu `apt-get` solution: pass proxy env vars via `--build-arg` as above
 
 2. **Keyring quota**
    - Haven't tested 100+ layers yet (hit overlay limit first at 35)
