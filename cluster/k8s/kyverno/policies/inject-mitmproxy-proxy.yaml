@@ -5,11 +5,17 @@
 #
 # Uses RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
 # conflicts with Kyverno autogen + Flux server-side dry-run on Deployments.
+#
+# Autogen is disabled: JSON patch "add /-" always appends, so if autogen
+# mutates the Deployment template AND the Pod-level rule fires at Pod
+# creation, volumes/env/mounts get duplicated. With autogen off, only
+# Pod admission is mutated.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: inject-mitmproxy-proxy
   annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
     policies.kyverno.io/title: Inject mitmproxy proxy
     policies.kyverno.io/category: Networking
     policies.kyverno.io/severity: medium
