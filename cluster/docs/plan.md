@@ -105,6 +105,10 @@ CloudNativePG `local-path`. See <changelog.md> for history.
     Ingester `replication_factor: 3` for in-flight data. Removes `proxmox-csi`
     dependency from Loki — unblocks the `grafana` HelmRepository (currently
     bundled in the `loki` kustomization) for Tempo and Alloy.
+  - [ ] Reconsider MinIO on control-plane nodes: currently 4 replicas across all
+        VPS nodes (2 CP + 2 worker) with CP tolerations. Alternative: 2 replicas on
+        workers only with `drivesPerNode: 2` (4 drives total, still erasure coded).
+        Keeps CP nodes lighter but halves node-loss tolerance (1 node = all data).
   - **Phase 3** (future): Deploy a second MinIO instance on Proxmox (`local-path`,
     single-node). Set up async replication or scheduled `mc mirror` from the
     Hetzner instance for off-site backup of log history.
