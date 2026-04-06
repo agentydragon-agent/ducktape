@@ -1,0 +1,221 @@
+# FreeCAD TechDraw Reference
+
+## Page setup
+
+`DrawPage` + `DrawSVGTemplate` (from `/usr/share/freecad/Mod/TechDraw/Templates/`). One
+`DrawViewPart` with `Direction = Vector(0,0,1)` for top-down.
+
+## Dimensions (entity-referenced)
+
+**Always use entity-referenced `DrawViewDimension`** with `References2D` pointing to projected
+edges. This is the only approach that produces parametric drawings — dimensions auto-update
+when sketch geometry or spreadsheet parameters change.
+
+Identify projected edges by geometric properties (radius, slope, position, length). Edge
+indices vary between recomputes, so **match by geometry, not index**.
+
+```python
+vis_edges = view.getVisibleEdges()
+
+def find_edge(predicate, desc):
+    matches = [(i, e) for i, e in enumerate(vis_edges) if predicate(e)]
+    if len(matches) != 1:
+        raise AssertionError(f"Expected 1 edge matching {desc}, got {len(matches)}")
+    return matches[0][0]
+
+# Linear dimension (single edge → measures edge length)
+dim = doc.addObject("TechDraw::DrawViewDimension", "RoomWidth")
+page.addView(dim)
+dim.Type = "DistanceX"
+dim.References2D = [(view, f"Edge{bottom_edge_idx}")]
+dim.X = 0    # view-local text offset
+dim.Y = -10  # below the edge
+
+# Linear dimension between two parallel edges
+dim = doc.addObject("TechDraw::DrawViewDimension", "WallThickness")
+page.addView(dim)
+dim.Type = "DistanceY"
+dim.References2D = [(view, f"Edge{outer_idx}"), (view, f"Edge{inner_idx}")]
+dim.X = -15; dim.Y = 0
+
+# Radius dimension (one circular edge ref)
+dim = doc.addObject("TechDraw::DrawViewDimension", "FilletRadius")
+page.addView(dim)
+dim.Type = "Radius"
+dim.References2D = [(view, f"Edge{fillet_edge}")]
+dim.X = 20; dim.Y = 10
+
+# Angle dimension (two line edge refs)
+dim = doc.addObject("TechDraw::DrawViewDimension", "TabAngle")
+page.addView(dim)
+dim.Type = "Angle"
+dim.References2D = [(view, f"Edge{bot_edge}"), (view, f"Edge{tab_edge}")]
+dim.X = -12; dim.Y = -8
+```
+
+Supported `Type` values: `"Distance"`, `"DistanceX"`, `"DistanceY"`, `"Radius"`, `"Diameter"`,
+`"Angle"`. Radius/Diameter need one circular edge ref; Angle needs two line edge refs. Linear
+types accept one edge (measures its projected length) or two edges (measures distance between).
+
+**You MUST set `dim.X` and `dim.Y`** — they default to `(0, 0)` (view center), so all text
+overlaps without explicit placement.
+
+See <parametric_sketch.py> for a full example. See <build_bearing_block_techdraw.py> for 3D
+`References3D` dimensions on a Part Design body.
+
+## 3D-referenced dimensions (References3D + MeasureType="True")
+
+For 3D Part Design models, `DrawViewDimension` supports measuring directly from 3D geometry
+via `References3D` and `MeasureType = "True"`. Proper for cylindrical features (boss diameter,
+bore diameter) because the 3D measurement is independent of the 2D projection.
+
+```python
+# Find the cylindrical face by geometric properties (not hardcoded index)
+boss_cyl_face = find_3d_face(
+    body.Tip.Shape,
+    lambda f: type(f.Surface).__name__ == "Cylinder" and abs(f.Surface.Radius - 20) < 0.5,
+    "boss cylinder R=20",
+)  # returns "Face1" (or whichever matches)
+
+d = doc.addObject("TechDraw::DrawViewDimension", "BossDiameter")
+page.addView(d)
+d.Type = "Diameter"
+d.MeasureType = "True"
+d.References2D = [(front_view, "")]     # view as context (empty sub-element)
+d.References3D = [(body.Tip, boss_cyl_face)]  # 3D cylindrical face
+```
+
+What works with References3D (FreeCAD 1.1.0):
+
+- **Cylinder diameter/radius**: single cylindrical face → auto-computes diameter
+- **Edge lengths**: single 3D edge reference
+- **Point-to-point**: two vertex references
+
+What does NOT work: **face-to-face distance** — `getTrueDimValue()` doesn't handle the
+`TwoPlanes` case. Use projected-edge DistanceY as workaround.
+
+## Chamfer dimensions
+
+No built-in chamfer dimension type. Use `DistanceX` on the chamfer edge + append angle to `FormatSpec`:
+
+```python
+d = doc.addObject("TechDraw::DrawViewDimension", "ChamferDim")
+page.addView(d)
+d.Type = "DistanceX"  # measures horizontal leg, not hypotenuse
+d.References2D = [(view, f"Edge{chamfer_edge_idx}")]
+d.FormatSpec = "%.0f x45°"  # produces "2 x45°" for a 2mm chamfer
+```
+
+`Type="Distance"` on a 45° chamfer edge gives the hypotenuse (√2 × leg). `DistanceX`
+extracts `fabs(dimVec.x)` — the horizontal leg — which is the correct chamfer size.
+
+## `makeDistanceDim` — do not use
+
+`TechDraw.makeDistanceDim()` creates point-based dimensions from hardcoded coordinates that
+are not bound to projected entities. The resulting dimensions do not update when sketch
+geometry changes. Always use `DrawViewDimension` with `References2D` instead.
+
+## Annotations
+
+`DrawViewAnnotation` with `.Text`, `.X`, `.Y` (page mm), `.TextSize`, `.Font`, `.TextColor`,
+`.Rotation`. Absolute page positioning.
+
+**Page coordinate system:** Page Y increases **upward** (Y=0 is bottom). The conversion does
+NOT invert Y:
+
+```python
+bb = feat.Shape.BoundBox
+scx, scy = (bb.XMin + bb.XMax) / 2, (bb.YMin + bb.YMax) / 2
+scale = float(view.Scale)
+page_x = float(view.X) + (sketch_x - scx) * scale
+page_y = float(view.Y) + (sketch_y - scy) * scale  # NOT minus — both Y-up
+```
+
+**Cast `view.X`, `view.Y`, `view.Scale` to `float()`** before arithmetic to avoid FreeCAD
+`Quantity` unit mismatch errors.
+
+**Unicode in DXF:** Unicode characters (e.g., `\u00b0`) corrupt in DXF export. Use ASCII
+alternatives (`"60 deg"`).
+
+## Multi-view TechDraw for 3D parts
+
+Create multiple `DrawViewPart` objects on one page, each with a different `Direction` vector.
+`Direction` is the viewing direction; `XDirection` defines which way is "right".
+
+```python
+front = doc.addObject("TechDraw::DrawViewPart", "FrontView")
+front.Source = [body]
+front.Direction = App.Vector(0, -1, 0)
+front.XDirection = App.Vector(1, 0, 0)
+
+right = doc.addObject("TechDraw::DrawViewPart", "RightView")
+right.Source = [body]
+right.Direction = App.Vector(1, 0, 0)
+right.XDirection = App.Vector(0, 1, 0)
+
+top = doc.addObject("TechDraw::DrawViewPart", "TopView")
+top.Source = [body]
+top.Direction = App.Vector(0, 0, -1)
+
+iso = doc.addObject("TechDraw::DrawViewPart", "IsoView")
+iso.Source = [body]
+iso.Direction = App.Vector(1, -1, 1)
+```
+
+**Direction and XDirection must be perpendicular.** For axis-aligned directions, FreeCAD's
+default XDirection algorithm may produce a degenerate projection CS — set it explicitly:
+
+| Direction    | XDirection  | View       |
+| ------------ | ----------- | ---------- |
+| `(0, -1, 0)` | `(1, 0, 0)` | Front      |
+| `(1, 0, 0)`  | `(0, 1, 0)` | Right side |
+| `(-1, 0, 0)` | `(0, 1, 0)` | Left side  |
+| `(0, 0, -1)` | `(1, 0, 0)` | Top        |
+| `(0, 0, 1)`  | `(1, 0, 0)` | Bottom     |
+
+**`getVisibleEdges()` returns edges in unscaled model coordinates** — compare radii against
+model radius directly, not `radius * scale`.
+
+**Cylinder projections produce BSplineCurves, not Lines.** Don't filter edges with
+`isinstance(e.Curve, Part.Line)` for edges on cylindrical features — match by geometric
+extent (`_edge_dx`, `_edge_dy`) regardless of curve type.
+
+## View computation: waiting for TechDraw HLR
+
+TechDraw runs Hidden Line Removal (HLR) asynchronously via `QtConcurrent` threads. After
+`doc.recompute()`, the HLR thread starts but `recompute()` returns immediately.
+
+**Why `processEvents()` is required:** The `QFutureWatcher::finished` Qt signal dispatches
+HLR completion back to the main thread. Without calling `qapp.processEvents()`, this signal
+is never delivered and `getVisibleEdges()` stays empty forever. A bare `time.sleep()` will
+NOT work.
+
+**Preferred approach — poll `getVisibleEdges()`:**
+
+```python
+def wait_for_view(view, timeout=15.0, poll_interval=0.05):
+    """Poll until TechDraw view has visible edges, processing Qt events."""
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < timeout:
+        if qapp:
+            qapp.processEvents()
+        if len(view.getVisibleEdges()) > 0:
+            return
+        time.sleep(poll_interval)
+    raise TimeoutError(f"TechDraw view not ready after {timeout}s")
+
+doc.recompute(None, True, True)
+wait_for_view(view)             # typically completes in <2s
+doc.recompute(None, True, True) # settle dimensions
+pump(0.5)                       # short fixed pump for annotations
+```
+
+**Not available from Python** (C++ only in FreeCAD 1.1.0): `waitingForHlr()`,
+`waitingForFaces()`, `waitingForResult()`. The `getVisibleEdges()` check is the best
+Python-accessible readiness indicator.
+
+**For 3D viewport rendering** (not TechDraw): no edge-based readiness indicator — use
+`pump()` with conservative fixed durations and `processEvents()`.
+
+The FCStd caches computed view edges when saved during a GUI session. Freshly created views
+always require event pumping.

@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/work")  # freecad_helpers.py is mounted alongside this script
+sys.path.insert(0, str(Path(__file__).parent))
 
 import FreeCAD as App
 import Part
@@ -51,5 +51,3 @@ log("saving FCStd")
 fcstd_path = os.path.join(outdir, "cube_with_hole.FCStd")  # noqa: PTH118 — FreeCAD API expects str
 doc.saveAs(fcstd_path)
 log(f"FCStd: {Path(fcstd_path).stat().st_size} bytes — done")
-
-os._exit(0)

@@ -1,11 +1,18 @@
 """Shared helpers for FreeCAD scripts running inside the test container.
 
-Mounted into Docker containers as a plain file alongside the FreeCAD scripts.
+Mounted alongside FreeCAD scripts as a plain file.
 Uses only stdlib + FreeCAD's bundled Python (no Bazel workspace imports).
+Targets FreeCAD 1.1.0+ (PySide6). For older FreeCAD (0.21, PySide2) you'd
+need to swap the PySide6 imports below.
 """
 
+import os
 import sys
 import time
+import traceback
+
+from PySide6 import QtWidgets
+from PySide6.QtCore import QTimer
 
 _t0 = time.monotonic()
 
@@ -16,11 +23,7 @@ def log(msg):
 
 
 def init_gui():
-    """Initialize FreeCAD GUI mode. Call after Gui.showMainWindow(). Returns qapp."""
-    try:
-        from PySide6 import QtWidgets  # noqa: PLC0415 — FreeCAD version-dependent
-    except ImportError:
-        from PySide2 import QtWidgets  # noqa: PLC0415
+    """Get the running QApplication. Call at module level in GUI binary scripts."""
     return QtWidgets.QApplication.instance()
 
 
@@ -47,3 +50,32 @@ def wait_for_view(view, qapp, timeout=15.0, poll_interval=0.05):
             return
         time.sleep(poll_interval)
     raise TimeoutError(f"TechDraw view not ready after {timeout}s")
+
+
+def run_gui_script(qapp, fn):
+    """Schedule fn to run after QApplication::exec() starts, always quitting exec() on completion.
+
+    When using the FreeCAD GUI binary, all script work must be deferred via QTimer because
+    exec() hasn't started yet when module-level code runs. If fn raises an exception,
+    PySide would normally catch it, print it, and let exec() keep running indefinitely.
+    This wrapper ensures qapp.quit() is always called so the process exits cleanly.
+
+    Usage (replace bare QTimer.singleShot at end of script):
+        run_gui_script(qapp, _work)
+    """
+
+    def _wrapper():
+        try:
+            fn()
+        except BaseException:
+            traceback.print_exc(file=sys.stderr)
+            # Quit the event loop, then force-exit: sys.exit() inside a Qt slot
+            # is swallowed by PySide, so os._exit() is the only reliable escape.
+            if qapp:
+                qapp.quit()
+            os._exit(1)
+        else:
+            if qapp:
+                qapp.quit()
+
+    QTimer.singleShot(0, _wrapper)
