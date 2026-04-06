@@ -1,5 +1,6 @@
 # Attic binary cache credentials.
-# Decrypted from SOPS at home-manager activation time using ~/.ssh/id_ed25519.
+# Decrypts the token from SOPS using ~/.ssh/id_ed25519 and renders
+# ~/.config/attic/config.toml via sops-nix templates.
 {
   config,
   lib,
@@ -7,7 +8,6 @@
 }:
 let
   cfg = config.ducktape.attic;
-  atticDir = "${config.xdg.configHome}/attic";
 in
 {
   options.ducktape.attic = {
@@ -23,17 +23,16 @@ in
       inherit (cfg) sopsFile;
     };
 
-    home.activation.attic-config = config.lib.dag.entryAfter [ "sops-nix" ] ''
-      mkdir -p ${atticDir}
-      token=$(cat ${config.sops.secrets.attic_token.path})
-      cat > ${atticDir}/config.toml <<EOF
-      default-server = "main"
+    sops.templates."attic-config.toml" = {
+      path = "${config.xdg.configHome}/attic/config.toml";
+      content = ''
+        default-server = "main"
 
-      [servers.main]
-      endpoint = "https://cache.allegedly.works"
-      token = "$token"
-      EOF
-      chmod 600 ${atticDir}/config.toml
-    '';
+        [servers.main]
+        endpoint = "https://cache.allegedly.works"
+        token = "${config.sops.placeholder.attic_token}"
+      '';
+      mode = "0600";
+    };
   };
 }
