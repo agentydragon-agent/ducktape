@@ -189,12 +189,10 @@ spec:
       exporter:
         path: /metrics
         port: 8001
+      # ServiceMonitor split into harbor/servicemonitor/ to avoid
+      # blocking Harbor deploys on monitoring-stack readiness.
       serviceMonitor:
-        enabled: true
-        # Match kube-prometheus-stack selector
-        additionalLabels:
-          prometheus: kube-prometheus-stack
-        interval: 30s
+        enabled: false
 
     nginx:
       nodeSelector:

@@ -141,6 +141,7 @@ resources:
   - harbor/proxy-cache/flux-kustomization.yaml
   - harbor/ci/flux-kustomization.yaml
   - harbor/props/flux-kustomization.yaml
+  - harbor/servicemonitor/flux-kustomization.yaml
   - harbor/oidc-config/flux-kustomization.yaml
 
   # --- firecrawl ---
@@ -202,6 +203,7 @@ resources:
   - gatus/namespace/flux-kustomization.yaml
   - gatus/secrets/flux-kustomization.yaml
   - gatus/app/flux-kustomization.yaml
+  - gatus/servicemonitor/flux-kustomization.yaml
 
   # --- ollama ---
   - ollama/namespace/flux-kustomization.yaml
@@ -212,6 +214,7 @@ resources:
   - litellm/namespace/flux-kustomization.yaml
   - litellm/secrets/flux-kustomization.yaml
   - litellm/app/flux-kustomization.yaml
+  - litellm/servicemonitor/flux-kustomization.yaml
 
   # --- headlamp ---
   - headlamp/namespace/flux-kustomization.yaml

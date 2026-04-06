@@ -23,4 +23,3 @@ spec:
     - name: gatus-secrets
     - name: gateway
     - name: local-path-provisioner
-    - name: monitoring-stack

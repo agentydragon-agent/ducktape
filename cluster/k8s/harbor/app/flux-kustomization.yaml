@@ -24,6 +24,5 @@ spec:
     - name: harbor-db
     - name: gateway
     - name: harbor-secrets
-    - name: monitoring-stack
     # Phase 1: Deploy without Authentik dependency
     # Phase 2: Add harbor-sso after Harbor is running
