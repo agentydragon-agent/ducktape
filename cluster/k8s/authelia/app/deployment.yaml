@@ -35,14 +35,15 @@ spec:
               containerPort: 9091
               protocol: TCP
           env:
-            - name: AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE
-              value: /secrets/oidc-hmac-secret
             - name: AUTHELIA_SESSION_SECRET_FILE
               value: /secrets/session-secret
             - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
               value: /secrets/storage-encryption-key
-            - name: AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE
-              value: /jwks/rsa-private.pem
+            # TODO: Uncomment when OIDC clients are added to configuration.yml
+            # - name: AUTHELIA_IDENTITY_PROVIDERS_OIDC_HMAC_SECRET_FILE
+            #   value: /secrets/oidc-hmac-secret
+            # - name: AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE
+            #   value: /jwks/rsa-private.pem
           volumeMounts:
             - name: config
               mountPath: /config
