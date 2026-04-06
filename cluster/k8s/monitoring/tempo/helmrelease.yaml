@@ -34,7 +34,7 @@ spec:
 
       extraEnvFrom:
         - secretRef:
-            name: tempo-minio-credentials
+            name: minio-credentials
 
     persistence:
       enabled: false

@@ -70,7 +70,7 @@ spec:
         size: 10Gi
       extraEnvFrom:
         - secretRef:
-            name: loki-minio-credentials
+            name: minio-credentials
       resources:
         requests:
           cpu: 100m
