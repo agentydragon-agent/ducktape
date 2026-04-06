@@ -36,13 +36,6 @@ startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
 # traffic (remote execution, cache, BES) needs the UDS proxy.
 startup --host_jvm_args=-Djdk.http.auth.tunneling.disabledSchemes=
 % endif
-% if bazel_remote_proxy_sock:
-# Route gRPC remote execution/cache and BES through a UDS proxy that
-# establishes a CONNECT tunnel through the egress proxy. Uses Bazel's native
-# --remote_proxy/--bes_proxy, bypassing the gRPC-Java Authenticator timing issue.
-build --remote_proxy=unix:${bazel_remote_proxy_sock}
-build --bes_proxy=unix:${bazel_remote_proxy_sock}
-% endif
 
 # Pass proxy + TLS CA to repository rules (for Go modules in gazelle, etc.)
 # GONOPROXY=* forces all Go module downloads through HTTP proxy.
@@ -68,6 +61,15 @@ build --build_metadata=ROLE=claude-code
 
 # Skip live OpenAI tests in wildcard expansion (no API key available)
 test --test_tag_filters=-live_openai_api
+% endif
+% if bazel_remote_proxy_sock:
+# Route gRPC remote execution/cache and BES through a UDS proxy (direct on CLI,
+# CONNECT tunnel through egress proxy on web). Uses Bazel's native
+# --remote_proxy/--bes_proxy, bypassing gRPC-Java's proxy auth timing issue.
+# On CLI: socket accessible inside bwrap sandbox (--ro-bind / / exposes host fs;
+# no seccomp on most Linux machines means AF_UNIX is not blocked).
+build --remote_proxy=unix:${bazel_remote_proxy_sock}
+build --bes_proxy=unix:${bazel_remote_proxy_sock}
 % endif
 
 % if buildbuddy_bazelrc:
