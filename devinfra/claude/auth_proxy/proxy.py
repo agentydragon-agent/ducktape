@@ -1,8 +1,8 @@
-"""Simple HTTP proxy that adds authentication to upstream proxy.
+"""HTTP proxy and UDS proxy for Bazel remote execution.
 
-Accepts unauthenticated CONNECT requests from clients (Bazel) and forwards them
-to an upstream proxy with Basic authentication added. Does NOT do TLS interception -
-just tunnels the encrypted traffic through.
+AuthForwardingProxy: accepts unauthenticated CONNECT requests from clients (Bazel)
+and forwards them to an upstream egress proxy with Basic authentication added. Does
+NOT do TLS interception — just tunnels the encrypted traffic through.
 
 Why this exists: Bazel's gRPC remote execution client (gRPC-Java/Netty) cannot
 authenticate with HTTP CONNECT proxies. gRPC-Java's ProxyDetectorImpl uses
@@ -13,13 +13,11 @@ timing: gRPC connects to an unauthenticated localhost proxy immediately, and the
 proxy injects credentials when forwarding to the egress proxy. BCR fetches (Java
 HTTP layer) also benefit since they go through the same proxy.
 
-Also provides UdsRemoteProxy: a Unix domain socket proxy for Bazel's
---remote_proxy flag. Bazel sends raw gRPC (HTTP/2) through the UDS; the proxy
-establishes a CONNECT tunnel through the egress proxy to a fixed remote endpoint
-(e.g. remote.buildbuddy.io:443), then shuttles bytes bidirectionally.
-
-Reads upstream proxy URL from a file on each connection, enabling credential
-hot-reload without restarting the proxy.
+UdsRemoteProxy: Unix domain socket proxy for Bazel's --remote_proxy flag. Bazel
+sends raw gRPC (HTTP/2) through the UDS; the proxy connects to a fixed remote
+endpoint (e.g. remote.buildbuddy.io:443) either directly (no upstream proxy, for
+CLI sessions with direct internet access) or via a CONNECT tunnel through an egress
+proxy (for web sessions behind Anthropic's TLS-inspecting proxy).
 """
 
 import base64
@@ -288,20 +286,26 @@ class UdsRemoteProxy:
     """Unix domain socket proxy for Bazel's --remote_proxy flag.
 
     Bazel sends raw gRPC (HTTP/2) through the UDS. For each connection, this
-    proxy establishes a CONNECT tunnel through the egress proxy to a fixed
-    remote endpoint, then shuttles bytes bidirectionally.
+    proxy connects to remote_target, either directly (no upstream proxy) or
+    via a CONNECT tunnel through an egress proxy, then shuttles bytes
+    bidirectionally.
 
     This bypasses gRPC-Java's ProxyDetectorImpl entirely — Bazel's
     --remote_proxy routes gRPC traffic through the UDS natively, so there's
     no Authenticator timing issue.
+
+    When no upstream proxy credentials are set (set_creds not called), the
+    proxy connects directly to remote_target over TCP. This supports CLI
+    sessions that have direct internet access.
     """
 
     def __init__(self, sock_path: Path, remote_target: str, max_workers: int = 100):
         """
         Args:
             sock_path: Path for the Unix domain socket.
-            remote_target: host:port to CONNECT to through the egress proxy
-                (e.g. "remote.buildbuddy.io:443").
+            remote_target: host:port to connect to (e.g. "remote.buildbuddy.io:443").
+                Connected to directly when no upstream proxy is set, or via
+                CONNECT tunnel when an upstream proxy is configured.
         """
         self.sock_path = sock_path
         self.remote_target = remote_target
@@ -321,12 +325,10 @@ class UdsRemoteProxy:
         with self._creds_lock:
             self._upstream_url = upstream_url
 
-    def _get_upstream_config(self) -> UpstreamConfig:
+    def _get_upstream_config(self) -> UpstreamConfig | None:
         with self._creds_lock:
             url = self._upstream_url
-        if url is None:
-            raise ValueError("Proxy credentials not set")
-        return parse_upstream_url(url)
+        return parse_upstream_url(url) if url is not None else None
 
     def start(self) -> None:
         """Start the UDS proxy server."""
@@ -376,7 +378,11 @@ class UdsRemoteProxy:
                 break
 
     def _handle_client(self, client_sock: socket.socket) -> None:
-        """Handle a single UDS connection: establish CONNECT tunnel, then shuttle bytes."""
+        """Handle a single UDS connection: connect to remote_target, then shuttle bytes.
+
+        With upstream proxy: establishes a CONNECT tunnel through the egress proxy.
+        Without upstream proxy: connects directly to remote_target via TCP.
+        """
         with self._conn_lock:
             self._conn_counter += 1
             conn_id = self._conn_counter
@@ -386,36 +392,41 @@ class UdsRemoteProxy:
         try:
             config = self._get_upstream_config()
 
-            # Connect to egress proxy
-            logger.debug("[uds %d] Connecting to upstream %s:%d", conn_id, config.host, config.port)
-            upstream_sock = socket.create_connection((config.host, config.port), timeout=30)
-            upstream_sock.settimeout(None)
+            if config is not None:
+                # Egress proxy mode: CONNECT tunnel through upstream proxy.
+                logger.debug("[uds %d] Connecting to egress proxy %s:%d", conn_id, config.host, config.port)
+                upstream_sock = socket.create_connection((config.host, config.port), timeout=30)
+                upstream_sock.settimeout(None)
 
-            # Send CONNECT request to establish tunnel to remote_target
-            connect_request = f"CONNECT {self.remote_target} HTTP/1.1\r\nHost: {self.remote_target}\r\n"
-            connect_request += config.auth_header
-            connect_request += "\r\n"
-            upstream_sock.sendall(connect_request.encode())
+                connect_request = f"CONNECT {self.remote_target} HTTP/1.1\r\nHost: {self.remote_target}\r\n"
+                connect_request += config.auth_header
+                connect_request += "\r\n"
+                upstream_sock.sendall(connect_request.encode())
 
-            # Read CONNECT response
-            response = b""
-            while b"\r\n\r\n" not in response:
-                chunk = upstream_sock.recv(4096)
-                if not chunk:
-                    logger.error("[uds %d] Upstream closed before CONNECT response", conn_id)
+                response = b""
+                while b"\r\n\r\n" not in response:
+                    chunk = upstream_sock.recv(4096)
+                    if not chunk:
+                        logger.error("[uds %d] Egress proxy closed before CONNECT response", conn_id)
+                        return
+                    response += chunk
+
+                status_line = response.decode("utf-8", errors="replace").split("\r\n")[0]
+                if not status_line.startswith("HTTP/1.1 200"):
+                    logger.error("[uds %d] CONNECT to %s rejected: %s", conn_id, self.remote_target, status_line)
                     return
-                response += chunk
 
-            response_str = response.decode("utf-8", errors="replace")
-            status_line = response_str.split("\r\n")[0]
+                logger.debug("[uds %d] Tunnel established to %s via egress proxy", conn_id, self.remote_target)
+            else:
+                # Direct mode: connect straight to remote_target.
+                host, _, port_str = self.remote_target.rpartition(":")
+                port = int(port_str)
+                logger.debug("[uds %d] Direct connect to %s:%d", conn_id, host, port)
+                upstream_sock = socket.create_connection((host, port), timeout=30)
+                upstream_sock.settimeout(None)
+                logger.debug("[uds %d] Direct connection established to %s", conn_id, self.remote_target)
 
-            if not status_line.startswith("HTTP/1.1 200"):
-                logger.error("[uds %d] CONNECT to %s rejected: %s", conn_id, self.remote_target, status_line)
-                return
-
-            logger.debug("[uds %d] Tunnel established to %s", conn_id, self.remote_target)
-
-            # Tunnel: raw gRPC from Bazel ↔ egress proxy ↔ remote endpoint
+            # Tunnel: raw gRPC from Bazel ↔ remote endpoint
             client_sock.settimeout(None)
             _tunnel_bidirectional(client_sock, upstream_sock)
             logger.debug("[uds %d] Tunnel completed", conn_id)
