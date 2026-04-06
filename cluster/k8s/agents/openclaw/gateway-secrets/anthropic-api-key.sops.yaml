@@ -4,31 +4,31 @@ metadata:
   name: openclaw-anthropic-api-key
   namespace: openclaw-gateway
   annotations:
-    description: Anthropic API key
+    description: Anthropic API key — workspace 'Cluster OpenClaw', $300/mo limit
 type: Opaque
 stringData:
-  api-key: ENC[AES256_GCM,data:EtIzJEn5ZtQXsQ==,iv:bH5DgZhYdprjjglhh9JG3glY7em9ULSPvkM6Akzf7dM=,tag:ktXX1fcPIYG92RSv+dxs4g==,type:str]
+  api-key: ENC[AES256_GCM,data:VvZkmYXKDsMNBN+dtf4LJjZ6VxgnwyKijfhHUa6YfxGUnDK04NdJzlHioj4A8n3AZbTu03Em7CoGJwiT4usHK+jSDDTv3CpPIECyEIEyOy/bOfUHJHVxASEbUGir78gypKkug+4sJyuGy6Dh,iv:4QJ4KY6u4Lrtt/VHsCvWrEYiFi7lfO5V0mrwW8Ye3qc=,tag:Tr0X7lTRCk0MS2I8YNUbVA==,type:str]
 sops:
   age:
     - recipient: age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
       enc: |
         -----BEGIN AGE ENCRYPTED FILE-----
-        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSB5NlpQV3BFaFVMdVA5ZmRS
-        WnRuclBxWjBzajV5cXZpUVVCVXc2Y3dpQ0Z3Cm04cEtqZmRLelVLWWxIdGVNcW5x
-        R0JaMEJMOGpNcCtMOWxDcnNSVGZJRlkKLS0tIDhjVFRmREtSS3dadFlSdGFBUm5I
-        ZGFpR3RTVi9EcGMvOFd2R0JuQ21rMTAKFQw2xd3fIFsFCBUhKHjpYXEHXtRHj2Fj
-        1gPrjtYD7xkytmayyG/SKVV4U6ZlsAEXa5uMMZnI9vsPnf3BP/lzBw==
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBmTFBMT3NVUXV6bHdraDU2
+        QjRxRGxKZkpDREJMc2E5NzErWG5qZ3hpR0dnClZjL3JqM0NPbmlMWDIxSEZkWGti
+        bkFvM1Z4UkFxeTErUEw2Ty8xVzRWaHMKLS0tIGF6TGx1VkJYWHRBbjhaYkU4OW8v
+        bkJYS09RTDhadCt0WTE5aTMzcE9GQ3MKnNtue815D21bNqCzy0JFv9PwZ/ovH+f/
+        JE3QCa1d6AFCqLky5E3u4R2n3i48eWjztyuZhLpBc2SLsAwIeqSY4A==
         -----END AGE ENCRYPTED FILE-----
     - recipient: age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
       enc: |
         -----BEGIN AGE ENCRYPTED FILE-----
-        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBabmUzOGxsakI1dExTS2tF
-        c0VPSFN6VUczWmt3SGVCbXdyblExUXY0WFhrClRkcUlCUDRSanFXZUF1cE5CVTEw
-        UUNTQUdiV1BoUkIzVkNHeUlvOXZqODAKLS0tIHB3ZWxkUkthLyswVUdaeFRGNWFD
-        RlVPMy9YOVBFT2cyVXhZYXdLQ1VUTUEK6pbP1lobFoNdnw0zGV2+VKK9aoJWqeb9
-        XYfrv568Mt2il+kUmEiKsQHsqIlCCo/OSxZGLXZKvN00qofVLbS7OQ==
+        YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBiSEdxdE5xRkZQdHNkMytl
+        Mk4yYWpqUUU0RjkwcmZkcXk3N3VZbENDc21RCjZ4WC9lVGNyY0V6aFZRMXV5RFpL
+        WkVXQjZ1bE9acEFwU2V2YkNJZXdsdncKLS0tIE5lR0ZkUUxabFRHNjlFZkxCRjJI
+        ZlhVald4bkdmalAwbHhQc0tQUEpuUDgKe4qouMn9fgiGFbxQS3hu7Dl+Q6LNb9Qi
+        zttL7MbwJ6wL2G7xSSTrQyFQI1pdvPXJB1wM4OXkipfAY6mxd6vg3A==
         -----END AGE ENCRYPTED FILE-----
-  lastmodified: "2026-04-05T19:50:16Z"
-  mac: ENC[AES256_GCM,data:r32Q/uitHWwa+f6bzhSXZuao2RuatRtr0jpNeyqj+pZGrB0a1tJZeDWKdUXUmReEfB/lg5/4EMsRiAB31o9VQDplcZx0ovPPS/+q4Q9Z7/CCyvdIcMF8Y2jcY+qerG3Jy+IrfB9U7cJ9fu/m8XmRV+AdlHEeZGV6a4TW2Y0JLdU=,iv:+PC35XWn4NAznGaAXx2lENg4s6QQGTm86Xwgx+h9lx8=,tag:aqxp9SgYP3eIliBUDWZlUA==,type:str]
+  lastmodified: "2026-04-06T22:08:02Z"
+  mac: ENC[AES256_GCM,data:Sx1EkU8xttWtQcghw16gewNqF/HThL43t+zVmnM1YW2E28xXzkLF1dZZQK1DwC+Tu0Ro5acENSZq3LqoR3kdqqBoCDgPRaK/TI+h9PnU7qzLt0HlfTN5X60SVWnAujEkrJofBoCN2JJGRVI8dWM0etza+D4b+4/SUJz//IKBcMk=,iv:ehe0w/Bjhi0u6GdCef1CgdhyHvFdfYxU+LAydqs5EmM=,tag:MRNV93zRfS9GZz9wEDiXAg==,type:str]
   encrypted_regex: ^(data|stringData)$
   version: 3.12.1

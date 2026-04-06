@@ -95,7 +95,3 @@ model_list:
       supports_function_calling: true
 litellm_settings:
   drop_params: true
-  success_callback:
-    - langfuse
-environment_variables:
-  LANGFUSE_HOST: http://langfuse-web.langfuse.svc.cluster.local:3000
