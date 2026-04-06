@@ -6,8 +6,12 @@ changed, preventing spurious Flux repins.
 """
 
 import argparse
+import json
+import logging
 import os
 import subprocess
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +21,8 @@ from util.bazel.workspace import BazelLabel, get_build_workspace_directory
 from util.crane import Crane
 from util.env import get_required_env
 from util.oci import read_oci_layout_digest
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -35,11 +41,41 @@ def _image_runfiles_dir(image_target: str) -> Path:
     return get_required_path(f"_main/{label.package}/{label.name}")
 
 
+def _ensure_package_public(package_name: str, token: str) -> None:
+    """Set GHCR package visibility to public via GitHub API.
+
+    Idempotent — already-public packages return 200. This is needed because
+    packages pushed via crane (BuildBuddy CI) default to private, unlike
+    packages pushed via GitHub Actions GITHUB_TOKEN which auto-inherit repo
+    visibility.
+    """
+    url = f"https://api.github.com/user/packages/container/{package_name}"
+    data = json.dumps({"visibility": "public"}).encode()
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="PATCH",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        urllib.request.urlopen(req)
+        logger.info("%s: package visibility set to public", package_name)
+    except urllib.error.HTTPError as e:
+        # 404 = package doesn't exist yet (first push in progress), will be
+        # set on next CI run. Don't fail the push for this.
+        logger.warning("%s: failed to set package visibility (HTTP %d): %s", package_name, e.code, e.reason)
+
+
 class ImagePusher:
-    def __init__(self, crane: Crane, branch: str, pinned_tag: str) -> None:
+    def __init__(self, crane: Crane, branch: str, pinned_tag: str, ghcr_token: str) -> None:
         self.crane = crane
         self.branch = branch
         self.pinned_tag = pinned_tag
+        self.ghcr_token = ghcr_token
 
     def _latest_pinned_tag(self, repo: str) -> str | None:
         try:
@@ -65,6 +101,10 @@ class ImagePusher:
         print(f"{img.repository}: tagging {self.pinned_tag}")
         self.crane.tag(ref, self.pinned_tag)
 
+        # Extract package name from "ghcr.io/owner/name" → "name"
+        package_name = img.repository.rsplit("/", 1)[-1]
+        _ensure_package_public(package_name, self.ghcr_token)
+
 
 def main() -> None:
     """Push a single OCI image to GHCR if its digest changed."""
@@ -83,12 +123,12 @@ def main() -> None:
     ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     sha = _git("rev-parse", "--short=7", "HEAD")
 
+    ghcr_token = get_required_env("GHCR_TOKEN")
     pusher = ImagePusher(
-        crane=Crane(
-            registry="ghcr.io", username=get_required_env("GHCR_USERNAME"), password=get_required_env("GHCR_TOKEN")
-        ),
+        crane=Crane(registry="ghcr.io", username=get_required_env("GHCR_USERNAME"), password=ghcr_token),
         branch=branch,
         pinned_tag=f"{branch}-{ts}-{sha}",
+        ghcr_token=ghcr_token,
     )
     pusher.push_and_tag(GhcrImage(image_target=args.image_target, repository=args.repository))
 

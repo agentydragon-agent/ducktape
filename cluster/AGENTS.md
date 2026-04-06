@@ -171,13 +171,55 @@ kustomization, SSO client secrets under `authentik/blueprints/`).
 ## Container Images
 
 Ducktape project images are published to GHCR at `ghcr.io/agentydragon/<image>`.
-CI pushes via BuildBuddy Workflows (`devinfra/ci/bb_push_images.py`) and GitHub
-Actions (openclaw-image, tana-mcp-image workflows). GHCR packages are public (no
-pull credentials needed).
+GHCR packages must be public (no pull credentials on cluster nodes).
 
 Props agent images are still published to Harbor (`registry.allegedly.works`).
 The Harbor Terraform (`terraform/gitops/harbor-ci/`) and pull robot credentials
 remain active for props.
+
+### Adding a new container image
+
+1. **Build**: Prefer Bazel (`oci_image` + `oci_load` from `@rules_oci`). Use
+   GitHub Actions only when Bazel can't build it (e.g., multi-stage Docker builds
+   with external toolchains). Set the `org.opencontainers.image.source` label:
+
+   ```python
+   oci_image(
+       name = "image",
+       labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+       ...
+   )
+   ```
+
+2. **Push**: Add a `ghcr_push` target (from `//devinfra/ghcr_push:push.bzl`):
+
+   ```python
+   ghcr_push(
+       name = "push_ghcr",
+       image = ":image",
+       repository = "ghcr.io/agentydragon/<name>",
+   )
+   ```
+
+   Register it in `devinfra/ci/generate_buildbuddy.py` so BuildBuddy CI pushes
+   on every `devel` commit. The push script automatically sets GHCR package
+   visibility to public via the GitHub API.
+
+3. **Tag policy — avoid `:latest`**: Use Flux image automation to track pinned
+   tags (`{branch}-{timestamp}-{sha7}`). For images deployed in-cluster:
+   - Create `ImageRepository` + `ImagePolicy` in `cluster/k8s/flux-image-automation/`
+   - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image
+     field in the Deployment/CronJob manifest
+   - Flux updates the tag in-repo on each new push
+
+   For images not deployed in-cluster (e.g., dev tools), pin the tag in the
+   consuming `BUILD.bazel` or manifest and update manually or via Renovate.
+
+4. **GitHub Actions path** (when Bazel isn't viable):
+   - Workflow in `.github/workflows/<name>-image.yml`
+   - Use `docker/build-push-action` with `packages: write` permission
+   - The `GITHUB_TOKEN` auto-links the package to the repo (public visibility
+     inherited)
 
 **Gotcha -- Flux image automation race**: When renaming image paths, push at least one
 image to the new path before updating `ImageRepository` resources. Otherwise Flux reverts
