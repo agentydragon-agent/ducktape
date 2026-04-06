@@ -41,6 +41,8 @@ spec:
               value: /secrets/session-secret
             - name: AUTHELIA_STORAGE_ENCRYPTION_KEY_FILE
               value: /secrets/storage-encryption-key
+            - name: AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE
+              value: /jwks/rsa-private.pem
           volumeMounts:
             - name: config
               mountPath: /config

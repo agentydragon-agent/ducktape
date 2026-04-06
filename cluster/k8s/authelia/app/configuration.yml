@@ -19,11 +19,14 @@ storage:
   local:
     path: /data/db.sqlite3
 
+identity_validation:
+  reset_password:
+    disable: true
+
 session:
   cookies:
     - domain: allegedly.works
       authelia_url: https://authelia.allegedly.works
-      default_redirection_url: https://authelia.allegedly.works
 
 # Access control: default deny, allow admin user everywhere.
 access_control:
@@ -41,7 +44,7 @@ identity_providers:
       - key_id: default
         algorithm: RS256
         use: sig
-        key: '{{ secret "/jwks/rsa-private.pem" }}'
+        # key loaded via AUTHELIA_IDENTITY_PROVIDERS_OIDC_JWKS_0_KEY_FILE env var
     # TODO: Add clients as apps are migrated from Authentik.
     # Example:
     # clients:
