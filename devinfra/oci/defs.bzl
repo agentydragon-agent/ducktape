@@ -7,8 +7,14 @@ def _oci_layout_rloc_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".rloc")
     ctx.actions.write(out, to_rlocation_path(ctx, ctx.file.image))
 
-    # Merge image runfiles so the OCI layout files are accessible in tests.
-    runfiles = ctx.runfiles([out]).merge(ctx.attr.image[DefaultInfo].default_runfiles)
+    # Include the image tree artifact and its runfiles so the OCI layout is
+    # accessible in tests. Locally-built oci_image targets place the image
+    # directory only in DefaultInfo.files, not default_runfiles, so we must
+    # add it via transitive_files.
+    runfiles = ctx.runfiles(
+        [out],
+        transitive_files = ctx.attr.image[DefaultInfo].files,
+    ).merge(ctx.attr.image[DefaultInfo].default_runfiles)
     return [DefaultInfo(files = depset([out]), runfiles = runfiles)]
 
 _oci_layout_rloc = rule(
