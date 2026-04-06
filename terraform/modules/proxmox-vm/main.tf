@@ -125,6 +125,9 @@ resource "proxmox_virtual_environment_vm" "vm" {
     timeout = "2m"
   }
 
-  # TODO: Re-add ignore_changes = [disk] after applying virtio2 creation.
-  # Needed when CSI driver attaches PVC disks dynamically.
+  lifecycle {
+    ignore_changes = [
+      disk, # CSI driver attaches PVC disks dynamically; tofu can't distinguish them
+    ]
+  }
 }
