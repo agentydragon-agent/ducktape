@@ -1,14 +1,12 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: flux-image-automation
+  name: flux-image-automation-ghcr
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./cluster/k8s/flux-image-automation
+  path: ./cluster/k8s/flux-image-automation-ghcr
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
-  dependsOn:
-    - name: harbor-ci # pull robot secret created by harbor-ci TF
