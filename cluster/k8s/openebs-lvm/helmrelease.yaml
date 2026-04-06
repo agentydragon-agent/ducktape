@@ -30,11 +30,6 @@ spec:
     lvmNode:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
-      allowedTopologies:
-        - matchLabelExpressions:
-            - key: topology.kubernetes.io/region
-              values:
-                - proxmox
     lvmController:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
