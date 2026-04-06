@@ -62,13 +62,13 @@ spec:
       resourcePolicy: "keep"
       persistentVolumeClaim:
         registry:
-          storageClass: longhorn
+          storageClass: lvm-proxmox
           size: 30Gi
         jobservice:
-          storageClass: longhorn
+          storageClass: lvm-proxmox
           size: 1Gi
         redis:
-          storageClass: longhorn
+          storageClass: lvm-proxmox
           size: 1Gi
         # trivy PVC removed — trivy disabled below
 

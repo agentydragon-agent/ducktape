@@ -1,15 +1,17 @@
 # Harbor CI infrastructure
 #
-# CLEANUP(2026-03-30): Ducktape project images migrated to GHCR. The CI robot
-# account is no longer used for pushing. The pull robot is still needed by props
-# (agent images pulled from Harbor). Once props also migrates off Harbor, suspend
-# this Terraform resource and orphan with `removed` blocks.
+# CLEANUP(2026-04-06): All ducktape project images fully migrated to GHCR.
+# The CI robot account is unused. The pull robot is needed only by props
+# (agent images in Harbor's `props` project). The harbor webhook token and
+# receiver have been removed (all ImageRepositories track GHCR now).
+# Once props also migrates off Harbor, suspend this Terraform resource and
+# orphan with `removed` blocks.
 #
 # Creates:
 #   - ducktape project (private, single project for all CI-pushed images)
-#   - ci robot account with push+pull on the ducktape project (CI push) — NO LONGER USED
-#   - pull robot account with read-only access (imagePullSecrets in app namespaces)
-#   - webhook token for the Flux harbor Receiver
+#   - ci robot account with push+pull on the ducktape project (CI push) — UNUSED
+#   - pull robot account with read-only access — only props still needs this
+#   - harbor webhook token — UNUSED (receiver removed, kept for state compat)
 #   - github webhook token for the Flux github Receiver
 #   - github webhook registration for Flux Receiver
 #
@@ -153,9 +155,9 @@ resource "kubernetes_secret" "harbor_pull_robot" {
     namespace = "flux-system"
     annotations = {
       "reflector.v1.k8s.emberstack.com/reflection-allowed"            = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "tana-mcp,homeassistant-proxy,activitywatch,inventree,props,openclaw-gateway,airlock"
+      "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces" = "props"
       "reflector.v1.k8s.emberstack.com/reflection-auto-enabled"       = "true"
-      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "tana-mcp,homeassistant-proxy,activitywatch,inventree,props,openclaw-gateway,airlock"
+      "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces"    = "props"
     }
   }
 

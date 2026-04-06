@@ -5,11 +5,9 @@ metadata:
   namespace: openclaw-gateway
 spec:
   image:
-    repository: registry.allegedly.works/ducktape/openclaw-matrix
+    repository: ghcr.io/agentydragon/openclaw-matrix
     tag: "devel-20260401064319-79303ab" # {"$imagepolicy": "flux-system:openclaw-matrix:tag"}
     pullPolicy: Always
-    pullSecrets:
-      - name: harbor-pull-robot
   env:
     # OpenClaw requires an API key for every provider. Ollama has no auth,
     # but a dummy value satisfies the auth-profiles check.

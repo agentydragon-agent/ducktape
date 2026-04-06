@@ -21,8 +21,8 @@ spec:
       serviceAccountName: props-executor
       nodeSelector:
         topology.kubernetes.io/region: proxmox
-      imagePullSecrets:
-        - name: harbor-pull-robot
+      # Props main image is on GHCR (public, no pull secret needed).
+      # Props still uses Harbor internally for agent images via props-harbor-robot.
       containers:
         - name: props
           image: ghcr.io/agentydragon/props-backend:devel-20260401040602-df942a4 # {"$imagepolicy": "flux-system:props-backend"}

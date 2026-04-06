@@ -30,12 +30,9 @@ spec:
 
   values:
     image:
-      repository: registry.allegedly.works/ducktape/inventree
+      repository: ghcr.io/agentydragon/inventree
       tag: latest
       pullPolicy: Always
-
-    imagePullSecrets:
-      - name: harbor-pull-robot
 
     global:
       siteUrl: "https://inventree.allegedly.works"

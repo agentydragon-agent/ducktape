@@ -170,12 +170,13 @@ kustomization, SSO client secrets under `authentik/blueprints/`).
 
 ## Container Images
 
-Ducktape project images are published to GHCR at `ghcr.io/agentydragon/<image>`.
-GHCR packages must be public (no pull credentials on cluster nodes).
+All ducktape project images (including `openclaw-matrix` and `inventree`) are
+published to GHCR at `ghcr.io/agentydragon/<image>`. GHCR packages must be
+public (no pull credentials on cluster nodes).
 
-Props agent images are still published to Harbor (`registry.allegedly.works`).
+Props agent images are still published to Harbor (`registry.allegedly.works/props`).
 The Harbor Terraform (`terraform/gitops/harbor-ci/`) and pull robot credentials
-remain active for props.
+remain active for props only.
 
 ### Adding a new container image
 

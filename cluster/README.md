@@ -24,12 +24,28 @@ See <docs/bootstrap.md> for full setup.
 - Network: 10.2.0.0/16 (VLAN 4 on Proxmox vmbr4)
   - 10.2.0.2: Atlas (Proxmox host) — **only reachable from Proxmox VLAN**
   - 10.2.1.x: Control plane (Proxmox), 10.2.2.x: Workers (Proxmox)
-- Nodes: 2x Hetzner CPX31 CP + 2x Hetzner CPX31 worker (VPS, public IPs) + talos-pve-cp-0 (10.2.1.1) + wyrm2 (NixOS GPU worker, 2x RTX 5090)
+- Nodes: see [Node Types](#node-types) below
 - Domain: `*.allegedly.works` (PowerDNS in-cluster, DNS-01 challenges, dual LE issuers)
 - HTTPS: Internet → VPS:443 → Cilium Envoy (Gateway API) → backend pods
 - Nebula: encrypted mesh overlay (UDP 4242, lighthouses + relays on VPS nodes)
 - Cilium MTU: `MTU: 1412` (uppercase key required — VXLAN 50 + Nebula 38 = 88 overhead)
 - Kubeconfig patched post-bootstrap to real VPS IP (no VIP possible across VPS+home)
+
+### Node Types
+
+| Node                               | Type             | Region    | Availability     | Hardware            |
+| ---------------------------------- | ---------------- | --------- | ---------------- | ------------------- |
+| `talos-vps-cp-0`, `talos-vps-cp-1` | Talos CP         | `hetzner` | Always on        | CPX31               |
+| `talos-vps-wk-0`, `talos-vps-wk-1` | Talos worker     | `hetzner` | Always on        | CPX31               |
+| `talos-pve-cp-0`                   | Talos CP         | `proxmox` | Always on (home) | Proxmox VM          |
+| `wyrm2`                            | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
+| `iguana`                           | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
+| `rugged`                           | NixOS laptop     | `roaming` | Often offline    | Dell Rugged 12      |
+
+Region labels are `topology.kubernetes.io/region`. Roaming nodes are laptops that
+join/leave the cluster frequently. `rugged` has taint
+`node-role.kubernetes.io/roaming=true:NoSchedule`. Do not schedule workloads that
+require persistent availability on roaming nodes.
 
 ## Services
 
@@ -52,15 +68,21 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 
 ## Storage
 
-| Provisioner          | Location | Default | Notes                                    |
-| -------------------- | -------- | ------- | ---------------------------------------- |
-| `longhorn`           | Hetzner  | No      | Legacy SC, migrate to `hetzner-longhorn` |
-| `hetzner-longhorn`   | Hetzner  | No      | Replicated across Hetzner VPS nodes      |
-| `proxmox-csi-retain` | Proxmox  | No      | Storage-heavy: Gitea, Loki, Nix          |
-| `hcloud-volumes`     | Hetzner  | No      | (none active)                            |
-| `local-path`         | Any node | No      | CNPG: Authentik, PowerDNS; Vault Raft    |
+All storage is region-local — no cross-site synchronous replication.
 
-Proxmox CSI pinned to Proxmox nodes (`topology.kubernetes.io/region: proxmox`) — needs VLAN access to API.
+| StorageClass         | Provisioner            | Region  | Notes                                                          |
+| -------------------- | ---------------------- | ------- | -------------------------------------------------------------- |
+| `local-path`         | local-path-provisioner | Any     | CNPG (all databases), Gatus, MinIO, Nix cache                  |
+| `local-path-hetzner` | local-path-provisioner | Hetzner | Loki                                                           |
+| `local-path-proxmox` | local-path-provisioner | Proxmox | (none active)                                                  |
+| `lvm-proxmox`        | OpenEBS LVM CSI        | Proxmox | Thin provisioning, expansion: Harbor                           |
+| `proxmox-csi-retain` | Proxmox CSI            | Proxmox | Block storage via Proxmox API: Ollama, Matrix, Tana            |
+| `longhorn`           | Longhorn               | Hetzner | Legacy — migrating off. Vault Raft, Grafana, Tempo, Prometheus |
+| `hetzner-longhorn`   | Longhorn               | Hetzner | Replicated across VPS nodes (none active yet)                  |
+| `hcloud-volumes`     | Hetzner Cloud CSI      | Hetzner | (none active)                                                  |
+
+Proxmox CSI needs VLAN access to Proxmox API. OpenEBS LVM is constrained to nodes
+with the `openebs-lvmvg` volume group (currently Proxmox nodes only).
 
 ## GPU (NVIDIA)
 
