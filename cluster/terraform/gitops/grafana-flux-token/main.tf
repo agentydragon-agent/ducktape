@@ -10,6 +10,10 @@ terraform {
       source  = "grafana/grafana"
       version = "~> 3.22.0"
     }
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.35"
+    }
   }
 
   backend "kubernetes" {
@@ -47,10 +51,13 @@ resource "grafana_service_account_token" "flux" {
   service_account_id = grafana_service_account.flux.id
 }
 
-resource "vault_kv_secret_v2" "grafana_flux_token" {
-  mount = "kv"
-  name  = "grafana/flux-token"
-  data_json = jsonencode({
+resource "kubernetes_secret" "grafana_flux_token" {
+  metadata {
+    name      = "grafana-flux-token"
+    namespace = "flux-system"
+  }
+
+  data = {
     token = grafana_service_account_token.flux.key
-  })
+  }
 }
