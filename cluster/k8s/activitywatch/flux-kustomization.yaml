@@ -19,4 +19,4 @@ spec:
     secretRef:
       name: sops-age-cluster-secrets
   dependsOn:
-    - name: proxmox-csi
+    - name: local-path-provisioner
