@@ -270,7 +270,6 @@ let
   # /code contains all git repos organized by host (github.com, gitlab.com, etc.)
   baseAdditionalDirs = [
     "/code"
-    "~/.cache/pre-commit"
   ]
   ++ cfg.additionalDirectories;
 
@@ -463,6 +462,12 @@ in
         autoAllowBashIfSandboxed = true;
         allowUnsandboxedCommands = true;
         excludedCommands = [ "nvidia-smi" ];
+        filesystem = {
+          allowWrite = [
+            "~/.cache/bazel"
+            "~/.cache/pre-commit"
+          ];
+        };
       };
 
       # Auto-generated from cfg.plugins
