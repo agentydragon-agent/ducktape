@@ -15,5 +15,5 @@ spec:
   wait: true
   dependsOn:
     - name: airlock # google-client-credentials (Reflector mirrors it here)
-    - name: proxmox-csi
+    - name: local-path-provisioner
     - name: reflector
