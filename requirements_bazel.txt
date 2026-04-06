@@ -200,6 +200,7 @@ anyio==4.12.1 \
     # via
     #   ducktape (pyproject.toml)
     #   anthropic
+    #   claude-agent-sdk
     #   claude-code-sdk
     #   datalayer-pycrdt
     #   httpx
@@ -731,6 +732,14 @@ chromadb==1.1.1 \
     --hash=sha256:bba0096a7f5e975875ead23a91c0d41d977fbd3767f60d3305a011b0ace7afd3 \
     --hash=sha256:ebfce0122753e306a76f1e291d4ddaebe5f01b5979b97ae0bc80b1d4024ff223
     # via crewai
+claude-agent-sdk==0.1.56 \
+    --hash=sha256:5934e082e1ccf975d65cd7412f2eaf2c5ffa6b9019a2ca2a9fb228310df7ddc8 \
+    --hash=sha256:824f4a10340f46dd26fee8e74aeed4fc64fec95084e327ab1ebb6058b349e1c3 \
+    --hash=sha256:9f5a7c87617101e6bb0f23408104ac6f40f9b5adec91dcfe5b8de5f65a7df73a \
+    --hash=sha256:a95bc14e59f9d6c8e7fa2e6581008a3f24f10e1b57302719823f62cfb5beccdc \
+    --hash=sha256:fe866b2119f69e99d9637acc27b588670c610fed1c4a096287874db5744d029b \
+    --hash=sha256:ff60dedc06b62b52e5937a9a2c4b0ec4ad0dd6764c20be656d01aeb8b11fba1d
+    # via ducktape (pyproject.toml)
 claude-code-sdk==0.0.25 \
     --hash=sha256:0d9e1eba432d4fe8a2f75f06ec9bb4c310f39b1d55246e7e4b2c69bfdd69eab3 \
     --hash=sha256:3d6a4ef958182f311d6050776d2675d9b39650a2db221c582a0a5156472dcee3
@@ -2859,6 +2868,7 @@ mcp[cli]==1.26.0 \
     --hash=sha256:db6e2ef491eecc1a0d93711a76f28dec2e05999f93afd48795da1c1137142c66
     # via
     #   ducktape (pyproject.toml)
+    #   claude-agent-sdk
     #   claude-code-sdk
     #   crewai
     #   fastmcp
