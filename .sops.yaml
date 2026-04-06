@@ -1,14 +1,15 @@
 keys:
   - &admin age1u858fg7wyakvv5tj7dh3e04jc4hvj7l8880m4nhh9djtx8g04gxs8xyjh0
-  # Host keys (derived from /etc/ssh/ssh_host_ed25519_key)
-  - &wyrm2 age1tzq86mfj30su8hvw9e0y5zw9mg254frtk5s2mp48580uky8fdppsju42pp
-  - &rugged age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
-  - &atlas age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
-  - &iguana age1zemurrcedw7sme3hh793cv8u5zu8eeekn637zpkulxwuw8uav58srwcxzv
+  # Host keys (derived from /etc/ssh/ssh_host_ed25519_key via ssh-to-age)
+  - &wyrm2-host age1tzq86mfj30su8hvw9e0y5zw9mg254frtk5s2mp48580uky8fdppsju42pp
+  - &rugged-host age1ek24fa0hv54p3d8f08zrlgx69c7vsausadmgnxahurvtshhleegs3ys6n0
+  - &atlas-host age1a23u3lugygtks3hhku9l3hsjc44y0eu7pv4q3r7n8u2k62uq3c9qmwh4ur
+  - &iguana-host age1zemurrcedw7sme3hh793cv8u5zu8eeekn637zpkulxwuw8uav58srwcxzv
   # User keys (derived from ~/.ssh/id_ed25519 via ssh-to-age)
-  - &user-wyrm2 age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
-  - &user-rugged age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
-  - &user-iguana age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
+  - &wyrm2-agentydragon age12c2ef6ayydzvmz6k49pyyhtgu2g00nyynmht8y3laqvxn3wya4wselpc4s
+  - &rugged-agentydragon age1qdgn0k59t7ghg3t4gg02g2ppnzp7uz0ddplup38y84hqslcsgsxq3v9tkz
+  - &atlas-agentydragon age15hfg4r2zfc2zl6zarecpvykxjktw4zu3grlahz4397rstmhqpvtqjgf6yy
+  - &iguana-agentydragon age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
   # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
   - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
   # Cluster k8s secrets (Flux decryption, private key in flux-system/sops-age-cluster-secrets)
@@ -35,129 +36,131 @@ creation_rules:
     key_groups:
       - age:
           - *admin
-          - *wyrm2
+          - *wyrm2-host
   - path_regex: secrets/nebula/rugged\.sops\.key$
     store_type: binary
     key_groups:
       - age:
           - *admin
-          - *rugged
+          - *rugged-host
   - path_regex: secrets/nebula/atlas\.sops\.key$
     store_type: binary
     key_groups:
       - age:
           - *admin
-          - *atlas
+          - *atlas-host
   - path_regex: secrets/nebula/iguana\.sops\.key$
     store_type: binary
     key_groups:
       - age:
           - *admin
-          - *iguana
+          - *iguana-host
 
   # --- Per-host secrets (admin + host) ---
   - path_regex: secrets/hosts/wyrm2-.*\.yaml$
     key_groups:
       - age:
           - *admin
-          - *wyrm2
+          - *wyrm2-host
   - path_regex: secrets/hosts/rugged-.*\.yaml$
     key_groups:
       - age:
           - *admin
-          - *rugged
+          - *rugged-host
   - path_regex: secrets/hosts/atlas-.*\.yaml$
     key_groups:
       - age:
           - *admin
-          - *atlas
+          - *atlas-host
   - path_regex: secrets/hosts/iguana-.*\.yaml$
     key_groups:
       - age:
           - *admin
-          - *iguana
+          - *iguana-host
 
   # --- Per-user home-manager secrets (admin + user SSH key) ---
   - path_regex: secrets/home/wyrm2/.*\.yaml$
     key_groups:
       - age:
           - *admin
-          - *user-wyrm2
+          - *wyrm2-agentydragon
   - path_regex: secrets/home/rugged/.*\.yaml$
     key_groups:
       - age:
           - *admin
-          - *user-rugged
+          - *rugged-agentydragon
   - path_regex: secrets/home/iguana/.*\.yaml$
     key_groups:
       - age:
           - *admin
-          - *user-iguana
+          - *iguana-agentydragon
 
-  # --- K8s worker secrets (all k8s workers) ---
+  # --- K8s worker secrets (all k8s worker hosts) ---
   - path_regex: secrets/k8s-worker\.yaml$
     key_groups:
       - age:
           - *admin
-          - *wyrm2
-          - *rugged
-          - *iguana
+          - *wyrm2-host
+          - *rugged-host
+          - *iguana-host
   # 15 Leroy HA SSH key (user-decryptable for home-manager sops deployment)
   - path_regex: secrets/15leroy-homeassistant-ssh\.yaml$
     key_groups:
       - age:
           - *admin
-          - *user-wyrm2
-          - *user-rugged
-          - *user-iguana
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *iguana-agentydragon
   # Cluster SOPS age private key (bootstrap deploys to flux-system/sops-age-cluster-secrets)
   # TODO: Consider narrowing to admin-only once bootstrap script is tested.
   - path_regex: secrets/cluster-secrets-age\.yaml$
     key_groups:
       - age:
           - *admin
-          - *user-wyrm2
-          - *user-rugged
-          - *user-iguana
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Flux deploy key (ED25519, registered as GitHub deploy key)
   - path_regex: secrets/flux-deploy-key\.yaml$
     key_groups:
       - age:
           - *admin
-          - *user-wyrm2
-          - *user-rugged
-          - *user-iguana
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Cluster infrastructure tokens (tofu apply: hcloud, proxmox)
   - path_regex: secrets/cluster-tokens\.yaml$
     key_groups:
       - age:
           - *admin
-          - *user-wyrm2
-          - *user-rugged
-          - *user-iguana
-          - *atlas
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
   # Claude web K8s token (auto-rotated by in-cluster CronJob)
   - path_regex: secrets/claude-web-k8s-token\.yaml$
     key_groups:
       - age:
           - *admin
           - *claude-web
-  # Shared secrets (all hosts + claude-web agent)
+  # Shared dev secrets (all users + claude-web agent)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:
       - age:
           - *admin
-          - *wyrm2
-          - *rugged
-          - *iguana
-          - *atlas
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
+          - *iguana-agentydragon
           - *claude-web
   # GitHub PAT for agentydragon-agent machine user (Claude Code, OpenClaw)
   - path_regex: secrets/github-pat-agentydragon-agent\.yaml$
     key_groups:
       - age:
           - *admin
-          - *wyrm2
-          - *rugged
-          - *atlas
+          - *wyrm2-agentydragon
+          - *rugged-agentydragon
+          - *atlas-agentydragon
           - *claude-web
