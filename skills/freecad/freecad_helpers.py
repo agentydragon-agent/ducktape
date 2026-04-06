@@ -11,6 +11,7 @@ import sys
 import time
 import traceback
 
+import FreeCAD as App
 from PySide6 import QtWidgets
 from PySide6.QtCore import QTimer
 
@@ -64,6 +65,16 @@ def run_gui_script(qapp, fn):
         run_gui_script(qapp, _work)
     """
 
+    def _close_all_docs():
+        # Close all open FreeCAD documents before quitting to prevent the
+        # "save changes?" dialog that blocks qapp.quit() in GUI mode.
+        # App.closeDocument() forces close without prompting.
+        try:
+            for name in list(App.listDocuments().keys()):
+                App.closeDocument(name)
+        except Exception:
+            pass
+
     def _wrapper():
         try:
             fn()
@@ -71,10 +82,12 @@ def run_gui_script(qapp, fn):
             traceback.print_exc(file=sys.stderr)
             # Quit the event loop, then force-exit: sys.exit() inside a Qt slot
             # is swallowed by PySide, so os._exit() is the only reliable escape.
+            _close_all_docs()
             if qapp:
                 qapp.quit()
             os._exit(1)
         else:
+            _close_all_docs()
             if qapp:
                 qapp.quit()
 

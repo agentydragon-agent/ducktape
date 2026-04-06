@@ -15,10 +15,10 @@
    </metadata>
   </g>
   <g fill="none" fill-rule="evenodd" id="DrawingContent" stroke="black" stroke-linecap="square" stroke-linejoin="bevel" stroke-width="1">
-   <g fill="#ffffff" fill-opacity="1" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="none" transform="matrix(1,0,0,1,1500,900)">
+   <g fill="#f1f3f5" fill-opacity="1" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="none" transform="matrix(1,0,0,1,1500,900)">
     <path d="M600,248.446 L600,-431.554 C600,-497.829 546.274,-551.554 480,-551.554 L-480,-551.554 C-546.274,-551.554 -600,-497.829 -600,-431.554 L-600,248.446 L0,248.446 L175,551.554 L175,248.446 L600,248.446" fill-rule="evenodd" vector-effect="non-scaling-stroke"/>
    </g>
-   <g fill="#ffffff" fill-opacity="1" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="none" transform="matrix(1,0,0,1,1500,900)">
+   <g fill="#f1f3f5" fill-opacity="1" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="none" transform="matrix(1,0,0,1,1500,900)">
     <path d="M80,-151.554 C80,-107.372 44.1828,-71.5544 0,-71.5544 C-44.1828,-71.5544 -80,-107.372 -80,-151.554 C-80,-195.737 -44.1828,-231.554 0,-231.554 C44.1828,-231.554 80,-195.737 80,-151.554 " fill-rule="evenodd" vector-effect="non-scaling-stroke"/>
    </g>
    <g fill="none" font-family="Sans Serif" font-size="31.75" font-style="normal" font-weight="400" stroke="#212529" stroke-linecap="round" stroke-linejoin="bevel" stroke-opacity="1" stroke-width="7" transform="matrix(1,0,0,1,1500,900)">

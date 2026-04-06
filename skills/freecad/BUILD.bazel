@@ -47,7 +47,7 @@ py_binary(
 )
 
 # FreeCAD AppImage for subprocess-based tests (no Docker required)
-# Rlocation: freecad_appimage/FreeCAD.AppImage
+# Rlocation: freecad_appimage/file/FreeCAD.AppImage  (http_file places files under "file/")
 filegroup(
     name = "freecad_appimage",
     testonly = True,

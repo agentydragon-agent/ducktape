@@ -17,7 +17,8 @@ from util.testing.otel_tracing import configure_tracing, export_traces
 FREECAD_TEST = OciImage("_main/skills/freecad/freecad_test.rloc", "freecad-test:pinned")
 
 # AppImage-based test fixtures
-_FREECAD_APPIMAGE_RLOCATION = "freecad_appimage/FreeCAD.AppImage"
+# http_file repos place downloaded files under a "file/" subdirectory
+_FREECAD_APPIMAGE_RLOCATION = "freecad_appimage/file/FreeCAD.AppImage"
 
 tracer = trace.get_tracer(__name__)
 
