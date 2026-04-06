@@ -1,41 +1,8 @@
 # Wyrm2 — NixOS dev workstation + k8s GPU worker on Proxmox
 # Uses shared proxmox-vm and nixos-image modules.
 
-# ============================================================================
-# SSH KEY DETECTION
-# ============================================================================
-
 locals {
-  ssh_key_candidates = [
-    pathexpand("~/.ssh/id_ed25519.pub"),
-    pathexpand("~/.ssh/id_ecdsa.pub"),
-    pathexpand("~/.ssh/id_rsa.pub")
-  ]
-  ssh_key_path = var.ssh_public_key != "" ? "" : (
-    fileexists(local.ssh_key_candidates[0]) ? local.ssh_key_candidates[0] :
-    fileexists(local.ssh_key_candidates[1]) ? local.ssh_key_candidates[1] :
-    fileexists(local.ssh_key_candidates[2]) ? local.ssh_key_candidates[2] :
-    ""
-  )
-  ssh_public_key = var.ssh_public_key != "" ? var.ssh_public_key : (
-    local.ssh_key_path != "" ? trimspace(file(local.ssh_key_path)) : ""
-  )
-
   repo_root = "${path.module}/../../.."
-}
-
-check "ssh_key_required" {
-  assert {
-    condition     = local.ssh_public_key != ""
-    error_message = <<-EOT
-      No SSH public key found!
-      Tried: ${join(", ", local.ssh_key_candidates)}
-
-      Fix by either:
-      1. Creating an SSH key: ssh-keygen -t ed25519 -C "your_email@example.com"
-      2. Providing key via variable: terraform apply -var="ssh_public_key=$(cat ~/.ssh/id_ed25519.pub)"
-    EOT
-  }
 }
 
 # ============================================================================
@@ -77,6 +44,7 @@ module "wyrm2" {
   vga_type           = "virtio"
   audio_device       = "ich9-intel-hda"
   audio_driver       = "spice"
+  usb_devices        = [{ host = "spice", usb3 = true }]
   # cache=never: virtiofsd with cache=auto leaks memory — it caches all accessed
   # files with no eviction, growing to 10+ GiB over days. On a 128 GiB host with
   # 96 GiB pinned for this VM, that starves ZFS ARC and causes system-wide stalls.
@@ -96,7 +64,7 @@ module "wyrm2" {
   # wyrm2 is on the default bridge (vmbr0), not the VLAN 4 bridge (vmbr4) used
   # by Talos nodes. TODO: consider consolidating onto vmbr4 for consistency.
   network_bridge = "vmbr0"
-  ssh_public_key = local.ssh_public_key
+  ssh_public_key = "" # NixOS manages authorized keys declaratively
 
   # K8s + Nebula credentials managed by sops-nix on the NixOS side,
   # no cloud-init credential injection needed.

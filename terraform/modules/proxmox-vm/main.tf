@@ -76,6 +76,15 @@ resource "proxmox_virtual_environment_vm" "vm" {
     }
   }
 
+  # USB devices (e.g. SPICE USB redirection)
+  dynamic "usb" {
+    for_each = var.usb_devices
+    content {
+      host = usb.value.host
+      usb3 = usb.value.usb3
+    }
+  }
+
   # VGA display (e.g. virtio for VNC console, qxl for SPICE)
   dynamic "vga" {
     for_each = var.vga_type != null ? [var.vga_type] : []

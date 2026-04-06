@@ -123,6 +123,15 @@ variable "vga_memory_mb" {
   default     = 256
 }
 
+variable "usb_devices" {
+  description = "USB devices to attach (e.g. SPICE redirection with host='spice')"
+  type = list(object({
+    host = string
+    usb3 = optional(bool, false)
+  }))
+  default = []
+}
+
 variable "audio_device" {
   description = "Audio device type (e.g. 'ich9-intel-hda', 'AC97', null = no audio)"
   type        = string

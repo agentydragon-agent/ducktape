@@ -65,12 +65,6 @@ variable "storage" {
   default     = "local-zfs"
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key (auto-detected if empty)"
-  type        = string
-  default     = ""
-}
-
 variable "rebuild_image" {
   description = "Rebuild NixOS bootstrap image (wyrm2)"
   type        = bool
