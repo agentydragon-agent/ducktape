@@ -48,6 +48,13 @@ spec:
           s3:
             bucket_name: mimir
 
+        # Chart 6.x defaults to Kafka ingest storage. Disable — single
+        # ingester, no benefit from decoupled write path.
+        ingest_storage:
+          enabled: false
+        ingester:
+          push_grpc_method_enabled: true
+
         multitenancy_enabled: false
 
         ruler:
