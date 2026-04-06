@@ -185,7 +185,10 @@ py_library(
     name = "kyverno",
     srcs = ["kyverno.py"],
     imports = ["../.."],
-    deps = ["//util/bazel:runfiles"],
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
 )
 
 py_test(

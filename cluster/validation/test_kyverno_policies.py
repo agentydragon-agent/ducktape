@@ -51,6 +51,41 @@ class TestInjectMitmproxyProxy:
         assert result.ok
         assert result.passed == 0, f"Expected no rules to match\n{result.stdout}"
 
+    def test_pod_with_existing_volumes_not_merged(self):
+        """Injected volume is appended, not merged into existing volumes.
+
+        Regression test: patchStrategicMerge caused Kyverno autogen to merge
+        the mitmproxy-ca-cert configMap into existing volume entries, producing
+        invalid volumes with two types. JSON patches avoid this by appending.
+        """
+        policy = _policy("cluster/k8s/kyverno/policies/inject-mitmproxy-proxy.yaml")
+        result = apply_policy(policy, _testdata("pod_with_existing_volumes.yaml"))
+        assert result.ok
+        assert len(result.mutated_resources) == 1, f"Expected 1 mutated resource\n{result.stdout}"
+        pod = result.mutated_resources[0]
+        spec = pod["spec"]
+
+        # Volumes: original 'config' + injected 'mitmproxy-ca-cert', each with exactly one type
+        volumes = spec["volumes"]
+        vol_names = [v["name"] for v in volumes]
+        assert "config" in vol_names, f"Original volume missing: {volumes}"
+        assert "mitmproxy-ca-cert" in vol_names, f"Injected volume missing: {volumes}"
+        for vol in volumes:
+            volume_types = [k for k in vol if k != "name"]
+            assert len(volume_types) == 1, f"Volume {vol['name']!r} has multiple types: {volume_types}"
+
+        # Container: original env var preserved, proxy env vars injected
+        container = spec["containers"][0]
+        env_names = [e["name"] for e in container["env"]]
+        assert "MY_VAR" in env_names, f"Original env var missing: {env_names}"
+        for expected in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "SSL_CERT_FILE"):
+            assert expected in env_names, f"{expected} not injected: {env_names}"
+
+        # Container: original volumeMount preserved, mitmproxy mount injected
+        mount_names = [m["name"] for m in container["volumeMounts"]]
+        assert "config" in mount_names, f"Original mount missing: {mount_names}"
+        assert "mitmproxy-ca-cert" in mount_names, f"Injected mount missing: {mount_names}"
+
 
 if __name__ == "__main__":
     pytest_bazel.main()
