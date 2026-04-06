@@ -13,6 +13,7 @@ manifest:
     IPython: ipython
     OpenSSL: pyopenssl
     PIL: pillow
+    PySide6: pyside6_essentials
     absl: absl_py
     agents: openai_agents
     aiodocker: aiodocker
@@ -68,6 +69,7 @@ manifest:
     chromadb_rust_bindings: chromadb
     claude_code_sdk: claude_code_sdk
     click: click
+    cloudpickle: cloudpickle
     colorama: colorama
     comm: comm
     compact_json: compact_json
@@ -101,6 +103,8 @@ manifest:
     exceptiongroup: exceptiongroup
     execnet: execnet
     executing: executing
+    ezdxf: ezdxf
+    farama_notifications: Farama_Notifications
     fastapi: fastapi
     fastapi_csrf_protect: fastapi_csrf_protect
     fastapi_sessions: fastapi_sessions
@@ -110,6 +114,7 @@ manifest:
     fastmcp: fastmcp
     fastuuid: fastuuid
     filelock: filelock
+    fitz: pymupdf
     flatbuffers: flatbuffers
     flexcache: flexcache
     flexparser: flexparser
@@ -198,6 +203,7 @@ manifest:
     greenlet: greenlet
     griffe: griffelib
     grpc: grpcio
+    gymnasium: gymnasium
     h11: h11
     h2: h2
     hamcrest: pyhamcrest
@@ -425,13 +431,16 @@ manifest:
     pygit2: pygit2
     pygments: pygments
     pylab: matplotlib
+    pymupdf: pymupdf
     pyparsing: pyparsing
+    pypdf: pypdf
     pypdfium2: pypdfium2
     pypdfium2_raw: pypdfium2
     pyperclip: pyperclip
     pypika: pypika
     pyproject_hooks: pyproject_hooks
     pyrage: pyrage
+    pyroute2: pyroute2
     pytest: pytest
     pytest_asyncio: pytest_asyncio
     pytest_base_url: pytest_base_url
@@ -448,6 +457,7 @@ manifest:
     pythonjsonlogger: python_json_logger
     pytimeparse: pytimeparse
     pytz: pytz
+    qrcode: qrcode
     reaktiv: reaktiv
     referencing: referencing
     regex: regex
@@ -469,6 +479,7 @@ manifest:
     send2trash: send2trash
     setuptools: setuptools
     shellingham: shellingham
+    shiboken6: shiboken6
     simplejson: simplejson
     six: six
     slugify: python_slugify
@@ -484,6 +495,7 @@ manifest:
     strict_rfc3339: strict_rfc3339
     structlog: structlog
     supervisor: supervisor
+    svgwrite: svgwrite
     sympy: sympy
     syrupy: syrupy
     tabulate: tabulate
@@ -588,4 +600,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 7352058e4031172ca819b5788b7a31fa18dd7509539bbbc02709c24b5b6a3f33
+integrity: 13d12ae44680c34a66e37d5a368bdd39e3289f7e9b9a6498df7c8df249928c3b

@@ -73,6 +73,7 @@ tf.download(
         "aws": "hashicorp/aws:5.100.0",
         "external": "hashicorp/external:2.3.5",
         "flux": "fluxcd/flux:1.7.6",
+        "github": "integrations/github:6.6.0",
         "grafana": "grafana/grafana:3.22.2",
         "harbor": "goharbor/harbor:3.11.3",
         "hcloud": "hetznercloud/hcloud:1.60.0",
