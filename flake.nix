@@ -250,6 +250,8 @@
               pkgs.shfmt
               pkgs.buildifier
               pkgs.gofumpt
+              pkgs.nodePackages.prettier
+              pkgs.openssl
               pkgs.ansible
               # Infrastructure tools
               pkgs.gh

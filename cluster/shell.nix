@@ -5,12 +5,10 @@
 }:
 pkgs.mkShell {
   buildInputs = [
-    pkgs.openssl
     pkgs.talosctl
     pkgs.fluxcd
     pkgs.kubernetes-helm
     pkgs.kustomize # For kustomize build validation
-    pkgs.nodePackages.prettier # For YAML formatting
     pkgs.tflint
     pkgs.hcloud # Hetzner Cloud CLI
     pkgs.packer # Packer for building Hetzner Talos snapshots (BSL license)
