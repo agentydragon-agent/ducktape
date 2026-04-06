@@ -93,8 +93,10 @@ module "wyrm2" {
 
   proxmox_node_name = var.proxmox_node_name
   storage           = var.storage
-  network_bridge    = var.network_bridge
-  ssh_public_key    = local.ssh_public_key
+  # wyrm2 is on the default bridge (vmbr0), not the VLAN 4 bridge (vmbr4) used
+  # by Talos nodes. TODO: consider consolidating onto vmbr4 for consistency.
+  network_bridge = "vmbr0"
+  ssh_public_key = local.ssh_public_key
 
   # K8s + Nebula credentials managed by sops-nix on the NixOS side,
   # no cloud-init credential injection needed.
