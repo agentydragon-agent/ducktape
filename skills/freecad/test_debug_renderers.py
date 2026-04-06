@@ -7,88 +7,53 @@ import pytest
 import pytest_bazel
 from PIL import Image
 
-from skills.freecad.conftest import FREECAD_TEST
+from skills.freecad.conftest import assert_run_ok
 from skills.freecad.testing.compare import assert_png_equal
 from util.bazel.runfiles import get_required_path
-from util.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 _BUILD_SCRIPT = "_main/skills/freecad/build_bearing_block.py"
 _TECHDRAW_SCRIPT = "_main/skills/freecad/build_bearing_block_techdraw.py"
-_HELPERS_SCRIPT = "_main/skills/freecad/freecad_helpers.py"
 _DEBUG_EDGES_SCRIPT = "_main/skills/freecad/render_debug_edges.py"
 _DEBUG_FACES_SCRIPT = "_main/skills/freecad/render_debug_faces.py"
 
 _GOLDEN_EDGES_FRONT = "_main/skills/freecad/golden/FrontView_debug_edges.png"
 _GOLDEN_FACES = "_main/skills/freecad/golden/debug_faces.png"
 
-_XVFB = 'xvfb-run -a -s \\"-screen 0 1024x768x24\\"'
-
 # Debug renderers use QPainter text rendering which varies more than 3D renders.
 _DEBUG_MAX_DIFF = 0.05
 
 
 @pytest.fixture(scope="module")
-def debug_outputs(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def debug_outputs(tmp_path_factory: pytest.TempPathFactory, freecad_run, freecad_gui) -> Path:
     """Build bearing block, add TechDraw, run debug renderers."""
-    tag = load_oci_image(FREECAD_TEST)
-    tmp_path = tmp_path_factory.mktemp("freecad-debug-renderers")
+    out_dir = tmp_path_factory.mktemp("debug-renderers")
+    uo = undeclared_outputs_dir() / "debug-renderers"
+    uo.mkdir(parents=True, exist_ok=True)
 
-    scripts = [
-        (get_required_path(_BUILD_SCRIPT), "/work/build_bearing_block.py"),
-        (get_required_path(_TECHDRAW_SCRIPT), "/work/build_bearing_block_techdraw.py"),
-        (get_required_path(_HELPERS_SCRIPT), "/work/freecad_helpers.py"),
-        (get_required_path(_DEBUG_EDGES_SCRIPT), "/work/render_debug_edges.py"),
-        (get_required_path(_DEBUG_FACES_SCRIPT), "/work/render_debug_faces.py"),
-    ]
-    volumes = [(str(src), dst, "ro") for src, dst in scripts] + [(str(tmp_path), "/output", "rw")]
+    # Build the Part Design model (pure freecadcmd, no GUI)
+    result = freecad_run(get_required_path(_BUILD_SCRIPT), outdir=out_dir)
+    assert_run_ok(result, "build_bearing_block.py", uo, "build")
 
-    with LoggedContainer(
-        tag,
-        test_name="freecad-debug-renderers",
-        command="sleep infinity",
-        volumes=volumes,
-        docker_client_kw={"timeout": 300},
-    ) as container:
-        # Build the Part Design model
-        result = container.exec('bash -c "OUTDIR=/output freecadcmd /work/build_bearing_block.py"')
-        output = result.output.decode(errors="replace")
-        print(output)
-        assert result.exit_code == 0, f"Build failed (exit {result.exit_code}): {output[:500]}"
+    fcstd = out_dir / "bearing_block.FCStd"
+    assert fcstd.exists(), "FCStd not generated — see build.stderr in test outputs"
 
-        # Add TechDraw views (needed for debug edges)
-        result = container.exec(
-            f'bash -c "INPUT=/output/bearing_block.FCStd OUTDIR=/output '
-            f'{_XVFB} freecadcmd /work/build_bearing_block_techdraw.py"'
-        )
-        output = result.output.decode(errors="replace")
-        print(output)
-        assert result.exit_code == 0, f"TechDraw failed (exit {result.exit_code}): {output[:500]}"
+    # Add TechDraw views (needed for debug edges)
+    result = freecad_gui(get_required_path(_TECHDRAW_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    assert_run_ok(result, "build_bearing_block_techdraw.py", uo, "techdraw")
 
-        # Render debug edges (all views)
-        result = container.exec(
-            f'bash -c "INPUT=/output/bearing_block.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/render_debug_edges.py"'
-        )
-        output = result.output.decode(errors="replace")
-        print(output)
-        assert result.exit_code == 0, f"Debug edges failed (exit {result.exit_code}): {output[:500]}"
+    # Render debug edges (all views)
+    result = freecad_gui(get_required_path(_DEBUG_EDGES_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    assert_run_ok(result, "render_debug_edges.py", uo, "debug_edges")
 
-        # Render debug faces
-        result = container.exec(
-            f'bash -c "INPUT=/output/bearing_block.FCStd OUTDIR=/output {_XVFB} freecadcmd /work/render_debug_faces.py"'
-        )
-        output = result.output.decode(errors="replace")
-        print(output)
-        assert result.exit_code == 0, f"Debug faces failed (exit {result.exit_code}): {output[:500]}"
+    # Render debug faces
+    result = freecad_gui(get_required_path(_DEBUG_FACES_SCRIPT), outdir=out_dir, env={"INPUT": str(fcstd)})
+    assert_run_ok(result, "render_debug_faces.py", uo, "debug_faces")
 
-    # Save outputs for debugging
-    out_dir = undeclared_outputs_dir() / "debug-renderers"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    for f in tmp_path.iterdir():
-        shutil.copy2(f, out_dir / f.name)
+    for f in out_dir.iterdir():
+        shutil.copy2(f, uo / f.name)
 
-    return tmp_path
+    return out_dir
 
 
 def test_debug_edges_produces_png(debug_outputs: Path) -> None:
