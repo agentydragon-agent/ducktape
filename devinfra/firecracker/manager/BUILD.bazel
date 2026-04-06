@@ -69,7 +69,10 @@ py_library(
     srcs = ["snapshots.py"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
-    deps = [":clients"],
+    deps = [
+        ":clients",
+        ":k8s_client",
+    ],
 )
 
 py_library(
