@@ -505,7 +505,9 @@ in
 
       # System utilities
       scrcpy # Android screen mirroring
-      virt-viewer # SPICE/VNC viewer for virtual machines (Proxmox viewer)
+      # virt-viewer is NOT installed via Nix — its spice-client-glib-usb-acl-helper
+      # needs setuid root for USB redirection, which Nix can't provide outside NixOS.
+      # Install via system package manager instead (apt on atlas — see ansible/atlas.yaml).
 
       # Learning
       anki
