@@ -6,11 +6,11 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 # HTTP control server.
 genrule(
     name = "initramfs",
-    srcs = ["//devinfra/claude/web_env/re/process_api/91c789ff:process_api_re"],
+    srcs = ["//devinfra/claude/web_env/re/process_api:process_api_re"],
     outs = ["initramfs.cpio"],
     cmd = """
         WORK=$$(mktemp -d)
-        cp $(location //devinfra/claude/web_env/re/process_api/91c789ff:process_api_re) $$WORK/init
+        cp $(location //devinfra/claude/web_env/re/process_api:process_api_re) $$WORK/init
         chmod 755 $$WORK/init
         (cd $$WORK && find . | cpio -o -H newc --quiet) > $@
         rm -rf $$WORK

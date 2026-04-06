@@ -97,7 +97,7 @@ cluster/.claude/
 !props/specimens/**/claude_linter_v2/config
 !x/claude_linter_v2/config
 !**/claude_hooks/config
-!devinfra/claude/web_env/re/environment_manager/*/src/internal/config
+!devinfra/claude/web_env/re/environment_manager/src/internal/config
 
 **/refs
 **/objects
