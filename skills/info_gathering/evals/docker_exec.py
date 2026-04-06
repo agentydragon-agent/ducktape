@@ -14,8 +14,8 @@ from pathlib import Path
 
 import aiodocker
 
-from mcp_infra.exec.docker.container_session import AlwaysSetTo, ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +37,18 @@ async def scratch_exec_server(image: str = "python:3.13-slim") -> AsyncGenerator
     cwd is fixed to /tmp (hidden from the model). User and env fields are disabled.
     Uses host networking and proxy env vars for internet access.
     """
-    opts = ContainerOptions(image=image, network_mode="host", environment=_proxy_env())
     async with aiodocker.Docker() as docker_client:
         server = ContainerExecServer(
             docker_client,
-            opts,
-            allow_user_field=False,
-            allow_env_field=False,
-            cwd_policy=AlwaysSetTo(value=Path("/tmp")),
+            ContainerExecServerConfig(
+                image=image,
+                working_dir=Path("/tmp"),
+                network_mode="host",
+                environment=_proxy_env(),
+                allow_user_field=False,
+                allow_env_field=False,
+                cwd_policy=AlwaysSetTo(value=Path("/tmp")),
+            ),
         )
         logger.info("Scratch exec server created (image=%s, network=host)", image)
         yield server

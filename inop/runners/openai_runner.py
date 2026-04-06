@@ -37,9 +37,8 @@ from mcp_infra.constants import WORKING_DIR
 from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.exec.bwrap import BwrapExecServer
 from mcp_infra.exec.direct import DirectExecServer
-from mcp_infra.exec.docker.container_session import BindMount, ContainerOptions, DefaultValue
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.docker.types import NetworkMode
+from mcp_infra.exec.docker.types import BindMount, ContainerExecServerConfig, DefaultValue, NetworkMode
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 
@@ -123,15 +122,17 @@ class OpenAIRunner(AgentRunner):
             def _factory(verifier) -> FastMCP:
                 return ContainerExecServer(
                     self._docker_client,
-                    ContainerOptions(
+                    ContainerExecServerConfig(
                         image=setup.docker.image,
                         working_dir=WORKING_DIR,
                         binds=binds,
                         network_mode=network_mode,
                         environment=setup.docker.env or {},
                         labels={"adgn.project": "inop", "adgn.role": "container"},
+                        allow_user_field=False,
+                        allow_env_field=False,
+                        cwd_policy=DefaultValue(value=WORKING_DIR),
                     ),
-                    cwd_policy=DefaultValue(value=WORKING_DIR),
                 )
 
             return {"container": _factory}

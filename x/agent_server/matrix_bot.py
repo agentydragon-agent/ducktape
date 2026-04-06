@@ -20,9 +20,8 @@ from mcp_infra.config_loader import build_mcp_config
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.docker.container_session import ContainerOptions, DefaultValue
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.docker.types import NetworkMode
+from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue, NetworkMode
 from mcp_infra.exec.models import BaseExecResult, make_exec_input
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
@@ -62,13 +61,16 @@ class MatrixBotCompositor(Compositor):
             MCPMountPrefix("runtime"),
             ContainerExecServer(
                 self._docker_client,
-                ContainerOptions(
+                ContainerExecServerConfig(
                     image=self._docker_image,
+                    working_dir=WORKING_DIR,
                     network_mode=self._network_mode,
                     environment=self._environment,
                     labels={"adgn.project": "matrix-bot", "adgn.role": "runtime"},
+                    allow_user_field=False,
+                    allow_env_field=False,
+                    cwd_policy=DefaultValue(value=WORKING_DIR),
                 ),
-                cwd_policy=DefaultValue(value=WORKING_DIR),
             ),
             pinned=True,
         )

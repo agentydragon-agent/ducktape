@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 import pytest_bazel
 from fastmcp.resources.template import match_uri_template
 
-from mcp_infra.constants import WORKING_DIR
-from mcp_infra.exec.docker.container_session import DefaultValue
 from mcp_infra.exec.docker.server import FILE_RESOURCE_URI_TEMPLATE, ContainerExecServer
+from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
 from mcp_infra.testing.fixtures import make_container_opts
 
@@ -14,9 +15,7 @@ from mcp_infra.testing.fixtures import make_container_opts
 @pytest.fixture
 def exec_server(async_docker_client, debian_slim_image):
     """Container exec server for docker exec tests."""
-    return ContainerExecServer(
-        async_docker_client, make_container_opts(debian_slim_image), cwd_policy=DefaultValue(value=WORKING_DIR)
-    )
+    return ContainerExecServer(async_docker_client, make_container_opts(debian_slim_image))
 
 
 @pytest.fixture
@@ -49,6 +48,29 @@ async def test_persession_exec_timeout_then_next_ok(exec_client) -> None:
     assert r1.exit == Exited(exit_code=0)
     assert isinstance(r1.stdout, str)  # Short output should not be truncated
     assert r1.stdout == "ok\n"
+
+
+def test_from_config_roundtrip() -> None:
+    """ContainerExecServerConfig → from_config produces correct opts and kwargs."""
+    config = ContainerExecServerConfig(
+        image="test:latest",
+        working_dir=Path("/work"),
+        binds=[BindMount(host_path=Path("/host/dir"), container_path=Path("/container/dir"), mode="ro")],
+        network_mode="bridge",
+        environment={"FOO": "bar"},
+        labels={"app": "test"},
+        allow_user_field=True,
+        allow_env_field=False,
+        cwd_policy=AlwaysSetTo(value=Path("/work")),
+    )
+
+    # Verify JSON roundtrip preserves discriminated union
+    restored = ContainerExecServerConfig.model_validate_json(config.model_dump_json())
+    assert isinstance(restored.cwd_policy, AlwaysSetTo)
+    assert restored.cwd_policy.value == Path("/work")
+    assert restored.binds[0].mode == "ro"
+    assert restored.allow_user_field is True
+    assert restored.allow_env_field is False
 
 
 def test_file_uri_template_matches_paths_with_slashes() -> None:
