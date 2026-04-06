@@ -52,10 +52,10 @@ module "wyrm2" {
     { mapping = "code", cache = "never" },
   ]
   additional_disks = [
-    { interface = "scsi30", size_gb = 200 },  # containerd (/var/lib/containerd)
     { interface = "virtio0", size_gb = 500 }, # local-path provisioner (/var/local-path-provisioner)
     { interface = "virtio1", size_gb = 100 }, # Longhorn (/var/mnt/longhorn)
     { interface = "virtio2", size_gb = 500 }, # OpenEBS LVM (VG openebs-lvmvg)
+    { interface = "virtio3", size_gb = 200 }, # containerd (/var/lib/containerd)
   ]
 
   proxmox_node_name = var.proxmox_node_name

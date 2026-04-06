@@ -100,17 +100,9 @@ in
   # NixOS auto-disables Wayland for NVIDIA, but the display is QXL (not NVIDIA).
   services.displayManager.gdm.wayland = true;
 
-  # Separate data disks (Proxmox virtual disks).
-  # scsi30 avoids collision with Proxmox CSI PVCs (scsi1-29).
-  # virtio0 uses a different controller, no SCSI slot conflict.
-  # by-id paths are stable across reboots.
+  # Separate data disks (Proxmox virtio disks).
   # autoFormat creates ext4 on first boot; autoResize grows to full disk size.
-  fileSystems."/var/lib/containerd" = {
-    device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi30";
-    fsType = "ext4";
-    autoFormat = true;
-    autoResize = true;
-  };
+  # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";
     fsType = "ext4";
@@ -119,6 +111,13 @@ in
   };
   fileSystems."/var/mnt/longhorn" = {
     device = "/dev/vdb";
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+  };
+  # virtio2 (/dev/vdc) is OpenEBS LVM — managed as LVM VG below, not a filesystem mount
+  fileSystems."/var/lib/containerd" = {
+    device = "/dev/vdd";
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
