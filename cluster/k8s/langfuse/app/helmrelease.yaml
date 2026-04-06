@@ -141,7 +141,7 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       persistence:
-        storageClass: proxmox-csi-retain
+        storageClass: TODO # replace before unsuspending
         size: 20Gi
 
     redis:
