@@ -70,6 +70,21 @@ class K8sConfig(BaseModel):
     namespace: str = Field(description="Default namespace for kubectl operations")
 
 
+class BazelRemoteProxyConfig(BaseModel):
+    target: str = Field(description="host:port to connect to, e.g. 'remote.buildbuddy.io:443'")
+
+
+class ProfileConfig(BaseModel):
+    bazel_remote_proxy: BazelRemoteProxyConfig | None = Field(
+        description="UDS proxy for Bazel --remote_proxy/--bes_proxy (remote execution + BES). Null = disabled."
+    )
+
+
+class ProfilesConfig(BaseModel):
+    cli: ProfileConfig
+    web: ProfileConfig
+
+
 class PreCommitConfig(BaseModel, frozen=True):
     """Pre-commit hook behavior configuration."""
 
@@ -96,6 +111,10 @@ class HookConfig(BaseModel):
     extra_env_script: str | None = Field(
         default=None, description="Extra shell script content appended verbatim to the session env file."
     )
+    profiles: ProfilesConfig
+
+    def profile(self, web_mode: bool) -> ProfileConfig:
+        return self.profiles.web if web_mode else self.profiles.cli
 
     @classmethod
     def load(cls, config_path: Path) -> HookConfig:
@@ -104,11 +123,11 @@ class HookConfig(BaseModel):
         return cls.model_validate(raw)
 
     @classmethod
-    def load_from_repo(cls, root: Path) -> HookConfig | None:
-        """Load hook config from repo root (with env var overrides), or None if not found."""
+    def load_from_repo(cls, root: Path) -> HookConfig:
+        """Load hook config from repo root. Raises FileNotFoundError if absent."""
         config_path = root / HOOKS_DOTDIR / "config.yaml"
         if not config_path.exists():
-            return None
+            raise FileNotFoundError(f"Hook config not found: {config_path}")
         config = cls.load(config_path)
         if config.otel:
             config = config.model_copy(update={"otel": config.otel.with_env_overrides()})

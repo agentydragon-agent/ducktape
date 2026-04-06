@@ -31,7 +31,14 @@ from devinfra.claude.claude_api.hooks.session_start import (
 )
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
-from devinfra.claude.hook_config import HOOKS_DOTDIR, HookConfig, OtelConfig, SecretSource, SopsSecretSource
+from devinfra.claude.hook_config import (
+    HOOKS_DOTDIR,
+    HookConfig,
+    OtelConfig,
+    ProfileConfig,
+    SecretSource,
+    SopsSecretSource,
+)
 from devinfra.claude.sops_decrypt import discover_age_identities
 
 # isort: off
@@ -152,13 +159,21 @@ def _render_extra_context(
     fork_result: fork_remote.ForkRemoteSetup | None = None,
     *,
     web_mode: bool = False,
+    profile: ProfileConfig,
+    bazel_remote_proxy_sock: Path | None,
 ) -> str:
     """Render repo-specific context from .claude_hooks/templates/context.mako if it exists."""
     extra_template_path = project_dir / HOOKS_DOTDIR / "templates" / "context.mako"
     if not extra_template_path.exists():
         return ""
     template = Template(extra_template_path.read_text())
-    result: str = template.render(secrets=secrets, fork_result=fork_result, web_mode=web_mode)
+    result: str = template.render(
+        secrets=secrets,
+        fork_result=fork_result,
+        web_mode=web_mode,
+        profile=profile,
+        bazel_remote_proxy_sock=bazel_remote_proxy_sock,
+    )
     return result.rstrip("\n")
 
 
@@ -480,9 +495,9 @@ async def run_session(
     # Two-phase resolution: SOPS secrets first (no K8s client needed), then K8s secrets.
     # This allows the K8s token itself to come from SOPS, with env var fallback.
     with tracer.start_as_current_span("resolve_secrets", context=root_ctx):
-        secrets_cfg = hook_config.secrets if hook_config else None
+        secrets_cfg = hook_config.secrets
         age_identities = discover_age_identities()
-        k8s_namespace = hook_config.k8s.namespace if hook_config and hook_config.k8s else None
+        k8s_namespace = hook_config.k8s.namespace if hook_config.k8s else None
 
         def resolve_sops(source: SecretSource) -> str | None:
             """Resolve a secret only if it's a SOPS source (no K8s client needed)."""
@@ -504,7 +519,7 @@ async def run_session(
         # Phase 2: K8s client setup (SOPS-derived token preferred, env var fallback).
         k8s_token = setup.secrets.k8s_token or settings.k8s_token
         k8s_api = None
-        if k8s_token and hook_config and hook_config.k8s:
+        if k8s_token and hook_config.k8s:
             try:
                 k8s_api = secret_sources.setup_k8s_client(
                     token=k8s_token, k8s_cfg=hook_config.k8s, combined_ca_path=combined_ca, proxy=proxy_url
@@ -523,7 +538,7 @@ async def run_session(
             )
 
         # Write kubeconfig when k8s client is available.
-        if k8s_api and k8s_token and hook_config and hook_config.k8s:
+        if k8s_api and k8s_token and hook_config.k8s:
             setup.secrets.kubeconfig_path = secret_sources.write_kubeconfig(
                 token=k8s_token,
                 k8s_cfg=hook_config.k8s,
@@ -553,7 +568,7 @@ async def run_session(
 
     # Configure OTLP now that secrets (with bearer token) are available.
     # Bearer token overrides config file / env var. Idempotent across sessions.
-    if hook_config and hook_config.otel:
+    if hook_config.otel:
         otel_config = hook_config.otel.with_env_overrides()
         otel_token = setup.secrets.otel_bearer_token
         if otel_token:
@@ -570,7 +585,7 @@ async def run_session(
             web_proxy=ctx.web_mode,
             use_tcp_proxy=settings.proxy_mode == ProxyMode.TCP,
             proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
-            remote_proxy_sock=paths.remote_proxy_sock,
+            remote_proxy_sock=paths.bazel_remote_proxy_sock,
             truststore_path=paths.auth_proxy_truststore,
             truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
             combined_ca_path=combined_ca,
@@ -609,7 +624,7 @@ async def run_session(
             mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
             secrets_env_vars=_build_secrets_env_vars(setup.secrets),
             with_direnv=setup.with_direnv,
-            extra_env_script=hook_config.extra_env_script if hook_config else None,
+            extra_env_script=hook_config.extra_env_script,
         )
         env_file.write_env_file(ctx.env_file_path, env_vars)
     logger.info("Wrote environment to %s", ctx.env_file_path)
@@ -628,7 +643,14 @@ async def run_session(
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
         status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
-        extra_context = _render_extra_context(project_dir, setup.secrets, setup.fork_result, web_mode=ctx.web_mode)
+        extra_context = _render_extra_context(
+            project_dir,
+            setup.secrets,
+            setup.fork_result,
+            web_mode=ctx.web_mode,
+            profile=hook_config.profile(ctx.web_mode),
+            bazel_remote_proxy_sock=paths.bazel_remote_proxy_sock if paths.bazel_remote_proxy_sock.exists() else None,
+        )
         template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
         context_output: str = template.render(
             WARNING=logging.WARNING,

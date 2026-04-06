@@ -36,12 +36,12 @@ startup --host_jvm_args=-Dhttps.proxyPort=${proxy_port}
 # traffic (remote execution, cache, BES) needs the UDS proxy.
 startup --host_jvm_args=-Djdk.http.auth.tunneling.disabledSchemes=
 % endif
-% if remote_proxy_sock:
+% if bazel_remote_proxy_sock:
 # Route gRPC remote execution/cache and BES through a UDS proxy that
 # establishes a CONNECT tunnel through the egress proxy. Uses Bazel's native
 # --remote_proxy/--bes_proxy, bypassing the gRPC-Java Authenticator timing issue.
-build --remote_proxy=unix:${remote_proxy_sock}
-build --bes_proxy=unix:${remote_proxy_sock}
+build --remote_proxy=unix:${bazel_remote_proxy_sock}
+build --bes_proxy=unix:${bazel_remote_proxy_sock}
 % endif
 
 # Pass proxy + TLS CA to repository rules (for Go modules in gazelle, etc.)

@@ -27,6 +27,7 @@ from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
+from devinfra.claude.hook_config import HookConfig
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, UpdateProxyCredsResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
@@ -56,7 +57,7 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     # Proxies are started lazily on the first SessionStart hook, not here.
 
 
-async def _start_session_proxy(session_id: str) -> None:
+async def _start_session_proxy(session_id: str, web_mode: bool, hook_config: HookConfig) -> None:
     """Start proxy infrastructure for the current session.
 
     In UDS mode (default): only the UDS proxy is started. Bazel uses
@@ -68,12 +69,12 @@ async def _start_session_proxy(session_id: str) -> None:
     properties.
 
     Called at the start of SessionStart handling — not at daemon startup.
-    Idempotent: no-op if proxies are already running or no upstream proxy
-    is configured.
+    Idempotent: no-op if proxies are already running.
     """
     if app.state.uds_proxy is not None:
         return
-    if not get_upstream_proxy_url():
+    proxy_cfg = hook_config.profile(web_mode).bazel_remote_proxy
+    if proxy_cfg is None:
         return
 
     settings: HookSettings = app.state.settings
@@ -88,7 +89,7 @@ async def _start_session_proxy(session_id: str) -> None:
 
     # UDS proxy for --remote_proxy/--bes_proxy (both modes).
     paths = SessionPaths(session_id=session_id, home=Path.home(), xdg_cache_home=Path.home())
-    uds_proxy = UdsRemoteProxy(sock_path=paths.remote_proxy_sock, remote_target=settings.remote_proxy_target)
+    uds_proxy = UdsRemoteProxy(sock_path=paths.bazel_remote_proxy_sock, remote_target=proxy_cfg.target)
     if upstream_url:
         uds_proxy.set_creds(upstream_url)
     uds_proxy.start()
@@ -125,7 +126,9 @@ async def handle_hook(req: HookRequest) -> Response:
         output: AnyHookOutput | None = None
         match req.hook:
             case SessionStartHookInput():
-                await _start_session_proxy(req.hook.session_id)
+                hook_config = HookConfig.load_from_repo(Path(req.hook.cwd))
+                web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
+                await _start_session_proxy(req.hook.session_id, web_mode, hook_config)
                 paths = SessionPaths.from_env(req.hook.session_id, req.env)
                 with build_http_client(req.env) as http:
                     output = await handle_session_start(

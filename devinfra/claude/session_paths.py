@@ -91,9 +91,9 @@ class SessionPaths:
         return _short_session_dir(self.session_id)
 
     @property
-    def remote_proxy_sock(self) -> Path:
-        """UDS path for --remote_proxy (Bazel gRPC remote execution/cache)."""
-        return self._short_dir / "remote-proxy.sock"
+    def bazel_remote_proxy_sock(self) -> Path:
+        """UDS socket for Bazel --remote_proxy/--bes_proxy (remote execution + BES)."""
+        return self._short_dir / "bazel-remote-proxy.sock"
 
     @property
     def wrapper_dir(self) -> Path:

@@ -48,3 +48,6 @@ API key in `~/.config/bazel/buildbuddy.bazelrc`. See <docs/buildbuddy_api.md> fo
 % if web_mode:
 Bazel: `bazel build //...` / `bazel test //...` (full repo) are slow in web sessions. When a repo-wide scan is needed, run a few smaller serial invocations (e.g. `//agent_core/...`, then `//props/...`) rather than one large `//...`.
 % endif
+% if profile.bazel_remote_proxy and bazel_remote_proxy_sock:
+Bazel remote proxy (UDS): `${bazel_remote_proxy_sock}` → `${profile.bazel_remote_proxy.target}` (used by `--remote_proxy`/`--bes_proxy` in session bazelrc).
+% endif
