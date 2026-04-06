@@ -8,11 +8,8 @@ These SOPS secrets contain `REPLACE_ME` and must be populated with real credenti
 before unsuspending the `openclaw-gateway-secrets` / `openclaw-sandbox-secrets`
 kustomizations. Edit with `sops <file>`, commit, push.
 
-- [ ] `agents/openclaw/gateway-secrets/anthropic-api-key.sops.yaml` — Anthropic console
-- [ ] `agents/openclaw/gateway-secrets/gemini-api-key.sops.yaml` — Google Cloud console
-- [ ] `agents/openclaw/gateway-secrets/telegram-bot-token.sops.yaml` — Telegram @BotFather
-- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — IBKR portal (`flex-token`, `query-id`)
 - [ ] `agents/openclaw/sandbox-secrets/coinbase-api-credentials.sops.yaml` — Coinbase portal (`api_key`, `api_secret`)
+- [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
 
 ## Missing CiliumNetworkPolicy
 
