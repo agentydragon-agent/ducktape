@@ -73,6 +73,18 @@ spec:
               protocol: TCP
 
   egress:
+    # Loki → kube-dns (DNS resolution)
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
     # Loki → MinIO (S3 chunk/index storage)
     - toEndpoints:
         - matchLabels:
