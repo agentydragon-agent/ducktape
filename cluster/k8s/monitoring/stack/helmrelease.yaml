@@ -57,26 +57,42 @@ spec:
         node: true
         nodeExporterAlerting: true
         nodeExporterRecording: true
-        prometheus: true
+        prometheus: false # Prometheus disabled; Mimir Ruler evaluates rules
         prometheusOperator: true
 
     # Alertmanager configuration
     alertmanager:
       enabled: true
       ingress:
-        enabled: false # Can enable later with authentication
+        enabled: false
       alertmanagerSpec:
+        replicas: 2
         storage:
           volumeClaimTemplate:
             metadata:
               name: db
             spec:
-              # CLEANUP(2026-04-02): Migrate to local-path-hetzner (small, rebuildable)
-              storageClassName: longhorn
+              storageClassName: local-path-hetzner
               accessModes: ["ReadWriteOnce"]
               resources:
                 requests:
                   storage: 1Gi
+        # Spread across VPS nodes for HA (gossip replicates state)
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: alertmanager
+                  topologyKey: kubernetes.io/hostname
+        tolerations:
+          - key: node-role.kubernetes.io/control-plane
+            operator: Exists
+            effect: NoSchedule
+        nodeSelector:
+          topology.kubernetes.io/region: hil
         resources:
           requests:
             cpu: 10m
@@ -144,23 +160,9 @@ spec:
             revision: 5
             datasource: Prometheus
 
-      # CRITICAL: Use Recreate strategy for RWO volumes
-      # Grafana uses RWO persistent volume for dashboards, plugins, and session data (10Gi).
-      # RollingUpdate + RWO volumes = deadlock when pods fail during initialization.
-      # Init:Error pods hold RWO volumes, preventing new pods from attaching.
-      # This has caused production deadlocks requiring manual intervention (3rd occurrence).
-      # See docs/RWO_VOLUME_DEPLOYMENT_STRATEGY.md for complete explanation.
-      # Brief downtime during updates is acceptable vs manual deadlock recovery.
-      deploymentStrategy:
-        type: Recreate
-
+      # No PVC — state stored in CNPG PostgreSQL (grafana-db).
       persistence:
-        enabled: true
-        # CLEANUP(2026-04-02): Migrate to local-path-hetzner (rebuildable, stateless-ish)
-        storageClassName: longhorn
-        accessModes:
-          - ReadWriteOnce
-        size: 2Gi
+        enabled: false
 
       resources:
         requests:
@@ -212,6 +214,18 @@ spec:
 
       # Authentik SSO configuration injected via valuesFrom from grafana-oidc-config secret
       # Complete config stored in Vault by Terraform (single source of truth)
+      env:
+        GF_DATABASE_TYPE: postgres
+        GF_DATABASE_HOST: grafana-db-rw.monitoring.svc.cluster.local:5432
+        GF_DATABASE_NAME: grafana
+        GF_DATABASE_USER: grafana
+        GF_DATABASE_SSL_MODE: require
+      envValueFrom:
+        GF_DATABASE_PASSWORD:
+          secretKeyRef:
+            name: grafana-db-app
+            key: password
+
       grafana.ini:
         server:
           root_url: https://grafana.allegedly.works
@@ -239,74 +253,11 @@ spec:
               cpu: 100m
               memory: 64Mi
 
-    # Prometheus configuration
+    # Prometheus disabled — Alloy scrapes metrics and pushes to Mimir.
+    # Mimir Ruler evaluates alerting/recording rules.
+    # Operator kept for CRD management (ServiceMonitor, PrometheusRule, etc.).
     prometheus:
-      enabled: true
-      ingress:
-        enabled: false # Can enable later with authentication
-
-      prometheusSpec:
-        # Accept OTLP metric pushes from Grafana Alloy (see cluster/k8s/monitoring/alloy/).
-        enableRemoteWriteReceiver: true
-
-        # Forward all scraped metrics to Mimir for long-term storage.
-        remoteWrite:
-          - url: http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push
-
-        # Retention settings
-        retention: 7d
-        retentionSize: "15GB"
-
-        # Storage configuration
-        storageSpec:
-          volumeClaimTemplate:
-            metadata:
-              name: db
-            spec:
-              # CLEANUP(2026-04-02): Replace with VictoriaMetrics (built-in replication)
-              storageClassName: longhorn
-              accessModes: ["ReadWriteOnce"]
-              resources:
-                requests:
-                  storage: 20Gi
-
-        # TODO(2026-03-17): Temporarily pinned to wyrm2 to recover from OOM kill
-        # cascade on VPS nodes (7.5GiB CPX31 too small for Prometheus + 33 other
-        # pods). Prometheus was using 1686Mi and getting OOM-killed every ~49min
-        # during WAL replay. wyrm2 has 96GiB RAM.
-        # Fix properly: add PriorityClasses, rebalance pods across nodes, consider
-        # CPX41 upgrade, then remove this pin.
-        # See cluster/debug/2026-03-17-cluster-down/observations.md
-        nodeSelector:
-          kubernetes.io/hostname: wyrm2
-
-        # TODO(2026-03-17): Temporarily bumped from 2Gi to 6Gi for WAL replay
-        # recovery. Prometheus OOM-killed 8 times in 49min at 2Gi limit.
-        # Investigate: which scrape targets / metrics are driving memory growth,
-        # whether retentionSize 15GB causes excessive WAL, and right-size after.
-        # Revert to a tighter limit once root cause is addressed.
-        resources:
-          requests:
-            cpu: 200m
-            memory: 1Gi
-          limits:
-            cpu: 1000m
-            memory: 6Gi
-
-        # Scrape interval
-        scrapeInterval: 30s
-        evaluationInterval: 30s
-
-        # Service monitor selector - select all service monitors
-        serviceMonitorSelectorNilUsesHelmValues: false
-        podMonitorSelectorNilUsesHelmValues: false
-        ruleSelectorNilUsesHelmValues: false
-
-        # Security context
-        securityContext:
-          runAsNonRoot: true
-          runAsUser: 1000
-          fsGroup: 2000
+      enabled: false
 
     # Node exporter configuration
     prometheus-node-exporter:

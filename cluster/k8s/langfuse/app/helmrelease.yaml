@@ -136,7 +136,7 @@ spec:
         replicaCount: 1
         resourcesPreset: small
         persistence:
-          storageClass: longhorn
+          storageClass: lvm-proxmox
           size: 8Gi
       nodeSelector:
         topology.kubernetes.io/region: proxmox
@@ -155,7 +155,7 @@ spec:
         topology.kubernetes.io/region: proxmox
       primary:
         persistence:
-          storageClass: longhorn
+          storageClass: lvm-proxmox
 
     # TODO(reliability): Replace bundled MinIO with multi-node MinIO or
     # external S3 (Cloudflare R2 / Hetzner Object Storage) for durability.
@@ -164,7 +164,7 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: proxmox
       persistence:
-        storageClass: longhorn
+        storageClass: lvm-proxmox
         size: 20Gi
 
     # Ingress disabled — using Gateway API HTTPRoute

@@ -93,6 +93,8 @@ resources:
   - monitoring/alloy/flux-kustomization.yaml
   - monitoring/alloy-otlp-bearer-token-tf/flux-kustomization.yaml
   - monitoring/tempo/flux-kustomization.yaml
+  - monitoring/mimir/flux-kustomization.yaml
+  - monitoring/grafana-db/flux-kustomization.yaml
 
   # --- powerdns ---
   - powerdns/namespace/flux-kustomization.yaml

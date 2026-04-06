@@ -50,6 +50,20 @@ spec:
 
         multitenancy_enabled: false
 
+        ruler:
+          alertmanager_url: http://monitoring-alertmanager.monitoring.svc.cluster.local:9093
+          rule_path: /data/rules
+
+        ruler_storage:
+          backend: s3
+          s3:
+            endpoint: minio.minio-hil.svc.cluster.local:9000
+            bucket_name: mimir-ruler
+            region: us-east-1
+            insecure: true
+            access_key_id: ${AWS_ACCESS_KEY_ID}
+            secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+
         limits:
           compactor_blocks_retention_period: 365d
           out_of_order_time_window: 30m
@@ -149,7 +163,15 @@ spec:
     # --- Disabled components ---
 
     ruler:
-      enabled: false
+      enabled: true
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      nodeSelector:
+        topology.kubernetes.io/region: hil
+
     alertmanager:
       enabled: false
 

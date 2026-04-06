@@ -18,5 +18,5 @@ spec:
       namespace: monitoring
   timeout: 5m
   dependsOn:
-    - name: monitoring-stack
+    - name: mimir
     - name: grafana-helmrepository

@@ -155,9 +155,9 @@ endpoints:
     conditions:
       - "[STATUS] == 200"
 
-  - name: Prometheus
+  - name: Mimir
     group: cluster
-    url: http://monitoring-prometheus.monitoring.svc.cluster.local:9090/-/ready
+    url: http://mimir-gateway.monitoring.svc.cluster.local/ready
     interval: 60s
     conditions:
       - "[STATUS] == 200"

@@ -25,7 +25,9 @@ spec:
         accessModes:
           - ReadWriteOnce
         # CLEANUP(2026-04-02): Goes away when Vault is dropped (Authelia + SOPS migration)
-        storageClassName: longhorn
+        # Vault Raft replicates at the app level (3 instances) — no need for
+        # storage-level replication.
+        storageClassName: local-path-hetzner
         resources:
           requests:
             storage: 2Gi
