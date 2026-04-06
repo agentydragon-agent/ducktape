@@ -525,6 +525,10 @@ in
       # pkgs.comby
     ];
 
+  # On non-NixOS (Proxmox, Pop!_OS, etc.), set up XDG_DATA_DIRS so GNOME Shell
+  # can find nix-managed extensions, desktop files, and icons.
+  targets.genericLinux.enable = !isNixOS;
+
   # Enable fontconfig when GUI is enabled
   fonts.fontconfig.enable = enableGui;
 
