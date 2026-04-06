@@ -66,6 +66,7 @@ spec:
           s3:
             endpoint: minio.minio-hil.svc.cluster.local:9000
             bucket_name: mimir
+            storage_prefix: ruler
             region: us-east-1
             insecure: true
             access_key_id: ${AWS_ACCESS_KEY_ID}
