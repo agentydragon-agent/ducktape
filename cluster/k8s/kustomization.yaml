@@ -139,7 +139,6 @@ resources:
   - harbor/proxy-cache/flux-kustomization.yaml
   - harbor/ci/flux-kustomization.yaml
   - harbor/props/flux-kustomization.yaml
-  - harbor/webhook/flux-kustomization.yaml
   - harbor/oidc-config/flux-kustomization.yaml
 
   # --- firecrawl ---
