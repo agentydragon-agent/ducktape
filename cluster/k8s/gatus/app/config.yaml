@@ -143,14 +143,14 @@ endpoints:
 
   - name: Loki
     group: cluster
-    url: http://loki-stack.loki.svc.cluster.local:3100/ready
+    url: http://loki.loki.svc.cluster.local:3100/ready
     interval: 60s
     conditions:
       - "[STATUS] == 200"
 
   - name: Loki labels API
     group: cluster
-    url: http://loki-stack.loki.svc.cluster.local:3100/loki/api/v1/labels
+    url: http://loki.loki.svc.cluster.local:3100/loki/api/v1/labels
     interval: 120s
     conditions:
       - "[STATUS] == 200"

@@ -1,5 +1,5 @@
 # HTTPRoute for Loki via shared Authentik proxy outpost.
-# Traffic flows: Gateway → outpost (auth) → loki-stack backend.
+# Traffic flows: Gateway → outpost (auth) → loki backend.
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

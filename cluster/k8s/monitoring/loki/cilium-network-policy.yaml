@@ -10,7 +10,8 @@
 #   - Gatus (gatus namespace, health checks)
 #   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
 #
-# Promtail egress is unrestricted (DaemonSet needs k8s API for service discovery).
+# Allowed egress from Loki:
+#   - MinIO (minio namespace, S3 chunk/index storage)
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -20,7 +21,7 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app: loki
+      app.kubernetes.io/name: loki
   ingress:
     # Promtail → Loki (log push)
     - fromEndpoints:
@@ -69,4 +70,15 @@ spec:
       toPorts:
         - ports:
             - port: "3100"
+              protocol: TCP
+
+  egress:
+    # Loki → MinIO (S3 chunk/index storage)
+    - toEndpoints:
+        - matchLabels:
+            app: minio
+            k8s:io.kubernetes.pod.namespace: minio
+      toPorts:
+        - ports:
+            - port: "9000"
               protocol: TCP

@@ -11,12 +11,16 @@ spec:
   sourceRef:
     kind: GitRepository
     name: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age-cluster-secrets
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
-      name: loki-stack
+      name: loki
       namespace: loki
   timeout: 10m
   dependsOn:
-    - name: longhorn
     - name: grafana-helmrepository
+    - name: minio

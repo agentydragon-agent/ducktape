@@ -12,7 +12,7 @@ entries:
       name: loki
     attrs:
       external_host: "https://loki.allegedly.works"
-      internal_host: "http://loki-stack.loki.svc.cluster.local:3100"
+      internal_host: "http://loki.loki.svc.cluster.local:3100"
       mode: proxy
       authentication_flow: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]

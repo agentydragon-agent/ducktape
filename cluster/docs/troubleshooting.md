@@ -299,7 +299,7 @@ been lost (completed Jobs, crashed/evicted pods).
 ```bash
 START=$(date -d '1 hour ago' +%s)000000000
 END=$(date +%s)000000000
-kubectl exec -n loki loki-stack-0 -- wget -qO- \
+kubectl exec -n loki deploy/loki -- wget -qO- \
   "http://localhost:3100/loki/api/v1/query_range?query=%7Bnamespace%3D%22NAMESPACE%22%2Ccontainer%3D%22CONTAINER%22%7D&limit=50&direction=backward&start=$START&end=$END"
 ```
 
