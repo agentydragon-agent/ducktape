@@ -249,10 +249,6 @@ image_pins = use_extension("//devinfra:image_pins.bzl", "image_pins")
 image_pins.from_file(lockfile = "//devinfra:image_pins.json")
 use_repo(image_pins, "freecad_test", "freecad_test_linux_amd64", "image_pins")
 
-# FreeCAD AppImage: downloaded on first use, exposed as @freecad_appimage//:appimage.
-freecad_appimage = use_extension("//third_party/freecad_appimage:defs.bzl", "freecad_appimage_ext")
-use_repo(freecad_appimage, "freecad_appimage")
-
 # Hermetic deb packages for container images (rules_distroless).
 # Replaces Dockerfile apt-get with lockfile-pinned deb extraction.
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
@@ -697,6 +693,15 @@ http_file(
     downloaded_file_path = "fb374d419588a4632f3f557e76b4b70aebbca790",
     sha256 = "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d",
     urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
+)
+
+# FreeCAD 1.1.0 AppImage — exposed as @freecad_appimage//file for subprocess-based tests.
+http_file(
+    name = "freecad_appimage",
+    downloaded_file_path = "FreeCAD.AppImage",
+    executable = True,
+    sha256 = "ef85f171f2d09eec93f358bc49c1730d33f72bfbd353e6465609b30e45acf2f0",
+    urls = ["https://github.com/FreeCAD/FreeCAD/releases/download/1.1.0/FreeCAD_1.1.0-Linux-x86_64-py311.AppImage"],
 )
 
 # gitstatusd - Git status daemon for wt tests
