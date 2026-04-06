@@ -29,10 +29,9 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
 - **Airlock**: `airlock` — suspended 2026-04-06. `google-workspace-mcp` depends on this.
 - **HomeAssistant Proxy**: `homeassistant-proxy` — suspended 2026-04-06.
-- **OpenClaw secrets**: `openclaw-gateway-secrets`, `openclaw-sandbox-secrets` —
-  suspended 2026-04-06. `openclaw-gateway` kustomization blocked as a result.
-- **ARC**: `arc-secrets` — suspended 2026-04-06. `arc` kustomization blocked as a result.
-- **Props secrets**: `props-secrets` — suspended 2026-04-06. `props` kustomization blocked as a result.
+- **OpenClaw Gateway**: `openclaw-gateway` — suspended 2026-04-06. Secrets (`openclaw-gateway-secrets`) are deployed.
+- **ARC**: `arc` — suspended 2026-04-06. Secrets (`arc-secrets`) are deployed.
+- **Props**: `props` — suspended 2026-04-06. Secrets (`props-secrets`) are deployed.
 
 ## Next Actions
 
