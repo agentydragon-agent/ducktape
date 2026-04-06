@@ -7,7 +7,7 @@ py_library(
     deps = [
         "@pypi//fonttools",
         "@pypi//qrcode",
-        "@pypi//svgwrite",
+        "@pypi//svg_py",
     ],
 )
 

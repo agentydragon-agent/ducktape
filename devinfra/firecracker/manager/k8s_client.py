@@ -138,7 +138,7 @@ class K8sVMClient:
             namespace=_NAMESPACE, label_selector=f"{_SNAPSHOT_LABEL}={snapshot_name}"
         )
         for pvc in pvcs.items:
-            source = pvc.metadata.labels.get("firecracker-source-rootfs")
+            source: str | None = pvc.metadata.labels.get("firecracker-source-rootfs")
             if source:
                 return source
         raise RuntimeError(f"No rootfs PVC found for snapshot {snapshot_name}")
@@ -258,7 +258,7 @@ class K8sVMClient:
         snapshot_pvc: str | None = None,
     ) -> dict[str, Any]:
         volume_devices = [{"name": "rootfs", "devicePath": ROOTFS_DEVICE_PATH}]
-        volume_mounts = [{"name": "work", "mountPath": WORK_MOUNT}]
+        volume_mounts: list[dict[str, Any]] = [{"name": "work", "mountPath": WORK_MOUNT}]
         volumes: list[dict[str, Any]] = [
             {"name": "rootfs", "persistentVolumeClaim": {"claimName": rootfs_pvc}},
             {"name": "work", "persistentVolumeClaim": {"claimName": work_pvc}},

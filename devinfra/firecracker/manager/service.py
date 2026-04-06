@@ -53,11 +53,13 @@ app = FastAPI(title="Firecracker VM Manager", dependencies=[Depends(_require_aut
 
 
 def _config(request: Request) -> ManagerConfig:
-    return request.app.state.config
+    config: ManagerConfig = request.app.state.config
+    return config
 
 
 def _k8s(request: Request) -> K8sVMClient:
-    return request.app.state.k8s
+    k8s: K8sVMClient = request.app.state.k8s
+    return k8s
 
 
 def _require_vm_with_ip(vm_id: str, k8s: K8s) -> VMInfo:
@@ -70,6 +72,7 @@ def _require_vm_with_ip(vm_id: str, k8s: K8s) -> VMInfo:
 
 
 def _firecracker_client(vm: RunningVM) -> Iterator[FirecrackerClient]:
+    assert vm.pod_ip is not None
     client = FirecrackerClient(vm.pod_ip)
     try:
         yield client
@@ -78,6 +81,7 @@ def _firecracker_client(vm: RunningVM) -> Iterator[FirecrackerClient]:
 
 
 def _control_client(vm: RunningVM) -> Iterator[ProcessApiControl]:
+    assert vm.pod_ip is not None
     client = ProcessApiControl(vm.pod_ip)
     try:
         yield client
