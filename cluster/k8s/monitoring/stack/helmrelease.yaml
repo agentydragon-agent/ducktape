@@ -77,16 +77,7 @@ spec:
               resources:
                 requests:
                   storage: 1Gi
-        # Spread across VPS nodes for HA (gossip replicates state)
-        affinity:
-          podAntiAffinity:
-            preferredDuringSchedulingIgnoredDuringExecution:
-              - weight: 100
-                podAffinityTerm:
-                  labelSelector:
-                    matchLabels:
-                      app.kubernetes.io/name: alertmanager
-                  topologyKey: kubernetes.io/hostname
+        # Chart auto-generates podAntiAffinity when replicas > 1
         tolerations:
           - key: node-role.kubernetes.io/control-plane
             operator: Exists
