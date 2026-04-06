@@ -1,7 +1,10 @@
 # Proxmox VM Module
 # Creates a VM from a pre-built qcow2 image on Proxmox.
-# SSH keys are injected via Proxmox cloud-init.
-# K8s secrets are optionally injected via cloud-init userdata.
+#
+# Cloud-init / k8s credential injection was removed — the only consumer
+# (wyrm2) uses NixOS declarative config instead. To re-add cloud-init,
+# see the bpg/proxmox provider docs for the `initialization` block and
+# `proxmox_virtual_environment_file` (snippets) resource.
 
 terraform {
   required_version = ">= 1.0"
@@ -11,27 +14,6 @@ terraform {
       source  = "bpg/proxmox"
       version = ">= 0.91.0"
     }
-  }
-}
-
-locals {
-  # Cloud-init userdata is only needed for k8s secret injection
-  needs_cloud_init_userdata = var.k8s_cluster_join != null
-  cloud_init_user_data = local.needs_cloud_init_userdata ? templatefile("${path.module}/cloud-init.yaml.tpl", {
-    k8s_cluster_join = var.k8s_cluster_join
-  }) : null
-}
-
-# Cloud-init configuration (only for k8s secret injection)
-resource "proxmox_virtual_environment_file" "cloud_init_config" {
-  count        = local.needs_cloud_init_userdata ? 1 : 0
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = var.proxmox_node_name
-
-  source_raw {
-    data      = local.cloud_init_user_data
-    file_name = "${var.vm_name}-cloud-init.yaml"
   }
 }
 
@@ -136,25 +118,6 @@ resource "proxmox_virtual_environment_vm" "vm" {
     model  = "virtio"
   }
 
-  initialization {
-    datastore_id = var.storage
-    interface    = "sata0"
-
-    ip_config {
-      ipv4 {
-        address = "dhcp"
-      }
-    }
-
-    user_account {
-      username = var.username
-      keys     = var.ssh_public_key != "" ? [var.ssh_public_key] : []
-      password = ""
-    }
-
-    user_data_file_id = local.needs_cloud_init_userdata ? proxmox_virtual_environment_file.cloud_init_config[0].id : null
-  }
-
   started = var.auto_start
 
   agent {
@@ -162,10 +125,9 @@ resource "proxmox_virtual_environment_vm" "vm" {
     timeout = "2m"
   }
 
-  # Ignore changes to cloud-init after creation - updates happen via nixos-rebuild
   lifecycle {
     ignore_changes = [
-      initialization[0].user_data_file_id,
+      initialization, # Stale cloud-init ISO may exist on disk; don't touch it
     ]
   }
 }

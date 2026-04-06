@@ -23,14 +23,13 @@ module "wyrm2_image" {
 # VM INSTANCE
 # ============================================================================
 
-# Wyrm2 - NixOS dev workstation + k8s worker (pre-built image, cloud-init for k8s creds)
+# Wyrm2 - NixOS dev workstation + k8s GPU worker
 module "wyrm2" {
   source = "../../../terraform/modules/proxmox-vm"
 
-  vm_name  = "wyrm2"
-  vm_id    = 110
-  username = "agentydragon"
-  vcpus    = 32
+  vm_name = "wyrm2"
+  vm_id   = 110
+  vcpus   = 32
   # 96GB. Reduced from 112GB — with balloon=0 (VFIO requires pinned memory),
   # 112GB + Talos CP (8GB) left only 8GB for host+ZFS ARC, causing ZFS write
   # stalls (memory_available_bytes went negative). 96GB leaves 24GB headroom.
@@ -64,10 +63,6 @@ module "wyrm2" {
   # wyrm2 is on the default bridge (vmbr0), not the VLAN 4 bridge (vmbr4) used
   # by Talos nodes. TODO: consider consolidating onto vmbr4 for consistency.
   network_bridge = "vmbr0"
-  ssh_public_key = "" # NixOS manages authorized keys declaratively
-
-  # K8s + Nebula credentials managed by sops-nix on the NixOS side,
-  # no cloud-init credential injection needed.
 
   depends_on = [module.wyrm2_image]
 }

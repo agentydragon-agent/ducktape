@@ -11,12 +11,6 @@ variable "vm_id" {
   default     = null
 }
 
-variable "username" {
-  description = "Username for VM user account"
-  type        = string
-  default     = "user"
-}
-
 variable "vcpus" {
   description = "Number of vCPUs"
   type        = number
@@ -67,11 +61,6 @@ variable "pool_id" {
   description = "Proxmox pool ID to place VM in (empty string = no pool)"
   type        = string
   default     = ""
-}
-
-variable "ssh_public_key" {
-  description = "SSH public key for VM access"
-  type        = string
 }
 
 variable "machine_type" {
@@ -142,20 +131,4 @@ variable "audio_driver" {
   description = "Audio driver/output (e.g. 'spice', 'none')"
   type        = string
   default     = "spice"
-}
-
-# K8s cluster join credentials (optional)
-variable "k8s_cluster_join" {
-  description = "K8s cluster join credentials. When set, cloud-init writes credential files for kubelet and Nebula mesh."
-  type = object({
-    bootstrap_kubeconfig = string
-    ca_cert              = string
-    node_name            = string
-    nebula_ca_cert       = string
-    nebula_host_cert     = string
-    nebula_host_key      = string
-    nebula_config        = string
-  })
-  default   = null
-  sensitive = true
 }
