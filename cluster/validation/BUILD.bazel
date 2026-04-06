@@ -197,13 +197,18 @@ py_test(
     data = [
         "//cluster/k8s:cluster_all_files",
         "@multitool//tools/kyverno",
-    ] + glob(["testdata/kyverno/**"]),
+    ] + glob([
+        "testdata/kyverno/**",
+        "__snapshots__/*.ambr",
+    ]),
     imports = ["../.."],
     deps = [
         ":kyverno",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+        "@pypi//syrupy",
     ],
 )
 

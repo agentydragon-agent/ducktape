@@ -162,14 +162,25 @@ On RBE, the outputs are downloaded to the local testlogs dir after the test comp
 
 ### Updating syrupy snapshots
 
-Snapshot tests use syrupy (`.ambr` files in `__snapshots__/`). To update after intentional changes, run locally (not RBE) so syrupy can write through the execroot symlinks to the source tree:
+Snapshot tests use syrupy (`.ambr` files in `__snapshots__/`). The `.ambr` files must
+be listed in the test target's `data` glob (e.g., `glob(["__snapshots__/*.ambr"])`).
+
+To update after intentional changes, run the test on RBE with `--snapshot-update`, then
+copy the updated `.ambr` file from the runfiles tree back to the source tree:
 
 ```bash
+# 1. Run on RBE with snapshot-update (writes into runfiles, not source tree)
 bazel test //path/to:snapshot_test \
   --test_arg=--snapshot-update \
-  --remote_executor="" \
   --nocache_test_results
+
+# 2. Copy updated snapshots back to source tree
+cp bazel-bin/path/to/snapshot_test.runfiles/_main/path/to/__snapshots__/snapshot_test.ambr \
+   path/to/__snapshots__/snapshot_test.ambr
 ```
+
+**Why not `--remote_executor=""`?** On NixOS, `/bin/bash` doesn't exist, which breaks
+the Ruff lint aspect when running locally. Running on RBE avoids this.
 
 Then commit the updated `.ambr` files.
 
