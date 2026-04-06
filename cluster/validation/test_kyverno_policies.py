@@ -1,4 +1,10 @@
-"""Tests for Kyverno policies using the kyverno CLI."""
+"""Tests for Kyverno policies using the kyverno CLI.
+
+TODO: Add tests for require-gitops and restrict-agent-kustomization-patch policies.
+These are validation (not mutation) policies with background: false that use
+request.userInfo for admission context. Testing them requires passing --userinfo
+flags or mock admission contexts to the kyverno CLI.
+"""
 
 from __future__ import annotations
 
