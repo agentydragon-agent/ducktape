@@ -78,10 +78,10 @@ resources:
   # --- gateway ---
   - gateway/flux-kustomization.yaml
 
-  # --- minio ---
-  - minio/namespace/flux-kustomization.yaml
-  - minio/secrets/flux-kustomization.yaml
-  - minio/app/flux-kustomization.yaml
+  # --- minio-hil ---
+  - minio-hil/namespace/flux-kustomization.yaml
+  - minio-hil/secrets/flux-kustomization.yaml
+  - minio-hil/app/flux-kustomization.yaml
 
   # --- monitoring ---
   - monitoring/grafana-helmrepository/flux-kustomization.yaml

@@ -29,7 +29,7 @@ spec:
       storage:
         type: s3
         s3:
-          endpoint: http://minio.minio.svc.cluster.local:9000
+          endpoint: http://minio.minio-hil.svc.cluster.local:9000
           region: us-east-1
           s3ForcePathStyle: true
           insecure: true
@@ -65,6 +65,9 @@ spec:
       replicas: 1
       nodeSelector:
         topology.kubernetes.io/region: hil
+      persistence:
+        storageClass: local-path-hetzner
+        size: 10Gi
       extraEnvFrom:
         - secretRef:
             name: loki-minio-credentials

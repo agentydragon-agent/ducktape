@@ -11,7 +11,7 @@
 #   - Authentik proxy outpost (authentik namespace, SSO-protected external access)
 #
 # Allowed egress from Loki:
-#   - MinIO (minio namespace, S3 chunk/index storage)
+#   - MinIO (minio-hil namespace, S3 chunk/index storage)
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -77,7 +77,7 @@ spec:
     - toEndpoints:
         - matchLabels:
             app: minio
-            k8s:io.kubernetes.pod.namespace: minio
+            k8s:io.kubernetes.pod.namespace: minio-hil
       toPorts:
         - ports:
             - port: "9000"
