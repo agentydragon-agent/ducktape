@@ -13,10 +13,10 @@
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: inject-mitmproxy-proxy
+  name: inject-mitmproxy
   annotations:
     pod-policies.kyverno.io/autogen-controllers: none
-    policies.kyverno.io/title: Inject mitmproxy proxy
+    policies.kyverno.io/title: Inject mitmproxy
     policies.kyverno.io/category: Networking
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Pod

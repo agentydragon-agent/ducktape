@@ -4,7 +4,7 @@
 #
 # To add a new sandbox namespace, add it to the namespaces list below
 # and add the corresponding mitmproxy-ca-cert SOPS secret + Kyverno
-# injection (already handled by inject-mitmproxy-proxy ClusterPolicy).
+# injection (already handled by inject-mitmproxy ClusterPolicy).
 apiVersion: cilium.io/v2
 kind: CiliumClusterwideNetworkPolicy
 metadata:

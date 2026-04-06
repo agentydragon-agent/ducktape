@@ -34,7 +34,7 @@ def _mutated_yaml(result: KyvernoApplyResult) -> str:
 
 @pytest.fixture
 def mitmproxy_policy() -> Path:
-    return _policy_path("cluster/k8s/kyverno/policies/inject-mitmproxy-proxy.yaml")
+    return _policy_path("cluster/k8s/kyverno/policies/inject-mitmproxy.yaml")
 
 
 class TestInjectMitmproxyProxy:
