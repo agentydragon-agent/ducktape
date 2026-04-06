@@ -127,6 +127,7 @@ resource "proxmox_virtual_environment_vm" "vm" {
 
   lifecycle {
     ignore_changes = [
+      disk,           # CSI driver attaches PVC disks dynamically; tofu can't distinguish them
       initialization, # Stale cloud-init ISO may exist on disk; don't touch it
     ]
   }
