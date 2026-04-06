@@ -64,6 +64,11 @@ spec:
 
     singleBinary:
       replicas: 1
+      # Goldilocks disabled: we manage our own VPA (vpa.yaml) so we can set
+      # explicit min/max bounds alongside Auto mode. Two VPAs on the same
+      # workload conflict, so goldilocks must be opted out.
+      annotations:
+        goldilocks.fairwinds.com/enabled: "false"
       nodeSelector:
         topology.kubernetes.io/region: hil
       persistence:

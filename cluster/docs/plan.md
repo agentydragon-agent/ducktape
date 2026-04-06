@@ -26,6 +26,13 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - **Langfuse**: `langfuse`, `langfuse-secrets`, `langfuse-db` —
   suspended 2026-03-31, degraded Longhorn volumes on wyrm2. Namespace kept active
   for `claude-rbac` RoleBinding dependency.
+- **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
+- **Airlock**: `airlock` — suspended 2026-04-06. `google-workspace-mcp` depends on this.
+- **HomeAssistant Proxy**: `homeassistant-proxy` — suspended 2026-04-06.
+- **OpenClaw secrets**: `openclaw-gateway-secrets`, `openclaw-sandbox-secrets` —
+  suspended 2026-04-06. `openclaw-gateway` kustomization blocked as a result.
+- **ARC**: `arc-secrets` — suspended 2026-04-06. `arc` kustomization blocked as a result.
+- **Props secrets**: `props-secrets` — suspended 2026-04-06. `props` kustomization blocked as a result.
 
 ## Next Actions
 
