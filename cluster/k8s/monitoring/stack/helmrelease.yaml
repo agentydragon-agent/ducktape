@@ -174,9 +174,18 @@ spec:
       plugins:
         - grafana-clock-panel
 
-      # Datasources - use default Prometheus datasource from chart
-      # Add Loki datasource for log aggregation, Tempo for tracing
+      # Disable the chart's built-in Prometheus datasource — we point at Mimir instead.
+      sidecar:
+        datasources:
+          defaultDatasourceEnabled: false
+
       additionalDataSources:
+        - name: Mimir
+          type: prometheus
+          access: proxy
+          url: http://mimir-gateway.monitoring.svc.cluster.local/prometheus
+          isDefault: true
+          editable: true
         - name: Loki
           type: loki
           access: proxy
@@ -239,6 +248,10 @@ spec:
       prometheusSpec:
         # Accept OTLP metric pushes from Grafana Alloy (see cluster/k8s/monitoring/alloy/).
         enableRemoteWriteReceiver: true
+
+        # Forward all scraped metrics to Mimir for long-term storage.
+        remoteWrite:
+          - url: http://mimir-gateway.monitoring.svc.cluster.local/api/v1/push
 
         # Retention settings
         retention: 7d

@@ -19,6 +19,7 @@ otelcol.processor.batch "default" {
 }
 
 // Push OTel metrics to Prometheus remote write receiver.
+// Prometheus forwards to Mimir via its own remoteWrite config.
 otelcol.exporter.prometheus "default" {
   forward_to          = [prometheus.remote_write.monitoring.receiver]
   add_metric_suffixes = false

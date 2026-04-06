@@ -33,6 +33,7 @@ spec:
     buckets:
       - name: loki
       - name: tempo
+      - name: mimir
 
     nodeSelector:
       topology.kubernetes.io/region: hil
