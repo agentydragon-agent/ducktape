@@ -10,7 +10,7 @@ and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 import asyncio
 import logging
 import logging.handlers
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -136,9 +136,9 @@ class PlatformSetup:
     with_direnv: bool = False
 
     # Shared-step results (populated by run_session, not platform setup)
-    secrets: secret_sources.SecretsResult | None = None
+    secrets: secret_sources.SecretsResult = field(default_factory=secret_sources.SecretsResult)
     fork_result: fork_remote.ForkRemoteSetup | None = None
-    buildbuddy_configured: bool = False
+    buildbuddy_setup: buildbuddy.BuildbuddySetup = field(default_factory=buildbuddy.BuildbuddyNotConfigured)
 
 
 # ============================================================================
@@ -493,7 +493,6 @@ async def run_session(
             )
 
         # Phase 1: Resolve SOPS-only secrets (including k8s_token).
-        setup.secrets = secret_sources.SecretsResult()
         if secrets_cfg:
             if secrets_cfg.k8s_token:
                 setup.secrets.k8s_token = resolve_sops(secrets_cfg.k8s_token)
@@ -534,17 +533,15 @@ async def run_session(
             )
 
     # Configure BuildBuddy now that secrets are available.
-    buildbuddy_api_key = setup.secrets.buildbuddy_api_key
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
-        if ctx.web_mode or buildbuddy_api_key:
-            buildbuddy_result = await run_in_thread(lambda: buildbuddy.setup_buildbuddy(api_key=buildbuddy_api_key))
-            setup.buildbuddy_configured = (
-                isinstance(buildbuddy_result, buildbuddy.BuildbuddySetup) and buildbuddy_result.configured
+        if buildbuddy_api_key := setup.secrets.buildbuddy_api_key:
+            buildbuddy_result = await run_in_thread(
+                lambda: buildbuddy.setup_buildbuddy(api_key=buildbuddy_api_key, session_dir=paths.session_dir)
             )
             if isinstance(buildbuddy_result, BaseException):
                 logger.warning("Failed to configure BuildBuddy: %s", buildbuddy_result)
-        else:
-            setup.buildbuddy_configured = buildbuddy.is_buildbuddy_configured()
+            else:
+                setup.buildbuddy_setup = buildbuddy_result
 
     # Ensure 'fork' git remote when GITHUB_TOKEN is available.
     if setup.secrets.github_token:
@@ -558,7 +555,7 @@ async def run_session(
     # Bearer token overrides config file / env var. Idempotent across sessions.
     if hook_config and hook_config.otel:
         otel_config = hook_config.otel.with_env_overrides()
-        otel_token = setup.secrets.otel_bearer_token if setup.secrets else None
+        otel_token = setup.secrets.otel_bearer_token
         if otel_token:
             otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=otel_token)
         otlp_session = _build_otlp_session(proxy_url, combined_ca)
@@ -577,8 +574,9 @@ async def run_session(
             truststore_path=paths.auth_proxy_truststore,
             truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
             combined_ca_path=combined_ca,
-            buildbuddy_configured=setup.buildbuddy_configured,
-            buildbuddy_bazelrc=buildbuddy.BUILDBUDDY_BAZELRC,
+            buildbuddy_bazelrc=setup.buildbuddy_setup.bazelrc_path
+            if isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured)
+            else None,
             bazel_cache_dir=setup.bazel_cache_dir,
             platform=setup.platform,
         )
@@ -645,7 +643,7 @@ async def run_session(
             secrets=setup.secrets,
             extra_context=extra_context,
             log_file=log_file,
-            buildbuddy_configured=setup.buildbuddy_configured,
+            buildbuddy_configured=isinstance(setup.buildbuddy_setup, buildbuddy.BuildbuddyConfigured),
             platform=setup.platform,
         )
         output = SessionStartOutput(

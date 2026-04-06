@@ -6,34 +6,27 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-BUILDBUDDY_BAZELRC = Path.home() / ".config" / "bazel" / "buildbuddy.bazelrc"
+
+@dataclass(frozen=True)
+class BuildbuddyConfigured:
+    """BuildBuddy was configured — session bazelrc was written."""
+
+    bazelrc_path: Path
 
 
-def is_buildbuddy_configured() -> bool:
-    """Check if BuildBuddy remote cache is configured on this machine."""
-    return BUILDBUDDY_BAZELRC.exists()
+@dataclass(frozen=True)
+class BuildbuddyNotConfigured:
+    """BuildBuddy was not configured (no API key available)."""
 
 
-@dataclass
-class BuildbuddySetup:
-    """Result of BuildBuddy configuration."""
-
-    configured: bool
+type BuildbuddySetup = BuildbuddyConfigured | BuildbuddyNotConfigured
 
 
-def setup_buildbuddy(*, api_key: str | None = None) -> BuildbuddySetup:
-    """Configure BuildBuddy remote cache.
-
-    Writes config to ~/.config/bazel/buildbuddy.bazelrc. The session bazelrc
-    template includes a try-import for this file.
-    """
-    if not api_key:
-        logger.info("BuildBuddy API key not provided, skipping setup")
-        return BuildbuddySetup(configured=False)
-
-    BUILDBUDDY_BAZELRC.parent.mkdir(parents=True, exist_ok=True)
-    BUILDBUDDY_BAZELRC.write_text(
-        "# BuildBuddy authentication (auto-generated)\n"
+def setup_buildbuddy(*, api_key: str, session_dir: Path) -> BuildbuddyConfigured:
+    """Write a per-session buildbuddy.bazelrc with the given API key."""
+    session_bazelrc = session_dir / "buildbuddy.bazelrc"
+    session_bazelrc.write_text(
+        "# BuildBuddy authentication (auto-generated per session)\n"
         "# Static configuration is in .bazelrc under build:rbe\n"
         f"common --remote_header=x-buildbuddy-api-key={api_key}\n"
         "\n"
@@ -41,5 +34,5 @@ def setup_buildbuddy(*, api_key: str | None = None) -> BuildbuddySetup:
         "build --config=rbe\n"
     )
 
-    logger.info("BuildBuddy remote cache configured at %s", BUILDBUDDY_BAZELRC)
-    return BuildbuddySetup(configured=True)
+    logger.info("BuildBuddy remote cache configured at %s", session_bazelrc)
+    return BuildbuddyConfigured(bazelrc_path=session_bazelrc)

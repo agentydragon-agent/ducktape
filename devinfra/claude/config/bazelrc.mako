@@ -70,8 +70,10 @@ build --build_metadata=ROLE=claude-code
 test --test_tag_filters=-live_openai_api
 % endif
 
-# BuildBuddy remote cache (API key in separate bazelrc, no-op if absent)
+% if buildbuddy_bazelrc:
+# BuildBuddy remote cache (API key written to per-session bazelrc)
 try-import ${buildbuddy_bazelrc}
+% endif
 
 # AI agent quiet mode (suppress verbose progress for agent transcript)
 # Bazel 7.6+ reads workspace and user RC files in addition to --bazelrc=,

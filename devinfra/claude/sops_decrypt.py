@@ -166,10 +166,16 @@ def _ssh_ed25519_to_age_identity(ssh_key_path: Path) -> x25519.Identity | None:
     try:
         private_key = ssh_serialization.load_ssh_private_key(key_data, password=None)
     except (ValueError, TypeError):
-        logger.debug("SSH key at %s is passphrase-protected or invalid, skipping", ssh_key_path)
+        logger.exception(
+            "SSH key at %s is passphrase-protected or invalid, cannot convert to age identity", ssh_key_path
+        )
         return None
     if not isinstance(private_key, Ed25519PrivateKey):
-        logger.debug("SSH key at %s is not ed25519, skipping", ssh_key_path)
+        logger.warning(
+            "SSH key at %s is %s, not ed25519 — cannot convert to age identity",
+            ssh_key_path,
+            type(private_key).__name__,
+        )
         return None
     seed = private_key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
     # Ed25519 seed -> X25519 private key (SHA-512 + clamping)
@@ -244,4 +250,6 @@ def discover_age_identities() -> list:
     if identity := _ssh_ed25519_to_age_identity(ssh_key):
         logger.debug("Loaded age identity from SSH key at %s", ssh_key)
         identities.append(identity)
+    if not identities:
+        logger.warning("No age identities found from any source (env vars, key files, SSH key)")
     return identities
