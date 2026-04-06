@@ -86,7 +86,8 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
 - [ ] OpenClaw: eliminate one-time token entry
 - [ ] Plaid integration: fix onboarding (`link/token/create` returns 400)
-- [ ] Grocy: provision API token for agent access
+- [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
+      proxy auth, recipe import)
 - [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
       `langfuse/langfuse-s3`, `monitoring/alertmanager-*`, `monitoring/prometheus-*`,
       `monitoring/storage-tempo-0`, `monitoring/kube-prometheus-stack-grafana`,

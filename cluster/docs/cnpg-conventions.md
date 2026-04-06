@@ -70,6 +70,7 @@ pinned DBs or vice versa. This prevents cross-site write latency.
 | gitea-db      | Proxmox-single | Yes       |       |
 | props-db      | Proxmox-single | Yes       |       |
 | matrix-db     | Proxmox-single | Yes       |       |
+| tandoor-db    | Proxmox-single | Yes       |       |
 | attic-db      | Proxmox-single | Yes       |       |
 
 ## TODO
