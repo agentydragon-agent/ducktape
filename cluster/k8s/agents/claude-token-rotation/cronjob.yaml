@@ -5,8 +5,8 @@ metadata:
   namespace: default
   annotations:
     description: >-
-      Rotates the Claude web K8s token by reading a projected SA token,
-      SOPS-encrypting it, and pushing to git. Runs as claude-code-web SA.
+      Syncs the static claude-code-web SA token to SOPS-encrypted git.
+      Runs biweekly to pick up token changes after cluster rebuild.
 spec:
   schedule: "0 0 1,15 * *"
   successfulJobsHistoryLimit: 3
@@ -20,12 +20,11 @@ spec:
           restartPolicy: OnFailure
           volumes:
             - name: sa-token
-              projected:
-                sources:
-                  - serviceAccountToken:
-                      path: token
-                      expirationSeconds: 2592000 # 30 days
-                      audience: https://kubernetes.default.svc
+              secret:
+                secretName: claude-code-web-token
+                items:
+                  - key: token
+                    path: token
             - name: github-pat
               secret:
                 secretName: github-secrets-sync-pat
@@ -36,6 +35,12 @@ spec:
             - name: rotate
               image: ghcr.io/agentydragon/claude-token-rotation:latest # {"$imagepolicy": "flux-system:claude-token-rotation"}
               command: ["/bin/bash", "/scripts/rotate.sh"]
+              env:
+                # rules_distroless extracts debs without running postinst, so
+                # update-ca-certificates never runs and /etc/ssl/certs/ is empty.
+                # Point git/libcurl at the individual cert files directly.
+                - name: GIT_SSL_CAPATH
+                  value: /usr/share/ca-certificates/mozilla
               volumeMounts:
                 - name: sa-token
                   mountPath: /var/run/secrets/sa-token
