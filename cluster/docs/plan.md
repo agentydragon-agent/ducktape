@@ -83,8 +83,7 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       service unit) — restarts kubelet if it deadlocks
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
-- [ ] Prometheus: investigate memory growth and right-size (OOM-killed 8x at 2Gi, pinned to wyrm2 at 6Gi)
-- [ ] Prometheus: unpin from wyrm2 (blocked on PriorityClasses + right-sizing + VPS headroom)
+- [x] Prometheus: replaced by Alloy+Mimir (2026-04-06). Prometheus disabled, operator kept for CRDs.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`, `activitywatch`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
@@ -95,28 +94,22 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
       proxy auth, recipe import)
 - [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
-      `langfuse/langfuse-s3`, `monitoring/alertmanager-*`, `monitoring/prometheus-*`,
-      `monitoring/storage-tempo-0`, `monitoring/kube-prometheus-stack-grafana`,
-      `harbor/harbor-jobservice`
-- [ ] Loki + MinIO migration (replace Longhorn PVC with object storage):
-  - **Phase 1**: Deploy MinIO distributed on Hetzner VPS nodes. 4 drives across
-    2 nodes (2 per node, `local-path`), erasure coded. Provides S3-compatible
-    endpoint with node-loss tolerance.
-  - **Phase 2**: Migrate Loki from `loki-stack` (monolithic, boltdb+filesystem)
-    to `loki` chart (simple scalable mode). Point chunks+index at Hetzner MinIO.
-    Ingester `replication_factor: 3` for in-flight data. Removes `proxmox-csi`
-    dependency from Loki — unblocks the `grafana` HelmRepository (currently
-    bundled in the `loki` kustomization) for Tempo and Alloy.
+      `langfuse/langfuse-s3`, `harbor/harbor-jobservice`.
+      Done: monitoring stack now on `local-path-hetzner` (Alloy+Mimir), Grafana on CNPG,
+      Vault on `local-path-hetzner`.
+- Loki + MinIO migration:
+  - [x] **Phase 1**: MinIO deployed on Hetzner VPS nodes (`minio-hil`).
+  - [x] **Phase 2**: Loki migrated to S3 backend (MinIO). Mimir and Tempo also use MinIO.
   - [ ] Reconsider MinIO on control-plane nodes: currently 4 replicas across all
         VPS nodes (2 CP + 2 worker) with CP tolerations. Alternative: 2 replicas on
         workers only with `drivesPerNode: 2` (4 drives total, still erasure coded).
         Keeps CP nodes lighter but halves node-loss tolerance (1 node = all data).
-  - **Phase 3** (future): Deploy a second MinIO instance on Proxmox (`local-path`,
-    single-node). Set up async replication or scheduled `mc mirror` from the
-    Hetzner instance for off-site backup of log history.
-  - **Phase 4** (future): Split Loki write path by region — Proxmox node logs
-    write to Proxmox MinIO, Hetzner node logs write to Hetzner MinIO. Avoids
-    cross-site traffic for log ingestion. Grafana queries both.
+  - [ ] **Phase 3** (future): Deploy a second MinIO instance on Proxmox (`local-path`,
+        single-node). Set up async replication or scheduled `mc mirror` from the
+        Hetzner instance for off-site backup of log history.
+  - [ ] **Phase 4** (future): Split Loki write path by region — Proxmox node logs
+        write to Proxmox MinIO, Hetzner node logs write to Hetzner MinIO. Avoids
+        cross-site traffic for log ingestion. Grafana queries both.
 - [ ] Re-enable MFA (TOTP/WebAuthn) once device enrollment is set up
 - [ ] Wire `scripts/check-authentik-login.py` into bootstrap/CI
 - [ ] Gatus: Harbor robot token for authenticated `/v2/` probe
@@ -157,13 +150,14 @@ See <plans/file-sync-evaluation.md>.
 **Rule**: These services MUST work with VPS only (Proxmox completely down). No
 `proxmox-csi-retain` storage or Proxmox-pinned workloads.
 
-| Service   | Status | Storage            | Notes                     |
-| --------- | ------ | ------------------ | ------------------------- |
-| DNS       | OK     | `local-path`       | CNPG 2-instance on VPS    |
-| Website   | OK     | None (stateless)   |                           |
-| Ingress   | OK     | None (hostNetwork) | Cilium Gateway on VPS     |
-| Authentik | OK     | `local-path`       | All components pinned     |
-| Vault     | OK     | `local-path`       | Raft storage, VPS-capable |
+| Service   | Status | Storage              | Notes                                 |
+| --------- | ------ | -------------------- | ------------------------------------- |
+| DNS       | OK     | `local-path`         | CNPG 2-instance on VPS                |
+| Website   | OK     | None (stateless)     |                                       |
+| Ingress   | OK     | None (hostNetwork)   | Cilium Gateway on VPS                 |
+| Authentik | OK     | `local-path`         | All components pinned                 |
+| Vault     | OK     | `local-path-hetzner` | Raft storage, VPS-pinned              |
+| Grafana   | OK     | CNPG VPS-HA          | Moved from Longhorn PVC to PostgreSQL |
 
 **Compliance checklist** for critical-path changes:
 
@@ -172,8 +166,8 @@ See <plans/file-sync-evaluation.md>.
 3. Can schedule on VPS nodes
 4. All upstream dependencies also pass 1-3
 
-**Proxmox-dependent services** (tolerate downtime by design): Harbor, Gitea, Loki,
-Nix cache, Grafana, BuildBuddy, Ollama, InvenTree, ActivityWatch.
+**Proxmox-dependent services** (tolerate downtime by design): Harbor, Gitea,
+Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 ## Operational Hardening
 

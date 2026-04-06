@@ -46,22 +46,22 @@ at creation time rather than silently landing on a random node.
    within a site only. Cross-site protection is async backup/mirror.
 4. **CNPG stays on `local-path-{region}`.** App-level replication
    handles durability. See `cnpg-conventions.md`.
-5. **Ephemeral data is explicitly marked.** Prometheus, Grafana, Tempo
-   on `local-path-{region}` — rebuildable, not precious.
+5. **Ephemeral data is explicitly marked.** Mimir, Tempo, Alertmanager
+   on `local-path-hetzner` — rebuildable, not precious. Grafana on CNPG.
 
 ## PVC Backup / Async Cross-Site Replication
 
 Per-workload backup strategy (no one-size-fits-all):
 
-| Data Type                       | Backup Method                                          | Cross-Site? |
-| ------------------------------- | ------------------------------------------------------ | ----------- |
-| CNPG databases                  | pg_dump CronJob to remote site PVC (existing pattern)  | Yes         |
-| CNPG databases                  | (future) CNPG `ScheduledBackup` + Barman to S3/MinIO   | Yes         |
-| CNPG databases                  | (future) CNPG read-only replica cluster at remote site | Yes         |
-| Loki/Tempo (if on MinIO)        | MinIO site replication (async)                         | Yes         |
-| Harbor registry                 | MinIO site replication (if migrated) or rsync CronJob  | Possible    |
-| Ephemeral (Prometheus, Grafana) | No backup needed — rebuildable                         | No          |
-| etcd                            | talos-backup CronJob to S3 with age encryption         | Yes         |
+| Data Type                              | Backup Method                                          | Cross-Site? |
+| -------------------------------------- | ------------------------------------------------------ | ----------- |
+| CNPG databases                         | pg_dump CronJob to remote site PVC (existing pattern)  | Yes         |
+| CNPG databases                         | (future) CNPG `ScheduledBackup` + Barman to S3/MinIO   | Yes         |
+| CNPG databases                         | (future) CNPG read-only replica cluster at remote site | Yes         |
+| Loki/Tempo (if on MinIO)               | MinIO site replication (async)                         | Yes         |
+| Harbor registry                        | MinIO site replication (if migrated) or rsync CronJob  | Possible    |
+| Ephemeral (Mimir, Tempo, Alertmanager) | No backup needed — rebuildable (S3/MinIO backend)      | No          |
+| etcd                                   | talos-backup CronJob to S3 with age encryption         | Yes         |
 
 ### CNPG Cross-Site Read Replica
 
@@ -87,30 +87,34 @@ streaming replication across Nebula (20ms) causes any issues.
 
 ## Current Longhorn Usage
 
-All Longhorn PVCs (checked 2026-04-01):
+**Updated 2026-04-06**: Monitoring stack migrated off Longhorn. Prometheus
+replaced by Alloy+Mimir (S3/MinIO backend). Grafana moved to CNPG. Vault
+moved to `local-path-hetzner`. Loki and Tempo now use MinIO.
 
-| Namespace  | PVC                             | Size | Notes                      |
-| ---------- | ------------------------------- | ---- | -------------------------- |
-| gitea      | data-gitea-postgresql-0         | 10G  | Legacy, suspended          |
-| harbor     | data-harbor-redis-0             | 1G   |                            |
-| harbor     | data-harbor-trivy-0             | 5G   |                            |
-| harbor     | database-data-harbor-database-0 | 1G   | Legacy (migrated to CNPG?) |
-| harbor     | harbor-jobservice               | 1G   |                            |
-| harbor     | harbor-registry                 | 30G  |                            |
-| loki       | storage-loki-stack-0            | 20G  |                            |
-| monitoring | db-alertmanager-monitoring-0    | 1G   |                            |
-| monitoring | db-prometheus-monitoring-0      | 20G  |                            |
-| monitoring | grafana                         | 2G   |                            |
-| monitoring | storage-tempo-0                 | 10G  |                            |
-| vault      | vault-raft-instance-{0,1,2}     | 2G   | Goes away if Vault drops   |
+Remaining Longhorn PVCs (stale/orphaned — no workloads reference `storageClassName: longhorn`):
 
-None of these benefit from Longhorn's cross-node replication:
+| Namespace | PVC                             | Size | Notes                                  |
+| --------- | ------------------------------- | ---- | -------------------------------------- |
+| gitea     | data-gitea-postgresql-0         | 10G  | Legacy, suspended                      |
+| harbor    | data-harbor-redis-0             | 1G   | Orphaned (Harbor now on `lvm-proxmox`) |
+| harbor    | data-harbor-trivy-0             | 5G   | Orphaned (Harbor now on `lvm-proxmox`) |
+| harbor    | database-data-harbor-database-0 | 1G   | Orphaned (migrated to CNPG)            |
+| harbor    | harbor-jobservice               | 1G   | Orphaned (Harbor now on `lvm-proxmox`) |
+| harbor    | harbor-registry                 | 30G  | Orphaned (Harbor now on `lvm-proxmox`) |
 
-- Harbor, Loki: Proxmox-pinned (proxmox-csi would work)
-- Vault: Has its own Raft replication. Goes away if dropped.
-- Monitoring (Prometheus, Grafana, Tempo, AlertManager): Ephemeral /
-  rebuildable. local-path is fine.
-- Gitea: Suspended.
+Previously on Longhorn, now migrated:
+
+| Was                           | Migrated To          | Date       |
+| ----------------------------- | -------------------- | ---------- |
+| monitoring/db-prometheus-\*   | Prometheus disabled  | 2026-04-06 |
+| monitoring/grafana            | CNPG VPS-HA          | 2026-04-06 |
+| monitoring/storage-tempo-0    | MinIO (S3)           | 2026-04-06 |
+| monitoring/db-alertmanager-\* | `local-path-hetzner` | 2026-04-06 |
+| loki/storage-loki-stack-0     | MinIO (S3)           | 2026-04-06 |
+| vault/vault-raft-instance-\*  | `local-path-hetzner` | 2026-04-06 |
+
+All remaining Longhorn PVCs are orphaned — Harbor moved to `lvm-proxmox`,
+Gitea is suspended. After verifying nothing is mounted, these are safe to delete.
 
 ## Distributed Storage Options Considered
 

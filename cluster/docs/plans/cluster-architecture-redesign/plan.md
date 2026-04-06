@@ -156,44 +156,33 @@ Legend: **bold** = decision made, normal = current state / TBD.
 
 ### Monitoring & Observability
 
-| Service         | Current      | Proposed                    | Storage    | Replication         | Notes                             |
-| --------------- | ------------ | --------------------------- | ---------- | ------------------- | --------------------------------- |
-| Prometheus      | wyrm2 (6 Gi) | **Replace with VM cluster** | —          | —                   | See VictoriaMetrics section below |
-| VictoriaMetrics | —            | **VPS workers**             | local-path | Built-in (factor=2) | 2x vmstorage on VPS workers       |
-| Grafana         | ?            | VPS workers                 | local-path | None                | Stateless-ish, rebuildable        |
-| Loki            | Proxmox      | TBD                         | MinIO?     | Via MinIO           | See <storage.md>                  |
-| Alloy           | ?            | Any                         |            |                     | DaemonSet, stateless              |
-| Tempo           | ?            | VPS workers                 | local-path | None                | Rebuildable                       |
-| AlertManager    | ?            | VPS workers                 | local-path | None                |                                   |
-| Gatus           | ?            | VPS workers                 | local-path | None                |                                   |
+| Service      | Current      | Storage                           | Replication    | Notes                                              |
+| ------------ | ------------ | --------------------------------- | -------------- | -------------------------------------------------- |
+| Alloy        | **Deployed** | none (DaemonSet)                  | n/a            | Scrapes ServiceMonitor/PodMonitor, pushes to Mimir |
+| Mimir        | **Deployed** | `local-path-hetzner`              | Built-in       | Long-term metrics storage, S3 backend (MinIO)      |
+| Grafana      | **Deployed** | CNPG VPS-HA                       | CNPG streaming | Moved from PVC to PostgreSQL                       |
+| Loki         | **Deployed** | MinIO (S3) + `local-path-hetzner` | None           | Single-binary; local PVC for WAL/cache             |
+| Tempo        | **Deployed** | S3 (MinIO)                        | None           | No local PVCs, S3 backend only                     |
+| Alertmanager | **Deployed** | `local-path-hetzner`              | 2 replicas     | Receives alerts from Mimir Ruler                   |
+| Gatus        | Deployed     | `local-path`                      | None           |                                                    |
+| Prometheus   | **Disabled** | —                                 | —              | Replaced by Alloy+Mimir (2026-04-06)               |
 
-#### VictoriaMetrics Cluster (replaces Prometheus)
+#### Alloy + Mimir (replaced Prometheus)
 
-Replace Prometheus with VictoriaMetrics cluster mode. ~3-10x less RAM
-for the same data. Built-in replication, PromQL-compatible, Grafana
-works as-is (Prometheus datasource type).
+Prometheus was disabled 2026-04-06 — it was pinned to wyrm2 with a
+broken Longhorn PVC and redundant once Mimir was deployed. The
+Prometheus Operator remains active (manages ServiceMonitor/PodMonitor/
+PrometheusRule CRDs).
 
-**Components:**
+**Current stack:**
 
-- `vmstorage` (x2): One per VPS worker, local-path storage,
-  `replicationFactor=2` — each metric written to both nodes
-- `vminsert` (x1): Receives remote-write from scrapers, distributes
-  to storage nodes. Lightweight, can run anywhere.
-- `vmselect` (x1): Serves PromQL queries, merges/deduplicates from
-  both storage nodes. Lightweight, can run anywhere.
-
-**Cross-site replication problem:** `vminsert` writes to
-`replicationFactor` nodes synchronously with no topology awareness.
-If vmstorage nodes span VPS + Proxmox, some writes cross the 20ms
-Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
-
-**Migration path:**
-
-1. Deploy VM cluster alongside Prometheus
-2. Configure dual remote-write (Alloy writes to both)
-3. Verify dashboards work against vmselect
-4. Switch Grafana datasource to vmselect
-5. Remove Prometheus
+- **Alloy** (DaemonSet): Discovers and scrapes ServiceMonitor/PodMonitor
+  targets, pushes to Mimir via remote-write.
+- **Mimir** (distributed): Long-term metrics storage with S3 backend
+  (MinIO). Ruler component evaluates alerting/recording rules. Pinned
+  to Hetzner region.
+- **Grafana**: Queries Mimir via Prometheus datasource type (PromQL-compatible).
+  State in CNPG PostgreSQL (VPS-HA, 2 replicas) instead of PVC.
 
 ### Agent / AI Services
 
@@ -232,24 +221,25 @@ Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
 
 - **Vault**: Drop (replaced by SOPS + age). See <sso.md>.
 - **SSO**: Authentik → Authelia. See <sso.md>.
-- **Prometheus**: Replace with VictoriaMetrics cluster.
-- **Longhorn**: Drop after migrating remaining PVCs. See <storage.md>.
+- **Prometheus**: Replaced by Alloy+Mimir (2026-04-06). Prometheus disabled, operator kept for CRDs.
+- **Grafana storage**: Moved from Longhorn PVC to CNPG PostgreSQL (VPS-HA).
+- **Vault storage**: Moved from Longhorn to `local-path-hetzner`.
+- **Longhorn**: No workloads remain on Longhorn storage. Operator still deployed (UI/SSO). Drop after removing operator + CRDs.
 
 ## Remaining Decisions
 
 ### Tier 1: Blocking
 
-1. **Prometheus + Loki long-term placement.** See <storage.md>.
+(None — monitoring placement resolved by Alloy+Mimir migration.)
 
 ### Tier 2: Should decide
 
-2. **Monitoring stack placement** (Grafana, Alloy, Tempo, AlertManager,
-   Gatus).
-3. **Harbor placement.** Effectively Proxmox-pinned via proxmox-csi.
-4. **tofu-state DB.** Currently VPS-HA CNPG. Stays on VPS workers?
-5. **Light services on CPs.** Candidates: PowerDNS, kube-api-proxy,
+1. **Loki long-term placement.** Currently single-binary on `local-path-hetzner`. See <storage.md>.
+2. **Harbor placement.** Effectively Proxmox-pinned via proxmox-csi.
+3. **tofu-state DB.** Currently VPS-HA CNPG. Stays on VPS workers?
+4. **Light services on CPs.** Candidates: PowerDNS, kube-api-proxy,
    Gateway/Ingress, Kyverno, CoreDNS, system DaemonSets.
-6. **Hcloud CSI.** Remove or use for VPS worker storage?
+5. **Hcloud CSI.** Remove or use for VPS worker storage?
 
 ### Tier 3: Low risk
 
@@ -280,6 +270,12 @@ Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
   HTTPRoute (`authelia.allegedly.works`), ConfigMap with OIDC provider
   config and local user backend. TODO markers for SOPS secrets, JWKS
   key, user password hash, and OIDC client definitions.
+- Monitoring migrated from Prometheus to Alloy+Mimir (2026-04-06):
+  Prometheus disabled, Alloy scrapes metrics, Mimir stores long-term
+  with S3 backend (MinIO). Mimir Ruler evaluates alert rules.
+- Grafana moved from Longhorn PVC to CNPG PostgreSQL (VPS-HA, 2 replicas)
+- Vault moved from Longhorn to `local-path-hetzner`
+- All Longhorn workload PVCs eliminated — no `storageClassName: longhorn` remains
 
 ### Phase 1: Foundation (remaining)
 
@@ -293,7 +289,9 @@ Nebula link. Plan for **vmstorage on VPS only** with 2 nodes.
    user password hash, uncomment SOPS resources in kustomization + Flux
 3. Update `cnpg-conventions.md` for region-explicit storage classes
 4. Migrate CNPG clusters + PVCs from generic `local-path` to `local-path-{region}`
-5. Migrate monitoring/vault off bare `longhorn` SC
+5. ~~Migrate monitoring/vault off bare `longhorn` SC~~ — **Done** (2026-04-06):
+   Prometheus disabled (replaced by Alloy+Mimir), Grafana moved to CNPG,
+   Vault moved to `local-path-hetzner`. No Longhorn PVCs remain.
 
 ### Phase 2: CP Isolation (remaining)
 
@@ -333,26 +331,24 @@ we want runtime self-service (password reset, profile changes)?
 For now: stick with static ConfigMap. Revisit if MFA (TOTP/WebAuthn)
 enrollment requires runtime writes.
 
-### Phase 4: Monitoring Migration (Prometheus → VictoriaMetrics)
+### Phase 4: Monitoring Migration — COMPLETE (2026-04-06)
 
-16. Deploy VictoriaMetrics cluster
-17. Configure dual remote-write
-18. Verify + switch Grafana datasource
-19. Remove Prometheus
+Prometheus replaced by Alloy+Mimir (not VictoriaMetrics as originally
+planned — Mimir was a better fit with MinIO already deployed). Grafana
+moved from Longhorn PVC to CNPG PostgreSQL (VPS-HA). Vault moved from
+Longhorn to `local-path-hetzner`.
 
 ### Phase 5: Storage (evaluate and migrate)
 
 See <storage.md> for validation plans.
 
-20. Evaluate MinIO site replication + HAProxy
-21. Evaluate Loki/Tempo on MinIO
-22. Evaluate JuiceFS OR Rook/Ceph
-23. Migrate remaining Longhorn PVCs
-24. Decommission Longhorn
+16. Evaluate MinIO site replication + HAProxy
+17. Evaluate Loki/Tempo on MinIO
+18. Evaluate JuiceFS OR Rook/Ceph
+19. Remove Longhorn operator and CRDs (no workload PVCs remain)
 
 ### Phase 6: Cleanup
 
-25. Remove Longhorn operator and CRDs
-26. Remove Vault, ESO, tofu-controller secret resources
-27. Remove Authentik namespace
-28. Update cluster docs
+20. Remove Vault, ESO, tofu-controller secret resources
+21. Remove Authentik namespace
+22. Update cluster docs
