@@ -23,7 +23,7 @@ in
       inherit (cfg) sopsFile;
     };
 
-    home.activation.attic-config = config.lib.dag.entryAfter [ "sopsNix" ] ''
+    home.activation.attic-config = config.lib.dag.entryAfter [ "sops-nix" ] ''
       mkdir -p ${atticDir}
       token=$(cat ${config.sops.secrets.attic_token.path})
       cat > ${atticDir}/config.toml <<EOF

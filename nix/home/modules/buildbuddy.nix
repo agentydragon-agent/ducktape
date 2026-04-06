@@ -10,7 +10,7 @@ in
     sopsFile = ../../../secrets/buildbuddy.yaml;
   };
 
-  home.activation.buildbuddy-bazelrc = config.lib.dag.entryAfter [ "sopsNix" ] ''
+  home.activation.buildbuddy-bazelrc = config.lib.dag.entryAfter [ "sops-nix" ] ''
     mkdir -p ${bazelrcDir}
     cat > ${bazelrcDir}/buildbuddy.bazelrc <<EOF
     common --remote_header=x-buildbuddy-api-key=$(cat ${config.sops.secrets.buildbuddy_api_key.path})
