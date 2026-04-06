@@ -5,8 +5,7 @@ metadata:
   namespace: default
   annotations:
     description: >-
-      Syncs the static claude-code-web SA token to SOPS-encrypted git.
-      Runs biweekly to pick up token changes after cluster rebuild.
+      Syncs the static claude-code-web SA token to SOPS-encrypted git. Runs biweekly to pick up token changes after cluster rebuild.
 spec:
   schedule: "0 0 1,15 * *"
   successfulJobsHistoryLimit: 3
@@ -33,7 +32,7 @@ spec:
                 name: claude-token-rotation-script
           containers:
             - name: rotate
-              image: ghcr.io/agentydragon/claude-token-rotation:latest # {"$imagepolicy": "flux-system:claude-token-rotation"}
+              image: ghcr.io/agentydragon/claude-token-rotation:devel-20260405225634-b069fe4 # {"$imagepolicy": "flux-system:claude-token-rotation"}
               command: ["/bin/bash", "/scripts/rotate.sh"]
               env:
                 # rules_distroless extracts debs without running postinst, so

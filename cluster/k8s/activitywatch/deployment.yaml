@@ -28,7 +28,7 @@ spec:
         - name: harbor-pull-robot
       containers:
         - name: aw-server
-          image: ghcr.io/agentydragon/aw-server:devel-20260401064257-79303ab # {"$imagepolicy": "flux-system:activitywatch"}
+          image: ghcr.io/agentydragon/aw-server:devel-20260406035759-ecb2481 # {"$imagepolicy": "flux-system:activitywatch"}
           ports:
             - containerPort: 5600
               name: http

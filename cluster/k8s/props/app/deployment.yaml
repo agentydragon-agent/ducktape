@@ -25,13 +25,13 @@ spec:
       # Props still uses Harbor internally for agent images via props-harbor-robot.
       containers:
         - name: props
-          image: ghcr.io/agentydragon/props-backend:devel-20260401040602-df942a4 # {"$imagepolicy": "flux-system:props-backend"}
+          image: ghcr.io/agentydragon/props-backend:devel-20260404212355-1feaf37 # {"$imagepolicy": "flux-system:props-backend"}
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
             - name: PROPS_IMAGE_TAG
-              value: devel-20260401040602-df942a4 # {"$imagepolicy": "flux-system:props-backend:tag"}
+              value: devel-20260404212355-1feaf37 # {"$imagepolicy": "flux-system:props-backend:tag"}
             - name: PROPS_CONFIG_FILE
               value: /etc/props/config.toml
             - name: PGHOST
