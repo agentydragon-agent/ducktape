@@ -1,7 +1,8 @@
 # Nebula Mesh — per-node machine config patches
 #
 # PKI (CA + node certs) is managed in persistent-auth.tf (same root).
-# To add a new node, add it to local.nebula_nodes in persistent-auth.tf.
+# Talos nodes: add to local.talos_nebula_nodes (tofu generates + embeds certs).
+# Non-Talos nodes: certs in SOPS (see docs/secrets.md).
 
 locals {
   nebula_ca_cert = local_file.nebula_ca_crt.content

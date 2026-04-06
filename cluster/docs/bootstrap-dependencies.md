@@ -37,7 +37,7 @@ L6  Cluster Services ───────────────────�
         │
 L7  NixOS Worker Integration ────────────────────────────────────────────
     (wyrm2, rugged join cluster via Nebula + kubelet bootstrap)
-        │  reads: L2 nebula certs (copied to sops-nix secrets)
+        │  reads: L1 nebula CA (certs generated manually, stored in SOPS)
 ```
 
 ## L0: External Credentials
@@ -96,15 +96,15 @@ SOPS-encrypt, commit, push. Flux picks it up automatically.
 Created by `tofu apply` Phase 1 (persistent-auth targets). Stored in PG
 backend. Resources have `lifecycle { prevent_destroy = true }`.
 
-| Resource                                                          | Reads                                  | Creates                                           | Depended On By                                                       |
-| ----------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------- |
-| `proxmox_virtual_environment_role.persistent`                     | L0: Proxmox token                      | Proxmox roles (CSI, TerraformAdmin)               | L2: Proxmox users                                                    |
-| `proxmox_virtual_environment_user.persistent`                     | L2: roles                              | Proxmox users (kubernetes-csi@pve, terraform@pve) | L2: tokens                                                           |
-| `proxmox_virtual_environment_user_token.persistent`               | L2: users                              | API tokens for CSI + terraform                    | L3: Proxmox VM creation; L6: CSI driver                              |
-| `local_file.nebula_ca_crt` / `local_sensitive_file.nebula_ca_key` | L1: `secrets/nebula-ca.yaml`           | CA cert/key on disk                               | L2: node cert signing                                                |
-| `null_resource.nebula_node_cert` (10 nodes)                       | L2: CA on disk                         | Per-node cert+key at `nebula-certs/`              | L3: Talos machine config (embedded); L7: NixOS workers (manual copy) |
-| `kubernetes_namespace.flux_system`                                | L3: kubeconfig                         | `flux-system` namespace                           | L2: SOPS age secret; L5: Flux                                        |
-| `kubernetes_secret.sops_age_cluster_secrets`                      | L1: `secrets/cluster-secrets-age.yaml` | k8s secret in flux-system                         | L5: Flux SOPS decryption                                             |
+| Resource                                                          | Reads                                  | Creates                                           | Depended On By                          |
+| ----------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- | --------------------------------------- |
+| `proxmox_virtual_environment_role.persistent`                     | L0: Proxmox token                      | Proxmox roles (CSI, TerraformAdmin)               | L2: Proxmox users                       |
+| `proxmox_virtual_environment_user.persistent`                     | L2: roles                              | Proxmox users (kubernetes-csi@pve, terraform@pve) | L2: tokens                              |
+| `proxmox_virtual_environment_user_token.persistent`               | L2: users                              | API tokens for CSI + terraform                    | L3: Proxmox VM creation; L6: CSI driver |
+| `local_file.nebula_ca_crt` / `local_sensitive_file.nebula_ca_key` | L1: `secrets/nebula-ca.yaml`           | CA cert/key on disk                               | L2: node cert signing                   |
+| `null_resource.nebula_node_cert` (5 Talos nodes)                  | L2: CA on disk                         | Per-node cert+key at `nebula-certs/`              | L3: Talos machine config (embedded)     |
+| `kubernetes_namespace.flux_system`                                | L3: kubeconfig                         | `flux-system` namespace                           | L2: SOPS age secret; L5: Flux           |
+| `kubernetes_secret.sops_age_cluster_secrets`                      | L1: `secrets/cluster-secrets-age.yaml` | k8s secret in flux-system                         | L5: Flux SOPS decryption                |
 
 **If tofu state is lost**: All L2 resources must be recreated. Proxmox
 roles/users/tokens that still exist on Proxmox must be deleted first (tofu
@@ -173,17 +173,17 @@ decrypted by Flux. See [App Credentials](#app-credentials) for the full list.
 
 wyrm2 and rugged join the cluster via kubelet TLS bootstrap over Nebula mesh.
 
-| What They Need           | Source                             | Delivery                                                                 |
-| ------------------------ | ---------------------------------- | ------------------------------------------------------------------------ |
-| Nebula cert + key        | L2: `nebula-certs/{host}.crt/key`  | Manual copy → `secrets/{host}-nebula.yaml` SOPS → `nixos-rebuild switch` |
-| Nebula CA cert           | L1: `secrets/nebula-ca.yaml`       | Included in per-host nebula SOPS file                                    |
-| k8s bootstrap kubeconfig | L3: `kubeconfig` + bootstrap token | Manual copy → `secrets/k8s-worker.yaml` SOPS → `nixos-rebuild switch`    |
-| k8s CA cert              | L3: Talos machine secrets          | Extracted from kubeconfig or tofu output                                 |
+| What They Need           | Source                                       | Delivery                                                              |
+| ------------------------ | -------------------------------------------- | --------------------------------------------------------------------- |
+| Nebula cert + key        | Generated via `nebula-cert sign` (see below) | `secrets/{host}-nebula.yaml` SOPS → `nixos-rebuild switch`            |
+| Nebula CA cert           | L1: `secrets/nebula-ca.yaml`                 | Included in per-host nebula SOPS file                                 |
+| k8s bootstrap kubeconfig | L3: `kubeconfig` + bootstrap token           | Manual copy → `secrets/k8s-worker.yaml` SOPS → `nixos-rebuild switch` |
+| k8s CA cert              | L3: Talos machine secrets                    | Extracted from kubeconfig or tofu output                              |
 
 **After fresh bootstrap** (new cluster CA / new machine secrets):
 
 1. Update SOPS files with new certs + bootstrap token:
-   - `secrets/{host}-nebula.yaml` — new nebula cert, key, CA from `nebula-certs/`
+   - `secrets/{host}-nebula.yaml` — generate new cert via `nebula-cert sign` (see <secrets.md> "Nebula Certs for Non-Talos Nodes")
    - `secrets/k8s-worker.yaml` — new `k8s_ca_cert` (PEM from `tofu output -raw k8s_ca_cert | base64 -d`),
      new `k8s_bootstrap_token` (from `tofu output -raw k8s_bootstrap_token`),
      new `k8s_bootstrap_kubeconfig` (with updated CA + token + server `https://10.42.0.1:6443`)
@@ -205,9 +205,6 @@ point` or `certificate signed by unknown authority`.
 5. Verify: `kubectl get nodes` should show the worker as `Ready` after ~30s
 
 **If only nebula certs rotate** (same cluster CA): steps 1-3 only, skip step 4.
-
-**Gap**: No automation connects tofu cert generation to sops-nix deployment.
-This is a manual step after every cert rotation.
 
 ## App Credentials
 

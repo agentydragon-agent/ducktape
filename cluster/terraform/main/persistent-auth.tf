@@ -121,25 +121,25 @@ data "sops_file" "flux_deploy_key" {
 locals {
   nebula_cert_dir = "${path.module}/nebula-certs"
 
-  # All Nebula mesh nodes — add new nodes here when expanding the mesh.
+  # Talos nodes — tofu generates certs and embeds them in machine config patches
+  # (nebula.tf). Add new Talos nodes here.
   # Cert names use FQDN under nebula.allegedly.works so that systemd-resolved
   # can route queries via ~nebula.allegedly.works without +DefaultRoute (which
   # breaks public DNS when cluster nodes are unreachable).
   # Groups are unused (no nebula firewall rules reference them) but kept
   # minimal for future use.
-  nebula_nodes = {
+  talos_nebula_nodes = {
     "talos-vps-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.1/16", groups = "lighthouse" }
     "talos-vps-cp-1.nebula.allegedly.works"     = { ip = "10.42.0.2/16", groups = "lighthouse" }
     "talos-pve-cp-0.nebula.allegedly.works"     = { ip = "10.42.0.10/16", groups = "" }
     "talos-vps-worker-0.nebula.allegedly.works" = { ip = "10.42.0.11/16", groups = "lighthouse" }
     "talos-vps-worker-1.nebula.allegedly.works" = { ip = "10.42.0.12/16", groups = "lighthouse" }
-    "wyrm2.nebula.allegedly.works"              = { ip = "10.42.0.20/16", groups = "" }
-    "rugged.nebula.allegedly.works"             = { ip = "10.42.0.30/16", groups = "" }
-    "iguana.nebula.allegedly.works"             = { ip = "10.42.0.31/16", groups = "" }
-    "k8s-worker-test.nebula.allegedly.works"    = { ip = "10.42.0.99/16", groups = "" }
-    "atlas.nebula.allegedly.works"              = { ip = "10.42.0.5/16", groups = "" }
-    "activitywatch.nebula.allegedly.works"      = { ip = "10.42.0.40/16", groups = "" }
   }
+
+  # Non-Talos nodes (wyrm2, rugged, iguana, atlas, activitywatch, k8s-worker-test)
+  # have certs managed via SOPS (secrets/{host}-nebula.yaml). IPs are embedded
+  # in the certs — use `nebula-cert print` to inspect. See docs/secrets.md
+  # "Nebula Certs for Non-Talos Nodes" for the generation workflow.
 }
 
 # Generate CA cert + key (once, stored on disk + in state).
@@ -160,7 +160,7 @@ resource "local_file" "nebula_ca_crt" {
 
 # Generate per-node certs signed by the CA.
 resource "null_resource" "nebula_node_cert" {
-  for_each = local.nebula_nodes
+  for_each = local.talos_nebula_nodes
 
   triggers = {
     ca_hash = sha256(local_file.nebula_ca_crt.content)
@@ -186,13 +186,13 @@ resource "null_resource" "nebula_node_cert" {
 }
 
 data "local_file" "nebula_node_crt" {
-  for_each   = local.nebula_nodes
+  for_each   = local.talos_nebula_nodes
   filename   = "${local.nebula_cert_dir}/${each.key}.crt"
   depends_on = [null_resource.nebula_node_cert]
 }
 
 data "local_sensitive_file" "nebula_node_key" {
-  for_each   = local.nebula_nodes
+  for_each   = local.talos_nebula_nodes
   filename   = "${local.nebula_cert_dir}/${each.key}.key"
   depends_on = [null_resource.nebula_node_cert]
 }
