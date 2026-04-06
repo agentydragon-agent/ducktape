@@ -38,7 +38,7 @@ spec:
             backend: s3
             s3:
               endpoint: minio.minio-hil.svc.cluster.local:9000
-              bucket_name: mimir
+              bucket_name: mimir-blocks
               region: us-east-1
               insecure: true
               access_key_id: ${AWS_ACCESS_KEY_ID}
@@ -46,7 +46,7 @@ spec:
 
         blocks_storage:
           s3:
-            bucket_name: mimir
+            bucket_name: mimir-blocks
 
         # Chart 6.x defaults to Kafka ingest storage. Disable — single
         # ingester, no benefit from decoupled write path.

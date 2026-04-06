@@ -33,7 +33,7 @@ spec:
     buckets:
       - name: loki
       - name: tempo
-      - name: mimir
+      - name: mimir-blocks
       - name: mimir-ruler
 
     nodeSelector:
