@@ -73,11 +73,11 @@ All storage is region-local — no cross-site synchronous replication.
 | StorageClass         | Provisioner            | Region  | Notes                                                         |
 | -------------------- | ---------------------- | ------- | ------------------------------------------------------------- |
 | `local-path`         | local-path-provisioner | Any     | CNPG (all databases), Gatus, MinIO, Nix cache                 |
-| `local-path-hetzner` | local-path-provisioner | Hetzner | Vault Raft, Loki, Alertmanager                                |
+| `local-path-hetzner` | local-path-provisioner | Hetzner | Vault Raft, Loki, Mimir, Alertmanager, Grafana DB             |
 | `local-path-proxmox` | local-path-provisioner | Proxmox | ActivityWatch, Scanner, Google Workspace MCP, Tana MCP        |
 | `lvm-proxmox`        | OpenEBS LVM CSI        | Proxmox | Thin provisioning, expansion: Harbor                          |
 | `proxmox-csi-retain` | Proxmox CSI            | Proxmox | Block storage via Proxmox API: Ollama, Matrix (migrating off) |
-| `longhorn`           | Longhorn               | Hetzner | Legacy — migrating off. Harbor (redis, registry)              |
+| `longhorn`           | Longhorn               | Hetzner | Legacy — orphaned PVCs only, no active workloads              |
 | `hetzner-longhorn`   | Longhorn               | Hetzner | Replicated across VPS nodes (none active yet)                 |
 | `hcloud-volumes`     | Hetzner Cloud CSI      | Hetzner | (none active)                                                 |
 
