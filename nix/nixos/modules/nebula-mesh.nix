@@ -25,6 +25,16 @@ let
       am_lighthouse = false;
       interval = 10;
       hosts = cfg.lighthouses;
+      # Block Cilium/container interfaces from being advertised as Nebula
+      # endpoints. Without this, Nebula may advertise pod CIDR IPs (10.244.x.x)
+      # to peers, causing a VXLAN-in-Nebula tunnel loop.
+      # See cluster/debug/2026-04-07-pve-cp0-etcd-partition/
+      local_allow_list = {
+        interfaces = {
+          "cilium.*" = false;
+          "lxc.*" = false;
+        };
+      };
     };
     relay = {
       relays = cfg.lighthouses;

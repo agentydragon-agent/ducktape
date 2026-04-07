@@ -49,6 +49,17 @@ locals {
     inbound  = [{ port = "any", proto = "any", host = "any" }]
   }
 
+  # Block Cilium/container interfaces from being advertised as Nebula endpoints.
+  # Without this, Nebula may advertise pod CIDR IPs (10.244.x.x) to peers,
+  # causing a VXLAN-in-Nebula tunnel loop that overwhelms the tun device.
+  # See cluster/debug/2026-04-07-pve-cp0-etcd-partition/
+  nebula_local_allow_list = {
+    interfaces = {
+      "cilium.*" = false
+      "lxc.*"    = false
+    }
+  }
+
   # Fields shared by all nebula nodes — merged with per-node overrides below
   nebula_common = {
     pki             = local.nebula_pki
@@ -69,47 +80,52 @@ locals {
     # VPS lighthouses: am_lighthouse + am_relay (relay required for NAT'd home nodes)
     vps0 = merge(local.nebula_common, {
       lighthouse = {
-        am_lighthouse = true
-        serve_dns     = true
-        interval      = 10
-        dns           = { host = "10.42.0.1", port = 53 }
+        am_lighthouse    = true
+        serve_dns        = true
+        interval         = 10
+        dns              = { host = "10.42.0.1", port = 53 }
+        local_allow_list = local.nebula_local_allow_list
       }
       relay = { am_relay = true }
     })
     vps1 = merge(local.nebula_common, {
       lighthouse = {
-        am_lighthouse = true
-        serve_dns     = true
-        interval      = 10
-        dns           = { host = "10.42.0.2", port = 53 }
+        am_lighthouse    = true
+        serve_dns        = true
+        interval         = 10
+        dns              = { host = "10.42.0.2", port = 53 }
+        local_allow_list = local.nebula_local_allow_list
       }
       relay = { am_relay = true }
     })
     # VPS workers: lighthouses + relays (public IPs)
     vps_worker0 = merge(local.nebula_common, {
       lighthouse = {
-        am_lighthouse = true
-        serve_dns     = true
-        interval      = 10
-        dns           = { host = "10.42.0.11", port = 53 }
+        am_lighthouse    = true
+        serve_dns        = true
+        interval         = 10
+        dns              = { host = "10.42.0.11", port = 53 }
+        local_allow_list = local.nebula_local_allow_list
       }
       relay = { am_relay = true }
     })
     vps_worker1 = merge(local.nebula_common, {
       lighthouse = {
-        am_lighthouse = true
-        serve_dns     = true
-        interval      = 10
-        dns           = { host = "10.42.0.12", port = 53 }
+        am_lighthouse    = true
+        serve_dns        = true
+        interval         = 10
+        dns              = { host = "10.42.0.12", port = 53 }
+        local_allow_list = local.nebula_local_allow_list
       }
       relay = { am_relay = true }
     })
     # Proxmox home node: not a lighthouse, uses VPS relays for NAT traversal
     pve_cp0 = merge(local.nebula_common, {
       lighthouse = {
-        am_lighthouse = false
-        interval      = 10
-        hosts         = local.nebula_lighthouse_ips
+        am_lighthouse    = false
+        interval         = 10
+        hosts            = local.nebula_lighthouse_ips
+        local_allow_list = local.nebula_local_allow_list
       }
       relay = { relays = local.nebula_lighthouse_ips, use_relays = true }
     })
