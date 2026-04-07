@@ -67,6 +67,7 @@ manifest:
     charset_normalizer: charset_normalizer
     chromadb: chromadb
     chromadb_rust_bindings: chromadb
+    claude_agent_sdk: claude_agent_sdk
     claude_code_sdk: claude_code_sdk
     click: click
     cloudpickle: cloudpickle
@@ -600,4 +601,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: b18fff7346f7f29f0b0317dffe9aa49915bfcd6d62378850a0cca47e27b140f8
+integrity: 043eaddf571a4ac07e8cb73182e6a39b19587917888e21d0d2e05b908451ead9
