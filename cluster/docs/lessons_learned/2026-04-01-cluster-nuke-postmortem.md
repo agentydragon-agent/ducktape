@@ -155,6 +155,20 @@ This is the exact footgun identified in "Architectural Footgun #2" above — tof
 managing wyrm2 from wyrm2. The fix is to use `-exclude=module.wyrm2` on all tofu
 applies run from wyrm2.
 
+## Recovery Changes (2026-04-02 bootstrap)
+
+- SealedSecrets fully replaced with SOPS (all 26 secret files converted)
+- Nebula CA moved from tofu-generated to SOPS (`secrets/nebula-ca.yaml`)
+- Flux deploy key moved from tofu-generated to SOPS (`secrets/shared/flux-deploy-key.yaml`)
+- Cluster age keypair moved to SOPS (`secrets/shared/cluster-secrets-age.yaml`)
+- Sealed-secrets controller removed from cluster
+- `flux-system` namespace now created by tofu in Phase 2 (for SOPS age secret)
+- DNS records moved from tofu-controller to declarative ClusterRRset CRDs
+
+**Key lesson**: ALWAYS verify `tofu state list` shows resources in the target
+backend before deleting any backups or source backends. `tofu init -migrate-state`
+to PG can silently write nothing.
+
 ## Action Items
 
 - [x] Add `ssh_keys` to `hcloud_server.vps` `ignore_changes` lifecycle

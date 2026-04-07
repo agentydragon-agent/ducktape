@@ -104,11 +104,11 @@ resource "proxmox_virtual_environment_user_token" "persistent" {
 # ============================================================================
 # FLUX DEPLOY KEY (ED25519 for GitHub repository access)
 # ============================================================================
-# Stored in secrets/flux-deploy-key.yaml (SOPS-encrypted).
+# Stored in secrets/shared/flux-deploy-key.yaml (SOPS-encrypted).
 # Public key must be registered as a deploy key on the GitHub repo.
 
 data "sops_file" "flux_deploy_key" {
-  source_file = "${path.module}/../../../secrets/flux-deploy-key.yaml"
+  source_file = "${path.module}/../../../secrets/shared/flux-deploy-key.yaml"
 }
 
 
@@ -204,12 +204,12 @@ data "local_sensitive_file" "nebula_node_key" {
 # ============================================================================
 # SOPS AGE KEYPAIR — cluster k8s secrets
 # ============================================================================
-# Keypair stored in secrets/cluster-secrets-age.yaml (SOPS-encrypted to admin +
+# Keypair stored in secrets/shared/cluster-secrets-age.yaml (SOPS-encrypted to admin +
 # user keys). Public key in .sops.yaml (&cluster-secrets anchor).
 # Tofu decrypts via sops provider and deploys the private key to flux-system.
 
 data "sops_file" "cluster_secrets_age" {
-  source_file = "${path.module}/../../../secrets/cluster-secrets-age.yaml"
+  source_file = "${path.module}/../../../secrets/shared/cluster-secrets-age.yaml"
 }
 
 resource "kubernetes_namespace" "flux_system" {

@@ -30,11 +30,11 @@ Terraform generates passwords → stores in Vault → ESO syncs to K8s.
 
 Defined in `.sops.yaml` creation rules:
 
-| Key                              | Purpose                                       | Storage                                                                                 |
-| -------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Admin age key (`age1u858...`)    | Decrypt all secrets locally                   | Derived from `~/.ssh/id_ed25519` via ssh-to-age                                         |
-| Cluster age key (`age1nywe...`)  | Flux decrypts `k8s/**/*.sops.yaml` in-cluster | `secrets/cluster-secrets-age.yaml` → deployed to `flux-system/sops-age-cluster-secrets` |
-| Host keys (wyrm2, rugged, atlas) | Per-host sops-nix secrets                     | Derived from host SSH keys                                                              |
+| Key                              | Purpose                                       | Storage                                                                                        |
+| -------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Admin age key (`age1u858...`)    | Decrypt all secrets locally                   | Derived from `~/.ssh/id_ed25519` via ssh-to-age                                                |
+| Cluster age key (`age1nywe...`)  | Flux decrypts `k8s/**/*.sops.yaml` in-cluster | `secrets/shared/cluster-secrets-age.yaml` → deployed to `flux-system/sops-age-cluster-secrets` |
+| Host keys (wyrm2, rugged, atlas) | Per-host sops-nix secrets                     | Derived from host SSH keys                                                                     |
 
 ## Adding New SOPS Secrets
 
@@ -55,7 +55,7 @@ file based on its path. Commit and push — Flux deploys automatically.
 ## Rotating the Cluster Age Key
 
 1. Generate: `age-keygen -o /dev/stdout`
-2. Update `secrets/cluster-secrets-age.yaml` with new keypair
+2. Update `secrets/shared/cluster-secrets-age.yaml` with new keypair
 3. Update `.sops.yaml` with new public key
 4. Re-encrypt all cluster secrets: `for f in $(find cluster/k8s -name '*.sops.yaml'); do sops updatekeys "$f"; done`
 5. `tofu apply` to deploy new k8s secret
@@ -80,7 +80,7 @@ match the key used to encrypt the file.
 **Prevention**:
 
 - PG backend with backup CronJob (`pg_dump` every 6 hours)
-- Age keypair also stored in `secrets/cluster-secrets-age.yaml` (SOPS-encrypted
+- Age keypair also stored in `secrets/shared/cluster-secrets-age.yaml` (SOPS-encrypted
   with admin key) — survives tofu state loss
 
 ## Proxmox CSI Token

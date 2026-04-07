@@ -13,7 +13,7 @@ keys:
   # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
   - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
   # Cluster k8s secrets (Flux decryption, private key in flux-system/sops-age-cluster-secrets)
-  # Private key stored in secrets/cluster-secrets-age.yaml (SOPS-encrypted).
+  # Private key stored in secrets/shared/cluster-secrets-age.yaml (SOPS-encrypted).
   # Bootstrap deploys it to the cluster as a k8s Secret.
   - &cluster-secrets age1nywlwepsyfxvyhqwkjquzz02nmus65gf6qewfjju4alym8f7se5qnua8na
 creation_rules:
@@ -111,27 +111,12 @@ creation_rules:
           - *wyrm2-agentydragon
           - *rugged-agentydragon
           - *iguana-agentydragon
-  # Cluster SOPS age private key (bootstrap deploys to flux-system/sops-age-cluster-secrets)
-  # TODO: Consider narrowing to admin-only once bootstrap script is tested.
-  - path_regex: secrets/cluster-secrets-age\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-  # Flux deploy key (ED25519, registered as GitHub deploy key)
-  - path_regex: secrets/flux-deploy-key\.yaml$
-    key_groups:
-      - age:
-          - *admin
-          - *wyrm2-agentydragon
-          - *rugged-agentydragon
-          - *atlas-agentydragon
-          - *iguana-agentydragon
-  # Cluster infrastructure tokens (tofu apply: hcloud, proxmox)
-  - path_regex: secrets/cluster-tokens\.yaml$
+  # --- All-user secrets (admin + all user SSH keys) ---
+  # cluster-secrets-age: Flux SOPS decryption key (TODO: consider narrowing to admin-only)
+  # flux-deploy-key: ED25519 SSH key registered as GitHub deploy key
+  # cluster-tokens: hcloud + proxmox API tokens (tofu apply)
+  # habitify, huggingface: personal API tokens exported as env vars
+  - path_regex: secrets/shared/.*\.yaml$
     key_groups:
       - age:
           - *admin

@@ -19,6 +19,17 @@
     sopsFile = ../../../secrets/home/wyrm2/attic.yaml;
   };
 
+  ducktape.sopsEnv = {
+    ANTHROPIC_API_KEY = {
+      sopsFile = ../../../secrets/home/wyrm2/anthropic.yaml;
+      key = "anthropic_api_key";
+    };
+    OPENAI_API_KEY = {
+      sopsFile = ../../../secrets/home/wyrm2/openai.yaml;
+      key = "openai_api_key";
+    };
+  };
+
   home.packages = [
     # TODO: Add syncthing tray (syncthing-gtk not in nixpkgs).
     # Options: gnomeExtensions.syncthing-indicator, gnomeExtensions.syncthing-toggle, qsyncthingtray

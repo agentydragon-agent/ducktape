@@ -46,7 +46,7 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       Gateway API CRDs could move to `extraManifests` (URL fetch) but currently also
       use `null_resource` for consistency with Cilium.
 - [ ] Consolidate tofu plan prerequisites — credentials are now SOPS-managed
-      (`cluster-tokens.yaml`, `credentials.sops.yaml`) and auto-decrypted by
+      (`shared/cluster-tokens.yaml`, `credentials.sops.yaml`) and auto-decrypted by
       `cluster/.envrc`. Remaining gaps: - `kubeconfig`: written to `terraform/main/kubeconfig` only after
       `tofu apply`; must be manually copied before the kubernetes provider
       can plan - `talosconfig.yml`: similarly written by `tofu apply`; empty stub in

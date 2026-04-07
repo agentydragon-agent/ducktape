@@ -108,8 +108,20 @@ in
     ./modules/attic.nix
     ./modules/buildbuddy.nix
     ./modules/datetime-format.nix
+    ./modules/sops-env.nix
     ./services/activitywatch.nix
   ];
+  ducktape.sopsEnv = {
+    HF_TOKEN = {
+      sopsFile = ../../secrets/shared/huggingface.yaml;
+      key = "hf_token";
+    };
+    HABITIFY_API_KEY = {
+      sopsFile = ../../secrets/shared/habitify.yaml;
+      key = "habitify_api_key";
+    };
+  };
+
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
   home.homeDirectory = "/home/agentydragon";
