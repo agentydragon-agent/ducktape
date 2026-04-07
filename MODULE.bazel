@@ -713,16 +713,7 @@ http_file(
     urls = ["https://openaipublic.blob.core.windows.net/encodings/o200k_base.tiktoken"],
 )
 
-# FreeCAD 1.1.0 AppImage — exposed as @freecad_appimage//file for subprocess-based tests.
-http_file(
-    name = "freecad_appimage",
-    downloaded_file_path = "FreeCAD.AppImage",
-    executable = True,
-    sha256 = "ef85f171f2d09eec93f358bc49c1730d33f72bfbd353e6465609b30e45acf2f0",
-    urls = ["https://github.com/FreeCAD/FreeCAD/releases/download/1.1.0/FreeCAD_1.1.0-Linux-x86_64-py311.AppImage"],
-)
-
-# FreeCAD 1.2.dev from conda — smaller alternative to the AppImage.
+# FreeCAD 1.2.dev from conda (replaces the 821 MB AppImage).
 # Lockfile generated with pixi (not bazel run lockfile.update — rules_conda's
 # lock_environments target has a Python version conflict with our 3.13 toolchain).
 conda = use_extension("@rules_conda//conda:extensions.bzl", "conda")
