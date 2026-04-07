@@ -20,6 +20,15 @@ bazel_dep(name = "rules_multirun", version = "0.13.0")  # Required by format_mul
 bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "package_metadata", version = "0.0.6")  # Required by image_pins extension (oci_pull repos reference it)
 bazel_dep(name = "rules_mypy", version = "0.40.0")
+bazel_dep(name = "rules_conda", version = "0.3.2")
+
+# Conda epoch versions (e.g. "1!164.3095") contain '!' which is invalid in Bazel
+# repo names. Patch _package_repo_name to sanitize.
+single_version_override(
+    module_name = "rules_conda",
+    patch_strip = 1,
+    patches = ["//third_party/patches:rules_conda_sanitize_repo_name.patch"],
+)
 
 # Fork with two fixes for CI disk exhaustion during mypy type-checking:
 # 1. include_external option: allows mypy aspect to run on @pypi// deps, so they
@@ -418,7 +427,13 @@ use_repo(multitool, "multitool")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
+    is_default = True,
     python_version = "3.13",
+)
+
+# rules_conda v0.3.2 hardcodes Python 3.11 for its internal tools (py-rattler, pyyaml).
+python.toolchain(
+    python_version = "3.11",
 )
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
@@ -464,6 +479,9 @@ types.requirements(
     # runtime package isn't in the pip hub, instead of failing at load time.
     # That would eliminate the need for this exclusion list entirely.
     exclude_requirements = [
+        # freecad-stubs provides FreeCAD/Part/Sketcher modules but there's
+        # no "freecad" runtime pip package — FreeCAD is an AppImage, not pip.
+        "freecad-stubs",
         # types-psycopg2 maps to requirement("psycopg2") but we use
         # psycopg2-binary (different pip package name). Can't be fixed
         # by adding a dep — psycopg2 and psycopg2-binary conflict.
@@ -703,6 +721,17 @@ http_file(
     sha256 = "ef85f171f2d09eec93f358bc49c1730d33f72bfbd353e6465609b30e45acf2f0",
     urls = ["https://github.com/FreeCAD/FreeCAD/releases/download/1.1.0/FreeCAD_1.1.0-Linux-x86_64-py311.AppImage"],
 )
+
+# FreeCAD 1.2.dev from conda — smaller alternative to the AppImage.
+# Lockfile generated with pixi (not bazel run lockfile.update — rules_conda's
+# lock_environments target has a Python version conflict with our 3.13 toolchain).
+conda = use_extension("@rules_conda//conda:extensions.bzl", "conda")
+conda.environment(
+    name = "freecad_conda",
+    environment = "default",
+    lockfile = "//skills/freecad/conda:pixi.lock",
+)
+use_repo(conda, "freecad_conda")
 
 # neka-nat/freecad-mcp addon — XML-RPC server for interactive FreeCAD driving.
 # Loaded via FreeCAD's -M flag. Used by skills/freecad interactive mode + tests.
