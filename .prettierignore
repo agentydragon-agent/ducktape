@@ -47,3 +47,6 @@ props/specimens/*/*/code/**
 **/pnpm-lock.yaml
 **/package-lock.json
 **/uv.lock
+
+# SOPS-encrypted file - prettier reformats the long encrypted blob
+secrets/claude-web-k8s-token.yaml
