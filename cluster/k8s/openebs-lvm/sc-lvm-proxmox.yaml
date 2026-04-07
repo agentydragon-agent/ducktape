@@ -16,3 +16,4 @@ parameters:
   storage: "lvm"
   volgroup: "openebs-lvmvg"
   fstype: "ext4"
+  thinProvision: "yes"

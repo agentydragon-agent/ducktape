@@ -4,3 +4,4 @@ resources:
   - namespace.yaml
   - helmrelease.yaml
   - sc-lvm-proxmox.yaml
+  - sc-lvm-proxmox-block.yaml
