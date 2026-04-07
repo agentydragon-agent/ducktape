@@ -4,7 +4,7 @@
   pkgsUnstable,
   lib,
   enableGui,
-  enableKube,
+
   isNixOS,
   isK8sWorker,
   enableHeavyPackages,
@@ -365,28 +365,15 @@ in
 
       pkgs.pyright
 
-      ansible
       ast-grep
       attic-client
       awscli2
-      bazelisk
-      # bazelisk is the real binary; this wrapper makes it available as "bazel" too.
-      # IMPORTANT: This must be a real binary, not a shell alias. Shell aliases only
-      # work in interactive shells — they are invisible to subprocesses
-      # (e.g., subprocess.run(["bazel", ...]) in Python, Makefiles, pre-commit hooks).
-      # The Claude Code session hook installs a bazel wrapper shim that delegates to
-      # the real "bazel" binary on PATH; if only an alias exists, the shim cannot find
-      # it and fails with FileNotFoundError.
-      (pkgs.writeShellScriptBin "bazel" ''exec ${pkgs.bazelisk}/bin/bazelisk "$@"'')
       gnuplot
       jq
       mc
       mmv
       nethogs
-      pre-commit
-      ruff
       speedtest-cli
-      terraform
       uv
       xxd
       yq
@@ -394,7 +381,6 @@ in
       atuin
 
       # Tools from GitHub releases / binary downloads
-      gh
       glab
       gitstatus
 
@@ -421,7 +407,6 @@ in
       # Development tools
       direnv
       devenv
-      nixfmt-rfc-style # Nix formatter (RFC 166 style)
       rclone # Cloud storage mounting/sync
       pkgsUnstable.opencode # AI coding agent for terminal (unstable for faster updates)
 
@@ -437,10 +422,6 @@ in
       bbapi # BuildBuddy API CLI
       gterm-theme # GNOME Terminal theme follower
       ducktapePackages.tana # Knowledge graph / note-taking
-    ]
-    ++ lib.optionals enableKube [
-      kubectl
-      kubernetes-helm
     ]
     ++ [
       eza # Modern ls

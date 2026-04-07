@@ -117,7 +117,6 @@
         {
           hostname,
           enableGui ? true,
-          enableKube ? true,
           isNixOS ? false,
           isK8sWorker ? false,
           enableHeavyPackages ? true,
@@ -134,7 +133,6 @@
               _module.args = hmCommonArgs // {
                 inherit
                   enableGui
-                  enableKube
                   isNixOS
                   isK8sWorker
                   enableHeavyPackages
@@ -163,7 +161,6 @@
               hmCommonArgs
               // {
                 enableGui = inlineHomeManager.enableGui or true;
-                enableKube = inlineHomeManager.enableKube or false;
                 isNixOS = true;
                 isK8sWorker = inlineHomeManager.isK8sWorker or false;
                 enableHeavyPackages = inlineHomeManager.enableHeavyPackages or false;
@@ -300,7 +297,6 @@
         wyrm = mkHome {
           hostname = "wyrm";
           enableGui = true;
-          enableKube = true;
           isNixOS = false;
           enableHeavyPackages = false;
         };
@@ -309,7 +305,6 @@
         nixos-vm = mkHome {
           hostname = "nixos-vm";
           enableGui = true;
-          enableKube = false;
           isNixOS = true;
           enableHeavyPackages = false;
         };
@@ -318,7 +313,6 @@
         atlas = mkHome {
           hostname = "atlas";
           enableGui = true;
-          enableKube = true;
           isNixOS = false;
           enableHeavyPackages = false;
         };
@@ -332,7 +326,6 @@
           hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
           inlineHomeManager = {
             enableGui = true;
-            enableKube = false;
             isK8sWorker = true;
             enableHeavyPackages = false;
             module = ./nix/home/hosts/wyrm2.nix;
@@ -345,7 +338,6 @@
           # Physical machine - hardware config is in hosts/rugged/
           inlineHomeManager = {
             enableGui = true;
-            enableKube = false;
             isK8sWorker = true;
             enableHeavyPackages = true;
             module = ./nix/home/hosts/rugged.nix;
@@ -358,7 +350,6 @@
           # Physical machine (ThinkPad X1 Extreme) - migrated from Pop!_OS (agentydragon)
           inlineHomeManager = {
             enableGui = true;
-            enableKube = true;
             isK8sWorker = true;
             enableHeavyPackages = false;
             module = ./nix/home/hosts/iguana.nix;
