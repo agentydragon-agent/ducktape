@@ -1,0 +1,47 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+exports_files(
+    [
+        "drawing.dxf",
+        "drawing.pdf",
+        "drawing.svg",
+        "parametric_sketch.py",
+    ],
+    visibility = ["//skills/freecad:__subpackages__"],
+)
+
+py_library(
+    name = "parametric_sketch",
+    srcs = ["parametric_sketch.py"],
+    imports = ["../../../.."],
+    visibility = ["//skills/freecad:__pkg__"],
+    deps = [
+        "//skills/freecad/examples:freecad_helpers",
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_test(
+    name = "test_parametric_sketch",
+    size = "medium",
+    srcs = ["test_parametric_sketch.py"],
+    data = [
+        "drawing.dxf",
+        "drawing.pdf",
+        "drawing.svg",
+        "//skills/freecad/conda:freecad_gui",
+        "//skills/freecad/conda:freecadcmd",
+    ],
+    imports = ["../../../.."],
+    deps = [
+        ":parametric_sketch",
+        "//skills/freecad:conftest",
+        "//skills/freecad/examples:export_page",
+        "//skills/freecad/testing:compare",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

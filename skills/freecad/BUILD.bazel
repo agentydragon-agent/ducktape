@@ -1,59 +1,97 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("@rules_python//python:defs.bzl", "py_library")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
 load("//devinfra/testing:defs.bzl", "py_test")
-load("//skills:defs.bzl", "skill_package")
 
-skill_package(
-    name = "freecad",
+# skill_package can't handle cross-package srcs (strip_prefix.from_pkg() loses
+# subdirectory structure for files from other packages). Build the tarball manually.
+pkg_files(
+    name = "freecad_local_files",
     srcs = [
         "SKILL.md",
-        "build_bearing_block.py",
-        "build_bearing_block_techdraw.py",
-        "build_compound.py",
-        "build_cube_with_hole.py",
         "debug/qt_shutdown_segfault.md",
-        "export_page.py",
-        "freecad_helpers.py",
         "gotchas.md",
         "interactive.md",
-        "parametric_sketch.py",
         "partdesign.md",
-        "rect.py",
-        "render_debug_edges.py",
-        "render_debug_faces.py",
-        "render_dxf.py",
-        "render_fcstd.py",
-        "render_multi_angle.py",
         "sketcher.md",
         "techdraw.md",
     ],
+    strip_prefix = strip_prefix.from_pkg(),
 )
 
-py_library(
-    name = "render_dxf",
-    srcs = ["render_dxf.py"],
-    imports = ["../.."],
-    deps = [
-        "@pypi//ezdxf",
-        "@pypi//matplotlib",
-        "@pypi//pillow",
+pkg_files(
+    name = "freecad_examples_files",
+    srcs = [
+        "//skills/freecad/examples:export_page.py",
+        "//skills/freecad/examples:freecad_helpers.py",
+        "//skills/freecad/examples:render_debug_edges.py",
+        "//skills/freecad/examples:render_debug_faces.py",
+        "//skills/freecad/examples:render_dxf.py",
+        "//skills/freecad/examples:render_fcstd.py",
+        "//skills/freecad/examples:render_multi_angle.py",
+        "//skills/freecad/examples:verify_fcstd_load.py",
     ],
+    prefix = "examples",
+    strip_prefix = strip_prefix.files_only(),
 )
 
-py_binary(
-    name = "render_dxf_bin",
-    imports = ["../.."],
-    main_module = "skills.freecad.render_dxf",
-    deps = [":render_dxf"],
+pkg_files(
+    name = "freecad_bearing_block_files",
+    srcs = [
+        "//skills/freecad/examples/bearing_block:build.py",
+        "//skills/freecad/examples/bearing_block:build_techdraw.py",
+    ],
+    prefix = "examples/bearing_block",
+    strip_prefix = strip_prefix.files_only(),
 )
 
-# FreeCAD AppImage for subprocess-based tests (no Docker required)
-# Rlocation: freecad_appimage/file/FreeCAD.AppImage  (http_file places files under "file/")
-filegroup(
-    name = "freecad_appimage",
-    testonly = True,
-    srcs = ["@freecad_appimage//file"],
+pkg_files(
+    name = "freecad_bracket_files",
+    srcs = ["//skills/freecad/examples/bracket:parametric_sketch.py"],
+    prefix = "examples/bracket",
+    strip_prefix = strip_prefix.files_only(),
 )
+
+pkg_files(
+    name = "freecad_compound_files",
+    srcs = ["//skills/freecad/examples/compound:build.py"],
+    prefix = "examples/compound",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "freecad_cube_with_hole_files",
+    srcs = ["//skills/freecad/examples/cube_with_hole:build.py"],
+    prefix = "examples/cube_with_hole",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_files(
+    name = "freecad_rect_files",
+    srcs = ["//skills/freecad/examples/rect:rect.py"],
+    prefix = "examples/rect",
+    strip_prefix = strip_prefix.files_only(),
+)
+
+pkg_tar(
+    name = "freecad_tar",
+    srcs = [
+        ":freecad_bearing_block_files",
+        ":freecad_bracket_files",
+        ":freecad_compound_files",
+        ":freecad_cube_with_hole_files",
+        ":freecad_examples_files",
+        ":freecad_local_files",
+        ":freecad_rect_files",
+    ],
+    package_dir = "freecad",
+    visibility = ["//visibility:public"],
+)
+
+# FreeCAD conda binaries for subprocess-based tests.
+# Referenced directly in data deps (not via filegroup) to preserve runfiles
+# from the conda environment — filegroup only propagates DefaultInfo.files.
 
 filegroup(
     name = "freecad_mcp_addon",
@@ -71,31 +109,19 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    data = [":freecad_appimage"],
+    data = [
+        "//skills/freecad/conda:freecad_gui",
+        "//skills/freecad/conda:freecadcmd",
+    ],
     imports = ["../.."],
+    visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         "//util:oci",
         "//util/bazel:runfiles",
+        "//util/bazel:subprocess",
         "//util/testing:container_logs",
         "//util/testing:otel_tracing",
         "@pypi//opentelemetry_api",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_rect",
-    size = "medium",
-    srcs = ["test_rect.py"],
-    data = [
-        "rect.py",
-        ":freecad_appimage",
-    ],
-    deps = [
-        ":conftest",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -122,139 +148,20 @@ py_test(
 )
 
 py_test(
-    name = "test_render_3d",
-    size = "medium",
-    srcs = ["test_render_3d.py"],
-    data = [
-        "build_cube_with_hole.py",
-        "freecad_helpers.py",
-        "golden/cube_with_hole.png",
-        "render_fcstd.py",
-        ":freecad_appimage",
-    ],
-    deps = [
-        ":conftest",
-        "//skills/freecad/testing:compare",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_parametric_sketch",
-    size = "medium",
-    srcs = ["test_parametric_sketch.py"],
-    data = [
-        "export_page.py",
-        "freecad_helpers.py",
-        "golden/bracket.dxf",
-        "golden/bracket.pdf",
-        "golden/bracket.svg",
-        "parametric_sketch.py",
-        ":freecad_appimage",
-    ],
-    deps = [
-        ":conftest",
-        "//skills/freecad/testing:compare",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_compound",
-    size = "medium",
-    srcs = ["test_compound.py"],
-    data = [
-        "build_compound.py",
-        "export_page.py",
-        "freecad_helpers.py",
-        "golden/compound.dxf",
-        "golden/compound.pdf",
-        "golden/compound.svg",
-        ":freecad_appimage",
-    ],
-    deps = [
-        ":conftest",
-        "//skills/freecad/testing:compare",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_bearing_block",
-    size = "medium",
-    srcs = ["test_bearing_block.py"],
-    data = [
-        "build_bearing_block.py",
-        "build_bearing_block_techdraw.py",
-        "export_page.py",
-        "freecad_helpers.py",
-        "golden/bearing_block.dxf",
-        "golden/bearing_block.pdf",
-        "golden/bearing_block.svg",
-        "golden/bearing_block_back_left.png",
-        "golden/bearing_block_front_right.png",
-        "render_multi_angle.py",
-        "verify_fcstd_load.py",
-        ":freecad_appimage",
-    ],
-    deps = [
-        ":conftest",
-        "//skills/freecad/testing:compare",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_explore_dim_coords",
     size = "medium",
     srcs = ["test_explore_dim_coords.py"],
     data = [
         "explore_dim_coords.py",
-        "freecad_helpers.py",
-        ":freecad_appimage",
+        "//skills/freecad/conda:freecad_gui",
+        "//skills/freecad/conda:freecadcmd",
     ],
     tags = ["manual"],
     deps = [
         ":conftest",
+        "//skills/freecad/examples:freecad_helpers",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_debug_renderers",
-    size = "medium",
-    srcs = ["test_debug_renderers.py"],
-    data = [
-        "build_bearing_block.py",
-        "build_bearing_block_techdraw.py",
-        "freecad_helpers.py",
-        "golden/FrontView_debug_edges.png",
-        "golden/debug_faces.png",
-        "render_debug_edges.py",
-        "render_debug_faces.py",
-        ":freecad_appimage",
-    ],
-    deps = [
-        ":conftest",
-        "//skills/freecad/testing:compare",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pillow",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -265,8 +172,9 @@ py_test(
     size = "medium",
     srcs = ["test_interactive.py"],
     data = [
-        ":freecad_appimage",
         ":freecad_mcp_addon",
+        "//skills/freecad/conda:freecad_gui",
+        "//skills/freecad/conda:freecadcmd",
     ],
     deps = [
         ":conftest",

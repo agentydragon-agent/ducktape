@@ -1,0 +1,47 @@
+load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/testing:defs.bzl", "py_test")
+
+exports_files(
+    [
+        "build.py",
+        "drawing.dxf",
+        "drawing.pdf",
+        "drawing.svg",
+    ],
+    visibility = ["//skills/freecad:__subpackages__"],
+)
+
+py_library(
+    name = "build",
+    srcs = ["build.py"],
+    imports = ["../../../.."],
+    visibility = ["//skills/freecad:__pkg__"],
+    deps = [
+        "//skills/freecad/examples:freecad_helpers",
+        "@pypi//freecad_stubs",
+    ],
+)
+
+py_test(
+    name = "test_compound",
+    size = "medium",
+    srcs = ["test_compound.py"],
+    data = [
+        "drawing.dxf",
+        "drawing.pdf",
+        "drawing.svg",
+        "//skills/freecad/conda:freecad_gui",
+        "//skills/freecad/conda:freecadcmd",
+    ],
+    imports = ["../../../.."],
+    deps = [
+        ":build",
+        "//skills/freecad:conftest",
+        "//skills/freecad/examples:export_page",
+        "//skills/freecad/testing:compare",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

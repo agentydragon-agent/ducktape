@@ -7,7 +7,6 @@ requests.
 
 import base64
 import json
-import os
 import signal
 import subprocess
 import time
@@ -16,44 +15,31 @@ import xmlrpc.client
 import pytest
 import pytest_bazel
 
+from skills.freecad.conftest import freecad_env
 from util.bazel.runfiles import get_required_path
 
-_FREECAD_APPIMAGE_RLOCATION = "freecad_appimage/file/FreeCAD.AppImage"
 _FREECAD_MCP_ADDON_RLOCATION = "freecad_mcp/addon/FreeCADMCP"
 _RPC_PORT = 9875
 _RPC_URL = f"http://localhost:{_RPC_PORT}"
 
 
 @pytest.fixture(scope="module")
-def freecad_rpc(xvfb_display, tmp_path_factory):
+def freecad_rpc(conda_root, xvfb_display, tmp_path_factory):
     """Start FreeCAD with the MCP addon and yield an XML-RPC proxy."""
-    appimage = get_required_path(_FREECAD_APPIMAGE_RLOCATION)
+    freecad_gui = conda_root / "bin" / "freecad"
     addon_dir = get_required_path(_FREECAD_MCP_ADDON_RLOCATION)
 
     fc_home = tmp_path_factory.mktemp("freecad_rpc_home")
     (fc_home / ".local" / "share" / "FreeCAD" / "1.0").mkdir(parents=True)
 
-    # Enable auto-start of the RPC server.
-    # getUserAppDataDir() returns $FREECAD_USER_HOME/ directly.
     settings = {"auto_start_rpc": True, "remote_enabled": False}
     (fc_home / "freecad_mcp_settings.json").write_text(json.dumps(settings))
 
-    env = {
-        **os.environ,
-        "DISPLAY": xvfb_display,
-        "HOME": str(fc_home),
-        "FREECAD_USER_HOME": str(fc_home),
-        "QT_QPA_PLATFORM": "xcb",
-    }
-    # Remove Wayland vars to force X11.
-    env.pop("WAYLAND_DISPLAY", None)
-    env.pop("GDK_BACKEND", None)
+    env = freecad_env(conda_root, fc_home, display=xvfb_display)
 
     # -M loads the addon without symlinking into Mod/.
     # The addon_dir points to the FreeCADMCP directory; -M needs its parent.
-    proc = subprocess.Popen(
-        [str(appimage), "freecad", "-M", str(addon_dir)], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
-    )
+    proc = subprocess.Popen([freecad_gui, "-M", addon_dir], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
     proxy = xmlrpc.client.ServerProxy(_RPC_URL, allow_none=True)
     deadline = time.monotonic() + 30
@@ -72,7 +58,6 @@ def freecad_rpc(xvfb_display, tmp_path_factory):
 
     yield proxy
 
-    # Shutdown: send SIGTERM, then force-kill after timeout.
     proc.send_signal(signal.SIGTERM)
     try:
         proc.wait(timeout=5)
@@ -132,7 +117,6 @@ def test_error_handling(freecad_rpc):
     result = freecad_rpc.execute_code("raise ValueError('test error')")
     assert result["success"] is False
     assert "test error" in result["error"]
-    # FreeCAD should still be alive after the error.
     assert freecad_rpc.ping() is True
 
 
