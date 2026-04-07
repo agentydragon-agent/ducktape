@@ -158,6 +158,16 @@ py_library(
     deps = ["@pypi//pydantic"],
 )
 
+assert_no_deps(
+    name = "docker_types_no_fastmcp",
+    forbidden = [
+        "@pypi//fastmcp",
+        "@pypi//aiodocker",
+        "@pypi//mcp",
+    ],
+    targets = ["//mcp_infra/exec:docker_types"],
+)
+
 # Docker container exec MCP server
 py_library(
     name = "docker",
@@ -185,6 +195,14 @@ py_library(
         "@pypi//mcp",
         "@pypi//typer_di",
     ],
+)
+
+py_binary(
+    name = "docker_launcher",
+    imports = ["../.."],
+    main_module = "mcp_infra.exec.docker.launcher",
+    visibility = ["//visibility:public"],
+    deps = [":docker"],
 )
 
 py_library(

@@ -23,7 +23,7 @@ from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.docker.container_session import ContainerOptions, DefaultValue
+from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import SamplingSnapshot, ServerEntry
 from openai_utils.client_factory import build_client
@@ -117,20 +117,21 @@ class AgentContainerCompositor(Compositor):
                 row = await self._persistence.get_agent(self._agent_id)
                 if row and row.metadata is not None:
                     preset_label = row.metadata.preset
-            opts = ContainerOptions(
+            config = ContainerExecServerConfig(
                 image=runtime_image,
-                binds=None,
+                working_dir=WORKING_DIR,
                 labels={
                     "agent_server.project": "agent-runtime",
                     "agent_server.role": "runtime",
                     "agent_server.agent_id": str(self._agent_id),
                     **({"agent_server.preset": preset_label} if preset_label else {}),
                 },
+                allow_user_field=False,
+                allow_env_field=False,
+                cwd_policy=DefaultValue(value=WORKING_DIR),
             )
             self.runtime = await self.mount_inproc(
-                MCPMountPrefix("runtime"),
-                RuntimeServer(self._async_docker_client, opts, cwd_policy=DefaultValue(value=WORKING_DIR)),
-                pinned=True,
+                MCPMountPrefix("runtime"), RuntimeServer(self._async_docker_client, config), pinned=True
             )
 
             # Attach persisted chat servers

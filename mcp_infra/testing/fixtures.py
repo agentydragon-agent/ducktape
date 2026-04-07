@@ -20,7 +20,7 @@ from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.notifications_buffer import NotificationsBuffer
 from mcp_infra.compositor.resources_server import ResourcesServer
 from mcp_infra.enhanced.server import EnhancedFastMCP
-from mcp_infra.exec.docker.server import ContainerOptions
+from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.resources_stub import ResourcesServerStub
 from mcp_infra.stubs.typed_stubs import TypedClient
@@ -29,9 +29,15 @@ from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp
 from util.bazel.subprocess import python_env
 
 
-def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerOptions:
-    """Create standard ContainerOptions for tests."""
-    return ContainerOptions(image=image, working_dir=working_dir, binds=None)
+def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerExecServerConfig:
+    """Create standard ContainerExecServerConfig for tests."""
+    return ContainerExecServerConfig(
+        image=image,
+        working_dir=working_dir,
+        allow_user_field=True,
+        allow_env_field=True,
+        cwd_policy=DefaultValue(value=working_dir),
+    )
 
 
 @pytest.fixture

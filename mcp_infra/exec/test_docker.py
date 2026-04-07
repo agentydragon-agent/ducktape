@@ -7,10 +7,9 @@ import pytest_bazel
 from fastmcp.client import Client
 
 from mcp_infra.constants import WORKING_DIR
-from mcp_infra.exec.docker.container_session import AlwaysSetTo, DefaultValue, ModelChooses
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import AlwaysSetTo, ContainerExecServerConfig, DefaultValue, ModelChooses
 from mcp_infra.exec.models import Exited, TimedOut, make_exec_input
-from mcp_infra.testing.fixtures import make_container_opts
 
 
 @pytest.fixture
@@ -63,10 +62,14 @@ def make_cwd_server(async_docker_client, debian_slim_image):
     """Factory for ContainerExecServer with a specific cwd_policy."""
 
     def _factory(cwd_policy):
-        opts = make_container_opts(debian_slim_image)
-        return ContainerExecServer(
-            async_docker_client, opts, cwd_policy=cwd_policy, allow_user_field=False, allow_env_field=False
+        config = ContainerExecServerConfig(
+            image=debian_slim_image,
+            working_dir=WORKING_DIR,
+            allow_user_field=False,
+            allow_env_field=False,
+            cwd_policy=cwd_policy,
         )
+        return ContainerExecServer(async_docker_client, config)
 
     return _factory
 

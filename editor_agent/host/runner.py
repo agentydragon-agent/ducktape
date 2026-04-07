@@ -16,8 +16,8 @@ from editor_agent.host.submit_server import EditorSubmitServer
 from mcp_infra.compositor.compositor import Compositor
 from mcp_infra.compositor.resources_server import ResourcesServer
 from mcp_infra.constants import WORKING_DIR
-from mcp_infra.exec.docker.container_session import ContainerOptions, DefaultValue
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue
 from mcp_infra.mounted import Mounted
 from util.docker import get_docker_network_gateway_async
 from util.net import pick_free_port
@@ -83,15 +83,21 @@ async def editor_docker_session(
 
     env = {"MCP_SERVER_URL": url_for_container, "MCP_SERVER_TOKEN": token}
 
-    opts = ContainerOptions(
-        image=image_id, working_dir=WORKING_DIR, binds=[], network_mode=network_name, environment=env
+    config = ContainerExecServerConfig(
+        image=image_id,
+        working_dir=WORKING_DIR,
+        network_mode=network_name,
+        environment=env,
+        allow_user_field=False,
+        allow_env_field=False,
+        cwd_policy=DefaultValue(value=WORKING_DIR),
     )
 
     compositor = Compositor()
     await compositor.__aenter__()
     resources_mount = compositor.resources
 
-    container_server = ContainerExecServer(docker_client, opts, cwd_policy=DefaultValue(value=WORKING_DIR))
+    container_server = ContainerExecServer(docker_client, config)
     runtime_mount = await compositor.mount_inproc(
         ContainerExecServer.DOCKER_MOUNT_PREFIX, container_server, pinned=True
     )

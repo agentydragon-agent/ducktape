@@ -9,8 +9,8 @@ from __future__ import annotations
 import pytest
 
 from mcp_infra.constants import WORKING_DIR
-from mcp_infra.exec.docker.container_session import DefaultValue
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.exec.docker.types import DefaultValue
 from mcp_infra.testing.fixtures import make_container_opts
 
 

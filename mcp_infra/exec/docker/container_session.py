@@ -4,14 +4,14 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, cast
 
 import aiodocker
 import anyio
 from fastmcp.server import FastMCP
 
-from mcp_infra.constants import SLEEP_FOREVER_CMD, WORKING_DIR
+from mcp_infra.constants import SLEEP_FOREVER_CMD
+from mcp_infra.exec.docker.types import ContainerExecServerConfig
 from mcp_infra.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, render_raw_to_result
 
 logger = logging.getLogger(__name__)
@@ -25,196 +25,30 @@ STREAM_TYPE_STDOUT = 1
 STREAM_TYPE_STDERR = 2
 
 
-@dataclass(frozen=True)
-class BindMount:
-    """Type-safe Docker volume bind mount specification.
-
-    Represents a single volume mount from host to container.
-    Internal representation uses Path objects for type safety.
-    """
-
-    host_path: Path
-    container_path: Path
-    mode: str = "rw"
-
-    def to_docker_spec(self) -> str:
-        """Convert to Docker bind spec string: 'host:container:mode'."""
-        return f"{self.host_path}:{self.container_path}:{self.mode}"
-
-    @classmethod
-    def parse_binds(cls, values: list[str] | None) -> list[BindMount] | None:
-        """Parse bind mount specifications into BindMount objects.
-
-        Args:
-            values: List of bind specs in format "host:container[:mode]"
-
-        Returns:
-            List of BindMount objects, or None if no binds
-
-        Raises:
-            ValueError: If bind spec format is invalid
-        """
-        if not values:
-            return None
-        result: list[BindMount] = []
-        entries: list[str] = []
-        for value in values:
-            entries.extend(value.split(","))
-        for entry in entries:
-            if not entry:
-                continue
-            parts = entry.split(":")
-            if len(parts) < 2:
-                raise ValueError(f"Invalid bind mount spec '{entry}'. Use host:container[:mode].")
-            host, container, *mode_parts = parts
-            result.append(
-                cls(
-                    host_path=Path(host).resolve(),
-                    container_path=Path(container),
-                    mode=mode_parts[0] if mode_parts else "rw",
-                )
-            )
-        return result
-
-
 @dataclass
 class ContainerSessionState:
+    """Runtime state for a container MCP session: Docker client + container ID + config."""
+
     docker_client: aiodocker.Docker
     container_id: str | None
-    image: str
-    # Volume bind mounts for the container
-    binds: list[BindMount] | None
-    # Container working directory
-    working_dir: Path
-    # Network mode used to start the container (str: "none", "bridge", "host", or custom network name)
-    network_mode: str
-    # Environment variables for the container
-    environment: dict[str, str] | None
-
-
-@dataclass
-class ContainerOptions:
-    image: str
-    working_dir: Path = WORKING_DIR
-    binds: list[BindMount] | None = None
-    network_mode: str = "none"
-    environment: dict[str, str] | None = None
-    labels: dict[str, str] | None = None
-    name: str | None = None
-    auto_remove: bool = False
-    # TODO: replace this implicit session-scoped default with an explicit
-    # lifecycle enum (e.g., externally_provided, server_scoped, session_scoped,
-    # call_scoped) once we need other strategies.
-
-    def to_container_config(
-        self,
-        *,
-        cmd: list[str],
-        working_dir: Path | None = None,
-        env: dict[str, str] | None = None,
-        auto_remove: bool | None = None,
-    ) -> dict[str, Any]:
-        """Build Docker container config dict.
-
-        Args:
-            cmd: Command to run (list of strings)
-            working_dir: Override container working directory (uses self.working_dir if None)
-            env: Override environment variables (uses self.environment if None)
-            auto_remove: Whether to auto-remove container after exit (defaults to self.auto_remove)
-
-        Returns:
-            Docker container config dict ready for containers.create()
-        """
-        return {
-            "Image": self.image,
-            "Cmd": cmd,
-            "WorkingDir": str(working_dir if working_dir is not None else self.working_dir),
-            "Env": [f"{k}={v}" for k, v in (env or self.environment or {}).items()],
-            "Labels": self.labels or {},
-            "AttachStdout": True,
-            "AttachStderr": True,
-            "Tty": False,
-            "HostConfig": _build_host_config(
-                self, auto_remove=self.auto_remove if auto_remove is None else auto_remove
-            ),
-        }
-
-
-# -- CwdPolicy: controls how the `cwd` field is exposed in the exec tool schema --
-
-
-@dataclass(frozen=True)
-class ModelChooses:
-    """Model picks the cwd via a required tool input field."""
-
-
-@dataclass(frozen=True)
-class DefaultValue:
-    """cwd is optional in schema; falls back to this value when omitted."""
-
-    value: Path
-
-
-@dataclass(frozen=True)
-class AlwaysSetTo:
-    """cwd is hidden from model; always uses this value."""
-
-    value: Path
-
-
-CwdPolicy = ModelChooses | DefaultValue | AlwaysSetTo
+    opts: ContainerExecServerConfig
 
 
 def session_state_from_ctx(ctx: Any) -> ContainerSessionState:
     return cast(ContainerSessionState, ctx.request_context.lifespan_context)
 
 
-def _build_host_config(opts: ContainerOptions, *, auto_remove: bool = False) -> dict[str, Any]:
-    """Build Docker HostConfig from ContainerOptions.
-
-    Args:
-        opts: Container options with binds and network_mode
-        auto_remove: Whether to set AutoRemove (for per-session containers)
-
-    Returns:
-        Docker HostConfig dict with Binds and NetworkMode if applicable
-    """
-    host_config: dict[str, Any] = {}
-
-    if auto_remove:
-        host_config["AutoRemove"] = True
-
-    # Convert binds to Docker HostConfig format
-    if opts.binds:
-        host_config["Binds"] = [bind.to_docker_spec() for bind in opts.binds]
-
-    host_config["NetworkMode"] = opts.network_mode
-
-    return host_config
-
-
-async def _create_and_start_container(client: aiodocker.Docker, opts: ContainerOptions) -> str:
+async def _create_and_start_container(client: aiodocker.Docker, config: ContainerExecServerConfig) -> str:
     """Create and start a Docker container with cleanup on start failure.
 
-    Args:
-        client: aiodocker Docker client
-        opts: Container configuration options
-
-    Returns:
-        Container ID (string)
-
-    Raises:
-        Exception: If container creation or start fails (container is cleaned up first)
-
-    Note:
-        If start() fails after create() succeeds, the container is immediately
-        cleaned up before re-raising the exception. This prevents container leaks.
+    If start() fails after create() succeeds, the container is immediately
+    cleaned up before re-raising the exception. This prevents container leaks.
     """
     # Always set auto_remove=False - we handle cleanup explicitly to ensure
     # containers are removed even if the process crashes before normal exit.
-    container_config = opts.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=False)
+    container_config = config.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=False)
 
-    container = await client.containers.create(container_config, name=opts.name)
+    container = await client.containers.create(container_config, name=config.name)
     container_id = container.id
 
     try:
@@ -231,23 +65,12 @@ async def _create_and_start_container(client: aiodocker.Docker, opts: ContainerO
 
 
 @asynccontextmanager
-async def scoped_container(client: aiodocker.Docker, opts: ContainerOptions):
+async def scoped_container(client: aiodocker.Docker, config: ContainerExecServerConfig):
     """Create, start, and manage a Docker container's lifecycle.
 
     Guarantees cleanup even if start fails. Yields container ID.
-
-    Args:
-        client: aiodocker Docker client
-        opts: Container configuration options
-
-    Yields:
-        Container ID (string)
-
-    Note:
-        Always cleans up the container in __aexit__, even if start() fails.
-        This prevents container leaks when initialization errors occur.
     """
-    container_id = await _create_and_start_container(client, opts)
+    container_id = await _create_and_start_container(client, config)
 
     try:
         yield container_id
@@ -274,34 +97,17 @@ async def scoped_container(client: aiodocker.Docker, opts: ContainerOptions):
 # ---- Lifespan factory (per-session container) ----
 
 
-def make_container_lifespan(opts: ContainerOptions, docker_client: aiodocker.Docker):
+def make_container_lifespan(config: ContainerExecServerConfig, docker_client: aiodocker.Docker):
     """Create lifespan context manager for container session.
 
-    Args:
-        opts: Container configuration options
-        docker_client: Async Docker client (owned by caller, not closed by lifespan)
-
-    Returns:
-        Lifespan context manager that yields ContainerSessionState
-
-    Note:
-        The caller owns docker_client and manages its lifecycle. The lifespan only
-        manages the container created from opts. Container cleanup is delegated to
-        scoped_container() which guarantees cleanup even on initialization failures.
+    The caller owns docker_client and manages its lifecycle. The lifespan only
+    manages the container created from config.
     """
 
     @asynccontextmanager
     async def lifespan(server: FastMCP):  # yields ContainerSessionState
-        async with scoped_container(docker_client, opts) as container_id:
-            yield ContainerSessionState(
-                docker_client=docker_client,
-                container_id=container_id,
-                image=opts.image,
-                binds=opts.binds,
-                working_dir=opts.working_dir,
-                network_mode=opts.network_mode,
-                environment=opts.environment,
-            )
+        async with scoped_container(docker_client, config) as container_id:
+            yield ContainerSessionState(docker_client=docker_client, container_id=container_id, opts=config)
 
     return lifespan
 
@@ -425,17 +231,16 @@ def render_container_result(
 
 
 async def run_session_container(
-    s: ContainerSessionState, cmd: list[str], input: ExecInput, opts: ContainerOptions
+    session: ContainerSessionState, cmd: list[str], input: ExecInput
 ) -> tuple[bytearray, bytearray, int | None, bool]:
     """Run command in per-session container using aiodocker exec."""
-    container_id = s.container_id
+    container_id = session.container_id
     if container_id is None:
         raise RuntimeError("No per-session container available")
 
     logger.debug(f"Executing command in container {container_id[:12]}: {cmd!r} (timeout_ms={input.timeout_ms})")
 
-    docker_client = s.docker_client
-    container_instance = await docker_client.containers.get(container_id)
+    container_instance = await session.docker_client.containers.get(container_id)
 
     # Execute with timeout handling
     loop = asyncio.get_running_loop()
@@ -453,7 +258,7 @@ async def run_session_container(
         stderr=True,
         stdin=False,
         tty=False,  # No TTY to ensure stdout/stderr separation
-        workdir=str(input.cwd) if input.cwd is not None else str(s.working_dir),
+        workdir=str(input.cwd) if input.cwd is not None else str(session.opts.working_dir),
         environment=input.env_dict(),
         user=input.user or "",
     )
