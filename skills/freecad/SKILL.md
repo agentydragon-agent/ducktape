@@ -131,7 +131,7 @@ TechDraw projects `Part::Feature` shapes via HLR. Shape topology rules:
 - Open `Part.Wire` or loose-edge Compound: crashes with `NCollection_Array1::Create`
 
 All geometry must be closed faces — model walls as closed polygons tracing inner and outer
-outlines (shell approach). See <build_compound.py> for an L-shaped wall shell.
+outlines (shell approach). See <examples/compound/build.py> for an L-shaped wall shell.
 
 **Single compound, single view.** Put ALL faces in one `Part.Compound` → one `Part::Feature`
 → one `TechDraw::DrawViewPart`. Multiple features with multiple views lose relative positions
@@ -170,7 +170,7 @@ feat = doc.addObject("Part::Feature", "CubeWithHole")
 feat.Shape = result
 ```
 
-See <build_cube_with_hole.py> for a complete example.
+See <examples/cube_with_hole/build.py> for a complete example.
 
 ## Visual Debugging
 
@@ -205,7 +205,7 @@ DISPLAY=:99 OUTDIR=. /opt/FreeCAD.AppImage freecad parametric_sketch.py   # → 
 DISPLAY=:99 INPUT=bracket.FCStd OUTDIR=. /opt/FreeCAD.AppImage freecad export_page.py  # → bracket.{dxf,svg,pdf}
 ```
 
-**DXF → PNG:** `python3 render_dxf.py output.dxf output.png`. See <render_dxf.py>.
+**DXF → PNG:** `python3 render_dxf.py output.dxf output.png`. See <examples/render_dxf.py>.
 
 | Format | API                                       | Notes                                                                 |
 | ------ | ----------------------------------------- | --------------------------------------------------------------------- |
