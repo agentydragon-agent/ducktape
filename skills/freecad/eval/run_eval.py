@@ -14,7 +14,7 @@ import shutil
 import time
 from pathlib import Path
 
-from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, SystemMessage, query
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, SystemMessage, UserMessage, query
 
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 from util.bazel.runfiles import get_required_path
@@ -31,19 +31,22 @@ CONTAINER_WORKSPACE = Path("/workspace")
 CONTAINER_SKILL_DIR = Path("/skill")
 
 SYSTEM_PROMPT = f"""\
-You are working inside a FreeCAD Docker container via the exec and read_image MCP tools.
+You are working inside a FreeCAD Docker container. You have exactly two tools:
+
+1. `mcp__freecad__exec` — run shell commands inside the container
+2. `mcp__freecad__read_image` — view PNG/SVG images you produce
+
+You have NO other tools. No Bash, Read, Write, Edit, Glob, Grep, or Skill tools.
+Use `mcp__freecad__exec` for everything: reading files (`cat`), writing files
+(`cat > file.py << 'EOF'`), running scripts, listing directories, etc.
 
 The FreeCAD skill (SKILL.md) and all example scripts are at {CONTAINER_SKILL_DIR}/.
-Read {CONTAINER_SKILL_DIR}/SKILL.md before starting — it contains essential FreeCAD
-scripting patterns, constraints, and gotchas. The example scripts (parametric_sketch.py,
-build_compound.py, etc.) are reference implementations you can study.
+Start by running: `cat {CONTAINER_SKILL_DIR}/SKILL.md`
 
 Your working directory is {CONTAINER_WORKSPACE}. Save all output files there.
 
 FreeCAD is available as `freecadcmd`. Use `xvfb-run -a -s "-screen 0 1024x768x24" freecadcmd`
 for any script that needs GUI/TechDraw rendering.
-
-Use the read_image tool to visually inspect PNG/SVG outputs you produce.
 """
 
 
@@ -91,6 +94,23 @@ async def run(output_dir: Path, model: str) -> None:
             prompt=user_prompt,
             options=ClaudeAgentOptions(
                 cwd=workspace,
+                disallowed_tools=[
+                    "Agent",
+                    "Bash",
+                    "Edit",
+                    "Glob",
+                    "Grep",
+                    "LSP",
+                    "NotebookEdit",
+                    "Read",
+                    "Skill",
+                    "WebFetch",
+                    "WebSearch",
+                    "Write",
+                    "Task",
+                    "TodoWrite",
+                    "ToolSearch",
+                ],
                 allowed_tools=["mcp__freecad__*"],
                 mcp_servers={"freecad": {"command": launcher_binary, "args": ["--config", config_json]}},
                 permission_mode="bypassPermissions",
@@ -115,7 +135,28 @@ async def run(output_dir: Path, model: str) -> None:
                         preview = block.text[:200] + "..." if len(block.text) > 200 else block.text
                         logger.info("Assistant: %s", preview)
                     elif hasattr(block, "name"):
-                        logger.info("Tool call: %s", block.name)
+                        cmd = getattr(block, "input", {}).get("cmd", "")
+                        if isinstance(cmd, list):
+                            cmd = " ".join(cmd)
+                        cmd_preview = (cmd[:150] + "...") if len(cmd) > 150 else cmd
+                        logger.info("Tool call: %s(%s)", block.name, cmd_preview)
+            elif isinstance(message, UserMessage):
+                if isinstance(message.content, list):
+                    for block in message.content:
+                        text = (
+                            block.get("content", "")
+                            if isinstance(block, dict)
+                            else getattr(block, "content", str(block))
+                        )
+                        is_err = block.get("is_error") if isinstance(block, dict) else getattr(block, "is_error", None)
+                        preview = (text[:300] + "...") if len(text) > 300 else text
+                        if is_err:
+                            logger.warning("Tool error: %s", preview)
+                        elif preview:
+                            logger.info("Tool result: %s", preview)
+                elif isinstance(message.content, str) and message.content:
+                    preview = (message.content[:300] + "...") if len(message.content) > 300 else message.content
+                    logger.info("User: %s", preview)
             elif isinstance(message, ResultMessage):
                 logger.info("Result: stop_reason=%s cost=$%.4f", message.stop_reason, message.total_cost_usd or 0)
             else:
