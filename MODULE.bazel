@@ -704,6 +704,24 @@ http_file(
     urls = ["https://github.com/FreeCAD/FreeCAD/releases/download/1.1.0/FreeCAD_1.1.0-Linux-x86_64-py311.AppImage"],
 )
 
+# neka-nat/freecad-mcp addon — XML-RPC server for interactive FreeCAD driving.
+# Loaded via FreeCAD's -M flag. Used by skills/freecad interactive mode + tests.
+_FREECAD_MCP_COMMIT = "c1548b56ddbab8942ce069d25f097c491a013c16"
+
+http_archive(
+    name = "freecad_mcp",
+    build_file_content = """
+filegroup(
+    name = "addon",
+    srcs = glob(["addon/FreeCADMCP/**/*.py"]),
+    visibility = ["//visibility:public"],
+)
+""",
+    sha256 = "8530d7177f333a1e66e256d2dfba8ff3990dafe4155e70a571c95e41680cf7cc",
+    strip_prefix = "freecad-mcp-" + _FREECAD_MCP_COMMIT,
+    urls = ["https://github.com/neka-nat/freecad-mcp/archive/" + _FREECAD_MCP_COMMIT + ".tar.gz"],
+)
+
 # gitstatusd - Git status daemon for wt tests
 # Build target: //third_party/gitstatusd
 http_archive(

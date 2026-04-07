@@ -55,6 +55,12 @@ filegroup(
     srcs = ["@freecad_appimage//file"],
 )
 
+filegroup(
+    name = "freecad_mcp_addon",
+    testonly = True,
+    srcs = ["@freecad_mcp//:addon"],
+)
+
 oci_layout_rloc(
     name = "freecad_test",
     testonly = True,
@@ -249,6 +255,22 @@ py_test(
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
         "@pypi//pillow",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_interactive",
+    size = "medium",
+    srcs = ["test_interactive.py"],
+    data = [
+        ":freecad_appimage",
+        ":freecad_mcp_addon",
+    ],
+    deps = [
+        ":conftest",
+        "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
