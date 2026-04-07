@@ -47,7 +47,6 @@ py_test(
         "drawing.pdf",
         "drawing.svg",
         "front_right.png",
-        "//skills/freecad/conda:freecad_gui",
         "//skills/freecad/conda:freecadcmd",
     ],
     imports = ["../../../.."],
@@ -73,7 +72,6 @@ py_test(
     data = [
         "debug_edges.png",
         "debug_faces.png",
-        "//skills/freecad/conda:freecad_gui",
         "//skills/freecad/conda:freecadcmd",
     ],
     imports = ["../../../.."],

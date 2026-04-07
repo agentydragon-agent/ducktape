@@ -21,7 +21,6 @@ py_test(
     size = "medium",
     srcs = ["test_rect.py"],
     data = [
-        "//skills/freecad/conda:freecad_gui",
         "//skills/freecad/conda:freecadcmd",
     ],
     imports = ["../../../.."],

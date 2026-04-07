@@ -30,7 +30,6 @@ py_test(
         "drawing.dxf",
         "drawing.pdf",
         "drawing.svg",
-        "//skills/freecad/conda:freecad_gui",
         "//skills/freecad/conda:freecadcmd",
     ],
     imports = ["../../../.."],

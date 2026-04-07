@@ -110,7 +110,6 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     data = [
-        "//skills/freecad/conda:freecad_gui",
         "//skills/freecad/conda:freecadcmd",
     ],
     imports = ["../.."],
@@ -148,32 +147,11 @@ py_test(
 )
 
 py_test(
-    name = "test_explore_dim_coords",
-    size = "medium",
-    srcs = ["test_explore_dim_coords.py"],
-    data = [
-        "explore_dim_coords.py",
-        "//skills/freecad/conda:freecad_gui",
-        "//skills/freecad/conda:freecadcmd",
-    ],
-    tags = ["manual"],
-    deps = [
-        ":conftest",
-        "//skills/freecad/examples:freecad_helpers",
-        "//util/bazel:runfiles",
-        "//util/testing:undeclared_outputs",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
     name = "test_interactive",
     size = "medium",
     srcs = ["test_interactive.py"],
     data = [
         ":freecad_mcp_addon",
-        "//skills/freecad/conda:freecad_gui",
         "//skills/freecad/conda:freecadcmd",
     ],
     deps = [

@@ -26,7 +26,6 @@ py_test(
     srcs = ["test_render_3d.py"],
     data = [
         "render.png",
-        "//skills/freecad/conda:freecad_gui",
         "//skills/freecad/conda:freecadcmd",
     ],
     imports = ["../../../.."],
