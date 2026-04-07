@@ -33,5 +33,10 @@ def py_test(name, size = "small", requires_docker = False, tags = None, **kwargs
         name = name,
         size = size,
         tags = base_tags,
+        # Disable auto-generated __init__.py stubs in runfiles directories.
+        # This repo uses imports=["../.."] consistently so stubs aren't needed,
+        # and they break conda environments (e.g. FreeCAD) by shadowing C
+        # extension modules with empty __init__.py packages.
+        legacy_create_init = 0,
         **kwargs
     )
