@@ -136,6 +136,33 @@ extracts `fabs(dimVec.x)` — the horizontal leg — which is the correct chamfe
 are not bound to projected entities. The resulting dimensions do not update when sketch
 geometry changes. Always use `DrawViewDimension` with `References2D` instead.
 
+## Centerlines and center marks
+
+Use `makeCosmeticLine` on `DrawViewPart` to add centerlines (dash-dot lines indicating
+symmetry axes) and center marks (small crosses at hole centers). Style `2` is the standard
+ISO center line dash-dot pattern.
+
+```python
+# Centerline cross through a bore/boss center, extending beyond the feature
+cl_extent = boss_d / 2 + 8
+view.makeCosmeticLine(App.Vector(0, -cl_extent, 0), App.Vector(0, cl_extent, 0), 2)
+view.makeCosmeticLine(App.Vector(-cl_extent, 0, 0), App.Vector(cl_extent, 0, 0), 2)
+
+# Center marks on mounting holes (small cross at each hole center)
+mark_size = hole_radius + 2
+for i, e in enumerate(view.getVisibleEdges()):
+    if isinstance(e.Curve, Part.Circle) and abs(e.Curve.Radius - hole_radius) < 1.0:
+        cx, cy = e.Curve.Center.x, e.Curve.Center.y
+        view.makeCosmeticLine(App.Vector(cx, cy - mark_size, 0), App.Vector(cx, cy + mark_size, 0), 2)
+        view.makeCosmeticLine(App.Vector(cx - mark_size, cy, 0), App.Vector(cx + mark_size, cy, 0), 2)
+```
+
+**`makeCenterLine`** (not `makeCosmeticLine`) creates bisector-style centerlines between two
+parallel edges. It requires 2+ edge references and does NOT work on a single circle — use
+`makeCosmeticLine` for circle center crosses instead.
+
+See <build_bearing_block_techdraw.py> for both patterns on the top view.
+
 ## Annotations
 
 `DrawViewAnnotation` with `.Text`, `.X`, `.Y` (page mm), `.TextSize`, `.Font`, `.TextColor`,

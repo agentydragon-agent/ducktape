@@ -415,6 +415,22 @@ def _main() -> None:
         y=-base_w / 2 + mount_iy / 2,
     )
 
+    # === Centerlines on top view ===
+    # Boss/bore centerline cross: cosmetic dash-dot lines through the bore center,
+    # extending slightly beyond the boss diameter.
+    cl_extent = boss_d / 2 + 8
+    top_v.makeCosmeticLine(App.Vector(0, -cl_extent, 0), App.Vector(0, cl_extent, 0), 2)
+    top_v.makeCosmeticLine(App.Vector(-cl_extent, 0, 0), App.Vector(cl_extent, 0, 0), 2)
+
+    # Center marks on all 4 mounting holes (small cross at each hole center)
+    mark_size = mount_r + 2
+    top_vis = top_v.getVisibleEdges()
+    for e in top_vis:
+        if isinstance(e.Curve, Part.Circle) and abs(e.Curve.Radius - mount_r) < 1.0:
+            cx, cy = e.Curve.Center.x, e.Curve.Center.y
+            top_v.makeCosmeticLine(App.Vector(cx, cy - mark_size, 0), App.Vector(cx, cy + mark_size, 0), 2)
+            top_v.makeCosmeticLine(App.Vector(cx - mark_size, cy, 0), App.Vector(cx + mark_size, cy, 0), 2)
+
     # === Annotations — positioned in title block area (bottom-right) ===
     add_ann("Title", "Flanged Bearing Block", x=250, y=15, size=6)
     add_ann("Material", "Material: Aluminium 6061", x=250, y=22)
