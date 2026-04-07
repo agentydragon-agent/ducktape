@@ -415,8 +415,9 @@ async def handle(
                 k8s_namespace=k8s_namespace,
             )
 
-        # Write kubeconfig when k8s client is available.
-        if k8s_api and k8s_token and hook_config.k8s:
+        # Write kubeconfig when k8s client is available and profile enables it.
+        # CLI profile skips this — the user has their own ~/.kube/config.
+        if k8s_api and k8s_token and hook_config.k8s and hook_config.profile(ctx.web_mode).write_kubeconfig:
             setup.secrets.kubeconfig_path = secret_sources.write_kubeconfig(
                 token=k8s_token,
                 k8s_cfg=hook_config.k8s,

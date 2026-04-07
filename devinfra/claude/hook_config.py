@@ -81,6 +81,11 @@ class ProfileConfig(BaseModel):
     bazel_bes_proxy: BazelRemoteProxyConfig | None = Field(
         description="UDS proxy for Bazel --bes_proxy (Build Event Service). Null = disabled."
     )
+    write_kubeconfig: bool = Field(
+        default=True,
+        description="Write a service-account kubeconfig and export KUBECONFIG. "
+        "Set to false in CLI profile when the user has their own ~/.kube/config.",
+    )
 
 
 class ProfilesConfig(BaseModel):
