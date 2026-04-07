@@ -23,6 +23,7 @@ filegroup(
     srcs = [
         ".bazelrc",
         ".bazelversion",
+        ".claude_hooks/config.yaml",
         "BUILD.bazel",
         "MODULE.bazel",
     ],

@@ -1,0 +1,7 @@
+profiles:
+  cli:
+    bazel_remote_proxy: null
+    bazel_bes_proxy: null
+  web:
+    bazel_remote_proxy: null
+    bazel_bes_proxy: null

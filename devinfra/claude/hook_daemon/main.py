@@ -47,7 +47,7 @@ def main() -> None:
     otlp_exporter = init_daemon_tracing(daemon_dir)
     configure(daemon_dir, otlp_exporter)
 
-    uvicorn.run(app, uds=args.sock, log_level="warning")
+    uvicorn.run(app, uds=args.sock, log_level="info")
     shutdown_tracing()
 
 
