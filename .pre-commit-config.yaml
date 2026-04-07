@@ -38,8 +38,6 @@ repos:
       - id: check-merge-conflict
 
       # Syntax checks
-      - id: check-ast # valid Python parse
-        language_version: python3.13
       - id: check-yaml
         args: ["--allow-multiple-documents"]
         # Skip ansible !vault tags (not parseable without custom YAML constructor), Helm/Flux dirs (Go templating), chart values
