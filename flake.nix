@@ -47,7 +47,7 @@
 
     # Private repo: Google Drive File Stream + drivectl
     gaffer-private = {
-      url = "git+ssh://git@github.com/agentydragon/gaffer-private";
+      url = "git+ssh://git@github.com/agentydragon/gaffer-private?lfs=1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
