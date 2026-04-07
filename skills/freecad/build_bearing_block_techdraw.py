@@ -92,11 +92,11 @@ def _main() -> None:
     right_v.X = 220
     right_v.Y = 155
 
-    # Top view: looking along -Z (shows X-Y plane)
+    # Top view: looking along +Z (down at the boss side of the part)
     top_v = doc.addObject("TechDraw::DrawViewPart", "TopView")
     page.addView(top_v)
     top_v.Source = [body]
-    top_v.Direction = App.Vector(0, 0, -1)
+    top_v.Direction = App.Vector(0, 0, 1)
     top_v.Scale = scale
     top_v.X = 90
     top_v.Y = 65
@@ -124,17 +124,8 @@ def _main() -> None:
 
     # === Dimensions ===
     #
-    # Two approaches are used:
-    # 1. References3D + MeasureType="True" — for cylindrical faces (diameter/radius).
-    #    TechDraw measures the 3D geometry directly, independent of projection.
-    # 2. References2D (projected edges) — for linear distances, chamfers, fillets.
-    #    Edge indices vary between recomputes, so match by geometric properties.
-    #
-    # TODO: Face-to-face distance (e.g., BaseHeight as distance between base bottom
-    # and base top faces) is supported by FreeCAD's Measurement engine
-    # (planePlaneDistance) but NOT wired into DrawViewDimension.getTrueDimValue()
-    # as of FreeCAD 1.1.0. When this gap is fixed upstream, convert the height
-    # dimensions from projected-edge DistanceY to References3D face pairs.
+    # All dimensions use References2D (projected edges/vertices). Edge indices vary
+    # between recomputes, so match by geometric properties (length, position, type).
 
     def find_unique_edge(view, predicate, desc):
         """Find exactly one visible edge matching predicate. Asserts on 0 or 2+."""
@@ -155,14 +146,6 @@ def _main() -> None:
         assert matches, f"No edge matching: {desc} (view {view.Name} has {len(vis)} edges)"
         return max(matches, key=lambda ie: key(ie[1]))[0]
 
-    def find_3d_face(shape, predicate, desc):
-        """Find a 3D face by geometric properties. Returns 'FaceN' string."""
-        matches = [(i, f) for i, f in enumerate(shape.Faces, 1) if predicate(f)]
-        assert len(matches) == 1, f"Expected 1 face matching: {desc}, got {len(matches)}: " + ", ".join(
-            f"Face{i} ({type(f.Surface).__name__})" for i, f in matches
-        )
-        return f"Face{matches[0][0]}"
-
     def _edge_is_line(e):
         return isinstance(e.Curve, Part.Line)
 
@@ -172,7 +155,7 @@ def _main() -> None:
     def _edge_dy(e):
         return abs(e.Vertexes[1].Point.y - e.Vertexes[0].Point.y)
 
-    def add_dim(name, dim_type, refs2d, x, y, *, format_spec=None, measure_type=None, refs3d=None):
+    def add_dim(name, dim_type, refs2d, x, y, *, format_spec=None):
         d = doc.addObject("TechDraw::DrawViewDimension", name)
         page.addView(d)
         d.Type = dim_type
@@ -181,10 +164,6 @@ def _main() -> None:
         d.Y = y
         if format_spec is not None:
             d.FormatSpec = format_spec
-        if measure_type is not None:
-            d.MeasureType = measure_type
-        if refs3d is not None:
-            d.References3D = refs3d
 
     def add_ann(name, text, x, y, size=4):
         a = doc.addObject("TechDraw::DrawViewAnnotation", name)
@@ -194,35 +173,10 @@ def _main() -> None:
         a.Y = y
         a.TextSize = size
 
-    tip_shape = body.Tip.Shape
     base_chamfer = float(sheet.get("B11"))
     boss_chamfer = float(sheet.get("B12"))
 
-    # --- 3D face identification for References3D dimensions ---
-    # Boss cylinder: Cylinder face with R = BossDiameter/2
-    boss_cyl_face = find_3d_face(
-        tip_shape,
-        lambda f: type(f.Surface).__name__ == "Cylinder" and abs(f.Surface.Radius - boss_d / 2) < 0.5,
-        f"boss cylinder R={boss_d / 2}",
-    )
-    # Bore cylinder: Cylinder face with R = BoreDiameter/2
-    bore_cyl_face = find_3d_face(
-        tip_shape,
-        lambda f: type(f.Surface).__name__ == "Cylinder" and abs(f.Surface.Radius - bore_d / 2) < 0.5,
-        f"bore cylinder R={bore_d / 2}",
-    )
-    # Mounting hole: any Cylinder face with R = MountHoleDiameter/2 (pick first by lowest x)
-    mount_hole_faces = [
-        (i, f)
-        for i, f in enumerate(tip_shape.Faces, 1)
-        if type(f.Surface).__name__ == "Cylinder" and abs(f.Surface.Radius - mount_d / 2) < 0.5
-    ]
-    assert mount_hole_faces, f"No mounting hole cylinder face R={mount_d / 2}"
-    mount_hole_face = f"Face{min(mount_hole_faces, key=lambda x: x[1].CenterOfMass.x)[0]}"
-
-    log(f"3D faces: boss={boss_cyl_face}, bore={bore_cyl_face}, hole={mount_hole_face}")
-
-    # --- Front view dimensions (References2D, projected edges) ---
+    # --- Front view dimensions ---
 
     # Log all front view edges for debugging
     front_vis = front.getVisibleEdges()
@@ -288,6 +242,19 @@ def _main() -> None:
 
     # FilletRadius — fillet arc edge (left side, away from other dims)
     add_dim("FilletRadius", "Radius", [(front, f"Edge{fillet_idx}")], x=-boss_d / 2 - 12, y=3)
+
+    # BossDiameter — measured on the front view where the boss profile is visible.
+    # The boss projects as a BSplineCurve at the fillet junction with dx = BossDiameter.
+    # Use DistanceX on this edge (measures projected X span = 40mm) with a ⌀ format.
+    boss_outline_idx = find_ranked_edge(
+        front,
+        lambda e: not _edge_is_line(e) and _edge_dy(e) < 0.5 and abs(_edge_dx(e) - boss_d) < 2,
+        lambda e: -e.Vertexes[0].Point.y,  # pick the one closest to boss top (most negative y)
+        "front: boss outline BSpline dx≈40",
+    )
+    add_dim(
+        "BossDiameter", "DistanceX", [(front, f"Edge{boss_outline_idx}")], x=0, y=-total_h - 10, format_spec="⌀%.0w"
+    )
 
     # BossChamfer — DistanceX on chamfer line gives the horizontal leg (2mm).
     # FormatSpec "x45°" produces the standard engineering callout "2 x45°".
@@ -367,35 +334,17 @@ def _main() -> None:
     )
     add_dim("BoreDiameter", "Diameter", [(top_v, f"Edge{bore_edge_idx}")], x=bore_r + 18, y=5)
 
-    # Boss diameter — 3D cylindrical face, placed on top view.
-    # The boss does NOT project as a R=20 circle in the top view because the fillet
-    # smooths the base junction and the chamfer shrinks the top face. Use References3D
-    # with the boss cylindrical face (R=20) for the correct ⌀40 measurement.
-    add_dim(
-        "BossDiameter",
-        "Diameter",
-        [(top_v, "")],
-        x=-boss_d / 2 - 15,
-        y=-5,
-        measure_type="True",
-        refs3d=[(body.Tip, boss_cyl_face)],
-    )
-
-    # Mounting hole diameter — pick the top-right hole circle (positive x, negative y in TechDraw)
+    # Mounting hole diameter — pick a corner hole, place label horizontally to the right
     mount_r = mount_d / 2
     mount_hole_idx = find_ranked_edge(
         top_v,
         lambda e: isinstance(e.Curve, Part.Circle) and abs(e.Curve.Radius - mount_r) < 1.0,
-        lambda e: e.Curve.Center.x - e.Curve.Center.y,  # top-right in TechDraw coords
-        "top: top-right mounting hole circle",
+        lambda e: e.Curve.Center.x - e.Curve.Center.y,
+        "top: corner mounting hole circle",
     )
-    add_dim(
-        "MountHoleDiameter",
-        "Diameter",
-        [(top_v, f"Edge{mount_hole_idx}")],
-        x=base_l / 2 - mount_ix + 12,
-        y=-base_w / 2 + mount_iy - 8,
-    )
+    # For Diameter dims, dim.X/dim.Y are offsets from the circle center.
+    # Y=0 gives a horizontal leader line.
+    add_dim("MountHoleDiameter", "Diameter", [(top_v, f"Edge{mount_hole_idx}")], x=base_l / 2 + 20, y=0)
 
     # Mounting hole inset dimensions via vertex references.
     # Each circle in TechDraw generates 3 vertices: 2 at the perimeter start/end

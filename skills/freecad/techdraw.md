@@ -94,36 +94,26 @@ dim.References2D = [(view, "Vertex14"), (view, "Vertex17")]  # hole center to co
 See <build_bearing_block_techdraw.py> for the full implementation including `find_vertex()`
 and `find_circle_center_vertex()` helpers.
 
-## 3D-referenced dimensions (References3D + MeasureType="True")
+## 3D-referenced dimensions (References3D) — AVOID
 
-For 3D Part Design models, `DrawViewDimension` supports measuring directly from 3D geometry
-via `References3D` and `MeasureType = "True"`. Proper for cylindrical features (boss diameter,
-bore diameter) because the 3D measurement is independent of the 2D projection.
+`References3D` with `MeasureType="True"` is theoretically supported but **unreliable in
+practice** (FreeCAD 1.1.0). Common failures: `2D references are corrupt`, `True dimension has
+no 3D References`, tiny/zero-length leader lines. The value may be correct but the visual
+rendering is broken.
+
+**Preferred alternative:** place the dimension on a view where the feature has a visible
+projected edge, then use `References2D`. For cylindrical features like a boss diameter, use
+`DistanceX` on the profile edge in the front/side view with `FormatSpec="⌀%.0w"`:
 
 ```python
-# Find the cylindrical face by geometric properties (not hardcoded index)
-boss_cyl_face = find_3d_face(
-    body.Tip.Shape,
-    lambda f: type(f.Surface).__name__ == "Cylinder" and abs(f.Surface.Radius - 20) < 0.5,
-    "boss cylinder R=20",
-)  # returns "Face1" (or whichever matches)
-
-d = doc.addObject("TechDraw::DrawViewDimension", "BossDiameter")
-page.addView(d)
-d.Type = "Diameter"
-d.MeasureType = "True"
-d.References2D = [(front_view, "")]     # view as context (empty sub-element)
-d.References3D = [(body.Tip, boss_cyl_face)]  # 3D cylindrical face
+# Boss projects as a BSplineCurve with dx ≈ BossDiameter in the front view
+boss_outline_idx = find_ranked_edge(front, ...)
+dim.Type = "DistanceX"
+dim.References2D = [(front, f"Edge{boss_outline_idx}")]
+dim.FormatSpec = "⌀%.0w"  # shows "⌀40" for a 40mm boss
 ```
 
-What works with References3D (FreeCAD 1.1.0):
-
-- **Cylinder diameter/radius**: single cylindrical face → auto-computes diameter
-- **Edge lengths**: single 3D edge reference
-- **Point-to-point**: two vertex references
-
-What does NOT work: **face-to-face distance** — `getTrueDimValue()` doesn't handle the
-`TwoPlanes` case. Use projected-edge DistanceY as workaround.
+See <build_bearing_block_techdraw.py> `BossDiameter` for the full implementation.
 
 ## Chamfer dimensions
 
@@ -171,7 +161,9 @@ alternatives (`"60 deg"`).
 ## Multi-view TechDraw for 3D parts
 
 Create multiple `DrawViewPart` objects on one page, each with a different `Direction` vector.
-`Direction` is the viewing direction; `XDirection` defines which way is "right".
+`Direction` is the **camera look direction** (where the camera points), NOT where the camera
+is. `(0, 0, 1)` means the camera looks in +Z, i.e., it sees the top of the part (the face
+with highest Z). `XDirection` defines which way is "right" in the projected view.
 
 ```python
 front = doc.addObject("TechDraw::DrawViewPart", "FrontView")
@@ -186,7 +178,7 @@ right.XDirection = App.Vector(0, 1, 0)
 
 top = doc.addObject("TechDraw::DrawViewPart", "TopView")
 top.Source = [body]
-top.Direction = App.Vector(0, 0, -1)
+top.Direction = App.Vector(0, 0, 1)
 
 iso = doc.addObject("TechDraw::DrawViewPart", "IsoView")
 iso.Source = [body]
@@ -201,8 +193,8 @@ default XDirection algorithm may produce a degenerate projection CS — set it e
 | `(0, -1, 0)` | `(1, 0, 0)` | Front      |
 | `(1, 0, 0)`  | `(0, 1, 0)` | Right side |
 | `(-1, 0, 0)` | `(0, 1, 0)` | Left side  |
-| `(0, 0, -1)` | `(1, 0, 0)` | Top        |
-| `(0, 0, 1)`  | `(1, 0, 0)` | Bottom     |
+| `(0, 0, 1)`  | `(1, 0, 0)` | Top        |
+| `(0, 0, -1)` | `(1, 0, 0)` | Bottom     |
 
 **`getVisibleEdges()` returns edges in unscaled model coordinates** — compare radii against
 model radius directly, not `radius * scale`.

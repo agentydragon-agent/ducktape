@@ -210,6 +210,25 @@ py_test(
 )
 
 py_test(
+    name = "test_explore_dim_coords",
+    size = "medium",
+    srcs = ["test_explore_dim_coords.py"],
+    data = [
+        "explore_dim_coords.py",
+        "freecad_helpers.py",
+        ":freecad_appimage",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":conftest",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_debug_renderers",
     size = "medium",
     srcs = ["test_debug_renderers.py"],
