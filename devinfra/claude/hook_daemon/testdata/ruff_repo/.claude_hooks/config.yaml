@@ -1,3 +1,11 @@
 pre_commit:
   auto_apply_hooks:
     - ruff-format
+
+profiles:
+  cli:
+    bazel_remote_proxy: null
+    bazel_bes_proxy: null
+  web:
+    bazel_remote_proxy: null
+    bazel_bes_proxy: null
