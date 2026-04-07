@@ -13,9 +13,6 @@ startup --output_user_root=${bazel_cache_dir | sh}
 startup --host_jvm_args=-Xmx8g
 % elif platform.is_gvisor:
 startup --host_jvm_args=-Xmx4g
-% else:
-## Unknown/CLI platform — conservative default.
-startup --host_jvm_args=-Xmx4g
 % endif
 % if web_proxy:
 startup --host_jvm_args=-Djavax.net.ssl.trustStore=${truststore_path | sh}
