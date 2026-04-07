@@ -103,7 +103,8 @@ resources:
   - powerdns/app/flux-kustomization.yaml
   - powerdns/secrets/flux-kustomization.yaml
   - powerdns/operator/flux-kustomization.yaml
-  - powerdns/zones/flux-kustomization.yaml
+  - powerdns/zones/allegedly.works/flux-kustomization.yaml
+  - powerdns/zones/allegedly.works/records/flux-kustomization.yaml
 
   # --- vault ---
   - vault/operator/flux-kustomization.yaml

@@ -2,12 +2,12 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: powerdns-zones
+  name: powerdns-records
   namespace: flux-system
 spec:
   retryInterval: 1m
   interval: 10m
-  path: ./cluster/k8s/powerdns/zones
+  path: ./cluster/k8s/powerdns/zones/allegedly.works/records
   prune: true
   sourceRef:
     kind: GitRepository
@@ -17,12 +17,6 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: cluster-info
-  # Health check ensures DNS zone is created before external-dns tries to manage records
-  healthChecks:
-    - apiVersion: dns.k8s.codesink.net/v1alpha1
-      kind: ClusterZone
-      name: allegedly-works
   dependsOn:
-    - name: powerdns-operator
-    - name: reflector
+    - name: powerdns-zone
   timeout: 5m

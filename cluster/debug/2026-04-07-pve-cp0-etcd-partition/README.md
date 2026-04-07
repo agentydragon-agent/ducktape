@@ -100,7 +100,7 @@ in the Nebula/kernel path.
 
 Interface counters from `/proc/net/dev` on pve-cp-0:
 
-```
+```text
 nebula1 TX: pkts=2,811,346,483  drop=574,827,750 (20.4%)
 ```
 
@@ -163,7 +163,7 @@ kube-scheduler, promtail, nfd-worker. Nothing unusual.
 
 **99.8% of all VXLAN traffic** is a single flow:
 
-```
+```text
 10.244.4.81:4242 → 10.244.1.207:4242  (2528/2532 packets)
 ```
 
@@ -274,7 +274,7 @@ loop through VXLAN indefinitely.
 Nebula logs on pve-cp-0 show handshakes from vps-cp-0 arriving **from
 `10.244.1.207:4242`** — a Cilium pod CIDR IP, not the public IP or host IP:
 
-```
+```json
 "from":{"direct":"10.244.1.207:4242"} ... "vpnAddrs":["10.42.0.1"]
 ```
 
