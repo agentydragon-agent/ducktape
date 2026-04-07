@@ -109,7 +109,10 @@ spec:
       # Reloader: auto-restart pods when secrets change
       podAnnotations:
         reloader.stakater.com/auto: "true"
-      # Admin password managed via ExternalSecret
+      # Admin password: init-time only. Grafana writes it to PostgreSQL on first
+      # boot (ensureMainOrgAndAdminUser in pkg/services/sqlstore/sqlstore.go bails
+      # early if any user exists). Reloader restarts will NOT update the DB password.
+      # To rotate: use grafana-cli admin reset-admin-password inside the pod.
       admin:
         existingSecret: grafana-admin-password
         passwordKey: admin-password
