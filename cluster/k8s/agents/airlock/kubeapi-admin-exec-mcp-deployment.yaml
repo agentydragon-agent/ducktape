@@ -26,7 +26,7 @@ spec:
       automountServiceAccountToken: true
       containers:
         - name: kubeapi-admin-exec-mcp
-          image: ghcr.io/agentydragon/openclaw-exec:devel-20260407085645-fa5ec96 # {"$imagepolicy": "flux-system:openclaw-exec"}
+          image: ghcr.io/agentydragon/openclaw-exec:devel-20260407112824-74d1f00 # {"$imagepolicy": "flux-system:openclaw-exec"}
           imagePullPolicy: Always
           ports:
             - name: mcp
