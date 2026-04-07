@@ -2,13 +2,8 @@
 
 Audit findings deferred for later.
 
-## OpenClaw secrets: populate placeholders
+## OpenClaw secrets
 
-These SOPS secrets contain `REPLACE_ME` and must be populated with real credentials
-before unsuspending the `openclaw-gateway-secrets` / `openclaw-sandbox-secrets`
-kustomizations. Edit with `sops <file>`, commit, push.
-
-- [ ] `agents/openclaw/sandbox-secrets/coinbase-api-credentials.sops.yaml` — Coinbase portal (`api_key`, `api_secret`)
 - [ ] `agents/openclaw/sandbox-secrets/ibkr-flex-query-credentials.sops.yaml` — consider moving `query-id` out of SOPS (not sensitive)
 
 ## Missing CiliumNetworkPolicy
