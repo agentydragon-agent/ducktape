@@ -13,6 +13,7 @@
   solarizedDark,
   terminalFont,
   ducktape-artifacts,
+  gaffer-private,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -93,7 +94,7 @@ in
 
   imports = [
 
-    ../packages/google-drive-service.nix
+    # google-drive module imported via mkHome extraModules (avoids _module.args cycle)
     ./codex
     ./crush
     ./modules/solarized.nix

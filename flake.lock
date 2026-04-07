@@ -50,6 +50,26 @@
         "type": "github"
       }
     },
+    "gaffer-private": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1775543739,
+        "narHash": "sha256-PLYSP7WGtkILu0G2WVGCZKS0KwJ9R9nnsbbBEGMtXxg=",
+        "ref": "refs/heads/main",
+        "rev": "c99f8730a599aa50aba66c24845b5ef1484ee5fa",
+        "revCount": 1,
+        "type": "git",
+        "url": "ssh://git@github.com/agentydragon/gaffer-private"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/agentydragon/gaffer-private"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -114,15 +134,16 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1761875112,
-        "narHash": "sha256-f/PZh1TaPWer5VVfcH3q6N5g0/qBmPYGcWcqJrCkeK4=",
+        "lastModified": 1773814637,
+        "narHash": "sha256-GNU+ooRmrHLfjlMsKdn0prEKVa0faVanm0jrgu1J/gY=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "cd7c6b09fc470be8a780bb2d966146e69cf1a1ec",
+        "rev": "fea3b367d61c1a6592bc47c72f40a9f3e6a53e96",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
+        "ref": "nixos-25.11",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -158,29 +179,14 @@
         "type": "github"
       }
     },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1773814637,
-        "narHash": "sha256-GNU+ooRmrHLfjlMsKdn0prEKVa0faVanm0jrgu1J/gY=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "fea3b367d61c1a6592bc47c72f40a9f3e6a53e96",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-25.11",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "claude-plugins-official": "claude-plugins-official",
+        "gaffer-private": "gaffer-private",
         "home-manager": "home-manager",
         "nix-colors": "nix-colors",
         "nixGL": "nixGL",
-        "nixpkgs": "nixpkgs_2",
+        "nixpkgs": "nixpkgs",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "siderolabs-docs": "siderolabs-docs",
         "sops-nix": "sops-nix"

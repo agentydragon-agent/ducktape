@@ -44,6 +44,12 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Private repo: Google Drive File Stream + drivectl
+    gaffer-private = {
+      url = "git+ssh://git@github.com/agentydragon/gaffer-private";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -95,6 +101,7 @@
           claude-plugins-official
           siderolabs-docs
           ;
+        inherit (inputs) gaffer-private;
         solarizedLight = nix-colors.colorSchemes.solarized-light;
         solarizedDark = nix-colors.colorSchemes.solarized-dark;
         terminalFont = {
@@ -121,6 +128,7 @@
 
           modules = [
             inputs.sops-nix.homeManagerModules.sops
+            inputs.gaffer-private.homeManagerModules.google-drive
             ./nix/home/hosts/${hostname}.nix
             {
               _module.args = hmCommonArgs // {

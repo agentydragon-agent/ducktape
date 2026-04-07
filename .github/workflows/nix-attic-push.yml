@@ -29,19 +29,55 @@ jobs:
       - name: Configure Attic cache
         run: attic login ducktape https://cache.allegedly.works "${{ secrets.ATTIC_TOKEN }}"
 
+      - name: Create gaffer-private stub
+        run: |
+          # gaffer-private is a private repo. CI doesn't need access — we
+          # stub it out with a no-op module so Nix doesn't try to fetch it.
+          mkdir -p /tmp/gaffer-stub
+          cat > /tmp/gaffer-stub/flake.nix << 'STUB'
+          {
+            outputs = { ... }: {
+              homeManagerModules.google-drive = { lib, ... }: {
+                options.services.google-drive.enable = lib.mkEnableOption "stub";
+              };
+            };
+          }
+          STUB
+          git -C /tmp/gaffer-stub init -q
+          git -C /tmp/gaffer-stub add .
+          git -C /tmp/gaffer-stub commit -qm stub
+
       - name: Build and push all flake outputs
         run: |
-          drvs=()
-          for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-            drvs+=(".#nixosConfigurations.$host.config.system.build.toplevel")
+          OVERRIDE="--override-input gaffer-private path:/tmp/gaffer-stub"
+          out_paths=$(mktemp)
+
+          # NixOS configurations
+          for host in $(nix eval --json .#nixosConfigurations --apply builtins.attrNames $OVERRIDE | jq -r '.[]'); do
+            nix build --impure $OVERRIDE \
+              ".#nixosConfigurations.$host.config.system.build.toplevel" \
+              --no-link --print-out-paths >> "$out_paths"
           done
-          for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames | jq -r '.[]'); do
-            drvs+=(".#homeConfigurations.$host.activationPackage")
+
+          # Home configurations (google-drive disabled via extendModules +
+          # gaffer-private stubbed out so the private binary is never fetched)
+          for host in $(nix eval --impure --json .#homeConfigurations --apply builtins.attrNames $OVERRIDE | jq -r '.[]'); do
+            nix build --impure $OVERRIDE --expr "
+              let flake = builtins.getFlake \"path:\$(pwd)\";
+              in (flake.homeConfigurations.$host.extendModules {
+                modules = [{ services.google-drive.enable = false; }];
+              }).activationPackage
+            " --no-link --print-out-paths >> "$out_paths"
           done
-          drvs+=(".#packages.x86_64-linux.web-session")
-          drvs+=(".#devShells.x86_64-linux.default.inputDerivation")
-          echo "Building ${#drvs[@]} outputs..."
-          nix build --impure "${drvs[@]}" --no-link --print-out-paths | xargs attic push main
+
+          # Other outputs
+          nix build --impure $OVERRIDE \
+            .#packages.x86_64-linux.web-session \
+            .#devShells.x86_64-linux.default.inputDerivation \
+            --no-link --print-out-paths >> "$out_paths"
+
+          echo "Pushing $(wc -l < "$out_paths") paths to Attic..."
+          xargs attic push main < "$out_paths"
 
       - name: Generate summary
         if: always()
