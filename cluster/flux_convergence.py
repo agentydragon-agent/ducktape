@@ -1,18 +1,19 @@
 """Flux kustomization convergence monitoring.
 
-Models, phase derivation, and polling loop for watching Flux kustomizations
+Models, phase derivation, and watch loop for observing Flux kustomizations
 converge to Ready state during cluster bootstrap.
 """
 
 import logging
 import time
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from typing import Any, Literal
 
-from kubernetes import client
+from kubernetes import client, watch
 from kubernetes.client import ApiException
 from pydantic import BaseModel
 
@@ -39,6 +40,7 @@ class FluxCondition(BaseModel):
 
 class ObjectMeta(BaseModel):
     name: str
+    resource_version: str = ""
 
 
 class KustomizationStatus(BaseModel):
@@ -50,6 +52,21 @@ class FluxKustomization(BaseModel):
 
     metadata: ObjectMeta
     status: KustomizationStatus = KustomizationStatus()
+
+    @property
+    def phase(self) -> KustomizationPhase:
+        return derive_phase(self.status.conditions)
+
+    @property
+    def ready_condition(self) -> FluxCondition | None:
+        return next((c for c in self.status.conditions if c.type == "Ready"), None)
+
+
+class WatchEvent(BaseModel):
+    """A single event from a k8s watch stream."""
+
+    type: Literal["ADDED", "MODIFIED", "DELETED", "ERROR", "BOOKMARK"]
+    object: FluxKustomization | dict[str, Any]
 
 
 @dataclass
@@ -84,41 +101,37 @@ def derive_phase(conditions: Sequence[FluxCondition]) -> KustomizationPhase:
     return KustomizationPhase.FAILED
 
 
-def get_ready_condition(ks: FluxKustomization) -> FluxCondition | None:
-    return next((c for c in ks.status.conditions if c.type == "Ready"), None)
-
-
 def update_tracked_state(
     tracked: dict[str, FluxKustomization], items: Sequence[FluxKustomization]
 ) -> list[StateChange]:
     """Update tracked state from Flux Kustomization items, return phase changes."""
     changes: list[StateChange] = []
     for item in items:
-        new_phase = derive_phase(item.status.conditions)
         old = tracked.get(item.metadata.name)
-        old_phase = derive_phase(old.status.conditions) if old else None
-        if old_phase != new_phase:
-            ready_cond = get_ready_condition(item)
+        old_phase = old.phase if old else None
+        if old_phase != item.phase:
+            rc = item.ready_condition
             changes.append(
                 StateChange(
-                    name=item.metadata.name,
-                    old_phase=old_phase,
-                    new_phase=new_phase,
-                    message=(ready_cond.message if ready_cond else ""),
+                    name=item.metadata.name, old_phase=old_phase, new_phase=item.phase, message=rc.message if rc else ""
                 )
             )
         tracked[item.metadata.name] = item
     return changes
 
 
+def _truncate_td(td: timedelta) -> timedelta:
+    """Truncate a timedelta to whole seconds for display."""
+    return timedelta(seconds=int(td.total_seconds()))
+
+
 def _print_changes(changes: list[StateChange], elapsed: timedelta) -> None:
     """Print batched state change lines, grouping by transition type."""
-    groups: dict[tuple[KustomizationPhase | None, KustomizationPhase], list[str]] = {}
+    groups: defaultdict[tuple[KustomizationPhase | None, KustomizationPhase], list[str]] = defaultdict(list)
     for s in changes:
-        key = (s.old_phase, s.new_phase)
-        groups.setdefault(key, []).append(s.name)
+        groups[s.old_phase, s.new_phase].append(s.name)
 
-    ts = timedelta(seconds=int(elapsed.total_seconds()))
+    ts = _truncate_td(elapsed)
     for (old, new), names in groups.items():
         transition = f"{old} -> {new}" if old else f"-> {new}"
         if len(names) <= 3:
@@ -131,53 +144,60 @@ def _print_changes(changes: list[StateChange], elapsed: timedelta) -> None:
             logger.info("        %s: %s", s.name, s.message)
 
 
-def _print_summary(tracked: dict[str, FluxKustomization], elapsed: timedelta) -> None:
-    counts = Counter(derive_phase(ks.status.conditions) for ks in tracked.values())
-    total = len(tracked)
-    ready = counts.get(KustomizationPhase.READY, 0)
+def _print_summary(counts: Counter[KustomizationPhase], total: int, elapsed: timedelta) -> None:
+    ready = counts[KustomizationPhase.READY]
     parts = [f"{ready}/{total} Ready"]
-    for phase in KustomizationPhase:
-        if phase == KustomizationPhase.READY:
-            continue
-        count = counts.get(phase, 0)
-        if count > 0:
-            parts.append(f"{count} {phase}")
-    ts = timedelta(seconds=int(elapsed.total_seconds()))
-    logger.info("%s Progress: %s", ts, ", ".join(parts))
+    parts.extend(
+        f"{counts[phase]} {phase}"
+        for phase in KustomizationPhase
+        if phase != KustomizationPhase.READY and counts[phase] > 0
+    )
+    logger.info("%s Progress: %s", _truncate_td(elapsed), ", ".join(parts))
 
 
-def _print_final_summary(tracked: dict[str, FluxKustomization], *, success: bool, reason: str = "") -> None:
-    if success:
-        logger.info("All %d kustomizations Ready", len(tracked))
-        return
-
-    logger.error("Convergence failed: %s", reason)
+def _print_not_ready(tracked: dict[str, FluxKustomization]) -> None:
+    """Print details of non-Ready kustomizations and a summary line."""
     not_ready = sorted(
-        (ks for ks in tracked.values() if derive_phase(ks.status.conditions) != KustomizationPhase.READY),
-        key=lambda ks: ks.metadata.name,
+        (ks for ks in tracked.values() if ks.phase != KustomizationPhase.READY), key=lambda ks: ks.metadata.name
     )
     for ks in not_ready:
-        ready_cond = get_ready_condition(ks)
-        phase = derive_phase(ks.status.conditions)
-        logger.error(
-            "  %s (%s): %s - %s",
-            ks.metadata.name,
-            phase,
-            ready_cond.reason if ready_cond else "",
-            ready_cond.message if ready_cond else "",
-        )
-    counts = Counter(derive_phase(ks.status.conditions) for ks in tracked.values())
-    ready = counts.get(KustomizationPhase.READY, 0)
-    logger.error("Summary: %d/%d Ready, %d not ready", ready, len(tracked), len(not_ready))
+        rc = ks.ready_condition
+        reason = rc.reason if rc else ""
+        message = rc.message if rc else ""
+        logger.error("  %s (%s): %s - %s", ks.metadata.name, ks.phase, reason, message)
+    counts = Counter(ks.phase for ks in tracked.values())
+    logger.error("Summary: %d/%d Ready, %d not ready", counts[KustomizationPhase.READY], len(tracked), len(not_ready))
+
+
+def _wait_for_api(custom_api: client.CustomObjectsApi, timeout: timedelta) -> None:
+    """Block until the kustomizations API is reachable."""
+    deadline = datetime.now(UTC) + timeout
+    while datetime.now(UTC) < deadline:
+        try:
+            custom_api.list_namespaced_custom_object(
+                group="kustomize.toolkit.fluxcd.io",
+                version="v1",
+                namespace="flux-system",
+                plural="kustomizations",
+                limit=1,
+            )
+            return
+        except ApiException:
+            logger.debug("API not ready yet, retrying...")
+            time.sleep(5)
+    raise SystemExit("Flux kustomization API not reachable within startup timeout")
 
 
 def monitor_flux_convergence(
     *,
     global_timeout: timedelta = timedelta(hours=1),
-    poll_interval: timedelta = timedelta(seconds=10),
     stable_failure_window: timedelta = timedelta(minutes=12),
+    api_startup_timeout: timedelta = timedelta(minutes=2),
 ) -> None:
     """Monitor Flux kustomizations until all are Ready or convergence stalls.
+
+    Uses a k8s watch for event-driven updates. The watch stream auto-reconnects
+    when timeout_seconds expires.
 
     Terminates when:
     1. All kustomizations Ready (success)
@@ -185,38 +205,38 @@ def monitor_flux_convergence(
     3. Global timeout (failure)
     """
     custom_api = client.CustomObjectsApi()
+    _wait_for_api(custom_api, api_startup_timeout)
 
     start = datetime.now(UTC)
     tracked: dict[str, FluxKustomization] = {}
     last_ready_increase = start
-    last_successful_poll = start
     high_water_ready = 0
     prev_total = 0
     total_stable_polls = 0
     last_summary_at = start - timedelta(seconds=30)
+    failure_reason: str | None = None
 
-    while True:
-        now = datetime.now(UTC)
-        elapsed = now - start
-        if elapsed >= global_timeout:
-            _print_final_summary(tracked, success=False, reason=f"global timeout ({global_timeout})")
-            raise SystemExit("Flux convergence timed out")
+    w = watch.Watch()
+    for event in w.stream(
+        custom_api.list_namespaced_custom_object,
+        group="kustomize.toolkit.fluxcd.io",
+        version="v1",
+        namespace="flux-system",
+        plural="kustomizations",
+        timeout_seconds=int(global_timeout.total_seconds()),
+    ):
+        parsed = WatchEvent.model_validate(event)
 
-        try:
-            raw = custom_api.list_namespaced_custom_object(
-                group="kustomize.toolkit.fluxcd.io", version="v1", namespace="flux-system", plural="kustomizations"
-            )
-            last_successful_poll = datetime.now(UTC)
-        except ApiException as e:
-            if elapsed < timedelta(minutes=1):
-                logger.debug("API not ready yet: %s", e.reason)
-            else:
-                logger.warning("API error polling kustomizations: %s", e.reason)
-            time.sleep(poll_interval.total_seconds())
+        if parsed.type == "ERROR":
+            logger.warning("Watch error event: %s", parsed.object)
             continue
 
-        items = [FluxKustomization.model_validate(i) for i in raw.get("items", [])]
-        changes = update_tracked_state(tracked, items)
+        if not isinstance(parsed.object, FluxKustomization):
+            continue
+
+        changes = update_tracked_state(tracked, [parsed.object])
+        now = datetime.now(UTC)
+        elapsed = now - start
 
         # Track total count stability (don't declare success during ramp-up)
         if len(tracked) == prev_total:
@@ -225,37 +245,39 @@ def monitor_flux_convergence(
             total_stable_polls = 0
             prev_total = len(tracked)
 
-        # Track Ready count high-water mark for staleness detection
-        ready_count = sum(
-            1 for ks in tracked.values() if derive_phase(ks.status.conditions) == KustomizationPhase.READY
-        )
+        counts = Counter(ks.phase for ks in tracked.values())
+        ready_count = counts[KustomizationPhase.READY]
+
         if ready_count > high_water_ready:
             high_water_ready = ready_count
-            last_ready_increase = datetime.now(UTC)
+            last_ready_increase = now
 
         if changes:
             _print_changes(changes, elapsed)
 
         # Periodic summary every 30s
         if now - last_summary_at >= timedelta(seconds=30):
-            _print_summary(tracked, elapsed)
+            _print_summary(counts, len(tracked), elapsed)
             last_summary_at = now
 
-        # Success: all Ready and total count stable for at least 2 polls
+        # Success: all Ready and total count stable
         if tracked and ready_count == len(tracked) and total_stable_polls >= 2:
-            _print_final_summary(tracked, success=True)
-            return
+            break
+
+        # Global timeout
+        if elapsed >= global_timeout:
+            failure_reason = f"global timeout ({global_timeout})"
+            break
 
         # Stalled: Ready count hasn't increased for stable_failure_window
-        # (only evaluate when last poll succeeded recently)
-        since_increase = datetime.now(UTC) - last_ready_increase
-        since_poll = datetime.now(UTC) - last_successful_poll
-        if since_increase >= stable_failure_window and since_poll < poll_interval * 3:
-            _print_final_summary(
-                tracked,
-                success=False,
-                reason=f"Ready count stuck at {high_water_ready}/{len(tracked)} for {since_increase}",
-            )
-            raise SystemExit("Flux convergence stalled")
+        since_increase = now - last_ready_increase
+        if since_increase >= stable_failure_window:
+            failure_reason = f"Ready count stuck at {high_water_ready}/{len(tracked)} for {since_increase}"
+            break
 
-        time.sleep(poll_interval.total_seconds())
+    if failure_reason:
+        logger.error("Convergence failed: %s", failure_reason)
+        _print_not_ready(tracked)
+        raise SystemExit("Flux convergence failed")
+
+    logger.info("All %d kustomizations Ready", len(tracked))

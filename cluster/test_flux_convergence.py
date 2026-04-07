@@ -7,7 +7,6 @@ from cluster.flux_convergence import (
     KustomizationStatus,
     ObjectMeta,
     derive_phase,
-    get_ready_condition,
     update_tracked_state,
 )
 
@@ -58,16 +57,23 @@ class TestDerivePhase:
         assert derive_phase(conditions) == KustomizationPhase.READY
 
 
-class TestGetReadyCondition:
+class TestPhaseProperty:
+    def test_ready(self) -> None:
+        ks = _make_ks("x", [FluxCondition(type="Ready", status="True", reason="OK", message="ok")])
+        assert ks.phase == KustomizationPhase.READY
+
+    def test_pending_when_no_conditions(self) -> None:
+        assert _make_ks("x").phase == KustomizationPhase.PENDING
+
+
+class TestReadyCondition:
     def test_present(self) -> None:
         ks = _make_ks("x", [FluxCondition(type="Ready", status="True", reason="OK", message="ok")])
-        cond = get_ready_condition(ks)
-        assert cond is not None
-        assert cond.reason == "OK"
+        assert ks.ready_condition is not None
+        assert ks.ready_condition.reason == "OK"
 
     def test_absent(self) -> None:
-        ks = _make_ks("x")
-        assert get_ready_condition(ks) is None
+        assert _make_ks("x").ready_condition is None
 
 
 class TestUpdateTrackedState:
@@ -82,7 +88,7 @@ class TestUpdateTrackedState:
         items = [_make_ks("core", [FluxCondition(type="Ready", status="True", reason="OK", message="ok")])]
         changes = update_tracked_state(tracked, items)
         assert "core" in tracked
-        assert derive_phase(tracked["core"].status.conditions) == KustomizationPhase.READY
+        assert tracked["core"].phase == KustomizationPhase.READY
         assert len(changes) == 1
         assert changes[0].old_phase is None
         assert changes[0].new_phase == KustomizationPhase.READY
@@ -91,7 +97,7 @@ class TestUpdateTrackedState:
         tracked: dict[str, FluxKustomization] = {}
         # First poll: Pending (no conditions)
         changes = update_tracked_state(tracked, [_make_ks("ks")])
-        assert derive_phase(tracked["ks"].status.conditions) == KustomizationPhase.PENDING
+        assert tracked["ks"].phase == KustomizationPhase.PENDING
         assert len(changes) == 1
         assert changes[0].old_phase is None
 
@@ -99,7 +105,7 @@ class TestUpdateTrackedState:
         changes = update_tracked_state(
             tracked, [_make_ks("ks", [FluxCondition(type="Ready", status="True", reason="OK", message="ok")])]
         )
-        assert derive_phase(tracked["ks"].status.conditions) == KustomizationPhase.READY
+        assert tracked["ks"].phase == KustomizationPhase.READY
         assert len(changes) == 1
         assert changes[0].old_phase == KustomizationPhase.PENDING
         assert changes[0].new_phase == KustomizationPhase.READY
@@ -109,13 +115,13 @@ class TestUpdateTrackedState:
         items = [_make_ks("ks", [FluxCondition(type="Ready", status="True", reason="OK", message="ok")])]
         update_tracked_state(tracked, items)
         changes = update_tracked_state(tracked, items)
-        assert derive_phase(tracked["ks"].status.conditions) == KustomizationPhase.READY
+        assert tracked["ks"].phase == KustomizationPhase.READY
         assert changes == []
 
     def test_item_without_status(self) -> None:
         tracked: dict[str, FluxKustomization] = {}
         update_tracked_state(tracked, [_make_ks("new-ks")])
-        assert derive_phase(tracked["new-ks"].status.conditions) == KustomizationPhase.PENDING
+        assert tracked["new-ks"].phase == KustomizationPhase.PENDING
 
     def test_multiple_changes(self) -> None:
         tracked: dict[str, FluxKustomization] = {}
