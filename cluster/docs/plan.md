@@ -304,16 +304,7 @@ Motivated by 2026-03-17 OOM cascade. Deploy PriorityClasses: `system-critical`
 ### VPA + Goldilocks
 
 VPA deployed (`k8s/vpa/`). Goldilocks auto-creates VPAs cluster-wide.
-Default mode "Off" (recommendation-only). Enable per namespace:
-
-```bash
-kubectl label ns <namespace> goldilocks.fairwinds.com/vpa-update-mode=auto
-```
-
-- **`auto`** (21 ns): activitywatch, airlock, atuin, gatus, gitea, google-workspace-mcp,
-  grocy, harbor, headlamp, homeassistant-proxy, inventree, langfuse, matrix, nix-cache,
-  ollama, openclaw-gateway, openclaw-mitmproxy, props, proxmox-proxy, scanner, tana-mcp
-- **`initial`** (6 ns): authentik, cnpg-system, dns-system, loki, monitoring, vault
+Default mode "Off" (recommendation-only). Enable per namespace.
 
 ### Alertmanager -> ntfy Bridge
 
