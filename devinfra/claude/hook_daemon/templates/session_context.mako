@@ -1,3 +1,6 @@
+<%
+    status = "ERRORS" if collector.has_errors else "OK with warnings" if collector.has_warnings else "OK"
+%>\
 # Claude Code session start hook — ${status}
 
 % if proxy:
@@ -76,11 +79,11 @@ Nix is available with nixpkgs. When a tool you need isn't installed, use `nix-sh
 ## Nix
 Nix is installed but nixpkgs channels are not configured. You can set up nixpkgs with `nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs && nix-channel --update` to enable `nix-shell -p <pkg>`.
 % endif
-% if any(r.levelno >= WARNING for r in log_entries):
+% if collector.has_warnings:
 
 ## Warnings
-% for record in log_entries:
-% if record.levelno >= WARNING:
+% for record in collector.buffer:
+% if record.levelno >= logging.WARNING:
 <%
     msg = record.getMessage()
     display_msg = msg[:200] + " [truncated — see log]" if len(msg) > 200 else msg

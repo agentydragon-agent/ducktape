@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from devinfra.claude.auth_proxy.credentials import check_credential_expiry
-from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS, get_upstream_proxy_url
+from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.env_file import ENV_BAZELISK_PATH
 from devinfra.claude.errors import AuthProxyError
@@ -117,16 +117,13 @@ def _resolve_real_binary() -> str:
     raise FileNotFoundError(f"No {invoked_as} found on PATH")
 
 
-def _refresh_proxy_creds(paths: SessionPaths) -> str:
-    """Send fresh JWT credentials to the hook daemon's in-process auth proxy via RPC.
-
-    Returns the local proxy URL (e.g. http://localhost:<port>).
-    """
+def _refresh_proxy_creds(paths: SessionPaths) -> None:
+    """Send fresh JWT credentials to the hook daemon's in-process auth proxy via RPC."""
     https_proxy = get_upstream_proxy_url()
     if not https_proxy:
         raise AuthProxyError("No HTTPS_PROXY environment variable set")
     try:
-        return update_proxy_creds(https_proxy, paths)
+        update_proxy_creds(https_proxy, paths)
     except OSError as e:
         raise AuthProxyError(
             f"Auth proxy RPC failed: {e}. The hook daemon may not be running. "
@@ -136,16 +133,8 @@ def _refresh_proxy_creds(paths: SessionPaths) -> str:
 
 def _run(paths: SessionPaths) -> None:
     if is_web_mode():
-        local_proxy = _refresh_proxy_creds(paths)
+        _refresh_proxy_creds(paths)
         warn_if_credentials_expiring()
-        # CLEANUP(2026-03-26): Remove TCP proxy branch once UDS mode is confirmed stable.
-        # In TCP mode, override HTTPS_PROXY to point at the local auth proxy so
-        # all JVM HTTP traffic goes through it. In UDS mode, gRPC goes through
-        # --remote_proxy UDS and BCR uses the native JAVA_TOOL_OPTIONS proxy,
-        # so no env var override is needed.
-        if local_proxy != "uds-only":
-            for var in PROXY_ENV_VARS:
-                os.environ[var] = local_proxy
 
     real_binary = _resolve_real_binary()
 

@@ -27,7 +27,7 @@ import select
 import socket
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -62,6 +62,35 @@ def parse_upstream_url(url: str) -> UpstreamConfig:
     return UpstreamConfig(host=host, port=port, auth_header=auth_header)
 
 
+@dataclass
+class UpstreamCreds:
+    """Thread-safe holder for an upstream proxy URL, shared across proxies in a session.
+
+    All proxy instances in the same session reference the same UpstreamCreds, so a
+    single set() call updates every proxy.
+    """
+
+    url: str | None = None
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False)
+
+    def set(self, new_url: str | None) -> None:
+        with self._lock:
+            self.url = new_url
+
+    def get_config(self) -> UpstreamConfig | None:
+        """Return parsed upstream config, or None if no URL is set (direct mode)."""
+        with self._lock:
+            url = self.url
+        return parse_upstream_url(url) if url is not None else None
+
+    def require_config(self) -> UpstreamConfig:
+        """Return parsed upstream config, raising if no URL has been set."""
+        config = self.get_config()
+        if config is None:
+            raise ValueError("Proxy credentials not set")
+        return config
+
+
 # CLEANUP(2026-03-26): Remove AuthForwardingProxy once UDS proxy mode is confirmed
 # stable. In UDS mode, BCR uses native JAVA_TOOL_OPTIONS proxy and gRPC goes through
 # UdsRemoteProxy. The TCP proxy is only needed if proxy_mode="tcp" (legacy fallback).
@@ -80,11 +109,10 @@ class AuthForwardingProxy:
     Reads upstream proxy URL from creds_file on each connection for hot-reload.
     """
 
-    def __init__(self, listen_port: int, max_workers: int = 100):
+    def __init__(self, listen_port: int, creds: UpstreamCreds, max_workers: int = 100):
         self.listen_port = listen_port
         self.max_workers = max_workers
-        self._upstream_url: str | None = None
-        self._creds_lock = threading.Lock()
+        self.creds = creds
         self.server_socket: socket.socket | None = None
         self._running = False
         self._thread: threading.Thread | None = None
@@ -92,18 +120,6 @@ class AuthForwardingProxy:
         self._connections: list[socket.socket] = []
         self._conn_counter = 0
         self._conn_lock = threading.Lock()
-
-    def set_creds(self, upstream_url: str) -> None:
-        """Update upstream proxy credentials (thread-safe)."""
-        with self._creds_lock:
-            self._upstream_url = upstream_url
-
-    def _get_upstream_config(self) -> UpstreamConfig:
-        with self._creds_lock:
-            url = self._upstream_url
-        if url is None:
-            raise ValueError("Proxy credentials not set")
-        return parse_upstream_url(url)
 
     def start(self) -> None:
         """Start the proxy server."""
@@ -184,8 +200,7 @@ class AuthForwardingProxy:
             target = parts[1]
             logger.info("[conn %d] CONNECT request for %s", conn_id, target)
 
-            # Get upstream config (re-read from file each connection for hot-reload)
-            config = self._get_upstream_config()
+            config = self.creds.require_config()
 
             # Connect to upstream proxy (30s timeout for connection only)
             logger.info("[conn %d] Connecting to upstream %s:%d", conn_id, config.host, config.port)
@@ -294,24 +309,24 @@ class UdsRemoteProxy:
     --remote_proxy routes gRPC traffic through the UDS natively, so there's
     no Authenticator timing issue.
 
-    When no upstream proxy credentials are set (set_creds not called), the
+    When no upstream proxy credentials are set, the
     proxy connects directly to remote_target over TCP. This supports CLI
     sessions that have direct internet access.
     """
 
-    def __init__(self, sock_path: Path, remote_target: str, max_workers: int = 100):
+    def __init__(self, sock_path: Path, remote_target: str, creds: UpstreamCreds, max_workers: int = 100):
         """
         Args:
             sock_path: Path for the Unix domain socket.
             remote_target: host:port to connect to (e.g. "remote.buildbuddy.io:443").
-                Connected to directly when no upstream proxy is set, or via
+                Connected to directly when no upstream proxy credentials are set, or via
                 CONNECT tunnel when an upstream proxy is configured.
+            creds: Shared upstream credentials. Use UpstreamCreds() for a standalone proxy.
         """
         self.sock_path = sock_path
         self.remote_target = remote_target
         self.max_workers = max_workers
-        self._upstream_url: str | None = None
-        self._creds_lock = threading.Lock()
+        self.creds = creds
         self.server_socket: socket.socket | None = None
         self._running = False
         self._thread: threading.Thread | None = None
@@ -319,16 +334,6 @@ class UdsRemoteProxy:
         self._connections: list[socket.socket] = []
         self._conn_counter = 0
         self._conn_lock = threading.Lock()
-
-    def set_creds(self, upstream_url: str) -> None:
-        """Update upstream proxy credentials (thread-safe)."""
-        with self._creds_lock:
-            self._upstream_url = upstream_url
-
-    def _get_upstream_config(self) -> UpstreamConfig | None:
-        with self._creds_lock:
-            url = self._upstream_url
-        return parse_upstream_url(url) if url is not None else None
 
     def start(self) -> None:
         """Start the UDS proxy server."""
@@ -390,7 +395,7 @@ class UdsRemoteProxy:
         upstream_sock: socket.socket | None = None
 
         try:
-            config = self._get_upstream_config()
+            config = self.creds.get_config()
 
             if config is not None:
                 # Egress proxy mode: CONNECT tunnel through upstream proxy.

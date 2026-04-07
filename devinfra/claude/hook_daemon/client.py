@@ -19,7 +19,7 @@ from pathlib import Path
 from filelock import FileLock
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, UpdateProxyCredsResponse
+from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.session_paths import SessionPaths
 from util.bazel.subprocess import python_env
 
@@ -55,8 +55,8 @@ class DaemonHttpError(RuntimeError):
         self.body = body
 
 
-def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> str:
-    """Send fresh proxy credentials to the daemon. Returns the local proxy URL.
+def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> None:
+    """Send fresh proxy credentials to the daemon.
 
     Raises OSError if the daemon is unreachable.
     """
@@ -70,7 +70,6 @@ def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> str:
     conn.close()
     if response.status != 200:
         raise OSError(f"Daemon returned HTTP {response.status} for update-proxy-creds: {body.decode()}")
-    return UpdateProxyCredsResponse.model_validate_json(body).proxy_url
 
 
 def check_health(sock_path: Path, timeout: float = 0.5) -> bool:
@@ -118,9 +117,9 @@ def _post_to_daemon(request: HookRequest, sock_path: Path) -> HookResponse | Non
             body = response.read().decode("utf-8", errors="replace")
             conn.close()
             raise DaemonHttpError(response.status, body)
-        body = response.read()
+        raw = response.read()
         conn.close()
-        return HookResponse.model_validate_json(body)
+        return HookResponse.model_validate_json(raw)
     except (ConnectionRefusedError, FileNotFoundError, OSError) as e:
         logger.debug("Daemon unreachable: %s", e)
         return None

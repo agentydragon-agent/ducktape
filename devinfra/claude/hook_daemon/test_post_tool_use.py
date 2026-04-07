@@ -13,7 +13,7 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.hook_config import HookConfig, PreCommitConfig
+from devinfra.claude.hook_config import HookConfig, PreCommitConfig, ProfileConfig, ProfilesConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result, evaluate
 from devinfra.claude.hook_daemon.precommit_runner import HookAutoApplied, HookFailedNotApplied, HookWouldEdit, RunResult
@@ -34,10 +34,16 @@ def git_project(tmp_path: Path) -> tuple[Path, Path]:
     """Create a tmp git project with .claude_hooks config and a test file."""
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
-    config = HookConfig(pre_commit=PreCommitConfig())
+    config = HookConfig(
+        pre_commit=PreCommitConfig(),
+        profiles=ProfilesConfig(
+            cli=ProfileConfig(bazel_remote_proxy=None, bazel_bes_proxy=None),
+            web=ProfileConfig(bazel_remote_proxy=None, bazel_bes_proxy=None),
+        ),
+    )
     hooks_dir = repo_path / ".claude_hooks"
     hooks_dir.mkdir()
-    (hooks_dir / "config.yaml").write_text(yaml.dump(config.model_dump(mode="json", exclude_none=True)))
+    (hooks_dir / "config.yaml").write_text(yaml.dump(config.model_dump(mode="json")))
     test_file = repo_path / "test.py"
     test_file.write_bytes(b"x=1\n")
     init_git_repo(repo_path)

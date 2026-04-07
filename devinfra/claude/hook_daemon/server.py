@@ -14,29 +14,27 @@ import json
 import logging
 import signal
 import time
-from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.responses import Response
 from opentelemetry import trace
 from pydantic import BaseModel
 
-from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy, UdsRemoteProxy
-from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.hook_config import HookConfig
-from devinfra.claude.hook_daemon.models import HookRequest, HookResponse, UpdateProxyCredsResponse
+from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
-from devinfra.claude.hook_daemon.session_start.handler import handle as handle_session_start
+from devinfra.claude.hook_daemon.session import Session
+from devinfra.claude.hook_daemon.session_start.handler import CallerContext, handle as handle_session_start
 from devinfra.claude.hook_daemon.session_start.http_client import build_http_client
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import HookSettings, ProxyMode, is_web_mode
+from devinfra.claude.settings import HookSettings, is_web_mode
 
 logger = logging.getLogger(__name__)
 
@@ -46,87 +44,24 @@ IDLE_CHECK_INTERVAL_SECONDS = 30
 app = FastAPI()
 
 
-@dataclass
-class ProxyState:
-    """In-process proxy instances, started lazily on the first SessionStart."""
-
-    tcp: AuthForwardingProxy | None = None
-    uds_remote: UdsRemoteProxy | None = None  # Bazel --remote_proxy
-    uds_bes: UdsRemoteProxy | None = None  # Bazel --bes_proxy
-
-    def set_creds(self, https_proxy: str) -> None:
-        """Update upstream credentials on all running proxies."""
-        if self.tcp is not None:
-            self.tcp.set_creds(https_proxy)
-        if self.uds_remote is not None:
-            self.uds_remote.set_creds(https_proxy)
-        if self.uds_bes is not None:
-            self.uds_bes.set_creds(https_proxy)
-
-    def any_running(self) -> bool:
-        return self.tcp is not None or self.uds_remote is not None or self.uds_bes is not None
-
-    def stop_all(self) -> None:
-        if self.tcp is not None:
-            logger.info("Stopping in-process auth proxy...")
-            self.tcp.stop()
-        if self.uds_remote is not None:
-            logger.info("Stopping UDS remote proxy...")
-            self.uds_remote.stop()
-        if self.uds_bes is not None:
-            logger.info("Stopping UDS BES proxy...")
-            self.uds_bes.stop()
-
-
 def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     """Set daemon runtime directory and shared config. Call before starting uvicorn."""
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
     app.state.otlp_exporter = otlp_exporter
     app.state.last_request_time = time.monotonic()
-    app.state.proxies = ProxyState()
-    app.state.background_tasks = set[asyncio.Task[object]]()
+    app.state.sessions = {}  # dict[str, Session]
     # Proxies are started lazily on the first SessionStart hook, not here.
 
 
-async def _start_session_proxy(session_id: str, web_mode: bool, hook_config: HookConfig) -> None:
-    """Start proxy infrastructure for the current session.
-
-    In UDS mode (default): UDS proxies are started for --remote_proxy and/or
-    --bes_proxy as configured. Bazel uses these for gRPC; BCR fetches use
-    JAVA_TOOL_OPTIONS (set by Anthropic).
-
-    In TCP mode (legacy): the TCP HTTP CONNECT proxy is also started.
-
-    Called at the start of SessionStart handling — not at daemon startup.
-    Idempotent: no-op if proxies are already running.
-    """
-    profile = hook_config.profile(web_mode)
-    upstream_url = get_upstream_proxy_url()
-    paths = SessionPaths(session_id=session_id, home=Path.home(), xdg_cache_home=Path.home())
-    proxies: ProxyState = app.state.proxies
-    settings: HookSettings = app.state.settings
-
-    # CLEANUP(2026-03-26): Remove TCP proxy once UDS mode is confirmed stable.
-    if settings.proxy_mode == ProxyMode.TCP and proxies.tcp is None:
-        tcp = AuthForwardingProxy(listen_port=0)
-        tcp.start()
-        proxies.tcp = tcp
-        logger.info("Auth proxy started in-process on port %d (tcp mode)", tcp.listen_port)
-
-    if proxies.uds_remote is None and profile.bazel_remote_proxy is not None:
-        uds = UdsRemoteProxy(sock_path=paths.bazel_remote_proxy_sock, remote_target=profile.bazel_remote_proxy.target)
-        if upstream_url:
-            uds.set_creds(upstream_url)
-        uds.start()
-        proxies.uds_remote = uds
-
-    if proxies.uds_bes is None and profile.bazel_bes_proxy is not None:
-        uds = UdsRemoteProxy(sock_path=paths.bazel_bes_proxy_sock, remote_target=profile.bazel_bes_proxy.target)
-        if upstream_url:
-            uds.set_creds(upstream_url)
-        uds.start()
-        proxies.uds_bes = uds
+def _get_or_create_session(session_id: str, env: dict[str, str]) -> Session:
+    """Return existing Session for session_id, or create and register one."""
+    sessions: dict[str, Session] = app.state.sessions
+    if existing := sessions.get(session_id):
+        return existing
+    session = Session(session_id=session_id, paths=SessionPaths.from_env(session_id, env))
+    sessions[session_id] = session
+    return session
 
 
 def _save_session_env(env: dict[str, str]) -> None:
@@ -161,22 +96,15 @@ async def handle_hook(req: HookRequest) -> Response:
             case SessionStartHookInput():
                 hook_config = HookConfig.load_from_repo(Path(req.hook.cwd))
                 web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
-                await _start_session_proxy(req.hook.session_id, web_mode, hook_config)
-                paths = SessionPaths.from_env(req.hook.session_id, req.env)
-                proxies: ProxyState = app.state.proxies
+                session = _get_or_create_session(req.hook.session_id, req.env)
+                await session.start_proxy(web_mode, hook_config, app.state.settings)
+                ctx = CallerContext.from_env(req.env)
                 with build_http_client(req.env) as http:
                     output = await handle_session_start(
-                        req.hook,
-                        paths,
-                        app.state.settings,
-                        caller_env=req.env,
-                        http=http,
-                        otlp_exporter=app.state.otlp_exporter,
-                        proxy=proxies.tcp,
-                        background_tasks=app.state.background_tasks,
+                        session, req.hook, app.state.settings, ctx=ctx, http=http, otlp_exporter=app.state.otlp_exporter
                     )
             case PreToolUseInput():
-                output = evaluate_pre(req.hook)
+                output = evaluate_pre(req.hook, _get_or_create_session(req.hook.session_id, req.env))
             case PostToolUseInput():
                 output = evaluate_post(req.hook)
             case _:
@@ -201,16 +129,11 @@ class _UpdateProxyCredsRequest(BaseModel):
 
 
 @app.post("/update-proxy-creds")
-async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> UpdateProxyCredsResponse:
+async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> None:
     """Update in-process proxy credentials. Called by bazel_wrapper on each invocation."""
-    proxies: ProxyState = app.state.proxies
-    if not proxies.any_running():
-        raise HTTPException(status_code=503, detail="No proxy running")
-    proxies.set_creds(req.https_proxy)
+    for s in app.state.sessions.values():
+        s.set_proxy_creds(req.https_proxy)
     logger.debug("Updated proxy credentials via RPC")
-    # Return TCP proxy URL if available (legacy mode), otherwise a placeholder.
-    proxy_url = f"http://localhost:{proxies.tcp.listen_port}" if proxies.tcp else "uds-only"
-    return UpdateProxyCredsResponse(proxy_url=proxy_url)
 
 
 @app.get("/health")
@@ -243,6 +166,5 @@ async def _start_idle_watchdog() -> None:
 @app.on_event("shutdown")
 async def _stop_proxy() -> None:
     """Stop the in-process proxies on daemon shutdown."""
-    proxies: ProxyState | None = getattr(app.state, "proxies", None)
-    if proxies is not None:
-        proxies.stop_all()
+    for session in app.state.sessions.values():
+        session.stop()

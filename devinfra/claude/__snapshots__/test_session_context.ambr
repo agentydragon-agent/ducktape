@@ -141,6 +141,8 @@
   **Notify the user** that secrets are unavailable and Bazel RBE / GitHub operations will not work until resolved.
   
   
+  - WARNING: Failed to install git pre-commit
+  
   Session start log: `/tmp/daemon.log`
   
   '''

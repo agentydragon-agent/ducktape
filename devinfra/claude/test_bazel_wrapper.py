@@ -11,14 +11,11 @@ from devinfra.claude.session_paths import SessionPaths
 
 
 def test_sends_creds_via_rpc(session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch) -> None:
-    """When RPC succeeds, proxy URL is returned and no error is raised."""
     monkeypatch.setenv("HTTPS_PROXY", "http://user:pass@proxy.example.com:8080")
 
-    with patch("devinfra.claude.bazel_wrapper.update_proxy_creds", return_value="http://localhost:12345") as mock_rpc:
-        result = _refresh_proxy_creds(session_paths)
-
+    with patch("devinfra.claude.bazel_wrapper.update_proxy_creds") as mock_rpc:
+        _refresh_proxy_creds(session_paths)
         mock_rpc.assert_called_once_with("http://user:pass@proxy.example.com:8080", session_paths)
-        assert result == "http://localhost:12345"
 
 
 def test_raises_when_no_proxy_env(session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch) -> None:

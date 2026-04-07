@@ -149,6 +149,10 @@ class SessionPaths:
         return self.session_dir / "hook-daemon"
 
     @property
+    def hook_daemon_log(self) -> Path:
+        return self.hook_daemon_dir / "daemon.log"
+
+    @property
     def hook_daemon_sock(self) -> Path:
         """UDS path for the hook daemon.
 
