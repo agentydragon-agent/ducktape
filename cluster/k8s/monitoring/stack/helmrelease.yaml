@@ -7,8 +7,17 @@ spec:
   interval: 30m
   timeout: 10m # Prometheus stack upgrades can be slow
   install:
+    # TODO(roaming-nodes): Roaming nodes (iguana/rugged) are often offline,
+    # so DaemonSets (node-exporter) have perpetually Pending pods. Helm waits
+    # for all pods to be ready, causing timeout. disableWait is a blunt
+    # workaround — need a general solution for every HelmRelease with a
+    # DaemonSet. Options: taint roaming nodes + add tolerations to DaemonSets
+    # that should run there, or use nodeAffinity to exclude roaming entirely.
+    disableWait: true
     remediation:
       retries: 3
+  upgrade:
+    disableWait: true
   chart:
     spec:
       chart: kube-prometheus-stack

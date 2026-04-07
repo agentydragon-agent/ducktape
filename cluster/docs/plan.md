@@ -82,12 +82,22 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
 - [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
 - [x] Prometheus: replaced by Alloy+Mimir (2026-04-06). Prometheus disabled, operator kept for CRDs.
+- [ ] **Roaming node DaemonSet problem**: Offline roaming nodes (iguana/rugged) cause
+      DaemonSet pods to stay Pending, which makes Helm install/upgrade timeout
+      (`disableWait: true` workaround in monitoring-stack). This affects every
+      HelmRelease that includes a DaemonSet. Need a general solution: - Option A: Taint roaming nodes (`node-role.kubernetes.io/roaming=true:NoSchedule`) + add tolerations to DaemonSets that should run on roaming nodes (node-exporter,
+      Cilium agent, etc.). DaemonSets without the toleration skip roaming nodes. - Option B: Use `nodeAffinity` on DaemonSets to exclude `roaming` region entirely. - Option C: Custom Flux health check that ignores Pending DaemonSet pods on
+      NotReady nodes.
+      `rugged` already has this taint; `iguana` does not — add it.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`, `activitywatch`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
       (upstream `0e28e50b4`, PR #24287)
 - [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
 - [ ] OpenClaw: eliminate one-time token entry
+- [ ] File upstream: powerdns-operator "stuck Failed" bug — once a ClusterRRset
+      reaches Failed, it never retries unless spec changes. Should retry with backoff.
+      See <lessons_learned/2026-04-07-powerdns-operator-stuck-failed-rrsets.md>.
 - [ ] Plaid integration: fix onboarding (`link/token/create` returns 400)
 - [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
       proxy auth, recipe import)
