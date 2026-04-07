@@ -79,7 +79,7 @@ Shell config is managed by Nix home-manager (`nix/home/home.nix`), init scripts 
 
 ```bash
 # Rebuild home-manager (on wyrm needs --impure for nixGL)
-home-manager switch --flake .#agentydragon --impure
+home-manager switch --flake .#iguana
 
 # Test oh-my-posh prompt
 USE_OHMYPOSH=1 zsh -c 'source ~/.zshrc; oh-my-posh print primary --config ~/.config/oh-my-posh/config.json'

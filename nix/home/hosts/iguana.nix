@@ -1,11 +1,6 @@
 # iguana (ThinkPad X1 Extreme) host-specific home-manager configuration
 #
-# Migrated from: nix/home/hosts/agentydragon.nix (Pop!_OS)
-#
-# Changes from Pop!_OS setup:
-# - Removed modules/popos-bazel.nix (not needed on NixOS)
-# - No longer need nixGL (native drivers on NixOS)
-# - No longer need --impure flag for home-manager switch
+# Previously Pop!_OS (agentydragon.nix), now NixOS.
 #
 # To apply: home-manager switch --flake ~/code/ducktape#iguana
 {

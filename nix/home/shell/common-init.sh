@@ -13,7 +13,7 @@ fi
 
 # Shell functions
 bmosh() {
-  # Use like: bmosh root@agentydragon.com
+  # Use like: bmosh user@host
   mosh "$1" -- tmux new-session -A -s bmosh
 }
 

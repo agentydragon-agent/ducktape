@@ -16,24 +16,6 @@
   gaffer-private,
   ...
 }:
-# IMPORTANT: Nix/Ansible Split for agentydragon machine
-# =====================================================
-# Nix home-manager manages:
-#   - User-level packages (dev tools, language servers, formatters)
-#   - GNOME dconf settings and terminal profiles
-#   - XDG autostart entries
-#   - GNOME extensions packages
-#   - oh-my-zsh
-#
-# Ansible continues to manage:
-#   - System packages (via apt)
-#   - Services and system configuration
-#   - Build dependencies (libssl-dev, etc.)
-#
-# Tools where Nix takes precedence (moved to cli_nix_migrated in Ansible):
-#   - neovim (Nix: unstable version)
-#   - Node.js (Nix: nodejs_24)
-#   - Rust (Nix: rustc/cargo packages)
 # Note for NixOS systems with enableHeavyPackages:
 # Heavy packages (gimp, krita, freecad, inkscape, etc.) should be installed
 # via NixOS system configuration using the module at nix/nixos/heavy-packages-module.nix
@@ -341,11 +323,10 @@ in
     source = ./config/nvim;
     recursive = true;
   };
-  # Base bazelrc settings (layered by popos-bazel.nix and host configs)
+  # Base bazelrc settings (layered by host configs)
   home.file.".bazelrc".text = ''
     common --show_progress_rate_limit=0.05
     common --progress_in_terminal_title
-    common --enable_bzlmod
     build --platforms //:linux_x64
 
     # Optional BuildBuddy / remote cache config (file not in git)

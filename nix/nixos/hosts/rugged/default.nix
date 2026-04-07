@@ -1,13 +1,11 @@
 # Dell Rugged 12 tablet
 #
 # Manual setup steps:
-# - SSH keygen and copy:
-#   - GitHub
-#   - VPS agentydragon, root
+# - SSH keygen and copy to GitHub
 # - Transfer over Ansible Vault password into libwallet
 #
 # TODO: Consider moving some packages from home-manager to system level (zsh, compilers like rustc/go/gcc)
-# TODO: SSH authorized_keys - add keys to users.users.agentydragon.openssh.authorizedKeys.keys
+# TODO: SSH authorized_keys - add keys to openssh.authorizedKeys.keys
 # TODO: Improved OSK extension - waiting for GNOME 49 support (currently only 43-44)
 # TODO: auto-cpufreq - services.auto-cpufreq for dynamic CPU governor (power saving on battery, performance on AC)
 # TODO: zram - consider zramSwap.enable for memory compression (swap file already exists at /swap/swapfile)
@@ -147,7 +145,7 @@
     # Allow reading system logs without sudo (systemd-journal group)
     extraGroups = [ "systemd-journal" ];
     openssh.authorizedKeys.keys = [
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@popvm"
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfzLZ7zOOMviYrrxeh1nSXdwu9uveSXr07EJI5NwFau agentydragon@iguana"
     ];
   };
 
