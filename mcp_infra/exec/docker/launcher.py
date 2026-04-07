@@ -1,6 +1,6 @@
 """CLI to run the docker_exec MCP server via stdio transport.
 
-Accepts a single JSON config file (ContainerExecServerConfig schema).
+Accepts config as inline JSON (--config) or a JSON file path (--config-file).
 """
 
 from __future__ import annotations
@@ -22,13 +22,22 @@ app = TyperDI(help="Run docker_exec MCP over stdio")
 @app.command()
 @async_run
 async def main(
-    config_file: Annotated[Path, typer.Argument(help="JSON config file (ContainerExecServerConfig schema)")],
+    config: Annotated[str | None, typer.Option(help="Inline JSON config (ContainerExecServerConfig)")] = None,
+    config_file: Annotated[Path | None, typer.Option(help="Path to JSON config file")] = None,
 ) -> None:
     """Run docker_exec MCP server over stdio transport."""
-    config = ContainerExecServerConfig.model_validate_json(config_file.read_text())
+    if config is not None and config_file is not None:
+        raise typer.BadParameter("Specify --config or --config-file, not both.")
+    if config is not None:
+        parsed = ContainerExecServerConfig.model_validate_json(config)
+    elif config_file is not None:
+        parsed = ContainerExecServerConfig.model_validate_json(config_file.read_text())
+    else:
+        raise typer.BadParameter("Specify --config or --config-file.")
+
     docker_client = aiodocker.Docker()
     try:
-        server = ContainerExecServer(docker_client, config)
+        server = ContainerExecServer(docker_client, parsed)
         await server.run_stdio_async()
     finally:
         await docker_client.close()

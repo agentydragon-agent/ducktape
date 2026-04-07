@@ -46,6 +46,7 @@ dependencies = [
     "openai>=1.40.0",
     "anthropic",
     "claude-code-sdk>=0.0.21,<0.1",
+    "claude-agent-sdk>=0.1.0,<0.2",
     "tiktoken>=0.7.0",
     "tenacity>=8.2.0",
 
