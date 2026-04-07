@@ -329,7 +329,7 @@ async def setup_auth_proxy(
     # TCP mode: set credentials on the in-process TCP proxy and verify it's listening
     port: int | None = None
     if proxy is not None:
-        proxy.set_creds(https_proxy)
+        proxy.creds.set(https_proxy)
         port = proxy.listen_port
         with tracer.start_as_current_span("proxy_wait_socket"):
             await _wait_for_proxy_port(port)

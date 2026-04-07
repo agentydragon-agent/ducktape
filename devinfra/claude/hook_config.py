@@ -108,7 +108,7 @@ class HookConfig(BaseModel):
     """Top-level hook config file (.claude_hooks/config.yaml)."""
 
     k8s: K8sConfig | None = None
-    secrets: SecretsConfig | None = None
+    secrets: SecretsConfig = Field(default_factory=SecretsConfig)
     otel: OtelConfig | None = None
     pre_commit: PreCommitConfig | None = None
     extra_env_script: str | None = Field(

@@ -1,14 +1,17 @@
 """Snapshot tests for the session_context.mako template."""
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect, precommit
+from devinfra.claude.hook_daemon.session_start.handler import LogCollector
 from devinfra.claude.hook_daemon.session_start.secret_sources import SecretsResult
 
 
@@ -24,19 +27,16 @@ def _render(
     log_entries: list[logging.LogRecord] | None = None,
     log_file: str = "/tmp/daemon.log",
     buildbuddy_configured: bool = False,
-    status: str = "OK",
 ) -> str:
+    collector = LogCollector()
+    collector.buffer.extend(log_entries or [])
     return str(
         templates.session_context.render(
-            WARNING=logging.WARNING,
-            status=status,
+            collector=collector,
             proxy=proxy,
             container=container,
             precommit=precommit_result,
-            PrecommitInstallingHooks=precommit.PrecommitInstallingHooks,
-            PrecommitNotInstalled=precommit.PrecommitNotInstalled,
             mkcert=mkcert_result,
-            log_entries=log_entries or [],
             secrets=secrets,
             extra_context=extra_context,
             log_file=log_file,
@@ -46,31 +46,37 @@ def _render(
     )
 
 
-def _cli_platform(*, nix_installed: bool = False, nixpkgs_available: bool = False) -> platform_detect.PlatformInfo:
-    return platform_detect.PlatformInfo(
-        hostname="wyrm2",
-        root_fstype="ext4",
-        init_cmdline=["/sbin/init"],
-        kernel_version="6.12.0",
-        platform=platform_detect.WebPlatform.UNKNOWN,
-        nix_installed=nix_installed,
-        nixpkgs_available=nixpkgs_available,
-    )
+@pytest.fixture
+def cli_platform() -> Callable[..., platform_detect.PlatformInfo]:
+    def _make(*, nix_installed: bool = False, nixpkgs_available: bool = False) -> platform_detect.PlatformInfo:
+        return platform_detect.PlatformInfo(
+            hostname="wyrm2",
+            root_fstype="ext4",
+            init_cmdline=["/sbin/init"],
+            kernel_version="6.12.0",
+            platform=platform_detect.WebPlatform.UNKNOWN,
+            nix_installed=nix_installed,
+            nixpkgs_available=nixpkgs_available,
+        )
+
+    return _make
 
 
-def _web_platform(*, nix_installed: bool = False) -> platform_detect.PlatformInfo:
+@pytest.fixture
+def web_platform() -> platform_detect.PlatformInfo:
     return platform_detect.PlatformInfo(
         hostname="runsc",
         root_fstype="9p",
         init_cmdline=["--firecracker-init"],
         kernel_version="5.15.0",
         platform=platform_detect.WebPlatform.FIRECRACKER,
-        nix_installed=nix_installed,
+        nix_installed=False,
         nixpkgs_available=False,
     )
 
 
-def _proxy() -> proxy_setup.ProxySetup:
+@pytest.fixture
+def proxy() -> proxy_setup.ProxySetup:
     return proxy_setup.ProxySetup(
         port=18081, combined_ca=Path("/session/auth-proxy/combined_ca.pem"), status="started", ca_status="loaded"
     )
@@ -79,24 +85,30 @@ def _proxy() -> proxy_setup.ProxySetup:
 # === CLI mode ===
 
 
-def test_cli_no_nix(snapshot: SnapshotAssertion) -> None:
-    result = _render(platform=_cli_platform())
+def test_cli_no_nix(snapshot: SnapshotAssertion, cli_platform: Callable[..., platform_detect.PlatformInfo]) -> None:
+    result = _render(platform=cli_platform())
     assert result == snapshot
 
 
-def test_cli_nix_with_nixpkgs(snapshot: SnapshotAssertion) -> None:
-    result = _render(platform=_cli_platform(nix_installed=True, nixpkgs_available=True))
+def test_cli_nix_with_nixpkgs(
+    snapshot: SnapshotAssertion, cli_platform: Callable[..., platform_detect.PlatformInfo]
+) -> None:
+    result = _render(platform=cli_platform(nix_installed=True, nixpkgs_available=True))
     assert result == snapshot
 
 
-def test_cli_nix_without_nixpkgs(snapshot: SnapshotAssertion) -> None:
-    result = _render(platform=_cli_platform(nix_installed=True, nixpkgs_available=False))
+def test_cli_nix_without_nixpkgs(
+    snapshot: SnapshotAssertion, cli_platform: Callable[..., platform_detect.PlatformInfo]
+) -> None:
+    result = _render(platform=cli_platform(nix_installed=True, nixpkgs_available=False))
     assert result == snapshot
 
 
-def test_cli_with_buildbuddy(snapshot: SnapshotAssertion) -> None:
+def test_cli_with_buildbuddy(
+    snapshot: SnapshotAssertion, cli_platform: Callable[..., platform_detect.PlatformInfo]
+) -> None:
     result = _render(
-        platform=_cli_platform(),
+        platform=cli_platform(),
         secrets=SecretsResult(buildbuddy_api_key="key", github_token="token"),
         buildbuddy_configured=True,
     )
@@ -106,20 +118,24 @@ def test_cli_with_buildbuddy(snapshot: SnapshotAssertion) -> None:
 # === Web mode ===
 
 
-def test_web_no_nix(snapshot: SnapshotAssertion) -> None:
+def test_web_no_nix(
+    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
+) -> None:
     result = _render(
-        platform=_web_platform(),
-        proxy=_proxy(),
+        platform=web_platform,
+        proxy=proxy,
         secrets=SecretsResult(buildbuddy_api_key="key", github_token="token"),
         buildbuddy_configured=True,
     )
     assert result == snapshot
 
 
-def test_web_with_docker(snapshot: SnapshotAssertion) -> None:
+def test_web_with_docker(
+    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
+) -> None:
     result = _render(
-        platform=_web_platform(),
-        proxy=_proxy(),
+        platform=web_platform,
+        proxy=proxy,
         container=container_runtime.ContainerRuntimeSetup(
             socket_url="unix:///var/run/docker.sock", status="running", storage_driver="overlay"
         ),
@@ -129,22 +145,34 @@ def test_web_with_docker(snapshot: SnapshotAssertion) -> None:
     assert result == snapshot
 
 
-def test_web_precommit_installing(snapshot: SnapshotAssertion) -> None:
-    result = _render(platform=_web_platform(), proxy=_proxy(), precommit_result=precommit.PrecommitInstallingHooks())
+def test_web_precommit_installing(
+    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
+) -> None:
+    result = _render(platform=web_platform, proxy=proxy, precommit_result=precommit.PrecommitInstallingHooks())
     assert result == snapshot
 
 
-def test_web_precommit_failed(snapshot: SnapshotAssertion) -> None:
+def test_web_precommit_failed(
+    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
+) -> None:
+    warn = logging.LogRecord(
+        name="session_start",
+        level=logging.WARNING,
+        pathname="",
+        lineno=0,
+        msg="Failed to install git pre-commit",
+        args=(),
+        exc_info=None,
+    )
     result = _render(
-        platform=_web_platform(),
-        proxy=_proxy(),
-        precommit_result=precommit.PrecommitNotInstalled(),
-        status="OK with warnings",
+        platform=web_platform, proxy=proxy, precommit_result=precommit.PrecommitNotInstalled(), log_entries=[warn]
     )
     assert result == snapshot
 
 
-def test_with_warnings_in_log(snapshot: SnapshotAssertion) -> None:
+def test_with_warnings_in_log(
+    snapshot: SnapshotAssertion, cli_platform: Callable[..., platform_detect.PlatformInfo]
+) -> None:
     record = logging.LogRecord(
         name="session_start",
         level=logging.WARNING,
@@ -154,7 +182,7 @@ def test_with_warnings_in_log(snapshot: SnapshotAssertion) -> None:
         args=(),
         exc_info=None,
     )
-    result = _render(platform=_cli_platform(), log_entries=[record], status="OK with warnings")
+    result = _render(platform=cli_platform(), log_entries=[record])
     assert result == snapshot
 
 

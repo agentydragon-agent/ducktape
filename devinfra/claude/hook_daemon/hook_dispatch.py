@@ -62,8 +62,7 @@ def main() -> None:
     paths = SessionPaths.from_env(parsed.session_id, dict(os.environ))
 
     def _fail(detail: str) -> None:
-        log_path = paths.hook_daemon_dir / "daemon.log"
-        print(_ERROR_TEMPLATE.render(detail=detail, log_path=log_path), file=sys.stderr)
+        print(_ERROR_TEMPLATE.render(detail=detail, log_path=paths.hook_daemon_log), file=sys.stderr)
         sys.exit(1)
 
     try:

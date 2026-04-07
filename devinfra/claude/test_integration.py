@@ -12,7 +12,7 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from devinfra.claude.auth_proxy import setup as proxy_setup
-from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy
+from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy, UpstreamCreds
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
@@ -45,8 +45,7 @@ async def auth_proxy(session_paths: SessionPaths, hook_settings: HookSettings):
     https_proxy = get_upstream_proxy_url()
     assert https_proxy, "HTTPS_PROXY must be set"
 
-    proxy = AuthForwardingProxy(listen_port=hook_settings.auth_proxy_port)
-    proxy.set_creds(https_proxy)
+    proxy = AuthForwardingProxy(listen_port=hook_settings.auth_proxy_port, creds=UpstreamCreds(https_proxy))
     proxy.start()
     await async_wait_for_port("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5)
     try:
@@ -87,7 +86,7 @@ async def test_credential_rotation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Test that credential rotation updates the proxy's in-memory credentials."""
-    assert "proxy_user" in (auth_proxy._upstream_url or ""), "Initial creds should have original credentials"
+    assert "proxy_user" in (auth_proxy.creds.url or ""), "Initial creds should have original credentials"
 
     # Simulate credential rotation
     new_proxy_url = "http://newuser:newpass@127.0.0.1:1"
@@ -96,7 +95,7 @@ async def test_credential_rotation(
     # Re-run setup — should update in-memory credentials
     result = await proxy_setup.setup_auth_proxy(session_paths, hook_settings, proxy=auth_proxy)
 
-    assert "newuser" in (auth_proxy._upstream_url or ""), "In-memory creds should have new credentials"
+    assert "newuser" in (auth_proxy.creds.url or ""), "In-memory creds should have new credentials"
     assert auth_proxy._running, "Proxy should still be running"
     assert result.status.startswith("running"), f"Expected running status, got: {result.status}"
 
