@@ -7,7 +7,7 @@ MCP-aware convenience methods.
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from pathlib import Path
+from typing import Any
 
 import pytest
 from fastmcp import FastMCP
@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from agent_core.testing.mcp.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput, EchoOutput
 from agent_core.testing.responses import DecoratorMock, PlayGen, ResponsesFactory, tool_roundtrip
 from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.models import BaseExecResult, ExecInput, make_exec_input
+from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.mounted import Mounted
 from mcp_infra.naming import MCPMountPrefix, build_mcp_function
 from openai_utils.model import FunctionCallItem, ResponsesRequest
@@ -27,34 +27,42 @@ class MCPResponsesFactory(ResponsesFactory):
     """ResponsesFactory with MCP-aware convenience methods."""
 
     def mcp_tool_call(
-        self, server: MCPMountPrefix, tool: str, arguments: BaseModel, call_id: str | None = None
+        self, server: MCPMountPrefix, tool: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         """Create tool call for MCP server/tool with automatic naming."""
-        return self.tool_call(build_mcp_function(server, tool), arguments.model_dump(mode="json"), call_id)
+        args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
+        return self.tool_call(build_mcp_function(server, tool), args, call_id)
 
     def docker_exec(
         self,
         cmd: list[str],
         *,
         timeout_ms: int = 30000,
-        cwd: Path | None = None,
+        cwd: str | None = None,
         env: list[str] | None = None,
         user: str | None = None,
         tool_name: str = "exec",
     ) -> FunctionCallItem:
         """Create docker exec tool call with sensible defaults."""
-        exec_input = ExecInput(cmd=cmd, cwd=str(cwd) if cwd else None, env=env, user=user, timeout_ms=timeout_ms)
-        return self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
+        args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms}
+        if cwd is not None:
+            args["cwd"] = cwd
+        if env is not None:
+            args["env"] = env
+        if user is not None:
+            args["user"] = user
+        return self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, args)
 
     def mounted_tool_call[S: FastMCP](
-        self, mounted: Mounted[S], tool: Tool, arguments: BaseModel, call_id: str | None = None
+        self, mounted: Mounted[S], tool: Tool, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         """Create tool call from Mounted server + tool attribute.
 
         Preferred over mcp_tool_call when you have a Mounted wrapper, as it
         derives the fully-qualified tool name from the Tool attribute.
         """
-        return self.tool_call(mounted.tool_name(tool), arguments.model_dump(mode="json"), call_id)
+        args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
+        return self.tool_call(mounted.tool_name(tool), args, call_id)
 
 
 class MCPDecoratorMock(DecoratorMock):
@@ -65,17 +73,19 @@ class MCPDecoratorMock(DecoratorMock):
     """
 
     def call_roundtrip[S: FastMCP, U: BaseModel](
-        self, mounted: Mounted[S], tool: Tool, arguments: BaseModel, output_type: type[U]
+        self, mounted: Mounted[S], tool: Tool, arguments: dict[str, Any] | BaseModel, output_type: type[U]
     ) -> Generator[FunctionCallItem, ResponsesRequest, U]:
         """Create tool call and yield roundtrip generator."""
-        call = self.tool_call(mounted.tool_name(tool), arguments.model_dump(mode="json"))
+        args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
+        call = self.tool_call(mounted.tool_name(tool), args)
         return tool_roundtrip(call, output_type)
 
     def mcp_tool_call(
-        self, server: MCPMountPrefix, tool: str, arguments: BaseModel, call_id: str | None = None
+        self, server: MCPMountPrefix, tool: str, arguments: dict[str, Any] | BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         """Create tool call for MCP server/tool with automatic naming."""
-        return self.tool_call(build_mcp_function(server, tool), arguments, call_id)
+        args = arguments.model_dump(mode="json") if isinstance(arguments, BaseModel) else arguments
+        return self.tool_call(build_mcp_function(server, tool), args, call_id)
 
 
 class DockerExecMock(MCPDecoratorMock):
@@ -105,12 +115,10 @@ class DockerExecMock(MCPDecoratorMock):
         self, cmd: list[str], timeout_ms: int = 30000, cwd: str | None = None
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
         """Yield exec call, receive response, return typed result."""
-        return self.call_roundtrip(
-            self._runtime,
-            self._runtime.server.exec_tool,
-            make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd),
-            BaseExecResult,
-        )
+        args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms}
+        if cwd is not None:
+            args["cwd"] = cwd
+        return self.call_roundtrip(self._runtime, self._runtime.server.exec_tool, args, BaseExecResult)
 
 
 class EchoMock(MCPDecoratorMock):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from io import StringIO
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -16,10 +17,16 @@ from syrupy.assertion import SnapshotAssertion
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.tool_provider import ToolResult
 from mcp_infra.display.rich_display import CompactDisplayHandler
-from mcp_infra.exec.docker.server import ContainerExecServer
-from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited
+from mcp_infra.exec.docker.server import ContainerExecServer, _make_exec_input_model
+from mcp_infra.exec.docker.types import DefaultValue
+from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
+
+# Dynamic model matching a server with all fields enabled
+_TestExecInput: type[BaseModel] = _make_exec_input_model(
+    allow_user=True, allow_env=True, cwd_policy=DefaultValue(value=Path("/workspace"))
+)
 
 
 def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str = "Agent") -> str:
@@ -30,10 +37,12 @@ def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str
     out = StringIO()
     console = Console(file=out, width=80, legacy_windows=False, color_system=None)
 
-    # Register tool schemas so the handler can recognize ExecInput/BaseExecResult
+    # Register tool schemas so the handler can recognize _TestExecInput/BaseExecResult
     # Use tuple keys (MCPMountPrefix, tool_name) as expected by CompactDisplayHandler
     tool_input_schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {
-        (ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(type[BaseModel], ExecInput)
+        (ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(
+            type[BaseModel], _TestExecInput
+        )
     }
     tool_schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {
         (ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(
@@ -68,10 +77,10 @@ def test_docker_exec_shell_unwrapping_snapshot(snapshot: SnapshotAssertion, call
 
     Tests the _unwrap_shell_command() logic for various shell wrappers.
     """
-    # Create ExecInput
-    exec_input = ExecInput(cmd=cmd, cwd="/workspace", env=None, user=None, timeout_ms=30000)
+    # Create _TestExecInput
+    exec_input = _TestExecInput(cmd=cmd, cwd="/workspace", env=None, user=None, timeout_ms=30000)
 
-    # Create ToolCall with ExecInput
+    # Create ToolCall with _TestExecInput
     call = ToolCall(
         name=build_mcp_function(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),
         args_json=json.dumps(exec_input.model_dump()),
@@ -95,8 +104,10 @@ def test_docker_exec_shell_unwrapping_snapshot(snapshot: SnapshotAssertion, call
 
 def test_docker_exec_with_custom_cwd_snapshot(snapshot: SnapshotAssertion, call_id_gen):
     """Snapshot test for docker exec with custom working directory display."""
-    # Create ExecInput with custom cwd
-    exec_input = ExecInput(cmd=["bash", "-c", "pwd && ls"], cwd="/tmp/custom", env=None, user=None, timeout_ms=30000)
+    # Create _TestExecInput with custom cwd
+    exec_input = _TestExecInput(
+        cmd=["bash", "-c", "pwd && ls"], cwd="/tmp/custom", env=None, user=None, timeout_ms=30000
+    )
 
     # Create ToolCall
     call = ToolCall(

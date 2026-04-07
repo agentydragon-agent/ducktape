@@ -33,7 +33,7 @@ from mcp_infra.exec.docker.types import (
     DefaultValue,
     ModelChooses,
 )
-from mcp_infra.exec.models import BaseExecResult, EnvVar, ExecInput, TimeoutMs, async_timer
+from mcp_infra.exec.models import BaseExecResult, EnvVar, ResolvedExecInput, TimeoutMs, async_timer
 from mcp_infra.exec.read_image import ReadImageInput, validate_and_encode_image
 from mcp_infra.flat_tool import FlatTool
 from mcp_infra.prefix import MCPMountPrefix
@@ -70,7 +70,7 @@ def resolve_cwd(policy: CwdPolicy, tool_input: Any) -> str | None:
 
 
 def _make_exec_input_model(*, allow_user: bool, allow_env: bool, cwd_policy: CwdPolicy) -> type:
-    """Dynamically create an ExecInput-compatible Pydantic model for the exec tool.
+    """Dynamically create the Pydantic input model for the exec tool.
 
     When allow_user=False or allow_env=False, the corresponding field is omitted from
     the schema so the LLM cannot set it (the handler substitutes None for disabled fields).
@@ -229,7 +229,7 @@ class ContainerExecServer(EnhancedFastMCP):
         async def exec(input, context: Context) -> BaseExecResult:
             async with async_timer() as get_duration_ms:
                 session = session_state_from_ctx(context)
-                effective = ExecInput(
+                effective = ResolvedExecInput(
                     cmd=input.cmd,
                     cwd=resolve_cwd(cwd_policy, input),
                     timeout_ms=input.timeout_ms,

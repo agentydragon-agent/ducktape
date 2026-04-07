@@ -20,7 +20,7 @@ from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput,
 from agent_core.handler import BaseHandler
 from mcp_infra.display.json_utils import parse_json_or_none
 from mcp_infra.display.result_utils import extract_display_data
-from mcp_infra.exec.models import BaseExecResult, ExecInput, ExecStream, TruncatedStream
+from mcp_infra.exec.models import BaseExecResult, ExecStream, TruncatedStream
 from mcp_infra.naming import parse_tool_name
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
@@ -210,8 +210,8 @@ class RichDisplayHandler(BaseHandler):
             kwargs["border_style"] = color
         return Panel(constrained_content, **kwargs)  # type: ignore[arg-type]
 
-    def _format_exec_input(self, input_data: ExecInput) -> Text:
-        """Format ExecInput as readable text."""
+    def _format_exec_input(self, input_data: Any) -> Text:
+        """Format exec tool input as readable text."""
         lines = []
 
         # Timeout in seconds
@@ -281,8 +281,9 @@ class RichDisplayHandler(BaseHandler):
                     input_type = self._tool_input_schemas[tool_key]
                     typed_input = TypeAdapter(input_type).validate_python(parsed)
 
-                    # Special rendering for ExecInput
-                    if isinstance(typed_input, ExecInput):
+                    # TODO: replace duck-type check with a proper marker (e.g. a
+                    # base class or Protocol) so the display layer doesn't guess.
+                    if hasattr(typed_input, "cmd") and hasattr(typed_input, "timeout_ms"):
                         formatted = self._format_exec_input(typed_input)
                         return self._panel(formatted, f"▶ {event.name}", "cyan")
                 except ValidationError:
@@ -444,8 +445,8 @@ class CompactDisplayHandler(BaseHandler):
             # Wrap in MaxHeight to enforce max_lines constraint
             self._console.print(MaxHeight(renderable, self._max_lines))
 
-    def _format_exec_command(self, input_data: ExecInput) -> str:
-        """Format ExecInput as a shell command."""
+    def _format_exec_command(self, input_data: Any) -> str:
+        """Format exec tool input as a shell command."""
         # Unwrap shell wrappers or quote the parts
         unwrapped = _unwrap_shell_command(input_data.cmd)
         if unwrapped:
@@ -584,13 +585,15 @@ class CompactDisplayHandler(BaseHandler):
             text.append(event.name, style="bold")
 
             # Special handling for exec
-            if isinstance(typed_input, ExecInput):
+            # TODO: replace duck-type check with a proper marker (e.g. a
+            # base class or Protocol) so the display layer doesn't guess.
+            if hasattr(typed_input, "cmd") and hasattr(typed_input, "timeout_ms"):
                 cmd_str = self._format_exec_command(typed_input)
                 truncated_cmd = self._truncate_lines(cmd_str, self._max_lines, indent=0)
                 text.append(f": {truncated_cmd}")
-                # Add cwd if present and not default
-                if typed_input.cwd and typed_input.cwd != "/workspace":
-                    text.append(f"  [cwd={typed_input.cwd}]", style="dim")
+                cwd = getattr(typed_input, "cwd", None)
+                if cwd:
+                    text.append(f"  [cwd={cwd}]", style="dim")
             elif args:
                 # Args with smart line wrapping
                 formatter = Formatter(max_inline_length=self._console.width - self._TOOL_CALL_INDENT)

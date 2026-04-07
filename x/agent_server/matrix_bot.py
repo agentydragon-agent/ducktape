@@ -22,7 +22,7 @@ from mcp_infra.display.event_renderer import DisplayEventsHandler
 from mcp_infra.enhanced.server import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, DefaultValue, NetworkMode
-from mcp_infra.exec.models import BaseExecResult, make_exec_input
+from mcp_infra.exec.models import BaseExecResult
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.client_factory import build_client
@@ -169,10 +169,9 @@ def run(
                             f'curl -sS -H "Authorization: Bearer $MATRIX_ACCESS_TOKEN" --fail --max-time 35 "{url}"'
                         )
 
-                        # Call docker exec using helper with defaults
-                        exec_input = make_exec_input(["sh", "-lc", curl_cmd], timeout_ms=40_000)
+                        # Call docker exec
                         res = await mcp_client.session.call_tool(
-                            name=docker_exec_tool, arguments=exec_input.model_dump()
+                            name=docker_exec_tool, arguments={"cmd": ["sh", "-lc", curl_cmd], "timeout_ms": 40_000}
                         )
                         exec_result = TypeAdapter(BaseExecResult).validate_python(res.structured_content or {})
 

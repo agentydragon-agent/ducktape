@@ -40,7 +40,7 @@ from __future__ import annotations
 import functools
 import logging
 from collections.abc import Callable, Generator, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from more_itertools import one
 from pydantic import BaseModel, TypeAdapter
@@ -49,7 +49,7 @@ from agent_core.events import ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
 from agent_core.tool_provider import ToolResult
-from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited
+from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.builders import ItemFactory
@@ -177,7 +177,7 @@ class ScriptBuilder(ItemFactory):
             print(result.stdout)
     """
 
-    def call(self, server: MCPMountPrefix, tool: str, payload: BaseModel) -> FunctionCallItem:
+    def call(self, server: MCPMountPrefix, tool: str, payload: dict[str, Any] | BaseModel) -> FunctionCallItem:
         """Create a namespaced MCP tool call item."""
         return self.tool_call(build_mcp_function(server, tool), payload)
 
@@ -185,11 +185,8 @@ class ScriptBuilder(ItemFactory):
         self, runtime: Mounted[ContainerExecServer], cmd: list[str], *, timeout_ms: int | None = None
     ) -> ScriptGen[BaseExecResult]:
         """Yield docker exec call, validate exit 0, return result. Defaults to 1000ms timeout."""
-        call = self.call(
-            runtime.prefix,
-            runtime.server.exec_tool.name,
-            ExecInput(cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms or 1000),
-        )
+        payload = {"cmd": cmd, "timeout_ms": timeout_ms or 1000}
+        call = self.call(runtime.prefix, runtime.server.exec_tool.name, payload)
         events: list[ScriptEvent] = yield [call]
         result = find_tool_result_typed(events, call.call_id, BaseExecResult)
         if not (isinstance(result.exit, Exited) and result.exit.exit_code == 0):

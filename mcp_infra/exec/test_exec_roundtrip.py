@@ -18,7 +18,7 @@ from agent_core.mcp_provider import MCPToolProvider
 from agent_core.testing.mcp.responses import MCPDecoratorMock
 from agent_core.testing.responses import tool_roundtrip
 from agent_core.turn_limit import MaxTurnsHandler
-from mcp_infra.exec.models import BaseExecResult, Exited, make_exec_input
+from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import UserMessage
 
@@ -35,7 +35,9 @@ async def test_llm_exec_echo(mock_or_live, docker_exec_server, compositor, compo
     @mock_or_live(MCPDecoratorMock)
     def client(m: MCPDecoratorMock):
         yield
-        call = m.mcp_tool_call(SERVER_NAME, "exec", make_exec_input(ECHO_CMD))
+        call = m.mcp_tool_call(
+            SERVER_NAME, "exec", {"cmd": ECHO_CMD, "timeout_ms": 10000, "env": None, "user": None, "cwd": None}
+        )
         result: BaseExecResult = yield from tool_roundtrip(call, BaseExecResult)
         assert isinstance(result.exit, Exited)
         assert result.exit.exit_code == 0

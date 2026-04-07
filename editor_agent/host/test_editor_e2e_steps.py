@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from typing import Any
 
 import pytest_bazel
 from hamcrest import assert_that
@@ -11,7 +12,7 @@ from editor_agent.host.agent_runner import run_editor_docker_agent
 from editor_agent.host.submit_server import SubmitStateSuccess
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.matchers import exited_successfully
-from mcp_infra.exec.models import BaseExecResult, make_exec_input
+from mcp_infra.exec.models import BaseExecResult
 from openai_utils.model import FunctionCallItem, ResponsesRequest
 
 
@@ -22,8 +23,10 @@ class HostDockerExecMock(MCPDecoratorMock):
         self, cmd: list[str], *, timeout_ms: int = 5000, cwd: str | None = None, tool_name: str = "exec"
     ) -> Generator[FunctionCallItem, ResponsesRequest, BaseExecResult]:
         """Yield MCP docker exec call (host-side docker exec into container)."""
-        exec_input = make_exec_input(cmd, timeout_ms=timeout_ms, cwd=cwd)
-        call = self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
+        args: dict[str, Any] = {"cmd": cmd, "timeout_ms": timeout_ms}
+        if cwd is not None:
+            args["cwd"] = cwd
+        call = self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, args)
         return tool_roundtrip(call, BaseExecResult)
 
 

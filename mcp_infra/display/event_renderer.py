@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any, get_args, get_type_hints
 import pydantic_core
 from fastmcp.tools.function_tool import FunctionTool
 
-from mcp_infra.exec.models import ExecInput
 from mcp_infra.flat_tool import FlatTool
 from mcp_infra.naming import parse_tool_name
 from mcp_infra.tool_schemas import _iter_tools
@@ -22,6 +21,14 @@ from agent_core.events import AssistantText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
 from mcp_infra.display.json_utils import parse_json_or_none
 from mcp_infra.display.result_utils import extract_display_data
+
+# TODO: replace name-based check with a proper marker (e.g. a base class or Protocol)
+# so the display layer doesn't guess which dynamic model is exec input.
+_EXEC_INPUT_MODEL_NAME = "ExecInput"
+
+
+def _is_exec_input_type(t: type | None) -> bool:
+    return t is not None and getattr(t, "__name__", None) == _EXEC_INPUT_MODEL_NAME
 
 
 class DisplayEventsHandler(BaseHandler):
@@ -109,7 +116,7 @@ class DisplayEventsHandler(BaseHandler):
         # Type-based dispatch
         input_type = self._get_tool_input_type(evt.name)
 
-        if input_type is ExecInput:
+        if _is_exec_input_type(input_type):
             # Specialized exec rendering
             call_args = parse_json_or_none(evt.args_json) or {}
             if isinstance(call_args, dict) and (cmd := call_args.get("cmd")) is not None:
@@ -129,7 +136,7 @@ class DisplayEventsHandler(BaseHandler):
             # Type-based dispatch
             input_type = self._get_tool_input_type(call.name)
 
-            if input_type is ExecInput:
+            if _is_exec_input_type(input_type):
                 # Extract result data from ToolOutput
                 data: Any = extract_display_data(evt.result)
 

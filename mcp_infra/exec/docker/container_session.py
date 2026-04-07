@@ -12,7 +12,7 @@ from fastmcp.server import FastMCP
 
 from mcp_infra.constants import SLEEP_FOREVER_CMD
 from mcp_infra.exec.docker.types import ContainerExecServerConfig
-from mcp_infra.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, render_raw_to_result
+from mcp_infra.exec.models import MAX_BYTES_CAP, BaseExecResult, ResolvedExecInput, render_raw_to_result
 
 logger = logging.getLogger(__name__)
 
@@ -110,9 +110,6 @@ def make_container_lifespan(config: ContainerExecServerConfig, docker_client: ai
             yield ContainerSessionState(docker_client=docker_client, container_id=container_id, opts=config)
 
     return lifespan
-
-
-# Module-level ExecInput to avoid ForwardRef issues during FastMCP signature introspection
 
 
 # ---- Helpers (small, focused) ----------------------------------------------
@@ -231,7 +228,7 @@ def render_container_result(
 
 
 async def run_session_container(
-    session: ContainerSessionState, cmd: list[str], input: ExecInput
+    session: ContainerSessionState, cmd: list[str], input: ResolvedExecInput
 ) -> tuple[bytearray, bytearray, int | None, bool]:
     """Run command in per-session container using aiodocker exec."""
     container_id = session.container_id

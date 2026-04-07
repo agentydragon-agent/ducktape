@@ -1,7 +1,7 @@
 # serializer version: 1
 # name: test_docker_exec_shell_unwrapping_snapshot[/bin/sh_-lc]
   '''
-  ● Agent: runtime_exec: sed -n '1,10p' file.txt
+  ● Agent: runtime_exec: sed -n '1,10p' file.txt  [cwd=/workspace]
     ⎿ exit_code=0  duration=0.1s
     output text
   
@@ -9,7 +9,7 @@
 # ---
 # name: test_docker_exec_shell_unwrapping_snapshot[bash_-c]
   '''
-  ● Agent: runtime_exec: ls -la /workspace
+  ● Agent: runtime_exec: ls -la /workspace  [cwd=/workspace]
     ⎿ exit_code=0  duration=0.1s
     output text
   
@@ -17,7 +17,7 @@
 # ---
 # name: test_docker_exec_shell_unwrapping_snapshot[non_wrapped]
   '''
-  ● Agent: runtime_exec: ruff check /workspace
+  ● Agent: runtime_exec: ruff check /workspace  [cwd=/workspace]
     ⎿ exit_code=0  duration=0.1s
     output text
   
@@ -25,7 +25,8 @@
 # ---
 # name: test_docker_exec_shell_unwrapping_snapshot[non_wrapped_spaces]
   '''
-  ● Agent: runtime_exec: python -c 'print('"'"'hello world'"'"')'
+  ● Agent: runtime_exec: python -c 'print('"'"'hello world'"'"')'  
+  [cwd=/workspace]
     ⎿ exit_code=0  duration=0.1s
     output text
   
@@ -33,7 +34,7 @@
 # ---
 # name: test_docker_exec_shell_unwrapping_snapshot[sh_-c]
   '''
-  ● Agent: runtime_exec: echo hello | tr a-z A-Z
+  ● Agent: runtime_exec: echo hello | tr a-z A-Z  [cwd=/workspace]
     ⎿ exit_code=0  duration=0.1s
     output text
   
