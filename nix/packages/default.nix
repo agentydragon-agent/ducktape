@@ -134,6 +134,7 @@ in
         ducktape-util
         pkgs.pre-commit
         pyrage
+        pkgs.python3Packages.networkx
       ];
   };
 

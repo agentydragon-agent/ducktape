@@ -62,14 +62,20 @@ py_binary(
     ],
 )
 
-# Generic pre-commit entry point for the ducktape wheel.
-# Currently dispatches to enforce-bazel-tests; future checks get added here.
+# Unified pre-commit entry point for the ducktape wheel.
+# Runs all custom validations (filename-conventions, tf-centralization,
+# pytest-main-check, cluster-validate) and optionally enforce-bazel-tests.
 py_library(
     name = "ducktape_precommit",
     srcs = ["ducktape_precommit.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":check_filename_conventions",
+        ":check_terraform_centralization",
+        "//cluster/scripts/validate_cluster:main",
+        "//devinfra:check_pytest_main",
         "//devinfra/precommit/enforce_bazel_tests",
+        "@pypi//pygit2",
     ],
 )

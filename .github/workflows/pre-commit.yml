@@ -26,10 +26,10 @@ jobs:
         with:
           extra_nix_config: experimental-features = nix-command flakes
 
-      # Install web-session via flake — provides ducktape-precommit, nixfmt,
+      # Install devtools via flake — provides ducktape-precommit, nixfmt,
       # pre-commit, and other dev tools (all language: system hooks).
-      - name: Install web-session tools
-        run: nix profile install .#web-session
+      - name: Install dev tools
+        run: nix profile install .#devtools
 
       # Bazel cache for bazel-operated hooks (buildifier, bazel-format, cluster validations)
       - uses: ./.github/actions/bazel-repo-cache

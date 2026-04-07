@@ -218,79 +218,76 @@
           )
           ++ extraModules;
         };
+      inherit (pkgs) lib;
+      ducktapePkgs = import ./nix/packages { inherit lib pkgs artifacts; };
+      # Dev tools shared between the devShell (local `nix develop` / direnv)
+      # and Claude Code web (`nix profile install .#devtools`).
+      # release.yml pushes this to attic so web installs are cache hits.
+      # TODO: disable NLS on pre-commit's gitMinimal to drop ~31 MiB of
+      # gettext + locale data. Blocked on slow rebuild (gitMinimal override
+      # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
+      # See devinfra/claude/docs/devtools-closure-size.md for details.
+      devToolPackages = [
+        # Repo-specific tools
+        ducktapePkgs.claude-hooks
+        ducktapePkgs.bbapi
+        ducktapePkgs.skills
+        # Dev tools
+        pkgs.pre-commit
+        pkgs.bazelisk
+        pkgs.nixfmt-rfc-style
+        pkgs.statix
+        pkgs.mkcert
+        pkgs.ruff
+        pkgs.shfmt
+        pkgs.buildifier
+        pkgs.gofumpt
+        pkgs.rustfmt
+        pkgs.nodePackages.prettier # TODO: not used by pre-commit yet (uses language:node with svelte plugin instead). Consolidate by bundling prettier+plugins in Nix.
+        pkgs.openssl
+        pkgs.ansible
+        # Infrastructure tools
+        pkgs.gh
+        pkgs.kubectl
+        pkgs.fluxcd
+        pkgs.kustomize
+        pkgs.kubernetes-helm
+        pkgs.kubeconform
+        pkgs.opentofu
+        pkgs.tflint
+        pkgs.sops
+      ];
     in
     {
-      # Development shell — same tools as web-session, usable via `direnv` (`use flake` in .envrc).
+      # Development shell — enter via `nix develop` or direnv (`use flake`).
       devShells.${system}.default = pkgs.mkShell {
-        packages = [ self.packages.${system}.web-session ];
+        packages = devToolPackages;
       };
 
-      # Packages exposed for nix-update and direct builds
-      packages.${system} =
-        let
-          inherit (pkgs) lib;
-          ducktapePkgs = import ./nix/packages { inherit lib pkgs artifacts; };
-        in
-        ducktapePkgs
-        // {
-          # Shared dev tools — installed by web_setup.sh and used by the devShell.
-          # Add tools here to make them available in both Claude Code web sessions
-          # and local development (via direnv `use flake`).
-          # release.yml pushes this to attic so installs are cache hits.
-          # TODO: disable NLS on pre-commit's gitMinimal to drop ~31 MiB of
-          # gettext + locale data. Blocked on slow rebuild (gitMinimal override
-          # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
-          # See devinfra/claude/docs/web-session-closure-size.md for details.
-          web-session = pkgs.symlinkJoin {
-            name = "claude-web-session";
-            paths = [
-              # Repo-specific tools
-              ducktapePkgs.claude-hooks
-              ducktapePkgs.bbapi
-              ducktapePkgs.skills
-              # Dev tools (also provided by .envrc via `use flake`)
-              pkgs.pre-commit
-              pkgs.bazelisk # TODO: ensure binary name matches what session start hook expects (no unconventional symlinks/aliases)
-              pkgs.nixfmt-rfc-style
-              pkgs.statix
-              pkgs.mkcert
-              pkgs.ruff
-              pkgs.shfmt
-              pkgs.buildifier
-              pkgs.gofumpt
-              pkgs.nodePackages.prettier
-              pkgs.openssl
-              pkgs.ansible
-              # Infrastructure tools
-              pkgs.gh
-              pkgs.kubectl
-              pkgs.fluxcd
-              pkgs.kustomize
-              pkgs.kubernetes-helm
-              pkgs.kubeconform
-              pkgs.opentofu
-              pkgs.tflint
-              pkgs.sops
-            ];
-          };
-          # NixOS container tarball for docker import.
-          # Build: nix build .#bazel-test-docker
-          # Load:  docker import result ducktape-nixos-bazel
-          # Run:   docker run --rm -it ducktape-nixos-bazel /init
-          # Exec:  docker exec -it <container> bash -l
-          bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
-          # Pre-built UEFI qcow2 VM images for Proxmox deployment.
-          # Build: nix build .#wyrm2-image
-          # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
-          wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
-          bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
-          k8s-worker-test-image =
-            self.nixosConfigurations.k8s-worker-test.config.system.build.images.qemu-efi;
-          # NixOS LXC tarball for Proxmox.
-          # Build: nix build .#lxc-k8s-test-lxc
-          # Upload: scp result/*.tar.xz root@atlas:/var/lib/vz/template/cache/
-          lxc-k8s-test-lxc = self.nixosConfigurations.lxc-k8s-test.config.system.build.tarball;
+      packages.${system} = ducktapePkgs // {
+        # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
+        devtools = pkgs.symlinkJoin {
+          name = "ducktape-devtools";
+          paths = devToolPackages;
         };
+        # NixOS container tarball for docker import.
+        # Build: nix build .#bazel-test-docker
+        # Load:  docker import result ducktape-nixos-bazel
+        # Run:   docker run --rm -it ducktape-nixos-bazel /init
+        # Exec:  docker exec -it <container> bash -l
+        bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
+        # Pre-built UEFI qcow2 VM images for Proxmox deployment.
+        # Build: nix build .#wyrm2-image
+        # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
+        wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
+        bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
+        k8s-worker-test-image =
+          self.nixosConfigurations.k8s-worker-test.config.system.build.images.qemu-efi;
+        # NixOS LXC tarball for Proxmox.
+        # Build: nix build .#lxc-k8s-test-lxc
+        # Upload: scp result/*.tar.xz root@atlas:/var/lib/vz/template/cache/
+        lxc-k8s-test-lxc = self.nixosConfigurations.lxc-k8s-test.config.system.build.tarball;
+      };
 
       homeConfigurations = {
         # Wyrm desktop VM on atlas
@@ -347,7 +344,7 @@
         iguana = mkNixos {
           hostname = "iguana";
           username = "agentydragon";
-          # Physical machine (ThinkPad X1 Extreme) - migrated from Pop!_OS (agentydragon)
+          # Physical machine (ThinkPad X1 Extreme)
           inlineHomeManager = {
             enableGui = true;
             isK8sWorker = true;

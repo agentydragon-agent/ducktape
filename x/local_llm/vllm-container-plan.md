@@ -87,7 +87,6 @@ imports = [
   ../home.nix
   ../opencode
   ../services/vllm.nix  # Add this
-  ../modules/popos-bazel.nix
 ];
 ```
 

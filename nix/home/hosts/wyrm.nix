@@ -13,7 +13,6 @@
     ../home.nix
     ../opencode
     ../codex
-    ../modules/popos-bazel.nix
     ../modules/no-screensaver.nix
   ];
 

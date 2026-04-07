@@ -1,8 +1,8 @@
-# `.#web-session` Nix Closure Size Breakdown
+# `.#devtools` Nix Closure Size Breakdown
 
 Generated 2026-03-24. Total closure: **543.5 MiB**.
 
-Regenerate with: `devinfra/claude/docs/web-session-closure-size.sh`
+Regenerate with: `devinfra/claude/docs/devtools-closure-size.sh`
 
 ## Top paths by NAR size
 
@@ -52,7 +52,7 @@ Regenerate with: `devinfra/claude/docs/web-session-closure-size.sh`
 ## Dependency graph (what pulls what)
 
 ```
-web-session (symlinkJoin)
+devtools (symlinkJoin)
 ├── claude-hooks (buildPythonApplication from wheel)
 │   ├── kubernetes → googleapis-common-protos → grpc (42 MiB)
 │   │                                           ├── protobuf C++ (18 MiB)
@@ -118,7 +118,7 @@ not a library import.
 
 **Fix**: Move `pre-commit` out of `propagatedBuildInputs` in `claude-hooks.nix`. Either:
 
-- Add `pkgs.pre-commit` directly to the `web-session` `symlinkJoin` paths
+- Add `pkgs.pre-commit` directly to the `devtools` `symlinkJoin` paths
 - Use `makeWrapperArgs` to inject it into `claude-hook`'s `PATH`
 
 ### `gettext` full package (18.4 MiB, only ~1 MiB needed)

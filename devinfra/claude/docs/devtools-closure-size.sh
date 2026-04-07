@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Print the .#web-session Nix closure breakdown sorted by NAR size.
-# Usage: ./web-session-closure-size.sh [flake-ref]
+# Print the .#devtools Nix closure breakdown sorted by NAR size.
+# Usage: ./devtools-closure-size.sh [flake-ref]
 set -euo pipefail
 
-FLAKE_REF="${1:-.#web-session}"
+FLAKE_REF="${1:-.#devtools}"
 STORE_PATH=$(nix path-info "$FLAKE_REF" 2>/dev/null)
 
 echo "Closure for: $FLAKE_REF"

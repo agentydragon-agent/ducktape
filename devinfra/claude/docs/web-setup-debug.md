@@ -42,7 +42,7 @@ failures causing SIGABRT). When tested in isolation with `sandbox=false` and
 - Trivial derivations (`/bin/sh -c "echo hello > $out"`)
 - `pkgs.runCommand`
 - `pkgs.symlinkJoin`
-- `nix profile install .#web-session`
+- `nix profile install .#devtools`
 
 No gVisor syscall issues were observed for any nix build operation.
 
@@ -63,7 +63,7 @@ With `max-jobs=0`, Nix can't build anything locally — not even a trivial
 
 ### 3. Attic cache race with CI pin bumps — CONFIRMED
 
-After we push `web-session` to attic, CI's release workflow creates a new
+After we push `devtools` to attic, CI's release workflow creates a new
 commit bumping `npins/sources.json` artifact pins. The web container evaluates
 `github:agentydragon/ducktape` (latest commit), which is now the CI commit
 with different pins → different `claude-hooks` derivation → different

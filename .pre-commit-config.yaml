@@ -196,35 +196,14 @@ repos:
         files: "pyproject\\.toml$"
         exclude: "^pyproject\\.toml$"
 
-      # Unified pre-commit: custom validations only (formatting handled by dedicated hooks)
-      # Uses --script_path runner to avoid Bazel lock (allows parallel batch execution)
-      # Runners stored in .git/precommit-runners/, one per pre-commit invocation
-      # NOTE: formatting moved to standard hooks (buildifier, ruff, shfmt - see above)
-      - id: bazel-precommit
-        name: bazel precommit (validate)
-        entry: devinfra/precommit/run_precommit.sh
-        language: system
-        pass_filenames: true
-        # Triggers on: test files (pytest-main), cluster files (validations), terraform (centralization)
-        files: |
-          (?x)(
-            \\.(py|tf)$|
-            ^cluster/
-          )
-        exclude: |
-          (?x)^(
-            # Authentik blueprints are not K8s manifests, skip validation
-            cluster/k8s/authentik/blueprints/.*
-          )$
-
-      # Enforce affected Bazel tests are cached/passing before commit.
-      # Guarded by DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1 (set in Claude Code web sessions).
-      # Uses git staged files internally, so always_run + pass_filenames=false.
-      - id: enforce-bazel-tests
-        name: enforce affected bazel tests
+      # Unified validation: pytest-main-check, tf-centralization, filename-conventions,
+      # cluster-validate. Also runs enforce-bazel-tests when DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1.
+      # Individual checks filter internally, so always_run + pass_filenames covers all cases.
+      - id: ducktape-precommit
+        name: ducktape precommit
         entry: ducktape-precommit
         language: system
-        pass_filenames: false
+        pass_filenames: true
         always_run: true
 
       # Specimens: block changes to committed snapshot code/ directories
@@ -287,7 +266,7 @@ repos:
   # CLUSTER-SPECIFIC HOOKS (external repos, scoped to cluster/ directory)
   # ============================================================================
 
-  # Checkov security scanner for Terraform (standalone, avoids 10s import in bazel-precommit)
+  # Checkov security scanner for Terraform
   - repo: https://github.com/bridgecrewio/checkov
     rev: 3.2.513
     hooks:
@@ -312,14 +291,5 @@ repos:
   # terraform modules via :validate and :lint targets with hermetic providers.
   # See MODULE.bazel tf.download(mirror={...}) for provider configuration.
 
-  # NOTE: The following custom validations are in bazel-precommit:
-  # - pytest-main check (ensures test files have pytest_bazel.main() entry points)
-  # - terraform-version-centralization (checks terraform modules don't define provider versions)
-  # - filename-conventions (enforces underscores not dashes in new .py/.md files)
-  # - cluster validations (kustomize, helm)
-  # This avoids Bazel client lock contention and runs validations in parallel.
-  #
-  # Standard formatting hooks (no longer in bazel-precommit):
-  # - buildifier (format + lint) → keith/pre-commit-buildifier
-  # - ruff (format + lint) → astral-sh/ruff-pre-commit
-  # - shfmt (format) → scop/pre-commit-shfmt
+  # NOTE: Custom validations (pytest-main-check, tf-centralization,
+  # filename-conventions, cluster-validate) are in ducktape-precommit above.

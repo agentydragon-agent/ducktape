@@ -1,7 +1,7 @@
 """Install Bazel wrapper for proxy credential injection.
 
 The wrapper script intercepts `bazel` invocations to inject proxy credentials
-via RPC before calling the real bazelisk binary (provided by Nix via web-session).
+via RPC before calling the real bazelisk binary (provided by Nix via devtools).
 """
 
 import logging
@@ -35,7 +35,7 @@ class BazeliskSetup:
 
 
 def resolve_bazelisk() -> Path:
-    """Find bazelisk on PATH (provided by Nix web-session package)."""
+    """Find bazelisk on PATH (provided by Nix devtools package)."""
     bazelisk = shutil.which("bazelisk")
     if bazelisk:
         return Path(bazelisk)
@@ -43,7 +43,7 @@ def resolve_bazelisk() -> Path:
     bazel = shutil.which("bazel")
     if bazel:
         return Path(bazel)
-    raise RuntimeError("bazelisk not found on PATH (expected from Nix web-session package)")
+    raise RuntimeError("bazelisk not found on PATH (expected from Nix devtools package)")
 
 
 _WRAPPER_RUNTIME_LINES = (

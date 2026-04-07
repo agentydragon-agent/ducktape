@@ -66,7 +66,7 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Bazel Setup (via `hook_daemon/session_start/bazelisk.py`)
 
-7. Bazelisk binary provided by Nix web-session package (on PATH)
+7. Bazelisk binary provided by Nix devShell (on PATH)
 8. Creates wrapper script at `<session_dir>/bin/bazel` (injects proxy credentials)
 
 ### Git Hooks
@@ -76,7 +76,7 @@ The hook runs at the start of each Claude Code web session and:
 ### Development Tools
 
 Note: flux, kustomize, helm are now Bazel-managed via `@multitool//tools/*`.
-Nix formatting uses `nixfmt` from the Nix devShell / web-session package.
+Nix formatting uses `nixfmt` from the Nix devShell.
 
 ### Environment Configuration
 

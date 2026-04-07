@@ -41,8 +41,7 @@ done
 
 # Other outputs
 nix build --impure $OVERRIDE \
-  .#packages.x86_64-linux.web-session \
-  .#devShells.x86_64-linux.default.inputDerivation \
+  .#packages.x86_64-linux.devtools \
   --no-link --print-out-paths >>"$out_paths"
 
 echo "Pushing $(wc -l <"$out_paths") paths to Attic..."

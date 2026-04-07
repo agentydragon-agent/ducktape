@@ -161,6 +161,8 @@ platform(
 py_package(
     name = "claude_hooks_pkg",
     packages = [
+        "cluster.scripts.validate_cluster",
+        "cluster.validation",
         "devinfra",
         "devinfra.claude",
         "devinfra.claude.auth_proxy",
@@ -198,6 +200,7 @@ py_wheel(
         "httpx",
         "kubernetes",
         "mako>=1.3",
+        "networkx",
         "opentelemetry-api",
         "opentelemetry-exporter-otlp-proto-http",
         "opentelemetry-sdk",

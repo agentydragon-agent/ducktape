@@ -3,7 +3,7 @@
 #
 # Installs:
 #   1. Nix (official single-user installer with permissive config)
-#   2. web-session — claude-hooks, bbapi, gh, skills; from flake via attic binary cache
+#   2. devtools — claude-hooks, bbapi, gh, skills; from flake via attic binary cache
 #   3. skills — symlinked per-skill into ~/.claude/skills/ (preserves Anthropic defaults)
 #
 # IMPORTANT: This script always exits 0 so the session starts even if setup
@@ -127,8 +127,8 @@ echo "  flake.nix exists: $(test -f flake.nix && echo yes || echo no)"
 echo "  ls pwd:"
 ls -la
 # Pass --max-jobs explicitly to override any nix.conf misconfiguration.
-nix profile install --max-jobs auto "${FLAKE}#web-session"
-echo "[$(date -Iseconds)] Web session tools installed."
+nix profile install --max-jobs auto "${FLAKE}#devtools"
+echo "[$(date -Iseconds)] Dev tools installed."
 
 # Symlink all Nix-installed binaries into /usr/local/bin so they're on PATH.
 # Claude Code is launched directly (not via login shell), so ~/.nix-profile/bin

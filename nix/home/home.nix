@@ -375,7 +375,6 @@ in
       rustc
       cargo
       clippy
-      rustfmt
       rust-analyzer
       sccache
       gcc # Matches Nix glibc for native extension builds

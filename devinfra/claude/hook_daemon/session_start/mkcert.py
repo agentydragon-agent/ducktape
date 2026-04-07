@@ -4,7 +4,7 @@ mkcert creates a local Certificate Authority and generates certificates
 signed by that CA. This gives localhost a valid TLS certificate trusted
 by curl, Python, Node, etc. via the combined CA bundle (SSL_CERT_FILE).
 
-The mkcert binary is provided by Nix via the web-session package.
+The mkcert binary is provided by Nix via the devShell.
 """
 
 import asyncio
@@ -57,7 +57,7 @@ def append_mkcert_ca_to_bundle(ca_root: Path, combined_ca: Path) -> None:
 async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertSetup:
     """Generate a trusted localhost TLS certificate via mkcert.
 
-    Uses the mkcert binary from PATH (provided by Nix web-session package).
+    Uses the mkcert binary from PATH (provided by Nix devShell).
     Generates a certificate for localhost/127.0.0.1/::1, and optionally
     appends the root CA to the combined CA bundle so Python/curl/Node trust
     it via SSL_CERT_FILE.
@@ -76,7 +76,7 @@ async def setup_mkcert(paths: SessionPaths, combined_ca: Path | None) -> MkcertS
     if not await cert_path.exists() or not await key_path.exists():
         mkcert_bin = shutil.which("mkcert")
         if not mkcert_bin:
-            raise RuntimeError("mkcert not found on PATH (expected from Nix web-session package)")
+            raise RuntimeError("mkcert not found on PATH (expected from Nix devtools package)")
 
         logger.info("Generating localhost certificate...")
         with tracer.start_as_current_span("mkcert_generate_cert"):
