@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import FreeCAD as App
+import FreeCAD
 from freecad_helpers import init_gui, log, pump, run_gui_script
 from PySide6 import QtCore, QtGui
 
@@ -33,7 +33,7 @@ view_filter = json.loads(os.environ.get("VIEWS", "null"))
 # default that doesn't depend on system font availability. Using it ensures debug
 # renders look identical across machines and Docker workers.
 _OSIFONT_PATH = os.path.join(  # noqa: PTH118
-    App.getResourceDir(), "Mod", "TechDraw", "Resources", "fonts", "osifont-lgpl3fe.ttf"
+    FreeCAD.getResourceDir(), "Mod", "TechDraw", "Resources", "fonts", "osifont-lgpl3fe.ttf"
 )
 
 qapp = init_gui()
@@ -103,8 +103,8 @@ def _main() -> None:
         (0, 139, 139),
     ]
 
-    doc = App.openDocument(input_path)
-    App.setActiveDocument(doc.Name)
+    doc = FreeCAD.openDocument(input_path)
+    FreeCAD.setActiveDocument(doc.Name)
     doc.recompute()
     pump(qapp, 5)
 

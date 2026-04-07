@@ -23,7 +23,7 @@ if not fcstd_path or not outdir:
     sys.exit(1)
 stem = Path(fcstd_path).stem
 
-import FreeCAD as App  # noqa: E402 — must parse args before FreeCAD import
+import FreeCAD  # noqa: E402 — must parse args before FreeCAD import
 from freecad_helpers import init_gui, log, pump, run_gui_script, wait_for_view  # noqa: E402
 
 qapp = init_gui()
@@ -34,7 +34,7 @@ def _main() -> None:
     import TechDrawGui  # noqa: PLC0415
 
     log("opening document")
-    doc = App.openDocument(fcstd_path)
+    doc = FreeCAD.openDocument(fcstd_path)
 
     view_part = next((o for o in doc.Objects if "DrawViewPart" in o.TypeId), None)
 

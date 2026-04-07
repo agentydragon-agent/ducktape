@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import FreeCAD as App
+import FreeCAD
 import Part
 from freecad_helpers import init_gui, log, pump, run_gui_script
 
@@ -32,8 +32,8 @@ qapp = init_gui()
 
 def _main() -> None:
     # === Load document ===
-    doc = App.openDocument(input_path)
-    App.setActiveDocument(doc.Name)
+    doc = FreeCAD.openDocument(input_path)
+    FreeCAD.setActiveDocument(doc.Name)
     doc.recompute()
 
     # Find the Body (source for all views)
@@ -56,7 +56,7 @@ def _main() -> None:
 
     # === TechDraw Page ===
     tmpl_path = os.path.join(  # noqa: PTH118
-        App.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg"
+        FreeCAD.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg"
     )
     page = doc.addObject("TechDraw::DrawPage", "Page")
     tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
@@ -73,8 +73,8 @@ def _main() -> None:
     front = doc.addObject("TechDraw::DrawViewPart", "FrontView")
     page.addView(front)
     front.Source = [body]
-    front.Direction = App.Vector(0, -1, 0)
-    front.XDirection = App.Vector(1, 0, 0)
+    front.Direction = FreeCAD.Vector(0, -1, 0)
+    front.XDirection = FreeCAD.Vector(1, 0, 0)
     front.Scale = scale
     front.X = 90
     front.Y = 155
@@ -86,8 +86,8 @@ def _main() -> None:
     right_v = doc.addObject("TechDraw::DrawViewPart", "RightView")
     page.addView(right_v)
     right_v.Source = [body]
-    right_v.Direction = App.Vector(1, 0, 0)
-    right_v.XDirection = App.Vector(0, 1, 0)
+    right_v.Direction = FreeCAD.Vector(1, 0, 0)
+    right_v.XDirection = FreeCAD.Vector(0, 1, 0)
     right_v.Scale = scale
     right_v.X = 220
     right_v.Y = 155
@@ -96,7 +96,7 @@ def _main() -> None:
     top_v = doc.addObject("TechDraw::DrawViewPart", "TopView")
     page.addView(top_v)
     top_v.Source = [body]
-    top_v.Direction = App.Vector(0, 0, 1)
+    top_v.Direction = FreeCAD.Vector(0, 0, 1)
     top_v.Scale = scale
     top_v.X = 90
     top_v.Y = 65
@@ -105,7 +105,7 @@ def _main() -> None:
     iso = doc.addObject("TechDraw::DrawViewPart", "IsoView")
     page.addView(iso)
     iso.Source = [body]
-    iso.Direction = App.Vector(1, -1, 1)
+    iso.Direction = FreeCAD.Vector(1, -1, 1)
     iso.Scale = scale * 0.7
     iso.X = 220
     iso.Y = 65
@@ -419,8 +419,8 @@ def _main() -> None:
     # Boss/bore centerline cross: cosmetic dash-dot lines through the bore center,
     # extending slightly beyond the boss diameter.
     cl_extent = boss_d / 2 + 8
-    top_v.makeCosmeticLine(App.Vector(0, -cl_extent, 0), App.Vector(0, cl_extent, 0), 2)
-    top_v.makeCosmeticLine(App.Vector(-cl_extent, 0, 0), App.Vector(cl_extent, 0, 0), 2)
+    top_v.makeCosmeticLine(FreeCAD.Vector(0, -cl_extent, 0), FreeCAD.Vector(0, cl_extent, 0), 2)
+    top_v.makeCosmeticLine(FreeCAD.Vector(-cl_extent, 0, 0), FreeCAD.Vector(cl_extent, 0, 0), 2)
 
     # Center marks on all 4 mounting holes (small cross at each hole center)
     mark_size = mount_r + 2
@@ -428,8 +428,8 @@ def _main() -> None:
     for e in top_vis:
         if isinstance(e.Curve, Part.Circle) and abs(e.Curve.Radius - mount_r) < 1.0:
             cx, cy = e.Curve.Center.x, e.Curve.Center.y
-            top_v.makeCosmeticLine(App.Vector(cx, cy - mark_size, 0), App.Vector(cx, cy + mark_size, 0), 2)
-            top_v.makeCosmeticLine(App.Vector(cx - mark_size, cy, 0), App.Vector(cx + mark_size, cy, 0), 2)
+            top_v.makeCosmeticLine(FreeCAD.Vector(cx, cy - mark_size, 0), FreeCAD.Vector(cx, cy + mark_size, 0), 2)
+            top_v.makeCosmeticLine(FreeCAD.Vector(cx - mark_size, cy, 0), FreeCAD.Vector(cx + mark_size, cy, 0), 2)
 
     # === Annotations — positioned in title block area (bottom-right) ===
     add_ann("Title", "Flanged Bearing Block", x=250, y=15, size=6)

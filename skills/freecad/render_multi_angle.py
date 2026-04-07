@@ -21,8 +21,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import FreeCAD as App
-import FreeCADGui as Gui
+import FreeCAD
+import FreeCADGui
 from freecad_helpers import init_gui, log, pump, run_gui_script
 
 _DEFAULT_ANGLES = [{"name": "front_right", "pos": [60, -40, 45]}, {"name": "back_left", "pos": [-60, 40, 45]}]
@@ -38,9 +38,9 @@ def _main() -> None:
     from pivy import coin  # noqa: PLC0415 — must import after GUI binary starts
 
     # === Load document ===
-    doc = App.openDocument(input_path)
-    App.setActiveDocument(doc.Name)
-    Gui.ActiveDocument = Gui.getDocument(doc.Name)
+    doc = FreeCAD.openDocument(input_path)
+    FreeCAD.setActiveDocument(doc.Name)
+    FreeCADGui.ActiveDocument = FreeCADGui.getDocument(doc.Name)
 
     pump(qapp, 2)
 
@@ -80,17 +80,17 @@ def _main() -> None:
 
     pump(qapp, 2)
 
-    view = Gui.ActiveDocument.ActiveView
+    view = FreeCADGui.ActiveDocument.ActiveView
 
     # Set white background
-    param = App.ParamGet("User parameter:BaseApp/Preferences/View")
+    param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
     param.SetBool("Gradient", False)
     param.SetUnsigned("BackgroundColor", 0xFFFFFFFF)
 
     # Use perspective projection
     cam = view.getCameraNode()
     if cam.getTypeId().getName() == "SoOrthographicCamera":
-        Gui.runCommand("Std_PerspectiveCamera", 0)
+        FreeCADGui.runCommand("Std_PerspectiveCamera", 0)
         pump(qapp, 1)
         cam = view.getCameraNode()
 

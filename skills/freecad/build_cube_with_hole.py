@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import FreeCAD as App
+import FreeCAD
 import Part
 from freecad_helpers import log
 
@@ -28,16 +28,16 @@ CUBE_SIZE = 20.0  # mm
 HOLE_RADIUS = 5.0  # mm
 
 # === Geometry ===
-doc = App.newDocument("CubeWithHole")
+doc = FreeCAD.newDocument("CubeWithHole")
 
-cube = Part.makeBox(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, App.Vector(-CUBE_SIZE / 2, -CUBE_SIZE / 2, -CUBE_SIZE / 2))
+cube = Part.makeBox(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE, FreeCAD.Vector(-CUBE_SIZE / 2, -CUBE_SIZE / 2, -CUBE_SIZE / 2))
 
 # Cylinder through the full cube height along Z axis, centered on X/Y
 cylinder = Part.makeCylinder(
     HOLE_RADIUS,
     CUBE_SIZE + 2,  # slightly longer than cube to ensure clean cut
-    App.Vector(0, 0, -CUBE_SIZE / 2 - 1),
-    App.Vector(0, 0, 1),
+    FreeCAD.Vector(0, 0, -CUBE_SIZE / 2 - 1),
+    FreeCAD.Vector(0, 0, 1),
 )
 
 result = cube.cut(cylinder)

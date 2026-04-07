@@ -17,7 +17,7 @@ import os
 import sys
 from pathlib import Path
 
-import FreeCAD as App
+import FreeCAD
 import Part
 import Sketcher
 
@@ -29,7 +29,7 @@ def log(msg):
 
 
 # === Document ===
-doc = App.newDocument("BearingBlock")
+doc = FreeCAD.newDocument("BearingBlock")
 
 # === Spreadsheet Parameters ===
 sheet = doc.addObject("Spreadsheet::Sheet", "Params")
@@ -91,10 +91,10 @@ base_sk.MapMode = "FlatFace"
 
 # Rectangle centered on origin: 4 lines
 hl, hw = BASE_L / 2, BASE_W / 2
-bot = base_sk.addGeometry(Part.LineSegment(App.Vector(-hl, -hw, 0), App.Vector(hl, -hw, 0)))
-right = base_sk.addGeometry(Part.LineSegment(App.Vector(hl, -hw, 0), App.Vector(hl, hw, 0)))
-top = base_sk.addGeometry(Part.LineSegment(App.Vector(hl, hw, 0), App.Vector(-hl, hw, 0)))
-left = base_sk.addGeometry(Part.LineSegment(App.Vector(-hl, hw, 0), App.Vector(-hl, -hw, 0)))
+bot = base_sk.addGeometry(Part.LineSegment(FreeCAD.Vector(-hl, -hw, 0), FreeCAD.Vector(hl, -hw, 0)))
+right = base_sk.addGeometry(Part.LineSegment(FreeCAD.Vector(hl, -hw, 0), FreeCAD.Vector(hl, hw, 0)))
+top = base_sk.addGeometry(Part.LineSegment(FreeCAD.Vector(hl, hw, 0), FreeCAD.Vector(-hl, hw, 0)))
+left = base_sk.addGeometry(Part.LineSegment(FreeCAD.Vector(-hl, hw, 0), FreeCAD.Vector(-hl, -hw, 0)))
 
 # Chain coincident
 for a, b in [(bot, right), (right, top), (top, left), (left, bot)]:
@@ -137,7 +137,7 @@ boss_sk = body.newObject("Sketcher::SketchObject", "BossSketch")
 boss_sk.AttachmentSupport = [(base_pad, f"Face{top_face_idx}")]
 boss_sk.MapMode = "FlatFace"
 
-boss_circle = boss_sk.addGeometry(Part.Circle(App.Vector(0, 0, 0), App.Vector(0, 0, 1), BOSS_D / 2))
+boss_circle = boss_sk.addGeometry(Part.Circle(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), BOSS_D / 2))
 boss_sk.addConstraint(Sketcher.Constraint("Coincident", boss_circle, 3, -1, 1))
 idx = boss_sk.addConstraint(Sketcher.Constraint("Radius", boss_circle, BOSS_D / 2))
 boss_sk.setExpression(f"Constraints[{idx}]", "Params.BossRadius")
@@ -160,7 +160,7 @@ bore_sk = body.newObject("Sketcher::SketchObject", "BoreSketch")
 bore_sk.AttachmentSupport = [(boss_pad, f"Face{bore_face_idx}")]
 bore_sk.MapMode = "FlatFace"
 
-bore_circle = bore_sk.addGeometry(Part.Circle(App.Vector(0, 0, 0), App.Vector(0, 0, 1), BORE_D / 2))
+bore_circle = bore_sk.addGeometry(Part.Circle(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), BORE_D / 2))
 bore_sk.addConstraint(Sketcher.Constraint("Coincident", bore_circle, 3, -1, 1))
 idx = bore_sk.addConstraint(Sketcher.Constraint("Radius", bore_circle, BORE_D / 2))
 bore_sk.setExpression(f"Constraints[{idx}]", "Params.BoreRadius")
@@ -197,7 +197,7 @@ hole_positions = [
 ]
 hole_geos = []
 for hx, hy in hole_positions:
-    h = holes_sk.addGeometry(Part.Circle(App.Vector(hx, hy, 0), App.Vector(0, 0, 1), MOUNT_D / 2))
+    h = holes_sk.addGeometry(Part.Circle(FreeCAD.Vector(hx, hy, 0), FreeCAD.Vector(0, 0, 1), MOUNT_D / 2))
     hole_geos.append(h)
 
 # Equal radius, bind first to spreadsheet

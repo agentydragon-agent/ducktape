@@ -33,7 +33,7 @@ Use `Part.ArcOfCircle` for arcs. Point refs: 1=start, 2=end, 3=center.
 ```python
 import math
 arc = sk.addGeometry(Part.ArcOfCircle(
-    Part.Circle(App.Vector(cx, cy, 0), App.Vector(0, 0, 1), radius),
+    Part.Circle(FreeCAD.Vector(cx, cy, 0), FreeCAD.Vector(0, 0, 1), radius),
     start_angle_radians, end_angle_radians
 ))
 ```
@@ -82,7 +82,7 @@ from X axis. For two-line angles, both lines must share a point.
 
 ## Modifying existing sketches
 
-`sk.setDatum(constraint_index, App.Units.Quantity(new_value))` — changes a constraint value
+`sk.setDatum(constraint_index, FreeCAD.Units.Quantity(new_value))` — changes a constraint value
 without rebuilding. Avoid removing geometry (shifts indices); convert to construction with
 `sk.toggleConstruction(index)` instead.
 

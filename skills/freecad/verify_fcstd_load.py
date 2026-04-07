@@ -12,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-import FreeCAD as App
+import FreeCAD
 
 input_path = os.environ["INPUT"]
 outdir = Path(os.environ.get("OUTDIR", "."))
@@ -22,7 +22,7 @@ def log(msg):
     print(msg, file=sys.stderr, flush=True)
 
 
-doc = App.openDocument(input_path)
+doc = FreeCAD.openDocument(input_path)
 log(f"Opened {input_path}: {len(doc.Objects)} objects")
 
 # Recompute and collect any errors
@@ -49,5 +49,5 @@ report_path = outdir / "load_report.json"
 report_path.write_text(json.dumps(report, indent=2))
 log(f"Report: {report_path} (ok={report['ok']})")
 
-App.closeDocument(doc.Name)
+FreeCAD.closeDocument(doc.Name)
 sys.exit(0 if report["ok"] else 1)

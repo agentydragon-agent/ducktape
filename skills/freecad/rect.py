@@ -10,22 +10,22 @@ Output written to OUTDIR env var (default: /tmp).
 import os
 from pathlib import Path
 
-import FreeCAD as App
+import FreeCAD
 import importDXF
 import Part
 
 outdir = Path(os.environ.get("OUTDIR", "/tmp"))
 outdir.mkdir(parents=True, exist_ok=True)
 
-doc = App.newDocument("RectTest")
+doc = FreeCAD.newDocument("RectTest")
 
 # A closed rectangular wire: 100 x 50
 pts = [
-    App.Vector(0, 0, 0),
-    App.Vector(100, 0, 0),
-    App.Vector(100, 50, 0),
-    App.Vector(0, 50, 0),
-    App.Vector(0, 0, 0),  # close
+    FreeCAD.Vector(0, 0, 0),
+    FreeCAD.Vector(100, 0, 0),
+    FreeCAD.Vector(100, 50, 0),
+    FreeCAD.Vector(0, 50, 0),
+    FreeCAD.Vector(0, 0, 0),  # close
 ]
 wire = Part.makePolygon(pts)
 face = Part.Face(wire)

@@ -61,6 +61,9 @@ Alternatively: `apt-get install -y freecad-python3 xvfb` with
 
 ## Script Execution Model
 
+For iterative work (exploring geometry, debugging dimensions), use Interactive Mode instead
+of standalone scripts — see the Interactive Mode section below.
+
 FreeCAD has two binaries with very different lifecycle models:
 
 | Binary       | Event loop    | Use for                                                             |
@@ -83,7 +86,7 @@ OUTDIR=/tmp/out xvfb-run -a /opt/FreeCAD.AppImage freecadcmd parametric_sketch.p
 INPUT=/tmp/bracket.FCStd OUTDIR=/tmp/out xvfb-run -a /opt/FreeCAD.AppImage freecadcmd export_page.py
 ```
 
-Scripts use module-level code, call `Gui.showMainWindow()`, and end with `os._exit(0)` to
+Scripts use module-level code, call `FreeCADGui.showMainWindow()`, and end with `os._exit(0)` to
 bypass the Qt6 TLS crash — see <debug/qt_shutdown_segfault.md>.
 
 **3D rendering (freecad GUI binary + direct Xvfb):** Do NOT use `xvfb-run` with the `freecad`
@@ -156,11 +159,11 @@ Use `Part` primitives and boolean operations for simple solid geometry (alternat
 Design for basic shapes):
 
 ```python
-import FreeCAD as App
+import FreeCAD
 import Part
 
-cube = Part.makeBox(20, 20, 20, App.Vector(-10, -10, -10))
-cylinder = Part.makeCylinder(5, 22, App.Vector(0, 0, -11), App.Vector(0, 0, 1))
+cube = Part.makeBox(20, 20, 20, FreeCAD.Vector(-10, -10, -10))
+cylinder = Part.makeCylinder(5, 22, FreeCAD.Vector(0, 0, -11), FreeCAD.Vector(0, 0, 1))
 result = cube.cut(cylinder)
 
 feat = doc.addObject("Part::Feature", "CubeWithHole")
@@ -213,3 +216,5 @@ DISPLAY=:99 INPUT=bracket.FCStd OUTDIR=. /opt/FreeCAD.AppImage freecad export_pa
 ## Gotchas
 
 @gotchas.md
+
+@interactive.md

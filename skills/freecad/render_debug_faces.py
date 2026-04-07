@@ -19,8 +19,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import FreeCAD as App
-import FreeCADGui as Gui
+import FreeCAD
+import FreeCADGui
 from freecad_helpers import init_gui, log, pump, run_gui_script
 
 input_path = os.environ.get("INPUT", "bearing_block.FCStd")
@@ -48,9 +48,9 @@ def _generate_colors(n):
 def _main() -> None:
     from pivy import coin  # noqa: PLC0415 — must import after GUI binary starts
 
-    doc = App.openDocument(input_path)
-    App.setActiveDocument(doc.Name)
-    Gui.ActiveDocument = Gui.getDocument(doc.Name)
+    doc = FreeCAD.openDocument(input_path)
+    FreeCAD.setActiveDocument(doc.Name)
+    FreeCADGui.ActiveDocument = FreeCADGui.getDocument(doc.Name)
     pump(qapp, 2)
 
     # Find the shape to colorize — prefer PartDesign::Body Tip, fall back to Part::Feature
@@ -144,15 +144,15 @@ def _main() -> None:
         )
 
     # Set up viewport
-    view = Gui.ActiveDocument.ActiveView
+    view = FreeCADGui.ActiveDocument.ActiveView
 
-    param = App.ParamGet("User parameter:BaseApp/Preferences/View")
+    param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
     param.SetBool("Gradient", False)
     param.SetUnsigned("BackgroundColor", 0xFFFFFFFF)
 
     cam = view.getCameraNode()
     if cam.getTypeId().getName() == "SoOrthographicCamera":
-        Gui.runCommand("Std_PerspectiveCamera", 0)
+        FreeCADGui.runCommand("Std_PerspectiveCamera", 0)
         pump(qapp, 1)
         cam = view.getCameraNode()
 

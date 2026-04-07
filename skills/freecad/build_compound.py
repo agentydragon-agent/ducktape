@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import FreeCAD as App
+import FreeCAD
 import Part
 import Sketcher
 from freecad_helpers import init_gui, log, pump, run_gui_script, wait_for_view
@@ -33,7 +33,7 @@ qapp = init_gui()
 
 def _main() -> None:
     # === Document ===
-    doc = App.newDocument("CompoundExample")
+    doc = FreeCAD.newDocument("CompoundExample")
 
     # === Spreadsheet Parameters ===
     sheet = doc.addObject("Spreadsheet::Sheet", "Params")
@@ -93,12 +93,12 @@ def _main() -> None:
     #  p1(0,-t)──────────p2(Rw+t,-t)
     #        bottom wall
     #
-    p1 = App.Vector(0, -t, 0)  # bottom-left outer
-    p2 = App.Vector(room_w + t, -t, 0)  # bottom-right outer
-    p3 = App.Vector(room_w + t, room_h + t, 0)  # top-right outer
-    p4 = App.Vector(room_w - t, room_h + t, 0)  # top-right inner (cap)
-    p5 = App.Vector(room_w - t, t, 0)  # inner L-bend
-    p6 = App.Vector(0, t, 0)  # bottom-left inner
+    p1 = FreeCAD.Vector(0, -t, 0)  # bottom-left outer
+    p2 = FreeCAD.Vector(room_w + t, -t, 0)  # bottom-right outer
+    p3 = FreeCAD.Vector(room_w + t, room_h + t, 0)  # top-right outer
+    p4 = FreeCAD.Vector(room_w - t, room_h + t, 0)  # top-right inner (cap)
+    p5 = FreeCAD.Vector(room_w - t, t, 0)  # inner L-bend
+    p6 = FreeCAD.Vector(0, t, 0)  # bottom-left inner
 
     s1 = sk.addGeometry(Part.LineSegment(p1, p2))  # bottom outer
     s2 = sk.addGeometry(Part.LineSegment(p2, p3))  # right outer
@@ -136,10 +136,10 @@ def _main() -> None:
 
     # Table: fully constrained rectangle
     x, y, tw, th = table_x, table_y, table_w, table_h
-    t0 = sk.addGeometry(Part.LineSegment(App.Vector(x, y, 0), App.Vector(x + tw, y, 0)))
-    t1 = sk.addGeometry(Part.LineSegment(App.Vector(x + tw, y, 0), App.Vector(x + tw, y + th, 0)))
-    t2 = sk.addGeometry(Part.LineSegment(App.Vector(x + tw, y + th, 0), App.Vector(x, y + th, 0)))
-    t3 = sk.addGeometry(Part.LineSegment(App.Vector(x, y + th, 0), App.Vector(x, y, 0)))
+    t0 = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(x, y, 0), FreeCAD.Vector(x + tw, y, 0)))
+    t1 = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(x + tw, y, 0), FreeCAD.Vector(x + tw, y + th, 0)))
+    t2 = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(x + tw, y + th, 0), FreeCAD.Vector(x, y + th, 0)))
+    t3 = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(x, y + th, 0), FreeCAD.Vector(x, y, 0)))
     for a, b in [(t0, t1), (t1, t2), (t2, t3), (t3, t0)]:
         sk.addConstraint(Sketcher.Constraint("Coincident", a, 2, b, 1))
     for i in [t0, t2]:
@@ -170,8 +170,8 @@ def _main() -> None:
         """Build a Part.Face from sketch geometry indices."""
         edges = [
             Part.makeLine(
-                App.Vector(sk.Geometry[i].StartPoint.x, sk.Geometry[i].StartPoint.y, 0),
-                App.Vector(sk.Geometry[i].EndPoint.x, sk.Geometry[i].EndPoint.y, 0),
+                FreeCAD.Vector(sk.Geometry[i].StartPoint.x, sk.Geometry[i].StartPoint.y, 0),
+                FreeCAD.Vector(sk.Geometry[i].EndPoint.x, sk.Geometry[i].EndPoint.y, 0),
             )
             for i in indices
         ]
@@ -185,7 +185,7 @@ def _main() -> None:
     log(f"Compound: {len(all_faces)} faces")
 
     # === TechDraw Page ===
-    tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118
+    tmpl_path = os.path.join(FreeCAD.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118
     page = doc.addObject("TechDraw::DrawPage", "Page")
     tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
     tmpl.Template = tmpl_path
@@ -194,7 +194,7 @@ def _main() -> None:
     view = doc.addObject("TechDraw::DrawViewPart", "TopView")
     page.addView(view)
     view.Source = [feat]
-    view.Direction = App.Vector(0, 0, 1)
+    view.Direction = FreeCAD.Vector(0, 0, 1)
     view.Scale = 1.0
     view.X = 150
     view.Y = 120

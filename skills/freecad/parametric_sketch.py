@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import FreeCAD as App
+import FreeCAD
 import Part
 import Sketcher
 from freecad_helpers import init_gui, log, pump, run_gui_script, wait_for_view
@@ -31,7 +31,7 @@ qapp = init_gui()
 
 def _main() -> None:
     # === Document ===
-    doc = App.newDocument("BracketTest")
+    doc = FreeCAD.newDocument("BracketTest")
 
     # === Spreadsheet Parameters ===
     sheet = doc.addObject("Spreadsheet::Sheet", "Params")
@@ -86,20 +86,22 @@ def _main() -> None:
     tab_tip_y = -tab_len * math.sin(tab_angle_rad)
 
     # --- Outer profile (CCW from origin) ---
-    bot_left = sk.addGeometry(Part.LineSegment(App.Vector(0, 0, 0), App.Vector(tab_start_x, 0, 0)))
-    tab_down = sk.addGeometry(Part.LineSegment(App.Vector(tab_start_x, 0, 0), App.Vector(tab_tip_x, tab_tip_y, 0)))
-    tab_up = sk.addGeometry(Part.LineSegment(App.Vector(tab_tip_x, tab_tip_y, 0), App.Vector(tab_tip_x, 0, 0)))
-    bot_right = sk.addGeometry(Part.LineSegment(App.Vector(tab_tip_x, 0, 0), App.Vector(w, 0, 0)))
-    right = sk.addGeometry(Part.LineSegment(App.Vector(w, 0, 0), App.Vector(w, h - r, 0)))
+    bot_left = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(tab_start_x, 0, 0)))
+    tab_down = sk.addGeometry(
+        Part.LineSegment(FreeCAD.Vector(tab_start_x, 0, 0), FreeCAD.Vector(tab_tip_x, tab_tip_y, 0))
+    )
+    tab_up = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(tab_tip_x, tab_tip_y, 0), FreeCAD.Vector(tab_tip_x, 0, 0)))
+    bot_right = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(tab_tip_x, 0, 0), FreeCAD.Vector(w, 0, 0)))
+    right = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(w, 0, 0), FreeCAD.Vector(w, h - r, 0)))
     arc_tr = sk.addGeometry(
-        Part.ArcOfCircle(Part.Circle(App.Vector(w - r, h - r, 0), App.Vector(0, 0, 1), r), 0, math.pi / 2)
+        Part.ArcOfCircle(Part.Circle(FreeCAD.Vector(w - r, h - r, 0), FreeCAD.Vector(0, 0, 1), r), 0, math.pi / 2)
     )
-    top = sk.addGeometry(Part.LineSegment(App.Vector(w - r, h, 0), App.Vector(r, h, 0)))
+    top = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(w - r, h, 0), FreeCAD.Vector(r, h, 0)))
     arc_tl = sk.addGeometry(
-        Part.ArcOfCircle(Part.Circle(App.Vector(r, h - r, 0), App.Vector(0, 0, 1), r), math.pi / 2, math.pi)
+        Part.ArcOfCircle(Part.Circle(FreeCAD.Vector(r, h - r, 0), FreeCAD.Vector(0, 0, 1), r), math.pi / 2, math.pi)
     )
-    left = sk.addGeometry(Part.LineSegment(App.Vector(0, h - r, 0), App.Vector(0, 0, 0)))
-    hole = sk.addGeometry(Part.Circle(App.Vector(w / 2, h / 2, 0), App.Vector(0, 0, 1), hole_r))
+    left = sk.addGeometry(Part.LineSegment(FreeCAD.Vector(0, h - r, 0), FreeCAD.Vector(0, 0, 0)))
+    hole = sk.addGeometry(Part.Circle(FreeCAD.Vector(w / 2, h / 2, 0), FreeCAD.Vector(0, 0, 1), hole_r))
 
     # === Constraints ===
 
@@ -151,7 +153,7 @@ def _main() -> None:
     outer_face = Part.Face(Part.Wire(outer_edges))
 
     hole_geo = sk.Geometry[hole]
-    hole_edge = Part.makeCircle(hole_geo.Radius, App.Vector(hole_geo.Center.x, hole_geo.Center.y, 0))
+    hole_edge = Part.makeCircle(hole_geo.Radius, FreeCAD.Vector(hole_geo.Center.x, hole_geo.Center.y, 0))
     bracket_face = outer_face.cut(Part.Face(Part.Wire([hole_edge])))
 
     feat = doc.addObject("Part::Feature", "BracketShape")
@@ -159,7 +161,7 @@ def _main() -> None:
     doc.recompute()
 
     # === TechDraw Page ===
-    tmpl_path = os.path.join(App.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118
+    tmpl_path = os.path.join(FreeCAD.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118
     page = doc.addObject("TechDraw::DrawPage", "Page")
     tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
     tmpl.Template = tmpl_path
@@ -168,7 +170,7 @@ def _main() -> None:
     view = doc.addObject("TechDraw::DrawViewPart", "TopView")
     page.addView(view)
     view.Source = [feat]
-    view.Direction = App.Vector(0, 0, 1)
+    view.Direction = FreeCAD.Vector(0, 0, 1)
     view.Scale = 1.0
     view.X = 150
     view.Y = 120

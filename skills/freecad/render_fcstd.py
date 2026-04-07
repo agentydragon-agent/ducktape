@@ -16,8 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-import FreeCAD as App
-import FreeCADGui as Gui
+import FreeCAD
+import FreeCADGui
 from freecad_helpers import init_gui, log, pump, run_gui_script
 
 input_path = os.environ.get("INPUT", "cube_with_hole.FCStd")
@@ -30,9 +30,9 @@ def _render() -> None:
     from pivy import coin  # noqa: PLC0415 — must import after exec() starts
 
     log("loading document")
-    doc = App.openDocument(input_path)
-    App.setActiveDocument(doc.Name)
-    Gui.ActiveDocument = Gui.getDocument(doc.Name)
+    doc = FreeCAD.openDocument(input_path)
+    FreeCAD.setActiveDocument(doc.Name)
+    FreeCADGui.ActiveDocument = FreeCADGui.getDocument(doc.Name)
 
     log("pump for document load")
     pump(qapp, 2)
@@ -53,17 +53,17 @@ def _render() -> None:
     log("pump for view properties")
     pump(qapp, 2)
 
-    view = Gui.ActiveDocument.ActiveView
+    view = FreeCADGui.ActiveDocument.ActiveView
 
     # Set white background
-    param = App.ParamGet("User parameter:BaseApp/Preferences/View")
+    param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
     param.SetBool("Gradient", False)
     param.SetUnsigned("BackgroundColor", 0xFFFFFFFF)
 
     # Use perspective projection for depth
     cam = view.getCameraNode()
     if cam.getTypeId().getName() == "SoOrthographicCamera":
-        Gui.runCommand("Std_PerspectiveCamera", 0)
+        FreeCADGui.runCommand("Std_PerspectiveCamera", 0)
         pump(qapp, 1)
         cam = view.getCameraNode()
 
@@ -92,7 +92,7 @@ def _render() -> None:
     log(f"rendered: {output_path} — done")
 
     doc.setClosable(True)
-    App.closeDocument(doc.Name)
+    FreeCAD.closeDocument(doc.Name)
 
 
 # Defer work until after QApplication::exec() starts — the GUI binary enters

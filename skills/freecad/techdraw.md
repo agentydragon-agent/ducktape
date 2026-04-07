@@ -145,16 +145,16 @@ ISO center line dash-dot pattern.
 ```python
 # Centerline cross through a bore/boss center, extending beyond the feature
 cl_extent = boss_d / 2 + 8
-view.makeCosmeticLine(App.Vector(0, -cl_extent, 0), App.Vector(0, cl_extent, 0), 2)
-view.makeCosmeticLine(App.Vector(-cl_extent, 0, 0), App.Vector(cl_extent, 0, 0), 2)
+view.makeCosmeticLine(FreeCAD.Vector(0, -cl_extent, 0), FreeCAD.Vector(0, cl_extent, 0), 2)
+view.makeCosmeticLine(FreeCAD.Vector(-cl_extent, 0, 0), FreeCAD.Vector(cl_extent, 0, 0), 2)
 
 # Center marks on mounting holes (small cross at each hole center)
 mark_size = hole_radius + 2
 for i, e in enumerate(view.getVisibleEdges()):
     if isinstance(e.Curve, Part.Circle) and abs(e.Curve.Radius - hole_radius) < 1.0:
         cx, cy = e.Curve.Center.x, e.Curve.Center.y
-        view.makeCosmeticLine(App.Vector(cx, cy - mark_size, 0), App.Vector(cx, cy + mark_size, 0), 2)
-        view.makeCosmeticLine(App.Vector(cx - mark_size, cy, 0), App.Vector(cx + mark_size, cy, 0), 2)
+        view.makeCosmeticLine(FreeCAD.Vector(cx, cy - mark_size, 0), FreeCAD.Vector(cx, cy + mark_size, 0), 2)
+        view.makeCosmeticLine(FreeCAD.Vector(cx - mark_size, cy, 0), FreeCAD.Vector(cx + mark_size, cy, 0), 2)
 ```
 
 **`makeCenterLine`** (not `makeCosmeticLine`) creates bisector-style centerlines between two
@@ -195,21 +195,21 @@ with highest Z). `XDirection` defines which way is "right" in the projected view
 ```python
 front = doc.addObject("TechDraw::DrawViewPart", "FrontView")
 front.Source = [body]
-front.Direction = App.Vector(0, -1, 0)
-front.XDirection = App.Vector(1, 0, 0)
+front.Direction = FreeCAD.Vector(0, -1, 0)
+front.XDirection = FreeCAD.Vector(1, 0, 0)
 
 right = doc.addObject("TechDraw::DrawViewPart", "RightView")
 right.Source = [body]
-right.Direction = App.Vector(1, 0, 0)
-right.XDirection = App.Vector(0, 1, 0)
+right.Direction = FreeCAD.Vector(1, 0, 0)
+right.XDirection = FreeCAD.Vector(0, 1, 0)
 
 top = doc.addObject("TechDraw::DrawViewPart", "TopView")
 top.Source = [body]
-top.Direction = App.Vector(0, 0, 1)
+top.Direction = FreeCAD.Vector(0, 0, 1)
 
 iso = doc.addObject("TechDraw::DrawViewPart", "IsoView")
 iso.Source = [body]
-iso.Direction = App.Vector(1, -1, 1)
+iso.Direction = FreeCAD.Vector(1, -1, 1)
 ```
 
 **Direction and XDirection must be perpendicular.** For axis-aligned directions, FreeCAD's
