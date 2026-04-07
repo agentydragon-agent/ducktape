@@ -25,7 +25,7 @@ py_binary(
         "baseplate/TASK.md",
         ":freecad_test",
         "//mcp_infra/exec:docker_launcher",
-        "//skills/freecad",
+        "//skills/freecad:freecad_tar",
     ],
     imports = ["../../.."],
     main_module = "skills.freecad.eval.run_eval",

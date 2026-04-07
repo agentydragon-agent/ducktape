@@ -11,6 +11,7 @@ import dataclasses
 import json
 import logging
 import shutil
+import tarfile
 import time
 from pathlib import Path
 
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 FREECAD_TEST = OciImage("_main/skills/freecad/eval/freecad_test.rloc", "freecad-test:pinned")
 TASK_MD = "_main/skills/freecad/eval/baseplate/TASK.md"
 DOCKER_LAUNCHER = "_main/mcp_infra/exec/docker_launcher"
-SKILL_DIR = "_main/skills/freecad"
+SKILL_TAR = "_main/skills/freecad/freecad_tar.tar"
 
 CONTAINER_WORKSPACE = Path("/workspace")
 CONTAINER_SKILL_DIR = Path("/skill")
@@ -58,16 +59,21 @@ async def run(output_dir: Path, model: str) -> None:
     workspace = output_dir / "workspace"
     workspace.mkdir(parents=True, exist_ok=True)
 
-    # Copy full skill directory (including subdirs) into a host directory
-    # that will be bind-mounted into the container at CONTAINER_SKILL_DIR.
-    skill_src_dir = get_required_path(SKILL_DIR)
+    # Extract skill tarball into a host directory for bind-mounting.
+    # Uses the tar (not the raw filegroup) to get exactly the skill package
+    # contents without test/eval files that share the same runfiles subtree.
+    skill_tar_path = get_required_path(SKILL_TAR)
     skill_host_dir = output_dir / "skill"
     if skill_host_dir.exists():
         shutil.rmtree(skill_host_dir)
-    shutil.copytree(skill_src_dir, skill_host_dir)
+    skill_host_dir.mkdir(parents=True)
+    with tarfile.open(skill_tar_path) as tf:
+        tf.extractall(skill_host_dir, filter="data")
     logger.info("Skill files staged at %s", skill_host_dir)
 
-    skill_md = (skill_host_dir / "SKILL.md").read_text()
+    # The tar extracts under a "freecad/" prefix (package_dir in skill_package).
+    skill_content_dir = skill_host_dir / "freecad"
+    skill_md = (skill_content_dir / "SKILL.md").read_text()
     task_text = get_required_path(TASK_MD).read_text()
     user_prompt = f"{skill_md}\n\n---\n\n{task_text}"
 
@@ -77,7 +83,7 @@ async def run(output_dir: Path, model: str) -> None:
         working_dir=CONTAINER_WORKSPACE,
         binds=[
             BindMount(host_path=workspace, container_path=CONTAINER_WORKSPACE),
-            BindMount(host_path=skill_host_dir, container_path=CONTAINER_SKILL_DIR, mode="ro"),
+            BindMount(host_path=skill_content_dir, container_path=CONTAINER_SKILL_DIR, mode="ro"),
         ],
         allow_user_field=False,
         allow_env_field=False,
