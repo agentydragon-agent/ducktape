@@ -12,6 +12,9 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10MB
 
+# Intersection of formats accepted by both OpenAI and Anthropic vision APIs.
+SUPPORTED_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+
 
 class ReadImageInput(OpenAIStrictModeBaseModel):
     """Input model for read_image tool (OpenAI strict mode compatible)."""
@@ -30,8 +33,10 @@ def validate_and_encode_image(data: bytes, path: str | os.PathLike[str]) -> mcp_
         ValueError: If mime type is not an image or size exceeds limit
     """
     mime_type, _ = mimetypes.guess_type(path)
-    if not mime_type or not mime_type.startswith("image/"):
-        raise ValueError(f"Not a supported image type: {path}")
+    if not mime_type or mime_type not in SUPPORTED_MIME_TYPES:
+        raise ValueError(
+            f"Unsupported image type for {path}: {mime_type}. Supported: {', '.join(sorted(SUPPORTED_MIME_TYPES))}"
+        )
 
     if len(data) > MAX_IMAGE_BYTES:
         raise ValueError(f"Image too large: {len(data)} bytes (limit: {MAX_IMAGE_BYTES})")

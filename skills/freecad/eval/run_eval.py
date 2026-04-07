@@ -34,7 +34,7 @@ SYSTEM_PROMPT = f"""\
 You are working inside a FreeCAD Docker container. You have exactly two tools:
 
 1. `mcp__freecad__exec` — run shell commands inside the container
-2. `mcp__freecad__read_image` — view PNG/SVG images you produce
+2. `mcp__freecad__read_image` — view PNG/JPEG/GIF/WebP images you produce
 
 You have NO other tools. No Bash, Read, Write, Edit, Glob, Grep, or Skill tools.
 Use `mcp__freecad__exec` for everything: reading files (`cat`), writing files
@@ -143,6 +143,15 @@ async def run(output_dir: Path, model: str) -> None:
             elif isinstance(message, UserMessage):
                 if isinstance(message.content, list):
                     for block in message.content:
+                        # Skip image content blocks — just note their presence.
+                        if isinstance(block, dict) and block.get("type") == "image":
+                            src = block.get("source", {})
+                            logger.info(
+                                "Tool result: [image %s, %d bytes encoded]",
+                                src.get("media_type", "?"),
+                                len(src.get("data", "")),
+                            )
+                            continue
                         text = (
                             block.get("content", "")
                             if isinstance(block, dict)

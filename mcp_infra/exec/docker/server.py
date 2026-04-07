@@ -269,7 +269,7 @@ class ContainerExecServer(EnhancedFastMCP):
 
         # Register read_image tool for reading images from container
         async def read_image(input: ReadImageInput, ctx: Context) -> list[mcp_types.ImageContent]:
-            """Read an image file from the container and return it for the model to see."""
+            """Read an image file from the container and return it for the model to see. Supported formats: JPEG, PNG, GIF, WebP."""
             container = _get_running_container(ctx)
             # Pull file from container via Docker API
             tar = await container.get_archive(input.path)
