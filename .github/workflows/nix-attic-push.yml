@@ -45,7 +45,7 @@ jobs:
           STUB
           git -C /tmp/gaffer-stub init -q
           git -C /tmp/gaffer-stub add .
-          git -C /tmp/gaffer-stub commit -qm stub
+          git -C /tmp/gaffer-stub -c user.email=ci@localhost -c user.name=CI commit -qm stub
 
       - name: Build and push all flake outputs
         run: |

@@ -227,19 +227,19 @@ TABLE
   2
 LAYER
   5
-ABE
+AD2
 330
 0
 100
 AcDbSymbolTable
  70
-17
+19
   0
 LAYER
   5
-ABF
+AD3
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -255,9 +255,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC0
+AD4
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -273,9 +273,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC1
+AD5
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -291,9 +291,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC2
+AD6
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -309,9 +309,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC3
+AD7
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -327,9 +327,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC4
+AD8
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -345,9 +345,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC5
+AD9
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -363,9 +363,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC6
+ADA
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -381,9 +381,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC7
+ADB
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -399,9 +399,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC8
+ADC
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -417,9 +417,9 @@ CONTINUOUS
   0
 LAYER
   5
-AC9
+ADD
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -435,9 +435,9 @@ CONTINUOUS
   0
 LAYER
   5
-ACA
+ADE
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -453,9 +453,9 @@ CONTINUOUS
   0
 LAYER
   5
-ACB
+ADF
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -471,9 +471,9 @@ CONTINUOUS
   0
 LAYER
   5
-ACC
+AE0
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -489,9 +489,9 @@ CONTINUOUS
   0
 LAYER
   5
-ACD
+AE1
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -507,9 +507,45 @@ CONTINUOUS
   0
 LAYER
   5
-ACE
+AE2
 330
-ABE
+AD2
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+MountInsetX
+ 70
+    0
+ 62
+    7
+  6
+CONTINUOUS
+  0
+LAYER
+  5
+AE3
+330
+AD2
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+MountInsetY
+ 70
+    0
+ 62
+    7
+  6
+CONTINUOUS
+  0
+LAYER
+  5
+AE4
+330
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -525,9 +561,9 @@ CONTINUOUS
   0
 LAYER
   5
-ACF
+AE5
 330
-ABE
+AD2
 100
 AcDbSymbolTableRecord
 100
@@ -976,6 +1012,30 @@ AcDbSymbolTableRecord
 AcDbBlockTableRecord
   2
 *MountHoleDiameter
+  0
+BLOCK_RECORD
+  5
+ABD
+330
+A01
+100
+AcDbSymbolTableRecord
+100
+AcDbBlockTableRecord
+  2
+*MountInsetX
+  0
+BLOCK_RECORD
+  5
+AC7
+330
+A01
+100
+AcDbSymbolTableRecord
+100
+AcDbBlockTableRecord
+  2
+*MountInsetY
   0
 ENDTAB
   0
@@ -3032,6 +3092,446 @@ AB5
 AcDbEntity
   8
 MountHoleDiameter
+100
+AcDbBlockEnd
+  0
+BLOCK
+  5
+ABE
+330
+ABD
+100
+AcDbEntity
+  8
+MountInsetX
+100
+AcDbBlockBegin
+  2
+*MountInsetX
+ 70
+   1
+ 10
+0
+ 20
+0
+ 30
+0
+  3
+*MountInsetX
+  1
+ 
+  0
+LINE
+  5
+ABF
+330
+ABD
+100
+AcDbEntity
+  8
+MountInsetX
+100
+AcDbLine
+ 10
+50
+ 20
+53
+ 30
+0
+ 11
+50
+ 21
+24
+ 31
+0
+  0
+LINE
+  5
+AC0
+330
+ABD
+100
+AcDbEntity
+  8
+MountInsetX
+100
+AcDbLine
+ 10
+62
+ 20
+53
+ 30
+0
+ 11
+62
+ 21
+24
+ 31
+0
+  0
+LINE
+  5
+AC1
+330
+ABD
+100
+AcDbEntity
+  8
+MountInsetX
+100
+AcDbLine
+ 10
+62
+ 20
+24
+ 30
+0
+ 11
+50
+ 21
+24
+ 31
+0
+  0
+TEXT
+  5
+AC2
+330
+ABD
+100
+AcDbEntity
+  8
+MountInsetX
+100
+AcDbText
+ 10
+47.5
+ 20
+19
+ 30
+0
+ 40
+3.5
+  1
+15
+  7
+STANDARD
+ 72
+1
+ 11
+47.5
+ 21
+24
+ 31
+0
+100
+AcDbText
+  0
+SOLID
+  5
+AC3
+330
+ABD
+100
+AcDbEntity
+  8
+0
+ 62
+     0
+100
+AcDbTrace
+ 10
+67
+ 20
+23.5833
+ 30
+0
+ 11
+67
+ 21
+24.4167
+ 31
+0
+ 12
+62
+ 22
+24
+ 32
+0
+ 13
+62
+ 23
+24
+ 33
+0
+  0
+SOLID
+  5
+AC4
+330
+ABD
+100
+AcDbEntity
+  8
+0
+ 62
+     0
+100
+AcDbTrace
+ 10
+45
+ 20
+23.5833
+ 30
+0
+ 11
+45
+ 21
+24.4167
+ 31
+0
+ 12
+50
+ 22
+24
+ 32
+0
+ 13
+50
+ 23
+24
+ 33
+0
+  0
+ENDBLK
+  5
+AC5
+330
+ABD
+100
+AcDbEntity
+  8
+MountInsetX
+100
+AcDbBlockEnd
+  0
+BLOCK
+  5
+AC8
+330
+AC7
+100
+AcDbEntity
+  8
+MountInsetY
+100
+AcDbBlockBegin
+  2
+*MountInsetY
+ 70
+   1
+ 10
+0
+ 20
+0
+ 30
+0
+  3
+*MountInsetY
+  1
+ 
+  0
+LINE
+  5
+AC9
+330
+AC7
+100
+AcDbEntity
+  8
+MountInsetY
+100
+AcDbLine
+ 10
+50
+ 20
+41
+ 30
+0
+ 11
+27.5355
+ 21
+41
+ 31
+0
+  0
+LINE
+  5
+ACA
+330
+AC7
+100
+AcDbEntity
+  8
+MountInsetY
+100
+AcDbLine
+ 10
+62
+ 20
+53
+ 30
+0
+ 11
+27.5355
+ 21
+53
+ 31
+0
+  0
+LINE
+  5
+ACB
+330
+AC7
+100
+AcDbEntity
+  8
+MountInsetY
+100
+AcDbLine
+ 10
+27.5355
+ 20
+53
+ 30
+0
+ 11
+27.5355
+ 21
+41
+ 31
+0
+  0
+TEXT
+  5
+ACC
+330
+AC7
+100
+AcDbEntity
+  8
+MountInsetY
+100
+AcDbText
+ 10
+24
+ 20
+42.5
+ 30
+0
+ 40
+3.5
+  1
+15
+  7
+STANDARD
+ 72
+1
+ 11
+27.5355
+ 21
+46.0355
+ 31
+0
+100
+AcDbText
+  0
+SOLID
+  5
+ACD
+330
+AC7
+100
+AcDbEntity
+  8
+0
+ 62
+     0
+100
+AcDbTrace
+ 10
+27.1189
+ 20
+58
+ 30
+0
+ 11
+27.9522
+ 21
+58
+ 31
+0
+ 12
+27.5355
+ 22
+53
+ 32
+0
+ 13
+27.5355
+ 23
+53
+ 33
+0
+  0
+SOLID
+  5
+ACE
+330
+AC7
+100
+AcDbEntity
+  8
+0
+ 62
+     0
+100
+AcDbTrace
+ 10
+27.1189
+ 20
+36
+ 30
+0
+ 11
+27.9522
+ 21
+36
+ 31
+0
+ 12
+27.5355
+ 22
+41
+ 32
+0
+ 13
+27.5355
+ 23
+41
+ 33
+0
+  0
+ENDBLK
+  5
+ACF
+330
+AC7
+100
+AcDbEntity
+  8
+MountInsetY
 100
 AcDbBlockEnd
   0
@@ -7203,9 +7703,107 @@ AcDbDiametricDimension
  40
 0
   0
-TEXT
+DIMENSION
   5
 ABC
+330
+A02
+100
+AcDbEntity
+  8
+MountInsetX
+100
+AcDbDimension
+  2
+*MountInsetX
+ 10
+47.500000000
+ 20
+24.000000000
+ 30
+0.000000000
+ 11
+47.500000000
+ 21
+19.000000000
+ 31
+0.000000000
+ 70
+32
+  1
+15
+  3
+STANDARD
+100
+AcDbAlignedDimension
+ 13
+62.000000000
+ 23
+53.000000000
+ 33
+0.000000000
+ 14
+50.000000000
+ 24
+53.000000000
+ 34
+0.000000000
+100
+AcDbRotatedDimension
+  0
+DIMENSION
+  5
+AC6
+330
+A02
+100
+AcDbEntity
+  8
+MountInsetY
+100
+AcDbDimension
+  2
+*MountInsetY
+ 10
+27.535533906
+ 20
+46.035533906
+ 30
+0.000000000
+ 11
+24.000000000
+ 21
+42.500000000
+ 31
+0.000000000
+ 70
+32
+  1
+15
+  3
+STANDARD
+100
+AcDbAlignedDimension
+ 13
+62.000000000
+ 23
+53.000000000
+ 33
+0.000000000
+ 14
+50.000000000
+ 24
+41.000000000
+ 34
+0.000000000
+ 50
+90
+100
+AcDbRotatedDimension
+  0
+TEXT
+  5
+AD0
 330
 A02
 100
@@ -7239,7 +7837,7 @@ AcDbText
   0
 TEXT
   5
-ABD
+AD1
 330
 A02
 100

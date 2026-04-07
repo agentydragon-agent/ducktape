@@ -397,9 +397,74 @@ def _main() -> None:
         y=-base_w / 2 + mount_iy - 8,
     )
 
-    # TODO: Mounting hole inset dimensions (MountHoleInsetX=15, MountHoleInsetY=15).
-    # Two-edge DistanceX/Y between a Line and a Circle produces incorrect values.
-    # Needs vertex references or LandmarkDimension.
+    # Mounting hole inset dimensions via vertex references.
+    # Each circle in TechDraw generates 3 vertices: 2 at the perimeter start/end
+    # and 1 at the center. We find the center vertex by matching coordinates.
+
+    def find_vertex(view, predicate, desc):
+        """Find a TechDraw vertex by geometric predicate. Returns 'VertexN' string."""
+        n_verts = len(view.getVisibleVertexes())
+        matches = []
+        for vi in range(n_verts):
+            v = view.getVertexBySelection(f"Vertex{vi}")
+            if predicate(v.Point):
+                matches.append((vi, v.Point))
+        assert len(matches) >= 1, f"No vertex matching: {desc} ({n_verts} total)"
+        return f"Vertex{matches[0][0]}"
+
+    def find_circle_center_vertex(view, circle_edge_idx):
+        """Find the TechDraw vertex at the center of a circle edge."""
+        circle = view.getVisibleEdges()[circle_edge_idx]
+        cx, cy = circle.Curve.Center.x, circle.Curve.Center.y
+        return find_vertex(
+            view,
+            lambda pt: abs(pt.x - cx) < 0.5 and abs(pt.y - cy) < 0.5,
+            f"center of circle Edge{circle_edge_idx} at ({cx:.1f}, {cy:.1f})",
+        )
+
+    # Pick the top-left hole for inset dims — emptiest quadrant, away from
+    # ⌀8/⌀20/⌀40 dims which cluster around center and right side.
+    # TechDraw Y is inverted: top in rendered view = most negative y.
+    inset_hole_idx = find_ranked_edge(
+        top_v,
+        lambda e: isinstance(e.Curve, Part.Circle) and abs(e.Curve.Radius - mount_r) < 1.0,
+        lambda e: -e.Curve.Center.x - e.Curve.Center.y,
+        "top: top-left mounting hole circle",
+    )
+    inset_hole_vert = find_circle_center_vertex(top_v, inset_hole_idx)
+    log(f"Inset hole: Edge{inset_hole_idx}, center vertex: {inset_hole_vert}")
+
+    # Left plate edge (vertical, most negative x)
+    top_left_edge_idx = find_ranked_edge(
+        top_v,
+        lambda e: _edge_is_line(e) and _edge_dx(e) < 1 and _edge_dy(e) > base_w * 0.8,
+        lambda e: -max(e.Vertexes[0].Point.x, e.Vertexes[1].Point.x),
+        "top: left plate edge",
+    )
+
+    # MountHoleInsetX: hole center to left plate edge
+    add_dim(
+        "MountInsetX",
+        "DistanceX",
+        [(top_v, inset_hole_vert), (top_v, f"Edge{top_left_edge_idx}")],
+        x=-base_l / 2 + mount_ix / 2,
+        y=-base_w / 2 - 16,
+    )
+
+    # MountHoleInsetY: hole center to nearest corner vertex.
+    # DistanceY between a vertex and a full-width horizontal edge measures to
+    # the far endpoint, not the perpendicular projection. Use two vertices
+    # (hole center + corner on the same edge) for correct perpendicular distance.
+    top_left_corner = find_vertex(
+        top_v, lambda pt: abs(pt.x - (-base_l / 2)) < 1 and abs(pt.y - (-base_w / 2)) < 1, "top-left plate corner"
+    )
+    add_dim(
+        "MountInsetY",
+        "DistanceY",
+        [(top_v, inset_hole_vert), (top_v, top_left_corner)],
+        x=-base_l / 2 - 16,
+        y=-base_w / 2 + mount_iy / 2,
+    )
 
     # === Annotations — positioned in title block area (bottom-right) ===
     add_ann("Title", "Flanged Bearing Block", x=250, y=15, size=6)

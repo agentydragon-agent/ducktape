@@ -63,6 +63,37 @@ overlaps without explicit placement.
 See <parametric_sketch.py> for a full example. See <build_bearing_block_techdraw.py> for 3D
 `References3D` dimensions on a Part Design body.
 
+## Vertex-referenced dimensions (hole center to edge/corner)
+
+`References2D` accepts `"VertexN"` references alongside `"EdgeN"`. This is how you dimension
+from a circle center to a plate edge (e.g., mounting hole inset distances).
+
+**Circle center vertices.** Each full circle edge in TechDraw generates 3 vertices: 2 at the
+perimeter start/end point, and 1 at the geometric center. Find the center vertex by matching
+coordinates from `getVertexBySelection("VertexN")` against `edge.Curve.Center`. Use
+`len(view.getVisibleVertexes())` for the vertex count — do not probe speculatively with
+try/except.
+
+**Vertex-to-edge `DistanceX`.** Works correctly for measuring perpendicular distance from a
+point to a vertical line edge:
+
+```python
+dim.Type = "DistanceX"
+dim.References2D = [(view, "Vertex14"), (view, "Edge7")]  # hole center to plate edge
+```
+
+**Vertex-to-vertex `DistanceY`.** `DistanceY` between a vertex and a full-width horizontal
+edge measures to the far endpoint, not the perpendicular projection. Use two vertices instead
+(hole center + corner vertex on the same edge):
+
+```python
+dim.Type = "DistanceY"
+dim.References2D = [(view, "Vertex14"), (view, "Vertex17")]  # hole center to corner
+```
+
+See <build_bearing_block_techdraw.py> for the full implementation including `find_vertex()`
+and `find_circle_center_vertex()` helpers.
+
 ## 3D-referenced dimensions (References3D + MeasureType="True")
 
 For 3D Part Design models, `DrawViewDimension` supports measuring directly from 3D geometry
