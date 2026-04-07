@@ -28,7 +28,6 @@ CloudNativePG `local-path`. See <changelog.md> for history.
   for `claude-rbac` RoleBinding dependency.
 - **ActivityWatch**: `activitywatch` — suspended 2026-04-06.
 - **Airlock**: `airlock` — suspended 2026-04-06. `google-workspace-mcp` depends on this.
-- **HomeAssistant Proxy**: `homeassistant-proxy` — suspended 2026-04-06.
 - **ARC**: `arc` — suspended 2026-04-06. Secrets (`arc-secrets`) are deployed.
 - **Props**: `props` — suspended 2026-04-06. Secrets (`props-secrets`) are deployed.
 
