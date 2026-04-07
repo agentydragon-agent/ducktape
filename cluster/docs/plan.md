@@ -80,15 +80,18 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] Enable systemd watchdog for kubelet on NixOS workers (`WatchdogSec=` in kubelet
       service unit) — restarts kubelet if it deadlocks
 - [ ] NVIDIA GPU monitoring: add DCGM exporter ServiceMonitor + Grafana dashboard (gnetId 12239)
-- [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver)
-- [x] Prometheus: replaced by Alloy+Mimir (2026-04-06). Prometheus disabled, operator kept for CRDs.
-- [ ] **Roaming node DaemonSet problem**: Offline roaming nodes (iguana/rugged) cause
-      DaemonSet pods to stay Pending, which makes Helm install/upgrade timeout
-      (`disableWait: true` workaround in monitoring-stack). This affects every
-      HelmRelease that includes a DaemonSet. Need a general solution: - Option A: Taint roaming nodes (`node-role.kubernetes.io/roaming=true:NoSchedule`) + add tolerations to DaemonSets that should run on roaming nodes (node-exporter,
-      Cilium agent, etc.). DaemonSets without the toleration skip roaming nodes. - Option B: Use `nodeAffinity` on DaemonSets to exclude `roaming` region entirely. - Option C: Custom Flux health check that ignores Pending DaemonSet pods on
-      NotReady nodes.
-      `rugged` already has this taint; `iguana` does not — add it.
+- [ ] etcd: add dedicated ServiceMonitor for full etcd metrics (current scrape is partial via apiserver, now via Alloy)
+- [ ] **Roaming node DaemonSet problem** (high priority): Offline roaming nodes
+      (iguana/rugged) cause DaemonSet pods to stay Pending, which makes Helm
+      install/upgrade timeout. Current workaround is `disableWait: true` in
+      monitoring-stack — this is unsatisfying because it suppresses all readiness
+      checking, not just for roaming nodes. Affects every HelmRelease with a
+      DaemonSet. Need a proper solution:
+  - Option A: Taint roaming nodes + add tolerations to DaemonSets that should
+    run there (node-exporter, Cilium). DaemonSets without toleration skip roaming.
+  - Option B: `nodeAffinity` on DaemonSets to exclude `roaming` region entirely.
+  - Option C: Custom Flux health check that ignores Pending pods on NotReady nodes.
+  - `rugged` already has `NoSchedule` taint; `iguana` does not — add it.
 - [ ] Enable roaming-tolerant workloads on rugged (`grocy`, `scanner`, `activitywatch`,
       `proxmox-proxy`, `props`/`props-registry`)
 - [ ] OpenClaw: obfuscation detection forces approval despite `security: full`
@@ -102,12 +105,8 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
       proxy auth, recipe import)
 - [ ] Move more PVCs to `local-path` (Proxmox CSI 29 LUN limit). Candidates:
-      `langfuse/langfuse-s3`, `harbor/harbor-jobservice`.
-      Done: monitoring stack now on `local-path-hetzner` (Alloy+Mimir), Grafana on CNPG,
-      Vault on `local-path-hetzner`.
-- Loki + MinIO migration:
-  - [x] **Phase 1**: MinIO deployed on Hetzner VPS nodes (`minio-hil`).
-  - [x] **Phase 2**: Loki migrated to S3 backend (MinIO). Mimir and Tempo also use MinIO.
+      `langfuse/langfuse-s3`.
+- Loki + MinIO:
   - [ ] Reconsider MinIO on control-plane nodes: currently 4 replicas across all
         VPS nodes (2 CP + 2 worker) with CP tolerations. Alternative: 2 replicas on
         workers only with `drivesPerNode: 2` (4 drives total, still erasure coded).
@@ -243,8 +242,8 @@ directly — no port-forward. From non-workers, fall back to `kubectl port-forwa
 
 ### GitHub Webhook Reconciliation
 
-Flux `Receiver` at `flux-webhook.allegedly.works`. Harbor webhook auto-configured by
-`harbor-webhook` Terraform.
+Flux `Receiver` at `flux-webhook.allegedly.works`. GitHub webhook registered by
+`harbor-ci` Terraform (`github_repository_webhook.flux_receiver`).
 
 ### etcd Backup
 
@@ -374,11 +373,11 @@ See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>.
 
 Minimize Hetzner volumes; generous on Proxmox.
 
-| Location | Services                                 | Rationale                         |
-| -------- | ---------------------------------------- | --------------------------------- |
-| VPS      | Vault, Authentik, Gateway, DNS, cert-mgr | Always-on, critical path          |
-| Home     | Harbor, Gitea, Grafana, media, Nix cache | Storage-heavy, tolerates downtime |
-| MinIO    | Loki (planned), CNPG backups (planned)   | Erasure-coded object storage      |
+| Location | Services                                          | Rationale                         |
+| -------- | ------------------------------------------------- | --------------------------------- |
+| VPS      | Vault, Authentik, Grafana, Gateway, DNS, cert-mgr | Always-on, critical path          |
+| Home     | Harbor, Gitea, Ollama, Nix cache                  | Storage-heavy, tolerates downtime |
+| MinIO    | Loki, Mimir, Tempo                                | Erasure-coded object storage      |
 
 CNPG: individual clusters per app, all on `local-path`. Two profiles: VPS-HA
 (2 instances, Hetzner) and Proxmox-single (1 instance). See <cnpg-conventions.md>.
