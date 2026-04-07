@@ -14,7 +14,7 @@ import shutil
 import time
 from pathlib import Path
 
-from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, SystemMessage, query
+from claude_agent_sdk import AssistantMessage, ClaudeAgentOptions, ResultMessage, SystemMessage, query
 
 from mcp_infra.exec.docker.types import AlwaysSetTo, BindMount, ContainerExecServerConfig
 from util.bazel.runfiles import get_required_path
@@ -107,8 +107,19 @@ async def run(output_dir: Path, model: str) -> None:
             if isinstance(message, SystemMessage) and message.subtype == "init":
                 session_id = message.data.get("session_id")
                 logger.info("Session: %s", session_id)
+            elif isinstance(message, AssistantMessage):
+                if message.error:
+                    logger.warning("Assistant error: %s", message.error)
+                for block in message.content:
+                    if hasattr(block, "text"):
+                        preview = block.text[:200] + "..." if len(block.text) > 200 else block.text
+                        logger.info("Assistant: %s", preview)
+                    elif hasattr(block, "name"):
+                        logger.info("Tool call: %s", block.name)
             elif isinstance(message, ResultMessage):
-                logger.info("Result: stop_reason=%s", message.stop_reason)
+                logger.info("Result: stop_reason=%s cost=$%.4f", message.stop_reason, message.total_cost_usd or 0)
+            else:
+                logger.info("Message: %s", type(message).__name__)
 
             log_f.write(json.dumps(entry, default=str) + "\n")
             log_f.flush()
@@ -136,7 +147,9 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description="Run FreeCAD skill evaluation")
     parser.add_argument("output_dir", type=Path, help="Directory for eval outputs")
-    parser.add_argument("--model", default="claude-sonnet-4-6", help="Model to use")
+    parser.add_argument(
+        "--model", default="claude-sonnet-4-6", help="Model ID (e.g. claude-sonnet-4-6, claude-opus-4-6)"
+    )
     args = parser.parse_args()
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
