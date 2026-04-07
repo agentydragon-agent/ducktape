@@ -6,7 +6,7 @@ py_library(
     name = "compare",
     srcs = ["compare.py"],
     imports = ["../../.."],
-    visibility = ["//skills/freecad:__pkg__"],
+    visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         "@pypi//opentelemetry_api",
         "@pypi//pillow",
