@@ -49,14 +49,13 @@ py_library(
 py_library(
     name = "post_tool_use_lib",
     srcs = ["post_tool_use.py"],
-    data = ["//devinfra/claude:templates/post_tool_use.mako"],
     imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":precommit_runner",
         "//devinfra/claude:hook_config",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
-        "@pypi//mako",
+        "//devinfra/claude/hook_daemon/templates",
         "@pypi//pygit2",
     ],
 )

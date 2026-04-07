@@ -1,14 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 
-exports_files(
-    [
-        "templates/post_tool_use.mako",
-        "templates/session_context.mako",
-    ],
-    visibility = ["//devinfra/claude/hook_daemon:__subpackages__"],
-)
-
 # === Base modules (no internal deps) ===
 
 py_library(
@@ -180,10 +172,7 @@ py_test(
 py_test(
     name = "test_session_context",
     srcs = ["test_session_context.py"],
-    data = [
-        "__snapshots__/test_session_context.ambr",
-        ":templates/session_context.mako",
-    ],
+    data = ["__snapshots__/test_session_context.ambr"],
     imports = ["../.."],
     deps = [
         ":conftest",
@@ -193,7 +182,7 @@ py_test(
         "//devinfra/claude/hook_daemon/session_start:platform_detect",
         "//devinfra/claude/hook_daemon/session_start:precommit",
         "//devinfra/claude/hook_daemon/session_start:secret_sources",
-        "@pypi//mako",
+        "//devinfra/claude/hook_daemon/templates",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//syrupy",

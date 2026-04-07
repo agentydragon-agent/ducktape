@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pygit2
-from mako.template import Template
 
 from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseHookSpecificOutput,
@@ -20,6 +19,7 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseOutput,
 )
 from devinfra.claude.hook_config import HookConfig, PreCommitConfig
+from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.precommit_runner import (
     HookAutoApplied,
     HookFailedNotApplied,
@@ -32,8 +32,6 @@ logger = logging.getLogger(__name__)
 
 FILE_MODIFYING_TOOLS: frozenset[str] = frozenset({"Edit", "Write", "MultiEdit"})
 
-_TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
-
 
 def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
     file_path = tool_input.get("file_path")
@@ -43,8 +41,7 @@ def _get_file_path(tool_input: dict[str, Any]) -> Path | None:
 
 
 def _format_check_result(result: RunResult, file_path: Path, pre_commit: PreCommitConfig) -> str:
-    template = Template((_TEMPLATES_DIR / "post_tool_use.mako").read_text())
-    output: str = template.render(result=result, file_path=file_path, pre_commit=pre_commit)
+    output: str = templates.post_tool_use.render(result=result, file_path=file_path, pre_commit=pre_commit)
     return output.strip()
 
 

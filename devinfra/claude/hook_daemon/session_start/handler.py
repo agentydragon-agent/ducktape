@@ -60,6 +60,7 @@ from devinfra.claude.hook_daemon.session_start import tmpfs
 from devinfra.claude.hook_daemon.session_start import tune_rootfs
 
 # isort: on
+from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
@@ -67,8 +68,6 @@ from devinfra.claude.settings import CONFIG_FILES, HookSettings, ProxyMode
 from devinfra.claude.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
-
-_TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
 
 
 def _build_secrets_env_vars(secrets: secret_sources.SecretsResult | None) -> dict[str, str] | None:
@@ -655,8 +654,7 @@ async def run_session(
             bazel_remote_proxy_sock=paths.bazel_remote_proxy_sock if paths.bazel_remote_proxy_sock.exists() else None,
             bazel_bes_proxy_sock=paths.bazel_bes_proxy_sock if paths.bazel_bes_proxy_sock.exists() else None,
         )
-        template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
-        context_output: str = template.render(
+        context_output: str = templates.session_context.render(
             WARNING=logging.WARNING,
             status=status,
             proxy=setup.auth_proxy,

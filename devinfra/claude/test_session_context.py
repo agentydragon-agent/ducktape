@@ -4,10 +4,10 @@ import logging
 from pathlib import Path
 
 import pytest_bazel
-from mako.template import Template
 from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.auth_proxy import setup as proxy_setup
+from devinfra.claude.hook_daemon import templates
 from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect, precommit
 from devinfra.claude.hook_daemon.session_start.secret_sources import SecretsResult
 
@@ -26,9 +26,8 @@ def _render(
     buildbuddy_configured: bool = False,
     status: str = "OK",
 ) -> str:
-    template = Template((_templates_dir() / "session_context.mako").read_text())
     return str(
-        template.render(
+        templates.session_context.render(
             WARNING=logging.WARNING,
             status=status,
             proxy=proxy,
@@ -45,13 +44,6 @@ def _render(
             platform=platform,
         )
     )
-
-
-_TEMPLATES_DIR = Path(__file__).parent / "templates"
-
-
-def _templates_dir() -> Path:
-    return _TEMPLATES_DIR
 
 
 def _cli_platform(*, nix_installed: bool = False, nixpkgs_available: bool = False) -> platform_detect.PlatformInfo:

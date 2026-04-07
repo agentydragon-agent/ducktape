@@ -138,7 +138,6 @@ py_library(
 py_library(
     name = "session_start_lib",
     srcs = ["handler.py"],
-    data = ["//devinfra/claude:templates/session_context.mako"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
     deps = [
@@ -168,6 +167,7 @@ py_library(
         "//devinfra/claude/auth_proxy:vars",
         "//devinfra/claude/claude_api/hooks:session_start",
         "//devinfra/claude/hook_daemon:tracing",
+        "//devinfra/claude/hook_daemon/templates",
         "//devinfra/claude/supervisor:setup",
         "@pypi//anyio",
         "@pypi//httpx",
