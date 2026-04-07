@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 from platformdirs import user_config_dir, user_state_dir
 
-from claude_hooks.actions import (
+from x.claude_hooks.actions import (
     HookAction,
     NotificationAction,
     PostToolAction,
@@ -21,7 +21,7 @@ from claude_hooks.actions import (
     SubagentStopAction,
     UserPromptSubmitAction,
 )
-from claude_hooks.inputs import (
+from x.claude_hooks.inputs import (
     BaseHookInput,
     HookContext,
     NotificationInput,
@@ -32,7 +32,7 @@ from claude_hooks.inputs import (
     SubagentStopInput,
     UserPromptSubmitInput,
 )
-from claude_hooks.logging_context import set_hook_context, setup_hook_logging
+from x.claude_hooks.logging_context import set_hook_context, setup_hook_logging
 
 
 class HookBase[InputT: BaseHookInput, OutputT: HookAction](ABC):

@@ -4,7 +4,8 @@ import ast
 import textwrap
 
 import pytest_bazel
-from flake8_early_bailout import EarlyBailoutChecker
+
+from x.flake8_early_bailout.flake8_early_bailout import EarlyBailoutChecker
 
 
 def get_errors(code: str) -> list[str]:

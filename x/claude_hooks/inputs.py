@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
-from claude_hooks.tool_models import (
+from x.claude_hooks.tool_models import (
     BashInput,
     EditInput,
     GlobInput,

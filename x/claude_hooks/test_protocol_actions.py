@@ -8,7 +8,7 @@ Tests the layered architecture:
 
 import pytest_bazel
 
-from claude_hooks.actions import (
+from x.claude_hooks.actions import (
     NotificationAck,
     PostToolContinue,
     PostToolFeedbackToClaude,

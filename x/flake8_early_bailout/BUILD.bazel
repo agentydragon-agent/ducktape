@@ -11,7 +11,7 @@ py_library(
 py_test(
     name = "test_early_bailout",
     srcs = ["test_early_bailout.py"],
-    imports = ["."],
+    imports = ["../.."],
     deps = [
         ":flake8_early_bailout",
         "@pypi//pytest",

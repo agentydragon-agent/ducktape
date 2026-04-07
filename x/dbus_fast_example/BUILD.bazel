@@ -21,7 +21,7 @@ py_test(
         "conftest.py",
         "test_example.py",
     ],
-    imports = ["."],
+    imports = ["../.."],
     deps = [
         ":dbus_fast_example",
         "//util/testing:undeclared_outputs",

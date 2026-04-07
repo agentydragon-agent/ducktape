@@ -10,8 +10,8 @@ import pygit2
 import pytest
 import yaml
 
-from claude_hooks.inputs import HookContext, PostToolInput
-from claude_hooks.tool_models import EditInput, WriteInput
+from x.claude_hooks.inputs import HookContext, PostToolInput
+from x.claude_hooks.tool_models import EditInput, WriteInput
 
 # Core Infrastructure Fixtures
 # ============================

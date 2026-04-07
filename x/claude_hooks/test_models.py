@@ -8,8 +8,8 @@ import pytest_bazel
 from hamcrest import assert_that, has_properties
 from pydantic import ValidationError
 
-from claude_hooks.inputs import PostToolInput, PreToolInput, UserPromptSubmitInput
-from claude_hooks.tool_models import BashInput, EditInput, WriteInput
+from x.claude_hooks.inputs import PostToolInput, PreToolInput, UserPromptSubmitInput
+from x.claude_hooks.tool_models import BashInput, EditInput, WriteInput
 
 
 def test_edit_input_valid():

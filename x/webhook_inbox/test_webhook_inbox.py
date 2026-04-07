@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 import pytest_bazel
-import webhook_inbox
 from cryptography.fernet import Fernet
 from starlette.testclient import TestClient
+
+from x.webhook_inbox import webhook_inbox
 
 
 @pytest.fixture

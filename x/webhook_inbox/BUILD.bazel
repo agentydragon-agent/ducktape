@@ -28,7 +28,7 @@ py_binary(
 py_test(
     name = "test_webhook_inbox",
     srcs = ["test_webhook_inbox.py"],
-    imports = ["."],
+    imports = ["../.."],
     deps = [
         ":webhook_inbox",
         "@pypi//cryptography",
@@ -45,7 +45,7 @@ py_test(
 py_binary(
     name = "server",
     srcs = ["server.py"],
-    imports = ["."],
+    imports = ["../.."],
     deps = [
         ":webhook_inbox",
         "@pypi//uvicorn",
@@ -55,7 +55,7 @@ py_binary(
 aspect_py_binary(
     name = "server_bin",
     srcs = ["server.py"],
-    imports = ["."],
+    imports = ["../.."],
     main = "server.py",
     deps = [
         ":webhook_inbox",

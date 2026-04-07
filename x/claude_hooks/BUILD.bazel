@@ -9,34 +9,34 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "actions",
     srcs = ["actions.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = ["@pypi//typing_extensions"],
 )
 
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "tool_models",
     srcs = ["tool_models.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "logging_context",
     srcs = ["logging_context.py"],
-    imports = [".."],
+    imports = ["../.."],
 )
 
 py_library(
     name = "inputs",
     srcs = ["inputs.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":tool_models",
         "@pypi//pydantic",
@@ -46,7 +46,7 @@ py_library(
 py_library(
     name = "base",
     srcs = ["base.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":actions",
         ":inputs",
@@ -65,7 +65,7 @@ py_library(
     name = "test_helpers",
     testonly = True,
     srcs = ["test_helpers.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [":inputs"],
 )
 
@@ -74,7 +74,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     data = glob(["testdata/**"]),
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":config",
         ":inputs",
@@ -93,7 +93,7 @@ py_library(
 py_test(
     name = "test_helpers_test",
     srcs = ["test_helpers.py"],
-    imports = [".."],
+    imports = ["../.."],
     main = "test_helpers.py",
     deps = [
         ":inputs",
@@ -105,7 +105,7 @@ py_test(
     name = "test_input_parsing",
     srcs = ["test_input_parsing.py"],
     data = glob(["testdata/**"]),
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         ":test_helpers",
@@ -118,7 +118,7 @@ py_test(
 py_test(
     name = "test_models",
     srcs = ["test_models.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":conftest",
         ":inputs",
@@ -133,7 +133,7 @@ py_test(
 py_test(
     name = "test_protocol_actions",
     srcs = ["test_protocol_actions.py"],
-    imports = [".."],
+    imports = ["../.."],
     deps = [
         ":actions",
         ":conftest",

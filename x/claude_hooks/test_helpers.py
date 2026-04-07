@@ -6,13 +6,13 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, cast
 
-from claude_hooks.inputs import PostToolInput
+from x.claude_hooks.inputs import PostToolInput
 
 
 def load_test_json(tool_name: str, scenario: str) -> dict[str, Any]:
     """Load test JSON data from testdata directory."""
     try:
-        testdata_path = resources.files("claude_hooks") / "testdata"
+        testdata_path = resources.files("x.claude_hooks") / "testdata"
         json_path = testdata_path / "hook_inputs" / "PostToolUse" / tool_name / f"{scenario}.json"
         json_content = json_path.read_text()
         return cast(dict[str, Any], json.loads(json_content))
