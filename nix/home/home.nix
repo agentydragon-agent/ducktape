@@ -409,28 +409,10 @@ in
       fzf
       fd
       ripgrep
-      # TUI resource monitors
-      btop
-      bottom
-      procs # Modern process viewer with structured output
-      dust # Disk usage visualizer
       tokei # SLOC analyzer grouped by language
-      # Network diagnostics (per-process usage and path tracing)
-      bandwhich
-      mtr
 
-      curl
-      wget
       pwgen
-      nmap
-      htop
-      iftop
-      iotop
       ffmpeg
-      mosh
-      ncdu
-      pv
-      tree
       sqlite
       gnupg
 

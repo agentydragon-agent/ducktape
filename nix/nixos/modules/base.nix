@@ -70,12 +70,26 @@
   # Essential packages
   environment.systemPackages = with pkgs; [
     git
-    vim
+    neovim
     wget
     curl
     htop
     tmux
     home-manager
+    nix-du
+    dust
+    ncdu
+    procs
+    bandwhich
+    tree
+    iotop
+    nmap
+    iftop
+    mtr
+    btop
+    bottom
+    pv
+    mosh
   ];
 
   system.stateVersion = "25.11";

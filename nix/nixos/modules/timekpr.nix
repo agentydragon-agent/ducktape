@@ -44,7 +44,6 @@ let
         description = ''
           Minute range within each hour, in timekpr format.
           "00-60" = full hour allowed.
-          "00-50" = minutes 0-50 allowed (forced 10-min pause).
           "00-15" = only minutes 0-15 allowed.
         '';
       };

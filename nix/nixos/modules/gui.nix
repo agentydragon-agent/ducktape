@@ -38,35 +38,12 @@
         }
         # 01:00-05:00: allow :00-:15 (mostly locked out overnight)
         {
-          hours = [
-            1
-            2
-            3
-            4
-          ];
+          hours = lib.range 1 4;
           minuteRange = "00-15";
         }
         # 05:00-22:00: full access
         {
-          hours = [
-            5
-            6
-            7
-            8
-            9
-            10
-            11
-            12
-            13
-            14
-            15
-            16
-            17
-            18
-            19
-            20
-            21
-          ];
+          hours = lib.range 5 21;
           minuteRange = "00-60";
         }
       ];
