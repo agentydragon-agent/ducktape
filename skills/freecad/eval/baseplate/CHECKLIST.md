@@ -1,7 +1,8 @@
 # Baseplate Evaluation Checklist
 
-Run `inspect.py` on the agent's FCStd first, then fill this out based on
-`inspection.json`, the rendered images, and the SVG export.
+Open the agent's FCStd in the FreeCAD container and inspect it (run
+FreeCAD Python to check geometry, constraints, parametric behavior).
+Review any rendered images/SVGs the agent produced in the workspace.
 
 ## Script execution
 

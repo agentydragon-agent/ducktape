@@ -6,7 +6,7 @@ to produce correct parametric CAD models from natural language specifications.
 ## Flow
 
 1. **Agent** receives `TASK.md` as the user prompt, with the FreeCAD skill
-   loaded via `~/.claude/skills/freecad/`
+   staged from `//skills/freecad` and bind-mounted into the container at `/skill`
 2. **Agent** uses MCP tools (`exec`, `read_image`) to run FreeCAD commands
    inside a Docker container and inspect outputs
 3. **Agent** produces a `.FCStd` file in the workspace
