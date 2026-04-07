@@ -119,7 +119,6 @@
           enableGui ? true,
           isNixOS ? false,
           isK8sWorker ? false,
-          enableHeavyPackages ? true,
           extraModules ? [ ],
         }:
         home-manager.lib.homeManagerConfiguration {
@@ -135,7 +134,6 @@
                   enableGui
                   isNixOS
                   isK8sWorker
-                  enableHeavyPackages
                   ;
               };
             }
@@ -163,7 +161,6 @@
                 enableGui = inlineHomeManager.enableGui or true;
                 isNixOS = true;
                 isK8sWorker = inlineHomeManager.isK8sWorker or false;
-                enableHeavyPackages = inlineHomeManager.enableHeavyPackages or false;
               }
             else
               { };
@@ -290,20 +287,12 @@
       };
 
       homeConfigurations = {
-        # Wyrm desktop VM on atlas
-        wyrm = mkHome {
-          hostname = "wyrm";
-          enableGui = true;
-          isNixOS = false;
-          enableHeavyPackages = false;
-        };
-
         # NixOS VM
         nixos-vm = mkHome {
           hostname = "nixos-vm";
           enableGui = true;
           isNixOS = true;
-          enableHeavyPackages = false;
+
         };
 
         # Atlas Proxmox VE host
@@ -311,7 +300,7 @@
           hostname = "atlas";
           enableGui = true;
           isNixOS = false;
-          enableHeavyPackages = false;
+
         };
       };
 
@@ -324,7 +313,7 @@
           inlineHomeManager = {
             enableGui = true;
             isK8sWorker = true;
-            enableHeavyPackages = false;
+
             module = ./nix/home/hosts/wyrm2.nix;
           };
         };
@@ -336,7 +325,6 @@
           inlineHomeManager = {
             enableGui = true;
             isK8sWorker = true;
-            enableHeavyPackages = true;
             module = ./nix/home/hosts/rugged.nix;
           };
         };
@@ -348,7 +336,7 @@
           inlineHomeManager = {
             enableGui = true;
             isK8sWorker = true;
-            enableHeavyPackages = false;
+
             module = ./nix/home/hosts/iguana.nix;
           };
         };

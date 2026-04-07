@@ -15,7 +15,6 @@
 {
   imports = [
     ../../modules/k8s-worker.nix
-    ../../modules/sops.nix
   ];
 
   time.timeZone = "UTC";

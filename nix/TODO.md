@@ -32,3 +32,7 @@ Could unify via `home-manager.nixosModules.home-manager` to use single `nixos-re
 **Current workaround:** Added nix-daemon.sh sourcing to `programs.zsh.envExtra` in home.nix (writes to `~/.zshenv` which runs for ALL zsh invocations).
 
 **Proper fix:** The nix installer should add sourcing to `/etc/zsh/zshenv` instead of/in addition to `/etc/zsh/zshrc`. This is arguably a gap in nix's shell integration.
+
+## Deduplicate wyrm2/rugged/iguana host configs
+
+wyrm2, rugged, and iguana import nearly identical module sets (gui, dev-workstation, bazel-dev, system-inspection-sudo, k8s-worker) and have similar `k8sWorker` config. Extract common setup into a shared module (e.g., `modules/k8s-dev-workstation.nix`).

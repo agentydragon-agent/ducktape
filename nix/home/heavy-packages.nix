@@ -1,13 +1,5 @@
-# Single source of truth for heavy packages
-# These are installed:
-# - Via NixOS system config on NixOS systems (using the module in nix/nixos/)
-# - Via home-manager on non-NixOS systems
-# - Not at all on minimal systems (e.g., atlas, iguana)
-#
-# This list contains packages that are:
-# - Large in download/install size
-# - Used for creative/productivity work (not essential for development)
-# - Better shared system-wide on NixOS to save space
+# Large creative/productivity packages (not essential for development).
+# Currently not installed by any host — kept as a reference list.
 {
   heavyPackages =
     pkgs: with pkgs; [

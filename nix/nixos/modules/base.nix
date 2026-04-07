@@ -3,11 +3,13 @@
   config,
   pkgs,
   lib,
+  inputs,
   hostname,
   username,
   ...
 }:
 {
+  imports = [ inputs.sops-nix.nixosModules.sops ];
   # Boot (UEFI with systemd-boot)
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
@@ -90,6 +92,7 @@
     bottom
     pv
     mosh
+    ripgrep
   ];
 
   system.stateVersion = "25.11";

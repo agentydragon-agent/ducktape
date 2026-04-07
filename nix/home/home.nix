@@ -7,7 +7,6 @@
 
   isNixOS,
   isK8sWorker,
-  enableHeavyPackages,
   nix-colors,
   solarizedLight,
   solarizedDark,
@@ -16,20 +15,8 @@
   gaffer-private,
   ...
 }:
-# Note for NixOS systems with enableHeavyPackages:
-# Heavy packages (gimp, krita, freecad, inkscape, etc.) should be installed
-# via NixOS system configuration using the module at nix/nixos/heavy-packages-module.nix
-# See heavy-packages.nix for the complete list.
 let
   toTOML = (pkgs.formats.toml { }).generate;
-
-  # Import the single source of truth for heavy packages
-  heavyPkgs = import ./heavy-packages.nix;
-
-  # Install heavy packages via home-manager only if:
-  # 1. Heavy packages are enabled for this host
-  # 2. This is NOT a NixOS system (NixOS uses system packages)
-  installHeavyViaHomeManager = enableHeavyPackages && !isNixOS;
 
   gnomeNvim = pkgs.vimUtils.buildVimPlugin {
     pname = "gnome.nvim";
@@ -408,7 +395,6 @@ in
       zoxide # Smarter cd
       fzf
       fd
-      ripgrep
       tokei # SLOC analyzer grouped by language
 
       pwgen
@@ -420,6 +406,9 @@ in
       oh-my-posh # Cross-shell prompt with proper powerline support
       zsh-powerlevel10k # Powerlevel10k theme for zsh
 
+      yt-dlp # YouTube downloader
+      pdftk # PDF manipulation toolkit
+      qpdf # PDF transformation/inspection tool
     ]
     ++ lib.optionals enableGui [
       # Fonts - using modern individual nerd-fonts packages (covers ansible nerd_fonts role)
@@ -443,9 +432,7 @@ in
 
       # GNOME Shell extensions are managed via programs.gnome-shell.extensions (see below).
       # Packages and enabled-extensions dconf are handled by that module.
-    ]
-    ++ lib.optionals enableGui [
-      # GUI applications (migrated from Ansible)
+
       # Note: discord and element-desktop moved to heavy packages
 
       # Development & utilities
@@ -471,18 +458,8 @@ in
       # GNOME utilities
       gnome-tweaks
       dconf-editor
-    ]
-    ++ lib.optionals installHeavyViaHomeManager (heavyPkgs.heavyPackages pkgs)
-    ++ [
-      # CLI utilities (no GUI needed)
-      yt-dlp # YouTube downloader
-      pdftk # PDF manipulation toolkit
-      qpdf # PDF transformation/inspection tool
 
       # TODO: comby is marked as broken in nixpkgs 25.11
-      # Previously we got it from oldPkgs (nixos-23.11) but removed during 25.11 migration
-      # Options: 1) build from source, 2) use unstable pin if fixed there, 3) find alternative
-      # pkgs.comby
     ];
 
   # On non-NixOS (Proxmox, Pop!_OS, etc.), set up XDG_DATA_DIRS so GNOME Shell
@@ -493,12 +470,8 @@ in
   fonts.fontconfig.enable = enableGui;
 
   home.sessionVariables = {
-    # Editor
     EDITOR = "nvim";
     VISUAL = "nvim";
-
-    # Basic Memory location
-    BASIC_MEMORY_HOME = "$HOME/.syncthing/pkm/basic-memory";
 
     # Character encoding
     DEFAULT_CHARSET = "utf8";

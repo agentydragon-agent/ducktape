@@ -30,9 +30,7 @@
     ../../modules/dev-workstation.nix
     ../../modules/bazel-dev.nix
     ../../modules/system-inspection-sudo.nix
-    ../../modules/sops.nix
     ../../modules/k8s-worker.nix
-    ../../modules/k8s-worker-sops.nix
   ];
 
   # Passwordless sudo for system inspection commands
@@ -41,8 +39,6 @@
   # TODO: Generate attic token for iguana and create secrets/hosts/iguana-attic.yaml
   # sops.secrets.attic_token.sopsFile = ../../../../secrets/hosts/iguana-attic.yaml;
 
-  # Nebula mesh + k8s worker credentials (wired via k8s-worker-sops module)
-  ducktape.k8sWorkerSops.hostname = "iguana";
   ducktape.k8sWorker = {
     enable = true;
     nodeLabels = {

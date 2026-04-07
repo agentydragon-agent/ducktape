@@ -39,15 +39,11 @@ in
     ../../modules/bazel-dev.nix
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
-    ../../modules/k8s-worker-sops.nix
-    ../../modules/sops.nix
   ];
 
   # Passwordless sudo for system inspection commands
   ducktape.systemInspectionSudo.enable = true;
 
-  # Nebula mesh + k8s worker credentials (wired via k8s-worker-sops module)
-  ducktape.k8sWorkerSops.hostname = "wyrm2";
   ducktape.k8sWorker = {
     enable = true;
     enableNvidiaRuntime = true;
