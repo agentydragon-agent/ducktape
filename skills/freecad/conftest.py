@@ -131,16 +131,19 @@ def freecad_run(freecad_appimage_path: Path, freecad_home: Path):
     Usage: result = freecad_run(script, outdir=Path(...))
     """
 
-    def _run(script: Path, outdir: Path, timeout: int = 120) -> subprocess.CompletedProcess:
+    def _run(script: Path, outdir: Path, env: dict | None = None, timeout: int = 120) -> subprocess.CompletedProcess:
+        run_env = {
+            **os.environ,
+            "QT_QPA_PLATFORM": "offscreen",
+            "OUTDIR": str(outdir),
+            "HOME": str(freecad_home),
+            "FREECAD_USER_HOME": str(freecad_home),
+        }
+        if env:
+            run_env.update(env)
         return subprocess.run(
             [freecad_appimage_path, "freecadcmd", script],
-            env={
-                **os.environ,
-                "QT_QPA_PLATFORM": "offscreen",
-                "OUTDIR": str(outdir),
-                "HOME": str(freecad_home),
-                "FREECAD_USER_HOME": str(freecad_home),
-            },
+            env=run_env,
             capture_output=True,
             text=True,
             timeout=timeout,

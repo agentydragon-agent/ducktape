@@ -196,6 +196,7 @@ py_test(
         "golden/bearing_block_back_left.png",
         "golden/bearing_block_front_right.png",
         "render_multi_angle.py",
+        "verify_fcstd_load.py",
         ":freecad_appimage",
     ],
     deps = [

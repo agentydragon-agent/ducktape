@@ -15,6 +15,7 @@ _BUILD_SCRIPT = "_main/skills/freecad/build_bearing_block.py"
 _TECHDRAW_SCRIPT = "_main/skills/freecad/build_bearing_block_techdraw.py"
 _RENDER_SCRIPT = "_main/skills/freecad/render_multi_angle.py"
 _EXPORT_SCRIPT = "_main/skills/freecad/export_page.py"
+_VERIFY_SCRIPT = "_main/skills/freecad/verify_fcstd_load.py"
 
 _GOLDEN_DXF = "_main/skills/freecad/golden/bearing_block.dxf"
 _GOLDEN_SVG = "_main/skills/freecad/golden/bearing_block.svg"
@@ -73,6 +74,20 @@ def test_render_front_right(bearing_block_outputs: Path) -> None:
 
 def test_render_back_left(bearing_block_outputs: Path) -> None:
     assert_png_equal(bearing_block_outputs / "bearing_block_back_left.png", get_required_path(_GOLDEN_BACK_LEFT))
+
+
+def test_fcstd_round_trip(bearing_block_outputs: Path, freecad_run) -> None:
+    """Verify the FCStd reloads cleanly in a fresh FreeCAD instance."""
+    fcstd = bearing_block_outputs / "bearing_block.FCStd"
+    assert fcstd.exists()
+
+    uo = undeclared_outputs_dir() / "bearing-block"
+    uo.mkdir(parents=True, exist_ok=True)
+    reload_dir = bearing_block_outputs / "reload"
+    reload_dir.mkdir(exist_ok=True)
+
+    result = freecad_run(get_required_path(_VERIFY_SCRIPT), outdir=reload_dir, env={"INPUT": str(fcstd)})
+    assert_run_ok(result, "verify_fcstd_load.py", uo, "reload")
 
 
 if __name__ == "__main__":
