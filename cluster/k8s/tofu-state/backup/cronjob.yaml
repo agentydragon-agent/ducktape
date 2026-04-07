@@ -37,19 +37,16 @@ spec:
                 - name: DB_HOST
                   value: tofu-state-db-rw.tofu-state.svc
                 - name: DB_NAME
-                  valueFrom:
-                    secretKeyRef:
-                      name: tofu-state-db-app
-                      key: dbname
+                  value: tfstate
                 - name: DB_USER
                   valueFrom:
                     secretKeyRef:
-                      name: tofu-state-db-app
+                      name: tofu-state-db-credentials
                       key: username
                 - name: DB_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: tofu-state-db-app
+                      name: tofu-state-db-credentials
                       key: password
               volumeMounts:
                 - name: backup-vol
