@@ -14,6 +14,7 @@ import json
 import logging
 import signal
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -45,14 +46,45 @@ IDLE_CHECK_INTERVAL_SECONDS = 30
 app = FastAPI()
 
 
+@dataclass
+class ProxyState:
+    """In-process proxy instances, started lazily on the first SessionStart."""
+
+    tcp: AuthForwardingProxy | None = None
+    uds_remote: UdsRemoteProxy | None = None  # Bazel --remote_proxy
+    uds_bes: UdsRemoteProxy | None = None  # Bazel --bes_proxy
+
+    def set_creds(self, https_proxy: str) -> None:
+        """Update upstream credentials on all running proxies."""
+        if self.tcp is not None:
+            self.tcp.set_creds(https_proxy)
+        if self.uds_remote is not None:
+            self.uds_remote.set_creds(https_proxy)
+        if self.uds_bes is not None:
+            self.uds_bes.set_creds(https_proxy)
+
+    def any_running(self) -> bool:
+        return self.tcp is not None or self.uds_remote is not None or self.uds_bes is not None
+
+    def stop_all(self) -> None:
+        if self.tcp is not None:
+            logger.info("Stopping in-process auth proxy...")
+            self.tcp.stop()
+        if self.uds_remote is not None:
+            logger.info("Stopping UDS remote proxy...")
+            self.uds_remote.stop()
+        if self.uds_bes is not None:
+            logger.info("Stopping UDS BES proxy...")
+            self.uds_bes.stop()
+
+
 def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
     """Set daemon runtime directory and shared config. Call before starting uvicorn."""
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
     app.state.otlp_exporter = otlp_exporter
     app.state.last_request_time = time.monotonic()
-    app.state.proxy = None
-    app.state.uds_proxy = None
+    app.state.proxies = ProxyState()
     app.state.background_tasks = set[asyncio.Task[object]]()
     # Proxies are started lazily on the first SessionStart hook, not here.
 
@@ -60,40 +92,41 @@ def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
 async def _start_session_proxy(session_id: str, web_mode: bool, hook_config: HookConfig) -> None:
     """Start proxy infrastructure for the current session.
 
-    In UDS mode (default): only the UDS proxy is started. Bazel uses
-    --remote_proxy/--bes_proxy for gRPC, and JAVA_TOOL_OPTIONS (set by
-    Anthropic) for BCR fetches.
+    In UDS mode (default): UDS proxies are started for --remote_proxy and/or
+    --bes_proxy as configured. Bazel uses these for gRPC; BCR fetches use
+    JAVA_TOOL_OPTIONS (set by Anthropic).
 
-    In TCP mode (legacy): both the TCP HTTP CONNECT proxy and UDS proxy
-    are started. The TCP proxy handles all Bazel traffic via JVM system
-    properties.
+    In TCP mode (legacy): the TCP HTTP CONNECT proxy is also started.
 
     Called at the start of SessionStart handling — not at daemon startup.
     Idempotent: no-op if proxies are already running.
     """
-    if app.state.uds_proxy is not None:
-        return
-    proxy_cfg = hook_config.profile(web_mode).bazel_remote_proxy
-    if proxy_cfg is None:
-        return
-
-    settings: HookSettings = app.state.settings
+    profile = hook_config.profile(web_mode)
     upstream_url = get_upstream_proxy_url()
+    paths = SessionPaths(session_id=session_id, home=Path.home(), xdg_cache_home=Path.home())
+    proxies: ProxyState = app.state.proxies
+    settings: HookSettings = app.state.settings
 
     # CLEANUP(2026-03-26): Remove TCP proxy once UDS mode is confirmed stable.
-    if settings.proxy_mode == ProxyMode.TCP:
-        proxy = AuthForwardingProxy(listen_port=0)
-        proxy.start()
-        app.state.proxy = proxy
-        logger.info("Auth proxy started in-process on port %d (tcp mode)", proxy.listen_port)
+    if settings.proxy_mode == ProxyMode.TCP and proxies.tcp is None:
+        tcp = AuthForwardingProxy(listen_port=0)
+        tcp.start()
+        proxies.tcp = tcp
+        logger.info("Auth proxy started in-process on port %d (tcp mode)", tcp.listen_port)
 
-    # UDS proxy for --remote_proxy/--bes_proxy (both modes).
-    paths = SessionPaths(session_id=session_id, home=Path.home(), xdg_cache_home=Path.home())
-    uds_proxy = UdsRemoteProxy(sock_path=paths.bazel_remote_proxy_sock, remote_target=proxy_cfg.target)
-    if upstream_url:
-        uds_proxy.set_creds(upstream_url)
-    uds_proxy.start()
-    app.state.uds_proxy = uds_proxy
+    if proxies.uds_remote is None and profile.bazel_remote_proxy is not None:
+        uds = UdsRemoteProxy(sock_path=paths.bazel_remote_proxy_sock, remote_target=profile.bazel_remote_proxy.target)
+        if upstream_url:
+            uds.set_creds(upstream_url)
+        uds.start()
+        proxies.uds_remote = uds
+
+    if proxies.uds_bes is None and profile.bazel_bes_proxy is not None:
+        uds = UdsRemoteProxy(sock_path=paths.bazel_bes_proxy_sock, remote_target=profile.bazel_bes_proxy.target)
+        if upstream_url:
+            uds.set_creds(upstream_url)
+        uds.start()
+        proxies.uds_bes = uds
 
 
 def _save_session_env(env: dict[str, str]) -> None:
@@ -130,6 +163,7 @@ async def handle_hook(req: HookRequest) -> Response:
                 web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
                 await _start_session_proxy(req.hook.session_id, web_mode, hook_config)
                 paths = SessionPaths.from_env(req.hook.session_id, req.env)
+                proxies: ProxyState = app.state.proxies
                 with build_http_client(req.env) as http:
                     output = await handle_session_start(
                         req.hook,
@@ -138,7 +172,7 @@ async def handle_hook(req: HookRequest) -> Response:
                         caller_env=req.env,
                         http=http,
                         otlp_exporter=app.state.otlp_exporter,
-                        proxy=app.state.proxy,
+                        proxy=proxies.tcp,
                         background_tasks=app.state.background_tasks,
                     )
             case PreToolUseInput():
@@ -169,17 +203,13 @@ class _UpdateProxyCredsRequest(BaseModel):
 @app.post("/update-proxy-creds")
 async def update_proxy_creds(req: _UpdateProxyCredsRequest) -> UpdateProxyCredsResponse:
     """Update in-process proxy credentials. Called by bazel_wrapper on each invocation."""
-    uds_proxy: UdsRemoteProxy | None = app.state.uds_proxy
-    if uds_proxy is None:
+    proxies: ProxyState = app.state.proxies
+    if not proxies.any_running():
         raise HTTPException(status_code=503, detail="No proxy running")
-    uds_proxy.set_creds(req.https_proxy)
-    # CLEANUP(2026-03-26): Remove TCP proxy branch once UDS mode is confirmed stable.
-    proxy: AuthForwardingProxy | None = app.state.proxy
-    if proxy is not None:
-        proxy.set_creds(req.https_proxy)
+    proxies.set_creds(req.https_proxy)
     logger.debug("Updated proxy credentials via RPC")
     # Return TCP proxy URL if available (legacy mode), otherwise a placeholder.
-    proxy_url = f"http://localhost:{proxy.listen_port}" if proxy else "uds-only"
+    proxy_url = f"http://localhost:{proxies.tcp.listen_port}" if proxies.tcp else "uds-only"
     return UpdateProxyCredsResponse(proxy_url=proxy_url)
 
 
@@ -213,11 +243,6 @@ async def _start_idle_watchdog() -> None:
 @app.on_event("shutdown")
 async def _stop_proxy() -> None:
     """Stop the in-process proxies on daemon shutdown."""
-    proxy: AuthForwardingProxy | None = getattr(app.state, "proxy", None)
-    if proxy is not None:
-        logger.info("Stopping in-process auth proxy...")
-        proxy.stop()
-    uds_proxy: UdsRemoteProxy | None = getattr(app.state, "uds_proxy", None)
-    if uds_proxy is not None:
-        logger.info("Stopping UDS remote proxy...")
-        uds_proxy.stop()
+    proxies: ProxyState | None = getattr(app.state, "proxies", None)
+    if proxies is not None:
+        proxies.stop_all()

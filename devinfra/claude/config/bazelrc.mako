@@ -63,13 +63,16 @@ build --build_metadata=ROLE=claude-code
 test --test_tag_filters=-live_openai_api
 % endif
 % if bazel_remote_proxy_sock:
-# Route gRPC remote execution/cache and BES through a UDS proxy (direct on CLI,
-# CONNECT tunnel through egress proxy on web). Uses Bazel's native
-# --remote_proxy/--bes_proxy, bypassing gRPC-Java's proxy auth timing issue.
+# Route gRPC remote execution/cache through a UDS proxy (direct on CLI,
+# CONNECT tunnel through egress proxy on web). Uses Bazel's native --remote_proxy,
+# bypassing gRPC-Java's proxy auth timing issue.
 # On CLI: socket accessible inside bwrap sandbox (--ro-bind / / exposes host fs;
 # no seccomp on most Linux machines means AF_UNIX is not blocked).
 build --remote_proxy=unix:${bazel_remote_proxy_sock}
-build --bes_proxy=unix:${bazel_remote_proxy_sock}
+% endif
+% if bazel_bes_proxy_sock:
+# Route Build Event Service (BES) traffic through a separate UDS proxy.
+build --bes_proxy=unix:${bazel_bes_proxy_sock}
 % endif
 
 % if buildbuddy_bazelrc:

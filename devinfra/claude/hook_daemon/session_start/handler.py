@@ -161,6 +161,7 @@ def _render_extra_context(
     web_mode: bool = False,
     profile: ProfileConfig,
     bazel_remote_proxy_sock: Path | None,
+    bazel_bes_proxy_sock: Path | None,
 ) -> str:
     """Render repo-specific context from .claude_hooks/templates/context.mako if it exists."""
     extra_template_path = project_dir / HOOKS_DOTDIR / "templates" / "context.mako"
@@ -173,6 +174,7 @@ def _render_extra_context(
         web_mode=web_mode,
         profile=profile,
         bazel_remote_proxy_sock=bazel_remote_proxy_sock,
+        bazel_bes_proxy_sock=bazel_bes_proxy_sock,
     )
     return result.rstrip("\n")
 
@@ -585,7 +587,8 @@ async def run_session(
             web_proxy=ctx.web_mode,
             use_tcp_proxy=settings.proxy_mode == ProxyMode.TCP,
             proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
-            remote_proxy_sock=paths.bazel_remote_proxy_sock,
+            bazel_remote_proxy_sock=paths.bazel_remote_proxy_sock,
+            bazel_bes_proxy_sock=paths.bazel_bes_proxy_sock,
             truststore_path=paths.auth_proxy_truststore,
             truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
             combined_ca_path=combined_ca,
@@ -650,6 +653,7 @@ async def run_session(
             web_mode=ctx.web_mode,
             profile=hook_config.profile(ctx.web_mode),
             bazel_remote_proxy_sock=paths.bazel_remote_proxy_sock if paths.bazel_remote_proxy_sock.exists() else None,
+            bazel_bes_proxy_sock=paths.bazel_bes_proxy_sock if paths.bazel_bes_proxy_sock.exists() else None,
         )
         template = Template((_TEMPLATES_DIR / "session_context.mako").read_text())
         context_output: str = template.render(

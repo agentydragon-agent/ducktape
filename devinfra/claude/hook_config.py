@@ -76,7 +76,10 @@ class BazelRemoteProxyConfig(BaseModel):
 
 class ProfileConfig(BaseModel):
     bazel_remote_proxy: BazelRemoteProxyConfig | None = Field(
-        description="UDS proxy for Bazel --remote_proxy/--bes_proxy (remote execution + BES). Null = disabled."
+        description="UDS proxy for Bazel --remote_proxy (remote execution + cache). Null = disabled."
+    )
+    bazel_bes_proxy: BazelRemoteProxyConfig | None = Field(
+        description="UDS proxy for Bazel --bes_proxy (Build Event Service). Null = disabled."
     )
 
 
