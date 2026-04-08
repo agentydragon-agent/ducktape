@@ -157,15 +157,25 @@ def get_all_files(repo: pygit2.Repository) -> list[Path]:
 
 
 async def main_async() -> int:
+    profile = os.environ.get("PRECOMMIT_PROFILE", "").lower() in ("1", "true", "yes")
+
+    t0 = time.perf_counter()
+
     repo_root = get_repo_root()
     repo = pygit2.Repository(str(repo_root))
+    t1 = time.perf_counter()
 
     bazel_index = build_bazel_index(repo_root)
 
     files = [Path(f) for f in sys.argv[1:]] if len(sys.argv) > 1 else get_all_files(repo)
+    t2 = time.perf_counter()
+
+    if profile:
+        print(f"[profile] setup: {t1 - t0:.2f}s, get_files: {t2 - t1:.2f}s")
 
     # Run validations
     print(f"Validating {len(files)} files...")
+    start_total = time.perf_counter()
     results = list(
         await asyncio.gather(
             run_pytest_main_check(files, repo_root, repo, bazel_index),
@@ -187,6 +197,9 @@ async def main_async() -> int:
                 failed.append(vresult)
                 if output:
                     print(output, file=sys.stderr)
+
+    elapsed_total = time.perf_counter() - start_total
+    print(f"\nTotal: {elapsed_total:.1f}s")
 
     # Enforce Bazel tests only when explicitly enabled
     if os.environ.get("DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS") in ("1", "true"):

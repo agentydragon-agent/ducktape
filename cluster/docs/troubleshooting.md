@@ -248,7 +248,7 @@ cd terraform/main && tofu apply -target=kubernetes_secret.sops_age_cluster_secre
 **Validation** (runs as part of unified pre-commit):
 
 ```bash
-bazel run //devinfra/precommit
+pre-commit run --all-files
 ```
 
 ## Health Checks

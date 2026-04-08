@@ -1,16 +1,3 @@
-# Unified pre-commit tool: custom validations in single Bazel invocation
-#
-# Combines custom validations to avoid Bazel client lock contention.
-# When pre-commit runs multiple Bazel hooks concurrently, they serialize on
-# the Bazel client lock (~55s each). This single binary runs both sequentially
-# within one invocation (~20s total).
-#
-# Note: formatting moved to standard hooks (buildifier, ruff, shfmt)
-#
-# Usage:
-#   bazel run //devinfra/precommit -- [files...]
-#   bazel run //devinfra/precommit  # validate all tracked files
-
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/testing:defs.bzl", "py_test")
 
@@ -47,24 +34,6 @@ py_binary(
     deps = [":check_terraform_centralization"],
 )
 
-# Unified precommit: custom validations in one Bazel invocation
-py_binary(
-    name = "precommit",
-    srcs = ["precommit.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":check_filename_conventions",
-        ":check_terraform_centralization",
-        "//cluster/scripts/validate_cluster:main",
-        "//devinfra:check_pytest_main",
-        "//util/bazel:workspace",
-        "@pypi//pygit2",
-    ],
-)
-
-# Unified pre-commit entry point for the ducktape wheel.
-# Runs all custom validations (filename-conventions, tf-centralization,
-# pytest-main-check, cluster-validate) and optionally enforce-bazel-tests.
 py_library(
     name = "check_test_tag",
     srcs = ["check_test_tag.py"],

@@ -198,5 +198,5 @@ rm -rf "$TMPCA"
 Pre-commit validates SOPS files can be decrypted:
 
 ```bash
-bazel run //devinfra/precommit
+pre-commit run --all-files
 ```
