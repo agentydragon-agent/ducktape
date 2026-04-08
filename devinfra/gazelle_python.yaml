@@ -18,6 +18,7 @@ manifest:
     absl: absl_py
     agent_framework: agent_framework_core
     agent_framework_anthropic: agent_framework_anthropic
+    agent_framework_claude: agent_framework_claude
     agent_framework_openai: agent_framework_openai
     agents: openai_agents
     aiodocker: aiodocker
@@ -601,4 +602,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 71bca9cfa98ad01c4020ec7eca864e603835e8e122dddea77ae971abe5e7afb0
+integrity: 923f0c6f49326f416703d0efc12343f8cfe0ea38d4fc886c625ecb95560d9a92
