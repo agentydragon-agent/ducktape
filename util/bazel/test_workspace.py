@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import pytest_bazel
 
-from util.bazel.workspace import BazelLabel, BazelWorkspace
+from util.bazel.workspace import BazelBackend, BazelLabel, BazelWorkspace
 
 
 @pytest.mark.parametrize(
@@ -119,7 +119,7 @@ def test_query_parses_labels(tmp_path: Path) -> None:
     mock_result = MagicMock()
     mock_result.stdout = "//foo:bar.py\n@ext//pkg:target\n\n"
     mock_result.returncode = 0
-    workspace = BazelWorkspace(root=tmp_path)
+    workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
     with patch("util.bazel.workspace.subprocess.run", return_value=mock_result) as mock_run:
         result = workspace.query("//...")
     (cmd,), kwargs = mock_run.call_args
@@ -140,7 +140,7 @@ def test_query_persist_dir(tmp_path: Path) -> None:
     mock_result.stdout = "//foo:bar\n"
     mock_result.stderr = ""
     mock_result.returncode = 0
-    workspace = BazelWorkspace(root=tmp_path)
+    workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
     with patch("util.bazel.workspace.subprocess.run", return_value=mock_result):
         workspace.query("//...", persist_dir=persist_dir)
     assert (persist_dir / "query").read_text() == "//..."
@@ -168,7 +168,7 @@ def test_query_filters_bb_remote_log_lines(tmp_path: Path) -> None:
         "\x1b[90m2026-04-08 14:38:30.000 UTC (command exited with code 0)\n"
     )
     mock_result.returncode = 0
-    workspace = BazelWorkspace(root=tmp_path)
+    workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
     with patch("util.bazel.workspace.subprocess.run", return_value=mock_result):
         result = workspace.query("//...")
     assert result == [
@@ -183,7 +183,7 @@ def test_query_raises_on_failure(tmp_path: Path) -> None:
     mock_result.stdout = ""
     mock_result.stderr = "error"
     mock_result.returncode = 1
-    workspace = BazelWorkspace(root=tmp_path)
+    workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
     with patch("util.bazel.workspace.subprocess.run", return_value=mock_result), pytest.raises(CalledProcessError):
         workspace.query("//...")
 

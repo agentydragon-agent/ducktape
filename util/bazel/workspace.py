@@ -192,9 +192,9 @@ class BazelWorkspace:
     """A local Bazel workspace rooted at a specific directory."""
 
     root: Path
+    backend: BazelBackend
     output_base: Path | None = None
     startup_flags: tuple[str, ...] = ()
-    backend: BazelBackend = BazelBackend.LOCAL
 
     def __post_init__(self) -> None:
         if self.backend != BazelBackend.LOCAL:
@@ -203,13 +203,14 @@ class BazelWorkspace:
             if self.startup_flags:
                 raise ValueError(f"startup_flags is not supported with {self.backend}")
 
-    def _bazel_prefix(self) -> list[str]:
+    @property
+    def _bazel_prefix(self) -> tuple[str, ...]:
         """Base bazel command with optional --output_base and startup flags."""
         cmd = list(self.backend.command)
         if self.output_base is not None:
             cmd.append(f"--output_base={self.output_base}")
         cmd.extend(self.startup_flags)
-        return cmd
+        return tuple(cmd)
 
     def find_package(self, filepath: Path) -> Path | None:
         """Find the Bazel package containing a file by walking up to find BUILD."""
@@ -247,7 +248,7 @@ class BazelWorkspace:
         ``--query_file`` (local only — ``bb remote`` cannot access local temp
         files).
         """
-        cmd = [*self._bazel_prefix(), "query", "--output=label"]
+        cmd = [*self._bazel_prefix, "query", "--output=label"]
         if keep_going:
             cmd.append("--keep_going")
         if universe_scope is not None:
@@ -298,7 +299,7 @@ class BazelWorkspace:
 
     def test(self, targets: list[str], *, check_up_to_date: bool = False, timeout: int | None = None) -> int:
         """Run ``bazel test`` and return the exit code."""
-        cmd = [*self._bazel_prefix(), "test"]
+        cmd = [*self._bazel_prefix, "test"]
         if check_up_to_date:
             cmd.append("--check_tests_up_to_date")
         cmd.extend(targets)
@@ -307,4 +308,4 @@ class BazelWorkspace:
 
     def shutdown(self) -> None:
         """Shut down the Bazel server for this workspace."""
-        subprocess.run([*self._bazel_prefix(), "shutdown"], cwd=self.root, check=False, capture_output=True)
+        subprocess.run([*self._bazel_prefix, "shutdown"], cwd=self.root, check=False, capture_output=True)
