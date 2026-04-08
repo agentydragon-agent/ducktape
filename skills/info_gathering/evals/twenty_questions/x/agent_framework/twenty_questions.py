@@ -123,10 +123,12 @@ async def _run_simulator(
     results: list[Content] = []
     tool_output = ""
     for fc in function_calls:
+        assert fc.name is not None, f"function_call missing name: {fc}"
+        assert fc.call_id is not None, f"function_call missing call_id: {fc}"
         tool = sim_tool_map[fc.name]
         args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else (fc.arguments or {})
         tool_result = await tool.invoke(arguments=args)
-        tool_output = tool_result[0].text if tool_result else ""
+        tool_output = tool_result[0].text if tool_result and tool_result[0].text else ""
         results.append(Content.from_function_result(fc.call_id, result=tool_output))
     sim_history.append(Message("tool", results))
 
@@ -280,13 +282,14 @@ async def run_game(
 
         results: list[Content] = []
         for fc in function_calls:
+            assert fc.name is not None, f"function_call missing name: {fc}"
+            assert fc.call_id is not None, f"function_call missing call_id: {fc}"
             tool = guesser_tool_map[fc.name]
             args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else (fc.arguments or {})
             try:
                 tool_result = await tool.invoke(arguments=args)
-                content = tool_result[0].text if tool_result else ""
+                content = tool_result[0].text if tool_result and tool_result[0].text else ""
             except Exception as e:
-                # Return validation/execution errors to the model so it can retry.
                 content = f"Error: {e}"
                 logger.warning("Tool %s error: %s", fc.name, e)
             results.append(Content.from_function_result(fc.call_id, result=content))

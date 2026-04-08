@@ -262,10 +262,10 @@ async def run_game(
 
             usage = _extract_usage(response)
             if usage:
-                game.total_input_tokens += usage.get("input_token_count", 0) or 0
-                game.total_output_tokens += usage.get("output_token_count", 0) or 0
-                game.total_cache_read_tokens += usage.get("anthropic.cache_read_input_tokens", 0) or 0
-                game.total_cache_creation_tokens += usage.get("anthropic.cache_creation_input_tokens", 0) or 0
+                game.total_input_tokens += int(usage.get("input_token_count", 0) or 0)
+                game.total_output_tokens += int(usage.get("output_token_count", 0) or 0)
+                game.total_cache_read_tokens += int(usage.get("anthropic.cache_read_input_tokens", 0) or 0)
+                game.total_cache_creation_tokens += int(usage.get("anthropic.cache_creation_input_tokens", 0) or 0)
 
             function_calls = _extract_function_calls(response)
 
@@ -312,7 +312,8 @@ async def run_game(
 
             results: list[Content] = []
             for fc in function_calls:
-                tool = tool_map.get(fc.name)
+                assert fc.call_id is not None, f"function_call missing call_id: {fc}"
+                tool = tool_map.get(fc.name) if fc.name is not None else None
                 args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else (fc.arguments or {})
                 if tool is None:
                     content = f"Error: unknown tool '{fc.name}'"
@@ -320,7 +321,7 @@ async def run_game(
                 else:
                     try:
                         tool_result = await tool.invoke(arguments=args)
-                        content = tool_result[0].text if tool_result else ""
+                        content = tool_result[0].text if tool_result and tool_result[0].text else ""
                     except Exception as e:
                         content = f"Error: {e}"
                         logger.warning("Tool %s error: %s", fc.name, e)
