@@ -1,4 +1,4 @@
-"""Function learning eval using AutoGen v0.4.
+"""Function learning eval using Microsoft Agent Framework.
 
 The model plays a function-learning game: each turn it queries one input of a
 secret boolean function and submits a Python program guess. The scaffold evaluates
@@ -13,20 +13,12 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Literal
+from typing import IO, Any, Literal
 
 import aiodocker
-from autogen_core import CancellationToken
-from autogen_core.models import (
-    AssistantMessage,
-    ChatCompletionClient,
-    FunctionExecutionResult,
-    FunctionExecutionResultMessage,
-    SystemMessage,
-    UserMessage,
-)
-from autogen_core.tools import FunctionTool
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from agent_framework import ChatResponse, Content, FunctionTool, Message, UsageDetails
+from agent_framework.anthropic import AnthropicClient
+from agent_framework.openai import OpenAIChatCompletionClient
 from fastmcp.client import Client
 from mcp.types import TextContent
 from pydantic import BaseModel
@@ -41,7 +33,6 @@ from skills.info_gathering.evals.function_learning.result_types import (
     TurnResult,
 )
 from skills.info_gathering.evals.function_learning.scoring import EVAL_TIMEOUT_S, evaluate_program
-from skills.info_gathering.evals.prompt_caching import CachedAnthropicClient, CachedCreateResult
 from skills.info_gathering.evals.twenty_questions.prompts import load_skill_prompt
 from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths
 
@@ -126,6 +117,16 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _extract_function_calls(response: ChatResponse) -> list[Content]:
+    """Extract function call Content items from a ChatResponse."""
+    msg = response.messages[0]
+    return [c for c in msg.contents if c.type == "function_call"]
+
+
+def _extract_usage(response: ChatResponse) -> UsageDetails | None:
+    return response.usage_details
+
+
 def _make_play_turn_tool(
     game: GameContext, secret_fn: SecretFunction, scoring_container: aiodocker.docker.DockerContainer
 ) -> FunctionTool:
@@ -174,12 +175,12 @@ def _make_play_turn_tool(
         return json.dumps(response, indent=2)
 
     return FunctionTool(
-        play_turn,
         name="play_turn",
         description=(
             "Query the secret function on one input and submit your program guess. "
             "The program takes no input and prints one output per line for inputs 0..max_input."
         ),
+        func=play_turn,
     )
 
 
@@ -191,15 +192,15 @@ def make_exec_tool(mcp_client: Client) -> FunctionTool:
         return "\n".join(block.text for block in result.content if isinstance(block, TextContent))
 
     return FunctionTool(
-        exec, name="exec", description="Run a command in a scratch container. cmd is a list of strings (no shell)."
+        name="exec", description="Run a command in a scratch container. cmd is a list of strings (no shell).", func=exec
     )
 
 
-def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
+def _build_model_client(*, api: str, model: str) -> Any:
     if api == "openai":
         return OpenAIChatCompletionClient(model=model)
     if api == "anthropic":
-        return CachedAnthropicClient(model=model)
+        return AnthropicClient(model=model)
     raise ValueError(f"Unsupported API: {api!r}")
 
 
@@ -216,7 +217,7 @@ async def run_game(
     output_dir: Path,
     exec_tool: FunctionTool,
     scoring_container: aiodocker.docker.DockerContainer,
-    model_client: ChatCompletionClient | None = None,
+    model_client: Any | None = None,
     no_skill: bool = False,
 ) -> RunSummary:
     """Execute one function learning game and persist results."""
@@ -236,7 +237,6 @@ async def run_game(
         game = GameContext(turn_limit=turn_limit, log_file=log_f)
         play_turn_tool = _make_play_turn_tool(game, secret_fn, scoring_container)
         all_tools = [play_turn_tool, exec_tool]
-        tool_schemas = [t.schema for t in all_tools]
         tool_map = {t.name: t for t in all_tools}
         game.log(
             GameStartLog(
@@ -250,78 +250,87 @@ async def run_game(
             )
         )
 
-        history: list[SystemMessage | UserMessage | AssistantMessage | FunctionExecutionResultMessage] = [
-            SystemMessage(content=system),
-            UserMessage(content=opening, source="user"),
-        ]
+        history: list[Message] = [Message("system", [system]), Message("user", [opening])]
 
         for _ in range(_MAX_STEPS):
             if game.finished:
                 break
 
-            result = await model_client.create(history, tools=tool_schemas, tool_choice="required")
+            response = await model_client.get_response(
+                history, options={"tools": all_tools, "tool_choice": "required", "allow_multiple_tool_calls": False}
+            )
 
-            game.total_input_tokens += result.usage.prompt_tokens
-            game.total_output_tokens += result.usage.completion_tokens
-            if isinstance(result, CachedCreateResult):
-                game.total_cache_read_tokens += result.cache_read_tokens or 0
-                game.total_cache_creation_tokens += result.cache_creation_tokens or 0
+            usage = _extract_usage(response)
+            if usage:
+                game.total_input_tokens += usage.get("input_token_count", 0) or 0
+                game.total_output_tokens += usage.get("output_token_count", 0) or 0
+                game.total_cache_read_tokens += usage.get("anthropic.cache_read_input_tokens", 0) or 0
+                game.total_cache_creation_tokens += usage.get("anthropic.cache_creation_input_tokens", 0) or 0
 
-            if isinstance(result.content, str):
+            function_calls = _extract_function_calls(response)
+
+            if not function_calls:
+                text_content = response.messages[0].text
+                cache_read = usage.get("anthropic.cache_read_input_tokens") if usage else None
+                cache_creation = usage.get("anthropic.cache_creation_input_tokens") if usage else None
                 game.log(
                     LlmResponseLog(
                         timestamp=_now(),
-                        text=result.content,
+                        text=text_content,
                         tool_calls=None,
-                        input_tokens=result.usage.prompt_tokens,
-                        output_tokens=result.usage.completion_tokens,
-                        cache_read_tokens=result.cache_read_tokens if isinstance(result, CachedCreateResult) else None,
-                        cache_creation_tokens=result.cache_creation_tokens
-                        if isinstance(result, CachedCreateResult)
-                        else None,
+                        input_tokens=usage.get("input_token_count", 0) or 0 if usage else 0,
+                        output_tokens=usage.get("output_token_count", 0) or 0 if usage else 0,
+                        cache_read_tokens=cache_read,
+                        cache_creation_tokens=cache_creation,
                     )
                 )
-                history.append(AssistantMessage(content=result.content, source="agent"))
+                history.append(response.messages[0])
                 continue
 
-            function_calls = result.content
             assert len(function_calls) == 1, f"expected 1 tool call, got {len(function_calls)}"
+            fc = function_calls[0]
+            cache_read = usage.get("anthropic.cache_read_input_tokens") if usage else None
+            cache_creation = usage.get("anthropic.cache_creation_input_tokens") if usage else None
             game.log(
                 LlmResponseLog(
                     timestamp=_now(),
                     text=None,
                     tool_calls=[
-                        FunctionCallLog(id=fc.id, name=fc.name, arguments=fc.arguments) for fc in function_calls
+                        FunctionCallLog(
+                            id=fc.call_id,
+                            name=fc.name,
+                            arguments=fc.arguments if isinstance(fc.arguments, str) else json.dumps(fc.arguments),
+                        )
                     ],
-                    input_tokens=result.usage.prompt_tokens,
-                    output_tokens=result.usage.completion_tokens,
-                    cache_read_tokens=result.cache_read_tokens if isinstance(result, CachedCreateResult) else None,
-                    cache_creation_tokens=result.cache_creation_tokens
-                    if isinstance(result, CachedCreateResult)
-                    else None,
+                    input_tokens=usage.get("input_token_count", 0) or 0 if usage else 0,
+                    output_tokens=usage.get("output_token_count", 0) or 0 if usage else 0,
+                    cache_read_tokens=cache_read,
+                    cache_creation_tokens=cache_creation,
                 )
             )
-            history.append(AssistantMessage(content=function_calls, source="agent"))
+            history.append(response.messages[0])
 
-            exec_results: list[FunctionExecutionResult] = []
+            results: list[Content] = []
             for fc in function_calls:
                 tool = tool_map.get(fc.name)
-                args = json.loads(fc.arguments)
+                args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else (fc.arguments or {})
                 if tool is None:
                     content = f"Error: unknown tool '{fc.name}'"
                     logger.warning("Unknown tool name: %s", fc.name)
                 else:
                     try:
-                        tool_result = await tool.run_json(args, CancellationToken())
-                        content = tool.return_value_as_string(tool_result)
+                        tool_result = await tool.invoke(arguments=args)
+                        content = tool_result[0].text if tool_result else ""
                     except Exception as e:
                         content = f"Error: {e}"
                         logger.warning("Tool %s error: %s", fc.name, e)
                 game.log(
-                    ToolResultLog(timestamp=_now(), tool_name=fc.name, call_id=fc.id, arguments=args, result=content)
+                    ToolResultLog(
+                        timestamp=_now(), tool_name=fc.name, call_id=fc.call_id, arguments=args, result=content
+                    )
                 )
-                exec_results.append(FunctionExecutionResult(call_id=fc.id, content=content, name=fc.name))
-            history.append(FunctionExecutionResultMessage(content=exec_results))
+                results.append(Content.from_function_result(fc.call_id, result=content))
+            history.append(Message("tool", results))
 
         per_turn = [tr.score.hamming_loss for tr in game.turn_results]
         per_turn += [0] * (turn_limit - len(per_turn))
@@ -342,7 +351,7 @@ async def run_game(
 
     summary = RunSummary(
         eval_name=function_name,
-        framework="autogen",
+        framework="agent_framework",
         model=model,
         api=api,
         turns=game.turn,
@@ -360,7 +369,7 @@ async def run_game(
     summary_path.write_text(summary.model_dump_json(indent=2))
     logger.info("Saved results to %s", summary_path.parent)
 
-    if owns_client:
+    if owns_client and hasattr(model_client, "close"):
         await model_client.close()
     return summary
 
@@ -395,7 +404,7 @@ async def _async_main(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Function Learning Eval — AutoGen")
+    parser = argparse.ArgumentParser(description="Function Learning Eval — Agent Framework")
     parser.add_argument("--function", choices=list(FUNCTIONS), required=True)
     parser.add_argument("--no-hint", action="store_true")
     parser.add_argument("--model", required=True)

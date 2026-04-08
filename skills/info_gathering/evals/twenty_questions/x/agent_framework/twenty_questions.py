@@ -1,4 +1,4 @@
-"""Twenty Questions game using AutoGen v0.4 with structured guesser tools.
+"""Twenty Questions game using Microsoft Agent Framework with structured guesser tools.
 
 The guesser has tool_choice=required and three tools: ask_yes_no_question,
 guess_answer, and exec (scratch computation). Game tools internally invoke the
@@ -13,24 +13,15 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from autogen_core import CancellationToken
-from autogen_core.models import (
-    AssistantMessage,
-    ChatCompletionClient,
-    FunctionExecutionResult,
-    FunctionExecutionResultMessage,
-    SystemMessage,
-    UserMessage,
-)
-from autogen_core.tools import FunctionTool
-from autogen_ext.models.openai import OpenAIChatCompletionClient
+from agent_framework import ChatResponse, Content, FunctionTool, Message
+from agent_framework.anthropic import AnthropicClient
+from agent_framework.openai import OpenAIChatCompletionClient
 from fastmcp.client import Client
 from mcp.types import TextContent
 
 from skills.info_gathering.evals.docker_exec import scratch_exec_server
-from skills.info_gathering.evals.prompt_caching import CachedAnthropicClient
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
@@ -97,41 +88,47 @@ def _make_sim_tools(game: GameContext) -> list[FunctionTool]:
         return reason
 
     return [
-        FunctionTool(answer, name="answer", description="Answer a yes/no question."),
-        FunctionTool(correct_answer, name="correct_answer", description="The player guessed correctly."),
-        FunctionTool(invalid_input, name="invalid_input", description="The input is not a valid question or guess."),
+        FunctionTool(name="answer", description="Answer a yes/no question.", func=answer),
+        FunctionTool(name="correct_answer", description="The player guessed correctly.", func=correct_answer),
+        FunctionTool(
+            name="invalid_input", description="The input is not a valid question or guess.", func=invalid_input
+        ),
     ]
 
 
+def _extract_function_calls(response: ChatResponse) -> list[Content]:
+    """Extract function call Content items from a ChatResponse."""
+    msg = response.messages[0]
+    return [c for c in msg.contents if c.type == "function_call"]
+
+
 async def _run_simulator(
-    *,
-    model_client: ChatCompletionClient,
-    sim_history: list[SystemMessage | UserMessage | AssistantMessage | FunctionExecutionResultMessage],
-    sim_tools: list[FunctionTool],
-    text: str,
+    *, model_client: Any, sim_history: list[Message], sim_tools: list[FunctionTool], text: str
 ) -> str:
     """Run one simulator turn: append text, call LLM with required tool use, execute tool, return result."""
-    sim_history.append(UserMessage(content=text, source="guesser"))
-    sim_tool_schemas = [t.schema for t in sim_tools]
+    sim_history.append(Message("user", [text]))
     sim_tool_map = {t.name: t for t in sim_tools}
 
-    result = await model_client.create(sim_history, tools=sim_tool_schemas, tool_choice="required")
+    response = await model_client.get_response(
+        sim_history, options={"tools": sim_tools, "tool_choice": "required", "allow_multiple_tool_calls": False}
+    )
 
-    if isinstance(result.content, str):
-        raise RuntimeError(f"Simulator returned text instead of tool call: {result.content!r}")
+    function_calls = _extract_function_calls(response)
+    if not function_calls:
+        text_content = response.messages[0].text
+        raise RuntimeError(f"Simulator returned text instead of tool call: {text_content!r}")
 
-    function_calls = result.content
-    sim_history.append(AssistantMessage(content=function_calls, source="simulator"))
+    sim_history.append(response.messages[0])
 
-    exec_results: list[FunctionExecutionResult] = []
+    results: list[Content] = []
     tool_output = ""
     for fc in function_calls:
         tool = sim_tool_map[fc.name]
-        args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else fc.arguments
-        tool_result = await tool.run_json(args, CancellationToken())
-        tool_output = tool.return_value_as_string(tool_result)
-        exec_results.append(FunctionExecutionResult(call_id=fc.id, content=tool_output, name=fc.name))
-    sim_history.append(FunctionExecutionResultMessage(content=exec_results))
+        args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else (fc.arguments or {})
+        tool_result = await tool.invoke(arguments=args)
+        tool_output = tool_result[0].text if tool_result else ""
+        results.append(Content.from_function_result(fc.call_id, result=tool_output))
+    sim_history.append(Message("tool", results))
 
     return tool_output
 
@@ -140,11 +137,7 @@ async def _run_simulator(
 
 
 def _make_game_tools(
-    *,
-    game: GameContext,
-    model_client: ChatCompletionClient,
-    sim_history: list[SystemMessage | UserMessage | AssistantMessage | FunctionExecutionResultMessage],
-    sim_tools: list[FunctionTool],
+    *, game: GameContext, model_client: Any, sim_history: list[Message], sim_tools: list[FunctionTool]
 ) -> list[FunctionTool]:
     """Create guesser game tools that internally invoke the simulator."""
 
@@ -190,9 +183,9 @@ def _make_game_tools(
 
     return [
         FunctionTool(
-            ask_yes_no_question, name="ask_yes_no_question", description="Ask a yes/no question. Uses one turn."
+            name="ask_yes_no_question", description="Ask a yes/no question. Uses one turn.", func=ask_yes_no_question
         ),
-        FunctionTool(guess_answer, name="guess_answer", description="Guess the secret answer. Uses one turn."),
+        FunctionTool(name="guess_answer", description="Guess the secret answer. Uses one turn.", func=guess_answer),
     ]
 
 
@@ -209,18 +202,18 @@ def _make_exec_tool(mcp_client: Client) -> FunctionTool:
         return "\n".join(block.text for block in result.content if isinstance(block, TextContent))
 
     return FunctionTool(
-        exec, name="exec", description="Run a command in a scratch container. cmd is a list of strings (no shell)."
+        name="exec", description="Run a command in a scratch container. cmd is a list of strings (no shell).", func=exec
     )
 
 
 # -- Helpers --
 
 
-def _build_model_client(*, api: str, model: str) -> ChatCompletionClient:
+def _build_model_client(*, api: str, model: str) -> Any:
     if api == "openai":
         return OpenAIChatCompletionClient(model=model)
     if api == "anthropic":
-        return CachedAnthropicClient(model=model)
+        return AnthropicClient(model=model)
     raise ValueError(f"Unsupported API: {api!r}")
 
 
@@ -236,7 +229,7 @@ async def run_game(
     api: str,
     output_dir: Path,
     exec_tool: FunctionTool | None = None,
-    model_client: ChatCompletionClient | None = None,
+    model_client: Any | None = None,
     no_skill: bool = False,
 ) -> RunSummary:
     """Execute one Twenty Questions game and persist results."""
@@ -254,9 +247,7 @@ async def run_game(
     game = GameContext(turn_limit=variant.turn_limit)
 
     # Simulator state
-    sim_history: list[SystemMessage | UserMessage | AssistantMessage | FunctionExecutionResultMessage] = [
-        SystemMessage(content=sim_system)
-    ]
+    sim_history: list[Message] = [Message("system", [sim_system])]
     sim_tools = _make_sim_tools(game)
 
     # Guesser tools = game tools + optional exec
@@ -264,43 +255,42 @@ async def run_game(
     all_guesser_tools = list(game_tools)
     if exec_tool:
         all_guesser_tools.append(exec_tool)
-    guesser_tool_schemas = [t.schema for t in all_guesser_tools]
     guesser_tool_map = {t.name: t for t in all_guesser_tools}
 
     # Guesser conversation history
-    guesser_history: list[SystemMessage | UserMessage | AssistantMessage | FunctionExecutionResultMessage] = [
-        SystemMessage(content=guesser_system),
-        UserMessage(content=opening, source="user"),
-    ]
+    guesser_history: list[Message] = [Message("system", [guesser_system]), Message("user", [opening])]
 
     # Main loop: call guesser LLM with tool_choice=required, execute tools, repeat.
     for _ in range(_MAX_STEPS):
         if game.result is not None:
             break
 
-        result = await model_client.create(guesser_history, tools=guesser_tool_schemas, tool_choice="required")
+        response = await model_client.get_response(
+            guesser_history,
+            options={"tools": all_guesser_tools, "tool_choice": "required", "allow_multiple_tool_calls": False},
+        )
 
-        if isinstance(result.content, str):
+        function_calls = _extract_function_calls(response)
+        if not function_calls:
             # Shouldn't happen with tool_choice=required, but handle gracefully.
-            guesser_history.append(AssistantMessage(content=result.content, source="guesser"))
+            guesser_history.append(response.messages[0])
             continue
 
-        function_calls = result.content
-        guesser_history.append(AssistantMessage(content=function_calls, source="guesser"))
+        guesser_history.append(response.messages[0])
 
-        exec_results: list[FunctionExecutionResult] = []
+        results: list[Content] = []
         for fc in function_calls:
             tool = guesser_tool_map[fc.name]
-            args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else fc.arguments
+            args = json.loads(fc.arguments) if isinstance(fc.arguments, str) else (fc.arguments or {})
             try:
-                tool_result = await tool.run_json(args, CancellationToken())
-                content = tool.return_value_as_string(tool_result)
+                tool_result = await tool.invoke(arguments=args)
+                content = tool_result[0].text if tool_result else ""
             except Exception as e:
                 # Return validation/execution errors to the model so it can retry.
                 content = f"Error: {e}"
                 logger.warning("Tool %s error: %s", fc.name, e)
-            exec_results.append(FunctionExecutionResult(call_id=fc.id, content=content, name=fc.name))
-        guesser_history.append(FunctionExecutionResultMessage(content=exec_results))
+            results.append(Content.from_function_result(fc.call_id, result=content))
+        guesser_history.append(Message("tool", results))
 
     if game.result is None:
         game.result = Timeout(limit=game.turn_limit)
@@ -308,14 +298,14 @@ async def run_game(
     result_val = game.result
     turns = result_val.limit if isinstance(result_val, Timeout) else result_val.turns
 
-    calls_path, summary_path = run_output_paths(f"autogen_{variant_name}", output_dir)
+    calls_path, summary_path = run_output_paths(f"af_{variant_name}", output_dir)
     with calls_path.open("w") as f:
         for entry in game.log_entries:
             f.write(entry.model_dump_json() + "\n")
 
     summary = RunSummary(
         eval_name=variant_name,
-        framework="autogen",
+        framework="agent_framework",
         model=model,
         api=api,
         turns=turns,
@@ -324,7 +314,7 @@ async def run_game(
     )
     save_summary(summary=summary, summary_path=summary_path)
 
-    if owns_client:
+    if owns_client and hasattr(model_client, "close"):
         await model_client.close()
     return summary
 
@@ -346,7 +336,7 @@ async def _async_main(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Twenty Questions — AutoGen v0.4")
+    parser = argparse.ArgumentParser(description="Twenty Questions — Agent Framework")
     add_common_args(parser)
     parser.add_argument("--no-skill", action="store_true", help="Run without info-gathering skill prompt (baseline)")
     args = parser.parse_args()

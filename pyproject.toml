@@ -181,9 +181,9 @@ dependencies = [
     "hcloud>=2.0.0",
 
     # skills/info_gathering/evals/twenty_questions/x
-    "autogen-agentchat>=0.4",
-    "autogen-core>=0.4",
-    "autogen-ext[openai,anthropic]>=0.4",
+    "agent-framework-core>=1.0",
+    "agent-framework-openai>=1.0",
+    "agent-framework-anthropic>=1.0.0b260402",
     "langgraph>=0.2",
     "langchain-mcp-adapters>=0.1",
     "langchain-openai>=0.3",

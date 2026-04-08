@@ -5,21 +5,21 @@ py_library(
     srcs = ["twenty_questions.py"],
     deps = [
         "//skills/info_gathering/evals:docker_exec",
-        "//skills/info_gathering/evals:prompt_caching",
         "//skills/info_gathering/evals/twenty_questions:prompts",
         "//skills/info_gathering/evals/twenty_questions:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:cli",
         "//skills/info_gathering/evals/twenty_questions/x/shared:output",
         "//skills/info_gathering/evals/twenty_questions/x/shared:variants",
-        "@pypi//autogen_core",
-        "@pypi//autogen_ext",
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
         "@pypi//fastmcp",
     ],
 )
 
 py_binary(
     name = "twenty_questions_bin",
-    main_module = "skills.info_gathering.evals.twenty_questions.x.autogen.twenty_questions",
+    main_module = "skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions",
     deps = [":twenty_questions"],
 )
 
@@ -31,10 +31,10 @@ py_test(
     ],
     deps = [
         ":twenty_questions",
+        "//skills/info_gathering/evals:replay_client",
         "//skills/info_gathering/evals/twenty_questions:result_types",
         "//skills/info_gathering/evals/twenty_questions/x/shared:conftest",
-        "@pypi//autogen_core",
-        "@pypi//autogen_ext",
+        "@pypi//agent_framework_core",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",

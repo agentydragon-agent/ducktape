@@ -1,13 +1,6 @@
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
-    name = "prompt_caching",
-    srcs = ["prompt_caching.py"],
-    visibility = ["//skills/info_gathering/evals:__subpackages__"],
-    deps = ["@pypi//autogen_ext"],
-)
-
-py_library(
     name = "litellm_tool_provider",
     srcs = ["litellm_tool_provider.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
@@ -39,6 +32,13 @@ py_library(
         "//mcp_infra/exec:docker",
         "@pypi//aiodocker",
     ],
+)
+
+py_library(
+    name = "replay_client",
+    srcs = ["replay_client.py"],
+    visibility = ["//skills/info_gathering/evals:__subpackages__"],
+    deps = ["@pypi//agent_framework_core"],
 )
 
 py_library(

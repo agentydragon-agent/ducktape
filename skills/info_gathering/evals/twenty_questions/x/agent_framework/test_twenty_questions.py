@@ -1,6 +1,6 @@
-"""Tests for Twenty Questions AutoGen implementation with structured guesser tools.
+"""Tests for Twenty Questions Agent Framework implementation with structured guesser tools.
 
-Uses ReplayChatCompletionClient to run games with scripted model responses.
+Uses ReplayChatClient to run games with scripted model responses.
 The guesser calls ask_yes_no_question/guess_answer tools (which invoke the
 simulator inline), so the replay sequence is:
   guesser_tool_call, simulator_tool_call, guesser_tool_call, simulator_tool_call, ...
@@ -12,47 +12,42 @@ from unittest.mock import MagicMock
 
 import pytest
 import pytest_bazel
-from autogen_core import FunctionCall
-from autogen_core.models import CreateResult, RequestUsage
-from autogen_ext.models.replay import ReplayChatCompletionClient
+from agent_framework import ChatResponse, Content, Message
 
+from skills.info_gathering.evals.replay_client import ReplayChatClient
 from skills.info_gathering.evals.twenty_questions.result_types import RunSummary
-from skills.info_gathering.evals.twenty_questions.x.autogen.twenty_questions import run_game
-
-_ZERO_USAGE = RequestUsage(prompt_tokens=0, completion_tokens=0)
+from skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions import run_game
 
 
-def _tool_call_reply(name: str, arguments: dict[str, object]) -> CreateResult:
-    """Build a CreateResult with a single function call."""
-    return CreateResult(
-        finish_reason="function_calls",
-        content=[FunctionCall(id="call_1", name=name, arguments=json.dumps(arguments))],
-        usage=_ZERO_USAGE,
-        cached=False,
+def _tool_call_reply(name: str, arguments: dict[str, object]) -> ChatResponse:
+    """Build a ChatResponse with a single function call."""
+    return ChatResponse(
+        messages=[Message("assistant", [Content.from_function_call("call_1", name, arguments=json.dumps(arguments))])],
+        finish_reason="tool_calls",
     )
 
 
-def _guesser_ask(question: str) -> CreateResult:
+def _guesser_ask(question: str) -> ChatResponse:
     """Guesser calls ask_yes_no_question."""
     return _tool_call_reply("ask_yes_no_question", {"question": question})
 
 
-def _guesser_guess(answer: str) -> CreateResult:
+def _guesser_guess(answer: str) -> ChatResponse:
     """Guesser calls guess_answer."""
     return _tool_call_reply("guess_answer", {"answer": answer})
 
 
-def _sim_answer(response: str) -> CreateResult:
+def _sim_answer(response: str) -> ChatResponse:
     """Simulator calls answer."""
     return _tool_call_reply("answer", {"response": response})
 
 
-def _sim_correct() -> CreateResult:
+def _sim_correct() -> ChatResponse:
     """Simulator calls correct_answer."""
     return _tool_call_reply("correct_answer", {})
 
 
-def _sim_invalid(reason: str) -> CreateResult:
+def _sim_invalid(reason: str) -> ChatResponse:
     """Simulator calls invalid_input."""
     return _tool_call_reply("invalid_input", {"reason": reason})
 
@@ -60,33 +55,24 @@ def _sim_invalid(reason: str) -> CreateResult:
 @pytest.fixture
 def _patch_prompts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "skills.info_gathering.evals.twenty_questions.x.autogen.twenty_questions.load_sim_prompt",
+        "skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions.load_sim_prompt",
         MagicMock(return_value="You are the simulator."),
     )
     monkeypatch.setattr(
-        "skills.info_gathering.evals.twenty_questions.x.autogen.twenty_questions.load_skill_prompt",
+        "skills.info_gathering.evals.twenty_questions.x.agent_framework.twenty_questions.load_skill_prompt",
         MagicMock(return_value="You are skilled."),
     )
 
 
 async def _run_with_replay(
-    *, completions: list[CreateResult], tmp_path: Path, variant_name: str = "states"
+    *, completions: list[ChatResponse], tmp_path: Path, variant_name: str = "states"
 ) -> RunSummary:
     """Run a game with scripted responses.
 
     Completions interleave guesser and simulator:
     [guesser_tool_call_1, simulator_tool_call_1, guesser_tool_call_2, simulator_tool_call_2, ...]
     """
-    client = ReplayChatCompletionClient(
-        chat_completions=completions,
-        model_info={
-            "vision": False,
-            "function_calling": True,
-            "json_output": False,
-            "family": "unknown",
-            "structured_output": False,
-        },
-    )
+    client = ReplayChatClient(responses=completions)
     return await run_game(
         variant_name=variant_name, model="test-model", api="openai", output_dir=tmp_path, model_client=client
     )
@@ -103,13 +89,13 @@ async def test_correct_guess(tmp_path: Path) -> None:
     assert summary.result.kind == "correct"
     assert summary.result.turns == 2
     assert summary.turns == 2
-    assert summary.framework == "autogen"
+    assert summary.framework == "agent_framework"
 
 
 @pytest.mark.usefixtures("_patch_prompts")
 async def test_timeout(tmp_path: Path) -> None:
     """Guesser never guesses correctly and hits the turn limit."""
-    completions: list[CreateResult] = []
+    completions: list[ChatResponse] = []
     for i in range(1, 21):
         completions.append(_guesser_ask(f"Question {i}?"))
         completions.append(_sim_answer("no"))
@@ -174,7 +160,7 @@ def _check_output_files(tmp_path: Path) -> None:
     assert len(lines) >= 2
 
     summary_data = json.loads(summary_files[0].read_text())
-    assert summary_data["framework"] == "autogen"
+    assert summary_data["framework"] == "agent_framework"
     assert summary_data["result"]["kind"] == "correct"
 
 

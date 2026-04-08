@@ -43,9 +43,9 @@ manifest:
     attr: attrs
     attrs: attrs
     authlib: authlib
-    autogen_agentchat: autogen_agentchat
-    autogen_core: autogen_core
-    autogen_ext: autogen_ext
+    agent_framework: agent_framework_core
+    agent_framework_anthropic: agent_framework_anthropic
+    agent_framework_openai: agent_framework_openai
     aw_client: aw_client
     aw_core: aw_core
     aw_datastore: aw_core

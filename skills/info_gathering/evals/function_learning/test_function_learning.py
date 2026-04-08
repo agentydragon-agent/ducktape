@@ -1,6 +1,6 @@
 """Tests for the function learning game loop.
 
-Uses ReplayChatCompletionClient for scripted LLM responses, but runs real
+Uses ReplayChatClient for scripted LLM responses, but runs real
 Docker-based program evaluation (no mocking of evaluate_program).
 """
 
@@ -10,16 +10,13 @@ from pathlib import Path
 
 import aiodocker
 import pytest_bazel
-from autogen_core import FunctionCall
-from autogen_core.models import CreateResult, RequestUsage
-from autogen_core.tools import FunctionTool
-from autogen_ext.models.replay import ReplayChatCompletionClient
+from agent_framework import ChatResponse, Content, FunctionTool, Message
 
 from skills.info_gathering.evals.function_learning.function_learning import run_game
 from skills.info_gathering.evals.function_learning.functions import PARITY_GROUPS
 from skills.info_gathering.evals.function_learning.result_types import RunSummary
+from skills.info_gathering.evals.replay_client import ReplayChatClient
 
-_ZERO_USAGE = RequestUsage(prompt_tokens=0, completion_tokens=0)
 _TEST_TURNS = 3
 
 
@@ -29,38 +26,34 @@ def _dummy_exec_tool() -> FunctionTool:
     async def exec(cmd: list[str], timeout_ms: int = 30000) -> str:
         raise RuntimeError("exec should not be called in replay tests")
 
-    return FunctionTool(exec, name="exec", description="dummy")
+    return FunctionTool(name="exec", description="dummy", func=exec)
 
 
-def _play_turn_call(query: int, program: str) -> CreateResult:
-    return CreateResult(
-        finish_reason="function_calls",
-        content=[
-            FunctionCall(id="call_1", name="play_turn", arguments=json.dumps({"query": query, "program": program}))
+def _play_turn_call(query: int, program: str) -> ChatResponse:
+    return ChatResponse(
+        messages=[
+            Message(
+                "assistant",
+                [
+                    Content.from_function_call(
+                        "call_1", "play_turn", arguments=json.dumps({"query": query, "program": program})
+                    )
+                ],
+            )
         ],
-        usage=_ZERO_USAGE,
-        cached=False,
+        finish_reason="tool_calls",
     )
 
 
 async def _run_with_replay(
     *,
-    completions: list[CreateResult],
+    completions: list[ChatResponse],
     tmp_path: Path,
     function_name: str = "parity_groups",
     hint: bool = True,
     turn_limit: int = _TEST_TURNS,
 ) -> RunSummary:
-    client = ReplayChatCompletionClient(
-        chat_completions=completions,
-        model_info={
-            "vision": False,
-            "function_calling": True,
-            "json_output": False,
-            "family": "unknown",
-            "structured_output": False,
-        },
-    )
+    client = ReplayChatClient(responses=completions)
 
     async with aiodocker.Docker() as docker:
         container = await docker.containers.run(
@@ -169,7 +162,7 @@ def _check_output_files(tmp_path: Path) -> None:
     assert len(summary_files) == 1
 
     summary_data = json.loads(summary_files[0].read_text())
-    assert summary_data["framework"] == "autogen"
+    assert summary_data["framework"] == "agent_framework"
     assert summary_data["result"]["kind"] == "completed"
 
 

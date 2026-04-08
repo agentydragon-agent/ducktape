@@ -4,6 +4,21 @@ absl-py==2.4.0 \
     --hash=sha256:88476fd881ca8aab94ffa78b7b6c632a782ab3ba1cd19c9bd423abc4fb4cd28d \
     --hash=sha256:8c6af82722b35cf71e0f4d1d47dcaebfff286e27110a99fc359349b247dfb5d4
     # via ducktape (pyproject.toml)
+agent-framework-anthropic==1.0.0b260402 \
+    --hash=sha256:5e267ba7c3df265b604219a14e758408cf1fede9b092d56bc01db348873cb095 \
+    --hash=sha256:fdf39f6867da00cdcc5abda6064e4c1f6853a37864da50ba7683bb245f4f4683
+    # via ducktape (pyproject.toml)
+agent-framework-core==1.0.0 \
+    --hash=sha256:445f2c13f3a710f399a0d630811ab820dfa811e0723f4825a2d1764592bf5ef5 \
+    --hash=sha256:f4e0b5eec386e099a24b796224482dfcc4c58a5f746c544d8696b403d3f81d42
+    # via
+    #   ducktape (pyproject.toml)
+    #   agent-framework-anthropic
+    #   agent-framework-openai
+agent-framework-openai==1.0.0 \
+    --hash=sha256:229179103f43125b30715bda98bc4b3316af3b303d8cd8034a54e3c3f94c28d5 \
+    --hash=sha256:57303177a876528442b23825a97f05a20c49440c0ff65e0c2fb447d058babc42
+    # via ducktape (pyproject.toml)
 aiodocker==0.26.0 \
     --hash=sha256:7e4ee40c6f98e6d1cf95d712f15aef3853087c0475bc7ea5ec499c2d485ba7ec \
     --hash=sha256:f450acf0b402a03c6a6f1517d06bdff739c404e62578b332182ca272fde6e986
@@ -15,9 +30,7 @@ aiofile==3.9.0 \
 aiofiles==24.1.0 \
     --hash=sha256:22a075c9e5a3810f0c2e48f3008c94d68c65d763b9b03857924c99e57355166c \
     --hash=sha256:b4ec55f4195e3eb5d7abd1bf7e061763e864dd4954231fb8539a0ef8bb8260e5
-    # via
-    #   autogen-ext
-    #   matrix-nio
+    # via matrix-nio
 aiohappyeyeballs==2.6.1 \
     --hash=sha256:c3f9d0113123803ccadfdf3f0faa505bc78e6a72d1cc4806cbd719826e943558 \
     --hash=sha256:f349ba8f4b75cb25c99c5c2d84e997e485204d2902a9597802b0371f09331fb8
@@ -186,12 +199,12 @@ annotated-types==0.7.0 \
     --hash=sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53 \
     --hash=sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89
     # via pydantic
-anthropic==0.84.0 \
-    --hash=sha256:72f5f90e5aebe62dca316cb013629cfa24996b0f5a4593b8c3d712bc03c43c37 \
-    --hash=sha256:861c4c50f91ca45f942e091d83b60530ad6d4f98733bfe648065364da05d29e7
+anthropic==0.80.0 \
+    --hash=sha256:dad0e40ec371ee686e9ffb2e0cb461a0ed51447fa100927fb5d39b174c286d6f \
+    --hash=sha256:ef042586673fdcab2a6ffd381aa5f9a1bcce38ffe73c07fe70bd56d12b8124ba
     # via
     #   ducktape (pyproject.toml)
-    #   autogen-ext
+    #   agent-framework-anthropic
     #   langchain-anthropic
     #   pydantic-ai-slim
 anyio==4.12.1 \
@@ -352,21 +365,6 @@ authlib==1.6.9 \
     --hash=sha256:d8f2421e7e5980cc1ddb4e32d3f5fa659cfaf60d8eaf3281ebed192e4ab74f04 \
     --hash=sha256:f08b4c14e08f0861dc18a32357b33fbcfd2ea86cfe3fe149484b4d764c4a0ac3
     # via fastmcp
-autogen-agentchat==0.7.5 \
-    --hash=sha256:8d9c718db52ef24a518806b3a0ef848f0e4c1902877675dc0abed73a8e6e7755 \
-    --hash=sha256:d19ca8ec26cb15e071a56c4269140aea2bf3c718bdc7e06f6677af9a905815ba
-    # via ducktape (pyproject.toml)
-autogen-core==0.7.5 \
-    --hash=sha256:4f4a0d3b88a36da75b2ef0d40be2d5e3a207cae7f7d951511e498ad1d68f8ef4 \
-    --hash=sha256:70c2871389f1d0a7f6db8ef78717a51b7ce877ff4a08a836b7758d604dece203
-    # via
-    #   ducktape (pyproject.toml)
-    #   autogen-agentchat
-    #   autogen-ext
-autogen-ext[anthropic, openai]==0.7.5 \
-    --hash=sha256:18cecc8aab37c7c4861fbad038a1017f0ef25e35e273aa158066ccf9d93fea4f \
-    --hash=sha256:711ab9238ea66ff2abef163c331e538092bdea661620727a4a9b2ebce1c22df9
-    # via ducktape (pyproject.toml)
 aw-client==0.5.12 \
     --hash=sha256:12bd6cbc02a06e970267f7f192a31a0036b4a9f9ae0852bd0a8bc718b9b8ea5a \
     --hash=sha256:824b5e83abe755d5f089bbbf87eaabdc8895220c1642904a5aa6b66fba09b6ba
@@ -2173,7 +2171,6 @@ jsonref==1.1.0 \
     --hash=sha256:32fe8e1d85af0fdefbebce950af85590b22b60f9e95443176adbde4e1ecea552 \
     --hash=sha256:590dc7773df6c21cbf948b5dac07a72a251db28b0238ceecce0a2abfa8ec30a9
     # via
-    #   autogen-core
     #   crewai
     #   fastmcp
 jsonschema[format-nongpl]==4.26.0 \
@@ -3363,7 +3360,7 @@ openai==2.26.0 \
     --hash=sha256:b41f37c140ae0034a6e92b0c509376d907f3a66109935fba2c1b471a7c05a8fb
     # via
     #   ducktape (pyproject.toml)
-    #   autogen-ext
+    #   agent-framework-openai
     #   crewai
     #   instructor
     #   langchain-openai
@@ -3387,7 +3384,7 @@ opentelemetry-api==1.39.1 \
     --hash=sha256:fbde8c80e1b937a2c61f20347e91c0c18a1940cecf012d62e65a7caf08967c9c
     # via
     #   ducktape (pyproject.toml)
-    #   autogen-core
+    #   agent-framework-core
     #   chromadb
     #   crewai
     #   fastmcp
@@ -3787,7 +3784,6 @@ pillow==12.1.1 \
     --hash=sha256:fc354a04072b765eccf2204f588a7a532c9511e8b9c7f900e1b64e3e33487090 \
     --hash=sha256:fc44ef1f3de4f45b50ccf9136999d71abb99dca7706bc75d222ed350b9fd2289
     # via
-    #   autogen-core
     #   ezdxf
     #   matplotlib
     #   pdfplumber
@@ -3998,7 +3994,6 @@ protobuf==5.29.6 \
     --hash=sha256:da9ee6a5424b6b30fd5e45c5ea663aef540ca95f9ad99d1e887e819cdf9b8723 \
     --hash=sha256:e3387f44798ac1106af0233c04fb8abf543772ff241169946f698b3a9a3d3ab9
     # via
-    #   autogen-core
     #   google-api-core
     #   googleapis-common-protos
     #   onnxruntime
@@ -4610,8 +4605,8 @@ pydantic[email]==2.12.5 \
     --hash=sha256:e561593fccf61e8a20fc46dfc2dfe075b8be7d0188df33f221ad1f0139180f9d
     # via
     #   ducktape (pyproject.toml)
+    #   agent-framework-core
     #   anthropic
-    #   autogen-core
     #   chromadb
     #   crewai
     #   fastapi
@@ -5061,6 +5056,7 @@ python-dotenv==1.2.2 \
     --hash=sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3
     # via
     #   ducktape (pyproject.toml)
+    #   agent-framework-core
     #   crewai
     #   fastmcp
     #   litellm
@@ -6108,7 +6104,6 @@ tiktoken==0.12.0 \
     --hash=sha256:ffc5288f34a8bc02e1ea7047b8d041104791d2ddbf42d1e5fa07822cbffe16bd
     # via
     #   ducktape (pyproject.toml)
-    #   autogen-ext
     #   langchain-openai
     #   litellm
     #   pydantic-ai-slim
@@ -6348,10 +6343,10 @@ typing-extensions==4.15.0 \
     --hash=sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548
     # via
     #   ducktape (pyproject.toml)
+    #   agent-framework-core
     #   alembic
     #   anthropic
     #   asyncpg-stubs
-    #   autogen-core
     #   aw-client
     #   beautifulsoup4
     #   cattrs

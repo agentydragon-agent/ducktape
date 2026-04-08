@@ -1,5 +1,10 @@
 # Prompt Caching Investigation — Anthropic API + autogen
 
+> **Resolved:** Issues #3 and #4 below were autogen-specific. The migration to
+> Microsoft Agent Framework (2026-04) eliminated both — AF's `AnthropicClient`
+> natively passes `cache_control` and exposes cache tokens in `UsageDetails`.
+> The `CachedAnthropicClient` in `../prompt_caching.py` has been deleted.
+
 ## Problem
 
 The function learning eval makes ~36 LLM calls per run with a growing conversation
@@ -90,9 +95,9 @@ skill arm reflected that most of the prefix was being written to cache each turn
 wastefully, since it was never re-read). The cache write tokens weren't captured due to
 issue #4.
 
-## Implementation
+## Implementation (historical — deleted in Agent Framework migration)
 
-`CachedAnthropicClient` in `../prompt_caching.py`:
+`CachedAnthropicClient` was in `../prompt_caching.py` (now deleted):
 
 1. Wraps `raw_client.messages.create` to inject `cache_control={"type":"ephemeral"}` as a
    top-level parameter and capture cache token counts from the raw response
