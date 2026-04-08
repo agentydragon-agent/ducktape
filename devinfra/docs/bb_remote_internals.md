@@ -112,20 +112,75 @@ bb remote build //devinfra:gazelle --config=nolint
 bb remote build //devinfra:gazelle --config=nolint --config=rbe
 ```
 
-## `--run_from_commit` footgun
+## Git state synchronization
 
-When `--run_from_commit` is set, local diffs are **NOT synced**. The runner
-checks out exactly that commit with no patches. Patches are only generated when
-BOTH `--run_from_branch` and `--run_from_commit` are empty (auto-detect mode):
+Source: `cli/remotebazel/remotebazel.go`, `Config()` line 368
 
-```go
-if *runFromBranch == "" && *runFromCommit == "" {
-    patches, err := generatePatches(commit)
-}
-```
+`bb remote` mirrors your local working tree to the runner as a base commit +
+patchset. The logic has three phases:
 
-Do NOT use `--run_from_commit` in wrapper scripts — it silently drops all
-uncommitted local changes.
+### Phase 1: Determine remote (`determineRemote`, line 162)
+
+Runs `git remote -v`, picks a fetch remote. With multiple remotes, prompts
+the user and caches the selection in `.git/config`.
+
+### Phase 2: Find base branch + commit (`getBaseBranchAndCommit`, line 404)
+
+When `--run_from_branch` and `--run_from_commit` are both empty (auto mode):
+
+1. `getCurrentRef()` → `git symbolic-ref --short HEAD` → e.g., `feature-x`
+   (or parses "detached at \<ref\>" from `git branch` output)
+2. `branchTrackedRemotely(remote, "feature-x")` → checks if
+   `refs/remotes/origin/feature-x` exists locally
+3. If yes: `commitTrackedInRemoteBranch(remote, "feature-x", "HEAD")` →
+   `git merge-base --is-ancestor HEAD refs/remotes/origin/feature-x`
+   - If HEAD is an ancestor of (or equal to) the remote tracking ref:
+     `branch=feature-x`, `commit=<HEAD SHA>`
+   - If HEAD is ahead (unpushed commits): falls through to default branch
+4. **Fallback** (branch doesn't exist remotely, or has unpushed commits):
+   - `branch = defaultBranch` (e.g., `devel`)
+   - `commit = git rev-parse devel` — uses the **local** ref, not
+     `origin/devel`
+
+### Phase 3: Generate patches (`generatePatches`, line 514)
+
+Generates a patchset of everything that differs between the base commit and
+the current working tree:
+
+1. `git diff <baseCommit>` — tracked modified files (text), as unified diff
+2. `git diff <baseCommit> --binary -- <files>` — binary modified files
+3. `git ls-files --others --exclude-standard` → for each untracked file,
+   `git diff --no-index /dev/null <file>` (synthetic "add file" patch)
+
+All patches are sent as `RepoState.Patch[]` in the `RunRequest`.
+
+### Runner side
+
+The runner clones the repo at the base commit/branch, then applies each patch
+with `git apply`. Result: workspace matches your local working tree.
+
+### Scenario matrix
+
+| Scenario                                   | Base branch       | Base commit                 | Patches contain                  |
+| ------------------------------------------ | ----------------- | --------------------------- | -------------------------------- |
+| Local branch, pushed, HEAD on remote       | `feature-x`       | HEAD SHA                    | uncommitted changes only         |
+| Local branch, pushed, HEAD ahead of remote | `devel` (default) | local `git rev-parse devel` | all branch commits + uncommitted |
+| Local branch, not pushed                   | `devel` (default) | local `git rev-parse devel` | all branch commits + uncommitted |
+| Detached HEAD, ref exists remotely         | detached ref      | ref SHA                     | uncommitted changes only         |
+| Detached HEAD, ref not on remote           | `devel` (default) | local `git rev-parse devel` | everything since devel           |
+
+### Gotchas
+
+- **Local devel ref used, not origin/devel**: If your local `devel` is behind
+  `origin/devel`, the base commit may not exist on the remote → runner clone
+  fails. Run `git fetch` first.
+- **`--run_from_commit` disables patches**: When set, the runner checks out
+  exactly that commit. Patches are only generated when BOTH `--run_from_branch`
+  and `--run_from_commit` are empty. Do NOT use `--run_from_commit` in wrapper
+  scripts — it silently drops all uncommitted local changes.
+- **Large patchsets**: All untracked files are included. A stale `bazel-bin`
+  symlink or large generated files can bloat the patchset (though
+  `.gitignore`'d files are excluded via `--exclude-standard`).
 
 ## Flag taxonomy
 
