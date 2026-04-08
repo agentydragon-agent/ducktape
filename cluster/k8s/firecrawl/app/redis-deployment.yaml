@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: firecrawl-redis
+  namespace: firecrawl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: firecrawl-redis
+  template:
+    metadata:
+      labels:
+        app: firecrawl-redis
+    spec:
+      nodeSelector:
+        topology.kubernetes.io/region: proxmox
+      containers:
+        - name: redis
+          image: redis:alpine
+          command: ["redis-server", "--bind", "0.0.0.0"]
+          ports:
+            - containerPort: 6379
