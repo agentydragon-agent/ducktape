@@ -16,6 +16,9 @@ manifest:
     PIL: pillow
     PySide6: pyside6_essentials
     absl: absl_py
+    agent_framework: agent_framework_core
+    agent_framework_anthropic: agent_framework_anthropic
+    agent_framework_openai: agent_framework_openai
     agents: openai_agents
     aiodocker: aiodocker
     aiofile: aiofile
@@ -43,9 +46,6 @@ manifest:
     attr: attrs
     attrs: attrs
     authlib: authlib
-    agent_framework: agent_framework_core
-    agent_framework_anthropic: agent_framework_anthropic
-    agent_framework_openai: agent_framework_openai
     aw_client: aw_client
     aw_core: aw_core
     aw_datastore: aw_core
@@ -601,4 +601,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 2857dff2ae2f7d72a992e86417f703f4a901b66903c69960f4952e1552c7a048
+integrity: 71bca9cfa98ad01c4020ec7eca864e603835e8e122dddea77ae971abe5e7afb0
