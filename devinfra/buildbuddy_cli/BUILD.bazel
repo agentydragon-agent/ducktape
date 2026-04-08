@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "bbapi_lib",
@@ -41,4 +41,10 @@ go_binary(
     name = "bbapi",
     embed = [":bbapi_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "bbapi_test",
+    srcs = ["helpers_test.go"],
+    embed = [":bbapi_lib"],
 )

@@ -23,6 +23,7 @@ type client struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+	groupID string
 }
 
 func newClient() (*client, error) {
@@ -73,6 +74,9 @@ func (c *client) call(method string, req proto.Message, resp proto.Message) erro
 // resolveGroupID fetches the group_id by searching for a recent invocation
 // and extracting it from the ACL. Many RPCs require request_context.group_id.
 func (c *client) resolveGroupID(repo string) (string, error) {
+	if c.groupID != "" {
+		return c.groupID, nil
+	}
 	req := &invocationpb.SearchInvocationRequest{
 		Query: &invocationpb.InvocationQuery{RepoUrl: repo},
 		Count: 1,
@@ -83,6 +87,7 @@ func (c *client) resolveGroupID(repo string) (string, error) {
 	}
 	for _, inv := range resp.GetInvocation() {
 		if gid := inv.GetAcl().GetGroupId(); gid != "" {
+			c.groupID = gid
 			return gid, nil
 		}
 	}

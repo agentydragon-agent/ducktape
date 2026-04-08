@@ -94,15 +94,9 @@ func targetHistorySubCmd() *cobra.Command {
 				},
 				ServerSidePagination: true,
 			}
-			var sinceTime time.Time
-			if since != "" {
-				if d, err := time.ParseDuration(since); err == nil {
-					sinceTime = time.Now().Add(-d)
-				} else if t, err := time.Parse("2006-01-02", since); err == nil {
-					sinceTime = t
-				} else {
-					return fmt.Errorf("--since: expected Go duration (168h, 24h) or date (YYYY-MM-DD), got %q", since)
-				}
+			sinceTime, err := parseSince(since, time.Now())
+			if err != nil {
+				return fmt.Errorf("--since: %w", err)
 			}
 
 			var allTargets []*targetpb.TargetHistory
@@ -349,4 +343,19 @@ Examples:
 	}
 	cmd.Flags().StringVar(&artifactName, "artifact", "test.log", "Artifact name to download (default: test.log)")
 	return cmd
+}
+
+// parseSince parses a --since value as a Go duration (e.g., "168h") or date (YYYY-MM-DD).
+// Returns the parsed time, or zero time if since is empty.
+func parseSince(since string, now time.Time) (time.Time, error) {
+	if since == "" {
+		return time.Time{}, nil
+	}
+	if d, err := time.ParseDuration(since); err == nil {
+		return now.Add(-d), nil
+	}
+	if t, err := time.Parse("2006-01-02", since); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("expected Go duration (168h, 24h) or date (YYYY-MM-DD), got %q", since)
 }
