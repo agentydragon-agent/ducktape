@@ -21,12 +21,12 @@ class PostToolUseInput(HookInputBase):
 
 
 class PostToolUseHookSpecificOutput(CamelModel):
-    """Nested hookSpecificOutput for PostToolUse."""
-
     hook_event_name: Literal["PostToolUse"] = "PostToolUse"
     additional_context: str | None = Field(default=None, description="Non-blocking extra context for Claude")
     updated_mcp_tool_output: Any | None = Field(
-        default=None, alias="updatedMCPToolOutput", description="MCP tools only — replaces the tool's output"
+        default=None,
+        alias="updatedMCPToolOutput",
+        description="MCP tools only — replaces the tool's output. Silently ignored for built-in tools.",
     )
 
 

@@ -1,4 +1,4 @@
-"""Pydantic models for Claude Code SessionEnd hook."""
+"""Pydantic models for Claude Code SessionEnd hook (non-REPL)."""
 
 from enum import StrEnum
 from typing import Literal
@@ -12,6 +12,7 @@ class SessionEndReason(StrEnum):
     PROMPT_INPUT_EXIT = "prompt_input_exit"
     OTHER = "other"
     RESUME = "resume"
+    BYPASS_PERMISSIONS_DISABLED = "bypass_permissions_disabled"
 
 
 class SessionEndInput(HookInputBase):

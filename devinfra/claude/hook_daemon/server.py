@@ -21,11 +21,19 @@ from fastapi.responses import Response
 from opentelemetry import trace
 from pydantic import BaseModel
 
+from devinfra.claude.claude_api.hooks.common import HookOutputBase
+from devinfra.claude.claude_api.hooks.config_change import ConfigChangeInput
+from devinfra.claude.claude_api.hooks.cwd_changed import CwdChangedInput
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
-from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
+from devinfra.claude.claude_api.hooks.file_changed import FileChangedInput
+from devinfra.claude.claude_api.hooks.instructions_loaded import InstructionsLoadedInput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
+from devinfra.claude.claude_api.hooks.session_end import SessionEndInput
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
+from devinfra.claude.claude_api.hooks.setup import SetupInput
+from devinfra.claude.claude_api.hooks.worktree_create import WorktreeCreateInput
+from devinfra.claude.claude_api.hooks.worktree_remove import WorktreeRemoveInput
 from devinfra.claude.hook_config import HookConfig
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
@@ -74,14 +82,37 @@ def _save_session_env(env: dict[str, str]) -> None:
     env_file.write_text(json.dumps(env, indent=2))
 
 
-_MAILBOX_HOOK_TYPES = (PreToolUseInput, PostToolUseInput)
+# Non-REPL hooks: Claude Code delivers systemMessage to the UI notification
+# callback only, not to the model conversation. Flushing mailbox messages into
+# these would waste them — the model never sees them, so they'd be silently lost.
+# All other hook types are REPL hooks where systemMessage is injected into the
+# conversation as a hook_system_message attachment that the model reads.
+_NON_REPL_HOOK_TYPES = (
+    SessionStartHookInput,
+    SessionEndInput,
+    SetupInput,
+    CwdChangedInput,
+    FileChangedInput,
+    InstructionsLoadedInput,
+    WorktreeCreateInput,
+    WorktreeRemoveInput,
+    ConfigChangeInput,
+)
 
 
-def _apply_mailbox(output: AnyHookOutput | None, session: Session, hook: AnyHookInput) -> AnyHookOutput | None:
-    """Drain session mailbox and append messages to output.system_message."""
-    if output is None or not isinstance(hook, _MAILBOX_HOOK_TYPES):
+def _apply_mailbox(output: HookOutputBase | None, session: Session, hook: AnyHookInput) -> HookOutputBase | None:
+    """Drain session mailbox and append messages to output.system_message.
+
+    Only flushes on REPL hooks — those where Claude Code delivers systemMessage
+    to the model conversation (as a hook_system_message attachment). Non-REPL
+    hooks (SessionStart, Setup, file watchers, etc.) deliver systemMessage to
+    the UI notification callback only; flushing there would waste the messages.
+    """
+    if isinstance(hook, _NON_REPL_HOOK_TYPES):
         return output
     if bg_messages := session.drain_messages():
+        if output is None:
+            output = HookOutputBase()
         formatted = "Messages from hook daemon mailbox:\n" + "\n".join(f"- {m}" for m in bg_messages)
         parts = [output.system_message, formatted] if output.system_message else [formatted]
         output.system_message = "\n\n".join(parts)
@@ -108,7 +139,7 @@ async def handle_hook(req: HookRequest) -> Response:
 
         session = _get_or_create_session(req.hook.session_id, req.env)
 
-        output: AnyHookOutput | None = None
+        output: HookOutputBase | None = None
         match req.hook:
             case SessionStartHookInput():
                 hook_config = HookConfig.load_from_repo(Path(req.hook.cwd))
@@ -127,6 +158,16 @@ async def handle_hook(req: HookRequest) -> Response:
                 pass  # All other hooks: noop
 
         output = _apply_mailbox(output, session, req.hook)
+
+        # Guard: non-REPL hooks deliver systemMessage to the UI notification
+        # callback only — the model never sees it. If we accidentally set it,
+        # catch the bug here rather than silently losing the message.
+        if output is not None and output.system_message is not None and isinstance(req.hook, _NON_REPL_HOOK_TYPES):
+            raise AssertionError(
+                f"Bug: system_message set on non-REPL hook {hook_name!r}. "
+                f"The model will never see this message. Use additionalContext "
+                f"or initialUserMessage in hookSpecificOutput instead."
+            )
 
         resp = HookResponse(output=output)
         # exclude_none: the client may run an older version of the models

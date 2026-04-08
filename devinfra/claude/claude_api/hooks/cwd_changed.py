@@ -1,4 +1,4 @@
-"""Pydantic models for Claude Code CwdChanged hook (v2.1.87+)."""
+"""Pydantic models for Claude Code CwdChanged hook (non-REPL)."""
 
 from typing import Literal
 

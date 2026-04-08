@@ -1,4 +1,4 @@
-"""Pydantic models for Claude Code ConfigChange hook."""
+"""Pydantic models for Claude Code ConfigChange hook (non-REPL)."""
 
 from enum import StrEnum
 from pathlib import Path

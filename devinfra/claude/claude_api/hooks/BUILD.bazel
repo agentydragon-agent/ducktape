@@ -191,7 +191,7 @@ py_library(
     srcs = ["worktree_remove.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
+    deps = [":common"],
 )
 
 py_library(
@@ -257,6 +257,17 @@ py_library(
 )
 
 py_library(
+    name = "permission_denied",
+    srcs = ["permission_denied.py"],
+    imports = ["../../../.."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "dispatch_output",
     srcs = ["dispatch_output.py"],
     imports = ["../../../.."],
@@ -267,6 +278,7 @@ py_library(
         ":elicitation",
         ":file_changed",
         ":notification",
+        ":permission_denied",
         ":permission_request",
         ":post_tool_use",
         ":post_tool_use_failure",
@@ -292,6 +304,7 @@ py_library(
         ":file_changed",
         ":instructions_loaded",
         ":notification",
+        ":permission_denied",
         ":permission_request",
         ":post_compact",
         ":post_tool_use",

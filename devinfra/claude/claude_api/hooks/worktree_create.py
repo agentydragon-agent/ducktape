@@ -1,19 +1,13 @@
-"""Pydantic models for Claude Code WorktreeCreate hook."""
+"""Pydantic models for Claude Code WorktreeCreate hook (non-REPL)."""
 
-from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookOutputBase
+from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase, HookOutputBase
 
 
-class WorktreeCreateInput(BaseModel):
-    """WorktreeCreate input (no permission_mode field)."""
-
-    session_id: str
-    transcript_path: Path
-    cwd: Path
+class WorktreeCreateInput(HookInputBase):
     hook_event_name: Literal["WorktreeCreate"] = "WorktreeCreate"
     name: str
 

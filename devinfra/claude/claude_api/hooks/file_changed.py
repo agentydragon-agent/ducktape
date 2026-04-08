@@ -1,4 +1,4 @@
-"""Pydantic models for Claude Code FileChanged hook (v2.1.87+)."""
+"""Pydantic models for Claude Code FileChanged hook (non-REPL)."""
 
 from enum import StrEnum
 from typing import Literal

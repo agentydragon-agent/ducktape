@@ -1,7 +1,4 @@
-"""Pydantic models for Claude Code SessionStart hook.
-
-See https://code.claude.com/docs/en/hooks for the full API spec.
-"""
+"""Pydantic models for Claude Code SessionStart hook (non-REPL)."""
 
 from enum import StrEnum
 from typing import Literal

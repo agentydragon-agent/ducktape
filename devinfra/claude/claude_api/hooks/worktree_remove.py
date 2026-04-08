@@ -1,16 +1,11 @@
-"""Pydantic models for Claude Code WorktreeRemove hook."""
+"""Pydantic models for Claude Code WorktreeRemove hook (non-REPL)."""
 
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from devinfra.claude.claude_api.hooks.common import HookInputBase
 
 
-class WorktreeRemoveInput(BaseModel):
-    """WorktreeRemove input (no permission_mode field)."""
-
-    session_id: str
-    transcript_path: Path
-    cwd: Path
+class WorktreeRemoveInput(HookInputBase):
     hook_event_name: Literal["WorktreeRemove"] = "WorktreeRemove"
     worktree_path: Path
