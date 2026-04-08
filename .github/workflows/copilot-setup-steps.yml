@@ -1,6 +1,5 @@
 name: "Copilot Setup Steps"
 
-# See .github/docs/buildbuddy-integration.md for BuildBuddy setup details
 on:
   workflow_dispatch:
   push:
@@ -15,86 +14,45 @@ jobs:
   copilot-setup-steps:
     runs-on: ubuntu-latest
 
-    # Set the permissions to the lowest permissions possible needed for your steps.
-    # Copilot will be given its own token for its operations.
     permissions:
-      # Clone the repository to set up the environment
       contents: read
+
+    env:
+      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
         with:
-          python-version: "3.13"
+          extra_nix_config: experimental-features = nix-command flakes
 
-      - name: Setup Bazel
-        uses: ./.github/actions/setup-bazel
-        with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
-
-      - name: Install pre-commit
+      - name: Install devtools from Nix flake
         run: |
-          pip install --user pre-commit==4.0.1
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          nix profile install .#devtools
+          echo "$HOME/.nix-profile/bin" >> $GITHUB_PATH
+
+      - name: Setup BuildBuddy
+        uses: ./.github/actions/setup-buildbuddy
+        with:
+          api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
 
       - name: Install pre-commit git hooks
         run: |
           pre-commit install
           pre-commit install --hook-type commit-msg
 
-      - name: Install OpenTofu
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: 1.9.0
-        continue-on-error: true
-
-      - name: Install TFLint
-        uses: terraform-linters/setup-tflint@v4
-        with:
-          tflint_version: v0.60.0
-        continue-on-error: true
-
       - name: Verify environment
         run: |
           echo "=== Environment Setup Complete ==="
-          echo "Python version: $(python --version)"
-          echo "Bazel version: $(bazel version | head -1)"
-          echo "Pre-commit version: $(pre-commit --version)"
-          which tofu && echo "OpenTofu version: $(tofu --version | head -1)" || echo "OpenTofu: not installed"
-          which tflint && echo "tflint version: $(tflint --version)" || echo "tflint: not installed"
-
-      - name: Set up Props environment variables
-        run: |
-          # Props E2E test environment variables
-          # These mirror the setup used by Claude code hooks
-          # (devinfra/claude/bazelisk_setup.py)
-          # but simplified for GitHub Actions (no HTTP proxy needed, using
-          # docker networking)
-
-          PROPS_ROOT="${{ github.workspace }}/props/testing/fixtures/testdata/specimens"
-          echo "ADGN_PROPS_SPECIMENS_ROOT=$PROPS_ROOT" >> $GITHUB_ENV
-
-          # PostgreSQL connection (for props database operations)
-          echo "PGHOST=127.0.0.1" >> $GITHUB_ENV
-          echo "PGPORT=5433" >> $GITHUB_ENV
-          echo "PGUSER=postgres" >> $GITHUB_ENV
-          echo "PGDATABASE=eval_results" >> $GITHUB_ENV
-
-          # Agent containers connect to host PostgreSQL
-          echo "AGENT_PGHOST=127.0.0.1" >> $GITHUB_ENV
-
-          # Props registry proxy configuration
-          echo "PROPS_REGISTRY_PROXY_HOST=127.0.0.1" >> $GITHUB_ENV
-          echo "PROPS_REGISTRY_PROXY_PORT=5051" >> $GITHUB_ENV
-
-          # Docker network for agent containers
-          # Claude hooks uses "host" network, GitHub Actions uses "props-agents" network
-          echo "PROPS_DOCKER_NETWORK=props-agents" >> $GITHUB_ENV
-
-          # Host network address for agent containers to reach host services
-          echo "PROPS_E2E_HOST_HOSTNAME=172.17.0.1" >> $GITHUB_ENV
-
-          echo "Props environment variables configured"
+          echo "bazelisk: $(bazelisk version 2>&1 | head -1)"
+          echo "bb: $(which bb)"
+          echo "pre-commit: $(pre-commit --version)"
+          echo "ruff: $(ruff version)"
+          echo "tofu: $(tofu --version | head -1)"
+          echo "tflint: $(tflint --version)"
+          echo "gh: $(gh --version | head -1)"
+          echo "kubectl: $(kubectl version --client -o yaml | head -3)"
+          echo "BUILDBUDDY_API_KEY set: $([ -n "${BUILDBUDDY_API_KEY:-}" ] && echo yes || echo no)"

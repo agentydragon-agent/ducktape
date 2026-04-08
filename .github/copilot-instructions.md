@@ -6,17 +6,36 @@ For detailed repository guidance, see: [AGENTS.md](../AGENTS.md) and [STYLE.md](
 
 "Ducktape" is a personal infrastructure repository. Key areas:
 
-- **Agent Framework** (`agent_cli/`, `agent_server/`, `agent_core/`, `agent_pkg/`) - Agent REPL, FastAPI backend, runtime
+- **Agent Framework** (`agent_cli/`, `x/agent_server/`, `agent_pkg/`) - Agent REPL, FastAPI backend, runtime
 - **Props** (`props/`) - Code evaluation system with Docker-based E2E tests
 - **MCP Infrastructure** (`mcp_infra/`) - MCP compositor and utilities
 - **Infrastructure Automation** (`ansible/`) - System configuration and deployment
-- **Development Tools** (`wt/`) - Worktree management
-- **Dotfiles** (`dotfiles/`, `nix/home/`) - Shell configs (mostly Nix home-manager now)
 - **Cluster** (`cluster/`) - k8s cluster configuration
+- **Dotfiles** (`nix/home/`) - Nix home-manager configs
 
 ## Build System
 
-**Bazel** is the unified build system. Always use Bazel, never direct `pytest` or `python`:
+**Bazel** is the unified build system. Always use Bazel, never direct `pytest` or `python`.
+
+### Remote Builds (`bb remote`)
+
+Prefer `bb remote` over direct `bazel` for build, test, and query commands. `bb remote`
+runs Bazel on a BuildBuddy runner VM colocated with RBE/cache servers, giving fast builds
+with warm Bazel instances. It automatically syncs local git diffs to the remote runner.
+
+```bash
+# Prefer:
+bb remote build //path/to:target
+bb remote test //path/to:target
+bb remote query '...'
+
+# Use direct bazel only for:
+#   - bazel run (local side effects)
+#   - When you need build outputs on the local filesystem
+#   - Gazelle: bazel run //devinfra:gazelle
+```
+
+### Gazelle
 
 ```bash
 bazel run //devinfra:gazelle         # Update BUILD files
@@ -50,7 +69,12 @@ with GitHub Actions workflows, but all new images should use `oci_image` + `ghcr
 
 ## Verification (Required)
 
-Before handing in any work, run `bazel build //...` and `bazel test //...`.
+Before handing in any work:
+
+```bash
+bb remote build //... --config=rbe
+bb remote test //... --config=rbe
+```
 
 If you modified `ansible/`, follow the checklist in [ansible/AGENTS.md](../ansible/AGENTS.md).
 
@@ -60,11 +84,3 @@ If you modified `ansible/`, follow the checklist in [ansible/AGENTS.md](../ansib
 - Framework: pytest with pytest-asyncio (auto mode)
 - All `py_test` targets MUST have `pytest_bazel.main()` entry point
 - Do NOT add `@pytest.mark.asyncio` — auto mode handles it
-
-## Props E2E Tests
-
-Props E2E tests use per-test testcontainers (PostgreSQL, Docker registry, etc.) and are fully hermetic — no manual setup required. Just run:
-
-```bash
-bazel test //props/...
-```
