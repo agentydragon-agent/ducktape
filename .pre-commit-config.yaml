@@ -227,14 +227,6 @@ repos:
         pass_filenames: false
         always_run: true
 
-      # Specimens: validate issue ID format in issues/*.yaml filenames
-      - id: validate-specimen-issue-ids
-        name: Validate specimen issue ID format
-        entry: props/specimens/hooks/validate_issue_ids.py
-        language: python
-        pass_filenames: false
-        always_run: true
-
       # Kubernetes manifest validation (auto-installed via go install)
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,
       # external-secrets, etc.  Niche CRDs without catalog

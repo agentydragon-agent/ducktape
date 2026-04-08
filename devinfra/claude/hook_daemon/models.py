@@ -2,8 +2,8 @@
 
 from pydantic import BaseModel, Field
 
+from devinfra.claude.claude_api.hooks.common import HookOutputBase
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
-from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
 
 
 class HookRequest(BaseModel):
@@ -16,4 +16,4 @@ class HookRequest(BaseModel):
 class HookResponse(BaseModel):
     """RPC response from hook daemon."""
 
-    output: AnyHookOutput | None = Field(default=None, description="Typed hook output. None for noops.")
+    output: HookOutputBase | None = Field(default=None, description="Typed hook output. None for noops.")
