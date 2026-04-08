@@ -256,7 +256,7 @@ func invocationStatSubCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
-	cmd.Flags().StringVar(&aggType, "agg-type", "date", "Aggregation type: user, host, repo, commit, date, branch, pattern")
+	cmd.Flags().StringVar(&aggType, "agg-type", "branch", "Aggregation type: user, host, repo, commit, date (broken), branch, pattern")
 	cmd.Flags().Int32Var(&limit, "limit", 20, "Maximum number of results")
 	return cmd
 }

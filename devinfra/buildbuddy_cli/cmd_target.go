@@ -65,6 +65,8 @@ func targetHistorySubCmd() *cobra.Command {
 	var repo string
 	var label string
 	var failuresOnly bool
+	var count int
+	var since string
 	cmd := &cobra.Command{
 		Use:   "history",
 		Short: "Show pass/fail/flake history for targets",
@@ -92,7 +94,19 @@ func targetHistorySubCmd() *cobra.Command {
 				},
 				ServerSidePagination: true,
 			}
+			var sinceTime time.Time
+			if since != "" {
+				if d, err := time.ParseDuration(since); err == nil {
+					sinceTime = time.Now().Add(-d)
+				} else if t, err := time.Parse("2006-01-02", since); err == nil {
+					sinceTime = t
+				} else {
+					return fmt.Errorf("--since: expected Go duration (168h, 24h) or date (YYYY-MM-DD), got %q", since)
+				}
+			}
+
 			var allTargets []*targetpb.TargetHistory
+			printed := 0
 			for {
 				resp := &targetpb.GetTargetHistoryResponse{}
 				if err := c.call("GetTargetHistory", req, resp); err != nil {
@@ -111,25 +125,26 @@ func targetHistorySubCmd() *cobra.Command {
 				if label != "" && th.GetTarget().GetLabel() != label {
 					continue
 				}
-				if failuresOnly {
-					hasFailure := false
-					for _, s := range th.GetTargetStatus() {
-						if s.GetStatus().String() != "PASSED" {
-							hasFailure = true
-							break
-						}
-					}
-					if !hasFailure {
-						continue
-					}
-				}
-				fmt.Printf("Target: %s\n", th.GetTarget().GetLabel())
-				t := newTable()
-				t.header("STATUS", "DUR", "STARTED", "COMMIT", "INVOCATION")
+				// Filter statuses by --since and --failures-only
+				var filtered []*targetpb.TargetStatus
 				for _, s := range th.GetTargetStatus() {
 					if failuresOnly && s.GetStatus().String() == "PASSED" {
 						continue
 					}
+					// Use invocation creation time, not test start time (cached tests report original start)
+					invTime := time.UnixMicro(s.GetInvocationCreatedAtUsec())
+					if !sinceTime.IsZero() && invTime.Before(sinceTime) {
+						continue
+					}
+					filtered = append(filtered, s)
+				}
+				if failuresOnly && len(filtered) == 0 {
+					continue
+				}
+				fmt.Printf("Target: %s\n", th.GetTarget().GetLabel())
+				t := newTable()
+				t.header("STATUS", "DUR", "STARTED", "COMMIT", "INVOCATION")
+				for _, s := range filtered {
 					started := s.GetTiming().GetStartTime().AsTime().Format("2006-01-02 15:04")
 					dur := fmtDurationUsec(s.GetTiming().GetDuration().AsDuration().Microseconds())
 					sha := s.GetCommitSha()
@@ -139,6 +154,10 @@ func targetHistorySubCmd() *cobra.Command {
 					t.row(s.GetStatus().String(), dur, started, sha, s.GetInvocationId())
 				}
 				t.flush()
+				printed++
+				if count > 0 && printed >= count {
+					break
+				}
 			}
 			return nil
 		},
@@ -146,6 +165,8 @@ func targetHistorySubCmd() *cobra.Command {
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().StringVar(&label, "label", "", "Filter to specific target label")
 	cmd.Flags().BoolVar(&failuresOnly, "failures-only", false, "Show only non-PASSED statuses")
+	cmd.Flags().IntVar(&count, "count", 0, "Maximum number of targets to show (0 = all)")
+	cmd.Flags().StringVar(&since, "since", "", "Show only entries after this time (e.g., 168h, 720h, 2026-04-01)")
 	return cmd
 }
 
