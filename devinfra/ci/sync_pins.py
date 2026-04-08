@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "requests>=2.32"]
+# dependencies = ["PyGithub>=1.77", "pydantic>=2.0", "httpx>=0.27"]
 # ///
 """Sync npins/sources.json with the latest GitHub Release for each package.
 
