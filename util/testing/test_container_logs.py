@@ -39,12 +39,12 @@ def _logs_dir(test_name: str) -> Path:
 
 
 def test_logs_collected_on_success(image_tag: str) -> None:
-    with LoggedContainer(image_tag, test_name="logs-success", command="echo SUCCESS_LOG_LINE"):
-        pass
+    with LoggedContainer(image_tag, test_name="logs-success", command="echo SUCCESS_LOG_LINE") as container:
+        container.get_wrapped_container().wait(timeout=5)
 
-    stdout = _logs_dir("logs-success") / "stdout.log"
-    assert stdout.exists(), "stdout.log not written on success"
-    assert b"SUCCESS_LOG_LINE" in stdout.read_bytes()
+    log = _logs_dir("logs-success") / "container.log"
+    assert log.exists(), "container.log not written on success"
+    assert b"SUCCESS_LOG_LINE" in log.read_bytes()
 
 
 def test_logs_collected_on_exec_failure(image_tag: str) -> None:
@@ -56,17 +56,16 @@ def test_logs_collected_on_exec_failure(image_tag: str) -> None:
     with pytest.raises(AssertionError):
         _run()
 
-    stdout = _logs_dir("logs-failure") / "stdout.log"
-    assert stdout.exists(), "stdout.log not written on failure"
+    log = _logs_dir("logs-failure") / "container.log"
+    assert log.exists(), "container.log not written on failure"
 
 
 def test_logs_collected_on_container_error(image_tag: str) -> None:
-    with LoggedContainer(image_tag, test_name="logs-error", command="bash -c 'echo ERROR_LINE && exit 1'"):
-        pass
+    with LoggedContainer(image_tag, test_name="logs-error", command="bash -c 'echo ERROR_LINE && exit 1'") as container:
+        container.get_wrapped_container().wait(timeout=5)
 
-    stdout = _logs_dir("logs-error") / "stdout.log"
-    stderr = _logs_dir("logs-error") / "stderr.log"
-    assert stdout.exists() or stderr.exists(), "no logs written on container error"
+    log = _logs_dir("logs-error") / "container.log"
+    assert log.exists(), "container.log not written on container error"
 
 
 # --- Container primitives ---
