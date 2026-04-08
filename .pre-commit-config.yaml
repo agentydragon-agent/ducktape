@@ -219,14 +219,6 @@ repos:
         pass_filenames: true
         always_run: true
 
-      # Specimens: block changes to committed snapshot code/ directories
-      - id: block-specimen-code-changes
-        name: Block changes to committed specimen code
-        entry: props/specimens/hooks/block_snapshot_code_changes.py
-        language: python
-        pass_filenames: false
-        always_run: true
-
       # Kubernetes manifest validation (auto-installed via go install)
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,
       # external-secrets, etc.  Niche CRDs without catalog

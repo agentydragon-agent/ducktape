@@ -5,39 +5,28 @@ from __future__ import annotations
 from pathlib import Path
 
 import pygit2
-import pytest
 import pytest_bazel
 
+from devinfra.precommit.conftest import commit, head_tree, staged_deltas
 from devinfra.precommit.filename_conventions import check_filename_conventions
 
 
-@pytest.fixture
-def repo(tmp_path: Path) -> pygit2.Repository:
-    repo = pygit2.init_repository(str(tmp_path))
-    repo.config["user.name"] = "Test"
-    repo.config["user.email"] = "test@test.com"
-    return repo
-
-
-def _commit(repo: pygit2.Repository) -> None:
-    sig = pygit2.Signature("Test", "test@test.com")
-    tree = repo.index.write_tree()
-    parents = [repo.head.target] if not repo.head_is_unborn else []
-    repo.create_commit("HEAD", sig, sig, "commit", tree, parents)
+def _check(repo: pygit2.Repository) -> list[str]:
+    return check_filename_conventions(staged_deltas(repo), head_tree(repo))
 
 
 def test_no_violations_with_underscores(repo: pygit2.Repository, tmp_path: Path) -> None:
     (tmp_path / "foo_bar.py").write_text("# test")
     repo.index.add("foo_bar.py")
     repo.index.write()
-    assert check_filename_conventions(repo) == []
+    assert _check(repo) == []
 
 
 def test_py_file_with_dash(repo: pygit2.Repository, tmp_path: Path) -> None:
     (tmp_path / "foo-bar.py").write_text("# test")
     repo.index.add("foo-bar.py")
     repo.index.write()
-    violations = check_filename_conventions(repo)
+    violations = _check(repo)
     assert len(violations) == 1
     assert "foo-bar.py" in violations[0]
     assert "underscore" in violations[0]
@@ -47,7 +36,7 @@ def test_md_file_with_dash(repo: pygit2.Repository, tmp_path: Path) -> None:
     (tmp_path / "foo-bar.md").write_text("# test")
     repo.index.add("foo-bar.md")
     repo.index.write()
-    violations = check_filename_conventions(repo)
+    violations = _check(repo)
     assert len(violations) == 1
     assert "foo-bar.md" in violations[0]
 
@@ -56,20 +45,20 @@ def test_existing_file_modification_not_flagged(repo: pygit2.Repository, tmp_pat
     (tmp_path / "foo-bar.py").write_text("# test")
     repo.index.add("foo-bar.py")
     repo.index.write()
-    _commit(repo)
+    commit(repo)
 
     (tmp_path / "foo-bar.py").write_text("# modified")
     repo.index.add("foo-bar.py")
     repo.index.write()
 
-    assert check_filename_conventions(repo) == []
+    assert _check(repo) == []
 
 
 def test_new_directory_with_dash(repo: pygit2.Repository, tmp_path: Path) -> None:
     (tmp_path / "existing.py").write_text("# test")
     repo.index.add("existing.py")
     repo.index.write()
-    _commit(repo)
+    commit(repo)
 
     new_dir = tmp_path / "my-dir"
     new_dir.mkdir()
@@ -77,7 +66,7 @@ def test_new_directory_with_dash(repo: pygit2.Repository, tmp_path: Path) -> Non
     repo.index.add("my-dir/foo.py")
     repo.index.write()
 
-    violations = check_filename_conventions(repo)
+    violations = _check(repo)
     assert len(violations) == 1
     assert "my-dir" in violations[0]
     assert "directory" in violations[0]
@@ -89,36 +78,49 @@ def test_existing_directory_with_dash_not_flagged(repo: pygit2.Repository, tmp_p
     (dash_dir / "existing.py").write_text("# test")
     repo.index.add("my-dir/existing.py")
     repo.index.write()
-    _commit(repo)
+    commit(repo)
 
     (dash_dir / "new_file.py").write_text("# test")
     repo.index.add("my-dir/new_file.py")
     repo.index.write()
 
-    assert check_filename_conventions(repo) == []
+    assert _check(repo) == []
 
 
 def test_other_extensions_not_checked(repo: pygit2.Repository, tmp_path: Path) -> None:
     (tmp_path / "foo-bar.txt").write_text("test")
     repo.index.add("foo-bar.txt")
     repo.index.write()
-    assert check_filename_conventions(repo) == []
+    assert _check(repo) == []
 
 
 def test_no_staged_changes(repo: pygit2.Repository) -> None:
-    assert check_filename_conventions(repo) == []
+    assert _check(repo) == []
 
 
 def test_filename_conventions_ignored_attr(repo: pygit2.Repository, tmp_path: Path) -> None:
+    """Gitattributes filtering is done upstream; verify filtered deltas produce no violations."""
     (tmp_path / ".gitattributes").write_text("bad-name.py filename-conventions-ignored=true\n")
     repo.index.add(".gitattributes")
     (tmp_path / "bad-name.py").write_text("# test")
     repo.index.add("bad-name.py")
     repo.index.write()
-    assert check_filename_conventions(repo) == []
+
+    # Simulate upstream filtering
+    deltas = staged_deltas(repo)
+    filtered = [
+        d
+        for d in deltas
+        if not any(
+            repo.get_attr(d.new_file.path, a) in (True, "true")
+            for a in ("filename-conventions-ignored", "rules-lint-ignored")
+        )
+    ]
+    assert check_filename_conventions(filtered, head_tree(repo)) == []
 
 
 def test_rules_lint_ignored_attr(repo: pygit2.Repository, tmp_path: Path) -> None:
+    """Gitattributes filtering is done upstream; verify filtered deltas produce no violations."""
     (tmp_path / ".gitattributes").write_text("ignored-dir/** rules-lint-ignored=true\n")
     repo.index.add(".gitattributes")
     ignored_dir = tmp_path / "ignored-dir"
@@ -126,7 +128,14 @@ def test_rules_lint_ignored_attr(repo: pygit2.Repository, tmp_path: Path) -> Non
     (ignored_dir / "bad-name.py").write_text("# test")
     repo.index.add("ignored-dir/bad-name.py")
     repo.index.write()
-    assert check_filename_conventions(repo) == []
+
+    deltas = staged_deltas(repo)
+    filtered = [
+        d
+        for d in deltas
+        if not any(repo.get_attr(d.new_file.path, a) in (True, "true") for a in ("rules-lint-ignored",))
+    ]
+    assert check_filename_conventions(filtered, head_tree(repo)) == []
 
 
 def test_both_filename_and_directory_violations(repo: pygit2.Repository, tmp_path: Path) -> None:
@@ -136,7 +145,7 @@ def test_both_filename_and_directory_violations(repo: pygit2.Repository, tmp_pat
     repo.index.add("bad-dir/bad-name.py")
     repo.index.write()
 
-    violations = check_filename_conventions(repo)
+    violations = _check(repo)
     assert len(violations) == 2
     filenames = [v for v in violations if "filename" in v]
     dirs = [v for v in violations if "directory" in v]

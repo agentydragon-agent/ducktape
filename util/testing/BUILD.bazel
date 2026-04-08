@@ -16,9 +16,9 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":undeclared_outputs",
+        "//util:otel",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
-        "@pypi//pytest",
     ],
 )
 

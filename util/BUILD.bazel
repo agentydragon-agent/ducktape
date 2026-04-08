@@ -4,6 +4,16 @@ load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
+    name = "otel",
+    srcs = ["otel.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
+    ],
+)
+
+py_library(
     name = "fs",
     srcs = ["fs.py"],
     visibility = ["//visibility:public"],

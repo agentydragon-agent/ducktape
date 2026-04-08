@@ -53,25 +53,6 @@ def _is_infra_file(path: str) -> bool:
     return any(fnmatch.fnmatch(path, g) for g in _INFRA_GLOBS)
 
 
-def _get_staged_files(repo: pygit2.Repository) -> list[str]:
-    """Get staged file paths using fast index-to-HEAD diff.
-
-    Uses index.diff_to_tree(HEAD) instead of repo.status() — the latter
-    triggers ~160k syscalls on 9p filesystems (~12s). diff_to_tree only
-    compares the index to HEAD (~0.003s).
-    """
-    try:
-        head_tree = repo.head.peel(pygit2.Tree)
-    except pygit2.GitError:
-        head_tree = None
-
-    repo.index.read()
-    if head_tree is not None:
-        diff = repo.index.diff_to_tree(head_tree)
-        return [delta.new_file.path for delta in diff.deltas]
-    return [entry.path for entry in repo.index]
-
-
 def _has_build_file(path: Path) -> bool:
     return (path / "BUILD.bazel").exists() or (path / "BUILD").exists()
 
@@ -165,13 +146,13 @@ class EnforceBazelTestsError(Exception):
     """Raised when affected Bazel tests are not cached/passing."""
 
 
-def run(workspace: BazelWorkspace, repo: pygit2.Repository) -> None:
+def run(workspace: BazelWorkspace, deltas: list[pygit2.DiffDelta]) -> None:
     """Verify affected Bazel tests are cached and passing.
 
     Raises EnforceBazelTestsError on failure. Returns silently when no tests
     are affected or all are up-to-date.
     """
-    staged = _get_staged_files(repo)
+    staged = [d.new_file.path for d in deltas]
     if not staged:
         return
 

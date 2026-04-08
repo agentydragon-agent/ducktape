@@ -73,6 +73,9 @@ bbapi execution search <query>
 bbapi invocation stat [--agg-type branch|user|host|repo|commit|pattern] [--repo URL] [--limit N]
 
 # AI analysis of a build/test failure (works on any invocation, unlike `bb ask`)
+# Sends the last ~1000 lines of the build log (from first "ERROR:" onward, max 8KB)
+# to OpenAI. Best for build errors with clear error messages in the log tail.
+# Less useful for test timeouts (log tail may show unrelated warnings instead).
 bbapi ask <invocation-id> [--prompt TEXT]
 
 # List configured BuildBuddy workflows

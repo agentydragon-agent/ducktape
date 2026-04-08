@@ -7,15 +7,33 @@ py_library(
     deps = ["@pypi//pygit2"],
 )
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pygit2",
+        "@pypi//pytest",
+    ],
+)
+
 py_test(
     name = "test_filename_conventions",
     srcs = ["test_filename_conventions.py"],
     deps = [
+        ":conftest",
         ":filename_conventions",
         "@pypi//pygit2",
-        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "frozen_specimens",
+    srcs = ["frozen_specimens.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pygit2"],
 )
 
 py_library(
@@ -48,10 +66,14 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":filename_conventions",
+        ":frozen_specimens",
         ":terraform_centralization",
         "//cluster/validation:validate_all",
         "//devinfra:pytest_main",
         "//devinfra/precommit/enforce_bazel_tests",
+        "//util:otel",
+        "@pypi//opentelemetry_api",
+        "@pypi//opentelemetry_sdk",
         "@pypi//pygit2",
     ],
 )
