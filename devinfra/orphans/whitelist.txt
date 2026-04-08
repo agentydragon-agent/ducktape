@@ -28,7 +28,6 @@ MODULE.bazel
 .gitlab-ci.yml
 buildbuddy.yaml
 .ansible-lint.yaml
-.yamllint.yaml
 pnpm-workspace.yaml
 pnpm-lock.yaml
 

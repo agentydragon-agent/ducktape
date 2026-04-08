@@ -212,9 +212,6 @@ dependencies = [
     "pint>=0.24",
     "tqdm>=4.66",
 
-    # yamllint
-    "yamllint>=1.35",
-
     # qr_codes
     "qrcode>=7.4",
     "svg.py>=1.4",
