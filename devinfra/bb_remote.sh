@@ -21,4 +21,4 @@ exec bb remote \
   --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
   --runner_exec_properties=workload-isolation-type=firecracker \
   --runner_exec_properties=init-dockerd=true \
-  "$@"
+  "$@" --config=rbe

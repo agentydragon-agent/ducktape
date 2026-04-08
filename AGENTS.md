@@ -18,11 +18,12 @@ The root cause is always a broken session start hook — notify the user if reco
 
 Run `bb`, `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
 
-## Remote Bazel (`bb remote`)
+## Remote Bazel (`bb-remote`)
 
-Prefer `bb remote` over direct `bazel` for build, test, and query commands. `bb remote`
-runs Bazel on a BuildBuddy runner VM colocated with RBE/cache servers, giving fast builds
-with warm Bazel instances. It automatically syncs local git diffs to the remote runner.
+Prefer `bb-remote` over direct `bazel` for build, test, and query commands.
+`bb-remote` is a wrapper around `bb remote` (<devinfra/bb_remote.sh>) that
+runs Bazel on a BuildBuddy runner VM with RBE enabled, Firecracker isolation,
+and Docker support. It automatically syncs local git diffs to the remote runner.
 
 ```bash
 # Instead of:
@@ -31,10 +32,15 @@ bazel build //path/to:target
 bazel query '...'
 
 # Use:
-bb remote test //path/to:target
-bb remote build //path/to:target
-bb remote query '...'
+bb-remote test //path/to:target
+bb-remote build //path/to:target
+bb-remote query '...'
 ```
+
+**`bb remote` does NOT read local `.bazelrc` files** — it passes flags
+literally to the runner, where Bazel reads the workspace `.bazelrc`. The
+`bb-remote` wrapper appends `--config=rbe` automatically. See
+<devinfra/docs/bb_remote_internals.md> for the full explanation.
 
 **When to use direct `bazel` instead:**
 
@@ -54,8 +60,8 @@ When renaming/moving/deleting files or symbols, search **all references** across
 ## Before Hand-off
 
 ```bash
-bb remote build //... --config=rbe
-bb remote test //... --config=rbe
+bb-remote build //...
+bb-remote test //...
 ```
 
 Lint (ruff + mypy) runs by default. Use `--config=nolint` to skip.
