@@ -28,7 +28,6 @@ from cluster.network_readiness import (
     verify_clusterip_routing,
     wait_for_cilium_health,
 )
-from cluster.scripts.generate_claude_kubeconfig import generate
 from util.bazel.runfiles import get_required_path
 from util.bazel.workspace import get_build_workspace_directory
 
@@ -184,8 +183,6 @@ def deploy_services(*, excludes: list[str]) -> None:
     log.info("Flux deployed. Monitoring kustomization convergence...")
     config.load_kube_config(str(kubeconfig))
     monitor_flux_convergence()
-
-    generate(SCRIPT_DIR.parent)
 
     log.info("Bootstrap complete - all kustomizations converged.")
     print(f"\nAccess cluster: export KUBECONFIG='{kubeconfig}'")

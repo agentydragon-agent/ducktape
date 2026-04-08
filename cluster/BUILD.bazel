@@ -28,7 +28,6 @@ py_library(
     deps = [
         ":flux_convergence",
         ":network_readiness",
-        "//cluster/scripts:generate_claude_kubeconfig_lib",
         "//util/bazel:runfiles",
         "//util/bazel:workspace",
         "@pypi//kubernetes",
