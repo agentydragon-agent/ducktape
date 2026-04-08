@@ -139,7 +139,7 @@ class BesInterceptor:
         else:
             creds = grpc.ssl_channel_credentials()
 
-        return grpc.secure_channel(self._upstream_target, creds, options=options)  # type: ignore[return-value]
+        return grpc.secure_channel(self._upstream_target, creds, options=options)  # type: ignore[no-any-return]
 
     def _upstream_metadata(self) -> tuple[tuple[str, str], ...]:
         return (("x-buildbuddy-api-key", self._api_key),)
@@ -148,7 +148,7 @@ class BesInterceptor:
         """Forward PublishLifecycleEvent to upstream."""
         channel = self._make_upstream_channel()
         try:
-            return channel.unary_unary(  # type: ignore[return-value]
+            return channel.unary_unary(  # type: ignore[no-any-return]
                 _LIFECYCLE_METHOD,
                 request_serializer=publish_build_event_pb2.PublishLifecycleEventRequest.SerializeToString,
                 response_deserializer=empty_pb2.Empty.FromString,
@@ -234,4 +234,4 @@ class _GenericHandler(grpc.GenericRpcHandler):
         self._handlers = {_LIFECYCLE_METHOD: lifecycle_handler, _STREAM_METHOD: stream_handler}
 
     def service(self, handler_call_details: grpc.HandlerCallDetails) -> grpc.RpcMethodHandler | None:
-        return self._handlers.get(handler_call_details.method)  # type: ignore[arg-type]
+        return self._handlers.get(handler_call_details.method)  # type: ignore[attr-defined]
