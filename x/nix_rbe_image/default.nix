@@ -1,7 +1,20 @@
-# Nix-based BuildBuddy RBE worker image.
+# Experimental: Nix-based BuildBuddy RBE worker image.
 #
-# Plain Docker image built with dockerTools — no NixOS, no systemd, no FUSE.
-# All tools come from the Nix closure directly.
+# The primary RBE image is the Ubuntu Dockerfile with Nix devtools baked in
+# (devinfra/rbe_image/Dockerfile). This file is an experiment to build the
+# image purely with Nix dockerTools. It is NOT production-ready.
+#
+# Known limitations of the dockerTools approach:
+# - NixOS glibc has nix-store paths compiled into its default library search
+#   path and ld.so.cache location. Standard FHS paths (/lib/x86_64-linux-gnu,
+#   /usr/lib, /lib64) are not searched by default.
+# - nix-ld can bridge this gap, but requires NIX_LD and NIX_LD_LIBRARY_PATH
+#   env vars, which BuildBuddy's goinit process does not set.
+# - ld.so.cache can partially work (see fakeRootCommands below), but ldconfig
+#   at build time runs under fakeroot/fakechroot where path resolution is
+#   fragile.
+# - The Ubuntu base image avoids all of this because its glibc natively
+#   searches FHS paths.
 #
 # Build:  nix build .#nix-rbe-image
 # Load:   docker load < result
@@ -31,20 +44,10 @@ let
     ];
   };
 
-  # FHS library layout: real glibc linker at /lib64/ and shared libs at
-  # /lib/x86_64-linux-gnu/. This avoids nix-ld (which needs NIX_LD env var)
-  # and works in any context — Docker, BB runner VMs, RBE containers —
-  # without requiring specific env vars to be set.
-  # FHS library layout. All shared libs go into /lib64/ alongside the
-  # dynamic linker — this is always in the default search path, no
-  # ld.so.conf/ldconfig/LD_LIBRARY_PATH needed.
-  # FHS library layout. Shared libs go into multiple standard paths so
-  # the glibc dynamic linker finds them without ld.so.cache or env vars.
-  # /lib64/ for the linker, /lib/ and /usr/lib/ for everything else.
-  # FHS library layout matching Debian/Ubuntu x86_64 multiarch paths.
-  # The glibc dynamic linker searches /lib/x86_64-linux-gnu/ and
-  # /usr/lib/x86_64-linux-gnu/ by default (compiled-in DT_DEFAULT_LIB).
-  # No ld.so.cache, LD_LIBRARY_PATH, or ldconfig needed.
+  # FHS library layout: place the dynamic linker at /lib64/ and shared libs
+  # at Debian multiarch paths. NixOS glibc does NOT search these paths by
+  # default (see file header), so we also generate ld.so.cache in
+  # fakeRootCommands to tell the linker about them.
   fhsLibs = pkgs.runCommand "fhs-libs" { } ''
     mkdir -p $out/lib64 $out/lib/x86_64-linux-gnu $out/usr/lib/x86_64-linux-gnu
 
@@ -65,11 +68,6 @@ let
       done
     done
   '';
-
-  # Pre-built ld.so.cache + ld.so.conf so the dynamic linker finds our libs.
-  # NixOS glibc doesn't have Debian multiarch paths compiled in, so we
-  # need ld.so.cache to tell it where /lib/x86_64-linux-gnu/ and
-  # /usr/lib/x86_64-linux-gnu/ are.
 
   # FHS symlinks: /bin/bash, /bin/sh, /usr/bin/env — Bazel hardcodes these.
   # Also bazel -> bazelisk (matching Ubuntu base image convention).

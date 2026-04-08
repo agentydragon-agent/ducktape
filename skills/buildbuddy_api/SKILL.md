@@ -161,6 +161,43 @@ bbapi target log <first-failing-invocation-id> test_target
 This is much faster than `git bisect` because it doesn't require re-running the
 test — the results are already in BuildBuddy's database.
 
+## Diagnosing Executor Environments
+
+Use `bb execute` to run one-off commands directly on a BuildBuddy executor to probe the container image, check installed tools, verify library paths, etc. Useful when builds fail due to missing dependencies or environment issues.
+
+```bash
+# Probe what's in a container image
+bb execute \
+  -exec_properties=container-image=docker://ghcr.io/agentydragon/rbe-worker:nix-devtools \
+  -- bash -c 'gcc --version; python3 --version; ldd --version | head -1'
+
+# Check if a specific library exists
+bb execute \
+  -exec_properties=container-image=docker://ghcr.io/agentydragon/rbe-worker:latest \
+  -- bash -c 'find / -name "libstdc++.so*" 2>/dev/null'
+
+# Test pip wheel compatibility (manylinux tags)
+bb execute \
+  -exec_properties=container-image=docker://ghcr.io/agentydragon/rbe-worker:latest \
+  -- bash -c 'python3 -m pip install --dry-run some-package==1.0'
+```
+
+`bb execute` runs on the default executor image (Ubuntu 16.04, glibc 2.23) unless you specify `-exec_properties=container-image=...`. Use `-exec_properties=workload-isolation-type=firecracker` to test with Firecracker isolation.
+
+### Interactive debugging with `bb ssh`
+
+For interactive debugging, start an SSH server on a BuildBuddy executor:
+
+```bash
+# On the executor (in one terminal)
+bb ssh-server my-debug-session
+
+# Connect from your machine (in another terminal)
+bb ssh my-debug-session
+```
+
+This gives a full shell on the executor for investigating build failures, inspecting the filesystem, testing commands interactively, etc.
+
 ## BuildBuddy Concepts
 
 **Group ID**: BuildBuddy's organization identifier (e.g., `GR7963402054611859571`).

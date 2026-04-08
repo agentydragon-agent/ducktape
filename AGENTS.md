@@ -42,6 +42,13 @@ literally to the runner, where Bazel reads the workspace `.bazelrc`. The
 `bb-remote` wrapper appends `--config=rbe` automatically. See
 <devinfra/docs/bb_remote_internals.md> for the full explanation.
 
+**Unpushed commits on the main branch**: `bb remote` auto-detects the base
+commit from your local branch. If the local `devel` ref is ahead of
+`origin/devel` (unpushed commits), the runner may fail with
+`upload-pack: not our ref` because it tries to fetch a commit that doesn't
+exist on the remote. Run `git push` first, or use `git fetch && git rebase
+origin/devel` to update your local ref.
+
 **When to use direct `bazel` instead:**
 
 - `bazel run` for local side effects (running binaries, pushing images, updating lockfiles)

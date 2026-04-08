@@ -1,51 +1,37 @@
-# NixOS-based BuildBuddy RBE Worker Image
+# Nix RBE Image Experiments
 
-Experimental replacement for the Ubuntu-based RBE image (`devinfra/rbe_image/Dockerfile`)
-using a NixOS container. The main benefit: the Nix flake devshell tools are available
-natively — no separate apt/pip install layer.
+Experimental approaches for Nix-based BuildBuddy RBE worker images.
 
-## Build & Load
+**The primary (working) approach** is in `devinfra/rbe_image/Dockerfile` — the
+Ubuntu base image with Nix devtools baked in via `nix build .#rbetools`.
 
-```bash
-nix build .#nix-rbe-image
-docker import result nix-rbe-worker
-docker run --rm -it nix-rbe-worker /init
-# In another terminal:
-docker exec -it <container> bash -l
-```
+This directory contains two alternative approaches that were explored but have
+limitations:
 
-## Test with BuildBuddy
+## `default.nix` — dockerTools.buildLayeredImage
 
-Point a custom platform at the image:
+Plain Docker image built entirely from Nix closures. No systemd, no FUSE.
 
-```starlark
-platform(
-    name = "nix_rbe",
-    exec_properties = {
-        "container-image": "docker://ghcr.io/agentydragon/nix-rbe-worker:latest",
-        "OSFamily": "Linux",
-    },
-)
-```
+**Limitation**: NixOS glibc has nix-store paths compiled in for library search.
+Dynamically-linked binaries downloaded at runtime (Bazel from bazelisk,
+python-build-standalone) can't find `libstdc++.so.6` without `LD_LIBRARY_PATH`
+or nix-ld — and BuildBuddy's goinit doesn't set these env vars.
 
-Then: `bb remote test //some:target --extra_execution_platforms=//path:nix_rbe`
+## `nixos.nix` — NixOS container (docker-image.nix)
 
-## What's included
+Full NixOS container with systemd, envfs, nix-ld. Would handle all FHS
+compatibility automatically.
 
-- Everything from the `bazel` NixOS module (envfs, nix-ld, system.bazelrc)
-- Build essentials (gcc, binutils, make, cmake, clang, pkg-config)
-- Java 11, Python 3, Git
-- Docker CE (for `init-dockerd` on Firecracker workers)
-- QEMU, Xvfb, cpio, dosfstools, mtools (test infrastructure)
-- FUSE, D-Bus, Chromium headless deps
+**Limitation**: BuildBuddy's Firecracker goinit does NOT run the container's
+`/init` — it pivot-roots into the rootfs and spawns its own vmexec service.
+systemd never starts, so envfs/nix-ld activation scripts don't run.
 
-## Known gaps
+## `packages.nix` — Shared package list
 
-- **Devtools not yet included**: The flake's `devToolPackages` (pre-commit, ruff, bb, etc.)
-  are not in this image yet. They need to be wired through the nixosConfiguration's module
-  args or passed as a package list.
-- **Docker lifecycle**: BuildBuddy's `goinit` starts dockerd. The NixOS Docker module
-  creates a systemd service, but goinit may bypass systemd. May need to disable the
-  systemd service and just ensure Docker binaries are on PATH.
-- **FHS path probing**: `buildbuddy-toolchain` repo rule probes `/usr/bin/ld.gold` and
-  similar FHS paths. envfs covers `/bin` and `/usr/bin` but not library paths under `/usr/lib`.
+Shared between both experimental images and potentially the Dockerfile approach.
+
+## See also
+
+- <devinfra/rbe_image/Dockerfile> — the working Ubuntu+Nix approach
+- <devinfra/docs/bb_remote_internals.md> — how `bb remote` and Firecracker work
+- <x/nix_rbe_image/TODO.md> — remaining work items
