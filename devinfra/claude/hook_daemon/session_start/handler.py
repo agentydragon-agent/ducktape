@@ -516,7 +516,7 @@ async def handle(
                 wrapper_path=session.paths.wrapper_path, project_dir=ctx.project_dir, env_file=ctx.env_file_path
             )
         )
-        session.track(task)
+        session.register_bazel_warmup(task)
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):

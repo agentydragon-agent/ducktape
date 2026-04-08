@@ -33,15 +33,15 @@ _COMMON = {
 
 class TestEvaluate:
     @pytest.mark.parametrize("command", sorted(ALWAYS_ALLOW_COMMANDS))
-    def test_allowed_bash_command_returns_allow(self, command: str, session: Session) -> None:
+    def test_allowed_bash_command_returns_allow(self, command: str) -> None:
         hook_input = PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": command})
-        result = evaluate(hook_input, session)
+        result = evaluate(hook_input)
         assert result.hook_specific_output is not None
         assert result.hook_specific_output.permission_decision == PermissionDecision.ALLOW
 
-    def test_output_serializes_to_camel_case(self, session: Session) -> None:
+    def test_output_serializes_to_camel_case(self) -> None:
         hook_input = PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": "echo hello world"})
-        result = evaluate(hook_input, session)
+        result = evaluate(hook_input)
         json_output = result.model_dump_json(by_alias=True)
         assert "hookSpecificOutput" in json_output
         assert "permissionDecision" in json_output
@@ -52,67 +52,63 @@ class TestEvaluate:
         [("Bash", {"command": "rm -rf /"}), ("Read", {"file_path": "/etc/passwd"}), ("Bash", {})],
         ids=["unknown-bash-command", "non-bash-tool", "bash-without-command"],
     )
-    def test_returns_no_decision_for_unmatched(self, tool_name: str, tool_input: dict, session: Session) -> None:
+    def test_returns_no_decision_for_unmatched(self, tool_name: str, tool_input: dict) -> None:
         # Unmatched tools return no hook_specific_output (implicit allow — no blocking decision)
         hook_input = PreToolUseInput(**_COMMON, tool_name=tool_name, tool_input=tool_input)
-        result = evaluate(hook_input, session)
+        result = evaluate(hook_input)
         assert result.hook_specific_output is None
 
 
-@pytest.fixture
-def hook_input() -> PreToolUseInput:
-    return PreToolUseInput(**_COMMON, tool_name="Bash", tool_input={"command": "ls"})
+# === Background notification tests (session.take_precommit_status) ===
 
 
-async def test_no_message_while_task_running(session: Session, hook_input: PreToolUseInput) -> None:
-    # Task still running: system_message must be None (must not block)
+async def test_no_message_while_task_running(session: Session) -> None:
     async def never_complete() -> precommit.PrecommitHooksResult:
         await asyncio.sleep(1000)
         return precommit.PrecommitHooksInstalled()
 
     task: asyncio.Task[precommit.PrecommitHooksResult] = asyncio.create_task(never_complete())
     session.register_precommit_install(task)
-    result = evaluate(hook_input, session)
-    assert result.system_message is None
+    assert session.drain_messages() == []
     task.cancel()
 
 
-async def test_precommit_success_surfaced_after_task_done(session: Session, hook_input: PreToolUseInput) -> None:
+async def test_precommit_success_surfaced_after_task_done(session: Session) -> None:
     async def succeed() -> precommit.PrecommitHooksResult:
         return precommit.PrecommitHooksInstalled()
 
     task: asyncio.Task[precommit.PrecommitHooksResult] = asyncio.create_task(succeed())
-    await asyncio.sleep(0)  # yield to let task complete
+    await asyncio.sleep(0)  # let task complete
     session.register_precommit_install(task)
-    result = evaluate(hook_input, session)
-    assert result.system_message is not None
-    assert "completed successfully" in result.system_message
+    await asyncio.sleep(0)  # let done callback fire
+    messages = session.drain_messages()
+    assert len(messages) == 1
+    assert "completed successfully" in messages[0]
 
 
-async def test_precommit_failure_surfaced_after_task_done(session: Session, hook_input: PreToolUseInput) -> None:
+async def test_precommit_failure_surfaced_after_task_done(session: Session) -> None:
     async def fail() -> precommit.PrecommitHooksResult:
         return precommit.PrecommitHooksFailed(error=RuntimeError("hook env error"))
 
     task: asyncio.Task[precommit.PrecommitHooksResult] = asyncio.create_task(fail())
-    await asyncio.sleep(0)
+    await asyncio.sleep(0)  # let task complete
     session.register_precommit_install(task)
-    result = evaluate(hook_input, session)
-    assert result.system_message is not None
-    assert "failed" in result.system_message
+    await asyncio.sleep(0)  # let done callback fire
+    messages = session.drain_messages()
+    assert len(messages) == 1
+    assert "failed" in messages[0]
 
 
-async def test_precommit_status_consumed_only_once(session: Session, hook_input: PreToolUseInput) -> None:
-    # Once consumed, subsequent calls return None
+async def test_mailbox_drained_only_once(session: Session) -> None:
     async def succeed() -> precommit.PrecommitHooksResult:
         return precommit.PrecommitHooksInstalled()
 
     task: asyncio.Task[precommit.PrecommitHooksResult] = asyncio.create_task(succeed())
-    await asyncio.sleep(0)
+    await asyncio.sleep(0)  # let task complete
     session.register_precommit_install(task)
-    first = evaluate(hook_input, session)
-    second = evaluate(hook_input, session)
-    assert first.system_message is not None
-    assert second.system_message is None
+    await asyncio.sleep(0)  # let done callback fire
+    assert len(session.drain_messages()) == 1
+    assert session.drain_messages() == []
 
 
 if __name__ == "__main__":

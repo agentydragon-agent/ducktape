@@ -16,6 +16,9 @@ from devinfra.claude.settings import HookSettings, ProxyMode
 logger = logging.getLogger(__name__)
 
 
+# TODO: persist mailbox to disk so messages survive daemon restarts.
+
+
 @dataclass
 class Session:
     """Per-session state: identity, paths, proxy handles, and background tasks."""
@@ -27,31 +30,54 @@ class Session:
     uds_bes: UdsRemoteProxy | None = None  # Bazel --bes_proxy
     _upstream_creds: UpstreamCreds = field(default_factory=UpstreamCreds)
     _background: set[asyncio.Task[object]] = field(default_factory=set)
-    _precommit_hooks_task: asyncio.Task[precommit.PrecommitHooksResult] | None = None
+    _mailbox: list[str] = field(default_factory=list)
 
     def track(self, task: asyncio.Task[object]) -> None:
         """Hold a strong reference to task; release it when done."""
         self._background.add(task)
         task.add_done_callback(self._background.discard)
 
+    def post_message(self, message: str) -> None:
+        """Post a notification message to the mailbox."""
+        self._mailbox.append(message)
+
+    def drain_messages(self) -> list[str]:
+        """Return and clear all pending mailbox messages."""
+        messages = list(self._mailbox)
+        self._mailbox.clear()
+        return messages
+
     def register_precommit_install(self, task: asyncio.Task[precommit.PrecommitHooksResult]) -> None:
-        """Register install-hooks task and keep it alive."""
-        self._precommit_hooks_task = task
+        """Register install-hooks task: track it and post status on completion."""
+
+        def _on_done(t: asyncio.Task[precommit.PrecommitHooksResult]) -> None:
+            if t.cancelled():
+                return
+            match t.result():
+                case precommit.PrecommitHooksInstalled():
+                    self.post_message("pre-commit install-hooks completed successfully. Hook environments are ready.")
+                case precommit.PrecommitHooksFailed(error=e):
+                    self.post_message(
+                        f"pre-commit install-hooks failed: {e}. Run `pre-commit install-hooks` manually to retry."
+                    )
+
+        task.add_done_callback(_on_done)
         self.track(task)
 
-    def take_precommit_status(self) -> str | None:
-        """Non-blocking: return and clear status message if task is done, else None."""
-        task = self._precommit_hooks_task
-        if task is None or not task.done():
-            return None
-        self._precommit_hooks_task = None
-        if task.cancelled():
-            return None
-        match task.result():
-            case precommit.PrecommitHooksInstalled():
-                return "pre-commit install-hooks completed successfully. Hook environments are ready."
-            case precommit.PrecommitHooksFailed(error=e):
-                return f"pre-commit install-hooks failed: {e}. Run `pre-commit install-hooks` manually to retry."
+    def register_bazel_warmup(self, task: asyncio.Task[None]) -> None:
+        """Register bazel warmup task: track it and post status on completion."""
+
+        def _on_done(t: asyncio.Task[None]) -> None:
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                self.post_message(f"Bazel server warmup failed: {exc}")
+            else:
+                self.post_message("Bazel server is warm.")
+
+        task.add_done_callback(_on_done)
+        self.track(task)
 
     async def start_proxy(self, web_mode: bool, hook_config: HookConfig, settings: HookSettings) -> None:
         """Start proxy infrastructure for this session."""

@@ -21,6 +21,7 @@ from fastapi.responses import Response
 from opentelemetry import trace
 from pydantic import BaseModel
 
+from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
 from devinfra.claude.claude_api.hooks.dispatch_output import AnyHookOutput
 from devinfra.claude.claude_api.hooks.post_tool_use import PostToolUseInput
 from devinfra.claude.claude_api.hooks.pre_tool_use import PreToolUseInput
@@ -73,6 +74,20 @@ def _save_session_env(env: dict[str, str]) -> None:
     env_file.write_text(json.dumps(env, indent=2))
 
 
+_MAILBOX_HOOK_TYPES = (PreToolUseInput, PostToolUseInput)
+
+
+def _apply_mailbox(output: AnyHookOutput | None, session: Session, hook: AnyHookInput) -> AnyHookOutput | None:
+    """Drain session mailbox and append messages to output.system_message."""
+    if output is None or not isinstance(hook, _MAILBOX_HOOK_TYPES):
+        return output
+    if bg_messages := session.drain_messages():
+        formatted = "Messages from hook daemon mailbox:\n" + "\n".join(f"- {m}" for m in bg_messages)
+        parts = [output.system_message, formatted] if output.system_message else [formatted]
+        output.system_message = "\n\n".join(parts)
+    return output
+
+
 @app.post("/hook")
 async def handle_hook(req: HookRequest) -> Response:
     app.state.last_request_time = time.monotonic()
@@ -91,12 +106,13 @@ async def handle_hook(req: HookRequest) -> Response:
         # Persist env to disk on every call
         _save_session_env(req.env)
 
+        session = _get_or_create_session(req.hook.session_id, req.env)
+
         output: AnyHookOutput | None = None
         match req.hook:
             case SessionStartHookInput():
                 hook_config = HookConfig.load_from_repo(Path(req.hook.cwd))
                 web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
-                session = _get_or_create_session(req.hook.session_id, req.env)
                 await session.start_proxy(web_mode, hook_config, app.state.settings)
                 ctx = CallerContext.from_env(req.env)
                 with build_http_client(req.env) as http:
@@ -104,11 +120,13 @@ async def handle_hook(req: HookRequest) -> Response:
                         session, req.hook, app.state.settings, ctx=ctx, http=http, otlp_exporter=app.state.otlp_exporter
                     )
             case PreToolUseInput():
-                output = evaluate_pre(req.hook, _get_or_create_session(req.hook.session_id, req.env))
+                output = evaluate_pre(req.hook)
             case PostToolUseInput():
                 output = evaluate_post(req.hook)
             case _:
                 pass  # All other hooks: noop
+
+        output = _apply_mailbox(output, session, req.hook)
 
         resp = HookResponse(output=output)
         # exclude_none: the client may run an older version of the models
