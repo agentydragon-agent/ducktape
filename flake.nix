@@ -229,13 +229,7 @@
       # - Firecracker + Docker on the runner (for requires_docker tests
       #   that run locally with no-sandbox)
       # RBE container image override is in .bazelrc under build:rbe.
-      bb-remote = pkgs.writeShellScriptBin "bb-remote" ''
-        exec bb remote \
-          --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
-          --runner_exec_properties=workload-isolation-type=firecracker \
-          --runner_exec_properties=init-dockerd=true \
-          "$@"
-      '';
+      bb-remote = pkgs.writeShellScriptBin "bb-remote" (builtins.readFile ./devinfra/bb_remote.sh);
       devToolPackages = [
         # Repo-specific tools
         bb-remote
