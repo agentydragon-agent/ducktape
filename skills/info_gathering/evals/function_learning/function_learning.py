@@ -13,7 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import IO, Any, Literal
+from typing import IO, Any, Literal, cast
 
 import aiodocker
 from agent_framework import ChatResponse, Content, FunctionTool, Message, UsageDetails
@@ -262,10 +262,12 @@ async def run_game(
 
             usage = _extract_usage(response)
             if usage:
-                game.total_input_tokens += int(usage.get("input_token_count", 0) or 0)
-                game.total_output_tokens += int(usage.get("output_token_count", 0) or 0)
-                game.total_cache_read_tokens += int(usage.get("anthropic.cache_read_input_tokens", 0) or 0)
-                game.total_cache_creation_tokens += int(usage.get("anthropic.cache_creation_input_tokens", 0) or 0)
+                game.total_input_tokens += usage.get("input_token_count") or 0
+                game.total_output_tokens += usage.get("output_token_count") or 0
+                cache_read = usage.get("anthropic.cache_read_input_tokens")
+                cache_create = usage.get("anthropic.cache_creation_input_tokens")
+                game.total_cache_read_tokens += cast(int, cache_read) if cache_read is not None else 0
+                game.total_cache_creation_tokens += cast(int, cache_create) if cache_create is not None else 0
 
             function_calls = _extract_function_calls(response)
 
