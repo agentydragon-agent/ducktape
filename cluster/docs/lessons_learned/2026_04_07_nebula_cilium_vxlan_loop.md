@@ -86,7 +86,37 @@ what traffic was actually flowing — 99.8% of VXLAN was
 `cilium_host:4242 → pod_ip:4242`. Then checking Nebula logs confirmed peers
 were advertising pod IPs. Data over theory.
 
-## Full Investigation
+## Timeline
 
-See `cluster/debug/2026-04-07-pve-cp0-etcd-partition/` for logs, pcaps,
-and detailed timeline.
+- **2026-04-06 10:36:07 UTC**: Nebula tunnel to vps-cp-0 marked "dead"
+- **2026-04-06 10:37:50 UTC**: Tunnel re-established. Last successful kubelet heartbeat.
+- **2026-04-06 10:38:48 UTC**: Kubernetes marks node `NotReady`
+- **2026-04-07 ~05:00 UTC**: Investigation begins (~18h partitioned)
+
+## Key Evidence
+
+| Metric                 | pve-cp-0 (broken)  | vps-cp-0 (healthy) |
+| ---------------------- | ------------------ | ------------------ |
+| nebula1 TX packets     | 2,822M             | 258M               |
+| nebula1 TX drops       | 577M (20%)         | 5,776              |
+| nebula1 TX drop rate   | 8,330/s            | ~0                 |
+| Nebula CPU (26h)       | 72,590s (~0.8 CPU) | 37,919s            |
+| cilium_vxlan TX rate   | 34,352 pkt/s       | normal             |
+| VXLAN traffic (30s)    | 99.8% single flow  | n/a                |
+
+The single VXLAN flow was `10.244.4.81:4242 → 10.244.1.207:4242` — Nebula
+UDP traffic being VXLAN-encapsulated through the Nebula tunnel (tunnel-in-tunnel).
+
+## Resolution Metrics
+
+After applying `local_allow_list`:
+
+- nebula1 TX drops: 577M → **0**
+- Nebula CPU: 72,590s → **13s**
+- etcd: Fail → **OK**
+- Node: NotReady → **Ready**
+
+## Prevention
+
+- [ ] Alert on `node_network_transmit_drop_total{device="nebula1"}` rate > 10/s
+- [ ] Alert on etcd health check failures
