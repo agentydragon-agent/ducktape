@@ -37,7 +37,7 @@ CloudNativePG `local-path`.
       any `tofu apply` risks rebooting wyrm2 (the machine running tofu). The `--exclude`
       flag is a workaround but error-prone. Options: separate TF root for wyrm2, or manage
       wyrm2 VM config purely via NixOS/Proxmox API (no terraform). See postmortem
-      `cluster/docs/lessons_learned/2026-04-01-cluster-nuke-postmortem.md`.
+      `cluster/docs/lessons_learned/2026_04_01_cluster_nuke_postmortem.md`.
 - [ ] Move Flux to Talos inline/extra manifest (CCM already done via `talos-ccm.tf`).
       Cilium can't be inlined — its rendered manifest (~82KB) exceeds Hetzner's 32KB
       `user_data` limit. Cilium stays as `null_resource.cilium_bootstrap` (helm CLI).
@@ -100,7 +100,7 @@ CloudNativePG `local-path`.
 - [ ] OpenClaw: eliminate one-time token entry
 - [ ] File upstream: powerdns-operator "stuck Failed" bug — once a ClusterRRset
       reaches Failed, it never retries unless spec changes. Should retry with backoff.
-      See <lessons_learned/2026-04-07-powerdns-operator-stuck-failed-rrsets.md>.
+      See <lessons_learned/2026_04_07_powerdns_operator_stuck_failed_rrsets.md>.
 - [ ] Plaid integration: fix onboarding (`link/token/create` returns 400)
 - [ ] Tandoor: verify deployment works end-to-end (DB migration, Authentik
       proxy auth, recipe import)
@@ -150,7 +150,7 @@ CloudNativePG `local-path`.
 
 ### File Sync (Syncthing Replacement)
 
-See <plans/file-sync-evaluation.md>.
+See <plans/file_sync_evaluation.md>.
 
 ## VPS-Only Resilience Invariants
 
@@ -182,7 +182,7 @@ Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
 Runtime secrets use Terraform → Vault → ESO. Bootstrap secrets use SOPS (age-encrypted in git, decrypted by Flux). Zero ESO Password generators remain.
 Stakater Reloader restarts pods on changes. See
-<lessons_learned/2025-11-28-eso-password-generator-desync.md>.
+<lessons_learned/2025_11_28_eso_password_generator_desync.md>.
 
 ### Kyverno GitOps Enforcement
 
@@ -358,7 +358,7 @@ CNPG is 2-instance primary+standby. Low priority -- survives single-node failure
 
 VXLAN tunnel mode. Hetzner VPS not on same L2; native routing fails. `MTU: 1412`
 (uppercase, case-sensitive). VXLAN (50) + Nebula (38) = 88 overhead. UDP 8472 required.
-See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>.
+See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
 
 ### Storage Strategy
 
@@ -371,12 +371,12 @@ Minimize Hetzner volumes; generous on Proxmox.
 | MinIO    | Loki, Mimir, Tempo                                | Erasure-coded object storage      |
 
 CNPG: individual clusters per app, all on `local-path`. Two profiles: VPS-HA
-(2 instances, Hetzner) and Proxmox-single (1 instance). See <cnpg-conventions.md>.
+(2 instances, Hetzner) and Proxmox-single (1 instance). See <cnpg_conventions.md>.
 
 ## Related Documentation
 
 - <bootstrap.md>
 - <troubleshooting.md>
-- <lessons_learned/2025-11-28-eso-password-generator-desync.md>
+- <lessons_learned/2025_11_28_eso_password_generator_desync.md>
 
 **Monthly Cost**: ~EUR64 (4x CPX31, grandfathered at HIL).

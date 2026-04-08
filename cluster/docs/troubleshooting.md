@@ -9,7 +9,7 @@
 
 **Fix**: Set `machine.network.hostname` explicitly in Terraform config patches.
 
-See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>.
+See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md>.
 
 ### Stale podCIDR After Node Hostname Change
 
@@ -24,7 +24,7 @@ kubectl get pods -A --field-selector spec.nodeName=<node> \
   -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name,IP:.status.podIP'
 ```
 
-See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md> (Root Cause 3).
+See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md> (Root Cause 3).
 
 ### Hetzner VPS Accidental Replacement via tofu apply
 
@@ -34,7 +34,7 @@ See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md> (Root Cause 3
 **Fix**: `lifecycle { ignore_changes = [user_data, image] }` on `hcloud_server`.
 Never `tofu apply -auto-approve` with `-target` without reviewing full plan.
 
-See <lessons_learned/2026-03-07-talosctl-upgrade-hostname-loss.md>.
+See <lessons_learned/2026_03_07_talosctl_upgrade_hostname_loss.md>.
 
 ### Zombie Kubelet (Containerd Crash Recovery)
 
@@ -46,7 +46,7 @@ assignment on workers (fixed in commit 2bf6ae9 -- `dhcp: false` in worker machin
 
 **Fix**: Reboot the node (`talosctl -n <node-ip> reboot`).
 
-See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>.
+See <lessons_learned/2025_11_17_zombie_kubelet_dual_ip.md>.
 
 ### Worker Dual-IP Assignment (DHCP + Static IP)
 
@@ -57,7 +57,7 @@ See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>.
 
 **Diagnosis**: `talosctl -n <ip> get addresses | grep "eth0.*10\."`
 
-See <lessons_learned/2025-11-17-zombie-kubelet-dual-ip.md>.
+See <lessons_learned/2025_11_17_zombie_kubelet_dual_ip.md>.
 
 ### XFS Quotacheck Stuck After Unclean Shutdown (Boot Hangs)
 
@@ -80,7 +80,7 @@ ssh root@atlas "qm reset <vmid>"
 
 **Prevention**: Never use `qm stop` for Talos VMs — always `qm shutdown` (ACPI).
 
-See <lessons_learned/2026-03-24-xfs-quotacheck-stuck-boot.md>.
+See <lessons_learned/2026_03_24_xfs_quotacheck_stuck_boot.md>.
 
 ## Cilium Issues
 
@@ -130,7 +130,7 @@ kubectl exec -n kube-system ds/cilium -- ip link show cilium_vxlan
 helm get values cilium -n kube-system
 ```
 
-See <lessons_learned/2026-02-11-cilium-mtu-cross-node-packet-loss.md>.
+See <lessons_learned/2026_02_11_cilium_mtu_cross_node_packet_loss.md>.
 
 ## tofu-controller Issues
 
@@ -153,7 +153,7 @@ kubectl delete pods -n flux-system -l app.kubernetes.io/name=tf-runner
 
 If that fails, suspend all Terraform resources first, restart, then resume.
 
-See <lessons_learned/2025-11-19-tofu-controller-tls-cache-desync.md>.
+See <lessons_learned/2025_11_19_tofu_controller_tls_cache_desync.md>.
 
 ### Stale State Locks After Restart
 
@@ -174,7 +174,7 @@ kubectl annotate terraform -n flux-system --all \
 **Prevention**: Never `rollout restart` tofu-controller without first suspending all
 Terraform resources and deleting runner pods.
 
-See <lessons_learned/2026-03-18-tofu-controller-stale-state-locks.md>.
+See <lessons_learned/2026_03_18_tofu_controller_stale_state_locks.md>.
 
 ## Secrets & Auth Issues
 
@@ -189,7 +189,7 @@ each sync instead of reading from Vault. Must use Vault data sources instead.
 **Fix**: Replace ESO Password generator with Vault data source in ExternalSecret.
 Pattern: Terraform generates -> Vault -> ESO reads.
 
-See <lessons_learned/2025-11-28-eso-password-generator-desync.md> for full analysis,
+See <lessons_learned/2025_11_28_eso_password_generator_desync.md> for full analysis,
 diagnosis commands, and correct pattern.
 
 ### Authentik API Token 403 (Vault Version Desync)
@@ -213,13 +213,13 @@ kubectl annotate externalsecret authentik-api-token -n flux-system \
 
 **Prevention**: `cas = 0` on write-once `vault_kv_secret_v2` resources.
 
-See <lessons_learned/2026-02-13-authentik-token-vault-overwrite.md>.
+See <lessons_learned/2026_02_13_authentik_token_vault_overwrite.md>.
 
 ### Authentik Teardown: TF State Desync (Mostly Historical)
 
 Most SSO config migrated to native blueprints. Only `sso-secrets` and `vault-oidc-auth`
 remain as Terraform. The cascading desync described in
-<lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md> should no longer occur.
+<lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md> should no longer occur.
 
 If it does: suspend Authentik-targeting Terraform resources, delete stale `tfstate-default-*`
 secrets, clean up Authentik API objects, unsuspend. See the lessons_learned doc for the

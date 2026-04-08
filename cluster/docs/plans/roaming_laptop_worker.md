@@ -3,7 +3,7 @@
 **Status**: Implemented (2026-03). rugged (Dell Rugged 12) joined as roaming worker
 via `nix/nixos/hosts/rugged/` + `k8s-worker.nix` + `nebula-mesh.nix`. Nebula mesh
 with VPS lighthouses/relays solves the double-NAT hole-punching problem that made
-KubeSpan unreliable. See `../lessons_learned/nebula-mesh-migration-tombstone.md` for the full history.
+KubeSpan unreliable. See `../lessons_learned/nebula_mesh_migration_tombstone.md` for the full history.
 
 **TODO**: Verify double-NAT passthrough and relay with real workloads (e.g., rugged
 behind a mobile hotspot or restrictive corporate NAT, running actual pods with
@@ -66,5 +66,5 @@ This plan went through three networking iterations:
 
 1. Tailscale/Headscale (second WireGuard mesh, required DaemonSet)
 2. KubeSpan/kubespand (reimplemented Talos KubeSpan for Linux — failed on double-NAT,
-   no relay capability). See `../lessons_learned/nebula-mesh-migration-tombstone.md`.
+   no relay capability). See `../lessons_learned/nebula_mesh_migration_tombstone.md`.
 3. Nebula mesh (current) — lighthouses + relays solve double-NAT reliably.

@@ -81,7 +81,7 @@ spec:
     # Pin all components to Proxmox — PVCs use proxmox-csi-retain and
     # cross-site latency (VPS↔Proxmox via KubeSpan) causes liveness probe
     # timeouts when core/nginx are on VPS but database/redis are on Proxmox.
-    # Requests right-sized from observed usage — see docs/operations/2026-02-22-memory-request-rightsizing.md
+    # Requests right-sized from observed usage — see docs/operations/2026_02_22_memory_request_rightsizing.md
     core:
       replicas: 1
       podAnnotations:

@@ -89,5 +89,5 @@ Built on the `k8s-worker` NixOS module (`nix/nixos/modules/k8s-worker.nix`) with
 
 ## Related
 
-- <roaming-laptop-worker.md> — NixOS k8s-worker module design and testing
+- <roaming_laptop_worker.md> — NixOS k8s-worker module design and testing
 - Cluster plan entry: `docs/plan.md` "GPU Worker Node"

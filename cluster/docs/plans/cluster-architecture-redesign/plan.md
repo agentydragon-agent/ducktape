@@ -287,7 +287,7 @@ PrometheusRule CRDs).
    referenced by `seal-secret.sh`.)
 2. Generate Authelia SOPS secrets (`authelia-secrets`, `authelia-jwks`),
    user password hash, uncomment SOPS resources in kustomization + Flux
-3. Update `cnpg-conventions.md` for region-explicit storage classes
+3. Update `cnpg_conventions.md` for region-explicit storage classes
 4. Migrate CNPG clusters + PVCs from generic `local-path` to `local-path-{region}`
 5. ~~Migrate monitoring/vault off bare `longhorn` SC~~ — **Done** (2026-04-06):
    Prometheus disabled (replaced by Alloy+Mimir), Grafana moved to CNPG,

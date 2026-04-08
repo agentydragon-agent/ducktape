@@ -11,7 +11,7 @@ pod template change), runner pods that are mid-plan hold terraform state locks s
 
 1. **Runner pods have no `ownerReferences`** — they are standalone pods, not owned by
    the controller deployment. They survive controller restarts as orphans.
-2. **TLS cache desync** (see <2025-11-19-tofu-controller-tls-cache-desync.md>): the new
+2. **TLS cache desync** (see <2025_11_19_tofu_controller_tls_cache_desync.md>): the new
    controller pod runs startup GC, deletes all TLS secrets, and regenerates new ones.
    Orphaned runners from the old controller have stale TLS certs — gRPC communication
    between new controller and old runners fails.

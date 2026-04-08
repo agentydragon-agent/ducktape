@@ -23,7 +23,7 @@ deployment) live in `terraform/main/persistent-auth.tf` with `lifecycle { preven
 Core secrets (Nebula CA, Flux deploy key, cluster age keypair) are SOPS-encrypted
 in `secrets/` and read by tofu via the `sops` provider.
 Talos machine secrets are ephemeral (fresh `cluster.id` per lifecycle).
-See <bootstrap-dependencies.md> for the full dependency graph.
+See <bootstrap_dependencies.md> for the full dependency graph.
 
 ## Cold-Start Deployment
 
@@ -110,7 +110,3 @@ via `${LETSENCRYPT_ISSUER}-root-ca` naming convention.
 Uses `localhost:7445` (Talos KubePrism on CP nodes, haproxy on NixOS workers) during
 bootstrap to avoid circular dependency. Kubeconfig is patched post-bootstrap with
 real VPS IP for external access.
-
-## Troubleshooting
-
-See <troubleshooting.md>.

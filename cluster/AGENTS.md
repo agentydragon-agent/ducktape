@@ -30,7 +30,7 @@ Most Authentik SSO uses native blueprints. Two TF modules still target Authentik
 `tfstate-default-sso-secrets` (OAuth2 secrets in Vault) and `tfstate-default-vault-oidc-auth`
 (Vault OIDC backend). After Authentik DB wipe, `vault-oidc-auth` requires
 `vault auth disable oidc/` before re-apply.
-See <docs/lessons_learned/2026-02-18-authentik-tf-state-lifecycle-coupling.md>.
+See <docs/lessons_learned/2026_02_18_authentik_tf_state_lifecycle_coupling.md>.
 
 ## CRITICAL: VPS-Only Resilience
 
@@ -145,11 +145,11 @@ All in `terraform/main/`:
 
 ### Bootstrap Dependencies
 
-@docs/bootstrap-dependencies.md
+@docs/bootstrap_dependencies.md
 
 **Keep this document up to date.** When adding, removing, or changing secrets,
 SOPS files, tofu resources, or external credential requirements, update
-<docs/bootstrap-dependencies.md> in the same commit. This is the single
+<docs/bootstrap_dependencies.md> in the same commit. This is the single
 reference for "what do I need to regenerate if X is lost?"
 
 ### Description Annotations
@@ -160,13 +160,13 @@ kustomization, SSO client secrets under `authentik/blueprints/`).
 
 ## CNPG (CloudNativePG)
 
-@docs/cnpg-conventions.md
+@docs/cnpg_conventions.md
 
 ## Troubleshooting
 
 @docs/troubleshooting.md
 
-@docs/lessons_learned/2025-11-28-eso-password-generator-desync.md
+@docs/lessons_learned/2025_11_28_eso_password_generator_desync.md
 
 ## Container Images
 

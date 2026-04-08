@@ -45,7 +45,7 @@ at creation time rather than silently landing on a random node.
 3. **No cross-site synchronous replication.** Storage classes replicate
    within a site only. Cross-site protection is async backup/mirror.
 4. **CNPG stays on `local-path-{region}`.** App-level replication
-   handles durability. See `cnpg-conventions.md`.
+   handles durability. See `cnpg_conventions.md`.
 5. **Ephemeral data is explicitly marked.** Mimir, Tempo, Alertmanager
    on `local-path-hetzner` — rebuildable, not precious. Grafana on CNPG.
 
