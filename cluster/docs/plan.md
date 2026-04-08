@@ -329,6 +329,21 @@ KubeRay for distributed ML, Kueue for job quota management on GPU node.
 
 On Proxmox, scaled to 0. Set `replicaCount > 0` to re-enable.
 
+### Shared Docker Daemon for CI Container Tests
+
+Container integration tests spend ~46s per run loading OCI images (376MB total:
+mitmproxy 254MB, two custom ~118MB images sharing a 113MB Python interpreter layer)
+into Docker on disposable RBE Firecracker VMs. A persistent Docker daemon with cached
+layers would make subsequent loads near-instant.
+
+- [ ] Deploy DinD pod in `docker-ci` namespace on Proxmox (`lvm-proxmox` 50Gi PV)
+- [ ] Expose via Cilium Gateway TCPRoute with mTLS (TLS passthrough to daemon)
+- [ ] Generate mTLS certs, store in SOPS (server certs → Flux → k8s Secret,
+      client certs → baked into RBE worker image)
+- [ ] Set `DOCKER_HOST`/`DOCKER_TLS_VERIFY`/`DOCKER_CERT_PATH` for `requires_docker` tests
+- [ ] Container reaping CronJob (`docker container prune --filter until=1h`)
+- [ ] Image pruning CronJob (`docker image prune --filter until=168h`)
+
 ### Self-Hosted Bazel Remote Cache
 
 Legacy VPS cache removed. If needed again, deploy in-cluster on Proxmox storage.
