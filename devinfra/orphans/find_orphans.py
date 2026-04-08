@@ -62,15 +62,14 @@ def query_bazel_files(workspace: BazelWorkspace) -> set[Path]:
 
     Uses labels(srcs/data, //...) for standard attributes, and adds full
     deps() traversal for rules that hold source files in non-standard
-    attributes (helm_package auto-discovers chart files; create_data_blob
-    uses issue_files rather than srcs/data for specimen YAML).
+    attributes (create_data_blob uses issue_files rather than srcs/data
+    for specimen YAML).
     All sets are retrieved in a single bazel query invocation.
     """
     expr = (
         "kind('source file',"
         "  labels(srcs, //...)"
         "  union labels(data, //...)"
-        "  union deps(kind('helm_package', //...))"
         "  union deps(kind('create_data_blob', //...))"
         ")"
     )

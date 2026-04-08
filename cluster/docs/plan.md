@@ -2,7 +2,7 @@
 
 **Status**: 5 nodes (2 VPS + 1 Proxmox CP + 1 GPU worker + 1 roaming laptop).
 Cilium Gateway API, DNS automation, Authentik SSO. PowerDNS and Authentik on
-CloudNativePG `local-path`. See <changelog.md> for history.
+CloudNativePG `local-path`.
 
 ## Dropped Services
 
@@ -18,7 +18,7 @@ CloudNativePG `local-path`. See <changelog.md> for history.
 - **Grocy**: `grocy`, `grocy-namespace`
 - **Gitea**: `gitea`, `gitea-namespace`, `gitea-secrets`, `gitea-admin-token`,
   `gitea-servicemonitor`, `authentik-blueprint-gitea-secret` — VPS memory pressure
-  (2026-03-17 OOM). Re-enable after rebalancing or CPX41 upgrade.
+  (2026-03-17 OOM). Re-enable after rebalancing.
 - **BuildBuddy Executor**: `buildbuddy-executor` — scaled to 0. Re-enable when needed.
 - **InvenTree**: `inventree`, `inventree-namespace`, `inventree-secrets`,
   `inventree-token-provisioner`, `authentik-blueprint-inventree-secret` — VPS memory pressure.
@@ -71,7 +71,7 @@ CloudNativePG `local-path`. See <changelog.md> for history.
       (1.9+). Add `lvm-vps` StorageClass. Rolling update: drain + destroy +
       recreate each VPS node. Gives VPS a local non-replicated option
       (faster than Longhorn for CNPG `local-path` replacements). - **Proxmox CP**: Similar approach if needed for local storage. - Expand OpenEBS LVM HelmRelease `lvmNode.nodeSelector` to include
-      target regions. Pairs well with CPX41 upgrade (240GB → more headroom).
+      target regions.
 - [ ] Longhorn node tags: Kyverno mutate policy sets `node.longhorn.io/default-node-tags`
       annotation, but only fires at Node admission time — nodes created before Kyverno is
       deployed (i.e., bootstrap) never get tagged. Currently patched manually. Options:
@@ -377,7 +377,6 @@ CNPG: individual clusters per app, all on `local-path`. Two profiles: VPS-HA
 
 - <bootstrap.md>
 - <troubleshooting.md>
-- <changelog.md>
 - <lessons_learned/2025-11-28-eso-password-generator-desync.md>
 
-**Monthly Cost**: ~EUR30 (2x CPX31). CPX41 upgrade planned (see <plans/2026-02-22-vps-cpx41-upgrade.md>).
+**Monthly Cost**: ~EUR64 (4x CPX31, grandfathered at HIL).

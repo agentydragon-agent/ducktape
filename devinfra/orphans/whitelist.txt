@@ -96,9 +96,6 @@ finance/worthy/worthy/graph.js
 # Nix files
 *.nix
 
-# Helm charts (files auto-discovered by helm_chart rule, but .helmignore
-# is not part of the chart content — whitelist it)
-*.helmignore
 
 # npm manifests (never Bazel targets)
 **/package.json
