@@ -8645,7 +8645,9 @@ packages:
 
   vue-d3-sunburst@https://codeload.github.com/ErikBjare/Vue.D3.sunburst/tar.gz/1fe0f3e00e04109c548f8bac6e6333b735955668:
     resolution:
-      { tarball: https://codeload.github.com/ErikBjare/Vue.D3.sunburst/tar.gz/1fe0f3e00e04109c548f8bac6e6333b735955668 }
+      {
+        tarball: "https://codeload.github.com/ErikBjare/Vue.D3.sunburst/tar.gz/1fe0f3e00e04109c548f8bac6e6333b735955668",
+      }
     version: 1.9.1
 
   vue-datetime@1.0.0-beta.14:
