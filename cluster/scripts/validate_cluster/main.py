@@ -39,9 +39,7 @@ from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks
 
 
-async def validate(
-    root: Path, *, skip_flux_build: bool = False, skip_dependencies: bool = False
-) -> tuple[list[tuple[Path, str]], list[str]]:
+async def validate(root: Path, *, skip_flux_build: bool = False) -> tuple[list[tuple[Path, str]], list[str]]:
     """Run all cluster validations.
 
     Returns (kust_errors, global_errors) where kust_errors are
@@ -82,8 +80,7 @@ async def validate(
     global_errors.extend(check_goldilocks_namespace_labels(cluster))
     global_errors.extend(check_goldilocks_explicit_decision(cluster))
 
-    if not skip_dependencies:
-        global_errors.extend(validate_dependencies(cluster, root))
+    global_errors.extend(validate_dependencies(cluster, root))
 
     global_errors.extend(check_controller_health_checks(cluster, root))
 
