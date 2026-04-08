@@ -10,9 +10,11 @@ and install a bazel wrapper that injects --bazelrc=<session-bazelrc>.
 import asyncio
 import logging
 import logging.handlers
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import anyio
 import httpx
@@ -126,11 +128,11 @@ class PlatformSetup:
     buildbuddy_setup: buildbuddy.BuildbuddySetup = field(default_factory=buildbuddy.BuildbuddyNotConfigured)
 
 
-def _run_background(session: Session, coro: object, *, name: str) -> None:
+def _run_background(session: Session, coro: Coroutine[Any, Any, Any], *, name: str) -> None:
     """Create a background task, track it, post success/failure to session mailbox."""
-    task = asyncio.create_task(coro)
+    task: asyncio.Task[Any] = asyncio.create_task(coro)
 
-    def _on_done(t: asyncio.Task) -> None:
+    def _on_done(t: asyncio.Task[Any]) -> None:
         if t.cancelled():
             return
         if exc := t.exception():
