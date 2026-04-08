@@ -82,9 +82,9 @@ class BesInterceptor:
         sock_path: Path,
         upstream_target: str,
         api_key: str,
-        on_nudge: Callable[[str], None] | None = None,
-        ca_bundle: Path | None = None,
-        http_proxy: str | None = None,
+        on_nudge: Callable[[str], None] | None,
+        ca_bundle: Path | None,
+        http_proxy: str | None,
     ) -> None:
         self._sock_path = sock_path
         self._upstream_target = upstream_target

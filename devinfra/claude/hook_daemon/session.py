@@ -75,6 +75,8 @@ class Session:
                 upstream_target=profile.bazel_bes_proxy.target,
                 api_key=self.buildbuddy_api_key,
                 on_nudge=on_nudge,
+                ca_bundle=self.paths.auth_proxy_combined_ca,
+                http_proxy=None,
             )
             self.bes_interceptor.start()
 
