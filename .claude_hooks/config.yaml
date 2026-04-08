@@ -27,7 +27,7 @@ extra_env_script: |
   export DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG=1
 
 profiles:
-  cli:
+  default:
     write_kubeconfig: false
     bazel_remote_proxy:
       target: remote.buildbuddy.io:443
@@ -38,6 +38,10 @@ profiles:
       target: remote.buildbuddy.io:443
     bazel_bes_proxy:
       target: remote.buildbuddy.io:443
+
+default_profiles:
+  cli: default
+  web: web
 
 secrets:
   k8s_token:

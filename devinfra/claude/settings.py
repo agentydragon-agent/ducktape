@@ -103,6 +103,9 @@ class HookSettings(BaseSettings):
     supervisor_port: int = Field(default=19001, description="Supervisor TCP port")
     auth_proxy_port: int = Field(default=18081, description="Auth proxy port")
 
+    # Profile override (env var DUCKTAPE_CLAUDE_HOOKS_PROFILE)
+    profile: str | None = Field(default=None, description="Override profile name from config.yaml")
+
     # Feature flags (enable/disable installations)
     install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
     install_apt_packages: bool = True

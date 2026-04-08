@@ -88,9 +88,11 @@ class ProfileConfig(BaseModel):
     )
 
 
-class ProfilesConfig(BaseModel):
-    cli: ProfileConfig
-    web: ProfileConfig
+class DefaultProfiles(BaseModel):
+    """Which named profile to use by default for each mode."""
+
+    cli: str
+    web: str
 
 
 class PreCommitConfig(BaseModel, frozen=True):
@@ -119,10 +121,16 @@ class HookConfig(BaseModel):
     extra_env_script: str | None = Field(
         default=None, description="Extra shell script content appended verbatim to the session env file."
     )
-    profiles: ProfilesConfig
+    profiles: dict[str, ProfileConfig]
+    default_profiles: DefaultProfiles
 
-    def profile(self, web_mode: bool) -> ProfileConfig:
-        return self.profiles.web if web_mode else self.profiles.cli
+    def resolve_profile(self, web_mode: bool, override: str | None = None) -> ProfileConfig:
+        """Resolve a profile by name. Override > default for mode > error."""
+        name = override or (self.default_profiles.web if web_mode else self.default_profiles.cli)
+        if name not in self.profiles:
+            available = ", ".join(sorted(self.profiles))
+            raise KeyError(f"Profile {name!r} not found (available: {available})")
+        return self.profiles[name]
 
     @classmethod
     def load(cls, config_path: Path) -> HookConfig:

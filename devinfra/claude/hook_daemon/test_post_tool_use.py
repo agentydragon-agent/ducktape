@@ -13,7 +13,7 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.hook_config import HookConfig, PreCommitConfig, ProfileConfig, ProfilesConfig
+from devinfra.claude.hook_config import DefaultProfiles, HookConfig, PreCommitConfig, ProfileConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result, evaluate
 from devinfra.claude.hook_daemon.precommit_runner import HookAutoApplied, HookFailedNotApplied, HookWouldEdit, RunResult
@@ -36,10 +36,8 @@ def git_project(tmp_path: Path) -> tuple[Path, Path]:
     repo_path.mkdir()
     config = HookConfig(
         pre_commit=PreCommitConfig(),
-        profiles=ProfilesConfig(
-            cli=ProfileConfig(bazel_remote_proxy=None, bazel_bes_proxy=None),
-            web=ProfileConfig(bazel_remote_proxy=None, bazel_bes_proxy=None),
-        ),
+        profiles={"default": ProfileConfig(bazel_remote_proxy=None, bazel_bes_proxy=None)},
+        default_profiles=DefaultProfiles(cli="default", web="default"),
     )
     hooks_dir = repo_path / ".claude_hooks"
     hooks_dir.mkdir()

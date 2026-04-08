@@ -144,7 +144,8 @@ async def handle_hook(req: HookRequest) -> Response:
             case SessionStartHookInput():
                 hook_config = HookConfig.load_from_repo(Path(req.hook.cwd))
                 web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
-                await session.start_proxy(web_mode, hook_config, app.state.settings)
+                profile = hook_config.resolve_profile(web_mode, override=app.state.settings.profile)
+                await session.start_proxy(profile, app.state.settings)
                 ctx = CallerContext.from_env(req.env)
                 with build_http_client(req.env) as http:
                     output = await handle_session_start(

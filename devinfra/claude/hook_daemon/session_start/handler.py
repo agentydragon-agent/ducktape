@@ -351,6 +351,7 @@ async def handle(
 
     # Load hook config (general config file, not gated on k8s_token).
     hook_config = HookConfig.load_from_repo(project_dir)
+    profile = hook_config.resolve_profile(ctx.web_mode, override=settings.profile)
 
     # Detect platform early (safe in both modes — reads /proc + psutil).
     platform = platform_detect.detect()
@@ -412,7 +413,7 @@ async def handle(
 
         # Write kubeconfig when k8s client is available and profile enables it.
         # CLI profile skips this — the user has their own ~/.kube/config.
-        if k8s_api and k8s_token and hook_config.k8s and hook_config.profile(ctx.web_mode).write_kubeconfig:
+        if k8s_api and k8s_token and hook_config.k8s and profile.write_kubeconfig:
             setup.secrets.kubeconfig_path = secret_sources.write_kubeconfig(
                 token=k8s_token,
                 k8s_cfg=hook_config.k8s,
@@ -531,7 +532,7 @@ async def handle(
             setup.secrets,
             setup.fork_result,
             web_mode=ctx.web_mode,
-            profile=hook_config.profile(ctx.web_mode),
+            profile=profile,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.uds_bes else None,
         )

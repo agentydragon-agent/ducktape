@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy, UdsRemoteProxy, UpstreamCreds
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
-from devinfra.claude.hook_config import HookConfig
+from devinfra.claude.hook_config import ProfileConfig
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings, ProxyMode
 
@@ -46,9 +46,8 @@ class Session:
         self._mailbox.clear()
         return messages
 
-    async def start_proxy(self, web_mode: bool, hook_config: HookConfig, settings: HookSettings) -> None:
+    async def start_proxy(self, profile: ProfileConfig, settings: HookSettings) -> None:
         """Start proxy infrastructure for this session."""
-        profile = hook_config.profile(web_mode)
         upstream_url = get_upstream_proxy_url()
 
         self._upstream_creds.set(upstream_url)
