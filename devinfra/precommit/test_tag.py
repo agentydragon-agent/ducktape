@@ -16,16 +16,12 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sys
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
 
 import httpx
 
 logger = logging.getLogger(__name__)
-
-_ENV_VAR = "DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG"
 _TAG_PATTERN = re.compile(r"^BAZEL_TEST_INVOCATIONS=(.*)$", re.MULTILINE)
 _EXEMPT_PREFIXES = ("Merge ", "fixup! ", "squash! ")
 _NONE_PREFIX = "none:"
@@ -156,24 +152,3 @@ def check_commit_message(message: str) -> None:
                 verify_invocations_on_buildbuddy(bb_ids)
         case NoTests():
             pass
-
-
-def main() -> int:
-    if os.environ.get(_ENV_VAR) not in ("1", "true"):
-        return 0
-
-    if len(sys.argv) < 2:
-        print("ERROR: commit message file path required as argument", file=sys.stderr)
-        return 1
-
-    message = Path(sys.argv[1]).read_text()
-    try:
-        check_commit_message(message)
-    except TestTagError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        return 1
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

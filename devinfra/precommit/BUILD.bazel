@@ -61,13 +61,14 @@ py_test(
 )
 
 py_library(
-    name = "ducktape_precommit",
-    srcs = ["ducktape_precommit.py"],
+    name = "git_hook",
+    srcs = ["git_hook.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":filename_conventions",
         ":frozen_specimens",
         ":terraform_centralization",
+        ":test_tag",
         "//cluster/validation:validate_all",
         "//devinfra:pytest_main",
         "//devinfra/precommit/enforce_bazel_tests",

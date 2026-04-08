@@ -26,7 +26,7 @@ jobs:
         with:
           extra_nix_config: experimental-features = nix-command flakes
 
-      # Install devtools via flake — provides ducktape-precommit, nixfmt,
+      # Install devtools via flake — provides ducktape-git-hook, nixfmt,
       # pre-commit, and other dev tools (all language: system hooks).
       - name: Install dev tools
         run: nix profile install .#devtools

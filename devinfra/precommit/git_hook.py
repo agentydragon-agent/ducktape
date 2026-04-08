@@ -1,23 +1,19 @@
-"""Unified pre-commit entry point for the ducktape wheel.
+"""Unified git hook entry point. Dispatches by stage.
 
-Runs all custom validations and optionally enforces Bazel test cache.
-Installed as `ducktape-precommit` console script via the claude-hooks wheel.
+Installed as `ducktape-git-hook` console script via the claude-hooks wheel.
+Pre-commit framework sets PRE_COMMIT_HOOK_STAGE; we dispatch on that.
 
-Validations (always run):
-- pytest-main-check: test files have pytest_bazel.main() entry points
-- tf-centralization: terraform modules don't define provider versions
-- filename-conventions: new .py/.md files use underscores not dashes
-- cluster-validate: kustomize/helm/dependency validation
-- frozen-specimens: block changes to code/ in committed specimen snapshots
-
-Optional (guarded by DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1):
-- enforce-bazel-tests: affected Bazel tests are cached and passing
+Stages:
+- pre-commit: file validations (pytest-main, tf-centralization, filenames, cluster, frozen-specimens)
+- prepare-commit-msg: block amending already-pushed commits
+- commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -35,6 +31,7 @@ from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import (
 from devinfra.precommit.filename_conventions import check_filename_conventions
 from devinfra.precommit.frozen_specimens import check_specimen_code_changes
 from devinfra.precommit.terraform_centralization import find_violations
+from devinfra.precommit.test_tag import TestTagError, check_commit_message
 from devinfra.pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from util.bazel.workspace import BazelWorkspace, detect_bazel_command
 from util.otel import JsonlSpanExporter
@@ -61,10 +58,7 @@ def is_terraform_module(p: Path) -> bool:
 async def run_pytest_main_check(
     files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex
 ) -> tuple[str, str | None]:
-    """Check that test files have pytest_bazel.main() calls.
-
-    Returns (name, error_output | None).
-    """
+    """Check that test files have pytest_bazel.main() calls."""
     if not files:
         candidates = [p.relative_to(repo_root) for p in bazel_index.known_srcs]
     else:
@@ -142,7 +136,12 @@ def _setup_tracing(repo_root: Path) -> None:
     trace.set_tracer_provider(provider)
 
 
-async def main_async() -> int:
+# ---------------------------------------------------------------------------
+# Stage: pre-commit
+# ---------------------------------------------------------------------------
+
+
+async def _run_pre_commit(argv: list[str]) -> int:
     repo_root = get_repo_root()
     repo = pygit2.Repository(str(repo_root))
     _setup_tracing(repo_root)
@@ -151,7 +150,6 @@ async def main_async() -> int:
         workspace = BazelWorkspace(root=repo_root, bazel_command=detect_bazel_command())
         bazel_index = build_bazel_index(workspace)
 
-        # Compute staged deltas once (fast index-to-HEAD diff)
         if repo.head_is_unborn:
             head_tree = None
             base = repo[repo.TreeBuilder().write()].peel(pygit2.Tree)
@@ -161,12 +159,10 @@ async def main_async() -> int:
         repo.index.read()
         all_deltas = list(repo.index.diff_to_tree(base).deltas)
 
-        # Filter out ignored paths before dispatching to checks
         deltas = [d for d in all_deltas if not _is_ignored(repo, d.new_file.path)]
 
-        files = [Path(f) for f in sys.argv[1:]] if len(sys.argv) > 1 else get_all_files(repo)
+        files = [Path(f) for f in argv] if argv else get_all_files(repo)
 
-        # Run validations concurrently, each wrapped in a span
         async def _traced(coro) -> tuple[str, str | None]:
             name, error = await coro
             span = trace.get_current_span()
@@ -195,7 +191,6 @@ async def main_async() -> int:
             else:
                 print(f"  {name}: ok")
 
-        # Enforce Bazel tests only when explicitly enabled
         if os.environ.get("DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS") in ("1", "true"):
             try:
                 enforce_bazel_tests_run(workspace, deltas)
@@ -206,8 +201,72 @@ async def main_async() -> int:
     return 1 if failed else 0
 
 
+# ---------------------------------------------------------------------------
+# Stage: prepare-commit-msg — block amending already-pushed commits
+# ---------------------------------------------------------------------------
+
+
+def _run_prepare_commit_msg(argv: list[str]) -> int:
+    # Git passes: <msg-file> <source> [<sha>]
+    # source is "commit" for --amend
+    source = argv[1] if len(argv) > 1 else ""
+    if source != "commit":
+        return 0
+
+    result = subprocess.run(["git", "branch", "-r", "--contains", "HEAD"], check=False, capture_output=True, text=True)
+    if result.returncode == 0 and result.stdout.strip():
+        print("ERROR: Refusing to amend a commit that has already been pushed.", file=sys.stderr)
+        print(
+            'Create a new commit instead. See AGENTS.md: "NEVER amend a commit that has already been pushed."',
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Stage: commit-msg — enforce BAZEL_TEST_INVOCATIONS= tag
+# ---------------------------------------------------------------------------
+
+_TEST_TAG_ENV_VAR = "DUCKTAPE_PRECOMMIT_ENFORCE_TEST_TAG"
+
+
+def _run_commit_msg(argv: list[str]) -> int:
+    if os.environ.get(_TEST_TAG_ENV_VAR) not in ("1", "true"):
+        return 0
+
+    if not argv:
+        print("ERROR: commit message file path required as argument", file=sys.stderr)
+        return 1
+
+    message = Path(argv[0]).read_text()
+    try:
+        check_commit_message(message)
+    except TestTagError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+_STAGES = {
+    "pre-commit": lambda argv: asyncio.run(_run_pre_commit(argv)),
+    "prepare-commit-msg": _run_prepare_commit_msg,
+    "commit-msg": _run_commit_msg,
+}
+
+
 def main() -> int:
-    return asyncio.run(main_async())
+    stage = os.environ.get("PRE_COMMIT_HOOK_STAGE", "")
+    handler = _STAGES.get(stage)
+    if handler is None:
+        print(f"ERROR: unknown or missing PRE_COMMIT_HOOK_STAGE={stage!r}", file=sys.stderr)
+        print(f"Expected one of: {', '.join(_STAGES)}", file=sys.stderr)
+        return 1
+    return handler(sys.argv[1:])
 
 
 if __name__ == "__main__":

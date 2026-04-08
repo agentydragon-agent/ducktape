@@ -177,8 +177,7 @@ py_package(
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
         "//devinfra/claude/hook_daemon:main_lib",
         "//devinfra/claude/statusline:statusline_lib",
-        "//devinfra/precommit:ducktape_precommit",
-        "//devinfra/precommit:test_tag",
+        "//devinfra/precommit:git_hook",
     ],
 )
 
@@ -189,8 +188,7 @@ py_wheel(
         "console_scripts": [
             "claude-hook = devinfra.claude.hook_daemon.hook_dispatch:main",
             "claude-statusline = devinfra.claude.statusline:main",
-            "check-commit-test-tag = devinfra.precommit.test_tag:main",
-            "ducktape-precommit = devinfra.precommit.ducktape_precommit:main",
+            "ducktape-git-hook = devinfra.precommit.git_hook:main",
         ],
     },
     python_requires = ">=3.13",

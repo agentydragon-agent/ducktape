@@ -1,6 +1,6 @@
 """Verify affected Bazel tests are cached and passing.
 
-Called from ducktape_precommit (guarded by DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1).
+Called from git_hook (guarded by DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS=1).
 
 Uses pygit2 for fast staged file discovery, then:
 1. Converts staged files to candidate Bazel source file labels
