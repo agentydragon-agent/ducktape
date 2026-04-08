@@ -293,6 +293,3 @@ repos:
   # NOTE: terraform_validate hook removed — Bazel rules_tf now covers all
   # terraform modules via :validate and :lint targets with hermetic providers.
   # See MODULE.bazel tf.download(mirror={...}) for provider configuration.
-
-  # NOTE: Custom validations (pytest-main-check, tf-centralization,
-  # filename-conventions, cluster-validate) are in ducktape-precommit above.
