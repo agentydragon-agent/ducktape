@@ -28,9 +28,7 @@ def _get_values_files() -> list[Path]:
         return [get_required_path(rloc) for rloc in _CILIUM_VALUES_RLOCATIONS]
     except (ImportError, RuntimeError):
         # Outside Bazel: resolve relative to repo root (strip _main/ prefix)
-        import pathlib  # noqa: PLC0415
-
-        repo_root = pathlib.Path(__file__).resolve().parents[4]
+        repo_root = Path(__file__).resolve().parents[4]
         return [repo_root / rloc.removeprefix("_main/") for rloc in _CILIUM_VALUES_RLOCATIONS]
 
 
