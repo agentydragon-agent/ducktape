@@ -19,7 +19,7 @@
 {
   imports = [
     (modulesPath + "/virtualisation/proxmox-lxc.nix")
-    ../../modules/dev-workstation.nix
+    ../../modules/workstation.nix
     ../../modules/k8s-worker.nix
   ];
 

@@ -1,4 +1,4 @@
-# Dev workstation module - Docker, Tailscale, Chrome, gnome-terminal
+# Workstation module - Docker, GUI apps, creative/productivity tools
 {
   config,
   pkgs,
@@ -11,6 +11,29 @@
   environment.systemPackages = with pkgs; [
     gnome-terminal
     google-chrome
+
+    # Creative/CAD
+    freecad
+    openscad
+    xournalpp
+
+    # Graphics/Audio editing
+    gimp
+    krita
+    inkscape
+    audacity
+
+    # Development & Analysis
+    vscode
+    wireshark
+
+    # Media & Downloads
+    vlc
+    transmission_4-gtk
+
+    # Communication (Electron apps)
+    discord
+    element-desktop
   ];
 
   # Docker

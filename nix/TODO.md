@@ -35,4 +35,4 @@ Could unify via `home-manager.nixosModules.home-manager` to use single `nixos-re
 
 ## Deduplicate wyrm2/rugged/iguana host configs
 
-wyrm2, rugged, and iguana import nearly identical module sets (gui, dev-workstation, bazel-dev, system-inspection-sudo, k8s-worker) and have similar `k8sWorker` config. Extract common setup into a shared module (e.g., `modules/k8s-dev-workstation.nix`).
+wyrm2, rugged, and iguana import nearly identical module sets (gui, workstation, bazel, system-inspection-sudo, k8s-worker) and have similar `k8sWorker` config. Extract common setup into a shared module (e.g., `modules/k8s-workstation.nix`).

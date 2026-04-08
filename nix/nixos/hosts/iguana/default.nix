@@ -27,8 +27,8 @@
   imports = [
     ./hardware-configuration.nix
     ../../modules/gui.nix
-    ../../modules/dev-workstation.nix
-    ../../modules/bazel-dev.nix
+    ../../modules/workstation.nix
+    ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
   ];

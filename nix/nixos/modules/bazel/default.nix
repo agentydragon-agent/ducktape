@@ -2,7 +2,7 @@
 #
 # Addresses three NixOS-specific Bazel issues:
 # 1. /bin/bash missing — envfs provides it (see below)
-# 2. Empty PATH in sandbox actions — bazel-nixos/ installs /etc/bazel.bazelrc
+# 2. Empty PATH in sandbox actions — system.bazelrc installs /etc/bazel.bazelrc
 # 3. Dynamically-linked Bazel-downloaded toolchains — nix-ld provides the linker stub
 #
 # See debug/nixos_bazel_bash/README.md for details.
@@ -13,7 +13,11 @@
   ...
 }:
 {
-  imports = [ ./bazel-nixos ];
+  # Install NixOS-specific Bazel flags to /etc/bazel.bazelrc.
+  # System-level bazelrc is read regardless of $HOME, so it works even when
+  # Claude Code's sandbox overrides HOME.
+  environment.etc."bazel.bazelrc".source = ./system.bazelrc;
+
   # envfs: FUSE mount at /bin and /usr/bin resolving binaries from PATH.
   # Bazel hardcodes /bin/bash for `bazel run` and run_shell() actions.
   # --shell_executable can't fix this: setting it to a Nix store path breaks

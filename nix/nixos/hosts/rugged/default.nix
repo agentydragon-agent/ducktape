@@ -26,8 +26,8 @@
   imports = [
     ./hardware-configuration.nix
     ../../modules/gui.nix
-    ../../modules/dev-workstation.nix
-    ../../modules/bazel-dev.nix
+    ../../modules/workstation.nix
+    ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
     ../../modules/ipu7-camera.nix
@@ -76,7 +76,6 @@
   # IIO sensor proxy for accelerometer (auto screen rotation)
   hardware.sensor.iio.enable = true;
 
-  # Services (tailscale enabled via dev-workstation.nix)
   services = {
     avahi = {
       enable = true;

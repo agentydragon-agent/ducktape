@@ -9,7 +9,7 @@
 {
   imports = [
     (modulesPath + "/virtualisation/docker-image.nix")
-    ../../modules/bazel-dev.nix
+    ../../modules/bazel
   ];
 
   # boot.isContainer is set by docker-container.nix (imported by docker-image.nix)

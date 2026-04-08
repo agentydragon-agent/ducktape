@@ -35,8 +35,8 @@ in
 
   imports = [
     ../../modules/gui.nix
-    ../../modules/dev-workstation.nix
-    ../../modules/bazel-dev.nix
+    ../../modules/workstation.nix
+    ../../modules/bazel
     ../../modules/system-inspection-sudo.nix
     ../../modules/k8s-worker.nix
   ];
@@ -168,7 +168,6 @@ in
 
   time.timeZone = "America/Los_Angeles";
 
-  # Services (tailscale enabled via dev-workstation.nix)
   services = {
     avahi = {
       enable = true;
