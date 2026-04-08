@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any
 
 import grpc
-from buildbuddy.proto import build_event_stream_pb2  # type: ignore[import-not-found]
 from google.devtools.build.v1 import publish_build_event_pb2  # type: ignore[import-not-found]
 from google.protobuf import empty_pb2
+from proto import build_event_stream_pb2  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
