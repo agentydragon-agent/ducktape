@@ -65,6 +65,11 @@ def main() -> None:
     sources_path().write_text(sources.model_dump_json(indent=2) + "\n")
     print(f"Updated: {' '.join(updated)}")
 
+    # Write updated package names for use in commit message
+    updated_file = Path(os.environ.get("GITHUB_OUTPUT", "/dev/null"))
+    with updated_file.open("a") as f:
+        f.write(f"updated={', '.join(updated)}\n")
+
 
 if __name__ == "__main__":
     main()

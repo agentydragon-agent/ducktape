@@ -23,6 +23,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sync pins with latest releases
+        id: sync
         run: pip install uv && uv run devinfra/ci/sync_pins.py
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,6 +37,6 @@ jobs:
             echo "No pin changes"
             exit 0
           fi
-          git commit -m "chore: sync artifact pins"
+          git commit -m "chore: sync artifact pins (${{ steps.sync.outputs.updated }})"
           git pull --rebase origin devel
           git push origin "HEAD:devel"
