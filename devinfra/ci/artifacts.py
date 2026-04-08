@@ -107,6 +107,6 @@ def file_sha256(path: Path) -> str:
 
 
 def url_sha256(url: str) -> str:
-    with httpx.stream("GET", url) as response:
+    with httpx.stream("GET", url, follow_redirects=True) as response:
         response.raise_for_status()
         return _sha256_of_chunks(response.iter_bytes(65536))
