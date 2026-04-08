@@ -31,17 +31,20 @@ def main() -> None:
     gh_token = os.environ["GH_TOKEN"]
     repo = Github(auth=Auth.Token(gh_token)).get_repo(REPO)
 
-    all_tags = [r.tag_name for r in repo.get_releases() if not r.draft and not r.prerelease][:200]
+    # Sort newest-first — GitHub's REST API does not guarantee chronological order.
+    releases = sorted(
+        (r for r in repo.get_releases() if not r.draft and not r.prerelease), key=lambda r: r.created_at, reverse=True
+    )[:200]
 
     sources = Sources.model_validate_json(sources_path().read_text())
 
     updated = []
     for artifact in ARTIFACTS:
-        tag = next((t for t in all_tags if is_tag_for_pkg(t, artifact.pkg)), None)
-        if not tag:
+        release = next((r for r in releases if is_tag_for_pkg(r.tag_name, artifact.pkg)), None)
+        if not release:
             print(f"{artifact.pkg}: no release found, skipping")
             continue
-
+        tag = release.tag_name
         url = f"{BASE}/{tag}/{artifact.filename}"
         pin = sources.pins.get(artifact.pkg)
         if pin and url == pin.url:

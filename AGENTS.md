@@ -61,6 +61,36 @@ regardless.
 **Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by session
 start hook).
 
+## Terraform via Bazel
+
+Terraform/OpenTofu modules are managed by Bazel (`@rules_tf`). Each module has a
+`BUILD.bazel` with `tf_providers_versions` and `tf_module` rules. **There are no
+hand-written `terraform.tf` or `required_providers` blocks** — Bazel generates them
+from `tf_providers_versions`. Do not suggest adding `terraform { required_providers }`
+blocks manually.
+
+## Flux Kustomization Wiring
+
+Flux `Kustomization` resources (`flux-kustomization.yaml`) are applied from the **root**
+`cluster/k8s/kustomization.yaml`, not from local `kustomization.yaml` files in each
+directory. A directory's `kustomization.yaml` should only list the manifests that Flux
+applies at `spec.path` (e.g., `terraform.yaml`, `*.sops.yaml`). **Do not include
+`flux-kustomization.yaml` in local `kustomization.yaml` resources** — it causes
+redundant application.
+
+## Container Images
+
+Most container images are built with Bazel (`rules_oci`, `rules_distroless`) and pushed
+to GHCR via `ghcr_push` targets, triggered by BuildBuddy CI. A few images use Dockerfiles
+with GitHub Actions workflows (RBE worker, devbot, claude web_env). New images should
+use `oci_image` + `ghcr_push`.
+
+## CI Configuration
+
+`buildbuddy.yaml` and `.github/workflows/ci.yml` are **auto-generated**. Do not edit them
+directly. Changes go in `devinfra/ci/workflows.yaml` and `devinfra/ci/generate_buildbuddy.py`,
+then regenerate with `bazel run //devinfra/ci:generate_buildbuddy_bin`.
+
 ## Refactoring
 
 When renaming/moving/deleting files or symbols, search **all references** across the entire codebase (imports, BUILD files, CI configs, docs, Dockerfiles, k8s manifests). Missing a reference is worse than being thorough.
