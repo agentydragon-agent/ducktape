@@ -118,7 +118,7 @@ def setup_hook_env(
     mock_ca_path.write_bytes(mock_proxy.ca_cert_pem)
     monkeypatch.setenv("ANTHROPIC_CA_PATH", str(mock_ca_path))
 
-    monkeypatch.setenv(settings.ENV_SETUP_DOCKER, str(setup_docker))
+    # setup_docker is now controlled by profile config, not env var
 
 
 def make_hook_input(project_dir: Path, source: HookSource = HookSource.STARTUP) -> str:

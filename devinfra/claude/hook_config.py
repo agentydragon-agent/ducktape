@@ -76,15 +76,23 @@ class BazelRemoteProxyConfig(BaseModel):
 
 class ProfileConfig(BaseModel):
     bazel_remote_proxy: BazelRemoteProxyConfig | None = Field(
-        description="UDS proxy for Bazel --remote_proxy (remote execution + cache). Null = disabled."
+        default=None, description="UDS proxy for Bazel --remote_proxy (remote execution + cache). Null = disabled."
     )
     bazel_bes_proxy: BazelRemoteProxyConfig | None = Field(
-        description="UDS proxy for Bazel --bes_proxy (Build Event Service). Null = disabled."
+        default=None, description="UDS proxy for Bazel --bes_proxy (Build Event Service). Null = disabled."
     )
     write_kubeconfig: bool = Field(
         default=True,
         description="Write a service-account kubeconfig and export KUBECONFIG. "
         "Set to false in CLI profile when the user has their own ~/.kube/config.",
+    )
+    install_mkcert: bool = Field(default=False, description="Install mkcert and generate localhost TLS cert.")
+    install_apt_packages: bool = Field(default=False, description="Install native dev packages via apt.")
+    setup_docker: bool = Field(default=False, description="Set up Docker daemon under supervisor.")
+    bazel_warmup: str | None = Field(
+        default=None,
+        description="Bazel warmup command after session start. 'info' for JVM warmup, "
+        "arbitrary command string for cache warmup, null to disable.",
     )
 
 

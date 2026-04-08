@@ -25,7 +25,6 @@ import httpx
 
 from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
-from devinfra.claude.errors import SkipError
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
@@ -175,13 +174,6 @@ def _configure_docker(paths: SessionPaths, tmpfs_mounted: bool, root_supports_ov
 # ============================================================================
 
 
-def get_storage_dir(paths: SessionPaths, settings: HookSettings) -> Path | None:
-    """Return the shared container storage directory for tmpfs mounting, or None if disabled."""
-    if not settings.setup_docker:
-        return None
-    return paths.container_storage_dir
-
-
 def _cleanup_stale_docker_pid() -> None:
     """Remove /var/run/docker.pid if it refers to a non-dockerd process.
 
@@ -257,13 +249,7 @@ async def setup_container_runtime(
 
     Idempotent: if the service is already running, skips the start step and
     returns the current state.
-
-    Raises:
-        SkipError: If setup_docker is False.
     """
-    if not settings.setup_docker:
-        raise SkipError("Docker setup disabled (setup_docker=False)")
-
     spec = _configure_docker(paths, tmpfs_mounted, root_supports_overlay=root_supports_overlay)
 
     socket_url = f"unix://{spec.socket_path}"

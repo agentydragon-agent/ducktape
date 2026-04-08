@@ -11,12 +11,10 @@ Environment Variables (in priority order):
 
 import importlib.resources
 import os
-from dataclasses import dataclass
 from enum import StrEnum
 from importlib.resources.abc import Traversable
-from typing import Annotated
 
-from pydantic import BeforeValidator, Field
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Config files bundled with the package (infrastructure config: bazelrc, env)
@@ -35,7 +33,6 @@ def _env_name(field: str) -> str:
 # Environment variable names (used by tests and env_file.py)
 ENV_SUPERVISOR_PORT = _env_name("supervisor_port")
 ENV_AUTH_PROXY_PORT = _env_name("auth_proxy_port")
-ENV_SETUP_DOCKER = _env_name("setup_docker")
 ENV_SESSION_DIR = _env_name("session_dir")
 
 
@@ -49,45 +46,6 @@ class ProxyMode(StrEnum):
 
     UDS = "uds"
     TCP = "tcp"
-
-
-@dataclass(frozen=True)
-class BazelWarmupDisabled:
-    """No Bazel warmup after session setup."""
-
-
-@dataclass(frozen=True)
-class BazelWarmupInfo:
-    """Warm up by running `bazel info` (starts JVM only)."""
-
-
-@dataclass(frozen=True)
-class BazelWarmupCommand:
-    """Warm up by running a configurable Bazel command (starts JVM + populates cache)."""
-
-    command: str
-
-
-BazelWarmup = BazelWarmupDisabled | BazelWarmupInfo | BazelWarmupCommand
-
-
-def _parse_bazel_warmup(value: object) -> BazelWarmup:
-    """Parse a string into a BazelWarmup variant.
-
-    'disabled' → BazelWarmupDisabled, 'info' → BazelWarmupInfo,
-    anything else → BazelWarmupCommand(command=value).
-    """
-    if isinstance(value, (BazelWarmupDisabled, BazelWarmupInfo, BazelWarmupCommand)):
-        return value
-    if not isinstance(value, str):
-        raise ValueError(f"expected str, got {type(value).__name__}")
-    match value:
-        case "disabled":
-            return BazelWarmupDisabled()
-        case "info":
-            return BazelWarmupInfo()
-        case _:
-            return BazelWarmupCommand(command=value)
 
 
 class HookSettings(BaseSettings):
@@ -106,21 +64,11 @@ class HookSettings(BaseSettings):
     # Profile override (env var DUCKTAPE_CLAUDE_HOOKS_PROFILE)
     profile: str | None = Field(default=None, description="Override profile name from config.yaml")
 
-    # Feature flags (enable/disable installations)
-    install_mkcert: bool = Field(default=True, description="Install mkcert and generate localhost TLS cert")
-    install_apt_packages: bool = True
-    setup_docker: bool = Field(default=True, description="Set up Docker daemon under supervisor")
-
     k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
     age_key: str | None = Field(
         default=None,
         description="Age private key (AGE-SECRET-KEY-...) for SOPS decryption. "
         "Used by Claude agent in Claude Code web to decrypt repo secrets locally.",
-    )
-
-    bazel_warmup: Annotated[BazelWarmup, BeforeValidator(_parse_bazel_warmup)] = Field(
-        default=BazelWarmupInfo(),
-        description="Bazel warmup: 'disabled', 'info' (bazel info), or a command string (e.g. \"query 'tests(//...)')\")",
     )
 
     proxy_mode: ProxyMode = Field(

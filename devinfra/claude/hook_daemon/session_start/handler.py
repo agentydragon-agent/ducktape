@@ -56,7 +56,7 @@ from devinfra.claude.hook_daemon.session_start import (
 )
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.managed_files import write_config
-from devinfra.claude.settings import CONFIG_FILES, BazelWarmupCommand, BazelWarmupInfo, HookSettings, ProxyMode
+from devinfra.claude.settings import CONFIG_FILES, HookSettings, ProxyMode
 from devinfra.claude.sops_decrypt import discover_age_identities
 from devinfra.claude.supervisor import setup as supervisor_setup
 
@@ -145,6 +145,7 @@ def _run_background(session: Session, coro: object, *, name: str) -> None:
 async def _setup_web(
     session: Session,
     settings: HookSettings,
+    profile: ProfileConfig,
     project_dir: Path,
     root_ctx: trace.Context,
     platform: platform_detect.PlatformInfo,
@@ -198,9 +199,9 @@ async def _setup_web(
         - gVisor without tmpfs: fall back to vfs
         """
         with tracer.start_as_current_span("setup_container_runtime", context=root_ctx):
-            storage_dir = container_runtime.get_storage_dir(session.paths, settings)
-            if storage_dir is None:
+            if not profile.setup_docker:
                 raise SkipError("Docker setup disabled (setup_docker=False)")
+            storage_dir = session.paths.container_storage_dir
             supervisor_result = await supervisor_task
             tmpfs_mounted = await mount_tmpfs_at(storage_dir)
             return await container_runtime.setup_container_runtime(
@@ -232,7 +233,7 @@ async def _setup_web(
     bazelisk_path = bazelisk.resolve_bazelisk()
 
     apt_packages: list[str] = []
-    if settings.install_apt_packages:
+    if profile.install_apt_packages:
         apt_packages.extend(apt.NATIVE_DEV_PACKAGES)
     else:
         logger.info("Skipping native apt packages (install_apt_packages=False)")
@@ -255,7 +256,7 @@ async def _setup_web(
     async def mkcert_generate_certs() -> mkcert.MkcertSetup:
         """Generate mkcert certs (no proxy dependency — runs immediately in parallel)."""
         with tracer.start_as_current_span("setup_mkcert", context=root_ctx):
-            if not settings.install_mkcert:
+            if not profile.install_mkcert:
                 raise SkipError("mkcert disabled (install_mkcert=False)")
             # Pass combined_ca=None: bundle append happens in mkcert_append_bundle
             return await mkcert.setup_mkcert(session.paths, combined_ca=None)
@@ -358,7 +359,7 @@ async def handle(
 
     # Platform-specific setup (proxy, containers, certs, etc.)
     if ctx.web_mode:
-        setup = await _setup_web(session, settings, project_dir, root_ctx, platform=platform)
+        setup = await _setup_web(session, settings, profile, project_dir, root_ctx, platform=platform)
     else:
         setup = PlatformSetup(platform=platform, with_direnv=True)
 
@@ -509,13 +510,7 @@ async def handle(
     # ORDERING: bazel tmpfs cache mount (in the gather above) must complete before
     # warmup starts — otherwise bazel writes to the underlying fs, then the tmpfs
     # mount shadows those files. This is satisfied because warmup runs after the gather.
-    bazel_command: str | None = None
-    match settings.bazel_warmup:
-        case BazelWarmupInfo():
-            bazel_command = "info"
-        case BazelWarmupCommand(command=command):
-            bazel_command = command
-    if bazel_command is not None:
+    if (bazel_command := profile.bazel_warmup) is not None:
         handle = await bazel_warmup.start_bazel_command(
             wrapper_path=session.paths.wrapper_path,
             project_dir=ctx.project_dir,

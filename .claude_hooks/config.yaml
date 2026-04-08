@@ -29,11 +29,16 @@ extra_env_script: |
 profiles:
   default:
     write_kubeconfig: false
+    bazel_warmup: info
     bazel_remote_proxy:
       target: remote.buildbuddy.io:443
     bazel_bes_proxy:
       target: remote.buildbuddy.io:443
   web:
+    install_mkcert: true
+    install_apt_packages: true
+    setup_docker: true
+    bazel_warmup: info
     bazel_remote_proxy:
       target: remote.buildbuddy.io:443
     bazel_bes_proxy:
