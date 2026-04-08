@@ -7,9 +7,9 @@ from pathlib import Path
 
 import yaml
 
+from cluster.scripts.validate_cluster.tool_resolve import resolve_tool
 from cluster.validation.k8s import parse_k8s_resources
 from cluster.validation.kustomize import KustomizeBuildResult
-from util.bazel.runfiles import get_required_path
 
 
 class KustomizeBuildError(Exception):
@@ -22,7 +22,7 @@ class KustomizeBuildError(Exception):
 
 async def run_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult:
     """Run kustomize build and parse the output. Raises KustomizeBuildError on failure."""
-    kustomize_bin = get_required_path("multitool/tools/kustomize/kustomize")
+    kustomize_bin = resolve_tool("kustomize", "multitool/tools/kustomize/kustomize")
     proc = await asyncio.create_subprocess_exec(
         kustomize_bin,
         "build",

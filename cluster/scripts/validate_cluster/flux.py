@@ -8,8 +8,8 @@ from pathlib import Path
 
 import yaml
 
+from cluster.scripts.validate_cluster.tool_resolve import resolve_tool
 from cluster.validation.k8s import parse_k8s_resources
-from util.bazel.runfiles import get_required_path
 
 
 async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
@@ -19,7 +19,7 @@ async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
     if not kustomization_file.exists():
         raise FileNotFoundError(f"gotk-sync.yaml not found at {kustomization_file}")
 
-    flux_bin = get_required_path("multitool/tools/flux/flux")
+    flux_bin = resolve_tool("flux", "multitool/tools/flux/flux")
     proc = await asyncio.create_subprocess_exec(
         flux_bin,
         "build",

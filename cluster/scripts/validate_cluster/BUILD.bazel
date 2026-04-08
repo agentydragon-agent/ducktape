@@ -10,13 +10,19 @@ package(default_visibility = [
 ])
 
 py_library(
+    name = "tool_resolve",
+    srcs = ["tool_resolve.py"],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_library(
     name = "kustomize",
     srcs = ["kustomize.py"],
     data = ["@multitool//tools/kustomize"],
     deps = [
+        ":tool_resolve",
         "//cluster/validation:k8s",
         "//cluster/validation:kustomize",
-        "//util/bazel:runfiles",
         "@pypi//pyyaml",
     ],
 )
@@ -26,8 +32,8 @@ py_library(
     srcs = ["flux.py"],
     data = ["@multitool//tools/flux"],
     deps = [
+        ":tool_resolve",
         "//cluster/validation:k8s",
-        "//util/bazel:runfiles",
         "@pypi//pyyaml",
     ],
 )
@@ -51,7 +57,10 @@ py_library(
         "//cluster/terraform/main:cilium-values.yaml",
         "@multitool//tools/helm",
     ],
-    deps = ["//util/bazel:runfiles"],
+    deps = [
+        ":tool_resolve",
+        "//util/bazel:runfiles",
+    ],
 )
 
 py_library(

@@ -9,7 +9,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from util.bazel.runfiles import get_required_path
+from cluster.scripts.validate_cluster.tool_resolve import resolve_tool
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +17,21 @@ _CILIUM_VALUES_RLOCATIONS = ["_main/cluster/terraform/main/cilium-values.yaml"]
 
 
 def _helm_bin() -> Path:
-    return get_required_path("multitool/tools/helm/helm")
+    return resolve_tool("helm","multitool/tools/helm/helm")
 
 
 def _get_values_files() -> list[Path]:
-    """Get cilium values files from runfiles."""
-    return [get_required_path(rlocation) for rlocation in _CILIUM_VALUES_RLOCATIONS]
+    """Get cilium values files from runfiles or source tree."""
+    try:
+        from util.bazel.runfiles import get_required_path  # in-function: not available outside Bazel
+
+        return [get_required_path(rloc) for rloc in _CILIUM_VALUES_RLOCATIONS]
+    except (ImportError, RuntimeError):
+        # Outside Bazel: resolve relative to repo root (strip _main/ prefix)
+        import pathlib
+
+        repo_root = pathlib.Path(__file__).resolve().parents[4]
+        return [repo_root / rloc.removeprefix("_main/") for rloc in _CILIUM_VALUES_RLOCATIONS]
 
 
 async def _exec(*args: str | Path) -> tuple[int, bytes, bytes]:
