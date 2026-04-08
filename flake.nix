@@ -226,15 +226,14 @@
       # See devinfra/claude/docs/devtools-closure-size.md for details.
       # bb remote with sane defaults for this repo:
       # - 50GB disk (default 20GB is too small)
-      # - origin/devel as base commit (workaround for bb bug where it uses
-      #   local ref, which fails with unpushed commits)
-      # TODO: Build CI workflow for nix-rbe-image, auto-push to GHCR,
-      # and pin digest in devinfra/image_pins.json like the Ubuntu image.
+      # - Firecracker + Docker on the runner (for requires_docker tests
+      #   that run locally with no-sandbox)
+      # RBE container image override is in .bazelrc under build:rbe.
       bb-remote = pkgs.writeShellScriptBin "bb-remote" ''
         exec bb remote \
           --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
-          --run_from_commit="$(git rev-parse origin/devel)" \
-          --remote_header=x-buildbuddy-platform.container-image=docker://ghcr.io/agentydragon/nix-rbe-worker:test \
+          --runner_exec_properties=workload-isolation-type=firecracker \
+          --runner_exec_properties=init-dockerd=true \
           "$@"
       '';
       devToolPackages = [

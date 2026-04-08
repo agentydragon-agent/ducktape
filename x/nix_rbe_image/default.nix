@@ -152,63 +152,6 @@ let
     exec ${pkgs.docker}/bin/dockerd "$@"
   '';
 
-  # System config files: passwd, group, shadow, sudoers, nsswitch, SSL certs.
-  # Packaged as a single derivation so they integrate into the buildEnv.
-  etcFiles = pkgs.runCommand "etc-files" { } ''
-    mkdir -p $out/etc/sudoers.d $out/etc/ssl/certs $out/etc/pki/tls/certs
-
-    cat > $out/etc/passwd <<'EOF'
-    root:x:0:0:root:/root:/bin/bash
-    buildbuddy:x:1000:1000:BuildBuddy:/home/buildbuddy:/bin/bash
-    nobody:x:65534:65534:Nobody:/:/noshell
-    EOF
-
-    cat > $out/etc/group <<'EOF'
-    root:x:0:
-    wheel:x:10:buildbuddy
-    docker:x:131:buildbuddy
-    users:x:1000:buildbuddy
-    nogroup:x:65534:
-    EOF
-
-    cat > $out/etc/shadow <<'EOF'
-    root:!:1::::::
-    buildbuddy:!:1::::::
-    nobody:!:1::::::
-    EOF
-
-    cat > $out/etc/nsswitch.conf <<'EOF'
-    passwd: files
-    group: files
-    shadow: files
-    hosts: files dns
-    networks: files
-    protocols: files
-    services: files
-    EOF
-
-    cat > $out/etc/sudoers <<'EOF'
-    root ALL=(ALL:ALL) ALL
-    %wheel ALL=(ALL:ALL) NOPASSWD: ALL
-    EOF
-    chmod 440 $out/etc/sudoers
-
-    # SSL certificates
-    ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
-    ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-bundle.crt
-    ln -s ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/pki/tls/certs/ca-bundle.crt
-
-    # Bazel config: propagate nix-ld env vars into Bazel's sandbox.
-    # Mirrors nix/nixos/modules/bazel/system.bazelrc but adapted for this
-    # container (no /run/current-system/sw/bin).
-    cat > $out/etc/bazel.bazelrc <<'BAZELRC'
-    build --shell_executable=/bin/bash
-    build --host_action_env=NIX_LD
-    build --host_action_env=NIX_LD_LIBRARY_PATH
-    common --repo_env=NIX_LD
-    common --repo_env=NIX_LD_LIBRARY_PATH
-    BAZELRC
-  '';
 in
 pkgs.dockerTools.buildLayeredImage {
   name = "nix-rbe-worker";
@@ -221,9 +164,6 @@ pkgs.dockerTools.buildLayeredImage {
       nixLdLink
       fhsLinks
       dockerdWrapper
-      # Higher priority (lower number) so our passwd/sudoers/etc win
-      # over defaults shipped by packages like sudo.
-      (pkgs.lib.setPrio 5 etcFiles)
     ];
     pathsToLink = [
       "/bin"
@@ -231,17 +171,69 @@ pkgs.dockerTools.buildLayeredImage {
       "/lib64"
       "/include"
       "/share"
-      "/etc"
       "/usr"
     ];
   };
 
   # Extra commands run as root during image build (before layers are sealed).
   # fakeRootCommands runs under fakeroot, allowing chown without real root.
+  # /etc files are created here as real files (not symlinks into /nix/store)
+  # because BuildBuddy's OCI runtime resolves /etc/passwd before the full
+  # rootfs overlay is assembled, so symlinks into /nix/store don't work.
   fakeRootCommands = ''
     mkdir -p home/buildbuddy tmp var/tmp run
     chmod 1777 tmp var/tmp
     chown 1000:1000 home/buildbuddy
+
+    mkdir -p etc/sudoers.d etc/ssl/certs etc/pki/tls/certs
+
+    cat > etc/passwd <<'PASSWD'
+    root:x:0:0:root:/root:/bin/bash
+    buildbuddy:x:1000:1000:BuildBuddy:/home/buildbuddy:/bin/bash
+    nobody:x:65534:65534:Nobody:/:/noshell
+    PASSWD
+
+    cat > etc/group <<'GROUP'
+    root:x:0:
+    wheel:x:10:buildbuddy
+    docker:x:131:buildbuddy
+    users:x:1000:buildbuddy
+    nogroup:x:65534:
+    GROUP
+
+    cat > etc/shadow <<'SHADOW'
+    root:!:1::::::
+    buildbuddy:!:1::::::
+    nobody:!:1::::::
+    SHADOW
+
+    cat > etc/nsswitch.conf <<'NSS'
+    passwd: files
+    group: files
+    shadow: files
+    hosts: files dns
+    networks: files
+    protocols: files
+    services: files
+    NSS
+
+    cat > etc/sudoers <<'SUDOERS'
+    root ALL=(ALL:ALL) ALL
+    %wheel ALL=(ALL:ALL) NOPASSWD: ALL
+    SUDOERS
+    chmod 440 etc/sudoers
+
+    ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-certificates.crt
+    ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-bundle.crt
+    ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/pki/tls/certs/ca-bundle.crt
+
+    cat > etc/bazel.bazelrc <<'BAZELRC'
+    build --shell_executable=/bin/bash
+    build --host_action_env=NIX_LD
+    build --host_action_env=NIX_LD_LIBRARY_PATH
+    common --repo_env=NIX_LD
+    common --repo_env=NIX_LD_LIBRARY_PATH
+    BAZELRC
   '';
   enableFakechroot = true;
 
