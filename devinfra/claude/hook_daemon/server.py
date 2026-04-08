@@ -14,10 +14,11 @@ import json
 import logging
 import signal
 import time
+import traceback
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import Response
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, Response
 from opentelemetry import trace
 from pydantic import BaseModel
 
@@ -51,6 +52,17 @@ IDLE_TIMEOUT_SECONDS = 1800  # 30 minutes
 IDLE_CHECK_INTERVAL_SECONDS = 30
 
 app = FastAPI()
+
+
+@app.middleware("http")
+async def _log_exceptions(request: Request, call_next):
+    """Log full traceback for unhandled exceptions instead of silent 500."""
+    try:
+        return await call_next(request)
+    except Exception:
+        tb_str = traceback.format_exc()
+        logger.error("Unhandled exception in %s %s:\n%s", request.method, request.url.path, tb_str)
+        return JSONResponse(status_code=500, content={"detail": tb_str})
 
 
 def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:

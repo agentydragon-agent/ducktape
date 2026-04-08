@@ -133,6 +133,29 @@ class TestHandleHook:
         _assert_no_nulls(resp.json())
 
 
+    async def test_session_start_bad_config_returns_traceback(self, client: AsyncClient, env: dict[str, str], tmp_path: Path) -> None:
+        """SessionStart with invalid config returns 500 with full traceback, not silent error."""
+        # Create a project dir with an invalid config (missing required fields)
+        project = tmp_path / "bad_project"
+        hooks_dir = project / ".claude_hooks"
+        hooks_dir.mkdir(parents=True)
+        (hooks_dir / "config.yaml").write_text("profiles: {}\n")
+
+        hook_input = {
+            **_COMMON,
+            "cwd": str(project),
+            "hook_event_name": "SessionStart",
+            "source": "startup",
+            "model": "claude-sonnet-4-6",
+        }
+        req = HookRequest(hook=hook_input, env=env)
+        resp = await client.post("/hook", content=req.model_dump_json(), headers=_JSON_HEADERS)
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert "default_profiles" in detail, f"Expected config error details, got: {detail}"
+        assert "Traceback" in detail, f"Expected full traceback, got: {detail}"
+
+
 class TestHealth:
     async def test_health_returns_ok(self, client: AsyncClient) -> None:
         resp = await client.get("/health")

@@ -1,3 +1,7 @@
+default_profiles:
+  cli: cli
+  web: web
+
 profiles:
   cli:
     bazel_remote_proxy: null
