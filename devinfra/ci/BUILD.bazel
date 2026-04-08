@@ -105,8 +105,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         "//util/bazel:workspace",
+        "@pypi//httpx",
         "@pypi//pydantic",
-        "@pypi//requests",
     ],
 )
 

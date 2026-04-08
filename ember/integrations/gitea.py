@@ -5,7 +5,7 @@ import json
 from typing import Any
 from urllib.parse import quote, urlencode
 
-import requests
+import httpx
 from pydantic import BaseModel, Field
 
 from ember.secrets import ProjectedSecret
@@ -71,8 +71,7 @@ class GiteaClient:
         self._base_url = base_url.rstrip("/")
         self._token = token
         self._default_repo = default_repo
-        self._session = requests.Session()
-        self._session.headers.update({"Authorization": f"token {token}", "Accept": "application/json"})
+        self._client = httpx.Client(headers={"Authorization": f"token {token}", "Accept": "application/json"})
 
     @classmethod
     def from_projected_secret(
@@ -126,7 +125,7 @@ class GiteaClient:
         return f"{self._base_url}{path_fragment}"
 
     def _request_json(self, method: str, url: str) -> Any:
-        response = self._session.request(method, url, timeout=30)
+        response = self._client.request(method, url, timeout=30)
         if response.status_code >= 400:
             raise GiteaError(f"Gitea API {method} {url} failed: {response.status_code} {response.text}")
         try:

@@ -50,7 +50,7 @@ async def test_trigger_mirror_sync_success(
             return _DummyResponse(200)
         raise AssertionError(f"Unexpected POST {url}")
 
-    monkeypatch.setattr(server.requests, "post", fake_post)
+    monkeypatch.setattr(server.httpx, "post", fake_post)
     monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
 
     async with make_typed_mcp(gitea_mirror_server) as (client, _):
@@ -72,13 +72,13 @@ async def test_trigger_sync_bubbles_mirror_error(
             return _DummyResponse(500, text="boom")
         raise AssertionError("mirror-sync should not be called")
 
-    monkeypatch.setattr(server.requests, "post", fake_post)
+    monkeypatch.setattr(server.httpx, "post", fake_post)
     monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
 
     def unexpected_get(*_, **__):  # pragma: no cover - helper
         raise AssertionError("GET not expected")
 
-    monkeypatch.setattr(server.requests, "get", unexpected_get)
+    monkeypatch.setattr(server.httpx, "get", unexpected_get)
 
     async with make_typed_mcp(gitea_mirror_server) as (client, _):
         # Error assertion path: expect tool error and capture message

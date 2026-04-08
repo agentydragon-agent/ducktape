@@ -31,8 +31,8 @@ py_library(
     deps = [
         "//mcp_infra:flat_tool",
         "//mcp_infra/enhanced:server",
+        "@pypi//httpx",
         "@pypi//pydantic",
-        "@pypi//requests",
     ],
 )
 

@@ -6,7 +6,7 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
-import requests
+import httpx
 from pydantic import BaseModel, Field
 
 from util.bazel.workspace import get_build_workspace_directory
@@ -107,6 +107,6 @@ def file_sha256(path: Path) -> str:
 
 
 def url_sha256(url: str) -> str:
-    with requests.get(url, stream=True) as response:
+    with httpx.stream("GET", url) as response:
         response.raise_for_status()
-        return _sha256_of_chunks(response.iter_content(65536))
+        return _sha256_of_chunks(response.iter_bytes(65536))

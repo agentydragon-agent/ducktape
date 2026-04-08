@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 from urllib.parse import urlparse
 
-import requests
+import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from mcp_infra.enhanced.server import EnhancedFastMCP
@@ -144,9 +144,8 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"token {token}", "Accept": "application/json", "Content-Type": "application/json"}
 
 
-def _post_json(url: str, token: str, payload: dict[str, Any] | None = None, *, timeout: int = 15) -> requests.Response:
-    resp: requests.Response = requests.post(url, headers=_headers(token), json=payload or {}, timeout=timeout)
-    return resp
+def _post_json(url: str, token: str, payload: dict[str, Any] | None = None, *, timeout: int = 15) -> httpx.Response:
+    return httpx.post(url, headers=_headers(token), json=payload or {}, timeout=timeout)
 
 
 class _UserInfo(BaseModel):
@@ -160,7 +159,7 @@ class _UserInfo(BaseModel):
 def _get_typed_json[T_Model: BaseModel](
     url: str, token: str, model_type: type[T_Model], *, timeout: int = 15
 ) -> T_Model:
-    resp = requests.get(url, headers=_headers(token), timeout=timeout)
+    resp = httpx.get(url, headers=_headers(token), timeout=timeout)
     resp.raise_for_status()
     data = resp.json()
     if not isinstance(data, dict):  # narrow type for mypy and correctness
@@ -201,7 +200,7 @@ def _trigger_sync(cfg: MirrorConfig, owner: str, repo: str) -> None:
     resp = _post_json(sync_url, cfg.token, {})
     try:
         resp.raise_for_status()
-    except requests.HTTPError:
+    except httpx.HTTPStatusError:
         raise MirrorError(f"mirror-sync failed ({resp.status_code}): {resp.text.strip()}") from None
 
 
@@ -210,7 +209,7 @@ def _get_repo_info(cfg: MirrorConfig, owner: str, repo: str) -> GiteaRepoInfo:
     repo_url = f"{cfg.base_url.rstrip('/')}/api/v1/repos/{owner}/{repo}"
     try:
         data = _get_typed_json(repo_url, cfg.token, GiteaRepoInfo)
-    except requests.RequestException as exc:
+    except httpx.HTTPError as exc:
         raise MirrorError("failed to fetch repository metadata") from exc
     return data
 
