@@ -114,7 +114,6 @@ class PlatformSetup:
     platform: platform_detect.PlatformInfo
     auth_proxy: proxy_setup.ProxySetup | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
-    precommit_result: precommit.PrecommitSetup | None = None
     mkcert_result: mkcert.MkcertSetup | None = None
     bazelisk_path: Path | None = None
     docker_env: dict[str, str] | None = None
@@ -224,7 +223,18 @@ async def _setup_web(
     async def traced_apt():
         return await apt.install_packages(apt_packages)
 
-    apt_task = asyncio.create_task(traced_apt())
+    # Fire-and-forget: apt, precommit, tune_rootfs (notifications via session mailbox).
+    session.register_apt_install(asyncio.create_task(traced_apt()))
+
+    @tracer.start_as_current_span("install_precommit", context=root_ctx)
+    async def traced_precommit() -> precommit.PrecommitSetup:
+        setup, hooks_task = await precommit.install_precommit(project_dir)
+        if hooks_task is not None:
+            session.register_precommit_install(hooks_task)
+        return setup
+
+    session.register_precommit_setup(asyncio.create_task(traced_precommit()))
+    session.register_tune_rootfs(asyncio.create_task(run_in_thread(tune_rootfs.reduce_reserved_blocks)))
 
     # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
     # k8s secrets which in turn depend on proxy being up for TLS).
@@ -253,46 +263,26 @@ async def _setup_web(
                 mkcert.append_mkcert_ca_to_bundle(mkcert_result.ca_root, combined_ca)
             return mkcert_result
 
-    @tracer.start_as_current_span("install_precommit", context=root_ctx)
-    async def traced_precommit():
-        setup, hooks_task = await precommit.install_precommit(project_dir)
-        if hooks_task is not None:
-            session.register_precommit_install(hooks_task)
-        return setup
-
     results = await asyncio.gather(
         proxy_task,
         setup_container_runtime_task(),
-        traced_precommit(),
         setup_bazel_on_tmpfs(),
         mkcert_append_bundle(),
-        apt_task,
-        run_in_thread(tune_rootfs.reduce_reserved_blocks),
         return_exceptions=True,
     )
     # Unpack with explicit type annotations for mypy
     auth_proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
     container_result: container_runtime.ContainerRuntimeSetup | BaseException = results[1]
-    precommit_result: precommit.PrecommitSetup | BaseException = results[2]
-    tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[3]
-    mkcert_result: mkcert.MkcertSetup | BaseException = results[4]
-    apt_result: apt.AptSetup | BaseException = results[5]
-    tune_result: None | BaseException = results[6]
+    tmpfs_result: tmpfs.TmpfsSetup | BaseException = results[2]
+    mkcert_result: mkcert.MkcertSetup | BaseException = results[3]
 
     # Log non-critical failures
-    if isinstance(tune_result, BaseException):
-        logger.warning("Failed to reduce reserved blocks: %s", tune_result)
-    if isinstance(precommit_result, BaseException):
-        logger.warning("Failed to install git pre-commit: %s", precommit_result)
     if isinstance(tmpfs_result, BaseException):
         logger.warning("Failed to set up tmpfs caches: %s", tmpfs_result)
     if isinstance(mkcert_result, SkipError):
         logger.info("mkcert setup skipped: %s", mkcert_result)
     elif isinstance(mkcert_result, BaseException):
         logger.warning("Failed to set up mkcert: %s", mkcert_result)
-    if isinstance(apt_result, BaseException):
-        logger.warning("Failed to install system packages: %s", apt_result)
-
     # Handle container runtime result
     docker_env: dict[str, str] | None = None
     if isinstance(container_result, SkipError):
@@ -316,7 +306,6 @@ async def _setup_web(
         platform=platform,
         auth_proxy=auth_proxy_result,
         container=None if isinstance(container_result, BaseException) else container_result,
-        precommit_result=None if isinstance(precommit_result, BaseException) else precommit_result,
         mkcert_result=None if isinstance(mkcert_result, BaseException) else mkcert_result,
         bazelisk_path=bazelisk_path,
         docker_env=docker_env,
@@ -543,7 +532,7 @@ async def handle(
             collector=collector,
             proxy=setup.auth_proxy,
             container=setup.container,
-            precommit=setup.precommit_result,
+            precommit=precommit.PrecommitInstallingHooks() if ctx.web_mode else None,
             mkcert=setup.mkcert_result,
             secrets=setup.secrets,
             extra_context=extra_context,
