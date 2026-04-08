@@ -4,7 +4,7 @@ description: >
   Surface all pending followups and verify session work is still on disk.
   Use when user says "bt", "backtrace", "stack", "where are we", or asks about
   current progress on a multi-step task.
-allowed-tools: Bash, Read, Glob, Grep, Agent
+allowed-tools: Bash, Read, Glob, Grep, Agent, AskUserQuestion
 ---
 
 Surface all pending followups and verify session work is still on disk.
@@ -177,145 +177,99 @@ For each verified action, estimate probability user wants it:
 
 **<10% probability - omit** (don't waste user's attention)
 
-## Output Format
+## Output and Interaction
 
-````markdown
-# Followups - Session [timestamp]
+### Phase output (text)
 
-## ⚠️ Verification
+Print verification results and a brief summary of findings as text:
 
-✅ All work from this session verified on disk
+```markdown
+## Verification
+
+✅ All session work verified on disk
 
 - src/feature/ (3 files modified)
 - config/settings.yaml (new validation added)
-- tests/test_feature.py (new)
 
-## 🔴 DO NOW
+## Summary
 
-1. **Commit feature implementation**
-   ```bash
-   git add src/feature/
-   git commit -m "feat: implement user authentication with JWT tokens"
-   ```
-````
+Found 3 immediate actions, 4 likely followups, 2 optional items.
+```
 
-2. **Commit test coverage**
+### Action selection (AskUserQuestion)
 
-   ```bash
-   git add tests/test_feature.py
-   git commit -m "test: add unit tests for authentication flow"
-   ```
+Use the `AskUserQuestion` tool to present followup actions as multi-select
+questions grouped by priority/topic. The user can select multiple items and
+add freeform input via the built-in "Other" option.
 
-## 🟡 LIKELY
+**Grouping strategy**: Group by logical topic (e.g., "Git", "Code quality",
+"Documentation") rather than by priority level. Include the priority indicator
+in the option description. Limit to 1-4 questions with 2-4 options each —
+combine or drop low-value items to fit the constraints.
 
-a. **Run test suite**
+**Example** (2 questions covering 7 followups):
 
-- Verify new tests pass and no regressions
+```
+Question 1: "Which git/commit actions?" (multiSelect: true, header: "Git")
+  - "Push 2 commits to devel" (description: "🔴 fe4942f, 80bbc8b — docs updates")
+  - "Discard image_pins.json formatting" (description: "🟡 git checkout devinfra/image_pins.json")
+  - "Commit MODULE.bazel changes" (description: "🟡 Unrelated modification, needs review")
 
-  ```bash
-  pytest tests/test_feature.py -v
-  ```
+Question 2: "Which code/docs followups?" (multiSelect: true, header: "Followups")
+  - "Run test suite" (description: "🟡 bb-remote test //... --config=rbe")
+  - "Remove dead helper functions" (description: "🟢 3 unused functions in auth.py, utils.py")
+  - "Update API docs" (description: "🟢 New endpoints need OpenAPI specs")
+  - "Add performance benchmarks" (description: "🔵 Optional — new code paths")
+```
 
-b. **Remove unused helper functions**
+The user selects items to execute, can add freeform via "Other", and the agent
+proceeds with the selected actions.
 
-- legacy_auth_helper (auth.py:145)
-- deprecated_token_parser (utils.py:89)
-- old_validation_logic (validators.py:234)
+**Priority indicators in descriptions:**
 
-c. **Update API documentation**
+- 🔴 = DO NOW (>80% probability)
+- 🟡 = LIKELY (40-80%)
+- 🟢 = MAYBE (20-40%)
+- 🔵 = OPTIONAL (10-20%)
 
-- New endpoints need OpenAPI specs
-- Authentication flow diagram
-
-## 🟢 MAYBE
-
-A. **Finish refactor away from FOO singleton to Foo class**
-
-- Started migration in src/core/
-- 8 more callsites in src/legacy/
-
-B. **Propagate new validation pattern**
-
-- Check if other endpoints could use same validator
-- Search for manual validation that could be replaced
-
-C. **Update architecture documentation**
-
-- Recent changes to auth flow
-- May need diagrams in docs/architecture/
-
-## 🔵 OPTIONAL
-
-x. Add performance benchmarks for new code paths
-y. Consider adding retry logic for network calls
-z. Update CONTRIBUTING.md with new testing patterns
-
----
-
-**Quick actions:**
-
-- Type `1` or `2` to execute DO NOW items
-- Type `a`, `b`, or `c` for LIKELY items
-- Type `A`, `B`, or `C` for MAYBE items
-- Type `x`, `y`, or `z` for OPTIONAL items
-- Type `all-likely` to queue a+b+c
-- Type `skip` to continue with new work
-
-````
+**If AskUserQuestion is not available** (e.g., non-interactive mode), fall back
+to printing the full list as markdown with the priority groupings and let the
+user respond in freeform text.
 
 ## Implementation Requirements
 
 ### 1. Consider Delegation
 
-Delegate tasks that are:
+Delegate read-only tasks (verification, code search, git status) to subagents
+when there are multiple independent checks. Spawn in parallel when possible.
 
-- Read-only discovery (searching, scanning, verifying)
-- Independently executable with clear scope
-- Chunkable into distinct files-allowed-to-edit blocks
-- Large enough that parallel execution provides value
+### 2. Concrete Commands
 
-### 2. Parallel Execution (When Appropriate)
+Every suggestion includes the exact command in the description:
 
-If tasks are truly independent, spawn subagents in parallel:
-
-```python
-# Example: 3 independent read-only tasks
-Task 1: "Verify these files still contain changes: [list]"
-Task 2: "Search codebase for pattern X usage sites"
-Task 3: "Check git status and suggest commit messages"
-# Wait for all, combine results
-```
-
-### 3. Concrete Commands
-
-Every suggestion includes exact command to run:
-
-- ✅ `git commit -m "exact message"`
-- ✅ `pytest tests/specific_test.py::test_name`
+- ✅ `git push origin devel`
+- ✅ `bb-remote test //path/to:target`
 - ❌ "consider committing changes"
 
-### 4. Probability Calibration
-
-Be honest about probabilities:
+### 3. Probability Calibration
 
 - 90%: User explicitly said "do this next"
 - 70%: Standard workflow step (commit after edits)
 - 50%: Natural followup (tests after code change)
 - 30%: Improvement opportunity (refactor similar code)
 - 15%: Nice-to-have (documentation polish)
+- <10%: Omit entirely
 
-### 5. Session Verification Template
+### 4. AskUserQuestion Constraints
 
-For every file touched:
+- 1-4 questions, 2-4 options each (hard API limit)
+- Group by topic, not priority — priority goes in description text
+- Use `multiSelect: true` on all questions (user picks what they want)
+- Keep option labels short (1-5 words), put details in description
+- "Other" is always available — user can add freeform items
+- If >16 items total, combine related items or drop lowest-probability ones
 
-```
-✅ path/to/file.py - verified (shows expected changes at line X)
-or
-⚠️ path/to/file.py - MISSING expected changes (check git stash)
-```
-
-### 6. Zero False Omissions
+### 5. Zero False Omissions
 
 Better to show 5 low-probability items than miss the one action user wanted.
 Err on side of over-suggesting rather than under-suggesting.
-````
