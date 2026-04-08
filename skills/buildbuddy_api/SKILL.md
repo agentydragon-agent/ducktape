@@ -51,8 +51,14 @@ bbapi target log <invocation-id> <target-label-or-substring>
 # List targets in an invocation
 bbapi target <invocation-id> [--filter SUBSTR] [--label LABEL]
 
-# Show pass/fail/flake history for targets
-bbapi target history <target-label>
+# Show pass/fail/flake history for targets (auto-detects group_id)
+bbapi target history [--repo URL] [--label LABEL] [--failures-only]
+
+# Show flake statistics for targets (last 7 days)
+bbapi target stats [--repo URL]
+
+# Show flake samples for a specific target
+bbapi target flakes <target-label> [--repo URL]
 
 # List artifacts, or download one by name match
 bbapi artifact <invocation-id> [name-substring]
@@ -120,8 +126,8 @@ When a test is failing and you need to find the commit that broke it, use target
 history instead of `git bisect` — BuildBuddy already has all the results:
 
 ```bash
-# 1. Check recent pass/fail history for the target
-bbapi target history //path/to:test_target
+# 1. Check recent pass/fail history for the target (failures only)
+bbapi target history --failures-only --label //path/to:test_target
 
 # 2. Identify the transition point (last pass → first fail)
 #    The output shows invocation IDs and commit SHAs for each run

@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
-	"github.com/spf13/cobra"
-
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	targetpb "github.com/buildbuddy-io/buildbuddy/proto/target"
+	"github.com/spf13/cobra"
 )
 
 func targetCmd() *cobra.Command {
@@ -55,12 +56,15 @@ func targetCmd() *cobra.Command {
 	cmd.Flags().StringVar(&filter, "filter", "", "Substring filter on target labels")
 	cmd.AddCommand(targetHistorySubCmd())
 	cmd.AddCommand(targetLogSubCmd())
+	cmd.AddCommand(targetStatsSubCmd())
+	cmd.AddCommand(targetFlakesSubCmd())
 	return cmd
 }
 
 func targetHistorySubCmd() *cobra.Command {
 	var repo string
 	var label string
+	var failuresOnly bool
 	cmd := &cobra.Command{
 		Use:   "history",
 		Short: "Show pass/fail/flake history for targets",
@@ -75,27 +79,57 @@ func targetHistorySubCmd() *cobra.Command {
 					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
 				}
 			}
+			groupID, err := c.resolveGroupID(repo)
+			if err != nil {
+				return err
+			}
 			req := &targetpb.GetTargetHistoryRequest{
+				RequestContext: &ctxpb.RequestContext{
+					GroupId: groupID,
+				},
 				Query: &targetpb.TargetQuery{
 					RepoUrl: repo,
 				},
 				ServerSidePagination: true,
 			}
-			resp := &targetpb.GetTargetHistoryResponse{}
-			if err := c.call("GetTargetHistory", req, resp); err != nil {
-				return err
+			var allTargets []*targetpb.TargetHistory
+			for {
+				resp := &targetpb.GetTargetHistoryResponse{}
+				if err := c.call("GetTargetHistory", req, resp); err != nil {
+					return err
+				}
+				if jsonOutput {
+					return printProtoJSON(resp)
+				}
+				allTargets = append(allTargets, resp.GetInvocationTargets()...)
+				if resp.GetNextPageToken() == "" {
+					break
+				}
+				req.PageToken = resp.GetNextPageToken()
 			}
-			if jsonOutput {
-				return printProtoJSON(resp)
-			}
-			for _, th := range resp.GetInvocationTargets() {
+			for _, th := range allTargets {
 				if label != "" && th.GetTarget().GetLabel() != label {
 					continue
+				}
+				if failuresOnly {
+					hasFailure := false
+					for _, s := range th.GetTargetStatus() {
+						if s.GetStatus().String() != "PASSED" {
+							hasFailure = true
+							break
+						}
+					}
+					if !hasFailure {
+						continue
+					}
 				}
 				fmt.Printf("Target: %s\n", th.GetTarget().GetLabel())
 				t := newTable()
 				t.header("STATUS", "DUR", "STARTED", "INVOCATION")
 				for _, s := range th.GetTargetStatus() {
+					if failuresOnly && s.GetStatus().String() == "PASSED" {
+						continue
+					}
 					started := s.GetTiming().GetStartTime().AsTime().Format("2006-01-02 15:04")
 					dur := fmtDurationUsec(s.GetTiming().GetDuration().AsDuration().Microseconds())
 					t.row(s.GetStatus().String(), dur, started, s.GetInvocationId())
@@ -107,6 +141,109 @@ func targetHistorySubCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().StringVar(&label, "label", "", "Filter to specific target label")
+	cmd.Flags().BoolVar(&failuresOnly, "failures-only", false, "Show only non-PASSED statuses")
+	return cmd
+}
+
+func targetStatsSubCmd() *cobra.Command {
+	var repo string
+	cmd := &cobra.Command{
+		Use:   "stats",
+		Short: "Show flake statistics for targets",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			c, err := newClient()
+			if err != nil {
+				return err
+			}
+			if repo == "" {
+				repo, err = detectRepoURL()
+				if err != nil {
+					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
+				}
+			}
+			groupID, err := c.resolveGroupID(repo)
+			if err != nil {
+				return err
+			}
+			req := &targetpb.GetTargetStatsRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+				Repo:           repo,
+			}
+			resp := &targetpb.GetTargetStatsResponse{}
+			if err := c.call("GetTargetStats", req, resp); err != nil {
+				return err
+			}
+			if jsonOutput {
+				return printProtoJSON(resp)
+			}
+			t := newTable()
+			t.header("LABEL", "TOTAL", "PASS", "FAIL", "FLAKY", "LIKELY_FLAKY", "FLAKE_TIME")
+			for _, s := range resp.GetStats() {
+				d := s.GetData()
+				ft := fmtDurationUsec(d.GetTotalFlakeRuntimeUsec())
+				t.row(s.GetLabel(),
+					fmt.Sprintf("%d", d.GetTotalRuns()),
+					fmt.Sprintf("%d", d.GetSuccessfulRuns()),
+					fmt.Sprintf("%d", d.GetFailedRuns()),
+					fmt.Sprintf("%d", d.GetFlakyRuns()),
+					fmt.Sprintf("%d", d.GetLikelyFlakyRuns()),
+					ft)
+			}
+			t.flush()
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect)")
+	return cmd
+}
+
+func targetFlakesSubCmd() *cobra.Command {
+	var repo string
+	cmd := &cobra.Command{
+		Use:   "flakes <target-label>",
+		Short: "Show flake samples for a target",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			c, err := newClient()
+			if err != nil {
+				return err
+			}
+			if repo == "" {
+				repo, err = detectRepoURL()
+				if err != nil {
+					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
+				}
+			}
+			groupID, err := c.resolveGroupID(repo)
+			if err != nil {
+				return err
+			}
+			req := &targetpb.GetTargetFlakeSamplesRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+				Label:          args[0],
+				Repo:           repo,
+			}
+			resp := &targetpb.GetTargetFlakeSamplesResponse{}
+			if err := c.call("GetTargetFlakeSamples", req, resp); err != nil {
+				return err
+			}
+			if jsonOutput {
+				return printProtoJSON(resp)
+			}
+			t := newTable()
+			t.header("STATUS", "STARTED", "INVOCATION")
+			for _, s := range resp.GetSamples() {
+				started := time.UnixMicro(s.GetInvocationStartTimeUsec()).Format("2006-01-02 15:04")
+				t.row(s.GetStatus().String(), started, s.GetInvocationId())
+			}
+			t.flush()
+			if len(resp.GetSamples()) == 0 {
+				fmt.Println("No flake samples found")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect)")
 	return cmd
 }
 

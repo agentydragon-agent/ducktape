@@ -21,8 +21,8 @@ func main() {
 Set BUILDBUDDY_API_KEY to authenticate. Use --json for raw proto JSON output.
 
 Not all BuildBuddyService RPCs are implemented. Useful unimplemented ones:
-  GetTargetStats, GetTargetFlakeSamples, CancelExecutions,
-  GetExecutionNodes, GetStatHeatmap, GetStatDrilldown, GetInvocationStat
+  CancelExecutions, GetExecutionNodes, GetStatHeatmap, GetStatDrilldown,
+  GetInvocationStat
 
 Full service definition:
   https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/buildbuddy_service.proto`,
