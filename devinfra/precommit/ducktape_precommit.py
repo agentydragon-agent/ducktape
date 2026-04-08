@@ -109,13 +109,11 @@ async def run_cluster_validate(files: list[Path], repo_root: Path) -> Validation
         return ValidationResult(name, Skipped())
 
     start = time.perf_counter()
-    kust_errors, global_errors = await validate_cluster(repo_root / "cluster/k8s", skip_flux_build=True)
+    errors = await validate_cluster(repo_root / "cluster/k8s", skip_flux_build=True)
     elapsed = time.perf_counter() - start
 
-    if kust_errors or global_errors:
-        lines = [f"  {k.parent}: {err.strip()}" for k, err in kust_errors]
-        lines.extend(f"  {err.strip()}" for err in global_errors)
-        return ValidationResult(name, Failed(elapsed, "\n".join(lines)))
+    if errors:
+        return ValidationResult(name, Failed(elapsed, "\n".join(f"  {e.strip()}" for e in errors)))
     return ValidationResult(name, Passed(elapsed))
 
 

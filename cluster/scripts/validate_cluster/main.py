@@ -39,32 +39,22 @@ from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks
 
 
-async def validate(root: Path, *, skip_flux_build: bool = False) -> tuple[list[tuple[Path, str]], list[str]]:
-    """Run all cluster validations.
-
-    Returns (kust_errors, global_errors) where kust_errors are
-    (kustomization_path, error_message) pairs.
-    """
+async def validate(root: Path, *, skip_flux_build: bool = False) -> list[str]:
+    """Run all cluster validations. Returns a list of error strings."""
     cluster = parse_cluster(root)
-    kustomization_files = list(cluster.kustomize_files)
+    outcomes = await asyncio.gather(*[run_kustomize_build(k) for k in cluster.kustomize_files], return_exceptions=True)
 
-    if not kustomization_files:
-        return [], []
-
-    outcomes = await asyncio.gather(*[run_kustomize_build(k) for k in kustomization_files], return_exceptions=True)
-
-    kust_errors: list[tuple[Path, str]] = []
-    global_errors: list[str] = []
+    errors: list[str] = []
 
     for outcome in outcomes:
         if isinstance(outcome, KustomizeBuildError):
-            kust_errors.append((outcome.kustomization_path, str(outcome)))
+            errors.append(str(outcome))
         elif isinstance(outcome, BaseException):
             raise outcome
         else:
             cluster.build_results.append(outcome)
 
-    global_errors.extend(check_duplicate_external_secrets(cluster.build_results))
+    errors.extend(check_duplicate_external_secrets(cluster.build_results))
 
     active_dirs = {spec.local_dir(root) for spec in cluster.active_flux_kustomizations.values()}
     for result in cluster.build_results:
@@ -73,20 +63,18 @@ async def validate(root: Path, *, skip_flux_build: bool = False) -> tuple[list[t
         try:
             check_crd_layering(result)
         except CrdLayeringViolationError as e:
-            kust_errors.append((result.kustomization_path, str(e)))
+            errors.append(str(e))
 
-    global_errors.extend(find_orphaned_files(cluster, root))
-    global_errors.extend(check_blueprint_completeness(root))
-    global_errors.extend(check_goldilocks_namespace_labels(cluster))
-    global_errors.extend(check_goldilocks_explicit_decision(cluster))
-
-    global_errors.extend(validate_dependencies(cluster, root))
-
-    global_errors.extend(check_controller_health_checks(cluster, root))
+    errors.extend(find_orphaned_files(cluster, root))
+    errors.extend(check_blueprint_completeness(root))
+    errors.extend(check_goldilocks_namespace_labels(cluster))
+    errors.extend(check_goldilocks_explicit_decision(cluster))
+    errors.extend(validate_dependencies(cluster, root))
+    errors.extend(check_controller_health_checks(cluster, root))
 
     if not skip_flux_build:
-        global_errors.extend(await validate_flux_build(root))
+        errors.extend(await validate_flux_build(root))
 
-    global_errors.extend(await validate_helm_templates())
+    errors.extend(await validate_helm_templates())
 
-    return kust_errors, global_errors
+    return errors
