@@ -10,6 +10,7 @@ pkg_tar(
         "//skills/branch_splitter:branch_splitter_tar",
         "//skills/buildbuddy_api:buildbuddy_api_tar",
         "//skills/cluster_health:cluster_health_tar",
+        "//skills/followups:followups_tar",
         "//skills/forensic_surgeon:forensic_surgeon_tar",
         "//skills/freecad:freecad_tar",
         "//skills/hetzner_vnc_screenshot:hetzner_vnc_screenshot_tar",

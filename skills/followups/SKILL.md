@@ -1,3 +1,12 @@
+---
+name: followups
+description: >
+  Surface all pending followups and verify session work is still on disk.
+  Use when user says "bt", "backtrace", "stack", "where are we", or asks about
+  current progress on a multi-step task.
+allowed-tools: Bash, Read, Glob, Grep, Agent
+---
+
 Surface all pending followups and verify session work is still on disk.
 
 ## Purpose
@@ -97,7 +106,35 @@ Scan conversation for:
 - Outdated comments referencing old code
 - Inconsistencies introduced
 
-### Phase 4: Probabilistic Action Suggestions
+### Phase 4: Prevent Recurrence Analysis
+
+If the session involved debugging, diagnosing, or working around a problem, ask:
+
+**Has this happened before?**
+
+- Search recent Claude session logs for similar symptoms, error messages, or affected components
+- Check `debug/` directories and `lessons_learned/` for prior investigations of the same area
+- If recurring: this is a higher-priority followup — the pattern needs a structural fix, not another one-off diagnosis
+
+**Can we prevent it from happening again?**
+
+For each significant problem encountered, consider whether any of these would be worth the effort:
+
+- **Pre-commit check or CI test**: Catches the problem before it ships (e.g., lint rule, validation script, regression test)
+- **Automated guard**: Code-level assertion, type constraint, or invariant that makes the bad state unrepresentable
+- **Better diagnostics**: More logging, metrics, or transparency that would make the _next_ occurrence faster to diagnose (e.g., structured error messages, health check endpoints, undeclared test outputs)
+- **Easier workflow**: A CLI command, script, or alias that automates the manual steps we had to do (e.g., `bbapi target history --failures-only` was built this session because manual API calls were painful)
+- **Documentation**: A `lessons_learned/` entry, `AGENTS.md` update, or troubleshooting section that captures the diagnosis path so future sessions don't start from scratch
+
+Surface these as followup suggestions with concrete proposals, not vague "consider adding tests." Example:
+
+```
+B. **Add pre-commit check for unquoted URLs in pnpm lockfiles**
+   - We spent time diagnosing a check-yaml failure caused by pnpm's YAML output
+   - A targeted check could catch this on lockfile regeneration
+```
+
+### Phase 5: Probabilistic Action Suggestions
 
 For each potential action, estimate probability user wants it:
 
@@ -218,21 +255,25 @@ z. Update CONTRIBUTING.md with new testing patterns
 ## Implementation Requirements
 
 ### 1. Consider Delegation
+
 Delegate tasks that are:
+
 - Read-only discovery (searching, scanning, verifying)
 - Independently executable with clear scope
 - Chunkable into distinct files-allowed-to-edit blocks
 - Large enough that parallel execution provides value
 
 ### 2. Parallel Execution (When Appropriate)
+
 If tasks are truly independent, spawn subagents in parallel:
+
 ```python
 # Example: 3 independent read-only tasks
 Task 1: "Verify these files still contain changes: [list]"
 Task 2: "Search codebase for pattern X usage sites"
 Task 3: "Check git status and suggest commit messages"
 # Wait for all, combine results
-````
+```
 
 ### 3. Concrete Commands
 
@@ -266,3 +307,4 @@ or
 
 Better to show 5 low-probability items than miss the one action user wanted.
 Err on side of over-suggesting rather than under-suggesting.
+````
