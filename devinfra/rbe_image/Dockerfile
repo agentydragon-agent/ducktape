@@ -29,19 +29,8 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
         libdbus-1-dev \
         # cpio: needed to build initramfs for QEMU-based tests
         cpio \
-        # dosfstools + mtools: needed to create FAT CIDATA volumes for Talos
-        # nocloud platform configuration in QEMU-based tests
-        dosfstools \
-        mtools \
-        # qemu-system-x86: QEMU emulator + firmware/BIOS for integration tests
-        # (TCG software emulation, no KVM needed)
-        qemu-system-x86 \
         # xvfb: virtual framebuffer for headless GUI tests (e.g. FreeCAD 3D rendering with OpenGL)
         xvfb \
-        # fuse3 + libfuse2: AppImage FUSE mounting (AppImages fall back to extraction without
-        # fusermount, but FUSE mounting avoids tmpfs write overhead on every run)
-        fuse3 \
-        libfuse2 \
         # Chromium headless shell shared library dependencies
         libasound2t64 \
         libatk-bridge2.0-0t64 \

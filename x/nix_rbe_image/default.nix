@@ -80,25 +80,13 @@ let
     unzip
 
     # TODO: add back once image size is manageable
-    # # cpio: initramfs builds (QEMU-based tests)
+    # # cpio: initramfs builds (Firecracker initramfs genrule)
     # cpio
-    # # dosfstools + mtools: FAT CIDATA volumes for Talos tests
-    # dosfstools
-    # mtools
-    # # QEMU for integration tests (TCG software emulation)
-    # qemu
-    # # Xvfb: virtual framebuffer for headless GUI tests
+    # # Xvfb: virtual framebuffer for headless GUI tests (FreeCAD)
     # xorg.xorgserver
-    # # FUSE: AppImage mounting
-    # fuse3
-    # fuse
     # # D-Bus daemon for tests that spawn private D-Bus sessions
     # dbus
-    # # Native dev headers for pip wheel builds (pygobject, pycairo, dbus-python)
-    # gobject-introspection
-    # cairo.dev
-    # dbus.dev
-    # # Chromium headless shell shared library dependencies
+    # # Chromium headless shell shared library dependencies (rules_playwright)
     # alsa-lib
     # at-spi2-atk
     # cups
