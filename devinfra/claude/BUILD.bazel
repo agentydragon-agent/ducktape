@@ -4,6 +4,13 @@ load("//devinfra/testing:defs.bzl", "py_test")
 # === Base modules (no internal deps) ===
 
 py_library(
+    name = "shell",
+    srcs = ["shell.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "errors",
     srcs = ["errors.py"],
     imports = ["../.."],

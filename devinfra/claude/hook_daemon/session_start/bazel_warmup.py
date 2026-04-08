@@ -1,9 +1,4 @@
-"""Background Bazel commands for Claude Code sessions.
-
-Starts Bazel subprocesses that source the session env file and run through
-the bazel wrapper, so --bazelrc, proxy credentials, and session env vars
-are applied.
-"""
+"""Background Bazel commands for Claude Code sessions."""
 
 import asyncio
 import logging
@@ -12,6 +7,8 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from devinfra.claude.shell import start_with_env_file
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +32,9 @@ async def start_bazel_command(
     process exits (raising on non-zero exit or timeout).
     """
     bazel_cmd = shlex.join([str(wrapper_path)]) + " " + command
-    shell_cmd = f"source {shlex.quote(str(env_file))} && {bazel_cmd}"
     logger.info("Starting background bazel command: %s", command)
 
-    proc = await asyncio.create_subprocess_exec(
-        "bash", "-c", shell_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=str(project_dir)
-    )
+    proc = await start_with_env_file(bazel_cmd, env_file, cwd=project_dir)
 
     async def _wait() -> None:
         async with asyncio.timeout(timeout_secs):

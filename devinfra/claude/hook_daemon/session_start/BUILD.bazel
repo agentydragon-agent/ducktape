@@ -37,6 +37,7 @@ py_library(
     srcs = ["bazel_warmup.py"],
     imports = ["../../../.."],
     visibility = ["//visibility:public"],
+    deps = ["//devinfra/claude:shell"],
 )
 
 py_library(
