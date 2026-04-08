@@ -10,7 +10,7 @@ Linux by default. macOS-only components (Seatbelt, Sandboxer) are explicitly doc
 
 If you see certificate errors, `bazel: command not found`, `Unable to resolve host
 remote.buildbuddy.io`, or other signs that session setup failed: **stop and recover before
-doing any other work.** Follow <devinfra/claude/hook_daemon/session_start_recovery.md> completely.
+doing any other work.** Follow <devinfra/claude/hook_daemon/docs/session_start_recovery.md> completely.
 Do not bypass proxy/certificate errors with `--noverify`, `SSL_VERIFY=false`, or similar.
 The root cause is always a broken session start hook — notify the user if recovery fails.
 
