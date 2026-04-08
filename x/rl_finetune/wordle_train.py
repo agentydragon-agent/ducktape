@@ -200,12 +200,12 @@ def main():
     config = GRPOConfig(
         output_dir="/tmp/wordle_grpo_output",
         # Generation
-        num_generations=2 if args.debug else 4,
+        num_generations=2 if args.debug else 8,
         max_completion_length=1024,
         # Training
         per_device_train_batch_size=1,
         gradient_accumulation_steps=2 if args.debug else 64,
-        num_train_epochs=1 if args.debug else 3,
+        num_train_epochs=1 if args.debug else 1000,
         learning_rate=5e-6,
         bf16=True,
         gradient_checkpointing=True,
