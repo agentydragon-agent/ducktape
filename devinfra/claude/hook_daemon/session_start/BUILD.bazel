@@ -228,6 +228,13 @@ oci_layout_rloc(
 
 # === Tests ===
 
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = ["//util/testing:otel_tracing"],
+)
+
 py_test(
     name = "test_k8s_proxy_integration",
     srcs = ["test_k8s_proxy_integration.py"],
@@ -241,6 +248,7 @@ py_test(
         "external",
     ],
     deps = [
+        ":conftest",
         "//devinfra/claude/testing:mitmproxy_fixture",
         "//util:oci",
         "//util/testing:undeclared_outputs",
