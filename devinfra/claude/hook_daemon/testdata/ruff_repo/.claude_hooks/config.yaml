@@ -2,6 +2,10 @@ pre_commit:
   auto_apply_hooks:
     - ruff-format
 
+default_profiles:
+  cli: cli
+  web: web
+
 profiles:
   cli:
     bazel_remote_proxy: null
