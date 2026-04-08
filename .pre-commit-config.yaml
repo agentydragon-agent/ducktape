@@ -1,3 +1,8 @@
+default_install_hook_types:
+  - pre-commit
+  - prepare-commit-msg
+  - commit-msg
+
 # Global exclusions for git-tracked files that should skip hooks
 # Note: .gitignore is respected automatically (pre-commit only runs on tracked files)
 # Uses (?x) verbose regex mode for readable multi-line patterns
