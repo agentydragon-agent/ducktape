@@ -5,6 +5,7 @@ Only the protos needed by //devinfra/buildbuddy_cli are compiled here.
 """
 
 load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
+load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
 package(default_visibility = ["//visibility:public"])
@@ -304,6 +305,11 @@ go_proto_library(
         ":invocation_policy_go_proto",
         ":package_load_metrics_go_proto",
     ],
+)
+
+py_proto_library(
+    name = "build_event_stream_py_proto",
+    deps = [":build_event_stream_proto"],
 )
 
 proto_library(

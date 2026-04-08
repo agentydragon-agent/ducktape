@@ -1,0 +1,10 @@
+"""Python proto libraries for googleapis protos used by the BES interceptor."""
+
+load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+py_proto_library(
+    name = "build_v1_py_proto",
+    deps = ["@googleapis//google/devtools/build/v1:build_proto"],
+)

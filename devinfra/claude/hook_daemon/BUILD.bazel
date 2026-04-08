@@ -1,6 +1,18 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "bes_interceptor",
+    srcs = ["bes_interceptor.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//third_party/googleapis:build_v1_py_proto",
+        "@buildbuddy_protos//:build_event_stream_py_proto",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "tracing",
     srcs = ["tracing.py"],
     visibility = ["//visibility:public"],
