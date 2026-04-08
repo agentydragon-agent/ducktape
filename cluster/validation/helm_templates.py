@@ -38,32 +38,32 @@ async def _exec(*args: str | Path) -> tuple[int, bytes, bytes]:
     return await proc.wait(), stdout, stderr
 
 
-async def validate_helm_template(values_file: Path) -> tuple[bool, str]:
+class HelmTemplateError(Exception):
+    """Raised when helm template rendering fails."""
+
+
+async def _validate_helm_template(values_file: Path) -> None:
     """Validate a Helm chart can render with the given values file."""
     rc, _, stderr = await _exec(
         _helm_bin(), "template", "test-release", "cilium/cilium", "-f", values_file, "--dry-run"
     )
-    if rc == 0:
-        return True, ""
-    return False, stderr.decode().strip()
+    if rc != 0:
+        raise HelmTemplateError(f"Helm template failed for {values_file}: {stderr.decode().strip()}")
 
 
-async def ensure_cilium_repo() -> bool:
-    """Ensure the Cilium Helm repo is added."""
+async def _ensure_cilium_repo() -> None:
+    """Ensure the Cilium Helm repo is added. Raises on failure."""
     rc, stdout, _ = await _exec(_helm_bin(), "repo", "list", "-o", "json")
     if rc == 0 and "cilium" in stdout.decode():
-        return True
+        return
 
     rc, _, stderr = await _exec(_helm_bin(), "repo", "add", "cilium", "https://helm.cilium.io/")
     if rc != 0:
-        logger.warning("Failed to add Cilium Helm repo: %s", stderr.decode())
-        return False
+        raise RuntimeError(f"Failed to add Cilium Helm repo: {stderr.decode()}")
 
     rc, _, stderr = await _exec(_helm_bin(), "repo", "update")
     if rc != 0:
-        logger.warning("Failed to update Helm repos: %s", stderr.decode())
-
-    return True
+        raise RuntimeError(f"Failed to update Helm repos: {stderr.decode()}")
 
 
 async def validate_helm_templates() -> list[str]:
@@ -72,12 +72,7 @@ async def validate_helm_templates() -> list[str]:
     if not values_files:
         return []
 
-    if not await ensure_cilium_repo():
-        return ["Failed to add Cilium Helm repo"]
+    await _ensure_cilium_repo()
 
-    results = await asyncio.gather(*[validate_helm_template(vf) for vf in values_files])
-    return [
-        f"Helm template failed for {vf}: {error}"
-        for vf, (success, error) in zip(values_files, results, strict=True)
-        if not success
-    ]
+    results = await asyncio.gather(*[_validate_helm_template(vf) for vf in values_files], return_exceptions=True)
+    return [str(e) for e in results if isinstance(e, HelmTemplateError)]
