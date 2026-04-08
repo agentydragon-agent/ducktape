@@ -218,6 +218,8 @@ async def _setup_web(
             await mount_tmpfs_at(bazel_cache_dir)
             return tmpfs.setup_bazel_cache(bazel_cache_dir)
 
+    bazel_tmpfs_task = asyncio.create_task(setup_bazel_on_tmpfs())
+
     # PARALLEL: All setup tasks (with explicit dependencies via task awaits)
     # Dependency graph:
     #   apt_task (no deps — runs immediately)
@@ -272,11 +274,7 @@ async def _setup_web(
             return mkcert_result
 
     results = await asyncio.gather(
-        proxy_task,
-        setup_container_runtime_task(),
-        setup_bazel_on_tmpfs(),
-        mkcert_append_bundle(),
-        return_exceptions=True,
+        proxy_task, setup_container_runtime_task(), bazel_tmpfs_task, mkcert_append_bundle(), return_exceptions=True
     )
     # Unpack with explicit type annotations for mypy
     auth_proxy_result: proxy_setup.ProxySetup | BaseException = results[0]
@@ -507,6 +505,9 @@ async def handle(
     logger.info("Wrote environment to %s", ctx.env_file_path)
 
     # Fire-and-forget Bazel warmup (both web and CLI modes).
+    # ORDERING: bazel tmpfs cache mount (in the gather above) must complete before
+    # warmup starts — otherwise bazel writes to the underlying fs, then the tmpfs
+    # mount shadows those files. This is satisfied because warmup runs after the gather.
     match settings.bazel_warmup:
         case BazelWarmupInfo():
             _run_background(
