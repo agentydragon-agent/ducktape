@@ -237,9 +237,11 @@ py_library(
 
 py_test(
     name = "test_k8s_proxy_integration",
-    # medium (300s): image loads take ~46s total on RBE (mitmproxy:11 ~15s,
-    # mock-k8s-server ~18s, k8s-test-client ~13s), leaving tight margin
-    # under small (60s). Observed total runtime 53–80s (2026-04-08).
+    # medium (300s): Docker image loads take ~46s total on RBE, leaving tight
+    # margin under small (60s). Observed total runtime 53–80s (2026-04-08).
+    # Image sizes: mitmproxy:11 254MB, mock_k8s_server 118MB (113MB shared
+    # Python interpreter + 5MB packages), k8s_test_client 117MB (shared
+    # interpreter + 3MB packages). ~376MB total unique data to docker load.
     size = "medium",
     srcs = ["test_k8s_proxy_integration.py"],
     data = [
