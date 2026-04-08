@@ -64,16 +64,14 @@ def test_resolve_k8s_secret(mock_k8s_api: MagicMock) -> None:
     """resolve_secret dispatches K8sSecretSource to read_k8s_secret."""
     mock_k8s_api.read_namespaced_secret.return_value = _make_mock_k8s_secret({"key": "value"})
     source = K8sSecretSource(kind="k8s", secret_name="my-secret", key="key")
-    result = resolve_secret(
-        source, project_dir=Path("/unused"), age_identities=None, k8s_api=mock_k8s_api, k8s_namespace="ns"
-    )
+    result = resolve_secret(source, project_dir=Path("/unused"), age_key=None, k8s_api=mock_k8s_api, k8s_namespace="ns")
     assert result == "value"
 
 
 def test_resolve_k8s_secret_no_client() -> None:
     """resolve_secret returns None when k8s client is unavailable."""
     source = K8sSecretSource(kind="k8s", secret_name="my-secret", key="key")
-    result = resolve_secret(source, project_dir=Path("/unused"), age_identities=None, k8s_api=None, k8s_namespace=None)
+    result = resolve_secret(source, project_dir=Path("/unused"), age_key=None, k8s_api=None, k8s_namespace=None)
     assert result is None
 
 
@@ -84,17 +82,8 @@ def test_resolve_sops_secret(tmp_path: Path) -> None:
         "devinfra.claude.hook_daemon.session_start.secret_sources.decrypt_sops_yaml",
         return_value={"my_key": "decrypted_value"},
     ):
-        result = resolve_secret(
-            source, project_dir=tmp_path, age_identities=["fake-identity"], k8s_api=None, k8s_namespace=None
-        )
+        result = resolve_secret(source, project_dir=tmp_path, age_key="fake-identity", k8s_api=None, k8s_namespace=None)
     assert result == "decrypted_value"
-
-
-def test_resolve_sops_secret_no_identities() -> None:
-    """resolve_secret returns None when age identities are unavailable."""
-    source = SopsSecretSource(kind="sops", sops_file="secrets/test.yaml", key="my_key")
-    result = resolve_secret(source, project_dir=Path("/unused"), age_identities=None, k8s_api=None, k8s_namespace=None)
-    assert result is None
 
 
 def test_kubeconfig_proxy_url(tmp_path: Path) -> None:

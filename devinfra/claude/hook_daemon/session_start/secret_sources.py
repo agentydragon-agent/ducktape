@@ -71,16 +71,13 @@ def resolve_secret(
     source: SecretSource,
     *,
     project_dir: Path,
-    age_identities: list | None,
+    age_key: str | None,
     k8s_api: CoreV1Api | None,
     k8s_namespace: str | None,
 ) -> str | None:
     """Resolve a single secret from its source config."""
     if isinstance(source, SopsSecretSource):
-        if not age_identities:
-            logger.warning("SOPS secret configured but no age_key available")
-            return None
-        decrypted = decrypt_sops_yaml(project_dir / source.sops_file, age_identities)
+        decrypted = decrypt_sops_yaml(project_dir / source.sops_file, age_key=age_key)
         return decrypted.get(source.key)
     if not k8s_api or not k8s_namespace:
         logger.warning("K8s secret configured but no k8s client available")

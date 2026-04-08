@@ -4,13 +4,6 @@ load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
 
 py_library(
-    name = "bech32",
-    srcs = ["bech32.py"],
-    imports = [".."],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
     name = "fs",
     srcs = ["fs.py"],
     imports = [".."],
@@ -117,7 +110,6 @@ py_package(
         "util.bazel",
     ],
     deps = [
-        ":bech32",
         ":env",
         ":fmt",
         ":fs",
