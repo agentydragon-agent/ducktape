@@ -15,8 +15,8 @@ exports_files([
 ])
 
 py_library(
-    name = "check_pytest_main",
-    srcs = ["check_pytest_main.py"],
+    name = "pytest_main",
+    srcs = ["pytest_main.py"],
     visibility = ["//visibility:public"],
     deps = ["//util/bazel:workspace"],
 )

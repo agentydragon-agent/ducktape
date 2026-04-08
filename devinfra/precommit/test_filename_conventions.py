@@ -1,4 +1,4 @@
-"""Tests for check_filename_conventions."""
+"""Tests for filename_conventions."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from devinfra.precommit.check_filename_conventions import check_filename_conventions
+from devinfra.precommit.filename_conventions import check_filename_conventions
 
 
 @pytest.fixture

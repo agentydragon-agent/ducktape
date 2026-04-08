@@ -1,17 +1,17 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "check_filename_conventions",
-    srcs = ["check_filename_conventions.py"],
+    name = "filename_conventions",
+    srcs = ["filename_conventions.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pygit2"],
 )
 
 py_test(
-    name = "test_check_filename_conventions",
-    srcs = ["test_check_filename_conventions.py"],
+    name = "test_filename_conventions",
+    srcs = ["test_filename_conventions.py"],
     deps = [
-        ":check_filename_conventions",
+        ":filename_conventions",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -19,23 +19,23 @@ py_test(
 )
 
 py_library(
-    name = "check_terraform_centralization",
-    srcs = ["check_terraform_centralization.py"],
+    name = "terraform_centralization",
+    srcs = ["terraform_centralization.py"],
     visibility = ["//visibility:public"],
 )
 
 py_library(
-    name = "check_test_tag",
-    srcs = ["check_test_tag.py"],
+    name = "test_tag",
+    srcs = ["test_tag.py"],
     visibility = ["//visibility:public"],
     deps = ["@pypi//httpx"],
 )
 
 py_test(
-    name = "test_check_test_tag",
-    srcs = ["test_check_test_tag.py"],
+    name = "test_test_tag",
+    srcs = ["test_test_tag.py"],
     deps = [
-        ":check_test_tag",
+        ":test_tag",
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -47,10 +47,10 @@ py_library(
     srcs = ["ducktape_precommit.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":check_filename_conventions",
-        ":check_terraform_centralization",
+        ":filename_conventions",
+        ":terraform_centralization",
         "//cluster/scripts/validate_cluster:main",
-        "//devinfra:check_pytest_main",
+        "//devinfra:pytest_main",
         "//devinfra/precommit/enforce_bazel_tests",
         "@pypi//pygit2",
     ],

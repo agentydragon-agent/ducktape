@@ -25,13 +25,13 @@ from pathlib import Path
 import pygit2
 
 from cluster.scripts.validate_cluster.main import validate as validate_cluster
-from devinfra.check_pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
-from devinfra.precommit.check_filename_conventions import check_filename_conventions
-from devinfra.precommit.check_terraform_centralization import find_violations
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import (
     EnforceBazelTestsError,
     run as enforce_bazel_tests_run,
 )
+from devinfra.precommit.filename_conventions import check_filename_conventions
+from devinfra.precommit.terraform_centralization import find_violations
+from devinfra.pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from util.bazel.workspace import BazelWorkspace, detect_bazel_command
 
 _LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
