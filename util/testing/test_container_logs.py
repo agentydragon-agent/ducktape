@@ -9,7 +9,7 @@ import pytest_bazel
 
 from third_party.containers.rlocations import DEBIAN_SLIM
 from util.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer, LoggedContainerFactory, logged_container  # noqa: F401  pytest fixture
+from util.testing.container_logs import LoggedContainer, LoggedContainerFactory
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -18,6 +18,17 @@ def image_tag() -> str:
     """Load debian-slim and return its tag."""
     load_oci_image(DEBIAN_SLIM)
     return DEBIAN_SLIM.tag
+
+
+@pytest.fixture
+def logged_container(request: pytest.FixtureRequest) -> LoggedContainerFactory:
+    """Factory fixture: LoggedContainer with test_name auto-derived."""
+    test_name = request.node.name
+
+    def _create(*args, **kwargs) -> LoggedContainer:
+        return LoggedContainer(*args, test_name=test_name, **kwargs)
+
+    return _create
 
 
 def _logs_dir(test_name: str) -> Path:

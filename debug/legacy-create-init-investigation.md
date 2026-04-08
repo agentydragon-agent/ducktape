@@ -23,6 +23,7 @@ With `legacy_create_init = 0`, ALL the empty stubs disappear. Only real
 `__init__.py` files from pip packages remain.
 
 **Why stubs matter**: When `_main` is on `sys.path`:
+
 - **With stubs**: `x/claude_linter_v2/` has `__init__.py` → it's a package.
   `import types` resolves to stdlib because `types.py` is only reachable as
   `x.claude_linter_v2.types` (a submodule of a package).

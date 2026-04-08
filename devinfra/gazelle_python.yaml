@@ -595,11 +595,10 @@ manifest:
     xdist: pytest_xdist
     xxhash: xxhash
     yaml: pyyaml
-    yamllint: yamllint
     yarl: yarl
     zipp: zipp
     zmq: pyzmq
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 95339aaf16798ecfd2e06345400056db7e10e239f622aaa94ddf404261214a5a
+integrity: 2857dff2ae2f7d72a992e86417f703f4a901b66903c69960f4952e1552c7a048

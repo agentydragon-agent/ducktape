@@ -132,8 +132,9 @@ class TestHandleHook:
 
         _assert_no_nulls(resp.json())
 
-
-    async def test_session_start_bad_config_returns_traceback(self, client: AsyncClient, env: dict[str, str], tmp_path: Path) -> None:
+    async def test_session_start_bad_config_returns_traceback(
+        self, client: AsyncClient, env: dict[str, str], tmp_path: Path
+    ) -> None:
         """SessionStart with invalid config returns 500 with full traceback, not silent error."""
         # Create a project dir with an invalid config (missing required fields)
         project = tmp_path / "bad_project"

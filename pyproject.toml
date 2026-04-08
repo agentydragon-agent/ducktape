@@ -235,7 +235,6 @@ dependencies = [
     "pypdf>=5.0",
     "PyHamcrest>=2.1",
     "mypy==1.19.1",
-    "invoke",
 
     # Type stubs for mypy
     "types-PyYAML",
