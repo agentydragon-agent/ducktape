@@ -1,10 +1,8 @@
-# gazelle:exclude tests
-# Test fixtures are data files, not buildable Python modules
+# gazelle:exclude rules
 
-"""Python detectors package."""
+"""Python detectors package — entry points and shared infrastructure."""
 
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
 
 py_library(
     name = "main",
@@ -12,32 +10,20 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":det_broad_except_order",
-        ":det_dynamic_attr_probe",
-        ":det_flatten_nested_guards",
-        ":det_import_aliasing",
-        ":det_imports_inside_def",
-        ":det_magic_tuple_indices",
-        ":det_optional_string_simplify",
-        ":det_pathlike_str_casts",
-        ":det_pydantic_v1_shims",
-        ":det_swallow_errors",
-        ":det_trivial_alias",
-        ":det_trivial_passthrough",
-        ":det_walrus_suggest",
         ":registry",
-    ],
-)
-
-py_library(
-    name = "base",
-    srcs = ["base.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":models",
-        ":registry",
-        ":utils",
+        "//py_detectors/rules:broad_except_order",
+        "//py_detectors/rules:dynamic_attr_probe",
+        "//py_detectors/rules:flatten_nested_guards",
+        "//py_detectors/rules:import_aliasing",
+        "//py_detectors/rules:imports_inside_def",
+        "//py_detectors/rules:magic_tuple_indices",
+        "//py_detectors/rules:optional_string_simplify",
+        "//py_detectors/rules:pathlike_str_casts",
+        "//py_detectors/rules:pydantic_v1_shims",
+        "//py_detectors/rules:swallow_errors",
+        "//py_detectors/rules:trivial_alias",
+        "//py_detectors/rules:trivial_passthrough",
+        "//py_detectors/rules:walrus_suggest",
     ],
 )
 
@@ -47,174 +33,19 @@ py_library(
     imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":det_dynamic_attr_probe",
-        ":det_flatten_nested_guards",
-        ":det_import_aliasing",
-        ":det_imports_inside_def",
-        ":det_magic_tuple_indices",
-        ":det_optional_string_simplify",
-        ":det_pathlike_str_casts",
-        ":det_pydantic_v1_shims",
-        ":det_swallow_errors",
-        ":det_trivial_alias",
-        ":det_walrus_suggest",
         ":registry",
+        "//py_detectors/rules:dynamic_attr_probe",
+        "//py_detectors/rules:flatten_nested_guards",
+        "//py_detectors/rules:import_aliasing",
+        "//py_detectors/rules:imports_inside_def",
+        "//py_detectors/rules:magic_tuple_indices",
+        "//py_detectors/rules:optional_string_simplify",
+        "//py_detectors/rules:pathlike_str_casts",
+        "//py_detectors/rules:pydantic_v1_shims",
+        "//py_detectors/rules:swallow_errors",
+        "//py_detectors/rules:trivial_alias",
+        "//py_detectors/rules:walrus_suggest",
     ],
-)
-
-py_library(
-    name = "det_broad_except_order",
-    srcs = ["det_broad_except_order.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-        ":utils",
-    ],
-)
-
-py_library(
-    name = "det_dynamic_attr_probe",
-    srcs = ["det_dynamic_attr_probe.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_flatten_nested_guards",
-    srcs = ["det_flatten_nested_guards.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_import_aliasing",
-    srcs = ["det_import_aliasing.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_imports_inside_def",
-    srcs = ["det_imports_inside_def.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":import_graph",
-        ":models",
-        ":registry",
-        ":utils",
-    ],
-)
-
-py_library(
-    name = "det_magic_tuple_indices",
-    srcs = ["det_magic_tuple_indices.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_optional_string_simplify",
-    srcs = ["det_optional_string_simplify.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_pathlike_str_casts",
-    srcs = ["det_pathlike_str_casts.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_pydantic_v1_shims",
-    srcs = ["det_pydantic_v1_shims.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_swallow_errors",
-    srcs = ["det_swallow_errors.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-        ":utils",
-    ],
-)
-
-py_library(
-    name = "det_trivial_alias",
-    srcs = ["det_trivial_alias.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_trivial_passthrough",
-    srcs = ["det_trivial_passthrough.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "det_walrus_suggest",
-    srcs = ["det_walrus_suggest.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":base",
-        ":models",
-    ],
-)
-
-py_library(
-    name = "import_graph",
-    srcs = ["import_graph.py"],
-    imports = [".."],
-    visibility = ["//:__subpackages__"],
 )
 
 py_library(
@@ -230,7 +61,17 @@ py_library(
     srcs = ["registry.py"],
     imports = [".."],
     visibility = ["//:__subpackages__"],
-    deps = [":models"],
+    deps = [
+        ":models",
+        ":utils",
+    ],
+)
+
+py_library(
+    name = "import_graph",
+    srcs = ["import_graph.py"],
+    imports = [".."],
+    visibility = ["//:__subpackages__"],
 )
 
 py_library(
@@ -254,25 +95,4 @@ py_binary(
     imports = [".."],
     main_module = "py_detectors.cli_custom",
     deps = [":cli_custom"],
-)
-
-py_test(
-    name = "test_py_detectors",
-    srcs = [
-        "tests/conftest.py",
-        "tests/fixture_utils.py",
-        "tests/test_detectors.py",
-    ],
-    data = glob(["tests/**/*.md"]) + glob(["tests/fixtures/**/*.py"]),
-    imports = ["."],
-    main = "tests/test_detectors.py",
-    deps = [
-        ":base",
-        ":main",
-        ":models",
-        ":registry",
-        ":utils",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
 )

@@ -17,6 +17,8 @@ exclude = [
     "k8s_old",
     "tana/export/references",
     "props/testing/fixtures/testdata",
+    "py_detectors/rules/**/bad/**",
+    "py_detectors/rules/**/ok/**",
     "x/claude_hooks/testdata",
     "x/sandboxed_jupyter/testdata",
     "sysrw/testdata",

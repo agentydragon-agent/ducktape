@@ -57,12 +57,12 @@ repos:
     hooks:
       - id: ruff-check
         name: ruff-check
-        entry: ruff check --fix --config ruff.toml
+        entry: ruff check --fix --force-exclude --config ruff.toml
         language: system
         files: "\\.py$"
       - id: ruff-format
         name: ruff-format
-        entry: ruff format --config ruff.toml
+        entry: ruff format --force-exclude --config ruff.toml
         language: system
         files: "\\.py$"
 

@@ -5,21 +5,31 @@ import json
 from pathlib import Path
 from typing import Any
 
-# Import custom detectors to register them (exclude adapters; agent runs Ruff/Vulture/Mypy directly)
-from py_detectors import (
-    det_dynamic_attr_probe,  # noqa: F401
-    det_flatten_nested_guards,  # noqa: F401
-    det_import_aliasing,  # noqa: F401
-    det_imports_inside_def,  # noqa: F401
-    det_magic_tuple_indices,  # noqa: F401
-    det_optional_string_simplify,  # noqa: F401
-    det_pathlike_str_casts,  # noqa: F401
-    det_pydantic_v1_shims,  # noqa: F401
-    det_swallow_errors,  # noqa: F401
-    det_trivial_alias,  # noqa: F401
-    det_walrus_suggest,  # noqa: F401
-)
-from py_detectors.registry import run_all
+from py_detectors.registry import FileDetector, run_all
+from py_detectors.rules.dynamic_attr_probe.rule import find_detections as dynamic_attr_probe
+from py_detectors.rules.flatten_nested_guards.rule import find_detections as flatten_nested_guards
+from py_detectors.rules.import_aliasing.rule import find_detections as import_aliasing
+from py_detectors.rules.imports_inside_def.rule import find_all as imports_inside_def_find_all
+from py_detectors.rules.magic_tuple_indices.rule import find_detections as magic_tuple_indices
+from py_detectors.rules.optional_string_simplify.rule import find_detections as optional_string_simplify
+from py_detectors.rules.pathlike_str_casts.rule import find_detections as pathlike_str_casts
+from py_detectors.rules.pydantic_v1_shims.rule import find_detections as pydantic_v1_shims
+from py_detectors.rules.swallow_errors.rule import find_detections as swallow_errors
+from py_detectors.rules.trivial_alias.rule import find_detections as trivial_alias
+from py_detectors.rules.walrus_suggest.rule import find_detections as walrus_suggest
+
+DETECTORS: dict[str, FileDetector] = {
+    "dynamic_attr_probe": dynamic_attr_probe,
+    "flatten_nested_guards": flatten_nested_guards,
+    "import_aliasing": import_aliasing,
+    "magic_tuple_indices": magic_tuple_indices,
+    "optional_string_simplify": optional_string_simplify,
+    "pathlike_str_casts": pathlike_str_casts,
+    "pydantic_v1_shims": pydantic_v1_shims,
+    "swallow_errors": swallow_errors,
+    "trivial_alias": trivial_alias,
+    "walrus_suggest": walrus_suggest,
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -36,7 +46,13 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     root = args.root.resolve()
-    dets = run_all(root, detector_names=args.only, workers=args.workers)
+    only = set(args.only) if args.only else None
+
+    dets = run_all(DETECTORS, root, detector_names=only, workers=args.workers)
+
+    if only is None or "imports_inside_def" in only:
+        dets.extend(imports_inside_def_find_all(root))
+
     payload: list[dict[str, Any]] = [d.model_dump(exclude_none=True, mode="json") for d in dets]
     s = json.dumps(payload, indent=2)
     if args.out:
