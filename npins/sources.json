@@ -5,19 +5,19 @@
       "sha256": "TgfSB1u2oIO519Ew320bvQGBBurJ9hp8xmdyM7QEXCE="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-efa9b18/bbapi",
-      "sha256": "ry3dVG0v8lvGfvZY5zp+ixWyGrTh3ByOZLjcPYHImuY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-9618682/bbapi",
+      "sha256": "zHUYa8qQ7qztmOB4glW17MFOGsEd72+F0QsoHn6yRJI="
     },
     "claude-hooks": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-f395b48/claude_hooks-0.1.0-py3-none-any.whl",
-      "sha256": "Lbb9Jy1ki4g0Rke243khwYfh0ajAtI2TMOM9A3QBSRQ="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/claude-hooks-9618682/claude_hooks-0.1.0-py3-none-any.whl",
+      "sha256": "bG9Fgr+ct+NdOUHR2khPtp3kLm46D4pnKl6cxv6yzyE="
     },
     "ducktape-util": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-f395b48/ducktape_util-0.1.0-py3-none-any.whl",
-      "sha256": "IOQ4jjR11NDYIQocnfJ8N9Va8KEox4iarFkoo8OO+jI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-util-9618682/ducktape_util-0.1.0-py3-none-any.whl",
+      "sha256": "SW6I/ahROnVtNQJ0IBHiepivVvXc3Pp4uijIqydU5q4="
     },
     "ducktape": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-b62da4b/ducktape-0.1.0-py3-none-any.whl",
+      "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-071dad5/ducktape-0.1.0-py3-none-any.whl",
       "sha256": "8A2FJn9JHA6ccAZ2gXt6ySc9a9OAXeQo3sdy1xGU7mQ="
     },
     "gterm-theme": {
@@ -25,8 +25,8 @@
       "sha256": "Bg6ZLAWoqnD7d/gKGhybzQ7E5CShdegeHq6ymTkadEA="
     },
     "skills": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-f395b48/skills.tar",
-      "sha256": "WU0uPbnXas6wdJTsmHa4MTnjz/scgvD9C5jRDBk04hY="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skills-9618682/skills.tar",
+      "sha256": "eqBnU5Tkf3nqD8so7Sy07DC3PLk2r4b/thz7oZLPY5Y="
     }
   }
 }
