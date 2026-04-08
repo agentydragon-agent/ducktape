@@ -224,8 +224,22 @@
       # gettext + locale data. Blocked on slow rebuild (gitMinimal override
       # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
       # See devinfra/claude/docs/devtools-closure-size.md for details.
+      # bb remote with sane defaults for this repo:
+      # - 50GB disk (default 20GB is too small)
+      # - origin/devel as base commit (workaround for bb bug where it uses
+      #   local ref, which fails with unpushed commits)
+      # TODO: Build CI workflow for nix-rbe-image, auto-push to GHCR,
+      # and pin digest in devinfra/image_pins.json like the Ubuntu image.
+      bb-remote = pkgs.writeShellScriptBin "bb-remote" ''
+        exec bb remote \
+          --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
+          --run_from_commit="$(git rev-parse origin/devel)" \
+          --remote_header=x-buildbuddy-platform.container-image=docker://ghcr.io/agentydragon/nix-rbe-worker:test \
+          "$@"
+      '';
       devToolPackages = [
         # Repo-specific tools
+        bb-remote
         ducktapePkgs.claude-hooks
         ducktapePkgs.bb
         ducktapePkgs.bbapi
@@ -274,11 +288,10 @@
         # Run:   docker run --rm -it ducktape-nixos-bazel /init
         # Exec:  docker exec -it <container> bash -l
         bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
-        # NixOS-based RBE worker image.
+        # Nix-based RBE worker image (plain Docker, no NixOS/systemd).
         # Build: nix build .#nix-rbe-image
-        # Load:  docker import result nix-rbe-worker
-        # Run:   docker run --rm -it nix-rbe-worker /init
-        nix-rbe-image = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
+        # Load:  docker load < result
+        nix-rbe-image = import ./x/nix_rbe_image { inherit pkgs; };
         # Pre-built UEFI qcow2 VM images for Proxmox deployment.
         # Build: nix build .#wyrm2-image
         # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
@@ -379,14 +392,6 @@
           ];
         };
 
-        # NixOS-based BuildBuddy RBE worker image.
-        # See x/nix_rbe_image/ for details.
-        nix-rbe-worker = nixpkgs.lib.nixosSystem {
-          inherit system;
-          modules = [
-            ./x/nix_rbe_image
-          ];
-        };
       };
     };
 }
