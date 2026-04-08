@@ -59,14 +59,15 @@ def generate_buildbuddy_config() -> dict[str, Any]:
             "bazel_commands": [
                 (
                     "test --keep_going --config=rbe"
-                    " --build_metadata=ROLE=ci --build_metadata=TAGS=test"
+                    # ROLE=CI must be uppercase per BuildBuddy docs (enables flake detection, test grid, etc.)
+                    " --build_metadata=ROLE=CI --build_metadata=TAGS=test"
                     " --test_tag_filters=-live_openai_api"
                     " //..."
                 ),
                 (
                     "build --keep_going --config=rbe"
                     " --strategy=mypy=local"
-                    " --build_metadata=ROLE=ci --build_metadata=TAGS=check"
+                    " --build_metadata=ROLE=CI --build_metadata=TAGS=check"
                     " //..."
                 ),
             ],
@@ -80,7 +81,7 @@ def generate_buildbuddy_config() -> dict[str, Any]:
                 {
                     "run": (
                         "bazel test --keep_going --config=rbe"
-                        " --build_metadata=ROLE=ci"
+                        " --build_metadata=ROLE=CI"
                         " --test_tag_filters=-live_openai_api"
                         " //...\n"
                     )

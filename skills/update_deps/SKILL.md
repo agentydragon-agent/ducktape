@@ -297,30 +297,9 @@ PREOF
 
 ## Verifying Tests
 
-After pushing a commit intended as "final" on any PR, you **MUST** verify
-tests pass on RBE. GitHub Actions CI does not run for fork PRs (no
-`BUILDBUDDY_API_KEY` — see [#787](https://github.com/agentydragon/ducktape/issues/787)),
-so verify via BuildBuddy directly:
-
-```bash
-# Run tests and get a BuildBuddy invocation link
-bazel test //... --build_metadata=ROLE=ci
-
-# Check the last invocation for this branch
-bbapi invocation list --count 1
-```
-
-If tests fail:
-
-1. Read the failure logs (`bb view <invocation-id>`)
-2. Diagnose the root cause
-3. Fix the issue (code change, revert a problematic update, etc.)
-4. Push again and re-run
-
-**You are NOT done until `bazel test //...` passes on RBE for all PRs.** This
-may require multiple fix-push cycles. If a test failure is clearly pre-existing
-(also failing on `devel`), document it in the PR description but do not let it
-block you.
+Follow the standard "Before Hand-off" instructions in AGENTS.md. If a test
+failure is clearly pre-existing (also failing on `devel`), document it in the
+PR description but do not let it block you.
 
 ## Bulk PR Description Format
 

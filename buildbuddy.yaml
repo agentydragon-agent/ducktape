@@ -16,9 +16,9 @@ actions:
       memory: 16GB
       disk: 50GB
     bazel_commands:
-      - test --keep_going --config=rbe --build_metadata=ROLE=ci --build_metadata=TAGS=test --test_tag_filters=-live_openai_api
+      - test --keep_going --config=rbe --build_metadata=ROLE=CI --build_metadata=TAGS=test --test_tag_filters=-live_openai_api
         //...
-      - build --keep_going --config=rbe --strategy=mypy=local --build_metadata=ROLE=ci --build_metadata=TAGS=check //...
+      - build --keep_going --config=rbe --strategy=mypy=local --build_metadata=ROLE=CI --build_metadata=TAGS=check //...
   - name: Release
     triggers: &id001
       push:
@@ -32,7 +32,7 @@ actions:
       disk: 50GB
     steps:
       - run: |
-          bazel test --keep_going --config=rbe --build_metadata=ROLE=ci --test_tag_filters=-live_openai_api //...
+          bazel test --keep_going --config=rbe --build_metadata=ROLE=CI --test_tag_filters=-live_openai_api //...
       - run: |
           # Install system deps for wheel builds (cairo, dbus, etc.)
           sudo apt-get update -qq && sudo apt-get install -y \
