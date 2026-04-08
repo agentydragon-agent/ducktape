@@ -49,6 +49,8 @@ build:rbe --bes_backend=grpcs://remote.buildbuddy.io
 common:rbe --remote_cache=grpcs://remote.buildbuddy.io
 common:rbe --remote_timeout=10m
 common:rbe --remote_cache_compression
+# TODO: pin digest in devinfra/image_pins.json and build CI workflow for nix-rbe-image
+build:rbe --remote_header=x-buildbuddy-platform.container-image=docker://ghcr.io/agentydragon/nix-rbe-worker:test
 build:rbe --noslim_profile
 build:rbe --experimental_profile_include_target_label
 build:rbe --experimental_profile_include_primary_output

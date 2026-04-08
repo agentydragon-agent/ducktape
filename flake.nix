@@ -230,6 +230,12 @@
       #   that run locally with no-sandbox)
       # RBE container image override is in .bazelrc under build:rbe.
       bb-remote = pkgs.writeShellScriptBin "bb-remote" (builtins.readFile ./devinfra/bb_remote.sh);
+      # Packages NOT needed on RBE workers (large, only for local/infra use).
+      # Excluded from rbeToolPackages to keep the RBE image small.
+      localOnlyPackages = [
+        pkgs.rustfmt # 1GB (pulls full rustc via RPATH)
+        pkgs.ansible # 650MB
+      ];
       devToolPackages = [
         # Repo-specific tools
         bb-remote
@@ -247,10 +253,8 @@
         pkgs.shfmt
         pkgs.buildifier
         pkgs.gofumpt
-        pkgs.rustfmt
         pkgs.nodePackages.prettier # TODO: not used by pre-commit yet (uses language:node with svelte plugin instead). Consolidate by bundling prettier+plugins in Nix.
         pkgs.openssl
-        pkgs.ansible
         # Infrastructure tools
         pkgs.gh
         pkgs.kubectl
@@ -266,13 +270,18 @@
     {
       # Development shell — enter via `nix develop` or direnv (`use flake`).
       devShells.${system}.default = pkgs.mkShell {
-        packages = devToolPackages;
+        packages = devToolPackages ++ localOnlyPackages;
       };
 
       packages.${system} = ducktapePkgs // {
         # Installable package for `nix profile install .#devtools` (used by web_setup.sh).
         devtools = pkgs.symlinkJoin {
           name = "ducktape-devtools";
+          paths = devToolPackages ++ localOnlyPackages;
+        };
+        # Lean devtools for RBE worker image (no rustfmt, ansible).
+        rbetools = pkgs.symlinkJoin {
+          name = "ducktape-rbetools";
           paths = devToolPackages;
         };
         # NixOS container tarball for docker import.
@@ -285,6 +294,10 @@
         # Build: nix build .#nix-rbe-image
         # Load:  docker load < result
         nix-rbe-image = import ./x/nix_rbe_image { inherit pkgs; };
+        # NixOS-based RBE worker (systemd, envfs, nix-ld).
+        # Build: nix build .#nix-rbe-nixos
+        # Load:  docker import result/tarball/*.tar.xz nix-rbe-nixos
+        nix-rbe-nixos = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
         # Pre-built UEFI qcow2 VM images for Proxmox deployment.
         # Build: nix build .#wyrm2-image
         # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
@@ -382,6 +395,14 @@
           modules = [
             ./nix/nixos/hosts/bazel-test
             home-manager.nixosModules.home-manager
+          ];
+        };
+
+        # NixOS-based RBE worker with full Bazel compat (envfs, nix-ld).
+        nix-rbe-worker = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            ./x/nix_rbe_image/nixos.nix
           ];
         };
 

@@ -134,9 +134,20 @@ B. **Add pre-commit check for unquoted URLs in pnpm lockfiles**
    - A targeted check could catch this on lockfile regeneration
 ```
 
-### Phase 5: Probabilistic Action Suggestions
+### Phase 5: Verify Suggestions Are Actionable
 
-For each potential action, estimate probability user wants it:
+Before surfacing any suggestion, verify it's actually actionable right now:
+
+- **Git push/commit**: Check `git status` and `git log --oneline origin/HEAD..HEAD` — don't suggest pushing if already pushed, don't suggest committing if nothing is staged/modified
+- **Run tests**: Confirm the test target exists and the test runner is available
+- **Code changes**: Confirm the file/function still exists and hasn't been changed by a concurrent agent
+- **Cleanup**: Confirm the dead code / unused import is actually still there
+
+Drop suggestions that fail verification. A stale or impossible suggestion wastes more attention than omitting it. If a suggestion is borderline (e.g., "bench.py might need updating" but you haven't checked), either verify it or drop it — don't surface uncertain claims as actionable items.
+
+### Phase 6: Probabilistic Action Suggestions
+
+For each verified action, estimate probability user wants it:
 
 **>80% probability - DO NOW category:**
 

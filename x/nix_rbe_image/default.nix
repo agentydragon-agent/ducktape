@@ -15,93 +15,7 @@
 # - Standard build tools (gcc, binutils, make, git, python3, java)
 { pkgs }:
 let
-  # All packages to include in the image.
-  packages = with pkgs; [
-    # Shell + core utilities
-    bash
-    coreutils
-    findutils
-    gnugrep
-    gnused
-    gawk
-    diffutils
-    gnutar
-    gzip
-    xz
-    bzip2
-    which
-    file
-    patch
-    less
-
-    # Network tools
-    curl
-    wget
-    cacert
-    openssl
-
-    # Build essentials
-    gcc
-    gnumake
-    binutils
-    patchelf
-    cmake
-    pkg-config
-
-    # Crypto/TLS dev headers (Rust toolchain, pip wheel builds)
-    openssl.dev
-
-    # Clang: pip C extension builds (low priority to avoid conflicts with gcc)
-    (pkgs.lib.setPrio 20 clang)
-
-    # Java (BuildBuddy toolchain default)
-    jdk11
-
-    # Python
-    python3
-
-    # Bazel (bazelisk respects .bazelversion)
-    bazelisk
-
-    # SCM
-    git
-
-    # Docker CLI (daemon managed by BB's init-dockerd)
-    docker
-
-    # iptables for Firecracker Docker compatibility
-    iptables
-
-    # sudo (BB expects passwordless sudo for buildbuddy user)
-    sudo
-
-    # Archive tools (Bazel needs zip/unzip)
-    zip
-    unzip
-
-    # TODO: add back once image size is manageable
-    # # cpio: initramfs builds (Firecracker initramfs genrule)
-    # cpio
-    # # Xvfb: virtual framebuffer for headless GUI tests (FreeCAD)
-    # xorg.xorgserver
-    # # D-Bus daemon for tests that spawn private D-Bus sessions
-    # dbus
-    # # Chromium headless shell shared library dependencies (rules_playwright)
-    # alsa-lib
-    # at-spi2-atk
-    # cups
-    # libdrm
-    # mesa
-    # nspr
-    # nss
-    # pango
-    # xorg.libXcomposite
-    # xorg.libXdamage
-    # libxkbcommon
-    # xorg.libXrandr
-    # xorg.libXfixes
-    # xorg.libxshmfence
-  ];
+  packages = import ./packages.nix { inherit pkgs; };
 
   # Merged environment with all packages on PATH.
   env = pkgs.buildEnv {
@@ -117,24 +31,45 @@ let
     ];
   };
 
-  # nix-ld: static-pie binary that acts as /lib64/ld-linux-x86-64.so.2.
-  # Reads NIX_LD (real glibc linker) and NIX_LD_LIBRARY_PATH (lib search
-  # path) from the environment, then delegates. This is the same approach
-  # the NixOS bazel module uses (programs.nix-ld.enable), but without
-  # NixOS — we just need the symlink and the env vars.
-  nixLdLink = pkgs.runCommand "nix-ld-link" { } ''
-    mkdir -p $out/lib64
-    ln -s ${pkgs.nix-ld}/libexec/nix-ld $out/lib64/ld-linux-x86-64.so.2
+  # FHS library layout: real glibc linker at /lib64/ and shared libs at
+  # /lib/x86_64-linux-gnu/. This avoids nix-ld (which needs NIX_LD env var)
+  # and works in any context — Docker, BB runner VMs, RBE containers —
+  # without requiring specific env vars to be set.
+  # FHS library layout. All shared libs go into /lib64/ alongside the
+  # dynamic linker — this is always in the default search path, no
+  # ld.so.conf/ldconfig/LD_LIBRARY_PATH needed.
+  # FHS library layout. Shared libs go into multiple standard paths so
+  # the glibc dynamic linker finds them without ld.so.cache or env vars.
+  # /lib64/ for the linker, /lib/ and /usr/lib/ for everything else.
+  # FHS library layout matching Debian/Ubuntu x86_64 multiarch paths.
+  # The glibc dynamic linker searches /lib/x86_64-linux-gnu/ and
+  # /usr/lib/x86_64-linux-gnu/ by default (compiled-in DT_DEFAULT_LIB).
+  # No ld.so.cache, LD_LIBRARY_PATH, or ldconfig needed.
+  fhsLibs = pkgs.runCommand "fhs-libs" { } ''
+    mkdir -p $out/lib64 $out/lib/x86_64-linux-gnu $out/usr/lib/x86_64-linux-gnu
+
+    # Real glibc dynamic linker
+    ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 $out/lib64/ld-linux-x86-64.so.2
+
+    # Shared libraries in Debian multiarch paths
+    for dir in \
+      ${pkgs.stdenv.cc.cc.lib}/lib \
+      ${pkgs.glibc}/lib \
+      ${pkgs.zlib}/lib \
+      ${pkgs.openssl.out}/lib; do
+      for lib in "$dir"/lib*.so*; do
+        if [ -e "$lib" ]; then
+          ln -sf "$lib" $out/lib/x86_64-linux-gnu/
+          ln -sf "$lib" $out/usr/lib/x86_64-linux-gnu/
+        fi
+      done
+    done
   '';
 
-  # Library path for NIX_LD_LIBRARY_PATH — shared libs that Bazel-downloaded
-  # binaries commonly need (libstdc++, libc, zlib, openssl).
-  nixLdLibraryPath = pkgs.lib.makeLibraryPath [
-    pkgs.stdenv.cc.cc.lib
-    pkgs.glibc
-    pkgs.zlib
-    pkgs.openssl
-  ];
+  # Pre-built ld.so.cache + ld.so.conf so the dynamic linker finds our libs.
+  # NixOS glibc doesn't have Debian multiarch paths compiled in, so we
+  # need ld.so.cache to tell it where /lib/x86_64-linux-gnu/ and
+  # /usr/lib/x86_64-linux-gnu/ are.
 
   # FHS symlinks: /bin/bash, /bin/sh, /usr/bin/env — Bazel hardcodes these.
   # Also bazel -> bazelisk (matching Ubuntu base image convention).
@@ -161,7 +96,7 @@ pkgs.dockerTools.buildLayeredImage {
     name = "rbe-root";
     paths = [
       (pkgs.lib.setPrio 10 env)
-      nixLdLink
+      fhsLibs
       fhsLinks
       dockerdWrapper
     ];
@@ -227,12 +162,18 @@ pkgs.dockerTools.buildLayeredImage {
     ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/ssl/certs/ca-bundle.crt
     ln -sf ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt etc/pki/tls/certs/ca-bundle.crt
 
+    # Generate ld.so.cache so NixOS glibc finds libs at Debian multiarch paths.
+    cat > etc/ld.so.conf <<'LDCONF'
+    /lib/x86_64-linux-gnu
+    /usr/lib/x86_64-linux-gnu
+    LDCONF
+    # fakeRootCommands runs in a fakechroot'd rootfs where /lib/x86_64-linux-gnu
+    # exists from the buildEnv contents. ldconfig can scan these real paths.
+    ${pkgs.glibc.bin}/bin/ldconfig -f etc/ld.so.conf -C etc/ld.so.cache \
+      /lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu 2>/dev/null || true
+
     cat > etc/bazel.bazelrc <<'BAZELRC'
     build --shell_executable=/bin/bash
-    build --host_action_env=NIX_LD
-    build --host_action_env=NIX_LD_LIBRARY_PATH
-    common --repo_env=NIX_LD
-    common --repo_env=NIX_LD_LIBRARY_PATH
     BAZELRC
   '';
   enableFakechroot = true;
@@ -246,9 +187,6 @@ pkgs.dockerTools.buildLayeredImage {
       "NIX_SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
       "GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt"
       "JAVA_HOME=${pkgs.jdk11}/lib/openjdk"
-      # nix-ld reads these to resolve dynamically-linked binaries.
-      "NIX_LD=${pkgs.glibc}/lib/ld-linux-x86-64.so.2"
-      "NIX_LD_LIBRARY_PATH=${nixLdLibraryPath}"
     ];
   };
 }
