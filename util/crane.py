@@ -137,7 +137,11 @@ def push_to_daemon(oci_layout: Path, tag: str) -> None:
     docker_manifest = [{"Config": config_blob_rel, "RepoTags": [tag], "Layers": layer_rels}]
 
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w") as tar:
+    # dereference=True: Bazel runfiles are symlinks into the execroot. Without
+    # dereferencing, tar records them as symlink entries with absolute target
+    # paths. Docker extracts the tarball and tries to follow those symlinks,
+    # which fail when the daemon runs outside Bazel's sandbox.
+    with tarfile.open(fileobj=buf, mode="w", dereference=True) as tar:
         # Add manifest.json
         manifest_data = json.dumps(docker_manifest).encode()
         info = tarfile.TarInfo(name="manifest.json")
