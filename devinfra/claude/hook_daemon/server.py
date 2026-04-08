@@ -61,7 +61,7 @@ async def _log_exceptions(request: Request, call_next):
         return await call_next(request)
     except Exception:
         tb_str = traceback.format_exc()
-        logger.error("Unhandled exception in %s %s:\n%s", request.method, request.url.path, tb_str)
+        logger.exception("Unhandled exception in %s %s", request.method, request.url.path)
         return JSONResponse(status_code=500, content={"detail": tb_str})
 
 
