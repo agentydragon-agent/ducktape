@@ -59,12 +59,12 @@ repos:
         name: ruff-check
         entry: ruff check --fix --force-exclude --config ruff.toml
         language: system
-        files: "\\.py$"
+        types: [python]
       - id: ruff-format
         name: ruff-format
         entry: ruff format --force-exclude --config ruff.toml
         language: system
-        files: "\\.py$"
+        types: [python]
 
   # TODO: Check if Bazel mypy (runs by default via bazel build //...) can replace
   # pre-commit mypy hooks. The Bazel mypy setup handles workspace dependencies
@@ -77,7 +77,7 @@ repos:
         name: nixfmt
         entry: nixfmt
         language: system
-        files: "\\.nix$"
+        types: [nix]
 
   # Statix - Nix anti-pattern linter — statix provided by devShell / web-session via Nix
   - repo: local
@@ -86,7 +86,7 @@ repos:
         name: statix
         entry: statix check
         language: system
-        files: "\\.nix$"
+        types: [nix]
         pass_filenames: false
 
   # Markdown linting (scoped to match .markdownlint-cli2.jsonc globs)
@@ -128,11 +128,14 @@ repos:
         types: [shell]
         exclude: "\\.zsh$"
 
-  # rustfmt - Rust code formatting
-  - repo: https://github.com/doublify/pre-commit-rust
-    rev: v1.0
+  # rustfmt - Rust code formatting — rustfmt provided by devShell / web-session via Nix
+  - repo: local
     hooks:
-      - id: fmt
+      - id: rustfmt
+        name: rustfmt
+        entry: rustfmt
+        language: system
+        types: [rust]
 
   # gofumpt - Go code formatting — gofumpt provided by devShell / web-session via Nix
   - repo: local
