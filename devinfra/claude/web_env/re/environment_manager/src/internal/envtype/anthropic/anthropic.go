@@ -11,6 +11,36 @@
 //   - anthropic.Registration (0x1589458)
 //   - anthropic.defaultSettingsJSON (0x15add80)
 //   - anthropic.init (0xaf8480)
+//
+// Garble symbol mapping (495ea204 binary):
+//
+//	Package: YpqWUfDmj6T (anthropic)
+//	Type:    yczF0CFcH   (anthropicEnvironmentType)
+//
+//	Preserved method names (interface methods, not obfuscated by garble):
+//	  - Initialize
+//	  - SetStartupContext
+//	  - SetAuthContext
+//	  - SetSessionMode
+//	  - GetCWD
+//	  - GetClaudeEnvironmentVariables
+//
+//	Obfuscated private methods:
+//	  - bJFaQ58       — unknown (has func1 with nested func2, func3)
+//	  - dtPRWj        — unknown (has func1-func4, with func4 having 12 sub-closures)
+//	  - ehquETtMkwV   — unknown (has func1-func6, func3 has deferwrap1 + sub-closures)
+//	  - fmAfspWU      — unknown (has gowrap1 — spawns goroutine, likely installLanguages)
+//	  - fuFt0_PLCFBM  — unknown (no closures visible)
+//	  - gIGM81J       — unknown (no closures visible)
+//	  - wfrgEf        — unknown (no closures visible)
+//	  - wiKTbkqTVS9   — unknown (no closures visible)
+//
+//	IravBP8W4ie — a function (possibly o11y.RecordFunction or similar) that
+//	  Initialize calls multiple times. Appears as nested closures inside
+//	  Initialize (func107, func111, func133, func146, func164, func172) each
+//	  with an identical pattern of sub-closures (func.1, func.2, func.2.1,
+//	  func.2.2, func.3, func.3.1, func.3.2). This matches 6 RecordFunction
+//	  calls wrapping major initialization steps.
 package anthropic
 
 import (
@@ -24,6 +54,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anthropics/anthropic/api-go/environment-manager/internal/claude"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/config"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype"
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/envtype/anthropic/install_scripts"
@@ -253,18 +284,28 @@ func (e *anthropicEnvironmentType) CreateLeaseManager(ctx context.Context, sessi
 
 // Initialize performs the full initialization sequence for the Anthropic environment.
 // This is a complex multi-step process that includes:
-//  1. Installing languages (Go, Node, Python, etc.)
-//  2. Cloning git repositories from sources
-//  3. Running init scripts
-//  4. Bootstrapping Claude skills and hooks
-//  5. Starting dev servers
-//  6. Checking if supervisord is running
+//  1. Installing languages (Go, Node, Python, etc.) — new/setup-only modes only
+//  2. Cloning git repositories from sources — new/setup-only modes only
+//  3. Running init scripts — all modes, if configured
+//  4. Running "claude --init-only" (via RunInit) — all modes, non-fatal
+//  5. Bootstrapping Claude skills — all modes
+//  6. Bootstrapping hooks (settings.json + stop hook) — all modes
 //
-// Binary address: 0xaf8740
+// Steps 1-2 are gated on isNewOrSetup (session mode "new" or "setup-only").
+// Steps 3-6 run unconditionally for all session modes including resume.
+// Step 4 errors are non-fatal (logged and swallowed).
+//
+// Binary address: 0xaf8740 (a6f96673) — address likely shifted in 495ea204.
 // Source file: anthropic.go
 //
-// The function uses RecordFunction wrappers (func1-func5) for observability,
-// each corresponding to a major initialization step.
+// The function has grown significantly between binary versions:
+//   - a6f96673: 5 RecordFunction closures (func1-func5)
+//   - 495ea204: 87 top-level closures (func1-func87) + 6 IravBP8W4ie
+//     (RecordFunction) wrappers (func107, func111, func133, func146,
+//     func164, func172), each with identical sub-closure patterns.
+//
+// The 6 IravBP8W4ie wrappers correspond to the 6 major initialization
+// steps listed above, each individually timed and observed.
 func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 	// Default session mode to "new" if not set.
 	// Binary: 0xaf87db-0xaf8816 checks sessionMode len == 0, sets to "new"
@@ -306,19 +347,43 @@ func (e *anthropicEnvironmentType) Initialize(ctx context.Context) error {
 		}
 	}
 
-	// Step 3: Run init script (via RecordFunction.func3 at 0xafdaa0)
+	// Step 3: Run init script (via RecordFunction/IravBP8W4ie wrapper)
 	if e.config != nil && e.config.InitScript != "" {
 		if err := e.runInitScript(ctx, e.config.InitScript); err != nil {
 			return err
 		}
 	}
 
-	// Step 4: Bootstrap Claude skills (via RecordFunction.func4 at 0xafd5e0)
+	// Step 4: Run "claude --init-only" (via RecordFunction/IravBP8W4ie wrapper)
+	// Calls claude.RunInit which executes "claude --init-only" in the working
+	// directory with the environment's env vars. This runs Setup + SessionStart
+	// hooks synchronously, then exits. See internal/claude/init.go for details.
+	//
+	// Session mode gating: UNCONDITIONAL — runs for all session modes (new,
+	// setup-only, resume, resume-cached). The session_mode.go documentation
+	// confirms resume modes still run RunInit. This makes sense because
+	// --init-only runs hooks (which need to fire every session) and applies
+	// config env vars (idempotent).
+	//
+	// Error handling: NON-FATAL — errors are logged at Warn level and
+	// initialization continues. This is intentional: RunInit fires hooks as
+	// a best-effort pre-warm; the main Claude Code session will fire hooks
+	// again during its own startup.
+	{
+		envVars := e.config.EnvironmentVariables
+		if err := claude.RunInit(e.logger, ctx, e.cwd, envVars); err != nil {
+			e.logger.Warn("claude init failed during initialization",
+				"error", err,
+			)
+		}
+	}
+
+	// Step 5: Bootstrap Claude skills (via RecordFunction/IravBP8W4ie wrapper)
 	if err := e.bootstrapClaudeSkills(ctx); err != nil {
 		return err
 	}
 
-	// Step 5: Bootstrap hooks in all dirs (via RecordFunction.func5 at 0xafd120)
+	// Step 6: Bootstrap hooks in all dirs (via RecordFunction/IravBP8W4ie wrapper)
 	if err := e.bootstrapHooksInAllDirs(ctx); err != nil {
 		return err
 	}

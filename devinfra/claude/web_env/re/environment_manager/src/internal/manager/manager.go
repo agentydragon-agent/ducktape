@@ -391,6 +391,19 @@ func (m *Manager) initializeEnvironmentAsync(ctx context.Context, logger *slog.L
 
 	// Call environment type's Initialize method via vtable dispatch.
 	// Binary: 0xb6f44c CALL DX (interface method at offset 0x20)
+	//
+	// For the anthropic environment type, this dispatches to:
+	//   YpqWUfDmj6T.(*yczF0CFcH).Initialize
+	// which is anthropicEnvironmentType.Initialize in the deobfuscated source.
+	// That method runs the full initialization sequence including:
+	//   1. Language installation
+	//   2. Git source cloning
+	//   3. Init script execution
+	//   4. RunInit ("claude init")
+	//   5. Claude skills bootstrapping
+	//   6. Hooks bootstrapping
+	// Each step is wrapped in an IravBP8W4ie (RecordFunction) call for
+	// observability timing.
 	var initErr error
 	if m.envType != nil {
 		initErr = m.envType.Initialize(ctx)

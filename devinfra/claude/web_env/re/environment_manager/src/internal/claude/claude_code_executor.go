@@ -271,6 +271,29 @@ func addTokenViaFileDescriptor(
 //   - Printing code logs on failure (printCodeLogs)
 //   - Sending SIGTERM on context cancellation (via goroutine closure func1)
 //
+// Claude Code CLI invocation (reconstructed from binary strings):
+//
+//	<claude-path> --output-format=stream-json --verbose --replay-user-messages \
+//	  --input-format=stream-json --debug-to-stderr \
+//	  [--<key>=<value> ...from ClaudeCodeArgs map] \
+//	  --resume=<session_ingress_url>
+//
+// Key environment variables set on the child process:
+//
+//	ANTHROPIC_BASE_URL=<api_base_url>
+//	CLAUDE_CODE_SESSION_ID=<session_id>
+//	CLAUDE_CODE_REMOTE_SESSION_ID=<session_id>
+//	CLAUDE_CODE_ENVIRONMENT_RUNNER_VERSION=<util.Version>
+//	CLAUDE_CODE_DIAGNOSTICS_FILE=<diag_file_path>
+//	CLAUDE_CODE_WEBSOCKET_AUTH_FILE_DESCRIPTOR=<fd_num>  (via addTokenViaFileDescriptor)
+//	CLAUDE_SESSION_INGRESS_TOKEN_FILE=<token_file_path>
+//	+ all vars from config.EnvironmentVariables map (e.g., CLAUDE_CODE_USE_CCR_V2,
+//	  CLAUDE_CODE_WORKER_EPOCH, CLAUDE_CODE_STUCK_THRESHOLD_SECONDS,
+//	  CLAUDE_CODE_EXIT_AFTER_STOP_DELAY — injected by orchestrator into work payload)
+//
+// Stdin: stream-json format (bidirectional communication with Claude Code)
+// Stdout/Stderr: captured via io.MultiWriter for both real-time output and logging
+//
 // The function spawns several goroutines via closures:
 //
 // Execute.func1 (0xadf400): Grace period signal sender. Reads the grace period

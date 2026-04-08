@@ -16,9 +16,37 @@ import (
 	"github.com/anthropics/anthropic/api-go/environment-manager/internal/o11y/diag"
 )
 
-// RunInit executes "claude init" in the specified working directory with the
-// given environment variables. It measures execution time and reports outcomes
-// via structured logging and diagnostic events.
+// RunInit executes "claude --init-only" in the specified working directory
+// with the given environment variables. It measures execution time and reports
+// outcomes via structured logging and diagnostic events.
+//
+// The --init-only flag (hidden, 11 chars matching 0xb in binary) tells Claude
+// Code to run Setup + SessionStart hooks synchronously, then exit:
+//  1. applyConfigEnvironmentVariables()
+//  2. processSetupHooks('init', { forceSyncExecution: true })
+//  3. processSessionStartHooks('startup', { forceSyncExecution: true })
+//  4. gracefulShutdownSync(0)
+//
+// This fires our SessionStart hook BEFORE the main Claude Code session starts.
+// The main session (launched by ClaudeCodeExecutor.Execute with --resume) fires
+// its own SessionStart hooks during startup, so hooks fire TWICE per new session.
+// Our hook daemon is idempotent, so the second invocation is a fast no-op.
+//
+// Session mode gating: RunInit is called for ALL session modes (new, setup-only,
+// resume, resume-cached). The session_mode.go documentation confirms that even
+// resume modes run RunInit.
+//
+// Error handling: RunInit errors are NON-FATAL. The caller in
+// anthropicEnvironmentType.Initialize logs the error at Warn level and
+// continues with skills/hooks bootstrapping. RunInit itself returns an error,
+// but Initialize does not propagate it.
+//
+// Call chain (495ea204 binary):
+//
+//	Manager.initializeEnvironmentAsync (manager/manager.go, 0xb6f2a0)
+//	  → envType.Initialize(ctx)  (vtable dispatch at 0xb6f44c)
+//	    → anthropicEnvironmentType.Initialize (envtype/anthropic/anthropic.go)
+//	      → RunInit (claude/init.go)
 //
 // Parameters (from register mapping at 0xae0b00):
 //   - AX: logger (*slog.Logger)
@@ -28,7 +56,7 @@ import (
 //   - SI: workingDir (string data ptr)
 //   - R8: envVars (map[string]string)
 //
-// Binary address: 0xae0b00 - 0xae14a3
+// Binary address: 0xae0b00 - 0xae14a3 (a6f96673; address likely shifted in 495ea204)
 func RunInit(
 	logger *slog.Logger,
 	ctx context.Context,
@@ -49,10 +77,13 @@ func RunInit(
 	// 0xae0c45: time.Now()
 	startTime := time.Now()
 
-	// 0xae0c62-0xae0cae: exec.CommandContext(ctx, claudePath, "init")
-	// string at 0x228(SP) length 0xb = 11 => "init" is arg, claudePath is command
-	// Actually: args = ["init"], length 1
-	cmd := exec.CommandContext(ctx, claudePath, "init")
+	// 0xae0c62-0xae0cae: exec.CommandContext(ctx, claudePath, "--init-only")
+	// string at 0x228(SP) length 0xb = 11 chars = "--init-only"
+	// The garble obfuscator encrypts this string at rest; it's decrypted at runtime.
+	// "--init-only" is a hidden Claude Code CLI flag that runs Setup + SessionStart
+	// hooks synchronously, then exits (gracefulShutdownSync(0)).
+	// Previous RE incorrectly identified this as "init" (4 chars doesn't match 0xb=11).
+	cmd := exec.CommandContext(ctx, claudePath, "--init-only")
 
 	// 0xae0cbf: cmd.Dir = workingDir (offset 0x48 in exec.Cmd)
 	cmd.Dir = workingDir

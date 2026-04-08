@@ -5,6 +5,20 @@ import "fmt"
 // SessionMode represents the mode for a session.
 // Reconstructed from: github.com/anthropics/anthropic/api-go/environment-manager/internal/config.SessionMode
 // DWARF shows it is a string typedef (str *uint8, len int) -- i.e., type SessionMode string.
+//
+// Session mode affects initialization behavior in anthropicEnvironmentType.Initialize:
+//   - "new":          Full initialization: install languages, clone sources, run init script,
+//     run "claude init" (RunInit), bootstrap skills and hooks.
+//   - "setup-only":   Same as "new" — full initialization. Used for pre-warming environments
+//     without starting a Claude Code session.
+//   - "resume":       Skips language installation and source cloning. Still runs init script,
+//     RunInit, skills, and hooks bootstrapping (idempotent writes).
+//   - "resume-cached": Same behavior as "resume" — skips install/clone steps. The "cached"
+//     suffix indicates the filesystem state was preserved from a prior session.
+//
+// Binary evidence for mode strings: "setup-only" (len 10) and "resume-cached" (len 13)
+// are present in the binary string table. The Initialize method defaults to "new" if
+// the session mode is empty (len == 0).
 type SessionMode string
 
 const (
