@@ -29,7 +29,6 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":undeclared_outputs",
-        "@pypi//pytest",
         "@pypi//testcontainers",
     ],
 )
