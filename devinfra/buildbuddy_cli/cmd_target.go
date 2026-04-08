@@ -125,14 +125,18 @@ func targetHistorySubCmd() *cobra.Command {
 				}
 				fmt.Printf("Target: %s\n", th.GetTarget().GetLabel())
 				t := newTable()
-				t.header("STATUS", "DUR", "STARTED", "INVOCATION")
+				t.header("STATUS", "DUR", "STARTED", "COMMIT", "INVOCATION")
 				for _, s := range th.GetTargetStatus() {
 					if failuresOnly && s.GetStatus().String() == "PASSED" {
 						continue
 					}
 					started := s.GetTiming().GetStartTime().AsTime().Format("2006-01-02 15:04")
 					dur := fmtDurationUsec(s.GetTiming().GetDuration().AsDuration().Microseconds())
-					t.row(s.GetStatus().String(), dur, started, s.GetInvocationId())
+					sha := s.GetCommitSha()
+					if len(sha) > 8 {
+						sha = sha[:8]
+					}
+					t.row(s.GetStatus().String(), dur, started, sha, s.GetInvocationId())
 				}
 				t.flush()
 			}
