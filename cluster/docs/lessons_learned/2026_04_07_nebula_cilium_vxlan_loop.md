@@ -95,14 +95,14 @@ were advertising pod IPs. Data over theory.
 
 ## Key Evidence
 
-| Metric                 | pve-cp-0 (broken)  | vps-cp-0 (healthy) |
-| ---------------------- | ------------------ | ------------------ |
-| nebula1 TX packets     | 2,822M             | 258M               |
-| nebula1 TX drops       | 577M (20%)         | 5,776              |
-| nebula1 TX drop rate   | 8,330/s            | ~0                 |
-| Nebula CPU (26h)       | 72,590s (~0.8 CPU) | 37,919s            |
-| cilium_vxlan TX rate   | 34,352 pkt/s       | normal             |
-| VXLAN traffic (30s)    | 99.8% single flow  | n/a                |
+| Metric               | pve-cp-0 (broken)  | vps-cp-0 (healthy) |
+| -------------------- | ------------------ | ------------------ |
+| nebula1 TX packets   | 2,822M             | 258M               |
+| nebula1 TX drops     | 577M (20%)         | 5,776              |
+| nebula1 TX drop rate | 8,330/s            | ~0                 |
+| Nebula CPU (26h)     | 72,590s (~0.8 CPU) | 37,919s            |
+| cilium_vxlan TX rate | 34,352 pkt/s       | normal             |
+| VXLAN traffic (30s)  | 99.8% single flow  | n/a                |
 
 The single VXLAN flow was `10.244.4.81:4242 → 10.244.1.207:4242` — Nebula
 UDP traffic being VXLAN-encapsulated through the Nebula tunnel (tunnel-in-tunnel).
