@@ -548,7 +548,7 @@ async def handle(
             platform=setup.platform,
         )
         output = SessionStartOutput(
-            hook_specific_output=SessionStartHookSpecificOutput(additional_context=context_output.strip("\n"))
+            hook_specific_output=SessionStartHookSpecificOutput(additional_context=context_output)
         )
 
     root_span.end()
