@@ -112,12 +112,7 @@ repos:
     hooks:
       - id: buildifier
         name: buildifier
-        entry: buildifier
-        language: system
-        files: "(BUILD|WORKSPACE|\\.bzl|\\.bazel)$"
-      - id: buildifier-lint
-        name: buildifier-lint
-        entry: buildifier --lint=warn
+        entry: buildifier --lint=fix
         language: system
         files: "(BUILD|WORKSPACE|\\.bzl|\\.bazel)$"
 
