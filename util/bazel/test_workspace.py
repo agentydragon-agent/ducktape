@@ -148,6 +148,36 @@ def test_query_persist_dir(tmp_path: Path) -> None:
     assert (persist_dir / "exit_code").read_text() == "0"
 
 
+def test_query_filters_bb_remote_log_lines(tmp_path: Path) -> None:
+    """bb remote mixes its own log lines into stdout; query() must filter them."""
+    mock_result = MagicMock()
+    mock_result.stdout = (
+        "Streaming remote runner logs to: https://app.buildbuddy.io/invocation/0b50b97b\n"
+        "\x1b[90m2026-04-08 14:38:25.577 UTC \x1b[mSyncing existing repo...\n"
+        "\x1b[90m2026-04-08 14:38:25.577 UTC \x1b[mConfiguring repository...\n"
+        '\x1b[90m2026-04-08 14:38:25.641 UTC \x1b[mConfiguring remote "origin"...\n'
+        "\x1b[90m2026-04-08 14:38:25.643 UTC \x1b[32m$ \x1b[mgit fetch --force --depth=1 origin abc123\n"
+        "remote: Total 0 (delta 0), reused 0 (delta 0), pack-reused 0 (from 0)\n"
+        "From https://github.com/agentydragon/ducktape\n"
+        " * branch            abc123 -> FETCH_HEAD\n"
+        "\x1b[32mLoading: \x1b[m12 packages loaded\n"
+        "//devinfra/precommit:test_test_tag.py\n"
+        "//util/bazel:test_workspace.py\n"
+        "@pypi//pytest:pkg\n"
+        "\x1b[32mINFO: \x1b[mStreaming build results to: https://app.buildbuddy.io/invocation/0b50b97b\n"
+        "\x1b[90m2026-04-08 14:38:30.000 UTC (command exited with code 0)\n"
+    )
+    mock_result.returncode = 0
+    workspace = BazelWorkspace(root=tmp_path)
+    with patch("util.bazel.workspace.subprocess.run", return_value=mock_result):
+        result = workspace.query("//...")
+    assert result == [
+        BazelLabel(repo="", package=Path("devinfra/precommit"), name="test_test_tag.py"),
+        BazelLabel(repo="", package=Path("util/bazel"), name="test_workspace.py"),
+        BazelLabel(repo="pypi", package=Path("pytest"), name="pkg"),
+    ]
+
+
 def test_query_raises_on_failure(tmp_path: Path) -> None:
     mock_result = MagicMock()
     mock_result.stdout = ""
