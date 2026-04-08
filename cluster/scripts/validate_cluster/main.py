@@ -37,15 +37,6 @@ from cluster.validation.cluster import parse_cluster
 from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks
-from cluster.validation.kustomize import KustomizeBuildResult
-
-
-async def _try_kustomize_build(kustomization_path: Path) -> KustomizeBuildResult | KustomizeBuildError:
-    """Run kustomize build, returning the result or error (not raising)."""
-    try:
-        return await run_kustomize_build(kustomization_path)
-    except KustomizeBuildError as e:
-        return e
 
 
 async def validate(
@@ -62,7 +53,7 @@ async def validate(
     if not kustomization_files:
         return [], []
 
-    outcomes = await asyncio.gather(*[_try_kustomize_build(k) for k in kustomization_files])
+    outcomes = await asyncio.gather(*[run_kustomize_build(k) for k in kustomization_files], return_exceptions=True)
 
     kust_errors: list[tuple[Path, str]] = []
     global_errors: list[str] = []
@@ -70,6 +61,8 @@ async def validate(
     for outcome in outcomes:
         if isinstance(outcome, KustomizeBuildError):
             kust_errors.append((outcome.kustomization_path, str(outcome)))
+        elif isinstance(outcome, BaseException):
+            raise outcome
         else:
             cluster.build_results.append(outcome)
 
