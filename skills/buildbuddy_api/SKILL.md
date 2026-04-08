@@ -4,10 +4,12 @@ description: >
   Reference for querying the BuildBuddy API. Use when investigating failed or slow
   CI builds, inspecting invocations by commit or branch, reading build or test logs,
   checking remote execution (RBE) details (exit codes, stderr, worker logs), analyzing
-  cache hit/miss rates, or downloading undeclared test outputs from RBE workers.
+  cache hit/miss rates, downloading undeclared test outputs from RBE workers, or
+  bisecting test failures using target history to find the culprit commit range.
   Trigger when the user asks "why did this build fail", "show me the build log",
   "check RBE execution", "get test output from RBE", "what happened in this CI run",
-  "check cache performance", or any task that requires fetching data from BuildBuddy.
+  "check cache performance", "when did this test start failing", "find the commit
+  that broke this test", or any task that requires fetching data from BuildBuddy.
 allowed-tools: Bash
 ---
 
@@ -111,6 +113,28 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 - `"compositor/test_lifecycle"` matches `//mcp_infra/compositor:test_lifecycle/test.log`
 
 When no match is found, the CLI prints available labels as hints.
+
+## Bisecting Test Failures with Target History
+
+When a test is failing and you need to find the commit that broke it, use target
+history instead of `git bisect` — BuildBuddy already has all the results:
+
+```bash
+# 1. Check recent pass/fail history for the target
+bbapi target history //path/to:test_target
+
+# 2. Identify the transition point (last pass → first fail)
+#    The output shows invocation IDs and commit SHAs for each run
+
+# 3. Narrow to the commit range
+git log --oneline <last-pass-commit>..<first-fail-commit>
+
+# 4. Read the test log from the first failing invocation
+bbapi target log <first-failing-invocation-id> test_target
+```
+
+This is much faster than `git bisect` because it doesn't require re-running the
+test — the results are already in BuildBuddy's database.
 
 ## Raw API Fallback
 

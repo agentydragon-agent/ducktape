@@ -117,6 +117,22 @@ On RBE, the outputs are downloaded to the local testlogs dir after the test comp
 
 **Test timeouts mean hangs, not slowness**: When a test times out, assume it is wedged — an internal operation is waiting on something that will never arrive (deadlock, stuck future, container that never becomes ready, connection to a port nothing is listening on). Do NOT bump `size`/`timeout` as a fix. Instead, trace the execution to find what is blocked: run with `--test_output=streamed --test_arg=-s`, add logging around fixture setup, check for stuck containers (`docker ps`), etc. A test that ran in 35s last week and now times out at 60s is not "slow" — something broke internally.
 
+**Localizing test failures with target history**: When a test is failing and you need to find when it broke, use `bbapi target history` to see the pass/fail timeline, then narrow to a commit range. This is faster than `git bisect` because BuildBuddy already has the results:
+
+```bash
+# 1. Check recent history for the failing target
+bbapi target history //path/to:test_target
+
+# 2. Identify the transition point (last pass → first fail)
+# 3. Use git log to find commits in that range
+git log --oneline <last-pass-commit>..<first-fail-commit>
+
+# 4. Read the test log from the first failing invocation
+bbapi target log <failing-invocation-id> test_target
+```
+
+Use the `/buildbuddy_api` skill for more details on the `bbapi` CLI.
+
 ### Updating syrupy snapshots
 
 Snapshot tests use syrupy (`.ambr` files in `__snapshots__/`). The `.ambr` files must
