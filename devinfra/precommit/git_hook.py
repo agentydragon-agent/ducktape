@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-import subprocess
 import sys
+from collections.abc import Awaitable
 from pathlib import Path
 
 import pygit2
@@ -33,7 +33,7 @@ from devinfra.precommit.frozen_specimens import check_specimen_code_changes
 from devinfra.precommit.terraform_centralization import find_violations
 from devinfra.precommit.test_tag import TestTagError, check_commit_message
 from devinfra.pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
-from util.bazel.workspace import BazelWorkspace, detect_bazel_command
+from util.bazel.workspace import BazelWorkspace, detect_bazel_backend
 from util.otel import JsonlSpanExporter
 
 _IGNORE_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored", "filename-conventions-ignored")
@@ -55,9 +55,7 @@ def is_terraform_module(p: Path) -> bool:
     return p.suffix == ".tf" and p.is_relative_to("cluster/terraform/modules")
 
 
-async def run_pytest_main_check(
-    files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex
-) -> tuple[str, str | None]:
+async def run_pytest_main_check(files: list[Path], repo_root: Path, bazel_index: BazelPyTestIndex) -> str | None:
     """Check that test files have pytest_bazel.main() calls."""
     if not files:
         candidates = [p.relative_to(repo_root) for p in bazel_index.known_srcs]
@@ -65,62 +63,44 @@ async def run_pytest_main_check(
         candidates = [f for f in files if (repo_root / f).resolve() in bazel_index.known_srcs]
 
     test_files = [f for f in candidates if f.name != "conftest.py"]
-
     if not test_files:
-        return ("pytest-main-check", None)
+        return None
 
     results = await check_files_async(test_files, repo_root, bazel_index)
     failed = [r for r in results if not r.passed]
     if failed:
-        return ("pytest-main-check", "\n".join(f"{r.file_path}: {r.reason}" for r in failed))
-    return ("pytest-main-check", None)
+        return "\n".join(f"{r.file_path}: {r.reason}" for r in failed)
+    return None
 
 
-async def run_cluster_validate(files: list[Path], repo_root: Path) -> tuple[str, str | None]:
+async def run_cluster_validate(files: list[Path], repo_root: Path) -> str | None:
     if not any(is_cluster_validated(f) for f in files):
-        return ("cluster-validate", None)
+        return None
     errors = await validate_cluster(repo_root / "cluster/k8s", skip_flux_build=True)
     if errors:
-        return ("cluster-validate", "\n".join(f"  {e.strip()}" for e in errors))
-    return ("cluster-validate", None)
+        return "\n".join(f"  {e.strip()}" for e in errors)
+    return None
 
 
-async def run_terraform_centralization_check(files: list[Path], repo_root: Path) -> tuple[str, str | None]:
+async def run_terraform_centralization_check(files: list[Path], repo_root: Path) -> str | None:
     if not any(is_terraform_module(f) for f in files):
-        return ("tf-centralization", None)
+        return None
     violations = find_violations(repo_root)
     if violations:
-        return ("tf-centralization", "\n".join(str(v) for v in violations))
-    return ("tf-centralization", None)
+        return "\n".join(str(v) for v in violations)
+    return None
 
 
-async def run_filename_convention_check(
-    deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None
-) -> tuple[str, str | None]:
+async def run_filename_convention_check(deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None) -> str | None:
     violations = check_filename_conventions(deltas, head_tree)
-    if violations:
-        return ("filename-conventions", "\n".join(violations))
-    return ("filename-conventions", None)
+    return "\n".join(violations) if violations else None
 
 
-async def run_frozen_specimens_check(
-    deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None
-) -> tuple[str, str | None]:
+async def run_frozen_specimens_check(deltas: list[pygit2.DiffDelta], head_tree: pygit2.Tree | None) -> str | None:
     violations = check_specimen_code_changes(deltas, head_tree)
     if violations:
-        msg = "Changes to code/ in committed snapshots are not allowed.\n"
-        msg += "\n".join(f"  {v}" for v in violations)
-        return ("frozen-specimens", msg)
-    return ("frozen-specimens", None)
-
-
-def get_repo_root() -> Path:
-    """Find repo root by walking up from cwd looking for .git."""
-    path = Path.cwd()
-    for parent in [path, *path.parents]:
-        if (parent / ".git").exists():
-            return parent
-    raise RuntimeError("Not inside a git repository")
+        return "Changes to code/ in committed snapshots are not allowed.\n" + "\n".join(f"  {v}" for v in violations)
+    return None
 
 
 def get_all_files(repo: pygit2.Repository) -> list[Path]:
@@ -142,12 +122,12 @@ def _setup_tracing(repo_root: Path) -> None:
 
 
 async def _run_pre_commit(argv: list[str]) -> int:
-    repo_root = get_repo_root()
-    repo = pygit2.Repository(str(repo_root))
+    repo = pygit2.Repository(".")
+    repo_root = Path(repo.workdir)
     _setup_tracing(repo_root)
 
     with tracer.start_as_current_span("precommit"):
-        workspace = BazelWorkspace(root=repo_root, bazel_command=detect_bazel_command())
+        workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
         bazel_index = build_bazel_index(workspace)
 
         if repo.head_is_unborn:
@@ -163,22 +143,21 @@ async def _run_pre_commit(argv: list[str]) -> int:
 
         files = [Path(f) for f in argv] if argv else get_all_files(repo)
 
-        async def _traced(coro) -> tuple[str, str | None]:
-            name, error = await coro
-            span = trace.get_current_span()
-            span.set_attribute("validation.name", name)
-            if error:
-                span.set_status(StatusCode.ERROR, error[:200])
-            return (name, error)
+        async def _traced(name: str, coro: Awaitable[str | None]) -> tuple[str, str | None]:
+            with tracer.start_as_current_span(name):
+                error = await coro
+                if error:
+                    trace.get_current_span().set_status(StatusCode.ERROR, error[:200])
+                return (name, error)
 
         print(f"Validating {len(files)} files...")
         results = list(
             await asyncio.gather(
-                _traced(run_pytest_main_check(files, repo_root, bazel_index)),
-                _traced(run_terraform_centralization_check(files, repo_root)),
-                _traced(run_filename_convention_check(deltas, head_tree)),
-                _traced(run_cluster_validate(files, repo_root)),
-                _traced(run_frozen_specimens_check(deltas, head_tree)),
+                _traced("pytest-main-check", run_pytest_main_check(files, repo_root, bazel_index)),
+                _traced("tf-centralization", run_terraform_centralization_check(files, repo_root)),
+                _traced("filename-conventions", run_filename_convention_check(deltas, head_tree)),
+                _traced("cluster-validate", run_cluster_validate(files, repo_root)),
+                _traced("frozen-specimens", run_frozen_specimens_check(deltas, head_tree)),
             )
         )
 
@@ -206,6 +185,16 @@ async def _run_pre_commit(argv: list[str]) -> int:
 # ---------------------------------------------------------------------------
 
 
+def _head_on_remote(repo: pygit2.Repository) -> bool:
+    """True if HEAD is reachable from any remote branch (i.e., already pushed)."""
+    head_oid = repo.head.target
+    return any(
+        ref.resolve().target == head_oid or repo.descendant_of(ref.resolve().target, head_oid)
+        for ref in repo.references.objects
+        if ref.name.startswith("refs/remotes/")
+    )
+
+
 def _run_prepare_commit_msg(argv: list[str]) -> int:
     # Git passes: <msg-file> <source> [<sha>]
     # source is "commit" for --amend
@@ -213,8 +202,8 @@ def _run_prepare_commit_msg(argv: list[str]) -> int:
     if source != "commit":
         return 0
 
-    result = subprocess.run(["git", "branch", "-r", "--contains", "HEAD"], check=False, capture_output=True, text=True)
-    if result.returncode == 0 and result.stdout.strip():
+    repo = pygit2.Repository(".")
+    if _head_on_remote(repo):
         print("ERROR: Refusing to amend a commit that has already been pushed.", file=sys.stderr)
         print(
             'Create a new commit instead. See AGENTS.md: "NEVER amend a commit that has already been pushed."',

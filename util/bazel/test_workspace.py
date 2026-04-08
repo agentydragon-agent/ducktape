@@ -124,7 +124,7 @@ def test_query_parses_labels(tmp_path: Path) -> None:
         result = workspace.query("//...")
     (cmd,), kwargs = mock_run.call_args
     assert cmd[:3] == ["bazel", "query", "--output=label"]
-    assert cmd[3].startswith("--query_file=")
+    assert cmd[3] == "//..."  # short queries passed inline, not via --query_file
     assert kwargs == {"capture_output": True, "text": True, "cwd": tmp_path, "check": False, "timeout": None}
     assert result == [
         BazelLabel(repo="", package=Path("foo"), name="bar.py"),
