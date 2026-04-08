@@ -79,6 +79,22 @@ class Session:
         task.add_done_callback(_on_done)
         self.track(task)
 
+    def register_background_bazel_command(self, task: asyncio.Task[None], pid: int, command: str) -> None:
+        """Register a background bazel command: post PID for cancellation, track completion."""
+        self.post_message(f"Background `bazel {command}` started (PID {pid}). To cancel, run: `kill {pid}`")
+
+        def _on_done(t: asyncio.Task[None]) -> None:
+            if t.cancelled():
+                return
+            exc = t.exception()
+            if exc is not None:
+                self.post_message(f"Background `bazel {command}` failed: {exc}")
+            else:
+                self.post_message(f"Background `bazel {command}` completed.")
+
+        task.add_done_callback(_on_done)
+        self.track(task)
+
     async def start_proxy(self, web_mode: bool, hook_config: HookConfig, settings: HookSettings) -> None:
         """Start proxy infrastructure for this session."""
         profile = hook_config.profile(web_mode)

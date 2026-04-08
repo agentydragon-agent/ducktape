@@ -11,10 +11,12 @@ Environment Variables (in priority order):
 
 import importlib.resources
 import os
+from dataclasses import dataclass
 from enum import StrEnum
 from importlib.resources.abc import Traversable
+from typing import Annotated
 
-from pydantic import Field
+from pydantic import BeforeValidator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Config files bundled with the package (infrastructure config: bazelrc, env)
@@ -49,6 +51,45 @@ class ProxyMode(StrEnum):
     TCP = "tcp"
 
 
+@dataclass(frozen=True)
+class BazelWarmupDisabled:
+    """No Bazel warmup after session setup."""
+
+
+@dataclass(frozen=True)
+class BazelWarmupInfo:
+    """Warm up by running `bazel info` (starts JVM only)."""
+
+
+@dataclass(frozen=True)
+class BazelWarmupCommand:
+    """Warm up by running a configurable Bazel command (starts JVM + populates cache)."""
+
+    command: str
+
+
+BazelWarmup = BazelWarmupDisabled | BazelWarmupInfo | BazelWarmupCommand
+
+
+def _parse_bazel_warmup(value: object) -> BazelWarmup:
+    """Parse a string into a BazelWarmup variant.
+
+    'disabled' → BazelWarmupDisabled, 'info' → BazelWarmupInfo,
+    anything else → BazelWarmupCommand(command=value).
+    """
+    if isinstance(value, (BazelWarmupDisabled, BazelWarmupInfo, BazelWarmupCommand)):
+        return value
+    if not isinstance(value, str):
+        raise ValueError(f"expected str, got {type(value).__name__}")
+    match value:
+        case "disabled":
+            return BazelWarmupDisabled()
+        case "info":
+            return BazelWarmupInfo()
+        case _:
+            return BazelWarmupCommand(command=value)
+
+
 class HookSettings(BaseSettings):
     """Configuration for claude via environment variables.
 
@@ -74,7 +115,10 @@ class HookSettings(BaseSettings):
         "Used by Claude agent in Claude Code web to decrypt repo secrets locally.",
     )
 
-    warmup_bazel_server: bool = Field(default=True, description="Start Bazel server in background after session setup")
+    bazel_warmup: Annotated[BazelWarmup, BeforeValidator(_parse_bazel_warmup)] = Field(
+        default=BazelWarmupInfo(),
+        description="Bazel warmup: 'disabled', 'info' (bazel info), or a command string (e.g. \"query 'tests(//...)')\")",
+    )
 
     proxy_mode: ProxyMode = Field(
         default=ProxyMode.UDS,
