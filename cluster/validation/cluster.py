@@ -72,10 +72,6 @@ def parse_cluster(k8s_dir: Path) -> ParsedCluster:
         if "flux-system" in yaml_file.parts:
             continue
 
-        # Skip charts directory (Helm templates)
-        if "charts" in yaml_file.parts:
-            continue
-
         # Skip blueprints directory (Authentik-specific YAML with !Env tags, not K8s resources)
         if "blueprints" in yaml_file.parts:
             continue
