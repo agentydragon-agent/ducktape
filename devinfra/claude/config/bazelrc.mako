@@ -68,8 +68,11 @@ test --test_tag_filters=-live_openai_api
 build --remote_proxy=unix:${bazel_remote_proxy_sock}
 % endif
 % if bazel_bes_proxy_sock:
-# Route Build Event Service (BES) traffic through a separate UDS proxy.
-build --bes_proxy=unix:${bazel_bes_proxy_sock}
+# Route BES to the local interceptor which inspects events and forwards to BuildBuddy.
+# The interceptor runs as a gRPC service, so we point --bes_backend (not --bes_proxy)
+# at it — Bazel speaks BES directly to our service on UDS.
+build --bes_backend=unix:${bazel_bes_proxy_sock}
+build --bes_results_url=https://app.buildbuddy.io/invocation/
 % endif
 
 % if buildbuddy_bazelrc:

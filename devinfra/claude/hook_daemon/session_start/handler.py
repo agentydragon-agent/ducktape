@@ -428,6 +428,7 @@ async def handle(
     # Configure BuildBuddy now that secrets are available.
     with tracer.start_as_current_span("setup_buildbuddy", context=root_ctx):
         if buildbuddy_api_key := setup.secrets.buildbuddy_api_key:
+            session.buildbuddy_api_key = buildbuddy_api_key
             buildbuddy_result = await run_in_thread(
                 lambda: buildbuddy.setup_buildbuddy(api_key=buildbuddy_api_key, session_dir=session.paths.session_dir)
             )
@@ -464,7 +465,7 @@ async def handle(
             use_tcp_proxy=settings.proxy_mode == ProxyMode.TCP,
             proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
-            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.uds_bes else None,
+            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
             truststore_path=session.paths.auth_proxy_truststore,
             truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
             combined_ca_path=combined_ca,
@@ -531,7 +532,7 @@ async def handle(
             web_mode=ctx.web_mode,
             profile=profile,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
-            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.uds_bes else None,
+            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
         )
         context_output: str = templates.session_context.render(
             collector=collector,

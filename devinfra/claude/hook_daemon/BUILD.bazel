@@ -41,6 +41,7 @@ py_library(
     srcs = ["session.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":bes_interceptor",
         "//devinfra/claude:hook_config",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",

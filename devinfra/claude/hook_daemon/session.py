@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy, UdsRemoteProxy, UpstreamCreds
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.hook_config import ProfileConfig
+from devinfra.claude.hook_daemon.bes_interceptor import BesInterceptor
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings, ProxyMode
 
@@ -26,7 +27,8 @@ class Session:
     paths: SessionPaths
     proxy: AuthForwardingProxy | None = None
     uds_remote: UdsRemoteProxy | None = None  # Bazel --remote_proxy
-    uds_bes: UdsRemoteProxy | None = None  # Bazel --bes_proxy
+    bes_interceptor: BesInterceptor | None = None  # BES event interceptor
+    buildbuddy_api_key: str | None = None
     _upstream_creds: UpstreamCreds = field(default_factory=UpstreamCreds)
     _background: set[asyncio.Task[object]] = field(default_factory=set)
     _mailbox: list[str] = field(default_factory=list)
@@ -66,19 +68,23 @@ class Session:
             )
             self.uds_remote.start()
 
-        if profile.bazel_bes_proxy is not None:
-            self.uds_bes = UdsRemoteProxy(
+        if profile.bazel_bes_proxy is not None and self.buildbuddy_api_key:
+            on_nudge = self.post_message if profile.bes_nudge_remote_execution else None
+            self.bes_interceptor = BesInterceptor(
                 sock_path=self.paths.bazel_bes_proxy_sock,
-                remote_target=profile.bazel_bes_proxy.target,
-                creds=self._upstream_creds,
+                upstream_target=profile.bazel_bes_proxy.target,
+                api_key=self.buildbuddy_api_key,
+                on_nudge=on_nudge,
             )
-            self.uds_bes.start()
+            self.bes_interceptor.start()
 
     def stop(self) -> None:
         """Stop all proxy infrastructure for this session."""
-        for proxy in [self.proxy, self.uds_remote, self.uds_bes]:
+        for proxy in [self.proxy, self.uds_remote]:
             if proxy is not None:
                 proxy.stop()
+        if self.bes_interceptor is not None:
+            self.bes_interceptor.stop()
 
     def set_proxy_creds(self, https_proxy: str) -> None:
         self._upstream_creds.set(https_proxy)

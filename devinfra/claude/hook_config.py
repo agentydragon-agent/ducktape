@@ -79,7 +79,13 @@ class ProfileConfig(BaseModel):
         default=None, description="UDS proxy for Bazel --remote_proxy (remote execution + cache). Null = disabled."
     )
     bazel_bes_proxy: BazelRemoteProxyConfig | None = Field(
-        default=None, description="UDS proxy for Bazel --bes_proxy (Build Event Service). Null = disabled."
+        default=None,
+        description="BES interceptor: gRPC service that inspects events and forwards to BuildBuddy. Null = disabled.",
+    )
+    bes_nudge_remote_execution: bool = Field(
+        default=False,
+        description="When BES interceptor is active, post a mailbox nudge if a build/test invocation "
+        "lacks --remote_executor. Encourages agent to use `bb remote`.",
     )
     write_kubeconfig: bool = Field(
         default=True,

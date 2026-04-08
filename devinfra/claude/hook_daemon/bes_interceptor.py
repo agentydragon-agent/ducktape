@@ -82,7 +82,7 @@ class BesInterceptor:
         sock_path: Path,
         upstream_target: str,
         api_key: str,
-        on_nudge: Callable[[str], None],
+        on_nudge: Callable[[str], None] | None = None,
         ca_bundle: Path | None = None,
         http_proxy: str | None = None,
     ) -> None:
@@ -208,6 +208,8 @@ class BesInterceptor:
 
     def _maybe_nudge(self, state: _InvocationState, invocation_id: str | None) -> None:
         """Post a mailbox nudge if the invocation should have used remote execution."""
+        if self._on_nudge is None:
+            return
         if state.command not in _NUDGE_COMMANDS:
             return
         if state.has_remote_executor:
