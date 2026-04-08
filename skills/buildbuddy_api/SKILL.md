@@ -17,9 +17,24 @@ allowed-tools: Bash
 
 All commands require `BUILDBUDDY_API_KEY` to be set (session hook exports it automatically).
 
-## CLI (`bbapi`)
+## Official `bb` CLI
 
-If `bbapi` is in PATH, prefer it over raw API calls:
+The official BuildBuddy CLI (`bb`) handles build logs and execution details:
+
+```bash
+# View build log for an invocation (replaces bbapi invocation log)
+bb view <invocation-id-or-url> [--lines=100000]
+
+# Fetch cached execution response for a single execution ID
+bb execution get <execution-id> [--output=json]
+
+# Download raw blob from CAS by digest
+bb download <digest>/<size> [--type=Action|Command]
+```
+
+## `bbapi` CLI
+
+`bbapi` provides API query features not available in `bb`:
 
 ```bash
 # Show invocation details (shows child invocation IDs for workflows)
@@ -27,9 +42,6 @@ bbapi invocation <invocation-id>
 
 # List recent invocations (auto-detects repo from git remote)
 bbapi invocation list [--repo URL] [--count N]
-
-# Print build log (shows test pass/fail summary with test.log paths)
-bbapi invocation log <invocation-id>
 
 # Download test.log for a specific target (most common for debugging failures)
 bbapi target log <invocation-id> <target-label-or-substring>
@@ -59,7 +71,7 @@ bbapi cache metadata <digest> <size-bytes>
 bbapi trend [--days N] [--repo URL]
 ```
 
-All commands support `--json` for raw JSON output.
+All `bbapi` commands support `--json` for raw JSON output.
 
 ## Investigating Failed CI Builds
 
@@ -70,7 +82,7 @@ Typical workflow for debugging a failed CI build:
 bbapi invocation <invocation-id>
 
 # 2. Get the build log to see which tests failed
-bbapi invocation log <invocation-id>
+bb view <invocation-id>
 
 # 3. Download the test.log for a specific failed target
 #    Works with both workflow and child invocation IDs (auto-resolves)

@@ -307,12 +307,12 @@ so verify via BuildBuddy directly:
 bazel test //... --build_metadata=ROLE=ci
 
 # Check the last invocation for this branch
-bbapi invocations --count 1
+bbapi invocation list --count 1
 ```
 
 If tests fail:
 
-1. Read the failure logs (`bbapi log <invocation-id>`)
+1. Read the failure logs (`bb view <invocation-id>`)
 2. Diagnose the root cause
 3. Fix the issue (code change, revert a problematic update, etc.)
 4. Push again and re-run

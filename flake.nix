@@ -274,6 +274,11 @@
         # Run:   docker run --rm -it ducktape-nixos-bazel /init
         # Exec:  docker exec -it <container> bash -l
         bazel-test-docker = self.nixosConfigurations.bazel-test.config.system.build.tarball;
+        # NixOS-based RBE worker image.
+        # Build: nix build .#nix-rbe-image
+        # Load:  docker import result nix-rbe-worker
+        # Run:   docker run --rm -it nix-rbe-worker /init
+        nix-rbe-image = self.nixosConfigurations.nix-rbe-worker.config.system.build.tarball;
         # Pre-built UEFI qcow2 VM images for Proxmox deployment.
         # Build: nix build .#wyrm2-image
         # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
@@ -371,6 +376,15 @@
           modules = [
             ./nix/nixos/hosts/bazel-test
             home-manager.nixosModules.home-manager
+          ];
+        };
+
+        # NixOS-based BuildBuddy RBE worker image.
+        # See x/nix_rbe_image/ for details.
+        nix-rbe-worker = nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            ./x/nix_rbe_image
           ];
         };
       };

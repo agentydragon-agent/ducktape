@@ -152,10 +152,10 @@
       pango
       xorg.libXcomposite
       xorg.libXdamage
-      xorg.libxkbcommon
+      libxkbcommon
       xorg.libXrandr
       xorg.libXfixes
-      xorg.libXshmfence
+      xorg.libxshmfence
     ];
 
   # envfs + nix-ld are pulled in by the bazel module.

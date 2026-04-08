@@ -15,4 +15,10 @@
     '';
     mode = "0600";
   };
+
+  # TODO: consider moving to repo-local .envrc with sops caching
+  ducktape.sopsEnv.BUILDBUDDY_API_KEY = {
+    sopsFile = ../../../secrets/buildbuddy.yaml;
+    key = "buildbuddy_api_key";
+  };
 }

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	eventlogpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/spf13/cobra"
 )
@@ -74,7 +73,6 @@ func invocationCmd() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(invocationListCmd())
-	cmd.AddCommand(invocationLogCmd())
 	return cmd
 }
 
@@ -128,36 +126,6 @@ func invocationListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
 	cmd.Flags().Int32Var(&count, "count", 10, "Number of invocations to list")
-	return cmd
-}
-
-func invocationLogCmd() *cobra.Command {
-	var minLines int32
-	cmd := &cobra.Command{
-		Use:   "log <invocation-id>",
-		Short: "Print build log",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			c, err := newClient()
-			if err != nil {
-				return err
-			}
-			req := &eventlogpb.GetEventLogChunkRequest{
-				InvocationId: args[0],
-				MinLines:     minLines,
-			}
-			resp := &eventlogpb.GetEventLogChunkResponse{}
-			if err := c.call("GetEventLogChunk", req, resp); err != nil {
-				return err
-			}
-			if jsonOutput {
-				return printProtoJSON(resp)
-			}
-			os.Stdout.Write(resp.GetBuffer())
-			return nil
-		},
-	}
-	cmd.Flags().Int32Var(&minLines, "lines", 500, "Minimum lines to fetch")
 	return cmd
 }
 
