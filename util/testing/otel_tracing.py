@@ -1,61 +1,56 @@
 """OpenTelemetry tracing for test profiling.
 
-Configures a TracerProvider with an in-memory exporter, exporting spans
-as JSONL to TEST_UNDECLARED_OUTPUTS_DIR.
+Configures a TracerProvider that writes spans to JSONL in
+TEST_UNDECLARED_OUTPUTS_DIR immediately as each span ends. Spans are
+flushed to disk on completion via SimpleSpanProcessor, so traces survive
+even if the test is killed by Bazel timeout (SIGKILL).
 
 Usage in conftest.py:
 
-    from util.testing.otel_tracing import configure_tracing, export_traces
+    from util.testing.otel_tracing import configure_tracing
 
     def pytest_configure(config):
         configure_tracing(config)
-
-    def pytest_sessionfinish(session, exitstatus):
-        export_traces(session.config)
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
-import pytest
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
 
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)
 
-_stash_key = pytest.StashKey[InMemorySpanExporter]()
+
+class _StreamingJsonlExporter(SpanExporter):
+    """Appends each span as JSONL to a file on disk immediately."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._file = self._path.open("a")
+
+    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
+        for span in spans:
+            self._file.write(span.to_json(indent=None) + "\n")
+        self._file.flush()
+        return SpanExportResult.SUCCESS
+
+    def shutdown(self) -> None:
+        self._file.close()
 
 
-def configure_tracing(config: pytest.Config) -> None:
-    """Set up OTel with in-memory exporter. Call from pytest_configure."""
-    exporter = InMemorySpanExporter()
+def configure_tracing(config=None, filename: str = "otel_spans.jsonl") -> None:
+    """Set up OTel with streaming JSONL exporter. Call from pytest_configure."""
+    dest = undeclared_outputs_dir() / filename
+    exporter = _StreamingJsonlExporter(dest)
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
-    config.stash[_stash_key] = exporter
-    logger.debug("OTel tracing configured with in-memory exporter")
-
-
-def export_traces(config: pytest.Config, filename: str = "otel_spans.jsonl") -> Path | None:
-    """Export collected spans to TEST_UNDECLARED_OUTPUTS_DIR as JSONL. Call from pytest_sessionfinish."""
-    exporter = config.stash.get(_stash_key, None)
-    if exporter is None:
-        return None
-
-    spans = exporter.get_finished_spans()
-    if not spans:
-        logger.debug("No spans collected, skipping trace export")
-        return None
-
-    dest = undeclared_outputs_dir() / filename
-    with dest.open("w") as f:
-        for span in spans:
-            f.write(span.to_json(indent=None) + "\n")
-    logger.info("Exported %d spans to %s", len(spans), dest)
-    return dest
+    logger.debug("OTel tracing configured, streaming to %s", dest)

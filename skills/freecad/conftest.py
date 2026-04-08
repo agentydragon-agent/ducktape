@@ -13,7 +13,7 @@ from opentelemetry import trace
 from util.bazel.runfiles import get_required_path
 from util.bazel.subprocess import python_env
 from util.oci import OciImage
-from util.testing.otel_tracing import configure_tracing, export_traces
+from util.testing.otel_tracing import configure_tracing
 
 # Docker-based test image (used by test_container_primitives.py)
 FREECAD_TEST = OciImage("_main/skills/freecad/freecad_test.rloc", "freecad-test:pinned")
@@ -30,9 +30,6 @@ tracer = trace.get_tracer(__name__)
 def pytest_configure(config: pytest.Config) -> None:
     configure_tracing(config)
 
-
-def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    export_traces(session.config)
 
 
 # ---------------------------------------------------------------------------

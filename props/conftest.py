@@ -71,7 +71,7 @@ from props.testing.fixtures.runs import (
     test_validation_snapshot_slug,
 )
 from props.testing.fixtures.scopes import all_files_scope, subtract_file_example
-from util.testing.otel_tracing import configure_tracing, export_traces
+from util.testing.otel_tracing import configure_tracing
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -97,9 +97,6 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "timeout(seconds): test timeout in seconds (requires pytest-timeout)")
     config.addinivalue_line("markers", "live_openai_api: marks tests calling real OpenAI API")
 
-
-def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    export_traces(session.config)
 
 
 @pytest.hookimpl(hookwrapper=True)
