@@ -1,10 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "admin",
     srcs = ["admin.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":compositor",
@@ -21,7 +19,6 @@ py_library(
 py_library(
     name = "clients",
     srcs = ["clients.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":compositor",
@@ -33,7 +30,6 @@ py_library(
 py_library(
     name = "meta_server",
     srcs = ["meta_server.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":server",
@@ -48,7 +44,6 @@ py_library(
 py_library(
     name = "mount",
     srcs = ["mount.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra:prefix",
@@ -59,7 +54,6 @@ py_library(
 py_library(
     name = "notifications_buffer",
     srcs = ["notifications_buffer.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":compositor",
@@ -74,7 +68,6 @@ py_library(
     name = "rendering",
     srcs = ["rendering.py"],
     data = ["templates/compositor_instructions.md.mako"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//mako_utils:preprocessor",
@@ -88,7 +81,6 @@ py_library(
 py_library(
     name = "resources_server",
     srcs = ["resources_server.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":server",
@@ -111,7 +103,6 @@ py_library(
 py_library(
     name = "server",
     srcs = ["server.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":mount",
@@ -131,7 +122,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../.."],
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
         "//agent_core/testing:responses",
@@ -245,7 +235,6 @@ py_library(
 py_test(
     name = "test_rendering_instructions",
     srcs = ["test_rendering_instructions.py"],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -261,7 +250,6 @@ py_test(
     name = "test_resources_flow",
     srcs = ["test_resources_flow.py"],
     data = ["//third_party/containers:debian_slim"],
-    imports = ["../.."],
     requires_docker = True,
     deps = [
         ":conftest",

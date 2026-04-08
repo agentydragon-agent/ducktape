@@ -14,8 +14,7 @@ The container runs a persistent agent loop that:
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
 
 exports_files(
@@ -26,7 +25,6 @@ exports_files(
 py_library(
     name = "tools",
     srcs = ["tools.py"],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//openai_utils:pydantic_strict_mode",
@@ -52,7 +50,6 @@ py_library(
         "//props/agents/docs:source_inspection.md.mako",
         "//props/agents/docs:system_access.md",
     ],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":drift_handler",
@@ -82,7 +79,6 @@ py_library(
 
 py_binary(
     name = "grader",
-    imports = ["../../.."],
     main_module = "props.agents.grader.main",
     visibility = ["//visibility:public"],
     deps = [
@@ -93,7 +89,6 @@ py_binary(
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
 aspect_py_binary(
     name = "grader_bin",
-    imports = ["../../.."],
     main = "main.py",
     visibility = ["//props:__subpackages__"],
     deps = [
@@ -119,7 +114,6 @@ py_python3_symlink(
 py_library(
     name = "drift_handler",
     srcs = ["drift_handler.py"],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//props/core:ids",
@@ -133,7 +127,6 @@ py_library(
 py_library(
     name = "notification_handler",
     srcs = ["notification_handler.py"],
-    imports = ["../../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         "//agent_core:handler",
@@ -150,7 +143,6 @@ py_library(
 py_test(
     name = "test_notification_handler",
     srcs = ["test_notification_handler.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":notification_handler",
@@ -165,7 +157,6 @@ py_test(
     name = "test_grading_edges_constraints",
     size = "medium",
     srcs = ["test_grading_edges_constraints.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -183,7 +174,6 @@ py_test(
 py_test(
     name = "test_matchable_occurrences",
     srcs = ["test_matchable_occurrences.py"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -203,7 +193,6 @@ py_test(
     data = [
         ":image",
     ],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -231,7 +220,6 @@ py_test(
     data = [
         ":image",
     ],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -259,7 +247,6 @@ py_test(
     data = [
         ":image",
     ],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",
@@ -287,7 +274,6 @@ py_test(
     data = [
         ":image",
     ],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         ":conftest",

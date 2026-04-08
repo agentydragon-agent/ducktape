@@ -1,11 +1,9 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Shared test utilities (non-Docker)
 py_library(
     name = "test_support",
     testonly = True,
-    imports = [".."],
     visibility = ["//mcp_infra:__subpackages__"],
     deps = [
         ":_markers",
@@ -23,7 +21,6 @@ py_library(
 py_test(
     name = "test_types",
     srcs = ["test_types.py"],
-    imports = [".."],
     deps = [
         ":conftest",
         ":prefix",

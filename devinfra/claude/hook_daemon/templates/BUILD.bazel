@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "templates",
@@ -7,7 +7,6 @@ py_library(
         "post_tool_use.mako",
         "session_context.mako",
     ],
-    imports = ["../../../.."],
     visibility = ["//devinfra/claude:__subpackages__"],
     deps = [
         "//devinfra/claude/hook_daemon/session_start:precommit",

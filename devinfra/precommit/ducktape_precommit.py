@@ -28,7 +28,8 @@ from cluster.scripts.validate_cluster.main import validate as validate_cluster
 from devinfra.check_pytest_main import BazelPyTestIndex, build_bazel_index, check_files_async
 from devinfra.precommit.check_filename_conventions import check_filename_conventions
 from devinfra.precommit.check_terraform_centralization import find_violations
-from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import main as enforce_bazel_tests_main
+from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
+from util.bazel.workspace import BazelWorkspace, detect_bazel_command
 
 _LINT_IGNORED_ATTRS = ("linguist-generated", "gitlab-generated", "rules-lint-ignored")
 
@@ -163,9 +164,10 @@ async def main_async() -> int:
 
     repo_root = get_repo_root()
     repo = pygit2.Repository(str(repo_root))
+    workspace = BazelWorkspace(root=repo_root, bazel_command=detect_bazel_command())
     t1 = time.perf_counter()
 
-    bazel_index = build_bazel_index(repo_root)
+    bazel_index = build_bazel_index(workspace)
 
     files = [Path(f) for f in sys.argv[1:]] if len(sys.argv) > 1 else get_all_files(repo)
     t2 = time.perf_counter()
@@ -203,7 +205,7 @@ async def main_async() -> int:
 
     # Enforce Bazel tests only when explicitly enabled
     if os.environ.get("DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS") in ("1", "true"):
-        rc = enforce_bazel_tests_main()
+        rc = enforce_bazel_tests_run(workspace)
         if rc != 0:
             return rc
 

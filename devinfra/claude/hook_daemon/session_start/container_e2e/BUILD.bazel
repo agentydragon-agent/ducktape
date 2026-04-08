@@ -1,7 +1,7 @@
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_test")
 
 # Apt manifest + lockfile for rules_distroless (referenced from MODULE.bazel).
 exports_files([
@@ -69,7 +69,6 @@ py_test(
     env_inherit = [
         "DOCKER_HOST",
     ],
-    imports = ["../../../../.."],
     tags = [
         "e2e",
         "external",

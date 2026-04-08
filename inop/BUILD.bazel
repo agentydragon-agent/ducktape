@@ -1,12 +1,10 @@
 """Instruction optimizer package."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_test(
     name = "test_optimizer_two_iters",
     srcs = ["test_optimizer_two_iters.py"],
-    imports = [".."],
     requires_docker = True,
     deps = [
         ":config",

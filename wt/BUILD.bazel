@@ -1,9 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "cli",
     srcs = ["cli.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//util:logging",
@@ -22,7 +21,6 @@ py_library(
 
 py_binary(
     name = "wt_cli",
-    imports = [".."],
     main_module = "wt.cli",
     visibility = ["//visibility:public"],
     deps = [":cli"],

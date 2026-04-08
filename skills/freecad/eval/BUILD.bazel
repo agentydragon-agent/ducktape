@@ -1,5 +1,5 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 oci_layout_rloc(
     name = "freecad_test",
@@ -9,7 +9,6 @@ oci_layout_rloc(
 py_library(
     name = "run_eval_lib",
     srcs = ["run_eval.py"],
-    imports = ["../../.."],
     deps = [
         "//mcp_infra/exec:docker_types",
         "//util:oci",
@@ -27,7 +26,6 @@ py_binary(
         "//mcp_infra/exec:docker_launcher",
         "//skills/freecad:freecad_tar",
     ],
-    imports = ["../../.."],
     main_module = "skills.freecad.eval.run_eval",
     deps = [":run_eval_lib"],
 )

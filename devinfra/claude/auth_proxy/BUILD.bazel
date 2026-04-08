@@ -1,16 +1,14 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "vars",
     srcs = ["vars.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "credentials",
     srcs = ["credentials.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pyjwt"],
 )
@@ -18,7 +16,6 @@ py_library(
 py_library(
     name = "setup",
     srcs = ["setup.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":proxy",
@@ -36,14 +33,12 @@ py_library(
 py_library(
     name = "proxy",
     srcs = ["proxy.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
 )
 
 py_test(
     name = "test_vars",
     srcs = ["test_vars.py"],
-    imports = ["../../.."],
     deps = [
         ":vars",
         "@pypi//pytest",

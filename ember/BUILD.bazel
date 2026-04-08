@@ -4,8 +4,7 @@
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 filegroup(
@@ -46,7 +45,6 @@ py_test(
     name = "test_documentation_snippets",
     srcs = ["test_documentation_snippets.py"],
     data = [":data_files"],
-    imports = [".."],
     deps = [
         ":system_prompt",
         "@pypi//pytest",
@@ -58,7 +56,6 @@ py_test(
 py_test(
     name = "test_matrix_client",
     srcs = ["test_matrix_client.py"],
-    imports = [".."],
     deps = [
         ":matrix_client",
         "@pypi//pytest",
@@ -70,7 +67,6 @@ py_test(
 py_test(
     name = "test_python_session",
     srcs = ["test_python_session.py"],
-    imports = [".."],
     deps = [
         ":python_session",
         "@pypi//pytest",

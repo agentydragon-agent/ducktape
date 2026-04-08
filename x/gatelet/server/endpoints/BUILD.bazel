@@ -1,12 +1,10 @@
 """Gatelet server endpoints."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "activitywatch",
     srcs = ["activitywatch.py"],
-    imports = ["../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "//x/gatelet/server:config",
@@ -17,7 +15,6 @@ py_library(
 py_library(
     name = "admin",
     srcs = ["admin.py"],
-    imports = ["../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         ":activitywatch",
@@ -38,7 +35,6 @@ py_library(
 py_library(
     name = "challenge",
     srcs = ["challenge.py"],
-    imports = ["../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "//x/gatelet/server:config",
@@ -53,7 +49,6 @@ py_library(
 py_library(
     name = "homeassistant",
     srcs = ["homeassistant.py"],
-    imports = ["../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "//x/gatelet/server:config",
@@ -67,7 +62,6 @@ py_library(
 py_library(
     name = "webhook_receive",
     srcs = ["webhook_receive.py"],
-    imports = ["../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "//x/gatelet/server:database",
@@ -81,7 +75,6 @@ py_library(
 py_library(
     name = "webhook_view",
     srcs = ["webhook_view.py"],
-    imports = ["../../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "//x/gatelet/server:config",

@@ -1,6 +1,6 @@
 """Models package - pure data types with no internal dependencies."""
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "policy_error",

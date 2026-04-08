@@ -1,10 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_binary(
     name = "gitea_mirror_launcher",
     srcs = ["launcher.py"],
-    imports = ["../../.."],
     main = "launcher.py",
     visibility = ["//visibility:public"],
     deps = [":server"],
@@ -13,7 +11,6 @@ py_binary(
 py_test(
     name = "test_server",
     srcs = ["test_server.py"],
-    imports = ["../../.."],
     deps = [
         ":conftest",
         ":server",
@@ -26,7 +23,6 @@ py_test(
 py_library(
     name = "server",
     srcs = ["server.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra:flat_tool",
@@ -40,7 +36,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra/testing:fixtures",

@@ -1,13 +1,11 @@
 """Server package - FastAPI app, state management, reducers."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../../.."],
     visibility = ["//x/agent_server:__subpackages__"],
     deps = [
         ":protocol",
@@ -27,7 +25,6 @@ py_test(
         "conftest.py",
         "test_end_turn_ui_integration.py",
     ],
-    imports = ["../../.."],
     deps = [
         ":bus",
         ":conftest",
@@ -48,7 +45,6 @@ py_test(
         "conftest.py",
         "test_history_fold_typed.py",
     ],
-    imports = ["../../.."],
     deps = [
         ":conftest",
         ":reducer",
@@ -66,7 +62,6 @@ py_test(
         "conftest.py",
         "test_reducer.py",
     ],
-    imports = ["../../.."],
     deps = [
         ":bus",
         ":conftest",
@@ -85,7 +80,6 @@ py_test(
 py_library(
     name = "app",
     srcs = ["app.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":mcp_routing",
@@ -106,7 +100,6 @@ py_library(
 py_library(
     name = "bus",
     srcs = ["bus.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -114,14 +107,12 @@ py_library(
 py_library(
     name = "exceptions",
     srcs = ["exceptions.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
 )
 
 py_library(
     name = "mcp_routing",
     srcs = ["mcp_routing.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra/compositor",
@@ -135,7 +126,6 @@ py_library(
 py_library(
     name = "runtime",
     srcs = ["runtime.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":bus",
@@ -158,7 +148,6 @@ py_library(
 py_library(
     name = "mode_handler",
     srcs = ["mode_handler.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":bus",
@@ -173,7 +162,6 @@ py_library(
 py_library(
     name = "protocol",
     srcs = ["protocol.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":bus",
@@ -188,7 +176,6 @@ py_library(
 py_library(
     name = "reducer",
     srcs = ["reducer.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":bus",
@@ -207,7 +194,6 @@ py_library(
 py_library(
     name = "state",
     srcs = ["state.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":protocol",
@@ -219,6 +205,5 @@ py_library(
 py_library(
     name = "system_message",
     srcs = ["system_message.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
 )

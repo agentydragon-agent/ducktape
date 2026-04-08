@@ -17,11 +17,11 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
-import habitify
-from habitify.habitify_client import HabitifyClient, HabitifyError
-from habitify.server import create_habitify
-from habitify.types import Status
-from habitify.utils.cli_utils import (
+from llm.mcp import habitify
+from llm.mcp.habitify.habitify_client import HabitifyClient, HabitifyError
+from llm.mcp.habitify.server import create_habitify
+from llm.mcp.habitify.types import Status
+from llm.mcp.habitify.utils.cli_utils import (
     format_rich_status,
     get_api_key_from_param_or_env,
     get_status_color,

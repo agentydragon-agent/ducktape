@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # =============================================================================
 # Leaf modules (no props.core deps)
@@ -8,7 +8,6 @@ load("@rules_python//python:defs.bzl", "py_library", "py_test")
 py_library(
     name = "ids",
     srcs = ["ids.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -16,7 +15,6 @@ py_library(
 py_library(
     name = "splits",
     srcs = ["splits.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
 )
 
@@ -27,7 +25,6 @@ py_library(
 py_library(
     name = "oci_utils",
     srcs = ["oci_utils.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":agent_types",
@@ -37,7 +34,6 @@ py_library(
 py_library(
     name = "agent_types",
     srcs = ["agent_types.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":ids",
@@ -49,7 +45,6 @@ py_library(
 py_library(
     name = "eval_api_models",
     srcs = ["eval_api_models.py"],
-    imports = ["../.."],
     visibility = ["//props:__subpackages__"],
     deps = [
         ":ids",
@@ -68,7 +63,6 @@ py_library(
 py_test(
     name = "test_rationale",
     srcs = ["test_rationale.py"],
-    imports = ["../.."],
     deps = [
         "//props:conftest",
         "@pypi//pydantic",
@@ -81,7 +75,6 @@ py_test(
 py_test(
     name = "test_oci_utils",
     srcs = ["test_oci_utils.py"],
-    imports = ["../.."],
     deps = [
         ":agent_types",
         ":oci_utils",
@@ -93,7 +86,6 @@ py_test(
 py_test(
     name = "test_agent_types",
     srcs = ["test_agent_types.py"],
-    imports = ["../.."],
     deps = [
         ":agent_types",
         ":ids",

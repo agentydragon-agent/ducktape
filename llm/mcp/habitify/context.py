@@ -8,8 +8,8 @@ from typing import Any
 
 from fastmcp import FastMCP
 
-from habitify.config import load_api_key
-from habitify.habitify_client import HabitifyClient
+from llm.mcp.habitify.config import load_api_key
+from llm.mcp.habitify.habitify_client import HabitifyClient
 
 CLIENT_KEY = "habitify_client"
 

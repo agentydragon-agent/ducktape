@@ -4,10 +4,10 @@
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
 load("@pypi//:requirements.bzl", "all_whl_requirements")
-load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//devinfra:filter_wheels.bzl", "filter_system_packages")
+load("//devinfra/python:defs.bzl", "py_library")
 
 exports_files([
     "image_pins.json",
@@ -17,7 +17,6 @@ exports_files([
 py_library(
     name = "check_pytest_main",
     srcs = ["check_pytest_main.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = ["//util/bazel:workspace"],
 )
@@ -65,7 +64,6 @@ py_library(
     name = "prettier",
     srcs = ["prettier.py"],
     data = [":prettier_bin"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = ["//util/bazel:runfiles"],
 )

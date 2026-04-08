@@ -1,5 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "config_file",
@@ -87,7 +86,6 @@ py_library(
 py_test(
     name = "test_style",
     srcs = ["test_style.py"],
-    imports = ["../.."],
     deps = [
         "//wt/testing:conftest",
         "@pypi//pytest_bazel",

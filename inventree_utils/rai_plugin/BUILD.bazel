@@ -2,9 +2,9 @@
 # InvenTree plugin - requires Django from InvenTree environment (not in @pypi)
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_wheel")
 load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "plugin",

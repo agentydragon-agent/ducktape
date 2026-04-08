@@ -1,7 +1,6 @@
 """Macro for defining py_detectors rules with auto-generated tests."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 def py_detector(name, srcs, deps = [], **kwargs):
     """Define a detector rule library and its fixture-based test.
@@ -16,7 +15,6 @@ def py_detector(name, srcs, deps = [], **kwargs):
     py_library(
         name = name,
         srcs = [name + "/" + s for s in srcs],
-        imports = ["../.."],
         visibility = ["//:__subpackages__"],
         deps = deps + [
             "//py_detectors:models",
@@ -29,7 +27,6 @@ def py_detector(name, srcs, deps = [], **kwargs):
         name = "test_" + name,
         srcs = ["test_rule.py"],
         main = "test_rule.py",
-        imports = ["../.."],
         env = {"DETECTOR_NAME": name},
         data = native.glob(
             [

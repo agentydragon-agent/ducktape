@@ -1,10 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "statusline",
     srcs = ["statusline.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -12,7 +10,6 @@ py_library(
 py_library(
     name = "credentials",
     srcs = ["credentials.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -20,7 +17,6 @@ py_library(
 py_library(
     name = "profile",
     srcs = ["profile.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -28,7 +24,6 @@ py_library(
 py_library(
     name = "usage",
     srcs = ["usage.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//httpx",
@@ -42,7 +37,6 @@ py_test(
     data = [
         "//devinfra/claude/claude_api/hooks/schemas/2.1.87:hook_schemas",
     ],
-    imports = ["../../.."],
     deps = [
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:config_change",

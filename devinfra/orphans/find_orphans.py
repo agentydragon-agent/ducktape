@@ -22,7 +22,7 @@ from textwrap import dedent
 import pathspec
 import pygit2
 
-from util.bazel.workspace import BazelLabel, BazelWorkspace, get_build_workspace_directory
+from util.bazel.workspace import BazelLabel, BazelWorkspace, detect_bazel_command, get_build_workspace_directory
 
 
 @dataclasses.dataclass
@@ -140,7 +140,7 @@ def main() -> int:
     args = parser.parse_args()
 
     repo_root = get_build_workspace_directory()
-    workspace = BazelWorkspace(root=repo_root)
+    workspace = BazelWorkspace(root=repo_root, bazel_command=detect_bazel_command())
     whitelist_path = args.whitelist or repo_root / "devinfra/orphans/whitelist.txt"
 
     orphans, stats = run_report(workspace, whitelist_path)

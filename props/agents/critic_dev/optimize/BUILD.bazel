@@ -7,7 +7,7 @@ Build targets:
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env", "py_python3_symlink")
 
 # Container-specific binary using aspect_rules_py (py_image_layer requires it).
@@ -38,7 +38,6 @@ py_test(
         "//props/agents/critic:image",
         "//props/agents/grader:image",
     ],
-    imports = ["../../../.."],
     requires_docker = True,
     deps = [
         "//agent_core/testing:responses",

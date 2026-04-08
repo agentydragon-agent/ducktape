@@ -1,13 +1,11 @@
 """Testing utility libraries."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "undeclared_outputs",
     testonly = True,
     srcs = ["undeclared_outputs.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
 )
 
@@ -15,7 +13,6 @@ py_library(
     name = "otel_tracing",
     testonly = True,
     srcs = ["otel_tracing.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":undeclared_outputs",
@@ -29,7 +26,6 @@ py_library(
     name = "container_logs",
     testonly = True,
     srcs = ["container_logs.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":undeclared_outputs",

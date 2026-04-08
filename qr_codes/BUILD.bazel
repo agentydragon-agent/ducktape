@@ -1,9 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "gen_lib",
     srcs = ["gen.py"],
-    imports = [".."],
     deps = [
         "@pypi//fonttools",
         "@pypi//qrcode",
@@ -13,7 +12,6 @@ py_library(
 
 py_binary(
     name = "gen",
-    imports = [".."],
     main_module = "qr_codes.gen",
     deps = [":gen_lib"],
 )

@@ -1,12 +1,10 @@
 """MCP Chat server - inter-agent messaging."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "chat",
     srcs = ["server.py"],
-    imports = ["../../../.."],
     visibility = ["//x/agent_server:__subpackages__"],
     deps = [
         "//mcp_infra:flat_tool",
@@ -23,7 +21,6 @@ py_library(
 py_test(
     name = "test_server",
     srcs = ["test_server.py"],
-    imports = ["../../../.."],
     deps = [
         "//mcp_infra/stubs:typed_stubs",
         "//mcp_infra/testing:notifications",

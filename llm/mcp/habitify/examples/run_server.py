@@ -7,8 +7,8 @@ import argparse
 import logging
 import sys
 
-from habitify.server import create_habitify
-from habitify.utils.cli_utils import get_api_key_from_param_or_env
+from llm.mcp.habitify.server import create_habitify
+from llm.mcp.habitify.utils.cli_utils import get_api_key_from_param_or_env
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")

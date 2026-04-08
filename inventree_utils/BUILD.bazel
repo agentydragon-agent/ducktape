@@ -1,7 +1,7 @@
 # gazelle:exclude rai_plugin
 # rai_plugin uses InvenTree's plugin framework (not in @pypi)
 
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 # Samplebooks import (standalone script)
 py_library(

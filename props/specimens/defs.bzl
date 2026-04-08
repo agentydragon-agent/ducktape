@@ -2,7 +2,7 @@
 
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_test")
 
 def _create_code_tar_impl(ctx):
     """Implementation for create_code_tar rule."""
@@ -142,7 +142,6 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = ""):
             "SPECIMEN_CODE_TAR": "$(location :" + code_tar_target + ")",
             "SPECIMEN_DATA_YAML": "$(location :" + data_blob_target + ")",
         },
-        imports = ["../.."],
         requires_docker = True,
         tags = ["specimen"],
         deps = [

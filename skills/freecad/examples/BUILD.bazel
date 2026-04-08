@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 exports_files(
     [
@@ -17,7 +17,6 @@ exports_files(
 py_library(
     name = "freecad_helpers",
     srcs = ["freecad_helpers.py"],
-    imports = ["../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         "@pypi//freecad_stubs",
@@ -27,7 +26,6 @@ py_library(
 py_library(
     name = "export_page",
     srcs = ["export_page.py"],
-    imports = ["../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         ":freecad_helpers",
@@ -38,7 +36,6 @@ py_library(
 py_library(
     name = "render_fcstd",
     srcs = ["render_fcstd.py"],
-    imports = ["../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         ":freecad_helpers",
@@ -49,7 +46,6 @@ py_library(
 py_library(
     name = "render_multi_angle",
     srcs = ["render_multi_angle.py"],
-    imports = ["../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         ":freecad_helpers",
@@ -60,7 +56,6 @@ py_library(
 py_library(
     name = "render_debug_edges",
     srcs = ["render_debug_edges.py"],
-    imports = ["../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         ":freecad_helpers",
@@ -71,7 +66,6 @@ py_library(
 py_library(
     name = "render_debug_faces",
     srcs = ["render_debug_faces.py"],
-    imports = ["../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         ":freecad_helpers",
@@ -82,7 +76,6 @@ py_library(
 py_library(
     name = "verify_fcstd_load",
     srcs = ["verify_fcstd_load.py"],
-    imports = ["../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         "@pypi//freecad_stubs",
@@ -92,7 +85,6 @@ py_library(
 py_library(
     name = "render_dxf",
     srcs = ["render_dxf.py"],
-    imports = ["../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         "@pypi//ezdxf",
@@ -103,7 +95,6 @@ py_library(
 
 py_binary(
     name = "render_dxf_bin",
-    imports = ["../../.."],
     main_module = "skills.freecad.examples.render_dxf",
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [":render_dxf"],

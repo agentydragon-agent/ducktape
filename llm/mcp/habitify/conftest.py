@@ -10,8 +10,8 @@ import httpx
 import pytest
 import yaml
 
-from habitify.habitify_client import HabitifyClient
-from habitify.testing_models import TestReference
+from llm.mcp.habitify.habitify_client import HabitifyClient
+from llm.mcp.habitify.testing_models import TestReference
 
 
 def pytest_configure(config):

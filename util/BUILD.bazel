@@ -1,19 +1,17 @@
 """Shared utility libraries."""
 
-load("@rules_python//python:defs.bzl", "py_library")
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "fs",
     srcs = ["fs.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "net",
     srcs = ["net.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//tenacity"],
 )
@@ -21,7 +19,6 @@ py_library(
 py_library(
     name = "docker",
     srcs = ["docker.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//aiodocker",
@@ -32,21 +29,18 @@ py_library(
 py_library(
     name = "env",
     srcs = ["env.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "typer",
     srcs = ["typer.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "logging",
     srcs = ["logging.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//structlog",
@@ -57,14 +51,12 @@ py_library(
 py_library(
     name = "fmt",
     srcs = ["fmt.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "oci",
     srcs = ["oci.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":crane",
@@ -77,7 +69,6 @@ py_library(
     name = "crane",
     srcs = ["crane.py"],
     data = ["@crane"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "//util/bazel:runfiles",
@@ -87,7 +78,6 @@ py_library(
 py_library(
     name = "json_schema",
     srcs = ["json_schema.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
 )
 
@@ -95,7 +85,6 @@ py_library(
     name = "playwright",
     testonly = True,
     srcs = ["playwright.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//playwright",

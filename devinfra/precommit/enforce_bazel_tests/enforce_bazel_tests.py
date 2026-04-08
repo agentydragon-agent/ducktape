@@ -167,12 +167,9 @@ def find_affected_tests(
     return workspace.query(rdeps_expr, timeout=timeout, universe_scope=universe_scope)
 
 
-def main() -> int:
-    if os.environ.get("DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS") != "1":
-        return 0
-
-    repo = pygit2.Repository(".")
-    repo_root = Path(repo.workdir).resolve()
+def run(workspace: BazelWorkspace) -> int:
+    """Run enforce-bazel-tests check. Called from ducktape_precommit."""
+    repo = pygit2.Repository(str(workspace.root))
 
     staged = _get_staged_files(repo)
     if not staged:
@@ -182,7 +179,6 @@ def main() -> int:
         print(f"{_PREFIX}: infrastructure file changed, skipping (CI catches these)")
         return 0
 
-    workspace = BazelWorkspace(root=repo_root)
     candidates: list[BazelLabel] = []
     for f in staged:
         label = workspace.file_to_label(Path(f))
@@ -235,7 +231,3 @@ def main() -> int:
         print(f"Run: bazel test {' '.join(targets)}", file=sys.stderr)
         print("Or set DUCKTAPE_PRECOMMIT_RUN_TESTS=1 to run tests automatically.", file=sys.stderr)
     return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

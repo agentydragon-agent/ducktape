@@ -1,5 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # Source of truth for CI workflow definitions
 exports_files(["workflows.yaml"])
@@ -17,7 +16,6 @@ filegroup(
 py_library(
     name = "github_actions",
     srcs = ["github_actions.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util:env",
@@ -28,7 +26,6 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util/bazel:workspace",
@@ -42,7 +39,6 @@ py_library(
 py_library(
     name = "diff_utils",
     srcs = ["diff_utils.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":github_actions",
@@ -56,7 +52,6 @@ py_library(
 py_library(
     name = "check_release",
     srcs = ["check_release.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":diff_utils",
@@ -71,7 +66,6 @@ py_library(
 py_library(
     name = "ci_decide",
     srcs = ["ci_decide.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":diff_utils",
@@ -87,7 +81,6 @@ py_library(
     name = "generate_ci",
     srcs = ["generate_ci.py"],
     data = [":workflows.yaml"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":github_actions",
@@ -101,7 +94,6 @@ py_library(
 py_library(
     name = "artifacts",
     srcs = ["artifacts.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//util/bazel:workspace",
@@ -113,7 +105,6 @@ py_library(
 py_library(
     name = "bb_release",
     srcs = ["bb_release.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
@@ -126,7 +117,6 @@ py_library(
 py_library(
     name = "sync_pins",
     srcs = ["sync_pins.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":artifacts",
@@ -137,7 +127,6 @@ py_library(
 py_library(
     name = "generate_buildbuddy",
     srcs = ["generate_buildbuddy.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//devinfra:prettier",
@@ -150,42 +139,36 @@ py_library(
 
 py_binary(
     name = "bb_release_bin",
-    imports = ["../.."],
     main_module = "devinfra.ci.bb_release",
     deps = [":bb_release"],
 )
 
 py_binary(
     name = "sync_pins_bin",
-    imports = ["../.."],
     main_module = "devinfra.ci.sync_pins",
     deps = [":sync_pins"],
 )
 
 py_binary(
     name = "check_release_bin",
-    imports = ["../.."],
     main_module = "devinfra.ci.check_release",
     deps = [":check_release"],
 )
 
 py_binary(
     name = "ci_decide_bin",
-    imports = ["../.."],
     main_module = "devinfra.ci.ci_decide",
     deps = [":ci_decide"],
 )
 
 py_binary(
     name = "generate_ci_bin",
-    imports = ["../.."],
     main_module = "devinfra.ci.generate_ci",
     deps = [":generate_ci"],
 )
 
 py_binary(
     name = "generate_buildbuddy_bin",
-    imports = ["../.."],
     main_module = "devinfra.ci.generate_buildbuddy",
     deps = [":generate_buildbuddy"],
 )
@@ -196,7 +179,6 @@ py_test(
     name = "test_generate_buildbuddy",
     srcs = ["test_generate_buildbuddy.py"],
     data = ["//:buildbuddy.yaml"],
-    imports = ["../.."],
     deps = [
         ":generate_buildbuddy",
         "//util/bazel:runfiles",
@@ -212,7 +194,6 @@ py_test(
         ":generated_workflows",
         ":workflows.yaml",
     ],
-    imports = ["../.."],
     deps = [
         ":generate_ci",
         "@pypi//pytest_bazel",

@@ -1,10 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "flat_mixin",
     srcs = ["flat_mixin.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//agent_core:pydantic_utils",
@@ -19,7 +17,6 @@ py_library(
 py_library(
     name = "oob_notify_mixin",
     srcs = ["oob_notify_mixin.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra:urls",
@@ -32,7 +29,6 @@ py_library(
 py_library(
     name = "openai_strict_mixin",
     srcs = ["openai_strict_mixin.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//openai_utils:pydantic_strict_mode",
@@ -43,7 +39,6 @@ py_library(
 py_library(
     name = "server",
     srcs = ["server.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":flat_mixin",
@@ -58,7 +53,6 @@ py_library(
 py_library(
     name = "simple",
     srcs = ["simple.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":flat_mixin",

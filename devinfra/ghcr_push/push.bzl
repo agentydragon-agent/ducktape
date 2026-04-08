@@ -7,7 +7,7 @@ generate_buildbuddy.py maintains a manual PUSH_TARGETS list that must be
 kept in sync (nested bazel query from bazel run is not feasible).
 """
 
-load("@rules_python//python:defs.bzl", "py_binary")
+load("//devinfra/python:defs.bzl", "py_binary")
 
 def ghcr_push(name, image, repository, visibility = None):
     """Create a runnable target that pushes an OCI image to GHCR with conditional tagging.

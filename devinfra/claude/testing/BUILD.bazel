@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_visibility = ["//devinfra/claude:__subpackages__"])
 
@@ -6,7 +6,6 @@ py_library(
     name = "proxy_ca",
     testonly = True,
     srcs = ["proxy_ca.py"],
-    imports = ["../../.."],
     deps = [
         "@pypi//cryptography",
     ],
@@ -16,7 +15,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../../.."],
     deps = ["@pypi//pytest"],
 )
 
@@ -24,14 +22,12 @@ py_library(
     name = "shell_helpers",
     testonly = True,
     srcs = ["shell_helpers.py"],
-    imports = ["../../.."],
 )
 
 py_library(
     name = "fixtures",
     testonly = True,
     srcs = ["fixtures.py"],
-    imports = ["../../.."],
     deps = [
         ":mitmproxy_fixture",
         "//devinfra/claude:session_paths",
@@ -48,7 +44,6 @@ py_library(
     testonly = True,
     srcs = ["mitmproxy_fixture.py"],
     data = ["//third_party/containers:mitmproxy"],
-    imports = ["../../.."],
     deps = [
         ":proxy_ca",
         "//third_party/containers:rlocations",
@@ -65,7 +60,6 @@ py_library(
     name = "session_start_helpers",
     testonly = True,
     srcs = ["session_start_helpers.py"],
-    imports = ["../../.."],
     deps = [
         ":mitmproxy_fixture",
         ":shell_helpers",

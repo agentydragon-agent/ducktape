@@ -1,6 +1,5 @@
 # gazelle:ignore
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # =============================================================================
 # Library targets (per-file)
@@ -9,34 +8,29 @@ load("//devinfra/testing:defs.bzl", "py_test")
 py_library(
     name = "actions",
     srcs = ["actions.py"],
-    imports = ["../.."],
     deps = ["@pypi//typing_extensions"],
 )
 
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = ["../.."],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "tool_models",
     srcs = ["tool_models.py"],
-    imports = ["../.."],
     deps = ["@pypi//pydantic"],
 )
 
 py_library(
     name = "logging_context",
     srcs = ["logging_context.py"],
-    imports = ["../.."],
 )
 
 py_library(
     name = "inputs",
     srcs = ["inputs.py"],
-    imports = ["../.."],
     deps = [
         ":tool_models",
         "@pypi//pydantic",
@@ -46,7 +40,6 @@ py_library(
 py_library(
     name = "base",
     srcs = ["base.py"],
-    imports = ["../.."],
     deps = [
         ":actions",
         ":inputs",
@@ -65,7 +58,6 @@ py_library(
     name = "test_helpers",
     testonly = True,
     srcs = ["test_helpers.py"],
-    imports = ["../.."],
     deps = [":inputs"],
 )
 
@@ -74,7 +66,6 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     data = glob(["testdata/**"]),
-    imports = ["../.."],
     deps = [
         ":config",
         ":inputs",
@@ -93,7 +84,6 @@ py_library(
 py_test(
     name = "test_helpers_test",
     srcs = ["test_helpers.py"],
-    imports = ["../.."],
     main = "test_helpers.py",
     deps = [
         ":inputs",
@@ -105,7 +95,6 @@ py_test(
     name = "test_input_parsing",
     srcs = ["test_input_parsing.py"],
     data = glob(["testdata/**"]),
-    imports = ["../.."],
     deps = [
         ":conftest",
         ":test_helpers",
@@ -118,7 +107,6 @@ py_test(
 py_test(
     name = "test_models",
     srcs = ["test_models.py"],
-    imports = ["../.."],
     deps = [
         ":conftest",
         ":inputs",
@@ -133,7 +121,6 @@ py_test(
 py_test(
     name = "test_protocol_actions",
     srcs = ["test_protocol_actions.py"],
-    imports = ["../.."],
     deps = [
         ":actions",
         ":conftest",

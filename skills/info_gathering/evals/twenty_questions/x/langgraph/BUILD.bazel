@@ -1,9 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "twenty_questions",
     srcs = ["twenty_questions.py"],
-    imports = ["../../../../../.."],
     deps = [
         "//mcp_infra/exec:docker",
         "//skills/info_gathering/evals:docker_exec",
@@ -25,7 +24,6 @@ py_library(
 
 py_binary(
     name = "twenty_questions_bin",
-    imports = ["../../../../../.."],
     main_module = "skills.info_gathering.evals.twenty_questions.x.langgraph.twenty_questions",
     deps = [":twenty_questions"],
 )
@@ -36,7 +34,6 @@ py_test(
         "conftest.py",
         "test_twenty_questions.py",
     ],
-    imports = ["../../../../../.."],
     deps = [
         ":twenty_questions",
         "//skills/info_gathering/evals/twenty_questions/x/shared:conftest",

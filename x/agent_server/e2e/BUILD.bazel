@@ -1,12 +1,10 @@
 # Agent server E2E tests (manual, require Playwright).
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_test(
     name = "test_abort",
     srcs = ["test_abort.py"],
-    imports = ["../../.."],
     tags = ["manual"],
     deps = [
         ":conftest",
@@ -20,7 +18,6 @@ py_test(
 py_test(
     name = "test_approvals",
     srcs = ["test_approvals.py"],
-    imports = ["../../.."],
     tags = ["manual"],
     deps = [
         ":conftest",
@@ -36,7 +33,6 @@ py_test(
 py_test(
     name = "test_proposals_reject",
     srcs = ["test_proposals_reject.py"],
-    imports = ["../../.."],
     tags = ["manual"],
     deps = [
         ":conftest",
@@ -54,7 +50,6 @@ py_test(
 py_test(
     name = "test_ui",
     srcs = ["test_ui.py"],
-    imports = ["../../.."],
     tags = ["manual"],
     deps = [
         ":conftest",

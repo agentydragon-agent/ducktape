@@ -1,10 +1,9 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 # Core LLM utilities - Claude Code API, hooks, outcomes
 py_library(
     name = "claude_code_api",
     srcs = ["claude_code_api.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",
@@ -14,7 +13,6 @@ py_library(
 py_library(
     name = "claude_outcomes",
     srcs = ["claude_outcomes.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":claude_code_api",
@@ -25,7 +23,6 @@ py_library(
 py_library(
     name = "hook_session_state",
     srcs = ["hook_session_state.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":claude_code_api",
@@ -36,7 +33,6 @@ py_library(
 py_library(
     name = "hook_logging",
     srcs = ["hook_logging.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":claude_code_api",
@@ -47,7 +43,6 @@ py_library(
 py_library(
     name = "claude_hooks",
     srcs = ["claude_hooks.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":claude_code_api",
@@ -57,7 +52,6 @@ py_library(
 py_library(
     name = "claude_hook",
     srcs = ["claude_hook.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":claude_code_api",

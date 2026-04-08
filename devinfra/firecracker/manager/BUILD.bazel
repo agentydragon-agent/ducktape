@@ -1,13 +1,12 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -15,7 +14,6 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",
@@ -26,7 +24,6 @@ py_library(
 py_library(
     name = "clients",
     srcs = ["clients.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//httpx",
@@ -37,7 +34,6 @@ py_library(
 py_library(
     name = "k8s_client",
     srcs = ["k8s_client.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":models",
@@ -48,7 +44,6 @@ py_library(
 py_library(
     name = "protocol",
     srcs = ["protocol.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = ["@pypi//pydantic"],
 )
@@ -56,7 +51,6 @@ py_library(
 py_library(
     name = "process_api_client",
     srcs = ["process_api_client.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":protocol",
@@ -67,7 +61,6 @@ py_library(
 py_library(
     name = "snapshots",
     srcs = ["snapshots.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":clients",
@@ -78,7 +71,6 @@ py_library(
 py_library(
     name = "service_lib",
     srcs = ["service.py"],
-    imports = ["../../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":clients",
@@ -93,7 +85,6 @@ py_library(
 
 py_binary(
     name = "service",
-    imports = ["../../.."],
     main_module = "devinfra.firecracker.manager.service",
     deps = [":service_lib"],
 )
@@ -102,7 +93,6 @@ py_binary(
 
 aspect_py_binary(
     name = "service_bin",
-    imports = ["../../.."],
     main = "service.py",
     deps = [":service_lib"],
 )

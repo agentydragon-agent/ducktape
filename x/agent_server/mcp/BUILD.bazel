@@ -1,12 +1,10 @@
 """MCP servers - standalone server modules and cross-cutting tests."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "matrix_server",
     srcs = ["matrix_server.py"],
-    imports = ["../../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "//mcp_infra:flat_tool",
@@ -24,7 +22,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../../.."],
     visibility = ["//x/agent_server/mcp:__subpackages__"],
     deps = [
         "//mcp_infra/testing:fixtures",
@@ -36,7 +33,6 @@ py_library(
 py_test(
     name = "test_notifications_envelope",
     srcs = ["test_notifications_envelope.py"],
-    imports = ["../../.."],
     deps = [
         ":conftest",
         "//mcp_infra:naming",

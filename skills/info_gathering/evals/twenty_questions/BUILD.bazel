@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files([
     "first_user_message.txt",
@@ -9,7 +9,6 @@ exports_files([
 py_library(
     name = "result_types",
     srcs = ["result_types.py"],
-    imports = ["../../../.."],
     visibility = ["//skills/info_gathering/evals/twenty_questions:__subpackages__"],
     deps = [
         "//skills/info_gathering/evals:harness",
@@ -26,7 +25,6 @@ py_library(
         "sim.txt",
         "//skills/info_gathering:SKILL.md",
     ],
-    imports = ["../../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = ["//util/bazel:runfiles"],
 )
@@ -34,7 +32,6 @@ py_library(
 py_library(
     name = "twenty_questions",
     srcs = ["twenty_questions.py"],
-    imports = ["../../../.."],
     deps = [
         ":prompts",
         ":result_types",
@@ -56,7 +53,6 @@ py_binary(
     data = [
         "//third_party/containers:debian_slim",
     ],
-    imports = ["../../../.."],
     main_module = "skills.info_gathering.evals.twenty_questions.twenty_questions",
     deps = [":twenty_questions"],
 )
@@ -64,7 +60,6 @@ py_binary(
 py_library(
     name = "conftest",
     srcs = ["conftest.py"],
-    imports = ["../../../.."],
     deps = ["@pypi//pytest"],
 )
 
@@ -74,7 +69,6 @@ py_test(
         "conftest.py",
         "test_twenty_questions.py",
     ],
-    imports = ["../../../.."],
     deps = [
         ":twenty_questions",
         "//agent_core:direct_provider",

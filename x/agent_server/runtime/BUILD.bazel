@@ -1,20 +1,17 @@
 """Runtime package - container lifecycle and agent registry."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Utility modules with minimal dependencies - can be imported by persist
 py_library(
     name = "images",
     srcs = ["images.py"],
-    imports = ["../../.."],
     visibility = ["//x/agent_server:__subpackages__"],
 )
 
 py_library(
     name = "auto_attach",
     srcs = ["auto_attach.py"],
-    imports = ["../../.."],
     visibility = ["//x/agent_server:__subpackages__"],
     deps = ["@pypi//fastmcp"],
 )
@@ -95,7 +92,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = ["../../.."],
     visibility = ["//x/agent_server/runtime:__subpackages__"],
     deps = [
         "@pypi//pytest",
@@ -110,7 +106,6 @@ py_test(
         "//third_party/containers:debian_slim",
         "//x/agent_server:image_info",
     ],
-    imports = ["../../.."],
     requires_docker = True,
     tags = ["manual"],
     deps = [

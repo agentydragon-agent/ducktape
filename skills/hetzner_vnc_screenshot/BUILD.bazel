@@ -1,10 +1,9 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load("//skills:defs.bzl", "skill_package")
 
 py_library(
     name = "vnc_screenshot",
     srcs = ["vnc_screenshot.py"],
-    imports = ["../.."],
     visibility = ["//:__subpackages__"],
     deps = [
         "@pypi//asyncvnc",
@@ -17,7 +16,6 @@ py_library(
 
 py_binary(
     name = "vnc_screenshot_bin",
-    imports = ["../.."],
     main_module = "skills.hetzner_vnc_screenshot.vnc_screenshot",
     deps = [":vnc_screenshot"],
 )

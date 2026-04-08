@@ -1,47 +1,40 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 # === Base modules (no internal deps) ===
 
 py_library(
     name = "shell",
     srcs = ["shell.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "errors",
     srcs = ["errors.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "streaming",
     srcs = ["streaming.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "debug",
     srcs = ["debug.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "managed_files",
     srcs = ["managed_files.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
 )
 
 py_library(
     name = "session_paths",
     srcs = ["session_paths.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//platformdirs",
@@ -54,7 +47,6 @@ py_library(
     data = [
         "config/bazelrc.mako",
     ],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//platformdirs",
@@ -66,7 +58,6 @@ py_library(
 py_library(
     name = "hook_config",
     srcs = ["hook_config.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pydantic",
@@ -77,7 +68,6 @@ py_library(
 py_library(
     name = "sops_decrypt",
     srcs = ["sops_decrypt.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pyyaml",
@@ -89,7 +79,6 @@ py_library(
 py_library(
     name = "env_file",
     srcs = ["env_file.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":managed_files",
@@ -107,7 +96,6 @@ py_library(
 py_library(
     name = "bazel_wrapper_lib",
     srcs = ["bazel_wrapper.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":debug",
@@ -125,7 +113,6 @@ py_library(
 
 py_binary(
     name = "bazel_wrapper",
-    imports = ["../.."],
     main_module = "devinfra.claude.bazel_wrapper",
     visibility = ["//visibility:public"],
     deps = [":bazel_wrapper_lib"],
@@ -139,7 +126,6 @@ py_binary(
 py_library(
     name = "conftest",
     srcs = ["conftest.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":session_paths",
@@ -151,7 +137,6 @@ py_library(
 py_test(
     name = "test_envrc_propagation",
     srcs = ["test_envrc_propagation.py"],
-    imports = ["../.."],
     deps = [
         ":conftest",
         ":env_file",
@@ -163,7 +148,6 @@ py_test(
 py_test(
     name = "test_hook_output_serialization",
     srcs = ["test_hook_output_serialization.py"],
-    imports = ["../.."],
     deps = [
         ":conftest",
         "//devinfra/claude/claude_api/hooks:session_start",
@@ -176,7 +160,6 @@ py_test(
     name = "test_session_context",
     srcs = ["test_session_context.py"],
     data = ["__snapshots__/test_session_context.ambr"],
-    imports = ["../.."],
     deps = [
         ":conftest",
         "//devinfra/claude/auth_proxy:setup",
@@ -196,7 +179,6 @@ py_test(
 py_test(
     name = "test_session_start_input",
     srcs = ["test_session_start_input.py"],
-    imports = ["../.."],
     deps = [
         ":conftest",
         "//devinfra/claude/claude_api/hooks:common",
@@ -215,7 +197,6 @@ py_test(
         "@multitool//tools/sops",
     ],
     env = {"SOPS_BIN": "$(rlocationpath @multitool//tools/sops)"},
-    imports = ["../.."],
     deps = [
         ":sops_decrypt",
         "//util/bazel:runfiles",
@@ -227,7 +208,6 @@ py_test(
 py_test(
     name = "test_proxy",
     srcs = ["test_proxy.py"],
-    imports = ["../.."],
     deps = [
         "//devinfra/claude/auth_proxy:credentials",
         "@pypi//pyjwt",
@@ -239,7 +219,6 @@ py_test(
 py_test(
     name = "test_bazel_wrapper",
     srcs = ["test_bazel_wrapper.py"],
-    imports = ["../.."],
     deps = [
         ":bazel_wrapper_lib",
         ":conftest",
@@ -269,7 +248,6 @@ py_test(
         "SSL_CERT_FILE",
         "REQUESTS_CA_BUNDLE",
     ],
-    imports = ["../.."],
     # local: keytool (Adoptium JDK) needs libjli.so which isn't on the RBE worker image
     local = True,
     tags = ["e2e"],

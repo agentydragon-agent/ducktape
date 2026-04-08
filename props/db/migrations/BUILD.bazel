@@ -5,7 +5,7 @@
 # gazelle:exclude versions
 
 # Removed py_test load - using defs.bzl version
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_test")
 
 filegroup(
     name = "migrations",
@@ -21,7 +21,6 @@ py_test(
     name = "test_migration_sequence",
     srcs = ["test_migration_sequence.py"],
     data = [":migrations"],
-    imports = ["../../../.."],
     deps = [
         "@pypi//alembic",
         "@pypi//pytest_bazel",
@@ -33,7 +32,6 @@ py_test(
     size = "medium",
     srcs = ["test_materialize_examples.py"],
     data = [":migrations"],
-    imports = ["../../.."],
     requires_docker = True,
     deps = [
         "//props:conftest",

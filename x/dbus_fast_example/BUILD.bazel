@@ -1,6 +1,5 @@
 # gazelle:ignore
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "dbus_fast_example",
@@ -21,7 +20,6 @@ py_test(
         "conftest.py",
         "test_example.py",
     ],
-    imports = ["../.."],
     deps = [
         ":dbus_fast_example",
         "//util/testing:undeclared_outputs",

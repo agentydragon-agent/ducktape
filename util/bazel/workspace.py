@@ -11,10 +11,14 @@ Both fall back to ``Path.cwd()`` when not running under ``bazel run``.
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Label format constants
 _CANONICAL_SIGIL = "@@"
@@ -151,6 +155,17 @@ class BazelLabel:
         if self.is_external:
             return None
         return self.package
+
+
+def detect_bazel_command() -> tuple[str, ...]:
+    """Use ``bb remote`` when ``bb`` is on PATH and ``BUILDBUDDY_API_KEY`` is set."""
+    if os.environ.get("BUILDBUDDY_API_KEY") and shutil.which("bb"):
+        return ("bb", "remote")
+    if not shutil.which("bb"):
+        logger.warning("bb not on PATH, falling back to local bazel")
+    elif not os.environ.get("BUILDBUDDY_API_KEY"):
+        logger.warning("BUILDBUDDY_API_KEY not set, falling back to local bazel")
+    return ("bazel",)
 
 
 @dataclasses.dataclass(frozen=True)

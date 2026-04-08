@@ -1,6 +1,6 @@
 """Props test fixtures package."""
 
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 package(default_testonly = True)
 

@@ -1,7 +1,6 @@
 """MCP Approval Policy server - policy engine and middleware."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "engine",
@@ -41,7 +40,6 @@ py_test(
         "//third_party/containers:debian_slim",
         "//x/agent_server:image_info",
     ],
-    imports = ["../../../.."],
     requires_docker = True,
     deps = [
         ":engine",
@@ -64,7 +62,6 @@ py_test(
         "//third_party/containers:debian_slim",
         "//x/agent_server:image_info",
     ],
-    imports = ["../../../.."],
     requires_docker = True,
     deps = [
         ":engine",
@@ -90,7 +87,6 @@ py_test(
         "//third_party/containers:debian_slim",
         "//x/agent_server:image_info",
     ],
-    imports = ["../../../.."],
     requires_docker = True,
     tags = ["manual"],
     deps = [
@@ -119,7 +115,6 @@ py_test(
         "//third_party/containers:debian_slim",
         "//x/agent_server:image_info",
     ],
-    imports = ["../../../.."],
     requires_docker = True,
     deps = [
         ":engine",
@@ -147,7 +142,6 @@ py_test(
         "//third_party/containers:debian_slim",
         "//x/agent_server:image_info",
     ],
-    imports = ["../../../.."],
     requires_docker = True,
     deps = [
         "//mcp_infra:constants",
@@ -169,7 +163,6 @@ py_test(
         "//third_party/containers:debian_slim",
         "//x/agent_server:image_info",
     ],
-    imports = ["../../../.."],
     requires_docker = True,
     deps = [
         ":engine",

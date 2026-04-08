@@ -1,5 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
     [
@@ -19,7 +18,6 @@ exports_files(
 py_library(
     name = "build",
     srcs = ["build.py"],
-    imports = ["../../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         "@pypi//freecad_stubs",
@@ -29,7 +27,6 @@ py_library(
 py_library(
     name = "build_techdraw",
     srcs = ["build_techdraw.py"],
-    imports = ["../../../.."],
     visibility = ["//skills/freecad:__subpackages__"],
     deps = [
         "//skills/freecad/examples:freecad_helpers",
@@ -49,7 +46,6 @@ py_test(
         "front_right.png",
         "//skills/freecad/conda:freecadcmd",
     ],
-    imports = ["../../../.."],
     # Stubs shadow FreeCAD conda C extensions. See debug/legacy-create-init-investigation.md
     legacy_create_init = 0,
     deps = [
@@ -76,7 +72,6 @@ py_test(
         "debug_faces.png",
         "//skills/freecad/conda:freecadcmd",
     ],
-    imports = ["../../../.."],
     # Stubs shadow FreeCAD conda C extensions. See debug/legacy-create-init-investigation.md
     legacy_create_init = 0,
     deps = [

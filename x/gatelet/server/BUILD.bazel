@@ -1,12 +1,10 @@
 """Gatelet server package."""
 
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_binary(
     name = "server",
-    imports = ["../../.."],
     main_module = "x.gatelet.server.main",
     visibility = ["//x/gatelet:__pkg__"],
     deps = [":main"],
@@ -14,7 +12,6 @@ py_binary(
 
 aspect_py_binary(
     name = "server_bin",
-    imports = ["../../.."],
     main = "main.py",
     visibility = ["//x/gatelet:__pkg__"],
     deps = [":main"],
@@ -29,7 +26,6 @@ py_image_layer(
 py_library(
     name = "main",
     srcs = ["main.py"],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         ":app",
@@ -44,7 +40,6 @@ py_library(
         "**/*.css",
         "**/*.html.j2",
     ]),
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         ":database",
@@ -66,7 +61,6 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = ["@pypi//pydantic"],
 )
@@ -74,7 +68,6 @@ py_library(
 py_library(
     name = "database",
     srcs = ["database.py"],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "@pypi//fastapi",
@@ -90,7 +83,6 @@ py_library(
         "//x/gatelet/server/migrations/versions:001_initial_schema",
         "//x/gatelet/server/migrations/versions:002_normalize_webhook_payload",
     ],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         ":config",
@@ -111,7 +103,6 @@ py_library(
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = ["@pypi//sqlalchemy"],
 )
@@ -119,7 +110,6 @@ py_library(
 py_library(
     name = "prompts",
     srcs = ["prompts.py"],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         ":config",
@@ -130,7 +120,6 @@ py_library(
 py_library(
     name = "security",
     srcs = ["security.py"],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         "@pypi//argon2_cffi",
@@ -141,7 +130,6 @@ py_library(
 py_library(
     name = "shared",
     srcs = ["shared.py"],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [":config"],
 )
@@ -151,7 +139,6 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     data = ["//third_party/containers:postgres_18"],
-    imports = ["../../.."],
     visibility = ["//x/gatelet:__subpackages__"],
     deps = [
         ":app",

@@ -1,14 +1,12 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 load("//devinfra/ghcr_push:push.bzl", "ghcr_push")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 py_library(
     name = "models",
     srcs = ["models.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//mcp",
@@ -19,7 +17,6 @@ py_library(
 py_library(
     name = "export_schema",
     srcs = ["export_schema.py"],
-    imports = [".."],
     deps = [
         ":models",
         "@pypi//pydantic",
@@ -28,7 +25,6 @@ py_library(
 
 py_binary(
     name = "export_schema_bin",
-    imports = [".."],
     main_module = "airlock.export_schema",
     visibility = [
         "//airlock:__subpackages__",
@@ -40,7 +36,6 @@ py_binary(
 py_library(
     name = "storage",
     srcs = ["storage.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":models",
@@ -53,7 +48,6 @@ py_library(
 py_library(
     name = "predicates",
     srcs = ["predicates.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [],
 )
@@ -61,7 +55,6 @@ py_library(
 py_library(
     name = "config",
     srcs = ["config.py"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":models",
@@ -77,7 +70,6 @@ py_library(
     name = "proxy_server",
     srcs = ["proxy_server.py"],
     data = ["instructions.mako"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":models",
@@ -99,7 +91,6 @@ py_library(
     name = "app",
     srcs = ["app.py"],
     data = ["//airlock/frontend:bundle"],
-    imports = [".."],
     visibility = ["//visibility:public"],
     deps = [
         ":config",
@@ -120,7 +111,6 @@ py_library(
 
 py_binary(
     name = "server",
-    imports = [".."],
     main_module = "airlock.app",
     visibility = ["//visibility:public"],
     deps = [":app"],
@@ -130,7 +120,6 @@ py_binary(
 
 aspect_py_binary(
     name = "server_bin",
-    imports = [".."],
     main = "app.py",
     deps = [":app"],
 )
@@ -172,7 +161,6 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
-    imports = [".."],
     visibility = ["//:__subpackages__"],
     deps = [
         ":models",

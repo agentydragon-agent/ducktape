@@ -1,9 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "prompt_caching",
     srcs = ["prompt_caching.py"],
-    imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = ["@pypi//autogen_ext"],
 )
@@ -11,7 +10,6 @@ py_library(
 py_library(
     name = "litellm_tool_provider",
     srcs = ["litellm_tool_provider.py"],
-    imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
         "//agent_core:tool_provider",
@@ -22,7 +20,6 @@ py_library(
 py_library(
     name = "harness",
     srcs = ["harness.py"],
-    imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
         "//agent_core:events",
@@ -37,7 +34,6 @@ py_library(
 py_library(
     name = "docker_exec",
     srcs = ["docker_exec.py"],
-    imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
         "//mcp_infra/exec:docker",
@@ -48,7 +44,6 @@ py_library(
 py_library(
     name = "docker_scratch",
     srcs = ["docker_scratch.py"],
-    imports = ["../../.."],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
     deps = [
         ":docker_exec",

@@ -1,7 +1,6 @@
 """Test macros for tests with mock and live OpenAI API variants."""
 
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/testing:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 _DEFAULT_LIVE_ENV = ["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL"]
 
@@ -22,25 +21,18 @@ def live_openai_py_test(name, srcs, deps, tags = None, **kwargs):
         deps: Dependencies (owned by the hidden _lib target).
         tags: Base tags applied to both targets. The .live target
             additionally gets "live_openai_api".
-        **kwargs: Passed through to py_test (imports, size, requires_docker,
+        **kwargs: Passed through to py_test (size, requires_docker,
             exec_properties, data, env, timeout, etc).
     """
     base_tags = tags or []
     ltags = _live_tags(base_tags)
 
-    # Extract imports from kwargs - needed for both library and tests
-    imports = kwargs.pop("imports", None)
-
     # Hidden library owns the source — compiled once, no .pyc collision.
-    lib_kwargs = {}
-    if imports:
-        lib_kwargs["imports"] = imports
     py_library(
         name = name + "_lib",
         srcs = srcs,
         deps = deps,
         testonly = True,
-        **lib_kwargs
     )
 
     # Build common kwargs for both test targets
@@ -48,8 +40,6 @@ def live_openai_py_test(name, srcs, deps, tags = None, **kwargs):
         "main_module": "pytest_bazel",
         "deps": [":" + name + "_lib", "@pypi//pytest_bazel"],
     }
-    if imports:
-        common_kwargs["imports"] = imports
     common_kwargs.update(kwargs)
 
     # .mock — runs only non-live tests
