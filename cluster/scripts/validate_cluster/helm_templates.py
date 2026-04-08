@@ -17,18 +17,18 @@ _CILIUM_VALUES_RLOCATIONS = ["_main/cluster/terraform/main/cilium-values.yaml"]
 
 
 def _helm_bin() -> Path:
-    return resolve_tool("helm","multitool/tools/helm/helm")
+    return resolve_tool("helm", "multitool/tools/helm/helm")
 
 
 def _get_values_files() -> list[Path]:
     """Get cilium values files from runfiles or source tree."""
     try:
-        from util.bazel.runfiles import get_required_path  # in-function: not available outside Bazel
+        from util.bazel.runfiles import get_required_path  # noqa: PLC0415 — not available outside Bazel
 
         return [get_required_path(rloc) for rloc in _CILIUM_VALUES_RLOCATIONS]
     except (ImportError, RuntimeError):
         # Outside Bazel: resolve relative to repo root (strip _main/ prefix)
-        import pathlib
+        import pathlib  # noqa: PLC0415
 
         repo_root = pathlib.Path(__file__).resolve().parents[4]
         return [repo_root / rloc.removeprefix("_main/") for rloc in _CILIUM_VALUES_RLOCATIONS]
@@ -37,8 +37,7 @@ def _get_values_files() -> list[Path]:
 async def _exec(*args: str | Path) -> tuple[int, bytes, bytes]:
     proc = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     stdout, stderr = await proc.communicate()
-    assert proc.returncode is not None
-    return proc.returncode, stdout, stderr
+    return await proc.wait(), stdout, stderr
 
 
 async def validate_helm_template(values_file: Path) -> tuple[bool, str]:

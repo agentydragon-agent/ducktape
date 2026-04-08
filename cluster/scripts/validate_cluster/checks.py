@@ -8,7 +8,6 @@ from pathlib import Path
 import yaml
 
 from cluster.validation.cluster import ParsedCluster
-from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering as _check_crd_layering_raises
 from cluster.validation.kustomize import KustomizeBuildResult
 
 
@@ -55,15 +54,6 @@ def check_duplicate_external_secrets(build_results: list[KustomizeBuildResult]) 
         errors.append("No external-secrets HelmRelease found. At least one is required.")
 
     return errors
-
-
-def check_crd_layering(result: KustomizeBuildResult) -> list[str]:
-    """Check CRD layering, returning errors as strings (adapter for raising API)."""
-    try:
-        _check_crd_layering_raises(result)
-    except CrdLayeringViolationError as e:
-        return [str(e)]
-    return []
 
 
 def check_goldilocks_namespace_labels(cluster: ParsedCluster) -> list[str]:

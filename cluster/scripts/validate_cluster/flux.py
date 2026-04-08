@@ -35,8 +35,7 @@ async def run_flux_build(k8s_dir: Path) -> tuple[int, str, str]:
         stderr=asyncio.subprocess.PIPE,
     )
     stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=60)
-    assert proc.returncode is not None
-    return proc.returncode, stdout_bytes.decode(), stderr_bytes.decode()
+    return await proc.wait(), stdout_bytes.decode(), stderr_bytes.decode()
 
 
 async def validate_flux_build(k8s_dir: Path) -> list[str]:

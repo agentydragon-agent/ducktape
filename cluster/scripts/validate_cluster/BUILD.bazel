@@ -43,8 +43,6 @@ py_library(
     srcs = ["checks.py"],
     deps = [
         "//cluster/validation:cluster",
-        "//cluster/validation:crd_layering",
-        "//cluster/validation:health_checks",
         "//cluster/validation:kustomize",
         "@pypi//pyyaml",
     ],
@@ -72,6 +70,7 @@ py_library(
         ":helm_templates",
         ":kustomize",
         "//cluster/validation:cluster",
+        "//cluster/validation:crd_layering",
         "//cluster/validation:dependencies",
         "//cluster/validation:health_checks",
         "//cluster/validation:kustomize",

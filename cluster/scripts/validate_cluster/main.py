@@ -25,7 +25,6 @@ from pathlib import Path
 
 from cluster.scripts.validate_cluster.checks import (
     check_blueprint_completeness,
-    check_crd_layering,
     check_duplicate_external_secrets,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
@@ -35,6 +34,7 @@ from cluster.scripts.validate_cluster.flux import validate_flux_build
 from cluster.scripts.validate_cluster.helm_templates import validate_helm_templates
 from cluster.scripts.validate_cluster.kustomize import KustomizeBuildError, run_kustomize_build
 from cluster.validation.cluster import parse_cluster
+from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks
 from cluster.validation.kustomize import KustomizeBuildResult
@@ -79,7 +79,10 @@ async def validate(
     for result in cluster.build_results:
         if result.kustomization_path.parent.resolve() not in active_dirs:
             continue
-        kust_errors.extend((result.kustomization_path, error) for error in check_crd_layering(result))
+        try:
+            check_crd_layering(result)
+        except CrdLayeringViolationError as e:
+            kust_errors.append((result.kustomization_path, str(e)))
 
     global_errors.extend(find_orphaned_files(cluster, root))
     global_errors.extend(check_blueprint_completeness(root))

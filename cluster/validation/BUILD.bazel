@@ -73,12 +73,6 @@ py_library(
 )
 
 py_library(
-    name = "helm_templates",
-    srcs = ["helm_templates.py"],
-    deps = ["//util/bazel:runfiles"],
-)
-
-py_library(
     name = "kustomize_build_all_lib",
     srcs = ["kustomize_build_all.py"],
     deps = [

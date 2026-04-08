@@ -108,7 +108,7 @@ def state_has_resources() -> bool:
     if result.returncode != 0:
         return False
     resources = json.loads(result.stdout).get("values", {}).get("root_module", {}).get("resources", [])
-    return len(resources) > 0
+    return bool(resources)
 
 
 def preflight(root: Path) -> None:
