@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/spf13/cobra"
 )
@@ -73,6 +74,7 @@ func invocationCmd() *cobra.Command {
 		},
 	}
 	cmd.AddCommand(invocationListCmd())
+	cmd.AddCommand(invocationStatSubCmd())
 	return cmd
 }
 
@@ -169,4 +171,92 @@ func resolveInvocationIDs(c *client, invocationID string) ([]string, error) {
 		return children, nil
 	}
 	return []string{invocationID}, nil
+}
+
+var aggTypeMap = map[string]invocationpb.AggType{
+	"user":    invocationpb.AggType_USER_AGGREGATION_TYPE,
+	"host":    invocationpb.AggType_HOSTNAME_AGGREGATION_TYPE,
+	"repo":    invocationpb.AggType_REPO_URL_AGGREGATION_TYPE,
+	"commit":  invocationpb.AggType_COMMIT_SHA_AGGREGATION_TYPE,
+	"date":    invocationpb.AggType_DATE_AGGREGATION_TYPE,
+	"branch":  invocationpb.AggType_BRANCH_AGGREGATION_TYPE,
+	"pattern": invocationpb.AggType_PATTERN_AGGREGATION_TYPE,
+}
+
+// TODO: --agg-type date returns a server-side ClickHouse error:
+// "Illegal type Float64 of first argument of function fromUnixTimestamp".
+// BuildBuddy stores updated_at_usec as Float64 but FROM_UNIXTIME expects integer.
+// Other aggregation types (branch, user, host, etc.) work fine.
+
+func invocationStatSubCmd() *cobra.Command {
+	var repo string
+	var aggType string
+	var limit int32
+	cmd := &cobra.Command{
+		Use:   "stat",
+		Short: "Show aggregated invocation statistics",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			c, err := newClient()
+			if err != nil {
+				return err
+			}
+			if repo == "" {
+				repo, err = detectRepoURL()
+				if err != nil {
+					return fmt.Errorf("auto-detect repo (use --repo to override): %w", err)
+				}
+			}
+			at, ok := aggTypeMap[aggType]
+			if !ok {
+				return fmt.Errorf("unknown --agg-type %q; valid: user, host, repo, commit, date, branch, pattern", aggType)
+			}
+			groupID, err := c.resolveGroupID(repo)
+			if err != nil {
+				return err
+			}
+			req := &invocationpb.GetInvocationStatRequest{
+				RequestContext:  &ctxpb.RequestContext{GroupId: groupID},
+				AggregationType: at,
+				Limit:           limit,
+				Query: &invocationpb.InvocationStatQuery{
+					RepoUrl: repo,
+				},
+			}
+			resp := &invocationpb.GetInvocationStatResponse{}
+			if err := c.call("GetInvocationStat", req, resp); err != nil {
+				return err
+			}
+			if jsonOutput {
+				return printProtoJSON(resp)
+			}
+			t := newTable()
+			t.header("NAME", "BUILDS", "PASS", "FAIL", "ACTIONS", "BUILD_TIME", "LAST_GREEN", "LAST_RED")
+			for _, s := range resp.GetInvocationStat() {
+				lastGreen := "-"
+				if s.GetLastGreenBuildUsec() > 0 {
+					lastGreen = time.UnixMicro(s.GetLastGreenBuildUsec()).Format("2006-01-02 15:04")
+				}
+				lastRed := "-"
+				if s.GetLastRedBuildUsec() > 0 {
+					lastRed = time.UnixMicro(s.GetLastRedBuildUsec()).Format("2006-01-02 15:04")
+				}
+				t.row(
+					s.GetName(),
+					s.GetTotalNumBuilds(),
+					s.GetTotalNumSucessfulBuilds(),
+					s.GetTotalNumFailingBuilds(),
+					s.GetTotalActions(),
+					fmtDurationUsec(s.GetTotalBuildTimeUsec()),
+					lastGreen,
+					lastRed,
+				)
+			}
+			t.flush()
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (default: auto-detect from git)")
+	cmd.Flags().StringVar(&aggType, "agg-type", "date", "Aggregation type: user, host, repo, commit, date, branch, pattern")
+	cmd.Flags().Int32Var(&limit, "limit", 20, "Maximum number of results")
+	return cmd
 }

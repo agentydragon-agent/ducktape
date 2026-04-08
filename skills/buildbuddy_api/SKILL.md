@@ -69,6 +69,18 @@ bbapi execution <invocation-id>
 # Search remote executions across invocations
 bbapi execution search <query>
 
+# Aggregated invocation statistics (by branch, user, commit, etc.)
+bbapi invocation stat [--agg-type branch|user|host|repo|commit|pattern] [--repo URL] [--limit N]
+
+# AI analysis of a build/test failure (works on any invocation, unlike `bb ask`)
+bbapi ask <invocation-id> [--prompt TEXT]
+
+# List configured BuildBuddy workflows
+bbapi workflow
+
+# Trigger a workflow run (auto-detects workflow ID, branch, commit from git)
+bbapi workflow run [--workflow-id ID] [--branch BRANCH] [--commit SHA] [--action NAME] [--async]
+
 # Show cache scorecard (per-action hit/miss)
 bbapi cache <invocation-id>
 
@@ -141,6 +153,17 @@ bbapi target log <first-failing-invocation-id> test_target
 
 This is much faster than `git bisect` because it doesn't require re-running the
 test — the results are already in BuildBuddy's database.
+
+## BuildBuddy Concepts
+
+**Group ID**: BuildBuddy's organization identifier (e.g., `GR7963402054611859571`).
+Scopes API queries to the org's data. Auto-detected by `bbapi` from a recent invocation's
+ACL — no manual configuration needed.
+
+**Workflow ID**: For repos using `buildbuddy.yaml` + GitHub app, workflow IDs are synthetic:
+`WF#GitRepository:{group_id}:{repo_url}`. The `bbapi workflow run` command auto-constructs
+this from the detected group_id and repo URL. `GetWorkflows` returns empty for these repos
+(it only lists explicitly created workflows).
 
 ## Raw API Fallback
 
