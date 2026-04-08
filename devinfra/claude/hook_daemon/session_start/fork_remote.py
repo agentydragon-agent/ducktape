@@ -114,5 +114,9 @@ def ensure_fork_remote(github_token: str, project_dir: Path) -> ForkRemoteSetup:
         repo.remotes.set_url("fork", fork_url)
         action = ForkRemoteAction.UPDATED
 
+    # Cache 'origin' as the default remote for `bb remote` (BuildBuddy CLI).
+    # Without this, bb prompts interactively when multiple remotes exist.
+    repo.config["buildbuddy.remote-bazel-remote-name"] = "origin"
+
     logger.info("Fork remote %s: https://github.com/%s/%s.git", action, username, repo_name)
     return ForkRemoteSetup(username=username, repo_name=repo_name, fork_exists=True, action=action)

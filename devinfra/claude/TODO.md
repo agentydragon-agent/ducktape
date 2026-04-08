@@ -27,6 +27,14 @@ Write a Claude Code hook that reminds the agent to use `dangerouslyDisableSandbo
 
 **Solution**: Add supervisor `TICK_60` eventlistener that checks TCP port 18081 is listening and marks process FATAL if unreachable.
 
+## Benchmark `bb remote` with and without `--config=rbe`
+
+With warm runner VMs, `bb remote` without `--config=rbe` (local `linux-sandbox` on the
+runner) may be fast enough to skip RBE entirely. Measure on a nontrivial workload: dirty a
+widely-imported file (e.g., a root `conftest.py` or a core library module) to invalidate
+many targets, then compare `bb remote test //... --config=rbe` vs `bb remote test //...`
+(no RBE). Check wall-clock time, action count, and cache hit rate.
+
 ## Hook Daemon Lifecycle Management
 
 **Problem**: The hook daemon client (`hook_daemon/client.py`) manually manages daemon lifecycle: pidfile read/write, process liveness checks, stale socket cleanup, fork+wait. This is ~50 lines of somewhat fiddly code.

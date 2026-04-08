@@ -16,7 +16,34 @@ The root cause is always a broken session start hook — notify the user if reco
 
 ## Sandbox
 
-Run `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
+Run `bb`, `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
+
+## Remote Bazel (`bb remote`)
+
+Prefer `bb remote` over direct `bazel` for build, test, and query commands. `bb remote`
+runs Bazel on a BuildBuddy runner VM colocated with RBE/cache servers, giving fast builds
+with warm Bazel instances. It automatically syncs local git diffs to the remote runner.
+
+```bash
+# Instead of:
+bazel test //path/to:target
+bazel build //path/to:target
+bazel query '...'
+
+# Use:
+bb remote test //path/to:target
+bb remote build //path/to:target
+bb remote query '...'
+```
+
+**When to use direct `bazel` instead:**
+
+- `bazel run` for local side effects (running binaries, pushing images, updating lockfiles)
+- When you need build outputs on the local filesystem (e.g., copying artifacts)
+- Gazelle: `bazel run //devinfra:gazelle`
+
+**Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by session
+start hook).
 
 ## Refactoring
 
@@ -27,8 +54,8 @@ When renaming/moving/deleting files or symbols, search **all references** across
 ## Before Hand-off
 
 ```bash
-bazel build //...
-bazel test //...
+bb remote build //... --config=rbe
+bb remote test //... --config=rbe
 ```
 
 Lint (ruff + mypy) runs by default. Use `--config=nolint` to skip.
