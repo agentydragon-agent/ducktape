@@ -19,16 +19,15 @@ import pytest
 import pytest_bazel
 import yaml
 
-from cluster.scripts.validate_cluster.checks import (
+from cluster.validation.checks import (
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
     find_orphaned_files,
 )
-from cluster.scripts.validate_cluster.kustomize import run_kustomize_build
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.dependencies import validate_dependencies
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
-from cluster.validation.kustomize import KustomizeBuildResult
+from cluster.validation.kustomize import KustomizeBuildResult, run_kustomize_build
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"

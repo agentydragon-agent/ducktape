@@ -9,7 +9,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from cluster.scripts.validate_cluster.tool_resolve import resolve_tool
+from cluster.validation.tool_resolve import resolve_tool
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _get_values_files() -> list[Path]:
         return [get_required_path(rloc) for rloc in _CILIUM_VALUES_RLOCATIONS]
     except (ImportError, RuntimeError):
         # Outside Bazel: resolve relative to repo root (strip _main/ prefix)
-        repo_root = Path(__file__).resolve().parents[4]
+        repo_root = Path(__file__).resolve().parents[2]
         return [repo_root / rloc.removeprefix("_main/") for rloc in _CILIUM_VALUES_RLOCATIONS]
 
 

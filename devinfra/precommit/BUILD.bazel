@@ -49,7 +49,7 @@ py_library(
     deps = [
         ":filename_conventions",
         ":terraform_centralization",
-        "//cluster/scripts/validate_cluster:main",
+        "//cluster/validation:validate_all",
         "//devinfra:pytest_main",
         "//devinfra/precommit/enforce_bazel_tests",
         "@pypi//pygit2",

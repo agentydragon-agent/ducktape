@@ -17,10 +17,18 @@ py_library(
 )
 
 py_library(
+    name = "tool_resolve",
+    srcs = ["tool_resolve.py"],
+    deps = ["//util/bazel:runfiles"],
+)
+
+py_library(
     name = "kustomize",
     srcs = ["kustomize.py"],
+    data = ["@multitool//tools/kustomize"],
     deps = [
         ":k8s",
+        ":tool_resolve",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -29,7 +37,10 @@ py_library(
 py_library(
     name = "flux",
     srcs = ["flux.py"],
+    data = ["@multitool//tools/flux"],
     deps = [
+        ":k8s",
+        ":tool_resolve",
         "@pypi//pydantic",
         "@pypi//pyyaml",
     ],
@@ -70,6 +81,44 @@ py_library(
     name = "crd_layering",
     srcs = ["crd_layering.py"],
     deps = [":kustomize"],
+)
+
+py_library(
+    name = "checks",
+    srcs = ["checks.py"],
+    deps = [
+        ":cluster",
+        ":kustomize",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
+    name = "helm_templates",
+    srcs = ["helm_templates.py"],
+    data = [
+        "//cluster/terraform/main:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    deps = [
+        ":tool_resolve",
+        "//util/bazel:runfiles",
+    ],
+)
+
+py_library(
+    name = "validate_all",
+    srcs = ["validate_all.py"],
+    deps = [
+        ":checks",
+        ":cluster",
+        ":crd_layering",
+        ":dependencies",
+        ":flux",
+        ":health_checks",
+        ":helm_templates",
+        ":kustomize",
+    ],
 )
 
 py_library(
@@ -196,12 +245,11 @@ py_test(
         "@multitool//tools/kustomize",
     ],
     deps = [
+        ":checks",
         ":cluster",
         ":dependencies",
         ":health_checks",
         ":kustomize",
-        "//cluster/scripts/validate_cluster:checks",
-        "//cluster/scripts/validate_cluster:kustomize",
         "//util/bazel:runfiles",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

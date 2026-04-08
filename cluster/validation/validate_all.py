@@ -23,20 +23,20 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from cluster.scripts.validate_cluster.checks import (
+from cluster.validation.checks import (
     check_blueprint_completeness,
     check_duplicate_external_secrets,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
     find_orphaned_files,
 )
-from cluster.scripts.validate_cluster.flux import validate_flux_build
-from cluster.scripts.validate_cluster.helm_templates import validate_helm_templates
-from cluster.scripts.validate_cluster.kustomize import KustomizeBuildError, run_kustomize_build
 from cluster.validation.cluster import parse_cluster
 from cluster.validation.crd_layering import CrdLayeringViolationError, check_crd_layering
 from cluster.validation.dependencies import validate_dependencies
+from cluster.validation.flux import validate_flux_build
 from cluster.validation.health_checks import check_controller_health_checks
+from cluster.validation.helm_templates import validate_helm_templates
+from cluster.validation.kustomize import KustomizeBuildError, run_kustomize_build
 
 
 async def validate(root: Path, *, skip_flux_build: bool = False) -> list[str]:

@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pygit2
 
-from cluster.scripts.validate_cluster.main import validate as validate_cluster
+from cluster.validation.validate_all import validate as validate_cluster
 from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import (
     EnforceBazelTestsError,
     run as enforce_bazel_tests_run,
