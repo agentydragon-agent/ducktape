@@ -10,7 +10,7 @@ from syrupy.assertion import SnapshotAssertion
 
 from devinfra.claude.auth_proxy import setup as proxy_setup
 from devinfra.claude.hook_daemon import templates
-from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect, precommit
+from devinfra.claude.hook_daemon.session_start import container_runtime, mkcert, platform_detect
 from devinfra.claude.hook_daemon.session_start.handler import LogCollector
 from devinfra.claude.hook_daemon.session_start.secret_sources import SecretsResult
 
@@ -20,7 +20,7 @@ def _render(
     platform: platform_detect.PlatformInfo,
     proxy: proxy_setup.ProxySetup | None = None,
     container: container_runtime.ContainerRuntimeSetup | None = None,
-    precommit_result: precommit.PrecommitSetup | None = None,
+    precommit_installing: bool = False,
     mkcert_result: mkcert.MkcertSetup | None = None,
     secrets: SecretsResult | None = None,
     extra_context: str = "",
@@ -35,7 +35,7 @@ def _render(
             collector=collector,
             proxy=proxy,
             container=container,
-            precommit=precommit_result,
+            precommit_installing=precommit_installing,
             mkcert=mkcert_result,
             secrets=secrets,
             extra_context=extra_context,
@@ -148,25 +148,7 @@ def test_web_with_docker(
 def test_web_precommit_installing(
     snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
 ) -> None:
-    result = _render(platform=web_platform, proxy=proxy, precommit_result=precommit.PrecommitInstallingHooks())
-    assert result == snapshot
-
-
-def test_web_precommit_failed(
-    snapshot: SnapshotAssertion, web_platform: platform_detect.PlatformInfo, proxy: proxy_setup.ProxySetup
-) -> None:
-    warn = logging.LogRecord(
-        name="session_start",
-        level=logging.WARNING,
-        pathname="",
-        lineno=0,
-        msg="Failed to install git pre-commit",
-        args=(),
-        exc_info=None,
-    )
-    result = _render(
-        platform=web_platform, proxy=proxy, precommit_result=precommit.PrecommitNotInstalled(), log_entries=[warn]
-    )
+    result = _render(platform=web_platform, proxy=proxy, precommit_installing=True)
     assert result == snapshot
 
 

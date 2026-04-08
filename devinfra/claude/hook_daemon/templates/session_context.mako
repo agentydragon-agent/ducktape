@@ -28,14 +28,10 @@ VFS on 9p (no layer caching, slower builds).
 ## Localhost TLS
 `$MKCERT_CERT` / `$MKCERT_KEY` (auto-trusted). Use for HTTPS dev servers.
 % endif
-% if isinstance(precommit, PrecommitInstallingHooks):
+% if precommit_installing:
 
 ## pre-commit
-Hook environments installing in background. First `git commit` may block briefly.
-% elif isinstance(precommit, PrecommitNotInstalled) or precommit is None:
-
-## pre-commit
-**Warning**: pre-commit hook installation failed. Git hooks may not run. Check daemon log for details.
+Installing in background. First `git commit` may block briefly.
 % endif
 <%
     has_any_secret = secrets and (secrets.buildbuddy_api_key or secrets.github_token or secrets.otel_bearer_token)

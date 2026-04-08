@@ -126,6 +126,22 @@ class PlatformSetup:
     buildbuddy_setup: buildbuddy.BuildbuddySetup = field(default_factory=buildbuddy.BuildbuddyNotConfigured)
 
 
+def _run_background(session: Session, coro: object, *, name: str) -> None:
+    """Create a background task, track it, post success/failure to session mailbox."""
+    task = asyncio.create_task(coro)
+
+    def _on_done(t: asyncio.Task) -> None:
+        if t.cancelled():
+            return
+        if exc := t.exception():
+            session.post_message(f"Background task '{name}' failed: {exc}")
+        else:
+            session.post_message(f"Background task '{name}' succeeded.")
+
+    task.add_done_callback(_on_done)
+    session.track(task)
+
+
 async def _setup_web(
     session: Session,
     settings: HookSettings,
@@ -224,17 +240,9 @@ async def _setup_web(
         return await apt.install_packages(apt_packages)
 
     # Fire-and-forget: apt, precommit, tune_rootfs (notifications via session mailbox).
-    session.register_apt_install(asyncio.create_task(traced_apt()))
-
-    @tracer.start_as_current_span("install_precommit", context=root_ctx)
-    async def traced_precommit() -> precommit.PrecommitSetup:
-        setup, hooks_task = await precommit.install_precommit(project_dir)
-        if hooks_task is not None:
-            session.register_precommit_install(hooks_task)
-        return setup
-
-    session.register_precommit_setup(asyncio.create_task(traced_precommit()))
-    session.register_tune_rootfs(asyncio.create_task(run_in_thread(tune_rootfs.reduce_reserved_blocks)))
+    _run_background(session, traced_apt(), name="apt package install")
+    _run_background(session, precommit.install_precommit(project_dir), name="pre-commit setup")
+    _run_background(session, run_in_thread(tune_rootfs.reduce_reserved_blocks), name="rootfs tuning")
 
     # Proxy task starts without BuildBuddy state (buildbuddy setup depends on
     # k8s secrets which in turn depend on proxy being up for TLS).
@@ -501,12 +509,13 @@ async def handle(
     # Fire-and-forget Bazel warmup (both web and CLI modes).
     match settings.bazel_warmup:
         case BazelWarmupInfo():
-            task = asyncio.create_task(
+            _run_background(
+                session,
                 bazel_warmup.warmup_bazel_server(
                     wrapper_path=session.paths.wrapper_path, project_dir=ctx.project_dir, env_file=ctx.env_file_path
-                )
+                ),
+                name="Bazel warmup",
             )
-            session.register_bazel_warmup(task)
         case BazelWarmupCommand(command=command):
             handle = await bazel_warmup.start_bazel_command(
                 wrapper_path=session.paths.wrapper_path,
@@ -514,8 +523,8 @@ async def handle(
                 env_file=ctx.env_file_path,
                 command=command,
             )
-            query_task = asyncio.create_task(handle.wait())
-            session.register_background_bazel_command(query_task, handle.pid, command)
+            session.post_message(f"Background `bazel {command}` started (PID {handle.pid}).")
+            _run_background(session, handle.wait(), name=f"bazel {command}")
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
@@ -532,7 +541,7 @@ async def handle(
             collector=collector,
             proxy=setup.auth_proxy,
             container=setup.container,
-            precommit=precommit.PrecommitInstallingHooks() if ctx.web_mode else None,
+            precommit_installing=ctx.web_mode,
             mkcert=setup.mkcert_result,
             secrets=setup.secrets,
             extra_context=extra_context,

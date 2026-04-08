@@ -1,6 +1,5 @@
 """Tests for pre_tool_use hook."""
 
-import asyncio
 from pathlib import Path
 
 import pytest
@@ -9,7 +8,6 @@ import pytest_bazel
 from devinfra.claude.claude_api.hooks.pre_tool_use import PermissionDecision, PreToolUseInput
 from devinfra.claude.hook_daemon.pre_tool_use import ALWAYS_ALLOW_COMMANDS, evaluate
 from devinfra.claude.hook_daemon.session import Session
-from devinfra.claude.hook_daemon.session_start import precommit
 from devinfra.claude.session_paths import SessionPaths
 
 
@@ -53,61 +51,27 @@ class TestEvaluate:
         ids=["unknown-bash-command", "non-bash-tool", "bash-without-command"],
     )
     def test_returns_no_decision_for_unmatched(self, tool_name: str, tool_input: dict) -> None:
-        # Unmatched tools return no hook_specific_output (implicit allow — no blocking decision)
         hook_input = PreToolUseInput(**_COMMON, tool_name=tool_name, tool_input=tool_input)
         result = evaluate(hook_input)
         assert result.hook_specific_output is None
 
 
-# === Background notification tests (session.take_precommit_status) ===
+# === Session mailbox tests ===
 
 
-async def test_no_message_while_task_running(session: Session) -> None:
-    async def never_complete() -> precommit.PrecommitHooksResult:
-        await asyncio.sleep(1000)
-        return precommit.PrecommitHooksInstalled()
+def test_post_and_drain(session: Session) -> None:
+    session.post_message("hello")
+    session.post_message("world")
+    assert session.drain_messages() == ["hello", "world"]
 
-    task: asyncio.Task[precommit.PrecommitHooksResult] = asyncio.create_task(never_complete())
-    session.register_precommit_install(task)
+
+def test_drain_clears(session: Session) -> None:
+    session.post_message("hello")
+    session.drain_messages()
     assert session.drain_messages() == []
-    task.cancel()
 
 
-async def test_precommit_success_surfaced_after_task_done(session: Session) -> None:
-    async def succeed() -> precommit.PrecommitHooksResult:
-        return precommit.PrecommitHooksInstalled()
-
-    task: asyncio.Task[precommit.PrecommitHooksResult] = asyncio.create_task(succeed())
-    await asyncio.sleep(0)  # let task complete
-    session.register_precommit_install(task)
-    await asyncio.sleep(0)  # let done callback fire
-    messages = session.drain_messages()
-    assert len(messages) == 1
-    assert "completed successfully" in messages[0]
-
-
-async def test_precommit_failure_surfaced_after_task_done(session: Session) -> None:
-    async def fail() -> precommit.PrecommitHooksResult:
-        return precommit.PrecommitHooksFailed(error=RuntimeError("hook env error"))
-
-    task: asyncio.Task[precommit.PrecommitHooksResult] = asyncio.create_task(fail())
-    await asyncio.sleep(0)  # let task complete
-    session.register_precommit_install(task)
-    await asyncio.sleep(0)  # let done callback fire
-    messages = session.drain_messages()
-    assert len(messages) == 1
-    assert "failed" in messages[0]
-
-
-async def test_mailbox_drained_only_once(session: Session) -> None:
-    async def succeed() -> precommit.PrecommitHooksResult:
-        return precommit.PrecommitHooksInstalled()
-
-    task: asyncio.Task[precommit.PrecommitHooksResult] = asyncio.create_task(succeed())
-    await asyncio.sleep(0)  # let task complete
-    session.register_precommit_install(task)
-    await asyncio.sleep(0)  # let done callback fire
-    assert len(session.drain_messages()) == 1
+def test_empty_drain(session: Session) -> None:
     assert session.drain_messages() == []
 
 

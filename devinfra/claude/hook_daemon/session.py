@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy, UdsRemoteProxy, UpstreamCreds
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.hook_config import HookConfig
-from devinfra.claude.hook_daemon.session_start import precommit
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings, ProxyMode
 
@@ -46,100 +45,6 @@ class Session:
         messages = list(self._mailbox)
         self._mailbox.clear()
         return messages
-
-    def register_precommit_install(self, task: asyncio.Task[precommit.PrecommitHooksResult]) -> None:
-        """Register install-hooks task: track it and post status on completion."""
-
-        def _on_done(t: asyncio.Task[precommit.PrecommitHooksResult]) -> None:
-            if t.cancelled():
-                return
-            match t.result():
-                case precommit.PrecommitHooksInstalled():
-                    self.post_message("pre-commit install-hooks completed successfully. Hook environments are ready.")
-                case precommit.PrecommitHooksFailed(error=e):
-                    self.post_message(
-                        f"pre-commit install-hooks failed: {e}. Run `pre-commit install-hooks` manually to retry."
-                    )
-
-        task.add_done_callback(_on_done)
-        self.track(task)
-
-    def register_bazel_warmup(self, task: asyncio.Task[None]) -> None:
-        """Register bazel warmup task: track it and post status on completion."""
-
-        def _on_done(t: asyncio.Task[None]) -> None:
-            if t.cancelled():
-                return
-            exc = t.exception()
-            if exc is not None:
-                self.post_message(f"Bazel server warmup failed: {exc}")
-            else:
-                self.post_message("Bazel server is warm.")
-
-        task.add_done_callback(_on_done)
-        self.track(task)
-
-    def register_precommit_setup(self, task: asyncio.Task[precommit.PrecommitSetup]) -> None:
-        """Register the entire precommit setup as fire-and-forget."""
-
-        def _on_done(t: asyncio.Task[precommit.PrecommitSetup]) -> None:
-            if t.cancelled():
-                return
-            exc = t.exception()
-            if exc is not None:
-                self.post_message(f"pre-commit setup failed: {exc}")
-                return
-            match t.result():
-                case precommit.PrecommitInstallingHooks():
-                    self.post_message("pre-commit hook installed, environments installing in background.")
-                case precommit.PrecommitNotInstalled():
-                    self.post_message("pre-commit hook installation failed. Run `pre-commit install` manually.")
-
-        task.add_done_callback(_on_done)
-        self.track(task)
-
-    def register_apt_install(self, task: asyncio.Task[object]) -> None:
-        """Register apt package install as fire-and-forget."""
-
-        def _on_done(t: asyncio.Task[object]) -> None:
-            if t.cancelled():
-                return
-            exc = t.exception()
-            if exc is not None:
-                self.post_message(f"System package installation failed: {exc}")
-            else:
-                self.post_message("System packages installed.")
-
-        task.add_done_callback(_on_done)
-        self.track(task)
-
-    def register_tune_rootfs(self, task: asyncio.Task[None]) -> None:
-        """Register rootfs tuning as fire-and-forget. Only posts on failure."""
-
-        def _on_done(t: asyncio.Task[None]) -> None:
-            if t.cancelled():
-                return
-            if exc := t.exception():
-                self.post_message(f"Failed to reduce reserved blocks: {exc}")
-
-        task.add_done_callback(_on_done)
-        self.track(task)
-
-    def register_background_bazel_command(self, task: asyncio.Task[None], pid: int, command: str) -> None:
-        """Register a background bazel command: post PID for cancellation, track completion."""
-        self.post_message(f"Background `bazel {command}` started (PID {pid}). To cancel, run: `kill {pid}`")
-
-        def _on_done(t: asyncio.Task[None]) -> None:
-            if t.cancelled():
-                return
-            exc = t.exception()
-            if exc is not None:
-                self.post_message(f"Background `bazel {command}` failed: {exc}")
-            else:
-                self.post_message(f"Background `bazel {command}` completed.")
-
-        task.add_done_callback(_on_done)
-        self.track(task)
 
     async def start_proxy(self, web_mode: bool, hook_config: HookConfig, settings: HookSettings) -> None:
         """Start proxy infrastructure for this session."""
