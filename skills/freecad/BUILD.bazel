@@ -76,7 +76,6 @@ pkg_tar(
         ":freecad_cube_with_hole_files",
         ":freecad_examples_files",
         ":freecad_local_files",
-        ":freecad_rect_files",
     ],
     package_dir = "freecad",
     visibility = ["//visibility:public"],
