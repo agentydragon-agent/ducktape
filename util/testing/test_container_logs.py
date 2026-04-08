@@ -9,7 +9,7 @@ import pytest_bazel
 
 from third_party.containers.rlocations import DEBIAN_SLIM
 from util.oci import load_oci_image
-from util.testing.container_logs import LoggedContainer, LoggedContainerFactory
+from util.testing.container_logs import LoggedContainer, LoggedContainerFactory, logged_container as logged_container
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
