@@ -4,7 +4,8 @@ name: Sync artifact pins
 # regardless of how many releases landed since the last sync.
 "on":
   schedule:
-    - cron: "*/5 * * * *"
+    # GitHub throttles scheduled workflows to ~30 min intervals regardless of cron.
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 concurrency:
   group: sync-pins
