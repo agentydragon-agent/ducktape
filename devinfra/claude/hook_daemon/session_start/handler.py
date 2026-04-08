@@ -56,7 +56,7 @@ from devinfra.claude.hook_daemon.session_start import (
 )
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.managed_files import write_config
-from devinfra.claude.settings import CONFIG_FILES, HookSettings, ProxyMode
+from devinfra.claude.settings import CONFIG_FILES, BazelWarmupCommand, BazelWarmupInfo, HookSettings, ProxyMode
 from devinfra.claude.sops_decrypt import discover_age_identities
 from devinfra.claude.supervisor import setup as supervisor_setup
 
@@ -464,8 +464,8 @@ async def handle(
             web_proxy=ctx.web_mode,
             use_tcp_proxy=settings.proxy_mode == ProxyMode.TCP,
             proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
-            bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock,
-            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock,
+            bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
+            bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.uds_bes else None,
             truststore_path=session.paths.auth_proxy_truststore,
             truststore_password=proxy_setup.TRUSTSTORE_PASSWORD,
             combined_ca_path=combined_ca,
@@ -509,14 +509,24 @@ async def handle(
         env_file.write_env_file(ctx.env_file_path, env_vars)
     logger.info("Wrote environment to %s", ctx.env_file_path)
 
-    # Fire-and-forget Bazel server warmup (both web and CLI modes).
-    if settings.warmup_bazel_server:
-        task = asyncio.create_task(
-            bazel_warmup.warmup_bazel_server(
-                wrapper_path=session.paths.wrapper_path, project_dir=ctx.project_dir, env_file=ctx.env_file_path
+    # Fire-and-forget Bazel warmup (both web and CLI modes).
+    match settings.bazel_warmup:
+        case BazelWarmupInfo():
+            task = asyncio.create_task(
+                bazel_warmup.warmup_bazel_server(
+                    wrapper_path=session.paths.wrapper_path, project_dir=ctx.project_dir, env_file=ctx.env_file_path
+                )
             )
-        )
-        session.register_bazel_warmup(task)
+            session.register_bazel_warmup(task)
+        case BazelWarmupCommand(command=command):
+            handle = await bazel_warmup.start_bazel_command(
+                wrapper_path=session.paths.wrapper_path,
+                project_dir=ctx.project_dir,
+                env_file=ctx.env_file_path,
+                command=command,
+            )
+            query_task = asyncio.create_task(handle.wait())
+            session.register_background_bazel_command(query_task, handle.pid, command)
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
