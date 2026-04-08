@@ -11,6 +11,7 @@ Both fall back to ``Path.cwd()`` when not running under ``bazel run``.
 from __future__ import annotations
 
 import dataclasses
+import enum
 import logging
 import os
 import shutil
@@ -157,15 +158,33 @@ class BazelLabel:
         return self.package
 
 
-def detect_bazel_command() -> tuple[str, ...]:
-    """Use ``bb remote`` when ``bb`` is on PATH and ``BUILDBUDDY_API_KEY`` is set."""
+class BazelBackend(enum.Enum):
+    """How Bazel commands are executed."""
+
+    LOCAL = "local"
+    """Direct local ``bazel`` invocation."""
+
+    BUILDBUDDY = "buildbuddy"
+    """Remote execution via ``bb remote``."""
+
+    @property
+    def command(self) -> tuple[str, ...]:
+        match self:
+            case BazelBackend.LOCAL:
+                return ("bazel",)
+            case BazelBackend.BUILDBUDDY:
+                return ("bb", "remote")
+
+
+def detect_bazel_backend() -> BazelBackend:
+    """Use BuildBuddy when ``bb`` is on PATH and ``BUILDBUDDY_API_KEY`` is set."""
     if os.environ.get("BUILDBUDDY_API_KEY") and shutil.which("bb"):
-        return ("bb", "remote")
+        return BazelBackend.BUILDBUDDY
     if not shutil.which("bb"):
         logger.warning("bb not on PATH, falling back to local bazel")
     elif not os.environ.get("BUILDBUDDY_API_KEY"):
         logger.warning("BUILDBUDDY_API_KEY not set, falling back to local bazel")
-    return ("bazel",)
+    return BazelBackend.LOCAL
 
 
 @dataclasses.dataclass(frozen=True)
@@ -175,20 +194,18 @@ class BazelWorkspace:
     root: Path
     output_base: Path | None = None
     startup_flags: tuple[str, ...] = ()
-    # Override the bazel command, e.g. ("bb", "remote") for BuildBuddy remote execution.
-    # --output_base and startup_flags are only applied when using the default ("bazel",).
-    bazel_command: tuple[str, ...] = ("bazel",)
+    backend: BazelBackend = BazelBackend.LOCAL
 
     def __post_init__(self) -> None:
-        if self.bazel_command != ("bazel",):
+        if self.backend != BazelBackend.LOCAL:
             if self.output_base is not None:
-                raise ValueError(f"output_base is not supported with custom bazel_command={self.bazel_command!r}")
+                raise ValueError(f"output_base is not supported with {self.backend}")
             if self.startup_flags:
-                raise ValueError(f"startup_flags is not supported with custom bazel_command={self.bazel_command!r}")
+                raise ValueError(f"startup_flags is not supported with {self.backend}")
 
     def _bazel_prefix(self) -> list[str]:
         """Base bazel command with optional --output_base and startup flags."""
-        cmd = list(self.bazel_command)
+        cmd = list(self.backend.command)
         if self.output_base is not None:
             cmd.append(f"--output_base={self.output_base}")
         cmd.extend(self.startup_flags)
@@ -223,18 +240,12 @@ class BazelWorkspace:
         universe_scope: str | None = None,
         profile_path: Path | None = None,
     ) -> list[BazelLabel]:
-        """Run ``bazel query`` in this workspace.
+        """Run ``bazel query`` and return parsed labels.
 
-        ``--output=label`` ensures every output line is a parseable label.
-        The expression is passed via ``--query_file`` to avoid
-        ``E2BIG`` / "Argument list too long" errors on large queries.
-
-        When *profile_path* is set, ``--generate_json_trace_profile`` and
-        ``--profile`` are passed to Bazel, producing a Chrome trace JSON.
-
-        Raises :class:`subprocess.CalledProcessError` if the query exits non-zero
-        (or non-3 when *keep_going*), with ``.stderr`` containing the captured
-        error text.
+        Short queries are passed as a positional arg (works with both local
+        bazel and ``bb remote``).  Queries exceeding 100 KB fall back to
+        ``--query_file`` (local only — ``bb remote`` cannot access local temp
+        files).
         """
         cmd = [*self._bazel_prefix(), "query", "--output=label"]
         if keep_going:
@@ -243,13 +254,30 @@ class BazelWorkspace:
             cmd.append(f"--universe_scope={universe_scope}")
         if profile_path is not None:
             cmd.extend([f"--profile={profile_path}", "--generate_json_trace_profile"])
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery") as query_file:
-            query_file.write(expr)
-            query_file.flush()
-            if persist_dir is not None:
-                (persist_dir / "query").write_text(expr)
-            cmd.append(f"--query_file={query_file.name}")
+        if persist_dir is not None:
+            (persist_dir / "query").write_text(expr)
+        # Prefer inline query arg (works with both local bazel and bb remote).
+        # Fall back to --query_file for large queries (local only — bb remote
+        # can't access local temp files on the runner).
+        max_inline_bytes = 100_000  # conservative; Linux MAX_ARG_STRLEN is 128 KiB
+        query_file_path: Path | None = None
+        if len(expr.encode()) <= max_inline_bytes:
+            cmd.append(expr)
+        elif self.backend == BazelBackend.LOCAL:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery", delete=False) as f:
+                f.write(expr)
+            query_file_path = Path(f.name)
+            cmd.append(f"--query_file={query_file_path}")
+        else:
+            raise RuntimeError(
+                f"Query too large ({len(expr)} chars) for command line,"
+                f" and --query_file is not supported with {self.backend}"
+            )
+        try:
             result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.root, check=False, timeout=timeout)
+        finally:
+            if query_file_path is not None:
+                query_file_path.unlink(missing_ok=True)
         if persist_dir is not None:
             (persist_dir / "stdout").write_text(result.stdout)
             (persist_dir / "stderr").write_text(result.stderr)
@@ -257,7 +285,16 @@ class BazelWorkspace:
         ok_codes = {0, 3} if keep_going else {0}
         if result.returncode not in ok_codes:
             raise subprocess.CalledProcessError(result.returncode, "bazel", result.stdout, result.stderr)
-        return [BazelLabel.parse(line) for line in result.stdout.splitlines() if line]
+
+        # TODO: bb remote mixes its own log lines (git sync, progress) into
+        # stdout.  We filter to lines that look like Bazel labels.  A cleaner
+        # approach would be to use `bb execute --input_root . --output stdio`
+        # which gives clean separated stdout/stderr, but it uploads the whole
+        # repo each time and doesn't benefit from bb remote's runner recycling.
+        def _is_label(line: str) -> bool:
+            return line.startswith((_PKG_SEP, _REPO_SIGIL))
+
+        return [BazelLabel.parse(line) for line in result.stdout.splitlines() if _is_label(line)]
 
     def test(self, targets: list[str], *, check_up_to_date: bool = False, timeout: int | None = None) -> int:
         """Run ``bazel test`` and return the exit code."""
