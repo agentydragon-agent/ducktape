@@ -24,16 +24,12 @@ const svelteFiles = projectGlobs.map((g) => `${g}/*.svelte`);
 const svelteTsFiles = projectGlobs.map((g) => `${g}/*.svelte.ts`);
 
 // Import ordering (TS equivalent of ruff's isort)
+// import/order is disabled: eslint-plugin-import-x's import/order rule crashes under
+// Bazel's sandboxed execution because resolve() returns null for imports in bazel-out/
+// paths and getFilePackagePath calls path.dirname(null). Affects all file types.
 const importRules = {
   "import/first": "error",
-  "import/order": [
-    "error",
-    {
-      groups: ["builtin", "external", "internal", ["parent", "sibling"], "index", "type"],
-      "newlines-between": "always",
-      alphabetize: { order: "asc", caseInsensitive: true },
-    },
-  ],
+  "import/order": "off",
   "import/newline-after-import": "error",
   "import/no-duplicates": "error",
 };
@@ -99,9 +95,6 @@ export default [
     },
     rules: {
       ...coreRules,
-      // import/order crashes under Bazel's sandboxed execution (null file path
-      // in getFilePackagePath). Affects both eslint-plugin-import and import-x.
-      "import/order": "off",
       "svelte/no-unused-svelte-ignore": "warn",
     },
   },

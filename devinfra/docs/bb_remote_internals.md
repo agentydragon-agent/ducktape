@@ -288,6 +288,28 @@ Both use the same Firecracker boot sequence when
 `-exec_properties=workload-isolation-type=firecracker` uses OCI containers
 instead (no VM, direct `runc`-style exec into the container rootfs).
 
+## Limitations
+
+### `bb remote` only supports bazel commands, not bb commands
+
+`bb remote` dispatches recognized bazel subcommands (`build`, `test`, `query`,
+`cquery`, `aquery`, etc.) to the runner. Non-bazel commands like `mod` are not
+recognized. Use `--script` mode instead:
+
+```bash
+# Does not work:
+bb remote mod explain protobuf
+
+# Use --script:
+bb remote --script 'bazel mod explain protobuf'
+```
+
+### `bb remote` mixes log lines into stdout
+
+Runner log lines (git sync, progress, ANSI escape sequences) are mixed into
+stdout alongside bazel output. When parsing stdout programmatically (e.g.,
+`bazel query` label output), filter to lines starting with `//` or `@`.
+
 ## Key source files
 
 All paths relative to <https://github.com/buildbuddy-io/buildbuddy>.
