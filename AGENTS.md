@@ -9,77 +9,149 @@ Linux by default. macOS-only components (Seatbelt, Sandboxer) are explicitly doc
 ## Recovering from a Broken Session Start Hook (Claude Code Web)
 
 When running in Claude Code Web (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` is set), the
-session start hook sets up Bazel, the auth proxy, TLS CA, k8s secrets, BuildBuddy RBE,
+session start hook sets up Bazel, the auth proxy, TLS CA, SOPS secrets, BuildBuddy RBE,
 and other tooling. Symptoms of failure: certificate errors, `bazel: command not found`,
 `Unable to resolve host remote.buildbuddy.io`, missing env files.
 
-**Recovery: read the implementation and replicate it manually.**
-
-1. Read <devinfra/claude/hook_daemon/session_start/handler.py> (`_setup_web()`) for the full setup sequence
-2. Read <devinfra/claude/README.md> for architecture context
-3. Read `.claude_hooks/config.yaml` for k8s server, namespace, secret mappings
-4. Read <devinfra/claude/config/bazelrc.mako> for the session bazelrc template
-5. Read <devinfra/setup_buildbuddy.sh> for BuildBuddy configuration
-
-**Do not skip steps.** In particular:
-
-- **k8s secrets setup** fetches the BuildBuddy API key (`DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` env var). Without it, RBE is unavailable.
-- **BuildBuddy setup** (`devinfra/setup_buildbuddy.sh`) provides remote cache/execution.
-
-Check the hook daemon log first: `tail -100 ~/.claude/session-env/<session_id>/hook-daemon/daemon.log`
-
-### Quick Recovery: Reuse a Previous Session
-
-If a previous session completed successfully, you can bootstrap from its files:
-
-1. **Find the active daemon**: `ps aux | grep hook_daemon` — note the session ID from the `--sock` argument
-2. **Find a previous working session**: look for `sessionstart-hook-0.sh` under `~/.claude/session-env/*/`
-3. **Trigger SessionStart on the live daemon** via `curl --unix-socket /tmp/claude-hd/<live_session_id>/d.sock`:
-   ```bash
-   LIVE=<live_session_id>
-   SOCK=/tmp/claude-hd/$LIVE/d.sock
-   # Build JSON with hook={hook_event_name: SessionStart, session_id: $LIVE, ...} and env=os.environ
-   python3 -c "
-   import json, os
-   env = dict(os.environ)
-   env['CLAUDE_ENV_FILE'] = f'/root/.claude/session-env/$LIVE/sessionstart-hook-0.sh'
-   env['CLAUDE_PROJECT_DIR'] = '/home/user/ducktape'
-   env['CLAUDE_CODE_REMOTE'] = 'true'
-   print(json.dumps({'hook': {'hook_event_name': 'SessionStart', 'session_id': '$LIVE',
-     'cwd': '/home/user/ducktape', 'transcript_path': '/tmp/transcript.json',
-     'source': 'startup'}, 'env': env}))
-   " | curl -s --max-time 300 --unix-socket $SOCK http://localhost/hook -X POST \
-     -H 'Content-Type: application/json' -d @-
-   ```
-4. If the hook completes, `source ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh`
-5. If the hook 500s (e.g. k8s secrets timeout), manually assemble from partial results:
-   - The daemon typically creates `bin/bazel` (wrapper), `auth-proxy/` (CA certs, truststore), and starts supervisor+docker before failing
-   - Write the `bazelrc` manually from <devinfra/claude/config/bazelrc.mako> — key vars: `remote_proxy_sock` = `/tmp/claude-hd/$LIVE/remote-proxy.sock`, `truststore_path` = `$SD/auth-proxy/cacerts.jks`, `combined_ca_path` = `$SD/auth-proxy/combined_ca.pem`
-   - Copy secrets (`GITHUB_TOKEN`, `BUILDBUDDY_API_KEY`) from a previous session's env file
-   - Write and source a minimal env file (see below)
-   - Patch the bazel wrapper's `DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR` if it was copied from another session
-
-### Minimal env file template
+**Check the daemon log first:**
 
 ```bash
-SD=~/.claude/session-env/<session_id>
-cat > "$SD/sessionstart-hook-0.sh" << 'EOF'
-export PATH="<session_dir>/bin:$PATH"
-export SESSION_BAZELRC="<session_dir>/bazelrc"
-export BAZELISK_PATH="~/.cache/claude-hooks/bin/bazelisk"
-export DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR="<session_dir>"
+LIVE=$(ps aux | grep hook_daemon | grep -v grep | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+')
+tail -100 ~/.claude/session-env/$LIVE/hook-daemon/daemon.log
+```
+
+**Recovery: read the implementation to understand what failed.**
+
+1. Read <devinfra/claude/hook_daemon/session_start/handler.py> for the full setup sequence
+2. Read <devinfra/claude/README.md> for architecture context
+3. Read `.claude_hooks/config.yaml` for secrets config (SOPS files and k8s settings)
+4. Read <devinfra/claude/config/bazelrc.mako> for the session bazelrc template
+
+**Key facts about secrets (changed from k8s to SOPS):**
+
+- `BUILDBUDDY_API_KEY` — decrypted from `secrets/buildbuddy.yaml` (SOPS, age key in env)
+- `GITHUB_TOKEN` — decrypted from `secrets/github-pat-agentydragon-agent.yaml` (SOPS)
+- `k8s_token` — decrypted from `secrets/claude-web-k8s-token.yaml` (SOPS); also available
+  as `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` env var (injected by the cluster at container start)
+- `otel_bearer_token` — fetched from k8s secret (non-critical, only for tracing)
+- `DUCKTAPE_CLAUDE_HOOKS_AGE_KEY` — always present in env; used to decrypt all SOPS files
+
+Without `BUILDBUDDY_API_KEY`, RBE is unavailable. All other secrets are non-critical.
+
+### Step 1: Check if the env file was already written
+
+A 500 response from the hook daemon often means the response _rendering_ failed, not the
+setup itself — the daemon frequently writes the env file before the template error occurs.
+Always check:
+
+```bash
+LIVE=$(ps aux | grep hook_daemon | grep -v grep | grep -oP '(?<=--sock /tmp/claude-hd/)[^/]+')
+head -3 ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh 2>/dev/null
+# If it has the CANARY marker, source it:
+source ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh
+bazel info  # verify it works
+```
+
+### Step 2: Re-trigger SessionStart on the live daemon
+
+If the env file is missing or incomplete, re-trigger the hook:
+
+```bash
+LIVE=<live_session_id>
+SOCK=/tmp/claude-hd/$LIVE/d.sock
+python3.13 -c "
+import json, os
+env = dict(os.environ)
+env['CLAUDE_ENV_FILE'] = f'/root/.claude/session-env/$LIVE/sessionstart-hook-0.sh'
+env['CLAUDE_PROJECT_DIR'] = '/home/user/ducktape'
+env['CLAUDE_CODE_REMOTE'] = 'true'
+print(json.dumps({'hook': {'hook_event_name': 'SessionStart', 'session_id': '$LIVE',
+  'cwd': '/home/user/ducktape', 'transcript_path': '/tmp/transcript.json',
+  'source': 'startup'}, 'env': env}))
+" | curl -s --max-time 300 --unix-socket $SOCK http://localhost/hook -X POST \
+  -H 'Content-Type: application/json' -d @-
+# Then source regardless of HTTP status (500 may still mean env file was written):
+source ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh
+```
+
+### Step 3: Manual assembly (daemon unavailable or env file missing)
+
+If the daemon is down, manually assemble using SOPS (no k8s required):
+
+**Decrypt secrets** — `DUCKTAPE_CLAUDE_HOOKS_AGE_KEY` is always in env:
+
+```bash
+# Get the PYTHONPATH the daemon uses (needed for yaml, pyrage deps)
+DAEMON_PY_PATH=$(cat /proc/$(pgrep -f hook_daemon | head -1)/environ 2>/dev/null \
+  | tr '\0' '\n' | grep '^PYTHONPATH=' | cut -d= -f2-)
+
+PYTHONPATH="$DAEMON_PY_PATH" python3.13 - <<'EOF'
+import os
+from devinfra.claude.sops_decrypt import load_age_identities, decrypt_sops_yaml
+from pathlib import Path
+ids = load_age_identities(os.environ["DUCKTAPE_CLAUDE_HOOKS_AGE_KEY"])
+proj = Path("/home/user/ducktape")
+bb = decrypt_sops_yaml(proj / "secrets/buildbuddy.yaml", ids)
+gh = decrypt_sops_yaml(proj / "secrets/github-pat-agentydragon-agent.yaml", ids)
+print(f"export BUILDBUDDY_API_KEY={bb['buildbuddy_api_key']}")
+print(f"export GITHUB_TOKEN={gh['github_token']}")
+EOF
+```
+
+**Configure BuildBuddy** (writes `~/.config/bazel/buildbuddy.bazelrc`):
+
+```bash
+BUILDBUDDY_API_KEY=<from above>
+mkdir -p ~/.config/bazel
+cat > ~/.config/bazel/buildbuddy.bazelrc <<EOF
+common --remote_header=x-buildbuddy-api-key=${BUILDBUDDY_API_KEY}
+build --config=rbe
+EOF
+```
+
+**Assemble the minimal env file** — copy from a previous session and patch the session ID:
+
+```bash
+PREV=$(ls ~/.claude/session-env/ | grep -v "$LIVE" | head -1)
+SD=~/.claude/session-env/$LIVE
+mkdir -p "$SD"
+sed "s|$PREV|$LIVE|g" ~/.claude/session-env/$PREV/sessionstart-hook-0.sh > "$SD/sessionstart-hook-0.sh"
+source "$SD/sessionstart-hook-0.sh"
+```
+
+If no previous session exists, write from scratch (fill in `<LIVE>` with the session ID):
+
+```bash
+SD=~/.claude/session-env/<LIVE>
+mkdir -p "$SD/auth-proxy" "$SD/bin"
+cat > "$SD/sessionstart-hook-0.sh" <<'ENVEOF'
+export PATH="<SD>/bin:$PATH"
+export SESSION_BAZELRC="<SD>/bazelrc"
+export BAZELISK_PATH="/usr/local/bin/bazelisk"
+export DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR="<SD>"
 export DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT="19001"
-export SSL_CERT_FILE="<session_dir>/auth-proxy/combined_ca.pem"
-export REQUESTS_CA_BUNDLE="<session_dir>/auth-proxy/combined_ca.pem"
-export CURL_CA_BUNDLE="<session_dir>/auth-proxy/combined_ca.pem"
-export NODE_EXTRA_CA_CERTS="<session_dir>/auth-proxy/combined_ca.pem"
+export SSL_CERT_FILE="<SD>/auth-proxy/combined_ca.pem"
+export REQUESTS_CA_BUNDLE="<SD>/auth-proxy/combined_ca.pem"
+export CURL_CA_BUNDLE="<SD>/auth-proxy/combined_ca.pem"
+export NODE_EXTRA_CA_CERTS="<SD>/auth-proxy/combined_ca.pem"
 export DOCKER_HOST="unix:///var/run/docker.sock"
-export GITHUB_TOKEN="<from old session or k8s>"
-export BUILDBUDDY_API_KEY="<from old session or k8s>"
+export GITHUB_TOKEN="<from SOPS above>"
+export BUILDBUDDY_API_KEY="<from SOPS above>"
 export DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS="0"
 export NO_PROXY="localhost,127.0.0.1,169.254.169.254,metadata.google.internal,*.svc.cluster.local,*.local"
 export no_proxy="$NO_PROXY"
-EOF
+ENVEOF
+```
+
+Note: without the auth proxy CA (`combined_ca.pem` and `cacerts.jks`), Bazel repository
+rules and the JVM truststore won't work. The CA files are created by the daemon. If the
+daemon is completely unavailable, re-run `devinfra/claude/web_setup.sh` to reinstall it.
+
+**Verify**:
+
+```bash
+bazel info           # should show output_base in session-env
+bazel test //devinfra/claude:test_sops_decrypt  # passes via RBE
 ```
 
 **Do NOT** bypass certificate/proxy errors with `--noverify`, `SSL_VERIFY=false`, etc. The root cause is always a missing/broken session start hook. Notify the user.
