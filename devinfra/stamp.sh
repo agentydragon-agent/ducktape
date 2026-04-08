@@ -27,3 +27,11 @@ fi
 # Stable status - only changes when commit changes
 echo "STABLE_BUILD_COMMIT ${COMMIT}"
 echo "STABLE_BUILD_TIMESTAMP ${COMMIT_TIME}"
+
+# Volatile status — BuildBuddy reads these for UI metadata
+# (repo links, branch display, user attribution)
+echo "REPO_URL https://github.com/agentydragon/ducktape"
+echo "BRANCH_NAME $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+echo "COMMIT_SHA $(git rev-parse HEAD 2>/dev/null || echo unknown)"
+echo "USER $(whoami 2>/dev/null || echo unknown)"
+echo "HOST $(hostname 2>/dev/null || echo unknown)"
