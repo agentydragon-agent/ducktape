@@ -160,10 +160,20 @@ class BazelWorkspace:
     root: Path
     output_base: Path | None = None
     startup_flags: tuple[str, ...] = ()
+    # Override the bazel command, e.g. ("bb", "remote") for BuildBuddy remote execution.
+    # --output_base and startup_flags are only applied when using the default ("bazel",).
+    bazel_command: tuple[str, ...] = ("bazel",)
+
+    def __post_init__(self) -> None:
+        if self.bazel_command != ("bazel",):
+            if self.output_base is not None:
+                raise ValueError(f"output_base is not supported with custom bazel_command={self.bazel_command!r}")
+            if self.startup_flags:
+                raise ValueError(f"startup_flags is not supported with custom bazel_command={self.bazel_command!r}")
 
     def _bazel_prefix(self) -> list[str]:
         """Base bazel command with optional --output_base and startup flags."""
-        cmd = ["bazel"]
+        cmd = list(self.bazel_command)
         if self.output_base is not None:
             cmd.append(f"--output_base={self.output_base}")
         cmd.extend(self.startup_flags)

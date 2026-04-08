@@ -24,12 +24,17 @@ TODO: Add XML analysis safety net that checks JUnit XML test results
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
 
 from util.bazel.workspace import BazelWorkspace
+
+logger = logging.getLogger(__name__)
 
 
 class CheckResult(NamedTuple):
@@ -55,6 +60,17 @@ class BazelPyTestIndex:
     exempt_srcs: set[Path] = field(default_factory=set)
 
 
+def _detect_bazel_command() -> tuple[str, ...]:
+    """Use ``bb remote`` when ``bb`` is on PATH and ``BUILDBUDDY_API_KEY`` is set."""
+    if os.environ.get("BUILDBUDDY_API_KEY") and shutil.which("bb"):
+        return ("bb", "remote")
+    if not shutil.which("bb"):
+        logger.warning("bb not on PATH, falling back to local bazel")
+    elif not os.environ.get("BUILDBUDDY_API_KEY"):
+        logger.warning("BUILDBUDDY_API_KEY not set, falling back to local bazel")
+    return ("bazel",)
+
+
 def build_bazel_index(repo_root: Path) -> BazelPyTestIndex:
     """Query Bazel for all py_test targets and build a src-file index.
 
@@ -62,7 +78,7 @@ def build_bazel_index(repo_root: Path) -> BazelPyTestIndex:
       - All source files that are srcs of some py_test target
       - Source files that are srcs of a py_test with a custom main= attribute
     """
-    workspace = BazelWorkspace(root=repo_root)
+    workspace = BazelWorkspace(root=repo_root, bazel_command=_detect_bazel_command())
     with ThreadPoolExecutor(max_workers=2) as executor:
         all_fut = executor.submit(workspace.query, "labels(srcs, kind(py_test, //...))")
         exempt_fut = executor.submit(workspace.query, "labels(srcs, attr(main, '.+', kind(py_test, //...)))")
