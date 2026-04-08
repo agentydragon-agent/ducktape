@@ -66,6 +66,26 @@ py_binary(
 # Runs all custom validations (filename-conventions, tf-centralization,
 # pytest-main-check, cluster-validate) and optionally enforce-bazel-tests.
 py_library(
+    name = "check_test_tag",
+    srcs = ["check_test_tag.py"],
+    imports = ["../.."],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//httpx"],
+)
+
+py_test(
+    name = "test_check_test_tag",
+    srcs = ["test_check_test_tag.py"],
+    imports = ["../.."],
+    deps = [
+        ":check_test_tag",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "ducktape_precommit",
     srcs = ["ducktape_precommit.py"],
     imports = ["../.."],

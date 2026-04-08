@@ -160,6 +160,16 @@ repos:
         stages: [prepare-commit-msg]
         always_run: true
 
+  # Enforce TESTS= tag in commit messages (commit-msg stage)
+  - repo: local
+    hooks:
+      - id: check-test-tag
+        name: Check TESTS= tag in commit message
+        entry: check-test-tag
+        language: system
+        stages: [commit-msg]
+        always_run: true
+
   - repo: local
     hooks:
       # Ansible syntax check: Fast validation for pre-commit
