@@ -16,6 +16,8 @@ import hashlib
 import hmac
 import json
 import os
+import urllib.error
+import urllib.parse
 import urllib.request
 
 SYNAPSE_URL = "http://matrix-synapse.matrix.svc.cluster.local:8008"
@@ -26,8 +28,7 @@ SERVER_NAME = "allegedly.works"
 
 
 def _get_json(url: str, headers: dict) -> dict:
-    hdrs = dict(headers)
-    req = urllib.request.Request(url, headers=hdrs)
+    req = urllib.request.Request(url, headers=headers)
     return json.loads(urllib.request.urlopen(req).read())
 
 
@@ -102,7 +103,7 @@ def upsert_bot(admin_password: str, bot_password: str) -> None:
     print(f"Phase 2: Logged in as @{ADMIN_USERNAME}:{SERVER_NAME}")
 
     bot_mxid = f"@{BOT_USERNAME}:{SERVER_NAME}"
-    encoded_mxid = urllib.request.quote(bot_mxid)
+    encoded_mxid = urllib.parse.quote(bot_mxid)
     auth = {"Authorization": f"Bearer {access_token}"}
     url = _admin_user_url(encoded_mxid)
 
