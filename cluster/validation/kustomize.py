@@ -81,12 +81,12 @@ class KustomizeBuildResult(BaseModel):
     resources: list[K8sResource] = []
 
 
-def parse_kustomize_file(kust_file: Path) -> KustomizeFile | None:
-    """Parse a kustomization.yaml file. Returns None only for empty files."""
+def parse_kustomize_file(kust_file: Path) -> KustomizeFile:
+    """Parse a kustomization.yaml file."""
     with kust_file.open() as f:
         doc = yaml.safe_load(f)
         if not doc:
-            return None
+            raise ValueError(f"{kust_file}: empty kustomization.yaml")
 
     if "patchesStrategicMerge" in doc:
         raise ValueError(
