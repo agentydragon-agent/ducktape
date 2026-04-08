@@ -1,11 +1,13 @@
 # Nix RBE Image TODOs
 
 ## CI & Publishing
+
 - Build CI workflow to auto-build and push `nix-rbe-image` to GHCR
 - Pin digest in `devinfra/image_pins.json` like the Ubuntu image
 - Figure out rebuild/repin flow
 
 ## Image Size
+
 - Add back commented-out packages (Xvfb, D-Bus, cpio, Chromium deps) —
   currently excluded to reduce image size
 - Removed permanently: QEMU, dosfstools, mtools, fuse3, fuse,
@@ -14,12 +16,14 @@
 ## `bb remote` Auto-Detection Issues
 
 ### Unpushed commit breaks auto-detect
+
 When there are unpushed local commits, `bb remote` (without `--run_from_commit`
 or `--run_from_branch`) tries to use the local HEAD SHA as the base commit. The
 runner then does `git fetch --depth=1 origin <sha>` which fails with
 `upload-pack: not our ref` because the commit doesn't exist on the remote.
 
 **Questions to investigate**:
+
 - How exactly does `getBaseBranchAndCommit` in `remotebazel.go` auto-detect?
   It should fall back to the default branch when the local commit isn't pushed.
   Why isn't it falling back?
@@ -31,6 +35,7 @@ runner then does `git fetch --depth=1 origin <sha>` which fails with
 - What's the intended workflow for developing with unpushed commits?
 
 ### Docker in linux-sandbox
+
 `--runner_exec_properties=init-dockerd=true` gives the runner VM a Docker daemon,
 but Bazel's `linux-sandbox` blocks access.
 
@@ -51,6 +56,7 @@ file creation/modification, not socket operations). So `/var/run/docker.sock` is
 always accessible inside the sandbox.
 
 ## shiboken6 / PySide6
+
 - `ezdxf[draw]` → `pyside6` → `shiboken6`/`pyside6-addons` fails to install on `bb remote`
 - All 6.11.0 wheels exist on PyPI as `manylinux_2_34_x86_64` with `cp310-abi3`
 - python-build-standalone reports glibc 2.40, `manylinux_2_34` is in supported tags
@@ -63,6 +69,7 @@ always accessible inside the sandbox.
 - This is a pre-existing issue on `origin/devel` too (not image-specific)
 
 ## `bb remote` git sync
+
 - Investigate how `bb remote` syncs local git state to the runner (the
   `getBaseBranchAndCommit` / patch generation flow in `remotebazel.go`).
 - Currently: unpushed commits cause `git fetch --depth=1 origin <sha>` to fail
