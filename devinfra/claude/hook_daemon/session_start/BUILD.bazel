@@ -283,3 +283,22 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_session_context",
+    srcs = ["test_session_context.py"],
+    data = ["__snapshots__/test_session_context.ambr"],
+    deps = [
+        ":container_runtime",
+        ":mkcert",
+        ":platform_detect",
+        ":precommit",
+        ":secret_sources",
+        ":session_start_lib",
+        "//devinfra/claude/auth_proxy:setup",
+        "//devinfra/claude/hook_daemon/templates",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//syrupy",
+    ],
+)
