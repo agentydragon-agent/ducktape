@@ -212,6 +212,82 @@ tarball and tries to follow the symlinks, which fail when the targets are
 sandbox-internal paths. Fix: `tarfile.open(..., dereference=True)` to store file
 content instead of symlinks.
 
+## Firecracker VM boot sequence
+
+Source: `enterprise/server/remote_execution/containers/firecracker/firecracker.go`,
+`enterprise/server/cmd/goinit/main.go`, `enterprise/server/vmexec/vmexec.go`
+
+BuildBuddy uses Firecracker microVMs for workload isolation. The container image
+is NOT run as a Docker container — it's converted to an ext4 filesystem and
+mounted as a block device in a Firecracker VM.
+
+### Host side (executor)
+
+1. **Image conversion**: Docker/OCI image → ext4 filesystem (`containerfs.ext4`),
+   cached by content hash at `/tmp/${USER}_remote_build/executor/<sha>/containerfs.ext4`
+2. **VM disk layout** — 3 block devices:
+   - `/dev/vda` — container rootfs ext4 (read-only)
+   - `/dev/vdb` — scratch disk ext4 (read-write, overlay upper layer)
+   - `/dev/vdc` — workspace ext4 (hot-swapped per action)
+3. **Launch Firecracker** with `goinit` as init, kernel args like
+   `ro console=ttyS0 reboot=k panic=1 pci=off`
+
+### Inside the VM (goinit, PID 1)
+
+`goinit` is a custom init process — it does NOT run the container's `/init`.
+
+4. **Mount basics**: `/dev` (devtmpfs), `/sys` (sysfs)
+5. **Overlay assembly**:
+   - Mount `/dev/vda` → `/container` (read-only)
+   - Mount `/dev/vdb` → `/scratch` (read-write)
+   - Create overlayfs: `lowerdir=/container, upperdir=/scratch/bbvmroot` → `/mnt`
+6. **Pivot root** to `/mnt` — container rootfs is now `/`
+7. **Pseudo-filesystems**: `/proc`, `/dev/pts`, `/dev/shm`, cgroup2, etc.
+8. **Create `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf`**
+9. **Set PATH** to `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`
+   (hardcoded in goinit)
+10. **Spawn children**:
+    - `vmexec` gRPC server on vsock port 11 (receives exec requests from host)
+    - `dockerd` (if `--init_dockerd` flag)
+    - Optional: DNS server, VFS server
+11. **Wait forever** (child reaper handles SIGCHLD)
+
+### Command execution (vmexec)
+
+The host communicates with the VM over vsock (virtio socket, no TCP needed):
+
+12. Host sends `Exec` gRPC → vmexec runs `os/exec.Command` with requested
+    args, env vars, working dir, and optional UID/GID switch
+13. **Workspace** is hot-mounted: `MountWorkspace` RPC → mounts `/dev/vdc` →
+    `/workspace`. Between actions: unmount, swap disk, remount.
+
+### Implications for container images
+
+- **goinit does NOT run the container's `/init` or systemd.** NixOS activation
+  scripts, envfs, nix-ld systemd services — none of these run.
+- **PATH is hardcoded** to FHS paths. NixOS tools at
+  `/run/current-system/sw/bin/` are not on PATH.
+- **envfs never starts** — `/bin/bash` must be a real file/symlink, not a FUSE
+  resolution.
+- **nix-ld activation doesn't happen** — `programs.nix-ld.enable` creates a
+  systemd unit that never runs.
+- **`/etc/passwd` may be overwritten** — goinit creates its own
+  `/etc/hostname`, `/etc/hosts`, `/etc/resolv.conf` during boot.
+- **Container rootfs is ext4** — all symlinks into `/nix/store/` resolve
+  correctly (the whole store is in the ext4 image).
+- **NixOS glibc searches nix-store paths only** — it does NOT search
+  `/lib/x86_64-linux-gnu/`, `/usr/lib/`, or read `/etc/ld.so.cache` from the
+  FHS path. Any dynamically-linked binary downloaded at runtime (like Bazel
+  from bazelisk) will fail to find `libstdc++.so.6` unless `LD_LIBRARY_PATH`
+  is set or nix-ld is active.
+
+### `bb execute` vs `bb remote` Firecracker behavior
+
+Both use the same Firecracker boot sequence when
+`workload-isolation-type=firecracker` is set. `bb execute` without
+`-exec_properties=workload-isolation-type=firecracker` uses OCI containers
+instead (no VM, direct `runc`-style exec into the container rootfs).
+
 ## Key source files
 
 All paths relative to <https://github.com/buildbuddy-io/buildbuddy>.
@@ -224,3 +300,6 @@ All paths relative to <https://github.com/buildbuddy-io/buildbuddy>.
 | [`enterprise/server/cmd/ci_runner/main.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/cmd/ci_runner/main.go)               | Runner bootstrap, `buildbuddy.bazelrc` generation, Bazel invocation               |
 | [`enterprise/server/hostedrunner/hostedrunner.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/hostedrunner/hostedrunner.go) | Runner service, processes `RunRequest`, handles remote headers                    |
 | [`proto/runner.proto`](https://github.com/buildbuddy-io/buildbuddy/blob/master/proto/runner.proto)                                                         | `RunRequest` protobuf definition                                                  |
+| [`enterprise/server/cmd/goinit/main.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/cmd/goinit/main.go)                     | Firecracker VM init process (PID 1), mounts, pivot root, spawns vmexec           |
+| [`enterprise/server/vmexec/vmexec.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/vmexec/vmexec.go)                         | VM exec service: runs commands via gRPC over vsock, workspace mount/unmount       |
+| [`enterprise/server/remote_execution/containers/firecracker/firecracker.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/remote_execution/containers/firecracker/firecracker.go) | Firecracker container orchestration, image conversion, VM lifecycle |
