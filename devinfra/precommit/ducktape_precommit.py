@@ -167,7 +167,7 @@ async def main_async() -> int:
         files = [Path(f) for f in sys.argv[1:]] if len(sys.argv) > 1 else get_all_files(repo)
 
         # Run validations concurrently, each wrapped in a span
-        async def _traced(coro) -> tuple[str, str | None]:  # noqa: ANN001
+        async def _traced(coro) -> tuple[str, str | None]:
             name, error = await coro
             span = trace.get_current_span()
             span.set_attribute("validation.name", name)

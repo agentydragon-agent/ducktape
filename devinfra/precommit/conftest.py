@@ -26,15 +26,10 @@ def commit(repo: pygit2.Repository) -> None:
 
 def staged_deltas(repo: pygit2.Repository) -> list[pygit2.DiffDelta]:
     """Compute staged deltas the same way the precommit entrypoint does."""
-    if repo.head_is_unborn:
-        base = repo[repo.TreeBuilder().write()].peel(pygit2.Tree)
-    else:
-        base = repo.head.peel(pygit2.Tree)
+    base = repo[repo.TreeBuilder().write()].peel(pygit2.Tree) if repo.head_is_unborn else repo.head.peel(pygit2.Tree)
     repo.index.read()
     return list(repo.index.diff_to_tree(base).deltas)
 
 
 def head_tree(repo: pygit2.Repository) -> pygit2.Tree | None:
-    if repo.head_is_unborn:
-        return None
-    return repo.head.peel(pygit2.Tree)
+    return None if repo.head_is_unborn else repo.head.peel(pygit2.Tree)
