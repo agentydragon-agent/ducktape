@@ -67,13 +67,6 @@ pkg_files(
     strip_prefix = strip_prefix.files_only(),
 )
 
-pkg_files(
-    name = "freecad_rect_files",
-    srcs = ["//skills/freecad/examples/rect:rect.py"],
-    prefix = "examples/rect",
-    strip_prefix = strip_prefix.files_only(),
-)
-
 pkg_tar(
     name = "freecad_tar",
     srcs = [
@@ -120,26 +113,6 @@ py_library(
         "//util/bazel:subprocess",
         "//util/testing:container_logs",
         "//util/testing:otel_tracing",
-        "@pypi//opentelemetry_api",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_container_primitives",
-    size = "medium",
-    srcs = ["test_container_primitives.py"],
-    data = [
-        ":freecad_test",
-        "//third_party/containers:debian_slim",
-    ],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        "//third_party/containers:rlocations",
-        "//util:oci",
-        "//util/testing:container_logs",
         "@pypi//opentelemetry_api",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
