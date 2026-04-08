@@ -10,6 +10,7 @@ manifest:
     7bce59c0a152c0e01f70__mypyc: tomli
     81d243bd2c585b0f4821__mypyc: charset_normalizer
     Crypto: pycryptodome
+    FreeCADTemplates: freecad_stubs
     IPython: ipython
     OpenSSL: pyopenssl
     PIL: pillow
@@ -459,6 +460,7 @@ manifest:
     pytimeparse: pytimeparse
     pytz: pytz
     qrcode: qrcode
+    qtpy: QtPy
     reaktiv: reaktiv
     referencing: referencing
     regex: regex
@@ -601,4 +603,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 043eaddf571a4ac07e8cb73182e6a39b19587917888e21d0d2e05b908451ead9
+integrity: e8cb8535c8b50434b57c780edd731b804f973f298b364633e423ff263342695b
