@@ -34,11 +34,13 @@ let
   hostname = config.networking.hostName;
 
   # Extract the Nebula IP from the host certificate at build time.
-  certInfo = builtins.fromJSON (
-    builtins.readFile (
-      pkgs.runCommand "nebula-cert-info" { } ''
-        ${pkgs.nebula}/bin/nebula-cert print -path ${nebulaDir}/${hostname}.crt -json > $out
-      ''
+  certInfo = lib.head (
+    builtins.fromJSON (
+      builtins.readFile (
+        pkgs.runCommand "nebula-cert-info" { } ''
+          ${pkgs.nebula}/bin/nebula-cert print -path ${nebulaDir}/${hostname}.crt -json > $out
+        ''
+      )
     )
   );
   nodeIp = lib.head (lib.splitString "/" (lib.head certInfo.details.networks));
