@@ -38,7 +38,12 @@ py_library(
     name = "replay_client",
     srcs = ["replay_client.py"],
     visibility = ["//skills/info_gathering/evals:__subpackages__"],
-    deps = ["@pypi//agent_framework_core"],
+    deps = [
+        "@pypi//agent_framework_anthropic",
+        "@pypi//agent_framework_claude",
+        "@pypi//agent_framework_core",
+        "@pypi//agent_framework_openai",
+    ],
 )
 
 py_library(
