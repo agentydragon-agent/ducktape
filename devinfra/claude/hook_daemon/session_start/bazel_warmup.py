@@ -15,7 +15,6 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_WARMUP_TIMEOUT_SECS = 120
 _COMMAND_TIMEOUT_SECS = 300
 
 
@@ -53,15 +52,3 @@ async def start_bazel_command(
         logger.info("Background bazel command completed: %s", command)
 
     return BazelCommandHandle(pid=proc.pid, wait=_wait)
-
-
-async def warmup_bazel_server(wrapper_path: Path, project_dir: Path, env_file: Path) -> None:
-    """Warm up the Bazel server via `bazel info`. Raises on failure."""
-    handle = await start_bazel_command(
-        wrapper_path=wrapper_path,
-        project_dir=project_dir,
-        env_file=env_file,
-        command="info",
-        timeout_secs=_WARMUP_TIMEOUT_SECS,
-    )
-    await handle.wait()

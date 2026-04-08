@@ -508,24 +508,21 @@ async def handle(
     # ORDERING: bazel tmpfs cache mount (in the gather above) must complete before
     # warmup starts — otherwise bazel writes to the underlying fs, then the tmpfs
     # mount shadows those files. This is satisfied because warmup runs after the gather.
+    bazel_command: str | None = None
     match settings.bazel_warmup:
         case BazelWarmupInfo():
-            _run_background(
-                session,
-                bazel_warmup.warmup_bazel_server(
-                    wrapper_path=session.paths.wrapper_path, project_dir=ctx.project_dir, env_file=ctx.env_file_path
-                ),
-                name="Bazel warmup",
-            )
+            bazel_command = "info"
         case BazelWarmupCommand(command=command):
-            handle = await bazel_warmup.start_bazel_command(
-                wrapper_path=session.paths.wrapper_path,
-                project_dir=ctx.project_dir,
-                env_file=ctx.env_file_path,
-                command=command,
-            )
-            session.post_message(f"Background `bazel {command}` started (PID {handle.pid}).")
-            _run_background(session, handle.wait(), name=f"bazel {command}")
+            bazel_command = command
+    if bazel_command is not None:
+        handle = await bazel_warmup.start_bazel_command(
+            wrapper_path=session.paths.wrapper_path,
+            project_dir=ctx.project_dir,
+            env_file=ctx.env_file_path,
+            command=bazel_command,
+        )
+        session.post_message(f"Background `bazel {bazel_command}` started (PID {handle.pid}).")
+        _run_background(session, handle.wait(), name=f"bazel {bazel_command}")
 
     # Build structured session context for Claude Code transcript
     with tracer.start_as_current_span("emit_session_context", context=root_ctx):
