@@ -349,6 +349,7 @@ in
       atuin
 
       # Tools from GitHub releases / binary downloads
+      gh
       glab
       gitstatus
 
