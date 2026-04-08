@@ -115,8 +115,10 @@ def check_blueprint_completeness(k8s_dir: Path) -> list[str]:
     authentik_kust = k8s_dir / "authentik" / "app" / "kustomization.yaml"
     blueprints_dir = k8s_dir / "authentik" / "app" / "blueprints"
 
-    if not authentik_kust.exists() or not blueprints_dir.exists():
-        return []
+    if not authentik_kust.exists():
+        raise FileNotFoundError(f"Expected {authentik_kust} to exist")
+    if not blueprints_dir.exists():
+        raise FileNotFoundError(f"Expected {blueprints_dir} to exist")
 
     with authentik_kust.open() as f:
         doc = yaml.safe_load(f)

@@ -63,8 +63,9 @@ class K8sResource(BaseModel):
 
     @property
     def chart_version(self) -> str | None:
-        if self.kind != "HelmRelease" or not self.spec:
-            return None
+        """Chart version for HelmRelease resources. Only valid when kind == 'HelmRelease'."""
+        if not self.spec:
+            raise ValueError(f"HelmRelease {self.name} has no spec")
         return self.spec.chart.spec.version
 
 
