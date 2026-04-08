@@ -98,7 +98,6 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "live_openai_api: marks tests calling real OpenAI API")
 
 
-
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item: pytest.Item) -> Generator[None]:
     """Create a root span for each test to enable hierarchical traces.

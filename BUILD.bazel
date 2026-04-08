@@ -161,7 +161,6 @@ platform(
 py_package(
     name = "claude_hooks_pkg",
     packages = [
-        "cluster.scripts.validate_cluster",
         "cluster.validation",
         "devinfra",
         "devinfra.claude",
