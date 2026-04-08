@@ -212,7 +212,9 @@ py_test(
     data = [
         "//devinfra/claude/testdata:sops_test_age_key.txt",
         "//devinfra/claude/testdata:sops_test_secrets.yaml",
+        "@multitool//tools/sops",
     ],
+    env = {"SOPS_BIN": "$(rlocationpath @multitool//tools/sops)"},
     imports = ["../.."],
     deps = [
         ":sops_decrypt",

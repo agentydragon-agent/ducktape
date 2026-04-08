@@ -1,6 +1,6 @@
 """Tests for SOPS YAML decryption via sops CLI."""
 
-import shutil
+import os
 import subprocess
 from pathlib import Path
 
@@ -10,13 +10,17 @@ import pytest_bazel
 from devinfra.claude.sops_decrypt import decrypt_sops_yaml, discover_age_key
 from util.bazel.runfiles import get_required_path
 
-# TODO: add sops to multitool or Bazel-managed tools so tests run on RBE.
-pytestmark = pytest.mark.skipif(shutil.which("sops") is None, reason="sops not on PATH")
-
 _TESTDATA_YAML = "_main/devinfra/claude/testdata/sops_test_secrets.yaml"
 _TESTDATA_AGE_KEY = "_main/devinfra/claude/testdata/sops_test_age_key.txt"
-
 _EXPECTED = {"api_key": "test-secret-value", "another_key": "another-secret"}
+
+
+@pytest.fixture(autouse=True)
+def _sops_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure the multitool sops binary is on PATH."""
+    if sops_rlocation := os.environ.get("SOPS_BIN"):
+        sops_path = get_required_path(sops_rlocation)
+        monkeypatch.setenv("PATH", f"{sops_path.parent}:{os.environ.get('PATH', '')}")
 
 
 @pytest.fixture

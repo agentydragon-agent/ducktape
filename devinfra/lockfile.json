@@ -208,6 +208,24 @@
       }
     ]
   },
+  "sops": {
+    "binaries": [
+      {
+        "kind": "file",
+        "url": "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.amd64",
+        "sha256": "14e2e1ba3bef31e74b70cf0b674f6443c80f6c5f3df15d05ffc57c34851b4998",
+        "os": "linux",
+        "cpu": "x86_64"
+      },
+      {
+        "kind": "file",
+        "url": "https://github.com/getsops/sops/releases/download/v3.12.2/sops-v3.12.2.linux.arm64",
+        "sha256": "f66de6f528dca946e910d74fa36a62a7714c11d0db16bd3c9bd8acf73b66704b",
+        "os": "linux",
+        "cpu": "arm64"
+      }
+    ]
+  },
   "ruff": {
     "binaries": [
       {
