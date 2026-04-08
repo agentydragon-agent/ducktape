@@ -227,6 +227,7 @@
       devToolPackages = [
         # Repo-specific tools
         ducktapePkgs.claude-hooks
+        ducktapePkgs.bb
         ducktapePkgs.bbapi
         ducktapePkgs.skills
         # Dev tools

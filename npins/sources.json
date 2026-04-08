@@ -1,5 +1,9 @@
 {
   "pins": {
+    "bb": {
+      "url": "https://github.com/buildbuddy-io/bazel/releases/download/5.0.339/bazel-5.0.339-linux-x86_64",
+      "sha256": "TgfSB1u2oIO519Ew320bvQGBBurJ9hp8xmdyM7QEXCE="
+    },
     "bbapi": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-58c9edd/bbapi",
       "sha256": "Up6RulfltrG6cpaL8OcRwUmRftAYLgfW6EFA1+02OZs="
