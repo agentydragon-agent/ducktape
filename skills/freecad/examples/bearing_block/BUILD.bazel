@@ -50,6 +50,8 @@ py_test(
         "//skills/freecad/conda:freecadcmd",
     ],
     imports = ["../../../.."],
+    # Stubs shadow FreeCAD conda C extensions. See debug/legacy-create-init-investigation.md
+    legacy_create_init = 0,
     deps = [
         ":build",
         ":build_techdraw",
@@ -75,6 +77,8 @@ py_test(
         "//skills/freecad/conda:freecadcmd",
     ],
     imports = ["../../../.."],
+    # Stubs shadow FreeCAD conda C extensions. See debug/legacy-create-init-investigation.md
+    legacy_create_init = 0,
     deps = [
         ":build",
         ":build_techdraw",
