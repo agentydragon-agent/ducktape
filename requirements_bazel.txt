@@ -1481,6 +1481,10 @@ fqdn==1.5.1 \
     --hash=sha256:105ed3677e767fb5ca086a0c1f4bb66ebc3c100be518f0e0d755d9eae164d89f \
     --hash=sha256:3a179af3761e4df6eb2e026ff9e1a3033d3587bf980a0b1b2e1e5d08d7358014
     # via jsonschema
+freecad-stubs==1.0.21 \
+    --hash=sha256:816b2ca663a44e75189482ab970f90278a112ff2b99f64edd216c13d553b52f5 \
+    --hash=sha256:fa96244b1a05e5130b0f96b3eb4ef9aca0f0aa437fff8000cb0750bdbb4edccc
+    # via ducktape (pyproject.toml)
 frozenlist==1.8.0 \
     --hash=sha256:0325024fe97f94c41c08872db482cf8ac4800d80e79222c6b0b7b162d5b13686 \
     --hash=sha256:032efa2674356903cd0261c4317a561a6850f3ac864a63fc1583147fb05a79b0 \
@@ -3582,6 +3586,7 @@ packaging==25.0 \
     #   onnxruntime
     #   pytest
     #   pytest-postgresql
+    #   qtpy
     #   statsmodels
 pandas==3.0.1 \
     --hash=sha256:06aff2ad6f0b94a17822cf8b83bbb563b090ed82ff4fe7712db2ce57cd50d9b8 \
@@ -5295,6 +5300,10 @@ qrcode==8.2 \
     --hash=sha256:16e64e0716c14960108e85d853062c9e8bba5ca8252c0b4d0231b9df4060ff4f \
     --hash=sha256:35c3f2a4172b33136ab9f6b3ef1c00260dd2f66f858f24d88418a015f446506c
     # via ducktape (pyproject.toml)
+qtpy==2.4.3 \
+    --hash=sha256:72095afe13673e017946cc258b8d5da43314197b741ed2890e563cf384b51aa1 \
+    --hash=sha256:db744f7832e6d3da90568ba6ccbca3ee2b3b4a890c3d6fbbc63142f6e4cdf5bb
+    # via freecad-stubs
 reaktiv==0.21.3 \
     --hash=sha256:1fd3ec8c8f0ebeaa84b3bd7db7ede84201b0f4c2c882dadca75642d0f158f04f \
     --hash=sha256:c9e12ca28e969ac34909e40f7a60107e3379ba97bb60950883577890b85b1283

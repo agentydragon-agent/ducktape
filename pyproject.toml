@@ -62,6 +62,7 @@ dependencies = [
 
     # CAD
     "ezdxf[draw]>=0.18",
+    "freecad-stubs",
 
     # Data
     "pandas>=2.2.0",
