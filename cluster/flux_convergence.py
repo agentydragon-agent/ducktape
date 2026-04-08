@@ -185,7 +185,7 @@ def _wait_for_api(custom_api: client.CustomObjectsApi, timeout: timedelta) -> No
         except ApiException:
             logger.debug("API not ready yet, retrying...")
             time.sleep(5)
-    raise SystemExit("Flux kustomization API not reachable within startup timeout")
+    raise RuntimeError("Flux kustomization API not reachable within startup timeout")
 
 
 def monitor_flux_convergence(
@@ -278,6 +278,6 @@ def monitor_flux_convergence(
     if failure_reason:
         logger.error("Convergence failed: %s", failure_reason)
         _print_not_ready(tracked)
-        raise SystemExit("Flux convergence failed")
+        raise RuntimeError("Flux convergence failed")
 
     logger.info("All %d kustomizations Ready", len(tracked))

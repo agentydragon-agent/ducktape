@@ -229,8 +229,8 @@ def _wait_for_pods_terminal(v1: client.CoreV1Api, namespace: str, pod_map: dict[
                 w.stop()
         elif phase == "Failed":
             w.stop()
-            raise SystemExit(f"ClusterIP routing probe failed on {pod_to_node[pod_name]}")
+            raise RuntimeError(f"ClusterIP routing probe failed on {pod_to_node[pod_name]}")
 
     if remaining:
         nodes = [pod_to_node[p] for p in remaining]
-        raise SystemExit(f"ClusterIP probe timed out on: {', '.join(nodes)}")
+        raise RuntimeError(f"ClusterIP probe timed out on: {', '.join(nodes)}")
