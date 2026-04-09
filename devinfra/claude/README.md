@@ -1,6 +1,6 @@
 # Claude Code Integration
 
-Session hooks, auth proxy, statusline, and Claude Code API models for Claude Code
+Session hooks, UDS proxy, statusline, and Claude Code API models for Claude Code
 web environments.
 
 ## References
@@ -10,12 +10,11 @@ web environments.
 
 ## Glossary
 
-| Concept                            | Canonical term      | Rationale                                                       |
-| ---------------------------------- | ------------------- | --------------------------------------------------------------- |
-| Anthropic's Envoy gateway          | **egress proxy**    | Matches Anthropic's own docs ("egress controls"). Unambiguous.  |
-| Local auth-adding proxy            | **auth proxy**      | Describes function. Short.                                      |
-| mitmproxy testcontainer for tests  | **mitmproxy proxy** | Stock mitmproxy:11 in Docker, simulates egress proxy TLS MITM.  |
-| "The proxy this proxy forwards to" | **upstream proxy**  | Standard networking term. Auth proxy's upstream = egress proxy. |
+| Concept                            | Canonical term      | Rationale                                                      |
+| ---------------------------------- | ------------------- | -------------------------------------------------------------- |
+| Anthropic's Envoy gateway          | **egress proxy**    | Matches Anthropic's own docs ("egress controls"). Unambiguous. |
+| mitmproxy testcontainer for tests  | **mitmproxy proxy** | Stock mitmproxy:11 in Docker, simulates egress proxy TLS MITM. |
+| "The proxy this proxy forwards to" | **upstream proxy**  | Standard networking term. UDS proxy's upstream = egress proxy.  |
 
 ## Anthropic's TLS-Inspecting Proxy
 
@@ -49,7 +48,7 @@ By preserving the original proxy env vars:
 ## Components
 
 - **Session Start Hook**: Sets up the development environment for Claude Code web sessions
-- **Auth Proxy**: Adds authentication headers for Bazel's proxy connections (not global)
+- **UDS Proxy**: Routes Bazel gRPC traffic through a Unix domain socket proxy (adds egress proxy auth)
 
 ## Session Start Hook
 
@@ -57,12 +56,11 @@ The hook runs at the start of each Claude Code web session and:
 
 ### Proxy Setup (via `proxy_setup.py`)
 
-1. Auth proxy starts in-process in the hook daemon (daemon threads, OS-assigned port) on the first `SessionStart`
-2. Session start sets credentials on the in-process proxy via `proxy.set_creds()`
-3. Loads the TLS inspection CA from the pre-installed filesystem path (`/usr/local/share/ca-certificates/swp-ca-production.crt`)
-4. Creates a Java truststore with the CA using keytool
-5. Creates combined CA bundle (system CAs + proxy CA)
-6. Writes bazelrc to `<session_dir>/bazelrc`
+1. UDS proxy starts in-process in the hook daemon for Bazel `--remote_proxy`
+2. Loads the TLS inspection CA from the pre-installed filesystem path (`/usr/local/share/ca-certificates/swp-ca-production.crt`)
+3. Creates a Java truststore with the CA using keytool
+4. Creates combined CA bundle (system CAs + proxy CA)
+5. Writes bazelrc to `<session_dir>/bazelrc`
 
 ### Bazel Setup (via `hook_daemon/session_start/bazelisk.py`)
 
@@ -114,100 +112,44 @@ old ID, the client finds no socket for the old ID and tries to start a _second_ 
 - **Session-global files** (bazelisk binary at `~/.cache/claude-hooks/bazelisk`): shared
   across all session IDs, safe for concurrent daemons.
 
-# Auth Proxy
+## UDS Proxy for Bazel
 
-A local HTTP CONNECT proxy that adds authentication to Anthropic's egress proxy, enabling Bazel's gRPC remote execution and BCR access.
-
-## Why This Exists
-
-[Claude Code on the web](https://docs.anthropic.com/en/docs/claude-code/claude-code-on-the-web) runs in ephemeral containers with a TLS-inspecting proxy for network egress. Bazel needs to route both **BCR fetches** (Java HTTP) and **gRPC remote execution** (gRPC-Java/Netty) through this proxy.
-
-### The Problem: gRPC-Java Cannot Authenticate with the Egress Proxy
-
-Bazel's Java HTTP layer _can_ authenticate with the egress proxy: `ProxyHelper` reads `HTTPS_PROXY`, installs a `java.net.Authenticator`, and handles 407 challenges. BCR fetches work this way. However, **gRPC-Java's remote execution client cannot reliably authenticate**:
-
-1. **gRPC-Java's `ProxyDetectorImpl`** reads proxy settings from `ProxySelector.getDefault()` (which uses JVM system properties `-Dhttps.proxyHost`/`-Dhttps.proxyPort`), then calls `Authenticator.requestPasswordAuthentication()` for credentials
-2. **Bazel's `ProxyHelper`** installs the `Authenticator` — but only when a repository rule triggers a download. The gRPC remote execution channel may already be established before any repository rule runs
-3. **Timing dependency**: If gRPC creates its channel before `ProxyHelper` installs the `Authenticator`, the `ProxyDetectorImpl` gets no credentials and gRPC's Netty transport sends an unauthenticated CONNECT → the egress proxy returns 407 → connection fails with "Unable to resolve host"
-
-### The Solution: Local Unauthenticated Proxy
-
-The auth proxy decouples authentication from this timing problem:
-
-- Runs on `localhost:<port>` (OS-assigned), accepts **unauthenticated** CONNECT requests
-- Bazel's JVM is configured with `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=<port>`
-- gRPC-Java's `ProxyDetectorImpl` sees the proxy via `ProxySelector` and connects without needing credentials
-- The auth proxy injects `Proxy-Authorization: Basic` credentials when forwarding to the egress proxy
-- Credentials are held in-memory; `bazelisk_wrapper` updates them via RPC before each invocation
-
-## References
-
-See <docs/proxy_alternatives.md> for analysis of why alternatives don't work.
-
-- [Claude Code on the Web](https://www.anthropic.com/news/claude-code-on-the-web) - Product announcement
-- [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing) - Network isolation architecture
-- [Enterprise Network Configuration](https://docs.anthropic.com/en/docs/claude-code/corporate-proxy) - Proxy and CA configuration
-- [Network Security](https://docs.anthropic.com/en/docs/claude-code/security#network-access) - Egress controls
-
-## Configuration
-
-All settings use [pydantic-settings](https://docs.pydantic.dev/latest/concepts/pydantic_settings/) with the `DUCKTAPE_CLAUDE_HOOKS_` prefix:
-
-| Environment Variable                    | Default                    | Description                           |
-| --------------------------------------- | -------------------------- | ------------------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_DIR`  | `<session_dir>/supervisor` | Supervisor config directory           |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001`                    | Supervisor TCP port                   |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_DIR`  | `<session_dir>/auth-proxy` | Proxy cache directory                 |
-| `DUCKTAPE_CLAUDE_HOOKS_AUTH_PROXY_PORT` | `18081`                    | Auth proxy port                       |
-| `DUCKTAPE_CLAUDE_HOOKS_SETUP_DOCKER`    | `true`                     | Set up Docker daemon under supervisor |
-
-`<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
-
-See `settings.py` for the full configuration schema.
-
-## Dependencies
-
-See BUILD.bazel for the full dependency list. Key runtime requirements:
-
-- **keytool** (from JDK) for Java truststore creation
-
-## How It Works
+Bazel's gRPC remote execution client (gRPC-Java/Netty) cannot reliably authenticate
+with HTTP CONNECT proxies due to a timing issue: `ProxyHelper` installs the
+`Authenticator` only when a repository rule triggers a download, which may be after
+the gRPC channel is already established. The UDS proxy bypasses this entirely —
+Bazel's `--remote_proxy=unix:<path>` routes gRPC traffic through the UDS natively.
 
 ```
 Most tools (curl, pip, npm, etc.)
     └──► HTTPS_PROXY (Anthropic's proxy) ──► Internet
          (unchanged, fresh JWT)
 
-Bazelisk
-    └──► bazelisk wrapper
-           ├── 1. Reads HTTPS_PROXY (fresh JWT from Anthropic)
-           ├── 2. RPC to hook daemon: POST /update-proxy-creds → in-memory update
-           ├── 3. Sets HTTPS_PROXY=localhost:<port> for subprocess only
-           └── 4. Execs bazelisk
-                   └──► Auth proxy (localhost:<port>)
-                          ├── Reads in-memory credentials (set via RPC)
-                          ├── Adds Proxy-Authorization header
-                          └──► Anthropic's proxy ──► Internet
+Bazel gRPC (remote execution, cache, BES)
+    └──► --remote_proxy=unix:<session_dir>/remote-proxy.sock
+           └──► UdsRemoteProxy (in hook daemon)
+                  └──► CONNECT tunnel through egress proxy ──► remote.buildbuddy.io
 ```
 
-The auth proxy runs in-process within the hook daemon (daemon threads, FastAPI on UDS).
-Credentials are held in-memory on the proxy object and updated via RPC before each bazelisk
-invocation. Proxy is started lazily on `SessionStart`, stopped on daemon shutdown.
+BCR fetches use native JVM proxy settings from Anthropic's `JAVA_TOOL_OPTIONS`.
 
-## Verification
+## Configuration
 
-After session start:
+| Environment Variable                    | Default                    | Description                           |
+| --------------------------------------- | -------------------------- | ------------------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001`                    | Supervisor TCP port                   |
+| `DUCKTAPE_CLAUDE_HOOKS_SETUP_DOCKER`    | `true`                     | Set up Docker daemon under supervisor |
 
-```bash
-# Proxy should be accessible (AUTH_PROXY_URL is set in the session env file)
-curl -s --max-time 5 -x "$AUTH_PROXY_URL" https://bcr.bazel.build/ | head -1
+`<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
 
-# Bazelisk should be able to access BCR
-bazelisk info
+See `settings.py` for the full configuration schema.
 
-# Check hook daemon logs (proxy runs in-process)
-tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/hook-daemon/daemon.log"
-```
+## References
+
+- [Claude Code on the Web](https://www.anthropic.com/news/claude-code-on-the-web) - Product announcement
+- [Claude Code Sandboxing](https://www.anthropic.com/engineering/claude-code-sandboxing) - Network isolation architecture
+- [Enterprise Network Configuration](https://docs.anthropic.com/en/docs/claude-code/corporate-proxy) - Proxy and CA configuration
+- [Network Security](https://docs.anthropic.com/en/docs/claude-code/security#network-access) - Egress controls
 
 ## Files
 
@@ -226,7 +168,7 @@ Hook daemon files (in `<session_dir>/hook-daemon/`):
 - `daemon.pid` - Daemon pidfile
 - `daemon.log` - Daemon and session start logs
 
-Auth proxy files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`):
+CA/truststore files (in `<session_dir>/auth-proxy/`, created by `proxy_setup.py`):
 
 - `anthropic_ca.pem` - Loaded TLS inspection CA
 - `combined_ca.pem` - System CAs + Anthropic CA bundle
@@ -238,37 +180,6 @@ Global (non-session-scoped) files in `~/.cache/claude-hooks/`:
 - `mkcert` - mkcert binary
 
 ## Known Limitations
-
-### rules_python lock() doesn't inherit --action_env
-
-The `lock()` rule from `@rules_python//python/uv:lock.bzl` has a bug/limitation: it doesn't inherit `--action_env` values because it sets an explicit `env` attribute on `ctx.actions.run_shell()`.
-
-**Impact**: The `uv pip compile` sandbox action doesn't receive proxy environment variables set via `--action_env=HTTPS_PROXY=...`.
-
-**Workaround**: Pass proxy env vars directly to the `lock()` rule's `env` attribute:
-
-```starlark
-lock(
-    name = "requirements",
-    srcs = [...],
-    out = "requirements_bazel.txt",
-    env = {
-        "HTTPS_PROXY": "http://localhost:18081",
-        "SSL_CERT_FILE": "/path/to/combined_ca.pem",  # For TLS inspection
-    },
-)
-```
-
-**Root cause**: In `python/uv/private/lock.bzl`:
-
-```starlark
-ctx.actions.run_shell(
-    ...
-    env = ctx.attr.env,  # <-- Explicit env overrides --action_env inheritance
-)
-```
-
-This should arguably use `dicts.add(ctx.configuration.default_shell_env, ctx.attr.env)` to merge `--action_env` with rule-specific env.
 
 ### 9p filesystem doesn't support Unix socket hard links
 
@@ -297,11 +208,9 @@ is available. They are **not** compatible with Claude Code web's egress proxy.
 ## OTEL Tracing
 
 Hooks emit OpenTelemetry traces to Grafana Alloy via Authentik proxy at
-`alloy-otlp.allegedly.works`. Fully declarative — token flows through
-Terraform → Vault → ESO → k8s secrets → `otel.py`.
+`alloy-otlp.allegedly.works`. Bearer token resolved from SOPS at daemon startup.
 
-Configured in `.claude_hooks/config.yaml` (`otel.endpoint`). Bearer token
-loaded from k8s secret (`secrets.otel_bearer_token`).
+Configured in `.claude_hooks/config.yaml` (`otel.endpoint`, `secrets.otel_bearer_token`).
 
 Key files: TF module in `cluster/terraform/gitops/alloy-otlp-bearer-token/`,
 Authentik blueprint in `cluster/k8s/authentik/app/blueprints/alloy-otlp-sso.yaml`.

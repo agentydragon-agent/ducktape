@@ -21,12 +21,6 @@
 
 Write a Claude Code hook that reminds the agent to use `dangerouslyDisableSandbox: true` when it runs `kubectl`, `systemctl`, `bazel`, `tofu`, `curl`, etc. inside the sandbox. Currently this is documented in root AGENTS.md but agents still forget.
 
-## Supervisor Health Check Eventlistener
-
-**Problem**: No proactive health monitoring for auth proxy - if it crashes, supervisor restarts it but we only notice on next bazel invocation.
-
-**Solution**: Add supervisor `TICK_60` eventlistener that checks TCP port 18081 is listening and marks process FATAL if unreachable.
-
 ## Benchmark `bb remote` with and without `--config=rbe`
 
 With warm runner VMs, `bb remote` without `--config=rbe` (local `linux-sandbox` on the
@@ -43,7 +37,7 @@ many targets, then compare `bb remote test //... --config=rbe` vs `bb remote tes
 
 - [`python-daemon`](https://pypi.org/project/python-daemon/) — handles server-side daemonization (double-fork, PID file, signal handling). Doesn't help with the client-side "ensure running" logic.
 - [`zdaemon`](https://pypi.org/project/zdaemon/) — Zope-era daemon controller with start/stop/restart/status and PID management. Closest fit but adds a Zope dependency.
-- **Move under supervisord** — the auth proxy already runs under supervisor. Adding the hook daemon there would eliminate the pidfile/fork logic entirely (client calls `supervisorctl start hook-daemon` if socket is dead). Trades custom lifecycle code for coupling to supervisor availability.
+- **Move under supervisord** — adding the hook daemon under supervisor would eliminate the pidfile/fork logic entirely (client calls `supervisorctl start hook-daemon` if socket is dead). Trades custom lifecycle code for coupling to supervisor availability.
 
 ## Integration Test: Session Start Hook via Nix devShell
 
