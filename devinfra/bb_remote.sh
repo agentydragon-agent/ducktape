@@ -22,23 +22,19 @@ if [ -n "$current_branch" ]; then
   fi
 fi
 
-# Forward CI secrets to the BB runner.
-# Secrets: single --remote_run_header with comma-separated K=V pairs
-#   (not cached, not visible in BB UI).
-# Non-secrets: --env (cached, visible).
+# Forward CI secrets to the BB runner via --remote_run_header (not cached,
+# not visible in BB UI). Non-secret vars via --env.
+# Multiple --remote_run_header with same key are merged by BB.
 # TODO: restructure push_ghcr to run locally instead of forwarding GHCR creds.
 extra_args=()
-secret_overrides=()
-[ -n "${DOCKER_CLIENT_KEY:-}" ] && secret_overrides+=("DOCKER_CLIENT_KEY=${DOCKER_CLIENT_KEY}")
-[ -n "${GHCR_TOKEN:-}" ] && secret_overrides+=("GHCR_TOKEN=${GHCR_TOKEN}")
-[ -n "${GH_RELEASE_PAT:-}" ] && secret_overrides+=("GH_RELEASE_PAT=${GH_RELEASE_PAT}")
-if [ ${#secret_overrides[@]} -gt 0 ]; then
-  IFS=','
-  extra_args+=("--remote_run_header=x-buildbuddy-platform.env-overrides=${secret_overrides[*]}")
-  unset IFS
-fi
-[ -n "${DOCKER_CLIENT_KEY:-}" ] && extra_args+=("--env=DOCKER_HOST=${DOCKER_HOST:-}" "--env=DOCKER_TLS_VERIFY=${DOCKER_TLS_VERIFY:-1}")
-[ -n "${GHCR_TOKEN:-}" ] && extra_args+=("--env=GHCR_USERNAME=${GHCR_USERNAME:-agentydragon}")
+[ -n "${DOCKER_CLIENT_KEY:-}" ] && extra_args+=(
+  "--remote_run_header=x-buildbuddy-platform.env-overrides=DOCKER_CLIENT_KEY=${DOCKER_CLIENT_KEY}"
+  "--env=DOCKER_HOST=${DOCKER_HOST:-}" "--env=DOCKER_TLS_VERIFY=${DOCKER_TLS_VERIFY:-1}")
+[ -n "${GHCR_TOKEN:-}" ] && extra_args+=(
+  "--remote_run_header=x-buildbuddy-platform.env-overrides=GHCR_TOKEN=${GHCR_TOKEN}"
+  "--env=GHCR_USERNAME=${GHCR_USERNAME:-agentydragon}")
+[ -n "${GH_RELEASE_PAT:-}" ] && extra_args+=(
+  "--remote_run_header=x-buildbuddy-platform.env-overrides=GH_RELEASE_PAT=${GH_RELEASE_PAT}")
 
 exec bb remote \
   --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
