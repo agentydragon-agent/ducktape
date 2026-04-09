@@ -107,7 +107,7 @@ in
   # NOTE: Installed in BOTH home-manager (home.nix) and devShell (flake.nix).
   # Both add PYTHONPATH entries. If one is updated but not the other, the stale
   # version's namespace packages (cluster.validation) shadow the new one,
-  # causing ImportError in ducktape-git-hook. Keep both in sync.
+  # causing ImportError in ducktape-precommit. Keep both in sync.
   claude-hooks = mkWheel {
     pname = "claude-hooks";
     description = "Claude Code session hooks (statusline, session-start, auth proxy)";
@@ -124,7 +124,6 @@ in
         filelock
         grpcio
         httpx
-        kubernetes
         mako
         opentelemetry-api
         opentelemetry-exporter-otlp-proto-http

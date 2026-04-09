@@ -187,8 +187,8 @@ py_test(
 )
 
 py_test(
-    name = "test_k8s_secrets",
-    srcs = ["test_k8s_secrets.py"],
+    name = "test_secret_sources",
+    srcs = ["test_secret_sources.py"],
     deps = [
         ":secret_sources",
         "//devinfra/claude/hook_daemon:config",

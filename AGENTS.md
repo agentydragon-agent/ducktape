@@ -151,7 +151,7 @@ ls "$TEST_DIR/test.outputs/"          # list undeclared output files
 cat "$TEST_DIR/test.outputs/my.log"   # read a specific output
 ```
 
-On RBE, the outputs are downloaded to local testlogs dir after test completes (Bazel fetches them automatically). The mitmproxy fixture saves `proxy.har` to undeclared outputs as an example; see `test_k8s_proxy_integration.py` for container log capture.
+On RBE, the outputs are downloaded to local testlogs dir after test completes (Bazel fetches them automatically). The mitmproxy fixture saves `proxy.har` to undeclared outputs as an example.
 
 **Test timeouts mean hangs, not slowness**: When a test times out, assume it is wedged — an internal operation is waiting on something that will never arrive (deadlock, stuck future, container that never becomes ready, connection to a port nothing is listening on). Do NOT bump `size`/`timeout` as a fix. Instead, trace the execution to find what is blocked: run with `--test_output=streamed --test_arg=-s`, add logging around fixture setup, check for stuck containers (`docker ps`), etc. A test that ran in 35s last week and now times out at 60s is not "slow" — something broke internally.
 
