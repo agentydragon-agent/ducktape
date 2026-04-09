@@ -41,6 +41,8 @@ jobs:
           # Use RBE worker image as runner (has system deps for pycairo etc.)
           # Can't use bb_remote.sh here because --container_image is a bb flag
           # that must come before the bazel command.
+          # TODO: teach bb_remote.sh to accept --container_image so all
+          # bb remote invocations go through the wrapper (secret forwarding, etc.)
           RBE_IMAGE=$(python3 -c "import json; d=json.load(open('devinfra/image_pins.json'))['rbe_worker']; print(d['image']+'@'+d['digest'])")
           bb remote \
             --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
