@@ -38,5 +38,13 @@ runs:
         SOPS_AGE_KEY: ${{ inputs.sops_age_key }}
       run: |
         eval "$(devinfra/ci_env.sh)"
+        # Mask secret values so they don't appear in logs
+        for var in BUILDBUDDY_API_KEY GITHUB_TOKEN ATTIC_TOKEN DOCKER_CLIENT_KEY \
+                   PROPS_REGISTRY_PASSWORD GHCR_TOKEN GH_RELEASE_PAT; do
+          val="${!var:-}"
+          if [ -n "$val" ]; then
+            echo "::add-mask::$val"
+          fi
+        done
         # Export to GITHUB_ENV for subsequent steps
         env | grep -E '^(DOCKER_CLIENT_KEY|DOCKER_HOST|DOCKER_TLS_VERIFY|BUILDBUDDY_API_KEY|GITHUB_TOKEN|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD|GHCR_USERNAME|GHCR_TOKEN|GH_RELEASE_PAT)=' >> "$GITHUB_ENV"

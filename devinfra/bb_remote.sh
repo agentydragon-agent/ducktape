@@ -10,8 +10,8 @@ default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null |
 default_branch=${default_branch:-devel}
 local_sha=$(git rev-parse "$default_branch" 2>/dev/null)
 remote_sha=$(git rev-parse "origin/$default_branch" 2>/dev/null)
-current_branch=$(git symbolic-ref --short HEAD 2>/dev/null)
-if [ "$current_branch" = "$default_branch" ] && [ "$local_sha" != "$remote_sha" ]; then
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+if [ -n "$current_branch" ] && [ "$current_branch" = "$default_branch" ] && [ "$local_sha" != "$remote_sha" ]; then
   echo "bb-remote: aborting — $default_branch has unpushed commits (local $local_sha != origin $remote_sha)." >&2
   echo "bb-remote: push first or use a feature branch." >&2
   exit 1
