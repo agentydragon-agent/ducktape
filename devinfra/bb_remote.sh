@@ -47,6 +47,7 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RBE_IMAGE=$(python3 -c "import json; d=json.load(open('${REPO_ROOT}/devinfra/image_pins.json'))['rbe_worker']; print(d['image']+'@'+d['digest'])")
 
 exec bb remote \
+  --runner_exec_properties=EstimatedComputeUnits=8 \
   --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
   --runner_exec_properties=workload-isolation-type=firecracker \
   --runner_exec_properties=init-dockerd=true \
