@@ -13,7 +13,7 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.hook_config import DefaultProfiles, HookConfig, PreCommitConfig, ProfileConfig
+from devinfra.claude.hook_daemon.config import DefaultProfiles, HookConfig, PreCommitConfig, ProfileConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result, evaluate
 from devinfra.claude.hook_daemon.precommit_runner import HookAutoApplied, HookFailedNotApplied, HookWouldEdit, RunResult

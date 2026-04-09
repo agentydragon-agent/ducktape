@@ -166,6 +166,12 @@ creation_rules:
           - *iguana-agentydragon
           - *claude-web
           - *ci
+  # OTLP bearer token for Alloy tracing (admin + claude-web agent)
+  - path_regex: secrets/alloy-otlp-bearer-token\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *claude-web
   # GitHub PAT for agentydragon-agent machine user (Claude Code, OpenClaw, CI)
   - path_regex: secrets/github-pat-agentydragon-agent\.yaml$
     key_groups:

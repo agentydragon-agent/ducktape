@@ -1,6 +1,6 @@
 """Shared configuration loaded from .claude_hooks/config.yaml.
 
-Repo-level config file that all hooks read. Configures k8s secrets,
+Repo-level config file that all hooks read. Configures SOPS secrets,
 OTEL tracing, and other shared settings. Environment variables
 (DUCKTAPE_CLAUDE_HOOKS_*) override values from this file.
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -41,19 +41,11 @@ class SopsSecretSource(BaseModel):
     key: str = Field(description="Key within the decrypted YAML")
 
 
-class K8sSecretSource(BaseModel):
-    """Fetch a secret from a Kubernetes Secret object."""
-
-    kind: Literal["k8s"]
-    secret_name: str
-    key: str
-
-
-SecretSource = Annotated[SopsSecretSource | K8sSecretSource, Field(discriminator="kind")]
+SecretSource = SopsSecretSource
 
 
 class SecretsConfig(BaseModel):
-    """Named secrets with tagged-union sources describing how to fetch each one."""
+    """Named secrets with SOPS sources describing how to fetch each one."""
 
     k8s_token: SecretSource | None = None
     buildbuddy_api_key: SecretSource | None = None
@@ -62,7 +54,7 @@ class SecretsConfig(BaseModel):
 
 
 class K8sConfig(BaseModel):
-    """K8s cluster connection config."""
+    """K8s cluster connection config for kubeconfig generation."""
 
     server: str = Field(description="K8s API server URL")
     service_account: str = Field(description="ServiceAccount name for kubeconfig user and context")

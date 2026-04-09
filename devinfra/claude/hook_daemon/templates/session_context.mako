@@ -34,7 +34,7 @@ VFS on 9p (no layer caching, slower builds).
 Installing in background. First `git commit` may block briefly.
 % endif
 <%
-    has_any_secret = secrets and (secrets.buildbuddy_api_key or secrets.github_token or secrets.otel_bearer_token)
+    has_any_secret = secrets and (secrets.buildbuddy_api_key or secrets.github_token)
 %>\
 % if has_any_secret:
 

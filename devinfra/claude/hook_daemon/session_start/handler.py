@@ -19,7 +19,6 @@ from typing import Any
 
 import anyio
 import httpx
-import requests
 from mako.template import Template
 from opentelemetry import trace
 
@@ -33,15 +32,8 @@ from devinfra.claude.claude_api.hooks.session_start import (
 )
 from devinfra.claude.debug import log_entrypoint_debug
 from devinfra.claude.errors import SkipError
-from devinfra.claude.hook_config import (
-    HOOKS_DOTDIR,
-    HookConfig,
-    OtelConfig,
-    ProfileConfig,
-    SecretSource,
-    SopsSecretSource,
-)
 from devinfra.claude.hook_daemon import templates
+from devinfra.claude.hook_daemon.config import HOOKS_DOTDIR, HookConfig, ProfileConfig
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start import (
     apt,
@@ -58,7 +50,6 @@ from devinfra.claude.hook_daemon.session_start import (
     tmpfs,
     tune_rootfs,
 )
-from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
@@ -327,9 +318,9 @@ async def handle(
     session: Session,
     hook_input: SessionStartHookInput,
     settings: HookSettings,
+    hook_config: HookConfig,
     ctx: CallerContext,
     http: httpx.Client,
-    otlp_exporter: DeferredOtlpExporter,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -353,8 +344,6 @@ async def handle(
     logger.info("CLAUDE_PROJECT_DIR: %s", project_dir)
     logger.info("Session directory: %s", session.paths.session_dir)
 
-    # Load hook config (general config file, not gated on k8s_token).
-    hook_config = HookConfig.load_from_repo(project_dir)
     profile = hook_config.resolve_profile(ctx.web_mode, override=settings.profile)
 
     # Detect platform early (safe in both modes — reads /proc + psutil).
@@ -370,47 +359,24 @@ async def handle(
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
     proxy_url = get_proxy_url(ctx.caller_env)
 
-    # Resolve secrets from tagged-union config (each field resolved independently).
-    # Two-phase resolution: SOPS secrets first (no K8s client needed), then K8s secrets.
-    # This allows the K8s token itself to come from SOPS, with env var fallback.
+    # Resolve secrets from SOPS config.
     with tracer.start_as_current_span("resolve_secrets", context=root_ctx):
         secrets_cfg = hook_config.secrets
-        k8s_namespace = hook_config.k8s.namespace if hook_config.k8s else None
 
-        def resolve_sops(source: SecretSource) -> str | None:
-            """Resolve a secret only if it's a SOPS source (no K8s client needed)."""
-            if not isinstance(source, SopsSecretSource):
-                return None
-            return secret_sources.resolve_secret(source, project_dir=project_dir, k8s_api=None, k8s_namespace=None)
+        def resolve(source: secret_sources.SecretSource) -> str | None:
+            return secret_sources.resolve_secret(source, project_dir=project_dir)
 
-        # Phase 1: Resolve SOPS-only secrets (including k8s_token).
         if secrets_cfg.k8s_token:
-            setup.secrets.k8s_token = resolve_sops(secrets_cfg.k8s_token)
+            setup.secrets.k8s_token = resolve(secrets_cfg.k8s_token)
         if secrets_cfg.buildbuddy_api_key:
-            setup.secrets.buildbuddy_api_key = resolve_sops(secrets_cfg.buildbuddy_api_key)
+            setup.secrets.buildbuddy_api_key = resolve(secrets_cfg.buildbuddy_api_key)
         if secrets_cfg.github_token:
-            setup.secrets.github_token = resolve_sops(secrets_cfg.github_token)
+            setup.secrets.github_token = resolve(secrets_cfg.github_token)
 
-        # Phase 2: K8s client setup (SOPS-derived token preferred, env var fallback).
-        k8s_token = setup.secrets.k8s_token or settings.k8s_token
-        k8s_api = None
-        if k8s_token and hook_config.k8s:
-            try:
-                k8s_api = secret_sources.setup_k8s_client(
-                    token=k8s_token, k8s_cfg=hook_config.k8s, combined_ca_path=combined_ca, proxy=proxy_url
-                )
-            except Exception as e:
-                logger.warning("K8s client setup failed: %s", e)
-
-        # Phase 3: Resolve K8s-sourced secrets (requires K8s client).
-        if secrets_cfg.otel_bearer_token:
-            setup.secrets.otel_bearer_token = secret_sources.resolve_secret(
-                secrets_cfg.otel_bearer_token, project_dir=project_dir, k8s_api=k8s_api, k8s_namespace=k8s_namespace
-            )
-
-        # Write kubeconfig when k8s client is available and profile enables it.
+        # Write kubeconfig when token is available and profile enables it.
         # CLI profile skips this — the user has their own ~/.kube/config.
-        if k8s_api and k8s_token and hook_config.k8s and profile.write_kubeconfig:
+        k8s_token = setup.secrets.k8s_token or settings.k8s_token
+        if k8s_token and hook_config.k8s and profile.write_kubeconfig:
             setup.secrets.kubeconfig_path = secret_sources.write_kubeconfig(
                 token=k8s_token,
                 k8s_cfg=hook_config.k8s,
@@ -438,16 +404,6 @@ async def handle(
                 setup.fork_result = fork_remote.ensure_fork_remote(setup.secrets.github_token, project_dir)
         except Exception as e:
             logger.warning("Fork remote setup failed: %s", e)
-
-    # Configure OTLP now that secrets (with bearer token) are available.
-    # Bearer token overrides config file / env var. Idempotent across sessions.
-    if hook_config.otel:
-        otel_config = hook_config.otel.with_env_overrides()
-        otel_token = setup.secrets.otel_bearer_token
-        if otel_token:
-            otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=otel_token)
-        otlp_session = _build_otlp_session(proxy_url, combined_ca)
-        otlp_exporter.configure(otel_config, session=otlp_session)
 
     # Render session bazelrc
     with tracer.start_as_current_span("render_bazelrc", context=root_ctx):
@@ -611,20 +567,6 @@ def _render_extra_context(
         bazel_bes_proxy_sock=bazel_bes_proxy_sock,
     )
     return result.rstrip("\n")
-
-
-def _build_otlp_session(proxy_url: str | None, ca_path: Path | None) -> requests.Session:
-    """Build a requests.Session for OTLP.
-
-    requests derives Proxy-Authorization from embedded proxy URL credentials automatically,
-    unlike raw urllib3 which requires explicit headers on HTTPS CONNECT tunnels.
-    """
-    session = requests.Session()
-    if proxy_url:
-        session.proxies = {"https": proxy_url, "http": proxy_url}
-    if ca_path and ca_path.exists():
-        session.verify = str(ca_path)
-    return session
 
 
 class LogCollector(logging.handlers.MemoryHandler):

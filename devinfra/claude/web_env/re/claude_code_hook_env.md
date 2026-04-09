@@ -88,18 +88,41 @@ The `-l` flag makes it a **login shell**, which sources `/etc/profile`,
 `/etc/profile.d/*.sh`, and `~/.profile`/`~/.bashrc`. So PATH modifications
 in profile scripts ARE picked up by the Bash tool but NOT by command hooks.
 
-### `CLAUDE_CODE_SHELL_PREFIX` — Undocumented Hook PATH Override
+### `CLAUDE_CODE_SHELL_PREFIX` — Undocumented Command Wrapper
 
-If the env var `CLAUDE_CODE_SHELL_PREFIX` is set, hook commands are prefixed:
+If the env var `CLAUDE_CODE_SHELL_PREFIX` is set, **both hook commands and Bash
+tool commands** are wrapped via `formatShellPrefixCommand()`:
+
+**Hooks** (`utils/hooks.ts`):
 
 ```javascript
-let finalCommand = process.env.CLAUDE_CODE_SHELL_PREFIX
-  ? applyShellPrefix(process.env.CLAUDE_CODE_SHELL_PREFIX, command)
+!isPowerShell && process.env.CLAUDE_CODE_SHELL_PREFIX
+  ? formatShellPrefixCommand(process.env.CLAUDE_CODE_SHELL_PREFIX, command)
   : command;
 ```
 
-This could theoretically be used to inject a `source` or `export PATH=...`
-before the hook command, but it's not documented and may change.
+**Bash tool** (`utils/shell/bashProvider.ts`):
+
+```javascript
+if (process.env.CLAUDE_CODE_SHELL_PREFIX) {
+  commandString = formatShellPrefixCommand(process.env.CLAUDE_CODE_SHELL_PREFIX, commandString);
+}
+```
+
+**`formatShellPrefixCommand`** (`utils/bash/shellPrefix.ts`) splits the prefix
+on the last ` -` to separate the executable from flags:
+
+- `"/path/to/wrapper.sh"` → `'/path/to/wrapper.sh' '<command>'`
+- `"/usr/bin/bash -c"` → `'/usr/bin/bash' -c '<command>'`
+
+Can be set via env var or `settings.json`:
+
+```json
+{ "env": { "CLAUDE_CODE_SHELL_PREFIX": "/path/to/wrapper.sh" } }
+```
+
+Also applies to MCP server commands (`services/mcp/client.ts`). Not applied on
+PowerShell. Undocumented and may change.
 
 ### Session Environment Scripts
 

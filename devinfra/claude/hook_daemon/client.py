@@ -235,7 +235,7 @@ def _ensure_daemon(paths: SessionPaths) -> None:
 
         # Wait for socket while still holding daemon.lock — prevents other
         # clients from entering and trying to start a second daemon.
-        _wait_for_sock(sock_path, pidfile=pidfile, daemon_dir=daemon_dir)
+        _wait_for_sock(sock_path, pidfile=pidfile)
 
 
 def _fork_daemon(daemon_dir: Path, sock_path: Path) -> None:
@@ -281,21 +281,7 @@ def _fork_daemon(daemon_dir: Path, sock_path: Path) -> None:
     )
 
 
-def _read_daemon_error_log(daemon_dir: Path) -> str:
-    """Read the last lines of daemon error/stdout logs for diagnostics."""
-    parts: list[str] = []
-    for name in ("daemon.err.log", "daemon.log"):
-        log_file = daemon_dir / name
-        if log_file.exists():
-            content = log_file.read_text().strip()
-            if content:
-                parts.append(f"--- {name} ---\n{content[-2000:]}")
-    return "\n".join(parts) if parts else "(no daemon logs found)"
-
-
-def _wait_for_sock(
-    sock_path: Path, *, pidfile: Path, daemon_dir: Path, timeout_secs: float = _DAEMON_STARTUP_TIMEOUT_SECS
-) -> None:
+def _wait_for_sock(sock_path: Path, *, pidfile: Path, timeout_secs: float = _DAEMON_STARTUP_TIMEOUT_SECS) -> None:
     """Poll until socket file exists and accepts connections.
 
     Detects daemon crashes via flock probe on the pidfile: if the lock becomes
@@ -319,10 +305,8 @@ def _wait_for_sock(
         # so if it exists, the new daemon created it.  An unlocked pidfile means
         # the daemon died after creating the file but before (or after) binding.
         if pidfile.exists() and not _is_pidfile_locked(pidfile):
-            raise DaemonStartError(f"Daemon died during startup.\n{_read_daemon_error_log(daemon_dir)}")
+            raise DaemonStartError("Daemon died during startup")
 
         time.sleep(0.1)
     logger.warning("Daemon socket did not appear within %.1fs at %s", timeout_secs, sock_path)
-    raise DaemonStartError(
-        f"Daemon socket did not appear within {timeout_secs}s.\n{_read_daemon_error_log(daemon_dir)}"
-    )
+    raise DaemonStartError(f"Daemon socket did not appear within {timeout_secs}s")

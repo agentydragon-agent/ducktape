@@ -18,8 +18,8 @@ from devinfra.claude.claude_api.hooks.post_tool_use import (
     PostToolUseInput,
     PostToolUseOutput,
 )
-from devinfra.claude.hook_config import HookConfig, PreCommitConfig
 from devinfra.claude.hook_daemon import templates
+from devinfra.claude.hook_daemon.config import HookConfig, PreCommitConfig
 from devinfra.claude.hook_daemon.precommit_runner import (
     HookAutoApplied,
     HookFailedNotApplied,

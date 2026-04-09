@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 
 from devinfra.claude.auth_proxy.proxy import UdsRemoteProxy, UpstreamCreds
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
-from devinfra.claude.hook_config import ProfileConfig
 from devinfra.claude.hook_daemon.bes_interceptor import BesInterceptor
+from devinfra.claude.hook_daemon.config import ProfileConfig
 from devinfra.claude.session_paths import SessionPaths
 
 logger = logging.getLogger(__name__)

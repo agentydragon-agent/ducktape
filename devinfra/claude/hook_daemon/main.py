@@ -8,11 +8,31 @@ from pathlib import Path
 import uvicorn
 from filelock import FileLock
 
+from devinfra.claude.hook_daemon.config import HookConfig, OtelConfig
 from devinfra.claude.hook_daemon.server import app, configure
+from devinfra.claude.hook_daemon.session_start.secret_sources import resolve_secret
 from devinfra.claude.hook_daemon.tracing import init_daemon_tracing, shutdown_tracing
 from devinfra.claude.settings import HookSettings
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_otel_config(hook_config: HookConfig, project_dir: Path) -> OtelConfig | None:
+    """Build OtelConfig with bearer token resolved from SOPS. Returns None if unavailable."""
+    if not hook_config.otel:
+        return None
+
+    otel_config = hook_config.otel.with_env_overrides()
+    if not otel_config.endpoint:
+        return None
+
+    token_source = hook_config.secrets.otel_bearer_token
+    if token_source:
+        token = resolve_secret(token_source, project_dir=project_dir)
+        if token:
+            otel_config = OtelConfig(endpoint=otel_config.endpoint, bearer_token=token)
+
+    return otel_config
 
 
 def main() -> None:
@@ -44,8 +64,20 @@ def main() -> None:
     logger.info("Daemon startup env var keys: %s", sorted(os.environ))
     logger.info("Daemon startup settings: %s", HookSettings().model_dump())
 
-    otlp_exporter = init_daemon_tracing(daemon_dir)
-    configure(daemon_dir, otlp_exporter)
+    # Load config once at daemon startup. Shared by tracing init and session start handler.
+    hook_config: HookConfig | None = None
+    otel_config: OtelConfig | None = None
+    project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
+    if project_dir_str:
+        project_dir = Path(project_dir_str)
+        try:
+            hook_config = HookConfig.load_from_repo(project_dir)
+            otel_config = _resolve_otel_config(hook_config, project_dir)
+        except Exception as e:
+            logger.warning("Failed to load hook config at startup: %s", e)
+
+    init_daemon_tracing(daemon_dir, otel_config=otel_config)
+    configure(daemon_dir, hook_config=hook_config)
 
     uvicorn.run(app, uds=args.sock, log_level="info")
     shutdown_tracing()

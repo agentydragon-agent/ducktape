@@ -14,7 +14,7 @@ import pytest
 import pytest_bazel
 from syrupy.assertion import SnapshotAssertion
 
-from devinfra.claude.hook_config import PreCommitConfig
+from devinfra.claude.hook_daemon.config import PreCommitConfig
 from devinfra.claude.hook_daemon.conftest import init_git_repo, write_precommit_config
 from devinfra.claude.hook_daemon.post_tool_use import _format_check_result
 from devinfra.claude.hook_daemon.precommit_runner import HookFailedNotApplied, HookPassed, HookWouldEdit, run_on_file

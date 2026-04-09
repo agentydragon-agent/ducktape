@@ -16,7 +16,7 @@ from mako.template import Template
 from pydantic import TypeAdapter
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
-from devinfra.claude.hook_daemon.client import DaemonHttpError, call_daemon
+from devinfra.claude.hook_daemon.client import DaemonHttpError, DaemonStartError, call_daemon
 from devinfra.claude.session_paths import SessionPaths
 
 _adapter: TypeAdapter[AnyHookInput] = TypeAdapter(AnyHookInput)
@@ -67,7 +67,7 @@ def main() -> None:
 
     try:
         result = call_daemon(parsed, dict(os.environ), paths)
-    except DaemonHttpError as e:
+    except (DaemonStartError, DaemonHttpError) as e:
         _log_event("error", str(e), hook_name=parsed.hook_event_name, session_id=parsed.session_id)
         _fail(str(e))
 

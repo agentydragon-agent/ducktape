@@ -54,7 +54,9 @@ class HookSettings(BaseSettings):
     # Profile override (env var DUCKTAPE_CLAUDE_HOOKS_PROFILE)
     profile: str | None = Field(default=None, description="Override profile name from config.yaml")
 
-    k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
+    k8s_token: str | None = Field(
+        default=None, description="K8s SA token for kubeconfig (env var fallback when SOPS unavailable)"
+    )
     # Per-session output directory. Exported as DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR so
     # subprocesses (e.g. bazel_wrapper) pick it up automatically via pydantic-settings.
     # Baked into the bazel/bazelisk shell wrapper at install time so it survives

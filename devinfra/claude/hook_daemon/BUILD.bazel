@@ -1,6 +1,16 @@
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
+    name = "config",
+    srcs = ["config.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_library(
     name = "bes_interceptor",
     srcs = ["bes_interceptor.py"],
     visibility = ["//visibility:public"],
@@ -24,11 +34,11 @@ py_library(
     srcs = ["tracing.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//devinfra/claude:hook_config",
+        ":config",
+        "//util:otel",
         "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_exporter_otlp_proto_http",
         "@pypi//opentelemetry_sdk",
-        "@pypi//requests",
     ],
 )
 
@@ -49,7 +59,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":bes_interceptor",
-        "//devinfra/claude:hook_config",
+        ":config",
         "//devinfra/claude:session_paths",
         "//devinfra/claude:settings",
         "//devinfra/claude/auth_proxy:proxy",
@@ -82,8 +92,8 @@ py_library(
     srcs = ["post_tool_use.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":config",
         ":precommit_runner",
-        "//devinfra/claude:hook_config",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/hook_daemon/templates",
         "@pypi//pygit2",
@@ -118,9 +128,11 @@ py_library(
     srcs = ["main.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":config",
         ":server",
         ":tracing",
         "//devinfra/claude:settings",
+        "//devinfra/claude/hook_daemon/session_start:secret_sources",
         "@pypi//filelock",
         "@pypi//uvicorn",
     ],
@@ -171,12 +183,12 @@ py_test(
     name = "test_tracing",
     srcs = ["test_tracing.py"],
     deps = [
+        ":config",
         ":tracing",
-        "//devinfra/claude:hook_config",
+        "@pypi//opentelemetry_api",
         "@pypi//opentelemetry_sdk",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//requests",
     ],
 )
 
@@ -187,7 +199,6 @@ py_test(
     deps = [
         ":models",
         ":server",
-        ":tracing",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
@@ -220,7 +231,6 @@ py_test(
         ":hook_daemon_conftest",
         ":models",
         ":server",
-        ":tracing",
         "//devinfra/claude:conftest",
         "//devinfra/claude/claude_api/hooks:stop",
         "@pypi//pytest_bazel",
@@ -266,11 +276,11 @@ py_test(
     data = ["__snapshots__/test_post_tool_use.ambr"],
     uses_syrupy = True,
     deps = [
+        ":config",
         ":hook_daemon_conftest",
         ":post_tool_use_lib",
         ":precommit_runner",
         "//devinfra/claude:conftest",
-        "//devinfra/claude:hook_config",
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -285,11 +295,11 @@ py_test(
     data = ["__snapshots__/test_precommit_e2e.ambr"],
     uses_syrupy = True,
     deps = [
+        ":config",
         ":hook_daemon_conftest",
         ":post_tool_use_lib",
         ":precommit_runner",
         "//devinfra/claude:conftest",
-        "//devinfra/claude:hook_config",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

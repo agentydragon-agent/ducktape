@@ -1,66 +1,39 @@
-"""Unit tests for DeferredOtlpExporter."""
+"""Unit tests for tracing initialization."""
 
-import pytest
 import pytest_bazel
-import requests
-import requests.adapters
-from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.sdk.trace.export import SpanExportResult
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
 
-from devinfra.claude.hook_config import OtelConfig
-from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
-
-_ENDPOINT = "https://otlp.example.com/v1/traces"
+from devinfra.claude.hook_daemon.config import OtelConfig
+from devinfra.claude.hook_daemon.tracing import init_daemon_tracing
 
 
-class _FailingAdapter(requests.adapters.HTTPAdapter):
-    def send(self, *args, **kwargs):
-        raise requests.exceptions.ConnectionError("unreachable")
+def test_init_no_otel_config(tmp_path) -> None:
+    """Without OtelConfig, only the JSONL file exporter is added."""
+    init_daemon_tracing(tmp_path)
+    provider = trace.get_tracer_provider()
+    assert isinstance(provider, TracerProvider)
+    # One processor: JSONL file exporter
+    assert len(provider._active_span_processor._span_processors) == 1
 
 
-@pytest.fixture
-def session() -> requests.Session:
-    s = requests.Session()
-    s.mount("https://", _FailingAdapter())
-    return s
+def test_init_with_otel_config(tmp_path) -> None:
+    """With OtelConfig, both JSONL and OTLP exporters are added."""
+    config = OtelConfig(endpoint="https://otlp.example.com/v1/traces", bearer_token="test-token")
+    init_daemon_tracing(tmp_path, otel_config=config)
+    provider = trace.get_tracer_provider()
+    assert isinstance(provider, TracerProvider)
+    # Two processors: JSONL + OTLP
+    assert len(provider._active_span_processor._span_processors) == 2
 
 
-@pytest.fixture
-def span() -> ReadableSpan:
-    return ReadableSpan(name="test-span")
-
-
-def test_configure_does_not_crash_on_export_failure(session: requests.Session, span: ReadableSpan) -> None:
-    """configure() logs a warning and continues if the initial span flush fails."""
-    exporter = DeferredOtlpExporter()
-    exporter.export([span])
-
-    exporter.configure(OtelConfig(endpoint=_ENDPOINT), session=session)
-
-    assert exporter._inner is not None
-    assert exporter._buffer == []
-
-
-def test_configure_idempotent(session: requests.Session) -> None:
-    """Second configure() call is a no-op (first caller wins)."""
-    exporter = DeferredOtlpExporter()
-    config = OtelConfig(endpoint=_ENDPOINT)
-    exporter.configure(config, session=session)
-    inner = exporter._inner
-    exporter.configure(config, session=session)
-    assert exporter._inner is inner
-
-
-def test_configure_no_endpoint_is_noop(session: requests.Session) -> None:
-    exporter = DeferredOtlpExporter()
-    exporter.configure(OtelConfig(endpoint=None), session=session)
-    assert exporter._inner is None
-
-
-def test_export_buffers_before_configure(span: ReadableSpan) -> None:
-    exporter = DeferredOtlpExporter()
-    assert exporter.export([span]) == SpanExportResult.SUCCESS
-    assert exporter._buffer == [span]
+def test_init_with_no_endpoint(tmp_path) -> None:
+    """OtelConfig with no endpoint skips OTLP exporter."""
+    config = OtelConfig(endpoint=None)
+    init_daemon_tracing(tmp_path, otel_config=config)
+    provider = trace.get_tracer_provider()
+    assert isinstance(provider, TracerProvider)
+    assert len(provider._active_span_processor._span_processors) == 1
 
 
 if __name__ == "__main__":

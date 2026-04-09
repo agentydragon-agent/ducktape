@@ -35,14 +35,13 @@ from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 from devinfra.claude.claude_api.hooks.setup import SetupInput
 from devinfra.claude.claude_api.hooks.worktree_create import WorktreeCreateInput
 from devinfra.claude.claude_api.hooks.worktree_remove import WorktreeRemoveInput
-from devinfra.claude.hook_config import HookConfig
+from devinfra.claude.hook_daemon.config import HookConfig
 from devinfra.claude.hook_daemon.models import HookRequest, HookResponse
 from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start.handler import CallerContext, handle as handle_session_start
 from devinfra.claude.hook_daemon.session_start.http_client import build_http_client
-from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings, is_web_mode
 
@@ -65,11 +64,11 @@ async def _log_exceptions(request: Request, call_next):
         return JSONResponse(status_code=500, content={"detail": tb_str})
 
 
-def configure(daemon_dir: Path, otlp_exporter: DeferredOtlpExporter) -> None:
+def configure(daemon_dir: Path, hook_config: HookConfig | None = None) -> None:
     """Set daemon runtime directory and shared config. Call before starting uvicorn."""
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
-    app.state.otlp_exporter = otlp_exporter
+    app.state.hook_config = hook_config
     app.state.last_request_time = time.monotonic()
     app.state.sessions = {}  # dict[str, Session]
     # Proxies are started lazily on the first SessionStart hook, not here.
@@ -154,14 +153,14 @@ async def handle_hook(req: HookRequest) -> Response:
         output: HookOutputBase | None = None
         match req.hook:
             case SessionStartHookInput():
-                hook_config = HookConfig.load_from_repo(Path(req.hook.cwd))
+                hook_config = app.state.hook_config or HookConfig.load_from_repo(Path(req.hook.cwd))
                 web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
                 profile = hook_config.resolve_profile(web_mode, override=app.state.settings.profile)
                 await session.start_proxy(profile)
                 ctx = CallerContext.from_env(req.env)
                 with build_http_client(req.env) as http:
                     output = await handle_session_start(
-                        session, req.hook, app.state.settings, ctx=ctx, http=http, otlp_exporter=app.state.otlp_exporter
+                        session, req.hook, app.state.settings, hook_config=hook_config, ctx=ctx, http=http
                     )
             case PreToolUseInput():
                 output = evaluate_pre(req.hook)
