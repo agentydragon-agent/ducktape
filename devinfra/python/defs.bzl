@@ -61,6 +61,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
             "DOCKER_TLS_VERIFY",
             "DOCKER_CERT_PATH",
             "DOCKER_CLIENT_KEY",
+            "DOCKER_CLIENT_KEY_B64",
         ]
         base_args = base_args + ["-p", "util.testing.docker_mtls"]
         base_deps = base_deps + ["//util/testing:docker_mtls"]

@@ -10,6 +10,7 @@ No-op when DOCKER_CLIENT_KEY is not set (falls back to non-TLS Docker).
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import stat
@@ -24,8 +25,13 @@ _RLOCATION_CLIENT_CERT = "_main/cluster/k8s/docker-ci/certs/client-cert.pem"
 
 @pytest.fixture(autouse=True)
 def docker_mtls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Assemble Docker mTLS cert dir if DOCKER_CLIENT_KEY is set."""
+    """Assemble Docker mTLS cert dir if DOCKER_CLIENT_KEY or DOCKER_CLIENT_KEY_B64 is set."""
     client_key = os.environ.get("DOCKER_CLIENT_KEY")
+    if not client_key:
+        # bb-remote base64-encodes the PEM to avoid newlines in HTTP headers
+        client_key_b64 = os.environ.get("DOCKER_CLIENT_KEY_B64")
+        if client_key_b64:
+            client_key = base64.b64decode(client_key_b64).decode()
     if not client_key:
         return
 

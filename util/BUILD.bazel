@@ -1,6 +1,7 @@
 """Shared utility libraries."""
 
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/ci:github_release.bzl", "github_release")
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
@@ -133,4 +134,12 @@ py_wheel(
     version = "0.1.0",
     visibility = ["//devinfra/claude/hook_daemon/session_start/container_e2e:__pkg__"],
     deps = [":util_pkg"],
+)
+
+github_release(
+    name = "release_ducktape_util",
+    artifact = ":wheel",
+    filename = "ducktape_util-0.1.0-py3-none-any.whl",
+    notes = "ducktape-util shared utility wheel.",
+    pkg = "ducktape-util",
 )

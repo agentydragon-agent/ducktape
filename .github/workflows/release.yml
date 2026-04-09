@@ -1,5 +1,6 @@
-# Build wheels and create GitHub releases via bb-remote.
-# Replaces the BuildBuddy Workflows "Release" action.
+# Release artifacts to GitHub via per-artifact bazel targets.
+# Each target builds its artifact (as a dep), computes SHA, and creates
+# a GitHub Release if the content changed.
 name: Release
 
 on:
@@ -17,9 +18,19 @@ permissions:
 
 jobs:
   release:
-    name: Build & Release
+    name: Release ${{ matrix.target }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - //:release_claude_hooks
+          - //util:release_ducktape_util
+          - //:release_ducktape
+          - //gterm_theme:release_gterm_theme
+          - //skills:release_skills
+          - //devinfra/buildbuddy_cli:release_bbapi
     steps:
       - uses: actions/checkout@v6
         with:
@@ -36,25 +47,5 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Build wheels and artifacts
-        run: |
-          # Use RBE worker image as runner (has system deps for pycairo etc.)
-          # Can't use bb_remote.sh here because --container_image is a bb flag
-          # that must come before the bazel command.
-          # TODO: teach bb_remote.sh to accept --container_image so all
-          # bb remote invocations go through the wrapper (secret forwarding, etc.)
-          RBE_IMAGE=$(python3 -c "import json; d=json.load(open('devinfra/image_pins.json'))['rbe_worker']; print(d['image']+'@'+d['digest'])")
-          bb remote \
-            --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
-            --runner_exec_properties=workload-isolation-type=firecracker \
-            --container_image="docker://${RBE_IMAGE}" \
-            build --remote_download_toplevel --config=rbe \
-            //:wheel \
-            //:claude_hooks_wheel \
-            //util:wheel \
-            //gterm_theme:wheel \
-            //skills:all_skills_tar \
-            //devinfra/buildbuddy_cli:bbapi
-
-      - name: Create GitHub releases
-        run: bazel run //devinfra/ci:bb_release_bin
+      - name: Release
+        run: devinfra/bb_remote.sh run ${{ matrix.target }}

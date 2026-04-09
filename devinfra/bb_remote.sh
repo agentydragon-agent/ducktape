@@ -27,9 +27,14 @@ fi
 # Multiple --remote_run_header with same key are merged by BB.
 # TODO: restructure push_ghcr to run locally instead of forwarding GHCR creds.
 extra_args=()
-[ -n "${DOCKER_CLIENT_KEY:-}" ] && extra_args+=(
-  "--remote_run_header=x-buildbuddy-platform.env-overrides=DOCKER_CLIENT_KEY=${DOCKER_CLIENT_KEY}"
-  "--env=DOCKER_HOST=${DOCKER_HOST:-}" "--env=DOCKER_TLS_VERIFY=${DOCKER_TLS_VERIFY:-1}")
+# DOCKER_CLIENT_KEY is a PEM with newlines — can't go in HTTP headers.
+# Base64-encode it; the docker_mtls pytest fixture decodes.
+if [ -n "${DOCKER_CLIENT_KEY:-}" ]; then
+  _dk_b64=$(printf '%s' "$DOCKER_CLIENT_KEY" | base64 -w0)
+  extra_args+=(
+    "--remote_run_header=x-buildbuddy-platform.env-overrides=DOCKER_CLIENT_KEY_B64=${_dk_b64}"
+    "--env=DOCKER_HOST=${DOCKER_HOST:-}" "--env=DOCKER_TLS_VERIFY=${DOCKER_TLS_VERIFY:-1}")
+fi
 [ -n "${GHCR_TOKEN:-}" ] && extra_args+=(
   "--remote_run_header=x-buildbuddy-platform.env-overrides=GHCR_TOKEN=${GHCR_TOKEN}"
   "--env=GHCR_USERNAME=${GHCR_USERNAME:-agentydragon}")

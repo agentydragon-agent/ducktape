@@ -1,4 +1,5 @@
 load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/ci:github_release.bzl", "github_release")
 
 # gazelle:ignore
 load("//devinfra/python:defs.bzl", "py_binary", "py_library")
@@ -48,4 +49,12 @@ py_wheel(
     tags = ["manual"],
     version = "0.1.0",
     deps = [":gterm_theme_pkg"],
+)
+
+github_release(
+    name = "release_gterm_theme",
+    artifact = ":wheel",
+    filename = "gterm_theme-0.1.0-py3-none-any.whl",
+    notes = "gterm-theme wheel (GNOME Terminal theme follower).",
+    pkg = "gterm-theme",
 )
