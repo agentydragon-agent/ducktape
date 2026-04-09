@@ -44,6 +44,5 @@ tf_module(
     tflint_config = "//cluster:.tflint.hcl",
     deps = [
         "//terraform/modules/nixos-image",
-        "//terraform/modules/proxmox-vm",
     ],
 )

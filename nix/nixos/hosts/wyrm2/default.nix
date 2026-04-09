@@ -95,7 +95,8 @@ in
 
   # Separate data disks (Proxmox virtio disks).
   # autoFormat creates ext4 on first boot; autoResize grows to full disk size.
-  # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd
+  # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
+  # virtio4=/dev/vde, virtio5=/dev/vdf
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";
     fsType = "ext4";
@@ -111,6 +112,18 @@ in
   # virtio2 (/dev/vdc) is OpenEBS LVM — managed as LVM VG below, not a filesystem mount
   fileSystems."/var/lib/containerd" = {
     device = "/dev/vdd";
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+  };
+  fileSystems."/home/agentydragon/.cache/bazel" = {
+    device = "/dev/vde"; # 40G SSD (local-zfs) — Bazel output bases
+    fsType = "ext4";
+    autoFormat = true;
+    autoResize = true;
+  };
+  fileSystems."/home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos" = {
+    device = "/dev/vdf"; # 100G HDD (tank-hdd) — Bazel repository cache
     fsType = "ext4";
     autoFormat = true;
     autoResize = true;
@@ -142,8 +155,15 @@ in
     '';
   };
 
-  # TODO: Create /mnt/tankshare/shared/{pip-cache,uv-cache} via systemd.tmpfiles.rules
-  # and configure pip/uv to use them as cache directories
+  # Intermediate directories for the nested repo cache mount.
+  # The SSD disk is mounted at ~/.cache/bazel, then the HDD disk is mounted
+  # over the repo cache subdirectory inside it.
+  systemd.tmpfiles.rules = [
+    "d /home/agentydragon/.cache/bazel 0755 agentydragon users -"
+    "d /home/agentydragon/.cache/bazel/_bazel_agentydragon 0755 agentydragon users -"
+    "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache 0755 agentydragon users -"
+    "d /home/agentydragon/.cache/bazel/_bazel_agentydragon/cache/repos 0755 agentydragon users -"
+  ];
 
   # virtiofs shared from Proxmox host (atlas)
   fileSystems."/mnt/tankshare" = {

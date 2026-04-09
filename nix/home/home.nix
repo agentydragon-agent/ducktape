@@ -488,6 +488,7 @@ in
 
     # pnpm global packages
     PNPM_HOME = "$HOME/.local/share/pnpm";
+
   };
 
   # Patch 2 critical MIME associations in-place without replacing the full

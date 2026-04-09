@@ -101,9 +101,9 @@ output "service_endpoints" {
 output "wyrm2" {
   description = "Wyrm2 VM info"
   value = {
-    name           = module.wyrm2.vm_name
-    id             = module.wyrm2.vm_id
-    ipv4_addresses = module.wyrm2.ipv4_addresses
+    name           = proxmox_virtual_environment_vm.wyrm2.name
+    id             = proxmox_virtual_environment_vm.wyrm2.vm_id
+    ipv4_addresses = proxmox_virtual_environment_vm.wyrm2.ipv4_addresses
   }
 }
 
@@ -111,7 +111,7 @@ output "instructions" {
   description = "Setup instructions and next steps"
   value       = <<-EOT
 
-    VM: wyrm2 (ID: ${module.wyrm2.vm_id})
+    VM: wyrm2 (ID: ${proxmox_virtual_environment_vm.wyrm2.vm_id})
 
     Workflows:
 
