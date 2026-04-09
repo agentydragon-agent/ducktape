@@ -34,6 +34,21 @@ py_library(
 )
 
 py_library(
+    name = "docker_mtls",
+    testonly = True,
+    srcs = ["docker_mtls.py"],
+    data = [
+        "//cluster/k8s/docker-ci/certs:ca.pem",
+        "//cluster/k8s/docker-ci/certs:client-cert.pem",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
     name = "container_logs",
     testonly = True,
     srcs = ["container_logs.py"],

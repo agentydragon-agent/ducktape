@@ -52,6 +52,8 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
         fail("Use requires_docker parameter instead of 'requires_docker' tag in {}".format(name))
 
     base_env_inherit = list(env_inherit or [])
+    base_args = list(args or [])
+    base_deps = list(deps or [])
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
         base_env_inherit = base_env_inherit + [
@@ -60,9 +62,8 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
             "DOCKER_CERT_PATH",
             "DOCKER_CLIENT_KEY",
         ]
-
-    base_args = list(args or [])
-    base_deps = list(deps or [])
+        base_args = base_args + ["-p", "util.testing.docker_mtls"]
+        base_deps = base_deps + ["//util/testing:docker_mtls"]
     if uses_syrupy:
         base_args = base_args + [
             "--snapshot-default-extension=util.testing.bazel_snapshot_extension.BazelAmberExtension",

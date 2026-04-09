@@ -1,0 +1,7 @@
+exports_files(
+    [
+        "ca.pem",
+        "client-cert.pem",
+    ],
+    visibility = ["//visibility:public"],
+)
