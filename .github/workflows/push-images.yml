@@ -43,6 +43,8 @@ jobs:
           - //third_party/activitywatch:push_ghcr
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: cachix/install-nix-action@v31
         with:
