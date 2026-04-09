@@ -76,9 +76,10 @@ use `oci_image` + `ghcr_push`.
 
 ## CI Configuration
 
-`buildbuddy.yaml` and `.github/workflows/ci.yml` are **auto-generated**. Do not edit them
-directly. Changes go in `devinfra/ci/workflows.yaml` and `devinfra/ci/generate_buildbuddy.py`,
-then regenerate with `bb run --remote_executor="" //devinfra/ci:generate_buildbuddy_bin`.
+All CI runs through GitHub Actions → `bb-remote` (BuildBuddy RBE). No separate
+`buildbuddy.yaml`. `.github/workflows/ci.yml` is auto-generated from
+`devinfra/ci/workflows.yaml` — regenerate with
+`bb run --remote_executor="" //devinfra/ci:generate_ci_bin`.
 
 ## Refactoring
 

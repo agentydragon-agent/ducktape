@@ -103,18 +103,6 @@ py_library(
 )
 
 py_library(
-    name = "bb_release",
-    srcs = ["bb_release.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":artifacts",
-        "//util/bazel:workspace",
-        "@pypi//more_itertools",
-        "@pypi//pygithub",
-    ],
-)
-
-py_library(
     name = "github_release_lib",
     srcs = ["github_release_bin.py"],
     visibility = ["//visibility:public"],
@@ -148,12 +136,6 @@ py_library(
 )
 
 # === Binaries ===
-
-py_binary(
-    name = "bb_release_bin",
-    main_module = "devinfra.ci.bb_release",
-    deps = [":bb_release"],
-)
 
 py_binary(
     name = "sync_pins_bin",
