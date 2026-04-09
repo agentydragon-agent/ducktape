@@ -72,11 +72,22 @@ resource "harbor_project" "ducktape" {
   public = false
 }
 
-# System-level robot account for CI push (GitHub Actions)
+# Desired CI robot credentials (SOPS-encrypted, Flux-deployed k8s Secret).
+# Source of truth: secrets/ci/harbor-ci-robot.sops.yaml (for ci_env.sh).
+# Mirrored here as a k8s Secret so tofu-controller can read it.
+data "kubernetes_secret" "harbor_ci_robot_desired" {
+  metadata {
+    name      = "harbor-ci-robot-desired"
+    namespace = "flux-system"
+  }
+}
+
+# System-level robot account for CI push (GitHub Actions + BuildBuddy)
 resource "harbor_robot_account" "ci" {
   name        = "ci"
-  description = "CI/CD robot account — pushes images from GitHub Actions"
+  description = "CI/CD robot account — pushes images from GitHub Actions and BuildBuddy"
   level       = "system"
+  secret      = data.kubernetes_secret.harbor_ci_robot_desired.data["password"]
 
   permissions {
     kind      = "project"
