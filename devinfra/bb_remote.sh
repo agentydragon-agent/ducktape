@@ -41,9 +41,15 @@ fi
 [ -n "${GH_RELEASE_PAT:-}" ] && extra_args+=(
   "--remote_run_header=x-buildbuddy-platform.env-overrides=GH_RELEASE_PAT=${GH_RELEASE_PAT}")
 
+# Use the RBE worker image as the runner container (has system deps like
+# libcairo2-dev needed for pycairo wheel builds).
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RBE_IMAGE=$(python3 -c "import json; d=json.load(open('${REPO_ROOT}/devinfra/image_pins.json'))['rbe_worker']; print(d['image']+'@'+d['digest'])")
+
 exec bb remote \
   --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
   --runner_exec_properties=workload-isolation-type=firecracker \
   --runner_exec_properties=init-dockerd=true \
+  --container_image="docker://${RBE_IMAGE}" \
   ${extra_args[@]+"${extra_args[@]}"} \
   "$@" --config=rbe
