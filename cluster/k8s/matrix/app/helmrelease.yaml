@@ -69,9 +69,10 @@ spec:
         memory: 512Mi
 
     # Persistence for media store
+    # TODO: consider migrating to S3-compatible storage (MinIO) via synapse-s3-storage-provider
     persistence:
       enabled: true
-      storageClass: "proxmox-csi-retain"
+      storageClass: "local-path-proxmox"
       size: 20Gi
       accessMode: ReadWriteOnce
 

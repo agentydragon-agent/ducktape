@@ -15,4 +15,4 @@ spec:
   wait: true
   dependsOn:
     - name: tofu-state-db
-    - name: proxmox-csi
+    - name: local-path-provisioner

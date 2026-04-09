@@ -176,6 +176,18 @@ See <plans/file_sync_evaluation.md>.
 **Proxmox-dependent services** (tolerate downtime by design): Harbor, Gitea,
 Nix cache, BuildBuddy, Ollama, InvenTree, ActivityWatch.
 
+### Migrating off `proxmox-csi-retain` on wyrm2
+
+**Rationale**: Proxmox CSI hotplugs SCSI disks onto the VM. The bpg/proxmox Terraform
+provider treats all disks as a single TypeSet with no stable keys — it can't distinguish
+Terraform-managed disks from CSI-managed ones. This forces `lifecycle { ignore_changes = [disk] }`
+on the entire VM, which means Terraform can't manage _any_ wyrm2 disks (including intentional
+ones like cache disks). Eliminating proxmox-csi usage on wyrm2 lets us eventually remove the
+ignore rule and manage all disks declaratively.
+
+**Migration**: Replace `proxmox-csi-retain` PVCs with `local-path-proxmox` (same failure
+domain, no CSI disk hotplug). Remaining `proxmox-csi-retain` consumer on wyrm2: `ollama/llm-models` (200Gi).
+
 ## Operational Hardening
 
 ### Secrets: Vault SSOT
@@ -224,7 +236,7 @@ cluster — DNS record is a declarative ClusterRRset, Flux deploys the proxy.
 
 All 6 former TF roots consolidated into a single root at `cluster/terraform/main/` with
 PG backend (CNPG `tofu-state-db`, schema `main`, 2 replicas on VPS `local-path`). Backup
-CronJob writes `pg_dump` to `proxmox-csi-retain` PVC every 6 hours.
+CronJob writes `pg_dump` to `local-path-proxmox` PVC every 6 hours.
 
 Zero `terraform_remote_state` dependencies — everything is in the same root. Persistent-auth
 resources have `lifecycle { prevent_destroy = true }`. Bootstrap uses targeted applies

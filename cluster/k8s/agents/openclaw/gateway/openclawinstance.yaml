@@ -271,7 +271,7 @@ spec:
     persistence:
       enabled: true
       size: 20Gi
-      storageClass: proxmox-csi-retain
+      storageClass: local-path-proxmox
   # Requests right-sized from observed usage — see docs/operations/2026_02_22_memory_request_rightsizing.md
   resources:
     requests:
