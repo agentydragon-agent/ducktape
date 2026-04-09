@@ -39,10 +39,14 @@ jobs:
       - name: Build wheels and artifacts
         run: |
           # Use RBE worker image as runner (has system deps for pycairo etc.)
+          # Can't use bb_remote.sh here because --container_image is a bb flag
+          # that must come before the bazel command.
           RBE_IMAGE=$(python3 -c "import json; d=json.load(open('devinfra/image_pins.json'))['rbe_worker']; print(d['image']+'@'+d['digest'])")
-          devinfra/bb_remote.sh build \
+          bb remote \
+            --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
+            --runner_exec_properties=workload-isolation-type=firecracker \
             --container_image="docker://${RBE_IMAGE}" \
-            --remote_download_toplevel \
+            build --remote_download_toplevel --config=rbe \
             //:wheel \
             //:claude_hooks_wheel \
             //util:wheel \
