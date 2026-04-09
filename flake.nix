@@ -224,12 +224,6 @@
       # gettext + locale data. Blocked on slow rebuild (gitMinimal override
       # isn't in the binary cache, triggers 600+ derivation bootstrap chain).
       # See devinfra/claude/docs/devtools-closure-size.md for details.
-      # bb remote with sane defaults for this repo:
-      # - 50GB disk (default 20GB is too small)
-      # - Firecracker + Docker on the runner (for requires_docker tests
-      #   that run locally with no-sandbox)
-      # RBE container image override is in .bazelrc under build:rbe.
-      bb-remote = pkgs.writeShellScriptBin "bb-remote" (builtins.readFile ./devinfra/bb_remote.sh);
       # Packages NOT needed on RBE workers (large, only for local/infra use).
       # Excluded from rbeToolPackages to keep the RBE image small.
       localOnlyPackages = [
@@ -237,8 +231,7 @@
         pkgs.ansible # 650MB
       ];
       devToolPackages = [
-        # Repo-specific tools
-        bb-remote
+        # Repo-specific tools (bb-remote is provided by claude-hooks wheel)
         ducktapePkgs.claude-hooks
         ducktapePkgs.bb
         ducktapePkgs.bbapi

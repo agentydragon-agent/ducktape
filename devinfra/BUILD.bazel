@@ -7,7 +7,7 @@ load("@pypi//:requirements.bzl", "all_whl_requirements")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("//devinfra:filter_wheels.bzl", "filter_system_packages")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files([
     "image_pins.json",
@@ -58,6 +58,24 @@ prettier_bin.prettier_binary(
         "\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
     ],
     visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "bb_remote",
+    srcs = ["bb_remote.py"],
+    visibility = ["//:__pkg__"],
+    deps = ["@pypi//pygit2"],
+)
+
+py_test(
+    name = "test_bb_remote",
+    srcs = ["test_bb_remote.py"],
+    deps = [
+        ":bb_remote",
+        "@pypi//pygit2",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_library(
