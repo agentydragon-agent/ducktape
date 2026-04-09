@@ -7,13 +7,13 @@ set -euo pipefail
 # select the local HEAD as the base commit, which doesn't exist on the
 # remote and causes the runner to fail during git fetch.
 # Skip on detached HEAD (GHA) or when origin/HEAD doesn't exist.
-current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+current_branch=$(git symbolic-ref --short HEAD || true)
 if [ -n "$current_branch" ]; then
-  default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)
+  default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD | sed 's|^origin/||' || true)
   default_branch=${default_branch:-devel}
   if [ "$current_branch" = "$default_branch" ]; then
-    local_sha=$(git rev-parse "$default_branch" 2>/dev/null || true)
-    remote_sha=$(git rev-parse "origin/$default_branch" 2>/dev/null || true)
+    local_sha=$(git rev-parse "$default_branch" || true)
+    remote_sha=$(git rev-parse "origin/$default_branch" || true)
     if [ -n "$local_sha" ] && [ -n "$remote_sha" ] && [ "$local_sha" != "$remote_sha" ]; then
       echo "bb-remote: aborting — $default_branch has unpushed commits (local $local_sha != origin $remote_sha)." >&2
       echo "bb-remote: push first or use a feature branch." >&2
