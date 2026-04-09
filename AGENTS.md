@@ -37,7 +37,7 @@ bb run --remote_executor="" //:requirements.update
 BuildBuddy runner VM with RBE, Firecracker isolation, and Docker. Syncs local
 git diffs automatically. See <devinfra/docs/bb_remote_internals.md>.
 
-**Unpushed commits on the default branch**: `bb-remote` aborts if local
+**Unpushed commits on default branch**: `bb-remote` aborts if local
 `devel` differs from `origin/devel`. Fix: `git push` first, or use a feature
 branch.
 
@@ -102,15 +102,17 @@ If you touched `ansible/`, also follow <ansible/AGENTS.md>.
 
 **NEVER use `git reset --soft` to squash onto a base branch that has moved on the remote.** `git reset --soft origin/devel` collapses _all_ differences between HEAD and `origin/devel` into the staging area — including commits other people landed on devel since your branch diverged. The resulting "squashed" commit silently re-applies every upstream change as if it were yours. Use `git rebase origin/devel` first to rebase, then squash with `git reset --soft $(git merge-base HEAD origin/devel)` so only your branch's changes are staged.
 
-## Debug Notes
+## Conventions
 
-Convention: `<subproject>/debug/<topic>.md` for persistent investigation notes (RCAs, debug logs). Examples: `debug/spice_lag/README.md`, `debug/wyrm-oom/INVESTIGATION.md`. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
+### Debug Notes
 
-## Plans
+`<subproject>/debug/<topic>.md`: for persistent investigation notes (RCAs, debug logs). Examples: `debug/spice_lag/README.md`, `debug/wyrm-oom/INVESTIGATION.md`. The `cluster/` subproject uses `cluster/docs/lessons_learned/` instead.
 
-`plans/` directories are for future work or work in progress. Once a plan is fully completed, remove it from `plans/` (delete, or squash into a short tombstone/summary elsewhere).
+### Plans
 
-## TODO Tracking
+`plans/`: for future work or work in progress. Once a plan is fully completed, remove it from `plans/` (delete, or squash into short tombstone/summary elsewhere).
+
+### TODO Tracking
 
 Subprojects use `TODO.md` for persistent TODO tracking. TODOs local to a specific code location are fine as inline comments; cross-cutting or project-level TODOs belong in `TODO.md`.
 
@@ -138,7 +140,7 @@ if __name__ == "__main__":
 
 **Docker tests run on RBE, never locally**: Tests that use Docker (e.g., container E2E tests, proxy integration tests with mitmproxy testcontainers) are designed to run on BuildBuddy RBE workers, which have Docker available. **Never** skip these tests because Docker is unavailable locally, disable them, or claim they are "not runnable." They work on RBE — that is the intended execution environment. If RBE is not working, recover it by following the "Recovering from a Broken Session Start Hook" section above. Every environment in which agents operate will have BuildBuddy accessible, either automatically (session start hook) or through manual recovery. If you cannot restore BuildBuddy remote execution after following recovery steps, **abort and report the issue to the user** rather than working around it with `--remote_executor=""` or local-only execution for tests that assume RBE.
 
-Use the `py_test` macro from `//devinfra/python:defs.bzl` (not the raw `@rules_python` `py_test`) and set `requires_docker = True`. The macro handles `env_inherit`, tags, and Docker exec properties automatically. Do not add `env_inherit = ["DOCKER_HOST"]` or `tags = ["requires_docker"]` manually.
+Use `py_test` macro from `//devinfra/python:defs.bzl` (not the raw `@rules_python` `py_test`) and set `requires_docker = True`. The macro handles `env_inherit`, tags, and Docker exec properties automatically. Do not add `env_inherit = ["DOCKER_HOST"]` or `tags = ["requires_docker"]` manually.
 
 **Use undeclared test outputs for log capture**: Write diagnostic data (container logs, HAR dumps, config snapshots) to Bazel's undeclared test outputs directory via `util.testing.undeclared_outputs.undeclared_outputs_dir()`. These are uploaded to BuildBuddy and retrievable from the invocation. Do not dump large log blobs into test stdout/stderr — they clutter the test log and are harder to navigate. To read undeclared outputs from a test run:
 
@@ -148,7 +150,7 @@ ls "$TEST_DIR/test.outputs/"          # list undeclared output files
 cat "$TEST_DIR/test.outputs/my.log"   # read a specific output
 ```
 
-On RBE, the outputs are downloaded to the local testlogs dir after the test completes (Bazel fetches them automatically). The mitmproxy fixture saves `proxy.har` to undeclared outputs as an example; see `test_k8s_proxy_integration.py` for container log capture.
+On RBE, the outputs are downloaded to local testlogs dir after test completes (Bazel fetches them automatically). The mitmproxy fixture saves `proxy.har` to undeclared outputs as an example; see `test_k8s_proxy_integration.py` for container log capture.
 
 **Test timeouts mean hangs, not slowness**: When a test times out, assume it is wedged — an internal operation is waiting on something that will never arrive (deadlock, stuck future, container that never becomes ready, connection to a port nothing is listening on). Do NOT bump `size`/`timeout` as a fix. Instead, trace the execution to find what is blocked: run with `--test_output=streamed --test_arg=-s`, add logging around fixture setup, check for stuck containers (`docker ps`), etc. A test that ran in 35s last week and now times out at 60s is not "slow" — something broke internally.
 

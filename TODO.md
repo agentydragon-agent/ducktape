@@ -4,14 +4,11 @@
 
 - [ ] Add a pre-commit linter to enforce the link style convention from STYLE.md: detect `[path](path)` duplicate-path links in markdown and suggest using `@path` transclusion or `<path>` angle bracket syntax instead
 - [ ] Reconsider `<path.md>` angle-bracket convention for local file links — GitHub doesn't render these as clickable links. May want to switch to `[path.md](path.md)` and update STYLE.md accordingly
-- [ ] Add ESLint to pre-commit for local JS/TS linting (currently only runs in CI via Bazel)
-- [ ] Consider adding mypy to pre-commit for local type checking (currently only runs in CI via Bazel)
 
 ## System Configuration
 
 - [ ] Add to small laptop installation: nmap, other hacking tools
 - [ ] Start Signal minimized (difficult: settings in encrypted sqlite)
-- [ ] Consider adding apt-file (heavy dependency)
 - [ ] Combine ActivityWatch + HALinuxCompanion to report: session events (login/logout, lock/unlock, suspend/resume), battery charge level, and other device telemetry
 
 ## Neovim
@@ -28,18 +25,13 @@
 - [ ] [#787](https://github.com/agentydragon/ducktape/issues/787): Fork PRs (from `agentydragon-agent`) don't receive `BUILDBUDDY_API_KEY`, so `bazel-check`/`bazel-test` are skipped on fork PRs. Fix by converting `BUILDBUDDY_API_KEY` to a repo variable (available to forks) or adding `agentydragon-agent` as a collaborator. Once fixed: remove `fork_skip: true` from `bazel-check`/`bazel-test` in `devinfra/ci/workflows.yaml`, regenerate `ci.yml`, and remove the Known Limitations note from `skills/buildbuddy_api/SKILL.md`.
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests, flat structure like `git_commit_ai/`)
 - [ ] Re-enable `bazel coverage` in CI once compatible with remote execution (RBE). Currently disabled because the Java-based `remote_coverage_tools` can't locate its runfiles on BuildBuddy workers, causing all tests to be marked as failed. See `bazel-test.yml`.
-- [ ] Set up BuildBuddy [remote runner features](https://www.buildbuddy.io/docs/remote-runner-features) for artifacts / extra test outputs
 - [ ] Upgrade protobuf once UPB uninitialized variable warnings are fixed upstream. Currently on `protobuf 34.0.bcr.1` (latest in BCR as of March 2026). GCC emits `-Wmaybe-uninitialized` warnings from `external/protobuf+/upb/wire/decode.c` (lines 281, 732, 1089: `upb_StringView sv` used uninitialized). These are false positives from GCC's static analysis failing to prove the variable is always set before use. Upstream issues: [#17052](https://github.com/protocolbuffers/protobuf/issues/17052), [PR #18805](https://github.com/protocolbuffers/protobuf/pull/18805). Also `src/google/protobuf/compiler/rust/message.cc` triggers `-Wdeprecated-declarations` for `FieldOptions::weak()`. Monitor protobuf releases >34.0 for fixes.
 
 ## Terraform
 
 - [ ] Unify manual `tofu` runs with Bazel-managed providers. Currently manual `tofu plan/apply` resolves providers independently from the `tf.download(mirror={...})` pins in `MODULE.bazel`. Create a wrapper (script or `bazel run` target) that sets `TF_CLI_CONFIG_FILE` pointing at the Bazel-fetched filesystem mirror (`<output_base>/external/@tf_toolchains/mirror/`), so manual runs use the exact same provider versions as `bazel test`.
 
-## Dependency Tracking (Renovate)
-
-Renovate is configured (`renovate.json`) with `config:recommended` and dashboard-only mode (`prCreation: "approval"`).
-
-### Coverage gaps
+## Renovate Coverage gaps
 
 Already covered by built-in managers (verified on dashboard):
 
