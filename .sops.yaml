@@ -12,6 +12,10 @@ keys:
   - &iguana-agentydragon age1l325yz3v2mev3t896mzvmmkaatjc7z4d9kukvnjuslgwwd8zg9ss9pnsc7
   # Claude agent key (Claude Code web sessions, private key in claude-sandbox k8s secret)
   - &claude-web age15gxxqn49sp8qhdya6utanzsxgzpfup63yfuht9yza4adpule4auqzsddj2
+  # CI key (GitHub Actions + BuildBuddy, narrow access to CI-only secrets)
+  # Private key: k8s Secret in github-secrets-sync namespace, synced to GHA as SOPS_AGE_KEY.
+  # Manual paste into BuildBuddy org secrets.
+  - &ci age1zl5lv4g0lzd4pcwx9q4vvq0w4rpmkde5r68k4n2zu89urmnx9svs3c2mef
   # Cluster k8s secrets (Flux decryption, private key in flux-system/sops-age-cluster-secrets)
   # Private key stored in secrets/shared/cluster-secrets-age.yaml (SOPS-encrypted).
   # Bootstrap deploys it to the cluster as a k8s Secret.
@@ -37,6 +41,14 @@ creation_rules:
       - age:
           - *admin
           - *claude-web
+          - *ci
+
+  # --- CI secrets (admin + CI key) ---
+  - path_regex: secrets/ci/.*\.sops\.yaml$
+    key_groups:
+      - age:
+          - *admin
+          - *ci
 
   # --- Nebula private keys (SOPS binary, admin + host) ---
   - path_regex: secrets/nebula/ca\.sops\.key$
@@ -143,7 +155,7 @@ creation_rules:
       - age:
           - *admin
           - *claude-web
-  # Shared dev secrets (all users + claude-web agent)
+  # Shared dev secrets (all users + claude-web agent + CI)
   - path_regex: secrets/buildbuddy\.yaml$
     key_groups:
       - age:
@@ -153,7 +165,8 @@ creation_rules:
           - *atlas-agentydragon
           - *iguana-agentydragon
           - *claude-web
-  # GitHub PAT for agentydragon-agent machine user (Claude Code, OpenClaw)
+          - *ci
+  # GitHub PAT for agentydragon-agent machine user (Claude Code, OpenClaw, CI)
   - path_regex: secrets/github-pat-agentydragon-agent\.yaml$
     key_groups:
       - age:
@@ -162,3 +175,4 @@ creation_rules:
           - *rugged-agentydragon
           - *atlas-agentydragon
           - *claude-web
+          - *ci
