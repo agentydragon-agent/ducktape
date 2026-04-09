@@ -39,6 +39,7 @@ async def run_one(
     scoring_container,
     sem: asyncio.Semaphore,
     model: str,
+    api: str,
     turn_limit: int,
     output_dir: Path,
 ) -> RunRecord | None:
@@ -52,7 +53,7 @@ async def run_one(
                 hint=False,
                 turn_limit=turn_limit,
                 model=model,
-                api="anthropic",
+                api=api,
                 output_dir=output_dir,
                 exec_tool=exec_tool,
                 scoring_container=scoring_container,
@@ -102,6 +103,7 @@ async def _async_main(args: argparse.Namespace) -> None:
                         scoring_container,
                         sem,
                         model=args.model,
+                        api=args.api,
                         turn_limit=args.turn_limit,
                         output_dir=output_dir / fn_name / ("no_skill" if no_skill else "skill") / f"run_{run_idx}",
                     )
@@ -130,6 +132,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.WARNING)
     parser = argparse.ArgumentParser(description="Run all function learning evals")
     parser.add_argument("--model", default="claude-haiku-4-5-20251001")
+    parser.add_argument("--api", choices=["openai", "anthropic"], default="anthropic")
     parser.add_argument("--turn-limit", type=int, required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--concurrency", type=int, default=3)

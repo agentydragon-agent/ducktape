@@ -70,10 +70,8 @@ def extract_comments_from_file(filepath: Path, lines: list[str]) -> list[dict[st
                     # Module docstrings don't have lineno, they're always at line 1
                     if isinstance(node, ast.Module):
                         line_num = 1
-                    elif hasattr(node, "lineno"):
-                        line_num = node.lineno
                     else:
-                        continue
+                        line_num = node.lineno
 
                     context_before = "".join(lines[max(0, line_num - 4) : line_num - 1])
                     context_after = "".join(lines[line_num : min(len(lines), line_num + 10)])

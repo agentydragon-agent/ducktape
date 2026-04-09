@@ -4,7 +4,7 @@ import shlex
 from collections.abc import Callable
 
 # Conditional import to avoid circular dependency when compositor is not available
-from typing import TYPE_CHECKING, Any, get_args, get_type_hints
+from typing import TYPE_CHECKING, Any, get_args, get_origin, get_type_hints
 
 import pydantic_core
 from fastmcp.tools.function_tool import FunctionTool
@@ -93,7 +93,7 @@ class DisplayEventsHandler(BaseHandler):
         input_type = params[0]
 
         # Unwrap Annotated, Optional, etc.
-        if hasattr(input_type, "__origin__"):
+        if get_origin(input_type) is not None:
             args = get_args(input_type)
             if args:
                 input_type = args[0]

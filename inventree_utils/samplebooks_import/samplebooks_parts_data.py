@@ -224,9 +224,9 @@ def eyeball_check():
         group = list(group_iter)  # Convert to list for multiple iterations
 
         # Determine available fields dynamically
-        has_tolerance = any(hasattr(p, "tolerance") and p.tolerance is not None for p in group)
-        has_voltage = any(hasattr(p, "voltage_rating") and p.voltage_rating is not None for p in group)
-        has_dielectric = any(hasattr(p, "dielectric") and p.dielectric is not None for p in group)
+        has_tolerance = any(p.tolerance is not None for p in group)
+        has_voltage = any(isinstance(p, Capacitor) and p.voltage_rating is not None for p in group)
+        has_dielectric = any(isinstance(p, Capacitor) and p.dielectric is not None for p in group)
 
         # Generate headers dynamically
         headers = ["Value"]

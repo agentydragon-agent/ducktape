@@ -379,8 +379,8 @@ async def test_critic_cannot_push_images(e2e_stack, synced_db: Database, all_fil
             ["sh", "-c", "crane push /workspace/ ${PROPS_BACKEND_URL#http://}/test-push:latest --insecure 2>&1"],
             timeout_ms=30000,
         )
-        stdout = result.stdout if hasattr(result, "stdout") else ""
-        stderr = result.stderr if hasattr(result, "stderr") else ""
+        stdout = result.stdout if isinstance(result.stdout, str) else ""
+        stderr = result.stderr if isinstance(result.stderr, str) else ""
         logger.info(f"Critic push attempt stdout: {stdout}")
         logger.info(f"Critic push attempt stderr: {stderr}")
 

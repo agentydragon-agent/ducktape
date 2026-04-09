@@ -266,10 +266,10 @@ async def _status_async(habit: str, date: str | None = None, api_key: str | None
             table.add_row("Status", status_color)
             table.add_row("Date", formatted_date)
 
-            if hasattr(status, "value") and status.value is not None:
+            if status.value is not None:
                 table.add_row("Value", str(status.value))
 
-            if hasattr(status, "note") and status.note:
+            if status.note:
                 table.add_row("Note", status.note)
 
             console.print(table)
