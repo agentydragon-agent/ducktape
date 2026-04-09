@@ -227,6 +227,7 @@ py_test(
         "testdata/kyverno/**",
         "__snapshots__/*.ambr",
     ]),
+    uses_syrupy = True,
     deps = [
         ":kyverno",
         "//util/bazel:runfiles",

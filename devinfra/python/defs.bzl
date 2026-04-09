@@ -66,6 +66,8 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     if uses_syrupy:
         base_args = base_args + [
             "--snapshot-default-extension=util.testing.bazel_snapshot_extension.BazelAmberExtension",
+            "-p",
+            "util.testing.bazel_snapshot_extension",
         ]
         base_deps = base_deps + [
             "//util/testing:bazel_snapshot_extension",

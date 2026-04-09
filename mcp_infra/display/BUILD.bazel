@@ -59,6 +59,7 @@ py_test(
     name = "test_compact_display",
     srcs = ["test_compact_display.py"],
     data = ["__snapshots__/test_compact_display.ambr"],
+    uses_syrupy = True,
     deps = [
         ":rich_display",
         "//agent_core:events",
@@ -81,6 +82,7 @@ py_test(
     name = "test_max_height",
     srcs = ["test_max_height.py"],
     data = ["__snapshots__/test_max_height.ambr"],
+    uses_syrupy = True,
     deps = [
         ":rich_display",
         "@pypi//pytest_bazel",

@@ -161,6 +161,7 @@ py_test(
     name = "test_snapshots",
     srcs = ["test_snapshots.py"],
     data = ["__snapshots__/test_snapshots.ambr"],
+    uses_syrupy = True,
     deps = [
         ":config",
         ":conftest",

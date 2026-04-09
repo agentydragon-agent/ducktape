@@ -108,7 +108,7 @@ class SessionPaths:
     @property
     def wrapper_path(self) -> Path:
         """Wrapper script path."""
-        return self.wrapper_dir / "bazel"
+        return self.wrapper_dir / "bazelisk"
 
     @property
     def mkcert_dir(self) -> Path:

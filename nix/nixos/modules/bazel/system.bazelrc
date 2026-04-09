@@ -2,7 +2,7 @@
 # Installed to /etc/bazel.bazelrc so it applies regardless of $HOME.
 # See debug/nixos_bazel_bash/STATUS.md for full context.
 
-# Override nixpkgs bazel_8's nix-store shell path for RBE compatibility
+# Override shell path for bazelisk-downloaded Bazel (may default to nix-store path on NixOS)
 build --shell_executable=/bin/bash
 # Fixed PATH for exec-config (host) tools only. These always run locally
 # and need /run/current-system/sw/bin for NixOS tools.

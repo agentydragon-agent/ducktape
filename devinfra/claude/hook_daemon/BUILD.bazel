@@ -264,6 +264,7 @@ py_test(
     name = "test_post_tool_use",
     srcs = ["test_post_tool_use.py"],
     data = ["__snapshots__/test_post_tool_use.ambr"],
+    uses_syrupy = True,
     deps = [
         ":hook_daemon_conftest",
         ":post_tool_use_lib",
@@ -282,6 +283,7 @@ py_test(
     name = "test_precommit_e2e",
     srcs = ["test_precommit_e2e.py"],
     data = ["__snapshots__/test_precommit_e2e.ambr"],
+    uses_syrupy = True,
     deps = [
         ":hook_daemon_conftest",
         ":post_tool_use_lib",

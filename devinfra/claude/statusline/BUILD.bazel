@@ -35,6 +35,7 @@ py_test(
     name = "test_statusline",
     srcs = ["test_statusline.py"],
     data = ["__snapshots__/test_statusline.ambr"],
+    uses_syrupy = True,
     deps = [
         ":statusline_lib",
         ":usage_cache",

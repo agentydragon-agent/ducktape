@@ -23,6 +23,17 @@ py_library(
 )
 
 py_library(
+    name = "bazel_snapshot_extension",
+    testonly = True,
+    srcs = ["bazel_snapshot_extension.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pytest",
+        "@pypi//syrupy",
+    ],
+)
+
+py_library(
     name = "container_logs",
     testonly = True,
     srcs = ["container_logs.py"],

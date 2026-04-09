@@ -29,7 +29,7 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 
 ### Python
 
-- Deps: add to `pyproject.toml`, run `bazel run //:requirements.update`, use `@pypi//pkg` in BUILD
+- Deps: add to `pyproject.toml`, run `bb run --remote_executor="" //:requirements.update`, use `@pypi//pkg` in BUILD
 - Lockfile: `requirements_bazel.txt` (never edit manually)
 - Lint: ruff + mypy via Bazel aspects (default on; `--config=nolint` to skip)
 
@@ -38,15 +38,15 @@ Personal infrastructure monorepo. Manages configuration for: **agentydragon** (T
 One `py_library` per `.py` file (no aggregators). Reference `//pkg:module` not `//pkg`. Bazel auto-generates `__init__.py` stubs via `imports = [".."]`.
 
 ```bash
-bazel run //devinfra:gazelle              # Update BUILD files
-bazel run //devinfra:gazelle -- --mode=diff  # Preview changes
+bb run --remote_executor="" //devinfra:gazelle              # Update BUILD files
+bb run --remote_executor="" //devinfra:gazelle -- --mode=diff  # Preview changes
 ```
 
 ### Rust
 
 ```bash
 # Add to root Cargo.toml, then:
-CARGO_BAZEL_REPIN=1 bazel build @crates//:all  # Update Cargo.Bazel.lock
+CARGO_BAZEL_REPIN=1 bb build --remote_executor="" @crates//:all  # Update Cargo.Bazel.lock
 # Use @crates//crate_name in BUILD.bazel deps
 ```
 
@@ -89,8 +89,8 @@ See `.github/workflows/` and `buildbuddy.yaml`.
 ## Common Commands
 
 ```bash
-bazel run //:requirements.update       # Update Python lockfile
-bazel run //devinfra/lint:buildifier    # Format Bazel files
+bb run --remote_executor="" //:requirements.update       # Update Python lockfile
+bb run --remote_executor="" //devinfra/lint:buildifier    # Format Bazel files
 ```
 
 ## License

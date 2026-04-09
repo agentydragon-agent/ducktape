@@ -67,7 +67,7 @@ The hook runs at the start of each Claude Code web session and:
 ### Bazel Setup (via `hook_daemon/session_start/bazelisk.py`)
 
 7. Bazelisk binary provided by Nix devShell (on PATH)
-8. Creates wrapper script at `<session_dir>/bin/bazel` (injects proxy credentials)
+8. Creates wrapper script at `<session_dir>/bin/bazelisk` (injects proxy credentials)
 
 ### Git Hooks
 
@@ -138,7 +138,7 @@ The auth proxy decouples authentication from this timing problem:
 - Bazel's JVM is configured with `-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=<port>`
 - gRPC-Java's `ProxyDetectorImpl` sees the proxy via `ProxySelector` and connects without needing credentials
 - The auth proxy injects `Proxy-Authorization: Basic` credentials when forwarding to the egress proxy
-- Credentials are held in-memory; `bazel_wrapper` updates them via RPC before each invocation
+- Credentials are held in-memory; `bazelisk_wrapper` updates them via RPC before each invocation
 
 ## References
 
@@ -178,8 +178,8 @@ Most tools (curl, pip, npm, etc.)
     └──► HTTPS_PROXY (Anthropic's proxy) ──► Internet
          (unchanged, fresh JWT)
 
-Bazel/Bazelisk
-    └──► bazel wrapper
+Bazelisk
+    └──► bazelisk wrapper
            ├── 1. Reads HTTPS_PROXY (fresh JWT from Anthropic)
            ├── 2. RPC to hook daemon: POST /update-proxy-creds → in-memory update
            ├── 3. Sets HTTPS_PROXY=localhost:<port> for subprocess only
@@ -191,7 +191,7 @@ Bazel/Bazelisk
 ```
 
 The auth proxy runs in-process within the hook daemon (daemon threads, FastAPI on UDS).
-Credentials are held in-memory on the proxy object and updated via RPC before each bazel
+Credentials are held in-memory on the proxy object and updated via RPC before each bazelisk
 invocation. Proxy is started lazily on `SessionStart`, stopped on daemon shutdown.
 
 ## Verification
@@ -202,8 +202,8 @@ After session start:
 # Proxy should be accessible (AUTH_PROXY_URL is set in the session env file)
 curl -s --max-time 5 -x "$AUTH_PROXY_URL" https://bcr.bazel.build/ | head -1
 
-# Bazel should be able to access BCR
-bazel info
+# Bazelisk should be able to access BCR
+bazelisk info
 
 # Check hook daemon logs (proxy runs in-process)
 tail -20 "$DUCKTAPE_CLAUDE_HOOKS_SESSION_DIR/hook-daemon/daemon.log"

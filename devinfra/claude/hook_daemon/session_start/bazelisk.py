@@ -1,6 +1,6 @@
-"""Install Bazel wrapper for proxy credential injection.
+"""Install bazelisk wrapper for proxy credential injection.
 
-The wrapper script intercepts `bazel` invocations to inject proxy credentials
+The wrapper script intercepts `bazelisk` invocations to inject proxy credentials
 via RPC before calling the real bazelisk binary (provided by Nix via devtools).
 """
 
@@ -26,8 +26,8 @@ class BazeliskSetup:
     @property
     def status(self) -> str:
         """Get status string for logging."""
-        bazel_on_path = shutil.which("bazel")
-        if bazel_on_path and Path(bazel_on_path).resolve() == self.wrapper_path.resolve():
+        bazelisk_on_path = shutil.which("bazelisk")
+        if bazelisk_on_path and Path(bazelisk_on_path).resolve() == self.wrapper_path.resolve():
             return f"wrapper at {self.wrapper_path}"
         if self.wrapper_path.exists():
             return f"wrapper exists but not on PATH ({self.wrapper_path})"
@@ -39,26 +39,17 @@ def resolve_bazelisk() -> Path:
     bazelisk = shutil.which("bazelisk")
     if bazelisk:
         return Path(bazelisk)
-    # Fallback: some setups put it as "bazel" directly
-    bazel = shutil.which("bazel")
-    if bazel:
-        return Path(bazel)
     raise RuntimeError("bazelisk not found on PATH (expected from Nix devtools package)")
 
 
-_WRAPPER_RUNTIME_LINES = (
-    'export _BAZEL_WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"\nexport _BAZEL_WRAPPER_NAME="$(basename "$0")"'
-)
+_WRAPPER_RUNTIME_LINES = 'export _BAZEL_WRAPPER_DIR="$(cd "$(dirname "$0")" && pwd)"'
 
 
 def install_wrapper(paths: SessionPaths, *, wrapper_dir: Path | None = None) -> Path:
-    """Install wrapper script that sets proxy env vars before calling bazelisk.
-
-    Also creates a bazelisk symlink for pre-commit hooks.
-    """
+    """Install wrapper script that sets proxy env vars before calling bazelisk."""
     if wrapper_dir is None:
         wrapper_dir = paths.wrapper_dir
-    wrapper_path = wrapper_dir / "bazel"
+    wrapper_path = wrapper_dir / "bazelisk"
 
     wrapper_dir.mkdir(parents=True, exist_ok=True)
 
@@ -68,13 +59,6 @@ def install_wrapper(paths: SessionPaths, *, wrapper_dir: Path | None = None) -> 
         baked_env={ENV_SESSION_DIR: str(paths.session_dir)},
         extra_lines=_WRAPPER_RUNTIME_LINES,
     )
-    logger.info("Installed bazel wrapper at %s", wrapper_path)
-
-    # Create bazelisk symlink for pre-commit hooks
-    bazelisk_symlink = wrapper_dir / "bazelisk"
-    if bazelisk_symlink.exists() or bazelisk_symlink.is_symlink():
-        bazelisk_symlink.unlink()
-    bazelisk_symlink.symlink_to(wrapper_path)
-    logger.info("Created bazelisk symlink at %s", bazelisk_symlink)
+    logger.info("Installed bazelisk wrapper at %s", wrapper_path)
 
     return wrapper_path

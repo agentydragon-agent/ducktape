@@ -18,45 +18,34 @@ The root cause is always a broken session start hook — notify the user if reco
 
 Run `bb`, `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl`, and other network/system commands **outside the sandbox** (`dangerouslyDisableSandbox: true`). The sandbox blocks their network calls (including localhost, e.g., `kubectl` to haproxy on `localhost:7445`).
 
-## Remote Bazel (`bb-remote`)
+## Bazel Commands
 
-Prefer `bb-remote` over direct `bazel` for build, test, and query commands.
-`bb-remote` is a wrapper around `bb remote` (<devinfra/bb_remote.sh>) that
-runs Bazel on a BuildBuddy runner VM with RBE enabled, Firecracker isolation,
-and Docker support. It automatically syncs local git diffs to the remote runner.
+Use `bb-remote` for build, test, and query. Use `bb` directly only for `run`
+(local side effects) or when you need outputs on the local filesystem.
 
 ```bash
-# Instead of:
-bazel test //path/to:target
-bazel build //path/to:target
-bazel query '...'
-
-# Use:
 bb-remote test //path/to:target
 bb-remote build //path/to:target
 bb-remote query '...'
+
+# Local side effects only:
+bb run --remote_executor="" //devinfra:gazelle
+bb run --remote_executor="" //:requirements.update
 ```
 
-**`bb remote` does NOT read local `.bazelrc` files** — it passes flags
-literally to the runner, where Bazel reads the workspace `.bazelrc`. The
-`bb-remote` wrapper appends `--config=rbe` automatically. See
-<devinfra/docs/bb_remote_internals.md> for the full explanation.
+`bb-remote` wraps `bb remote` (<devinfra/bb_remote.sh>) — runs Bazel on a
+BuildBuddy runner VM with RBE, Firecracker isolation, and Docker. Syncs local
+git diffs automatically. See <devinfra/docs/bb_remote_internals.md>.
 
-**Unpushed commits on the default branch**: `bb-remote` checks whether the
-local `devel` ref matches `origin/devel` and **aborts** if there are
-unpushed commits (error: `devel has unpushed commits`). This is because
-`bb remote` uses the default branch as the base commit — if the local
-`devel` has commits that don't exist on the remote, the runner can't
-fetch them. Fix: `git push` the unpushed commits first, then retry
-`bb-remote`. This only matters on the default branch (`devel`); feature
-branches are fine because `bb remote` uses `origin/devel` as the base
-regardless.
+**Unpushed commits on the default branch**: `bb-remote` aborts if local
+`devel` differs from `origin/devel`. Fix: `git push` first, or use a feature
+branch.
 
-**When to use direct `bazel` instead:**
-
-- `bazel run` for local side effects (running binaries, pushing images, updating lockfiles)
-- When you need build outputs on the local filesystem (e.g., copying artifacts)
-- Gazelle: `bazel run //devinfra:gazelle`
+**Downloading build outputs from RBE**: `--config=rbe` sets `--remote_download_minimal`,
+so build artifacts aren't downloaded by default. To force-download specific outputs,
+add `--remote_download_regex='<java regex>'` (e.g., `--remote_download_regex='.*\.whl$'`).
+This is additive with `--remote_download_minimal`. For `bb-remote`, pass the flag before
+the target: `bb-remote build //target --remote_download_regex='.*\.whl$'`.
 
 **Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by session
 start hook).
@@ -89,7 +78,7 @@ use `oci_image` + `ghcr_push`.
 
 `buildbuddy.yaml` and `.github/workflows/ci.yml` are **auto-generated**. Do not edit them
 directly. Changes go in `devinfra/ci/workflows.yaml` and `devinfra/ci/generate_buildbuddy.py`,
-then regenerate with `bazel run //devinfra/ci:generate_buildbuddy_bin`.
+then regenerate with `bb run --remote_executor="" //devinfra/ci:generate_buildbuddy_bin`.
 
 ## Refactoring
 
@@ -130,8 +119,8 @@ Subprojects use `TODO.md` for persistent TODO tracking. TODOs local to a specifi
 **Always use Bazel**, not direct pytest/python:
 
 ```bash
-bazel test //path/to:test_target
-bazel run //path/to:binary_target
+bb-remote test //path/to:test_target
+bb run --remote_executor="" //path/to:binary_target
 ```
 
 **CRITICAL gotcha**: All `py_test` targets MUST have a `pytest_bazel.main()` entry point. Without it, Bazel runs the file as a script which exits 0 without running tests. Add `@pypi//pytest_bazel` to deps.
@@ -154,7 +143,7 @@ Use the `py_test` macro from `//devinfra/python:defs.bzl` (not the raw `@rules_p
 **Use undeclared test outputs for log capture**: Write diagnostic data (container logs, HAR dumps, config snapshots) to Bazel's undeclared test outputs directory via `util.testing.undeclared_outputs.undeclared_outputs_dir()`. These are uploaded to BuildBuddy and retrievable from the invocation. Do not dump large log blobs into test stdout/stderr — they clutter the test log and are harder to navigate. To read undeclared outputs from a test run:
 
 ```bash
-TEST_DIR=$(bazel info bazel-testlogs)/path/to/test_target
+TEST_DIR=$(bb info bazel-testlogs)/path/to/test_target
 ls "$TEST_DIR/test.outputs/"          # list undeclared output files
 cat "$TEST_DIR/test.outputs/my.log"   # read a specific output
 ```
@@ -181,27 +170,33 @@ Use the `/buildbuddy_api` skill for more details on the `bbapi` CLI.
 
 ### Updating syrupy snapshots
 
-Snapshot tests use syrupy (`.ambr` files in `__snapshots__/`). The `.ambr` files must
-be listed in the test target's `data` glob (e.g., `glob(["__snapshots__/*.ambr"])`).
+Snapshot tests use syrupy (`.ambr` files in `__snapshots__/`). Set `uses_syrupy = True`
+in the `py_test` macro — this wires `BazelAmberExtension` which copies updated `.ambr`
+files to undeclared test outputs for RBE retrieval.
 
-To update after intentional changes, run the test on RBE with `--snapshot-update`, then
-copy the updated `.ambr` file from the runfiles tree back to the source tree:
+On failure, the test prints the exact update command.
+
+**RBE** (preferred — works for Docker tests too):
 
 ```bash
-# 1. Run on RBE with snapshot-update (writes into runfiles, not source tree)
-bazel test //path/to:snapshot_test \
-  --test_arg=--snapshot-update \
-  --nocache_test_results
+bb test --config=rbe --remote_download_outputs=toplevel \
+  //path/to:snapshot_test \
+  --test_arg=--snapshot-update --nocache_test_results
 
-# 2. Copy updated snapshots back to source tree
-cp bazel-bin/path/to/snapshot_test.runfiles/_main/path/to/__snapshots__/snapshot_test.ambr \
+# Copy updated snapshot from undeclared outputs back to source tree
+cp bazel-testlogs/path/to/snapshot_test/test.outputs/snapshot_test.ambr \
    path/to/__snapshots__/snapshot_test.ambr
 ```
 
-**Why not `--remote_executor=""`?** On NixOS, `/bin/bash` doesn't exist, which breaks
-the Ruff lint aspect when running locally. Running on RBE avoids this.
+**Local** (simpler, no copy step — syrupy writes through runfiles symlinks):
 
-Then commit the updated `.ambr` files.
+```bash
+bb test //path/to:snapshot_test \
+  --test_arg=--snapshot-update --nocache_test_results \
+  --remote_executor="" --config=nolint
+```
+
+Then commit the updated `.ambr` files. See <devinfra/docs/syrupy_snapshots.md> for details.
 
 ### Live OpenAI API Tests
 

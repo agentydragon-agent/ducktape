@@ -30,8 +30,6 @@
 
   # Development packages needed for Bazel builds
   environment.systemPackages = with pkgs; [
-    # Bazel (nixpkgs version, already patched for NixOS /bin/bash issue)
-    bazel_8
     # Build essentials
     gcc
     gnumake
