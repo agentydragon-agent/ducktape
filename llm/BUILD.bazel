@@ -21,42 +21,11 @@ py_library(
 )
 
 py_library(
-    name = "hook_session_state",
-    srcs = ["hook_session_state.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":claude_code_api",
-        "@pypi//platformdirs",
-    ],
-)
-
-py_library(
-    name = "hook_logging",
-    srcs = ["hook_logging.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":claude_code_api",
-        ":hook_session_state",
-    ],
-)
-
-py_library(
     name = "claude_hooks",
     srcs = ["claude_hooks.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":claude_code_api",
-    ],
-)
-
-py_library(
-    name = "claude_hook",
-    srcs = ["claude_hook.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":claude_code_api",
-        ":claude_outcomes",
-        ":hook_logging",
     ],
 )
 
@@ -66,10 +35,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":claude_code_api",
-        ":claude_hook",
         ":claude_hooks",
         ":claude_outcomes",
-        ":hook_logging",
-        ":hook_session_state",
     ],
 )
