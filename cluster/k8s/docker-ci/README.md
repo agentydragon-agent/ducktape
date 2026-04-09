@@ -103,14 +103,7 @@ cp client-key.pem secrets/docker-ci/client-key.sops.pem && sops -e -i secrets/do
 
 ## Maintenance CronJobs
 
-TODO: Add container and image pruning CronJobs:
+- **Container prune**: hourly, removes stopped containers older than 1h
+- **Image prune**: weekly (Sunday 3am), removes unused images older than 7 days
 
-- `docker container prune --filter until=1h`
-- `docker image prune --filter until=168h`
-
-## TODO
-
-- [ ] pytest fixture for assembling cert dir from env + runfiles
-- [ ] Update `py_test` macro `env_inherit` for Docker TLS vars
-- [ ] Container/image pruning CronJobs
-- [ ] Integration with session start hook (auto-decrypt client key)
+Both use `kubectl exec` into the DinD pod via a dedicated ServiceAccount.

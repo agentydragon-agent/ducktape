@@ -348,13 +348,12 @@ mitmproxy 254MB, two custom ~118MB images sharing a 113MB Python interpreter lay
 into Docker on disposable RBE Firecracker VMs. A persistent Docker daemon with cached
 layers would make subsequent loads near-instant.
 
-DinD pod deployed with mTLS (ECDSA P-256), TLSRoute, `bb-remote --remote_run_header`
-wiring, and `py_test` macro `env_inherit`. See <../k8s/docker-ci/README.md>.
+Done: DinD pod, mTLS, TLSRoute, `bb-remote --remote_run_header`, `py_test` macro,
+pytest fixture, pruning CronJobs, CI SOPS age key (`&ci`), `devinfra/ci_env.sh`,
+GHA `setup-ci-secrets` action, Harbor cred adoption. See <../k8s/docker-ci/README.md>.
 
-- [ ] Unify CI secrets: single SOPS age key (`AGE_SECRET_KEY`) for BuildBuddy + GHA
-- [ ] pytest fixture to assemble cert dir from env + runfiles
-- [ ] Container reaping CronJob (`docker container prune --filter until=1h`)
-- [ ] Image pruning CronJob (`docker image prune --filter until=168h`)
+- [ ] Migrate BuildBuddy Workflows to SOPS decryption (install sops, run `ci_env.sh`)
+- [ ] Drop bazelisk wrapper in favor of `bb` CLI (embeds bazelisk + reads `BUILDBUDDY_API_KEY`)
 
 ### Self-Hosted Bazel Remote Cache
 
