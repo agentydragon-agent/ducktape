@@ -140,6 +140,5 @@ github_release(
     name = "release_ducktape_util",
     artifact = ":wheel",
     filename = "ducktape_util-0.1.0-py3-none-any.whl",
-    notes = "ducktape-util shared utility wheel.",
     pkg = "ducktape-util",
 )

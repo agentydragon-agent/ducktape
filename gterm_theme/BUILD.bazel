@@ -55,6 +55,5 @@ github_release(
     name = "release_gterm_theme",
     artifact = ":wheel",
     filename = "gterm_theme-0.1.0-py3-none-any.whl",
-    notes = "gterm-theme wheel (GNOME Terminal theme follower).",
     pkg = "gterm-theme",
 )

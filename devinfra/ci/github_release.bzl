@@ -2,7 +2,7 @@
 
 load("//devinfra/python:defs.bzl", "py_binary")
 
-def github_release(name, artifact, pkg, notes, filename, visibility = None, **kwargs):
+def github_release(name, artifact, pkg, filename, visibility = None, **kwargs):
     """Create a runnable target that releases an artifact to GitHub.
 
     The artifact is a data dep resolved from runfiles — no bazel-bin globbing.
@@ -12,7 +12,6 @@ def github_release(name, artifact, pkg, notes, filename, visibility = None, **kw
         name: Target name.
         artifact: Label of the artifact to release (wheel, tar, binary).
         pkg: npins package name (e.g., "claude-hooks").
-        notes: GitHub release body text.
         filename: Artifact filename for the GitHub release asset.
         visibility: Bazel visibility.
         **kwargs: Passed through to py_binary.
@@ -25,8 +24,6 @@ def github_release(name, artifact, pkg, notes, filename, visibility = None, **kw
         args = [
             "--pkg",
             pkg,
-            "--notes",
-            notes,
             "--filename",
             filename,
             "--artifact-rlocation",

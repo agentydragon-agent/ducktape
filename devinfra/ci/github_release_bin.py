@@ -49,10 +49,11 @@ def _prune_old_releases(gh_repo, pkg: str, keep_tag: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Release artifact to GitHub")
     parser.add_argument("--pkg", required=True)
-    parser.add_argument("--notes", required=True)
     parser.add_argument("--filename", required=True)
     parser.add_argument("--artifact-rlocation", required=True)
     args = parser.parse_args()
+
+    notes = f"{args.pkg} release"
 
     os.chdir(get_build_workspace_directory())
 
@@ -79,9 +80,7 @@ def main() -> None:
     print(f"{args.pkg}: content changed, creating release {tag}")
 
     gh_repo = Github(auth=Auth.Token(gh_token)).get_repo(REPO)
-    release = gh_repo.create_git_release(
-        tag=tag, name=f"{args.pkg} ({short_sha})", message=args.notes, make_latest="false"
-    )
+    release = gh_repo.create_git_release(tag=tag, name=f"{args.pkg} ({short_sha})", message=notes, make_latest="false")
     release.upload_asset(str(artifact_path), name=args.filename)
     _prune_old_releases(gh_repo, args.pkg, keep_tag=tag)
     print(f"Released: {args.pkg}")

@@ -321,7 +321,6 @@ github_release(
     name = "release_claude_hooks",
     artifact = ":claude_hooks_wheel",
     filename = "claude_hooks-0.1.0-py3-none-any.whl",
-    notes = "Claude Code hooks wheel for Claude Code integration.",
     pkg = "claude-hooks",
 )
 
@@ -329,6 +328,5 @@ github_release(
     name = "release_ducktape",
     artifact = ":wheel",
     filename = "ducktape-0.1.0-py3-none-any.whl",
-    notes = "ducktape wheel containing CLI tools.",
     pkg = "ducktape",
 )

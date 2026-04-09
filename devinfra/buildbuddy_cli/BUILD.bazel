@@ -54,6 +54,5 @@ github_release(
     name = "release_bbapi",
     artifact = ":bbapi",
     filename = "bbapi",
-    notes = "bbapi — BuildBuddy API CLI (Linux x86_64).",
     pkg = "bbapi",
 )

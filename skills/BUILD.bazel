@@ -31,6 +31,5 @@ github_release(
     name = "release_skills",
     artifact = ":all_skills_tar",
     filename = "skills.tar",
-    notes = "Skills tarball for AI agent deployment.",
     pkg = "skills",
 )
