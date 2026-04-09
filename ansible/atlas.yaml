@@ -299,6 +299,22 @@
         reload: true
       tags: [swap, zram]
 
+    # Disable ZFS Direct I/O on the dataset backing VM disk images.
+    # We observed dio_verify_wr (DIO_CHECKSUM_VERIFY) EIO errors on this
+    # dataset with DIO enabled, causing QEMU to pause VMs. Root cause is
+    # unclear — could be a ZFS DIO bug (feature is new, OpenZFS 2.3.0 Jan
+    # 2025, known open issues like openzfs/zfs#16695), or actual hardware
+    # corruption that DIO verify is correctly catching. Disabling DIO as a
+    # trial to see if the problem goes away.
+    # See debug/wyrm2-io-error-2026-04-08/README.md for investigation.
+    - name: Disable ZFS Direct I/O on VM image dataset
+      community.general.zfs:
+        name: rpool/var-lib-vz
+        state: present
+        extra_zfs_properties:
+          direct: disabled
+      tags: [zfs, storage]
+
     - name: Mask CUPS services (spams dmesg)
       ansible.builtin.systemd:
         name: "{{ item }}"
