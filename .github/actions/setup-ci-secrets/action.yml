@@ -23,10 +23,14 @@ runs:
     - name: Install sops
       shell: bash
       run: |
-        SOPS_VERSION="3.9.4"
-        curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops
-        chmod +x /usr/local/bin/sops
-        sops --version
+        if command -v sops &>/dev/null; then
+          echo "sops already on PATH: $(sops --version)"
+        else
+          SOPS_VERSION="3.9.4"
+          curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops
+          chmod +x /usr/local/bin/sops
+          sops --version
+        fi
 
     - name: Decrypt CI secrets
       shell: bash

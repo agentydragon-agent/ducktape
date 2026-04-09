@@ -1,0 +1,44 @@
+# Bazel test + build via bb-remote (runs on BuildBuddy RBE).
+# Replaces the BuildBuddy Workflows "CI" action.
+name: Bazel CI
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+concurrency:
+  group: bazel-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bazel-ci:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+
+      - name: Install devtools
+        run: nix profile install .#devtools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Test
+        run: |
+          devinfra/bb_remote.sh test --keep_going \
+            --test_tag_filters=-live_openai_api \
+            //...
+
+      - name: Build + lint
+        run: |
+          devinfra/bb_remote.sh build --keep_going \
+            //...

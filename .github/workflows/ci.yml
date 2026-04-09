@@ -30,6 +30,33 @@ jobs:
       - name: Compute CI decision
         id: decide
         run: uv run devinfra/ci/ci_decide.py
+  bazel-ci:
+    needs:
+      - compute-targets
+      - rbe-image
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'bazel-ci')
+    uses: ./.github/workflows/bazel-ci.yml
+    with:
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+    secrets: inherit
+  release:
+    needs:
+      - compute-targets
+      - rbe-image
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'release')
+    uses: ./.github/workflows/release.yml
+    with:
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+    secrets: inherit
+  push-images:
+    needs:
+      - compute-targets
+      - rbe-image
+    if: always() && !cancelled() && !failure() && contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'push-images')
+    uses: ./.github/workflows/push-images.yml
+    with:
+      rbe_image: ${{ needs.rbe-image.outputs.rbe_image }}
+    secrets: inherit
   rbe-image:
     needs: compute-targets
     if: contains(fromJson(needs.compute-targets.outputs.workflows || '[]'), 'rbe-image')

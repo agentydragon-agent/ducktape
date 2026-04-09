@@ -1,0 +1,53 @@
+# Push OCI images to GHCR via bb-remote (parallel matrix).
+# Replaces the 13 BuildBuddy Workflows "Push" actions.
+#
+# Each image is pushed independently — a broken build doesn't block others.
+# Images with unchanged digests are skipped (ghcr_push_lib deduplicates).
+name: Push Images
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  push:
+    name: Push ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - //airlock:push_ghcr
+          - //airlock/auth_proxy:push_ghcr
+          - //cluster/k8s/agents/claude-token-rotation:push_ghcr
+          - //cluster/k8s/inventree/token-provisioner:push_ghcr
+          - //devinfra/firecracker/manager:push_ghcr
+          - //devinfra/firecracker/vm_pod:push_ghcr
+          - //homeassistant/proxy:push_ghcr
+          - //inventree_utils/rai_plugin:push_ghcr
+          - //mcp_infra/exec:push_ghcr
+          - //openclaw/exec:push_ghcr
+          - //props/backend:push_ghcr
+          - //tana/token_broker:push_ghcr
+          - //third_party/activitywatch:push_ghcr
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+
+      - name: Install devtools
+        run: nix profile install .#devtools
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
+      - name: Push image
+        run: devinfra/bb_remote.sh run --remote_download_toplevel ${{ matrix.target }}
