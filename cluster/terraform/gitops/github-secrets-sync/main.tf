@@ -58,15 +58,6 @@ removed {
   from = github_actions_secret.attic_token
   lifecycle { destroy = true }
 }
-removed {
-  from = data.kubernetes_secret.harbor_ci_robot
-  lifecycle { destroy = false }
-}
-removed {
-  from = data.kubernetes_secret.buildbuddy_api_key
-  lifecycle { destroy = false }
-}
-removed {
-  from = data.kubernetes_secret.attic_push_token
-  lifecycle { destroy = false }
-}
+
+# Data sources for harbor_ci_robot, buildbuddy_api_key, attic_push_token
+# were removed (no `removed` block needed for data sources — just delete).
