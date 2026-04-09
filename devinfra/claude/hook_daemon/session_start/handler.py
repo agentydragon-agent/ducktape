@@ -59,7 +59,7 @@ from devinfra.claude.hook_daemon.session_start import (
 )
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.managed_files import write_config
-from devinfra.claude.settings import CONFIG_FILES, HookSettings, ProxyMode
+from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
@@ -188,9 +188,9 @@ async def _setup_web(
             return False
 
     async def setup_proxy_credentials() -> proxy_setup.ProxySetup:
-        """Write proxy credentials and set up CA/truststore (proxy already running in-process)."""
+        """Set up CA/truststore for TLS-inspecting proxy."""
         with tracer.start_as_current_span("setup_proxy", context=root_ctx):
-            return await proxy_setup.setup_auth_proxy(session.paths, settings, proxy=session.proxy)
+            return await proxy_setup.setup_auth_proxy(session.paths)
 
     async def setup_container_runtime_task() -> container_runtime.ContainerRuntimeSetup:
         """Set up Docker (depends on supervisor).
@@ -367,7 +367,7 @@ async def handle(
 
     # -- Shared steps: secrets, BuildBuddy, fork remote --
     combined_ca = setup.auth_proxy.combined_ca if setup.auth_proxy else None
-    proxy_url = (setup.auth_proxy.proxy_url if setup.auth_proxy else None) or get_proxy_url(ctx.caller_env)
+    proxy_url = get_proxy_url(ctx.caller_env)
 
     # Resolve secrets from tagged-union config (each field resolved independently).
     # Two-phase resolution: SOPS secrets first (no K8s client needed), then K8s secrets.
@@ -455,8 +455,6 @@ async def handle(
         )
         bazelrc_content: str = bazelrc_template.render(
             web_proxy=ctx.web_mode,
-            use_tcp_proxy=settings.proxy_mode == ProxyMode.TCP,
-            proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
             bazel_remote_proxy_sock=session.paths.bazel_remote_proxy_sock if session.uds_remote else None,
             bazel_bes_proxy_sock=session.paths.bazel_bes_proxy_sock if session.bes_interceptor else None,
             truststore_path=session.paths.auth_proxy_truststore,
@@ -488,7 +486,6 @@ async def handle(
             bazel_wrapper_dir=session.paths.wrapper_dir,
             session_bazelrc=session_bazelrc,
             session_dir=session.paths.session_dir,
-            proxy_port=setup.auth_proxy.port if setup.auth_proxy else None,
             supervisor_port=settings.supervisor_port,
             combined_ca=combined_ca,
             bazelisk_path=setup.bazelisk_path,

@@ -1,7 +1,7 @@
-"""Integration test: k8s secrets via egress proxy in UDS mode (no TCP auth proxy).
+"""Integration test: k8s secrets via egress proxy.
 
-Verifies that read_k8s_secret() works when no local TCP auth proxy exists. The
-egress proxy URL (with embedded credentials) is passed directly. This exercises
+Verifies that read_k8s_secret() works with the egress proxy URL (with embedded
+credentials) passed directly. This exercises
 normalize_proxy_url() extracting credentials into an explicit Proxy-Authorization
 header, required for urllib3 v2 on HTTPS CONNECT tunnels.
 
@@ -109,7 +109,7 @@ def test_k8s_secrets_via_egress_proxy_uds_mode(
     mock_k8s_server: MockK8sServer,
     client_image: str,
 ) -> None:
-    """read_k8s_secret succeeds through the egress proxy without a TCP auth proxy."""
+    """read_k8s_secret succeeds through the egress proxy."""
     docker_client = docker.from_env()
     proxy_container = mitmproxy_proxy.container.get_wrapped_container()
     assert proxy_net.name

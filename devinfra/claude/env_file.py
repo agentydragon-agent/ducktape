@@ -15,8 +15,6 @@ from devinfra.claude.settings import ENV_SESSION_DIR, ENV_SUPERVISOR_PORT
 from util.bazel.subprocess import exports_from_dict
 
 # Runtime env var names (written by session hook, read by bazel_wrapper)
-ENV_AUTH_PROXY_PORT = "AUTH_PROXY_PORT"
-ENV_AUTH_PROXY_URL = "AUTH_PROXY_URL"
 ENV_SESSION_BAZELRC = "SESSION_BAZELRC"
 ENV_BAZELISK_PATH = "BAZELISK_PATH"
 
@@ -61,8 +59,7 @@ class EnvVars:
     # Web mode: per-session directory
     session_dir: Path | None = None
 
-    # Web mode: auth proxy and Bazel configuration
-    proxy_port: int | None = None
+    # Web mode: Bazel configuration
     supervisor_port: int | None = None
     combined_ca: Path | None = None
     bazelisk_path: Path | None = None
@@ -102,31 +99,15 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         ["", "# Bazel tooling", *exports_from_dict({"PATH": path_str, ENV_SESSION_BAZELRC: vars.session_bazelrc})]
     )
 
-    if vars.proxy_port is not None:
-        assert vars.session_dir is not None
-        assert vars.supervisor_port is not None
-        assert vars.combined_ca is not None
-        local_proxy = f"http://localhost:{vars.proxy_port}"
-        auth_proxy_config: dict[str, str | Path] = {
-            ENV_SESSION_DIR: vars.session_dir,
-            ENV_AUTH_PROXY_PORT: str(vars.proxy_port),
-            ENV_AUTH_PROXY_URL: local_proxy,
-            # Supervisor port needed by bazel_wrapper to connect to supervisor
-            ENV_SUPERVISOR_PORT: str(vars.supervisor_port),
-        }
-        ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
-        exports.extend(["", "# Auth proxy configuration"])
-        exports.extend(exports_from_dict(auth_proxy_config | ca_config))
-    elif vars.session_dir is not None:
-        # UDS mode: no TCP proxy port, but session dir and CA still needed
-        uds_config: dict[str, str | Path] = {ENV_SESSION_DIR: vars.session_dir}
+    if vars.session_dir is not None:
+        session_config: dict[str, str | Path] = {ENV_SESSION_DIR: vars.session_dir}
         if vars.supervisor_port is not None:
-            uds_config[ENV_SUPERVISOR_PORT] = str(vars.supervisor_port)
+            session_config[ENV_SUPERVISOR_PORT] = str(vars.supervisor_port)
         if vars.combined_ca is not None:
-            ca_config = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
-            uds_config.update(ca_config)
-        exports.extend(["", "# Session configuration (UDS proxy mode)"])
-        exports.extend(exports_from_dict(uds_config))
+            ca_config: dict[str, str | Path] = dict.fromkeys(SSL_CA_ENV_VARS, vars.combined_ca)
+            session_config.update(ca_config)
+        exports.extend(["", "# Session configuration"])
+        exports.extend(exports_from_dict(session_config))
 
     # Bazelisk path (always set when available, regardless of proxy mode)
     if vars.bazelisk_path is not None:

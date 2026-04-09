@@ -6,12 +6,11 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 
-from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy, UdsRemoteProxy, UpstreamCreds
+from devinfra.claude.auth_proxy.proxy import UdsRemoteProxy, UpstreamCreds
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.hook_config import ProfileConfig
 from devinfra.claude.hook_daemon.bes_interceptor import BesInterceptor
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import HookSettings, ProxyMode
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,6 @@ class Session:
 
     session_id: str
     paths: SessionPaths
-    proxy: AuthForwardingProxy | None = None
     uds_remote: UdsRemoteProxy | None = None  # Bazel --remote_proxy
     bes_interceptor: BesInterceptor | None = None  # BES event interceptor
     buildbuddy_api_key: str | None = None
@@ -48,17 +46,11 @@ class Session:
         self._mailbox.clear()
         return messages
 
-    async def start_proxy(self, profile: ProfileConfig, settings: HookSettings) -> None:
+    async def start_proxy(self, profile: ProfileConfig) -> None:
         """Start proxy infrastructure for this session."""
         upstream_url = get_upstream_proxy_url()
 
         self._upstream_creds.set(upstream_url)
-
-        # CLEANUP(2026-03-26): Remove TCP proxy once UDS mode is confirmed stable.
-        if settings.proxy_mode == ProxyMode.TCP:
-            self.proxy = AuthForwardingProxy(listen_port=0, creds=self._upstream_creds)
-            self.proxy.start()
-            logger.info("Auth proxy started in-process on port %d (tcp mode)", self.proxy.listen_port)
 
         if profile.bazel_remote_proxy is not None:
             self.uds_remote = UdsRemoteProxy(
@@ -82,9 +74,8 @@ class Session:
 
     def stop(self) -> None:
         """Stop all proxy infrastructure for this session."""
-        for proxy in [self.proxy, self.uds_remote]:
-            if proxy is not None:
-                proxy.stop()
+        if self.uds_remote is not None:
+            self.uds_remote.stop()
         if self.bes_interceptor is not None:
             self.bes_interceptor.stop()
 

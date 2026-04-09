@@ -18,12 +18,9 @@ py_library(
     srcs = ["setup.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":proxy",
         ":vars",
         "//devinfra/claude:errors",
         "//devinfra/claude:session_paths",
-        "//devinfra/claude:settings",
-        "//util:net",
         "//util/bazel:runfiles",
         "@pypi//cryptography",
         "@pypi//opentelemetry_api",

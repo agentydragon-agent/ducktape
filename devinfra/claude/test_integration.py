@@ -1,7 +1,6 @@
 """Integration tests for claude proxy infrastructure.
 
-These tests use the in-process auth proxy and a mitmproxy container
-to verify end-to-end behavior.
+These tests use a mitmproxy container to verify CA extraction behavior.
 """
 
 from pathlib import Path
@@ -12,12 +11,9 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 
 from devinfra.claude.auth_proxy import setup as proxy_setup
-from devinfra.claude.auth_proxy.proxy import AuthForwardingProxy, UpstreamCreds
-from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings
 from devinfra.claude.testing.mitmproxy_fixture import MitmproxyFixture
-from util.net import async_wait_for_port
 
 # Register shared fixtures (isolated_dirs, session_paths, hook_settings, mitmproxy_proxy)
 pytest_plugins = ["devinfra.claude.testing.fixtures", "devinfra.claude.testing.mitmproxy_fixture"]
@@ -39,30 +35,7 @@ def hook_settings(
     return HookSettings()
 
 
-@pytest.fixture
-async def auth_proxy(session_paths: SessionPaths, hook_settings: HookSettings):
-    """Start an in-process auth proxy and clean up after test."""
-    https_proxy = get_upstream_proxy_url()
-    assert https_proxy, "HTTPS_PROXY must be set"
-
-    proxy = AuthForwardingProxy(listen_port=hook_settings.auth_proxy_port, creds=UpstreamCreds(https_proxy))
-    proxy.start()
-    await async_wait_for_port("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5)
-    try:
-        yield proxy
-    finally:
-        proxy.stop()
-
-
-async def test_proxy_starts_and_listens(auth_proxy: AuthForwardingProxy, hook_settings: HookSettings) -> None:
-    """Test that the in-process auth proxy starts and listens on the configured port."""
-    assert auth_proxy._running, "Auth proxy should be running"
-    await async_wait_for_port("127.0.0.1", hook_settings.auth_proxy_port, timeout_secs=5)
-
-
-async def test_ca_extraction(
-    auth_proxy: AuthForwardingProxy, session_paths: SessionPaths, hook_settings: HookSettings
-) -> None:
+async def test_ca_extraction(session_paths: SessionPaths, hook_settings: HookSettings) -> None:
     """Test that CA certificate is extracted from the filesystem."""
     proxy_setup._extract_proxy_ca(session_paths)
 
@@ -76,28 +49,6 @@ async def test_ca_extraction(
     cn_value = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
     cn = cn_value if isinstance(cn_value, str) else cn_value.decode()
     assert "TLS Inspection CA" in cn, f"Expected 'TLS Inspection CA' in CN, got: {cn}"
-
-
-async def test_credential_rotation(
-    auth_proxy: AuthForwardingProxy,
-    session_paths: SessionPaths,
-    hook_settings: HookSettings,
-    mitmproxy_proxy: MitmproxyFixture,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test that credential rotation updates the proxy's in-memory credentials."""
-    assert "proxy_user" in (auth_proxy.creds.url or ""), "Initial creds should have original credentials"
-
-    # Simulate credential rotation
-    new_proxy_url = "http://newuser:newpass@127.0.0.1:1"
-    monkeypatch.setenv("HTTPS_PROXY", new_proxy_url)
-
-    # Re-run setup — should update in-memory credentials
-    result = await proxy_setup.setup_auth_proxy(session_paths, hook_settings, proxy=auth_proxy)
-
-    assert "newuser" in (auth_proxy.creds.url or ""), "In-memory creds should have new credentials"
-    assert auth_proxy._running, "Proxy should still be running"
-    assert result.status.startswith("running"), f"Expected running status, got: {result.status}"
 
 
 if __name__ == "__main__":
