@@ -270,6 +270,14 @@ resource "hcloud_firewall" "talos" {
     source_ips = ["0.0.0.0/0", "::/0"]
   }
 
+  # Docker CI (DinD mTLS)
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "2376"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+
   # HTTP (for ACME)
   rule {
     direction  = "in"
