@@ -43,3 +43,10 @@ try_export ATTIC_TOKEN "$REPO_ROOT/secrets/ci/attic-token.sops.yaml" '["token"]'
 # Harbor CI robot
 try_export PROPS_REGISTRY_USERNAME "$REPO_ROOT/secrets/ci/harbor-ci-robot.sops.yaml" '["username"]'
 try_export PROPS_REGISTRY_PASSWORD "$REPO_ROOT/secrets/ci/harbor-ci-robot.sops.yaml" '["password"]'
+
+# GHCR (crane push, package visibility)
+try_export GHCR_USERNAME "$REPO_ROOT/secrets/ci/ghcr-credentials.sops.yaml" '["username"]'
+try_export GHCR_TOKEN "$REPO_ROOT/secrets/ci/ghcr-credentials.sops.yaml" '["token"]'
+
+# GitHub releases (agentydragon account, contents:write on ducktape)
+try_export GH_RELEASE_PAT "$REPO_ROOT/secrets/ci/gh-release-pat.sops.yaml" '["token"]'

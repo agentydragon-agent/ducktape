@@ -61,17 +61,6 @@ let
     ];
   };
 
-  # The claude-hooks wheel contains protobuf gencode compiled by Bazel's
-  # protobuf toolchain. The runtime protobuf version must be >= the gencode
-  # version, but nixpkgs may lag behind. Override to match the Bazel pin.
-  protobuf-pinned = pkgs.python3Packages.protobuf.overridePythonAttrs (old: rec {
-    version = "6.33.6";
-    src = pkgs.fetchPypi {
-      pname = "protobuf";
-      inherit version;
-      hash = "sha256-pnaNJSSDEsKXVYr5ap+ckp6MTO4GWcsH54BzEJXzgTU=";
-    };
-  });
 in
 {
   inherit ducktape-util;
@@ -141,6 +130,7 @@ in
         opentelemetry-exporter-otlp-proto-http
         opentelemetry-sdk
         platformdirs
+        protobuf
         psutil
         pydantic
         pydantic-settings
@@ -157,7 +147,6 @@ in
       ++ [
         ducktape-util
         pkgs.pre-commit
-        protobuf-pinned
         pyrage
         pkgs.python3Packages.networkx
       ];
