@@ -17,8 +17,20 @@ if [ "$current_branch" = "$default_branch" ] && [ "$local_sha" != "$remote_sha" 
   exit 1
 fi
 
+# Docker CI mTLS: decrypt client key and pass to runner via header
+# (not cached, not visible in BB UI). Non-secret vars via --env.
+docker_args=()
+if [ -n "${DOCKER_CLIENT_KEY:-}" ]; then
+  docker_args+=(
+    "--remote_run_header=x-buildbuddy-platform.env-overrides=DOCKER_CLIENT_KEY=${DOCKER_CLIENT_KEY}"
+    "--env=DOCKER_HOST=${DOCKER_HOST}"
+    "--env=DOCKER_TLS_VERIFY=${DOCKER_TLS_VERIFY:-1}"
+  )
+fi
+
 exec bb remote \
   --runner_exec_properties=EstimatedFreeDiskBytes=50000000000 \
   --runner_exec_properties=workload-isolation-type=firecracker \
   --runner_exec_properties=init-dockerd=true \
+  "${docker_args[@]}" \
   "$@" --config=rbe
