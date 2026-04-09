@@ -2,7 +2,7 @@
 
 When running in Claude Code Web (`CLAUDE_CODE_REMOTE_ENVIRONMENT_TYPE` is set), the
 session start hook sets up Bazel, the auth proxy, TLS CA, SOPS secrets, BuildBuddy RBE,
-and other tooling. Symptoms of failure: certificate errors, `bazel: command not found`,
+and other tooling. Symptoms of failure: certificate errors, `bazelisk: command not found`,
 `Unable to resolve host remote.buildbuddy.io`, missing env files.
 
 **Check the daemon log first:**
@@ -26,7 +26,7 @@ tail -100 ~/.claude/session-env/$LIVE/hook-daemon/daemon.log
 - `k8s_token` — decrypted from `secrets/claude-web-k8s-token.yaml` (SOPS); also available
   as `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` env var (injected by the cluster at container start)
 - `otel_bearer_token` — fetched from k8s secret (non-critical, only for tracing)
-- `DUCKTAPE_CLAUDE_HOOKS_AGE_KEY` — always present in env; used to decrypt all SOPS files
+- `SOPS_AGE_KEY` — always present in env; standard sops env var for age-based decryption
 
 Without `BUILDBUDDY_API_KEY`, RBE is unavailable. All other secrets are non-critical.
 
@@ -41,7 +41,7 @@ LIVE=$(ps aux | grep hook_daemon | grep -v grep | grep -oP '(?<=--sock /tmp/clau
 head -3 ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh 2>/dev/null
 # If it has the CANARY marker, source it:
 source ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh
-bazel info  # verify it works
+bazelisk info  # verify it works
 ```
 
 ## Step 2: Re-trigger SessionStart on the live daemon
@@ -70,7 +70,7 @@ source ~/.claude/session-env/$LIVE/sessionstart-hook-0.sh
 
 If the daemon is down, manually assemble using SOPS (no k8s required):
 
-**Decrypt secrets** — `DUCKTAPE_CLAUDE_HOOKS_AGE_KEY` is always in env:
+**Decrypt secrets** — `SOPS_AGE_KEY` is always in env:
 
 ```bash
 # Get the PYTHONPATH the daemon uses (needed for yaml, pyrage deps)
@@ -78,13 +78,12 @@ DAEMON_PY_PATH=$(cat /proc/$(pgrep -f hook_daemon | head -1)/environ 2>/dev/null
   | tr '\0' '\n' | grep '^PYTHONPATH=' | cut -d= -f2-)
 
 PYTHONPATH="$DAEMON_PY_PATH" python3.13 - <<'EOF'
-import os
-from devinfra.claude.sops_decrypt import load_age_identities, decrypt_sops_yaml
+from devinfra.claude.sops_decrypt import decrypt_sops_yaml
 from pathlib import Path
-ids = load_age_identities(os.environ["DUCKTAPE_CLAUDE_HOOKS_AGE_KEY"])
+# SOPS_AGE_KEY is inherited from the environment — sops reads it natively.
 proj = Path("/home/user/ducktape")
-bb = decrypt_sops_yaml(proj / "secrets/buildbuddy.yaml", ids)
-gh = decrypt_sops_yaml(proj / "secrets/github-pat-agentydragon-agent.yaml", ids)
+bb = decrypt_sops_yaml(proj / "secrets/buildbuddy.yaml")
+gh = decrypt_sops_yaml(proj / "secrets/github-pat-agentydragon-agent.yaml")
 print(f"export BUILDBUDDY_API_KEY={bb['buildbuddy_api_key']}")
 print(f"export GITHUB_TOKEN={gh['github_token']}")
 EOF

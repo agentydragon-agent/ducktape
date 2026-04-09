@@ -65,11 +65,6 @@ class HookSettings(BaseSettings):
     profile: str | None = Field(default=None, description="Override profile name from config.yaml")
 
     k8s_token: str | None = Field(default=None, description="K8s SA token for reading secrets from cluster")
-    age_key: str | None = Field(
-        default=None,
-        description="Age private key (AGE-SECRET-KEY-...) for SOPS decryption. "
-        "Used by Claude agent in Claude Code web to decrypt repo secrets locally.",
-    )
 
     proxy_mode: ProxyMode = Field(
         default=ProxyMode.UDS,

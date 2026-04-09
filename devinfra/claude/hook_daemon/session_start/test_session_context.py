@@ -160,7 +160,7 @@ def test_with_warnings_in_log(
         level=logging.WARNING,
         pathname="",
         lineno=0,
-        msg="SOPS secret configured but no age_key available",
+        msg="Something went wrong during setup",
         args=(),
         exc_info=None,
     )

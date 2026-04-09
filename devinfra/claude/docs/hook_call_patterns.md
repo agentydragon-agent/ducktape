@@ -96,7 +96,7 @@ in Claude Code: `"compact"` (context window compaction).
 | `HTTPS_PROXY`                     | `http://<container>:<jwt>@<host>:<port>`              |
 | `JAVA_TOOL_OPTIONS`               | `-Dhttps.proxyHost=... -Dhttps.proxyPassword=<jwt>`   |
 | `DUCKTAPE_CLAUDE_HOOKS_K8S_TOKEN` | K8s SA token (static across sessions)                 |
-| `DUCKTAPE_CLAUDE_HOOKS_AGE_KEY`   | Age key for SOPS (static)                             |
+| `SOPS_AGE_KEY`                    | Age key for SOPS (static, standard sops env var)      |
 
 The `CLAUDE_CODE_SESSION_ID` (API-level, e.g., `cse_01ANqo...`) remains
 constant across resumes. The hook `session_id` (UUID) changes.

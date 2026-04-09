@@ -178,7 +178,7 @@
   **Notify the user** that secrets are unavailable and Bazel RBE / GitHub operations will not work until resolved.
   
   
-  - WARNING: SOPS secret configured but no age_key available
+  - WARNING: Something went wrong during setup
   
   Session start log: `/tmp/daemon.log`
   

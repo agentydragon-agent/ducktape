@@ -68,16 +68,11 @@ def read_k8s_secret(api: CoreV1Api, namespace: str, secret_name: str, key: str) 
 
 
 def resolve_secret(
-    source: SecretSource,
-    *,
-    project_dir: Path,
-    age_key: str | None,
-    k8s_api: CoreV1Api | None,
-    k8s_namespace: str | None,
+    source: SecretSource, *, project_dir: Path, k8s_api: CoreV1Api | None, k8s_namespace: str | None
 ) -> str | None:
     """Resolve a single secret from its source config."""
     if isinstance(source, SopsSecretSource):
-        decrypted = decrypt_sops_yaml(project_dir / source.sops_file, age_key=age_key)
+        decrypted = decrypt_sops_yaml(project_dir / source.sops_file)
         return decrypted.get(source.key)
     if not k8s_api or not k8s_namespace:
         logger.warning("K8s secret configured but no k8s client available")

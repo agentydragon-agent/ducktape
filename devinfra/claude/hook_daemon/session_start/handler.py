@@ -59,7 +59,6 @@ from devinfra.claude.hook_daemon.session_start import (
 from devinfra.claude.hook_daemon.tracing import DeferredOtlpExporter
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings, ProxyMode
-from devinfra.claude.sops_decrypt import discover_age_key
 from devinfra.claude.supervisor import setup as supervisor_setup
 
 logger = logging.getLogger(__name__)
@@ -374,16 +373,13 @@ async def handle(
     # This allows the K8s token itself to come from SOPS, with env var fallback.
     with tracer.start_as_current_span("resolve_secrets", context=root_ctx):
         secrets_cfg = hook_config.secrets
-        age_key = discover_age_key()
         k8s_namespace = hook_config.k8s.namespace if hook_config.k8s else None
 
         def resolve_sops(source: SecretSource) -> str | None:
             """Resolve a secret only if it's a SOPS source (no K8s client needed)."""
             if not isinstance(source, SopsSecretSource):
                 return None
-            return secret_sources.resolve_secret(
-                source, project_dir=project_dir, age_key=age_key, k8s_api=None, k8s_namespace=None
-            )
+            return secret_sources.resolve_secret(source, project_dir=project_dir, k8s_api=None, k8s_namespace=None)
 
         # Phase 1: Resolve SOPS-only secrets (including k8s_token).
         if secrets_cfg.k8s_token:
@@ -407,11 +403,7 @@ async def handle(
         # Phase 3: Resolve K8s-sourced secrets (requires K8s client).
         if secrets_cfg.otel_bearer_token:
             setup.secrets.otel_bearer_token = secret_sources.resolve_secret(
-                secrets_cfg.otel_bearer_token,
-                project_dir=project_dir,
-                age_key=age_key,
-                k8s_api=k8s_api,
-                k8s_namespace=k8s_namespace,
+                secrets_cfg.otel_bearer_token, project_dir=project_dir, k8s_api=k8s_api, k8s_namespace=k8s_namespace
             )
 
         # Write kubeconfig when k8s client is available and profile enables it.
