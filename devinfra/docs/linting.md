@@ -102,7 +102,7 @@ Key hooks in `.pre-commit-config.yaml`:
 | `ruff-format`       | astral-sh/ruff-pre-commit    | Python formatting        |
 | `buildifier`        | keith/pre-commit-buildifier  | Starlark formatting      |
 | `buildifier-lint`   | keith/pre-commit-buildifier  | Starlark linting         |
-| `ducktape-git-hook` | local (system)               | Validations              |
+| `ducktape-precommit` | local (system)              | Validations              |
 | `prettier`          | local (node)                 | JS/TS/MD/YAML formatting |
 | `rustfmt`           | local (system)               | Rust formatting          |
 | `nixfmt`            | local (static binary)        | Nix formatting           |

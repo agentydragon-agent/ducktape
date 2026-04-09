@@ -191,17 +191,32 @@ repos:
         files: "pyproject\\.toml$"
         exclude: "^pyproject\\.toml$"
 
-      # Unified git hook: dispatches by PRE_COMMIT_HOOK_STAGE.
-      # pre-commit: file validations (pytest-main, tf-centralization, filenames, cluster, frozen-specimens)
-      # prepare-commit-msg: block amending already-pushed commits
-      # commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
-      - id: ducktape-git-hook
-        name: ducktape git hook
-        entry: ducktape-git-hook
+      # Pre-commit file validations (pytest-main, tf-centralization, filenames, cluster, frozen-specimens)
+      - id: ducktape-precommit
+        name: ducktape pre-commit
+        entry: ducktape-precommit
         language: system
         pass_filenames: true
         always_run: true
-        stages: [pre-commit, prepare-commit-msg, commit-msg]
+        stages: [pre-commit]
+
+      # Block amending already-pushed commits
+      - id: ducktape-prepare-commit-msg
+        name: ducktape prepare-commit-msg
+        entry: ducktape-prepare-commit-msg
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [prepare-commit-msg]
+
+      # Enforce BAZEL_TEST_INVOCATIONS= tag
+      - id: ducktape-commit-msg
+        name: ducktape commit-msg
+        entry: ducktape-commit-msg
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [commit-msg]
 
       # Kubernetes manifest validation (auto-installed via go install)
       # CRD schemas from datreeio/CRDs-catalog cover Flux, cert-manager,

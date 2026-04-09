@@ -1,12 +1,9 @@
-"""Unified git hook entry point. Dispatches by stage.
+"""Git hook entry points for pre-commit framework.
 
-Installed as `ducktape-git-hook` console script via the claude-hooks wheel.
-Pre-commit framework sets PRE_COMMIT_HOOK_STAGE; we dispatch on that.
-
-Stages:
-- pre-commit: file validations (pytest-main, tf-centralization, filenames, cluster, frozen-specimens)
-- prepare-commit-msg: block amending already-pushed commits
-- commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
+Installed as separate console scripts via the claude-hooks wheel:
+- ducktape-precommit: file validations (pytest-main, tf-centralization, filenames, cluster, frozen-specimens)
+- ducktape-prepare-commit-msg: block amending already-pushed commits
+- ducktape-commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
 """
 
 from __future__ import annotations
@@ -241,22 +238,13 @@ def _run_commit_msg(argv: list[str]) -> int:
 # Dispatch
 # ---------------------------------------------------------------------------
 
-_STAGES = {
-    "pre-commit": lambda argv: asyncio.run(_run_pre_commit(argv)),
-    "prepare-commit-msg": _run_prepare_commit_msg,
-    "commit-msg": _run_commit_msg,
-}
+def main_pre_commit() -> int:
+    return asyncio.run(_run_pre_commit(sys.argv[1:]))
 
 
-def main() -> int:
-    stage = os.environ.get("PRE_COMMIT_HOOK_STAGE", "")
-    handler = _STAGES.get(stage)
-    if handler is None:
-        print(f"ERROR: unknown or missing PRE_COMMIT_HOOK_STAGE={stage!r}", file=sys.stderr)
-        print(f"Expected one of: {', '.join(_STAGES)}", file=sys.stderr)
-        return 1
-    return handler(sys.argv[1:])
+def main_prepare_commit_msg() -> int:
+    return _run_prepare_commit_msg(sys.argv[1:])
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+def main_commit_msg() -> int:
+    return _run_commit_msg(sys.argv[1:])
