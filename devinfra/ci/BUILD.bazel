@@ -124,17 +124,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "generate_buildbuddy",
-    srcs = ["generate_buildbuddy.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        "//devinfra:prettier",
-        "//util/bazel:workspace",
-        "@pypi//pyyaml",
-    ],
-)
-
 # === Binaries ===
 
 py_binary(
@@ -161,25 +150,7 @@ py_binary(
     deps = [":generate_ci"],
 )
 
-py_binary(
-    name = "generate_buildbuddy_bin",
-    main_module = "devinfra.ci.generate_buildbuddy",
-    deps = [":generate_buildbuddy"],
-)
-
 # === Tests ===
-
-py_test(
-    name = "test_generate_buildbuddy",
-    srcs = ["test_generate_buildbuddy.py"],
-    data = ["//:buildbuddy.yaml"],
-    deps = [
-        ":generate_buildbuddy",
-        "//util/bazel:runfiles",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-    ],
-)
 
 py_test(
     name = "test_generate_ci",

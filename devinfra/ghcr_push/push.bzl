@@ -3,8 +3,8 @@
 Creates a `bazel run`-able py_binary that pushes an OCI image to GHCR only
 when the image digest has changed. Tagged with "ghcr_push" so targets can
 be found via `bazel query 'attr(tags, "ghcr_push", //...)'`.
-generate_buildbuddy.py maintains a manual PUSH_TARGETS list that must be
-kept in sync (nested bazel query from bazel run is not feasible).
+The push-images.yml GHA workflow matrix must list all push targets manually
+(nested bazel query from bazel run is not feasible).
 """
 
 load("//devinfra/python:defs.bzl", "py_binary")

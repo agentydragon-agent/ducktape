@@ -26,7 +26,6 @@ MODULE.bazel
 # Root-level CI and tool config files (yaml — not blanket *.yaml)
 .pre-commit-config.yaml
 .gitlab-ci.yml
-buildbuddy.yaml
 .ansible-lint.yaml
 pnpm-workspace.yaml
 pnpm-lock.yaml

@@ -10,12 +10,6 @@
 #   - Root .envrc (direnv, laptop)
 #   - Session start hook (Claude web, baked into env file)
 #   - .github/actions/setup-ci-secrets (GitHub Actions)
-#
-# TODO: Adapt BuildBuddy Workflows (buildbuddy.yaml) to run this script
-# instead of relying on BB org secrets. Requires sops on the BB runner
-# (install via curl, like the GHA action does). Once done, remove the
-# old individual secrets (GHCR_TOKEN, GHCR_USERNAME, GH_RELEASE_PAT)
-# from BuildBuddy's secret store.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
