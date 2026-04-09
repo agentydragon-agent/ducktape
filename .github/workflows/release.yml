@@ -4,6 +4,12 @@ name: Release
 
 on:
   workflow_call:
+    inputs:
+      rbe_image:
+        description: "Override RBE container image (optional)"
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
 
 permissions:
