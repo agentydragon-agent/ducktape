@@ -33,7 +33,17 @@ actions:
     steps:
       - run: |
           bazel test --keep_going --config=rbe --build_metadata=ROLE=CI --test_tag_filters=-live_openai_api //...
+      - &id002
+        run: |
+          # Install sops and decrypt CI secrets to a file
+          if ! command -v sops &>/dev/null; then
+            SOPS_VERSION=3.9.4
+            curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops
+            chmod +x /usr/local/bin/sops
+          fi
+          devinfra/ci_env.sh > /tmp/ci_env_exports.sh
       - run: |
+          source /tmp/ci_env_exports.sh
           # Install system deps for wheel builds (cairo, dbus, etc.)
           sudo apt-get update -qq && sudo apt-get install -y \
             libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev pkg-config
@@ -48,92 +58,118 @@ actions:
   - name: Push //airlock:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: &id002
+    resource_requests: &id003
       disk: 50GB
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //airlock:push_ghcr
   - name: Push //airlock/auth_proxy:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //airlock/auth_proxy:push_ghcr
   - name: Push //cluster/k8s/agents/claude-token-rotation:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //cluster/k8s/agents/claude-token-rotation:push_ghcr
   - name: Push //cluster/k8s/inventree/token-provisioner:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //cluster/k8s/inventree/token-provisioner:push_ghcr
   - name: Push //devinfra/firecracker/manager:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //devinfra/firecracker/manager:push_ghcr
   - name: Push //devinfra/firecracker/vm_pod:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //devinfra/firecracker/vm_pod:push_ghcr
   - name: Push //homeassistant/proxy:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //homeassistant/proxy:push_ghcr
   - name: Push //inventree_utils/rai_plugin:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //inventree_utils/rai_plugin:push_ghcr
   - name: Push //mcp_infra/exec:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //mcp_infra/exec:push_ghcr
   - name: Push //openclaw/exec:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //openclaw/exec:push_ghcr
   - name: Push //props/backend:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //props/backend:push_ghcr
   - name: Push //tana/token_broker:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //tana/token_broker:push_ghcr
   - name: Push //third_party/activitywatch:push_ghcr
     triggers: *id001
     container_image: ubuntu-24.04
-    resource_requests: *id002
+    resource_requests: *id003
     steps:
+      - *id002
       - run: |
+          source /tmp/ci_env_exports.sh
           bazel run --config=rbe --remote_download_toplevel //third_party/activitywatch:push_ghcr

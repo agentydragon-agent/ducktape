@@ -43,6 +43,26 @@ PUSH_TARGETS = [
 ]
 
 
+# Step 1: install sops (persists on filesystem across steps and runs).
+# Step 2+: source the cached exports file. Each step is a separate bash process,
+# so env vars don't persist — but the file does.
+_SOPS_INSTALL_STEP = {
+    "run": (
+        "# Install sops and decrypt CI secrets to a file\n"
+        "if ! command -v sops &>/dev/null; then\n"
+        "  SOPS_VERSION=3.9.4\n"
+        '  curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}'
+        '/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops\n'
+        "  chmod +x /usr/local/bin/sops\n"
+        "fi\n"
+        "devinfra/ci_env.sh > /tmp/ci_env_exports.sh\n"
+    )
+}
+
+# Source decrypted exports. Prepend to any step that needs CI secrets.
+_SOPS_SOURCE = "source /tmp/ci_env_exports.sh\n"
+
+
 def generate_buildbuddy_config() -> dict[str, Any]:
     """Generate the complete buildbuddy.yaml config."""
     # Shared Python objects — PyYAML emits YAML anchors/aliases for these
@@ -86,9 +106,10 @@ def generate_buildbuddy_config() -> dict[str, Any]:
                         " //...\n"
                     )
                 },
+                _SOPS_INSTALL_STEP,
                 {
                     "run": (
-                        "# Install system deps for wheel builds (cairo, dbus, etc.)\n"
+                        _SOPS_SOURCE + "# Install system deps for wheel builds (cairo, dbus, etc.)\n"
                         "sudo apt-get update -qq && sudo apt-get install -y \\\n"
                         "  libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev pkg-config\n"
                         "bazel build --config=rbe --remote_download_toplevel \\\n"
@@ -113,7 +134,10 @@ def generate_buildbuddy_config() -> dict[str, Any]:
                 "triggers": push_triggers,
                 "container_image": "ubuntu-24.04",
                 "resource_requests": push_resources,
-                "steps": [{"run": (f"bazel run --config=rbe --remote_download_toplevel {target_str}\n")}],
+                "steps": [
+                    _SOPS_INSTALL_STEP,
+                    {"run": _SOPS_SOURCE + f"bazel run --config=rbe --remote_download_toplevel {target_str}\n"},
+                ],
             }
         )
 
