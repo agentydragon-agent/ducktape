@@ -136,7 +136,7 @@ locals {
     "talos-vps-worker-1.nebula.allegedly.works" = { ip = "10.42.0.12/16", groups = "lighthouse" }
   }
 
-  # Non-Talos nodes (wyrm2, rugged, iguana, atlas, activitywatch, k8s-worker-test)
+  # Non-Talos nodes (wyrm2, rugged, iguana, atlas, activitywatch)
   # have certs in secrets/nebula/ — plaintext .crt + SOPS binary .sops.key.
   # IPs are embedded in the certs — use `nebula-cert print` to inspect.
   # See docs/secrets.md "Nebula Certs for Non-Talos Nodes" for the generation workflow.

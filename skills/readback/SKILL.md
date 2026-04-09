@@ -1,5 +1,8 @@
 ---
-description: Paraphrase vague instructions back with context, without executing changes
+name: readback
+description: >
+  Paraphrase vague instructions back with context, without executing changes.
+  TRIGGER: any time the user says the word "readback".
 ---
 
 You just received rushed/vague instructions from the user.

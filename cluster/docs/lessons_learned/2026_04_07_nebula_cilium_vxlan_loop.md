@@ -32,7 +32,7 @@ lighthouse:
       lxc.*: false
 ```
 
-Applied to Terraform (`nebula.tf`) and NixOS (`nebula-mesh.nix`). Talos
+Applied to Terraform (`nebula.tf`) and NixOS (`nebula.nix`). Talos
 restarted Nebula automatically on config push — no reboot needed.
 
 ## Lessons Learned

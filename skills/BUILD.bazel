@@ -21,6 +21,7 @@ pkg_tar(
         "//skills/session_logs:session_logs_tar",
         "//skills/superforecaster:superforecaster_tar",
         "//skills/update_deps:update_deps_tar",
+        "//skills/readback:readback_tar",
         "//skills/verify_docs:verify_docs_tar",
     ],
 )

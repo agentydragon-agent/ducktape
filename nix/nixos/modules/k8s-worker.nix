@@ -103,7 +103,7 @@ let
   );
 in
 {
-  imports = [ ./nebula-mesh.nix ];
+  imports = [ ./nebula.nix ];
 
   options.ducktape.k8sWorker = {
     enable = lib.mkEnableOption "Kubernetes worker node (joins external Talos cluster via Nebula mesh)";
@@ -249,7 +249,7 @@ in
     };
 
     # Disable iptables rpfilter (nixos-fw-rpfilter chain in mangle/
-    # PREROUTING). nebula-mesh.nix sets "loose", but even loose rpfilter
+    # PREROUTING). nebula.nix sets "loose", but even loose rpfilter
     # drops pod-to-node hairpin traffic. Talos has no iptables rpfilter.
     # See: https://github.com/NixOS/nixpkgs/issues/298165
     networking.firewall.checkReversePath = lib.mkForce false;

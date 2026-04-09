@@ -284,7 +284,7 @@ let
   ) (lib.filterAttrs (name: type: type == "regular" && lib.hasSuffix ".md" name) commandFiles);
 
   # Shared skill files — generates home.file entries for ~/.claude/skills/
-  mkSkills = import ../skills/skills.nix {
+  mkSkills = import ../skills.nix {
     inherit
       lib
       pkgs

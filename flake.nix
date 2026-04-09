@@ -303,8 +303,6 @@
         # Uses built-in system.build.images.qemu-efi (nixos-generators upstreamed in 25.05+).
         wyrm2-image = self.nixosConfigurations.wyrm2.config.system.build.images.qemu-efi;
         bootstrap-image = self.nixosConfigurations.bootstrap.config.system.build.images.qemu-efi;
-        k8s-worker-test-image =
-          self.nixosConfigurations.k8s-worker-test.config.system.build.images.qemu-efi;
         # NixOS LXC tarball for Proxmox.
         # Build: nix build .#lxc-k8s-test-lxc
         # Upload: scp result/*.tar.xz root@atlas:/var/lib/vz/template/cache/
@@ -364,13 +362,6 @@
 
             module = ./nix/home/hosts/iguana.nix;
           };
-        };
-
-        k8s-worker-test = mkNixos {
-          hostname = "k8s-worker-test";
-          username = "user";
-          homeManagerHost = "nixos-vm";
-          hardwareModule = ./nix/nixos/modules/vm-hardware.nix;
         };
 
         # NixOS LXC container on Proxmox — test k8s worker in LXC.

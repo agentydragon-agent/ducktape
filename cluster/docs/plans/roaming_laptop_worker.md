@@ -1,7 +1,7 @@
 # Roaming Laptop Worker Node
 
 **Status**: Implemented (2026-03). rugged (Dell Rugged 12) joined as roaming worker
-via `nix/nixos/hosts/rugged/` + `k8s-worker.nix` + `nebula-mesh.nix`. Nebula mesh
+via `nix/nixos/hosts/rugged/` + `k8s-worker.nix` + `nebula.nix`. Nebula mesh
 with VPS lighthouses/relays solves the double-NAT hole-punching problem that made
 KubeSpan unreliable. See `../lessons_learned/nebula_mesh_migration_tombstone.md` for the full history.
 
@@ -13,7 +13,7 @@ cross-node traffic).
 
 NixOS laptop joins the Talos k8s cluster as a worker without VMs:
 
-- **`nebula-mesh.nix`** — joins the Nebula mesh (UDP 4242). VPS lighthouses provide
+- **`nebula.nix`** — joins the Nebula mesh (UDP 4242). VPS lighthouses provide
   peer discovery; relay mode handles double-NAT when hole-punching fails.
 - **`k8s-worker.nix`** — containerd + kubelet, haproxy on `localhost:7445`
   load-balancing across control plane Nebula IPs, sops-nix for credentials.
@@ -23,7 +23,7 @@ Key files:
 
 - `nix/nixos/hosts/rugged/default.nix` — host config
 - `nix/nixos/modules/k8s-worker.nix` — k8s worker module
-- `nix/nixos/modules/nebula-mesh.nix` — Nebula mesh module
+- `nix/nixos/modules/nebula.nix` — Nebula mesh module
 - `cluster/terraform/main/nebula.tf` — PKI
 
 ## Networking

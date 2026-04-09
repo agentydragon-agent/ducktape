@@ -148,7 +148,7 @@ No built-in auth; Nebula mesh membership is the trust boundary.
 Watchers run locally, heartbeat to cluster via Nebula mesh. Config managed by
 Nix home-manager (`nix/home/services/activitywatch.nix`).
 
-1. Ensure Nebula is running on the host (NixOS workers have it via `nebula-mesh.nix`)
+1. Ensure Nebula is running on the host (NixOS workers have it via `nebula.nix`)
 2. Apply config: `home-manager switch --flake ~/code/ducktape#<hostname>`
 3. Start: `aw-qt` (runs `aw-watcher-afk`, `aw-watcher-window`)
 4. Verify: `curl http://activitywatch:5600/api/0/info`

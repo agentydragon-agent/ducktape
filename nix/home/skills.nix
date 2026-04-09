@@ -5,7 +5,7 @@
 # Skill contents are controlled by skill_package(srcs=...) in each skill's BUILD.bazel.
 #
 # Usage:
-#   let mkSkills = import ../skills/skills.nix { inherit lib pkgs siderolabs-docs skills-tar; };
+#   let mkSkills = import ./skills.nix { inherit lib pkgs siderolabs-docs skills-tar; };
 #   in mkSkills ".claude"
 {
   lib,

@@ -365,7 +365,7 @@ in
 
   # Deploy skills to ~/.config/opencode/skills/ (shared with Claude Code, Gemini CLI)
   home.file =
-    (import ../skills/skills.nix {
+    (import ../skills.nix {
       inherit
         lib
         pkgs

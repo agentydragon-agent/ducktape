@@ -1,5 +1,5 @@
 {
-  "_comment": "Single source of truth for Nebula mesh lighthouse topology. Read by: Nix (nebula-mesh.nix), Terraform (infrastructure). Non-lighthouse nodes need public IPs here because DNS (*.nebula.allegedly.works) resolves via lighthouse DNS which isn't reachable before the mesh is up.",
+  "_comment": "Single source of truth for Nebula mesh lighthouse topology. Read by: Nix (nebula.nix), Terraform (infrastructure). Non-lighthouse nodes need public IPs here because DNS (*.nebula.allegedly.works) resolves via lighthouse DNS which isn't reachable before the mesh is up.",
   "lighthouse_ips": ["10.42.0.1", "10.42.0.2", "10.42.0.11", "10.42.0.12"],
   "static_host_map": {
     "10.42.0.1": ["5.78.144.197:4242"],

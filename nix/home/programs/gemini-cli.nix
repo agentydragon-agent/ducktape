@@ -121,7 +121,7 @@ in
 
     # Deploy skills to ~/.gemini/skills/ (local + external, shared with Claude Code)
     home.file =
-      (import ../skills/skills.nix {
+      (import ../skills.nix {
         inherit
           lib
           pkgs

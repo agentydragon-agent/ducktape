@@ -4,9 +4,9 @@ Agent skills for Claude Code, Gemini CLI, OpenCode, and other AI agents.
 
 ## Deployment
 
-Skills are built by Bazel (`skill_package` macro in `defs.bzl`) and packaged into a combined tarball (`//skills:all_skills_tar`). CI publishes this tarball as a GitHub release artifact (`skills-tar` flake input). Nix home-manager deploys skills from the tarball to `~/.claude/skills/`, `~/.gemini/skills/`, etc. via `nix/home/skills/skills.nix`.
+Skills are built by Bazel (`skill_package` macro in `defs.bzl`) and packaged into a combined tarball (`//skills:all_skills_tar`). CI publishes this tarball as a GitHub release artifact (`skills-tar` flake input). Nix home-manager deploys skills from the tarball to `~/.claude/skills/`, `~/.gemini/skills/`, etc. via `nix/home/skills.nix`.
 
-**Local machines**: `skill_package()` BUILD targets → `all_skills_tar` → CI release → Nix flake input (`skills-tar`) → home-manager `home.file` entries (`nix/home/skills/skills.nix`).
+**Local machines**: `skill_package()` BUILD targets → `all_skills_tar` → CI release → Nix flake input (`skills-tar`) → home-manager `home.file` entries (`nix/home/skills.nix`).
 
 **Claude Code Web**: `devinfra/claude/web_setup.sh` extracts the tarball into `~/.claude/skills/`.
 
