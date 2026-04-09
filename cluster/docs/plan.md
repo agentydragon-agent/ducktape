@@ -336,16 +336,11 @@ mitmproxy 254MB, two custom ~118MB images sharing a 113MB Python interpreter lay
 into Docker on disposable RBE Firecracker VMs. A persistent Docker daemon with cached
 layers would make subsequent loads near-instant.
 
-- [ ] Deploy DinD pod in `docker-ci` namespace on Proxmox (`lvm-proxmox` 50Gi PV)
-- [ ] Expose via Cilium Gateway TCPRoute with mTLS (TLS passthrough to daemon)
-- [ ] Generate mTLS certs, store in SOPS (server certs → Flux → k8s Secret,
-      client certs decrypted at CI time — NOT baked into the public RBE worker image)
-- [ ] Unify CI secrets: give BuildBuddy and GitHub Actions a single SOPS age key
-      (`AGE_SECRET_KEY`) instead of N separate secrets. CI steps run `sops -d` to
-      extract what they need (Docker mTLS certs, API keys, etc.)
-- [ ] Wire decrypted Docker client certs into the right location for RBE test runners
-      (`DOCKER_CERT_PATH` populated from SOPS-decrypted files)
-- [ ] Set `DOCKER_HOST`/`DOCKER_TLS_VERIFY`/`DOCKER_CERT_PATH` for `requires_docker` tests
+DinD pod deployed with mTLS (ECDSA P-256), TLSRoute, `bb-remote --remote_run_header`
+wiring, and `py_test` macro `env_inherit`. See <../k8s/docker-ci/README.md>.
+
+- [ ] Unify CI secrets: single SOPS age key (`AGE_SECRET_KEY`) for BuildBuddy + GHA
+- [ ] pytest fixture to assemble cert dir from env + runfiles
 - [ ] Container reaping CronJob (`docker container prune --filter until=1h`)
 - [ ] Image pruning CronJob (`docker image prune --filter until=168h`)
 
