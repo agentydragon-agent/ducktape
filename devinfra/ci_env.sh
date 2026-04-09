@@ -5,6 +5,17 @@
 # Requires: sops on PATH with a valid age key (SOPS_AGE_KEY, SOPS_AGE_KEY_FILE,
 # or ~/.ssh/id_ed25519). Each secret is decrypted independently — if one fails,
 # the others still get exported. Outputs nothing for secrets that fail to decrypt.
+#
+# Consumed by:
+#   - Root .envrc (direnv, laptop)
+#   - Session start hook (Claude web, baked into env file)
+#   - .github/actions/setup-ci-secrets (GitHub Actions)
+#
+# TODO: Adapt BuildBuddy Workflows (buildbuddy.yaml) to run this script
+# instead of relying on BB org secrets. Requires sops on the BB runner
+# (install via curl, like the GHA action does). Once done, remove the
+# old individual secrets (GHCR_TOKEN, GHCR_USERNAME, GH_RELEASE_PAT)
+# from BuildBuddy's secret store.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
