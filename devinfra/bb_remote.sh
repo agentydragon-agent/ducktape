@@ -6,13 +6,10 @@ set -euo pipefail
 # Abort if the default branch has unpushed commits — bb remote would
 # select the local HEAD as the base commit, which doesn't exist on the
 # remote and causes the runner to fail during git fetch.
-# Abort if the default branch has unpushed commits — bb remote would
-# select the local HEAD as the base commit, which doesn't exist on the
-# remote and causes the runner to fail during git fetch.
-# Skip this check on detached HEAD (GHA checkout) or shallow clones.
+# Skip on detached HEAD (GHA) or when origin/HEAD doesn't exist.
 current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
 if [ -n "$current_branch" ]; then
-  default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+  default_branch=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || true)
   default_branch=${default_branch:-devel}
   if [ "$current_branch" = "$default_branch" ]; then
     local_sha=$(git rev-parse "$default_branch" 2>/dev/null || true)
