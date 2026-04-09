@@ -196,10 +196,14 @@ py_wheel(
         ],
     },
     python_requires = ">=3.13",
+    # SYNC: This list must match propagatedBuildInputs in nix/packages/default.nix
+    # (claude-hooks). The Nix derivation provides these at runtime on NixOS/devShell.
+    # When adding a dependency, update BOTH places.
     requires = [
         "anyio",
         "cryptography",
         "fastapi>=0.115.0",
+        "filelock",
         "grpcio",
         "httpx",
         "kubernetes",
@@ -218,6 +222,7 @@ py_wheel(
         "pyrage>=1.0.0",
         "pyjwt",
         "pyyaml",
+        "requests",
         "rich",
         "structlog",
         "supervisor",

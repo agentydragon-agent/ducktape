@@ -1,5 +1,14 @@
 @README.md
 
+## Dependency Sync
+
+The hook daemon's runtime Python dependencies are declared in **two places** that must stay in sync:
+
+1. **Wheel `requires`**: `//:claude_hooks_wheel` in `BUILD.bazel` — used by `uv tool install` on Claude Code web
+2. **Nix `propagatedBuildInputs`**: `claude-hooks` in `nix/packages/default.nix` — used by devShell and home-manager on NixOS
+
+When adding or removing a runtime dependency, update **both** lists. A mismatch causes `ModuleNotFoundError` at daemon startup in whichever environment has the stale list. Both files have `SYNC:` comments pointing to each other.
+
 ## Agent Instructions
 
 - **Hook daemon logs** (includes session start): `~/.claude/session-env/<session_id>/hook-daemon/daemon.log`

@@ -109,12 +109,17 @@ in
     pname = "claude-hooks";
     description = "Claude Code session hooks (statusline, session-start, auth proxy)";
     mainProgram = "claude-hook";
+    # SYNC: This list must match `requires` in //:claude_hooks_wheel (BUILD.bazel).
+    # The wheel declares pip-level deps; this list provides Nix-level equivalents.
+    # When adding a dependency, update BOTH places.
     propagatedBuildInputs =
       with pkgs.python3Packages;
       [
         anyio
         cryptography
         fastapi
+        filelock
+        grpcio
         httpx
         kubernetes
         mako
@@ -122,12 +127,14 @@ in
         opentelemetry-exporter-otlp-proto-http
         opentelemetry-sdk
         platformdirs
+        protobuf
         psutil
         pydantic
         pydantic-settings
         pygit2
         pyjwt
         pyyaml
+        requests
         rich
         structlog
         supervisor
