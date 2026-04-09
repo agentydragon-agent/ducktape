@@ -36,14 +36,13 @@ jobs:
         with:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
-      - name: Install system deps
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y \
-            libcairo2-dev libgirepository-2.0-dev libdbus-1-dev libxcb1-dev pkg-config
-
       - name: Build wheels and artifacts
         run: |
-          devinfra/bb_remote.sh build --remote_download_toplevel \
+          # Use RBE worker image as runner (has system deps for pycairo etc.)
+          RBE_IMAGE=$(python3 -c "import json; d=json.load(open('devinfra/image_pins.json'))['rbe_worker']; print(d['image']+'@'+d['digest'])")
+          devinfra/bb_remote.sh build \
+            --container_image="docker://${RBE_IMAGE}" \
+            --remote_download_toplevel \
             //:wheel \
             //:claude_hooks_wheel \
             //util:wheel \
