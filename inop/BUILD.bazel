@@ -26,6 +26,19 @@ py_test(
 )
 
 py_library(
+    name = "prompt_feedback_mcp",
+    srcs = ["prompt_feedback_mcp.py"],
+    visibility = ["//:__subpackages__"],
+    deps = [
+        "//inop/prompting:prompt_engineer",
+        "//mcp_infra/enhanced:server",
+        "//openai_utils:pydantic_strict_mode",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "config",
     srcs = ["config.py"],
     visibility = ["//:__subpackages__"],

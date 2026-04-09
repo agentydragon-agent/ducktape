@@ -57,9 +57,9 @@ from inop.io.jsonl_logger import JSONLLogger
 from inop.io.logging_utils import DualOutputLogging
 from inop.io.task_loader import load_runner_configs, load_task_definitions, load_task_types
 from inop.io.yaml_loader import load_yaml_files
-from inop.mcp.prompt_feedback_server import make_prompt_feedback_server_with_state
 from inop.model_factory import create_optimizer_models
 from inop.plots import ScoreEvolutionTracker
+from inop.prompt_feedback_mcp import make_prompt_feedback_server_with_state
 from inop.prompting.pe_controller import ProposePromptNTimes
 from inop.prompting.prompt_engineer import (
     FeedbackMode,
