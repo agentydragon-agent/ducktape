@@ -50,6 +50,7 @@ from devinfra.claude.hook_daemon.session_start import (
     buildbuddy,
     container_runtime,
     fork_remote,
+    git_wrapper,
     mkcert,
     platform_detect,
     precommit,
@@ -472,6 +473,10 @@ async def handle(
     # Install bazel wrapper (single canonical install for both web and CLI modes).
     with tracer.start_as_current_span("install_bazel_wrappers", context=root_ctx):
         bazelisk.install_wrapper(session.paths)
+
+    # Install git safety wrapper (blocks git add -A, git stash, git commit --amend).
+    with tracer.start_as_current_span("install_git_wrapper", context=root_ctx):
+        git_wrapper.install_wrapper(session.paths)
 
     # Generate timestamp
     hook_timestamp = datetime.now()

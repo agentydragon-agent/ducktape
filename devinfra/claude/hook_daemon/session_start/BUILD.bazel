@@ -123,6 +123,16 @@ py_library(
 )
 
 py_library(
+    name = "git_wrapper",
+    srcs = ["git_wrapper.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/claude:session_paths",
+        "//util/bazel:subprocess",
+    ],
+)
+
+py_library(
     name = "session_start_lib",
     srcs = ["handler.py"],
     visibility = ["//visibility:public"],
@@ -133,6 +143,7 @@ py_library(
         ":buildbuddy",
         ":container_runtime",
         ":fork_remote",
+        ":git_wrapper",
         ":mkcert",
         ":platform_detect",
         ":precommit",
