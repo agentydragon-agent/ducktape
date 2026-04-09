@@ -12,9 +12,13 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v6
 
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
       - uses: ./.github/actions/setup-bazel
         with:
-          buildbuddy_api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          buildbuddy_api_key: ${{ env.BUILDBUDDY_API_KEY }}
 
       - name: bazel build -k //...
         id: build

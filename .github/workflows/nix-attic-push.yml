@@ -26,8 +26,12 @@ jobs:
       - name: Install Attic client
         run: nix profile install nixpkgs#attic-client
 
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+
       - name: Configure Attic cache
-        run: attic login ducktape https://cache.allegedly.works "${{ secrets.ATTIC_TOKEN }}"
+        run: attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
 
       - name: Build and push all flake outputs
         run: devinfra/ci/nix_attic_build_and_push.sh

@@ -17,12 +17,13 @@ jobs:
     permissions:
       contents: read
 
-    env:
-      BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-ci-secrets
+        with:
+          sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
@@ -37,7 +38,7 @@ jobs:
       - name: Setup BuildBuddy
         uses: ./.github/actions/setup-buildbuddy
         with:
-          api_key: ${{ secrets.BUILDBUDDY_API_KEY }}
+          api_key: ${{ env.BUILDBUDDY_API_KEY }}
 
       - name: Install pre-commit git hooks
         run: |

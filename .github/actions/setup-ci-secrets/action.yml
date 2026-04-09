@@ -1,0 +1,38 @@
+# Decrypt CI secrets from git using SOPS age key.
+#
+# Installs sops, runs devinfra/ci_env.sh, and exports the decrypted
+# secrets as environment variables for subsequent steps.
+#
+# Usage:
+#   - uses: ./.github/actions/setup-ci-secrets
+#     with:
+#       sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
+#
+#   # Subsequent steps have BUILDBUDDY_API_KEY, DOCKER_*, etc. in env
+name: Setup CI Secrets
+description: Decrypt SOPS-encrypted CI secrets and export as env vars
+
+inputs:
+  sops_age_key:
+    description: "SOPS age private key for CI decryption"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install sops
+      shell: bash
+      run: |
+        SOPS_VERSION="3.9.4"
+        curl -fsSL "https://github.com/getsops/sops/releases/download/v${SOPS_VERSION}/sops-v${SOPS_VERSION}.linux.amd64" -o /usr/local/bin/sops
+        chmod +x /usr/local/bin/sops
+        sops --version
+
+    - name: Decrypt CI secrets
+      shell: bash
+      env:
+        SOPS_AGE_KEY: ${{ inputs.sops_age_key }}
+      run: |
+        eval "$(devinfra/ci_env.sh)"
+        # Export to GITHUB_ENV for subsequent steps
+        env | grep -E '^(DOCKER_CLIENT_KEY|DOCKER_HOST|DOCKER_TLS_VERIFY|BUILDBUDDY_API_KEY|GITHUB_TOKEN|ATTIC_TOKEN|PROPS_REGISTRY_USERNAME|PROPS_REGISTRY_PASSWORD)=' >> "$GITHUB_ENV"
