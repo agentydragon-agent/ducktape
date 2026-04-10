@@ -44,15 +44,15 @@ data "authentik_certificate_key_pair" "self_signed" {
   name = "authentik Self-signed Certificate"
 }
 
-data "authentik_scope_mapping" "openid" {
+data "authentik_property_mapping_provider_scope" "openid" {
   managed = "goauthentik.io/providers/oauth2/scope-openid"
 }
 
-data "authentik_scope_mapping" "email" {
+data "authentik_property_mapping_provider_scope" "email" {
   managed = "goauthentik.io/providers/oauth2/scope-email"
 }
 
-data "authentik_scope_mapping" "profile" {
+data "authentik_property_mapping_provider_scope" "profile" {
   managed = "goauthentik.io/providers/oauth2/scope-profile"
 }
 
@@ -75,9 +75,9 @@ resource "authentik_provider_oauth2" "gatus" {
   include_claims_in_id_token = true
 
   property_mappings = [
-    data.authentik_scope_mapping.openid.id,
-    data.authentik_scope_mapping.email.id,
-    data.authentik_scope_mapping.profile.id,
+    data.authentik_property_mapping_provider_scope.openid.id,
+    data.authentik_property_mapping_provider_scope.email.id,
+    data.authentik_property_mapping_provider_scope.profile.id,
   ]
 
   allowed_redirect_uris = [
