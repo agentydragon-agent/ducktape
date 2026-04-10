@@ -15,25 +15,6 @@
 LOG_FILE="/tmp/web-setup.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-# Always exit 0 — upload log on failure so we can debug from inside the session.
-on_exit() {
-  local rc=$?
-  if [ "$rc" -ne 0 ]; then
-    echo ""
-    echo "=== SETUP FAILED (exit $rc) ==="
-    echo "Log saved to: $LOG_FILE"
-    # Upload full log to ix.io for debugging (UI truncates output).
-    local url
-    if url=$(curl -fsSL -F 'f:1=@'"$LOG_FILE" ix.io 2>/dev/null); then
-      echo "Full log: $url"
-    else
-      echo "(ix.io upload failed)"
-    fi
-  fi
-  exit 0
-}
-trap on_exit EXIT
-
 set -euo pipefail
 
 FLAKE="path:$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
