@@ -231,7 +231,7 @@
         pkgs.ansible # 650MB
       ];
       devToolPackages = [
-        # Repo-specific tools (bb-remote is provided by claude-hooks wheel)
+        # Repo-specific tools (bbr is provided by claude-hooks wheel)
         ducktapePkgs.claude-hooks
         ducktapePkgs.bb
         ducktapePkgs.bbapi

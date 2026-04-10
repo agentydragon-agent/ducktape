@@ -1,4 +1,4 @@
-"""Tests for devinfra.bb_remote."""
+"""Tests for devinfra.bbr."""
 
 import json
 from pathlib import Path
@@ -8,7 +8,7 @@ import pygit2
 import pytest
 import pytest_bazel
 
-from devinfra.bb_remote import _build_secret_args, _read_rbe_image, _validate_git_state, build_command
+from devinfra.bbr import _build_secret_args, _read_rbe_image, _validate_git_state, build_command
 
 
 def _make_repo(tmp_path: Path) -> pygit2.Repository:
@@ -17,7 +17,6 @@ def _make_repo(tmp_path: Path) -> pygit2.Repository:
     sig = pygit2.Signature("test", "test@test.com")
     tree = repo.TreeBuilder().write()
     oid = repo.create_commit("refs/heads/devel", sig, sig, "init", tree, [])
-    # Simulate origin/devel pointing at the same commit.
     repo.references.create("refs/remotes/origin/devel", oid)
     repo.create_reference_symbolic("refs/remotes/origin/HEAD", "refs/remotes/origin/devel", False)
     repo.set_head("refs/heads/devel")
@@ -51,10 +50,10 @@ class TestBuildSecretArgs:
         with patch.dict("os.environ", env, clear=True):
             args = _build_secret_args()
         assert "--remote_run_header=x-buildbuddy-platform.env-overrides=GHCR_TOKEN=ghp_abc123" in args
-        assert "--env=GHCR_USERNAME=agentydragon" in args
 
-    def test_ghcr_username_override(self) -> None:
-        env = {"GHCR_TOKEN": "tok", "GHCR_USERNAME": "other"}
+    def test_ghcr_username_independent(self) -> None:
+        """GHCR_USERNAME is forwarded independently of GHCR_TOKEN."""
+        env = {"GHCR_USERNAME": "other"}
         with patch.dict("os.environ", env, clear=True):
             args = _build_secret_args()
         assert "--env=GHCR_USERNAME=other" in args
@@ -69,19 +68,17 @@ class TestBuildSecretArgs:
 class TestValidateGitState:
     def test_detached_head_skips(self, tmp_path: Path) -> None:
         repo = _make_repo(tmp_path)
-        # Detach HEAD at current commit.
         repo.set_head(repo.head.target)
-        _validate_git_state(repo)  # should not raise
+        _validate_git_state(repo)
 
     def test_feature_branch_skips(self, tmp_path: Path) -> None:
         repo = _make_repo(tmp_path)
         repo.references.create("refs/heads/my-feature", repo.head.target)
         repo.set_head("refs/heads/my-feature")
-        _validate_git_state(repo)  # should not raise
+        _validate_git_state(repo)
 
     def test_default_branch_unpushed_aborts(self, tmp_path: Path) -> None:
         repo = _make_repo(tmp_path)
-        # Advance devel ahead of origin/devel.
         sig = pygit2.Signature("test", "test@test.com")
         tree = repo.TreeBuilder().write()
         new_oid = repo.create_commit("refs/heads/devel", sig, sig, "second", tree, [repo.head.target])
@@ -92,7 +89,17 @@ class TestValidateGitState:
 
     def test_default_branch_up_to_date_passes(self, tmp_path: Path) -> None:
         repo = _make_repo(tmp_path)
-        _validate_git_state(repo)  # should not raise
+        _validate_git_state(repo)
+
+    def test_missing_origin_head_aborts(self, tmp_path: Path) -> None:
+        """Without refs/remotes/origin/HEAD, bbr should crash."""
+        repo = pygit2.init_repository(str(tmp_path / "bare"))
+        sig = pygit2.Signature("test", "test@test.com")
+        tree = repo.TreeBuilder().write()
+        repo.create_commit("refs/heads/devel", sig, sig, "init", tree, [])
+        repo.set_head("refs/heads/devel")
+        with pytest.raises(SystemExit):
+            _validate_git_state(repo)
 
 
 class TestBuildCommand:
@@ -103,14 +110,13 @@ class TestBuildCommand:
         (repo_root / "devinfra").mkdir()
         (repo_root / "devinfra" / "image_pins.json").write_text(json.dumps(pins))
 
-        with patch("devinfra.bb_remote._find_bb", return_value="/usr/bin/bb"), patch.dict("os.environ", {}, clear=True):
+        with patch("devinfra.bbr._find_bb", return_value="/usr/bin/bb"), patch.dict("os.environ", {}, clear=True):
             cmd = build_command(repo, ["build", "//foo:bar", "--nocache_test_results"])
 
         assert cmd[0] == "/usr/bin/bb"
         assert cmd[1] == "remote"
         assert "--container_image=docker://ghcr.io/test/rbe@sha256:deadbeef" in cmd
         assert "--runner_exec_properties=init-dockerd=true" in cmd
-        # User args before --config=rbe
         assert cmd[-2] == "--nocache_test_results"
         assert cmd[-1] == "--config=rbe"
 

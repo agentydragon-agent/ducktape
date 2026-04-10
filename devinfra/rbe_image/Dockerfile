@@ -71,8 +71,6 @@ RUN sed -i 's/^Components: main$/Components: main universe/' /etc/apt/sources.li
 COPY flake.nix flake.lock /tmp/flake/
 COPY npins /tmp/flake/npins
 COPY nix/packages /tmp/flake/nix/packages
-COPY devinfra/bb_remote.sh /tmp/flake/devinfra/bb_remote.sh
-
 SHELL ["/bin/bash", "-c"]
 RUN mkdir -p ~/.config/nix \
     # nix.conf MUST be written BEFORE the installer runs — the installer

@@ -1,4 +1,4 @@
-# Bazel test + build via bb-remote (runs on BuildBuddy RBE).
+# Bazel test + build via bbr (runs on BuildBuddy RBE).
 # Replaces the BuildBuddy Workflows "CI" action.
 name: Bazel CI
 
@@ -42,11 +42,11 @@ jobs:
 
       - name: Test
         run: |
-          devinfra/bb_remote.sh test --keep_going \
+          bbr test --keep_going \
             --test_tag_filters=-live_openai_api \
             //...
 
       - name: Build + lint
         run: |
-          devinfra/bb_remote.sh build --keep_going \
+          bbr build --keep_going \
             //...

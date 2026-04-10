@@ -181,7 +181,7 @@ py_package(
         "proto",
     ],
     deps = [
-        "//devinfra:bb_remote",
+        "//devinfra:bbr",
         "//devinfra/claude/hook_daemon:hook_dispatch_lib",
         "//devinfra/claude/hook_daemon:main_lib",
         "//devinfra/claude/statusline:statusline_lib",
@@ -199,7 +199,7 @@ py_wheel(
             "ducktape-precommit = devinfra.precommit.git_hook:main_pre_commit",
             "ducktape-prepare-commit-msg = devinfra.precommit.git_hook:main_prepare_commit_msg",
             "ducktape-commit-msg = devinfra.precommit.git_hook:main_commit_msg",
-            "bb-remote = devinfra.bb_remote:main",
+            "bbr = devinfra.bbr:main",
         ],
     },
     python_requires = ">=3.13",

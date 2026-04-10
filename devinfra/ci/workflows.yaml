@@ -16,7 +16,7 @@
 # Workflow file changes automatically trigger their workflow.
 
 workflows:
-  # Bazel test + build via bb-remote (runs on BuildBuddy RBE)
+  # Bazel test + build via bbr (runs on BuildBuddy RBE)
   bazel-ci:
     trigger: { kind: always }
     secrets: inherit

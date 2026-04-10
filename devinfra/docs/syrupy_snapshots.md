@@ -39,7 +39,7 @@ cp bazel-testlogs/path/to/snapshot_test/test.outputs/snapshot_test.ambr \
    path/to/__snapshots__/snapshot_test.ambr
 ```
 
-**Why not `bb-remote`?** It appends `--config=rbe` after user args, so
+**Why not `bbr`?** It appends `--config=rbe` after user args, so
 `--remote_download_outputs=toplevel` gets overridden by `--remote_download_minimal`.
 Use `bb test --config=rbe` directly for flag ordering control.
 

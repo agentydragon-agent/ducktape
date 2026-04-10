@@ -1,5 +1,4 @@
 # gazelle:exclude ci
-# CI scripts run via uv, not Bazel; they use relative imports
 
 load("@bazel_gazelle//:def.bzl", "gazelle", "gazelle_binary")
 load("@npm_ducktape//:prettier/package_json.bzl", prettier_bin = "bin")
@@ -61,17 +60,17 @@ prettier_bin.prettier_binary(
 )
 
 py_library(
-    name = "bb_remote",
-    srcs = ["bb_remote.py"],
+    name = "bbr",
+    srcs = ["bbr.py"],
     visibility = ["//:__pkg__"],
     deps = ["@pypi//pygit2"],
 )
 
 py_test(
-    name = "test_bb_remote",
-    srcs = ["test_bb_remote.py"],
+    name = "test_bbr",
+    srcs = ["test_bbr.py"],
     deps = [
-        ":bb_remote",
+        ":bbr",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

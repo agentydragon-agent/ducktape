@@ -20,32 +20,32 @@ Run `bb`, `bazel`, `terraform`/`tofu`, `kubectl`, `systemctl`, `ss`, `ip`, `curl
 
 ## Bazel Commands
 
-Use `bb-remote` for build, test, and query. Use `bb` directly only for `run`
+Use `bbr` for build, test, and query. Use `bb` directly only for `run`
 (local side effects) or when you need outputs on the local filesystem.
 
 ```bash
-bb-remote test //path/to:target
-bb-remote build //path/to:target
-bb-remote query '...'
+bbr test //path/to:target
+bbr build //path/to:target
+bbr query '...'
 
 # Local side effects only:
 bb run --remote_executor="" //devinfra:gazelle
 bb run --remote_executor="" //:requirements.update
 ```
 
-`bb-remote` wraps `bb remote` (<devinfra/bb_remote.sh>) — runs Bazel on a
+`bbr` wraps `bb remote` (<devinfra/bbr.py>) — runs Bazel on a
 BuildBuddy runner VM with RBE, Firecracker isolation, and Docker. Syncs local
 git diffs automatically. See <devinfra/docs/bb_remote_internals.md>.
 
-**Unpushed commits on default branch**: `bb-remote` aborts if local
+**Unpushed commits on default branch**: `bbr` aborts if local
 `devel` differs from `origin/devel`. Fix: `git push` first, or use a feature
 branch.
 
 **Downloading build outputs from RBE**: `--config=rbe` sets `--remote_download_minimal`,
 so build artifacts aren't downloaded by default. To force-download specific outputs,
 add `--remote_download_regex='<java regex>'` (e.g., `--remote_download_regex='.*\.whl$'`).
-This is additive with `--remote_download_minimal`. For `bb-remote`, pass the flag before
-the target: `bb-remote build //target --remote_download_regex='.*\.whl$'`.
+This is additive with `--remote_download_minimal`. For `bbr`, pass the flag before
+the target: `bbr build //target --remote_download_regex='.*\.whl$'`.
 
 **Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by session
 start hook).
@@ -76,7 +76,7 @@ use `oci_image` + `ghcr_push`.
 
 ## CI Configuration
 
-All CI runs through GitHub Actions → `bb-remote` (BuildBuddy RBE). No separate
+All CI runs through GitHub Actions → `bbr` (BuildBuddy RBE). No separate
 `buildbuddy.yaml`. `.github/workflows/ci.yml` is auto-generated from
 `devinfra/ci/workflows.yaml` — regenerate with
 `bb run --remote_executor="" //devinfra/ci:generate_ci_bin`.
@@ -90,8 +90,8 @@ When renaming/moving/deleting files or symbols, search **all references** across
 ## Before Hand-off
 
 ```bash
-bb-remote build //...
-bb-remote test //...
+bbr build //...
+bbr test //...
 ```
 
 Lint (ruff + mypy) runs by default. Use `--config=nolint` to skip.
@@ -122,7 +122,7 @@ Subprojects use `TODO.md` for persistent TODO tracking. TODOs local to a specifi
 **Always use Bazel**, not direct pytest/python:
 
 ```bash
-bb-remote test //path/to:test_target
+bbr test //path/to:test_target
 bb run --remote_executor="" //path/to:binary_target
 ```
 
@@ -141,7 +141,7 @@ if __name__ == "__main__":
 
 **Docker tests run on RBE, never locally**: Tests that use Docker (e.g., container E2E tests, proxy integration tests with mitmproxy testcontainers) are designed to run on BuildBuddy RBE workers, which have Docker available. **Never** skip these tests because Docker is unavailable locally, disable them, or claim they are "not runnable." They work on RBE — that is the intended execution environment. If RBE is not working, recover it by following the "Recovering from a Broken Session Start Hook" section above. Every environment in which agents operate will have BuildBuddy accessible, either automatically (session start hook) or through manual recovery. If you cannot restore BuildBuddy remote execution after following recovery steps, **abort and report the issue to the user** rather than working around it with `--remote_executor=""` or local-only execution for tests that assume RBE.
 
-Use `py_test` macro from `//devinfra/python:defs.bzl` (not the raw `@rules_python` `py_test`) and set `requires_docker = True`. The macro handles `env_inherit`, tags, and Docker exec properties automatically. Do not add `env_inherit = ["DOCKER_HOST"]` or `tags = ["requires_docker"]` manually.
+Use `py_test` macro from `//devinfra/python:defs.bzl` (not the raw `@rules_python` `py_test`) and set `requires_docker = True`. The macro handles `env_inherit`, tags, and Docker exec properties automatically. Do not add `env_inherit = ["DUCKTAPE_DOCKER_CLIENT_KEY"]` or `tags = ["requires_docker"]` manually.
 
 **Use undeclared test outputs for log capture**: Write diagnostic data (container logs, HAR dumps, config snapshots) to Bazel's undeclared test outputs directory via `util.testing.undeclared_outputs.undeclared_outputs_dir()`. These are uploaded to BuildBuddy and retrievable from the invocation. Do not dump large log blobs into test stdout/stderr — they clutter the test log and are harder to navigate. To read undeclared outputs from a test run:
 

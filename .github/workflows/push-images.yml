@@ -1,4 +1,4 @@
-# Push OCI images to GHCR via bb-remote (parallel matrix).
+# Push OCI images to GHCR via bbr (parallel matrix).
 # Replaces the 13 BuildBuddy Workflows "Push" actions.
 #
 # Each image is pushed independently — a broken build doesn't block others.
@@ -58,4 +58,4 @@ jobs:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Push image
-        run: devinfra/bb_remote.sh run --remote_download_toplevel ${{ matrix.target }}
+        run: bbr run --remote_download_toplevel ${{ matrix.target }}

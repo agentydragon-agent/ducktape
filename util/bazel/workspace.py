@@ -165,7 +165,7 @@ class BazelBackend(enum.Enum):
     """Direct local ``bazel`` invocation."""
 
     BUILDBUDDY = "buildbuddy"
-    """Remote execution via ``bb remote``."""
+    """Remote execution via ``bbr``."""
 
     @property
     def command(self) -> tuple[str, ...]:
@@ -173,15 +173,15 @@ class BazelBackend(enum.Enum):
             case BazelBackend.LOCAL:
                 return ("bazel",)
             case BazelBackend.BUILDBUDDY:
-                return ("bb", "remote")
+                return ("bbr",)
 
 
 def detect_bazel_backend() -> BazelBackend:
-    """Use BuildBuddy when ``bb`` is on PATH and ``BUILDBUDDY_API_KEY`` is set."""
-    if os.environ.get("BUILDBUDDY_API_KEY") and shutil.which("bb"):
+    """Use BuildBuddy when ``bbr`` is on PATH and ``BUILDBUDDY_API_KEY`` is set."""
+    if os.environ.get("BUILDBUDDY_API_KEY") and shutil.which("bbr"):
         return BazelBackend.BUILDBUDDY
-    if not shutil.which("bb"):
-        logger.warning("bb not on PATH, falling back to local bazel")
+    if not shutil.which("bbr"):
+        logger.warning("bbr not on PATH, falling back to local bazel")
     elif not os.environ.get("BUILDBUDDY_API_KEY"):
         logger.warning("BUILDBUDDY_API_KEY not set, falling back to local bazel")
     return BazelBackend.LOCAL
@@ -244,8 +244,8 @@ class BazelWorkspace:
         """Run ``bazel query`` and return parsed labels.
 
         Short queries are passed as a positional arg (works with both local
-        bazel and ``bb remote``).  Queries exceeding 100 KB fall back to
-        ``--query_file`` (local only — ``bb remote`` cannot access local temp
+        bazel and ``bbr``).  Queries exceeding 100 KB fall back to
+        ``--query_file`` (local only — ``bbr`` cannot access local temp
         files).
         """
         cmd = [*self._bazel_prefix, "query", "--output=label"]
@@ -257,8 +257,8 @@ class BazelWorkspace:
             cmd.extend([f"--profile={profile_path}", "--generate_json_trace_profile"])
         if persist_dir is not None:
             (persist_dir / "query").write_text(expr)
-        # Prefer inline query arg (works with both local bazel and bb remote).
-        # Fall back to --query_file for large queries (local only — bb remote
+        # Prefer inline query arg (works with both local bazel and bbr).
+        # Fall back to --query_file for large queries (local only — bbr
         # can't access local temp files on the runner).
         max_inline_bytes = 100_000  # conservative; Linux MAX_ARG_STRLEN is 128 KiB
         query_file_path: Path | None = None
@@ -287,11 +287,11 @@ class BazelWorkspace:
         if result.returncode not in ok_codes:
             raise subprocess.CalledProcessError(result.returncode, "bazel", result.stdout, result.stderr)
 
-        # TODO: bb remote mixes its own log lines (git sync, progress) into
+        # TODO: bbr mixes its own log lines (git sync, progress) into
         # stdout.  We filter to lines that look like Bazel labels.  A cleaner
         # approach would be to use `bb execute --input_root . --output stdio`
         # which gives clean separated stdout/stderr, but it uploads the whole
-        # repo each time and doesn't benefit from bb remote's runner recycling.
+        # repo each time and doesn't benefit from bbr's runner recycling.
         def _is_label(line: str) -> bool:
             return line.startswith((_PKG_SEP, _REPO_SIGIL))
 

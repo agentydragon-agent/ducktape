@@ -1,4 +1,4 @@
-"""bb-remote: wrapper around `bb remote` with sane defaults for this repo.
+"""bbr: wrapper around `bb remote` with sane defaults for this repo.
 
 Validates git state, forwards CI secrets, sets RBE runner properties, and
 appends --config=rbe. See devinfra/docs/bb_remote_internals.md for how
@@ -13,16 +13,11 @@ from pathlib import Path
 
 import pygit2
 
-_RUNNER_EXEC_PROPERTIES = [
-    "--runner_exec_properties=EstimatedFreeDiskBytes=50000000000",
-    "--runner_exec_properties=workload-isolation-type=firecracker",
-    "--runner_exec_properties=init-dockerd=true",
-]
-
-
-def _open_repo() -> pygit2.Repository:
-    """Open the git repo containing cwd."""
-    return pygit2.Repository(".")
+_RUNNER_PROPERTIES = {
+    "EstimatedFreeDiskBytes": "50000000000",
+    "workload-isolation-type": "firecracker",
+    "init-dockerd": "true",
+}
 
 
 def _validate_git_state(repo: pygit2.Repository) -> None:
@@ -31,25 +26,20 @@ def _validate_git_state(repo: pygit2.Repository) -> None:
     bb remote selects the local HEAD as the base commit. If that commit
     doesn't exist on the remote, the runner fails during git fetch.
     """
-    # Skip on detached HEAD.
     if repo.head_is_detached:
         return
 
     current_branch = repo.head.shorthand
 
-    # Determine default branch from origin/HEAD (fallback: devel).
-    try:
-        origin_head = repo.references.get("refs/remotes/origin/HEAD")
-        if origin_head is None:
-            raise KeyError
-        default_branch = origin_head.resolve().shorthand.removeprefix("origin/")
-    except (KeyError, pygit2.GitError):
-        default_branch = "devel"
+    origin_head = repo.references.get("refs/remotes/origin/HEAD")
+    if origin_head is None:
+        print("bbr: cannot determine default branch (refs/remotes/origin/HEAD missing).", file=sys.stderr)
+        sys.exit(1)
+    default_branch = origin_head.resolve().shorthand.removeprefix("origin/")
 
     if current_branch != default_branch:
         return
 
-    # Compare local vs remote SHA.
     try:
         local_oid = repo.references[f"refs/heads/{default_branch}"].resolve().target
     except KeyError:
@@ -61,10 +51,10 @@ def _validate_git_state(repo: pygit2.Repository) -> None:
 
     if local_oid != remote_oid:
         print(
-            f"bb-remote: aborting — {default_branch} has unpushed commits (local {local_oid} != origin {remote_oid}).",
+            f"bbr: aborting — {default_branch} has unpushed commits (local {local_oid} != origin {remote_oid}).",
             file=sys.stderr,
         )
-        print("bb-remote: push first or use a feature branch.", file=sys.stderr)
+        print("bbr: push first or use a feature branch.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -75,6 +65,11 @@ def _read_rbe_image(repo_root: Path) -> str:
     return f"{entry['image']}@{entry['digest']}"
 
 
+def _env_override(key: str, value: str) -> str:
+    """Build a --remote_run_header flag that sets an env var on the runner."""
+    return f"--remote_run_header=x-buildbuddy-platform.env-overrides={key}={value}"
+
+
 def _build_secret_args() -> list[str]:
     """Build --remote_run_header and --env flags from CI secret env vars."""
     args: list[str] = []
@@ -83,14 +78,16 @@ def _build_secret_args() -> list[str]:
     # The docker_mtls pytest fixture on the RBE worker decodes it and
     # assembles DOCKER_HOST / DOCKER_TLS_VERIFY / DOCKER_CERT_PATH.
     if dk_b64 := os.environ.get("DUCKTAPE_DOCKER_CLIENT_KEY"):
-        args.append(f"--remote_run_header=x-buildbuddy-platform.env-overrides=DUCKTAPE_DOCKER_CLIENT_KEY={dk_b64}")
+        args.append(_env_override("DUCKTAPE_DOCKER_CLIENT_KEY", dk_b64))
 
     if ghcr_token := os.environ.get("GHCR_TOKEN"):
-        args.append(f"--remote_run_header=x-buildbuddy-platform.env-overrides=GHCR_TOKEN={ghcr_token}")
-        args.append(f"--env=GHCR_USERNAME={os.environ.get('GHCR_USERNAME', 'agentydragon')}")
+        args.append(_env_override("GHCR_TOKEN", ghcr_token))
+
+    if ghcr_username := os.environ.get("GHCR_USERNAME"):
+        args.append(f"--env=GHCR_USERNAME={ghcr_username}")
 
     if gh_release_pat := os.environ.get("GH_RELEASE_PAT"):
-        args.append(f"--remote_run_header=x-buildbuddy-platform.env-overrides=GH_RELEASE_PAT={gh_release_pat}")
+        args.append(_env_override("GH_RELEASE_PAT", gh_release_pat))
 
     return args
 
@@ -99,7 +96,7 @@ def _find_bb() -> str:
     """Locate the bb binary on PATH."""
     if path := shutil.which("bb"):
         return path
-    print("bb-remote: 'bb' not found on PATH.", file=sys.stderr)
+    print("bbr: 'bb' not found on PATH.", file=sys.stderr)
     sys.exit(1)
 
 
@@ -113,7 +110,7 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> list[str]:
     return [
         bb,
         "remote",
-        *_RUNNER_EXEC_PROPERTIES,
+        *[f"--runner_exec_properties={k}={v}" for k, v in _RUNNER_PROPERTIES.items()],
         f"--container_image=docker://{rbe_image}",
         *secret_args,
         *user_args,
@@ -124,12 +121,11 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> list[str]:
 def main() -> None:
     args = sys.argv[1:]
 
-    # Extract wrapper-specific flags (before passthrough to bb remote).
     dry_run = "--dry-run" in args
     if dry_run:
         args.remove("--dry-run")
 
-    repo = _open_repo()
+    repo = pygit2.Repository(".")
     _validate_git_state(repo)
     cmd = build_command(repo, args)
 

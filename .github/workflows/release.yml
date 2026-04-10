@@ -48,4 +48,4 @@ jobs:
           sops_age_key: ${{ secrets.SOPS_AGE_KEY }}
 
       - name: Release
-        run: devinfra/bb_remote.sh run ${{ matrix.target }}
+        run: bbr run ${{ matrix.target }}

@@ -148,8 +148,8 @@ def test_query_persist_dir(tmp_path: Path) -> None:
     assert (persist_dir / "exit_code").read_text() == "0"
 
 
-def test_query_filters_bb_remote_log_lines(tmp_path: Path) -> None:
-    """bb remote mixes its own log lines into stdout; query() must filter them."""
+def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:
+    """bbr mixes its own log lines into stdout; query() must filter them."""
     mock_result = MagicMock()
     mock_result.stdout = (
         "Streaming remote runner logs to: https://app.buildbuddy.io/invocation/0b50b97b\n"
