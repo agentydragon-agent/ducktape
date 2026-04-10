@@ -29,7 +29,7 @@ in
   # Verify total permission count
   test_total_count = {
     expr = builtins.length bashPerms;
-    expected = 154;
+    expected = 156;
   };
 
   # Verify first few permissions are correct

@@ -1,760 +1,312 @@
-# Single Source of Truth for system inspection commands
+# Read-only system inspection commands — single source of truth
 #
-# Used by:
-#   - nix/nixos/modules/system-inspection-sudo.nix (passwordless sudo)
-#   - nix/home/claude_code/default.nix (Claude Code permissions)
-#   - nix/home/gemini_cli.nix (Gemini CLI policies)
+# This list defines commands that are safe to run without human oversight because
+# they only read system state. It serves two purposes:
 #
-# The command lists below must be kept in sync with:
+#   1. Passwordless sudo (NixOS sudoers) — so the user (and agents running as
+#      the user) can run privileged read-only commands without typing a password.
+#      Consumer: nix/nixos/modules/system-inspection-sudo.nix
+#
+#   2. AI agent auto-approval — so Claude Code / Gemini CLI can execute these
+#      commands without prompting the user for confirmation.
+#      Consumers: nix/home/claude_code/default.nix, nix/home/gemini_cli.nix
+#
+# Commands are split into two groups:
+#   - noSudoCommands: don't need root. Only role (2) applies.
+#   - sudoCommands: need root. Both roles apply — agents run them as
+#     "sudo <cmd>" which works without a password thanks to role (1).
+#
+# The shared safety invariant is: every command here is read-only. If a command
+# can modify system state with any flag combination, it must use mkExact to
+# restrict to specific safe invocations.
+#
+# Must be kept in sync with:
 #   ansible/roles/system_inspection_nopasswd/defaults/main.yml
-#
-# Exports:
-#   exports.sudoDetailed - Detailed format for sudo module: { type, cmd, prefix?, args? }
-#   exports.noSudo - Simple format for Claude/Gemini: { type, cmd }
-#   exports.sudo - Simple format for Claude/Gemini: { type, cmd = "sudo ..." }
 { lib }:
 let
-  # ============================================================================
-  # Internal Structured Format
-  # ============================================================================
-  # Format: { type = "prefix"|"exact"; cmd = "command"; args? = "subcommand/args"; }
-  #   - type = "prefix": allows trailing arguments (cmd args *)
-  #   - type = "exact": no additional arguments (cmd args)
-  #   - args is optional (omit for base command only)
+  # Helpers — prefix allows trailing args, exact does not.
+  mkPrefix = cmd: {
+    type = "prefix";
+    inherit cmd;
+  };
+  mkPrefixArgs = cmd: args: {
+    type = "prefix";
+    inherit cmd args;
+  };
+  mkExact = cmd: {
+    type = "exact";
+    inherit cmd;
+  };
+  mkExactArgs = cmd: args: {
+    type = "exact";
+    inherit cmd args;
+  };
+
+  # Batch helpers — fan out one base command to multiple arg variants.
+  mkExactMulti = cmd: argsList: map (mkExactArgs cmd) argsList;
+  mkPrefixMulti = cmd: argsList: map (mkPrefixArgs cmd) argsList;
 
   # Commands that don't need sudo (user-accessible)
   noSudoCommands = [
-    # Hardware information (user-accessible)
-    {
-      type = "prefix";
-      cmd = "lspci";
-    }
-    {
-      type = "prefix";
-      cmd = "lsusb";
-    }
-    {
-      type = "prefix";
-      cmd = "lscpu";
-    }
-    {
-      type = "prefix";
-      cmd = "lsblk";
-    }
-    {
-      type = "prefix";
-      cmd = "sensors";
-    }
+    # Hardware information
+    (mkPrefix "lspci")
+    (mkPrefix "lsusb")
+    (mkPrefix "lscpu")
+    (mkPrefix "lsblk")
+    (mkPrefix "sensors")
     # Process information
-    {
-      type = "prefix";
-      cmd = "ps";
-    }
-    {
-      type = "prefix";
-      cmd = "pstree";
-    }
-    {
-      type = "prefix";
-      cmd = "top";
-    }
-    {
-      type = "prefix";
-      cmd = "htop";
-    }
-    {
-      type = "prefix";
-      cmd = "pgrep";
-    }
+    (mkPrefix "ps")
+    (mkPrefix "pstree")
+    (mkPrefix "top")
+    (mkPrefix "htop")
+    (mkPrefix "pgrep")
     # Memory information
-    {
-      type = "prefix";
-      cmd = "free";
-    }
-    {
-      type = "prefix";
-      cmd = "vmstat";
-    }
+    (mkPrefix "free")
+    (mkPrefix "vmstat")
     # Disk information
-    {
-      type = "prefix";
-      cmd = "df";
-    }
-    {
-      type = "prefix";
-      cmd = "du";
-    }
-    {
-      type = "prefix";
-      cmd = "findmnt";
-    }
+    (mkPrefix "df")
+    (mkPrefix "du")
+    (mkPrefix "findmnt")
     # Network information
-    {
-      type = "prefix";
-      cmd = "netstat";
-    }
-    {
-      type = "prefix";
-      cmd = "ss";
-    }
-    {
-      type = "prefix";
-      cmd = "dig";
-    }
-    {
-      type = "prefix";
-      cmd = "nslookup";
-    }
-    {
-      type = "prefix";
-      cmd = "host";
-    }
-    {
-      type = "prefix";
-      cmd = "traceroute";
-    }
-    {
-      type = "prefix";
-      cmd = "mtr";
-    }
-    {
-      type = "prefix";
-      cmd = "nmap";
-    }
-    {
-      type = "prefix";
-      cmd = "lsmod";
-    }
+    (mkPrefix "netstat")
+    (mkPrefix "ss")
+    (mkPrefix "dig")
+    (mkPrefix "nslookup")
+    (mkPrefix "host")
+    (mkPrefix "traceroute")
+    (mkPrefix "mtr")
+    (mkPrefix "nmap")
+    (mkPrefix "lsmod")
     # Kernel/system logs (no sudo needed if systemd-journal group + dmesg_restrict=0)
-    {
-      type = "prefix";
-      cmd = "dmesg";
-    }
-    {
-      type = "prefix";
-      cmd = "journalctl";
-    }
+    (mkPrefix "dmesg")
+    (mkPrefix "journalctl")
     # Security/user information
-    {
-      type = "prefix";
-      cmd = "last";
-    }
-    {
-      type = "prefix";
-      cmd = "w";
-    }
-    {
-      type = "prefix";
-      cmd = "who";
-    }
-    {
-      type = "prefix";
-      cmd = "users";
-    }
-    {
-      type = "prefix";
-      cmd = "id";
-    }
-    {
-      type = "prefix";
-      cmd = "groups";
-    }
+    (mkPrefix "last")
+    (mkPrefix "w")
+    (mkPrefix "who")
+    (mkPrefix "users")
+    (mkPrefix "id")
+    (mkPrefix "groups")
   ];
 
   # Commands needing sudo
   # Only include commands where ALL possible flags/arguments are safe (read-only)
   sudoCommands = [
-    # Hardware information - any arguments safe (prefix match)
-    {
-      type = "prefix";
-      cmd = "lshw";
-    }
-    {
-      type = "prefix";
-      cmd = "dmidecode";
-    }
-    {
-      type = "prefix";
-      cmd = "hwinfo";
-    }
-    {
-      type = "prefix";
-      cmd = "biosdecode";
-    }
-    {
-      type = "prefix";
-      cmd = "ownership";
-    }
-    {
-      type = "prefix";
-      cmd = "vpddecode";
-    }
-    {
-      type = "prefix";
-      cmd = "inxi";
-    }
-    {
-      type = "prefix";
-      cmd = "acpi";
-    }
-    {
-      type = "prefix";
-      cmd = "ipmi-sensors";
-    }
+    # Hardware information - any arguments safe
+    (mkPrefix "lshw")
+    (mkPrefix "dmidecode")
+    (mkPrefix "hwinfo")
+    (mkPrefix "biosdecode")
+    (mkPrefix "ownership")
+    (mkPrefix "vpddecode")
+    (mkPrefix "inxi")
+    (mkPrefix "acpi")
+    (mkPrefix "ipmi-sensors")
     # System information
-    {
-      type = "prefix";
-      cmd = "uname";
-    }
+    (mkPrefix "uname")
     # Process information
-    {
-      type = "prefix";
-      cmd = "iotop";
-    }
-    {
-      type = "prefix";
-      cmd = "pidstat";
-    }
+    (mkPrefix "iotop")
+    (mkPrefix "pidstat")
     # Memory information
-    {
-      type = "prefix";
-      cmd = "slabtop";
-    }
+    (mkPrefix "slabtop")
     # Disk information
-    {
-      type = "prefix";
-      cmd = "blkid";
-    }
+    (mkPrefix "blkid")
     # File system information - display commands only
-    {
-      type = "prefix";
-      cmd = "lvdisplay";
-    }
-    {
-      type = "prefix";
-      cmd = "vgdisplay";
-    }
-    {
-      type = "prefix";
-      cmd = "pvdisplay";
-    }
+    (mkPrefix "lvdisplay")
+    (mkPrefix "vgdisplay")
+    (mkPrefix "pvdisplay")
     # Kernel information
-    {
-      type = "prefix";
-      cmd = "modinfo";
-    }
+    (mkPrefix "modinfo")
     # NOTE: dmesg and journalctl removed from sudo rules - on NixOS, grant access via:
     #   users.users.${username}.extraGroups = ["systemd-journal"];
     #   boot.kernel.sysctl."kernel.dmesg_restrict" = 0;
     # Security information
-    {
-      type = "prefix";
-      cmd = "aa-status";
-    }
-    {
-      type = "prefix";
-      cmd = "sestatus";
-    }
+    (mkPrefix "aa-status")
+    (mkPrefix "sestatus")
     # Performance monitoring
-    {
-      type = "prefix";
-      cmd = "iostat";
-    }
-    {
-      type = "prefix";
-      cmd = "mpstat";
-    }
-    {
-      type = "prefix";
-      cmd = "sar";
-    }
+    (mkPrefix "iostat")
+    (mkPrefix "mpstat")
+    (mkPrefix "sar")
 
-    # GPU information - ONLY query subcommands (exact match)
-    {
-      type = "exact";
-      cmd = "nvidia-smi";
-    } # No args
-    {
-      type = "exact";
-      cmd = "nvidia-smi";
-      args = "-q";
-    }
-    {
-      type = "exact";
-      cmd = "nvidia-smi";
-      args = "-L";
-    }
-    {
-      type = "exact";
-      cmd = "nvidia-smi";
-      args = "pmon";
-    }
-    {
-      type = "exact";
-      cmd = "nvidia-smi";
-      args = "dmon";
-    }
+    # GPU information - ONLY query subcommands
+    (mkExact "nvidia-smi")
+  ]
+  ++ mkExactMulti "nvidia-smi" [
+    "-q"
+    "-L"
+    "pmon"
+    "dmon"
+  ]
+  ++ [
 
     # ACPI information - ONLY query flags
-    {
-      type = "exact";
-      cmd = "acpitool";
-    }
-    {
-      type = "exact";
-      cmd = "acpitool";
-      args = "-B";
-    }
-    {
-      type = "exact";
-      cmd = "acpitool";
-      args = "-a";
-    }
-    {
-      type = "exact";
-      cmd = "acpitool";
-      args = "-t";
-    }
-    {
-      type = "exact";
-      cmd = "acpitool";
-      args = "-f";
-    }
-    {
-      type = "exact";
-      cmd = "acpitool";
-      args = "-e";
-    }
+    (mkExact "acpitool")
+  ]
+  ++ mkExactMulti "acpitool" [
+    "-B"
+    "-a"
+    "-t"
+    "-f"
+    "-e"
+  ]
+  ++ [
 
     # Last login information
-    {
-      type = "exact";
-      cmd = "lastlog";
-    }
+    (mkExact "lastlog")
 
     # System information - read-only subcommands
-    {
-      type = "exact";
-      cmd = "hostnamectl";
-      args = "status";
-    }
-    {
-      type = "exact";
-      cmd = "timedatectl";
-      args = "status";
-    }
-    {
-      type = "exact";
-      cmd = "timedatectl";
-      args = "show";
-    }
-    {
-      type = "exact";
-      cmd = "timedatectl";
-      args = "timesync-status";
-    }
-    {
-      type = "exact";
-      cmd = "localectl";
-      args = "status";
-    }
-    {
-      type = "exact";
-      cmd = "loginctl";
-      args = "list-sessions";
-    }
-    {
-      type = "exact";
-      cmd = "loginctl";
-      args = "list-users";
-    }
-    {
-      type = "exact";
-      cmd = "bootctl";
-      args = "status";
-    }
-    {
-      type = "exact";
-      cmd = "bootctl";
-      args = "list";
-    }
+    (mkExactArgs "hostnamectl" "status")
+  ]
+  ++ mkExactMulti "timedatectl" [
+    "status"
+    "show"
+    "timesync-status"
+  ]
+  ++ [ (mkExactArgs "localectl" "status") ]
+  ++ mkExactMulti "loginctl" [
+    "list-sessions"
+    "list-users"
+  ]
+  ++ mkExactMulti "bootctl" [
+    "status"
+    "list"
+  ]
 
-    # Firmware - query subcommands
-    {
-      type = "exact";
-      cmd = "fwupdmgr";
-      args = "get-devices";
-    }
-    {
-      type = "exact";
-      cmd = "fwupdmgr";
-      args = "get-updates";
-    }
-    {
-      type = "exact";
-      cmd = "fwupdmgr";
-      args = "get-history";
-    }
-    {
-      type = "exact";
-      cmd = "fwupdmgr";
-      args = "get-plugins";
-    }
-    {
-      type = "exact";
-      cmd = "fwupdmgr";
-      args = "security";
-    }
+  # Firmware - query subcommands
+  ++ mkExactMulti "fwupdmgr" [
+    "get-devices"
+    "get-updates"
+    "get-history"
+    "get-plugins"
+    "security"
+  ]
 
-    # IPMI - read-only subcommands
-    {
-      type = "exact";
-      cmd = "ipmitool";
-      args = "sensor list";
-    }
-    {
-      type = "exact";
-      cmd = "ipmitool";
-      args = "sdr list";
-    }
-    {
-      type = "exact";
-      cmd = "ipmitool";
-      args = "fru print";
-    }
-    {
-      type = "exact";
-      cmd = "ipmitool";
-      args = "mc info";
-    }
-    {
-      type = "exact";
-      cmd = "ipmitool";
-      args = "lan print";
-    }
-    {
-      type = "exact";
-      cmd = "ipmitool";
-      args = "chassis status";
-    }
+  # IPMI - read-only subcommands
+  ++ mkExactMulti "ipmitool" [
+    "sensor list"
+    "sdr list"
+    "fru print"
+    "mc info"
+    "lan print"
+    "chassis status"
+  ]
 
+  ++ [
     # Disk partitioning - read-only list modes
-    {
-      type = "exact";
-      cmd = "fdisk";
-      args = "-l";
-    }
-    {
-      type = "exact";
-      cmd = "parted";
-      args = "-l";
-    }
+    (mkExactArgs "fdisk" "-l")
+    (mkExactArgs "parted" "-l")
 
-    # NVMe info - read operations (exact and prefix matches)
-    {
-      type = "exact";
-      cmd = "nvme";
-      args = "list";
-    }
-    {
-      type = "prefix";
-      cmd = "nvme";
-      args = "smart-log";
-    }
-    {
-      type = "prefix";
-      cmd = "nvme";
-      args = "id-ctrl";
-    }
-    {
-      type = "prefix";
-      cmd = "nvme";
-      args = "id-ns";
-    }
+    # NVMe info - read operations
+    (mkExactArgs "nvme" "list")
+  ]
+  ++ mkPrefixMulti "nvme" [
+    "smart-log"
+    "id-ctrl"
+    "id-ns"
+  ]
+  ++ [
 
     # WireGuard - show tunnel status (prefix to allow interface name)
-    {
-      type = "prefix";
-      cmd = "wg";
-      args = "show";
-    }
+    (mkPrefixArgs "wg" "show")
 
     # Network information - show/list operations
-    {
-      type = "exact";
-      cmd = "ip";
-      args = "addr show";
-    }
-    {
-      type = "exact";
-      cmd = "ip";
-      args = "-s addr show";
-    }
-    {
-      type = "exact";
-      cmd = "ip";
-      args = "route show";
-    }
-    {
-      type = "exact";
-      cmd = "ip";
-      args = "-s route show";
-    }
-    {
-      type = "exact";
-      cmd = "ip";
-      args = "link show";
-    }
-    {
-      type = "exact";
-      cmd = "ip";
-      args = "-s link show";
-    }
-    {
-      type = "exact";
-      cmd = "ip";
-      args = "neighbor show";
-    }
-    {
-      type = "exact";
-      cmd = "ip";
-      args = "netns list";
-    }
+  ]
+  ++ mkExactMulti "ip" [
+    "addr show"
+    "-s addr show"
+    "route show"
+    "-s route show"
+    "link show"
+    "-s link show"
+    "neighbor show"
+    "netns list"
+  ]
 
-    # Service information
-    {
-      type = "exact";
-      cmd = "systemctl";
-      args = "list-units";
-    }
-    {
-      type = "exact";
-      cmd = "systemctl";
-      args = "list-unit-files";
-    }
-    {
-      type = "exact";
-      cmd = "systemctl";
-      args = "list-timers";
-    }
-    {
-      type = "exact";
-      cmd = "systemctl";
-      args = "list-sockets";
-    }
-    {
-      type = "prefix";
-      cmd = "systemctl";
-      args = "status";
-    }
-    {
-      type = "prefix";
-      cmd = "systemctl";
-      args = "show";
-    }
+  # Service information
+  ++ mkPrefixMulti "systemctl" [
+    "list-units"
+    "list-unit-files"
+    "list-timers"
+    "list-sockets"
+    "status"
+    "show"
+  ]
 
-    # Session/user info (prefix - needs session/user ID)
-    {
-      type = "prefix";
-      cmd = "loginctl";
-      args = "show-session";
-    }
-    {
-      type = "prefix";
-      cmd = "loginctl";
-      args = "show-user";
-    }
-    {
-      type = "prefix";
-      cmd = "loginctl";
-      args = "session-status";
-    }
-    {
-      type = "prefix";
-      cmd = "loginctl";
-      args = "user-status";
-    }
+  # Session/user info (prefix - needs session/user ID)
+  ++ mkPrefixMulti "loginctl" [
+    "show-session"
+    "show-user"
+    "session-status"
+    "user-status"
+  ]
 
-    # SMART disk info (prefix - needs device path)
-    {
-      type = "prefix";
-      cmd = "smartctl";
-      args = "-a";
-    }
-    {
-      type = "prefix";
-      cmd = "smartctl";
-      args = "-H";
-    }
-    {
-      type = "prefix";
-      cmd = "smartctl";
-      args = "-i";
-    }
-    {
-      type = "prefix";
-      cmd = "smartctl";
-      args = "-l";
-    }
+  # SMART disk info (prefix - needs device path)
+  ++ mkPrefixMulti "smartctl" [
+    "-a"
+    "-H"
+    "-i"
+    "-l"
+  ]
 
+  ++ [
     # File systems - read commands
-    {
-      type = "exact";
-      cmd = "zfs";
-      args = "list";
-    }
-    {
-      type = "exact";
-      cmd = "zpool";
-      args = "status";
-    }
-    {
-      type = "exact";
-      cmd = "zpool";
-      args = "list";
-    }
-    {
-      type = "exact";
-      cmd = "btrfs";
-      args = "filesystem show";
-    }
-    {
-      type = "exact";
-      cmd = "btrfs";
-      args = "device stats";
-    }
+    (mkExactArgs "zfs" "list")
+  ]
+  ++ mkExactMulti "zpool" [
+    "status"
+    "list"
+  ]
+  ++ mkExactMulti "btrfs" [
+    "filesystem show"
+    "device stats"
+  ]
+  ++ [
 
     # Package managers - list modes
-    {
-      type = "exact";
-      cmd = "apt";
-      args = "list";
-    }
-    {
-      type = "exact";
-      cmd = "dpkg";
-      args = "-l";
-    }
-    {
-      type = "exact";
-      cmd = "snap";
-      args = "list";
-    }
-    {
-      type = "exact";
-      cmd = "flatpak";
-      args = "list";
-    }
+    (mkExactArgs "apt" "list")
+    (mkExactArgs "dpkg" "-l")
+    (mkExactArgs "snap" "list")
+    (mkExactArgs "flatpak" "list")
 
     # System control - read modes
-    {
-      type = "exact";
-      cmd = "sysctl";
-      args = "-a";
-    }
-    {
-      type = "exact";
-      cmd = "sysctl";
-      args = "-N";
-    }
-    {
-      type = "prefix";
-      cmd = "sysctl";
-      args = "-n";
-    }
+    (mkExactArgs "sysctl" "-a")
+    (mkExactArgs "sysctl" "-N")
+    (mkPrefixArgs "sysctl" "-n")
 
     # Firewall - list/show modes
-    {
-      type = "exact";
-      cmd = "firewall-cmd";
-      args = "--list-all";
-    }
-    {
-      type = "exact";
-      cmd = "iptables";
-      args = "-L";
-    }
-    {
-      type = "exact";
-      cmd = "iptables";
-      args = "-S";
-    }
-    {
-      type = "exact";
-      cmd = "ip6tables";
-      args = "-L";
-    }
-    {
-      type = "exact";
-      cmd = "ip6tables";
-      args = "-S";
-    }
-    {
-      type = "exact";
-      cmd = "nft";
-      args = "list ruleset";
-    }
+    (mkExactArgs "firewall-cmd" "--list-all")
+  ]
+  ++ mkExactMulti "iptables" [
+    "-L"
+    "-S"
+  ]
+  ++ mkExactMulti "ip6tables" [
+    "-L"
+    "-S"
+  ]
+  ++ [ (mkExactArgs "nft" "list ruleset") ]
 
-    # Container/VM - read-only info
-    {
-      type = "exact";
-      cmd = "docker";
-      args = "ps";
-    }
-    {
-      type = "exact";
-      cmd = "docker";
-      args = "images";
-    }
-    {
-      type = "exact";
-      cmd = "docker";
-      args = "info";
-    }
-    {
-      type = "exact";
-      cmd = "docker";
-      args = "version";
-    }
-    {
-      type = "exact";
-      cmd = "podman";
-      args = "ps";
-    }
-    {
-      type = "exact";
-      cmd = "podman";
-      args = "images";
-    }
-    {
-      type = "exact";
-      cmd = "virsh";
-      args = "list";
-    }
-    {
-      type = "exact";
-      cmd = "qm";
-      args = "list";
-    }
+  # Container/VM - read-only info
+  ++ mkExactMulti "docker" [
+    "ps"
+    "images"
+    "info"
+    "version"
+  ]
+  ++ mkExactMulti "podman" [
+    "ps"
+    "images"
+  ]
+  ++ [
+    (mkExactArgs "virsh" "list")
+    (mkExactArgs "qm" "list")
 
     # Proxmox (prefix - needs path argument)
-    {
-      type = "prefix";
-      cmd = "pvesh";
-      args = "get";
-    }
-
-    # Performance monitoring (prefix - needs args)
-    {
-      type = "prefix";
-      cmd = "perf";
-      args = "stat";
-    }
-    {
-      type = "prefix";
-      cmd = "perf";
-      args = "top";
-    }
+    (mkPrefixArgs "pvesh" "get")
+  ]
+  ++ mkPrefixMulti "perf" [
+    "stat"
+    "top"
   ];
 
   # Special log viewing commands - ONLY for sudoers, NOT for Claude Code/Gemini
