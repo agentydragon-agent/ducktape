@@ -98,6 +98,10 @@ CloudNativePG `local-path`.
       (upstream `0e28e50b4`, PR #24287)
 - [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
 - [ ] OpenClaw: eliminate one-time token entry
+- [ ] Cilium Gateway `Programmed: False` (upstream bug `cilium/cilium#42786`):
+      hostNetwork gateways lost address assignment in v1.18.3 refactor.
+      Workaround: wildcard/apex ClusterRRsets in `k8s/powerdns/zones/`.
+      Remove workaround when Cilium ships a fix and we upgrade past it.
 - [ ] `vault-oidc-auth` terraform: Apply fails with `path is already in use at oidc/` —
       Vault's OIDC auth backend exists but TF state was lost in the April 1 rebuild.
       Fix: `vault auth disable oidc/` then let tofu-controller re-apply (per AGENTS.md).
