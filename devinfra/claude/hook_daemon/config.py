@@ -92,6 +92,13 @@ class ProfileConfig(BaseModel):
         description="Bazel warmup command after session start. 'info' for JVM warmup, "
         "arbitrary command string for cache warmup, null to disable.",
     )
+    env_exports: str | None = Field(
+        default=None, description="Inline shell content appended verbatim to the session env file."
+    )
+    env_script: str | None = Field(
+        default=None,
+        description="Repo-relative path to a shell script whose stdout is appended to the session env file.",
+    )
 
 
 class DefaultProfiles(BaseModel):
@@ -124,9 +131,6 @@ class HookConfig(BaseModel):
     secrets: SecretsConfig = Field(default_factory=SecretsConfig)
     otel: OtelConfig | None = None
     pre_commit: PreCommitConfig | None = None
-    extra_env_script: str | None = Field(
-        default=None, description="Extra shell script content appended verbatim to the session env file."
-    )
     profiles: dict[str, ProfileConfig]
     default_profiles: DefaultProfiles
 

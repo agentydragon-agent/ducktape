@@ -429,7 +429,7 @@ async def handle(
 
     # Write environment file
     with tracer.start_as_current_span("write_env_file", context=root_ctx):
-        extra_env = _build_extra_env_script(project_dir, hook_config.extra_env_script)
+        extra_env = _build_extra_env_script(project_dir, profile)
         env_vars = env_file.EnvVars(
             bazel_wrapper_dir=session.paths.wrapper_dir,
             session_bazelrc=session_bazelrc,
@@ -492,20 +492,24 @@ async def handle(
     return output
 
 
-def _build_extra_env_script(project_dir: Path, config_script: str | None) -> str | None:
-    """Build extra env script by running ci_env.sh and combining with config."""
+def _build_extra_env_script(project_dir: Path, profile: ProfileConfig) -> str | None:
+    """Build extra env content from profile's env_script (file) and env_exports (inline)."""
     parts: list[str] = []
 
-    ci_env_script = project_dir / "devinfra" / "ci_env.sh"
-    result = subprocess.run([ci_env_script], check=False, capture_output=True, text=True, timeout=30)
-    if result.returncode != 0:
-        logger.error("ci_env.sh exited %d: %s", result.returncode, result.stderr)
-    elif result.stdout:
-        parts.append(result.stdout.rstrip())
-        logger.info("ci_env.sh produced %d bytes of exports", len(result.stdout))
+    if profile.env_script:
+        script_path = project_dir / profile.env_script
+        if script_path.is_file():
+            result = subprocess.run([script_path], check=False, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                logger.error("%s exited %d: %s", profile.env_script, result.returncode, result.stderr)
+            elif result.stdout:
+                parts.append(result.stdout.rstrip())
+                logger.info("%s produced %d bytes of exports", profile.env_script, len(result.stdout))
+        else:
+            logger.warning("env_script %s not found at %s", profile.env_script, script_path)
 
-    if config_script:
-        parts.append(config_script.rstrip())
+    if profile.env_exports:
+        parts.append(profile.env_exports.rstrip())
 
     return "\n".join(parts) if parts else None
 
