@@ -308,13 +308,14 @@ bb remote --script 'bazel mod explain protobuf'
 
 Source: `cli/remotebazel/remotebazel.go` (`streamLogs`, `printLogs`), `cli/log/log.go`
 
-| Source | Destination |
-| ------ | ----------- |
-| Remote Bazel output (event log chunks) | **stdout** (`os.Stdout.Write`) |
+| Source                                   | Destination                    |
+| ---------------------------------------- | ------------------------------ |
+| Remote Bazel output (event log chunks)   | **stdout** (`os.Stdout.Write`) |
 | CLI messages (`log.Printf`, `log.Warnf`) | **stderr** (Go default logger) |
-| ANSI cursor control (progress rewriting) | **stdout** (`fmt.Print`) |
+| ANSI cursor control (progress rewriting) | **stdout** (`fmt.Print`)       |
 
 Interactive mode (detected via `terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)`):
+
 - **Interactive**: `streamLogs()` — polls `GetEventLogChunk()`, redraws "live"
   chunks with ANSI cursor-up/delete-line escape sequences on stdout
 - **Non-interactive** (piped): `printLogs()` — waits for each chunk to finalize,

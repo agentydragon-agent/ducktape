@@ -238,10 +238,7 @@ def _cleanup_stale_docker_pid() -> None:
 
 
 async def setup_container_runtime(
-    paths: SessionPaths,
-    supervisor: SupervisorClient,
-    tmpfs_mounted: bool,
-    root_supports_overlay: bool,
+    paths: SessionPaths, supervisor: SupervisorClient, tmpfs_mounted: bool, root_supports_overlay: bool
 ) -> ContainerRuntimeSetup:
     """Set up Docker under supervisor.
 

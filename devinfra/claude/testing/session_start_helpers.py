@@ -70,11 +70,7 @@ def isolated_dirs(tmp_path: Path) -> IsolatedDirs:
     return dirs
 
 
-def setup_hook_env(
-    monkeypatch: pytest.MonkeyPatch,
-    isolated_dirs: IsolatedDirs,
-    mock_proxy: MitmproxyFixture,
-) -> None:
+def setup_hook_env(monkeypatch: pytest.MonkeyPatch, isolated_dirs: IsolatedDirs, mock_proxy: MitmproxyFixture) -> None:
     """Set up environment variables for running session start hook via monkeypatch."""
     # Create combined CA bundle with system CAs + mock proxy CA
     # This allows bazelisk and other TLS clients to trust the mock proxy

@@ -57,6 +57,7 @@ the older `rules_python`'s `tool_versions` dict, which doesn't have it.
 **Status: likely viable — earlier blockers are resolved.**
 
 BCR `rules_proto_grpc_python` 5.8.0 depends on:
+
 - `grpc` 1.74.1 (which depends on `protobuf` 31.1)
 - `rules_python` 1.6.3
 

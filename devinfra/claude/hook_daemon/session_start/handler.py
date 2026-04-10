@@ -292,9 +292,7 @@ async def _setup_web(
         logger.error("Proxy setup failed: %s", auth_proxy_result)
         raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
 
-    logger.info(
-        "Ready: proxy=%s, CA=%s", auth_proxy_result.status, auth_proxy_result.ca_status
-    )
+    logger.info("Ready: proxy=%s, CA=%s", auth_proxy_result.status, auth_proxy_result.ca_status)
     logger.info("Container: %s", container_result)
 
     return PlatformSetup(

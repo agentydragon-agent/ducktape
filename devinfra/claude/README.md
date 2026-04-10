@@ -14,7 +14,7 @@ web environments.
 | ---------------------------------- | ------------------- | -------------------------------------------------------------- |
 | Anthropic's Envoy gateway          | **egress proxy**    | Matches Anthropic's own docs ("egress controls"). Unambiguous. |
 | mitmproxy testcontainer for tests  | **mitmproxy proxy** | Stock mitmproxy:11 in Docker, simulates egress proxy TLS MITM. |
-| "The proxy this proxy forwards to" | **upstream proxy**  | Standard networking term. UDS proxy's upstream = egress proxy.  |
+| "The proxy this proxy forwards to" | **upstream proxy**  | Standard networking term. UDS proxy's upstream = egress proxy. |
 
 ## Anthropic's TLS-Inspecting Proxy
 
@@ -135,10 +135,10 @@ BCR fetches use native JVM proxy settings from Anthropic's `JAVA_TOOL_OPTIONS`.
 
 ## Configuration
 
-| Environment Variable                    | Default                    | Description                           |
-| --------------------------------------- | -------------------------- | ------------------------------------- |
-| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001`                    | Supervisor TCP port                   |
-| `DUCKTAPE_CLAUDE_HOOKS_SETUP_DOCKER`    | `true`                     | Set up Docker daemon under supervisor |
+| Environment Variable                    | Default | Description                           |
+| --------------------------------------- | ------- | ------------------------------------- |
+| `DUCKTAPE_CLAUDE_HOOKS_SUPERVISOR_PORT` | `19001` | Supervisor TCP port                   |
+| `DUCKTAPE_CLAUDE_HOOKS_SETUP_DOCKER`    | `true`  | Set up Docker daemon under supervisor |
 
 `<session_dir>` = `~/.claude/session-env/<session_id>/` — a per-session directory managed by Claude Code.
 

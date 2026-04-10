@@ -238,6 +238,7 @@ def _run_commit_msg(argv: list[str]) -> int:
 # Dispatch
 # ---------------------------------------------------------------------------
 
+
 def main_pre_commit() -> int:
     return asyncio.run(_run_pre_commit(sys.argv[1:]))
 

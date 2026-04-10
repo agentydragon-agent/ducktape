@@ -32,7 +32,9 @@ def test_raises_when_rpc_fails(session_paths: SessionPaths, monkeypatch: pytest.
     monkeypatch.setenv("HTTPS_PROXY", "http://user:pass@proxy.example.com:8080")
 
     with (
-        patch("devinfra.claude.hook_daemon.wrappers.bazel.update_proxy_creds", side_effect=OSError("connection refused")),
+        patch(
+            "devinfra.claude.hook_daemon.wrappers.bazel.update_proxy_creds", side_effect=OSError("connection refused")
+        ),
         pytest.raises(AuthProxyError, match="Auth proxy RPC failed"),
     ):
         _refresh_proxy_creds(session_paths)
