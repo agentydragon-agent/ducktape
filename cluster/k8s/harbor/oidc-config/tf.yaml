@@ -26,5 +26,3 @@ spec:
       value: "https://auth.allegedly.works"
     - name: harbor_url
       value: "http://harbor-core.harbor:80"
-    - name: vault_address
-      value: "http://instance.vault.svc.cluster.local:8200"
