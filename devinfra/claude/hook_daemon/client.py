@@ -238,7 +238,14 @@ def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
 
         # Wait for socket while still holding daemon.lock — prevents other
         # clients from entering and trying to start a second daemon.
-        return _wait_for_sock(sock_path, pidfile=pidfile, daemon_pid=daemon_pid)
+        try:
+            return _wait_for_sock(sock_path, pidfile=pidfile, daemon_pid=daemon_pid)
+        except DaemonStartError as e:
+            # Enrich with daemon stderr at the error boundary (once).
+            stderr = _read_daemon_stderr(daemon_dir)
+            if stderr:
+                raise DaemonStartError(f"{e}\n--- daemon stderr ---\n{stderr}") from e
+            raise
 
 
 def _fork_daemon(daemon_dir: Path, sock_path: Path) -> int:
@@ -297,12 +304,20 @@ def _fork_daemon(daemon_dir: Path, sock_path: Path) -> int:
     )
 
 
+def _read_daemon_stderr(daemon_dir: Path, max_bytes: int = 4096) -> str:
+    """Read the tail of daemon.err.log for inclusion in crash error messages."""
+    err_log = daemon_dir / "daemon.err.log"
+    try:
+        content = err_log.read_text(errors="replace")
+        if len(content) > max_bytes:
+            content = "..." + content[-max_bytes:]
+        return content.strip()
+    except OSError:
+        return ""
+
+
 def _wait_for_sock(
-    sock_path: Path,
-    *,
-    pidfile: Path,
-    daemon_pid: int,
-    timeout_secs: float = _DAEMON_STARTUP_TIMEOUT_SECS,
+    sock_path: Path, *, pidfile: Path, daemon_pid: int, timeout_secs: float = _DAEMON_STARTUP_TIMEOUT_SECS
 ) -> _UDSConnection:
     """Poll until socket file exists and accepts connections, returning a connection.
 

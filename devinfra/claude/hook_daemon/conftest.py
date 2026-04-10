@@ -1,5 +1,6 @@
 """Shared fixtures for hook daemon tests."""
 
+import shutil
 import tempfile
 import uuid
 from collections.abc import Generator, Sequence
@@ -11,6 +12,7 @@ import pytest
 import yaml
 
 from devinfra.claude.session_paths import SessionPaths
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 
 def init_git_repo(repo_path: Path) -> None:
@@ -39,14 +41,24 @@ def short_tmp() -> Generator[Path]:
 
 
 @pytest.fixture
-def daemon_paths(tmp_path: Path) -> SessionPaths:
+def daemon_paths(tmp_path: Path, request: pytest.FixtureRequest) -> Generator[SessionPaths]:
     """SessionPaths with a unique session_id (isolates socket path between tests).
 
     Each test gets its own session_id, so daemon socket paths don't collide.
     Daemons left running after a test are harmless — they'll be killed when
     the RBE container exits.
+
+    After the test, copies daemon logs to undeclared test outputs for post-hoc debugging.
     """
     session_id = f"td-{uuid.uuid4().hex[:8]}"
     paths = SessionPaths(session_id=session_id, home=tmp_path, xdg_cache_home=tmp_path / "cache")
     (tmp_path / "cache").mkdir()
-    return paths
+    yield paths
+
+    # Copy daemon logs to undeclared outputs for BuildBuddy retrieval.
+    daemon_dir = paths.hook_daemon_dir
+    if daemon_dir.exists():
+        out_dir = undeclared_outputs_dir() / request.node.name
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for log_file in daemon_dir.glob("*.log"):
+            shutil.copy2(log_file, out_dir / log_file.name)

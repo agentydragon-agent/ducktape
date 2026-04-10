@@ -10,15 +10,22 @@ import multiprocessing
 import multiprocessing.sharedctypes
 import multiprocessing.synchronize
 import os
-import pytest
 import signal
 import threading
 import time
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 
-from devinfra.claude.hook_daemon.client import _ensure_daemon, _kill_daemon_by_pidfile, check_health, read_pidfile
+from devinfra.claude.hook_daemon.client import (
+    DaemonStartError,
+    _ensure_daemon,
+    _kill_daemon_by_pidfile,
+    _wait_for_sock,
+    check_health,
+    read_pidfile,
+)
 from devinfra.claude.session_paths import SessionPaths
 
 
@@ -162,8 +169,6 @@ def test_ensure_daemon_replaces_dead_daemon(daemon_paths: SessionPaths) -> None:
 
 def test_wait_for_sock_detects_pre_pidfile_crash(daemon_paths: SessionPaths) -> None:
     """_wait_for_sock raises quickly when the daemon PID is already dead (pre-pidfile crash)."""
-    from devinfra.claude.hook_daemon.client import DaemonStartError, _wait_for_sock
-
     # Use a PID that is guaranteed dead: fork a child that exits immediately.
     pid = os.fork()
     if pid == 0:
@@ -172,11 +177,7 @@ def test_wait_for_sock_detects_pre_pidfile_crash(daemon_paths: SessionPaths) -> 
 
     start = time.monotonic()
     with pytest.raises(DaemonStartError, match="pre-pidfile"):
-        _wait_for_sock(
-            daemon_paths.hook_daemon_sock,
-            pidfile=daemon_paths.hook_daemon_pidfile,
-            daemon_pid=pid,
-        )
+        _wait_for_sock(daemon_paths.hook_daemon_sock, pidfile=daemon_paths.hook_daemon_pidfile, daemon_pid=pid)
     elapsed = time.monotonic() - start
     # Should detect within a couple poll cycles, not wait for the full 5s timeout.
     assert elapsed < 1.0, f"Took {elapsed:.1f}s — expected < 1s"

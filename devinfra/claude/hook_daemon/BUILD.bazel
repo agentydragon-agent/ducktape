@@ -215,6 +215,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         "//devinfra/claude:session_paths",
+        "//util/testing:undeclared_outputs",
         "@pypi//pygit2",
         "@pypi//pytest",
         "@pypi//pyyaml",
