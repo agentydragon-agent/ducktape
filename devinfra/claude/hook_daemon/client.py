@@ -302,6 +302,7 @@ def _fork_daemon(daemon_dir: Path, sock_path: Path) -> int:
         [sys.executable, "-m", daemon_module, "--sock", str(sock_path), "--daemon-dir", str(daemon_dir)],
         env,
     )
+    raise AssertionError("unreachable: execve replaces the process")
 
 
 def _read_daemon_stderr(daemon_dir: Path, max_bytes: int = 4096) -> str:
