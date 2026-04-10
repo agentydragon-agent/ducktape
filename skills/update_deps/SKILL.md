@@ -200,6 +200,27 @@ Good commit message examples:
 
 ## Apply Updates
 
+### Cross-ecosystem version compatibility
+
+Some dependencies are declared in multiple ecosystems (pip, Bazel, Nix) and
+their versions must remain compatible. When updating any of these, verify all
+declarations.
+
+**Protobuf** is the primary example:
+
+| Ecosystem | Declaration                                                      | Example                          |
+| --------- | ---------------------------------------------------------------- | -------------------------------- |
+| Bazel     | `MODULE.bazel`: `bazel_dep(name = "protobuf", version = "33.1")` | protoc gencode 6.33.1            |
+| pip       | `pyproject.toml`: `protobuf==6.33.1`                             | Python runtime                   |
+| Nix       | `nix/packages/default.nix`: `protobuf` (tracks nixpkgs)          | Runtime in devShell/home-manager |
+
+**Rule**: protobuf runtime (pip/Nix) must be **>=** gencode (Bazel protoc).
+Bazel module version `X.Y` maps to gencode `6.X.Y`. If bumping Bazel protobuf,
+also bump pip. If Nix lags behind, do not bump Bazel/pip past the Nix version.
+
+When proposing ANY protobuf update, verify all three are compatible and note
+the versions in the PR description.
+
 ### Lockfile regeneration by ecosystem
 
 After editing version pins, regenerate lockfiles:
