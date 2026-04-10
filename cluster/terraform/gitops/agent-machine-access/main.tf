@@ -69,16 +69,5 @@ resource "kubernetes_secret" "agent_bearer_token" {
   }
 }
 
-# --- Application Bindings ---
-# Each binding grants the agent service account access to a proxied application.
-# To add a new app: look up by slug, add a policy binding.
-
-data "authentik_application" "grocy" {
-  slug = "grocy"
-}
-
-resource "authentik_policy_binding" "agent_grocy" {
-  target = data.authentik_application.grocy.id
-  user   = authentik_user.agent_sa.id
-  order  = 10
-}
+# Application bindings are managed via blueprint:
+# cluster/k8s/authentik/app/blueprints/agent-machine-access-bindings.yaml
