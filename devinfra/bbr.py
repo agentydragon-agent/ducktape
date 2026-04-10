@@ -15,6 +15,7 @@ import pygit2
 
 _RUNNER_PROPERTIES = {
     "EstimatedFreeDiskBytes": "50000000000",
+    "EstimatedComputeUnits": "4",
     "workload-isolation-type": "firecracker",
     "init-dockerd": "true",
 }
