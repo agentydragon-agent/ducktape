@@ -331,7 +331,9 @@ Interactive mode (detected via `terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.St
    bb remote query 'deps(//foo)' | cat
    ```
 2. **`--invocation_id_file`** — write the invocation ID to a file, then fetch
-   logs post-hoc via the BuildBuddy API
+   logs post-hoc via the BuildBuddy API. `bbr` does this automatically
+   (`~/.cache/bbr/last_invocation_id`) and prints a post-run summary with
+   `bbapi` commands for fetching targets, logs, and artifacts.
 3. **`--script` + file redirect** — redirect bazel output to a file on the
    runner, download via `--remote_download_regex`
 
@@ -350,3 +352,11 @@ All paths relative to <https://github.com/buildbuddy-io/buildbuddy>.
 | [`enterprise/server/cmd/goinit/main.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/cmd/goinit/main.go)                                                                         | Firecracker VM init process (PID 1), mounts, pivot root, spawns vmexec            |
 | [`enterprise/server/vmexec/vmexec.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/vmexec/vmexec.go)                                                                             | VM exec service: runs commands via gRPC over vsock, workspace mount/unmount       |
 | [`enterprise/server/remote_execution/containers/firecracker/firecracker.go`](https://github.com/buildbuddy-io/buildbuddy/blob/master/enterprise/server/remote_execution/containers/firecracker/firecracker.go) | Firecracker container orchestration, image conversion, VM lifecycle               |
+
+## Future: custom runner orchestration
+
+`bb remote` output is verbose and not designed for programmatic consumption.
+Long-term, we could implement our own runner orchestration that calls
+BuildBuddy's hosted runner API directly (via the `RunWorkflow` / `Run` RPCs
+in `runner.proto`), giving full control over output format, invocation ID
+extraction, and post-run reporting. This would replace `bb remote` in `bbr`.

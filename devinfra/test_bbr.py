@@ -91,15 +91,14 @@ class TestValidateGitState:
         repo = _make_repo(tmp_path)
         _validate_git_state(repo)
 
-    def test_missing_origin_head_aborts(self, tmp_path: Path) -> None:
-        """Without refs/remotes/origin/HEAD, bbr should crash."""
+    def test_missing_origin_head_skips(self, tmp_path: Path) -> None:
+        """Without refs/remotes/origin/HEAD (e.g. CI), validation is skipped."""
         repo = pygit2.init_repository(str(tmp_path / "bare"))
         sig = pygit2.Signature("test", "test@test.com")
         tree = repo.TreeBuilder().write()
         repo.create_commit("refs/heads/devel", sig, sig, "init", tree, [])
         repo.set_head("refs/heads/devel")
-        with pytest.raises(SystemExit):
-            _validate_git_state(repo)
+        _validate_git_state(repo)
 
 
 class TestBuildCommand:
@@ -119,6 +118,24 @@ class TestBuildCommand:
         assert "--runner_exec_properties=init-dockerd=true" in cmd
         assert cmd[-2] == "--nocache_test_results"
         assert cmd[-1] == "--config=rbe"
+
+    def test_invocation_id_file_before_bazel_command(self, tmp_path: Path) -> None:
+        """--invocation_id_file must come before the bazel command (bb remote flag)."""
+        pins = {"rbe_worker": {"image": "ghcr.io/test/rbe", "digest": "sha256:deadbeef"}}
+        repo = _make_repo(tmp_path)
+        repo_root = Path(repo.workdir)
+        (repo_root / "devinfra").mkdir()
+        (repo_root / "devinfra" / "image_pins.json").write_text(json.dumps(pins))
+
+        with patch("devinfra.bbr._find_bb", return_value="/usr/bin/bb"), patch.dict("os.environ", {}, clear=True):
+            cmd = build_command(repo, ["test", "//foo:bar"])
+
+        inv_flag = [f for f in cmd if f.startswith("--invocation_id_file=")]
+        assert len(inv_flag) == 1
+        # Must appear before the bazel command ("test")
+        inv_idx = cmd.index(inv_flag[0])
+        test_idx = cmd.index("test")
+        assert inv_idx < test_idx
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ bb remote works under the hood.
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,6 +20,9 @@ _RUNNER_PROPERTIES = {
     "workload-isolation-type": "firecracker",
     "init-dockerd": "true",
 }
+
+_INVOCATION_ID_DIR = Path.home() / ".cache" / "bbr"
+_INVOCATION_ID_FILE = _INVOCATION_ID_DIR / "last_invocation_id"
 
 
 def _validate_git_state(repo: pygit2.Repository) -> None:
@@ -108,15 +112,33 @@ def build_command(repo: pygit2.Repository, user_args: list[str]) -> list[str]:
     secret_args = _build_secret_args()
     bb = _find_bb()
 
+    _INVOCATION_ID_DIR.mkdir(parents=True, exist_ok=True)
+
     return [
         bb,
         "remote",
+        f"--invocation_id_file={_INVOCATION_ID_FILE}",
         *[f"--runner_exec_properties={k}={v}" for k, v in _RUNNER_PROPERTIES.items()],
         f"--container_image=docker://{rbe_image}",
         *secret_args,
         *user_args,
         "--config=rbe",
     ]
+
+
+def _print_post_run_summary() -> None:
+    """Print invocation ID and useful commands after bb remote completes."""
+    try:
+        inv_id = _INVOCATION_ID_FILE.read_text().strip()
+    except OSError:
+        return
+    if not inv_id:
+        return
+    print(f"bbr: invocation {inv_id}", file=sys.stderr)
+    print(f"bbr:   targets:  bbapi target {inv_id}", file=sys.stderr)
+    print(f"bbr:   logs:     bbapi target log {inv_id} <target>", file=sys.stderr)
+    print(f"bbr:   artifacts: bbapi artifact {inv_id}", file=sys.stderr)
+    print(f"bbr:   details:  bbapi invocation {inv_id}", file=sys.stderr)
 
 
 def main() -> None:
@@ -134,7 +156,9 @@ def main() -> None:
         print(" ".join(cmd))
         return
 
-    os.execvp(cmd[0], cmd)
+    result = subprocess.run(cmd, check=False)
+    _print_post_run_summary()
+    sys.exit(result.returncode)
 
 
 if __name__ == "__main__":

@@ -52,7 +52,7 @@ bbapi invocation list [--repo URL] [--count N]
 # Download test.log for a specific target (most common for debugging failures)
 bbapi target log <invocation-id> <target-label-or-substring>
 
-# List targets in an invocation
+# List targets in an invocation (auto-resolves workflow/runner IDs to child)
 bbapi target <invocation-id> [--filter SUBSTR] [--label LABEL]
 
 # Show pass/fail/flake history for targets (auto-detects group_id)
@@ -126,8 +126,7 @@ invocation contains the actual `bazel test` results, targets, and artifacts.
 - `bbapi invocation` shows `Child: <child-id>` for workflow invocations
 - `bbapi artifact` and `bbapi target log` auto-resolve workflow invocations
   to their children — you can pass either the workflow or child ID
-- `bbapi target` does NOT auto-resolve (uses the BuildBuddy `GetTarget` RPC
-  which requires the exact invocation ID)
+- `bbapi target` also auto-resolves workflow invocations to their children
 
 ### Artifact Name Matching
 

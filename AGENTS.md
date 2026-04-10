@@ -50,6 +50,26 @@ the target: `bbr build //target --remote_download_regex='.*\.whl$'`.
 **Requirements:** `bb` on PATH and `BUILDBUDDY_API_KEY` set (both provided by session
 start hook).
 
+**Invocation tracking:** `bbr` automatically writes the BuildBuddy invocation ID to
+`~/.cache/bbr/last_invocation_id` and prints a post-run summary with `bbapi` commands:
+
+```bash
+# After any bbr command, use the printed invocation ID:
+bbapi target <id>                    # List targets (auto-resolves workflow IDs)
+bbapi target log <id> <target>       # Fetch test log
+bbapi artifact <id>                  # List/download undeclared test outputs
+bbapi invocation <id>                # Invocation details (commit, branch, dirty)
+
+# Or read the last invocation ID from file:
+cat ~/.cache/bbr/last_invocation_id
+
+# Target history (pass/fail timeline, useful for bisecting):
+bbapi target history --label //path:target
+```
+
+`bbapi target` and `bbapi target log` auto-resolve workflow (runner) invocation IDs
+to child invocations — either ID works.
+
 ## Terraform via Bazel
 
 Terraform/OpenTofu modules are managed by Bazel (`@rules_tf`). Each module has a
