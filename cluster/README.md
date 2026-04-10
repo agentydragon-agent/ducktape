@@ -35,8 +35,8 @@ See <docs/bootstrap.md> for full setup.
 
 | Node                               | Type             | Region    | Availability     | Hardware            |
 | ---------------------------------- | ---------------- | --------- | ---------------- | ------------------- |
-| `talos-vps-cp-0`, `talos-vps-cp-1` | Talos CP         | `hetzner` | Always on        | CPX31               |
-| `talos-vps-wk-0`, `talos-vps-wk-1` | Talos worker     | `hetzner` | Always on        | CPX31               |
+| `talos-vps-cp-0`, `talos-vps-cp-1` | Talos CP         | `hil`     | Always on        | CPX31               |
+| `talos-vps-wk-0`, `talos-vps-wk-1` | Talos worker     | `hil`     | Always on        | CPX31               |
 | `talos-pve-cp-0`                   | Talos CP         | `proxmox` | Always on (home) | Proxmox VM          |
 | `wyrm2`                            | NixOS GPU worker | `proxmox` | Always on (home) | 2x RTX 5090         |
 | `iguana`                           | NixOS laptop     | `roaming` | Often offline    | ThinkPad X1 Extreme |
@@ -70,16 +70,16 @@ OpenClaw requires a one-time gateway token entry in the UI — the token is incl
 
 All storage is region-local — no cross-site synchronous replication.
 
-| StorageClass         | Provisioner            | Region  | Notes                                                         |
-| -------------------- | ---------------------- | ------- | ------------------------------------------------------------- |
-| `local-path`         | local-path-provisioner | Any     | CNPG (all databases), Gatus, MinIO, Nix cache                 |
-| `local-path-hetzner` | local-path-provisioner | Hetzner | Vault Raft, Loki, Mimir, Alertmanager, Grafana DB             |
-| `local-path-proxmox` | local-path-provisioner | Proxmox | ActivityWatch, Scanner, Google Workspace MCP, Tana MCP        |
-| `lvm-proxmox`        | OpenEBS LVM CSI        | Proxmox | Thin provisioning, expansion: Harbor                          |
-| `proxmox-csi-retain` | Proxmox CSI            | Proxmox | Block storage via Proxmox API: Ollama, Matrix (migrating off) |
-| `longhorn`           | Longhorn               | Hetzner | Legacy — orphaned PVCs only, no active workloads              |
-| `hetzner-longhorn`   | Longhorn               | Hetzner | Replicated across VPS nodes (none active yet)                 |
-| `hcloud-volumes`     | Hetzner Cloud CSI      | Hetzner | (none active)                                                 |
+| StorageClass         | Provisioner            | Region    | Notes                                                         |
+| -------------------- | ---------------------- | --------- | ------------------------------------------------------------- |
+| `local-path`         | local-path-provisioner | Any       | CNPG (all databases), Gatus, MinIO, Nix cache                 |
+| `local-path-hetzner` | local-path-provisioner | `hil`     | Vault Raft, Loki, Mimir, Alertmanager, Grafana DB             |
+| `local-path-proxmox` | local-path-provisioner | `proxmox` | ActivityWatch, Scanner, Google Workspace MCP, Tana MCP        |
+| `lvm-proxmox`        | OpenEBS LVM CSI        | `proxmox` | Thin provisioning, expansion: Harbor                          |
+| `proxmox-csi-retain` | Proxmox CSI            | `proxmox` | Block storage via Proxmox API: Ollama, Matrix (migrating off) |
+| `longhorn`           | Longhorn               | `hil`     | Legacy — orphaned PVCs only, no active workloads              |
+| `hetzner-longhorn`   | Longhorn               | `hil`     | Replicated across VPS nodes (none active yet)                 |
+| `hcloud-volumes`     | Hetzner Cloud CSI      | `hil`     | (none active)                                                 |
 
 Proxmox CSI needs VLAN access to Proxmox API. OpenEBS LVM is constrained to nodes
 with the `openebs-lvmvg` volume group (currently Proxmox nodes only).

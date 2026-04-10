@@ -98,6 +98,10 @@ CloudNativePG `local-path`.
       (upstream `0e28e50b4`, PR #24287)
 - [ ] OpenClaw: fix Ollama model discovery timeout on startup (Nebula not ready)
 - [ ] OpenClaw: eliminate one-time token entry
+- [ ] `vault-oidc-auth` terraform: Apply fails with `path is already in use at oidc/` —
+      Vault's OIDC auth backend exists but TF state was lost in the April 1 rebuild.
+      Fix: `vault auth disable oidc/` then let tofu-controller re-apply (per AGENTS.md).
+      Will break SSO logins until re-applied. Coordinate with `sso-secrets` resync TODO above.
 - [ ] File upstream: powerdns-operator "stuck Failed" bug — once a ClusterRRset
       reaches Failed, it never retries unless spec changes. Should retry with backoff.
       See <lessons_learned/2026_04_07_powerdns_operator_stuck_failed_rrsets.md>.
