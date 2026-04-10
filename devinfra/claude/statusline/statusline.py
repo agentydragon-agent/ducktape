@@ -16,7 +16,7 @@ from rich.text import Text
 
 from devinfra.claude.claude_api.credentials import read_credentials
 from devinfra.claude.claude_api.statusline import ContextWindow, Input
-from devinfra.claude.hook_daemon.client import check_health
+from devinfra.claude.hook_daemon.client import _UDSConnection
 from devinfra.claude.session_paths import default_cache_dir, hook_daemon_sock
 from devinfra.claude.statusline.usage_cache import CachedUsage, UsageCache
 
@@ -166,7 +166,7 @@ def main() -> None:
         cached_usage=usage_cache.get(access_token),
         home=Path(home_env) if home_env else None,
         now=datetime.now(UTC),
-        daemon_healthy=check_health(hook_daemon_sock(data.session_id)) is not None,
+        daemon_healthy=_UDSConnection(hook_daemon_sock(data.session_id)).check_health(),
     )
     sys.stdout.write(output)
 

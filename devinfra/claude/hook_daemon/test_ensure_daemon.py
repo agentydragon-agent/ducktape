@@ -22,8 +22,8 @@ from devinfra.claude.hook_daemon.client import (
     DaemonStartError,
     _ensure_daemon,
     _kill_daemon_by_pidfile,
+    _UDSConnection,
     _wait_for_sock,
-    check_health,
     read_pidfile,
 )
 from devinfra.claude.session_paths import SessionPaths
@@ -58,7 +58,7 @@ def _wait_for_pid_death(pid: int, timeout: float = 10) -> None:
 def test_ensure_daemon_starts_fresh(daemon_paths: SessionPaths) -> None:
     """_ensure_daemon starts a daemon when none is running."""
     _ensure_daemon(daemon_paths)
-    assert check_health(daemon_paths.hook_daemon_sock)
+    assert _UDSConnection(daemon_paths.hook_daemon_sock).check_health()
 
 
 def test_ensure_daemon_noop_when_healthy(daemon_paths: SessionPaths) -> None:
@@ -69,7 +69,7 @@ def test_ensure_daemon_noop_when_healthy(daemon_paths: SessionPaths) -> None:
     _ensure_daemon(daemon_paths)
 
     assert read_pidfile(daemon_paths.hook_daemon_pidfile) == original_pid
-    assert check_health(daemon_paths.hook_daemon_sock)
+    assert _UDSConnection(daemon_paths.hook_daemon_sock).check_health()
 
 
 def test_parallel_cold_start(short_tmp: Path) -> None:
@@ -94,7 +94,7 @@ def test_parallel_cold_start(short_tmp: Path) -> None:
 
     failed = [i for i in range(n) if results[i] != 0]
     assert not failed, f"Workers {failed} raised exceptions"
-    assert check_health(paths.hook_daemon_sock)
+    assert _UDSConnection(paths.hook_daemon_sock).check_health()
     assert read_pidfile(paths.hook_daemon_pidfile) > 0
 
 
@@ -142,11 +142,11 @@ def test_ensure_daemon_kills_hung_daemon(daemon_paths: SessionPaths) -> None:
     # the process alive (flock still held).  This is equivalent to a daemon that
     # is alive but unresponsive — _ensure_daemon should detect the flock and kill it.
     daemon_paths.hook_daemon_sock.unlink()
-    assert not check_health(daemon_paths.hook_daemon_sock)
+    assert not _UDSConnection(daemon_paths.hook_daemon_sock).check_health()
 
     _ensure_daemon(daemon_paths)
 
-    assert check_health(daemon_paths.hook_daemon_sock)
+    assert _UDSConnection(daemon_paths.hook_daemon_sock).check_health()
     new_pid = read_pidfile(daemon_paths.hook_daemon_pidfile)
     assert new_pid != old_pid
 
@@ -164,7 +164,7 @@ def test_ensure_daemon_replaces_dead_daemon(daemon_paths: SessionPaths) -> None:
     assert daemon_paths.hook_daemon_pidfile.exists()
 
     _ensure_daemon(daemon_paths)
-    assert check_health(daemon_paths.hook_daemon_sock)
+    assert _UDSConnection(daemon_paths.hook_daemon_sock).check_health()
 
 
 def test_wait_for_sock_detects_pre_pidfile_crash(daemon_paths: SessionPaths) -> None:

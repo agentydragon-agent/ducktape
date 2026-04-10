@@ -154,6 +154,7 @@ py_library(
         "//devinfra/claude/claude_api/hooks:dispatch_input",
         "//util/bazel:subprocess",
         "@pypi//filelock",
+        "@pypi//httpx",
     ],
 )
 

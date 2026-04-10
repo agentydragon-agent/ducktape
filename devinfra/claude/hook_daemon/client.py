@@ -1,21 +1,18 @@
 """Thin UDS client for the hook daemon with self-healing.
 
 Sends hook RPCs to the daemon over a Unix domain socket. If the daemon is
-unreachable, forks a new one and retries. Uses only stdlib (urllib) on the
-hot path to avoid importing httpx.
+unreachable, forks a new one and retries.
 """
 
 import fcntl
-import http.client
-import json
 import logging
 import os
 import signal
-import socket
 import sys
 import time
 from pathlib import Path
 
+import httpx
 from filelock import FileLock
 
 from devinfra.claude.claude_api.hooks.dispatch_input import AnyHookInput
@@ -29,17 +26,36 @@ logger = logging.getLogger(__name__)
 _DAEMON_STARTUP_TIMEOUT_SECS = 5
 
 
-class _UDSConnection(http.client.HTTPConnection):
-    """HTTPConnection subclass that connects to a Unix domain socket."""
+class _UDSConnection:
+    """HTTP client that connects to the hook daemon over a Unix domain socket."""
 
     def __init__(self, sock_path: Path) -> None:
-        # host is unused but required by HTTPConnection
-        super().__init__("localhost")
-        self._sock_path = sock_path
+        self._client = httpx.Client(transport=httpx.HTTPTransport(uds=str(sock_path)), base_url="http://localhost")
 
-    def connect(self) -> None:
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.connect(str(self._sock_path))
+    def close(self) -> None:
+        self._client.close()
+
+    def get(self, path: str, *, timeout: float | None = None) -> httpx.Response:
+        return self._client.get(path, timeout=timeout)
+
+    def post(
+        self,
+        path: str,
+        *,
+        content: str | bytes | None = None,
+        json: object = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> httpx.Response:
+        return self._client.post(path, content=content, json=json, headers=headers, timeout=timeout)
+
+    def check_health(self, timeout: float = 0.5) -> bool:
+        """Check if the daemon is healthy by hitting GET /health."""
+        try:
+            r = self.get("/health", timeout=timeout)
+            return r.status_code == 200
+        except (httpx.ConnectError, httpx.TimeoutException, OSError):
+            return False
 
 
 class DaemonStartError(RuntimeError):
@@ -60,32 +76,13 @@ def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> None:
 
     Raises OSError if the daemon is unreachable.
     """
-    sock_path = paths.hook_daemon_sock
-    payload = json.dumps({"https_proxy": https_proxy}).encode()
-    conn = _UDSConnection(sock_path)
-    conn.timeout = 5.0
-    conn.request("POST", "/update-proxy-creds", body=payload, headers={"Content-Type": "application/json"})
-    response = conn.getresponse()
-    body = response.read()
-    conn.close()
-    if response.status != 200:
-        raise OSError(f"Daemon returned HTTP {response.status} for update-proxy-creds: {body.decode()}")
-
-
-def check_health(sock_path: Path, timeout: float = 0.5) -> _UDSConnection | None:
-    """Check if the daemon is healthy by hitting GET /health. Returns a connection on success."""
+    conn = _UDSConnection(paths.hook_daemon_sock)
     try:
-        conn = _UDSConnection(sock_path)
-        conn.timeout = timeout
-        conn.request("GET", "/health")
-        response = conn.getresponse()
-        response.read()
-        if response.status == 200:
-            return conn
+        r = conn.post("/update-proxy-creds", json={"https_proxy": https_proxy}, timeout=5.0)
+        if r.status_code != 200:
+            raise OSError(f"Daemon returned HTTP {r.status_code} for update-proxy-creds: {r.text}")
+    finally:
         conn.close()
-        return None
-    except (ConnectionRefusedError, FileNotFoundError, OSError, http.client.HTTPException):
-        return None
 
 
 def call_daemon(hook_input: AnyHookInput, env: dict[str, str], paths: SessionPaths) -> HookResponse | None:
@@ -113,17 +110,12 @@ def call_daemon(hook_input: AnyHookInput, env: dict[str, str], paths: SessionPat
 def _post_to_daemon(request: HookRequest, conn: _UDSConnection) -> HookResponse | None:
     """Send a hook request to the daemon. Returns None if connection fails."""
     try:
-        payload = request.model_dump_json().encode()
-        conn.request("POST", "/hook", body=payload, headers={"Content-Type": "application/json"})
-        response = conn.getresponse()
-        if response.status != 200:
-            body = response.read().decode("utf-8", errors="replace")
+        r = conn.post("/hook", content=request.model_dump_json(), headers={"Content-Type": "application/json"})
+        if r.status_code != 200:
             conn.close()
-            raise DaemonHttpError(response.status, body)
-        raw = response.read()
-        conn.close()
-        return HookResponse.model_validate_json(raw)
-    except (ConnectionRefusedError, FileNotFoundError, OSError) as e:
+            raise DaemonHttpError(r.status_code, r.text)
+        return HookResponse.model_validate_json(r.content)
+    except (httpx.ConnectError, httpx.TimeoutException, OSError) as e:
         logger.debug("Daemon unreachable: %s", e)
         return None
 
@@ -213,7 +205,8 @@ def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
     with FileLock(str(daemon_dir / "daemon.lock")):
         # Re-check after acquiring: another client may have won the race and
         # already started a healthy daemon while we were waiting.
-        if conn := check_health(sock_path):
+        conn = _UDSConnection(sock_path)
+        if conn.check_health():
             logger.debug("Daemon already healthy (socket=%s), skipping start", sock_path)
             return conn
 
@@ -331,13 +324,11 @@ def _wait_for_sock(
     deadline = time.monotonic() + timeout_secs
     while time.monotonic() < deadline:
         if sock_path.exists():
-            try:
-                conn = _UDSConnection(sock_path)
-                conn.connect()
+            conn = _UDSConnection(sock_path)
+            if conn.check_health():
                 logger.debug("Daemon socket ready at %s", sock_path)
                 return conn
-            except (ConnectionRefusedError, OSError):
-                pass
+            conn.close()
 
         # Post-pidfile crash detection: if the daemon died, its flock on the
         # pidfile is released by the kernel.  The stale pidfile is deleted
