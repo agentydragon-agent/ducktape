@@ -1,7 +1,8 @@
 """Git hook entry points for pre-commit framework.
 
 Installed as separate console scripts via the claude-hooks wheel:
-- ducktape-precommit: file validations (pytest-main, tf-centralization, filenames, cluster, frozen-specimens)
+- ducktape-precommit: file validations (tf-centralization, filenames, cluster, frozen-specimens)
+- ducktape-pytest-main-check: verify test files have pytest_bazel.main() entry points
 - ducktape-prepare-commit-msg: block amending already-pushed commits
 - ducktape-commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
 - ducktape-enforce-bazel-tests: verify affected Bazel tests are cached/passing
@@ -134,9 +135,6 @@ async def _run_pre_commit(argv: list[str]) -> int:
     _setup_tracing(repo_root)
 
     with tracer.start_as_current_span("precommit"):
-        workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
-        bazel_index = build_bazel_index(workspace)
-
         head_tree, all_deltas = _staged_deltas(repo)
         deltas = [d for d in all_deltas if not _is_ignored(repo, d.new_file.path)]
 
@@ -152,7 +150,6 @@ async def _run_pre_commit(argv: list[str]) -> int:
         print(f"Validating {len(files)} files...")
         results = list(
             await asyncio.gather(
-                _traced("pytest-main-check", run_pytest_main_check(files, repo_root, bazel_index)),
                 _traced("tf-centralization", run_terraform_centralization_check(files, repo_root)),
                 _traced("filename-conventions", run_filename_convention_check(deltas, head_tree)),
                 _traced("cluster-validate", run_cluster_validate(files, repo_root)),
@@ -236,6 +233,22 @@ def _run_commit_msg(argv: list[str]) -> int:
 
 def main_pre_commit() -> int:
     return asyncio.run(_run_pre_commit(sys.argv[1:]))
+
+
+def main_pytest_main_check() -> int:
+    repo = pygit2.Repository(".")
+    repo_root = Path(repo.workdir)
+    _setup_tracing(repo_root)
+
+    workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
+    bazel_index = build_bazel_index(workspace)
+
+    files = [Path(f) for f in sys.argv[1:]] if sys.argv[1:] else get_all_files(repo)
+    error = asyncio.run(run_pytest_main_check(files, repo_root, bazel_index))
+    if error:
+        print(error, file=sys.stderr)
+        return 1
+    return 0
 
 
 def main_enforce_bazel_tests() -> None:

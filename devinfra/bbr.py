@@ -34,8 +34,8 @@ def _validate_git_state(repo: pygit2.Repository) -> None:
 
     origin_head = repo.references.get("refs/remotes/origin/HEAD")
     if origin_head is None:
-        print("bbr: cannot determine default branch (refs/remotes/origin/HEAD missing).", file=sys.stderr)
-        sys.exit(1)
+        # CI (actions/checkout) doesn't set origin/HEAD — skip validation.
+        return
     default_branch = origin_head.resolve().shorthand.removeprefix("origin/")
 
     if current_branch != default_branch:

@@ -191,10 +191,19 @@ repos:
         files: "pyproject\\.toml$"
         exclude: "^pyproject\\.toml$"
 
-      # Pre-commit file validations (pytest-main, tf-centralization, filenames, cluster, frozen-specimens)
+      # Pre-commit file validations (tf-centralization, filenames, cluster, frozen-specimens)
       - id: ducktape-precommit
         name: ducktape pre-commit
         entry: ducktape-precommit
+        language: system
+        pass_filenames: true
+        always_run: true
+        stages: [pre-commit]
+
+      # Verify test files have pytest_bazel.main() entry points
+      - id: ducktape-pytest-main-check
+        name: ducktape pytest-main-check
+        entry: ducktape-pytest-main-check
         language: system
         pass_filenames: true
         always_run: true
