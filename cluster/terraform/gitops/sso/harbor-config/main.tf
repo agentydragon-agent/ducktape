@@ -10,24 +10,11 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.38.0"
     }
-    vault = {
-      source  = "hashicorp/vault"
-      version = "~> 5.7.0"
-    }
   }
 
   backend "kubernetes" {
     secret_suffix = "harbor-oidc-config"
     namespace     = "flux-system"
-  }
-}
-
-provider "vault" {
-  address = var.vault_address
-  auth_login_jwt {
-    mount = "kubernetes"
-    role  = "tf-runner"
-    jwt   = fileexists("/var/run/secrets/kubernetes.io/serviceaccount/token") ? file("/var/run/secrets/kubernetes.io/serviceaccount/token") : "not-in-cluster"
   }
 }
 
@@ -45,10 +32,12 @@ provider "harbor" {
   password = data.kubernetes_secret.harbor_admin_password.data["HARBOR_ADMIN_PASSWORD"]
 }
 
-# Read OIDC credentials stored by harbor SSO provider module
-data "vault_kv_secret_v2" "harbor_oidc" {
-  mount = "kv"
-  name  = "sso/harbor"
+# OIDC credentials from ESO-synced K8s secret (source: kv/sso/harbor in Vault)
+data "kubernetes_secret" "harbor_oidc" {
+  metadata {
+    name      = "harbor-oauth-client-secret"
+    namespace = "harbor"
+  }
 }
 
 # Configure Harbor OIDC authentication with Authentik
@@ -57,8 +46,8 @@ resource "harbor_config_auth" "oidc" {
 
   oidc_name          = "Authentik"
   oidc_endpoint      = "${var.authentik_url}/application/o/harbor/"
-  oidc_client_id     = jsondecode(data.vault_kv_secret_v2.harbor_oidc.data_json)["client_id"]
-  oidc_client_secret = jsondecode(data.vault_kv_secret_v2.harbor_oidc.data_json)["client_secret"]
+  oidc_client_id     = data.kubernetes_secret.harbor_oidc.data["client_id"]
+  oidc_client_secret = data.kubernetes_secret.harbor_oidc.data["client_secret"]
   oidc_scope         = "openid,email,profile"
   oidc_verify_cert   = true
 
