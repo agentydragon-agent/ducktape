@@ -23,29 +23,35 @@ func targetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req := &targetpb.GetTargetRequest{
-				InvocationId: args[0],
-				TargetLabel:  label,
-				Filter:       filter,
-			}
-			resp := &targetpb.GetTargetResponse{}
-			if err := c.call("GetTarget", req, resp); err != nil {
+			ids, err := resolveInvocationIDs(c, args[0])
+			if err != nil {
 				return err
-			}
-			if jsonOutput {
-				return printProtoJSON(resp)
 			}
 			t := newTable()
 			t.header("STATUS", "DUR", "RULE", "LABEL")
-			for _, g := range resp.GetTargetGroups() {
-				for _, tgt := range g.GetTargets() {
-					meta := tgt.GetMetadata()
-					dur := fmtDurationUsec(tgt.GetTiming().GetDuration().AsDuration().Microseconds())
-					lbl := meta.GetLabel()
-					if tgt.GetRootCause() {
-						lbl += " [ROOT CAUSE]"
+			for _, id := range ids {
+				req := &targetpb.GetTargetRequest{
+					InvocationId: id,
+					TargetLabel:  label,
+					Filter:       filter,
+				}
+				resp := &targetpb.GetTargetResponse{}
+				if err := c.call("GetTarget", req, resp); err != nil {
+					return err
+				}
+				if jsonOutput {
+					return printProtoJSON(resp)
+				}
+				for _, g := range resp.GetTargetGroups() {
+					for _, tgt := range g.GetTargets() {
+						meta := tgt.GetMetadata()
+						dur := fmtDurationUsec(tgt.GetTiming().GetDuration().AsDuration().Microseconds())
+						lbl := meta.GetLabel()
+						if tgt.GetRootCause() {
+							lbl += " [ROOT CAUSE]"
+						}
+						t.row(tgt.GetStatus().String(), dur, meta.GetRuleType(), lbl)
 					}
-					t.row(tgt.GetStatus().String(), dur, meta.GetRuleType(), lbl)
 				}
 			}
 			t.flush()
