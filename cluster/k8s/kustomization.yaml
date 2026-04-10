@@ -205,7 +205,7 @@ resources:
 
   # --- gatus ---
   - gatus/namespace/flux-kustomization.yaml
-  - gatus/secrets/flux-kustomization.yaml
+  - gatus/sso-tf/flux-kustomization.yaml
   - gatus/app/flux-kustomization.yaml
   - gatus/servicemonitor/flux-kustomization.yaml
 
