@@ -9,7 +9,7 @@ def _buildbuddy_protos_impl(_ctx):
     http_archive(
         name = "buildbuddy_protos",
         url = "https://github.com/buildbuddy-io/buildbuddy/archive/{}.tar.gz".format(_COMMIT),
-        integrity = "sha256-Cs2dEJ3TfXIKSGhVeEnOwr8DRYzEkn8KQXxwxXNy6ZA=",
+        integrity = "sha256-CszZEJ3TfXIKSGhVeEns4r8DRYzEkn8KQXxwxXNy6ZA=",
         strip_prefix = _PREFIX,
         build_file = "//third_party/buildbuddy:BUILD.protos.bazel",
         patch_cmds = [
