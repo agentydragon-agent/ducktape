@@ -33,15 +33,12 @@ class OtelConfig(BaseModel):
         )
 
 
-class SopsSecretSource(BaseModel):
+class SecretSource(BaseModel):
     """Fetch a secret by decrypting a SOPS-encrypted YAML file."""
 
     kind: Literal["sops"]
     sops_file: str = Field(description="Repo-relative path to SOPS-encrypted YAML")
     key: str = Field(description="Key within the decrypted YAML")
-
-
-SecretSource = SopsSecretSource
 
 
 class SecretsConfig(BaseModel):

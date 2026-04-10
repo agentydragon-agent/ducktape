@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest_bazel
 import yaml
 
-from devinfra.claude.hook_daemon.config import K8sConfig, SopsSecretSource
+from devinfra.claude.hook_daemon.config import K8sConfig, SecretSource
 from devinfra.claude.hook_daemon.session_start.secret_sources import resolve_secret, write_kubeconfig
 
 _K8S_CFG = K8sConfig(
@@ -18,8 +18,8 @@ _K8S_CFG = K8sConfig(
 
 
 def test_resolve_sops_secret(tmp_path: Path) -> None:
-    """resolve_secret dispatches SopsSecretSource to SOPS decryption."""
-    source = SopsSecretSource(kind="sops", sops_file="secrets/test.yaml", key="my_key")
+    """resolve_secret dispatches SecretSource to SOPS decryption."""
+    source = SecretSource(kind="sops", sops_file="secrets/test.yaml", key="my_key")
     with patch(
         "devinfra.claude.hook_daemon.session_start.secret_sources.decrypt_sops_yaml",
         return_value={"my_key": "decrypted_value"},
