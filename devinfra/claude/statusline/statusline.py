@@ -166,7 +166,7 @@ def main() -> None:
         cached_usage=usage_cache.get(access_token),
         home=Path(home_env) if home_env else None,
         now=datetime.now(UTC),
-        daemon_healthy=check_health(hook_daemon_sock(data.session_id)),
+        daemon_healthy=check_health(hook_daemon_sock(data.session_id)) is not None,
     )
     sys.stdout.write(output)
 

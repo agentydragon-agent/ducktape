@@ -13,7 +13,6 @@ from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExport
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.trace import ProxyTracerProvider
 
 from devinfra.claude.hook_daemon.config import OtelConfig
 from util.otel import JsonlSpanExporter
@@ -39,14 +38,6 @@ def init_daemon_tracing(trace_dir: Path, otel_config: OtelConfig | None = None) 
     Called once at daemon startup. Sets the global TracerProvider.
     Callers get tracers via trace.get_tracer(__name__).
     """
-    existing = trace.get_tracer_provider()
-    if not isinstance(existing, ProxyTracerProvider):
-        logger.warning(
-            "TracerProvider already set before init_daemon_tracing: %s — "
-            "possible OTEL_* env var auto-configuration; set_tracer_provider will warn",
-            type(existing).__name__,
-        )
-
     trace_file = trace_dir / "traces.jsonl"
     resource = Resource.create({"service.name": "claude-hooks"})
     provider = TracerProvider(resource=resource)
@@ -56,11 +47,12 @@ def init_daemon_tracing(trace_dir: Path, otel_config: OtelConfig | None = None) 
     logger.info("Tracing: local file → %s", trace_file)
 
     if otel_config and otel_config.endpoint:
-        # requests.Session picks up HTTPS_PROXY and SSL_CERT_FILE from env.
         otlp_exporter = OTLPSpanExporter(endpoint=otel_config.endpoint, headers=_build_otlp_headers(otel_config))
         provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
         logger.info("Tracing: OTLP → %s", otel_config.endpoint)
 
+    # Force-set provider even if one already exists (e.g., from OTEL_* auto-config).
+    trace._TRACER_PROVIDER_SET_ONCE._done = False
     trace.set_tracer_provider(provider)
 
 

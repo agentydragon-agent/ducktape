@@ -13,7 +13,7 @@ import pytest_bazel
 import uvicorn
 
 from devinfra.claude.claude_api.hooks.stop import StopInput
-from devinfra.claude.hook_daemon.client import _post_to_daemon
+from devinfra.claude.hook_daemon.client import _post_to_daemon, _UDSConnection
 from devinfra.claude.hook_daemon.models import HookRequest
 from devinfra.claude.hook_daemon.server import app, configure
 
@@ -62,7 +62,7 @@ def test_daemon_serves_over_uds(short_tmp: Path) -> None:
 
     server = _start_uvicorn_in_thread(sock_path, daemon_dir)
     try:
-        result = _post_to_daemon(_make_request(), sock_path)
+        result = _post_to_daemon(_make_request(), _UDSConnection(sock_path))
         assert result is not None
         assert result.output is None  # Stop is a noop
 
@@ -78,7 +78,7 @@ def test_client_detects_dead_daemon(short_tmp: Path) -> None:
     sock_path = short_tmp / "nonexistent.sock"
 
     # No daemon running, socket doesn't exist
-    result = _post_to_daemon(_make_request(), sock_path)
+    result = _post_to_daemon(_make_request(), _UDSConnection(sock_path))
     assert result is None
 
 
@@ -92,7 +92,7 @@ def test_daemon_restart_recovery(short_tmp: Path) -> None:
     server1 = _start_uvicorn_in_thread(sock_path, daemon_dir)
 
     # Verify it works
-    result1 = _post_to_daemon(_make_request(), sock_path)
+    result1 = _post_to_daemon(_make_request(), _UDSConnection(sock_path))
     assert result1 is not None
 
     # Kill first daemon
@@ -107,7 +107,7 @@ def test_daemon_restart_recovery(short_tmp: Path) -> None:
     server2 = _start_uvicorn_in_thread(sock_path, daemon_dir)
     try:
         # Verify second daemon works
-        result2 = _post_to_daemon(_make_request(), sock_path)
+        result2 = _post_to_daemon(_make_request(), _UDSConnection(sock_path))
         assert result2 is not None
         assert result2.output is None
     finally:

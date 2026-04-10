@@ -16,7 +16,8 @@ import stat
 from pathlib import Path
 
 import pytest
-from rules_python.python.runfiles import runfiles
+
+from util.bazel.runfiles import get_required_path
 
 _RLOCATION_CA = "_main/cluster/k8s/docker-ci/certs/ca.pem"
 _RLOCATION_CLIENT_CERT = "_main/cluster/k8s/docker-ci/certs/client-cert.pem"
@@ -36,10 +37,10 @@ def docker_mtls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cert_dir = tmp_path / "docker-certs"
     cert_dir.mkdir()
 
-    r = runfiles.Create()
-    ca_path = r.Rlocation(_RLOCATION_CA)
-    cert_path = r.Rlocation(_RLOCATION_CLIENT_CERT)
-    if not ca_path or not cert_path:
+    try:
+        ca_path = get_required_path(_RLOCATION_CA)
+        cert_path = get_required_path(_RLOCATION_CLIENT_CERT)
+    except RuntimeError:
         pytest.skip("Docker mTLS certs not in runfiles")
 
     # Docker expects exactly: ca.pem, cert.pem, key.pem

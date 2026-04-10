@@ -78,7 +78,7 @@ def web_platform() -> platform_detect.PlatformInfo:
 @pytest.fixture
 def proxy() -> proxy_setup.ProxySetup:
     return proxy_setup.ProxySetup(
-        port=18081, combined_ca=Path("/session/auth-proxy/combined_ca.pem"), status="started", ca_status="loaded"
+        combined_ca=Path("/session/auth-proxy/combined_ca.pem"), status="started", ca_status="loaded"
     )
 
 

@@ -1,11 +1,18 @@
 """Unit tests for tracing initialization."""
 
+import pytest
 import pytest_bazel
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 
 from devinfra.claude.hook_daemon.config import OtelConfig
 from devinfra.claude.hook_daemon.tracing import init_daemon_tracing
+
+
+@pytest.fixture(autouse=True)
+def _reset_tracer_provider():
+    """Reset global TracerProvider so set_tracer_provider() works in each test."""
+    trace._TRACER_PROVIDER_SET_ONCE._done = False
 
 
 def test_init_no_otel_config(tmp_path) -> None:

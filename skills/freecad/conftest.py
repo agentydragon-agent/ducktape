@@ -12,11 +12,11 @@ from opentelemetry import trace
 
 from util.bazel.runfiles import get_required_path
 from util.bazel.subprocess import python_env
-from util.oci import OciImage
 from util.testing.otel_tracing import configure_tracing
 
-# Docker-based test image (used by test_container_primitives.py)
-FREECAD_TEST = OciImage("_main/skills/freecad/freecad_test.rloc", "freecad-test:pinned")
+# CLEANUP(2026-04-10): Unused — tests migrated to conda fixtures. eval/run_eval.py
+# has its own OciImage. Remove once confirmed no new Docker-based tests are planned.
+# FREECAD_TEST = OciImage("_main/skills/freecad/freecad_test.rloc", "freecad-test:pinned")
 
 # Conda-based FreeCAD binary (rules_conda run_binary target).
 # Used as anchor to locate the conda env root in runfiles.

@@ -43,8 +43,8 @@ py_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//util/bazel:runfiles",
         "@pypi//pytest",
-        "@rules_python//python/runfiles",
     ],
 )
 
