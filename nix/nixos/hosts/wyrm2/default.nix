@@ -147,11 +147,12 @@ in
     };
     script = ''
       if vgs openebs-lvmvg >/dev/null 2>&1; then
-        echo "VG openebs-lvmvg already exists, skipping"
-        exit 0
+        echo "VG openebs-lvmvg already exists, activating"
+      else
+        pvcreate /dev/vdc
+        vgcreate openebs-lvmvg /dev/vdc
       fi
-      pvcreate /dev/vdc
-      vgcreate openebs-lvmvg /dev/vdc
+      vgchange -ay openebs-lvmvg
     '';
   };
 
