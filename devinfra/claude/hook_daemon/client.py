@@ -72,17 +72,20 @@ def update_proxy_creds(https_proxy: str, paths: SessionPaths) -> None:
         raise OSError(f"Daemon returned HTTP {response.status} for update-proxy-creds: {body.decode()}")
 
 
-def check_health(sock_path: Path, timeout: float = 0.5) -> bool:
-    """Check if the daemon is healthy by hitting GET /health. Returns False on any failure."""
+def check_health(sock_path: Path, timeout: float = 0.5) -> _UDSConnection | None:
+    """Check if the daemon is healthy by hitting GET /health. Returns a connection on success."""
     try:
         conn = _UDSConnection(sock_path)
         conn.timeout = timeout
         conn.request("GET", "/health")
         response = conn.getresponse()
+        response.read()
+        if response.status == 200:
+            return conn
         conn.close()
-        return response.status == 200
+        return None
     except (ConnectionRefusedError, FileNotFoundError, OSError, http.client.HTTPException):
-        return False
+        return None
 
 
 def call_daemon(hook_input: AnyHookInput, env: dict[str, str], paths: SessionPaths) -> HookResponse | None:
@@ -95,21 +98,21 @@ def call_daemon(hook_input: AnyHookInput, env: dict[str, str], paths: SessionPat
 
     # Fast path: talk to an existing healthy daemon without any locking.
     if sock_path.exists():
-        result = _post_to_daemon(request, sock_path)
+        conn = _UDSConnection(sock_path)
+        result = _post_to_daemon(request, conn)
         if result is not None:
             return result
         logger.info("Daemon unreachable on existing socket %s, will restart", sock_path)
 
     # Slow path: ensure a healthy daemon exists (may kill a stale/hung one
     # and start a fresh one), then retry.
-    _ensure_daemon(paths)
-    return _post_to_daemon(request, sock_path)
+    conn = _ensure_daemon(paths)
+    return _post_to_daemon(request, conn)
 
 
-def _post_to_daemon(request: HookRequest, sock_path: Path) -> HookResponse | None:
+def _post_to_daemon(request: HookRequest, conn: _UDSConnection) -> HookResponse | None:
     """Send a hook request to the daemon. Returns None if connection fails."""
     try:
-        conn = _UDSConnection(sock_path)
         payload = request.model_dump_json().encode()
         conn.request("POST", "/hook", body=payload, headers={"Content-Type": "application/json"})
         response = conn.getresponse()
@@ -188,8 +191,8 @@ def _kill_daemon_by_pidfile(pidfile: Path) -> None:
     logger.warning("Daemon pid=%d still alive after SIGTERM+SIGKILL", pid)
 
 
-def _ensure_daemon(paths: SessionPaths) -> None:
-    """Ensure a healthy daemon is running, starting or restarting as needed.
+def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
+    """Ensure a healthy daemon is running, returning a connection to it.
 
     Holds daemon.lock for the entire duration — from checking liveness through
     forking and waiting for the new daemon's socket to accept connections. This
@@ -210,9 +213,9 @@ def _ensure_daemon(paths: SessionPaths) -> None:
     with FileLock(str(daemon_dir / "daemon.lock")):
         # Re-check after acquiring: another client may have won the race and
         # already started a healthy daemon while we were waiting.
-        if check_health(sock_path):
+        if conn := check_health(sock_path):
             logger.debug("Daemon already healthy (socket=%s), skipping start", sock_path)
-            return
+            return conn
 
         # Probe daemon liveness via flock on pidfile.
         if _is_pidfile_locked(pidfile):
@@ -235,7 +238,7 @@ def _ensure_daemon(paths: SessionPaths) -> None:
 
         # Wait for socket while still holding daemon.lock — prevents other
         # clients from entering and trying to start a second daemon.
-        _wait_for_sock(sock_path, pidfile=pidfile)
+        return _wait_for_sock(sock_path, pidfile=pidfile)
 
 
 def _fork_daemon(daemon_dir: Path, sock_path: Path) -> None:
@@ -281,8 +284,10 @@ def _fork_daemon(daemon_dir: Path, sock_path: Path) -> None:
     )
 
 
-def _wait_for_sock(sock_path: Path, *, pidfile: Path, timeout_secs: float = _DAEMON_STARTUP_TIMEOUT_SECS) -> None:
-    """Poll until socket file exists and accepts connections.
+def _wait_for_sock(
+    sock_path: Path, *, pidfile: Path, timeout_secs: float = _DAEMON_STARTUP_TIMEOUT_SECS
+) -> _UDSConnection:
+    """Poll until socket file exists and accepts connections, returning a connection.
 
     Detects daemon crashes via flock probe on the pidfile: if the lock becomes
     available, the daemon died (kernel released the flock on process exit).
@@ -292,11 +297,10 @@ def _wait_for_sock(sock_path: Path, *, pidfile: Path, timeout_secs: float = _DAE
     while time.monotonic() < deadline:
         if sock_path.exists():
             try:
-                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                s.connect(str(sock_path))
-                s.close()
+                conn = _UDSConnection(sock_path)
+                conn.connect()
                 logger.debug("Daemon socket ready at %s", sock_path)
-                return
+                return conn
             except (ConnectionRefusedError, OSError):
                 pass
 

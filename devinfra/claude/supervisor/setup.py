@@ -10,7 +10,6 @@ import asyncio
 import configparser
 import logging
 import os
-from dataclasses import dataclass
 
 from devinfra.claude.errors import SupervisorError
 from devinfra.claude.managed_files import write_ini_config
@@ -21,13 +20,6 @@ from util.bazel.subprocess import async_run_python_module
 from util.net import is_port_in_use
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class SupervisorSetup:
-    """Result of supervisor setup."""
-
-    client: SupervisorClient
 
 
 def _write_config(paths: SessionPaths, settings: HookSettings) -> None:
@@ -119,7 +111,7 @@ def _dump_supervisor_debug_info(paths: SessionPaths, settings: HookSettings) -> 
     return "\n".join(lines)
 
 
-async def start(paths: SessionPaths, settings: HookSettings) -> SupervisorSetup:
+async def start(paths: SessionPaths, settings: HookSettings) -> SupervisorClient:
     """Start supervisord if not already running.
 
     Raises:
@@ -128,7 +120,7 @@ async def start(paths: SessionPaths, settings: HookSettings) -> SupervisorSetup:
     existing_client = await try_connect(paths, settings)
     if existing_client:
         logger.info("supervisord already running")
-        return SupervisorSetup(client=existing_client)
+        return existing_client
 
     logger.info("Starting supervisord...")
 
@@ -204,7 +196,7 @@ async def start(paths: SessionPaths, settings: HookSettings) -> SupervisorSetup:
         client = await try_connect(paths, settings)
         if client:
             logger.info("supervisord started successfully")
-            return SupervisorSetup(client=client)
+            return client
         if i % 4 == 3:  # Log every second
             logger.debug("Waiting for supervisord... (%d/20)", i + 1)
 

@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-__WRAPPER_DIR_ENV = "_GIT_WRAPPER_DIR"
+_WRAPPER_DIR_ENV = "_GIT_WRAPPER_DIR"
 
 # Git global options that consume the next argument as a value.
 _GLOBAL_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"})

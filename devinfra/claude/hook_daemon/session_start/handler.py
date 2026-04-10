@@ -47,7 +47,7 @@ from devinfra.claude.hook_daemon.session_start import (
     tmpfs,
     tune_rootfs,
 )
-from devinfra.claude.hook_daemon.wrappers import install as wrappers
+from devinfra.claude.hook_daemon.wrappers.install import install as install_wrapper
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
@@ -197,7 +197,7 @@ async def _setup_web(
             tmpfs_mounted = await mount_tmpfs_at(storage_dir)
             return await container_runtime.setup_container_runtime(
                 session.paths,
-                supervisor_result.client,
+                supervisor_result,
                 tmpfs_mounted=tmpfs_mounted,
                 root_supports_overlay=platform.root_supports_overlay,
             )
@@ -416,13 +416,10 @@ async def handle(
         session_bazelrc = session.paths.session_dir / "bazelrc"
         write_config(session_bazelrc, bazelrc_content, "session bazelrc")
 
-    # Install bazel wrapper (single canonical install for both web and CLI modes).
-    with tracer.start_as_current_span("install_bazel_wrappers", context=root_ctx):
-        wrappers.install_bazel(session.paths)
-
-    # Install git safety wrapper (blocks git add -A, git stash, git commit --amend).
-    with tracer.start_as_current_span("install_git_wrapper", context=root_ctx):
-        wrappers.install_git(session.paths)
+    # Install PATH wrappers (bazelisk proxy injection + git safety).
+    with tracer.start_as_current_span("install_wrappers", context=root_ctx):
+        install_wrapper("bazelisk", "devinfra.claude.hook_daemon.wrappers.bazel", session.paths)
+        install_wrapper("git", "devinfra.claude.hook_daemon.wrappers.git", session.paths)
 
     # Generate timestamp
     hook_timestamp = datetime.now()

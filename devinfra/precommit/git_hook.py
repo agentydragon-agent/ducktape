@@ -4,6 +4,7 @@ Installed as separate console scripts via the claude-hooks wheel:
 - ducktape-precommit: file validations (pytest-main, tf-centralization, filenames, cluster, frozen-specimens)
 - ducktape-prepare-commit-msg: block amending already-pushed commits
 - ducktape-commit-msg: enforce BAZEL_TEST_INVOCATIONS= tag
+- ducktape-enforce-bazel-tests: verify affected Bazel tests are cached/passing
 """
 
 from __future__ import annotations
@@ -21,10 +22,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.trace import StatusCode
 
 from cluster.validation.validate_all import validate as validate_cluster
-from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import (
-    EnforceBazelTestsError,
-    run as enforce_bazel_tests_run,
-)
+from devinfra.precommit.enforce_bazel_tests.enforce_bazel_tests import run as enforce_bazel_tests_run
 from devinfra.precommit.filename_conventions import check_filename_conventions
 from devinfra.precommit.frozen_specimens import check_specimen_code_changes
 from devinfra.precommit.terraform_centralization import find_violations
@@ -106,6 +104,18 @@ def get_all_files(repo: pygit2.Repository) -> list[Path]:
     return [Path(entry.path) for entry in repo.index if (repo_root / entry.path).exists()]
 
 
+def _staged_deltas(repo: pygit2.Repository) -> tuple[pygit2.Tree | None, list[pygit2.DiffDelta]]:
+    """Return (head_tree, staged deltas) for the current index."""
+    if repo.head_is_unborn:
+        head_tree = None
+        base = repo[repo.TreeBuilder().write()].peel(pygit2.Tree)
+    else:
+        head_tree = repo.head.peel(pygit2.Tree)
+        base = head_tree
+    repo.index.read()
+    return head_tree, list(repo.index.diff_to_tree(base).deltas)
+
+
 def _setup_tracing(repo_root: Path) -> None:
     provider = TracerProvider()
     exporter = JsonlSpanExporter(repo_root / ".git" / "precommit-traces.jsonl")
@@ -127,15 +137,7 @@ async def _run_pre_commit(argv: list[str]) -> int:
         workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
         bazel_index = build_bazel_index(workspace)
 
-        if repo.head_is_unborn:
-            head_tree = None
-            base = repo[repo.TreeBuilder().write()].peel(pygit2.Tree)
-        else:
-            head_tree = repo.head.peel(pygit2.Tree)
-            base = head_tree
-        repo.index.read()
-        all_deltas = list(repo.index.diff_to_tree(base).deltas)
-
+        head_tree, all_deltas = _staged_deltas(repo)
         deltas = [d for d in all_deltas if not _is_ignored(repo, d.new_file.path)]
 
         files = [Path(f) for f in argv] if argv else get_all_files(repo)
@@ -166,13 +168,6 @@ async def _run_pre_commit(argv: list[str]) -> int:
                 failed.append(name)
             else:
                 print(f"  {name}: ok")
-
-        if os.environ.get("DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS") in ("1", "true"):
-            try:
-                enforce_bazel_tests_run(workspace, deltas)
-            except EnforceBazelTestsError as e:
-                print(f"enforce-bazel-tests: {e}", file=sys.stderr)
-                return 1
 
     return 1 if failed else 0
 
@@ -241,6 +236,18 @@ def _run_commit_msg(argv: list[str]) -> int:
 
 def main_pre_commit() -> int:
     return asyncio.run(_run_pre_commit(sys.argv[1:]))
+
+
+def main_enforce_bazel_tests() -> None:
+    if os.environ.get("DUCKTAPE_PRECOMMIT_ENFORCE_BAZEL_TESTS") not in ("1", "true"):
+        return
+
+    repo = pygit2.Repository(".")
+    repo_root = Path(repo.workdir)
+    workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
+    _, deltas = _staged_deltas(repo)
+
+    enforce_bazel_tests_run(workspace, deltas)
 
 
 def main_prepare_commit_msg() -> int:

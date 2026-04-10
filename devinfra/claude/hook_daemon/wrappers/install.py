@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 WRAPPER_DIR_ENV = "_DUCKTAPE_WRAPPER_DIR"
 
 
-def _install(binary_name: str, module: str, paths: SessionPaths) -> Path:
+def install(binary_name: str, module: str, paths: SessionPaths) -> Path:
     """Install a shell wrapper script at paths.wrapper_dir/<binary_name>."""
     wrapper_dir = paths.wrapper_dir
     wrapper_path = wrapper_dir / binary_name
@@ -27,19 +27,3 @@ def _install(binary_name: str, module: str, paths: SessionPaths) -> Path:
     logger.info("Installed %s wrapper at %s", binary_name, wrapper_path)
 
     return wrapper_path
-
-
-# --- Bazel ---
-
-
-def install_bazel(paths: SessionPaths) -> Path:
-    """Install bazelisk wrapper that injects proxy credentials."""
-    return _install("bazelisk", "devinfra.claude.hook_daemon.wrappers.bazel", paths)
-
-
-# --- Git ---
-
-
-def install_git(paths: SessionPaths) -> Path:
-    """Install git wrapper that blocks dangerous operations."""
-    return _install("git", "devinfra.claude.hook_daemon.wrappers.git", paths)
