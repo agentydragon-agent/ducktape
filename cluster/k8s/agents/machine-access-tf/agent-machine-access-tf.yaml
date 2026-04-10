@@ -1,0 +1,21 @@
+apiVersion: infra.contrib.fluxcd.io/v1alpha2
+kind: Terraform
+metadata:
+  name: agent-machine-access
+  namespace: flux-system
+spec:
+  interval: 15m
+  approvePlan: "auto"
+  path: ./cluster/terraform/gitops/agent-machine-access
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  serviceAccountName: tf-runner
+  backendConfig:
+    customConfiguration: |
+      backend "kubernetes" {
+        secret_suffix    = "agent-machine-access"
+        namespace        = "flux-system"
+      }
+  vars: []
