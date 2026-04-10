@@ -1,19 +1,19 @@
-"""Unit tests for bazel_wrapper proxy credential refresh logic."""
+"""Unit tests for bazel wrapper proxy credential refresh logic."""
 
 from unittest.mock import patch
 
 import pytest
 import pytest_bazel
 
-from devinfra.claude.bazel_wrapper import _refresh_proxy_creds
 from devinfra.claude.errors import AuthProxyError
+from devinfra.claude.hook_daemon.wrappers.bazel import _refresh_proxy_creds
 from devinfra.claude.session_paths import SessionPaths
 
 
 def test_sends_creds_via_rpc(session_paths: SessionPaths, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HTTPS_PROXY", "http://user:pass@proxy.example.com:8080")
 
-    with patch("devinfra.claude.bazel_wrapper.update_proxy_creds") as mock_rpc:
+    with patch("devinfra.claude.hook_daemon.wrappers.bazel.update_proxy_creds") as mock_rpc:
         _refresh_proxy_creds(session_paths)
         mock_rpc.assert_called_once_with("http://user:pass@proxy.example.com:8080", session_paths)
 
@@ -32,7 +32,7 @@ def test_raises_when_rpc_fails(session_paths: SessionPaths, monkeypatch: pytest.
     monkeypatch.setenv("HTTPS_PROXY", "http://user:pass@proxy.example.com:8080")
 
     with (
-        patch("devinfra.claude.bazel_wrapper.update_proxy_creds", side_effect=OSError("connection refused")),
+        patch("devinfra.claude.hook_daemon.wrappers.bazel.update_proxy_creds", side_effect=OSError("connection refused")),
         pytest.raises(AuthProxyError, match="Auth proxy RPC failed"),
     ):
         _refresh_proxy_creds(session_paths)

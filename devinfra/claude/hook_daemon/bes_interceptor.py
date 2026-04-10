@@ -179,8 +179,7 @@ class BesInterceptor:
                             stream_id = str(obe.stream_id.invocation_id)
                     yield request
 
-            response_stream = upstream_call(inspecting_iterator(), metadata=self._upstream_metadata())
-            yield from response_stream
+            yield from upstream_call(inspecting_iterator(), metadata=self._upstream_metadata())
 
             # After stream completes, check if we should nudge.
             self._maybe_nudge(invocation_state, stream_id)

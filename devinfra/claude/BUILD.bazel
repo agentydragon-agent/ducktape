@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # === Base modules (no internal deps) ===
 
@@ -78,49 +78,6 @@ py_library(
     ],
 )
 
-# === Libraries for binary sources ===
-# py_library targets for source files that are also py_binary entry points.
-# py_package depends on these (not the py_binary targets) to avoid pulling in
-# venv artifacts that break py_wheel packaging.
-
-py_library(
-    name = "bazel_wrapper_lib",
-    srcs = ["bazel_wrapper.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":debug",
-        ":env_file",
-        ":errors",
-        ":session_paths",
-        ":settings",
-        "//devinfra/claude/auth_proxy:credentials",
-        "//devinfra/claude/auth_proxy:vars",
-        "//devinfra/claude/hook_daemon:client",
-    ],
-)
-
-py_library(
-    name = "git_wrapper_lib",
-    srcs = ["git_wrapper.py"],
-    visibility = ["//visibility:public"],
-)
-
-# === Binaries ===
-
-py_binary(
-    name = "bazel_wrapper",
-    main_module = "devinfra.claude.bazel_wrapper",
-    visibility = ["//visibility:public"],
-    deps = [":bazel_wrapper_lib"],
-)
-
-py_binary(
-    name = "git_wrapper",
-    main_module = "devinfra.claude.git_wrapper",
-    visibility = ["//visibility:public"],
-    deps = [":git_wrapper_lib"],
-)
-
 # Packaging targets are in the root //:wheel (merged ducktape wheel).
 # See /BUILD.bazel for ducktape_pkg and wheel targets.
 
@@ -195,30 +152,6 @@ py_test(
         "//devinfra/claude/auth_proxy:credentials",
         "@pypi//pyjwt",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_git_wrapper",
-    srcs = ["test_git_wrapper.py"],
-    deps = [
-        ":git_wrapper_lib",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_bazel_wrapper",
-    srcs = ["test_bazel_wrapper.py"],
-    deps = [
-        ":bazel_wrapper_lib",
-        ":conftest",
-        ":errors",
-        ":session_paths",
-        ":settings",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
         "@pypi//pytest_bazel",
     ],
 )

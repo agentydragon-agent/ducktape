@@ -116,7 +116,6 @@ py_library(
         "//devinfra/claude/claude_api/hooks:post_tool_use",
         "//devinfra/claude/claude_api/hooks:pre_tool_use",
         "//devinfra/claude/claude_api/hooks:session_start",
-        "//devinfra/claude/hook_daemon/session_start:http_client",
         "//devinfra/claude/hook_daemon/session_start:session_start_lib",
         "@pypi//fastapi",
         "@pypi//opentelemetry_api",
@@ -173,7 +172,7 @@ py_library(
 
 py_binary(
     name = "hook_dispatch",
-    data = ["//devinfra/claude:bazel_wrapper"],
+    data = ["//devinfra/claude/hook_daemon/wrappers:bazel"],
     main_module = "devinfra.claude.hook_daemon.hook_dispatch",
     visibility = ["//visibility:public"],
     deps = [":hook_dispatch_lib"],

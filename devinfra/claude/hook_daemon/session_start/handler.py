@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any
 
 import anyio
-import httpx
 from mako.template import Template
 from opentelemetry import trace
 
@@ -38,11 +37,9 @@ from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start import (
     apt,
     bazel_warmup,
-    bazelisk,
     buildbuddy,
     container_runtime,
     fork_remote,
-    git_wrapper,
     mkcert,
     platform_detect,
     precommit,
@@ -50,6 +47,7 @@ from devinfra.claude.hook_daemon.session_start import (
     tmpfs,
     tune_rootfs,
 )
+from devinfra.claude.hook_daemon.wrappers import install as wrappers
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.settings import CONFIG_FILES, HookSettings
 from devinfra.claude.supervisor import setup as supervisor_setup
@@ -158,7 +156,7 @@ async def _setup_web(
         with tracer.start_as_current_span("supervisor_start", context=root_ctx):
             return await supervisor_setup.start(session.paths, settings)
 
-    # Start supervisor (required by proxy and docker)
+    # Start supervisor (required by docker)
     supervisor_task = asyncio.create_task(traced_supervisor_start())
 
     async def mount_tmpfs_at(path: Path) -> bool:
@@ -200,7 +198,6 @@ async def _setup_web(
             tmpfs_mounted = await mount_tmpfs_at(storage_dir)
             return await container_runtime.setup_container_runtime(
                 session.paths,
-                settings,
                 supervisor_result.client,
                 tmpfs_mounted=tmpfs_mounted,
                 root_supports_overlay=platform.root_supports_overlay,
@@ -224,7 +221,7 @@ async def _setup_web(
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
     # Resolve bazelisk path early (fast shutil.which — wrapper installed later in run_session).
-    bazelisk_path = bazelisk.resolve_bazelisk()
+    bazelisk_path = wrappers.resolve_bazelisk()
 
     apt_packages: list[str] = []
     if profile.install_apt_packages:
@@ -320,7 +317,6 @@ async def handle(
     settings: HookSettings,
     hook_config: HookConfig,
     ctx: CallerContext,
-    http: httpx.Client,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -428,11 +424,11 @@ async def handle(
 
     # Install bazel wrapper (single canonical install for both web and CLI modes).
     with tracer.start_as_current_span("install_bazel_wrappers", context=root_ctx):
-        bazelisk.install_wrapper(session.paths)
+        wrappers.install_bazel(session.paths)
 
     # Install git safety wrapper (blocks git add -A, git stash, git commit --amend).
     with tracer.start_as_current_span("install_git_wrapper", context=root_ctx):
-        git_wrapper.install_wrapper(session.paths)
+        wrappers.install_git(session.paths)
 
     # Generate timestamp
     hook_timestamp = datetime.now()

@@ -41,7 +41,6 @@ from devinfra.claude.hook_daemon.post_tool_use import evaluate as evaluate_post
 from devinfra.claude.hook_daemon.pre_tool_use import evaluate as evaluate_pre
 from devinfra.claude.hook_daemon.session import Session
 from devinfra.claude.hook_daemon.session_start.handler import CallerContext, handle as handle_session_start
-from devinfra.claude.hook_daemon.session_start.http_client import build_http_client
 from devinfra.claude.session_paths import SessionPaths
 from devinfra.claude.settings import HookSettings, is_web_mode
 
@@ -158,10 +157,9 @@ async def handle_hook(req: HookRequest) -> Response:
                 profile = hook_config.resolve_profile(web_mode, override=app.state.settings.profile)
                 await session.start_proxy(profile)
                 ctx = CallerContext.from_env(req.env)
-                with build_http_client(req.env) as http:
-                    output = await handle_session_start(
-                        session, req.hook, app.state.settings, hook_config=hook_config, ctx=ctx, http=http
-                    )
+                output = await handle_session_start(
+                    session, req.hook, app.state.settings, hook_config=hook_config, ctx=ctx
+                )
             case PreToolUseInput():
                 output = evaluate_pre(req.hook)
             case PostToolUseInput():

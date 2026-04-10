@@ -7,24 +7,6 @@ py_library(
 )
 
 py_library(
-    name = "http_client",
-    srcs = ["http_client.py"],
-    visibility = ["//visibility:public"],
-    deps = ["@pypi//httpx"],
-)
-
-py_library(
-    name = "bazelisk",
-    srcs = ["bazelisk.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/claude:session_paths",
-        "//devinfra/claude:settings",
-        "//util/bazel:subprocess",
-    ],
-)
-
-py_library(
     name = "bazel_warmup",
     srcs = ["bazel_warmup.py"],
     visibility = ["//visibility:public"],
@@ -117,34 +99,21 @@ py_library(
 )
 
 py_library(
-    name = "git_wrapper",
-    srcs = ["git_wrapper.py"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//devinfra/claude:session_paths",
-        "//util/bazel:subprocess",
-    ],
-)
-
-py_library(
     name = "session_start_lib",
     srcs = ["handler.py"],
     visibility = ["//visibility:public"],
     deps = [
         ":apt",
         ":bazel_warmup",
-        ":bazelisk",
         ":buildbuddy",
         ":container_runtime",
         ":fork_remote",
-        ":git_wrapper",
         ":mkcert",
         ":platform_detect",
         ":precommit",
         ":secret_sources",
         ":tmpfs",
         ":tune_rootfs",
-        "//devinfra/claude:bazel_wrapper_lib",
         "//devinfra/claude:debug",
         "//devinfra/claude:env_file",
         "//devinfra/claude:errors",
@@ -157,6 +126,7 @@ py_library(
         "//devinfra/claude/hook_daemon:config",
         "//devinfra/claude/hook_daemon:session",
         "//devinfra/claude/hook_daemon/templates",
+        "//devinfra/claude/hook_daemon/wrappers:install",
         "//devinfra/claude/supervisor:setup",
         "@pypi//anyio",
         "@pypi//httpx",

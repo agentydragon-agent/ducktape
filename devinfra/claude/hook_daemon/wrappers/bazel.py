@@ -1,11 +1,7 @@
-"""Bazelisk wrapper for Claude Code — sets up environment and execs bazelisk.
+"""Bazelisk wrapper — runtime entry point, execs real bazelisk.
 
-Mode-aware: in web mode (CLAUDE_CODE_REMOTE=true), writes fresh proxy
-credentials and verifies the in-process auth proxy is running. In CLI mode,
-passes through directly.
-Both modes inject --bazelrc=<per-session-bazelrc> derived from the session dir.
-
-Reads configuration from environment variables set by session_start.py.
+Mode-aware: in web mode, refreshes proxy credentials via RPC before exec.
+In CLI mode, passes through directly. Both modes inject --bazelrc.
 """
 
 import logging
@@ -54,12 +50,10 @@ def _setup_logging(paths: SessionPaths) -> None:
     """Configure logging to both stderr and file."""
     formatter = logging.Formatter("[bazelisk-wrapper] %(asctime)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
 
-    # Stderr: only warnings and errors (keep output quiet on happy path)
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setFormatter(formatter)
     stderr_handler.setLevel(logging.WARNING)
 
-    # File: verbose (DEBUG+) for post-mortem debugging
     log_file = paths.sandbox_writable_dir / "bazelisk-wrapper.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(log_file, mode="a")
@@ -71,7 +65,6 @@ def _setup_logging(paths: SessionPaths) -> None:
     root_logger.addHandler(stderr_handler)
     root_logger.addHandler(file_handler)
 
-    # Show log file path on stderr so users know where to look
     print(f"[bazelisk-wrapper] log: {log_file}", file=sys.stderr)
     logger.info("bazelisk_wrapper started")
 
@@ -89,7 +82,6 @@ def _resolve_real_binary() -> str:
             raise FileNotFoundError(f"{ENV_BAZELISK_PATH}={env_path} does not exist")
         return env_path
 
-    # CLI mode: find the real bazelisk, skipping our wrapper directory
     wrapper_dir = os.environ.get(_WRAPPER_DIR_ENV, "")
     for directory in os.environ.get("PATH", "").split(os.pathsep):
         if wrapper_dir and Path(directory).resolve() == Path(wrapper_dir).resolve():

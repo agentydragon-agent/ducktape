@@ -66,9 +66,7 @@ py_test(
         ":e2e_container",
         "//devinfra/claude/testdata/test_workspace:workspace_files",
     ],
-    env_inherit = [
-        "DOCKER_HOST",
-    ],
+    requires_docker = True,
     tags = [
         "e2e",
         "external",

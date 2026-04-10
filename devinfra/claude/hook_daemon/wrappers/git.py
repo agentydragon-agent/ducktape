@@ -1,4 +1,4 @@
-"""Git safety wrapper — blocks dangerous git operations.
+"""Git safety wrapper — runtime entry point, blocks dangerous git operations.
 
 Intercepts git invocations, rejects blocked patterns (git add -A, git stash,
 git commit --amend), and execs the real git binary for everything else.
@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-_WRAPPER_DIR_ENV = "_GIT_WRAPPER_DIR"
+__WRAPPER_DIR_ENV = "_GIT_WRAPPER_DIR"
 
 # Git global options that consume the next argument as a value.
 _GLOBAL_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"})
