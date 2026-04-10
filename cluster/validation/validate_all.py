@@ -11,7 +11,8 @@ Checks:
 6. Flux build: Validates flux can build the complete kustomization tree
 7. Controller resource healthChecks: Flux kustomizations deploying HelmReleases or Terraform CRs
    must have healthChecks for them
-8. Helm template rendering: Cilium values files render without errors
+8. Helm template rendering: Cilium values files render without errors (Bazel test only,
+   enable in pre-commit with DUCKTAPE_HELM_VALIDATE=1)
 9. Blueprint completeness: All authentik blueprint files must be listed in configMapGenerator
 10. Goldilocks explicit decision: Namespaces with workloads must explicitly set goldilocks enabled label
 
@@ -21,6 +22,7 @@ See AGENTS.md section "Flux Kustomization Layering" for CRD layering details.
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 from cluster.validation.checks import (
@@ -75,6 +77,7 @@ async def validate(root: Path, *, skip_flux_build: bool = False) -> list[str]:
     if not skip_flux_build:
         errors.extend(await validate_flux_build(root))
 
-    errors.extend(await validate_helm_templates())
+    if os.environ.get("DUCKTAPE_HELM_VALIDATE") == "1":
+        errors.extend(await validate_helm_templates())
 
     return errors

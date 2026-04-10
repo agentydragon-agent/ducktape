@@ -208,6 +208,20 @@ py_test(
     ],
 )
 
+py_test(
+    name = "test_helm_templates",
+    srcs = ["test_helm_templates.py"],
+    data = [
+        "//cluster/terraform/main:cilium-values.yaml",
+        "@multitool//tools/helm",
+    ],
+    deps = [
+        ":helm_templates",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 py_library(
     name = "kyverno",
     srcs = ["kyverno.py"],
