@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "common",
@@ -237,6 +237,17 @@ py_library(
     deps = [
         ":common",
         "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_session_start_serialization",
+    srcs = ["test_session_start_serialization.py"],
+    deps = [
+        ":session_start",
+        "//devinfra/claude:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )
 

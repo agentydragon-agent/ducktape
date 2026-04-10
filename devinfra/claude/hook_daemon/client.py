@@ -234,20 +234,23 @@ def _ensure_daemon(paths: SessionPaths) -> _UDSConnection:
         if pidfile.exists():
             pidfile.unlink()
 
-        _fork_daemon(daemon_dir, sock_path)
+        daemon_pid = _fork_daemon(daemon_dir, sock_path)
 
         # Wait for socket while still holding daemon.lock — prevents other
         # clients from entering and trying to start a second daemon.
-        return _wait_for_sock(sock_path, pidfile=pidfile)
+        return _wait_for_sock(sock_path, pidfile=pidfile, daemon_pid=daemon_pid)
 
 
-def _fork_daemon(daemon_dir: Path, sock_path: Path) -> None:
-    """Fork the daemon as a double-forked background process.
+def _fork_daemon(daemon_dir: Path, sock_path: Path) -> int:
+    """Fork the daemon as a double-forked background process. Returns grandchild PID.
 
     Uses the classic Unix double-fork pattern: parent → child → grandchild.
     The intermediate child exits immediately (reaped synchronously by the parent),
     and the grandchild is reparented to init. This eliminates zombies — unlike
     Popen(start_new_session=True) where the parent must waitpid to reap.
+
+    The grandchild PID is piped back from the intermediate child so the caller
+    can detect pre-pidfile crashes via os.kill(pid, 0).
     """
     daemon_module = "devinfra.claude.hook_daemon.main"
     log_out = daemon_dir / "daemon.log"
@@ -255,19 +258,29 @@ def _fork_daemon(daemon_dir: Path, sock_path: Path) -> None:
 
     logger.info("Starting daemon: module=%s sock=%s daemon_dir=%s", daemon_module, sock_path, daemon_dir)
 
+    read_fd, write_fd = os.pipe()
+
     pid = os.fork()
     if pid > 0:
-        # Parent: reap intermediate child immediately (it exits right away).
+        # Parent: close write end, reap intermediate child, read grandchild PID.
+        os.close(write_fd)
         os.waitpid(pid, 0)
-        return
+        data = os.read(read_fd, 32)
+        os.close(read_fd)
+        return int(data)
 
-    # Intermediate child: new session, then fork again.
+    # Intermediate child: close read end, new session, then fork again.
+    os.close(read_fd)
     os.setsid()
     pid2 = os.fork()
     if pid2 > 0:
-        os._exit(0)  # Intermediate child exits.
+        # Write grandchild PID to pipe before exiting.
+        os.write(write_fd, str(pid2).encode())
+        os.close(write_fd)
+        os._exit(0)
 
     # Grandchild: this becomes the daemon process.
+    os.close(write_fd)
     # Redirect stdout/stderr to log files.
     fd_out = os.open(str(log_out), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
     fd_err = os.open(str(log_err), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
@@ -285,14 +298,20 @@ def _fork_daemon(daemon_dir: Path, sock_path: Path) -> None:
 
 
 def _wait_for_sock(
-    sock_path: Path, *, pidfile: Path, timeout_secs: float = _DAEMON_STARTUP_TIMEOUT_SECS
+    sock_path: Path,
+    *,
+    pidfile: Path,
+    daemon_pid: int,
+    timeout_secs: float = _DAEMON_STARTUP_TIMEOUT_SECS,
 ) -> _UDSConnection:
     """Poll until socket file exists and accepts connections, returning a connection.
 
-    Detects daemon crashes via flock probe on the pidfile: if the lock becomes
-    available, the daemon died (kernel released the flock on process exit).
+    Detects daemon crashes two ways:
+    1. Post-pidfile: flock probe on the pidfile (authoritative, PID-reuse safe).
+    2. Pre-pidfile: os.kill(daemon_pid, 0) — covers the gap before the daemon
+       acquires the flock. PID reuse in the <5s startup window is negligible.
     """
-    logger.debug("Waiting for daemon socket %s (timeout=%.1fs)", sock_path, timeout_secs)
+    logger.debug("Waiting for daemon socket %s (pid=%d, timeout=%.1fs)", sock_path, daemon_pid, timeout_secs)
     deadline = time.monotonic() + timeout_secs
     while time.monotonic() < deadline:
         if sock_path.exists():
@@ -304,12 +323,21 @@ def _wait_for_sock(
             except (ConnectionRefusedError, OSError):
                 pass
 
-        # Crash detection: if the daemon died, its flock on the pidfile is
-        # released by the kernel.  The stale pidfile is deleted before forking,
-        # so if it exists, the new daemon created it.  An unlocked pidfile means
-        # the daemon died after creating the file but before (or after) binding.
+        # Post-pidfile crash detection: if the daemon died, its flock on the
+        # pidfile is released by the kernel.  The stale pidfile is deleted
+        # before forking, so if it exists, the new daemon created it.  An
+        # unlocked pidfile means the daemon died after creating the file but
+        # before (or after) binding.
         if pidfile.exists() and not _is_pidfile_locked(pidfile):
             raise DaemonStartError("Daemon died during startup")
+
+        # Pre-pidfile crash detection: if the daemon process exited before it
+        # even wrote the pidfile (import error, execve failure, early crash),
+        # os.kill(pid, 0) catches it immediately instead of waiting for timeout.
+        try:
+            os.kill(daemon_pid, 0)
+        except ProcessLookupError:
+            raise DaemonStartError("Daemon process died during startup (pre-pidfile)")
 
         time.sleep(0.1)
     logger.warning("Daemon socket did not appear within %.1fs at %s", timeout_secs, sock_path)

@@ -12,7 +12,7 @@ from pathlib import Path
 import yaml
 
 from devinfra.claude.hook_daemon.config import K8sConfig, SecretSource
-from devinfra.claude.sops_decrypt import decrypt_sops_yaml
+from devinfra.claude.hook_daemon.session_start.sops_decrypt import decrypt_sops_yaml
 
 logger = logging.getLogger(__name__)
 

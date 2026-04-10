@@ -6,7 +6,7 @@ from devinfra.claude.hook_daemon.wrappers.git import _check_blocked, _extract_su
 
 class TestExtractSubcommand:
     @pytest.mark.parametrize(
-        "args, expected",
+        ("args", "expected"),
         [
             (["status"], ("status", [])),
             (["add", "file.py"], ("add", ["file.py"])),
@@ -25,7 +25,7 @@ class TestExtractSubcommand:
 
 class TestCheckBlocked:
     @pytest.mark.parametrize(
-        "subcommand, sub_args",
+        ("subcommand", "sub_args"),
         [
             ("add", ["-A"]),
             ("add", ["--all"]),
@@ -41,7 +41,7 @@ class TestCheckBlocked:
         assert _check_blocked(subcommand, sub_args) is not None
 
     @pytest.mark.parametrize(
-        "subcommand, sub_args",
+        ("subcommand", "sub_args"),
         [
             ("add", ["file.py"]),
             ("add", ["-p", "file.py"]),

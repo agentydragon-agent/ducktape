@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from devinfra.claude.sops_decrypt import decrypt_sops_yaml
+from devinfra.claude.hook_daemon.session_start.sops_decrypt import decrypt_sops_yaml
 from util.bazel.runfiles import get_required_path
 
 _TESTDATA_YAML = "_main/devinfra/claude/testdata/sops_test_secrets.yaml"

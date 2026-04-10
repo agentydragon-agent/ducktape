@@ -1,6 +1,13 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
+    name = "sops_decrypt",
+    srcs = ["sops_decrypt.py"],
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//pyyaml"],
+)
+
+py_library(
     name = "apt",
     srcs = ["apt.py"],
     visibility = ["//visibility:public"],
@@ -48,7 +55,7 @@ py_library(
     srcs = ["secret_sources.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//devinfra/claude:sops_decrypt",
+        ":sops_decrypt",
         "//devinfra/claude/hook_daemon:config",
         "@pypi//pyyaml",
     ],
@@ -142,6 +149,23 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = ["//util/testing:otel_tracing"],
+)
+
+py_test(
+    name = "test_sops_decrypt",
+    srcs = ["test_sops_decrypt.py"],
+    data = [
+        "//devinfra/claude/testdata:sops_test_age_key.txt",
+        "//devinfra/claude/testdata:sops_test_secrets.yaml",
+        "@multitool//tools/sops",
+    ],
+    env = {"SOPS_BIN": "$(rlocationpath @multitool//tools/sops)"},
+    deps = [
+        ":sops_decrypt",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(
