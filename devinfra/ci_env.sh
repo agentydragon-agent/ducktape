@@ -27,12 +27,13 @@ try_export() {
   printf 'export %s=%q\n' "$var_name" "$value"
 }
 
-# Docker CI mTLS
+# Docker CI mTLS — only the base64-encoded client key.
+# Python code (docker_mtls fixture) assembles DOCKER_HOST / DOCKER_TLS_VERIFY /
+# DOCKER_CERT_PATH atomically from this single value.
 if [ -f "$REPO_ROOT/secrets/docker-ci/client-key.sops.pem" ]; then
   _dk=$(sops -d "$REPO_ROOT/secrets/docker-ci/client-key.sops.pem" 2>/dev/null) && {
-    printf 'export DOCKER_CLIENT_KEY=%q\n' "$_dk"
-    echo 'export DOCKER_HOST=tcp://docker-ci.allegedly.works:2376'
-    echo 'export DOCKER_TLS_VERIFY=1'
+    _dk_b64=$(printf '%s' "$_dk" | base64 -w0)
+    printf 'export DUCKTAPE_DOCKER_CLIENT_KEY=%s\n' "$_dk_b64"
   }
 fi
 

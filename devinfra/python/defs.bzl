@@ -57,11 +57,7 @@ def py_test(name, size = "small", requires_docker = False, uses_syrupy = False, 
     if requires_docker:
         base_tags = base_tags + ["requires_docker"]
         base_env_inherit = base_env_inherit + [
-            "DOCKER_HOST",
-            "DOCKER_TLS_VERIFY",
-            "DOCKER_CERT_PATH",
-            "DOCKER_CLIENT_KEY",
-            "DOCKER_CLIENT_KEY_B64",
+            "DUCKTAPE_DOCKER_CLIENT_KEY",
         ]
         base_args = base_args + ["-p", "util.testing.docker_mtls"]
         base_deps = base_deps + ["//util/testing:docker_mtls"]
