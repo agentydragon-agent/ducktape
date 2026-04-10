@@ -6,6 +6,7 @@
 
 # Build system
 /bazel-*
+/.docker-certs/
 /bb-out
 **/node_modules/
 **/.aspect/

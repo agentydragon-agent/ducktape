@@ -25,10 +25,9 @@ _HOOK_EVENT_LOG = Path("/tmp/claude-hook-events.jsonl")
 
 _ERROR_TEMPLATE = Template("""\
 ERROR: ${detail}
-Hook daemon unavailable — the session environment may be broken.
-Tell the user about this problem and check the daemon log:
-  tail -50 ${log_path}
-Then follow the recovery steps in CLAUDE.md under
+Hook daemon unavailable — session environment may be broken.
+Tell the user about this problem and check the daemon log: ${log_path}
+Then follow recovery steps in CLAUDE.md under
   'Recovering from a Broken Session Start Hook'.\
 """)
 

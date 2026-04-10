@@ -13,7 +13,6 @@ from pathlib import Path
 from devinfra.claude.auth_proxy.credentials import check_credential_expiry
 from devinfra.claude.auth_proxy.vars import get_upstream_proxy_url
 from devinfra.claude.debug import log_entrypoint_debug
-from devinfra.claude.env_file import ENV_BAZELISK_PATH
 from devinfra.claude.errors import AuthProxyError
 from devinfra.claude.hook_daemon.client import update_proxy_creds
 from devinfra.claude.session_paths import SessionPaths
@@ -70,18 +69,7 @@ def _setup_logging(paths: SessionPaths) -> None:
 
 
 def _resolve_real_binary() -> str:
-    """Resolve the real bazelisk binary path.
-
-    Web mode: reads BAZELISK_PATH (set by session hook to Nix-provided bazelisk).
-    CLI mode: finds bazelisk on PATH, skipping our own wrapper directory.
-    """
-    env_path = os.environ.get(ENV_BAZELISK_PATH)
-    if env_path:
-        path = Path(env_path)
-        if not path.exists():
-            raise FileNotFoundError(f"{ENV_BAZELISK_PATH}={env_path} does not exist")
-        return env_path
-
+    """Find the real bazelisk on PATH, skipping our own wrapper directory."""
     wrapper_dir = os.environ.get(_WRAPPER_DIR_ENV, "")
     for directory in os.environ.get("PATH", "").split(os.pathsep):
         if wrapper_dir and Path(directory).resolve() == Path(wrapper_dir).resolve():

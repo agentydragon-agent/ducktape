@@ -27,7 +27,6 @@ from devinfra.claude.auth_proxy.setup import SSL_CA_ENV_VARS
 from devinfra.claude.auth_proxy.vars import PROXY_ENV_VARS
 from devinfra.claude.managed_files import write_config
 from devinfra.claude.session_paths import SessionPaths
-from devinfra.claude.settings import HookSettings
 from devinfra.claude.supervisor.client import ProcessInfo, ProcessState, SupervisorClient
 from devinfra.claude.supervisor.service_utils import log_service_failure, wait_for_service_socket
 
@@ -240,7 +239,6 @@ def _cleanup_stale_docker_pid() -> None:
 
 async def setup_container_runtime(
     paths: SessionPaths,
-    settings: HookSettings,
     supervisor: SupervisorClient,
     tmpfs_mounted: bool,
     root_supports_overlay: bool,

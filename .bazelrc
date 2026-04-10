@@ -49,9 +49,6 @@ build:rbe --bes_backend=grpcs://remote.buildbuddy.io
 common:rbe --remote_cache=grpcs://remote.buildbuddy.io
 common:rbe --remote_timeout=10m
 common:rbe --remote_cache_compression
-# TODO: pin digest in devinfra/image_pins.json and add CI build+push workflow
-# Ubuntu base + Nix devtools (pre-commit, ruff, buildifier, bb, gh, kubectl, etc.)
-build:rbe --remote_header=x-buildbuddy-platform.container-image=docker://ghcr.io/agentydragon/rbe-worker:nix-devtools
 build:rbe --noslim_profile
 build:rbe --experimental_profile_include_target_label
 build:rbe --experimental_profile_include_primary_output

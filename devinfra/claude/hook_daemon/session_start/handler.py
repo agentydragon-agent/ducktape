@@ -107,7 +107,6 @@ class PlatformSetup:
     auth_proxy: proxy_setup.ProxySetup | None = None
     container: container_runtime.ContainerRuntimeSetup | None = None
     mkcert_result: mkcert.MkcertSetup | None = None
-    bazelisk_path: Path | None = None
     docker_env: dict[str, str] | None = None
     bazel_cache_dir: Path | None = None
     with_direnv: bool = False
@@ -220,8 +219,6 @@ async def _setup_web(
     #                      (mounts its own tmpfs internally)
     #   setup_bazel_on_tmpfs mounts its own tmpfs independently
     logger.info("Starting parallel installations...")
-    # Resolve bazelisk path early (fast shutil.which — wrapper installed later in run_session).
-    bazelisk_path = wrappers.resolve_bazelisk()
 
     apt_packages: list[str] = []
     if profile.install_apt_packages:
@@ -296,7 +293,7 @@ async def _setup_web(
         raise RuntimeError(f"Proxy setup failed: {auth_proxy_result}") from auth_proxy_result
 
     logger.info(
-        "Ready: bazel=%s, proxy=%s, CA=%s", bazelisk_path, auth_proxy_result.status, auth_proxy_result.ca_status
+        "Ready: proxy=%s, CA=%s", auth_proxy_result.status, auth_proxy_result.ca_status
     )
     logger.info("Container: %s", container_result)
 
@@ -305,7 +302,6 @@ async def _setup_web(
         auth_proxy=auth_proxy_result,
         container=None if isinstance(container_result, BaseException) else container_result,
         mkcert_result=None if isinstance(mkcert_result, BaseException) else mkcert_result,
-        bazelisk_path=bazelisk_path,
         docker_env=docker_env,
         bazel_cache_dir=tmpfs_result.bazel_cache if isinstance(tmpfs_result, tmpfs.TmpfsSetup) else None,
     )
@@ -445,7 +441,6 @@ async def handle(
             session_dir=session.paths.session_dir,
             supervisor_port=settings.supervisor_port,
             combined_ca=combined_ca,
-            bazelisk_path=setup.bazelisk_path,
             docker_env=setup.docker_env,
             hook_timestamp=hook_timestamp,
             mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,

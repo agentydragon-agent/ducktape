@@ -304,11 +304,35 @@ bb remote mod explain protobuf
 bb remote --script 'bazel mod explain protobuf'
 ```
 
-### `bb remote` mixes log lines into stdout
+### Output stream separation
 
-Runner log lines (git sync, progress, ANSI escape sequences) are mixed into
-stdout alongside bazel output. When parsing stdout programmatically (e.g.,
-`bazel query` label output), filter to lines starting with `//` or `@`.
+Source: `cli/remotebazel/remotebazel.go` (`streamLogs`, `printLogs`), `cli/log/log.go`
+
+| Source | Destination |
+| ------ | ----------- |
+| Remote Bazel output (event log chunks) | **stdout** (`os.Stdout.Write`) |
+| CLI messages (`log.Printf`, `log.Warnf`) | **stderr** (Go default logger) |
+| ANSI cursor control (progress rewriting) | **stdout** (`fmt.Print`) |
+
+Interactive mode (detected via `terminal.IsTTY(os.Stdin) && terminal.IsTTY(os.Stderr)`):
+- **Interactive**: `streamLogs()` — polls `GetEventLogChunk()`, redraws "live"
+  chunks with ANSI cursor-up/delete-line escape sequences on stdout
+- **Non-interactive** (piped): `printLogs()` — waits for each chunk to finalize,
+  writes raw bytes to stdout, no ANSI escapes
+
+**Extracting clean output programmatically**:
+
+1. **Pipe stdout** — non-interactive mode activates automatically when stdout is
+   not a TTY, producing clean bazel output on stdout with CLI noise on stderr:
+   ```bash
+   RESULT=$(bb remote query 'deps(//foo)' 2>/dev/null)
+   # or force non-interactive:
+   bb remote query 'deps(//foo)' | cat
+   ```
+2. **`--invocation_id_file`** — write the invocation ID to a file, then fetch
+   logs post-hoc via the BuildBuddy API
+3. **`--script` + file redirect** — redirect bazel output to a file on the
+   runner, download via `--remote_download_regex`
 
 ## Key source files
 

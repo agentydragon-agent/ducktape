@@ -1,8 +1,6 @@
 """Wrapper installation — installs PATH-intercepting shell wrappers during session start."""
 
 import logging
-import shutil
-from dataclasses import dataclass
 from pathlib import Path
 
 from devinfra.claude.session_paths import SessionPaths
@@ -32,32 +30,6 @@ def _install(binary_name: str, module: str, paths: SessionPaths) -> Path:
 
 
 # --- Bazel ---
-
-
-@dataclass
-class BazeliskSetup:
-    """Result of bazelisk wrapper installation."""
-
-    bazelisk_path: Path
-    wrapper_path: Path
-
-    @property
-    def status(self) -> str:
-        """Get status string for logging."""
-        bazelisk_on_path = shutil.which("bazelisk")
-        if bazelisk_on_path and Path(bazelisk_on_path).resolve() == self.wrapper_path.resolve():
-            return f"wrapper at {self.wrapper_path}"
-        if self.wrapper_path.exists():
-            return f"wrapper exists but not on PATH ({self.wrapper_path})"
-        return "no wrapper"
-
-
-def resolve_bazelisk() -> Path:
-    """Find bazelisk on PATH (provided by Nix devtools package)."""
-    bazelisk = shutil.which("bazelisk")
-    if bazelisk:
-        return Path(bazelisk)
-    raise RuntimeError("bazelisk not found on PATH (expected from Nix devtools package)")
 
 
 def install_bazel(paths: SessionPaths) -> Path:

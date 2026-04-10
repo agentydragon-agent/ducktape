@@ -115,7 +115,7 @@ have partial SOPS changes that should be reverted/deleted as part of this work.
 - Plan file: `~/.claude/plans/frolicking-cooking-stearns.md`
 - Memory: `~/.claude/projects/-home-agentydragon-code-ducktape/memory/project_ci_sops_key.md`
 - DinD README: `cluster/k8s/docker-ci/README.md`
-- Skip `ducktape-git-hook` in pre-commit (broken Nix package, `validate_flux_build` import error)
+- Skip `ducktape-precommit` in pre-commit (broken Nix package, `validate_flux_build` import error)
 - BB CLI source: `/code/github.com/buildbuddy-io/buildbuddy/cli/`
 - Harbor provider source: `/code/github.com/goharbor/terraform-provider-harbor/`
 - CI age key public: `age1zl5lv4g0lzd4pcwx9q4vvq0w4rpmkde5r68k4n2zu89urmnx9svs3c2mef`

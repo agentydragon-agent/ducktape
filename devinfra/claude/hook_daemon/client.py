@@ -26,7 +26,7 @@ from util.bazel.subprocess import python_env
 logger = logging.getLogger(__name__)
 
 # How long to wait for the daemon socket to appear after starting the daemon.
-_DAEMON_STARTUP_TIMEOUT_SECS = 15
+_DAEMON_STARTUP_TIMEOUT_SECS = 5
 
 
 class _UDSConnection(http.client.HTTPConnection):

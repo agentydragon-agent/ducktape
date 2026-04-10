@@ -16,7 +16,6 @@ from util.bazel.subprocess import exports_from_dict
 
 # Runtime env var names (written by session hook, read by bazel_wrapper)
 ENV_SESSION_BAZELRC = "SESSION_BAZELRC"
-ENV_BAZELISK_PATH = "BAZELISK_PATH"
 
 
 # NO_PROXY entries that break Go module downloads in the gVisor sandbox.
@@ -62,7 +61,6 @@ class EnvVars:
     # Web mode: Bazel configuration
     supervisor_port: int | None = None
     combined_ca: Path | None = None
-    bazelisk_path: Path | None = None
 
     # Container runtime env vars (web mode)
     docker_env: dict[str, str] | None = None
@@ -108,11 +106,6 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
             session_config.update(ca_config)
         exports.extend(["", "# Session configuration"])
         exports.extend(exports_from_dict(session_config))
-
-    # Bazelisk path (always set when available, regardless of proxy mode)
-    if vars.bazelisk_path is not None:
-        exports.extend(["", "# Bazelisk path"])
-        exports.extend(exports_from_dict({ENV_BAZELISK_PATH: vars.bazelisk_path}))
 
     # NOTE: We intentionally do NOT export HTTPS_PROXY/HTTP_PROXY here.
     # Anthropic sets these in the container with fresh JWT credentials.

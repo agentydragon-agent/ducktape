@@ -74,8 +74,6 @@ def setup_hook_env(
     monkeypatch: pytest.MonkeyPatch,
     isolated_dirs: IsolatedDirs,
     mock_proxy: MitmproxyFixture,
-    *,
-    setup_docker: bool = False,
 ) -> None:
     """Set up environment variables for running session start hook via monkeypatch."""
     # Create combined CA bundle with system CAs + mock proxy CA
