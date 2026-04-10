@@ -96,7 +96,7 @@
   # Claude Code session start hook — OK
   
   **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-  **Bazel:** wrapper adds auth proxy (port 18081, loaded)
+  **Bazel:** wrapper adds auth proxy (loaded)
   
   Secrets loaded (buildbuddy=yes, github=yes).
   
@@ -113,7 +113,7 @@
   # Claude Code session start hook — OK
   
   **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-  **Bazel:** wrapper adds auth proxy (port 18081, loaded)
+  **Bazel:** wrapper adds auth proxy (loaded)
   
   Installing in background. First `git commit` may block briefly.
   
@@ -140,7 +140,7 @@
   # Claude Code session start hook — OK
   
   **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-  **Bazel:** wrapper adds auth proxy (port 18081, loaded)
+  **Bazel:** wrapper adds auth proxy (loaded)
   
   running, `DOCKER_HOST=unix:///var/run/docker.sock`
   - `docker run` works. `docker build --network=host` works (BuildKit handles large output gracefully).

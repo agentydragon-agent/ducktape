@@ -5,7 +5,7 @@
 
 % if proxy:
 **Environment:** gVisor sandbox, TLS-inspecting proxy, no overlay fs (vfs), 9p fs
-**Bazel:** wrapper adds auth proxy (port ${proxy.port}, ${proxy.ca_status})
+**Bazel:** wrapper adds auth proxy (${proxy.ca_status})
 % else:
 **Environment:** CLI (local)
 % endif

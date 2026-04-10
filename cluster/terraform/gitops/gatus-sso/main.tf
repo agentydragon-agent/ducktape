@@ -4,7 +4,7 @@ terraform {
   required_providers {
     authentik = {
       source  = "goauthentik/authentik"
-      version = "~> 2025.10.0"
+      version = "~> 2025.10"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -71,7 +71,7 @@ resource "authentik_provider_oauth2" "gatus" {
   invalidation_flow  = data.authentik_flow.invalidation.id
   signing_key        = data.authentik_certificate_key_pair.self_signed.id
 
-  issuer_mode              = "per_provider"
+  issuer_mode                = "per_provider"
   include_claims_in_id_token = true
 
   property_mappings = [
