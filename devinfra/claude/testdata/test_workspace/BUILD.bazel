@@ -26,6 +26,7 @@ filegroup(
         ".claude_hooks/config.yaml",
         "BUILD.bazel",
         "MODULE.bazel",
+        "test_env.sh",
     ],
     visibility = ["//devinfra/claude:__subpackages__"],
 )

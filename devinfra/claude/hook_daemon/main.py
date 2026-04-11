@@ -64,30 +64,33 @@ def main() -> None:
     logger.info("Daemon startup settings: %s", HookSettings().model_dump())
 
     # Load config once at daemon startup. Shared by tracing init and session start handler.
-    hook_config: HookConfig | None = None
     otel_config: OtelConfig | None = None
+    env_script_exports: str = ""
     project_dir_str = os.environ.get("CLAUDE_PROJECT_DIR")
-    if project_dir_str:
-        project_dir = Path(project_dir_str)
-        try:
-            hook_config = HookConfig.load_from_repo(project_dir)
+    if not project_dir_str:
+        raise RuntimeError("CLAUDE_PROJECT_DIR not set — cannot load hook config")
 
-            # Run the profile's env_script to populate secrets in os.environ
-            # (BUILDBUDDY_API_KEY, DUCKTAPE_OTEL_BEARER_TOKEN, etc.)
-            settings = HookSettings()
-            profile = hook_config.resolve_profile(is_web_mode(), override=settings.profile)
-            if profile.env_script:
-                env_script_path = project_dir / profile.env_script
-                if env_script_path.is_file():
-                    script_result = run_env_script(env_script_path)
-                    os.environ.update(script_result.env_vars)
+    project_dir = Path(project_dir_str)
+    hook_config = HookConfig.load_from_repo(project_dir)
 
-            otel_config = _resolve_otel_config(hook_config)
-        except Exception as e:
-            logger.warning("Failed to load hook config at startup: %s", e)
+    # Run the profile's env_script to populate secrets in os.environ
+    # (BUILDBUDDY_API_KEY, DUCKTAPE_OTEL_BEARER_TOKEN, etc.)
+    # Raw export lines are stored and written verbatim to the session env file.
+    # TODO: os.environ.update() is a footgun — env script can silently overwrite
+    # any daemon env var. Consider allowlisting which vars the script may set.
+    settings = HookSettings()
+    profile = hook_config.resolve_profile(is_web_mode(), override=settings.profile)
+    if profile.env_script:
+        env_script_path = project_dir / profile.env_script
+        if env_script_path.is_file():
+            script_result = run_env_script(env_script_path)
+            os.environ.update(script_result.env_vars)
+            env_script_exports = script_result.raw_exports
+
+    otel_config = _resolve_otel_config(hook_config)
 
     init_daemon_tracing(daemon_dir, otel_config=otel_config)
-    configure(daemon_dir, hook_config=hook_config)
+    configure(daemon_dir, hook_config=hook_config, env_script_exports=env_script_exports)
 
     uvicorn.run(app, uds=args.sock, log_level="info")
     shutdown_tracing()

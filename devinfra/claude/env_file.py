@@ -72,8 +72,11 @@ class EnvVars:
     mkcert_cert: Path | None = None
     mkcert_key: Path | None = None
 
-    # K8s secrets env vars (web mode)
-    secrets_env_vars: dict[str, str] | None = None
+    # Raw export lines from profile env_script (pasted verbatim)
+    env_script_exports: str = ""
+
+    # Kubeconfig generated at session start (web mode only)
+    kubeconfig_path: Path | None = None
 
     # CLI mode: include direnv eval for .envrc propagation
     with_direnv: bool = False
@@ -135,9 +138,14 @@ def write_env_file(env_file: Path, vars: EnvVars) -> None:
         exports.extend(["", "# Session metadata"])
         exports.extend(exports_from_dict({"DUCKTAPE_SESSION_START_HOOK_TS": vars.hook_timestamp.isoformat()}))
 
-    if vars.secrets_env_vars:
-        exports.extend(["", "# K8s cluster secrets"])
-        exports.extend(exports_from_dict(vars.secrets_env_vars))
+    if vars.env_script_exports:
+        exports.extend(["", "# --- env_script exports (from profile env_script) ---"])
+        exports.append(vars.env_script_exports)
+        exports.append("# --- end env_script exports ---")
+
+    if vars.kubeconfig_path:
+        exports.extend(["", "# Kubeconfig (generated at session start)"])
+        exports.extend(exports_from_dict({"KUBECONFIG": vars.kubeconfig_path}))
 
     # Point Ansible's local tmp to a sandbox-writable directory so that
     # pre-commit ansible-syntax-check works when /tmp is read-only in the

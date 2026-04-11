@@ -63,11 +63,16 @@ async def _log_exceptions(request: Request, call_next):
         return JSONResponse(status_code=500, content={"detail": tb_str})
 
 
-def configure(daemon_dir: Path, hook_config: HookConfig | None = None) -> None:
+def configure(
+    daemon_dir: Path,
+    hook_config: HookConfig,
+    env_script_exports: str,
+) -> None:
     """Set daemon runtime directory and shared config. Call before starting uvicorn."""
     app.state.daemon_dir = daemon_dir
     app.state.settings = HookSettings()
     app.state.hook_config = hook_config
+    app.state.env_script_exports = env_script_exports
     app.state.last_request_time = time.monotonic()
     app.state.sessions = {}  # dict[str, Session]
     # Proxies are started lazily on the first SessionStart hook, not here.
@@ -152,13 +157,18 @@ async def handle_hook(req: HookRequest) -> Response:
         output: HookOutputBase | None = None
         match req.hook:
             case SessionStartHookInput():
-                hook_config = app.state.hook_config or HookConfig.load_from_repo(Path(req.hook.cwd))
+                hook_config = app.state.hook_config
                 web_mode = req.env.get("CLAUDE_CODE_REMOTE") == "true"
                 profile = hook_config.resolve_profile(web_mode, override=app.state.settings.profile)
                 await session.start_proxy(profile)
                 ctx = CallerContext.from_env(req.env)
                 output = await handle_session_start(
-                    session, req.hook, app.state.settings, hook_config=hook_config, ctx=ctx
+                    session,
+                    req.hook,
+                    app.state.settings,
+                    hook_config=hook_config,
+                    ctx=ctx,
+                    env_script_exports=app.state.env_script_exports,
                 )
             case PreToolUseInput():
                 output = evaluate_pre(req.hook)

@@ -20,28 +20,48 @@ class EnvScriptResult:
     """Result of running an env script."""
 
     env_vars: dict[str, str]
+    raw_exports: str
     stderr: str
 
 
 def run_env_script(script_path: Path, *, timeout: int = 30) -> EnvScriptResult:
-    """Run a shell env script, return the new/changed env vars.
+    """Run a shell env script, return the new/changed env vars and raw export lines.
 
     Does NOT mutate os.environ — caller decides what to do with the result.
+
+    Returns both:
+    - env_vars: parsed dict for os.environ.update() (daemon-side usage)
+    - raw_exports: raw stdout from the script (export lines, pasted into session env file)
     """
-    result = subprocess.run(
-        ["bash", "-c", f"source {shlex.quote(str(script_path))} && env -0"],
+    # First, capture the raw export lines (stdout of the script itself)
+    raw_result = subprocess.run(
+        ["bash", script_path],
         check=False,
         capture_output=True,
         timeout=timeout,
     )
-    stderr = result.stderr.decode(errors="replace").strip()
+    raw_exports = raw_result.stdout.decode(errors="replace").strip()
+    stderr = raw_result.stderr.decode(errors="replace").strip()
 
-    if result.returncode != 0:
-        logger.error("%s exited %d: %s", script_path, result.returncode, stderr)
-        return EnvScriptResult(env_vars={}, stderr=stderr)
+    if raw_result.returncode != 0:
+        logger.error("%s exited %d: %s", script_path, raw_result.returncode, stderr)
+        return EnvScriptResult(env_vars={}, raw_exports="", stderr=stderr)
 
-    # Parse NUL-delimited env vars, keep only new/changed ones
-    new_env = dict(line.split("=", 1) for line in result.stdout.decode(errors="replace").split("\0") if "=" in line)
+    # Second, run with env -0 to get parsed key=value pairs for os.environ
+    env_result = subprocess.run(
+        f"source {shlex.quote(str(script_path))} && env -0",
+        shell=True,
+        executable="bash",
+        check=False,
+        capture_output=True,
+        timeout=timeout,
+    )
+
+    if env_result.returncode != 0:
+        logger.error("%s env parse failed: %s", script_path, env_result.stderr.decode(errors="replace").strip())
+        return EnvScriptResult(env_vars={}, raw_exports=raw_exports, stderr=stderr)
+
+    new_env = dict(line.split("=", 1) for line in env_result.stdout.decode(errors="replace").split("\0") if "=" in line)
     changed = {k: v for k, v in new_env.items() if os.environ.get(k) != v}
 
     if changed:
@@ -49,4 +69,4 @@ def run_env_script(script_path: Path, *, timeout: int = 30) -> EnvScriptResult:
     if stderr:
         logger.warning("Env script %s stderr:\n%s", script_path.name, stderr)
 
-    return EnvScriptResult(env_vars=changed, stderr=stderr)
+    return EnvScriptResult(env_vars=changed, raw_exports=raw_exports, stderr=stderr)

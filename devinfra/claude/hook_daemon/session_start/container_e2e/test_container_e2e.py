@@ -252,6 +252,16 @@ def test_container_e2e(
         )
         _exec(container, ["bash", "-c", f"echo {shlex.quote(hook_input)} | claude-hook"])
 
+        # Verify env script output was applied to session env file
+        logger.info("Verifying env script output in session env file")
+        rc, env_content, _ = _exec(container, ["cat", _ENV_FILE], check=False)
+        if rc == 0:
+            env_text = env_content.decode(errors="replace")
+            assert "E2E_TEST_SECRET" in env_text, (
+                f"Expected E2E_TEST_SECRET from test_env.sh in session env file, got:\n{env_text}"
+            )
+            logger.info("Env script output verified: E2E_TEST_SECRET found in session env file")
+
         # Run bazel build through the proxy chain
         logger.info("Running bazel build")
         bazel_cmd = f"source {_ENV_FILE} && bazel build //:hello"

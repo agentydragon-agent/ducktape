@@ -6,6 +6,8 @@ profiles:
   cli:
     bazel_remote_proxy: null
     bazel_bes_proxy: null
+    env_script: test_env.sh
   web:
     bazel_remote_proxy: null
     bazel_bes_proxy: null
+    env_script: test_env.sh

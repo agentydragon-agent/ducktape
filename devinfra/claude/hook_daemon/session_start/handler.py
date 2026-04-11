@@ -321,6 +321,7 @@ async def handle(
     settings: HookSettings,
     hook_config: HookConfig,
     ctx: CallerContext,
+    env_script_exports: str,
 ) -> SessionStartOutput:
     """Unified session setup for both web and CLI modes.
 
@@ -442,7 +443,8 @@ async def handle(
             hook_timestamp=hook_timestamp,
             mkcert_cert=setup.mkcert_result.cert_path if setup.mkcert_result else None,
             mkcert_key=setup.mkcert_result.key_path if setup.mkcert_result else None,
-            secrets_env_vars=_build_secrets_env_vars(setup.secrets),
+            env_script_exports=env_script_exports,
+            kubeconfig_path=setup.secrets.kubeconfig_path,
             with_direnv=setup.with_direnv,
             extra_env_script=extra_env,
         )
@@ -504,21 +506,6 @@ def _build_extra_env_script(profile: ProfileConfig) -> str | None:
         return profile.env_exports.rstrip()
     return None
 
-
-def _build_secrets_env_vars(secrets: SecretsResult) -> dict[str, str] | None:
-    """Build env var dict for the session env file.
-
-    Secrets come from os.environ (populated by env_script at daemon startup).
-    KUBECONFIG is generated at session start time.
-    """
-    env_vars: dict[str, str] = {}
-    if secrets.buildbuddy_api_key:
-        env_vars["BUILDBUDDY_API_KEY"] = secrets.buildbuddy_api_key
-    if secrets.github_token:
-        env_vars["GITHUB_TOKEN"] = secrets.github_token
-    if secrets.kubeconfig_path:
-        env_vars["KUBECONFIG"] = str(secrets.kubeconfig_path)
-    return env_vars or None
 
 
 # ============================================================================
