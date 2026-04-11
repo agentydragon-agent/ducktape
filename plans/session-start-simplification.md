@@ -103,6 +103,25 @@ Eliminated `HookConfig` wrapper — each profile is now a standalone YAML file.
   hardcoded `.claude_hooks/templates/context.mako` path
 - Deleted: `HookConfig`, `DefaultProfiles`, `is_web_mode()`
 
+### CI `bbr` removal
+
+Replaced `bbr` (from claude-hooks wheel) with `bb remote` in all CI workflows.
+Broke the chicken-and-egg where CI couldn't test wheel changes because it used the
+previous release's `bbr`.
+
+**What was done**:
+
+- Set `GIT_REPO_DEFAULT_BRANCH=devel` in all workflows (`bb remote` checks this env var
+  first, bypassing `origin/HEAD` detection that fails on GHA checkouts where default
+  branch is `devel` not `main`/`master`)
+- `bazel-ci.yml`: `bbr test/build` → `bb remote test/build`
+- `push-images.yml`: `bbr run` → `bb remote run` with inline `GHCR_TOKEN`/`GHCR_USERNAME`
+  forwarding via `--remote_run_header`
+- `release.yml`: `bbr run` → `bb remote run` with inline `GH_RELEASE_PAT` forwarding
+- Added `citools` Nix package (just `bb` + `sops`) for lean CI installs
+- Added `package` input to `setup-nix-devtools` action
+- Removed CI env forwarding from `bbr.py` (GHCR_TOKEN, GHCR_USERNAME, GH_RELEASE_PAT)
+
 ## Remaining
 
 ### Future: `ci_env.sh` as full CI setup step
