@@ -40,6 +40,17 @@ let
     };
   };
 
+  solarizedNvim = pkgs.vimUtils.buildVimPlugin {
+    pname = "solarized.nvim";
+    version = "2024-11-26";
+    src = pkgs.fetchFromGitHub {
+      owner = "maxmx03";
+      repo = "solarized.nvim";
+      rev = "main";
+      sha256 = "1fz1wc569w26aanmj3hhsc17xrx29g6bfsjsbgssa7jq76aavp3w";
+    };
+  };
+
   # Shell initialization scripts (loaded from external files to avoid escaping hell)
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
@@ -216,6 +227,162 @@ in
     withNodeJs = false;
     withPython3 = false;
     extraLuaConfig = builtins.readFile ./config/nvim/init.lua;
+    plugins = with pkgs.vimPlugins; [
+      (nvim-treesitter.withPlugins (
+        p: with p; [
+          bash
+          bibtex
+          c
+          c-sharp
+          clojure
+          cmake
+          cpp
+          css
+          csv
+          desktop
+          diff
+          dockerfile
+          git-config
+          git-rebase
+          gitattributes
+          gitcommit
+          gitignore
+          go
+          gomod
+          gosum
+          gotmpl
+          haskell
+          html
+          htmldjango
+          http
+          ini
+          java
+          javadoc
+          javascript
+          jinja
+          jq
+          jsdoc
+          json
+          jsonnet
+          latex
+          lua
+          luadoc
+          make
+          markdown
+          nginx
+          nix
+          proto
+          python
+          requirements
+          rust
+          scss
+          sql
+          ssh-config
+          starlark
+          textproto
+          tmux
+          toml
+          typescript
+          vim
+          vimdoc
+          xml
+        ]
+      ))
+      {
+        plugin = nvim-lspconfig;
+        type = "lua";
+        config = ''
+          vim.lsp.config("pyright", {})
+          vim.lsp.enable("pyright")
+        '';
+      }
+      {
+        plugin = conform-nvim;
+        type = "lua";
+        config = ''
+          require("conform").setup({
+            formatters_by_ft = {
+              lua = { "stylua" },
+              python = { "isort", "black" },
+              rust = { "rustfmt", lsp_format = "fallback" },
+            },
+            format_on_save = {
+              timeout_ms = 500,
+              lsp_format = "fallback",
+            },
+          })
+        '';
+      }
+      {
+        plugin = copilot-lua;
+        type = "lua";
+        config = ''
+          require("copilot").setup({
+            suggestion = { enabled = true, auto_trigger = true },
+            panel = { enabled = false },
+            filetypes = {
+              markdown = true,
+              help = true,
+              gitcommit = true,
+              ["*"] = true,
+            },
+          })
+        '';
+      }
+      nvim-web-devicons
+      {
+        plugin = lualine-nvim;
+        type = "lua";
+        config = ''
+          require("lualine").setup({
+            options = { icons_enabled = true, theme = "auto" },
+          })
+        '';
+      }
+      {
+        plugin = nvim-notify;
+        type = "lua";
+        config = ''
+          local bg_color = vim.o.background == "dark" and "#002b36" or "#fdf6e3"
+          require("notify").setup({ background_colour = bg_color })
+          vim.notify = require("notify")
+        '';
+      }
+      {
+        plugin = vim-better-whitespace;
+        type = "lua";
+        config = ''
+          vim.g.better_whitespace_enabled = 1
+          vim.api.nvim_set_hl(0, "ExtraIndentMixed", { bg = "#443333" })
+          vim.api.nvim_create_autocmd("BufWinEnter", {
+            callback = function()
+              vim.fn.matchadd("ExtraIndentMixed", [[^\t+ +\|^ \+\t+]])
+            end,
+          })
+          vim.api.nvim_set_hl(0, "ExtraWhitespace", { bg = "#552222" })
+        '';
+      }
+      vim-lastplace
+      {
+        plugin = solarizedNvim;
+        type = "lua";
+        config = ''
+          vim.o.termguicolors = true
+          require("solarized").setup({})
+          vim.cmd.colorscheme("solarized")
+        '';
+      }
+      {
+        plugin = gnomeNvim;
+        type = "lua";
+        config = ''
+          if vim.fn.has("unix") == 1 and vim.fn.has("mac") == 0 then
+            require("gnome").setup({})
+          end
+        '';
+      }
+      vimLumen
+    ];
   };
 
   # Delta - better git diffs
@@ -305,11 +472,7 @@ in
     enable_daemon=true
   '';
 
-  # Neovim configuration
-  xdg.configFile."nvim" = {
-    source = ./config/nvim;
-    recursive = true;
-  };
+  # Neovim plugin config is now fully inline in programs.neovim.plugins above.
   # Base bazelrc settings (layered by host configs)
   home.file.".bazelrc".text = ''
     common --show_progress_rate_limit=0.05
@@ -377,9 +540,6 @@ in
       devenv
       rclone # Cloud storage mounting/sync
       pkgsUnstable.opencode # AI coding agent for terminal (unstable for faster updates)
-
-      # Tree-sitter CLI for manual parser management
-      tree-sitter # Used by nvim-treesitter auto_install
 
       # Formatters for conform.nvim
       stylua # Lua formatter

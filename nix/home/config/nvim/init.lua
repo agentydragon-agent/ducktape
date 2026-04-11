@@ -111,16 +111,15 @@ opt.termguicolors = true -- Enable true color support (recommended for modern UI
 -- opt.splitright = true           -- Split vertical windows to the right
 -- opt.splitbelow = true           -- Split horizontal windows to the bottom
 
--- Make sure to setup `mapleader` and `maplocalleader` before
--- loading lazy.nvim so that mappings are correct.
--- This is also a good place to setup other settings (vim.opt)
 vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 
 -- Enable EditorConfig support
 vim.g.editorconfig = true
 
-require("config.lazy")
-
--- Django template formatter:
--- { "yaegassy/coc-htmldjango" }
+-- Plugins are installed and configured by Nix (home-manager programs.neovim.plugins).
+-- Treesitter grammars are prebuilt by Nix, folding config here:
+vim.opt.foldmethod = "expr"
+vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+vim.opt.foldlevelstart = 99
+vim.opt.foldlevel = 99
