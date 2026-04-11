@@ -6,7 +6,7 @@
 
 locals {
   cilium_version      = "1.19.2"
-  gateway_api_version = "v1.4.1"
+  gateway_api_version = "v1.5.1"
 }
 
 resource "null_resource" "gateway_api_crds" {
@@ -19,7 +19,8 @@ resource "null_resource" "gateway_api_crds" {
     environment = {
       KUBECONFIG = local_file.kubeconfig.filename
     }
-    # Experimental channel CRDs (superset of standard: adds TLSRoute, etc.).
+    # Experimental channel — Cilium 1.19 requires TLSRoute v1alpha2, which the
+    # standard channel dropped in v1.5.0 (graduated to v1 only).
     # Server-side apply required: HTTPRoute CRD exceeds 256KB annotation limit.
     command = <<-EOT
       set -e
