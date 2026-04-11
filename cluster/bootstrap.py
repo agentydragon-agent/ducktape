@@ -95,7 +95,10 @@ def run(
 
 def tofu(*args: str, excludes: list[str], timeout: int = 600) -> subprocess.CompletedProcess[str]:
     exclude_flags = [f"-exclude={e}" for e in excludes]
-    return run([_TOFU_BIN, *args, *exclude_flags], cwd=TF_DIR, timeout=timeout)
+    result = run([_TOFU_BIN, *args, *exclude_flags], cwd=TF_DIR, timeout=timeout, check=False)
+    if result.returncode != 0:
+        raise SystemExit(f"tofu {args[0]} failed (exit {result.returncode})")
+    return result
 
 
 def tofu_output(name: str) -> str:
@@ -240,6 +243,9 @@ def main() -> None:
         default=[],
         help="Tofu resource address to exclude from all applies (passed as -exclude= to tofu). Can be repeated.",
     )
+    parser.add_argument(
+        "--skip-preflight", action="store_true", help="Skip preflight validation (pre-commit, tofu validate)"
+    )
     args = parser.parse_args()
 
     # Safety check: running on wyrm2 without excluding module.wyrm2 will cause
@@ -265,7 +271,8 @@ def main() -> None:
     if start_phase > 1:
         log.info("Starting from phase: %s", args.start_from)
 
-    preflight(root)
+    if not args.skip_preflight:
+        preflight(root)
 
     if start_phase <= 1:
         deploy_persistent_auth()
